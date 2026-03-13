@@ -1,4 +1,4 @@
-# INFORME DE CIERRE — Sesion CC0: Project Scaffolding
+# INFORME DE CIERRE — Sesion CC0: Project Scaffolding + Config Centralizada
 ## Branch: claude/check-directory-files-lgXi9
 
 ### Objetivos definidos
@@ -9,6 +9,8 @@
 - docker-compose.yml para PostgreSQL y Redis
 - src/index.ts placeholder
 - Ejecutar npm install y verificar que compila
+- Configuracion centralizada: un unico archivo para todos los parametros configurables
+- Regla maxima en CLAUDE.md prohibiendo leer process.env fuera de config.ts
 
 ### Completado ✅
 - package.json con todas las dependencias (versiones verificadas contra npm registry)
@@ -20,7 +22,10 @@
 - src/index.ts placeholder
 - npm install exitoso (338 paquetes instalados)
 - npx tsc --noEmit pasa sin errores
-- Commit y push al branch remoto
+- `src/config.ts` — archivo unico de configuracion con validacion zod y tipos
+- `.env.example` — template con todas las variables organizadas por seccion
+- `CLAUDE.md` actualizado con regla maxima de configuracion centralizada
+- Commit y push al branch remoto (3 commits)
 
 ### No completado ❌
 - Nada pendiente. Todos los objetivos cumplidos.
@@ -34,10 +39,17 @@
 | `vitest.config.ts` | nuevo | Configuracion de tests |
 | `eslint.config.js` | nuevo | Linting con flat config v9 |
 | `.gitignore` | nuevo | Exclusiones de git |
+| `.env.example` | nuevo | Template de todas las variables configurables |
 | `docker-compose.yml` | nuevo | PostgreSQL 16 + Redis 7 |
 | `src/index.ts` | nuevo | Placeholder del entry point |
+| `src/config.ts` | nuevo | Configuracion centralizada con zod validation |
+| `CLAUDE.md` | modificado | Regla maxima de config centralizada agregada |
 | `docs/reports/S00-report.md` | nuevo | Informe tecnico de sesion |
 | `informes/CC0.md` | nuevo | Este informe |
+
+### Interfaces expuestas (exports que otros consumen)
+- `config` — singleton tipado con todos los parametros del sistema (`src/config.ts`)
+- `Config` — type inferido del schema zod (`src/config.ts`)
 
 ### Dependencias instaladas
 
@@ -58,6 +70,8 @@
 - vitest en ^2.x (v4 es major bump reciente)
 - ESLint flat config (v9) segun especificacion
 - NodeNext para module/moduleResolution (requerido por ESM con extensiones .js)
+- Configuracion centralizada: un solo archivo (`src/config.ts`) lee `.env` via dotenv, valida con zod, y exporta un singleton tipado. Ningun otro modulo toca `process.env`.
+- Todos los defaults definidos en el schema zod con `.default()` para que el sistema arranque sin `.env` en desarrollo.
 
 ### Riesgos o deuda tecnica
 - 6 vulnerabilidades reportadas por npm audit (5 moderate, 1 high) — dependencias transitivas
@@ -68,3 +82,6 @@
 - Imports deben usar extension `.js` (ESM + NodeNext)
 - Tests van en `tests/**/*.test.ts`
 - `npx vitest run` funciona (0 tests, exit limpio)
+- Para usar configuracion: `import { config } from '../config.js'`
+- PROHIBIDO leer `process.env` fuera de `src/config.ts`
+- Nuevos parametros configurables se agregan en: `.env.example`, schema zod, y mapeo `loadFromEnv()`
