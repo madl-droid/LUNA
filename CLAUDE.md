@@ -62,6 +62,12 @@ import type { NormalizedMessage } from '../gateway/channels/types.js'
 import type { ToolResult } from '../tools/types.js'
 ```
 
+## Convenciones de naming
+- Archivos y carpetas: `kebab-case` (ej: `lead-status.ts`, `whatsapp-adapter.ts`)
+- Variables y funciones: `camelCase`
+- Clases y types/interfaces: `PascalCase`
+- Constantes globales: `UPPER_SNAKE_CASE`
+
 ## Principios
 - Si se puede sin LLM → código
 - Cada tool extiende BaseTool (retry + fallback + circuit breaker)
