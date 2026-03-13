@@ -1,6 +1,0 @@
-node_modules/
-dist/
-.env
-instance/wa-auth/
-*.log
-coverage/
