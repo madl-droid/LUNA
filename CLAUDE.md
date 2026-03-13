@@ -71,11 +71,6 @@ import type { ToolResult } from '../tools/types.js'
 - Logs JSON estructurados en cada paso
 - Contact unification cross-channel
 
-# ═══════════════════════════════════════════════════════
-# PEGAR EN CLAUDE.md — después de "## Principios" 
-# ═══════════════════════════════════════════════════════
-
-
 ## Lead Status (máquina de estados)
 
 qualification_status — valores y transiciones:
