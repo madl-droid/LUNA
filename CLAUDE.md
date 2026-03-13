@@ -68,6 +68,39 @@ import type { ToolResult } from '../tools/types.js'
 - Clases y types/interfaces: `PascalCase`
 - Constantes globales: `UPPER_SNAKE_CASE`
 
+## REGLA MAXIMA: Configuracion centralizada
+
+**TODO parametro configurable del sistema DEBE vivir en `src/config.ts` y leerse desde `.env`.**
+
+Esto incluye: API keys, timeouts, limites de tokens, temperaturas, intervalos, cron schedules, puertos, modelos LLM, feature flags de modulos, rutas de archivos, y cualquier valor que el usuario pueda querer cambiar sin tocar codigo.
+
+### Reglas:
+1. **Ningun modulo lee `process.env` directamente.** Solo `src/config.ts` lo hace.
+2. **Todo modulo importa de `src/config.ts`:** `import { config } from '../config.js'`
+3. **Nuevos parametros configurables** se agregan en 3 lugares:
+   - `.env.example` (documentacion con valor por defecto)
+   - Schema zod en `src/config.ts` (validacion y tipo)
+   - Mapeo `loadFromEnv()` en `src/config.ts` (lectura del env var)
+4. **Antes de hardcodear un valor** que podria ser configurable (timeout, limite, intervalo, modelo, flag), pregunta al usuario si debe ir en `src/config.ts`.
+5. **Valores por defecto** se definen en el schema zod con `.default()`, para que el sistema arranque sin `.env` en desarrollo.
+
+### Ejemplo de uso correcto:
+```typescript
+import { config } from '../config.js'
+
+const pool = new Pool({
+  host: config.db.host,
+  port: config.db.port,
+  max: config.db.maxConnections,
+})
+```
+
+### Ejemplo de uso INCORRECTO:
+```typescript
+// PROHIBIDO: leer process.env directamente
+const host = process.env.DB_HOST ?? 'localhost'
+```
+
 ## Principios
 - Si se puede sin LLM → código
 - Cada tool extiende BaseTool (retry + fallback + circuit breaker)
