@@ -1,21 +1,130 @@
 // LUNA — Configuracion centralizada
 // REGLA: Todo parametro configurable del sistema se define y exporta desde este archivo.
 // Ningun otro modulo debe leer process.env directamente.
+//
+// Dos fuentes:
+// 1. .env (via Varlock) → secretos (API keys, DB passwords)
+// 2. instance/config.json → configuración operativa editable desde UI
 
+// Runtime: dotenv carga .env → process.env
+// Varlock queda instalado para CLI (varlock scan) y .env.schema como doc AI-safe
 import dotenv from 'dotenv'
-import { z } from 'zod'
-
 dotenv.config()
+
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import { z } from 'zod'
 
 // --- Helpers ---
 const boolStr = z.string().transform(v => v === 'true').pipe(z.boolean())
 const intStr = z.string().transform(Number).pipe(z.number().int())
 const floatStr = z.string().transform(Number).pipe(z.number())
 
-// --- Schema ---
-const configSchema = z.object({
+// --- Instance config schema (instance/config.json, editable desde UI) ---
+export const instanceConfigSchema = z.object({
+  whatsapp: z.object({
+    phoneNumber: z.string().default(''),
+    enabled: z.boolean().default(true),
+    baileys: z.object({
+      printQRInTerminal: z.boolean().default(true),
+      syncFullHistory: z.boolean().default(false),
+      allowedEvents: z.array(z.string()).default(['messages.upsert', 'connection.update', 'creds.update']),
+    }).default({}),
+  }).default({}),
+  llm: z.object({
+    primaryProvider: z.string().default('anthropic'),
+    fallbackProvider: z.string().default('gemini'),
+    models: z.object({
+      classify: z.object({
+        provider: z.string().default('anthropic'),
+        model: z.string().default('claude-haiku-4-5-20251001'),
+        maxInputTokens: z.number().default(2048),
+        maxOutputTokens: z.number().default(512),
+      }).default({}),
+      respond: z.object({
+        provider: z.string().default('anthropic'),
+        model: z.string().default('claude-sonnet-4-6-20250514'),
+        maxInputTokens: z.number().default(8192),
+        maxOutputTokens: z.number().default(2048),
+      }).default({}),
+      complex: z.object({
+        provider: z.string().default('anthropic'),
+        model: z.string().default('claude-opus-4-6-20250605'),
+        maxInputTokens: z.number().default(16384),
+        maxOutputTokens: z.number().default(4096),
+      }).default({}),
+      compress: z.object({
+        provider: z.string().default('gemini'),
+        model: z.string().default('gemini-2.5-flash'),
+        maxInputTokens: z.number().default(8192),
+        maxOutputTokens: z.number().default(2048),
+      }).default({}),
+      fallback: z.object({
+        provider: z.string().default('gemini'),
+        model: z.string().default('gemini-3-flash-preview'),
+        maxInputTokens: z.number().default(8192),
+        maxOutputTokens: z.number().default(2048),
+      }).default({}),
+    }).default({}),
+    availableModels: z.object({
+      anthropic: z.array(z.string()).default([
+        'claude-haiku-4-5-20251001',
+        'claude-sonnet-4-6-20250514',
+        'claude-opus-4-6-20250605',
+        'claude-sonnet-4-5-20241022',
+        'claude-opus-4-5-20250115',
+      ]),
+      gemini: z.array(z.string()).default([
+        'gemini-3.1-pro-preview',
+        'gemini-3-flash-preview',
+        'gemini-3.1-flash-lite-preview',
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+      ]),
+    }).default({}),
+  }).default({}),
+  memory: z.object({
+    bufferMessageCount: z.number().default(50),
+    sessionInactivityTimeoutMinutes: z.number().default(30),
+    sessionMaxTTLHours: z.number().default(24),
+    compressionThreshold: z.number().default(30),
+    compressionKeepRecent: z.number().default(10),
+  }).default({}),
+  channels: z.object({
+    enabledChannels: z.array(z.string()).default(['whatsapp']),
+  }).default({}),
+})
+
+export type InstanceConfig = z.infer<typeof instanceConfigSchema>
+
+// --- Load instance config from JSON file ---
+const INSTANCE_CONFIG_PATH = path.resolve('instance/config.json')
+
+function loadInstanceConfig(): InstanceConfig {
+  try {
+    if (fs.existsSync(INSTANCE_CONFIG_PATH)) {
+      const raw = fs.readFileSync(INSTANCE_CONFIG_PATH, 'utf-8')
+      return instanceConfigSchema.parse(JSON.parse(raw))
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[config] Failed to load instance/config.json, using defaults:', err)
+  }
+  return instanceConfigSchema.parse({})
+}
+
+// Mutable reference so admin UI can hot-reload
+let _instanceConfig = loadInstanceConfig()
+
+export function reloadInstanceConfig(): void {
+  _instanceConfig = loadInstanceConfig()
+}
+
+// --- Env config schema (secrets from .env) ---
+const envConfigSchema = z.object({
   // Node
-  nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
+  nodeEnv: z.enum(['development', 'production', 'staging', 'test']).default('development'),
   port: intStr.default('3000'),
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
@@ -82,7 +191,7 @@ const configSchema = z.object({
     pollIntervalMs: intStr.default('60000'),
   }),
 
-  // LLM Models
+  // LLM
   llm: z.object({
     classify: z.object({
       model: z.string().default('claude-haiku-4-5-20251001'),
@@ -189,7 +298,7 @@ const configSchema = z.object({
 // --- Mapeo env vars → schema ---
 function loadFromEnv() {
   const env = process.env
-  return configSchema.parse({
+  return envConfigSchema.parse({
     nodeEnv: env.NODE_ENV,
     port: env.PORT,
     logLevel: env.LOG_LEVEL,
@@ -347,5 +456,15 @@ function loadFromEnv() {
 }
 
 // --- Export singleton ---
-export const config = loadFromEnv()
-export type Config = z.infer<typeof configSchema>
+const envConfig = loadFromEnv()
+
+// Combined config: env config + instance config accessible via .instanceConfig
+export const config = {
+  ...envConfig,
+  /** Instance config editable desde UI (instance/config.json) */
+  get instanceConfig(): InstanceConfig {
+    return _instanceConfig
+  },
+}
+
+export type Config = typeof config

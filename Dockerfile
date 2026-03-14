@@ -13,5 +13,10 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist/
 COPY src/oficina/config-ui.html ./dist/oficina/config-ui.html
 COPY .env.example ./.env.example
-EXPOSE 3000
+COPY .env.schema ./.env.schema
+COPY instance/config.json ./instance/config.json
+COPY instance/config.schema.json ./instance/config.schema.json
+# Copy HTML for admin UI (not compiled by tsc)
+COPY src/admin/config-ui.html ./src/admin/config-ui.html
+EXPOSE 3000 3002
 CMD ["node", "dist/index.js"]
