@@ -1,0 +1,170 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Luna Instance Configuration",
+  "description": "Configuración operativa editable desde la UI de administración",
+  "type": "object",
+  "properties": {
+    "whatsapp": {
+      "type": "object",
+      "title": "WhatsApp",
+      "properties": {
+        "phoneNumber": {
+          "type": "string",
+          "title": "Número de teléfono",
+          "description": "Número de WhatsApp del agente (formato internacional)"
+        },
+        "enabled": {
+          "type": "boolean",
+          "title": "Habilitado",
+          "default": true
+        },
+        "baileys": {
+          "type": "object",
+          "title": "Baileys Settings",
+          "properties": {
+            "printQRInTerminal": {
+              "type": "boolean",
+              "title": "Mostrar QR en terminal",
+              "default": true
+            },
+            "syncFullHistory": {
+              "type": "boolean",
+              "title": "Sincronizar historial completo",
+              "default": false
+            },
+            "allowedEvents": {
+              "type": "array",
+              "title": "Eventos permitidos",
+              "items": { "type": "string" },
+              "default": ["messages.upsert", "connection.update", "creds.update"]
+            }
+          }
+        }
+      }
+    },
+    "llm": {
+      "type": "object",
+      "title": "LLM / Modelos de IA",
+      "properties": {
+        "primaryProvider": {
+          "type": "string",
+          "title": "Provider principal",
+          "enum": ["anthropic", "gemini", "openai"],
+          "default": "anthropic"
+        },
+        "fallbackProvider": {
+          "type": "string",
+          "title": "Provider fallback",
+          "enum": ["anthropic", "gemini", "openai"],
+          "default": "gemini"
+        },
+        "models": {
+          "type": "object",
+          "title": "Modelos por tarea",
+          "properties": {
+            "classify": { "$ref": "#/$defs/modelConfig" },
+            "respond": { "$ref": "#/$defs/modelConfig" },
+            "complex": { "$ref": "#/$defs/modelConfig" },
+            "compress": { "$ref": "#/$defs/modelConfig" },
+            "fallback": { "$ref": "#/$defs/modelConfig" }
+          }
+        },
+        "availableModels": {
+          "type": "object",
+          "title": "Modelos disponibles por provider",
+          "properties": {
+            "anthropic": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "gemini": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "title": "Memoria / Sesiones",
+      "properties": {
+        "bufferMessageCount": {
+          "type": "integer",
+          "title": "Mensajes en buffer Redis",
+          "minimum": 10,
+          "maximum": 200,
+          "default": 50
+        },
+        "sessionInactivityTimeoutMinutes": {
+          "type": "integer",
+          "title": "Timeout inactividad (min)",
+          "minimum": 5,
+          "maximum": 120,
+          "default": 30
+        },
+        "sessionMaxTTLHours": {
+          "type": "integer",
+          "title": "TTL máximo sesión (horas)",
+          "minimum": 1,
+          "maximum": 72,
+          "default": 24
+        },
+        "compressionThreshold": {
+          "type": "integer",
+          "title": "Umbral compresión (mensajes)",
+          "minimum": 10,
+          "maximum": 100,
+          "default": 30
+        },
+        "compressionKeepRecent": {
+          "type": "integer",
+          "title": "Mensajes recientes a mantener",
+          "minimum": 3,
+          "maximum": 30,
+          "default": 10
+        }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "title": "Canales",
+      "properties": {
+        "enabledChannels": {
+          "type": "array",
+          "title": "Canales activos",
+          "items": {
+            "type": "string",
+            "enum": ["whatsapp", "email", "instagram", "messenger"]
+          },
+          "default": ["whatsapp"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "modelConfig": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["anthropic", "gemini", "openai"]
+        },
+        "model": {
+          "type": "string"
+        },
+        "maxInputTokens": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 128000
+        },
+        "maxOutputTokens": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 32000
+        }
+      },
+      "required": ["provider", "model"]
+    }
+  }
+}
