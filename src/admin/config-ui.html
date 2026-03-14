@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna - Configuraci&oacute;n</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a; color: #e2e8f0;
+      padding: 2rem; max-width: 900px; margin: 0 auto;
+    }
+    h1 { color: #38bdf8; margin-bottom: 1.5rem; font-size: 1.8rem; }
+    .section {
+      background: #1e293b; border-radius: 12px; margin-bottom: 1rem;
+      border: 1px solid #334155; overflow: hidden;
+    }
+    .section-header {
+      padding: 1rem 1.25rem; cursor: pointer; display: flex;
+      justify-content: space-between; align-items: center;
+      background: #1e293b; user-select: none;
+    }
+    .section-header:hover { background: #253348; }
+    .section-header h2 { font-size: 1.1rem; color: #94a3b8; }
+    .section-header .arrow { transition: transform 0.2s; font-size: 0.8rem; color: #64748b; }
+    .section-header.open .arrow { transform: rotate(90deg); }
+    .section-body { padding: 0 1.25rem 1.25rem; display: none; }
+    .section-body.open { display: block; }
+    .field { margin-bottom: 1rem; }
+    .field label {
+      display: block; font-size: 0.85rem; color: #94a3b8;
+      margin-bottom: 0.3rem; font-weight: 500;
+    }
+    .field .desc { font-size: 0.75rem; color: #64748b; margin-bottom: 0.3rem; }
+    input[type="text"], input[type="number"], select {
+      width: 100%; padding: 0.6rem 0.8rem; border-radius: 8px;
+      border: 1px solid #334155; background: #0f172a; color: #e2e8f0;
+      font-size: 0.9rem; outline: none; transition: border-color 0.2s;
+    }
+    input:focus, select:focus { border-color: #38bdf8; }
+    .toggle {
+      display: flex; align-items: center; gap: 0.5rem; cursor: pointer;
+    }
+    .toggle input { display: none; }
+    .toggle .slider {
+      width: 44px; height: 24px; background: #334155; border-radius: 12px;
+      position: relative; transition: background 0.2s;
+    }
+    .toggle .slider::after {
+      content: ''; position: absolute; width: 18px; height: 18px;
+      border-radius: 50%; background: #94a3b8; top: 3px; left: 3px;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .toggle input:checked + .slider { background: #38bdf8; }
+    .toggle input:checked + .slider::after { transform: translateX(20px); background: #fff; }
+    .model-group {
+      background: #0f172a; border-radius: 8px; padding: 1rem;
+      margin-bottom: 0.75rem; border: 1px solid #1e293b;
+    }
+    .model-group h3 {
+      font-size: 0.9rem; color: #38bdf8; margin-bottom: 0.75rem;
+      text-transform: capitalize;
+    }
+    .model-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .model-row .field { margin-bottom: 0.5rem; }
+    .tags {
+      display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem;
+    }
+    .tag {
+      background: #334155; color: #94a3b8; padding: 0.25rem 0.6rem;
+      border-radius: 6px; font-size: 0.8rem; cursor: pointer;
+      border: 1px solid transparent; transition: all 0.2s;
+    }
+    .tag.active { background: #0c4a6e; color: #38bdf8; border-color: #38bdf8; }
+    .tag:hover { border-color: #475569; }
+    .actions {
+      display: flex; gap: 1rem; margin-top: 1.5rem;
+      position: sticky; bottom: 0; padding: 1rem 0;
+      background: #0f172a; border-top: 1px solid #1e293b;
+    }
+    button {
+      padding: 0.7rem 2rem; border-radius: 8px; border: none;
+      font-size: 0.95rem; cursor: pointer; font-weight: 600;
+      transition: all 0.2s;
+    }
+    .btn-save { background: #38bdf8; color: #0f172a; }
+    .btn-save:hover { background: #7dd3fc; }
+    .btn-reset { background: #334155; color: #94a3b8; }
+    .btn-reset:hover { background: #475569; }
+    .toast {
+      position: fixed; bottom: 2rem; right: 2rem; padding: 0.8rem 1.5rem;
+      border-radius: 8px; font-weight: 500; opacity: 0;
+      transition: opacity 0.3s; z-index: 100;
+    }
+    .toast.success { background: #065f46; color: #6ee7b7; opacity: 1; }
+    .toast.error { background: #7f1d1d; color: #fca5a5; opacity: 1; }
+  </style>
+</head>
+<body>
+  <h1>Luna - Configuraci&oacute;n</h1>
+  <div id="app"></div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let config = {};
+    let schema = {};
+
+    async function fetchData() {
+      const [cfgRes, schRes] = await Promise.all([
+        fetch('/api/config'),
+        fetch('/api/schema'),
+      ]);
+      config = await cfgRes.json();
+      schema = await schRes.json();
+      render();
+    }
+
+    function showToast(msg, type) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast ' + type;
+      setTimeout(() => t.className = 'toast', 3000);
+    }
+
+    async function saveConfig() {
+      collectValues();
+      const res = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Configuraci\u00f3n guardada', 'success');
+      } else {
+        showToast('Error: ' + (data.error || 'Unknown'), 'error');
+      }
+    }
+
+    function collectValues() {
+      document.querySelectorAll('[data-path]').forEach(el => {
+        const path = el.dataset.path.split('.');
+        let obj = config;
+        for (let i = 0; i < path.length - 1; i++) {
+          if (!obj[path[i]]) obj[path[i]] = {};
+          obj = obj[path[i]];
+        }
+        const key = path[path.length - 1];
+        if (el.type === 'checkbox') {
+          obj[key] = el.checked;
+        } else if (el.type === 'number') {
+          obj[key] = Number(el.value);
+        } else {
+          obj[key] = el.value;
+        }
+      });
+
+      // Collect enabled channels
+      const channelTags = document.querySelectorAll('.channel-tag.active');
+      config.channels = config.channels || {};
+      config.channels.enabledChannels = Array.from(channelTags).map(t => t.dataset.channel);
+
+      // Collect allowed events
+      const eventTags = document.querySelectorAll('.event-tag.active');
+      if (!config.whatsapp) config.whatsapp = {};
+      if (!config.whatsapp.baileys) config.whatsapp.baileys = {};
+      config.whatsapp.baileys.allowedEvents = Array.from(eventTags).map(t => t.dataset.event);
+    }
+
+    function getVal(obj, path) {
+      const parts = path.split('.');
+      let v = obj;
+      for (const p of parts) {
+        if (v == null) return undefined;
+        v = v[p];
+      }
+      return v;
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+      const sections = schema.properties || {};
+      let html = '';
+
+      for (const [sectionKey, sectionSchema] of Object.entries(sections)) {
+        const title = sectionSchema.title || sectionKey;
+        html += `<div class="section">
+          <div class="section-header" onclick="toggleSection(this)">
+            <h2>${title}</h2><span class="arrow">\u25B6</span>
+          </div>
+          <div class="section-body">`;
+
+        if (sectionKey === 'whatsapp') {
+          html += renderWhatsApp();
+        } else if (sectionKey === 'llm') {
+          html += renderLLM();
+        } else if (sectionKey === 'memory') {
+          html += renderMemory();
+        } else if (sectionKey === 'channels') {
+          html += renderChannels();
+        }
+
+        html += '</div></div>';
+      }
+
+      html += `<div class="actions">
+        <button class="btn-save" onclick="saveConfig()">Guardar</button>
+        <button class="btn-reset" onclick="fetchData()">Resetear</button>
+      </div>`;
+
+      app.innerHTML = html;
+    }
+
+    function renderWhatsApp() {
+      const wa = config.whatsapp || {};
+      const b = wa.baileys || {};
+      const events = b.allowedEvents || [];
+      const allEvents = [
+        'messages.upsert','messages.update','messages.delete','messages.reaction',
+        'message-receipt.update','connection.update','creds.update',
+        'groups.upsert','groups.update','group-participants.update',
+        'contacts.upsert','contacts.update','presence.update',
+        'chats.upsert','chats.update','chats.delete',
+        'labels.edit','labels.association'
+      ];
+
+      return `
+        <div class="field">
+          <label>N\u00famero de tel\u00e9fono</label>
+          <input type="text" data-path="whatsapp.phoneNumber" value="${wa.phoneNumber || ''}" placeholder="+573001234567">
+        </div>
+        <div class="field">
+          <label class="toggle">
+            <input type="checkbox" data-path="whatsapp.enabled" ${wa.enabled !== false ? 'checked' : ''}>
+            <span class="slider"></span> Habilitado
+          </label>
+        </div>
+        <div class="field">
+          <label class="toggle">
+            <input type="checkbox" data-path="whatsapp.baileys.printQRInTerminal" ${b.printQRInTerminal !== false ? 'checked' : ''}>
+            <span class="slider"></span> Mostrar QR en terminal
+          </label>
+        </div>
+        <div class="field">
+          <label class="toggle">
+            <input type="checkbox" data-path="whatsapp.baileys.syncFullHistory" ${b.syncFullHistory ? 'checked' : ''}>
+            <span class="slider"></span> Sincronizar historial completo
+          </label>
+        </div>
+        <div class="field">
+          <label>Directorio de autenticaci\u00f3n</label>
+          <input type="text" data-path="whatsapp.baileys.authDir" value="${b.authDir || 'instance/wa-auth'}">
+        </div>
+        <div class="field">
+          <label>Eventos permitidos</label>
+          <div class="tags">
+            ${allEvents.map(e => `<span class="tag event-tag ${events.includes(e) ? 'active' : ''}" data-event="${e}" onclick="this.classList.toggle('active')">${e}</span>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    function renderLLM() {
+      const llm = config.llm || {};
+      const models = llm.models || {};
+      const available = llm.availableModels || {};
+
+      let html = `
+        <div class="model-row">
+          <div class="field">
+            <label>Proveedor principal</label>
+            <select data-path="llm.primaryProvider">
+              <option value="anthropic" ${llm.primaryProvider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+              <option value="gemini" ${llm.primaryProvider === 'gemini' ? 'selected' : ''}>Gemini</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Proveedor de respaldo</label>
+            <select data-path="llm.fallbackProvider">
+              <option value="anthropic" ${llm.fallbackProvider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+              <option value="gemini" ${llm.fallbackProvider === 'gemini' ? 'selected' : ''}>Gemini</option>
+            </select>
+          </div>
+        </div>`;
+
+      for (const [task, m] of Object.entries(models)) {
+        const allModels = [...(available.anthropic || []), ...(available.gemini || [])];
+        html += `<div class="model-group">
+          <h3>${task}</h3>
+          <div class="model-row">
+            <div class="field">
+              <label>Proveedor</label>
+              <select data-path="llm.models.${task}.provider">
+                <option value="anthropic" ${m.provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+                <option value="gemini" ${m.provider === 'gemini' ? 'selected' : ''}>Gemini</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Modelo</label>
+              <select data-path="llm.models.${task}.model">
+                ${allModels.map(mod => `<option value="${mod}" ${m.model === mod ? 'selected' : ''}>${mod}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="model-row">
+            <div class="field">
+              <label>M\u00e1x. tokens entrada</label>
+              <input type="number" data-path="llm.models.${task}.maxInputTokens" value="${m.maxInputTokens}" min="256" max="200000">
+            </div>
+            <div class="field">
+              <label>M\u00e1x. tokens salida</label>
+              <input type="number" data-path="llm.models.${task}.maxOutputTokens" value="${m.maxOutputTokens}" min="64" max="64000">
+            </div>
+          </div>
+        </div>`;
+      }
+
+      return html;
+    }
+
+    function renderMemory() {
+      const mem = config.memory || {};
+      const fields = [
+        { key: 'bufferMessageCount', label: 'Mensajes en buffer', min: 10, max: 200, desc: 'N\u00famero m\u00e1ximo de mensajes en Redis' },
+        { key: 'sessionInactivityTimeoutMinutes', label: 'Timeout inactividad (min)', min: 5, max: 1440, desc: 'Minutos sin actividad antes de cerrar sesi\u00f3n' },
+        { key: 'sessionMaxTTLHours', label: 'TTL m\u00e1ximo sesi\u00f3n (horas)', min: 1, max: 72, desc: 'Horas m\u00e1ximas de vida de una sesi\u00f3n' },
+        { key: 'compressionThreshold', label: 'Umbral de compresi\u00f3n', min: 10, max: 100, desc: 'Mensajes antes de activar compresi\u00f3n' },
+        { key: 'compressionKeepRecent', label: 'Mensajes recientes sin comprimir', min: 3, max: 30, desc: 'Mensajes recientes que no se comprimen' },
+      ];
+
+      return fields.map(f => `
+        <div class="field">
+          <label>${f.label}</label>
+          <div class="desc">${f.desc}</div>
+          <input type="number" data-path="memory.${f.key}" value="${mem[f.key] ?? ''}" min="${f.min}" max="${f.max}">
+        </div>`).join('');
+    }
+
+    function renderChannels() {
+      const ch = config.channels || {};
+      const enabled = ch.enabledChannels || [];
+      const allChannels = ['whatsapp', 'instagram', 'messenger', 'telegram', 'email'];
+
+      return `<div class="field">
+        <label>Canales habilitados</label>
+        <div class="tags">
+          ${allChannels.map(c => `<span class="tag channel-tag ${enabled.includes(c) ? 'active' : ''}" data-channel="${c}" onclick="this.classList.toggle('active')">${c}</span>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    function toggleSection(header) {
+      header.classList.toggle('open');
+      header.nextElementSibling.classList.toggle('open');
+    }
+
+    fetchData();
+  </script>
+</body>
+</html>
