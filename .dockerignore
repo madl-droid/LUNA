@@ -1,7 +1,8 @@
 node_modules/
 dist/
 .env
-instance/
+instance/wa-auth/
+instance/knowledge/
 .git/
 .github/
 docs/
