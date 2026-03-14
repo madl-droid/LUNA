@@ -169,6 +169,11 @@ const configSchema = z.object({
     port: intStr.default('3001'),
   }),
 
+  // Oficina (panel de control)
+  oficina: z.object({
+    enabled: boolStr.default('true'),
+  }),
+
   // Active modules
   modules: z.object({
     whatsapp: boolStr.default('true'),
@@ -323,6 +328,10 @@ function loadFromEnv() {
     healthCheck: {
       enabled: env.HEALTH_CHECK_ENABLED,
       port: env.HEALTH_CHECK_PORT,
+    },
+
+    oficina: {
+      enabled: env.OFICINA_ENABLED,
     },
 
     modules: {
