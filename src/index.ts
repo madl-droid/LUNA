@@ -1,4 +1,4 @@
-import 'varlock/auto';
+import 'varlock/auto-load';
 import pino from 'pino';
 import { loadConfig } from './config.js';
 import { startConfigServer } from './admin/config-server.js';

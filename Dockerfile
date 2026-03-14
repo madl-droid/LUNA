@@ -30,6 +30,9 @@ COPY --from=builder /app/dist ./dist
 # Copiar la carpeta instance (config por instancia)
 COPY instance/ ./instance/
 
+# Varlock necesita el schema para validar env vars al arrancar
+COPY .env.schema ./
+
 EXPOSE 3001
 
 CMD ["node", "dist/index.js"]
