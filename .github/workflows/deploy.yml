@@ -43,21 +43,14 @@ jobs:
 
   deploy:
     needs: build-and-push
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, luna]
     steps:
-      - name: Deploy to server via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          command_timeout: 120s
-          script: |
-            if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-              cd /docker/luna-production
-            else
-              cd /docker/luna-staging
-            fi
-            docker compose pull app
-            docker compose up -d app
+      - name: Deploy
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            cd /docker/luna-production
+          else
+            cd /docker/luna-staging
+          fi
+          docker compose pull app
+          docker compose up -d app
