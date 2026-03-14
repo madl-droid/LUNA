@@ -1,0 +1,195 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Luna Instance Configuration",
+  "description": "Configuración operativa de la instancia Luna - editable desde UI",
+  "type": "object",
+  "properties": {
+    "whatsapp": {
+      "title": "WhatsApp",
+      "type": "object",
+      "properties": {
+        "phoneNumber": {
+          "title": "Número de teléfono",
+          "type": "string",
+          "description": "Número de WhatsApp con código de país (ej: +573001234567)"
+        },
+        "enabled": {
+          "title": "Habilitado",
+          "type": "boolean",
+          "default": true
+        },
+        "baileys": {
+          "title": "Configuración Baileys",
+          "type": "object",
+          "properties": {
+            "printQRInTerminal": {
+              "title": "Mostrar QR en terminal",
+              "type": "boolean",
+              "default": true
+            },
+            "syncFullHistory": {
+              "title": "Sincronizar historial completo",
+              "type": "boolean",
+              "default": false
+            },
+            "authDir": {
+              "title": "Directorio de autenticación",
+              "type": "string",
+              "default": "instance/wa-auth"
+            },
+            "allowedEvents": {
+              "title": "Eventos permitidos",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "messages.upsert",
+                  "messages.update",
+                  "messages.delete",
+                  "messages.reaction",
+                  "message-receipt.update",
+                  "connection.update",
+                  "creds.update",
+                  "groups.upsert",
+                  "groups.update",
+                  "group-participants.update",
+                  "contacts.upsert",
+                  "contacts.update",
+                  "presence.update",
+                  "chats.upsert",
+                  "chats.update",
+                  "chats.delete",
+                  "labels.edit",
+                  "labels.association"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "llm": {
+      "title": "LLM (Modelos de IA)",
+      "type": "object",
+      "properties": {
+        "primaryProvider": {
+          "title": "Proveedor principal",
+          "type": "string",
+          "enum": ["anthropic", "gemini"]
+        },
+        "fallbackProvider": {
+          "title": "Proveedor de respaldo",
+          "type": "string",
+          "enum": ["anthropic", "gemini"]
+        },
+        "models": {
+          "title": "Modelos por tarea",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "title": "Proveedor",
+                "type": "string",
+                "enum": ["anthropic", "gemini"]
+              },
+              "model": {
+                "title": "Modelo",
+                "type": "string"
+              },
+              "maxInputTokens": {
+                "title": "Máx. tokens de entrada",
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 200000
+              },
+              "maxOutputTokens": {
+                "title": "Máx. tokens de salida",
+                "type": "integer",
+                "minimum": 64,
+                "maximum": 64000
+              }
+            },
+            "required": ["provider", "model", "maxInputTokens", "maxOutputTokens"]
+          }
+        },
+        "availableModels": {
+          "title": "Modelos disponibles",
+          "type": "object",
+          "description": "Lista de modelos disponibles por proveedor",
+          "properties": {
+            "anthropic": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "gemini": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "memory": {
+      "title": "Memoria y Buffer",
+      "type": "object",
+      "properties": {
+        "bufferMessageCount": {
+          "title": "Mensajes en buffer",
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 200,
+          "default": 50,
+          "description": "Número máximo de mensajes que se mantienen en el buffer de Redis"
+        },
+        "sessionInactivityTimeoutMinutes": {
+          "title": "Timeout por inactividad (minutos)",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1440,
+          "default": 30,
+          "description": "Minutos de inactividad antes de cerrar la sesión"
+        },
+        "sessionMaxTTLHours": {
+          "title": "TTL máximo de sesión (horas)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 72,
+          "default": 24,
+          "description": "Horas máximas que una sesión puede estar activa"
+        },
+        "compressionThreshold": {
+          "title": "Umbral de compresión",
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 100,
+          "default": 30,
+          "description": "Número de mensajes a partir del cual se activa la compresión"
+        },
+        "compressionKeepRecent": {
+          "title": "Mensajes recientes a mantener",
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 30,
+          "default": 10,
+          "description": "Número de mensajes recientes que no se comprimen"
+        }
+      }
+    },
+    "channels": {
+      "title": "Canales",
+      "type": "object",
+      "properties": {
+        "enabledChannels": {
+          "title": "Canales habilitados",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["whatsapp", "instagram", "messenger", "telegram", "email"]
+          },
+          "description": "Canales de comunicación activos"
+        }
+      }
+    }
+  }
+}
