@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+instance/
+.git/
+.github/
+docs/
+informes/
+*.md
+!.env.example
+coverage/
+*.log

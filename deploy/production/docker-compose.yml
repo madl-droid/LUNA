@@ -1,0 +1,54 @@
+services:
+  app:
+    image: ghcr.io/madl-droid/luna:latest
+    container_name: LUNA
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.luna-prod.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.luna-prod.entrypoints=websecure"
+      - "traefik.http.routers.luna-prod.tls.certresolver=letsencrypt"
+      - "traefik.http.services.luna-prod.loadbalancer.server.port=${APP_PORT:-3000}"
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - ./instance:/app/instance:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: LUNA-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-luna}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-luna}
+    volumes:
+      - luna-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-luna}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: LUNA-redis
+    restart: unless-stopped
+    volumes:
+      - luna-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  luna-pgdata:
+  luna-redis:
