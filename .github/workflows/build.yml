@@ -1,9 +1,9 @@
 # =============================================================================
-# Build & Push imagen a GHCR
-# Watchtower en el VPS detecta la nueva imagen y actualiza staging automaticamente
+# Build & Push imagen a GHCR + Deploy a staging via SSH
+# Produccion se actualiza manualmente
 # =============================================================================
 
-name: Build & Push
+name: Build & Deploy Staging
 
 on:
   push:
@@ -32,3 +32,17 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/luna:latest
             ghcr.io/${{ github.repository_owner }}/luna:${{ github.sha }}
+
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to staging via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            docker pull ghcr.io/madl-droid/luna:latest
+            cd /docker/luna-staging && docker compose up -d

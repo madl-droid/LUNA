@@ -106,9 +106,10 @@ LUNA usa Docker para deploy. El repo incluye archivos genéricos que funcionan e
 
 ### CI/CD
 
-- `.github/workflows/build.yml` — Push a `main` → build imagen → push a `ghcr.io/madl-droid/luna:latest`
-- **No hay deploy automático en el workflow.** Watchtower en el servidor de staging detecta la nueva imagen y actualiza solo.
-- **Producción se actualiza manualmente** con `git pull && docker compose up -d --build` en el servidor.
+- `.github/workflows/build.yml` — Push a `main` → build imagen → push a GHCR → SSH deploy a staging
+- **Staging se actualiza automáticamente** con cada push a `main` via GitHub Actions + SSH
+- **Producción se actualiza manualmente** con `docker pull ghcr.io/madl-droid/luna:latest && cd /docker/luna-production && docker compose up -d`
+- Los secrets del Action (`VPS_HOST`, `VPS_SSH_KEY`) son del repo, no del código. Al clonar para otra empresa, se configuran los secrets de ese servidor.
 
 ### Variables de entorno (Varlock)
 
