@@ -124,7 +124,7 @@ export function reloadInstanceConfig(): void {
 // --- Env config schema (secrets from .env) ---
 const envConfigSchema = z.object({
   // Node
-  nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
+  nodeEnv: z.enum(['development', 'production', 'staging', 'test']).default('development'),
   port: intStr.default('3000'),
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
