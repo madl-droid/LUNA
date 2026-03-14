@@ -194,7 +194,7 @@ contact_type: unknown | lead | client_active | client_former | team_internal | p
 - `DOMAIN` — dominio que Traefik usa para rutear y generar SSL (requerido)
 - `APP_PORT` — puerto de la app (default: 3000 prod, 3001 staging)
 - `DB_PASSWORD` — password de PostgreSQL (requerido, sin default)
-- `NODE_ENV` — production o staging
+- `NODE_ENV` — development, production, staging, o test (validado por Zod enum en src/config.ts)
 - Ver `deploy/.env.example` para la lista completa
 
 ### Secrets de GitHub Actions
