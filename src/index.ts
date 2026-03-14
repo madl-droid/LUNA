@@ -10,6 +10,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   logger.info({ nodeEnv: config.env.nodeEnv }, 'Config loaded');
+  logger.info({ serverUrl: config.env.serverUrl }, 'Server URL configured');
   logger.info(
     { enabledChannels: config.instance.channels.enabledChannels },
     'Channels configured',

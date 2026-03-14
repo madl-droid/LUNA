@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 
@@ -67,11 +68,26 @@ const InstanceConfigSchema = z.object({
 export type InstanceConfig = z.infer<typeof InstanceConfigSchema>;
 export type ModelConfig = z.infer<typeof ModelConfigSchema>;
 
+// --- Server URL auto-detection ---
+
+function detectServerUrl(port: number): string {
+  const nets = networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] ?? []) {
+      if (!net.internal && net.family === 'IPv4') {
+        return `http://${net.address}:${port}`;
+      }
+    }
+  }
+  return `http://127.0.0.1:${port}`;
+}
+
 // --- Environment config (from .env via process.env) ---
 
 const EnvConfigSchema = z.object({
   nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
   logLevel: z.string().default('info'),
+  serverUrl: z.string().default(''),
 
   postgres: z.object({
     host: z.string().default('localhost'),
@@ -103,9 +119,10 @@ export type EnvConfig = z.infer<typeof EnvConfigSchema>;
 // --- Load and validate ---
 
 function loadEnvConfig(): EnvConfig {
-  return EnvConfigSchema.parse({
+  const parsed = EnvConfigSchema.parse({
     nodeEnv: process.env['NODE_ENV'],
     logLevel: process.env['LOG_LEVEL'],
+    serverUrl: process.env['SERVER_URL'] || undefined,
     postgres: {
       host: process.env['POSTGRES_HOST'],
       port: process.env['POSTGRES_PORT'] ? Number(process.env['POSTGRES_PORT']) : undefined,
@@ -127,6 +144,11 @@ function loadEnvConfig(): EnvConfig {
       token: process.env['ADMIN_TOKEN'] || undefined,
     },
   });
+
+  return {
+    ...parsed,
+    serverUrl: parsed.serverUrl || detectServerUrl(parsed.admin.port),
+  };
 }
 
 function loadInstanceConfig(configPath: string): InstanceConfig {
