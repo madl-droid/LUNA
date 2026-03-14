@@ -41,8 +41,8 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: root
+          username: claude-code
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            docker pull ghcr.io/madl-droid/luna:latest
-            cd /docker/luna-staging && docker compose up -d
+            sudo docker pull ghcr.io/madl-droid/luna:latest
+            cd /docker/luna-staging && sudo docker compose up -d
