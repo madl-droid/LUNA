@@ -1,33 +1,42 @@
 // LUNA — Leads Unified Nurturing Agent
-// Entry point: carga config, inicia admin UI, logea estado.
+// Servidor HTTP unificado: /oficina, /health, /webhooks (futuro)
 
-import pino from 'pino'
+import * as http from 'node:http'
 import { config } from './config.js'
-import { startAdminServer } from './admin/config-server.js'
+import { handleOficinaRequest } from './oficina/config-server.js'
 
-const logger = pino({ name: 'luna', level: config.logLevel })
+const logger = {
+  info: (data: Record<string, unknown>, msg: string) =>
+    console.log(JSON.stringify({ level: 'info', msg, ...data, ts: new Date().toISOString() })),
+}
 
 function main(): void {
-  logger.info({
-    env: config.nodeEnv,
-    port: config.port,
-    modules: config.modules,
-    instanceConfig: {
-      whatsappEnabled: config.instanceConfig.whatsapp.enabled,
-      llmPrimaryProvider: config.instanceConfig.llm.primaryProvider,
-      enabledChannels: config.instanceConfig.channels.enabledChannels,
-      memoryBufferSize: config.instanceConfig.memory.bufferMessageCount,
-    },
-  }, 'LUNA starting...')
+  const server = http.createServer(async (req, res) => {
+    const url = req.url ?? '/'
 
-  // Start admin UI if enabled
-  if (config.admin.enabled) {
-    startAdminServer()
-    logger.info({ port: config.admin.port }, 'Admin UI available')
-  }
+    // Oficina
+    if (config.oficina.enabled && url.startsWith('/oficina')) {
+      await handleOficinaRequest(req, res)
+      return
+    }
 
-  // TODO: Initialize channels, pipeline, memory manager
-  logger.info('LUNA initialized (channels + pipeline pending)')
+    // Health check
+    if (url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end('{"status":"ok"}')
+      return
+    }
+
+    // Future: /webhooks/*
+
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end('{"error":"Not found"}')
+  })
+
+  server.listen(config.port, () => {
+    logger.info({ port: config.port }, 'LUNA server started')
+    if (config.oficina.enabled) logger.info({ path: '/oficina' }, 'Oficina available at /oficina')
+  })
 }
 
 main()

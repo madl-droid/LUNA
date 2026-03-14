@@ -11,6 +11,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist/
+COPY src/oficina/config-ui.html ./dist/oficina/config-ui.html
 COPY .env.example ./.env.example
 COPY .env.schema ./.env.schema
 COPY instance/config.json ./instance/config.json

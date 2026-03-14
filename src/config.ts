@@ -278,10 +278,9 @@ const envConfigSchema = z.object({
     port: intStr.default('3001'),
   }),
 
-  // Admin UI
-  admin: z.object({
+  // Oficina (panel de control)
+  oficina: z.object({
     enabled: boolStr.default('true'),
-    port: intStr.default('3002'),
   }),
 
   // Active modules
@@ -440,9 +439,8 @@ function loadFromEnv() {
       port: env.HEALTH_CHECK_PORT,
     },
 
-    admin: {
-      enabled: env.ADMIN_ENABLED,
-      port: env.ADMIN_PORT,
+    oficina: {
+      enabled: env.OFICINA_ENABLED,
     },
 
     modules: {
