@@ -86,3 +86,33 @@ Todos cumplen la misma interfaz de adapter. El engine no los distingue.
 - Tests al lado del código que prueban (archivo.test.ts)
 - Errores con mensajes claros que digan qué pasó Y qué hacer
 - Logs estructurados JSON con pino, siempre con contexto (instanceId, contactId, sessionId)
+
+## Infraestructura Docker
+
+### Arquitectura de deploy
+
+LUNA usa Docker para deploy. El repo incluye archivos genéricos que funcionan en cualquier servidor:
+
+- `Dockerfile` — Multi-stage build: compila TypeScript en stage 1, copia solo dist + prod deps en stage 2
+- `docker-compose.yml` — Levanta app + PostgreSQL + Redis. Genérico, sin config de reverse proxy
+- `.env.example` + `.env.schema` (Varlock) — Definición de variables de entorno
+
+### Reglas para archivos Docker
+
+- **El Dockerfile y docker-compose.yml deben ser genéricos.** No incluir labels de Traefik, Watchtower, ni config específica de ningún servidor. El objetivo es: clonar repo → copiar .env → `docker compose up` y funciona.
+- **No exponer puertos de postgres/redis al host en producción.** Los defaults del compose son para desarrollo local. En producción, el override del servidor se encarga.
+- **Los container_name usan prefijo `luna-`** (luna-app, luna-postgres, luna-redis).
+- **Healthchecks obligatorios** en postgres y redis. La app depende de ellos con `condition: service_healthy`.
+
+### CI/CD
+
+- `.github/workflows/build.yml` — Push a `main` → build imagen → push a `ghcr.io/madl-droid/luna:latest`
+- **No hay deploy automático en el workflow.** Watchtower en el servidor de staging detecta la nueva imagen y actualiza solo.
+- **Producción se actualiza manualmente** con `git pull && docker compose up -d --build` en el servidor.
+
+### Variables de entorno (Varlock)
+
+- `.env.schema` define todas las variables con anotaciones Varlock (`@sensitive`, `@required`, `@type=port`)
+- `.env.example` es la referencia rápida para copiar
+- **Nunca commitear `.env`** — está en .gitignore
+- Al agregar una variable nueva, actualizar AMBOS archivos (.env.schema y .env.example)

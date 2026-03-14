@@ -1,23 +1,53 @@
+# =============================================================================
+# LUNA - Docker Compose generico
+# Clonar repo → copiar .env.example a .env → llenar secrets → docker compose up
+# =============================================================================
+
 services:
-  postgres:
-    image: postgres:16
-    container_name: luna-postgres
-    environment:
-      POSTGRES_USER: luna
-      POSTGRES_PASSWORD: luna_dev
-      POSTGRES_DB: luna
+  app:
+    build: .
+    container_name: luna-app
+    restart: unless-stopped
+    env_file: .env
     ports:
-      - "5432:5432"
+      - "${ADMIN_PORT:-3001}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: luna-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-luna}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-luna_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-luna}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - luna_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-luna}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     container_name: luna-redis
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - luna_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   luna_pgdata:
