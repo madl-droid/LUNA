@@ -19,26 +19,26 @@ TypeScript / Node.js ≥22 (ESM), PostgreSQL, Redis + BullMQ, Baileys (WhatsApp)
 ### TIEMPO REAL — EL CONTACTO ESTÁ ESPERANDO
 | Tarea | Modelo principal | Provider | Fallback |
 |-------|-----------------|----------|----------|
-| Clasificar intención | Claude Haiku 3.5 | Anthropic | Gemini 2.0 Flash |
-| Ejecutar tools / resolver | Claude Haiku 3.5 | Anthropic | Gemini 2.0 Flash |
-| Generar respuesta conversacional | Claude Sonnet 4.5 | Anthropic | Gemini 2.0 Flash |
-| Tareas complejas | Claude Opus 4.5 | Anthropic | Gemini 2.0 Pro |
-| Mensajes proactivos / follow-ups | Claude Sonnet 4.5 | Anthropic | Gemini 2.0 Flash |
-| Comprimir sesión (en vivo) | Claude Haiku 3.5 | Anthropic | Gemini 2.0 Flash |
+| Clasificar intención | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
+| Ejecutar tools / resolver | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
+| Generar respuesta conversacional | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
+| Tareas complejas | Claude Opus 4.5 | Anthropic | Gemini 2.5 Pro |
+| Mensajes proactivos / follow-ups | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
+| Comprimir sesión (en vivo) | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
 
 ### BATCH NOCTURNO — NADIE ESPERA, 50% DESCUENTO
 | Tarea | Modelo principal | Provider | Fallback |
 |-------|-----------------|----------|----------|
-| Scoring de leads fríos | Claude Haiku 3.5 batch | Anthropic | — |
+| Scoring de leads fríos | Claude Haiku 4.5 batch | Anthropic | — |
 | Clasificar objeciones acumuladas | Claude Sonnet 4.5 batch | Anthropic | — |
-| Comprimir memoria masiva | Gemini 2.0 Flash batch | Google | Claude Haiku 3.5 |
-| Reporte diario al Sheet | Gemini 2.0 Flash batch | Google | — |
+| Comprimir memoria masiva | Gemini 2.5 Flash batch | Google | Claude Haiku 4.5 |
+| Reporte diario al Sheet | Gemini 2.5 Flash batch | Google | — |
 
 ### VOZ, BÚSQUEDA Y MEDIA
 | Tarea | Modelo principal | Provider | Fallback |
 |-------|-----------------|----------|----------|
-| Búsqueda web | Gemini 2.0 Flash + Grounding | Google | Anthropic web_search |
-| Script para audio / llamadas | Claude Sonnet 4.5 | Anthropic | Gemini 2.0 Flash |
+| Búsqueda web | Gemini 2.5 Flash + Grounding | Google | Anthropic web_search |
+| Script para audio / llamadas | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
 | TTS / síntesis de voz | Gemini TTS | Google | — |
 | Llamadas en vivo (V2) | Gemini Live | Google | — |
 
