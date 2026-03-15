@@ -5,7 +5,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type * as http from 'node:http'
 import QRCode from 'qrcode'
-import { config } from '../config.js'
+import { config, reloadEnvConfig, reloadInstanceConfig } from '../config.js'
 import type { BaileysAdapter } from '../channels/whatsapp/baileys-adapter.js'
 
 const logger = {
@@ -240,6 +240,53 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
         logger.error('Failed to disconnect WhatsApp', err)
         jsonResponse(res, 500, { error: 'Failed to disconnect: ' + String(err) })
       }
+    }
+    return true
+  }
+
+  // POST /oficina/api/apply → hot-reload config from .env + instance/config.json
+  if (localUrl === '/api/apply' && method === 'POST') {
+    try {
+      reloadEnvConfig()
+      reloadInstanceConfig()
+      logger.info('Config hot-reloaded from disk')
+      jsonResponse(res, 200, { ok: true })
+    } catch (err) {
+      logger.error('Failed to reload config', err)
+      jsonResponse(res, 500, { error: 'Failed to reload: ' + String(err) })
+    }
+    return true
+  }
+
+  // POST /oficina/api/reset-db → truncate all tables + flush Redis (testing only)
+  if (localUrl === '/api/reset-db' && method === 'POST') {
+    try {
+      const { Pool } = await import('pg')
+      const pool = new Pool({
+        host: config.db.host,
+        port: config.db.port,
+        database: config.db.name,
+        user: config.db.user,
+        password: config.db.password,
+      })
+      await pool.query('TRUNCATE messages CASCADE')
+      await pool.end()
+
+      const { Redis } = await import('ioredis')
+      const redis = new Redis({
+        host: config.redis.host,
+        port: config.redis.port,
+        password: config.redis.password || undefined,
+        db: config.redis.db,
+      })
+      await redis.flushdb()
+      await redis.quit()
+
+      logger.info('Database and Redis flushed (testing reset)')
+      jsonResponse(res, 200, { ok: true })
+    } catch (err) {
+      logger.error('Failed to reset databases', err)
+      jsonResponse(res, 500, { error: 'Failed to reset: ' + String(err) })
     }
     return true
   }

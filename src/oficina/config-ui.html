@@ -209,8 +209,10 @@
   </header>
   <main id="main"><div class="loading">...</div></main>
   <div class="save-bar">
+    <button class="btn-reset" onclick="resetDb()" id="btn-resetdb" style="background:#7f1d1d;color:#fca5a5;margin-right:auto">Reset DB</button>
     <button class="btn-reset" onclick="resetChanges()" id="btn-reset">Descartar</button>
     <button class="btn-save" id="btn-save" onclick="saveChanges()" disabled>Guardar</button>
+    <button class="btn-save" id="btn-apply" onclick="applyChanges()" style="background:#16a34a">Aplicar</button>
   </div>
 
 <script>
@@ -237,6 +239,14 @@ const i18n = {
     sec_whatsapp_info: 'Canales de conexion a WhatsApp.',
     waModuleDisabled: 'Modulo WhatsApp deshabilitado',
     comingSoon: 'Proximamente',
+    applyBtn: 'Aplicar cambios',
+    applyConfirm: 'Aplicar los cambios guardados al sistema en tiempo real?',
+    applySuccess: 'Cambios aplicados',
+    applyError: 'Error al aplicar',
+    resetDbBtn: 'Limpiar DB',
+    resetDbConfirm: 'ATENCION: Esto borrara TODOS los mensajes y sesiones de la base de datos y Redis. Continuar?',
+    resetDbSuccess: 'Base de datos limpiada',
+    resetDbError: 'Error al limpiar DB',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'Claves de acceso a los proveedores de IA. Se necesita al menos una para que LUNA funcione.',
     sec_models: 'Modelos de IA',
@@ -343,6 +353,14 @@ const i18n = {
     sec_whatsapp_info: 'WhatsApp connection channels.',
     waModuleDisabled: 'WhatsApp module disabled',
     comingSoon: 'Coming soon',
+    applyBtn: 'Apply changes',
+    applyConfirm: 'Apply saved changes to the running system in real time?',
+    applySuccess: 'Changes applied',
+    applyError: 'Failed to apply',
+    resetDbBtn: 'Reset DB',
+    resetDbConfirm: 'WARNING: This will delete ALL messages and sessions from the database and Redis. Continue?',
+    resetDbSuccess: 'Database cleared',
+    resetDbError: 'Failed to reset DB',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'AI provider access keys. At least one is required for LUNA to work.',
     sec_models: 'AI Models',
@@ -512,6 +530,8 @@ function render() {
   const m = document.getElementById('main')
   document.getElementById('btn-reset').textContent = t('discard')
   document.getElementById('btn-save').textContent = t('save')
+  document.getElementById('btn-apply').textContent = t('applyBtn')
+  document.getElementById('btn-resetdb').textContent = t('resetDbBtn')
   let h = ''
 
   // 1. WhatsApp panel
@@ -812,6 +832,28 @@ async function saveChanges() {
       setStatus(t('saved'), 'saved'); showToast(t('configSaved'), 'success')
     } else { setStatus(t('errorSave'), 'error') }
   } catch { setStatus(t('errorConnect'), 'error') }
+}
+
+async function applyChanges() {
+  if (!confirm(t('applyConfirm'))) return
+  try {
+    const res = await fetch('/oficina/api/apply', { method: 'POST' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(t('applySuccess'), 'success')
+    } else { showToast(t('applyError'), 'error') }
+  } catch { showToast(t('applyError'), 'error') }
+}
+
+async function resetDb() {
+  if (!confirm(t('resetDbConfirm'))) return
+  try {
+    const res = await fetch('/oficina/api/reset-db', { method: 'POST' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(t('resetDbSuccess'), 'success')
+    } else { showToast(t('resetDbError'), 'error') }
+  } catch { showToast(t('resetDbError'), 'error') }
 }
 
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }

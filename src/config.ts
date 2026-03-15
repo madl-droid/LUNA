@@ -455,16 +455,37 @@ function loadFromEnv() {
   })
 }
 
-// --- Export singleton ---
-const envConfig = loadFromEnv()
+// --- Export singleton (hot-reloadable) ---
+let _envConfig = loadFromEnv()
 
-// Combined config: env config + instance config accessible via .instanceConfig
-export const config = {
-  ...envConfig,
-  /** Instance config editable desde UI (instance/config.json) */
-  get instanceConfig(): InstanceConfig {
-    return _instanceConfig
-  },
+/** Recarga .env desde disco y actualiza el config en memoria. */
+export function reloadEnvConfig(): void {
+  // Re-read .env file into process.env
+  dotenv.config({ override: true })
+  _envConfig = loadFromEnv()
 }
 
-export type Config = typeof config
+// Combined config: env config + instance config accessible via .instanceConfig
+// Uses a Proxy so property reads always reflect the latest _envConfig after hot-reload.
+type EnvConfig = ReturnType<typeof loadFromEnv>
+type CombinedConfig = EnvConfig & { readonly instanceConfig: InstanceConfig }
+
+export const config: CombinedConfig = new Proxy({} as CombinedConfig, {
+  get(_target, prop) {
+    if (prop === 'instanceConfig') return _instanceConfig
+    if (typeof prop === 'symbol') return undefined
+    return (_envConfig as Record<string, unknown>)[prop]
+  },
+  ownKeys() {
+    return [...Object.keys(_envConfig), 'instanceConfig']
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    if (typeof prop === 'symbol') return undefined
+    if (prop === 'instanceConfig' || prop in _envConfig) {
+      return { configurable: true, enumerable: true, writable: false, value: (config as Record<string, unknown>)[prop] }
+    }
+    return undefined
+  },
+})
+
+export type Config = CombinedConfig
