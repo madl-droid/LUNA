@@ -6,19 +6,12 @@ services:
     env_file: .env
     ports:
       - "${APP_PORT:-3001}:${APP_PORT:-3001}"
-      - "${ADMIN_PORT:-3002}:${ADMIN_PORT:-3002}"
     labels:
-      # Main app — Traefik router
       - "traefik.enable=true"
       - "traefik.http.routers.luna-staging.rule=Host(`${DOMAIN}`)"
       - "traefik.http.routers.luna-staging.entrypoints=websecure"
       - "traefik.http.routers.luna-staging.tls.certresolver=letsencrypt"
       - "traefik.http.services.luna-staging.loadbalancer.server.port=${APP_PORT:-3001}"
-      # Admin UI — Traefik router (subdomain: admin.DOMAIN)
-      - "traefik.http.routers.luna-staging-admin.rule=Host(`admin.${DOMAIN}`)"
-      - "traefik.http.routers.luna-staging-admin.entrypoints=websecure"
-      - "traefik.http.routers.luna-staging-admin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.luna-staging-admin.loadbalancer.server.port=${ADMIN_PORT:-3002}"
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - ./instance:/app/instance

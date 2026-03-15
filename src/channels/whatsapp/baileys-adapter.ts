@@ -44,7 +44,13 @@ export class BaileysAdapter implements ChannelAdapter {
     this._qr = null
     this._autoReconnect = true
 
-    const { state, saveCreds } = await useMultiFileAuthState(config.whatsapp.authDir)
+    // Ensure auth directory exists
+    const authDir = config.whatsapp.authDir
+    if (!fs.existsSync(authDir)) {
+      fs.mkdirSync(authDir, { recursive: true })
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(authDir)
     const { version } = await fetchLatestBaileysVersion()
 
     this.socket = makeWASocket({
