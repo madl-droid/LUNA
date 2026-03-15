@@ -230,7 +230,13 @@ const i18n = {
     reason: 'Razon',
     // Sections
     sec_whatsapp: 'WhatsApp',
-    sec_whatsapp_info: 'Conexion y estado de WhatsApp via Baileys. Escanea el QR para vincular el dispositivo.',
+    sec_whatsapp_baileys: 'Baileys (conexion directa)',
+    sec_whatsapp_baileys_info: 'Conexion a WhatsApp usando Baileys. Escanea el QR para vincular el dispositivo.',
+    sec_whatsapp_api: 'Meta Cloud API',
+    sec_whatsapp_api_info: 'Integracion con la API oficial de Meta para WhatsApp Business. Disponible en una futura version.',
+    sec_whatsapp_info: 'Canales de conexion a WhatsApp.',
+    waModuleDisabled: 'Modulo WhatsApp deshabilitado',
+    comingSoon: 'Proximamente',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'Claves de acceso a los proveedores de IA. Se necesita al menos una para que LUNA funcione.',
     sec_models: 'Modelos de IA',
@@ -330,7 +336,13 @@ const i18n = {
     waStatus: { not_initialized: 'Not initialized', disconnected: 'Disconnected', connecting: 'Connecting...', connected: 'Connected', qr_ready: 'Scan QR' },
     reason: 'Reason',
     sec_whatsapp: 'WhatsApp',
-    sec_whatsapp_info: 'WhatsApp connection via Baileys. Scan QR to link your device.',
+    sec_whatsapp_baileys: 'Baileys (direct connection)',
+    sec_whatsapp_baileys_info: 'WhatsApp connection using Baileys. Scan QR to link your device.',
+    sec_whatsapp_api: 'Meta Cloud API',
+    sec_whatsapp_api_info: 'Integration with Meta official WhatsApp Business API. Available in a future version.',
+    sec_whatsapp_info: 'WhatsApp connection channels.',
+    waModuleDisabled: 'WhatsApp module disabled',
+    comingSoon: 'Coming soon',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'AI provider access keys. At least one is required for LUNA to work.',
     sec_models: 'AI Models',
@@ -503,10 +515,21 @@ function render() {
   let h = ''
 
   // 1. WhatsApp panel
+  const waModEnabled = waState.moduleEnabled !== false
   h += `<div class="panel" id="wa-panel-wrap"><div class="panel-header" onclick="togglePanel(this)">
-    <span class="panel-title">${t('sec_whatsapp')} <span class="panel-badge badge-active">${t('waStatus')[waState.status] || waState.status}</span></span>
+    <span class="panel-title">${t('sec_whatsapp')} <span class="panel-badge badge-active">${t('waStatus')[waState.status] || waState.status}</span>
+    ${!waModEnabled ? '<span class="panel-badge badge-soon">' + t('waModuleDisabled') + '</span>' : ''}</span>
     <span class="panel-chevron">&#9660;</span>
-  </div><div class="panel-body"><div class="panel-info">${t('sec_whatsapp_info')}</div><div id="wa-inner"></div></div></div>`
+  </div><div class="panel-body"><div class="panel-info">${t('sec_whatsapp_info')}</div>
+    <div style="font-size:0.7rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:0.75rem 0 0.25rem">${t('sec_whatsapp_baileys')}</div>
+    <div class="panel-info">${t('sec_whatsapp_baileys_info')}</div>
+    <div id="wa-inner"></div>
+    <div style="font-size:0.7rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:1rem 0 0.25rem;border-top:1px solid #334155;margin-top:0.75rem">${t('sec_whatsapp_api')}</div>
+    <div class="panel-info">${t('sec_whatsapp_api_info')}</div>
+    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0">
+      <span class="panel-badge badge-soon">${t('comingSoon')}</span>
+    </div>
+  </div></div>`
 
   // 2. API Keys
   h += panel('apikeys', [
@@ -720,7 +743,8 @@ function renderWa() {
   if (!inner) return
   const s = waState
   const showQr = s.status === 'qr_ready' && s.qrDataUrl
-  const canConnect = s.status === 'disconnected' || s.status === 'not_initialized'
+  const moduleEnabled = s.moduleEnabled !== false
+  const canConnect = moduleEnabled && (s.status === 'disconnected' || s.status === 'not_initialized')
   const canDisconnect = s.status === 'connected' || s.status === 'qr_ready' || s.status === 'connecting'
 
   const waPhone = currentValues['WHATSAPP_PHONE_NUMBER'] ?? ''
@@ -732,7 +756,7 @@ function renderWa() {
       ${s.lastDisconnectReason ? `<span class="wa-reason">${t('reason')}: ${s.lastDisconnectReason}</span>` : ''}
     </div>
     <div class="wa-actions">
-      <button class="wa-btn wa-btn-connect" onclick="waConnect()" ${canConnect?'':'disabled'}>${t('connectBtn')}</button>
+      <button class="wa-btn wa-btn-connect" onclick="waConnect()" ${canConnect?'':'disabled'} ${!moduleEnabled?'title="'+t('waModuleDisabled')+'"':''}>${t('connectBtn')}</button>
       <button class="wa-btn wa-btn-disconnect" onclick="waDisconnect()" ${canDisconnect?'':'disabled'}>${t('disconnectBtn')}</button>
     </div>
     <div class="wa-qr-box ${showQr?'':'wa-qr-hidden'}">

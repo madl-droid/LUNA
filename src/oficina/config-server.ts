@@ -194,8 +194,9 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
 
   // GET /oficina/api/whatsapp/status
   if (localUrl === '/api/whatsapp/status' && method === 'GET') {
+    const moduleEnabled = config.modules.whatsapp
     if (!waAdapter) {
-      jsonResponse(res, 200, { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null })
+      jsonResponse(res, 200, { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null, moduleEnabled })
     } else {
       const state = waAdapter.getState()
       let qrDataUrl: string | null = null
@@ -204,14 +205,16 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
           qrDataUrl = await QRCode.toDataURL(state.qr, { width: 300, margin: 2, color: { dark: '#e2e8f0', light: '#0f172a' } })
         } catch { /* ignore */ }
       }
-      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason })
+      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason, moduleEnabled })
     }
     return true
   }
 
   // POST /oficina/api/whatsapp/connect
   if (localUrl === '/api/whatsapp/connect' && method === 'POST') {
-    if (!waAdapter) {
+    if (!config.modules.whatsapp) {
+      jsonResponse(res, 400, { error: 'WhatsApp module is disabled' })
+    } else if (!waAdapter) {
       jsonResponse(res, 400, { error: 'WhatsApp adapter not initialized' })
     } else {
       try {

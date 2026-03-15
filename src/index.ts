@@ -5,6 +5,7 @@ import * as http from 'node:http'
 import { config } from './config.js'
 import { handleOficinaRequest, setWhatsAppAdapter } from './oficina/config-server.js'
 import { BaileysAdapter } from './channels/whatsapp/baileys-adapter.js'
+import { createMessageHandler } from './engine/responder.js'
 
 const logger = {
   info: (data: Record<string, unknown>, msg: string) =>
@@ -15,6 +16,7 @@ function main(): void {
   // Initialize WhatsApp adapter and register with oficina
   const waAdapter = new BaileysAdapter()
   setWhatsAppAdapter(waAdapter)
+  waAdapter.onMessage(createMessageHandler(waAdapter))
 
   // Auto-connect WhatsApp if module is enabled
   if (config.modules.whatsapp) {
