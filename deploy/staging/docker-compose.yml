@@ -15,6 +15,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - ./instance:/app/instance
+      - ./.env:/app/.env
     depends_on:
       postgres:
         condition: service_healthy
