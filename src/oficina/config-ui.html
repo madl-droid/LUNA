@@ -20,25 +20,149 @@
       align-items: center;
       justify-content: space-between;
     }
-    header h1 {
-      font-size: 1.25rem;
-      font-weight: 600;
-    }
-    header h1 span {
-      color: #38bdf8;
-      font-weight: 700;
-    }
-    .status {
-      font-size: 0.875rem;
-      color: #94a3b8;
-    }
+    header h1 { font-size: 1.25rem; font-weight: 600; }
+    header h1 span { color: #38bdf8; font-weight: 700; }
+    .status { font-size: 0.875rem; color: #94a3b8; }
     .status.saved { color: #4ade80; }
     .status.error { color: #f87171; }
     main {
       max-width: 900px;
       margin: 2rem auto;
-      padding: 0 1rem;
+      padding: 0 1rem 5rem;
     }
+
+    /* WhatsApp panel */
+    .wa-panel {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .wa-panel h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .wa-status-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .wa-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .wa-status-badge.disconnected { background: rgba(239,68,68,0.15); color: #f87171; }
+    .wa-status-badge.connecting { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .wa-status-badge.connected { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .wa-status-badge.qr_ready { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .wa-status-badge.not_initialized { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .wa-status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block;
+    }
+    .wa-status-badge.disconnected .wa-status-dot { background: #f87171; }
+    .wa-status-badge.connecting .wa-status-dot { background: #fbbf24; animation: pulse 1.5s infinite; }
+    .wa-status-badge.connected .wa-status-dot { background: #4ade80; }
+    .wa-status-badge.qr_ready .wa-status-dot { background: #38bdf8; animation: pulse 1.5s infinite; }
+    .wa-status-badge.not_initialized .wa-status-dot { background: #94a3b8; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .wa-actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .wa-btn {
+      padding: 0.5rem 1.25rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .wa-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .wa-btn-connect { background: #22c55e; color: #000; }
+    .wa-btn-connect:hover:not(:disabled) { background: #16a34a; }
+    .wa-btn-disconnect { background: #ef4444; color: #fff; }
+    .wa-btn-disconnect:hover:not(:disabled) { background: #dc2626; }
+
+    .wa-qr-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+      background: #0f172a;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .wa-qr-container canvas {
+      border-radius: 8px;
+    }
+    .wa-qr-label {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+    .wa-qr-hidden { display: none; }
+
+    .wa-phone-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #334155;
+    }
+    .wa-phone-field label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      margin-bottom: 0.4rem;
+    }
+    .wa-phone-field input {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      color: #e2e8f0;
+      font-size: 0.875rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      width: 100%;
+    }
+    .wa-phone-field input:focus {
+      outline: none;
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56,189,248,0.2);
+    }
+    .wa-phone-field input.modified { border-color: #fbbf24; }
+    .wa-phone-save {
+      margin-top: 0.75rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .wa-disconnect-reason {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-top: 0.25rem;
+    }
+
+    /* Config sections */
     .section-title {
       font-size: 0.75rem;
       font-weight: 600;
@@ -79,14 +203,10 @@
       border-color: #38bdf8;
       box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
     }
-    .field input.modified {
-      border-color: #fbbf24;
-    }
+    .field input.modified { border-color: #fbbf24; }
     .actions {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
+      bottom: 0; left: 0; right: 0;
       background: #1e293b;
       border-top: 1px solid #334155;
       padding: 1rem 2rem;
@@ -102,27 +222,30 @@
       cursor: pointer;
       border: none;
     }
-    .btn-save {
-      background: #2563eb;
-      color: white;
-    }
+    .btn-save { background: #2563eb; color: white; }
     .btn-save:hover { background: #1d4ed8; }
     .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-reset {
-      background: #334155;
-      color: #e2e8f0;
-    }
+    .btn-reset { background: #334155; color: #e2e8f0; }
     .btn-reset:hover { background: #475569; }
-    .loading {
-      text-align: center;
-      padding: 4rem;
-      color: #64748b;
-    }
+    .loading { text-align: center; padding: 4rem; color: #64748b; }
     .field-type {
       font-size: 0.625rem;
       color: #475569;
       text-transform: uppercase;
     }
+    .toast {
+      position: fixed;
+      top: 70px; right: 24px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      z-index: 200;
+      animation: slideIn 0.3s ease;
+    }
+    .toast.success { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+    .toast.error { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   </style>
 </head>
 <body>
@@ -131,18 +254,23 @@
     <div class="status" id="status">Cargando...</div>
   </header>
   <main id="main">
-    <div class="loading">Cargando configuracion...</div>
+    <div class="loading">Cargando...</div>
   </main>
   <div class="actions">
     <button class="btn-reset" onclick="resetChanges()">Descartar</button>
     <button class="btn-save" id="saveBtn" onclick="saveChanges()" disabled>Guardar cambios</button>
   </div>
 
+  <!-- QR code library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <script>
     let originalValues = {}
     let currentValues = {}
     let schema = {}
+    let waState = { status: 'not_initialized', qr: null, lastDisconnectReason: null }
+    let waPolling = null
 
+    // --- Init ---
     async function init() {
       try {
         const [configRes, schemaRes] = await Promise.all([
@@ -156,33 +284,73 @@
         currentValues = { ...configData.values }
         schema = schemaData.schema || {}
 
+        await pollWhatsApp()
         render()
         setStatus('Conectado', '')
+        startWaPolling()
       } catch (err) {
         setStatus('Error al conectar', 'error')
         document.getElementById('main').innerHTML =
-          '<div class="loading">Error al cargar la configuracion. Verifica que el servidor esta corriendo.</div>'
+          '<div class="loading">Error al cargar. Verifica que el servidor esta corriendo.</div>'
       }
     }
 
-    function setStatus(text, cls) {
-      const el = document.getElementById('status')
-      el.textContent = text
-      el.className = 'status ' + (cls || '')
+    // --- WhatsApp polling ---
+    async function pollWhatsApp() {
+      try {
+        const res = await fetch('/oficina/api/whatsapp/status')
+        const newState = await res.json()
+        const changed = newState.status !== waState.status || newState.qr !== waState.qr
+        waState = newState
+        if (changed) renderWaPanel()
+      } catch {}
     }
 
+    function startWaPolling() {
+      if (waPolling) clearInterval(waPolling)
+      waPolling = setInterval(pollWhatsApp, 3000)
+    }
+
+    // --- WhatsApp actions ---
+    async function waConnect() {
+      try {
+        showToast('Conectando WhatsApp...', 'success')
+        await fetch('/oficina/api/whatsapp/connect', { method: 'POST' })
+        // Poll faster while connecting
+        setTimeout(pollWhatsApp, 500)
+        setTimeout(pollWhatsApp, 1500)
+        setTimeout(pollWhatsApp, 3000)
+      } catch (err) {
+        showToast('Error al conectar: ' + err.message, 'error')
+      }
+    }
+
+    async function waDisconnect() {
+      if (!confirm('Desconectar WhatsApp? Se eliminara la sesion y necesitaras escanear el QR de nuevo.')) return
+      try {
+        await fetch('/oficina/api/whatsapp/disconnect', { method: 'POST' })
+        await pollWhatsApp()
+        showToast('WhatsApp desconectado', 'success')
+      } catch (err) {
+        showToast('Error al desconectar: ' + err.message, 'error')
+      }
+    }
+
+    // --- Render ---
     function render() {
       const main = document.getElementById('main')
-      const sections = {}
+      let html = ''
 
-      // Group by schema sections
+      // WhatsApp panel
+      html += '<div id="wa-panel"></div>'
+
+      // Config sections
+      const sections = {}
       for (const [key, info] of Object.entries(schema)) {
         const section = info.description || 'General'
         if (!sections[section]) sections[section] = []
         sections[section].push(key)
       }
-
-      // Add any keys from current values not in schema
       for (const key of Object.keys(currentValues)) {
         if (!schema[key]) {
           const section = 'Otros'
@@ -191,14 +359,12 @@
         }
       }
 
-      let html = ''
       for (const [section, keys] of Object.entries(sections)) {
         html += `<div class="section-title">${section}</div>`
         for (const key of keys) {
           const value = currentValues[key] ?? schema[key]?.default ?? ''
           const type = schema[key]?.type ?? 'string'
           const isSecret = key.includes('KEY') || key.includes('SECRET') || key.includes('PASSWORD') || key.includes('TOKEN')
-
           let input
           if (type === 'boolean') {
             input = `<select data-key="${key}" onchange="onChange(this)">
@@ -209,7 +375,6 @@
             const inputType = isSecret ? 'password' : 'text'
             input = `<input type="${inputType}" data-key="${key}" value="${escapeAttr(value)}" oninput="onChange(this)">`
           }
-
           html += `<div class="field">
             <label>${key} <span class="field-type">${type}</span></label>
             ${input}
@@ -218,7 +383,83 @@
       }
 
       main.innerHTML = html
-      main.style.paddingBottom = '5rem'
+      renderWaPanel()
+    }
+
+    function renderWaPanel() {
+      const panel = document.getElementById('wa-panel')
+      if (!panel) return
+
+      const s = waState
+      const statusLabels = {
+        not_initialized: 'No inicializado',
+        disconnected: 'Desconectado',
+        connecting: 'Conectando...',
+        connected: 'Conectado',
+        qr_ready: 'Escanea el QR',
+      }
+
+      const isConnected = s.status === 'connected'
+      const showQr = s.status === 'qr_ready' && s.qr
+      const canConnect = s.status === 'disconnected' || s.status === 'not_initialized'
+      const canDisconnect = s.status === 'connected' || s.status === 'qr_ready' || s.status === 'connecting'
+
+      const waPhone = currentValues['WHATSAPP_PHONE_NUMBER'] ?? ''
+      const twilioPhone = currentValues['TWILIO_PHONE_NUMBER'] ?? ''
+
+      panel.innerHTML = `
+        <div class="wa-panel">
+          <h2>WhatsApp</h2>
+          <div class="wa-status-row">
+            <span class="wa-status-badge ${s.status}">
+              <span class="wa-status-dot"></span>
+              ${statusLabels[s.status] || s.status}
+            </span>
+            ${s.lastDisconnectReason ? `<span class="wa-disconnect-reason">Razon: ${s.lastDisconnectReason}</span>` : ''}
+          </div>
+          <div class="wa-actions">
+            <button class="wa-btn wa-btn-connect" onclick="waConnect()" ${canConnect ? '' : 'disabled'}>Conectar</button>
+            <button class="wa-btn wa-btn-disconnect" onclick="waDisconnect()" ${canDisconnect ? '' : 'disabled'}>Desconectar</button>
+          </div>
+          <div id="wa-qr-box" class="wa-qr-container ${showQr ? '' : 'wa-qr-hidden'}">
+            <canvas id="wa-qr-canvas"></canvas>
+            <div class="wa-qr-label">Escanea con WhatsApp &gt; Dispositivos vinculados</div>
+          </div>
+          <div class="wa-phone-fields">
+            <div class="wa-phone-field">
+              <label>Numero de WhatsApp</label>
+              <input type="text" id="wa-phone" placeholder="+521234567890" value="${escapeAttr(waPhone)}"
+                oninput="onPhoneChange('WHATSAPP_PHONE_NUMBER', this)">
+            </div>
+            <div class="wa-phone-field">
+              <label>Numero de Twilio</label>
+              <input type="text" id="twilio-phone" placeholder="+15551234567" value="${escapeAttr(twilioPhone)}"
+                oninput="onPhoneChange('TWILIO_PHONE_NUMBER', this)">
+            </div>
+          </div>
+        </div>
+      `
+
+      if (showQr) {
+        const canvas = document.getElementById('wa-qr-canvas')
+        if (canvas && typeof QRCode !== 'undefined') {
+          QRCode.toCanvas(canvas, s.qr, {
+            width: 280,
+            margin: 2,
+            color: { dark: '#e2e8f0', light: '#0f172a' },
+          })
+        }
+      }
+    }
+
+    function onPhoneChange(key, el) {
+      currentValues[key] = el.value
+      if (el.value !== (originalValues[key] ?? '')) {
+        el.classList.add('modified')
+      } else {
+        el.classList.remove('modified')
+      }
+      updateSaveButton()
     }
 
     function escapeAttr(str) {
@@ -227,15 +468,12 @@
 
     function onChange(el) {
       const key = el.dataset.key
-      const value = el.value
-      currentValues[key] = value
-
-      if (value !== (originalValues[key] ?? '')) {
+      currentValues[key] = el.value
+      if (el.value !== (originalValues[key] ?? '')) {
         el.classList.add('modified')
       } else {
         el.classList.remove('modified')
       }
-
       updateSaveButton()
     }
 
@@ -260,7 +498,6 @@
           changes[key] = value
         }
       }
-
       if (Object.keys(changes).length === 0) return
 
       try {
@@ -276,12 +513,29 @@
           render()
           updateSaveButton()
           setStatus('Guardado', 'saved')
+          showToast('Configuracion guardada', 'success')
         } else {
           setStatus('Error al guardar', 'error')
         }
       } catch (err) {
         setStatus('Error de conexion', 'error')
       }
+    }
+
+    function setStatus(text, cls) {
+      const el = document.getElementById('status')
+      el.textContent = text
+      el.className = 'status ' + (cls || '')
+    }
+
+    function showToast(msg, type) {
+      const old = document.querySelector('.toast')
+      if (old) old.remove()
+      const t = document.createElement('div')
+      t.className = 'toast ' + type
+      t.textContent = msg
+      document.body.appendChild(t)
+      setTimeout(() => t.remove(), 3500)
     }
 
     init()

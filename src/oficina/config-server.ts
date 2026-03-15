@@ -4,10 +4,18 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type * as http from 'node:http'
+import type { BaileysAdapter } from '../channels/whatsapp/baileys-adapter.js'
 
 const logger = {
   info: (msg: string) => console.log(JSON.stringify({ level: 'info', module: 'oficina', msg, ts: new Date().toISOString() })),
   error: (msg: string, err?: unknown) => console.error(JSON.stringify({ level: 'error', module: 'oficina', msg, error: String(err), ts: new Date().toISOString() })),
+}
+
+// --- WhatsApp adapter reference (set from index.ts) ---
+let waAdapter: BaileysAdapter | null = null
+
+export function setWhatsAppAdapter(adapter: BaileysAdapter): void {
+  waAdapter = adapter
 }
 
 function jsonResponse(res: http.ServerResponse, status: number, data: unknown): void {
@@ -163,6 +171,50 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
     } catch (err) {
       logger.error('Failed to update config', err)
       jsonResponse(res, 400, { error: 'Invalid request body' })
+    }
+    return true
+  }
+
+  // --- WhatsApp / Baileys endpoints ---
+
+  // GET /oficina/api/whatsapp/status
+  if (localUrl === '/api/whatsapp/status' && method === 'GET') {
+    if (!waAdapter) {
+      jsonResponse(res, 200, { status: 'not_initialized', qr: null, lastDisconnectReason: null })
+    } else {
+      jsonResponse(res, 200, waAdapter.getState())
+    }
+    return true
+  }
+
+  // POST /oficina/api/whatsapp/connect
+  if (localUrl === '/api/whatsapp/connect' && method === 'POST') {
+    if (!waAdapter) {
+      jsonResponse(res, 400, { error: 'WhatsApp adapter not initialized' })
+    } else {
+      try {
+        await waAdapter.initialize()
+        jsonResponse(res, 200, { ok: true, status: waAdapter.getState().status })
+      } catch (err) {
+        logger.error('Failed to connect WhatsApp', err)
+        jsonResponse(res, 500, { error: 'Failed to connect: ' + String(err) })
+      }
+    }
+    return true
+  }
+
+  // POST /oficina/api/whatsapp/disconnect
+  if (localUrl === '/api/whatsapp/disconnect' && method === 'POST') {
+    if (!waAdapter) {
+      jsonResponse(res, 400, { error: 'WhatsApp adapter not initialized' })
+    } else {
+      try {
+        await waAdapter.disconnect()
+        jsonResponse(res, 200, { ok: true, status: 'disconnected' })
+      } catch (err) {
+        logger.error('Failed to disconnect WhatsApp', err)
+        jsonResponse(res, 500, { error: 'Failed to disconnect: ' + String(err) })
+      }
     }
     return true
   }

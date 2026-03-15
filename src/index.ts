@@ -3,7 +3,8 @@
 
 import * as http from 'node:http'
 import { config } from './config.js'
-import { handleOficinaRequest } from './oficina/config-server.js'
+import { handleOficinaRequest, setWhatsAppAdapter } from './oficina/config-server.js'
+import { BaileysAdapter } from './channels/whatsapp/baileys-adapter.js'
 
 const logger = {
   info: (data: Record<string, unknown>, msg: string) =>
@@ -11,6 +12,17 @@ const logger = {
 }
 
 function main(): void {
+  // Initialize WhatsApp adapter and register with oficina
+  const waAdapter = new BaileysAdapter()
+  setWhatsAppAdapter(waAdapter)
+
+  // Auto-connect WhatsApp if module is enabled
+  if (config.modules.whatsapp) {
+    waAdapter.initialize().catch(err => {
+      console.error(JSON.stringify({ level: 'error', msg: 'Failed to initialize WhatsApp', error: String(err), ts: new Date().toISOString() }))
+    })
+  }
+
   const server = http.createServer(async (req, res) => {
     const url = req.url ?? '/'
 
@@ -23,7 +35,7 @@ function main(): void {
     // Health check
     if (url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end('{"status":"ok"}')
+      res.end(JSON.stringify({ status: 'ok', whatsapp: waAdapter.getState().status }))
       return
     }
 
