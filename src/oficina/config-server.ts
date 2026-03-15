@@ -145,6 +145,12 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
     return true
   }
 
+  // GET /oficina/api/version → return build version
+  if (localUrl === '/api/version' && method === 'GET') {
+    jsonResponse(res, 200, { version: process.env['BUILD_VERSION'] ?? 'dev' })
+    return true
+  }
+
   // GET /oficina/api/config → return current .env values
   if (localUrl === '/api/config' && method === 'GET') {
     const envFile = findEnvFile()

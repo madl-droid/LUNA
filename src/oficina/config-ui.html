@@ -252,7 +252,10 @@
 <body>
   <header>
     <h1><span>LUNA</span> Oficina</h1>
-    <div class="status" id="status">Cargando...</div>
+    <div style="display:flex;align-items:center;gap:1rem">
+      <span id="build-version" style="font-size:0.7rem;color:#475569;font-family:monospace"></span>
+      <div class="status" id="status">Cargando...</div>
+    </div>
   </header>
   <main id="main">
     <div class="loading">Cargando...</div>
@@ -272,10 +275,14 @@
     // --- Init ---
     async function init() {
       try {
-        const [configRes, schemaRes] = await Promise.all([
+        const [configRes, schemaRes, versionRes] = await Promise.all([
           fetch('/oficina/api/config'),
           fetch('/oficina/api/schema'),
+          fetch('/oficina/api/version'),
         ])
+        const versionData = await versionRes.json()
+        const v = versionData.version ?? 'dev'
+        document.getElementById('build-version').textContent = 'v' + (v.length > 7 ? v.slice(0, 7) : v)
         const configData = await configRes.json()
         const schemaData = await schemaRes.json()
 
