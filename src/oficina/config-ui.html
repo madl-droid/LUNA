@@ -247,6 +247,12 @@ const i18n = {
     resetDbConfirm: 'ATENCION: Esto borrara TODOS los mensajes y sesiones de la base de datos y Redis. Continuar?',
     resetDbSuccess: 'Base de datos limpiada',
     resetDbError: 'Error al limpiar DB',
+    scanModelsBtn: 'Escanear modelos',
+    lastScan: 'Ultimo escaneo',
+    scanSuccess: 'Escaneo completado',
+    scanError: 'Error al escanear',
+    scanScanning: 'Escaneando...',
+    scanReplaced: 'reemplazado por',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'Claves de acceso a los proveedores de IA. Se necesita al menos una para que LUNA funcione.',
     sec_models: 'Modelos de IA',
@@ -361,6 +367,12 @@ const i18n = {
     resetDbConfirm: 'WARNING: This will delete ALL messages and sessions from the database and Redis. Continue?',
     resetDbSuccess: 'Database cleared',
     resetDbError: 'Failed to reset DB',
+    scanModelsBtn: 'Scan models',
+    lastScan: 'Last scan',
+    scanSuccess: 'Scan complete',
+    scanError: 'Scan failed',
+    scanScanning: 'Scanning...',
+    scanReplaced: 'replaced by',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'AI provider access keys. At least one is required for LUNA to work.',
     sec_models: 'AI Models',
@@ -464,6 +476,7 @@ function toggleLang() {
 let originalValues = {}, currentValues = {}, allModels = { anthropic: [], gemini: [] }
 let waState = { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null }
 let waPolling = null
+let lastScan = null
 
 // ═══════════════════════════════════════════
 // Init
@@ -486,6 +499,7 @@ async function init() {
     originalValues = { ...configData.values }
     currentValues = { ...configData.values }
     allModels = modelsData.models || { anthropic: [], gemini: [] }
+    lastScan = modelsData.scan || null
 
     await pollWa()
     render()
@@ -572,7 +586,19 @@ function render() {
     ['LLM_FALLBACK_RESPOND', 'f_LLM_FB_RESPOND', 'i_LLM_FB_RESPOND'],
     ['LLM_FALLBACK_COMPLEX', 'f_LLM_FB_COMPLEX', 'i_LLM_FB_COMPLEX'],
   ]
-  let modelFields = `<div style="font-size:0.7rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:0.5rem 0 0.25rem">${t('models_primary')}</div>`
+  const scanInfo = lastScan ? `<span style="font-size:0.65rem;color:#64748b">${t('lastScan')}: ${new Date(lastScan.lastScanAt).toLocaleString()}</span>` : ''
+  const scanReplacements = (lastScan && lastScan.replacements && lastScan.replacements.length > 0)
+    ? lastScan.replacements.map(r =>
+        `<div style="font-size:0.7rem;color:#fbbf24;padding:0.3rem 0.5rem;background:rgba(251,191,36,0.1);border-radius:4px;margin-bottom:0.3rem">
+          ${r.configKey}: <s>${r.oldModel}</s> ${t('scanReplaced')} <b>${r.newModel}</b>
+        </div>`
+      ).join('') : ''
+  let modelFields = `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0 0.5rem">
+    <button class="wa-btn wa-btn-connect" onclick="triggerScan()" style="font-size:0.7rem;padding:0.3rem 0.8rem">${t('scanModelsBtn')}</button>
+    ${scanInfo}
+  </div>
+  <div id="scan-replacements">${scanReplacements}</div>
+  <div style="font-size:0.7rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:0.5rem 0 0.25rem">${t('models_primary')}</div>`
   for (const [prefix, labelKey, infoKey] of modelTasks) {
     modelFields += modelDropdown(prefix, labelKey, infoKey)
   }
@@ -871,6 +897,34 @@ async function resetDb() {
       showToast(t('resetDbSuccess'), 'success')
     } else { showToast(t('resetDbError'), 'error') }
   } catch { showToast(t('resetDbError'), 'error') }
+}
+
+async function triggerScan() {
+  showToast(t('scanScanning'), 'success')
+  try {
+    const res = await fetch('/oficina/api/models/scan', { method: 'POST' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(t('scanSuccess'), 'success')
+      // Refresh models and scan data
+      const modelsRes = await fetch('/oficina/api/models')
+      const modelsData = await modelsRes.json()
+      allModels = modelsData.models || { anthropic: [], gemini: [] }
+      lastScan = modelsData.scan || null
+      // Show replacements if any
+      if (data.replacements && data.replacements.length > 0) {
+        const repDiv = document.getElementById('scan-replacements')
+        if (repDiv) {
+          repDiv.innerHTML = data.replacements.map(r =>
+            `<div style="font-size:0.7rem;color:#fbbf24;padding:0.3rem 0.5rem;background:rgba(251,191,36,0.1);border-radius:4px;margin-bottom:0.3rem">
+              ${r.configKey}: <s>${r.oldModel}</s> ${t('scanReplaced')} <b>${r.newModel}</b>
+            </div>`
+          ).join('')
+        }
+      }
+      render()
+    } else { showToast(t('scanError'), 'error') }
+  } catch { showToast(t('scanError'), 'error') }
 }
 
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }

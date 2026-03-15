@@ -6,6 +6,7 @@ import { config } from './config.js'
 import { handleOficinaRequest, setWhatsAppAdapter } from './oficina/config-server.js'
 import { BaileysAdapter } from './channels/whatsapp/baileys-adapter.js'
 import { createMessageHandler } from './engine/responder.js'
+import { startModelScanner } from './llm/model-scanner.js'
 
 const logger = {
   info: (data: Record<string, unknown>, msg: string) =>
@@ -46,6 +47,9 @@ function main(): void {
     res.writeHead(404, { 'Content-Type': 'application/json' })
     res.end('{"error":"Not found"}')
   })
+
+  // Start LLM model scanner (scans every 6 hours, runs immediately on startup)
+  startModelScanner()
 
   server.listen(config.port, () => {
     logger.info({ port: config.port }, 'LUNA server started')

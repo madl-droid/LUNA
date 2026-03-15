@@ -6,6 +6,7 @@ import * as path from 'node:path'
 import type * as http from 'node:http'
 import QRCode from 'qrcode'
 import { config, reloadEnvConfig, reloadInstanceConfig } from '../config.js'
+import { getLastScanResult, scanModels } from '../llm/model-scanner.js'
 import type { BaileysAdapter } from '../channels/whatsapp/baileys-adapter.js'
 
 const logger = {
@@ -183,10 +184,38 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
     return true
   }
 
-  // GET /oficina/api/models → return available LLM models from instance config
+  // GET /oficina/api/models → return available LLM models (from scan or instance config)
   if (localUrl === '/api/models' && method === 'GET') {
+    const scan = getLastScanResult()
     const available = config.instanceConfig.llm.availableModels
-    jsonResponse(res, 200, { models: available })
+    jsonResponse(res, 200, {
+      models: available,
+      scan: scan ? { lastScanAt: scan.lastScanAt, replacements: scan.replacements } : null,
+    })
+    return true
+  }
+
+  // POST /oficina/api/models/scan → trigger manual model scan
+  if (localUrl === '/api/models/scan' && method === 'POST') {
+    try {
+      const result = await scanModels()
+      jsonResponse(res, 200, {
+        ok: true,
+        anthropic: result.anthropic.length,
+        google: result.google.length,
+        replacements: result.replacements,
+      })
+    } catch (err) {
+      logger.error('Failed to scan models', err)
+      jsonResponse(res, 500, { error: 'Scan failed: ' + String(err) })
+    }
+    return true
+  }
+
+  // GET /oficina/api/models/scan → get last scan result
+  if (localUrl === '/api/models/scan' && method === 'GET') {
+    const scan = getLastScanResult()
+    jsonResponse(res, 200, scan ?? { anthropic: [], google: [], lastScanAt: null, replacements: [] })
     return true
   }
 
