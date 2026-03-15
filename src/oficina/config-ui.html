@@ -712,6 +712,19 @@ function boolField(key, labelKey) {
   </div>`
 }
 
+const MODEL_NAMES = {
+  'claude-3-5-haiku-20241022': 'Haiku 3.5',
+  'claude-sonnet-4-5-20241022': 'Sonnet 4.5',
+  'claude-opus-4-5-20250115': 'Opus 4.5',
+  'claude-3-5-sonnet-20241022': 'Sonnet 3.5',
+  'claude-3-opus-20240229': 'Opus 3',
+  'gemini-2.0-flash': 'Flash 2.0',
+  'gemini-2.0-pro': 'Pro 2.0',
+  'gemini-1.5-pro': 'Pro 1.5',
+  'gemini-1.5-flash': 'Flash 1.5',
+}
+function modelLabel(id) { return MODEL_NAMES[id] || id }
+
 function modelDropdown(prefix, labelKey, infoKey) {
   const providerKey = prefix + '_PROVIDER'
   const modelKey = prefix + '_MODEL'
@@ -722,10 +735,10 @@ function modelDropdown(prefix, labelKey, infoKey) {
   const models = allModels[curProvider === 'google' ? 'gemini' : curProvider] || []
 
   let providerOpts = providers.map(p => `<option value="${p}" ${p===curProvider?'selected':''}>${p}</option>`).join('')
-  let modelOpts = models.map(m => `<option value="${m}" ${m===curModel?'selected':''}>${m}</option>`).join('')
+  let modelOpts = models.map(m => `<option value="${m}" ${m===curModel?'selected':''}>${modelLabel(m)}</option>`).join('')
   // Add current model if not in list
   if (curModel && !models.includes(curModel)) {
-    modelOpts = `<option value="${curModel}" selected>${curModel}</option>` + modelOpts
+    modelOpts = `<option value="${curModel}" selected>${modelLabel(curModel)}</option>` + modelOpts
   }
 
   return `<div class="field">

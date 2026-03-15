@@ -19,26 +19,26 @@ TypeScript / Node.js ≥22 (ESM), PostgreSQL, Redis + BullMQ, Baileys (WhatsApp)
 ### TIEMPO REAL — EL CONTACTO ESTÁ ESPERANDO
 | Tarea | Modelo principal | Provider | Fallback |
 |-------|-----------------|----------|----------|
-| Clasificar intención | Claude Haiku 4.5 | Anthropic | Gemini 3 Flash |
-| Ejecutar tools / resolver | Claude Haiku 4.5 | Anthropic | Gemini 3 Flash |
-| Generar respuesta conversacional | Claude Sonnet 4.6 | Anthropic | Gemini 3 Flash |
-| Tareas complejas | Claude Opus 4.6 | Anthropic | Gemini 3 Pro |
-| Mensajes proactivos / follow-ups | Claude Sonnet 4.6 | Anthropic | Gemini 3 Flash |
-| Comprimir sesión (en vivo) | Claude Haiku 4.5 | Anthropic | Gemini 3 Flash |
+| Clasificar intención | Claude Haiku 3.5 | Anthropic | Gemini 2.0 Flash |
+| Ejecutar tools / resolver | Claude Haiku 3.5 | Anthropic | Gemini 2.0 Flash |
+| Generar respuesta conversacional | Claude Sonnet 4.5 | Anthropic | Gemini 2.0 Flash |
+| Tareas complejas | Claude Opus 4.5 | Anthropic | Gemini 2.0 Pro |
+| Mensajes proactivos / follow-ups | Claude Sonnet 4.5 | Anthropic | Gemini 2.0 Flash |
+| Comprimir sesión (en vivo) | Claude Haiku 3.5 | Anthropic | Gemini 2.0 Flash |
 
 ### BATCH NOCTURNO — NADIE ESPERA, 50% DESCUENTO
 | Tarea | Modelo principal | Provider | Fallback |
 |-------|-----------------|----------|----------|
-| Scoring de leads fríos | Claude Haiku 4.5 batch | Anthropic | — |
-| Clasificar objeciones acumuladas | Claude Sonnet 4.6 batch | Anthropic | — |
-| Comprimir memoria masiva | Gemini 3 Flash batch | Google | Claude Haiku 4.5 |
-| Reporte diario al Sheet | Gemini 3 Flash batch | Google | — |
+| Scoring de leads fríos | Claude Haiku 3.5 batch | Anthropic | — |
+| Clasificar objeciones acumuladas | Claude Sonnet 4.5 batch | Anthropic | — |
+| Comprimir memoria masiva | Gemini 2.0 Flash batch | Google | Claude Haiku 3.5 |
+| Reporte diario al Sheet | Gemini 2.0 Flash batch | Google | — |
 
 ### VOZ, BÚSQUEDA Y MEDIA
 | Tarea | Modelo principal | Provider | Fallback |
 |-------|-----------------|----------|----------|
-| Búsqueda web | Gemini 3 Flash + Grounding | Google | Anthropic web_search |
-| Script para audio / llamadas | Claude Sonnet 4.6 | Anthropic | Gemini 3 Flash |
+| Búsqueda web | Gemini 2.0 Flash + Grounding | Google | Anthropic web_search |
+| Script para audio / llamadas | Claude Sonnet 4.5 | Anthropic | Gemini 2.0 Flash |
 | TTS / síntesis de voz | Gemini TTS | Google | — |
 | Llamadas en vivo (V2) | Gemini Live | Google | — |
 
