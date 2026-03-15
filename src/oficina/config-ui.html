@@ -107,8 +107,9 @@
       border-radius: 8px;
       margin-bottom: 1rem;
     }
-    .wa-qr-container canvas {
+    .wa-qr-container img {
       border-radius: 8px;
+      max-width: 280px;
     }
     .wa-qr-label {
       margin-top: 0.75rem;
@@ -261,13 +262,11 @@
     <button class="btn-save" id="saveBtn" onclick="saveChanges()" disabled>Guardar cambios</button>
   </div>
 
-  <!-- QR code library -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <script>
     let originalValues = {}
     let currentValues = {}
     let schema = {}
-    let waState = { status: 'not_initialized', qr: null, lastDisconnectReason: null }
+    let waState = { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null }
     let waPolling = null
 
     // --- Init ---
@@ -300,7 +299,7 @@
       try {
         const res = await fetch('/oficina/api/whatsapp/status')
         const newState = await res.json()
-        const changed = newState.status !== waState.status || newState.qr !== waState.qr
+        const changed = newState.status !== waState.status || newState.qrDataUrl !== waState.qrDataUrl
         waState = newState
         if (changed) renderWaPanel()
       } catch {}
@@ -400,7 +399,7 @@
       }
 
       const isConnected = s.status === 'connected'
-      const showQr = s.status === 'qr_ready' && s.qr
+      const showQr = s.status === 'qr_ready' && s.qrDataUrl
       const canConnect = s.status === 'disconnected' || s.status === 'not_initialized'
       const canDisconnect = s.status === 'connected' || s.status === 'qr_ready' || s.status === 'connecting'
 
@@ -422,7 +421,7 @@
             <button class="wa-btn wa-btn-disconnect" onclick="waDisconnect()" ${canDisconnect ? '' : 'disabled'}>Desconectar</button>
           </div>
           <div id="wa-qr-box" class="wa-qr-container ${showQr ? '' : 'wa-qr-hidden'}">
-            <canvas id="wa-qr-canvas"></canvas>
+            ${showQr ? `<img src="${s.qrDataUrl}" alt="QR Code" />` : ''}
             <div class="wa-qr-label">Escanea con WhatsApp &gt; Dispositivos vinculados</div>
           </div>
           <div class="wa-phone-fields">
@@ -440,16 +439,6 @@
         </div>
       `
 
-      if (showQr) {
-        const canvas = document.getElementById('wa-qr-canvas')
-        if (canvas && typeof QRCode !== 'undefined') {
-          QRCode.toCanvas(canvas, s.qr, {
-            width: 280,
-            margin: 2,
-            color: { dark: '#e2e8f0', light: '#0f172a' },
-          })
-        }
-      }
     }
 
     function onPhoneChange(key, el) {

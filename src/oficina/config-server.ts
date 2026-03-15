@@ -4,6 +4,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type * as http from 'node:http'
+import QRCode from 'qrcode'
 import type { BaileysAdapter } from '../channels/whatsapp/baileys-adapter.js'
 
 const logger = {
@@ -180,9 +181,16 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
   // GET /oficina/api/whatsapp/status
   if (localUrl === '/api/whatsapp/status' && method === 'GET') {
     if (!waAdapter) {
-      jsonResponse(res, 200, { status: 'not_initialized', qr: null, lastDisconnectReason: null })
+      jsonResponse(res, 200, { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null })
     } else {
-      jsonResponse(res, 200, waAdapter.getState())
+      const state = waAdapter.getState()
+      let qrDataUrl: string | null = null
+      if (state.qr) {
+        try {
+          qrDataUrl = await QRCode.toDataURL(state.qr, { width: 300, margin: 2, color: { dark: '#e2e8f0', light: '#0f172a' } })
+        } catch { /* ignore */ }
+      }
+      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason })
     }
     return true
   }
