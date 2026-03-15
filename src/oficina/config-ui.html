@@ -92,6 +92,25 @@
     }
     .info-tooltip.visible { display: block; }
 
+    /* Toggle switch */
+    .toggle { position: relative; width: 44px; height: 24px; display: inline-block; flex-shrink: 0; }
+    .toggle input { display: none; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: #475569; border-radius: 24px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+      background: #94a3b8; top: 3px; left: 3px; transition: all 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: #22c55e; }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
+    .toggle-field {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.6rem 0; border-bottom: 1px solid rgba(51,65,85,0.4);
+    }
+    .toggle-field:last-child { border-bottom: none; }
+
     /* WhatsApp panel specifics */
     .wa-status-row { display: flex; align-items: center; gap: 1rem; margin: 0.75rem 0; }
     .wa-badge {
@@ -238,12 +257,17 @@ const i18n = {
     f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
     f_OPENAI_API_KEY: 'OpenAI',
     f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
+    models_primary: 'Modelos principales',
+    models_fallback: 'Modelos de fallback',
     f_LLM_CLASSIFY: 'Clasificar intencion',
     f_LLM_RESPOND: 'Generar respuesta',
     f_LLM_COMPLEX: 'Tareas complejas',
     f_LLM_TOOLS: 'Ejecutar tools',
     f_LLM_COMPRESS: 'Comprimir memoria',
     f_LLM_PROACTIVE: 'Mensajes proactivos',
+    f_LLM_FB_CLASSIFY: 'Clasificar (fallback)',
+    f_LLM_FB_RESPOND: 'Responder (fallback)',
+    f_LLM_FB_COMPLEX: 'Complejo (fallback)',
     f_LLM_MAX_INPUT_TOKENS: 'Max tokens de entrada',
     f_LLM_MAX_OUTPUT_TOKENS: 'Max tokens de salida',
     f_LLM_TEMPERATURE_CLASSIFY: 'Temperatura (clasificar)',
@@ -279,6 +303,9 @@ const i18n = {
     i_LLM_TOOLS: 'Modelo que decide que tools ejecutar y con que parametros.',
     i_LLM_COMPRESS: 'Modelo que comprime el historial de mensajes para ahorrar tokens.',
     i_LLM_PROACTIVE: 'Modelo que genera mensajes de follow-up y seguimiento proactivo.',
+    i_LLM_FB_CLASSIFY: 'Modelo alternativo para clasificar si el principal falla.',
+    i_LLM_FB_RESPOND: 'Modelo alternativo para responder si el principal falla.',
+    i_LLM_FB_COMPLEX: 'Modelo alternativo para tareas complejas si el principal falla.',
     i_TEMPERATURE_CLASSIFY: 'Mas bajo = mas determinista. Para clasificacion, 0.1 funciona bien.',
     i_TEMPERATURE_RESPOND: 'Mas alto = mas creativo. 0.7 es buen balance para respuestas conversacionales.',
     i_TEMPERATURE_COMPLEX: 'Balance entre creatividad y precision para tareas complejas.',
@@ -329,12 +356,17 @@ const i18n = {
     f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
     f_OPENAI_API_KEY: 'OpenAI',
     f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
+    models_primary: 'Primary models',
+    models_fallback: 'Fallback models',
     f_LLM_CLASSIFY: 'Classify intent',
     f_LLM_RESPOND: 'Generate response',
     f_LLM_COMPLEX: 'Complex tasks',
     f_LLM_TOOLS: 'Execute tools',
     f_LLM_COMPRESS: 'Compress memory',
     f_LLM_PROACTIVE: 'Proactive messages',
+    f_LLM_FB_CLASSIFY: 'Classify (fallback)',
+    f_LLM_FB_RESPOND: 'Respond (fallback)',
+    f_LLM_FB_COMPLEX: 'Complex (fallback)',
     f_LLM_MAX_INPUT_TOKENS: 'Max input tokens',
     f_LLM_MAX_OUTPUT_TOKENS: 'Max output tokens',
     f_LLM_TEMPERATURE_CLASSIFY: 'Temperature (classify)',
@@ -369,6 +401,9 @@ const i18n = {
     i_LLM_TOOLS: 'Model that decides which tools to execute and with what parameters.',
     i_LLM_COMPRESS: 'Model that compresses message history to save tokens.',
     i_LLM_PROACTIVE: 'Model that generates follow-up and proactive outreach messages.',
+    i_LLM_FB_CLASSIFY: 'Fallback model for classification if primary fails.',
+    i_LLM_FB_RESPOND: 'Fallback model for responses if primary fails.',
+    i_LLM_FB_COMPLEX: 'Fallback model for complex tasks if primary fails.',
     i_TEMPERATURE_CLASSIFY: 'Lower = more deterministic. 0.1 works well for classification.',
     i_TEMPERATURE_RESPOND: 'Higher = more creative. 0.7 is a good balance for conversational replies.',
     i_TEMPERATURE_COMPLEX: 'Balance between creativity and precision for complex tasks.',
@@ -480,7 +515,7 @@ function render() {
     secretField('GOOGLE_AI_API_KEY', 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY'),
   ])
 
-  // 3. Models (dropdowns)
+  // 3. Models (dropdowns) — primary + fallback
   const modelTasks = [
     ['LLM_CLASSIFY', 'f_LLM_CLASSIFY', 'i_LLM_CLASSIFY'],
     ['LLM_RESPOND', 'f_LLM_RESPOND', 'i_LLM_RESPOND'],
@@ -489,8 +524,17 @@ function render() {
     ['LLM_COMPRESS', 'f_LLM_COMPRESS', 'i_LLM_COMPRESS'],
     ['LLM_PROACTIVE', 'f_LLM_PROACTIVE', 'i_LLM_PROACTIVE'],
   ]
-  let modelFields = ''
+  const fallbackTasks = [
+    ['LLM_FALLBACK_CLASSIFY', 'f_LLM_FB_CLASSIFY', 'i_LLM_FB_CLASSIFY'],
+    ['LLM_FALLBACK_RESPOND', 'f_LLM_FB_RESPOND', 'i_LLM_FB_RESPOND'],
+    ['LLM_FALLBACK_COMPLEX', 'f_LLM_FB_COMPLEX', 'i_LLM_FB_COMPLEX'],
+  ]
+  let modelFields = `<div style="font-size:0.7rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:0.5rem 0 0.25rem">${t('models_primary')}</div>`
   for (const [prefix, labelKey, infoKey] of modelTasks) {
+    modelFields += modelDropdown(prefix, labelKey, infoKey)
+  }
+  modelFields += `<div style="font-size:0.7rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:1rem 0 0.25rem;border-top:1px solid #334155;margin-top:0.5rem">${t('models_fallback')}</div>`
+  for (const [prefix, labelKey, infoKey] of fallbackTasks) {
     modelFields += modelDropdown(prefix, labelKey, infoKey)
   }
   h += panelRaw('models', modelFields)
@@ -618,13 +662,11 @@ function numField(key, labelKey, infoKey) {
 }
 function boolField(key, labelKey) {
   const label = labelKey ? t(labelKey) : key
-  const val = currentValues[key] ?? 'false'
-  const mod = currentValues[key] !== (originalValues[key] ?? '') ? ' modified' : ''
-  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span></div>
-    <select data-key="${key}" onchange="onChange(this)" class="${mod}">
-      <option value="true" ${val==='true'?'selected':''}>true</option>
-      <option value="false" ${val!=='true'?'selected':''}>false</option>
-    </select></div>`
+  const val = (currentValues[key] ?? 'false') === 'true'
+  return `<div class="toggle-field">
+    <span class="field-label">${label}</span>
+    <label class="toggle"><input type="checkbox" data-key="${key}" ${val?'checked':''} onchange="onToggle(this)"><span class="toggle-slider"></span></label>
+  </div>`
 }
 
 function modelDropdown(prefix, labelKey, infoKey) {
@@ -711,6 +753,10 @@ function renderWa() {
 function onChange(el) {
   currentValues[el.dataset.key] = el.value
   el.classList.toggle('modified', el.value !== (originalValues[el.dataset.key] ?? ''))
+  updateSaveBtn()
+}
+function onToggle(el) {
+  currentValues[el.dataset.key] = el.checked ? 'true' : 'false'
   updateSaveBtn()
 }
 function onPhoneChange(key, el) {
