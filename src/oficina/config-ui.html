@@ -8,533 +8,751 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      min-height: 100vh;
+      background: #0f172a; color: #e2e8f0; min-height: 100vh;
     }
     header {
-      background: #1e293b;
-      border-bottom: 1px solid #334155;
-      padding: 1rem 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      background: #1e293b; border-bottom: 1px solid #334155;
+      padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
     }
     header h1 { font-size: 1.25rem; font-weight: 600; }
     header h1 span { color: #38bdf8; font-weight: 700; }
-    .status { font-size: 0.875rem; color: #94a3b8; }
-    .status.saved { color: #4ade80; }
-    .status.error { color: #f87171; }
-    main {
-      max-width: 900px;
-      margin: 2rem auto;
-      padding: 0 1rem 5rem;
-    }
-
-    /* WhatsApp panel */
-    .wa-panel {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 1.5rem;
-      margin-bottom: 2rem;
-    }
-    .wa-panel h2 {
-      font-size: 1rem;
+    .header-right { display: flex; align-items: center; gap: 1rem; }
+    .lang-toggle {
+      background: #334155; border: 1px solid #475569; border-radius: 6px;
+      color: #e2e8f0; font-size: 0.75rem; padding: 4px 10px; cursor: pointer;
       font-weight: 600;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
     }
-    .wa-status-row {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-    .wa-status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 14px;
-      border-radius: 20px;
-      font-size: 0.8rem;
-      font-weight: 500;
-    }
-    .wa-status-badge.disconnected { background: rgba(239,68,68,0.15); color: #f87171; }
-    .wa-status-badge.connecting { background: rgba(251,191,36,0.15); color: #fbbf24; }
-    .wa-status-badge.connected { background: rgba(74,222,128,0.15); color: #4ade80; }
-    .wa-status-badge.qr_ready { background: rgba(56,189,248,0.15); color: #38bdf8; }
-    .wa-status-badge.not_initialized { background: rgba(148,163,184,0.15); color: #94a3b8; }
-    .wa-status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      display: inline-block;
-    }
-    .wa-status-badge.disconnected .wa-status-dot { background: #f87171; }
-    .wa-status-badge.connecting .wa-status-dot { background: #fbbf24; animation: pulse 1.5s infinite; }
-    .wa-status-badge.connected .wa-status-dot { background: #4ade80; }
-    .wa-status-badge.qr_ready .wa-status-dot { background: #38bdf8; animation: pulse 1.5s infinite; }
-    .wa-status-badge.not_initialized .wa-status-dot { background: #94a3b8; }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .lang-toggle:hover { background: #475569; }
+    .build-ver { font-size: 0.65rem; color: #475569; font-family: monospace; }
+    .status-text { font-size: 0.8rem; color: #94a3b8; }
+    .status-text.saved { color: #4ade80; }
+    .status-text.error { color: #f87171; }
+    main { max-width: 900px; margin: 1.5rem auto; padding: 0 1rem 5rem; }
 
-    .wa-actions {
-      display: flex;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
+    /* Panels */
+    .panel {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+      margin-bottom: 1.25rem; overflow: hidden;
     }
+    .panel-header {
+      padding: 0.875rem 1.25rem; display: flex; align-items: center;
+      justify-content: space-between; cursor: pointer; user-select: none;
+    }
+    .panel-header:hover { background: rgba(255,255,255,0.02); }
+    .panel-title { font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+    .panel-chevron { color: #64748b; transition: transform 0.2s; font-size: 0.7rem; }
+    .panel.collapsed .panel-chevron { transform: rotate(-90deg); }
+    .panel.collapsed .panel-body { display: none; }
+    .panel-body { padding: 0 1.25rem 1.25rem; border-top: 1px solid #334155; }
+    .panel-info {
+      font-size: 0.75rem; color: #64748b; padding: 0.75rem 0 0.5rem;
+      line-height: 1.5;
+    }
+    .panel-badge {
+      font-size: 0.6rem; padding: 2px 8px; border-radius: 10px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .badge-active { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .badge-soon { background: rgba(251,191,36,0.15); color: #fbbf24; }
+
+    /* Fields */
+    .field {
+      display: grid; grid-template-columns: 1fr 1.5fr; gap: 0.75rem;
+      align-items: center; padding: 0.6rem 0;
+      border-bottom: 1px solid rgba(51,65,85,0.4);
+    }
+    .field:last-child { border-bottom: none; }
+    .field-left { display: flex; align-items: center; gap: 0.4rem; }
+    .field-label {
+      font-size: 0.8rem; font-weight: 500; color: #cbd5e1;
+    }
+    .field input, .field select {
+      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+      padding: 0.45rem 0.65rem; color: #e2e8f0; font-size: 0.8rem;
+      font-family: 'SF Mono', 'Fira Code', monospace; width: 100%;
+    }
+    .field input:focus, .field select:focus {
+      outline: none; border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56,189,248,0.2);
+    }
+    .field input.modified, .field select.modified { border-color: #fbbf24; }
+
+    /* Info button */
+    .info-btn {
+      width: 18px; height: 18px; border-radius: 50%; border: 1px solid #475569;
+      background: transparent; color: #64748b; font-size: 0.6rem; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-family: serif; font-style: italic;
+    }
+    .info-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+    .info-tooltip {
+      display: none; font-size: 0.7rem; color: #94a3b8; padding: 0.4rem 0 0.2rem;
+      grid-column: 1 / -1; line-height: 1.5;
+    }
+    .info-tooltip.visible { display: block; }
+
+    /* WhatsApp panel specifics */
+    .wa-status-row { display: flex; align-items: center; gap: 1rem; margin: 0.75rem 0; }
+    .wa-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 500;
+    }
+    .wa-badge.disconnected { background: rgba(239,68,68,0.15); color: #f87171; }
+    .wa-badge.connecting { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .wa-badge.connected { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .wa-badge.qr_ready { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .wa-badge.not_initialized { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .wa-dot {
+      width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+    }
+    .wa-badge.disconnected .wa-dot { background: #f87171; }
+    .wa-badge.connecting .wa-dot { background: #fbbf24; animation: pulse 1.5s infinite; }
+    .wa-badge.connected .wa-dot { background: #4ade80; }
+    .wa-badge.qr_ready .wa-dot { background: #38bdf8; animation: pulse 1.5s infinite; }
+    .wa-badge.not_initialized .wa-dot { background: #94a3b8; }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+    .wa-actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
     .wa-btn {
-      padding: 0.5rem 1.25rem;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s;
+      padding: 0.4rem 1rem; border: none; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 500; cursor: pointer;
     }
     .wa-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .wa-btn-connect { background: #22c55e; color: #000; }
     .wa-btn-connect:hover:not(:disabled) { background: #16a34a; }
     .wa-btn-disconnect { background: #ef4444; color: #fff; }
     .wa-btn-disconnect:hover:not(:disabled) { background: #dc2626; }
-
-    .wa-qr-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 1.5rem;
-      background: #0f172a;
-      border-radius: 8px;
-      margin-bottom: 1rem;
+    .wa-qr-box {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 1.25rem; background: #0f172a; border-radius: 8px; margin-bottom: 0.75rem;
     }
-    .wa-qr-container img {
-      border-radius: 8px;
-      max-width: 280px;
-    }
-    .wa-qr-label {
-      margin-top: 0.75rem;
-      font-size: 0.8rem;
-      color: #94a3b8;
-    }
+    .wa-qr-box img { border-radius: 8px; max-width: 260px; }
+    .wa-qr-label { margin-top: 0.6rem; font-size: 0.75rem; color: #94a3b8; }
     .wa-qr-hidden { display: none; }
+    .wa-phones {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+      padding-top: 0.75rem; border-top: 1px solid #334155;
+    }
+    .wa-phones label { display: block; font-size: 0.7rem; font-weight: 600; color: #64748b; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .wa-phones input {
+      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+      padding: 0.45rem 0.65rem; color: #e2e8f0; font-size: 0.8rem;
+      font-family: 'SF Mono','Fira Code',monospace; width: 100%;
+    }
+    .wa-phones input:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56,189,248,0.2); }
+    .wa-phones input.modified { border-color: #fbbf24; }
+    .wa-reason { font-size: 0.7rem; color: #94a3b8; }
 
-    .wa-phone-fields {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid #334155;
+    /* Model selector (provider + model on one row) */
+    .model-row { display: grid; grid-template-columns: 120px 1fr; gap: 0.5rem; }
+    .model-row select {
+      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+      padding: 0.45rem 0.65rem; color: #e2e8f0; font-size: 0.8rem; width: 100%;
     }
-    .wa-phone-field label {
-      display: block;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #64748b;
-      margin-bottom: 0.4rem;
-    }
-    .wa-phone-field input {
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      padding: 0.5rem 0.75rem;
-      color: #e2e8f0;
-      font-size: 0.875rem;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      width: 100%;
-    }
-    .wa-phone-field input:focus {
-      outline: none;
-      border-color: #38bdf8;
-      box-shadow: 0 0 0 2px rgba(56,189,248,0.2);
-    }
-    .wa-phone-field input.modified { border-color: #fbbf24; }
-    .wa-phone-save {
-      margin-top: 0.75rem;
-      display: flex;
-      justify-content: flex-end;
-    }
+    .model-row select:focus { outline: none; border-color: #38bdf8; }
 
-    .wa-disconnect-reason {
-      font-size: 0.75rem;
-      color: #94a3b8;
-      margin-top: 0.25rem;
+    /* Save bar */
+    .save-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: #1e293b; border-top: 1px solid #334155;
+      padding: 0.75rem 2rem; display: flex; justify-content: flex-end; gap: 0.75rem;
     }
-
-    /* Config sections */
-    .section-title {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #64748b;
-      margin-top: 2rem;
-      margin-bottom: 0.75rem;
-      padding-bottom: 0.5rem;
-      border-bottom: 1px solid #1e293b;
-    }
-    .field {
-      display: grid;
-      grid-template-columns: 1fr 1.5fr;
-      gap: 0.75rem;
-      align-items: center;
-      padding: 0.5rem 0;
-      border-bottom: 1px solid #1e293b;
-    }
-    .field label {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: #cbd5e1;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-    }
-    .field input, .field select {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      padding: 0.5rem 0.75rem;
-      color: #e2e8f0;
-      font-size: 0.875rem;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      width: 100%;
-    }
-    .field input:focus, .field select:focus {
-      outline: none;
-      border-color: #38bdf8;
-      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
-    }
-    .field input.modified { border-color: #fbbf24; }
-    .actions {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      background: #1e293b;
-      border-top: 1px solid #334155;
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: flex-end;
-      gap: 1rem;
-    }
-    .actions button {
-      padding: 0.5rem 1.5rem;
-      border-radius: 6px;
-      font-size: 0.875rem;
-      font-weight: 500;
-      cursor: pointer;
-      border: none;
+    .save-bar button {
+      padding: 0.5rem 1.5rem; border-radius: 6px; font-size: 0.8rem;
+      font-weight: 500; cursor: pointer; border: none;
     }
     .btn-save { background: #2563eb; color: white; }
     .btn-save:hover { background: #1d4ed8; }
     .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-reset { background: #334155; color: #e2e8f0; }
     .btn-reset:hover { background: #475569; }
-    .loading { text-align: center; padding: 4rem; color: #64748b; }
-    .field-type {
-      font-size: 0.625rem;
-      color: #475569;
-      text-transform: uppercase;
-    }
+
     .toast {
-      position: fixed;
-      top: 70px; right: 24px;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 500;
-      z-index: 200;
+      position: fixed; top: 70px; right: 24px; padding: 10px 18px;
+      border-radius: 8px; font-size: 0.8rem; font-weight: 500; z-index: 200;
       animation: slideIn 0.3s ease;
     }
     .toast.success { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
     .toast.error { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
-    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes slideIn { from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1} }
+
+    .loading { text-align: center; padding: 4rem; color: #64748b; }
   </style>
 </head>
 <body>
   <header>
     <h1><span>LUNA</span> Oficina</h1>
-    <div style="display:flex;align-items:center;gap:1rem">
-      <span id="build-version" style="font-size:0.7rem;color:#475569;font-family:monospace"></span>
-      <div class="status" id="status">Cargando...</div>
+    <div class="header-right">
+      <span class="build-ver" id="build-ver"></span>
+      <button class="lang-toggle" id="lang-btn" onclick="toggleLang()">EN</button>
+      <span class="status-text" id="status">...</span>
     </div>
   </header>
-  <main id="main">
-    <div class="loading">Cargando...</div>
-  </main>
-  <div class="actions">
-    <button class="btn-reset" onclick="resetChanges()">Descartar</button>
-    <button class="btn-save" id="saveBtn" onclick="saveChanges()" disabled>Guardar cambios</button>
+  <main id="main"><div class="loading">...</div></main>
+  <div class="save-bar">
+    <button class="btn-reset" onclick="resetChanges()" id="btn-reset">Descartar</button>
+    <button class="btn-save" id="btn-save" onclick="saveChanges()" disabled>Guardar</button>
   </div>
 
-  <script>
-    let originalValues = {}
-    let currentValues = {}
-    let schema = {}
-    let waState = { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null }
-    let waPolling = null
+<script>
+// ═══════════════════════════════════════════
+// i18n
+// ═══════════════════════════════════════════
+const i18n = {
+  es: {
+    connected: 'Conectado', saving: 'Guardando...', saved: 'Guardado', errorConnect: 'Error al conectar',
+    errorSave: 'Error al guardar', discarded: 'Cambios descartados', configSaved: 'Configuracion guardada',
+    discard: 'Descartar', save: 'Guardar', loading: 'Cargando...',
+    connectBtn: 'Conectar', disconnectBtn: 'Desconectar',
+    disconnectConfirm: 'Desconectar WhatsApp? Se eliminara la sesion y necesitaras escanear el QR de nuevo.',
+    connectingWa: 'Conectando WhatsApp...',
+    scanLabel: 'Escanea con WhatsApp > Dispositivos vinculados',
+    waStatus: { not_initialized: 'No inicializado', disconnected: 'Desconectado', connecting: 'Conectando...', connected: 'Conectado', qr_ready: 'Escanea el QR' },
+    reason: 'Razon',
+    // Sections
+    sec_whatsapp: 'WhatsApp',
+    sec_whatsapp_info: 'Conexion y estado de WhatsApp via Baileys. Escanea el QR para vincular el dispositivo.',
+    sec_apikeys: 'API Keys',
+    sec_apikeys_info: 'Claves de acceso a los proveedores de IA. Se necesita al menos una para que LUNA funcione.',
+    sec_models: 'Modelos de IA',
+    sec_models_info: 'Selecciona que modelo usar para cada tarea del pipeline. Los modelos disponibles dependen de las API keys configuradas.',
+    sec_llm_limits: 'Limites y Tokens',
+    sec_llm_limits_info: 'Controla cuantos tokens puede usar cada tarea y los timeouts de las llamadas a la API.',
+    sec_llm_cb: 'Circuit Breaker',
+    sec_llm_cb_info: 'Si un proveedor falla muchas veces seguidas, se desactiva temporalmente para evitar errores en cadena.',
+    sec_pipeline: 'Pipeline',
+    sec_pipeline_info: 'Limites del pipeline de conversacion: tools por turno, turnos maximos y tiempo de sesion.',
+    sec_followup: 'Follow-up',
+    sec_followup_info: 'Mensajes de seguimiento automaticos cuando un lead no responde.',
+    sec_db: 'Base de Datos',
+    sec_db_info: 'Conexion a PostgreSQL. Normalmente no necesitas cambiar esto — viene configurado en docker-compose.',
+    sec_redis: 'Redis',
+    sec_redis_info: 'Conexion a Redis para colas y cache. Igual que la DB, normalmente se configura en docker-compose.',
+    sec_modules: 'Modulos Activos',
+    sec_modules_info: 'Activa o desactiva funcionalidades de LUNA. Lo que esta desactivado no consume recursos.',
+    sec_google: 'Google (Gmail, Calendar, Sheets)',
+    sec_google_info: 'Integracion con Google para email, calendario y reportes. Requiere OAuth2.',
+    sec_email: 'Email',
+    sec_email_info: 'Configuracion del canal de email con IMAP/SMTP.',
+    // Field labels
+    f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
+    f_OPENAI_API_KEY: 'OpenAI',
+    f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
+    f_LLM_CLASSIFY: 'Clasificar intencion',
+    f_LLM_RESPOND: 'Generar respuesta',
+    f_LLM_COMPLEX: 'Tareas complejas',
+    f_LLM_TOOLS: 'Ejecutar tools',
+    f_LLM_COMPRESS: 'Comprimir memoria',
+    f_LLM_PROACTIVE: 'Mensajes proactivos',
+    f_LLM_MAX_INPUT_TOKENS: 'Max tokens de entrada',
+    f_LLM_MAX_OUTPUT_TOKENS: 'Max tokens de salida',
+    f_LLM_TEMPERATURE_CLASSIFY: 'Temperatura (clasificar)',
+    f_LLM_TEMPERATURE_RESPOND: 'Temperatura (responder)',
+    f_LLM_TEMPERATURE_COMPLEX: 'Temperatura (complejo)',
+    f_LLM_REQUEST_TIMEOUT_MS: 'Timeout de peticion (ms)',
+    f_LLM_CIRCUIT_BREAKER_FAILURES: 'Fallos para activar',
+    f_LLM_CIRCUIT_BREAKER_WINDOW_MS: 'Ventana de fallos (ms)',
+    f_LLM_CIRCUIT_BREAKER_COOLDOWN_MS: 'Cooldown (ms)',
+    f_PIPELINE_MAX_TOOL_CALLS_PER_TURN: 'Max tool calls por turno',
+    f_PIPELINE_MAX_CONVERSATION_TURNS: 'Max turnos de conversacion',
+    f_PIPELINE_SESSION_TTL_MS: 'TTL de sesion (ms)',
+    f_FOLLOWUP_ENABLED: 'Habilitado',
+    f_FOLLOWUP_DELAY_MINUTES: 'Delay (minutos)',
+    f_FOLLOWUP_MAX_ATTEMPTS: 'Max intentos',
+    f_FOLLOWUP_COLD_AFTER_ATTEMPTS: 'Marcar frio despues de',
+    f_WHATSAPP_PHONE: 'Numero de WhatsApp',
+    f_TWILIO_PHONE: 'Numero de Twilio',
+    f_MODULE_WHATSAPP: 'WhatsApp',
+    f_MODULE_EMAIL: 'Email',
+    f_MODULE_GOOGLE_SHEETS: 'Google Sheets',
+    f_MODULE_GOOGLE_CALENDAR: 'Google Calendar',
+    f_MODULE_BATCH: 'Batch nocturno',
+    f_MODULE_FOLLOWUP: 'Follow-up',
+    f_MODULE_WEB_SEARCH: 'Busqueda web',
+    // Info tooltips
+    i_ANTHROPIC_API_KEY: 'Clave de Anthropic para usar modelos Claude. Obtenla en console.anthropic.com.',
+    i_OPENAI_API_KEY: 'Clave de OpenAI. Actualmente solo se usa como fallback.',
+    i_GOOGLE_AI_API_KEY: 'Clave de Google AI Studio para modelos Gemini.',
+    i_LLM_CLASSIFY: 'Modelo que analiza cada mensaje entrante y decide la intencion del lead. Debe ser rapido y barato.',
+    i_LLM_RESPOND: 'Modelo que genera la respuesta conversacional al lead. Balance entre calidad y velocidad.',
+    i_LLM_COMPLEX: 'Modelo para tareas complejas que requieren mas razonamiento. Se usa poco.',
+    i_LLM_TOOLS: 'Modelo que decide que tools ejecutar y con que parametros.',
+    i_LLM_COMPRESS: 'Modelo que comprime el historial de mensajes para ahorrar tokens.',
+    i_LLM_PROACTIVE: 'Modelo que genera mensajes de follow-up y seguimiento proactivo.',
+    i_TEMPERATURE_CLASSIFY: 'Mas bajo = mas determinista. Para clasificacion, 0.1 funciona bien.',
+    i_TEMPERATURE_RESPOND: 'Mas alto = mas creativo. 0.7 es buen balance para respuestas conversacionales.',
+    i_TEMPERATURE_COMPLEX: 'Balance entre creatividad y precision para tareas complejas.',
+    i_LLM_CB_FAILURES: 'Cuantos errores consecutivos activan el circuit breaker.',
+    i_LLM_CB_WINDOW: 'Ventana de tiempo en la que se cuentan los fallos.',
+    i_LLM_CB_COOLDOWN: 'Cuanto tiempo queda desactivado el proveedor despues de activarse.',
+    i_PIPELINE_TOOLS: 'Limite de herramientas que el agente puede ejecutar en un solo turno.',
+    i_PIPELINE_TURNS: 'Maximo de turnos en una conversacion antes de cerrar sesion.',
+    i_PIPELINE_TTL: 'Tiempo maximo de sesion inactiva antes de expirar (en milisegundos).',
+    i_FOLLOWUP_DELAY: 'Minutos de espera antes de enviar el primer follow-up.',
+    i_FOLLOWUP_MAX: 'Intentos maximos de follow-up antes de detenerse.',
+    i_FOLLOWUP_COLD: 'Despues de estos intentos sin respuesta, el lead se marca como frio.',
+  },
+  en: {
+    connected: 'Connected', saving: 'Saving...', saved: 'Saved', errorConnect: 'Connection error',
+    errorSave: 'Save error', discarded: 'Changes discarded', configSaved: 'Config saved',
+    discard: 'Discard', save: 'Save', loading: 'Loading...',
+    connectBtn: 'Connect', disconnectBtn: 'Disconnect',
+    disconnectConfirm: 'Disconnect WhatsApp? Session will be cleared and you will need to scan QR again.',
+    connectingWa: 'Connecting WhatsApp...',
+    scanLabel: 'Scan with WhatsApp > Linked devices',
+    waStatus: { not_initialized: 'Not initialized', disconnected: 'Disconnected', connecting: 'Connecting...', connected: 'Connected', qr_ready: 'Scan QR' },
+    reason: 'Reason',
+    sec_whatsapp: 'WhatsApp',
+    sec_whatsapp_info: 'WhatsApp connection via Baileys. Scan QR to link your device.',
+    sec_apikeys: 'API Keys',
+    sec_apikeys_info: 'AI provider access keys. At least one is required for LUNA to work.',
+    sec_models: 'AI Models',
+    sec_models_info: 'Select which model to use for each pipeline task. Available models depend on configured API keys.',
+    sec_llm_limits: 'Limits & Tokens',
+    sec_llm_limits_info: 'Control how many tokens each task can use and API call timeouts.',
+    sec_llm_cb: 'Circuit Breaker',
+    sec_llm_cb_info: 'If a provider fails repeatedly, it gets temporarily disabled to prevent cascading errors.',
+    sec_pipeline: 'Pipeline',
+    sec_pipeline_info: 'Conversation pipeline limits: tools per turn, max turns, session TTL.',
+    sec_followup: 'Follow-up',
+    sec_followup_info: 'Automatic follow-up messages when a lead stops responding.',
+    sec_db: 'Database',
+    sec_db_info: 'PostgreSQL connection. Usually configured in docker-compose — no need to change.',
+    sec_redis: 'Redis',
+    sec_redis_info: 'Redis connection for queues and cache. Like DB, usually set in docker-compose.',
+    sec_modules: 'Active Modules',
+    sec_modules_info: 'Enable or disable LUNA features. Disabled modules use no resources.',
+    sec_google: 'Google (Gmail, Calendar, Sheets)',
+    sec_google_info: 'Google integration for email, calendar, and reporting. Requires OAuth2.',
+    sec_email: 'Email',
+    sec_email_info: 'Email channel config with IMAP/SMTP.',
+    f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
+    f_OPENAI_API_KEY: 'OpenAI',
+    f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
+    f_LLM_CLASSIFY: 'Classify intent',
+    f_LLM_RESPOND: 'Generate response',
+    f_LLM_COMPLEX: 'Complex tasks',
+    f_LLM_TOOLS: 'Execute tools',
+    f_LLM_COMPRESS: 'Compress memory',
+    f_LLM_PROACTIVE: 'Proactive messages',
+    f_LLM_MAX_INPUT_TOKENS: 'Max input tokens',
+    f_LLM_MAX_OUTPUT_TOKENS: 'Max output tokens',
+    f_LLM_TEMPERATURE_CLASSIFY: 'Temperature (classify)',
+    f_LLM_TEMPERATURE_RESPOND: 'Temperature (respond)',
+    f_LLM_TEMPERATURE_COMPLEX: 'Temperature (complex)',
+    f_LLM_REQUEST_TIMEOUT_MS: 'Request timeout (ms)',
+    f_LLM_CIRCUIT_BREAKER_FAILURES: 'Failures to trigger',
+    f_LLM_CIRCUIT_BREAKER_WINDOW_MS: 'Failure window (ms)',
+    f_LLM_CIRCUIT_BREAKER_COOLDOWN_MS: 'Cooldown (ms)',
+    f_PIPELINE_MAX_TOOL_CALLS_PER_TURN: 'Max tool calls per turn',
+    f_PIPELINE_MAX_CONVERSATION_TURNS: 'Max conversation turns',
+    f_PIPELINE_SESSION_TTL_MS: 'Session TTL (ms)',
+    f_FOLLOWUP_ENABLED: 'Enabled',
+    f_FOLLOWUP_DELAY_MINUTES: 'Delay (minutes)',
+    f_FOLLOWUP_MAX_ATTEMPTS: 'Max attempts',
+    f_FOLLOWUP_COLD_AFTER_ATTEMPTS: 'Mark cold after',
+    f_WHATSAPP_PHONE: 'WhatsApp number',
+    f_TWILIO_PHONE: 'Twilio number',
+    f_MODULE_WHATSAPP: 'WhatsApp',
+    f_MODULE_EMAIL: 'Email',
+    f_MODULE_GOOGLE_SHEETS: 'Google Sheets',
+    f_MODULE_GOOGLE_CALENDAR: 'Google Calendar',
+    f_MODULE_BATCH: 'Nightly batch',
+    f_MODULE_FOLLOWUP: 'Follow-up',
+    f_MODULE_WEB_SEARCH: 'Web search',
+    i_ANTHROPIC_API_KEY: 'Anthropic key for Claude models. Get it at console.anthropic.com.',
+    i_OPENAI_API_KEY: 'OpenAI key. Currently only used as fallback.',
+    i_GOOGLE_AI_API_KEY: 'Google AI Studio key for Gemini models.',
+    i_LLM_CLASSIFY: 'Model that analyzes each incoming message to determine lead intent. Should be fast and cheap.',
+    i_LLM_RESPOND: 'Model that generates conversational replies to leads. Balance of quality and speed.',
+    i_LLM_COMPLEX: 'Model for complex tasks requiring more reasoning. Used sparingly.',
+    i_LLM_TOOLS: 'Model that decides which tools to execute and with what parameters.',
+    i_LLM_COMPRESS: 'Model that compresses message history to save tokens.',
+    i_LLM_PROACTIVE: 'Model that generates follow-up and proactive outreach messages.',
+    i_TEMPERATURE_CLASSIFY: 'Lower = more deterministic. 0.1 works well for classification.',
+    i_TEMPERATURE_RESPOND: 'Higher = more creative. 0.7 is a good balance for conversational replies.',
+    i_TEMPERATURE_COMPLEX: 'Balance between creativity and precision for complex tasks.',
+    i_LLM_CB_FAILURES: 'How many consecutive errors trigger the circuit breaker.',
+    i_LLM_CB_WINDOW: 'Time window in which failures are counted.',
+    i_LLM_CB_COOLDOWN: 'How long the provider stays disabled after triggering.',
+    i_PIPELINE_TOOLS: 'Limit of tools the agent can execute in a single turn.',
+    i_PIPELINE_TURNS: 'Maximum turns in a conversation before closing session.',
+    i_PIPELINE_TTL: 'Max inactive session time before expiry (milliseconds).',
+    i_FOLLOWUP_DELAY: 'Minutes to wait before sending the first follow-up.',
+    i_FOLLOWUP_MAX: 'Maximum follow-up attempts before stopping.',
+    i_FOLLOWUP_COLD: 'After this many unanswered attempts, lead is marked cold.',
+  }
+}
+let lang = localStorage.getItem('luna-lang') || 'es'
+function t(key) { return i18n[lang]?.[key] ?? i18n.es[key] ?? key }
+function toggleLang() {
+  lang = lang === 'es' ? 'en' : 'es'
+  localStorage.setItem('luna-lang', lang)
+  document.getElementById('lang-btn').textContent = lang === 'es' ? 'EN' : 'ES'
+  render()
+  updateSaveBtn()
+}
 
-    // --- Init ---
-    async function init() {
-      try {
-        const [configRes, schemaRes, versionRes] = await Promise.all([
-          fetch('/oficina/api/config'),
-          fetch('/oficina/api/schema'),
-          fetch('/oficina/api/version'),
-        ])
-        const versionData = await versionRes.json()
-        const v = versionData.version ?? 'dev'
-        document.getElementById('build-version').textContent = 'v' + (v.length > 7 ? v.slice(0, 7) : v)
-        const configData = await configRes.json()
-        const schemaData = await schemaRes.json()
+// ═══════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════
+let originalValues = {}, currentValues = {}, allModels = { anthropic: [], gemini: [] }
+let waState = { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null }
+let waPolling = null
 
-        originalValues = { ...configData.values }
-        currentValues = { ...configData.values }
-        schema = schemaData.schema || {}
+// ═══════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════
+async function init() {
+  document.getElementById('lang-btn').textContent = lang === 'es' ? 'EN' : 'ES'
+  try {
+    const [configRes, versionRes, modelsRes] = await Promise.all([
+      fetch('/oficina/api/config'),
+      fetch('/oficina/api/version'),
+      fetch('/oficina/api/models'),
+    ])
+    const configData = await configRes.json()
+    const versionData = await versionRes.json()
+    const modelsData = await modelsRes.json()
 
-        await pollWhatsApp()
-        render()
-        setStatus('Conectado', '')
-        startWaPolling()
-      } catch (err) {
-        setStatus('Error al conectar', 'error')
-        document.getElementById('main').innerHTML =
-          '<div class="loading">Error al cargar. Verifica que el servidor esta corriendo.</div>'
-      }
-    }
+    const v = versionData.version ?? 'dev'
+    document.getElementById('build-ver').textContent = 'v' + (v.length > 7 ? v.slice(0, 7) : v)
 
-    // --- WhatsApp polling ---
-    async function pollWhatsApp() {
-      try {
-        const res = await fetch('/oficina/api/whatsapp/status')
-        const newState = await res.json()
-        const changed = newState.status !== waState.status || newState.qrDataUrl !== waState.qrDataUrl
-        waState = newState
-        if (changed) renderWaPanel()
-      } catch {}
-    }
+    originalValues = { ...configData.values }
+    currentValues = { ...configData.values }
+    allModels = modelsData.models || { anthropic: [], gemini: [] }
 
-    function startWaPolling() {
-      if (waPolling) clearInterval(waPolling)
-      waPolling = setInterval(pollWhatsApp, 3000)
-    }
+    await pollWa()
+    render()
+    setStatus(t('connected'), '')
+    startWaPolling()
+  } catch (err) {
+    setStatus(t('errorConnect'), 'error')
+    document.getElementById('main').innerHTML = '<div class="loading">' + t('errorConnect') + '</div>'
+  }
+}
 
-    // --- WhatsApp actions ---
-    async function waConnect() {
-      try {
-        showToast('Conectando WhatsApp...', 'success')
-        await fetch('/oficina/api/whatsapp/connect', { method: 'POST' })
-        // Poll faster while connecting
-        setTimeout(pollWhatsApp, 500)
-        setTimeout(pollWhatsApp, 1500)
-        setTimeout(pollWhatsApp, 3000)
-      } catch (err) {
-        showToast('Error al conectar: ' + err.message, 'error')
-      }
-    }
+// ═══════════════════════════════════════════
+// WhatsApp
+// ═══════════════════════════════════════════
+async function pollWa() {
+  try {
+    const res = await fetch('/oficina/api/whatsapp/status')
+    const ns = await res.json()
+    const changed = ns.status !== waState.status || ns.qrDataUrl !== waState.qrDataUrl
+    waState = ns
+    if (changed) renderWa()
+  } catch {}
+}
+function startWaPolling() { waPolling = setInterval(pollWa, 3000) }
 
-    async function waDisconnect() {
-      if (!confirm('Desconectar WhatsApp? Se eliminara la sesion y necesitaras escanear el QR de nuevo.')) return
-      try {
-        await fetch('/oficina/api/whatsapp/disconnect', { method: 'POST' })
-        await pollWhatsApp()
-        showToast('WhatsApp desconectado', 'success')
-      } catch (err) {
-        showToast('Error al desconectar: ' + err.message, 'error')
-      }
-    }
+async function waConnect() {
+  showToast(t('connectingWa'), 'success')
+  await fetch('/oficina/api/whatsapp/connect', { method: 'POST' })
+  setTimeout(pollWa, 500); setTimeout(pollWa, 2000); setTimeout(pollWa, 4000)
+}
+async function waDisconnect() {
+  if (!confirm(t('disconnectConfirm'))) return
+  await fetch('/oficina/api/whatsapp/disconnect', { method: 'POST' })
+  await pollWa()
+  showToast('WhatsApp disconnected', 'success')
+}
 
-    // --- Render ---
-    function render() {
-      const main = document.getElementById('main')
-      let html = ''
+// ═══════════════════════════════════════════
+// Render
+// ═══════════════════════════════════════════
+function render() {
+  const m = document.getElementById('main')
+  document.getElementById('btn-reset').textContent = t('discard')
+  document.getElementById('btn-save').textContent = t('save')
+  let h = ''
 
-      // WhatsApp panel
-      html += '<div id="wa-panel"></div>'
+  // 1. WhatsApp panel
+  h += `<div class="panel" id="wa-panel-wrap"><div class="panel-header" onclick="togglePanel(this)">
+    <span class="panel-title">${t('sec_whatsapp')} <span class="panel-badge badge-active">${t('waStatus')[waState.status] || waState.status}</span></span>
+    <span class="panel-chevron">&#9660;</span>
+  </div><div class="panel-body"><div class="panel-info">${t('sec_whatsapp_info')}</div><div id="wa-inner"></div></div></div>`
 
-      // Config sections
-      const sections = {}
-      for (const [key, info] of Object.entries(schema)) {
-        const section = info.description || 'General'
-        if (!sections[section]) sections[section] = []
-        sections[section].push(key)
-      }
-      for (const key of Object.keys(currentValues)) {
-        if (!schema[key]) {
-          const section = 'Otros'
-          if (!sections[section]) sections[section] = []
-          sections[section].push(key)
-        }
-      }
+  // 2. API Keys
+  h += panel('apikeys', [
+    secretField('ANTHROPIC_API_KEY', 'f_ANTHROPIC_API_KEY', 'i_ANTHROPIC_API_KEY'),
+    secretField('OPENAI_API_KEY', 'f_OPENAI_API_KEY', 'i_OPENAI_API_KEY'),
+    secretField('GOOGLE_AI_API_KEY', 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY'),
+  ])
 
-      for (const [section, keys] of Object.entries(sections)) {
-        html += `<div class="section-title">${section}</div>`
-        for (const key of keys) {
-          const value = currentValues[key] ?? schema[key]?.default ?? ''
-          const type = schema[key]?.type ?? 'string'
-          const isSecret = key.includes('KEY') || key.includes('SECRET') || key.includes('PASSWORD') || key.includes('TOKEN')
-          let input
-          if (type === 'boolean') {
-            input = `<select data-key="${key}" onchange="onChange(this)">
-              <option value="true" ${value === 'true' ? 'selected' : ''}>true</option>
-              <option value="false" ${value !== 'true' ? 'selected' : ''}>false</option>
-            </select>`
-          } else {
-            const inputType = isSecret ? 'password' : 'text'
-            input = `<input type="${inputType}" data-key="${key}" value="${escapeAttr(value)}" oninput="onChange(this)">`
-          }
-          html += `<div class="field">
-            <label>${key} <span class="field-type">${type}</span></label>
-            ${input}
-          </div>`
-        }
-      }
+  // 3. Models (dropdowns)
+  const modelTasks = [
+    ['LLM_CLASSIFY', 'f_LLM_CLASSIFY', 'i_LLM_CLASSIFY'],
+    ['LLM_RESPOND', 'f_LLM_RESPOND', 'i_LLM_RESPOND'],
+    ['LLM_COMPLEX', 'f_LLM_COMPLEX', 'i_LLM_COMPLEX'],
+    ['LLM_TOOLS', 'f_LLM_TOOLS', 'i_LLM_TOOLS'],
+    ['LLM_COMPRESS', 'f_LLM_COMPRESS', 'i_LLM_COMPRESS'],
+    ['LLM_PROACTIVE', 'f_LLM_PROACTIVE', 'i_LLM_PROACTIVE'],
+  ]
+  let modelFields = ''
+  for (const [prefix, labelKey, infoKey] of modelTasks) {
+    modelFields += modelDropdown(prefix, labelKey, infoKey)
+  }
+  h += panelRaw('models', modelFields)
 
-      main.innerHTML = html
-      renderWaPanel()
-    }
+  // 4. Limits & Tokens
+  h += panel('llm_limits', [
+    numField('LLM_MAX_INPUT_TOKENS', 'f_LLM_MAX_INPUT_TOKENS'),
+    numField('LLM_MAX_OUTPUT_TOKENS', 'f_LLM_MAX_OUTPUT_TOKENS'),
+    numField('LLM_TEMPERATURE_CLASSIFY', 'f_LLM_TEMPERATURE_CLASSIFY', 'i_TEMPERATURE_CLASSIFY'),
+    numField('LLM_TEMPERATURE_RESPOND', 'f_LLM_TEMPERATURE_RESPOND', 'i_TEMPERATURE_RESPOND'),
+    numField('LLM_TEMPERATURE_COMPLEX', 'f_LLM_TEMPERATURE_COMPLEX', 'i_TEMPERATURE_COMPLEX'),
+    numField('LLM_REQUEST_TIMEOUT_MS', 'f_LLM_REQUEST_TIMEOUT_MS'),
+  ])
 
-    function renderWaPanel() {
-      const panel = document.getElementById('wa-panel')
-      if (!panel) return
+  // 5. Circuit Breaker
+  h += panel('llm_cb', [
+    numField('LLM_CIRCUIT_BREAKER_FAILURES', 'f_LLM_CIRCUIT_BREAKER_FAILURES', 'i_LLM_CB_FAILURES'),
+    numField('LLM_CIRCUIT_BREAKER_WINDOW_MS', 'f_LLM_CIRCUIT_BREAKER_WINDOW_MS', 'i_LLM_CB_WINDOW'),
+    numField('LLM_CIRCUIT_BREAKER_COOLDOWN_MS', 'f_LLM_CIRCUIT_BREAKER_COOLDOWN_MS', 'i_LLM_CB_COOLDOWN'),
+  ])
 
-      const s = waState
-      const statusLabels = {
-        not_initialized: 'No inicializado',
-        disconnected: 'Desconectado',
-        connecting: 'Conectando...',
-        connected: 'Conectado',
-        qr_ready: 'Escanea el QR',
-      }
+  // 6. Pipeline
+  h += panel('pipeline', [
+    numField('PIPELINE_MAX_TOOL_CALLS_PER_TURN', 'f_PIPELINE_MAX_TOOL_CALLS_PER_TURN', 'i_PIPELINE_TOOLS'),
+    numField('PIPELINE_MAX_CONVERSATION_TURNS', 'f_PIPELINE_MAX_CONVERSATION_TURNS', 'i_PIPELINE_TURNS'),
+    numField('PIPELINE_SESSION_TTL_MS', 'f_PIPELINE_SESSION_TTL_MS', 'i_PIPELINE_TTL'),
+  ])
 
-      const isConnected = s.status === 'connected'
-      const showQr = s.status === 'qr_ready' && s.qrDataUrl
-      const canConnect = s.status === 'disconnected' || s.status === 'not_initialized'
-      const canDisconnect = s.status === 'connected' || s.status === 'qr_ready' || s.status === 'connecting'
+  // 7. Follow-up
+  h += panel('followup', [
+    boolField('FOLLOWUP_ENABLED', 'f_FOLLOWUP_ENABLED'),
+    numField('FOLLOWUP_DELAY_MINUTES', 'f_FOLLOWUP_DELAY_MINUTES', 'i_FOLLOWUP_DELAY'),
+    numField('FOLLOWUP_MAX_ATTEMPTS', 'f_FOLLOWUP_MAX_ATTEMPTS', 'i_FOLLOWUP_MAX'),
+    numField('FOLLOWUP_COLD_AFTER_ATTEMPTS', 'f_FOLLOWUP_COLD_AFTER_ATTEMPTS', 'i_FOLLOWUP_COLD'),
+  ])
 
-      const waPhone = currentValues['WHATSAPP_PHONE_NUMBER'] ?? ''
-      const twilioPhone = currentValues['TWILIO_PHONE_NUMBER'] ?? ''
+  // 8. Modules
+  h += panel('modules', [
+    boolField('MODULE_WHATSAPP', 'f_MODULE_WHATSAPP'),
+    boolField('MODULE_EMAIL', 'f_MODULE_EMAIL'),
+    boolField('MODULE_GOOGLE_SHEETS', 'f_MODULE_GOOGLE_SHEETS'),
+    boolField('MODULE_GOOGLE_CALENDAR', 'f_MODULE_GOOGLE_CALENDAR'),
+    boolField('MODULE_BATCH', 'f_MODULE_BATCH'),
+    boolField('MODULE_FOLLOWUP', 'f_MODULE_FOLLOWUP'),
+    boolField('MODULE_WEB_SEARCH', 'f_MODULE_WEB_SEARCH'),
+  ])
 
-      panel.innerHTML = `
-        <div class="wa-panel">
-          <h2>WhatsApp</h2>
-          <div class="wa-status-row">
-            <span class="wa-status-badge ${s.status}">
-              <span class="wa-status-dot"></span>
-              ${statusLabels[s.status] || s.status}
-            </span>
-            ${s.lastDisconnectReason ? `<span class="wa-disconnect-reason">Razon: ${s.lastDisconnectReason}</span>` : ''}
-          </div>
-          <div class="wa-actions">
-            <button class="wa-btn wa-btn-connect" onclick="waConnect()" ${canConnect ? '' : 'disabled'}>Conectar</button>
-            <button class="wa-btn wa-btn-disconnect" onclick="waDisconnect()" ${canDisconnect ? '' : 'disabled'}>Desconectar</button>
-          </div>
-          <div id="wa-qr-box" class="wa-qr-container ${showQr ? '' : 'wa-qr-hidden'}">
-            ${showQr ? `<img src="${s.qrDataUrl}" alt="QR Code" />` : ''}
-            <div class="wa-qr-label">Escanea con WhatsApp &gt; Dispositivos vinculados</div>
-          </div>
-          <div class="wa-phone-fields">
-            <div class="wa-phone-field">
-              <label>Numero de WhatsApp</label>
-              <input type="text" id="wa-phone" placeholder="+521234567890" value="${escapeAttr(waPhone)}"
-                oninput="onPhoneChange('WHATSAPP_PHONE_NUMBER', this)">
-            </div>
-            <div class="wa-phone-field">
-              <label>Numero de Twilio</label>
-              <input type="text" id="twilio-phone" placeholder="+15551234567" value="${escapeAttr(twilioPhone)}"
-                oninput="onPhoneChange('TWILIO_PHONE_NUMBER', this)">
-            </div>
-          </div>
-        </div>
-      `
+  // 9. Google (coming soon)
+  h += panelSoon('google')
 
-    }
+  // 10. Email (coming soon)
+  h += panelSoon('email')
 
-    function onPhoneChange(key, el) {
-      currentValues[key] = el.value
-      if (el.value !== (originalValues[key] ?? '')) {
-        el.classList.add('modified')
-      } else {
-        el.classList.remove('modified')
-      }
-      updateSaveButton()
-    }
+  // 11. DB (collapsed)
+  h += panelCollapsed('db', [
+    textField('DB_HOST'), textField('DB_PORT'), textField('DB_NAME'),
+    textField('DB_USER'), secretField('DB_PASSWORD', null, null),
+  ])
 
-    function escapeAttr(str) {
-      return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
-    }
+  // 12. Redis (collapsed)
+  h += panelCollapsed('redis', [
+    textField('REDIS_HOST'), textField('REDIS_PORT'), secretField('REDIS_PASSWORD', null, null),
+  ])
 
-    function onChange(el) {
-      const key = el.dataset.key
-      currentValues[key] = el.value
-      if (el.value !== (originalValues[key] ?? '')) {
-        el.classList.add('modified')
-      } else {
-        el.classList.remove('modified')
-      }
-      updateSaveButton()
-    }
+  m.innerHTML = h
+  renderWa()
+}
 
-    function updateSaveButton() {
-      const hasChanges = Object.keys(currentValues).some(
-        k => currentValues[k] !== (originalValues[k] ?? '')
-      )
-      document.getElementById('saveBtn').disabled = !hasChanges
-    }
+// ═══════════════════════════════════════════
+// Panel builders
+// ═══════════════════════════════════════════
+function panel(secKey, fieldsHtml) {
+  return `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
+    <span class="panel-title">${t('sec_'+secKey)}</span>
+    <span class="panel-chevron">&#9660;</span>
+  </div><div class="panel-body"><div class="panel-info">${t('sec_'+secKey+'_info')}</div>${fieldsHtml.join('')}</div></div>`
+}
+function panelRaw(secKey, innerHtml) {
+  return `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
+    <span class="panel-title">${t('sec_'+secKey)}</span>
+    <span class="panel-chevron">&#9660;</span>
+  </div><div class="panel-body"><div class="panel-info">${t('sec_'+secKey+'_info')}</div>${innerHtml}</div></div>`
+}
+function panelSoon(secKey) {
+  return `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+    <span class="panel-title">${t('sec_'+secKey)} <span class="panel-badge badge-soon">Proximamente</span></span>
+    <span class="panel-chevron">&#9660;</span>
+  </div><div class="panel-body"><div class="panel-info">${t('sec_'+secKey+'_info')}</div></div></div>`
+}
+function panelCollapsed(secKey, fieldsHtml) {
+  return `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+    <span class="panel-title">${t('sec_'+secKey)}</span>
+    <span class="panel-chevron">&#9660;</span>
+  </div><div class="panel-body"><div class="panel-info">${t('sec_'+secKey+'_info')}</div>${fieldsHtml.join('')}</div></div>`
+}
 
-    function resetChanges() {
-      currentValues = { ...originalValues }
-      render()
-      updateSaveButton()
-      setStatus('Cambios descartados', '')
-    }
+function togglePanel(header) { header.closest('.panel').classList.toggle('collapsed') }
 
-    async function saveChanges() {
-      const changes = {}
-      for (const [key, value] of Object.entries(currentValues)) {
-        if (value !== (originalValues[key] ?? '')) {
-          changes[key] = value
-        }
-      }
-      if (Object.keys(changes).length === 0) return
+// ═══════════════════════════════════════════
+// Field builders
+// ═══════════════════════════════════════════
+function textField(key, labelKey, infoKey) {
+  const label = labelKey ? t(labelKey) : key
+  const val = esc(currentValues[key] ?? '')
+  const mod = currentValues[key] !== (originalValues[key] ?? '') ? ' modified' : ''
+  let info = infoKey ? infoTooltip(key, infoKey) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${infoKey ? infoBtn(key) : ''}</div>
+    <input type="text" data-key="${key}" value="${val}" oninput="onChange(this)" class="${mod}"></div>${info}`
+}
+function secretField(key, labelKey, infoKey) {
+  const label = labelKey ? t(labelKey) : key
+  const val = esc(currentValues[key] ?? '')
+  const mod = currentValues[key] !== (originalValues[key] ?? '') ? ' modified' : ''
+  let info = infoKey ? infoTooltip(key, infoKey) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${infoKey ? infoBtn(key) : ''}</div>
+    <input type="password" data-key="${key}" value="${val}" oninput="onChange(this)" class="${mod}"></div>${info}`
+}
+function numField(key, labelKey, infoKey) {
+  const label = labelKey ? t(labelKey) : key
+  const val = esc(currentValues[key] ?? '')
+  const mod = currentValues[key] !== (originalValues[key] ?? '') ? ' modified' : ''
+  let info = infoKey ? infoTooltip(key, infoKey) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${infoKey ? infoBtn(key) : ''}</div>
+    <input type="text" data-key="${key}" value="${val}" oninput="onChange(this)" class="${mod}"></div>${info}`
+}
+function boolField(key, labelKey) {
+  const label = labelKey ? t(labelKey) : key
+  const val = currentValues[key] ?? 'false'
+  const mod = currentValues[key] !== (originalValues[key] ?? '') ? ' modified' : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span></div>
+    <select data-key="${key}" onchange="onChange(this)" class="${mod}">
+      <option value="true" ${val==='true'?'selected':''}>true</option>
+      <option value="false" ${val!=='true'?'selected':''}>false</option>
+    </select></div>`
+}
 
-      try {
-        setStatus('Guardando...', '')
-        const res = await fetch('/oficina/api/config', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(changes),
-        })
-        const data = await res.json()
-        if (data.ok) {
-          originalValues = { ...currentValues }
-          render()
-          updateSaveButton()
-          setStatus('Guardado', 'saved')
-          showToast('Configuracion guardada', 'success')
-        } else {
-          setStatus('Error al guardar', 'error')
-        }
-      } catch (err) {
-        setStatus('Error de conexion', 'error')
-      }
-    }
+function modelDropdown(prefix, labelKey, infoKey) {
+  const providerKey = prefix + '_PROVIDER'
+  const modelKey = prefix + '_MODEL'
+  const curProvider = currentValues[providerKey] ?? 'anthropic'
+  const curModel = currentValues[modelKey] ?? ''
+  const label = t(labelKey)
+  const providers = ['anthropic', 'google']
+  const models = allModels[curProvider === 'google' ? 'gemini' : curProvider] || []
 
-    function setStatus(text, cls) {
-      const el = document.getElementById('status')
-      el.textContent = text
-      el.className = 'status ' + (cls || '')
-    }
+  let providerOpts = providers.map(p => `<option value="${p}" ${p===curProvider?'selected':''}>${p}</option>`).join('')
+  let modelOpts = models.map(m => `<option value="${m}" ${m===curModel?'selected':''}>${m}</option>`).join('')
+  // Add current model if not in list
+  if (curModel && !models.includes(curModel)) {
+    modelOpts = `<option value="${curModel}" selected>${curModel}</option>` + modelOpts
+  }
 
-    function showToast(msg, type) {
-      const old = document.querySelector('.toast')
-      if (old) old.remove()
-      const t = document.createElement('div')
-      t.className = 'toast ' + type
-      t.textContent = msg
-      document.body.appendChild(t)
-      setTimeout(() => t.remove(), 3500)
-    }
+  return `<div class="field">
+    <div class="field-left"><span class="field-label">${label}</span>${infoKey ? infoBtn(prefix) : ''}</div>
+    <div class="model-row">
+      <select data-key="${providerKey}" onchange="onProviderChange('${prefix}', this)">${providerOpts}</select>
+      <select data-key="${modelKey}" onchange="onChange(this)">${modelOpts}</select>
+    </div>
+  </div>${infoKey ? infoTooltip(prefix, infoKey) : ''}`
+}
 
-    init()
-  </script>
+function infoBtn(id) {
+  return ` <button class="info-btn" onclick="event.stopPropagation();toggleInfo('info-${id}')">i</button>`
+}
+function infoTooltip(id, key) {
+  return `<div class="info-tooltip" id="info-${id}">${t(key)}</div>`
+}
+function toggleInfo(id) {
+  const el = document.getElementById(id)
+  if (el) el.classList.toggle('visible')
+}
+
+function onProviderChange(prefix, el) {
+  currentValues[prefix + '_PROVIDER'] = el.value
+  // Re-render to update model list
+  render()
+  updateSaveBtn()
+}
+
+// ═══════════════════════════════════════════
+// WhatsApp render
+// ═══════════════════════════════════════════
+function renderWa() {
+  const inner = document.getElementById('wa-inner')
+  if (!inner) return
+  const s = waState
+  const showQr = s.status === 'qr_ready' && s.qrDataUrl
+  const canConnect = s.status === 'disconnected' || s.status === 'not_initialized'
+  const canDisconnect = s.status === 'connected' || s.status === 'qr_ready' || s.status === 'connecting'
+
+  const waPhone = currentValues['WHATSAPP_PHONE_NUMBER'] ?? ''
+  const twilioPhone = currentValues['TWILIO_PHONE_NUMBER'] ?? ''
+
+  inner.innerHTML = `
+    <div class="wa-status-row">
+      <span class="wa-badge ${s.status}"><span class="wa-dot"></span>${t('waStatus')[s.status] || s.status}</span>
+      ${s.lastDisconnectReason ? `<span class="wa-reason">${t('reason')}: ${s.lastDisconnectReason}</span>` : ''}
+    </div>
+    <div class="wa-actions">
+      <button class="wa-btn wa-btn-connect" onclick="waConnect()" ${canConnect?'':'disabled'}>${t('connectBtn')}</button>
+      <button class="wa-btn wa-btn-disconnect" onclick="waDisconnect()" ${canDisconnect?'':'disabled'}>${t('disconnectBtn')}</button>
+    </div>
+    <div class="wa-qr-box ${showQr?'':'wa-qr-hidden'}">
+      ${showQr ? `<img src="${s.qrDataUrl}" alt="QR" />` : ''}
+      <div class="wa-qr-label">${t('scanLabel')}</div>
+    </div>
+    <div class="wa-phones">
+      <div><label>${t('f_WHATSAPP_PHONE')}</label>
+        <input type="text" value="${esc(waPhone)}" oninput="onPhoneChange('WHATSAPP_PHONE_NUMBER',this)" class="${waPhone!==(originalValues['WHATSAPP_PHONE_NUMBER']??'')?'modified':''}"></div>
+      <div><label>${t('f_TWILIO_PHONE')}</label>
+        <input type="text" value="${esc(twilioPhone)}" oninput="onPhoneChange('TWILIO_PHONE_NUMBER',this)" class="${twilioPhone!==(originalValues['TWILIO_PHONE_NUMBER']??'')?'modified':''}"></div>
+    </div>`
+}
+
+// ═══════════════════════════════════════════
+// Handlers
+// ═══════════════════════════════════════════
+function onChange(el) {
+  currentValues[el.dataset.key] = el.value
+  el.classList.toggle('modified', el.value !== (originalValues[el.dataset.key] ?? ''))
+  updateSaveBtn()
+}
+function onPhoneChange(key, el) {
+  currentValues[key] = el.value
+  el.classList.toggle('modified', el.value !== (originalValues[key] ?? ''))
+  updateSaveBtn()
+}
+function updateSaveBtn() {
+  const has = Object.keys(currentValues).some(k => currentValues[k] !== (originalValues[k] ?? ''))
+  document.getElementById('btn-save').disabled = !has
+}
+function resetChanges() {
+  currentValues = { ...originalValues }
+  render(); updateSaveBtn()
+  setStatus(t('discarded'), '')
+}
+async function saveChanges() {
+  const changes = {}
+  for (const [k,v] of Object.entries(currentValues)) {
+    if (v !== (originalValues[k] ?? '')) changes[k] = v
+  }
+  if (!Object.keys(changes).length) return
+  try {
+    setStatus(t('saving'), '')
+    const res = await fetch('/oficina/api/config', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(changes) })
+    const data = await res.json()
+    if (data.ok) {
+      originalValues = { ...currentValues }; render(); updateSaveBtn()
+      setStatus(t('saved'), 'saved'); showToast(t('configSaved'), 'success')
+    } else { setStatus(t('errorSave'), 'error') }
+  } catch { setStatus(t('errorConnect'), 'error') }
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
+function setStatus(text, cls) { const el=document.getElementById('status'); el.textContent=text; el.className='status-text '+(cls||'') }
+function showToast(msg, type) {
+  const old=document.querySelector('.toast'); if(old) old.remove()
+  const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg
+  document.body.appendChild(t); setTimeout(()=>t.remove(), 3500)
+}
+
+init()
+</script>
 </body>
 </html>

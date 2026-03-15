@@ -5,6 +5,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type * as http from 'node:http'
 import QRCode from 'qrcode'
+import { config } from '../config.js'
 import type { BaileysAdapter } from '../channels/whatsapp/baileys-adapter.js'
 
 const logger = {
@@ -179,6 +180,13 @@ export async function handleOficinaRequest(req: http.IncomingMessage, res: http.
       logger.error('Failed to update config', err)
       jsonResponse(res, 400, { error: 'Invalid request body' })
     }
+    return true
+  }
+
+  // GET /oficina/api/models → return available LLM models from instance config
+  if (localUrl === '/api/models' && method === 'GET') {
+    const available = config.instanceConfig.llm.availableModels
+    jsonResponse(res, 200, { models: available })
     return true
   }
 
