@@ -56,7 +56,6 @@ export class BaileysAdapter implements ChannelAdapter {
     this.socket = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: config.instanceConfig.whatsapp.baileys.printQRInTerminal,
       logger: pino({ level: 'silent' }) as never,
     })
 
