@@ -1,0 +1,273 @@
+// LUNA — Model scanner logic
+// Escanea APIs de providers, detecta modelos deprecados, auto-reemplaza.
+
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
+
+const logger = pino({ name: 'model-scanner' })
+
+// ═══════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════
+
+export interface ScannedModel {
+  id: string
+  displayName: string
+  provider: 'anthropic' | 'google'
+  family: string
+  createdAt: string
+}
+
+export interface ScanResult {
+  anthropic: ScannedModel[]
+  google: ScannedModel[]
+  lastScanAt: string
+  replacements: Replacement[]
+}
+
+interface Replacement {
+  configKey: string
+  oldModel: string
+  newModel: string
+  reason: string
+}
+
+// ═══════════════════════════════════════════
+// Family detection
+// ═══════════════════════════════════════════
+
+const ANTHROPIC_FAMILIES = ['haiku', 'sonnet', 'opus'] as const
+const GOOGLE_FAMILIES = ['flash', 'pro'] as const
+
+function detectFamily(modelId: string): string {
+  const lower = modelId.toLowerCase()
+  for (const f of [...ANTHROPIC_FAMILIES, ...GOOGLE_FAMILIES]) {
+    if (lower.includes(f)) return f
+  }
+  return 'unknown'
+}
+
+// ═══════════════════════════════════════════
+// API calls
+// ═══════════════════════════════════════════
+
+async function fetchAnthropicModels(apiKey: string): Promise<ScannedModel[]> {
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+    })
+    if (!res.ok) {
+      logger.warn({ status: res.status }, 'Failed to fetch Anthropic models')
+      return []
+    }
+    const data = await res.json() as { data: Array<{ id: string; display_name: string; created_at: string }> }
+    return data.data.map(m => ({
+      id: m.id,
+      displayName: m.display_name,
+      provider: 'anthropic' as const,
+      family: detectFamily(m.id),
+      createdAt: m.created_at,
+    }))
+  } catch (err) {
+    logger.error({ err }, 'Error fetching Anthropic models')
+    return []
+  }
+}
+
+async function fetchGoogleModels(apiKey: string): Promise<ScannedModel[]> {
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
+    if (!res.ok) {
+      logger.warn({ status: res.status }, 'Failed to fetch Google models')
+      return []
+    }
+    const data = await res.json() as { models: Array<{ name: string; displayName: string }> }
+    return (data.models || [])
+      .filter(m => m.name.startsWith('models/gemini'))
+      .map(m => {
+        const id = m.name.replace('models/', '')
+        return {
+          id,
+          displayName: m.displayName,
+          provider: 'google' as const,
+          family: detectFamily(id),
+          createdAt: '',
+        }
+      })
+  } catch (err) {
+    logger.error({ err }, 'Error fetching Google models')
+    return []
+  }
+}
+
+// ═══════════════════════════════════════════
+// Replacement logic
+// ═══════════════════════════════════════════
+
+function findReplacement(missingId: string, available: ScannedModel[]): ScannedModel | null {
+  const family = detectFamily(missingId)
+  const candidates = available
+    .filter(m => m.family === family)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return candidates[0] ?? null
+}
+
+// ═══════════════════════════════════════════
+// Instance config update
+// ═══════════════════════════════════════════
+
+function updateInstanceConfigModels(anthropicModels: ScannedModel[], googleModels: ScannedModel[]): void {
+  const configPath = path.resolve('instance/config.json')
+  let instanceConfig: Record<string, unknown> = {}
+  try {
+    if (fs.existsSync(configPath)) {
+      instanceConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
+    }
+  } catch { /* start fresh */ }
+
+  const llm = (instanceConfig.llm ?? {}) as Record<string, unknown>
+  const available = (llm.availableModels ?? {}) as Record<string, string[]>
+
+  available.anthropic = anthropicModels.map(m => m.id)
+  available.gemini = googleModels.map(m => m.id)
+
+  llm.availableModels = available
+  instanceConfig.llm = llm
+
+  fs.writeFileSync(configPath, JSON.stringify(instanceConfig, null, 2), 'utf-8')
+}
+
+// ═══════════════════════════════════════════
+// .env update
+// ═══════════════════════════════════════════
+
+function updateEnvFile(replacements: Replacement[]): void {
+  if (replacements.length === 0) return
+
+  const envPath = path.resolve('.env')
+  if (!fs.existsSync(envPath)) return
+
+  let content = fs.readFileSync(envPath, 'utf-8')
+  for (const r of replacements) {
+    const regex = new RegExp(`^${r.configKey}=.*$`, 'm')
+    if (regex.test(content)) {
+      content = content.replace(regex, `${r.configKey}=${r.newModel}`)
+    }
+  }
+  fs.writeFileSync(envPath, content, 'utf-8')
+}
+
+// ═══════════════════════════════════════════
+// Main scan
+// ═══════════════════════════════════════════
+
+let _lastScanResult: ScanResult | null = null
+
+export function getLastScanResult(): ScanResult | null {
+  return _lastScanResult
+}
+
+/** All config keys that hold a model ID */
+const MODEL_CONFIG_KEYS = [
+  'LLM_CLASSIFY_MODEL',
+  'LLM_RESPOND_MODEL',
+  'LLM_COMPLEX_MODEL',
+  'LLM_TOOLS_MODEL',
+  'LLM_COMPRESS_MODEL',
+  'LLM_PROACTIVE_MODEL',
+  'LLM_FALLBACK_CLASSIFY_MODEL',
+  'LLM_FALLBACK_RESPOND_MODEL',
+  'LLM_FALLBACK_COMPLEX_MODEL',
+] as const
+
+export async function scanModels(registry: Registry): Promise<ScanResult> {
+  logger.info('Starting model scan...')
+
+  const config = registry.getConfig<{ ANTHROPIC_API_KEY: string; GOOGLE_AI_API_KEY: string }>('model-scanner')
+  const anthropicKey = config.ANTHROPIC_API_KEY
+  const googleKey = config.GOOGLE_AI_API_KEY
+
+  const anthropicModels = anthropicKey ? await fetchAnthropicModels(anthropicKey) : []
+  const googleModels = googleKey ? await fetchGoogleModels(googleKey) : []
+
+  logger.info({ anthropic: anthropicModels.length, google: googleModels.length }, 'Models discovered')
+
+  if (anthropicModels.length > 0 || googleModels.length > 0) {
+    updateInstanceConfigModels(anthropicModels, googleModels)
+  }
+
+  // Check for deprecated models and auto-replace
+  const allAvailableIds = new Set([...anthropicModels, ...googleModels].map(m => m.id))
+  const replacements: Replacement[] = []
+
+  for (const key of MODEL_CONFIG_KEYS) {
+    const currentModel = process.env[key]
+    if (!currentModel) continue
+
+    // Determine which provider's models to check against
+    const providerKey = key.includes('FALLBACK') ? `LLM_FALLBACK_${key.split('_').pop()}_PROVIDER` : key.replace('_MODEL', '_PROVIDER')
+    const provider = process.env[providerKey] ?? 'anthropic'
+    const providerModels = provider === 'google' ? googleModels : anthropicModels
+
+    if (providerModels.length === 0) continue
+
+    if (!allAvailableIds.has(currentModel)) {
+      const replacement = findReplacement(currentModel, providerModels)
+      if (replacement) {
+        replacements.push({
+          configKey: key,
+          oldModel: currentModel,
+          newModel: replacement.id,
+          reason: `Model "${currentModel}" no longer available. Replaced with "${replacement.id}" (${replacement.displayName}).`,
+        })
+        logger.warn({ key, oldModel: currentModel, newModel: replacement.id }, 'Auto-replacing deprecated model')
+      } else {
+        logger.error({ key, model: currentModel }, 'Model deprecated but no replacement found in same family')
+      }
+    }
+  }
+
+  if (replacements.length > 0) {
+    updateEnvFile(replacements)
+  }
+
+  const result: ScanResult = {
+    anthropic: anthropicModels,
+    google: googleModels,
+    lastScanAt: new Date().toISOString(),
+    replacements,
+  }
+
+  _lastScanResult = result
+  return result
+}
+
+// ═══════════════════════════════════════════
+// Periodic scanner
+// ═══════════════════════════════════════════
+
+let _intervalId: ReturnType<typeof setInterval> | null = null
+
+export function startScanner(registry: Registry, intervalMs = 21600000): void {
+  // Run immediately on start
+  scanModels(registry).catch(err => logger.error({ err }, 'Initial model scan failed'))
+
+  _intervalId = setInterval(() => {
+    scanModels(registry).catch(err => logger.error({ err }, 'Periodic model scan failed'))
+  }, intervalMs)
+
+  logger.info({ intervalHours: intervalMs / 3600000 }, 'Model scanner started')
+}
+
+export function stopScanner(): void {
+  if (_intervalId) {
+    clearInterval(_intervalId)
+    _intervalId = null
+    logger.info('Model scanner stopped')
+  }
+}

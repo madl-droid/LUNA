@@ -1,60 +1,43 @@
 // LUNA — Leads Unified Nurturing Agent
-// Servidor HTTP unificado: /oficina, /health, /webhooks (futuro)
+// Entry point: kernel boots, loads modules, starts server.
 
-import * as http from 'node:http'
-import { config } from './config.js'
-import { handleOficinaRequest, setWhatsAppAdapter } from './oficina/config-server.js'
-import { BaileysAdapter } from './channels/whatsapp/baileys-adapter.js'
-import { createMessageHandler } from './engine/responder.js'
-import { startModelScanner } from './llm/model-scanner.js'
+import { createPool } from './kernel/db.js'
+import { createRedis } from './kernel/redis.js'
+import { Registry } from './kernel/registry.js'
+import { loadModules } from './kernel/loader.js'
+import { Server } from './kernel/server.js'
+import { kernelConfig } from './kernel/config.js'
+import pino from 'pino'
 
-const logger = {
-  info: (data: Record<string, unknown>, msg: string) =>
-    console.log(JSON.stringify({ level: 'info', msg, ...data, ts: new Date().toISOString() })),
-}
+const logger = pino({ name: 'luna' })
 
-function main(): void {
-  // Initialize WhatsApp adapter and register with oficina
-  const waAdapter = new BaileysAdapter()
-  setWhatsAppAdapter(waAdapter)
-  waAdapter.onMessage(createMessageHandler(waAdapter))
+async function main(): Promise<void> {
+  logger.info({ env: kernelConfig.nodeEnv }, 'LUNA starting...')
 
-  // Auto-connect WhatsApp if module is enabled
-  if (config.modules.whatsapp) {
-    waAdapter.initialize().catch(err => {
-      console.error(JSON.stringify({ level: 'error', msg: 'Failed to initialize WhatsApp', error: String(err), ts: new Date().toISOString() }))
-    })
+  const db = await createPool()
+  const redis = await createRedis()
+  const registry = new Registry(db, redis)
+
+  // Load and activate modules from src/modules/
+  await loadModules(registry)
+
+  // Start HTTP server (mounts module routes + /health)
+  const server = new Server(registry)
+
+  // Mount API routes from active modules
+  for (const mod of registry.listModules()) {
+    if (mod.active && mod.manifest.oficina?.apiRoutes) {
+      server.mountModuleRoutes(mod.manifest.name, mod.manifest.oficina.apiRoutes)
+    }
   }
 
-  const server = http.createServer(async (req, res) => {
-    const url = req.url ?? '/'
+  await server.start()
 
-    // Oficina
-    if (config.oficina.enabled && url.startsWith('/oficina')) {
-      await handleOficinaRequest(req, res)
-      return
-    }
-
-    // Health check
-    if (url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ status: 'ok', whatsapp: waAdapter.getState().status }))
-      return
-    }
-
-    // Future: /webhooks/*
-
-    res.writeHead(404, { 'Content-Type': 'application/json' })
-    res.end('{"error":"Not found"}')
-  })
-
-  // Start LLM model scanner (scans every 6 hours, runs immediately on startup)
-  startModelScanner()
-
-  server.listen(config.port, () => {
-    logger.info({ port: config.port }, 'LUNA server started')
-    if (config.oficina.enabled) logger.info({ path: '/oficina' }, 'Oficina available at /oficina')
-  })
+  const activeModules = registry.listModules().filter(m => m.active).map(m => m.manifest.name)
+  logger.info({ modules: activeModules }, 'LUNA ready')
 }
 
-main()
+main().catch(err => {
+  console.error('Fatal error:', err)
+  process.exit(1)
+})
