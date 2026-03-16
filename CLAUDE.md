@@ -6,202 +6,90 @@ Agente de IA que atiende leads por WhatsApp y email. Califica, agenda, hace segu
 ## Stack
 TypeScript / Node.js ≥22 (ESM), PostgreSQL, Redis + BullMQ, Baileys (WhatsApp), Google OAuth2 (Gmail, Calendar, Sheets), LLMs: Anthropic + OpenAI + Google.
 
-## Pipeline (5 pasos, solo 2 usan LLM)
-1. **Preprocess** (código): normalizar, identificar contacto, cargar contexto
-2. **Classify** (LLM barato): intención, tools necesarias, sentiment
-2.5. **Complexity Route** (código): decide si escalar modelo
-3. **Execute Tools** (código): ejecutar tools, armar contexto resuelto
-4. **Respond** (LLM potente): generar respuesta conversacional
-5. **Postprocess** (código): validar, formatear, enviar, guardar, loguear
+## Arquitectura
+Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada módulo exporta un `manifest.ts` con lifecycle (init/stop), hooks tipados, config schema y definición de UI.
 
-## Tabla de modelos
+- Kernel (src/kernel/): registry, loader, hooks, config, server HTTP — ver `src/kernel/CLAUDE.md`
+- Módulos (src/modules/): descubiertos automáticamente por loader — ver CLAUDE.md de cada módulo
+- Engine (src/engine/): pipeline de procesamiento de mensajes — ver `src/engine/CLAUDE.md`
+- Pipeline de 5 pasos (solo 2 usan LLM): ver `docs/architecture/pipeline.md`
+- Tabla de modelos y fallback chain: ver `docs/architecture/pipeline.md`
+- Lead status (máquina de estados): ver `docs/architecture/lead-status.md`
+- Fallback chain: Anthropic → OpenAI → Google. Circuit breaker: 5 fallas en 10 min → provider DOWN 5 min.
 
-### TIEMPO REAL — EL CONTACTO ESTÁ ESPERANDO
-| Tarea | Modelo principal | Provider | Fallback |
-|-------|-----------------|----------|----------|
-| Clasificar intención | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
-| Ejecutar tools / resolver | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
-| Generar respuesta conversacional | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
-| Tareas complejas | Claude Opus 4.5 | Anthropic | Gemini 2.5 Pro |
-| Mensajes proactivos / follow-ups | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
-| Comprimir sesión (en vivo) | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
-
-### BATCH NOCTURNO — NADIE ESPERA, 50% DESCUENTO
-| Tarea | Modelo principal | Provider | Fallback |
-|-------|-----------------|----------|----------|
-| Scoring de leads fríos | Claude Haiku 4.5 batch | Anthropic | — |
-| Clasificar objeciones acumuladas | Claude Sonnet 4.5 batch | Anthropic | — |
-| Comprimir memoria masiva | Gemini 2.5 Flash batch | Google | Claude Haiku 4.5 |
-| Reporte diario al Sheet | Gemini 2.5 Flash batch | Google | — |
-
-### VOZ, BÚSQUEDA Y MEDIA
-| Tarea | Modelo principal | Provider | Fallback |
-|-------|-----------------|----------|----------|
-| Búsqueda web | Gemini 2.5 Flash + Grounding | Google | Anthropic web_search |
-| Script para audio / llamadas | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
-| TTS / síntesis de voz | Gemini TTS | Google | — |
-| Llamadas en vivo (V2) | Gemini Live | Google | — |
-
-### Fallback chain: Anthropic → OpenAI → Google
-Si un provider falla 5x en 10 min → marcarlo DOWN por 5 min (circuit breaker).
-
-## Estrategia de types (imports entre módulos)
-
-Cada módulo define y exporta SUS propios types. NO hay un `src/shared/types.ts`. Los consumidores importan del módulo que define el type:
-
+## Estructura de directorios
 ```
-src/llm/types.ts         → LLMProvider, ChatParams, ChatResponse, TaskType, ModelConfig
-src/gateway/channels/types.ts → NormalizedMessage, ChannelAdapter, IncomingRawMessage, SendResult, MediaPayload, OutgoingMessage
-src/tools/types.ts       → ToolResult, ToolHealth
-src/engine/types.ts      → PreprocessResult, Classification, ModelTier, ResolvedContext, AgentResponse, PipelineResult, PipelineLog
+src/
+  kernel/            — core del sistema modular (ver src/kernel/CLAUDE.md)
+  modules/
+    whatsapp/        — canal WhatsApp Baileys (ver CLAUDE.md)
+    memory/          — memoria Redis+PG (ver CLAUDE.md)
+    oficina/         — panel de control web (ver CLAUDE.md)
+    model-scanner/   — escáner de modelos LLM (ver CLAUDE.md)
+  engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
+  index.ts           — entry point: crea kernel, carga módulos, inicia server
+deploy/              — docker-compose + deploy (ver deploy/CLAUDE.md)
+instance/            — config operacional (config.json) + wa-auth/ + knowledge/media/
+docs/                — arquitectura (docs/architecture/) y reportes de sesión
 ```
 
-Ejemplo de import correcto:
+## Cómo crear un nuevo módulo
+1. Crear `src/modules/{nombre}/manifest.ts` exportando `ModuleManifest` (de `../../kernel/types.js`)
+2. Definir: name, version, description, type (`core-module`|`channel`|`feature`|`provider`), init(), stop()
+3. Config: agregar `configSchema` (Zod) + `.env.example`. UI: definir `oficina.fields`/`apiRoutes`.
+4. Dependencias: declarar `depends: ['otro-modulo']`.
+5. **OBLIGATORIO: Crear `CLAUDE.md`** en el directorio del módulo (ver template en sección "Mantenimiento" abajo). Agregar entrada a la lista de "Módulos documentados".
+
+## REGLA MAXIMA: Config distribuido
+
+**Ningún módulo lee `process.env` directamente.**
+
+### Cómo funciona:
+1. **Kernel** (`src/kernel/config.ts`): ÚNICO archivo que lee process.env. Solo infraestructura: DB, Redis, PORT, LOG_LEVEL.
+2. **Módulos**: declaran `configSchema` (Zod) en su manifest para sus propias env vars. El loader parsea y guarda en registry.
+3. **Lectura**: módulos usan `registry.getConfig<MiConfig>('mi-modulo')` — tipado y validado.
+4. **Nuevos params**: agregar al configSchema del módulo + `.env.example`.
+5. **Valores por defecto**: en el schema Zod con `.default()`.
+
+### Ejemplo: en manifest.ts declarar `configSchema: z.object({ MI_PARAM: z.string().default('valor') })`, en init() leer con `registry.getConfig<T>('mi-modulo')`.
+
+## Types: cada módulo define los suyos
+Contratos centrales en `src/kernel/types.ts` (HookMap, ModuleManifest, payloads). Types de dominio en cada módulo. NO hay `src/shared/types.ts`.
 ```typescript
-import type { NormalizedMessage } from '../gateway/channels/types.js'
-import type { ToolResult } from '../tools/types.js'
+import type { ModuleManifest, HookMap } from '../../kernel/types.js'
+import type { StoredMessage } from '../memory/types.js'
 ```
 
 ## Convenciones de naming
-- Archivos y carpetas: `kebab-case` (ej: `lead-status.ts`, `whatsapp-adapter.ts`)
+- Archivos y carpetas: `kebab-case` (ej: `model-scanner`, `baileys-adapter.ts`)
 - Variables y funciones: `camelCase`
 - Clases y types/interfaces: `PascalCase`
 - Constantes globales: `UPPER_SNAKE_CASE`
 
-## REGLA MAXIMA: Configuracion centralizada
-
-**TODO parametro configurable del sistema DEBE vivir en `src/config.ts` y leerse desde `.env`.**
-
-Esto incluye: API keys, timeouts, limites de tokens, temperaturas, intervalos, cron schedules, puertos, modelos LLM, feature flags de modulos, rutas de archivos, y cualquier valor que el usuario pueda querer cambiar sin tocar codigo.
-
-### Reglas:
-1. **Ningun modulo lee `process.env` directamente.** Solo `src/config.ts` lo hace.
-2. **Todo modulo importa de `src/config.ts`:** `import { config } from '../config.js'`
-3. **Nuevos parametros configurables** se agregan en 3 lugares:
-   - `.env.example` (documentacion con valor por defecto)
-   - Schema zod en `src/config.ts` (validacion y tipo)
-   - Mapeo `loadFromEnv()` en `src/config.ts` (lectura del env var)
-4. **Antes de hardcodear un valor** que podria ser configurable (timeout, limite, intervalo, modelo, flag), pregunta al usuario si debe ir en `src/config.ts`.
-5. **Valores por defecto** se definen en el schema zod con `.default()`, para que el sistema arranque sin `.env` en desarrollo.
-
-### Ejemplo de uso correcto:
-```typescript
-import { config } from '../config.js'
-
-const pool = new Pool({
-  host: config.db.host,
-  port: config.db.port,
-  max: config.db.maxConnections,
-})
-```
-
-### Ejemplo de uso INCORRECTO:
-```typescript
-// PROHIBIDO: leer process.env directamente
-const host = process.env.DB_HOST ?? 'localhost'
-```
-
 ## Principios
 - Si se puede sin LLM → código
-- Cada tool extiende BaseTool (retry + fallback + circuit breaker)
+- Módulos se comunican via hooks y services del registry, nunca imports directos
 - Config por archivos en /instance (Markdown + JSON)
 - Fallback messages son predefinidos, nunca generados por LLM
-- Channel adapter es interfaz inmutable
-- Logs JSON estructurados en cada paso
+- Logs JSON estructurados en cada paso (pino)
 - Contact unification cross-channel
 
-## Lead Status (máquina de estados)
-
-qualification_status — valores y transiciones:
-
-  unknown → new → qualifying → qualified → scheduled → attended → converted
-                      │
-                      ├→ out_of_zone
-                      ├→ not_interested
-                      └→ cold (3 follow-ups sin respuesta)
-  scheduled → cold (no asiste, no responde)
-  ANY → blocked (lead pide no ser contactado)
-
-Triggers (código en postprocessor, NO en LLM):
-  unknown → new:              primer mensaje recibido
-  new → qualifying:           agente inicia preguntas de calificación
-  qualifying → qualified:     cumple TODOS los criterios de qualifying.json
-  qualifying → out_of_zone:   ubicación fuera de cobertura
-  qualifying → not_interested: lead dice que no le interesa
-  qualifying → cold:          3 follow-ups sin respuesta
-  qualified → scheduled:      cita/demo agendada exitosamente
-  scheduled → attended:       confirmación de asistencia (manual o callback)
-  scheduled → cold:           no asiste y no responde
-  attended → converted:       cierre de venta (manual)
-  ANY → blocked:              /stop, "no me escriban", "dejen de molestar"
-```
-`contact_type` es un campo APARTE (no confundir):
-contact_type: unknown | lead | client_active | client_former | team_internal | provider | blocked
-
 ## Lo que NO hacer
-
 - NO usar ORM (Drizzle, Prisma, TypeORM) — raw SQL con queries parametrizadas ($1, $2)
-- NO agregar Express ni Fastify — health check usa http nativo de Node.js
+- NO agregar Express ni Fastify — servidor HTTP nativo de Node.js
+- NO importar código entre módulos directamente — usar hooks o services del registry
+- NO leer process.env fuera de kernel/config.ts — módulos usan registry.getConfig()
 - NO implementar Meta Cloud API adapter — solo archivo placeholder vacío
 - NO implementar voz ni llamadas (TTS, Gemini Live) — es V2
 - NO agregar vector database (pgvector, Pinecone) — fuse.js fuzzy search basta para V1
 - NO guardar archivos en la base de datos — media queda en disco en instance/knowledge/media/
 - NO construir dashboard — es V2
-- NO hacer sync bidireccional con Google Sheets — Postgres es fuente de verdad, writes a Sheets son async y unidireccionales
-- NO usar import sin extensión .js en paths relativos (ESM lo requiere)
+- NO hacer sync bidireccional con Google Sheets — Postgres es fuente de verdad, writes a Sheets son async
+- NO usar import sin extensión .js en paths relativos — ESM lo requiere
 
-## Infraestructura y deploy
-
-### Ramas
-- `main` = producción. Push a main dispara build + deploy automático a producción.
-- `pruebas` = staging. Push a pruebas dispara build + deploy automático a staging.
-- `claude` = desarrollo con Claude Code. Merge a pruebas o main cuando esté listo.
-
-### Flujo de deploy
-1. Push a rama (`main` o `pruebas`)
-2. GitHub Actions (`.github/workflows/deploy.yml`) construye imagen Docker y la sube a GHCR
-3. GitHub Actions se conecta por SSH al servidor y ejecuta `docker compose pull && docker compose up -d`
-4. Traefik detecta el container y lo expone con HTTPS automático
-
-### Imágenes Docker
-- `ghcr.io/madl-droid/luna:latest` — producción (rama main)
-- `ghcr.io/madl-droid/luna:staging` — staging (rama pruebas)
-
-### Layout del servidor
-```
-/docker/
-  traefik/          — reverse proxy con Let's Encrypt (NO TOCAR)
-  luna-production/  — docker-compose.yml + .env (container: LUNA)
-  luna-staging/     — docker-compose.yml + .env (container: LUNA-S)
-```
-
-### URLs (servidor actual)
-- Produccion: `luna.madl98.cloud`
-- Staging: `luna-s.madl98.cloud`
-
-### Portabilidad — instalar en un nuevo servidor
-1. Instalar Docker y Traefik
-2. Copiar `deploy/production/docker-compose.yml` a `/docker/luna-production/`
-3. Copiar `deploy/.env.example` a `/docker/luna-production/.env` y llenar:
-   - `DOMAIN` = dominio apuntando al servidor
-   - `DB_PASSWORD` = password seguro
-   - API keys según se necesiten
-4. `docker login ghcr.io` con un PAT que tenga scope `read:packages`
-5. `docker compose up -d`
-6. Traefik se encarga del SSL automáticamente
-
-### Variables de entorno clave para deploy
-- `DOMAIN` — dominio que Traefik usa para rutear y generar SSL (requerido)
-- `APP_PORT` — puerto de la app (default: 3000 prod, 3001 staging)
-- `DB_PASSWORD` — password de PostgreSQL (requerido, sin default)
-- `NODE_ENV` — development, production, staging, o test (validado por Zod enum en src/config.ts)
-- Ver `deploy/.env.example` para la lista completa
-
-### Secrets de GitHub Actions
-- `SSH_HOST` — IP o dominio del servidor
-- `SSH_USER` — usuario SSH
-- `SSH_KEY` — clave privada SSH
-- `SSH_PORT` — puerto SSH (default 22)
+## Deploy
+Ramas: `main` (prod), `pruebas` (staging), `claude` (dev). Push auto-deploys via GitHub Actions + Docker + Traefik.
+Detalle completo en `deploy/CLAUDE.md`.
 
 ## Desarrollo paralelo
 Cada sesión trabaja en su propio branch. Contexto específico en `docs/sessions/S{XX}.md`.
@@ -224,3 +112,27 @@ Al terminar CADA sesión, genera informe en `docs/reports/S{XX}-report.md`:
 ### Riesgos o deuda técnica
 ### Notas para integración
 ```
+
+## Mantenimiento de CLAUDE.md por módulo
+
+Cada módulo bajo `src/` tiene (o debería tener) su propio CLAUDE.md con contexto específico. Estos archivos se cargan automáticamente solo cuando se trabaja en ese directorio.
+
+### Cuándo crear uno nuevo
+- Al crear un nuevo módulo en `src/modules/` (ej: `src/modules/llm-anthropic/`)
+- Al descubrir trampas o patrones durante desarrollo, actualizar el CLAUDE.md del módulo afectado
+
+### Template (mantener bajo 80 líneas)
+Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, config), Hooks/Servicios, API routes, Patrones, Trampas.
+
+### Módulos documentados
+- `src/kernel/CLAUDE.md` — core del sistema modular
+- `src/modules/whatsapp/CLAUDE.md` — canal WhatsApp (Baileys)
+- `src/modules/memory/CLAUDE.md` — memoria Redis+PG
+- `src/modules/oficina/CLAUDE.md` — panel de control web
+- `src/modules/model-scanner/CLAUDE.md` — escáner de modelos LLM
+- `src/engine/CLAUDE.md` — pipeline de procesamiento
+- `deploy/CLAUDE.md` — infraestructura y despliegue
+
+### Docs de referencia (consultar cuando sea relevante)
+- `docs/architecture/pipeline.md` — pipeline de 5 pasos y tabla de modelos LLM
+- `docs/architecture/lead-status.md` — máquina de estados de calificación de leads
