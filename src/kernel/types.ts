@@ -43,6 +43,9 @@ export interface HookMap {
   'contact:new':            [{ contactId: string; channel: string }, void]
   'contact:status_changed': [{ contactId: string; from: string; to: string }, void]
 
+  // Usuarios (users module)
+  'user:resolved':          [{ senderId: string; channel: string; userType: string; listName: string }, void]
+
   // Jobs
   'job:register':           [JobRegistration, void]
   'job:run':                [{ jobName: string }, void]
