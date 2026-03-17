@@ -1,0 +1,254 @@
+// LUNA Engine — Phase 5: Validate + Send + Persist
+// Código puro. Validates output, formats, rate limits, sends, persists.
+
+import { randomUUID } from 'node:crypto'
+import type { Pool } from 'pg'
+import type { Redis } from 'ioredis'
+import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
+import type {
+  ContextBundle,
+  CompositorOutput,
+  EvaluatorOutput,
+  ValidationResult,
+  DeliveryResult,
+  EngineConfig,
+} from '../types.js'
+import { detectOutputInjection, detectSensitiveData } from '../utils/injection-detector.js'
+import { formatForChannel, calculateTypingDelay } from '../utils/message-formatter.js'
+
+const logger = pino({ name: 'engine:phase5' })
+
+/**
+ * Execute Phase 5: Validate, format, send, persist.
+ */
+export async function phase5Validate(
+  ctx: ContextBundle,
+  composed: CompositorOutput,
+  evaluation: EvaluatorOutput,
+  registry: Registry,
+  db: Pool,
+  redis: Redis,
+  config: EngineConfig,
+): Promise<DeliveryResult> {
+  const startMs = Date.now()
+
+  logger.info({ traceId: ctx.traceId }, 'Phase 5 start')
+
+  // 1. Validate output
+  const validation = validateOutput(composed.responseText)
+
+  let responseText = composed.responseText
+  if (!validation.passed) {
+    logger.warn({ traceId: ctx.traceId, issues: validation.issues }, 'Output validation issues')
+    responseText = validation.sanitizedText
+  }
+
+  // 2. Check rate limits
+  const rateLimitOk = await checkRateLimit(redis, ctx.message.from, ctx.message.channelName, config)
+  if (!rateLimitOk) {
+    logger.warn({ traceId: ctx.traceId, to: ctx.message.from }, 'Rate limit exceeded')
+    return { sent: false, error: 'Rate limit exceeded' }
+  }
+
+  // 3. Format for channel (split into bubbles for WA, HTML for email)
+  const parts = formatForChannel(responseText, ctx.message.channelName)
+
+  // 4. Send via channel adapter
+  const deliveryResult = await sendMessages(ctx, parts, registry)
+
+  // 5. Persist messages (both incoming and outgoing)
+  await persistMessages(ctx, responseText, evaluation, db)
+
+  // 6. Update session
+  await updateSession(ctx, db)
+
+  // 7. Enqueue sheets sync (async, fire-and-forget)
+  enqueueSheetsSync(ctx, redis)
+
+  const durationMs = Date.now() - startMs
+  logger.info({
+    traceId: ctx.traceId,
+    durationMs,
+    sent: deliveryResult.sent,
+    parts: parts.length,
+  }, 'Phase 5 complete')
+
+  return deliveryResult
+}
+
+/**
+ * Validate output text for injection and sensitive data.
+ */
+function validateOutput(text: string): ValidationResult {
+  const issues: string[] = []
+
+  // Check for output injection (system prompt leaks)
+  const injectionIssues = detectOutputInjection(text)
+  issues.push(...injectionIssues)
+
+  // Check for sensitive data
+  const sensitiveIssues = detectSensitiveData(text)
+  issues.push(...sensitiveIssues)
+
+  if (issues.length === 0) {
+    return { passed: true, issues: [], sanitizedText: text }
+  }
+
+  // Sanitize: remove sensitive patterns
+  let sanitized = text
+  // Remove API key patterns
+  sanitized = sanitized.replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+  sanitized = sanitized.replace(/sk-ant-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+  sanitized = sanitized.replace(/AIza[a-zA-Z0-9_-]{35}/g, '[REDACTED]')
+  sanitized = sanitized.replace(/Bearer\s+[a-zA-Z0-9._-]{20,}/g, 'Bearer [REDACTED]')
+
+  return { passed: false, issues, sanitizedText: sanitized }
+}
+
+/**
+ * Check rate limit for sending messages.
+ * WA: 30/hour, 200/day.
+ */
+async function checkRateLimit(
+  redis: Redis,
+  to: string,
+  channel: string,
+  config: EngineConfig,
+): Promise<boolean> {
+  if (channel !== 'whatsapp') return true
+
+  const hourKey = `rate:${to}:hour`
+  const dayKey = `rate:${to}:day`
+
+  try {
+    const [hourCount, dayCount] = await Promise.all([
+      redis.get(hourKey),
+      redis.get(dayKey),
+    ])
+
+    if (hourCount && parseInt(hourCount) >= config.waRateLimitHour) return false
+    if (dayCount && parseInt(dayCount) >= config.waRateLimitDay) return false
+
+    // Increment counters
+    const pipeline = redis.pipeline()
+    pipeline.incr(hourKey)
+    pipeline.expire(hourKey, 3600)
+    pipeline.incr(dayKey)
+    pipeline.expire(dayKey, 86400)
+    await pipeline.exec()
+
+    return true
+  } catch (err) {
+    logger.warn({ err, to }, 'Rate limit check failed, allowing')
+    return true
+  }
+}
+
+/**
+ * Send message parts via channel adapter hook.
+ */
+async function sendMessages(
+  ctx: ContextBundle,
+  parts: string[],
+  registry: Registry,
+): Promise<DeliveryResult> {
+  let lastMessageId: string | undefined
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+
+    // Typing delay for WA (simulate human)
+    if (ctx.message.channelName === 'whatsapp' && i > 0) {
+      const delay = calculateTypingDelay(part)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+
+    try {
+      await registry.runHook('message:send', {
+        channel: ctx.message.channelName,
+        to: ctx.message.from,
+        content: { type: 'text', text: part },
+        correlationId: ctx.traceId,
+      })
+      lastMessageId = randomUUID()  // placeholder until hook returns real ID
+    } catch (err) {
+      logger.error({ err, traceId: ctx.traceId, part: i }, 'Failed to send message part')
+      return { sent: false, error: String(err) }
+    }
+  }
+
+  return { sent: true, channelMessageId: lastMessageId }
+}
+
+/**
+ * Persist incoming and outgoing messages to DB.
+ */
+async function persistMessages(
+  ctx: ContextBundle,
+  responseText: string,
+  evaluation: EvaluatorOutput,
+  db: Pool,
+): Promise<void> {
+  const now = new Date()
+
+  try {
+    // Persist incoming message
+    await db.query(
+      `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        ctx.message.id,
+        ctx.session.id,
+        ctx.message.channelName,
+        'user',
+        ctx.message.from,
+        JSON.stringify({ type: ctx.messageType, text: ctx.normalizedText }),
+        ctx.message.timestamp,
+      ],
+    )
+
+    // Persist outgoing message
+    await db.query(
+      `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        randomUUID(),
+        ctx.session.id,
+        ctx.message.channelName,
+        'agent',
+        'luna',
+        JSON.stringify({ type: 'text', text: responseText, intent: evaluation.intent }),
+        now,
+      ],
+    )
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Failed to persist messages')
+  }
+}
+
+/**
+ * Update session last activity and message count.
+ */
+async function updateSession(ctx: ContextBundle, db: Pool): Promise<void> {
+  try {
+    await db.query(
+      `UPDATE sessions
+       SET last_activity_at = now(), message_count = message_count + 2
+       WHERE id = $1`,
+      [ctx.session.id],
+    )
+  } catch (err) {
+    logger.warn({ err, sessionId: ctx.session.id }, 'Failed to update session')
+  }
+}
+
+/**
+ * Enqueue Google Sheets sync (BullMQ async — currently just logs).
+ */
+function enqueueSheetsSync(ctx: ContextBundle, _redis: Redis): void {
+  // TODO: implement BullMQ job when queue module exists
+  logger.debug({ traceId: ctx.traceId, contactId: ctx.contactId }, 'Sheets sync enqueued (noop)')
+}

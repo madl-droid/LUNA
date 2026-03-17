@@ -1,29 +1,76 @@
-# Engine — Pipeline de procesamiento
+# Engine — Pipeline de procesamiento de mensajes
 
-Pipeline de procesamiento de mensajes entrantes. Actualmente stub, destinado a crecer con el pipeline completo.
+Pipeline de 5 fases que procesa mensajes entrantes (reactivo) y genera contactos salientes (proactivo).
 
 ## Archivos
-- `responder.ts` — stub temporal: recibe mensaje WhatsApp → envía a Claude → retorna respuesta
 
-## Estado actual
-**Temporal.** responder.ts es un proof-of-concept que:
-- Escucha mensajes de WhatsApp via hook `message:incoming`
-- Envía a Anthropic Claude (hardcodeado)
-- Retorna respuesta al usuario via hook `message:send`
-- Usa ALLOWED_NUMBERS hardcodeado (no DB-driven)
-- NO está completamente integrado con el sistema de hooks del kernel
+```
+engine.ts             — orquestador principal, entry point
+config.ts             — carga config de env vars
+index.ts              — re-exports públicos
+types.ts              — todos los types del engine
+responder.ts          — stub temporal (legacy, reemplazado por engine.ts)
+phases/
+  phase1-intake.ts    — normalización + context loading (código puro, <200ms)
+  phase2-evaluate.ts  — evaluación con LLM (modelo evaluador, <2s)
+  phase3-execute.ts   — ejecución del plan (router, parallel/sequential)
+  phase4-compose.ts   — composición de respuesta (modelo compositor)
+  phase5-validate.ts  — validación + envío + persistencia
+subagent/
+  subagent.ts         — mini-loop con barandas
+  guardrails.ts       — límites configurables
+proactive/
+  proactive-runner.ts — orquestador de flujos proactivos (setInterval)
+  triggers.ts         — definición de triggers
+  jobs/               — cada job proactivo (follow-up, reminder, etc.)
+prompts/
+  evaluator.ts        — prompt builder para fase 2
+  compositor.ts       — prompt builder para fase 4
+  subagent.ts         — prompt builder para subagent
+utils/
+  normalizer.ts       — sanitización de mensajes
+  injection-detector.ts — detección de prompt injection (regex)
+  rag-local.ts        — búsqueda fuzzy con fuse.js
+  quick-actions.ts    — detección de patrones rápidos (stop, sí/no)
+  message-formatter.ts — formateo por canal (WA burbujas, HTML email)
+  llm-client.ts       — llamadas directas a SDKs (Anthropic, Google, OpenAI)
+mocks/
+  user-resolver.ts    — mock de S02 (user lists)
+  tool-registry.ts    — mock de S03 (tool framework)
+```
 
-## Pipeline futuro (5 pasos)
-Cuando se implemente completamente, usará hooks del kernel para cada paso:
-1. Preprocess → `message:incoming` hook
-2. Classify → `message:classified` hook
-3. Execute Tools → tools via registry services
-4. Respond → `llm:chat` hook (filter)
-5. Postprocess → `message:send` hook
+## Flujo reactivo
 
-Ver `docs/architecture/pipeline.md` para detalle completo y tabla de modelos.
+1. `message:incoming` hook → `engine.ts` → `processMessage()`
+2. Phase 1: normalize, resolve user type (cached Redis), load context → ContextBundle
+3. Phase 2: LLM evaluator → intent, plan, tools needed
+4. Phase 3: execute plan steps (parallel when independent)
+5. Phase 4: LLM compositor → response text
+6. Phase 5: validate, format, rate limit, send via `message:send` hook, persist
+
+## Dependencias externas (mocked)
+
+- S02 user-resolver: `resolveUserType(senderId, channel)` — en `mocks/user-resolver.ts`
+- S03 tool-registry: `executeTool(name, params)` — en `mocks/tool-registry.ts`
+
+## Config
+
+Engine config se lee de env vars via `kernel/config.ts:getEnv()`. Ver `config.ts` para todos los parámetros.
+
+## DB Tables
+
+Migration en `docs/migrations/s01-engine-tables.sql`:
+- `contacts` — identidad unificada de contactos
+- `contact_channels` — link contacto ↔ canal (phone, email, etc.)
+- `sessions` — sesiones de conversación
+- `messages` — mensajes entrantes y salientes
+- `campaigns` — campañas de marketing
 
 ## Trampas
-- responder.ts NO es el diseño final — no agregar lógica compleja aquí
-- ALLOWED_NUMBERS se eliminará cuando haya sistema de contactos en DB
-- El circuit breaker y fallback chain deben implementarse como módulos LLM provider, no en el engine
+
+- LLM evaluador a veces devuelve JSON con backticks markdown — se stripean en `phase2-evaluate.ts`
+- `messages` table puede no existir aún — queries tienen try/catch
+- Subagent guardrails se leen de `instance/config.json` si existe
+- RAG recarga index cada 5 min — no es instantáneo
+- Rate limit es por número destino, no por sesión
+- `responder.ts` es legacy — usar `engine.ts` en su lugar
