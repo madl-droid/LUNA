@@ -105,7 +105,8 @@ function shouldRunCron(cron: string, _timezone: string): boolean {
   if (parts.length < 5) return false
 
   const now = new Date()
-  const [cronMin, cronHour] = parts
+  const cronMin = parts[0]!
+  const cronHour = parts[1]!
 
   const currentMin = now.getMinutes()
   const currentHour = now.getHours()

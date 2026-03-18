@@ -12,6 +12,7 @@ import type {
   LoadedModule,
   ModuleManifest,
 } from './types.js'
+import { getAllEnv } from './config.js'
 
 const logger = pino({ name: 'registry' })
 
@@ -53,6 +54,19 @@ export class Registry {
     for (const dep of mod.manifest.depends ?? []) {
       if (!this.isActive(dep)) {
         throw new Error(`Cannot activate "${name}": dependency "${dep}" is not active`)
+      }
+    }
+
+    // Parse configSchema before init if not already set
+    if (mod.manifest.configSchema && !this.moduleConfigs.has(name)) {
+      try {
+        const parsed = mod.manifest.configSchema.parse(getAllEnv())
+        this.moduleConfigs.set(name, parsed as Record<string, unknown>)
+      } catch {
+        try {
+          const defaults = mod.manifest.configSchema.parse({})
+          this.moduleConfigs.set(name, defaults as Record<string, unknown>)
+        } catch { /* no defaults */ }
       }
     }
 

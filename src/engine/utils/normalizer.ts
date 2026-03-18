@@ -1,6 +1,8 @@
 // LUNA Engine — Message Normalizer
 // Sanitiza unicode, trunca, detecta tipo de contenido.
 
+import type { MessageContentType } from '../../channels/types.js'
+
 const MAX_TEXT_LENGTH = 5000
 
 // Regex to strip invisible/control chars except newlines and tabs
@@ -55,7 +57,8 @@ export function normalizeText(text: string | undefined | null): string {
 /**
  * Detect message content type from the raw content object.
  */
-export function detectMessageType(content: { type: string; text?: string }): string {
+export function detectMessageType(content: { type: string; text?: string }): MessageContentType {
   if (content.type === 'text' && content.text) return 'text'
-  return content.type || 'unknown'
+  const valid = new Set<string>(['text', 'image', 'audio', 'video', 'document', 'sticker', 'location', 'contact'])
+  return (valid.has(content.type) ? content.type : 'text') as MessageContentType
 }

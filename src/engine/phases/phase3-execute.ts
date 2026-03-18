@@ -39,7 +39,7 @@ export async function phase3Execute(
   const { executionPlan } = evaluation
 
   // If respond_only, skip execution
-  if (executionPlan.length === 1 && executionPlan[0].type === 'respond_only') {
+  if (executionPlan.length === 1 && executionPlan[0]!.type === 'respond_only') {
     const durationMs = Date.now() - startMs
     logger.info({ traceId: ctx.traceId, durationMs }, 'Phase 3 skip (respond_only)')
     return { results: [], allSucceeded: true, partialData: {} }
@@ -356,7 +356,7 @@ function groupStepsByDependency(steps: ExecutionStep[]): {
   const dependent: Array<{ step: ExecutionStep; index: number }> = []
 
   for (let i = 0; i < steps.length; i++) {
-    const step = steps[i]
+    const step = steps[i]!
     if (step.dependsOn && step.dependsOn.length > 0) {
       dependent.push({ step, index: i })
     } else {

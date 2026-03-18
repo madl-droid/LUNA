@@ -31,6 +31,18 @@ async function main(): Promise<void> {
     }
   }
 
+  // Auto-mount/unmount routes when modules are activated/deactivated at runtime
+  registry.addHook('kernel', 'module:activated', async (payload) => {
+    const mod = registry.getModule(payload.name)
+    if (mod?.manifest.oficina?.apiRoutes) {
+      server.mountModuleRoutes(mod.manifest.name, mod.manifest.oficina.apiRoutes)
+    }
+  })
+
+  registry.addHook('kernel', 'module:deactivated', async (payload) => {
+    server.unmountModuleRoutes(payload.name)
+  })
+
   await server.start()
 
   const activeModules = registry.listModules().filter(m => m.active).map(m => m.manifest.name)

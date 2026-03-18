@@ -159,7 +159,7 @@ async function sendMessages(
   let lastMessageId: string | undefined
 
   for (let i = 0; i < parts.length; i++) {
-    const part = parts[i]
+    const part = parts[i]!
 
     // Typing delay for WA (simulate human)
     if (ctx.message.channelName === 'whatsapp' && i > 0) {

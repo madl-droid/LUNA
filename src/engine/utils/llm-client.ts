@@ -256,7 +256,7 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
     parts: [{ text: m.content }],
   }))
 
-  const lastMessage = options.messages[options.messages.length - 1]
+  const lastMessage = options.messages[options.messages.length - 1]!
 
   const chat = genModel.startChat({ history })
   const result = await chat.sendMessage(lastMessage.content)

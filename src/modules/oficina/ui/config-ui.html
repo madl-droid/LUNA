@@ -212,7 +212,7 @@
     <button class="btn-reset" onclick="resetDb()" id="btn-resetdb" style="background:#7f1d1d;color:#fca5a5;margin-right:auto">Reset DB</button>
     <button class="btn-reset" onclick="resetChanges()" id="btn-reset">Descartar</button>
     <button class="btn-save" id="btn-save" onclick="saveChanges()" disabled>Guardar</button>
-    <button class="btn-save" id="btn-apply" onclick="applyChanges()" style="background:#16a34a">Aplicar</button>
+    <button class="btn-save" id="btn-apply" onclick="applyChanges()" style="background:#16a34a" disabled>Aplicar</button>
   </div>
 
 <script>
@@ -868,9 +868,11 @@ function onPhoneChange(key, el) {
   el.classList.toggle('modified', el.value !== (originalValues[key] ?? ''))
   updateSaveBtn()
 }
+let _pendingApply = false
 function updateSaveBtn() {
   const has = Object.keys(currentValues).some(k => currentValues[k] !== (originalValues[k] ?? ''))
   document.getElementById('btn-save').disabled = !has
+  document.getElementById('btn-apply').disabled = !_pendingApply
 }
 function resetChanges() {
   currentValues = { ...originalValues }
@@ -888,7 +890,7 @@ async function saveChanges() {
     const res = await fetch('/oficina/api/oficina/config', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(changes) })
     const data = await res.json()
     if (data.ok) {
-      originalValues = { ...currentValues }; render(); updateSaveBtn()
+      originalValues = { ...currentValues }; _pendingApply = true; render(); updateSaveBtn()
       setStatus(t('saved'), 'saved'); showToast(t('configSaved'), 'success')
     } else { setStatus(t('errorSave'), 'error') }
   } catch { setStatus(t('errorConnect'), 'error') }
@@ -900,6 +902,7 @@ async function applyChanges() {
     const res = await fetch('/oficina/api/oficina/apply', { method: 'POST' })
     const data = await res.json()
     if (data.ok) {
+      _pendingApply = false; updateSaveBtn()
       showToast(t('applySuccess'), 'success')
     } else { showToast(t('applyError'), 'error') }
   } catch { showToast(t('applyError'), 'error') }

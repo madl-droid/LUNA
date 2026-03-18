@@ -7,6 +7,7 @@ import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Registry } from './registry.js'
 import type { ModuleManifest } from './types.js'
+import { getAllEnv } from './config.js'
 
 const logger = pino({ name: 'kernel:loader' })
 
@@ -47,6 +48,25 @@ export async function loadModules(registry: Registry): Promise<void> {
 
   // 6. Topological sort by dependencies
   const sorted = topologicalSort(toActivate)
+
+  // 6b. Parse configSchemas from env vars and store validated config
+  const env = getAllEnv()
+  for (const manifest of discovered) {
+    if (manifest.configSchema) {
+      try {
+        const parsed = manifest.configSchema.parse(env)
+        registry.setModuleConfig(manifest.name, parsed as Record<string, unknown>)
+        logger.debug({ module: manifest.name }, 'Module config parsed')
+      } catch (err) {
+        logger.warn({ module: manifest.name, err }, 'Failed to parse module config, using defaults')
+        // Try parsing with empty object to get defaults
+        try {
+          const defaults = manifest.configSchema.parse({})
+          registry.setModuleConfig(manifest.name, defaults as Record<string, unknown>)
+        } catch { /* no defaults available */ }
+      }
+    }
+  }
 
   // 7. Activate in order
   for (const manifest of sorted) {
