@@ -130,6 +130,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/memory/CLAUDE.md` — memoria Redis+PG
 - `src/modules/oficina/CLAUDE.md` — panel de control web
 - `src/modules/model-scanner/CLAUDE.md` — escáner de modelos LLM
+- `src/modules/tools/CLAUDE.md` — herramientas del agente (registro, ejecución, tool calling nativo)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 
