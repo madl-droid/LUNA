@@ -62,9 +62,10 @@ export class Server {
         return
       }
 
-      // Try matched module routes
+      // Try matched module routes (strip query params for matching)
+      const urlPath = url.split('?')[0]
       const matched = this.routes.find(r =>
-        r.method === method && url === r.fullPath
+        r.method === method && urlPath === r.fullPath
       )
       if (matched) {
         try {
