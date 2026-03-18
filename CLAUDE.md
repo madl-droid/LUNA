@@ -25,6 +25,7 @@ src/
     whatsapp/        — canal WhatsApp Baileys (ver CLAUDE.md)
     memory/          — memoria Redis+PG (ver CLAUDE.md)
     oficina/         — panel de control web (ver CLAUDE.md)
+    llm/             — gateway LLM unificado (ver CLAUDE.md)
     model-scanner/   — escáner de modelos LLM (ver CLAUDE.md)
     users/           — listas de usuarios y permisos (ver CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
@@ -132,6 +133,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/oficina/CLAUDE.md` — panel de control web
 - `src/modules/model-scanner/CLAUDE.md` — escáner de modelos LLM
 - `src/modules/users/CLAUDE.md` — listas de usuarios y permisos
+- `src/modules/llm/CLAUDE.md` — gateway LLM unificado (circuit breaker, routing, tracking, seguridad)
 - `src/modules/tools/CLAUDE.md` — herramientas del agente (registro, ejecución, tool calling nativo)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue

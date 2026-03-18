@@ -1,6 +1,7 @@
 // LUNA Engine — LLM Client
-// Llamadas directas a SDKs (Anthropic, Google, OpenAI).
-// Sin circuit breaker por ahora. Se reemplazará por módulo LLM provider.
+// Puente entre el engine y el módulo LLM.
+// Si el módulo LLM está activo, delega al gateway.
+// Si no, usa llamadas directas a SDKs (fallback para compatibilidad).
 
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
@@ -9,6 +10,56 @@ import pino from 'pino'
 import type { LLMCallOptions, LLMCallResult, LLMProvider, EngineConfig } from '../types.js'
 
 const logger = pino({ name: 'engine:llm' })
+
+// ═══════════════════════════════════════════
+// Gateway reference (set by engine init when LLM module is active)
+// ═══════════════════════════════════════════
+
+interface LLMGatewayLike {
+  chat(request: {
+    task: string
+    provider?: string
+    model?: string
+    system?: string
+    messages: Array<{ role: string; content: string }>
+    maxTokens?: number
+    temperature?: number
+    tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+    jsonMode?: boolean
+    traceId?: string
+  }): Promise<{
+    text: string
+    provider: string
+    model: string
+    inputTokens: number
+    outputTokens: number
+    toolCalls?: Array<{ name: string; input: Record<string, unknown> }>
+    durationMs: number
+  }>
+}
+
+let _gateway: LLMGatewayLike | null = null
+
+/**
+ * Set the LLM gateway reference. Called by engine init when LLM module is active.
+ */
+export function setLLMGateway(gateway: LLMGatewayLike | null): void {
+  _gateway = gateway
+  if (gateway) {
+    logger.info('LLM calls will be routed through the LLM module gateway')
+  }
+}
+
+/**
+ * Check if the gateway is available.
+ */
+export function hasGateway(): boolean {
+  return _gateway !== null
+}
+
+// ═══════════════════════════════════════════
+// Direct SDK clients (fallback when LLM module not active)
+// ═══════════════════════════════════════════
 
 let anthropicClient: Anthropic | null = null
 let googleClient: GoogleGenerativeAI | null = null
@@ -30,10 +81,16 @@ export function initLLMClients(config: EngineConfig): void {
 }
 
 /**
- * Call an LLM provider directly.
- * Tries primary provider, falls back if it fails.
+ * Call an LLM provider.
+ * Routes through gateway if available, otherwise uses direct SDK calls.
  */
 export async function callLLM(options: LLMCallOptions): Promise<LLMCallResult> {
+  // If gateway available, delegate
+  if (_gateway) {
+    return callViaGateway(options)
+  }
+
+  // Fallback: direct SDK calls
   const provider = options.provider ?? 'anthropic'
   const model = options.model ?? ''
 
@@ -47,12 +104,19 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMCallResult> {
 
 /**
  * Call with fallback: try primary, then fallback provider.
+ * Routes through gateway if available (gateway handles fallback internally).
  */
 export async function callLLMWithFallback(
   options: LLMCallOptions,
   fallbackProvider: LLMProvider,
   fallbackModel: string,
 ): Promise<LLMCallResult> {
+  // Gateway handles fallback internally via task routing
+  if (_gateway) {
+    return callViaGateway(options)
+  }
+
+  // Fallback: direct SDK calls with manual fallback
   try {
     return await callLLM(options)
   } catch (primaryErr) {
@@ -71,6 +135,37 @@ export async function callLLMWithFallback(
     }
   }
 }
+
+// ═══════════════════════════════════════════
+// Gateway delegation
+// ═══════════════════════════════════════════
+
+async function callViaGateway(options: LLMCallOptions): Promise<LLMCallResult> {
+  const response = await _gateway!.chat({
+    task: options.task,
+    provider: options.provider,
+    model: options.model,
+    system: options.system,
+    messages: options.messages,
+    maxTokens: options.maxTokens,
+    temperature: options.temperature,
+    tools: options.tools,
+    jsonMode: options.jsonMode,
+  })
+
+  return {
+    text: response.text,
+    provider: response.provider as LLMProvider,
+    model: response.model,
+    inputTokens: response.inputTokens,
+    outputTokens: response.outputTokens,
+    toolCalls: response.toolCalls,
+  }
+}
+
+// ═══════════════════════════════════════════
+// Direct SDK calls (fallback)
+// ═══════════════════════════════════════════
 
 async function callProvider(
   provider: LLMProvider,
