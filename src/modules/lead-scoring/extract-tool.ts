@@ -172,11 +172,12 @@ async function handleExtraction(
       return { success: true, data: { extracted: false, reason: 'no_relevant_info' } }
     }
 
-    // Merge new data with existing
+    // Merge new data with existing (respecting minConfidence threshold)
     const mergedData = mergeQualificationData(
       existingData,
       extraction.extracted,
       extraction.confidence ?? {},
+      config.minConfidence ?? 0.3,
     )
 
     // Handle disqualification

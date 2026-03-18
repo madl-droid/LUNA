@@ -37,6 +37,8 @@ export interface QualifyingConfig {
   disqualifyReasons: DisqualifyReason[]
   maxCustomCriteria: number
   recalculateOnConfigChange: boolean
+  /** Minimum confidence (0-1) to accept an LLM extraction. Default: 0.3 */
+  minConfidence: number
 }
 
 // ═══════════════════════════════════════════

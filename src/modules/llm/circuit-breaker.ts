@@ -24,6 +24,9 @@ export class CircuitBreaker {
   private halfOpenRequests = 0
   private successesSinceHalfOpen = 0
 
+  /** Called when breaker transitions to 'closed' (provider recovered). */
+  onRecovery: ((provider: LLMProviderName) => void) | null = null
+
   constructor(
     private readonly provider: LLMProviderName,
     private readonly config: CircuitBreakerConfig,
@@ -159,6 +162,9 @@ export class CircuitBreaker {
         this.halfOpenRequests = 0
         this.successesSinceHalfOpen = 0
         logger.info({ provider: this.provider, from: oldState }, 'Circuit breaker CLOSED — provider healthy')
+        if (oldState === 'half-open' && this.onRecovery) {
+          this.onRecovery(this.provider)
+        }
         break
     }
   }
@@ -179,12 +185,16 @@ export class CircuitBreaker {
 export class CircuitBreakerManager {
   private breakers = new Map<LLMProviderName, CircuitBreaker>()
 
+  /** Callback fired when any breaker recovers (half-open → closed). */
+  onRecovery: ((provider: LLMProviderName) => void) | null = null
+
   constructor(private readonly defaultConfig: CircuitBreakerConfig) {}
 
   get(provider: LLMProviderName): CircuitBreaker {
     let breaker = this.breakers.get(provider)
     if (!breaker) {
       breaker = new CircuitBreaker(provider, this.defaultConfig)
+      breaker.onRecovery = this.onRecovery
       this.breakers.set(provider, breaker)
     }
     return breaker

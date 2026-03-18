@@ -59,6 +59,11 @@ export class LLMGateway {
       halfOpenMax: config.LLM_CB_HALF_OPEN_MAX,
     }
     this.breakers = new CircuitBreakerManager(cbConfig)
+    this.breakers.onRecovery = (provider) => {
+      if (this.registry) {
+        this.registry.runHook('llm:provider_up', { provider })
+      }
+    }
 
     // Retry config
     this.retryMax = config.LLM_RETRY_MAX

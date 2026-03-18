@@ -61,6 +61,7 @@ const DEFAULT_CONFIG: QualifyingConfig = {
   ],
   maxCustomCriteria: 6,
   recalculateOnConfigChange: true,
+  minConfidence: 0.3,
 }
 
 export class ConfigStore {
@@ -108,6 +109,8 @@ export class ConfigStore {
     try {
       const raw = fs.readFileSync(this.filePath, 'utf-8')
       const parsed = JSON.parse(raw) as QualifyingConfig
+      // Apply defaults for new fields added after initial deploy
+      if (parsed.minConfidence === undefined) parsed.minConfidence = 0.3
       this.validate(parsed)
       return parsed
     } catch (err) {

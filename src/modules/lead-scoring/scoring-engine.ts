@@ -185,11 +185,13 @@ export function resolveTransition(
 /**
  * Merge new extracted data into existing qualification data.
  * Only overwrites if new value has higher confidence or existing is empty.
+ * Extractions below minConfidence are discarded (unless no existing value).
  */
 export function mergeQualificationData(
   existing: Record<string, unknown>,
   extracted: Record<string, unknown>,
   confidence: Record<string, number>,
+  minConfidence = 0.3,
 ): Record<string, unknown> {
   const merged = { ...existing }
 
@@ -203,18 +205,31 @@ export function mergeQualificationData(
     const existingValue = existing[key]
     const newConfidence = confidence[key] ?? 0.5
     const existingConfidence = (existing['_confidence'] as Record<string, number> | undefined)?.[key] ?? 0
+    const hasExisting = isFilled(existingValue, { key, type: 'text', name: { es: '', en: '' }, weight: 0, required: false, neverAskDirectly: false })
+
+    // Skip low-confidence extractions when there's already a value
+    if (newConfidence < minConfidence && hasExisting) {
+      logger.debug({ key, newConfidence, minConfidence }, 'Skipping low-confidence extraction — existing value preserved')
+      continue
+    }
 
     // Overwrite if: no existing value, or new confidence is higher
-    if (!isFilled(existingValue, { key, type: 'text', name: { es: '', en: '' }, weight: 0, required: false, neverAskDirectly: false })) {
+    if (!hasExisting) {
       merged[key] = newValue
     } else if (newConfidence > existingConfidence) {
       merged[key] = newValue
     }
   }
 
-  // Update confidence tracking
+  // Update confidence tracking (only for values that passed the threshold)
   const existingConf = (existing['_confidence'] as Record<string, number>) ?? {}
-  merged['_confidence'] = { ...existingConf, ...confidence }
+  const acceptedConf: Record<string, number> = {}
+  for (const [key, conf] of Object.entries(confidence)) {
+    if (key.startsWith('_') || merged[key] === extracted[key]) {
+      acceptedConf[key] = conf
+    }
+  }
+  merged['_confidence'] = { ...existingConf, ...acceptedConf }
 
   return merged
 }

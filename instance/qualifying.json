@@ -50,5 +50,6 @@
     { "key": "out_of_zone", "name": { "es": "Fuera de zona", "en": "Out of zone" }, "targetStatus": "out_of_zone" }
   ],
   "maxCustomCriteria": 6,
-  "recalculateOnConfigChange": true
+  "recalculateOnConfigChange": true,
+  "minConfidence": 0.3
 }
