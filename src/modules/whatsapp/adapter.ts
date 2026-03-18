@@ -1,12 +1,14 @@
 // LUNA — WhatsApp adapter using Baileys 7.x
 // Adaptador de canal WhatsApp vía Baileys.
+// Auth state is stored in PostgreSQL, not on the filesystem.
 
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys'
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys'
 import type { WASocket, BaileysEventMap } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import { v4 as uuidv4 } from 'uuid'
-import * as fs from 'node:fs'
+import type { Pool } from 'pg'
 import pino from 'pino'
+import { usePostgresAuthState, clearAuthState } from './pg-auth-state.js'
 
 const logger = pino({ name: 'whatsapp:adapter' })
 
@@ -16,12 +18,17 @@ export interface BaileysState {
   status: BaileysStatus
   qr: string | null
   lastDisconnectReason: string | null
+  connectedNumber: string | null
 }
 
 export interface WhatsAppConfig {
-  WHATSAPP_AUTH_DIR: string
   WHATSAPP_RECONNECT_INTERVAL_MS: number
   WHATSAPP_MAX_RECONNECT_ATTEMPTS: number
+}
+
+export interface AdapterCallbacks {
+  onConnected?: () => Promise<void>
+  onStatusChange?: (status: BaileysStatus, connectedNumber: string | null) => Promise<void>
 }
 
 export interface OutgoingMessage {
@@ -55,13 +62,18 @@ export class BaileysAdapter {
   private _status: BaileysStatus = 'disconnected'
   private _qr: string | null = null
   private _lastDisconnectReason: string | null = null
+  private _connectedNumber: string | null = null
   private _autoReconnect = true
   private config: WhatsAppConfig
-  private onConnected?: () => Promise<void>
+  private pool: Pool
+  private instanceId: string
+  private callbacks: AdapterCallbacks
 
-  constructor(config: WhatsAppConfig, onConnected?: () => Promise<void>) {
+  constructor(config: WhatsAppConfig, pool: Pool, instanceId: string, callbacks?: AdapterCallbacks) {
     this.config = config
-    this.onConnected = onConnected
+    this.pool = pool
+    this.instanceId = instanceId
+    this.callbacks = callbacks ?? {}
   }
 
   getState(): BaileysState {
@@ -69,6 +81,7 @@ export class BaileysAdapter {
       status: this._status,
       qr: this._qr,
       lastDisconnectReason: this._lastDisconnectReason,
+      connectedNumber: this._connectedNumber,
     }
   }
 
@@ -77,12 +90,7 @@ export class BaileysAdapter {
     this._qr = null
     this._autoReconnect = true
 
-    const authDir = this.config.WHATSAPP_AUTH_DIR || 'instance/wa-auth'
-    if (!fs.existsSync(authDir)) {
-      fs.mkdirSync(authDir, { recursive: true })
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(authDir)
+    const { state, saveCreds } = await usePostgresAuthState(this.pool, this.instanceId)
     const { version } = await fetchLatestBaileysVersion()
 
     this.socket = makeWASocket({
@@ -99,7 +107,9 @@ export class BaileysAdapter {
       if (qr) {
         this._qr = qr
         this._status = 'qr_ready'
+        this._connectedNumber = null
         logger.info('QR code available for scanning')
+        this.emitStatusChange()
       }
 
       if (connection === 'close') {
@@ -107,6 +117,8 @@ export class BaileysAdapter {
         const reason = (lastDisconnect?.error as Boom)?.output?.statusCode
         this._lastDisconnectReason = DisconnectReason[reason as number] ?? String(reason)
         this._status = 'disconnected'
+        this._connectedNumber = null
+        this.emitStatusChange()
 
         const shouldReconnect = this._autoReconnect && reason !== DisconnectReason.loggedOut
 
@@ -124,9 +136,16 @@ export class BaileysAdapter {
         this._qr = null
         this._status = 'connected'
         this._lastDisconnectReason = null
-        logger.info('WhatsApp connected successfully')
-        if (this.onConnected) {
-          this.onConnected().catch(err => logger.error({ err }, 'onConnected callback failed'))
+
+        // Extract connected phone number from socket user
+        const rawId = this.socket?.user?.id ?? null
+        this._connectedNumber = rawId ? rawId.replace(/:.*$/, '') : null
+
+        logger.info({ connectedNumber: this._connectedNumber }, 'WhatsApp connected successfully')
+        this.emitStatusChange()
+
+        if (this.callbacks.onConnected) {
+          this.callbacks.onConnected().catch(err => logger.error({ err }, 'onConnected callback failed'))
         }
       }
     })
@@ -162,6 +181,7 @@ export class BaileysAdapter {
     }
     this._status = 'disconnected'
     this._qr = null
+    this._connectedNumber = null
     logger.info('Baileys adapter shut down')
   }
 
@@ -172,14 +192,14 @@ export class BaileysAdapter {
       this.socket.end(undefined)
       this.socket = null
     }
-    const authDir = this.config.WHATSAPP_AUTH_DIR
-    if (fs.existsSync(authDir)) {
-      fs.rmSync(authDir, { recursive: true, force: true })
-    }
+    // Clear auth state from DB so next connect starts fresh with QR
+    await clearAuthState(this.pool, this.instanceId)
     this._status = 'disconnected'
     this._qr = null
+    this._connectedNumber = null
     this.reconnectAttempts = 0
-    logger.info('WhatsApp disconnected and session cleared')
+    this.emitStatusChange()
+    logger.info('WhatsApp disconnected and session cleared from DB')
   }
 
   async sendMessage(to: string, message: OutgoingMessage): Promise<SendResult> {
@@ -212,6 +232,13 @@ export class BaileysAdapter {
 
   onMessage(handler: MessageHandler): void {
     this.messageHandlers.push(handler)
+  }
+
+  private emitStatusChange(): void {
+    if (this.callbacks.onStatusChange) {
+      this.callbacks.onStatusChange(this._status, this._connectedNumber)
+        .catch(err => logger.error({ err }, 'onStatusChange callback failed'))
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

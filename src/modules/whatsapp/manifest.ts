@@ -1,10 +1,13 @@
 // LUNA — Module: whatsapp
 // Canal WhatsApp vía Baileys (conexión directa).
+// Auth state stored in PostgreSQL — no filesystem credentials.
 
+import { hostname } from 'node:os'
 import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { BaileysAdapter } from './adapter.js'
+import * as configStore from '../../kernel/config-store.js'
 import QRCode from 'qrcode'
 
 let adapter: BaileysAdapter | null = null
@@ -22,7 +25,7 @@ const apiRoutes: ApiRoute[] = [
     handler: async (_req, res) => {
       const moduleEnabled = _registry?.isActive('whatsapp') ?? false
       if (!adapter) {
-        jsonResponse(res, 200, { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null, moduleEnabled })
+        jsonResponse(res, 200, { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null, connectedNumber: null, moduleEnabled })
         return
       }
       const state = adapter.getState()
@@ -32,7 +35,7 @@ const apiRoutes: ApiRoute[] = [
           qrDataUrl = await QRCode.toDataURL(state.qr, { width: 300, margin: 2, color: { dark: '#e2e8f0', light: '#0f172a' } })
         } catch { /* ignore */ }
       }
-      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason, moduleEnabled })
+      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason, connectedNumber: state.connectedNumber, moduleEnabled })
     },
   },
   {
@@ -71,10 +74,10 @@ const apiRoutes: ApiRoute[] = [
 
 const manifest: ModuleManifest = {
   name: 'whatsapp',
-  version: '1.0.0',
+  version: '1.1.0',
   description: {
-    es: 'Canal de WhatsApp usando Baileys (conexión directa)',
-    en: 'WhatsApp channel using Baileys (direct connection)',
+    es: 'Canal de WhatsApp usando Baileys (conexión directa, auth en DB)',
+    en: 'WhatsApp channel using Baileys (direct connection, DB auth)',
   },
   type: 'channel',
   removable: true,
@@ -82,7 +85,6 @@ const manifest: ModuleManifest = {
   depends: [],
 
   configSchema: z.object({
-    WHATSAPP_AUTH_DIR: z.string().default('instance/wa-auth'),
     WHATSAPP_RECONNECT_INTERVAL_MS: z.string().transform(Number).pipe(z.number().int()).default('5000'),
     WHATSAPP_MAX_RECONNECT_ATTEMPTS: z.string().transform(Number).pipe(z.number().int()).default('10'),
   }),
@@ -90,12 +92,23 @@ const manifest: ModuleManifest = {
   oficina: {
     title: { es: 'WhatsApp (Baileys)', en: 'WhatsApp (Baileys)' },
     info: {
-      es: 'Conexión directa a WhatsApp. Escanea el QR para vincular.',
-      en: 'Direct WhatsApp connection. Scan QR to link device.',
+      es: 'Conexión directa a WhatsApp. Credenciales almacenadas en la base de datos, no en el filesystem.',
+      en: 'Direct WhatsApp connection. Credentials stored in database, not filesystem.',
     },
     order: 10,
     fields: [
-      { key: 'WHATSAPP_AUTH_DIR', type: 'text', label: { es: 'Directorio de autenticación', en: 'Auth directory' } },
+      {
+        key: 'WHATSAPP_CONNECTED_NUMBER',
+        type: 'text',
+        label: { es: 'Numero conectado', en: 'Connected number' },
+        info: { es: 'Numero de WhatsApp vinculado actualmente (solo lectura)', en: 'Currently linked WhatsApp number (read-only)' },
+      },
+      {
+        key: 'WHATSAPP_CONNECTION_STATUS',
+        type: 'text',
+        label: { es: 'Estado de conexion', en: 'Connection status' },
+        info: { es: 'Estado actual de la conexion WhatsApp (solo lectura)', en: 'Current WhatsApp connection status (read-only)' },
+      },
     ],
     apiRoutes,
   },
@@ -103,18 +116,31 @@ const manifest: ModuleManifest = {
   async init(registry: Registry) {
     _registry = registry
     const config = registry.getConfig<{
-      WHATSAPP_AUTH_DIR: string
       WHATSAPP_RECONNECT_INTERVAL_MS: number
       WHATSAPP_MAX_RECONNECT_ATTEMPTS: number
     }>('whatsapp')
 
-    adapter = new BaileysAdapter(config, async () => {
-      // Auto-activate module when WhatsApp connects successfully
-      if (_registry && !_registry.isActive('whatsapp')) {
+    const db = registry.getDb()
+    const instanceId = hostname()
+
+    adapter = new BaileysAdapter(config, db, instanceId, {
+      onConnected: async () => {
+        if (_registry && !_registry.isActive('whatsapp')) {
+          try {
+            await _registry.activate('whatsapp')
+          } catch { /* already active or other issue */ }
+        }
+      },
+      onStatusChange: async (status, connectedNumber) => {
         try {
-          await _registry.activate('whatsapp')
-        } catch { /* already active or other issue — ignore */ }
-      }
+          await configStore.set(db, 'WHATSAPP_CONNECTION_STATUS', status, false)
+          await configStore.set(db, 'WHATSAPP_CONNECTED_NUMBER', connectedNumber ?? '', false)
+        } catch (err) {
+          // Non-critical — log and continue
+          const pino = await import('pino')
+          pino.default({ name: 'whatsapp:manifest' }).warn({ err }, 'Failed to persist connection metadata')
+        }
+      },
     })
 
     // Register hook: when pipeline sends a message for whatsapp channel
