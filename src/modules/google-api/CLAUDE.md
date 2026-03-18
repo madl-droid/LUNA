@@ -60,5 +60,6 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 ## Trampas
 - NO leer process.env — usar registry.getConfig()
 - El refresh_token de OAuth2 dura indefinidamente SI la app está en modo "producción" en GCP (en "testing" expira en 7 días)
-- Siempre incluir scope de gmail en auth URL aunque gmail sea módulo separado (email depende de google-api)
+- auth-url siempre incluye gmail scopes por conveniencia (si email está activo, comparte este OAuth; si no, no afecta)
+- Email ya NO depende de google-api — puede autenticarse solo con su propio EmailOAuthManager
 - `google-auth-library` y `googleapis` ya están instalados en package.json
