@@ -11,6 +11,12 @@ export interface EmailConfig {
   EMAIL_AUTO_MARK_READ: boolean
   EMAIL_INCLUDE_SIGNATURE: boolean
   EMAIL_MAX_HISTORY_FETCH: number
+  // OAuth standalone (cuando google-api no está activo)
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  GOOGLE_REDIRECT_URI: string
+  GOOGLE_REFRESH_TOKEN: string
+  GOOGLE_TOKEN_REFRESH_BUFFER_MS: number
 }
 
 export interface EmailMessage {

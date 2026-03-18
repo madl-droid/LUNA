@@ -4,13 +4,21 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, oficina fields, API routes, migrations, polling
-- `types.ts` — EmailMessage, EmailAttachment, EmailSendOptions, EmailReplyOptions, EmailForwardOptions
+- `types.ts` — EmailMessage, EmailAttachment, EmailSendOptions, EmailReplyOptions, EmailForwardOptions, EmailConfig
 - `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, filtro no-reply, parsing MIME
+- `email-oauth.ts` — OAuth2 standalone para Gmail-only (se usa cuando google-api no está activo)
 
 ## Manifest
 - type: `channel`, removable: true, activateByDefault: false
-- depends: ['google-api'] — requiere OAuth2 conectado
-- configSchema: EMAIL_POLL_INTERVAL_MS, EMAIL_MAX_ATTACHMENT_SIZE_MB, EMAIL_NOREPLY_ADDRESSES, EMAIL_NOREPLY_PATTERNS, EMAIL_PROCESS_LABELS, EMAIL_SKIP_LABELS, EMAIL_AUTO_MARK_READ, EMAIL_INCLUDE_SIGNATURE, EMAIL_MAX_HISTORY_FETCH
+- depends: [] — google-api es OPCIONAL (si está activo, comparte su OAuth; si no, email usa su propio OAuth)
+- configSchema: EMAIL_POLL_INTERVAL_MS, EMAIL_MAX_ATTACHMENT_SIZE_MB, EMAIL_NOREPLY_ADDRESSES, EMAIL_NOREPLY_PATTERNS, EMAIL_PROCESS_LABELS, EMAIL_SKIP_LABELS, EMAIL_AUTO_MARK_READ, EMAIL_INCLUDE_SIGNATURE, EMAIL_MAX_HISTORY_FETCH, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN, GOOGLE_TOKEN_REFRESH_BUFFER_MS
+
+## Autenticación dual
+- **Con google-api activo**: usa `registry.getOptional('google:oauth-manager')` → OAuth compartido con Drive, Sheets, etc.
+- **Sin google-api**: usa `EmailOAuthManager` propio → solo pide scopes de Gmail + userinfo.email
+- La decisión se toma en `init()` automáticamente
+- Los campos GOOGLE_* del configSchema solo se usan en modo standalone
+- Tabla propia `email_oauth_tokens` para persistir tokens standalone (no comparte con google-api)
 
 ## Hooks
 - **Escucha** `message:send` → envía email cuando channel === 'email'
@@ -20,11 +28,16 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - `email:adapter` — GmailAdapter instance
 
 ## API Routes (bajo /oficina/api/email/)
-- `GET /status` — estado del poller + conexión OAuth
+- `GET /status` — estado del poller + conexión OAuth + standaloneAuth flag
 - `POST /poll-now` — forzar poll inmediato
 - `POST /send` — enviar email { to, subject, bodyHtml, cc?, bodyText? }
 - `POST /reply` — responder { originalMessageId, bodyHtml, replyAll?, bodyText? }
 - `POST /check-noreply` — verificar si un email es no-reply { email }
+- `GET /auth-status` — estado de autenticación (standalone o shared)
+- `GET /auth-url` — genera URL OAuth2 (solo standalone)
+- `POST /auth-callback` — { code } — intercambia código por tokens (solo standalone)
+- `POST /auth-disconnect` — revoca tokens standalone
+- `POST /auth-refresh` — fuerza refresh del token standalone
 
 ## Polling
 - Usa Gmail History API para polling incremental (eficiente, no descarga todo)
@@ -44,6 +57,7 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 ## Tablas
 - `email_state` — estado del poller (last_history_id, messages_processed)
 - `email_threads` — tracking de threads (thread_id, contact_id, subject, message_count)
+- `email_oauth_tokens` — tokens OAuth2 standalone (solo se usa cuando google-api no está activo)
 
 ## Patrones
 - Emails entrantes → se parsean y envían como `message:incoming` con channel='email'
@@ -57,3 +71,5 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - Gmail API usa base64url encoding (no base64 estándar)
 - Adjuntos grandes: attachmentId se obtiene del metadata, content se descarga por separado
 - Subject encoding: se usa =?UTF-8?B?...?= para caracteres especiales
+- Si google-api Y email tienen credenciales Google, se prefiere el OAuth compartido de google-api
+- Las rutas auth-url/auth-callback/auth-disconnect solo funcionan en modo standalone
