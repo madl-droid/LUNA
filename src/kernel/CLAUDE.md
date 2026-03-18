@@ -5,10 +5,11 @@ Sistema de carga dinámica de módulos con hooks tipados, inyección de dependen
 ## Archivos
 - `types.ts` — HookMap (todos los hooks con payload tipado), ModuleManifest, ApiRoute, ModuleOficinaDef, payloads de mensaje/LLM/contacto
 - `config.ts` — **ÚNICO archivo que lee process.env.** Solo infra: DB, Redis, PORT, LOG_LEVEL. Proxy read-only.
+- `config-store.ts` — CRUD encriptado para tabla config_store (AES-256-GCM). Secrets se encriptan, non-secrets en texto plano.
 - `registry.ts` — bus central: hooks, DI (provide/get), config por módulo, lifecycle de módulos
 - `loader.ts` — descubre `src/modules/*/manifest.ts`, sync con tabla kernel_modules, topological sort por depends, activa en orden
 - `server.ts` — servidor HTTP nativo. Monta rutas de módulos en `/oficina/api/{moduleName}/{path}`. Endpoint `/health`.
-- `db.ts` — pool PostgreSQL + ejecución de migraciones kernel
+- `db.ts` — pool PostgreSQL + ejecución de migraciones kernel (kernel_modules + config_store)
 - `redis.ts` — conexión Redis con lazyConnect
 - `migrations/001_modules.sql` — tabla kernel_modules (name, active, activated_at, meta)
 
@@ -51,12 +52,16 @@ Registrar: `registry.addHook('mi-modulo', 'message:incoming', handler, priority?
 5. `topologicalSort()` — ordena por depends, detecta ciclos → error
 6. Activa en orden: llama `manifest.init(registry)` para cada uno
 
+## Regla obligatoria: campos en oficina
+Todo módulo que tenga parámetros configurables DEBE definir `manifest.oficina.fields` para que aparezcan en la oficina automáticamente. La UI renderiza paneles dinámicamente desde el registro de módulos — no hay paneles hardcodeados.
+
 ## Trampas
 - **NO leer process.env** fuera de kernel/config.ts. Módulos usan registry.getConfig().
 - **NO importar código entre módulos** directamente. Usar hooks o services del registry.
 - **Dependencias circulares** causan error en loader. Declararlas en manifest.depends[].
 - `callHook` retorna null si ningún listener responde — siempre manejar el caso null.
 - Las migraciones kernel corren automáticamente en `createPool()`. Módulos crean sus propias tablas en init().
+- **src/oficina/ es LEGACY** — toda funcionalidad nueva va en src/modules/oficina/.
 
 ## Exports consumidos por otros
 - `Registry` class — instanciada en src/index.ts, pasada a todos los módulos

@@ -13,7 +13,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist/
 ENV BUILD_VERSION=${BUILD_VERSION}
-COPY src/oficina/config-ui.html ./dist/oficina/config-ui.html
+COPY src/modules/oficina/ui/config-ui.html ./dist/oficina/config-ui.html
 COPY .env.example ./.env.example
 COPY .env.schema ./.env.schema
 COPY instance/config.json ./instance/config.json
