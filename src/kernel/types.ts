@@ -49,6 +49,11 @@ export interface HookMap {
   // Jobs
   'job:register':           [JobRegistration, void]
   'job:run':                [{ jobName: string }, void]
+
+  // Tools
+  'tools:register':         [ToolRegisterPayload, void]
+  'tools:before_execute':   [ToolBeforeExecutePayload, void]
+  'tools:executed':         [ToolExecutedPayload, void]
 }
 
 // Hook payload types
@@ -123,6 +128,27 @@ export interface JobRegistration {
   cron?: string
   intervalMs?: number
   handler: () => Promise<void>
+}
+
+// Tool hook payloads
+export interface ToolRegisterPayload {
+  toolName: string
+  moduleName: string
+}
+
+export interface ToolBeforeExecutePayload {
+  toolName: string
+  input: Record<string, unknown>
+  messageId?: string
+  contactType?: string
+}
+
+export interface ToolExecutedPayload {
+  toolName: string
+  success: boolean
+  durationMs: number
+  messageId?: string
+  error?: string
 }
 
 // ═══════════════════════════════════════════
