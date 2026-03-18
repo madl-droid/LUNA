@@ -8,6 +8,7 @@ import { BaileysAdapter } from './adapter.js'
 import QRCode from 'qrcode'
 
 let adapter: BaileysAdapter | null = null
+let _registry: Registry | null = null
 
 function jsonResponse(res: import('node:http').ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -19,8 +20,9 @@ const apiRoutes: ApiRoute[] = [
     method: 'GET',
     path: 'status',
     handler: async (_req, res) => {
+      const moduleEnabled = _registry?.isActive('whatsapp') ?? false
       if (!adapter) {
-        jsonResponse(res, 200, { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null })
+        jsonResponse(res, 200, { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null, moduleEnabled })
         return
       }
       const state = adapter.getState()
@@ -30,7 +32,7 @@ const apiRoutes: ApiRoute[] = [
           qrDataUrl = await QRCode.toDataURL(state.qr, { width: 300, margin: 2, color: { dark: '#e2e8f0', light: '#0f172a' } })
         } catch { /* ignore */ }
       }
-      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason })
+      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason, moduleEnabled })
     },
   },
   {
@@ -99,13 +101,21 @@ const manifest: ModuleManifest = {
   },
 
   async init(registry: Registry) {
+    _registry = registry
     const config = registry.getConfig<{
       WHATSAPP_AUTH_DIR: string
       WHATSAPP_RECONNECT_INTERVAL_MS: number
       WHATSAPP_MAX_RECONNECT_ATTEMPTS: number
     }>('whatsapp')
 
-    adapter = new BaileysAdapter(config)
+    adapter = new BaileysAdapter(config, async () => {
+      // Auto-activate module when WhatsApp connects successfully
+      if (_registry && !_registry.isActive('whatsapp')) {
+        try {
+          await _registry.activate('whatsapp')
+        } catch { /* already active or other issue — ignore */ }
+      }
+    })
 
     // Register hook: when pipeline sends a message for whatsapp channel
     registry.addHook('whatsapp', 'message:send', async (payload) => {
@@ -150,6 +160,7 @@ const manifest: ModuleManifest = {
       await adapter.shutdown()
       adapter = null
     }
+    _registry = null
   },
 }
 

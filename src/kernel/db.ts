@@ -15,6 +15,13 @@ CREATE TABLE IF NOT EXISTS kernel_modules (
   config_overrides JSONB DEFAULT '{}',
   meta          JSONB DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS config_store (
+  key         TEXT PRIMARY KEY,
+  value       TEXT NOT NULL,
+  is_secret   BOOLEAN DEFAULT false,
+  updated_at  TIMESTAMPTZ DEFAULT now()
+);
 `
 
 export async function createPool(): Promise<Pool> {

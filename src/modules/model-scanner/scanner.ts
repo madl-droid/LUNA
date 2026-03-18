@@ -25,6 +25,7 @@ export interface ScanResult {
   google: ScannedModel[]
   lastScanAt: string
   replacements: Replacement[]
+  errors?: Array<{ provider: string; message: string }>
 }
 
 interface Replacement {
@@ -123,6 +124,7 @@ function findReplacement(missingId: string, available: ScannedModel[]): ScannedM
 
 function updateInstanceConfigModels(anthropicModels: ScannedModel[], googleModels: ScannedModel[]): void {
   const configPath = path.resolve('instance/config.json')
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
   let instanceConfig: Record<string, unknown> = {}
   try {
     if (fs.existsSync(configPath)) {
@@ -191,11 +193,19 @@ export async function scanModels(registry: Registry): Promise<ScanResult> {
   const config = registry.getConfig<{ ANTHROPIC_API_KEY: string; GOOGLE_AI_API_KEY: string }>('model-scanner')
   const anthropicKey = config.ANTHROPIC_API_KEY
   const googleKey = config.GOOGLE_AI_API_KEY
+  const errors: Array<{ provider: string; message: string }> = []
+
+  if (!anthropicKey) {
+    errors.push({ provider: 'anthropic', message: 'ANTHROPIC_API_KEY is not configured. Set it in API Keys to scan Anthropic models.' })
+  }
+  if (!googleKey) {
+    errors.push({ provider: 'google', message: 'GOOGLE_AI_API_KEY is not configured. Set it in API Keys to scan Google models.' })
+  }
 
   const anthropicModels = anthropicKey ? await fetchAnthropicModels(anthropicKey) : []
   const googleModels = googleKey ? await fetchGoogleModels(googleKey) : []
 
-  logger.info({ anthropic: anthropicModels.length, google: googleModels.length }, 'Models discovered')
+  logger.info({ anthropic: anthropicModels.length, google: googleModels.length, errors: errors.length }, 'Models discovered')
 
   if (anthropicModels.length > 0 || googleModels.length > 0) {
     updateInstanceConfigModels(anthropicModels, googleModels)
@@ -241,6 +251,7 @@ export async function scanModels(registry: Registry): Promise<ScanResult> {
     google: googleModels,
     lastScanAt: new Date().toISOString(),
     replacements,
+    errors: errors.length > 0 ? errors : undefined,
   }
 
   _lastScanResult = result

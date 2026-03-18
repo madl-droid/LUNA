@@ -1,4 +1,8 @@
-// LUNA — Oficina server
+// @deprecated — LEGACY FILE. Use src/modules/oficina/ instead.
+// This file is kept only for reference. The modular system (src/modules/oficina/)
+// is the active implementation. Do NOT add new functionality here.
+//
+// LUNA — Oficina server (LEGACY)
 // Panel de control del agente. Se monta en /oficina del servidor principal.
 
 import * as fs from 'node:fs'

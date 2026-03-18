@@ -33,7 +33,7 @@ utils/
   rag-local.ts        — búsqueda fuzzy con fuse.js
   quick-actions.ts    — detección de patrones rápidos (stop, sí/no)
   message-formatter.ts — formateo por canal (WA burbujas, HTML email)
-  llm-client.ts       — llamadas directas a SDKs (Anthropic, Google, OpenAI)
+  llm-client.ts       — bridge: delega al módulo LLM (gateway) si activo, fallback a SDKs directos
 mocks/
   user-resolver.ts    — mock de S02 (user lists)
   tool-registry.ts    — mock de S03 (tool framework)
@@ -46,12 +46,14 @@ mocks/
 3. Phase 2: LLM evaluator → intent, plan, tools needed
 4. Phase 3: execute plan steps (parallel when independent)
 5. Phase 4: LLM compositor → response text
-6. Phase 5: validate, format, rate limit, send via `message:send` hook, persist
+6. Phase 5: validate, format, rate limit, send via `message:send` hook, persist, update lead qualification (auto-transition new→qualifying)
 
-## Dependencias externas (mocked)
+## Integraciones con módulos
 
-- S02 user-resolver: `resolveUserType(senderId, channel)` — en `mocks/user-resolver.ts`
-- S03 tool-registry: `executeTool(name, params)` — en `mocks/tool-registry.ts`
+- **LLM module**: `engine.ts` intenta `registry.getOptional('llm:gateway')` en init. Si existe, `llm-client.ts` delega todas las llamadas al gateway (circuit breaker, routing, tracking). Si no, usa SDKs directos (legacy mode).
+- **Lead-scoring**: `phase5-validate.ts` llama `updateLeadQualification()` para auto-transicionar leads new→qualifying y recalcular score.
+- **Users**: `resolveUserType(senderId, channel)` — módulo real o mock en `mocks/user-resolver.ts`
+- **Tools**: `executeTool(name, params)` — módulo real o mock en `mocks/tool-registry.ts`
 
 ## Config
 

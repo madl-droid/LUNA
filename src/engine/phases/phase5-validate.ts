@@ -60,10 +60,13 @@ export async function phase5Validate(
   // 5. Persist messages (both incoming and outgoing)
   await persistMessages(ctx, responseText, evaluation, db)
 
-  // 6. Update session
+  // 6. Update lead qualification (if contact is a lead)
+  await updateLeadQualification(ctx, registry, db)
+
+  // 7. Update session
   await updateSession(ctx, db)
 
-  // 7. Enqueue sheets sync (async, fire-and-forget)
+  // 8. Enqueue sheets sync (async, fire-and-forget)
   enqueueSheetsSync(ctx, redis)
 
   const durationMs = Date.now() - startMs
@@ -242,6 +245,38 @@ async function updateSession(ctx: ContextBundle, db: Pool): Promise<void> {
     )
   } catch (err) {
     logger.warn({ err, sessionId: ctx.session.id }, 'Failed to update session')
+  }
+}
+
+/**
+ * Update lead qualification after processing.
+ * Reads latest qualification_data from DB (may have been updated by extract_qualification tool
+ * in Phase 3) and recalculates the score to ensure consistency.
+ */
+async function updateLeadQualification(
+  ctx: ContextBundle,
+  registry: Registry,
+  db: Pool,
+): Promise<void> {
+  // Only for leads with a contact record
+  if (!ctx.contactId || ctx.contact?.contactType !== 'lead') return
+
+  // Transition new → qualifying on first interaction
+  if (ctx.contact?.qualificationStatus === 'new') {
+    try {
+      await db.query(
+        `UPDATE contacts SET qualification_status = 'qualifying', updated_at = NOW() WHERE id = $1 AND qualification_status = 'new'`,
+        [ctx.contactId],
+      )
+      await registry.runHook('contact:status_changed', {
+        contactId: ctx.contactId,
+        from: 'new',
+        to: 'qualifying',
+      })
+      logger.info({ contactId: ctx.contactId, traceId: ctx.traceId }, 'Lead transitioned new → qualifying')
+    } catch (err) {
+      logger.warn({ err, contactId: ctx.contactId }, 'Failed to transition lead to qualifying')
+    }
   }
 }
 

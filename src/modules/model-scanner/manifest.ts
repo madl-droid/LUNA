@@ -48,6 +48,19 @@ const manifest: ModuleManifest = {
         },
       },
       {
+        method: 'GET',
+        path: 'models',
+        handler: async (_req, res) => {
+          const scan = getLastScanResult()
+          const models = {
+            anthropic: scan?.anthropic.map(m => m.id) ?? [],
+            gemini: scan?.google.map(m => m.id) ?? [],
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ models, scan }))
+        },
+      },
+      {
         method: 'POST',
         path: 'scan',
         handler: async (_req, res) => {
@@ -59,6 +72,7 @@ const manifest: ModuleManifest = {
               anthropic: result.anthropic.length,
               google: result.google.length,
               replacements: result.replacements,
+              errors: result.errors,
             }))
           } catch (err) {
             res.writeHead(500, { 'Content-Type': 'application/json' })

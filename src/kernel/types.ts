@@ -109,6 +109,14 @@ export interface LLMChatPayload {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>
   maxTokens?: number
   temperature?: number
+  /** Tools for native function calling */
+  tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+  /** Force JSON output */
+  jsonMode?: boolean
+  /** Override API key env var */
+  apiKeyEnv?: string
+  /** Trace/correlation ID */
+  traceId?: string
 }
 
 export interface LLMChatResult {
@@ -117,6 +125,8 @@ export interface LLMChatResult {
   model: string
   inputTokens?: number
   outputTokens?: number
+  /** Tool calls returned by the model */
+  toolCalls?: Array<{ name: string; input: Record<string, unknown> }>
 }
 
 export interface LLMModelsResult {

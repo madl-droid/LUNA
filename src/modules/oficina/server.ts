@@ -3,13 +3,23 @@
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { createRequire } from 'node:module'
 import type * as http from 'node:http'
 import type { Registry } from '../../kernel/registry.js'
 import type { ApiRoute } from '../../kernel/types.js'
 import { reloadKernelConfig } from '../../kernel/config.js'
+import * as configStore from '../../kernel/config-store.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'oficina' })
+
+// Read package.json version once at import time
+let packageJsonVersion = 'dev'
+try {
+  const require = createRequire(import.meta.url)
+  const pkg = require('../../../package.json') as { version?: string }
+  packageJsonVersion = pkg.version ?? 'dev'
+} catch { /* fallback to dev */ }
 
 function jsonResponse(res: http.ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -129,22 +139,40 @@ export function createApiRoutes(): ApiRoute[] {
       method: 'GET',
       path: 'version',
       handler: async (_req, res) => {
-        jsonResponse(res, 200, { version: process.env['BUILD_VERSION'] ?? 'dev' })
+        const version = process.env['BUILD_VERSION'] || packageJsonVersion || 'dev'
+        jsonResponse(res, 200, { version })
       },
     },
 
-    // GET /oficina/api/oficina/config — return current .env values
+    // GET /oficina/api/oficina/config — return current config (DB > .env > defaults)
     {
       method: 'GET',
       path: 'config',
       handler: async (_req, res) => {
         const envFile = findEnvFile()
-        const values = parseEnvFile(envFile)
+        const envValues = parseEnvFile(envFile)
+        const defaults: Record<string, string> = {
+          DB_HOST: 'localhost', DB_PORT: '5432', DB_NAME: 'luna', DB_USER: 'luna',
+          REDIS_HOST: 'localhost', REDIS_PORT: '6379',
+        }
+        // Try to read DB config (DB has priority over .env)
+        let dbValues: Record<string, string> = {}
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (registry) {
+            dbValues = await configStore.getAll(registry.getDb())
+          }
+        } catch (err) {
+          logger.warn({ err }, 'Could not read config from DB, using .env only')
+        }
+        // Merge: DB > .env > defaults
+        const values = { ...defaults, ...envValues, ...dbValues }
         jsonResponse(res, 200, { file: envFile, values })
       },
     },
 
-    // PUT /oficina/api/oficina/config — update .env values
+    // PUT /oficina/api/oficina/config — update config (DB primary + .env backward compat)
     {
       method: 'PUT',
       path: 'config',
@@ -152,8 +180,22 @@ export function createApiRoutes(): ApiRoute[] {
         try {
           const body = await readBody(req)
           const updates = JSON.parse(body) as Record<string, string>
+
+          // Write to .env for backward compatibility
           const envFile = findEnvFile()
           writeEnvFile(envFile, updates)
+
+          // Write to DB (primary storage, encrypted for secrets)
+          try {
+            const { getRegistryRef } = await import('./manifest-ref.js')
+            const registry = getRegistryRef()
+            if (registry) {
+              await configStore.setMultiple(registry.getDb(), updates)
+            }
+          } catch (err) {
+            logger.warn({ err }, 'Could not write config to DB, .env was updated')
+          }
+
           logger.info(`Config updated: ${Object.keys(updates).join(', ')}`)
           jsonResponse(res, 200, { ok: true, updated: Object.keys(updates) })
         } catch (err) {

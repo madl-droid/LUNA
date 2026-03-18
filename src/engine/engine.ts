@@ -7,7 +7,7 @@ import type { Registry } from '../kernel/registry.js'
 import type { IncomingMessage } from '../channels/types.js'
 import type { PipelineResult, EngineConfig } from './types.js'
 import { loadEngineConfig } from './config.js'
-import { initLLMClients } from './utils/llm-client.js'
+import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
 import { phase1Intake } from './phases/phase1-intake.js'
 import { phase2Evaluate } from './phases/phase2-evaluate.js'
 import { phase3Execute } from './phases/phase3-execute.js'
@@ -29,8 +29,16 @@ export function initEngine(reg: Registry): void {
   // Load config
   engineConfig = loadEngineConfig()
 
-  // Initialize LLM clients
+  // Initialize LLM clients (direct SDK fallback)
   initLLMClients(engineConfig)
+
+  // If LLM module is active, delegate all LLM calls through the gateway
+  const gateway = reg.getOptional<unknown>('llm:gateway')
+  if (gateway) {
+    setLLMGateway(gateway as Parameters<typeof setLLMGateway>[0])
+  } else {
+    logger.warn('LLM module not active — using direct SDK calls (no circuit breaker, no tracking)')
+  }
 
   // Register hook listener for incoming messages
   registry.addHook('engine', 'message:incoming', async (payload, correlationId) => {

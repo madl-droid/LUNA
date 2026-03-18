@@ -41,6 +41,13 @@
 4. `docker login ghcr.io` con PAT (scope `read:packages`)
 5. `docker compose up -d`
 
+## Config encryption (config-store)
+- Los secrets (API keys, passwords) se guardan encriptados en la tabla `config_store` (AES-256-GCM).
+- La key de encriptación se auto-genera en `instance/config.key` en primer arranque (permisos `0600`).
+- `instance/` se monta como volumen Docker — la key persiste entre deploys.
+- **BACKUP**: al migrar de servidor, copiar `instance/` completo (incluye `config.key`, `wa-auth/`, `knowledge/`). Sin la key, los secrets en DB son irrecuperables.
+- **Alternativa** (multi-instancia/CI): usar env var `CONFIG_ENCRYPTION_KEY` en lugar del archivo.
+
 ## Variables de entorno clave
 - `DOMAIN` — dominio para Traefik routing + SSL (requerido)
 - `APP_PORT` — puerto app (default: 3000 prod, 3001 staging)

@@ -253,6 +253,8 @@ const i18n = {
     scanError: 'Error al escanear',
     scanScanning: 'Escaneando...',
     scanReplaced: 'reemplazado por',
+    sec_lead_scoring: 'Calificacion de Leads',
+    sec_lead_scoring_badge: 'Configurar',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'Claves de acceso a los proveedores de IA. Se necesita al menos una para que LUNA funcione.',
     sec_models: 'Modelos de IA',
@@ -275,6 +277,9 @@ const i18n = {
     sec_google_info: 'Integracion con Google para email, calendario y reportes. Requiere OAuth2.',
     sec_email: 'Email',
     sec_email_info: 'Configuracion del canal de email con IMAP/SMTP.',
+    activated: 'activado',
+    deactivated: 'desactivado',
+    moduleToggleError: 'Error al cambiar estado del modulo',
     // Field labels
     f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
     f_OPENAI_API_KEY: 'OpenAI',
@@ -373,6 +378,8 @@ const i18n = {
     scanError: 'Scan failed',
     scanScanning: 'Scanning...',
     scanReplaced: 'replaced by',
+    sec_lead_scoring: 'Lead Scoring',
+    sec_lead_scoring_badge: 'Configure',
     sec_apikeys: 'API Keys',
     sec_apikeys_info: 'AI provider access keys. At least one is required for LUNA to work.',
     sec_models: 'AI Models',
@@ -395,6 +402,9 @@ const i18n = {
     sec_google_info: 'Google integration for email, calendar, and reporting. Requires OAuth2.',
     sec_email: 'Email',
     sec_email_info: 'Email channel config with IMAP/SMTP.',
+    activated: 'activated',
+    deactivated: 'deactivated',
+    moduleToggleError: 'Failed to toggle module',
     f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
     f_OPENAI_API_KEY: 'OpenAI',
     f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
@@ -474,9 +484,10 @@ function toggleLang() {
 // State
 // ═══════════════════════════════════════════
 let originalValues = {}, currentValues = {}, allModels = { anthropic: [], gemini: [] }
-let waState = { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null }
+let waState = { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null, moduleEnabled: false }
 let waPolling = null
 let lastScan = null
+let moduleStates = []
 
 // ═══════════════════════════════════════════
 // Init
@@ -484,14 +495,16 @@ let lastScan = null
 async function init() {
   document.getElementById('lang-btn').textContent = lang === 'es' ? 'EN' : 'ES'
   try {
-    const [configRes, versionRes, modelsRes] = await Promise.all([
-      fetch('/oficina/api/config'),
-      fetch('/oficina/api/version'),
-      fetch('/oficina/api/models'),
+    const [configRes, versionRes, modelsRes, modulesRes] = await Promise.all([
+      fetch('/oficina/api/oficina/config'),
+      fetch('/oficina/api/oficina/version'),
+      fetch('/oficina/api/model-scanner/models'),
+      fetch('/oficina/api/oficina/modules'),
     ])
     const configData = await configRes.json()
     const versionData = await versionRes.json()
     const modelsData = await modelsRes.json()
+    const modulesData = await modulesRes.json()
 
     const v = versionData.version ?? 'dev'
     document.getElementById('build-ver').textContent = 'v' + (v.length > 7 ? v.slice(0, 7) : v)
@@ -500,6 +513,7 @@ async function init() {
     currentValues = { ...configData.values }
     allModels = modelsData.models || { anthropic: [], gemini: [] }
     lastScan = modelsData.scan || null
+    moduleStates = modulesData.modules || []
 
     await pollWa()
     render()
@@ -517,6 +531,7 @@ async function init() {
 async function pollWa() {
   try {
     const res = await fetch('/oficina/api/whatsapp/status')
+    if (!res.ok) { waState = { status: 'not_initialized', qrDataUrl: null, lastDisconnectReason: null, moduleEnabled: false }; return }
     const ns = await res.json()
     const changed = ns.status !== waState.status || ns.qrDataUrl !== waState.qrDataUrl
     waState = ns
@@ -563,6 +578,12 @@ function render() {
     <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0">
       <span class="panel-badge badge-soon">${t('comingSoon')}</span>
     </div>
+  </div></div>`
+
+  // 1.5. Lead Scoring (link to separate page)
+  h += `<div class="panel"><div class="panel-header" onclick="window.location.href='/oficina/api/lead-scoring/ui'" style="cursor:pointer">
+    <span class="panel-title">${t('sec_lead_scoring')} <span class="panel-badge badge-active">${t('sec_lead_scoring_badge')}</span></span>
+    <span class="panel-chevron" style="transform:rotate(-90deg)">&#9660;</span>
   </div></div>`
 
   // 2. API Keys
@@ -632,24 +653,20 @@ function render() {
     numField('PIPELINE_SESSION_TTL_MS', 'f_PIPELINE_SESSION_TTL_MS', 'i_PIPELINE_TTL'),
   ])
 
-  // 7. Follow-up
-  h += panel('followup', [
-    boolField('FOLLOWUP_ENABLED', 'f_FOLLOWUP_ENABLED'),
-    numField('FOLLOWUP_DELAY_MINUTES', 'f_FOLLOWUP_DELAY_MINUTES', 'i_FOLLOWUP_DELAY'),
-    numField('FOLLOWUP_MAX_ATTEMPTS', 'f_FOLLOWUP_MAX_ATTEMPTS', 'i_FOLLOWUP_MAX'),
-    numField('FOLLOWUP_COLD_AFTER_ATTEMPTS', 'f_FOLLOWUP_COLD_AFTER_ATTEMPTS', 'i_FOLLOWUP_COLD'),
-  ])
+  // 7. Follow-up (only show params if enabled)
+  const followupEnabled = currentValues['FOLLOWUP_ENABLED'] === 'true'
+  const followupFields = [boolField('FOLLOWUP_ENABLED', 'f_FOLLOWUP_ENABLED')]
+  if (followupEnabled) {
+    followupFields.push(
+      numField('FOLLOWUP_DELAY_MINUTES', 'f_FOLLOWUP_DELAY_MINUTES', 'i_FOLLOWUP_DELAY'),
+      numField('FOLLOWUP_MAX_ATTEMPTS', 'f_FOLLOWUP_MAX_ATTEMPTS', 'i_FOLLOWUP_MAX'),
+      numField('FOLLOWUP_COLD_AFTER_ATTEMPTS', 'f_FOLLOWUP_COLD_AFTER_ATTEMPTS', 'i_FOLLOWUP_COLD'),
+    )
+  }
+  h += panel('followup', followupFields)
 
-  // 8. Modules
-  h += panel('modules', [
-    boolField('MODULE_WHATSAPP', 'f_MODULE_WHATSAPP'),
-    boolField('MODULE_EMAIL', 'f_MODULE_EMAIL'),
-    boolField('MODULE_GOOGLE_SHEETS', 'f_MODULE_GOOGLE_SHEETS'),
-    boolField('MODULE_GOOGLE_CALENDAR', 'f_MODULE_GOOGLE_CALENDAR'),
-    boolField('MODULE_BATCH', 'f_MODULE_BATCH'),
-    boolField('MODULE_FOLLOWUP', 'f_MODULE_FOLLOWUP'),
-    boolField('MODULE_WEB_SEARCH', 'f_MODULE_WEB_SEARCH'),
-  ])
+  // 8. Dynamic module panels from registry
+  h += renderModulePanels()
 
   // 9. Google (coming soon)
   h += panelSoon('google')
@@ -868,7 +885,7 @@ async function saveChanges() {
   if (!Object.keys(changes).length) return
   try {
     setStatus(t('saving'), '')
-    const res = await fetch('/oficina/api/config', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(changes) })
+    const res = await fetch('/oficina/api/oficina/config', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(changes) })
     const data = await res.json()
     if (data.ok) {
       originalValues = { ...currentValues }; render(); updateSaveBtn()
@@ -880,7 +897,7 @@ async function saveChanges() {
 async function applyChanges() {
   if (!confirm(t('applyConfirm'))) return
   try {
-    const res = await fetch('/oficina/api/apply', { method: 'POST' })
+    const res = await fetch('/oficina/api/oficina/apply', { method: 'POST' })
     const data = await res.json()
     if (data.ok) {
       showToast(t('applySuccess'), 'success')
@@ -891,7 +908,7 @@ async function applyChanges() {
 async function resetDb() {
   if (!confirm(t('resetDbConfirm'))) return
   try {
-    const res = await fetch('/oficina/api/reset-db', { method: 'POST' })
+    const res = await fetch('/oficina/api/oficina/reset-db', { method: 'POST' })
     const data = await res.json()
     if (data.ok) {
       showToast(t('resetDbSuccess'), 'success')
@@ -902,12 +919,16 @@ async function resetDb() {
 async function triggerScan() {
   showToast(t('scanScanning'), 'success')
   try {
-    const res = await fetch('/oficina/api/models/scan', { method: 'POST' })
+    const res = await fetch('/oficina/api/model-scanner/scan', { method: 'POST' })
     const data = await res.json()
     if (data.ok) {
-      showToast(t('scanSuccess'), 'success')
+      if (data.errors && data.errors.length > 0) {
+        showToast(data.errors.map(e => e.provider + ': ' + e.message).join('\n'), 'error')
+      } else {
+        showToast(t('scanSuccess'), 'success')
+      }
       // Refresh models and scan data
-      const modelsRes = await fetch('/oficina/api/models')
+      const modelsRes = await fetch('/oficina/api/model-scanner/models')
       const modelsData = await modelsRes.json()
       allModels = modelsData.models || { anthropic: [], gemini: [] }
       lastScan = modelsData.scan || null
@@ -925,6 +946,95 @@ async function triggerScan() {
       render()
     } else { showToast(t('scanError'), 'error') }
   } catch { showToast(t('scanError'), 'error') }
+}
+
+// ═══════════════════════════════════════════
+// Dynamic module panels
+// ═══════════════════════════════════════════
+function renderModulePanels() {
+  let h = `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
+    <span class="panel-title">${t('sec_modules')}</span>
+    <span class="panel-chevron">&#9660;</span>
+  </div><div class="panel-body"><div class="panel-info">${t('sec_modules_info')}</div>`
+
+  // Filter: skip oficina itself (it's the panel we're in)
+  const displayModules = moduleStates.filter(m => m.name !== 'oficina')
+
+  for (const mod of displayModules) {
+    const title = mod.oficina?.title ? (mod.oficina.title[lang] || mod.oficina.title.es || mod.name) : mod.name
+    const info = mod.oficina?.info ? (mod.oficina.info[lang] || mod.oficina.info.es || '') : ''
+    const isActive = mod.active
+    const canToggle = mod.removable !== false
+
+    h += `<div style="border:1px solid #334155;border-radius:8px;margin-bottom:0.75rem;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 1rem;background:rgba(255,255,255,0.02)">
+        <div>
+          <span style="font-size:0.85rem;font-weight:600">${esc(title)}</span>
+          <span class="panel-badge ${isActive ? 'badge-active' : 'badge-soon'}" style="margin-left:0.5rem">${isActive ? t('activated') : t('deactivated')}</span>
+          <span style="font-size:0.6rem;color:#64748b;margin-left:0.5rem">${mod.type}</span>
+        </div>
+        ${canToggle ? `<label class="toggle"><input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleModule('${esc(mod.name)}', this.checked)"><span class="toggle-slider"></span></label>` : ''}
+      </div>`
+
+    // Only show config fields if module is active and has oficina fields
+    if (isActive && mod.oficina?.fields && mod.oficina.fields.length > 0) {
+      h += `<div style="padding:0.5rem 1rem 0.75rem;border-top:1px solid #334155">`
+      if (info) h += `<div class="panel-info">${esc(info)}</div>`
+      for (const field of mod.oficina.fields) {
+        const label = field.label ? (field.label[lang] || field.label.es || field.key) : field.key
+        if (field.type === 'secret') {
+          h += secretField(field.key, null, null).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label))
+        } else if (field.type === 'boolean') {
+          h += boolField(field.key, null).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label))
+        } else if (field.type === 'number') {
+          h += numField(field.key, null, null).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label))
+        } else if (field.type === 'select' && field.options) {
+          h += selectField(field.key, label, field.options)
+        } else {
+          h += textField(field.key, null, null).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label))
+        }
+      }
+      h += `</div>`
+    }
+
+    h += `</div>`
+  }
+
+  h += `</div></div>`
+  return h
+}
+
+function selectField(key, label, options) {
+  const val = currentValues[key] ?? ''
+  const mod = currentValues[key] !== (originalValues[key] ?? '') ? ' modified' : ''
+  const opts = options.map(o => `<option value="${esc(o.value)}" ${o.value === val ? 'selected' : ''}>${esc(o.label?.[lang] || o.label?.es || o.value)}</option>`).join('')
+  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span></div>
+    <select data-key="${key}" onchange="onChange(this)" class="${mod}">${opts}</select></div>`
+}
+
+async function toggleModule(name, active) {
+  const endpoint = active ? '/oficina/api/oficina/activate' : '/oficina/api/oficina/deactivate'
+  try {
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(`${name} ${active ? t('activated') : t('deactivated')}`, 'success')
+      await refreshModuleStates()
+      render()
+    } else {
+      showToast(data.error || t('moduleToggleError'), 'error')
+    }
+  } catch {
+    showToast(t('moduleToggleError'), 'error')
+  }
+}
+
+async function refreshModuleStates() {
+  try {
+    const res = await fetch('/oficina/api/oficina/modules')
+    const data = await res.json()
+    moduleStates = data.modules || []
+  } catch { /* ignore */ }
 }
 
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }

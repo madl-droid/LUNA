@@ -57,9 +57,11 @@ export class BaileysAdapter {
   private _lastDisconnectReason: string | null = null
   private _autoReconnect = true
   private config: WhatsAppConfig
+  private onConnected?: () => Promise<void>
 
-  constructor(config: WhatsAppConfig) {
+  constructor(config: WhatsAppConfig, onConnected?: () => Promise<void>) {
     this.config = config
+    this.onConnected = onConnected
   }
 
   getState(): BaileysState {
@@ -123,6 +125,9 @@ export class BaileysAdapter {
         this._status = 'connected'
         this._lastDisconnectReason = null
         logger.info('WhatsApp connected successfully')
+        if (this.onConnected) {
+          this.onConnected().catch(err => logger.error({ err }, 'onConnected callback failed'))
+        }
       }
     })
 
