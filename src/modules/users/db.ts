@@ -206,7 +206,8 @@ export class UsersDb {
     )
 
     if (result.rows.length === 0) return null
-    return { listType: result.rows[0].list_type, listName: result.rows[0].list_name }
+    const row = result.rows[0]!
+    return { listType: row.list_type, listName: row.list_name }
   }
 
   // ─── List config ────────────────────────
@@ -280,14 +281,14 @@ export class UsersDb {
       `SELECT COUNT(*) as count FROM user_lists WHERE list_type = $1 AND is_active = true`,
       [listType],
     )
-    return parseInt(result.rows[0].count, 10)
+    return parseInt(result.rows[0]!.count, 10)
   }
 
   async countListTypes(): Promise<number> {
     const result = await this.pool.query<{ count: string }>(
       `SELECT COUNT(*) as count FROM user_list_config`,
     )
-    return parseInt(result.rows[0].count, 10)
+    return parseInt(result.rows[0]!.count, 10)
   }
 
   /** Deactivate all users from a specific source in a list (used before re-sync). */
