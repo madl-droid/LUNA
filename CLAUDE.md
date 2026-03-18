@@ -30,10 +30,11 @@ src/
     users/           — listas de usuarios y permisos (ver CLAUDE.md)
     tools/           — herramientas del agente (ver CLAUDE.md)
     lead-scoring/    — calificación de leads BANT (ver CLAUDE.md)
+    engine/          — wrapper del pipeline para el kernel (ver CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
 deploy/              — docker-compose + deploy (ver deploy/CLAUDE.md)
-instance/            — config operacional (config.json) + wa-auth/ + knowledge/media/
+instance/            — config operacional (config.json) + knowledge/media/
 docs/                — arquitectura (docs/architecture/) y reportes de sesión
 ```
 
@@ -139,6 +140,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/llm/CLAUDE.md` — gateway LLM unificado (circuit breaker, routing, tracking, seguridad)
 - `src/modules/tools/CLAUDE.md` — herramientas del agente (registro, ejecución, tool calling nativo)
 - `src/modules/lead-scoring/CLAUDE.md` — calificación de leads (BANT + custom, scoring, UI oficina)
+- `src/modules/engine/CLAUDE.md` — wrapper del pipeline para el kernel
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 

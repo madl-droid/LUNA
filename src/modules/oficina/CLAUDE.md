@@ -9,7 +9,7 @@ Panel de configuración, monitoreo y gestión de módulos. Se monta en `/oficina
 - `ui/config-ui.html` — SPA dark theme (Tailwind-inspired, i18n ES/EN). Paneles dinámicos vía `renderModulePanels()`.
 
 ## Manifest
-- type: `core-module`, removable: true, activateByDefault: true
+- type: `core-module`, removable: false, activateByDefault: true
 
 ## Servicio registrado
 - `oficina:requestHandler` — handler que retorna true si manejó la ruta /oficina

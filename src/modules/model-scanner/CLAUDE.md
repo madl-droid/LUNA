@@ -12,8 +12,8 @@ Escanea APIs de Anthropic y Google AI para descubrir modelos disponibles, detect
 
 ## API routes (montadas en /oficina/api/model-scanner/)
 - `GET /status` — último resultado de scan (modelos por provider, fecha, reemplazos)
+- `GET /models` — modelos disponibles por provider + último resultado de scan
 - `POST /scan` — disparar scan manual
-- `GET /scan` — obtener resultado del último scan
 
 ## Patrones
 - Scan periódico configurable (default cada 6 horas)

@@ -11,7 +11,7 @@ Redis (buffer rápido) + PostgreSQL (persistente). Redis es primario para lectur
 
 ## Manifest
 - type: `core-module`, removable: false, activateByDefault: true
-- configSchema: MEMORY_BUFFER_MESSAGE_COUNT (50), MEMORY_SESSION_MAX_TTL_HOURS (24), MEMORY_COMPRESSION_THRESHOLD (30), MEMORY_COMPRESSION_KEEP_RECENT (10)
+- configSchema: MEMORY_BUFFER_MESSAGE_COUNT (50), MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN (30), MEMORY_SESSION_MAX_TTL_HOURS (24), MEMORY_COMPRESSION_THRESHOLD (30), MEMORY_COMPRESSION_KEEP_RECENT (10)
 
 ## Servicio registrado
 - `memory:manager` — instancia de MemoryManager

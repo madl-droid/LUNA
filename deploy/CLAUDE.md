@@ -29,7 +29,7 @@
 
 ## Docker compose
 - `.env` montado como volumen (persiste edits desde oficina entre deploys)
-- `instance/` montado como volumen (wa-auth + config operacional)
+- `instance/` montado como volumen (config operacional + knowledge)
 - PostgreSQL 16 + Redis 7 como servicios con health checks
 - Traefik labels para routing y SSL automático
 - `BUILD_VERSION` como build arg (mostrado en oficina)
@@ -45,7 +45,7 @@
 - Los secrets (API keys, passwords) se guardan encriptados en la tabla `config_store` (AES-256-GCM).
 - La key de encriptación se auto-genera en `instance/config.key` en primer arranque (permisos `0600`).
 - `instance/` se monta como volumen Docker — la key persiste entre deploys.
-- **BACKUP**: al migrar de servidor, copiar `instance/` completo (incluye `config.key`, `wa-auth/`, `knowledge/`). Sin la key, los secrets en DB son irrecuperables.
+- **BACKUP**: al migrar de servidor, copiar `instance/` completo (incluye `config.key`, `knowledge/`) + dump de PostgreSQL (auth WhatsApp está en tablas `wa_auth_*`). Sin la config.key, los secrets en DB son irrecuperables.
 - **Alternativa** (multi-instancia/CI): usar env var `CONFIG_ENCRYPTION_KEY` en lugar del archivo.
 
 ## Variables de entorno clave
