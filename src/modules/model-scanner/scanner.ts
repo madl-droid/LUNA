@@ -5,6 +5,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
+import { getEnv } from '../../kernel/config.js'
 
 const logger = pino({ name: 'model-scanner' })
 
@@ -216,12 +217,12 @@ export async function scanModels(registry: Registry): Promise<ScanResult> {
   const replacements: Replacement[] = []
 
   for (const key of MODEL_CONFIG_KEYS) {
-    const currentModel = process.env[key]
+    const currentModel = getEnv(key)
     if (!currentModel) continue
 
     // Determine which provider's models to check against
     const providerKey = key.includes('FALLBACK') ? `LLM_FALLBACK_${key.split('_').pop()}_PROVIDER` : key.replace('_MODEL', '_PROVIDER')
-    const provider = process.env[providerKey] ?? 'anthropic'
+    const provider = getEnv(providerKey) ?? 'anthropic'
     const providerModels = provider === 'google' ? googleModels : anthropicModels
 
     if (providerModels.length === 0) continue

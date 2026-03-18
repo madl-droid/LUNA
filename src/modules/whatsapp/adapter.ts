@@ -77,7 +77,7 @@ export class BaileysAdapter {
     this._qr = null
     this._autoReconnect = true
 
-    const authDir = this.config.WHATSAPP_AUTH_DIR
+    const authDir = this.config.WHATSAPP_AUTH_DIR || 'instance/wa-auth'
     if (!fs.existsSync(authDir)) {
       fs.mkdirSync(authDir, { recursive: true })
     }

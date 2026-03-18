@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import type * as http from 'node:http'
 import type { Registry } from '../../kernel/registry.js'
 import type { ApiRoute } from '../../kernel/types.js'
-import { reloadKernelConfig } from '../../kernel/config.js'
+import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import pino from 'pino'
 
@@ -139,7 +139,7 @@ export function createApiRoutes(): ApiRoute[] {
       method: 'GET',
       path: 'version',
       handler: async (_req, res) => {
-        const version = process.env['BUILD_VERSION'] || packageJsonVersion || 'dev'
+        const version = kernelConfig.buildVersion || packageJsonVersion || 'dev'
         jsonResponse(res, 200, { version })
       },
     },

@@ -14,6 +14,7 @@ const kernelSchema = z.object({
   nodeEnv: z.enum(['development', 'production', 'staging', 'test']).default('development'),
   port: intStr.default('3000'),
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  buildVersion: z.string().default('dev'),
 
   db: z.object({
     host: z.string().default('localhost'),
@@ -41,6 +42,7 @@ function loadKernelConfig() {
     nodeEnv: env.NODE_ENV,
     port: env.PORT,
     logLevel: env.LOG_LEVEL,
+    buildVersion: env.BUILD_VERSION,
 
     db: {
       host: env.DB_HOST,
