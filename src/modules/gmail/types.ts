@@ -1,4 +1,4 @@
-// LUNA — Module: email — Types
+// LUNA — Module: gmail — Types
 // Interfaces para el canal de email (Gmail).
 
 export interface EmailConfig {
@@ -11,7 +11,7 @@ export interface EmailConfig {
   EMAIL_AUTO_MARK_READ: boolean
   EMAIL_INCLUDE_SIGNATURE: boolean
   EMAIL_MAX_HISTORY_FETCH: number
-  // OAuth standalone (cuando google-api no está activo)
+  // OAuth standalone (cuando google-apps no está activo)
   GOOGLE_CLIENT_ID: string
   GOOGLE_CLIENT_SECRET: string
   GOOGLE_REDIRECT_URI: string

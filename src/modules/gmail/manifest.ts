@@ -1,4 +1,4 @@
-// LUNA — Module: email
+// LUNA — Module: gmail
 // Canal de email via Gmail API. Recibe emails, los procesa por el engine, y envía respuestas.
 // La firma se incluye directamente desde la cuenta de Google (no se genera por el sistema).
 
@@ -6,19 +6,19 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import type { OAuthManager } from '../google-api/oauth-manager.js'
+import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
 import type { EmailConfig, EmailPollerState, EmailMessage } from './types.js'
 
-const logger = pino({ name: 'email' })
+const logger = pino({ name: 'gmail' })
 
 let gmailAdapter: GmailAdapter | null = null
 let _registry: Registry | null = null
 let pollInterval: ReturnType<typeof setInterval> | null = null
 let lastHistoryId: string | null = null
 let standaloneOAuth: EmailOAuthManager | null = null
-// Indica si email usa su propio OAuth (true) o el de google-api (false)
+// Indica si email usa su propio OAuth (true) o el de google-apps (false)
 let usingStandaloneAuth = false
 
 const pollerState: EmailPollerState = {
@@ -133,7 +133,7 @@ async function pollForEmails(): Promise<void> {
 async function processIncomingEmail(msg: EmailMessage): Promise<void> {
   if (!_registry || !gmailAdapter) return
 
-  const config = _registry.getConfig<EmailConfig>('email')
+  const config = _registry.getConfig<EmailConfig>('gmail')
 
   // Track thread
   const db = _registry.getDb()
@@ -289,12 +289,12 @@ const apiRoutes: ApiRoute[] = [
       jsonResponse(res, 200, { email, isNoReply: gmailAdapter.isNoReply(email) })
     },
   },
-  // ─── Auth standalone routes (solo cuando google-api no está activo) ──
+  // ─── Auth standalone routes (solo cuando google-apps no está activo) ──
   {
     method: 'GET',
     path: 'auth-status',
     handler: async (_req, res) => {
-      // Si google-api está activo, redirigir a su status
+      // Si google-apps está activo, redirigir a su status
       if (!usingStandaloneAuth) {
         const oauthManager = _registry?.getOptional<OAuthManager>('google:oauth-manager')
         if (oauthManager) {
@@ -316,7 +316,7 @@ const apiRoutes: ApiRoute[] = [
     path: 'auth-url',
     handler: async (_req, res) => {
       if (!usingStandaloneAuth || !standaloneOAuth) {
-        jsonResponse(res, 400, { error: 'Standalone auth not active — use google-api module for authentication' })
+        jsonResponse(res, 400, { error: 'Standalone auth not active — use google-apps module for authentication' })
         return
       }
       const url = standaloneOAuth.generateAuthUrl()
@@ -342,7 +342,7 @@ const apiRoutes: ApiRoute[] = [
 
         // Ahora que tenemos auth, inicializar adapter y polling
         if (!gmailAdapter && _registry) {
-          const config = _registry.getConfig<EmailConfig>('email')
+          const config = _registry.getConfig<EmailConfig>('gmail')
           gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
           _registry.provide('email:adapter', gmailAdapter)
           startPolling(config.EMAIL_POLL_INTERVAL_MS)
@@ -393,7 +393,7 @@ const apiRoutes: ApiRoute[] = [
 // ─── Manifest ──────────────────────────────
 
 const manifest: ModuleManifest = {
-  name: 'email',
+  name: 'gmail',
   version: '1.0.0',
   description: {
     es: 'Canal de email via Gmail API. Recibe, responde, reenvía y envía correos.',
@@ -402,7 +402,7 @@ const manifest: ModuleManifest = {
   type: 'channel',
   removable: true,
   activateByDefault: false,
-  depends: [], // google-api es opcional — si está activo se comparte su OAuth, si no email usa el suyo
+  depends: [], // google-apps es opcional — si está activo se comparte su OAuth, si no email usa el suyo
 
   configSchema: z.object({
     EMAIL_POLL_INTERVAL_MS: z.string().transform(Number).pipe(z.number().int().positive()).default('60000'),
@@ -414,10 +414,10 @@ const manifest: ModuleManifest = {
     EMAIL_AUTO_MARK_READ: z.string().transform((v) => v === 'true').default('true'),
     EMAIL_INCLUDE_SIGNATURE: z.string().transform((v) => v === 'true').default('true'),
     EMAIL_MAX_HISTORY_FETCH: z.string().transform(Number).pipe(z.number().int().positive()).default('20'),
-    // OAuth standalone (cuando google-api no está activo)
+    // OAuth standalone (cuando google-apps no está activo)
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
-    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/email/oauth2callback'),
+    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/gmail/oauth2callback'),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: z.string().transform(Number).pipe(z.number().int().positive()).default('300000'),
   }),
@@ -472,7 +472,7 @@ const manifest: ModuleManifest = {
         label: { es: 'Max emails por poll', en: 'Max emails per poll' },
         info: { es: 'Máximo de emails a obtener por ciclo de polling (default: 20)', en: 'Maximum emails to fetch per poll cycle (default: 20)' },
       },
-      // OAuth standalone — se muestran siempre, se usan solo si google-api no está activo
+      // OAuth standalone — se muestran siempre, se usan solo si google-apps no está activo
       {
         key: 'GOOGLE_CLIENT_ID',
         type: 'secret',
@@ -504,22 +504,22 @@ const manifest: ModuleManifest = {
   async init(registry: Registry) {
     _registry = registry
     const db = registry.getDb()
-    const config = registry.getConfig<EmailConfig>('email')
+    const config = registry.getConfig<EmailConfig>('gmail')
 
     // Run migrations
     await runMigrations(db)
 
-    // ─── Resolver autenticación: google-api compartido o standalone ───
+    // ─── Resolver autenticación: google-apps compartido o standalone ───
     let authClient: import('google-auth-library').OAuth2Client | null = null
     let oauthConnected = false
 
-    // Opción 1: Intentar usar OAuth de google-api (si está activo)
+    // Opción 1: Intentar usar OAuth de google-apps (si está activo)
     const sharedOAuth = registry.getOptional<OAuthManager>('google:oauth-manager')
     if (sharedOAuth) {
       usingStandaloneAuth = false
       authClient = sharedOAuth.getClient()
       oauthConnected = sharedOAuth.isConnected()
-      logger.info('Email using shared OAuth from google-api module')
+      logger.info('Email using shared OAuth from google-apps module')
     } else {
       // Opción 2: OAuth standalone con credenciales propias
       usingStandaloneAuth = true
@@ -542,7 +542,7 @@ const manifest: ModuleManifest = {
         oauthConnected = standaloneOAuth.isConnected()
         logger.info('Email using standalone OAuth (gmail-only scopes)')
       } else {
-        logger.warn('No OAuth available — configure Google credentials in email settings or activate google-api module')
+        logger.warn('No OAuth available — configure Google credentials in email settings or activate google-apps module')
       }
     }
 
@@ -562,7 +562,7 @@ const manifest: ModuleManifest = {
     }
 
     // Hook: cuando el engine quiere enviar email
-    registry.addHook('email', 'message:send', async (payload) => {
+    registry.addHook('gmail', 'message:send', async (payload) => {
       if (payload.channel !== 'email') return
       if (!gmailAdapter) return
 

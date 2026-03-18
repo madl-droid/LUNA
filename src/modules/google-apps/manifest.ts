@@ -1,4 +1,4 @@
-// LUNA — Module: google-api
+// LUNA — Module: google-apps
 // Provider de servicios Google: OAuth2, Drive, Sheets, Docs, Slides, Calendar.
 // Expone servicios via registry para que otros módulos (email, users) los consuman.
 
@@ -15,7 +15,7 @@ import { CalendarService } from './calendar-service.js'
 import { registerGoogleTools } from './tools.js'
 import type { GoogleApiConfig, GoogleServiceName } from './types.js'
 
-const logger = pino({ name: 'google-api' })
+const logger = pino({ name: 'google-apps' })
 
 let oauthManager: OAuthManager | null = null
 let _registry: Registry | null = null
@@ -89,7 +89,7 @@ const apiRoutes: ApiRoute[] = [
         jsonResponse(res, 400, { error: 'OAuth manager not initialized' })
         return
       }
-      const config = _registry.getConfig<GoogleApiConfig>('google-api')
+      const config = _registry.getConfig<GoogleApiConfig>('google-apps')
       const enabledServices = parseEnabledServices(config.GOOGLE_ENABLED_SERVICES)
       // Siempre incluir gmail para el módulo email
       enabledServices.push('gmail')
@@ -162,7 +162,7 @@ function parseEnabledServices(csv: string): string[] {
 // ─── Manifest ──────────────────────────────
 
 const manifest: ModuleManifest = {
-  name: 'google-api',
+  name: 'google-apps',
   version: '1.0.0',
   description: {
     es: 'Integración Google API: OAuth2, Drive, Sheets, Docs, Slides, Calendar',
@@ -176,7 +176,7 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
-    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/google-api/oauth2callback'),
+    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/google-apps/oauth2callback'),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
     GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar'),
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: z.string().transform(Number).pipe(z.number().int().positive()).default('300000'),
@@ -235,7 +235,7 @@ const manifest: ModuleManifest = {
   async init(registry: Registry) {
     _registry = registry
     const db = registry.getDb()
-    const config = registry.getConfig<GoogleApiConfig>('google-api')
+    const config = registry.getConfig<GoogleApiConfig>('google-apps')
 
     // Run migrations
     await runMigrations(db)

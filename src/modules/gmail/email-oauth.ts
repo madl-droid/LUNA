@@ -1,40 +1,46 @@
-// LUNA — Module: google-api — OAuth Manager
-// Maneja autenticación OAuth2, refresh de tokens, y estado de conexión.
+// LUNA — Module: gmail — Standalone OAuth Manager
+// OAuth2 ligero para Gmail-only. Se usa cuando el módulo google-apps NO está activo.
+// Si google-apps está activo, email usa su OAuthManager compartido.
 
 import { OAuth2Client } from 'google-auth-library'
 import pino from 'pino'
 import type { Pool } from 'pg'
-import type { GoogleApiConfig, GoogleAuthState, TokenInfo } from './types.js'
 
-const logger = pino({ name: 'google-api:oauth' })
+const logger = pino({ name: 'email:oauth' })
 
-// Scopes por servicio — se combinan según los servicios habilitados
-export const SCOPES_BY_SERVICE: Record<string, string[]> = {
-  gmail: [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/gmail.modify',
-  ],
-  drive: [
-    'https://www.googleapis.com/auth/drive',
-  ],
-  sheets: [
-    'https://www.googleapis.com/auth/spreadsheets',
-  ],
-  docs: [
-    'https://www.googleapis.com/auth/documents',
-  ],
-  slides: [
-    'https://www.googleapis.com/auth/presentations',
-  ],
-  calendar: [
-    'https://www.googleapis.com/auth/calendar',
-  ],
+const GMAIL_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/userinfo.email',
+]
+
+export interface EmailOAuthConfig {
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  GOOGLE_REDIRECT_URI: string
+  GOOGLE_REFRESH_TOKEN: string
+  GOOGLE_TOKEN_REFRESH_BUFFER_MS: number
 }
 
-export class OAuthManager {
+export interface EmailAuthState {
+  status: 'disconnected' | 'connected' | 'error' | 'refreshing'
+  email: string | null
+  scopes: string[]
+  lastRefreshAt: Date | null
+  expiresAt: Date | null
+  error: string | null
+}
+
+/**
+ * OAuth2 manager minimalista para email standalone.
+ * Misma interfaz pública que OAuthManager de google-apps (getClient, getState, isConnected,
+ * generateAuthUrl, handleAuthCallback, disconnect) para que el manifest de email
+ * pueda usar cualquiera de los dos sin cambiar el código.
+ */
+export class EmailOAuthManager {
   private client: OAuth2Client
-  private state: GoogleAuthState = {
+  private state: EmailAuthState = {
     status: 'disconnected',
     email: null,
     scopes: [],
@@ -45,7 +51,7 @@ export class OAuthManager {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
-    private config: GoogleApiConfig,
+    private config: EmailOAuthConfig,
     private db: Pool,
   ) {
     this.client = new OAuth2Client(
@@ -56,7 +62,7 @@ export class OAuthManager {
   }
 
   async initialize(): Promise<void> {
-    // Intentar cargar token almacenado en DB
+    // 1. Intentar cargar token de DB
     const stored = await this.loadTokenFromDb()
     if (stored) {
       this.client.setCredentials({
@@ -68,7 +74,6 @@ export class OAuthManager {
       this.state.scopes = stored.scopes
       this.state.expiresAt = stored.expiresAt
 
-      // Refresh si está por expirar
       const now = Date.now()
       const expiresIn = stored.expiresAt.getTime() - now
       if (expiresIn < this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS) {
@@ -77,40 +82,36 @@ export class OAuthManager {
         this.state.status = 'connected'
         this.scheduleRefresh(expiresIn - this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS)
       }
-      logger.info({ email: this.state.email }, 'Google OAuth restored from DB')
+      logger.info({ email: this.state.email }, 'Email OAuth restored from DB')
       return
     }
 
-    // Si hay refresh token en config, usarlo directamente
+    // 2. Si hay refresh token en config, usarlo
     if (this.config.GOOGLE_REFRESH_TOKEN) {
       this.client.setCredentials({
         refresh_token: this.config.GOOGLE_REFRESH_TOKEN,
       })
       await this.refreshAccessToken()
-      logger.info({ email: this.state.email }, 'Google OAuth initialized from config refresh token')
+      logger.info({ email: this.state.email }, 'Email OAuth initialized from config refresh token')
       return
     }
 
-    logger.warn('No Google refresh token available — OAuth not connected')
+    logger.warn('No Google refresh token — email OAuth not connected')
   }
 
   async refreshAccessToken(): Promise<void> {
     try {
       this.state.status = 'refreshing'
-
       const { credentials } = await this.client.refreshAccessToken()
       const expiryDate = credentials.expiry_date ?? Date.now() + 3600 * 1000
 
       this.client.setCredentials(credentials)
 
-      // Obtener email si no lo tenemos
       if (!this.state.email && credentials.access_token) {
         try {
           const tokenInfo = await this.client.getTokenInfo(credentials.access_token)
           this.state.email = tokenInfo.email ?? null
-        } catch {
-          // Non-critical
-        }
+        } catch { /* non-critical */ }
       }
 
       this.state.status = 'connected'
@@ -119,7 +120,6 @@ export class OAuthManager {
       this.state.scopes = credentials.scope?.split(' ') ?? this.state.scopes
       this.state.error = null
 
-      // Persistir en DB
       await this.saveTokenToDb({
         accessToken: credentials.access_token ?? '',
         refreshToken: credentials.refresh_token ?? this.config.GOOGLE_REFRESH_TOKEN,
@@ -128,20 +128,17 @@ export class OAuthManager {
         email: this.state.email,
       })
 
-      // Programar siguiente refresh
       const refreshIn = expiryDate - Date.now() - this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS
       this.scheduleRefresh(Math.max(refreshIn, 60_000))
 
       logger.info(
         { email: this.state.email, expiresIn: Math.round((expiryDate - Date.now()) / 1000) },
-        'Access token refreshed',
+        'Email access token refreshed',
       )
     } catch (err) {
       this.state.status = 'error'
       this.state.error = err instanceof Error ? err.message : String(err)
-      logger.error({ err }, 'Failed to refresh access token')
-
-      // Retry en 60 segundos
+      logger.error({ err }, 'Failed to refresh email access token')
       this.scheduleRefresh(60_000)
     }
   }
@@ -150,7 +147,7 @@ export class OAuthManager {
     return this.client
   }
 
-  getState(): GoogleAuthState {
+  getState(): EmailAuthState {
     return { ...this.state }
   }
 
@@ -158,39 +155,21 @@ export class OAuthManager {
     return this.state.status === 'connected'
   }
 
-  /**
-   * Generate authorization URL for initial OAuth2 flow.
-   * User visits this URL → grants permissions → redirects with code.
-   */
-  generateAuthUrl(enabledServices: string[]): string {
-    const scopes: string[] = []
-    // Siempre incluir gmail si el módulo email está habilitado
-    for (const service of enabledServices) {
-      const svcScopes = SCOPES_BY_SERVICE[service]
-      if (svcScopes) scopes.push(...svcScopes)
-    }
-    // Siempre incluir profile para obtener email
-    scopes.push('https://www.googleapis.com/auth/userinfo.email')
-
+  generateAuthUrl(): string {
     return this.client.generateAuthUrl({
       access_type: 'offline',
-      scope: [...new Set(scopes)],
-      prompt: 'consent', // Forzar consent para obtener refresh_token
+      scope: GMAIL_SCOPES,
+      prompt: 'consent',
       include_granted_scopes: true,
     })
   }
 
-  /**
-   * Exchange authorization code for tokens.
-   * Called from the OAuth callback route.
-   */
   async handleAuthCallback(code: string): Promise<void> {
     const { tokens } = await this.client.getToken(code)
     this.client.setCredentials(tokens)
 
     const expiryDate = tokens.expiry_date ?? Date.now() + 3600 * 1000
 
-    // Obtener email
     if (tokens.access_token) {
       try {
         const tokenInfo = await this.client.getTokenInfo(tokens.access_token)
@@ -215,7 +194,7 @@ export class OAuthManager {
     const refreshIn = expiryDate - Date.now() - this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS
     this.scheduleRefresh(Math.max(refreshIn, 60_000))
 
-    logger.info({ email: this.state.email }, 'OAuth callback handled — connected')
+    logger.info({ email: this.state.email }, 'Email OAuth callback handled — connected')
   }
 
   async disconnect(): Promise<void> {
@@ -229,9 +208,7 @@ export class OAuthManager {
       if (credentials.access_token) {
         await this.client.revokeToken(credentials.access_token)
       }
-    } catch {
-      // Revoke may fail if token already expired — not critical
-    }
+    } catch { /* revoke may fail if expired */ }
 
     this.client.setCredentials({})
     this.state = {
@@ -243,9 +220,8 @@ export class OAuthManager {
       error: null,
     }
 
-    // Limpiar de DB
-    await this.db.query(`DELETE FROM google_oauth_tokens WHERE id = 'primary'`)
-    logger.info('Google OAuth disconnected and tokens revoked')
+    await this.db.query(`DELETE FROM email_oauth_tokens WHERE id = 'primary'`)
+    logger.info('Email OAuth disconnected and tokens revoked')
   }
 
   async shutdown(): Promise<void> {
@@ -255,26 +231,26 @@ export class OAuthManager {
     }
   }
 
-  // ─── DB persistence ────────────────────────
+  // ─── DB persistence (tabla propia, no comparte con google-apps) ────
 
-  private async saveTokenToDb(token: TokenInfo): Promise<void> {
+  private async saveTokenToDb(token: { accessToken: string; refreshToken: string; expiresAt: Date; scopes: string[]; email: string | null }): Promise<void> {
     try {
       await this.db.query(`
-        INSERT INTO google_oauth_tokens (id, access_token, refresh_token, expires_at, scopes, email)
+        INSERT INTO email_oauth_tokens (id, access_token, refresh_token, expires_at, scopes, email)
         VALUES ('primary', $1, $2, $3, $4, $5)
         ON CONFLICT (id) DO UPDATE SET
           access_token = $1, refresh_token = $2, expires_at = $3, scopes = $4, email = $5,
           updated_at = now()
       `, [token.accessToken, token.refreshToken, token.expiresAt, JSON.stringify(token.scopes), token.email])
     } catch (err) {
-      logger.error({ err }, 'Failed to save token to DB')
+      logger.error({ err }, 'Failed to save email token to DB')
     }
   }
 
-  private async loadTokenFromDb(): Promise<TokenInfo | null> {
+  private async loadTokenFromDb(): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date; scopes: string[]; email: string | null } | null> {
     try {
       const result = await this.db.query(
-        `SELECT access_token, refresh_token, expires_at, scopes, email FROM google_oauth_tokens WHERE id = 'primary'`,
+        `SELECT access_token, refresh_token, expires_at, scopes, email FROM email_oauth_tokens WHERE id = 'primary'`,
       )
       const row = result.rows[0]
       if (!row) return null
@@ -294,7 +270,7 @@ export class OAuthManager {
     if (this.refreshTimer) clearTimeout(this.refreshTimer)
     this.refreshTimer = setTimeout(() => {
       this.refreshAccessToken().catch((err) => {
-        logger.error({ err }, 'Scheduled token refresh failed')
+        logger.error({ err }, 'Scheduled email token refresh failed')
       })
     }, ms)
   }

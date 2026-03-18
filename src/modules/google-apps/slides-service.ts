@@ -1,4 +1,4 @@
-// LUNA — Module: google-api — Slides Service
+// LUNA — Module: google-apps — Slides Service
 // Lectura, edición y creación de Google Slides.
 
 import { google } from 'googleapis'
@@ -6,7 +6,7 @@ import type { OAuth2Client } from 'google-auth-library'
 import pino from 'pino'
 import type { SlideInfo } from './types.js'
 
-const logger = pino({ name: 'google-api:slides' })
+const logger = pino({ name: 'google-apps:slides' })
 
 export class SlidesService {
   private slides

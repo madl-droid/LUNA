@@ -1,4 +1,4 @@
-// LUNA — Module: google-api — Tool Registration
+// LUNA — Module: google-apps — Tool Registration
 // Registra herramientas de Drive, Sheets, Docs, Slides, Calendar en el sistema de tools.
 
 import type { Registry } from '../../kernel/registry.js'
@@ -11,7 +11,7 @@ import type { CalendarService } from './calendar-service.js'
 import type { GoogleServiceName, CalendarEventUpdateOptions } from './types.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'google-api:tools' })
+const logger = pino({ name: 'google-apps:tools' })
 
 export async function registerGoogleTools(
   registry: Registry,
@@ -41,7 +41,7 @@ export async function registerGoogleTools(
         displayName: 'Listar archivos en Drive',
         description: 'Lista archivos y carpetas en Google Drive del agente. Puede buscar por nombre, carpeta o tipo.',
         category: 'drive',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -71,7 +71,7 @@ export async function registerGoogleTools(
         displayName: 'Obtener detalle de archivo',
         description: 'Obtiene información detallada de un archivo en Drive incluyendo permisos y enlaces.',
         category: 'drive',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -92,7 +92,7 @@ export async function registerGoogleTools(
         displayName: 'Crear carpeta en Drive',
         description: 'Crea una nueva carpeta en Google Drive.',
         category: 'drive',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -114,7 +114,7 @@ export async function registerGoogleTools(
         displayName: 'Crear archivo en Drive',
         description: 'Crea un archivo nuevo en Google Drive con contenido.',
         category: 'drive',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -143,7 +143,7 @@ export async function registerGoogleTools(
         displayName: 'Compartir archivo de Drive',
         description: 'Comparte un archivo o carpeta de Drive con un usuario por email.',
         category: 'drive',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -170,7 +170,7 @@ export async function registerGoogleTools(
         displayName: 'Mover archivo en Drive',
         description: 'Mueve un archivo a otra carpeta en Google Drive.',
         category: 'drive',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -203,7 +203,7 @@ export async function registerGoogleTools(
         displayName: 'Leer Google Sheet',
         description: 'Lee datos de un rango en una hoja de cálculo de Google Sheets.',
         category: 'sheets',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -225,7 +225,7 @@ export async function registerGoogleTools(
         displayName: 'Escribir en Google Sheet',
         description: 'Escribe datos en un rango de una hoja de cálculo.',
         category: 'sheets',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -252,7 +252,7 @@ export async function registerGoogleTools(
         displayName: 'Agregar filas a Google Sheet',
         description: 'Agrega filas al final de una hoja de cálculo.',
         category: 'sheets',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -279,7 +279,7 @@ export async function registerGoogleTools(
         displayName: 'Crear Google Sheet',
         description: 'Crea una nueva hoja de cálculo en Google Sheets.',
         category: 'sheets',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -300,7 +300,7 @@ export async function registerGoogleTools(
         displayName: 'Info de Google Sheet',
         description: 'Obtiene información y lista de hojas de una hoja de cálculo.',
         category: 'sheets',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -327,7 +327,7 @@ export async function registerGoogleTools(
         displayName: 'Leer Google Doc',
         description: 'Lee el contenido de texto de un documento de Google Docs.',
         category: 'docs',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -348,7 +348,7 @@ export async function registerGoogleTools(
         displayName: 'Crear Google Doc',
         description: 'Crea un nuevo documento de Google Docs con contenido opcional.',
         category: 'docs',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -370,7 +370,7 @@ export async function registerGoogleTools(
         displayName: 'Agregar texto a Google Doc',
         description: 'Agrega texto al final de un documento existente.',
         category: 'docs',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -392,7 +392,7 @@ export async function registerGoogleTools(
         displayName: 'Reemplazar texto en Google Doc',
         description: 'Busca y reemplaza texto en un documento de Google Docs.',
         category: 'docs',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -425,7 +425,7 @@ export async function registerGoogleTools(
         displayName: 'Leer Google Slides',
         description: 'Lee el contenido de texto de una presentación de Google Slides.',
         category: 'slides',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -450,7 +450,7 @@ export async function registerGoogleTools(
         displayName: 'Info de Google Slides',
         description: 'Obtiene información de una presentación (título, cantidad de slides).',
         category: 'slides',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -471,7 +471,7 @@ export async function registerGoogleTools(
         displayName: 'Crear Google Slides',
         description: 'Crea una nueva presentación de Google Slides.',
         category: 'slides',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -492,7 +492,7 @@ export async function registerGoogleTools(
         displayName: 'Reemplazar texto en Slides',
         description: 'Busca y reemplaza texto en toda la presentación.',
         category: 'slides',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -525,7 +525,7 @@ export async function registerGoogleTools(
         displayName: 'Listar eventos del calendario',
         description: 'Lista eventos del calendario de Google en un rango de fechas. Puede buscar por texto.',
         category: 'calendar',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -555,7 +555,7 @@ export async function registerGoogleTools(
         displayName: 'Crear evento en calendario',
         description: 'Crea un nuevo evento en Google Calendar. Puede incluir invitados, ubicación y recordatorios.',
         category: 'calendar',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -614,7 +614,7 @@ export async function registerGoogleTools(
         displayName: 'Actualizar evento del calendario',
         description: 'Actualiza un evento existente en Google Calendar.',
         category: 'calendar',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -656,7 +656,7 @@ export async function registerGoogleTools(
         displayName: 'Agregar invitados a evento',
         description: 'Agrega invitados a un evento existente en Google Calendar.',
         category: 'calendar',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
@@ -684,7 +684,7 @@ export async function registerGoogleTools(
         displayName: 'Listar calendarios',
         description: 'Lista todos los calendarios disponibles (propios y compartidos).',
         category: 'calendar',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: { type: 'object', properties: {} },
       },
       handler: async () => {
@@ -699,7 +699,7 @@ export async function registerGoogleTools(
         displayName: 'Verificar disponibilidad',
         description: 'Verifica horarios ocupados/libres en calendarios para un rango de fechas.',
         category: 'calendar',
-        sourceModule: 'google-api',
+        sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {

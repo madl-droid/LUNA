@@ -27,7 +27,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - `google:slides` — SlidesService (si habilitado)
 - `google:calendar` — CalendarService (si habilitado)
 
-## API Routes (bajo /oficina/api/google-api/)
+## API Routes (bajo /oficina/api/google-apps/)
 - `GET /status` — estado OAuth + servicios
 - `GET /auth-url` — genera URL para autorización OAuth2
 - `POST /auth-callback` — { code } — intercambia código por tokens
@@ -61,5 +61,5 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - NO leer process.env — usar registry.getConfig()
 - El refresh_token de OAuth2 dura indefinidamente SI la app está en modo "producción" en GCP (en "testing" expira en 7 días)
 - auth-url siempre incluye gmail scopes por conveniencia (si email está activo, comparte este OAuth; si no, no afecta)
-- Email ya NO depende de google-api — puede autenticarse solo con su propio EmailOAuthManager
+- Email ya NO depende de google-apps — puede autenticarse solo con su propio EmailOAuthManager
 - `google-auth-library` y `googleapis` ya están instalados en package.json

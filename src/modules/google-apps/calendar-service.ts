@@ -1,4 +1,4 @@
-// LUNA — Module: google-api — Calendar Service
+// LUNA — Module: google-apps — Calendar Service
 // Gestión completa de Google Calendar: listar, crear, editar eventos, invitar asistentes.
 
 import { google } from 'googleapis'
@@ -13,7 +13,7 @@ import type {
   CalendarEventUpdateOptions,
 } from './types.js'
 
-const logger = pino({ name: 'google-api:calendar' })
+const logger = pino({ name: 'google-apps:calendar' })
 
 export class CalendarService {
   private calendar

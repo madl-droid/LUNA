@@ -1,4 +1,4 @@
-// LUNA — Module: google-api — Drive Service
+// LUNA — Module: google-apps — Drive Service
 // CRUD de archivos y carpetas en Google Drive.
 
 import { google } from 'googleapis'
@@ -13,7 +13,7 @@ import type {
 } from './types.js'
 import { Readable } from 'node:stream'
 
-const logger = pino({ name: 'google-api:drive' })
+const logger = pino({ name: 'google-apps:drive' })
 
 export class DriveService {
   private drive

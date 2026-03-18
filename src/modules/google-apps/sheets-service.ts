@@ -1,4 +1,4 @@
-// LUNA — Module: google-api — Sheets Service
+// LUNA — Module: google-apps — Sheets Service
 // Lectura, escritura y creación de Google Sheets.
 
 import { google } from 'googleapis'
@@ -6,7 +6,7 @@ import type { OAuth2Client } from 'google-auth-library'
 import pino from 'pino'
 import type { SheetRange, SheetProperties } from './types.js'
 
-const logger = pino({ name: 'google-api:sheets' })
+const logger = pino({ name: 'google-apps:sheets' })
 
 export class SheetsService {
   private sheets

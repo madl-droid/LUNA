@@ -1,4 +1,4 @@
-// LUNA — Module: google-api — Docs Service
+// LUNA — Module: google-apps — Docs Service
 // Lectura, edición y creación de Google Docs.
 
 import { google } from 'googleapis'
@@ -6,7 +6,7 @@ import type { OAuth2Client } from 'google-auth-library'
 import pino from 'pino'
 import type { DocInfo } from './types.js'
 
-const logger = pino({ name: 'google-api:docs' })
+const logger = pino({ name: 'google-apps:docs' })
 
 export class DocsService {
   private docs

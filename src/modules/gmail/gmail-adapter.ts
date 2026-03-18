@@ -1,4 +1,4 @@
-// LUNA — Module: email — Gmail Adapter
+// LUNA — Module: gmail — Gmail Adapter
 // Lee, envía, responde y reenvía emails usando la API de Gmail.
 // La firma se envía tal cual está configurada en la cuenta de Google, no se genera por el sistema.
 

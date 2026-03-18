@@ -1,4 +1,4 @@
-// LUNA — Module: google-api — Types
+// LUNA — Module: google-apps — Types
 // Interfaces para autenticación Google OAuth2 y servicios (Drive, Sheets, Docs, Slides, Calendar).
 
 import type { OAuth2Client } from 'google-auth-library'
