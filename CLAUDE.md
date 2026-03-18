@@ -90,6 +90,7 @@ import type { StoredMessage } from '../memory/types.js'
 - NO construir dashboard — es V2
 - NO hacer sync bidireccional con Google Sheets — Postgres es fuente de verdad, writes a Sheets son async
 - NO usar import sin extensión .js en paths relativos — ESM lo requiere
+- NO acceder arrays por índice sin `!` o `?.` — `noUncheckedIndexedAccess` está activo en tsconfig. `arr[0]` es `T | undefined`. Usar `arr[0]!` cuando hay guard previo (`if (arr.length > 0)`) o `arr[0]?.prop` cuando no hay guard.
 
 ## Deploy
 Ramas: `main` (prod), `pruebas` (staging), `claude` (dev). Push auto-deploys via GitHub Actions + Docker + Traefik.

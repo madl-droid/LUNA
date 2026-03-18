@@ -320,9 +320,10 @@ export class LeadQueries {
     )
     if (result.rows.length === 0) return
 
-    const data = (typeof result.rows[0].qualification_data === 'string'
-      ? JSON.parse(result.rows[0].qualification_data)
-      : result.rows[0].qualification_data ?? {}) as Record<string, unknown>
+    const row = result.rows[0]!
+    const data = (typeof row.qualification_data === 'string'
+      ? JSON.parse(row.qualification_data)
+      : row.qualification_data ?? {}) as Record<string, unknown>
 
     data['_disqualified'] = reasonKey
 

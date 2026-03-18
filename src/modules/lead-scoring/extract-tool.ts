@@ -137,8 +137,9 @@ async function handleExtraction(
     return { success: false, error: 'Contact not found' }
   }
 
-  const existingData = (contactRow.rows[0].qualification_data as Record<string, unknown>) ?? {}
-  const currentStatus = (contactRow.rows[0].qualification_status as QualificationStatus) ?? 'new'
+  const row = contactRow.rows[0]!
+  const existingData = (row.qualification_data as Record<string, unknown>) ?? {}
+  const currentStatus = (row.qualification_status as QualificationStatus) ?? 'new'
 
   // Build prompt and call LLM
   const systemPrompt = buildExtractionPrompt(config, existingData)

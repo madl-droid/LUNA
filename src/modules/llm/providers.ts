@@ -172,7 +172,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         })
       }
     }
-    return blocks.length === 1 && blocks[0].type === 'text'
+    return blocks.length === 1 && blocks[0]!.type === 'text'
       ? (blocks[0] as Anthropic.TextBlockParam).text
       : blocks
   }
