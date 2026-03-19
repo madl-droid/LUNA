@@ -3,6 +3,7 @@
 // Campaign matching via fuse.js. Evaluador generado on-demand por LLM.
 
 import pino from 'pino'
+import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptSlot } from './types.js'
@@ -161,6 +162,7 @@ const manifest: ModuleManifest = {
   removable: true,
   activateByDefault: true,
   depends: [], // llm is optional (only for evaluator generation)
+  configSchema: z.object({}),
 
   oficina: {
     title: { es: 'Prompts del Agente', en: 'Agent Prompts' },

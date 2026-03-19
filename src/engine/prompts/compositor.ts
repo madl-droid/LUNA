@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import pino from 'pino'
 import type { ContextBundle, EvaluatorOutput, ExecutionOutput } from '../types.js'
-import type { ChannelName } from '../../channels/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 
