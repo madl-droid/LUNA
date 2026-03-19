@@ -153,6 +153,40 @@ Adapta tu respuesta al contexto de esta campaña.`)
     }
   }
 
+  // Contact memory (cold tier)
+  if (ctx.contactMemory) {
+    const cm = ctx.contactMemory
+    if (cm.summary) {
+      userParts.push(`\n[Lo que sabes de este contacto: ${cm.summary}]`)
+    }
+    if (cm.key_facts.length > 0) {
+      userParts.push(`[Datos clave:]`)
+      for (const f of cm.key_facts.slice(0, 8)) {
+        userParts.push(`- ${f.fact}`)
+      }
+    }
+    if (cm.relationship_notes) {
+      userParts.push(`[Notas de relación: ${cm.relationship_notes}]`)
+    }
+  }
+
+  // Pending commitments (prospective tier)
+  if (ctx.pendingCommitments.length > 0) {
+    userParts.push(`\n[Compromisos pendientes con este contacto:]`)
+    for (const c of ctx.pendingCommitments.slice(0, 5)) {
+      const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
+      userParts.push(`- ${c.description}${due}`)
+    }
+  }
+
+  // Relevant past summaries (warm tier)
+  if (ctx.relevantSummaries.length > 0) {
+    userParts.push(`\n[Conversaciones previas relevantes:]`)
+    for (const s of ctx.relevantSummaries.slice(0, 3)) {
+      userParts.push(`- ${s.summaryText.substring(0, 200)}`)
+    }
+  }
+
   // Knowledge context
   if (ctx.knowledgeMatches.length > 0) {
     userParts.push(`\n[Información del negocio:]`)

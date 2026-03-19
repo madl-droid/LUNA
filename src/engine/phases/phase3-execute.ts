@@ -5,6 +5,7 @@
 import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
+import type { Registry } from '../../kernel/registry.js'
 import type {
   ContextBundle,
   EvaluatorOutput,
@@ -13,6 +14,7 @@ import type {
   ExecutionStep,
   EngineConfig,
 } from '../types.js'
+import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import { executeTool, getDefinition } from '../mocks/tool-registry.js'
 import { runSubagent } from '../subagent/subagent.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
@@ -28,6 +30,7 @@ export async function phase3Execute(
   db: Pool,
   redis: Redis,
   config: EngineConfig,
+  registry: Registry,
 ): Promise<ExecutionOutput> {
   const startMs = Date.now()
 
@@ -59,7 +62,7 @@ export async function phase3Execute(
   if (independent.length > 0) {
     const parallelResults = await Promise.allSettled(
       independent.map(({ step, index }) =>
-        executeStep(step, index, ctx, db, redis, config),
+        executeStep(step, index, ctx, db, redis, config, registry),
       ),
     )
 
@@ -80,7 +83,7 @@ export async function phase3Execute(
 
   // Execute dependent steps sequentially
   for (const { step, index } of dependent) {
-    const result = await executeStep(step, index, ctx, db, redis, config)
+    const result = await executeStep(step, index, ctx, db, redis, config, registry)
     results.push(result)
   }
 
@@ -114,6 +117,7 @@ async function executeStep(
   db: Pool,
   _redis: Redis,
   config: EngineConfig,
+  registry: Registry,
 ): Promise<StepResult> {
   const startMs = Date.now()
 
@@ -129,7 +133,7 @@ async function executeStep(
         return await executeSubagent(step, index, ctx, config, startMs)
 
       case 'memory_lookup':
-        return await executeMemoryLookup(step, index, db, ctx, startMs)
+        return await executeMemoryLookup(step, index, db, ctx, registry, startMs)
 
       case 'web_search':
         return await executeWebSearch(step, index, config, startMs)
@@ -257,17 +261,45 @@ async function executeSubagent(
 }
 
 /**
- * Execute memory lookup (query PostgreSQL for session history, compressed summaries).
+ * Execute memory lookup via memory:manager (hybrid search + contact memory).
+ * Falls back to direct DB query if memory module is not active.
  */
 async function executeMemoryLookup(
   step: ExecutionStep,
   index: number,
   db: Pool,
   ctx: ContextBundle,
+  registry: Registry,
   startMs: number,
 ): Promise<StepResult> {
+  const memoryManager = registry.getOptional<MemoryManager>('memory:manager')
+
+  if (memoryManager && ctx.contactId) {
+    try {
+      const query = step.description ?? (step.params?.query as string) ?? ctx.normalizedText
+      const [searchResults, contactMemory] = await Promise.all([
+        memoryManager.hybridSearch(ctx.contactId, query, 'es', 5),
+        memoryManager.getAgentContact(ctx.agentId, ctx.contactId),
+      ])
+
+      return {
+        stepIndex: index,
+        type: 'memory_lookup',
+        success: true,
+        data: {
+          searchResults,
+          contactMemory: contactMemory?.contactMemory ?? null,
+          query,
+        },
+        durationMs: Date.now() - startMs,
+      }
+    } catch (err) {
+      logger.warn({ err, traceId: ctx.traceId }, 'memory:manager lookup failed, falling back to direct DB')
+    }
+  }
+
+  // Fallback: direct DB query (legacy)
   try {
-    // Query previous sessions for this contact
     const result = await db.query(
       `SELECT id, started_at, last_activity_at, message_count, compressed_summary
        FROM sessions
@@ -281,10 +313,7 @@ async function executeMemoryLookup(
       stepIndex: index,
       type: 'memory_lookup',
       success: true,
-      data: {
-        previousSessions: result.rows,
-        query: step.description,
-      },
+      data: { previousSessions: result.rows, query: step.description },
       durationMs: Date.now() - startMs,
     }
   } catch (err) {

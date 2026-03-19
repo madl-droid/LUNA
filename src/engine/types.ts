@@ -63,6 +63,7 @@ export interface ContactInfo {
 export interface SessionInfo {
   id: string
   contactId: string
+  agentId: string
   channel: ChannelName
   startedAt: Date
   lastActivityAt: Date
@@ -105,6 +106,9 @@ export interface ContextBundle {
   userPermissions: UserPermissions
   contactId: string | null
 
+  // Agent (resolved from config or DB)
+  agentId: string
+
   // Contact & session
   contact: ContactInfo | null
   session: SessionInfo
@@ -121,6 +125,12 @@ export interface ContextBundle {
 
   // History
   history: HistoryMessage[]
+
+  // Memory v3 — from memory:manager service
+  contactMemory: import('../modules/memory/types.js').ContactMemory | null
+  pendingCommitments: import('../modules/memory/types.js').Commitment[]
+  relevantSummaries: import('../modules/memory/types.js').HybridSearchResult[]
+  leadStatus: string | null
 
   // Sheets cache (from Redis)
   sheetsData: Record<string, unknown> | null

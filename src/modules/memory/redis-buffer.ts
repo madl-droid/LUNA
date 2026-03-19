@@ -1,4 +1,5 @@
-// LUNA — Redis buffer for session messages
+// LUNA — Redis buffer for session messages (v3)
+// Adds new cache keys for lead_status, context bundle.
 
 import type { Redis } from 'ioredis'
 import pino from 'pino'
@@ -16,6 +17,10 @@ export class RedisBuffer {
   getConfig(): MemoryConfig {
     return this.config
   }
+
+  // ═══════════════════════════════════════════
+  // Session messages (hot tier)
+  // ═══════════════════════════════════════════
 
   async saveMessage(message: StoredMessage): Promise<void> {
     const key = `session:${message.sessionId}:messages`
@@ -37,6 +42,10 @@ export class RedisBuffer {
     return raw.map((item: string) => JSON.parse(item) as StoredMessage)
   }
 
+  // ═══════════════════════════════════════════
+  // Session metadata
+  // ═══════════════════════════════════════════
+
   async getSessionMeta(sessionId: string): Promise<SessionMeta | null> {
     const key = `session:${sessionId}:meta`
     const data = await this.redis.hgetall(key)
@@ -46,11 +55,13 @@ export class RedisBuffer {
     return {
       sessionId: sid,
       contactId: data.contactId ?? '',
+      agentId: data.agentId ?? '',
       channelName: data.channelName ?? '',
       startedAt: new Date(data.startedAt ?? 0),
       lastActivityAt: new Date(data.lastActivityAt ?? 0),
       messageCount: parseInt(data.messageCount ?? '0', 10),
       compressed: data.compressed === 'true',
+      status: (data.status as SessionMeta['status']) ?? 'active',
     }
   }
 
@@ -61,11 +72,13 @@ export class RedisBuffer {
     await this.redis.hset(key, {
       sessionId: meta.sessionId,
       contactId: meta.contactId,
+      agentId: meta.agentId,
       channelName: meta.channelName,
       startedAt: meta.startedAt.toISOString(),
       lastActivityAt: meta.lastActivityAt.toISOString(),
       messageCount: String(meta.messageCount),
       compressed: String(meta.compressed),
+      status: meta.status,
     })
     await this.redis.expire(key, ttlSeconds)
   }
@@ -79,5 +92,64 @@ export class RedisBuffer {
 
   async getMessageCount(sessionId: string): Promise<number> {
     return await this.redis.llen(`session:${sessionId}:messages`)
+  }
+
+  // ═══════════════════════════════════════════
+  // Lead status cache (NEW — v3)
+  // key: lead_status:{contactId}:{agentId}
+  // ═══════════════════════════════════════════
+
+  async getLeadStatus(contactId: string, agentId: string): Promise<string | null> {
+    try {
+      return await this.redis.get(`lead_status:${contactId}:${agentId}`)
+    } catch {
+      return null
+    }
+  }
+
+  async setLeadStatus(contactId: string, agentId: string, status: string): Promise<void> {
+    try {
+      await this.redis.set(`lead_status:${contactId}:${agentId}`, status, 'EX', 43200) // 12h
+    } catch (err) {
+      logger.warn({ err, contactId, agentId }, 'Failed to cache lead status')
+    }
+  }
+
+  async invalidateLeadStatus(contactId: string, agentId: string): Promise<void> {
+    try {
+      await this.redis.del(`lead_status:${contactId}:${agentId}`)
+    } catch {
+      // ignore
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  // Context bundle cache (NEW — v3)
+  // key: context:{contactId}:{agentId}
+  // Short TTL (5min) — invalidated on new message
+  // ═══════════════════════════════════════════
+
+  async getCachedContext(contactId: string, agentId: string): Promise<string | null> {
+    try {
+      return await this.redis.get(`context:${contactId}:${agentId}`)
+    } catch {
+      return null
+    }
+  }
+
+  async setCachedContext(contactId: string, agentId: string, contextJson: string): Promise<void> {
+    try {
+      await this.redis.set(`context:${contactId}:${agentId}`, contextJson, 'EX', 300) // 5min
+    } catch (err) {
+      logger.warn({ err, contactId, agentId }, 'Failed to cache context')
+    }
+  }
+
+  async invalidateContext(contactId: string, agentId: string): Promise<void> {
+    try {
+      await this.redis.del(`context:${contactId}:${agentId}`)
+    } catch {
+      // ignore
+    }
   }
 }

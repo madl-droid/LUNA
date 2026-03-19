@@ -83,7 +83,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
   try {
     // ═══ PHASE 1: Intake + Context Loading ═══
     const p1Start = Date.now()
-    const ctx = await phase1Intake(message, db, redis, engineConfig)
+    const ctx = await phase1Intake(message, db, redis, engineConfig, registry)
     traceId = ctx.traceId
     const phase1DurationMs = Date.now() - p1Start
 
@@ -110,7 +110,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
 
     // ═══ PHASE 3: Execute Plan ═══
     const p3Start = Date.now()
-    const execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig)
+    const execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
     const phase3DurationMs = Date.now() - p3Start
 
     logger.info({
@@ -147,6 +147,24 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       sent: delivery.sent,
       totalDurationMs,
     }, 'Phase 5 done — pipeline complete')
+
+    // Pipeline log (fire-and-forget via memory:manager)
+    const memMgr = registry.getOptional<import('../modules/memory/memory-manager.js').MemoryManager>('memory:manager')
+    if (memMgr && ctx.contactId) {
+      memMgr.savePipelineLog({
+        messageId: ctx.message.id,
+        agentId: ctx.agentId,
+        contactId: ctx.contactId,
+        sessionId: ctx.session.id,
+        phase1Ms: phase1DurationMs,
+        phase2Ms: phase2DurationMs,
+        phase3Ms: phase3DurationMs,
+        phase4Ms: phase4DurationMs,
+        phase5Ms: phase5DurationMs,
+        totalMs: totalDurationMs,
+        toolsCalled: evaluation.toolsNeeded,
+      }).catch(() => {})
+    }
 
     return {
       traceId,

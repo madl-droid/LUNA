@@ -1,5 +1,6 @@
-// LUNA — Module: memory
+// LUNA — Module: memory (v3)
 // Sistema de memoria: Redis buffer (rápido) + PostgreSQL (persistencia).
+// 3 niveles: caliente (messages), tibio (session_summaries), frío (contact_memory).
 
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
@@ -10,10 +11,10 @@ let manager: MemoryManager | null = null
 
 const manifest: ModuleManifest = {
   name: 'memory',
-  version: '1.0.0',
+  version: '3.0.0',
   description: {
-    es: 'Sistema de memoria: Redis (buffer) + PostgreSQL (persistencia)',
-    en: 'Memory system: Redis (buffer) + PostgreSQL (persistence)',
+    es: 'Sistema de memoria: Redis (buffer) + PostgreSQL (persistencia) — 3 niveles: caliente/tibio/frío',
+    en: 'Memory system: Redis (buffer) + PostgreSQL (persistence) — 3 tiers: hot/warm/cold',
   },
   type: 'core-module',
   removable: false,
@@ -21,24 +22,73 @@ const manifest: ModuleManifest = {
   depends: [],
 
   configSchema: z.object({
+    // Buffer and sessions
     MEMORY_BUFFER_MESSAGE_COUNT: z.string().transform(Number).pipe(z.number().int()).default('50'),
     MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN: z.string().transform(Number).pipe(z.number().int()).default('30'),
     MEMORY_SESSION_MAX_TTL_HOURS: z.string().transform(Number).pipe(z.number().int()).default('24'),
     MEMORY_COMPRESSION_THRESHOLD: z.string().transform(Number).pipe(z.number().int()).default('30'),
     MEMORY_COMPRESSION_KEEP_RECENT: z.string().transform(Number).pipe(z.number().int()).default('10'),
+
+    // Compression and models
+    MEMORY_COMPRESSION_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+    MEMORY_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+    MEMORY_MAX_CONTACT_MEMORY_WORDS: z.string().transform(Number).pipe(z.number().int()).default('2000'),
+
+    // Retention and purge
+    MEMORY_SUMMARY_RETENTION_DAYS: z.string().transform(Number).pipe(z.number().int()).default('90'),
+    MEMORY_ARCHIVE_RETENTION_YEARS: z.string().transform(Number).pipe(z.number().int()).default('5'),
+    MEMORY_PIPELINE_LOGS_RETENTION_DAYS: z.string().transform(Number).pipe(z.number().int()).default('90'),
+    MEMORY_MEDIA_IMAGE_RETENTION_YEARS: z.string().transform(Number).pipe(z.number().int()).default('5'),
+    MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: z.string().transform((v: string) => v === 'true').default('true'),
+    MEMORY_PURGE_MERGED_SUMMARIES: z.string().transform((v: string) => v === 'true').default('false'),
+    MEMORY_RECOMPRESSION_INTERVAL_DAYS: z.string().transform(Number).pipe(z.number().int()).default('30'),
+
+    // Batch crons
+    MEMORY_BATCH_COMPRESS_CRON: z.string().default('0 2 * * *'),
+    MEMORY_BATCH_EMBEDDINGS_CRON: z.string().default('30 2 * * *'),
+    MEMORY_BATCH_MERGE_CRON: z.string().default('0 3 * * *'),
+    MEMORY_BATCH_RECOMPRESS_CRON: z.string().default('0 4 1 * *'),
+    MEMORY_BATCH_MEDIA_PURGE_CRON: z.string().default('0 5 * * 0'),
+    MEMORY_BATCH_LOGS_PURGE_CRON: z.string().default('0 5 * * 0'),
+    MEMORY_BATCH_ARCHIVE_PURGE_CRON: z.string().default('0 5 1 * *'),
   }),
 
   oficina: {
     title: { es: 'Memoria', en: 'Memory' },
     info: {
-      es: 'Buffer de mensajes en Redis + persistencia en PostgreSQL.',
-      en: 'Message buffer in Redis + persistence in PostgreSQL.',
+      es: 'Buffer de mensajes en Redis + persistencia en PostgreSQL. 3 niveles: caliente (mensajes), tibio (resúmenes), frío (memoria de contacto).',
+      en: 'Message buffer in Redis + persistence in PostgreSQL. 3 tiers: hot (messages), warm (summaries), cold (contact memory).',
     },
     order: 40,
     fields: [
+      // ── Buffer y sesiones ──
       { key: 'MEMORY_BUFFER_MESSAGE_COUNT', type: 'number', label: { es: 'Mensajes en buffer', en: 'Buffer message count' } },
       { key: 'MEMORY_SESSION_MAX_TTL_HOURS', type: 'number', label: { es: 'TTL sesión (horas)', en: 'Session TTL (hours)' } },
       { key: 'MEMORY_COMPRESSION_THRESHOLD', type: 'number', label: { es: 'Umbral de compresión', en: 'Compression threshold' } },
+      { key: 'MEMORY_COMPRESSION_KEEP_RECENT', type: 'number', label: { es: 'Mensajes recientes a conservar', en: 'Recent messages to keep' } },
+
+      // ── Compresión y modelos ──
+      { key: 'MEMORY_COMPRESSION_MODEL', type: 'text', label: { es: 'Modelo de compresión', en: 'Compression model' }, info: { es: 'Modelo LLM para comprimir sesiones', en: 'LLM model for compressing sessions' } },
+      { key: 'MEMORY_EMBEDDING_MODEL', type: 'text', label: { es: 'Modelo de embeddings', en: 'Embedding model' }, info: { es: 'Modelo para generar embeddings vectoriales', en: 'Model for generating vector embeddings' } },
+      { key: 'MEMORY_MAX_CONTACT_MEMORY_WORDS', type: 'number', label: { es: 'Máx. palabras memoria contacto', en: 'Max contact memory words' }, info: { es: 'Límite antes de re-compresión', en: 'Limit before re-compression' } },
+
+      // ── Retención y purga ──
+      { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Retención resúmenes (días)', en: 'Summary retention (days)' } },
+      { key: 'MEMORY_ARCHIVE_RETENTION_YEARS', type: 'number', label: { es: 'Retención archivos legales (años)', en: 'Legal archive retention (years)' } },
+      { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Retención pipeline logs (días)', en: 'Pipeline logs retention (days)' } },
+      { key: 'MEMORY_MEDIA_IMAGE_RETENTION_YEARS', type: 'number', label: { es: 'Retención media (años)', en: 'Media retention (years)' } },
+      { key: 'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', type: 'boolean', label: { es: 'Borrar mensajes tras comprimir', en: 'Purge messages after compress' } },
+      { key: 'MEMORY_PURGE_MERGED_SUMMARIES', type: 'boolean', label: { es: 'Borrar resúmenes fusionados', en: 'Purge merged summaries' } },
+      { key: 'MEMORY_RECOMPRESSION_INTERVAL_DAYS', type: 'number', label: { es: 'Re-compresión (días)', en: 'Recompression interval (days)' } },
+
+      // ── Batch nocturno ──
+      { key: 'MEMORY_BATCH_COMPRESS_CRON', type: 'text', label: { es: 'Cron compresión', en: 'Compression cron' } },
+      { key: 'MEMORY_BATCH_EMBEDDINGS_CRON', type: 'text', label: { es: 'Cron embeddings', en: 'Embeddings cron' } },
+      { key: 'MEMORY_BATCH_MERGE_CRON', type: 'text', label: { es: 'Cron fusión', en: 'Merge cron' } },
+      { key: 'MEMORY_BATCH_RECOMPRESS_CRON', type: 'text', label: { es: 'Cron re-compresión', en: 'Recompression cron' } },
+      { key: 'MEMORY_BATCH_MEDIA_PURGE_CRON', type: 'text', label: { es: 'Cron purga media', en: 'Media purge cron' } },
+      { key: 'MEMORY_BATCH_LOGS_PURGE_CRON', type: 'text', label: { es: 'Cron purga logs', en: 'Logs purge cron' } },
+      { key: 'MEMORY_BATCH_ARCHIVE_PURGE_CRON', type: 'text', label: { es: 'Cron purga archivos', en: 'Archive purge cron' } },
     ],
   },
 
@@ -48,6 +98,16 @@ const manifest: ModuleManifest = {
       MEMORY_SESSION_MAX_TTL_HOURS: number
       MEMORY_COMPRESSION_THRESHOLD: number
       MEMORY_COMPRESSION_KEEP_RECENT: number
+      MEMORY_COMPRESSION_MODEL: string
+      MEMORY_EMBEDDING_MODEL: string
+      MEMORY_MAX_CONTACT_MEMORY_WORDS: number
+      MEMORY_SUMMARY_RETENTION_DAYS: number
+      MEMORY_ARCHIVE_RETENTION_YEARS: number
+      MEMORY_PIPELINE_LOGS_RETENTION_DAYS: number
+      MEMORY_MEDIA_IMAGE_RETENTION_YEARS: number
+      MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolean
+      MEMORY_PURGE_MERGED_SUMMARIES: boolean
+      MEMORY_RECOMPRESSION_INTERVAL_DAYS: number
     }>('memory')
 
     manager = new MemoryManager(registry.getDb(), registry.getRedis(), config)
