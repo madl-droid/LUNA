@@ -211,7 +211,7 @@ export interface ModuleManifest {
 
 export interface OficinaField {
   key: string
-  type: 'text' | 'secret' | 'number' | 'boolean' | 'select'
+  type: 'text' | 'textarea' | 'secret' | 'number' | 'boolean' | 'select'
   label: { es: string; en: string }
   info?: { es: string; en: string }
   options?: Array<{ value: string; label: string }>

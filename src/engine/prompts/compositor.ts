@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import pino from 'pino'
 import type { ContextBundle, EvaluatorOutput, ExecutionOutput } from '../types.js'
 import type { ChannelName } from '../../channels/types.js'
+import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../../modules/prompts/types.js'
 
 const logger = pino({ name: 'engine:prompts:compositor' })
 
@@ -56,16 +58,36 @@ export async function buildCompositorPrompt(
   evaluation: EvaluatorOutput,
   execution: ExecutionOutput,
   knowledgeDir: string,
+  registry?: Registry,
 ): Promise<{
   system: string
   userMessage: string
 }> {
-  // Load identity and guardrails files
-  const [identity, guardrails, responseFormat] = await Promise.all([
-    loadFile(join(knowledgeDir, 'identity.md')),
-    loadFile(join(knowledgeDir, 'guardrails.md')),
-    loadFile(join(knowledgeDir, 'response-format.md')),
-  ])
+  // Try prompts:service first (DB-backed, editable from oficina)
+  const promptsService = registry?.getOptional<PromptsService>('prompts:service') ?? null
+
+  let identity = ''
+  let job = ''
+  let guardrails = ''
+  let relationship = ''
+
+  if (promptsService) {
+    const prompts = await promptsService.getCompositorPrompts(ctx.userType)
+    identity = prompts.identity
+    job = prompts.job
+    guardrails = prompts.guardrails
+    relationship = prompts.relationship
+  }
+
+  // Fallback to files if prompts module not active or returned empty
+  if (!identity) {
+    identity = await loadFile(join(knowledgeDir, 'identity.md'))
+  }
+  if (!guardrails) {
+    guardrails = await loadFile(join(knowledgeDir, 'guardrails.md'))
+  }
+
+  const responseFormat = await loadFile(join(knowledgeDir, 'response-format.md'))
 
   // Build system prompt
   const systemParts: string[] = []
@@ -78,8 +100,16 @@ Tu trabajo es atender a las personas que te contactan, ayudarles con sus pregunt
 y guiarlos hacia una decisión de compra o agendamiento.`)
   }
 
+  if (job) {
+    systemParts.push(`\n--- TRABAJO ---\n${job}`)
+  }
+
   if (guardrails) {
     systemParts.push(`\n--- REGLAS ---\n${guardrails}`)
+  }
+
+  if (relationship) {
+    systemParts.push(`\n--- CONTEXTO DE RELACIÓN ---\n${relationship}`)
   }
 
   // Channel format limits
@@ -90,7 +120,7 @@ y guiarlos hacia una decisión de compra o agendamiento.`)
     systemParts.push(`\n--- FORMATO ---\n${channelLimit}`)
   }
 
-  // Campaign context
+  // Campaign context (from prompts:service fuzzy match or ctx.campaign)
   if (ctx.campaign) {
     systemParts.push(`\n--- CAMPAÑA ACTIVA ---\nCampaña: ${ctx.campaign.name}
 Adapta tu respuesta al contexto de esta campaña.`)

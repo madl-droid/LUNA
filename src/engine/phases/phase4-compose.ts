@@ -5,6 +5,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
 import type {
   ContextBundle,
   EvaluatorOutput,
@@ -28,6 +29,7 @@ export async function phase4Compose(
   evaluation: EvaluatorOutput,
   execution: ExecutionOutput,
   config: EngineConfig,
+  registry?: Registry,
 ): Promise<CompositorOutput> {
   const startMs = Date.now()
 
@@ -39,6 +41,7 @@ export async function phase4Compose(
     evaluation,
     execution,
     config.knowledgeDir,
+    registry,
   )
 
   try {

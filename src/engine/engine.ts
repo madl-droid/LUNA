@@ -123,7 +123,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
 
     // ═══ PHASE 4: Compose Response ═══
     const p4Start = Date.now()
-    const composed = await phase4Compose(ctx, evaluation, execution, engineConfig)
+    const composed = await phase4Compose(ctx, evaluation, execution, engineConfig, registry)
     const phase4DurationMs = Date.now() - p4Start
 
     logger.info({
