@@ -1,5 +1,5 @@
-// LUNA Engine — Phase 5: Validate + Send + Persist
-// Código puro. Validates output, formats, rate limits, sends, persists.
+// LUNA Engine — Phase 5: Validate + Send + Persist (v3)
+// Validates output, formats, rate limits, sends, persists via memory:manager.
 
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
@@ -14,6 +14,8 @@ import type {
   DeliveryResult,
   EngineConfig,
 } from '../types.js'
+import type { MemoryManager } from '../../modules/memory/memory-manager.js'
+import type { StoredMessage } from '../../modules/memory/types.js'
 import { detectOutputInjection, detectSensitiveData } from '../utils/injection-detector.js'
 import { formatForChannel, calculateTypingDelay } from '../utils/message-formatter.js'
 
@@ -51,22 +53,23 @@ export async function phase5Validate(
     return { sent: false, error: 'Rate limit exceeded' }
   }
 
-  // 3. Format for channel (split into bubbles for WA, HTML for email)
+  // 3. Format for channel
   const parts = formatForChannel(responseText, ctx.message.channelName)
 
   // 4. Send via channel adapter
   const deliveryResult = await sendMessages(ctx, parts, registry)
 
-  // 5. Persist messages (both incoming and outgoing)
-  await persistMessages(ctx, responseText, evaluation, db)
+  // 5. Persist messages via memory:manager (or fallback to direct DB)
+  const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
+  await persistMessages(ctx, responseText, evaluation, db, memoryManager)
 
-  // 6. Update lead qualification (if contact is a lead)
-  await updateLeadQualification(ctx, registry, db)
+  // 6. Update lead qualification
+  await updateLeadQualification(ctx, registry, db, memoryManager)
 
   // 7. Update session
   await updateSession(ctx, db)
 
-  // 8. Enqueue sheets sync (async, fire-and-forget)
+  // 8. Enqueue sheets sync
   enqueueSheetsSync(ctx, redis)
 
   const durationMs = Date.now() - startMs
@@ -80,17 +83,12 @@ export async function phase5Validate(
   return deliveryResult
 }
 
-/**
- * Validate output text for injection and sensitive data.
- */
 function validateOutput(text: string): ValidationResult {
   const issues: string[] = []
 
-  // Check for output injection (system prompt leaks)
   const injectionIssues = detectOutputInjection(text)
   issues.push(...injectionIssues)
 
-  // Check for sensitive data
   const sensitiveIssues = detectSensitiveData(text)
   issues.push(...sensitiveIssues)
 
@@ -98,9 +96,7 @@ function validateOutput(text: string): ValidationResult {
     return { passed: true, issues: [], sanitizedText: text }
   }
 
-  // Sanitize: remove sensitive patterns
   let sanitized = text
-  // Remove API key patterns
   sanitized = sanitized.replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
   sanitized = sanitized.replace(/sk-ant-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
   sanitized = sanitized.replace(/AIza[a-zA-Z0-9_-]{35}/g, '[REDACTED]')
@@ -109,10 +105,6 @@ function validateOutput(text: string): ValidationResult {
   return { passed: false, issues, sanitizedText: sanitized }
 }
 
-/**
- * Check rate limit for sending messages.
- * WA: 30/hour, 200/day.
- */
 async function checkRateLimit(
   redis: Redis,
   to: string,
@@ -133,7 +125,6 @@ async function checkRateLimit(
     if (hourCount && parseInt(hourCount) >= config.waRateLimitHour) return false
     if (dayCount && parseInt(dayCount) >= config.waRateLimitDay) return false
 
-    // Increment counters
     const pipeline = redis.pipeline()
     pipeline.incr(hourKey)
     pipeline.expire(hourKey, 3600)
@@ -148,9 +139,6 @@ async function checkRateLimit(
   }
 }
 
-/**
- * Send message parts via channel adapter hook.
- */
 async function sendMessages(
   ctx: ContextBundle,
   parts: string[],
@@ -161,7 +149,6 @@ async function sendMessages(
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!
 
-    // Typing delay for WA (simulate human)
     if (ctx.message.channelName === 'whatsapp' && i > 0) {
       const delay = calculateTypingDelay(part)
       await new Promise(resolve => setTimeout(resolve, delay))
@@ -174,7 +161,7 @@ async function sendMessages(
         content: { type: 'text', text: part },
         correlationId: ctx.traceId,
       })
-      lastMessageId = randomUUID()  // placeholder until hook returns real ID
+      lastMessageId = randomUUID()
     } catch (err) {
       logger.error({ err, traceId: ctx.traceId, part: i }, 'Failed to send message part')
       return { sent: false, error: String(err) }
@@ -184,45 +171,79 @@ async function sendMessages(
   return { sent: true, channelMessageId: lastMessageId }
 }
 
-/**
- * Persist incoming and outgoing messages to DB.
- */
 async function persistMessages(
   ctx: ContextBundle,
   responseText: string,
   evaluation: EvaluatorOutput,
   db: Pool,
+  memoryManager: MemoryManager | null,
 ): Promise<void> {
   const now = new Date()
 
+  if (memoryManager) {
+    const incomingMsg: StoredMessage = {
+      id: ctx.message.id,
+      sessionId: ctx.session.id,
+      agentId: ctx.agentId,
+      channelName: ctx.message.channelName,
+      senderType: 'user',
+      senderId: ctx.message.from,
+      content: { type: ctx.messageType, text: ctx.normalizedText },
+      role: 'user',
+      contentText: ctx.normalizedText,
+      contentType: (ctx.messageType as StoredMessage['contentType']) ?? 'text',
+      intent: evaluation.intent,
+      emotion: evaluation.emotion,
+      createdAt: ctx.message.timestamp,
+    }
+
+    const outgoingMsg: StoredMessage = {
+      id: randomUUID(),
+      sessionId: ctx.session.id,
+      agentId: ctx.agentId,
+      channelName: ctx.message.channelName,
+      senderType: 'agent',
+      senderId: ctx.agentId,
+      content: { type: 'text', text: responseText },
+      role: 'assistant',
+      contentText: responseText,
+      contentType: 'text',
+      intent: evaluation.intent,
+      createdAt: now,
+    }
+
+    try {
+      await Promise.all([
+        memoryManager.saveMessage(incomingMsg),
+        memoryManager.saveMessage(outgoingMsg),
+      ])
+      return
+    } catch (err) {
+      logger.warn({ err, traceId: ctx.traceId }, 'memory:manager persist failed, falling back to direct DB')
+    }
+  }
+
+  // Legacy: direct DB
   try {
-    // Persist incoming message
     await db.query(
       `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (id) DO NOTHING`,
       [
-        ctx.message.id,
-        ctx.session.id,
-        ctx.message.channelName,
-        'user',
-        ctx.message.from,
+        ctx.message.id, ctx.session.id, ctx.message.channelName,
+        'user', ctx.message.from,
         JSON.stringify({ type: ctx.messageType, text: ctx.normalizedText }),
         ctx.message.timestamp,
       ],
     )
 
-    // Persist outgoing message
     await db.query(
       `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (id) DO NOTHING`,
       [
-        randomUUID(),
-        ctx.session.id,
-        ctx.message.channelName,
-        'agent',
-        'luna',
+        randomUUID(), ctx.session.id, ctx.message.channelName,
+        'agent', ctx.agentId,
         JSON.stringify({ type: 'text', text: responseText, intent: evaluation.intent }),
         now,
       ],
@@ -232,9 +253,6 @@ async function persistMessages(
   }
 }
 
-/**
- * Update session last activity and message count.
- */
 async function updateSession(ctx: ContextBundle, db: Pool): Promise<void> {
   try {
     await db.query(
@@ -248,28 +266,28 @@ async function updateSession(ctx: ContextBundle, db: Pool): Promise<void> {
   }
 }
 
-/**
- * Update lead qualification after processing.
- * Reads latest qualification_data from DB (may have been updated by extract_qualification tool
- * in Phase 3) and recalculates the score to ensure consistency.
- */
 async function updateLeadQualification(
   ctx: ContextBundle,
   registry: Registry,
   db: Pool,
+  memoryManager: MemoryManager | null,
 ): Promise<void> {
-  // Only for leads with a contact record
   if (!ctx.contactId || ctx.contact?.contactType !== 'lead') return
 
-  // Transition new → qualifying on first interaction
-  if (ctx.contact?.qualificationStatus === 'new') {
+  const currentStatus = ctx.leadStatus ?? ctx.contact?.qualificationStatus
+  if (currentStatus === 'new') {
     try {
-      await db.query(
-        `UPDATE contacts SET qualification_status = 'qualifying', updated_at = NOW() WHERE id = $1 AND qualification_status = 'new'`,
-        [ctx.contactId],
-      )
+      if (memoryManager) {
+        await memoryManager.updateLeadStatus(ctx.agentId, ctx.contactId, 'qualifying')
+      } else {
+        await db.query(
+          `UPDATE contacts SET qualification_status = 'qualifying', updated_at = NOW() WHERE id = $1 AND qualification_status = 'new'`,
+          [ctx.contactId],
+        )
+      }
       await registry.runHook('contact:status_changed', {
         contactId: ctx.contactId,
+        agentId: ctx.agentId,
         from: 'new',
         to: 'qualifying',
       })
@@ -280,10 +298,6 @@ async function updateLeadQualification(
   }
 }
 
-/**
- * Enqueue Google Sheets sync (BullMQ async — currently just logs).
- */
 function enqueueSheetsSync(ctx: ContextBundle, _redis: Redis): void {
-  // TODO: implement BullMQ job when queue module exists
   logger.debug({ traceId: ctx.traceId, contactId: ctx.contactId }, 'Sheets sync enqueued (noop)')
 }

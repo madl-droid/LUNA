@@ -1,39 +1,48 @@
-# Memory — Sistema de memoria dos-tier
+# Memory — Sistema de memoria tres-tier (v3)
 
-Redis (buffer rápido) + PostgreSQL (persistente). Redis es primario para lectura; PG es backup y log permanente.
+3 niveles: caliente (messages Redis+PG), tibio (session_summaries), frío (contact_memory en agent_contacts). Incluye búsqueda híbrida FTS+vector, compromisos, archivo legal, y pipeline logs.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, servicio `memory:manager`
-- `memory-manager.ts` — orquestador, API pública del módulo
-- `redis-buffer.ts` — operaciones Redis: mensajes (lista circular) y metadata (hash)
-- `pg-store.ts` — persistencia PostgreSQL, tabla messages
-- `types.ts` — StoredMessage, SessionMeta, SenderType
+- `manifest.ts` — lifecycle, configSchema (20+ params), servicio `memory:manager`
+- `memory-manager.ts` — orquestador, API pública: hybrid search, compress, merge, fact correction
+- `redis-buffer.ts` — ops Redis: mensajes (lista circular), metadata (hash), lead_status cache, context cache
+- `pg-store.ts` — persistencia PG: messages, agent_contacts, session_summaries, commitments, archives, pipeline_logs
+- `types.ts` — StoredMessage, SessionSummary, AgentContact, ContactMemory, Commitment, FactCorrection, HybridSearchResult
 
 ## Manifest
 - type: `core-module`, removable: false, activateByDefault: true
-- configSchema: MEMORY_BUFFER_MESSAGE_COUNT (50), MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN (30), MEMORY_SESSION_MAX_TTL_HOURS (24), MEMORY_COMPRESSION_THRESHOLD (30), MEMORY_COMPRESSION_KEEP_RECENT (10)
+- configSchema: buffer, compresión, modelos, retención, purga, batch crons (20+ params)
 
 ## Servicio registrado
 - `memory:manager` — instancia de MemoryManager
 
-## Patrones
-- Redis primary para reads. PG fallback solo cuando Redis devuelve array vacío.
-- PG writes son **fire-and-forget**: async, no bloquean pipeline. Errores se loguean pero no propagan.
-- Compresión: `needsCompression()` checa messageCount >= compressionThreshold.
-- Raw SQL con queries parametrizadas ($1, $2). NO usar ORM.
-- Usa `registry.getDb()` y `registry.getRedis()` para conexiones (no crea las suyas).
+## Tablas PG (v3)
+- `messages` — nivel caliente: dual-write (old + new columns) durante migración
+- `agent_contacts` — nivel frío: relación agente↔contacto, lead_status, qualification_data, contact_memory JSONB
+- `session_summaries` — nivel tibio: resúmenes comprimidos con FTS dinámico + embeddings vector(1536)
+- `commitments` — compromisos y seguimiento (PERMANENTE, nunca se borran)
+- `conversation_archives` — backup legal (5 años retención)
+- `pipeline_logs` — observabilidad (90 días retención)
+- `agents` — registro de agentes
+- `companies` — empresas B2B
 
 ## Redis keys
-- `session:{sessionId}:messages` — lista circular, trim a bufferMessageCount
-- `session:{sessionId}:meta` — hash con metadata (start, contact, channel, messageCount)
-- TTL basado en sessionMaxTTLHours
+- `session:{sessionId}:messages` — lista circular hot messages
+- `session:{sessionId}:meta` — hash metadata sesión
+- `lead_status:{contactId}:{agentId}` — cache lead status (12h TTL)
+- `context:{contactId}:{agentId}` — cache context bundle (5min TTL)
 
-## PG schema
-- Tabla `messages`: id (UUID PK), session_id, channel_name, sender_type, sender_id, content (JSONB), created_at
-- INSERT con ON CONFLICT DO NOTHING (idempotente)
-- Índice en (session_id, created_at)
+## Patrones
+- Redis primary para reads. PG fallback solo cuando Redis vacío.
+- PG writes de pipeline_logs son **fire-and-forget**
+- Búsqueda híbrida: FTS (plainto_tsquery dinámico por idioma) + vector cosine + recency re-rank
+- Compresión: caller provee resultado LLM, memory-manager maneja storage
+- Fact correction: busca key_fact existente, lo reemplaza con supersedes tracking
+- Contact memory merge: warm→cold, marca summaries como merged
 
 ## Trampas
-- **NO cambiar fire-and-forget de PG a await** — bloquearía el pipeline en tiempo real
-- `getSessionMessages()` cae a PG solo si Redis está vacío. Datos parciales en Redis se retornan tal cual.
-- Los types de este módulo (StoredMessage) son SEPARADOS de los types de channels — no confundir
+- **NO cambiar fire-and-forget de pipeline_logs/messages a await** — bloquearía pipeline
+- `content` column en messages cambió de JSONB a TEXT (`content_text`). Durante dual-write ambas se escriben.
+- `qualification_*` migró de contacts a agent_contacts. Lead-scoring usa agentId.
+- El FTS trigger mapea `summary_language` al diccionario PG automáticamente.
+- pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration.

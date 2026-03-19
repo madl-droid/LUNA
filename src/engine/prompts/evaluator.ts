@@ -80,10 +80,46 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
     parts.push(`[Contacto nuevo, no registrado]`)
   }
 
+  // Lead status
+  if (ctx.leadStatus) {
+    parts.push(`[Estado del lead: ${ctx.leadStatus}]`)
+  }
+
   // Session context
   parts.push(`[Sesión: ${ctx.session.isNew ? 'nueva' : `mensajes: ${ctx.session.messageCount}`}]`)
   if (ctx.session.compressedSummary) {
     parts.push(`[Resumen sesión anterior: ${ctx.session.compressedSummary}]`)
+  }
+
+  // Contact memory (cold tier)
+  if (ctx.contactMemory) {
+    const cm = ctx.contactMemory
+    if (cm.summary) {
+      parts.push(`[Memoria del contacto: ${cm.summary}]`)
+    }
+    if (cm.key_facts.length > 0) {
+      parts.push(`[Datos clave del contacto:]`)
+      for (const f of cm.key_facts.slice(0, 10)) {
+        parts.push(`- ${f.fact}`)
+      }
+    }
+  }
+
+  // Pending commitments (prospective tier — always inject)
+  if (ctx.pendingCommitments.length > 0) {
+    parts.push(`[Compromisos pendientes:]`)
+    for (const c of ctx.pendingCommitments.slice(0, 5)) {
+      const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
+      parts.push(`- [${c.commitmentType}] ${c.description}${due} — por: ${c.commitmentBy}`)
+    }
+  }
+
+  // Relevant summaries from hybrid search (warm tier)
+  if (ctx.relevantSummaries.length > 0) {
+    parts.push(`[Conversaciones previas relevantes:]`)
+    for (const s of ctx.relevantSummaries.slice(0, 3)) {
+      parts.push(`- (${s.interactionStartedAt.toISOString().split('T')[0]!}) ${s.summaryText.substring(0, 150)}`)
+    }
   }
 
   // Campaign context
