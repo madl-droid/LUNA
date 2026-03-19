@@ -287,10 +287,10 @@ async function loadHistory(
       [sessionId, limit],
     )
 
-    return result.rows.reverse().map(row => ({
+    return result.rows.reverse().map((row: Record<string, unknown>) => ({
       role: row.sender_type === 'agent' ? 'assistant' as const : 'user' as const,
-      content: typeof row.content === 'object' ? (row.content.text ?? '') : String(row.content),
-      timestamp: row.created_at,
+      content: typeof row.content === 'object' ? ((row.content as Record<string, string>)?.text ?? '') : String(row.content),
+      timestamp: row.created_at as Date,
     }))
   } catch (err) {
     logger.debug({ err, sessionId }, 'Failed to load history (table may not exist yet)')
