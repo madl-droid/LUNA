@@ -6,6 +6,8 @@ Sistema de carga dinámica de módulos con hooks tipados, inyección de dependen
 - `types.ts` — HookMap (todos los hooks con payload tipado), ModuleManifest, ApiRoute, ModuleOficinaDef, payloads de mensaje/LLM/contacto
 - `config.ts` — **ÚNICO archivo que lee process.env.** Solo infra: DB, Redis, PORT, LOG_LEVEL. Proxy read-only.
 - `config-store.ts` — CRUD encriptado para tabla config_store (AES-256-GCM). Secrets se encriptan, non-secrets en texto plano.
+- `config-helpers.ts` — helpers Zod para configSchema: `numEnv()`, `numEnvMin()`, `floatEnv()`, `floatEnvMin()`, `boolEnv()`. Evitan repetir `.transform(Number).pipe(...)`.
+- `http-helpers.ts` — helpers HTTP compartidos: `readBody()`, `parseBody()`, `jsonResponse()`, `parseQuery()`, `getPathname()`. **Todos los módulos los importan de aquí.**
 - `registry.ts` — bus central: hooks, DI (provide/get), config por módulo, lifecycle de módulos
 - `loader.ts` — descubre `src/modules/*/manifest.ts`, sync con tabla kernel_modules, topological sort por depends, activa en orden
 - `server.ts` — servidor HTTP nativo. `mountModuleRoutes(name, routes)` y `unmountModuleRoutes(name)` para hot-mount/unmount de rutas en `/oficina/api/{moduleName}/{path}`. Endpoint `/health`.
@@ -72,3 +74,5 @@ Todo módulo que tenga parámetros configurables DEBE definir `manifest.oficina.
 - `createPool()`, `createRedis()` — setup de conexiones
 - `createServer()`, `startServer()` — servidor HTTP
 - `loadModules()` — orquestador de arranque
+- `http-helpers.ts` — `readBody`, `parseBody`, `jsonResponse`, `parseQuery`, `getPathname` — usados por todos los módulos con apiRoutes
+- `config-helpers.ts` — `numEnv`, `numEnvMin`, `floatEnv`, `floatEnvMin`, `boolEnv` — usados en configSchema de módulos

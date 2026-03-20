@@ -57,3 +57,4 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 - Admin máximo 5 usuarios por instancia
 - Sheet sync solo funciona si hay módulo Google OAuth activo
 - Al cambiar permisos de una lista, llamar cache.invalidateAll()
+- **Helpers HTTP y config**: `sync/api-handler.ts` usa `jsonResponse`, `parseBody` de `kernel/http-helpers.js`. configSchema usa `numEnv`, `boolEnv` de `kernel/config-helpers.js`. NO redefinir localmente.

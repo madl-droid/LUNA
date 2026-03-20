@@ -1,10 +1,11 @@
 // LUNA — Users module: API route handlers
 // Endpoints CRUD para gestionar usuarios y listas desde la oficina.
 
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { ServerResponse } from 'node:http'
 import pino from 'pino'
 import type { Registry } from '../../../kernel/registry.js'
 import type { ApiRoute } from '../../../kernel/types.js'
+import { jsonResponse, parseBody } from '../../../kernel/http-helpers.js'
 import type { UsersDb } from '../db.js'
 import type { UserCache } from '../cache.js'
 import { importCsv, importArray } from './csv-import.js'
@@ -12,29 +13,13 @@ import { syncListFromSheet } from './sheet-sync.js'
 
 const logger = pino({ name: 'users:api' })
 
-// ─── Helpers ──────────────────────────────
-
+/** Shorthand: json(res, data) defaults to 200, json(res, data, 201) for custom status */
 function json(res: ServerResponse, data: unknown, status = 200): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
+  jsonResponse(res, status, data)
 }
 
 function error(res: ServerResponse, message: string, status = 400): void {
   json(res, { error: message }, status)
-}
-
-async function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()))
-    req.on('error', reject)
-  })
-}
-
-async function parseJsonBody<T = unknown>(req: IncomingMessage): Promise<T> {
-  const raw = await readBody(req)
-  return JSON.parse(raw) as T
 }
 
 // ─── Route factory ────────────────────────
@@ -61,7 +46,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'create',
       handler: async (req, res) => {
         try {
-          const body = await parseJsonBody<{
+          const body = await parseBody<{
             senderId: string
             channel: string
             listType: string
@@ -98,7 +83,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'update',
       handler: async (req, res) => {
         try {
-          const body = await parseJsonBody<{
+          const body = await parseBody<{
             id: string
             displayName?: string
             metadata?: Record<string, unknown>
@@ -128,7 +113,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'deactivate',
       handler: async (req, res) => {
         try {
-          const body = await parseJsonBody<{ id: string }>(req)
+          const body = await parseBody<{ id: string }>(req)
           if (!body.id) return error(res, 'Missing required field: id')
 
           const existing = await db.findUserById(body.id)
@@ -151,7 +136,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'list',
       handler: async (req, res) => {
         try {
-          const body = await parseJsonBody<{ listType: string; includeInactive?: boolean }>(req)
+          const body = await parseBody<{ listType: string; includeInactive?: boolean }>(req)
           if (!body.listType) return error(res, 'Missing required field: listType')
 
           const users = await db.listUsers(body.listType, !body.includeInactive)
@@ -169,7 +154,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'bulk-import',
       handler: async (req, res) => {
         try {
-          const body = await parseJsonBody<{
+          const body = await parseBody<{
             listType: string
             format: 'csv' | 'json'
             data: string | Array<{ senderId: string; channel: string; displayName?: string; metadata?: Record<string, unknown> }>
@@ -206,7 +191,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'trigger-sync',
       handler: async (req, res) => {
         try {
-          const body = await parseJsonBody<{ listType: string }>(req)
+          const body = await parseBody<{ listType: string }>(req)
           if (!body.listType) return error(res, 'Missing required field: listType')
 
           const config = await db.getListConfig(body.listType)
@@ -231,7 +216,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'config-list',
       handler: async (req, res) => {
         try {
-          const body = await parseJsonBody<{
+          const body = await parseBody<{
             action: 'get' | 'get-all' | 'upsert'
             listType?: string
             displayName?: string
@@ -302,7 +287,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
           const { resolveUserType } = await import('../resolver.js')
           const { getUserPermissions } = await import('../permissions.js')
 
-          const body = await parseJsonBody<{ senderId: string; channel: string }>(req)
+          const body = await parseBody<{ senderId: string; channel: string }>(req)
           if (!body.senderId || !body.channel) {
             return error(res, 'Missing required fields: senderId, channel')
           }

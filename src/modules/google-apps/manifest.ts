@@ -6,6 +6,8 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse, parseBody } from '../../kernel/http-helpers.js'
+import { numEnv } from '../../kernel/config-helpers.js'
 import { OAuthManager } from './oauth-manager.js'
 import { DriveService } from './drive-service.js'
 import { SheetsService } from './sheets-service.js'
@@ -19,27 +21,6 @@ const logger = pino({ name: 'google-apps' })
 
 let oauthManager: OAuthManager | null = null
 let _registry: Registry | null = null
-
-function jsonResponse(res: import('node:http').ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
-
-function parseBody(req: import('node:http').IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => {
-      try {
-        const body = Buffer.concat(chunks).toString()
-        resolve(body ? JSON.parse(body) : {})
-      } catch (err) {
-        reject(err)
-      }
-    })
-    req.on('error', reject)
-  })
-}
 
 // ─── Migrations ────────────────────────────
 
@@ -179,9 +160,9 @@ const manifest: ModuleManifest = {
     GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/google-apps/oauth2callback'),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
     GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar'),
-    GOOGLE_TOKEN_REFRESH_BUFFER_MS: z.string().transform(Number).pipe(z.number().int().positive()).default('300000'),
-    GOOGLE_API_TIMEOUT_MS: z.string().transform(Number).pipe(z.number().int().positive()).default('30000'),
-    GOOGLE_API_RETRY_MAX: z.string().transform(Number).pipe(z.number().int().nonnegative()).default('2'),
+    GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
+    GOOGLE_API_TIMEOUT_MS: numEnv(30000),
+    GOOGLE_API_RETRY_MAX: numEnv(2),
   }),
 
   oficina: {

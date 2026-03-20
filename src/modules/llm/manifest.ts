@@ -4,6 +4,8 @@
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
+import { numEnvMin, floatEnvMin } from '../../kernel/config-helpers.js'
 import { LLMGateway } from './llm-gateway.js'
 import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget } from './types.js'
 
@@ -34,35 +36,35 @@ const manifest: ModuleManifest = {
     LLM_IMAGE_GEN_API_KEY: z.string().default(''),
 
     // Circuit breaker
-    LLM_CB_FAILURE_THRESHOLD: z.string().transform(Number).pipe(z.number().int().min(1)).default('5'),
-    LLM_CB_WINDOW_MS: z.string().transform(Number).pipe(z.number().int().min(1000)).default('600000'),
-    LLM_CB_RECOVERY_MS: z.string().transform(Number).pipe(z.number().int().min(1000)).default('300000'),
-    LLM_CB_HALF_OPEN_MAX: z.string().transform(Number).pipe(z.number().int().min(1)).default('1'),
+    LLM_CB_FAILURE_THRESHOLD: numEnvMin(1, 5),
+    LLM_CB_WINDOW_MS: numEnvMin(1000, 600000),
+    LLM_CB_RECOVERY_MS: numEnvMin(1000, 300000),
+    LLM_CB_HALF_OPEN_MAX: numEnvMin(1, 1),
 
     // Retry
-    LLM_RETRY_MAX: z.string().transform(Number).pipe(z.number().int().min(0)).default('2'),
-    LLM_RETRY_BACKOFF_MS: z.string().transform(Number).pipe(z.number().int().min(100)).default('1000'),
+    LLM_RETRY_MAX: numEnvMin(0, 2),
+    LLM_RETRY_BACKOFF_MS: numEnvMin(100, 1000),
 
     // Timeouts per provider
-    LLM_TIMEOUT_ANTHROPIC_MS: z.string().transform(Number).pipe(z.number().int().min(1000)).default('30000'),
-    LLM_TIMEOUT_GOOGLE_MS: z.string().transform(Number).pipe(z.number().int().min(1000)).default('30000'),
-    LLM_TIMEOUT_OPENAI_MS: z.string().transform(Number).pipe(z.number().int().min(1000)).default('30000'),
+    LLM_TIMEOUT_ANTHROPIC_MS: numEnvMin(1000, 30000),
+    LLM_TIMEOUT_GOOGLE_MS: numEnvMin(1000, 30000),
+    LLM_TIMEOUT_OPENAI_MS: numEnvMin(1000, 30000),
 
     // Rate limits per provider (0 = unlimited)
-    LLM_RPM_ANTHROPIC: z.string().transform(Number).pipe(z.number().int().min(0)).default('0'),
-    LLM_RPM_GOOGLE: z.string().transform(Number).pipe(z.number().int().min(0)).default('0'),
-    LLM_RPM_OPENAI: z.string().transform(Number).pipe(z.number().int().min(0)).default('0'),
-    LLM_TPM_ANTHROPIC: z.string().transform(Number).pipe(z.number().int().min(0)).default('0'),
-    LLM_TPM_GOOGLE: z.string().transform(Number).pipe(z.number().int().min(0)).default('0'),
-    LLM_TPM_OPENAI: z.string().transform(Number).pipe(z.number().int().min(0)).default('0'),
+    LLM_RPM_ANTHROPIC: numEnvMin(0, 0),
+    LLM_RPM_GOOGLE: numEnvMin(0, 0),
+    LLM_RPM_OPENAI: numEnvMin(0, 0),
+    LLM_TPM_ANTHROPIC: numEnvMin(0, 0),
+    LLM_TPM_GOOGLE: numEnvMin(0, 0),
+    LLM_TPM_OPENAI: numEnvMin(0, 0),
 
     // Usage tracking
     LLM_USAGE_ENABLED: z.string().default('true'),
-    LLM_USAGE_RETENTION_DAYS: z.string().transform(Number).pipe(z.number().int().min(1)).default('90'),
+    LLM_USAGE_RETENTION_DAYS: numEnvMin(1, 90),
 
     // Cost budget (0 = unlimited)
-    LLM_DAILY_BUDGET_USD: z.string().transform(Number).pipe(z.number().min(0)).default('0'),
-    LLM_MONTHLY_BUDGET_USD: z.string().transform(Number).pipe(z.number().min(0)).default('0'),
+    LLM_DAILY_BUDGET_USD: floatEnvMin(0, 0),
+    LLM_MONTHLY_BUDGET_USD: floatEnvMin(0, 0),
 
     // Task routing (JSON strings)
     LLM_ROUTE_CLASSIFY: z.string().default(''),
@@ -131,14 +133,12 @@ const manifest: ModuleManifest = {
         path: 'status',
         handler: async (_req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
           const status = await _gateway.getProviderStatus()
           const cost = await _gateway.getTodayCost()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ providers: status, todayCostUsd: cost }))
+          jsonResponse(res, 200, { providers: status, todayCostUsd: cost })
         },
       },
       // Available models
@@ -147,15 +147,13 @@ const manifest: ModuleManifest = {
         path: 'models',
         handler: async (_req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
-          const url = new URL(_req.url ?? '/', `http://${_req.headers.host}`)
-          const provider = url.searchParams.get('provider') as LLMProviderName | null
+          const query = parseQuery(_req)
+          const provider = query.get('provider') as LLMProviderName | null
           const models = _gateway.getAvailableModels(provider ?? undefined)
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ models }))
+          jsonResponse(res, 200, { models })
         },
       },
       // Refresh models
@@ -164,14 +162,12 @@ const manifest: ModuleManifest = {
         path: 'models/refresh',
         handler: async (_req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
           await _gateway.refreshModels()
           const models = _gateway.getAvailableModels()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, count: models.length }))
+          jsonResponse(res, 200, { ok: true, count: models.length })
         },
       },
       // Usage summary
@@ -180,15 +176,13 @@ const manifest: ModuleManifest = {
         path: 'usage',
         handler: async (_req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
-          const url = new URL(_req.url ?? '/', `http://${_req.headers.host}`)
-          const period = (url.searchParams.get('period') ?? 'day') as 'hour' | 'day' | 'week' | 'month'
+          const query = parseQuery(_req)
+          const period = (query.get('period') ?? 'day') as 'hour' | 'day' | 'week' | 'month'
           const summary = await _gateway.getUsageSummary(period)
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify(summary))
+          jsonResponse(res, 200, summary)
         },
       },
       // Task routes
@@ -197,13 +191,11 @@ const manifest: ModuleManifest = {
         path: 'routes',
         handler: async (_req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
           const routes = _gateway.getRoutes()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ routes }))
+          jsonResponse(res, 200, { routes })
         },
       },
       // Update task route
@@ -212,24 +204,20 @@ const manifest: ModuleManifest = {
         path: 'routes',
         handler: async (req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
           try {
-            const body = await readBody(req)
-            const data = JSON.parse(body) as { task: LLMTask; primary: RouteTarget; fallbacks?: RouteTarget[] }
+            const data = await parseBody<{ task: LLMTask; primary: RouteTarget; fallbacks?: RouteTarget[] }>(req)
             const route: TaskRoute = {
               task: data.task,
               primary: data.primary,
               fallbacks: data.fallbacks ?? [],
             }
             _gateway.setRoute(data.task, route)
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: true }))
+            jsonResponse(res, 200, { ok: true })
           } catch (err) {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Invalid route data: ' + String(err) }))
+            jsonResponse(res, 400, { error: 'Invalid route data: ' + String(err) })
           }
         },
       },
@@ -239,13 +227,11 @@ const manifest: ModuleManifest = {
         path: 'circuit-breakers',
         handler: async (_req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
           const status = _gateway.getCircuitBreakerStatus()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ circuitBreakers: status }))
+          jsonResponse(res, 200, { circuitBreakers: status })
         },
       },
       // Reset circuit breaker
@@ -254,19 +240,15 @@ const manifest: ModuleManifest = {
         path: 'circuit-breakers/reset',
         handler: async (req, res) => {
           if (!_gateway) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'LLM gateway not initialized' }))
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
             return
           }
           try {
-            const body = await readBody(req)
-            const data = JSON.parse(body) as { provider: LLMProviderName }
+            const data = await parseBody<{ provider: LLMProviderName }>(req)
             _gateway.resetCircuitBreaker(data.provider)
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: true, provider: data.provider }))
+            jsonResponse(res, 200, { ok: true, provider: data.provider })
           } catch (err) {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Invalid data: ' + String(err) }))
+            jsonResponse(res, 400, { error: 'Invalid data: ' + String(err) })
           }
         },
       },
@@ -327,17 +309,6 @@ const manifest: ModuleManifest = {
     }
     _registry = null
   },
-}
-
-// ─── Helper ──────────────────────────────
-
-function readBody(req: import('node:http').IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
-    req.on('error', reject)
-  })
 }
 
 export default manifest

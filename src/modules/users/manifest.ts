@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { numEnv, boolEnv } from '../../kernel/config-helpers.js'
 import { UsersDb } from './db.js'
 import { UserCache } from './cache.js'
 import { initResolver } from './resolver.js'
@@ -28,9 +29,9 @@ const manifest: ModuleManifest = {
   depends: [],
 
   configSchema: z.object({
-    USER_TYPE_CACHE_TTL: z.string().transform(Number).pipe(z.number().int()).default('43200'),
-    USER_LISTS_ENABLED: z.string().transform(v => v === 'true').pipe(z.boolean()).default('true'),
-    SHEET_SYNC_INTERVAL: z.string().transform(Number).pipe(z.number().int()).default('3600000'),
+    USER_TYPE_CACHE_TTL: numEnv(43200),
+    USER_LISTS_ENABLED: boolEnv(true),
+    SHEET_SYNC_INTERVAL: numEnv(3600000),
   }),
 
   oficina: {

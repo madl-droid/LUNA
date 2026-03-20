@@ -54,3 +54,4 @@ Gateway centralizado para Anthropic, Google (Gemini) y OpenAI. Circuit breaker, 
 - **Budget = 0** significa sin límite. Se chequea antes de cada llamada.
 - **Gateway es null-safe**: si el módulo no está activo, el engine usa fallback directo.
 - **Modelo de costos**: tabla DEFAULT_COST_TABLE en types.ts. Actualizable via tracker.
+- **Helpers HTTP y config**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js` y `numEnvMin`, `floatEnvMin` de `kernel/config-helpers.js`. NO redefinir localmente.

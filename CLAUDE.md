@@ -46,6 +46,7 @@ docs/                — arquitectura (docs/architecture/) y reportes de sesión
 3. Config: agregar `configSchema` (Zod) + `.env.example`. UI: definir `oficina.fields`/`apiRoutes`.
 4. Dependencias: declarar `depends: ['otro-modulo']`.
 5. **OBLIGATORIO: Crear `CLAUDE.md`** en el directorio del módulo (ver template en sección "Mantenimiento" abajo). Agregar entrada a la lista de "Módulos documentados".
+6. **OBLIGATORIO: Usar helpers del kernel** — ver sección "REGLA: No duplicar helpers HTTP ni config schemas" abajo.
 
 ## REGLA MAXIMA: Config distribuido
 
@@ -59,6 +60,41 @@ docs/                — arquitectura (docs/architecture/) y reportes de sesión
 5. **Valores por defecto**: en el schema Zod con `.default()`.
 
 ### Ejemplo: en manifest.ts declarar `configSchema: z.object({ MI_PARAM: z.string().default('valor') })`, en init() leer con `registry.getConfig<T>('mi-modulo')`.
+
+## REGLA: No duplicar helpers HTTP ni config schemas
+
+**Helpers HTTP y Zod ya existen en el kernel. NUNCA redefinir `readBody`, `parseBody`, `jsonResponse`, `parseQuery` en un módulo.**
+
+### HTTP helpers (`src/kernel/http-helpers.ts`)
+```typescript
+import { jsonResponse, parseBody, parseQuery, readBody, getPathname } from '../../kernel/http-helpers.js'
+
+// En handlers de apiRoutes:
+jsonResponse(res, 200, { ok: true })          // respuesta JSON
+const body = await parseBody<MyType>(req)      // leer + parsear JSON body
+const query = parseQuery(req)                  // URLSearchParams
+const name = query.get('name')                 // query param (string | null)
+```
+
+### Config schema helpers (`src/kernel/config-helpers.ts`)
+```typescript
+import { numEnv, numEnvMin, floatEnv, floatEnvMin, boolEnv } from '../../kernel/config-helpers.js'
+
+configSchema: z.object({
+  MI_TIMEOUT_MS: numEnv(30000),          // int, default 30000
+  MI_MAX_RETRIES: numEnvMin(0, 3),       // int >= 0, default 3
+  MI_BUDGET_USD: floatEnvMin(0, 10.5),   // float >= 0, default 10.5
+  MI_ENABLED: boolEnv(true),             // boolean, default true
+  MI_NAME: z.string().default('valor'),  // string (sin helper, directo)
+})
+```
+
+### Lo que NO hacer
+- NO definir `function readBody()`, `function jsonResponse()`, `function parseBody()`, `function parseQuery()` dentro de un módulo
+- NO escribir `z.string().transform(Number).pipe(z.number().int())` — usar `numEnv()` o `numEnvMin()`
+- NO escribir `z.string().transform(v => v === 'true')` — usar `boolEnv()`
+- NO usar `res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(...))` — usar `jsonResponse()`
+- NO usar `JSON.parse(await readBody(req))` — usar `parseBody<T>(req)`
 
 ## Types: cada módulo define los suyos
 Contratos centrales en `src/kernel/types.ts` (HookMap, ModuleManifest, payloads). Types de dominio en cada módulo. NO hay `src/shared/types.ts`.

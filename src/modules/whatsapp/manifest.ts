@@ -5,17 +5,14 @@
 import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse } from '../../kernel/http-helpers.js'
+import { numEnv } from '../../kernel/config-helpers.js'
 import { BaileysAdapter } from './adapter.js'
 import * as configStore from '../../kernel/config-store.js'
 import QRCode from 'qrcode'
 
 let adapter: BaileysAdapter | null = null
 let _registry: Registry | null = null
-
-function jsonResponse(res: import('node:http').ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
 
 const apiRoutes: ApiRoute[] = [
   {
@@ -84,8 +81,8 @@ const manifest: ModuleManifest = {
   depends: [],
 
   configSchema: z.object({
-    WHATSAPP_RECONNECT_INTERVAL_MS: z.string().transform(Number).pipe(z.number().int()).default('5000'),
-    WHATSAPP_MAX_RECONNECT_ATTEMPTS: z.string().transform(Number).pipe(z.number().int()).default('10'),
+    WHATSAPP_RECONNECT_INTERVAL_MS: numEnv(5000),
+    WHATSAPP_MAX_RECONNECT_ATTEMPTS: numEnv(10),
   }),
 
   oficina: {

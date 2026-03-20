@@ -4,38 +4,14 @@
 import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
+import { numEnv } from '../../kernel/config-helpers.js'
 import type { ToolsConfig } from './types.js'
 import { PgStore } from './pg-store.js'
 import { ToolExecutor } from './tool-executor.js'
 import { ToolRegistry } from './tool-registry.js'
 
 let toolRegistry: ToolRegistry | null = null
-
-function readBody(req: import('node:http').IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()))
-    req.on('error', reject)
-  })
-}
-
-function jsonResponse(res: import('node:http').ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
-
-function parseQuery(url: string | undefined): Record<string, string> {
-  if (!url) return {}
-  const idx = url.indexOf('?')
-  if (idx === -1) return {}
-  const params: Record<string, string> = {}
-  for (const part of url.slice(idx + 1).split('&')) {
-    const [k, v] = part.split('=')
-    if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? '')
-  }
-  return params
-}
 
 function createApiRoutes(): ApiRoute[] {
   const getRegistry = (): ToolRegistry => {
@@ -51,8 +27,8 @@ function createApiRoutes(): ApiRoute[] {
       path: 'by-module',
       handler: async (req, res) => {
         try {
-          const query = parseQuery(req.url)
-          const moduleName = query['module']
+          const query = parseQuery(req)
+          const moduleName = query.get('module')
           if (!moduleName) {
             jsonResponse(res, 400, { error: 'Missing "module" query parameter' })
             return
@@ -71,12 +47,12 @@ function createApiRoutes(): ApiRoute[] {
       path: 'settings',
       handler: async (req, res) => {
         try {
-          const body = JSON.parse(await readBody(req)) as {
+          const body = await parseBody<{
             toolName: string
             enabled?: boolean
             maxRetries?: number
             maxUsesPerLoop?: number
-          }
+          }>(req)
           if (!body.toolName) {
             jsonResponse(res, 400, { error: 'Missing toolName' })
             return
@@ -99,8 +75,8 @@ function createApiRoutes(): ApiRoute[] {
       path: 'access',
       handler: async (req, res) => {
         try {
-          const query = parseQuery(req.url)
-          const toolName = query['tool']
+          const query = parseQuery(req)
+          const toolName = query.get('tool')
           if (!toolName) {
             jsonResponse(res, 400, { error: 'Missing "tool" query parameter' })
             return
@@ -119,11 +95,11 @@ function createApiRoutes(): ApiRoute[] {
       path: 'access',
       handler: async (req, res) => {
         try {
-          const body = JSON.parse(await readBody(req)) as {
+          const body = await parseBody<{
             toolName: string
             contactType: string
             allowed: boolean
-          }
+          }>(req)
           if (!body.toolName || !body.contactType) {
             jsonResponse(res, 400, { error: 'Missing toolName or contactType' })
             return
@@ -142,9 +118,9 @@ function createApiRoutes(): ApiRoute[] {
       path: 'executions',
       handler: async (req, res) => {
         try {
-          const query = parseQuery(req.url)
-          const toolName = query['tool'] || undefined
-          const limit = query['limit'] ? parseInt(query['limit'], 10) : 50
+          const query = parseQuery(req)
+          const toolName = query.get('tool') ?? undefined
+          const limit = query.has('limit') ? parseInt(query.get('limit')!, 10) : 50
           const executions = await getRegistry().getRecentExecutions(toolName, limit)
           jsonResponse(res, 200, { executions })
         } catch (err) {
@@ -182,9 +158,9 @@ const manifest: ModuleManifest = {
   depends: [],
 
   configSchema: z.object({
-    TOOLS_RETRY_BACKOFF_MS: z.string().transform(Number).pipe(z.number().int()).default('1000'),
-    TOOLS_EXECUTION_TIMEOUT_MS: z.string().transform(Number).pipe(z.number().int()).default('30000'),
-    PIPELINE_MAX_TOOL_CALLS_PER_TURN: z.string().transform(Number).pipe(z.number().int()).default('5'),
+    TOOLS_RETRY_BACKOFF_MS: numEnv(1000),
+    TOOLS_EXECUTION_TIMEOUT_MS: numEnv(30000),
+    PIPELINE_MAX_TOOL_CALLS_PER_TURN: numEnv(5),
   }),
 
   oficina: {

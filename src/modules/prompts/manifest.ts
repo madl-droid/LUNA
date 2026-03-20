@@ -6,6 +6,7 @@ import pino from 'pino'
 import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import type { PromptSlot } from './types.js'
 import { ensureTable, ensureCampaignColumns } from './pg-queries.js'
 import * as campaignQueries from './pg-queries.js'
@@ -14,30 +15,6 @@ import { PromptsServiceImpl } from './prompts-service.js'
 const logger = pino({ name: 'prompts' })
 
 let service: PromptsServiceImpl | null = null
-
-function jsonResponse(res: import('node:http').ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
-
-function parseBody(req: import('node:http').IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => {
-      try {
-        const body = Buffer.concat(chunks).toString()
-        resolve(body ? JSON.parse(body) : {})
-      } catch (err) { reject(err) }
-    })
-    req.on('error', reject)
-  })
-}
-
-function parseQuery(req: import('node:http').IncomingMessage): URLSearchParams {
-  const url = new URL(req.url ?? '', 'http://localhost')
-  return url.searchParams
-}
 
 const apiRoutes: ApiRoute[] = [
   // ─── Prompt slots ─────────────────────────

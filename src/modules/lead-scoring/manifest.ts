@@ -8,6 +8,7 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import type { LeadScoringConfig, QualifyingConfig, QualificationStatus } from './types.js'
 import { ConfigStore } from './config-store.js'
 import { LeadQueries } from './pg-queries.js'
@@ -18,36 +19,6 @@ const logger = pino({ name: 'lead-scoring' })
 
 let configStore: ConfigStore | null = null
 let leadQueries: LeadQueries | null = null
-
-// ═══════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════
-
-function readBody(req: import('node:http').IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()))
-    req.on('error', reject)
-  })
-}
-
-function jsonResponse(res: import('node:http').ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
-
-function parseQuery(url: string | undefined): Record<string, string> {
-  if (!url) return {}
-  const idx = url.indexOf('?')
-  if (idx === -1) return {}
-  const params: Record<string, string> = {}
-  for (const part of url.slice(idx + 1).split('&')) {
-    const [k, v] = part.split('=')
-    if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? '')
-  }
-  return params
-}
 
 // ═══════════════════════════════════════════
 // API Routes
@@ -86,7 +57,7 @@ function createApiRoutes(): ApiRoute[] {
       path: 'config',
       handler: async (req, res) => {
         try {
-          const body = JSON.parse(await readBody(req)) as QualifyingConfig
+          const body = await parseBody<QualifyingConfig>(req)
           getConfigStore().save(body)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
@@ -149,14 +120,14 @@ function createApiRoutes(): ApiRoute[] {
       path: 'leads',
       handler: async (req, res) => {
         try {
-          const q = parseQuery(req.url)
+          const q = parseQuery(req)
           const result = await getQueries().listLeads({
-            status: q['status'] as QualificationStatus | undefined,
-            search: q['search'] || undefined,
-            limit: q['limit'] ? parseInt(q['limit'], 10) : 50,
-            offset: q['offset'] ? parseInt(q['offset'], 10) : 0,
-            sortBy: (q['sort'] as 'score' | 'updated' | 'created') || 'updated',
-            sortDir: (q['dir'] as 'asc' | 'desc') || 'desc',
+            status: (q.get('status') as QualificationStatus) ?? undefined,
+            search: q.get('search') ?? undefined,
+            limit: q.has('limit') ? parseInt(q.get('limit')!, 10) : 50,
+            offset: q.has('offset') ? parseInt(q.get('offset')!, 10) : 0,
+            sortBy: (q.get('sort') as 'score' | 'updated' | 'created') ?? 'updated',
+            sortDir: (q.get('dir') as 'asc' | 'desc') ?? 'desc',
           })
           jsonResponse(res, 200, result)
         } catch (err) {
@@ -171,8 +142,8 @@ function createApiRoutes(): ApiRoute[] {
       path: 'lead',
       handler: async (req, res) => {
         try {
-          const q = parseQuery(req.url)
-          const contactId = q['id']
+          const q = parseQuery(req)
+          const contactId = q.get('id')
           if (!contactId) {
             jsonResponse(res, 400, { error: 'Missing "id" query parameter' })
             return
@@ -195,10 +166,10 @@ function createApiRoutes(): ApiRoute[] {
       path: 'lead-status',
       handler: async (req, res) => {
         try {
-          const body = JSON.parse(await readBody(req)) as {
+          const body = await parseBody<{
             contactId: string
             status: QualificationStatus
-          }
+          }>(req)
           if (!body.contactId || !body.status) {
             jsonResponse(res, 400, { error: 'Missing contactId or status' })
             return
@@ -234,10 +205,10 @@ function createApiRoutes(): ApiRoute[] {
       path: 'disqualify',
       handler: async (req, res) => {
         try {
-          const body = JSON.parse(await readBody(req)) as {
+          const body = await parseBody<{
             contactId: string
             reasonKey: string
-          }
+          }>(req)
           if (!body.contactId || !body.reasonKey) {
             jsonResponse(res, 400, { error: 'Missing contactId or reasonKey' })
             return
