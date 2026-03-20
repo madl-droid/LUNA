@@ -1,7 +1,7 @@
 // LUNA — Channel types
 // Tipos compartidos entre todos los adaptadores de canal
 
-export type ChannelName = 'whatsapp' | 'email' | 'instagram' | 'messenger'
+export type ChannelName = 'whatsapp' | 'email' | 'instagram' | 'messenger' | 'voice'
 
 export type MessageContentType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'location' | 'contact'
 

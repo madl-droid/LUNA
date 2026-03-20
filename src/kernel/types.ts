@@ -54,6 +54,13 @@ export interface HookMap {
   'tools:register':         [ToolRegisterPayload, void]
   'tools:before_execute':   [ToolBeforeExecutePayload, void]
   'tools:executed':         [ToolExecutedPayload, void]
+
+  // Voice calls (twilio-voice module)
+  'call:incoming':          [CallHookPayload, void]
+  'call:outgoing':          [CallHookPayload, void]
+  'call:connected':         [CallConnectedPayload, void]
+  'call:ended':             [CallEndedPayload, void]
+  'call:transcript':        [CallTranscriptPayload, void]
 }
 
 // Hook payload types
@@ -159,6 +166,47 @@ export interface ToolExecutedPayload {
   durationMs: number
   messageId?: string
   error?: string
+}
+
+// Call hook payloads (twilio-voice module)
+export interface CallHookPayload {
+  callId: string
+  callSid: string
+  direction: 'inbound' | 'outbound'
+  from: string
+  to: string
+  agentId?: string
+  contactId?: string
+}
+
+export interface CallConnectedPayload {
+  callId: string
+  callSid: string
+  direction: 'inbound' | 'outbound'
+  from: string
+  to: string
+  agentId?: string
+  contactId?: string
+  connectedAt: Date
+}
+
+export interface CallEndedPayload {
+  callId: string
+  callSid: string
+  direction: 'inbound' | 'outbound'
+  from: string
+  to: string
+  agentId?: string
+  contactId?: string
+  durationSeconds: number
+  endReason: string
+}
+
+export interface CallTranscriptPayload {
+  callId: string
+  speaker: 'caller' | 'agent' | 'system'
+  text: string
+  timestampMs: number
 }
 
 // ═══════════════════════════════════════════

@@ -2,6 +2,7 @@
 // Servidor base que monta rutas de módulos dinámicamente.
 
 import * as http from 'node:http'
+import type { Socket } from 'node:net'
 import pino from 'pino'
 import { kernelConfig } from './config.js'
 import type { Registry } from './registry.js'
@@ -16,13 +17,26 @@ export interface MountedRoute {
   handler: ApiRoute['handler']
 }
 
+export type UpgradeHandler = (req: http.IncomingMessage, socket: Socket, head: Buffer) => void
+
 export class Server {
   private httpServer: http.Server | null = null
   private routes: MountedRoute[] = []
   private registry: Registry
+  private upgradeHandlers: Array<{ pathPrefix: string; handler: UpgradeHandler }> = []
+  private upgradeAttached = false
 
   constructor(registry: Registry) {
     this.registry = registry
+  }
+
+  /** Register a WebSocket upgrade handler for a URL path prefix */
+  registerUpgradeHandler(pathPrefix: string, handler: UpgradeHandler): void {
+    this.upgradeHandlers.push({ pathPrefix, handler })
+    if (this.httpServer && !this.upgradeAttached) {
+      this.attachUpgradeHandlers()
+    }
+    logger.debug({ pathPrefix }, 'WebSocket upgrade handler registered')
   }
 
   /** Mount API routes for a module under /oficina/api/{moduleName}/ */
@@ -95,6 +109,9 @@ export class Server {
       res.end('{"error":"Not found"}')
     })
 
+    // Attach WebSocket upgrade handlers
+    this.attachUpgradeHandlers()
+
     const port = kernelConfig.port
     return new Promise((resolve) => {
       this.httpServer!.listen(port, () => {
@@ -116,5 +133,25 @@ export class Server {
 
   getHttpServer(): http.Server | null {
     return this.httpServer
+  }
+
+  private attachUpgradeHandlers(): void {
+    if (!this.httpServer || this.upgradeAttached) return
+    this.upgradeAttached = true
+
+    this.httpServer.on('upgrade', (req, socket, head) => {
+      const url = req.url ?? '/'
+      const urlPath = url.split('?')[0]
+
+      for (const entry of this.upgradeHandlers) {
+        if (urlPath!.startsWith(entry.pathPrefix)) {
+          entry.handler(req, socket as Socket, head)
+          return
+        }
+      }
+
+      // No handler matched — destroy socket
+      socket.destroy()
+    })
   }
 }

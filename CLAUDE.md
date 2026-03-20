@@ -33,6 +33,7 @@ src/
     google-apps/     — provider Google: OAuth2, Drive, Sheets, Docs, Slides, Calendar (ver CLAUDE.md)
     gmail/           — canal de email via Gmail API (ver CLAUDE.md)
     google-chat/     — canal Google Chat (ver CLAUDE.md)
+    twilio-voice/    — canal de voz: Twilio + Gemini Live (ver CLAUDE.md)
     engine/          — wrapper del pipeline para el kernel (ver CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
@@ -124,7 +125,7 @@ import type { StoredMessage } from '../memory/types.js'
 - NO importar código entre módulos directamente — usar hooks o services del registry
 - NO leer process.env fuera de kernel/config.ts — módulos usan registry.getConfig()
 - NO implementar Meta Cloud API adapter — solo archivo placeholder vacío
-- NO implementar voz ni llamadas (TTS, Gemini Live) — es V2
+- NO implementar voz ni llamadas fuera del módulo twilio-voice — toda la lógica de voz vive ahí
 - NO agregar vector database (pgvector, Pinecone) — fuse.js fuzzy search basta para V1
 - NO guardar archivos en la base de datos — media queda en disco en instance/knowledge/media/
 - NO construir dashboard — es V2
@@ -184,6 +185,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/prompts/CLAUDE.md` — gestión centralizada de prompts del agente (slots, campaigns, oficina)
 - `src/modules/engine/CLAUDE.md` — wrapper del pipeline para el kernel
 - `src/modules/google-chat/CLAUDE.md` — canal Google Chat (webhook + Chat API, Service Account)
+- `src/modules/twilio-voice/CLAUDE.md` — canal de voz (Twilio + Gemini Live)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 

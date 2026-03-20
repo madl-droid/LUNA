@@ -23,6 +23,7 @@ async function main(): Promise<void> {
 
   // Start HTTP server (mounts module routes + /health)
   const server = new Server(registry)
+  registry.provide('kernel:server', server)
 
   // Mount API routes from active modules
   for (const mod of registry.listModules()) {
