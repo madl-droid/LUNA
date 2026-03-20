@@ -88,6 +88,39 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
     const url = req.url ?? '/'
     const localUrl = url.slice('/oficina'.length) || '/'
 
+    // GET /oficina/assets/* → serve static assets (images, etc.)
+    if (localUrl.startsWith('/assets/') && req.method === 'GET') {
+      const fileName = localUrl.slice('/assets/'.length)
+      // Security: prevent path traversal
+      if (fileName.includes('..') || fileName.includes('\0') || /[/\\]/.test(fileName)) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' })
+        res.end('Invalid path')
+        return true
+      }
+      const candidates = [
+        path.resolve(process.cwd(), 'dist', 'oficina', 'assets', fileName),
+        path.resolve(process.cwd(), 'src', 'modules', 'oficina', 'ui', 'assets', fileName),
+      ]
+      const mimeTypes: Record<string, string> = {
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+        '.webp': 'image/webp', '.css': 'text/css', '.js': 'application/javascript',
+      }
+      for (const assetPath of candidates) {
+        if (fs.existsSync(assetPath)) {
+          const ext = path.extname(assetPath).toLowerCase()
+          const contentType = mimeTypes[ext] || 'application/octet-stream'
+          const data = fs.readFileSync(assetPath)
+          res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=86400' })
+          res.end(data)
+          return true
+        }
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' })
+      res.end('Asset not found')
+      return true
+    }
+
     // GET /oficina or /oficina/ → serve HTML
     if ((localUrl === '/' || localUrl === '') && req.method === 'GET') {
       const candidates = [
