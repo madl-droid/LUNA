@@ -99,8 +99,12 @@ export function loadEngineConfig(): EngineConfig {
     // Session
     sessionReopenWindowMs: envInt('SESSION_REOPEN_WINDOW_MS', 86400000), // 24h
 
-    // Naturalidad: aviso de proceso
-    ackTriggerMs: envInt('ACK_TRIGGER_MS', 3000),
-    ackHoldResponseMs: envInt('ACK_HOLD_RESPONSE_MS', 2000),
+    // Naturalidad: aviso de proceso (per-channel)
+    ackWhatsappTriggerMs: envInt('ACK_WHATSAPP_TRIGGER_MS', 3000),
+    ackWhatsappHoldMs: envInt('ACK_WHATSAPP_HOLD_MS', 2000),
+    ackWhatsappMessage: env('ACK_WHATSAPP_MESSAGE', 'Un momento, estoy revisando eso...'),
+    ackEmailTriggerMs: envInt('ACK_EMAIL_TRIGGER_MS', 0),
+    ackEmailHoldMs: envInt('ACK_EMAIL_HOLD_MS', 0),
+    ackEmailMessage: env('ACK_EMAIL_MESSAGE', 'Recibí tu mensaje, te respondo en breve.'),
   }
 }

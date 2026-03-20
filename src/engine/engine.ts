@@ -4,7 +4,7 @@
 
 import pino from 'pino'
 import type { Registry } from '../kernel/registry.js'
-import type { IncomingMessage, ChannelName } from '../channels/types.js'
+import type { IncomingMessage } from '../channels/types.js'
 import type { PipelineResult, EngineConfig, ContextBundle } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
@@ -109,14 +109,15 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
     }, 'Phase 2 done')
 
     // ═══ PHASE 3+4: Execute + Compose (with aviso de proceso timer) ═══
+    const ackConfig = getAckConfig(ctx.message.channelName, engineConfig)
     let ackSentAt: number | undefined = undefined
-    const ackTimer = engineConfig.ackTriggerMs > 0
+    const ackTimer = ackConfig.triggerMs > 0
       ? setTimeout(() => {
           ackSentAt = Date.now()
-          sendProcessingAck(ctx, registry).catch(err =>
+          sendProcessingAck(ctx, ackConfig.message, registry).catch(err =>
             logger.warn({ err, traceId }, 'Failed to send aviso de proceso'),
           )
-        }, engineConfig.ackTriggerMs)
+        }, ackConfig.triggerMs)
       : null
 
     const p3Start = Date.now()
@@ -148,7 +149,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
     // Si se envió aviso de proceso, retener la respuesta el tiempo configurado
     if (ackSentAt !== undefined) {
       const elapsed = Date.now() - ackSentAt
-      const holdMs = engineConfig.ackHoldResponseMs - elapsed
+      const holdMs = ackConfig.holdMs - elapsed
       if (holdMs > 0) {
         logger.info({ traceId, holdMs }, 'Reteniendo respuesta tras aviso de proceso')
         await new Promise(resolve => setTimeout(resolve, holdMs))
@@ -241,15 +242,23 @@ export function getEngineConfig(): EngineConfig {
 }
 
 /**
- * Envía un aviso de proceso al canal del mensaje original.
- * Mensaje predefinido, nunca generado por LLM.
+ * Returns per-channel ack config (trigger delay, hold delay, message text).
  */
-async function sendProcessingAck(ctx: ContextBundle, reg: Registry): Promise<void> {
-  const ackMessages: Partial<Record<ChannelName, string>> = {
-    whatsapp: 'Un momento, estoy revisando eso...',
-    email: 'Recibí tu mensaje, te respondo en breve.',
+function getAckConfig(channel: string, config: EngineConfig): { triggerMs: number; holdMs: number; message: string } {
+  if (channel === 'whatsapp') {
+    return { triggerMs: config.ackWhatsappTriggerMs, holdMs: config.ackWhatsappHoldMs, message: config.ackWhatsappMessage }
   }
-  const text = ackMessages[ctx.message.channelName] ?? 'Un momento...'
+  if (channel === 'email') {
+    return { triggerMs: config.ackEmailTriggerMs, holdMs: config.ackEmailHoldMs, message: config.ackEmailMessage }
+  }
+  return { triggerMs: 0, holdMs: 0, message: '' }
+}
+
+/**
+ * Envía un aviso de proceso al canal del mensaje original.
+ * Mensaje configurable desde oficina, nunca generado por LLM.
+ */
+async function sendProcessingAck(ctx: ContextBundle, text: string, reg: Registry): Promise<void> {
   await reg.runHook('message:send', {
     channel: ctx.message.channelName,
     to: ctx.message.from,

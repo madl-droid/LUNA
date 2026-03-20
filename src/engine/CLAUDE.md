@@ -51,9 +51,13 @@ mocks/
 
 Campos nuevos: `agentId`, `contactMemory`, `pendingCommitments`, `relevantSummaries`, `leadStatus`.
 
-## Naturalidad: aviso de proceso
+## Naturalidad: aviso de proceso (per-channel)
 
-Si la respuesta tarda más de `ACK_TRIGGER_MS` (default 3000ms), se envía un aviso automático al contacto ("Un momento, estoy revisando eso...") via `message:send` hook. Tras enviar el aviso, la respuesta real se retiene `ACK_HOLD_RESPONSE_MS` (default 2000ms) para que no lleguen juntos. `ACK_TRIGGER_MS=0` desactiva la feature. Mensajes predefinidos por canal, nunca generados por LLM. Config en `engine/config.ts`, UI en oficina sección "Naturalidad".
+Config independiente por canal. Cada canal tiene trigger, hold y mensaje configurable desde oficina:
+- **WhatsApp**: `ACK_WHATSAPP_TRIGGER_MS` (3000), `ACK_WHATSAPP_HOLD_MS` (2000), `ACK_WHATSAPP_MESSAGE`
+- **Email**: `ACK_EMAIL_TRIGGER_MS` (0=off), `ACK_EMAIL_HOLD_MS` (0), `ACK_EMAIL_MESSAGE`
+
+Si la respuesta tarda más del trigger, se envía el aviso via `message:send` hook. Tras enviar, la respuesta real se retiene el hold configurado. Trigger=0 desactiva por canal. Mensajes editables desde oficina, nunca generados por LLM.
 
 ## Trampas
 

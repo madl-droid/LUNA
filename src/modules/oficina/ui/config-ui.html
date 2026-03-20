@@ -346,11 +346,21 @@ const i18n = {
     i_FOLLOWUP_MAX: 'Intentos maximos de follow-up antes de detenerse.',
     i_FOLLOWUP_COLD: 'Despues de estos intentos sin respuesta, el lead se marca como frio.',
     sec_naturalidad: 'Naturalidad',
-    sec_naturalidad_info: 'Ajusta como se comporta el agente para que las conversaciones se sientan mas naturales y humanas.',
-    f_ACK_TRIGGER_MS: 'Tiempo para aviso de proceso (ms)',
-    f_ACK_HOLD_RESPONSE_MS: 'Pausa antes de la respuesta (ms)',
-    i_ACK_TRIGGER_MS: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico al contacto. 0 = desactivado.',
-    i_ACK_HOLD_RESPONSE_MS: 'Tiempo que se retiene la respuesta real despues de enviar el aviso, para que no lleguen juntos.',
+    sec_naturalidad_info: 'Ajusta como se comporta el agente para que las conversaciones se sientan mas naturales y humanas. Configura por canal.',
+    sub_ack_whatsapp: '— WhatsApp',
+    f_ACK_WHATSAPP_TRIGGER_MS: 'Tiempo para aviso (ms)',
+    f_ACK_WHATSAPP_HOLD_MS: 'Pausa antes de respuesta (ms)',
+    f_ACK_WHATSAPP_MESSAGE: 'Mensaje de aviso',
+    i_ACK_WHATSAPP_TRIGGER_MS: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico. 0 = desactivado.',
+    i_ACK_WHATSAPP_HOLD_MS: 'Tiempo que se retiene la respuesta real despues del aviso, para que no lleguen juntos.',
+    i_ACK_WHATSAPP_MESSAGE: 'Texto del aviso que recibe el contacto mientras se prepara la respuesta.',
+    sub_ack_email: '— Email',
+    f_ACK_EMAIL_TRIGGER_MS: 'Tiempo para aviso (ms)',
+    f_ACK_EMAIL_HOLD_MS: 'Pausa antes de respuesta (ms)',
+    f_ACK_EMAIL_MESSAGE: 'Mensaje de aviso',
+    i_ACK_EMAIL_TRIGGER_MS: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico. 0 = desactivado.',
+    i_ACK_EMAIL_HOLD_MS: 'Tiempo que se retiene la respuesta real despues del aviso, para que no lleguen juntos.',
+    i_ACK_EMAIL_MESSAGE: 'Texto del aviso que recibe el contacto mientras se prepara la respuesta.',
   },
   en: {
     connected: 'Connected', saving: 'Saving...', saved: 'Saved', errorConnect: 'Connection error',
@@ -475,11 +485,21 @@ const i18n = {
     i_FOLLOWUP_MAX: 'Maximum follow-up attempts before stopping.',
     i_FOLLOWUP_COLD: 'After this many unanswered attempts, lead is marked cold.',
     sec_naturalidad: 'Natural Feel',
-    sec_naturalidad_info: 'Tune the agent behavior so conversations feel more natural and human.',
-    f_ACK_TRIGGER_MS: 'Processing notice delay (ms)',
-    f_ACK_HOLD_RESPONSE_MS: 'Pause before response (ms)',
-    i_ACK_TRIGGER_MS: 'If the response takes longer than this, an automatic notice is sent to the contact. 0 = disabled.',
-    i_ACK_HOLD_RESPONSE_MS: 'How long to hold back the real response after sending the notice, so they do not arrive together.',
+    sec_naturalidad_info: 'Tune the agent behavior so conversations feel more natural and human. Configure per channel.',
+    sub_ack_whatsapp: '— WhatsApp',
+    f_ACK_WHATSAPP_TRIGGER_MS: 'Notice delay (ms)',
+    f_ACK_WHATSAPP_HOLD_MS: 'Pause before response (ms)',
+    f_ACK_WHATSAPP_MESSAGE: 'Notice message',
+    i_ACK_WHATSAPP_TRIGGER_MS: 'If the response takes longer than this, an automatic notice is sent. 0 = disabled.',
+    i_ACK_WHATSAPP_HOLD_MS: 'How long to hold back the real response after the notice, so they do not arrive together.',
+    i_ACK_WHATSAPP_MESSAGE: 'Text the contact receives while the response is being prepared.',
+    sub_ack_email: '— Email',
+    f_ACK_EMAIL_TRIGGER_MS: 'Notice delay (ms)',
+    f_ACK_EMAIL_HOLD_MS: 'Pause before response (ms)',
+    f_ACK_EMAIL_MESSAGE: 'Notice message',
+    i_ACK_EMAIL_TRIGGER_MS: 'If the response takes longer than this, an automatic notice is sent. 0 = disabled.',
+    i_ACK_EMAIL_HOLD_MS: 'How long to hold back the real response after the notice, so they do not arrive together.',
+    i_ACK_EMAIL_MESSAGE: 'Text the contact receives while the response is being prepared.',
   }
 }
 let lang = localStorage.getItem('luna-lang') || 'es'
@@ -677,10 +697,16 @@ function render() {
   }
   h += panel('followup', followupFields)
 
-  // 7.5. Naturalidad
+  // 7.5. Naturalidad (per-channel)
   h += panel('naturalidad', [
-    numField('ACK_TRIGGER_MS', 'f_ACK_TRIGGER_MS', 'i_ACK_TRIGGER_MS'),
-    numField('ACK_HOLD_RESPONSE_MS', 'f_ACK_HOLD_RESPONSE_MS', 'i_ACK_HOLD_RESPONSE_MS'),
+    `<div class="field"><span class="field-label" style="font-weight:600;opacity:.7">${t('sub_ack_whatsapp')}</span></div>`,
+    numField('ACK_WHATSAPP_TRIGGER_MS', 'f_ACK_WHATSAPP_TRIGGER_MS', 'i_ACK_WHATSAPP_TRIGGER_MS'),
+    numField('ACK_WHATSAPP_HOLD_MS', 'f_ACK_WHATSAPP_HOLD_MS', 'i_ACK_WHATSAPP_HOLD_MS'),
+    textField('ACK_WHATSAPP_MESSAGE', 'f_ACK_WHATSAPP_MESSAGE', 'i_ACK_WHATSAPP_MESSAGE'),
+    `<div class="field"><span class="field-label" style="font-weight:600;opacity:.7">${t('sub_ack_email')}</span></div>`,
+    numField('ACK_EMAIL_TRIGGER_MS', 'f_ACK_EMAIL_TRIGGER_MS', 'i_ACK_EMAIL_TRIGGER_MS'),
+    numField('ACK_EMAIL_HOLD_MS', 'f_ACK_EMAIL_HOLD_MS', 'i_ACK_EMAIL_HOLD_MS'),
+    textField('ACK_EMAIL_MESSAGE', 'f_ACK_EMAIL_MESSAGE', 'i_ACK_EMAIL_MESSAGE'),
   ])
 
   // 8. Dynamic module panels from registry
