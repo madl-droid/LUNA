@@ -7,7 +7,7 @@ Módulo wrapper que conecta el engine pipeline (`src/engine/`) al sistema modula
 
 ## Manifest
 - type: `core-module`, removable: false, activateByDefault: true
-- depends: `['memory']`
+- depends: `['memory', 'llm']`
 
 ## Relación con src/engine/
 Este módulo NO contiene lógica de pipeline. Solo hace el bridge entre el kernel (lifecycle, hooks, registry) y `src/engine/engine.ts` que tiene la implementación real. Ver `src/engine/CLAUDE.md` para documentación del pipeline.

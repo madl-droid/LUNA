@@ -110,12 +110,14 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
 
     // ═══ PHASE 3+4: Execute + Compose (with aviso de proceso timer) ═══
     let ackSentAt: number | undefined = undefined
-    const ackTimer = setTimeout(() => {
-      ackSentAt = Date.now()
-      sendProcessingAck(ctx, registry).catch(err =>
-        logger.warn({ err, traceId }, 'Failed to send aviso de proceso'),
-      )
-    }, engineConfig.ackTriggerMs)
+    const ackTimer = engineConfig.ackTriggerMs > 0
+      ? setTimeout(() => {
+          ackSentAt = Date.now()
+          sendProcessingAck(ctx, registry).catch(err =>
+            logger.warn({ err, traceId }, 'Failed to send aviso de proceso'),
+          )
+        }, engineConfig.ackTriggerMs)
+      : null
 
     const p3Start = Date.now()
     const execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
@@ -134,7 +136,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
     const composed = await phase4Compose(ctx, evaluation, execution, engineConfig, registry)
     const phase4DurationMs = Date.now() - p4Start
 
-    clearTimeout(ackTimer)
+    if (ackTimer) clearTimeout(ackTimer)
 
     logger.info({
       traceId,

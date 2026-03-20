@@ -51,8 +51,13 @@ mocks/
 
 Campos nuevos: `agentId`, `contactMemory`, `pendingCommitments`, `relevantSummaries`, `leadStatus`.
 
+## Naturalidad: aviso de proceso
+
+Si la respuesta tarda más de `ACK_TRIGGER_MS` (default 3000ms), se envía un aviso automático al contacto ("Un momento, estoy revisando eso...") via `message:send` hook. Tras enviar el aviso, la respuesta real se retiene `ACK_HOLD_RESPONSE_MS` (default 2000ms) para que no lleguen juntos. `ACK_TRIGGER_MS=0` desactiva la feature. Mensajes predefinidos por canal, nunca generados por LLM. Config en `engine/config.ts`, UI en oficina sección "Naturalidad".
+
 ## Trampas
 
 - memory:manager es opcional — fallback a SQL directo en todas las fases
 - Pipeline log fire-and-forget via `memoryManager.savePipelineLog()`
 - Persist messages usa dual-write (Redis buffer + PG async) via memory:manager
+- `needsAcknowledgment` en EvaluatorOutput ya no se consume en phase3 — el aviso de proceso ahora es por timer en engine.ts, no por decisión del evaluador
