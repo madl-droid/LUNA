@@ -190,7 +190,8 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
 export function createOficinaHandler(registry: Registry): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<boolean> {
   return async (req, res) => {
     const url = req.url ?? '/'
-    const localUrl = url.slice('/oficina'.length) || '/'
+    const [urlPath] = url.split('?')
+    const localUrl = (urlPath ?? '/').slice('/oficina'.length) || '/'
 
     // 1. Static files — serve CSS, JS, images
     if (localUrl.startsWith('/static/') && req.method === 'GET') {
