@@ -59,9 +59,8 @@ header h1 span {
 .status-text.error { color: var(--error); }
 
 main {
-  max-width: 900px;
-  margin: 24px auto;
-  padding: 0 16px 80px;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Save bar — fixed bottom */
@@ -105,13 +104,8 @@ main {
 }
 
 /* Responsive */
-@media (max-width: 768px) {
-  main { padding: 0 12px 80px; }
-}
-
 @media (max-width: 480px) {
   header { padding: 12px 16px; }
   header h1 { font-size: 17px; }
   .build-ver { display: none; }
-  main { padding: 0 8px 80px; }
 }

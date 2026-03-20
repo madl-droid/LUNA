@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/oficina/static/styles/layout.css">
   <link rel="stylesheet" href="/oficina/static/styles/components.css">
   <link rel="stylesheet" href="/oficina/static/styles/whatsapp.css">
+  <link rel="stylesheet" href="/oficina/static/styles/sidebar.css">
 </head>
 <body>
   <header>
@@ -21,7 +22,12 @@
       <span class="status-text" id="status">...</span>
     </div>
   </header>
-  <main id="main"><div class="loading">...</div></main>
+  <main id="main">
+    <div class="app-layout">
+      <nav class="sidebar" id="sidebar"></nav>
+      <div class="content-area" id="content"><div class="loading">...</div></div>
+    </div>
+  </main>
   <div class="save-bar">
     <button class="btn-reset" onclick="resetDb()" id="btn-resetdb" style="background:var(--error);color:#ffffff;margin-right:auto">Reset DB</button>
     <button class="btn-reset" onclick="resetChanges()" id="btn-reset">Descartar</button>
@@ -35,6 +41,7 @@
 <script src="/oficina/static/js/utils.js"></script>
 <script src="/oficina/static/js/fields.js"></script>
 <script src="/oficina/static/js/panels.js"></script>
+<script src="/oficina/static/js/navigation.js"></script>
 <script src="/oficina/static/js/whatsapp.js"></script>
 <script src="/oficina/static/js/modules.js"></script>
 <script src="/oficina/static/js/render.js"></script>

@@ -54,8 +54,8 @@ ui/
 
 ## Plan de modularización (en progreso)
 - **Ronda 1** ✅: Extraer CSS a archivos separados
-- **Ronda 2** ✅: Extraer JS a 10 archivos separados (i18n, state, utils, fields, panels, whatsapp, modules, render, handlers, app)
-- **Ronda 3**: Implementar sidebar layout estilo HubSpot + navigation.js
+- **Ronda 2** ✅: Extraer JS a 10 archivos separados
+- **Ronda 3** ✅: Sidebar layout estilo HubSpot + navigation.js (secciones agrupadas, responsive mobile tabs)
 - **Ronda 4**: Polish (responsive sidebar, iconos, transiciones)
 
 ## Trampas
