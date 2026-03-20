@@ -1,0 +1,111 @@
+/* layout.css — Page structure: header, main, save bar */
+
+header {
+  background: rgba(245,245,247,0.85);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--border-light);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+header h1 span {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 17px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.lang-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.lang-toggle:hover { background: var(--bg-tertiary); }
+
+.build-ver {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.status-text { font-size: 13px; color: var(--text-secondary); }
+.status-text.saved { color: var(--success); }
+.status-text.error { color: var(--error); }
+
+main {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Save bar — fixed bottom */
+.save-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(245,245,247,0.85);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid var(--border-light);
+  padding: 12px 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  align-items: center;
+}
+
+.save-bar button {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.btn-save { background: var(--accent); color: #ffffff; }
+.btn-save:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-reset { background: transparent; border: 1px solid var(--border); color: var(--text-primary); }
+.btn-reset:hover { background: var(--bg-tertiary); }
+
+.loading {
+  text-align: center;
+  padding: 64px;
+  color: var(--text-tertiary);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  header { padding: 12px 16px; }
+  header h1 { font-size: 17px; }
+  .build-ver { display: none; }
+}

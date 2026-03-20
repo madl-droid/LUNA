@@ -75,6 +75,43 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
     const url = req.url ?? '/'
     const localUrl = url.slice('/oficina'.length) || '/'
 
+    // GET /oficina/static/* → serve static files (css, js, images)
+    // Maps /oficina/static/styles/base.css → ui/styles/base.css
+    if (localUrl.startsWith('/static/') && req.method === 'GET') {
+      const relativePath = localUrl.slice('/static/'.length)
+      // Security: reject null bytes
+      if (relativePath.includes('\0')) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' })
+        res.end('Invalid path')
+        return true
+      }
+      const baseDirs = [
+        path.resolve(process.cwd(), 'dist', 'oficina'),
+        path.resolve(process.cwd(), 'src', 'modules', 'oficina', 'ui'),
+      ]
+      const mimeTypes: Record<string, string> = {
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+        '.webp': 'image/webp', '.css': 'text/css', '.js': 'application/javascript',
+      }
+      for (const baseDir of baseDirs) {
+        const resolved = path.resolve(baseDir, relativePath)
+        // Security: ensure resolved path is within baseDir (prevents ../ traversal)
+        if (!resolved.startsWith(baseDir + path.sep) && resolved !== baseDir) continue
+        if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+          const ext = path.extname(resolved).toLowerCase()
+          const contentType = mimeTypes[ext] || 'application/octet-stream'
+          const data = fs.readFileSync(resolved)
+          res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=86400' })
+          res.end(data)
+          return true
+        }
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' })
+      res.end('Not found')
+      return true
+    }
+
     // GET /oficina or /oficina/ → serve HTML
     if ((localUrl === '/' || localUrl === '') && req.method === 'GET') {
       const candidates = [
