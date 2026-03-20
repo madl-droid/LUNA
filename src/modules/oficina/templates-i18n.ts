@@ -1,7 +1,10 @@
-// i18n.js — Translations and language toggle
-// All i18n keys: sec_ (sections), f_ (fields), i_ (tooltips)
+// templates-i18n.ts — Server-side i18n (migrated from ui/js/i18n.js)
 
-const i18n = {
+import type { IncomingMessage } from 'node:http'
+
+export type Lang = 'es' | 'en'
+
+export const i18n: Record<Lang, Record<string, string | Record<string, string>>> = {
   es: {
     connected: 'Conectado', saving: 'Guardando...', saved: 'Guardado', errorConnect: 'Error al conectar',
     errorSave: 'Error al guardar', discarded: 'Cambios descartados', configSaved: 'Configuracion guardada',
@@ -10,9 +13,12 @@ const i18n = {
     disconnectConfirm: 'Desconectar WhatsApp? Se eliminara la sesion y necesitaras escanear el QR de nuevo.',
     connectingWa: 'Conectando WhatsApp...',
     scanLabel: 'Escanea con WhatsApp > Dispositivos vinculados',
-    waStatus: { not_initialized: 'No inicializado', disconnected: 'Desconectado', connecting: 'Conectando...', connected: 'Conectado', qr_ready: 'Escanea el QR' },
+    waStatus_not_initialized: 'No inicializado',
+    waStatus_disconnected: 'Desconectado',
+    waStatus_connecting: 'Conectando...',
+    waStatus_connected: 'Conectado',
+    waStatus_qr_ready: 'Escanea el QR',
     reason: 'Razon',
-    // Sections
     sec_whatsapp: 'WhatsApp',
     sec_whatsapp_baileys: 'Baileys (conexion directa)',
     sec_whatsapp_baileys_info: 'Conexion a WhatsApp usando Baileys. Escanea el QR para vincular el dispositivo.',
@@ -62,7 +68,6 @@ const i18n = {
     activated: 'activado',
     deactivated: 'desactivado',
     moduleToggleError: 'Error al cambiar estado del modulo',
-    // Field labels
     f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
     f_OPENAI_API_KEY: 'OpenAI',
     f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
@@ -102,7 +107,6 @@ const i18n = {
     f_MODULE_BATCH: 'Batch nocturno',
     f_MODULE_FOLLOWUP: 'Follow-up',
     f_MODULE_WEB_SEARCH: 'Busqueda web',
-    // Info tooltips
     i_ANTHROPIC_API_KEY: 'Clave de Anthropic para usar modelos Claude. Obtenla en console.anthropic.com.',
     i_OPENAI_API_KEY: 'Clave de OpenAI. Actualmente solo se usa como fallback.',
     i_GOOGLE_AI_API_KEY: 'Clave de Google AI Studio para modelos Gemini.',
@@ -142,7 +146,6 @@ const i18n = {
     sub_aviso_email: '— Email',
     f_AVISO_EMAIL_TRIGGER_MS: 'Tiempo para aviso (ms)',
     f_AVISO_EMAIL_HOLD_MS: 'Pausa antes de respuesta (ms)',
-    // Google OAuth
     googleConnectBtn: 'Conectar con Google',
     googleDisconnectBtn: 'Desconectar Google',
     googleConnected: 'Cuenta conectada',
@@ -166,7 +169,11 @@ const i18n = {
     disconnectConfirm: 'Disconnect WhatsApp? Session will be cleared and you will need to scan QR again.',
     connectingWa: 'Connecting WhatsApp...',
     scanLabel: 'Scan with WhatsApp > Linked devices',
-    waStatus: { not_initialized: 'Not initialized', disconnected: 'Disconnected', connecting: 'Connecting...', connected: 'Connected', qr_ready: 'Scan QR' },
+    waStatus_not_initialized: 'Not initialized',
+    waStatus_disconnected: 'Disconnected',
+    waStatus_connecting: 'Connecting...',
+    waStatus_connected: 'Connected',
+    waStatus_qr_ready: 'Scan QR',
     reason: 'Reason',
     sec_whatsapp: 'WhatsApp',
     sec_whatsapp_baileys: 'Baileys (direct connection)',
@@ -295,7 +302,6 @@ const i18n = {
     sub_aviso_email: '— Email',
     f_AVISO_EMAIL_TRIGGER_MS: 'Notice delay (ms)',
     f_AVISO_EMAIL_HOLD_MS: 'Pause before response (ms)',
-    // Google OAuth
     googleConnectBtn: 'Connect with Google',
     googleDisconnectBtn: 'Disconnect Google',
     googleConnected: 'Account connected',
@@ -310,17 +316,27 @@ const i18n = {
     googleConnectedAs: 'Connected as',
     googleAuthInfo: 'This OAuth2 authentication is shared by Gmail, Google Sheets, and Google Calendar. Connect once and all modules use it.',
     googleModulesTitle: 'Modules using this connection',
-  }
+  },
 }
 
-let lang = localStorage.getItem('luna-lang') || 'es'
+export function t(key: string, lang: Lang): string {
+  const val = i18n[lang]?.[key] ?? i18n['es']?.[key]
+  if (typeof val === 'string') return val
+  return key
+}
 
-function t(key) { return i18n[lang]?.[key] ?? i18n.es[key] ?? key }
+export function tWaStatus(status: string, lang: Lang): string {
+  return t('waStatus_' + status, lang) || status
+}
 
-function toggleLang() {
-  lang = lang === 'es' ? 'en' : 'es'
-  localStorage.setItem('luna-lang', lang)
-  document.getElementById('lang-btn').textContent = lang === 'es' ? 'EN' : 'ES'
-  render()
-  updateSaveBtn()
+export function detectLang(req: IncomingMessage): Lang {
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  const queryLang = url.searchParams.get('lang')
+  if (queryLang === 'en' || queryLang === 'es') return queryLang
+
+  const cookie = req.headers.cookie ?? ''
+  const match = cookie.match(/luna-lang=(es|en)/)
+  if (match?.[1]) return match[1] as Lang
+
+  return 'es'
 }
