@@ -48,11 +48,6 @@ export async function phase3Execute(
     return { results: [], allSucceeded: true, partialData: {} }
   }
 
-  // Send acknowledgment if needed (before slow operations)
-  if (evaluation.needsAcknowledgment) {
-    await sendAcknowledgment(ctx)
-  }
-
   // Group steps by dependency
   const { independent, dependent } = groupStepsByDependency(executionPlan)
 
@@ -396,10 +391,3 @@ function groupStepsByDependency(steps: ExecutionStep[]): {
   return { independent, dependent }
 }
 
-/**
- * Send an acknowledgment message before slow operations.
- */
-async function sendAcknowledgment(ctx: ContextBundle): Promise<void> {
-  // TODO: wire to registry.runHook('message:send', ...) when integrated
-  logger.info({ traceId: ctx.traceId, to: ctx.message.from }, 'Sending acknowledgment')
-}

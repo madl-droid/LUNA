@@ -98,5 +98,9 @@ export function loadEngineConfig(): EngineConfig {
 
     // Session
     sessionReopenWindowMs: envInt('SESSION_REOPEN_WINDOW_MS', 86400000), // 24h
+
+    // Naturalidad: aviso de proceso
+    ackTriggerMs: envInt('ACK_TRIGGER_MS', 3000),
+    ackHoldResponseMs: envInt('ACK_HOLD_RESPONSE_MS', 2000),
   }
 }

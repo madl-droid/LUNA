@@ -345,6 +345,12 @@ const i18n = {
     i_FOLLOWUP_DELAY: 'Minutos de espera antes de enviar el primer follow-up.',
     i_FOLLOWUP_MAX: 'Intentos maximos de follow-up antes de detenerse.',
     i_FOLLOWUP_COLD: 'Despues de estos intentos sin respuesta, el lead se marca como frio.',
+    sec_naturalidad: 'Naturalidad',
+    sec_naturalidad_info: 'Ajusta como se comporta el agente para que las conversaciones se sientan mas naturales y humanas.',
+    f_ACK_TRIGGER_MS: 'Tiempo para aviso de proceso (ms)',
+    f_ACK_HOLD_RESPONSE_MS: 'Pausa antes de la respuesta (ms)',
+    i_ACK_TRIGGER_MS: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico al contacto. 0 = desactivado.',
+    i_ACK_HOLD_RESPONSE_MS: 'Tiempo que se retiene la respuesta real despues de enviar el aviso, para que no lleguen juntos.',
   },
   en: {
     connected: 'Connected', saving: 'Saving...', saved: 'Saved', errorConnect: 'Connection error',
@@ -468,6 +474,12 @@ const i18n = {
     i_FOLLOWUP_DELAY: 'Minutes to wait before sending the first follow-up.',
     i_FOLLOWUP_MAX: 'Maximum follow-up attempts before stopping.',
     i_FOLLOWUP_COLD: 'After this many unanswered attempts, lead is marked cold.',
+    sec_naturalidad: 'Natural Feel',
+    sec_naturalidad_info: 'Tune the agent behavior so conversations feel more natural and human.',
+    f_ACK_TRIGGER_MS: 'Processing notice delay (ms)',
+    f_ACK_HOLD_RESPONSE_MS: 'Pause before response (ms)',
+    i_ACK_TRIGGER_MS: 'If the response takes longer than this, an automatic notice is sent to the contact. 0 = disabled.',
+    i_ACK_HOLD_RESPONSE_MS: 'How long to hold back the real response after sending the notice, so they do not arrive together.',
   }
 }
 let lang = localStorage.getItem('luna-lang') || 'es'
@@ -664,6 +676,12 @@ function render() {
     )
   }
   h += panel('followup', followupFields)
+
+  // 7.5. Naturalidad
+  h += panel('naturalidad', [
+    numField('ACK_TRIGGER_MS', 'f_ACK_TRIGGER_MS', 'i_ACK_TRIGGER_MS'),
+    numField('ACK_HOLD_RESPONSE_MS', 'f_ACK_HOLD_RESPONSE_MS', 'i_ACK_HOLD_RESPONSE_MS'),
+  ])
 
   // 8. Dynamic module panels from registry
   h += renderModulePanels()

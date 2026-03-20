@@ -4,8 +4,8 @@
 
 import pino from 'pino'
 import type { Registry } from '../kernel/registry.js'
-import type { IncomingMessage } from '../channels/types.js'
-import type { PipelineResult, EngineConfig } from './types.js'
+import type { IncomingMessage, ChannelName } from '../channels/types.js'
+import type { PipelineResult, EngineConfig, ContextBundle } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
 import { phase1Intake } from './phases/phase1-intake.js'
@@ -108,7 +108,15 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       planSteps: evaluation.executionPlan.length,
     }, 'Phase 2 done')
 
-    // ═══ PHASE 3: Execute Plan ═══
+    // ═══ PHASE 3+4: Execute + Compose (with aviso de proceso timer) ═══
+    let ackSentAt: number | undefined = undefined
+    const ackTimer = setTimeout(() => {
+      ackSentAt = Date.now()
+      sendProcessingAck(ctx, registry).catch(err =>
+        logger.warn({ err, traceId }, 'Failed to send aviso de proceso'),
+      )
+    }, engineConfig.ackTriggerMs)
+
     const p3Start = Date.now()
     const execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
     const phase3DurationMs = Date.now() - p3Start
@@ -126,12 +134,24 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
     const composed = await phase4Compose(ctx, evaluation, execution, engineConfig, registry)
     const phase4DurationMs = Date.now() - p4Start
 
+    clearTimeout(ackTimer)
+
     logger.info({
       traceId,
       phase: 4,
       durationMs: phase4DurationMs,
       responseLength: composed.responseText.length,
     }, 'Phase 4 done')
+
+    // Si se envió aviso de proceso, retener la respuesta el tiempo configurado
+    if (ackSentAt !== undefined) {
+      const elapsed = Date.now() - ackSentAt
+      const holdMs = engineConfig.ackHoldResponseMs - elapsed
+      if (holdMs > 0) {
+        logger.info({ traceId, holdMs }, 'Reteniendo respuesta tras aviso de proceso')
+        await new Promise(resolve => setTimeout(resolve, holdMs))
+      }
+    }
 
     // ═══ PHASE 5: Validate + Send ═══
     const p5Start = Date.now()
@@ -216,4 +236,23 @@ export function stopEngine(): void {
  */
 export function getEngineConfig(): EngineConfig {
   return engineConfig
+}
+
+/**
+ * Envía un aviso de proceso al canal del mensaje original.
+ * Mensaje predefinido, nunca generado por LLM.
+ */
+async function sendProcessingAck(ctx: ContextBundle, reg: Registry): Promise<void> {
+  const ackMessages: Partial<Record<ChannelName, string>> = {
+    whatsapp: 'Un momento, estoy revisando eso...',
+    email: 'Recibí tu mensaje, te respondo en breve.',
+  }
+  const text = ackMessages[ctx.message.channelName] ?? 'Un momento...'
+  await reg.runHook('message:send', {
+    channel: ctx.message.channelName,
+    to: ctx.message.from,
+    content: { type: 'text', text },
+    correlationId: ctx.traceId,
+  })
+  logger.info({ traceId: ctx.traceId, to: ctx.message.from }, 'Aviso de proceso enviado')
 }

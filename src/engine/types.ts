@@ -388,4 +388,8 @@ export interface EngineConfig {
 
   // Session
   sessionReopenWindowMs: number
+
+  // Naturalidad: aviso de proceso
+  ackTriggerMs: number
+  ackHoldResponseMs: number
 }
