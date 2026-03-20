@@ -123,6 +123,22 @@ export class Registry {
     logger.info({ module: name }, 'Module deactivated')
   }
 
+  /** Stop all active modules in reverse activation order (for graceful shutdown) */
+  async stopAll(): Promise<void> {
+    const active = [...this.modules.entries()].filter(([, m]) => m.active).reverse()
+    for (const [name, mod] of active) {
+      try {
+        if (mod.manifest.stop) {
+          await mod.manifest.stop()
+        }
+        mod.active = false
+        logger.info({ module: name }, 'Module stopped')
+      } catch (err) {
+        logger.error({ module: name, err }, 'Error stopping module')
+      }
+    }
+  }
+
   // ─── Hooks (typed) ───────────────────────
 
   addHook<K extends keyof HookMap>(

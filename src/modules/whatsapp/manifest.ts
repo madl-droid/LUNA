@@ -2,7 +2,6 @@
 // Canal WhatsApp vía Baileys (conexión directa).
 // Auth state stored in PostgreSQL — no filesystem credentials.
 
-import { hostname } from 'node:os'
 import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
@@ -121,7 +120,9 @@ const manifest: ModuleManifest = {
     }>('whatsapp')
 
     const db = registry.getDb()
-    const instanceId = hostname()
+    // Stable instance ID: survives container recreation across deploys.
+    // Falls back to hostname only for local dev without INSTANCE_ID set.
+    const instanceId = process.env.INSTANCE_ID || 'luna-default'
 
     adapter = new BaileysAdapter(config, db, instanceId, {
       onConnected: async () => {

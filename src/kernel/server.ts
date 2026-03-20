@@ -104,6 +104,16 @@ export class Server {
     })
   }
 
+  async stop(): Promise<void> {
+    if (!this.httpServer) return
+    return new Promise((resolve) => {
+      this.httpServer!.close(() => {
+        logger.info('HTTP server closed')
+        resolve()
+      })
+    })
+  }
+
   getHttpServer(): http.Server | null {
     return this.httpServer
   }

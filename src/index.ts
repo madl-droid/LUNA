@@ -47,6 +47,25 @@ async function main(): Promise<void> {
 
   const activeModules = registry.listModules().filter(m => m.active).map(m => m.manifest.name)
   logger.info({ modules: activeModules }, 'LUNA ready')
+
+  // Graceful shutdown: stop modules cleanly so Baileys preserves auth in DB
+  const shutdown = async (signal: string) => {
+    logger.info({ signal }, 'Shutdown signal received, stopping modules...')
+    try {
+      await server.stop()
+      await registry.stopAll()
+      await redis.quit()
+      await db.end()
+      logger.info('LUNA shut down cleanly')
+      process.exit(0)
+    } catch (err) {
+      logger.error({ err }, 'Error during shutdown')
+      process.exit(1)
+    }
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+  process.on('SIGINT', () => shutdown('SIGINT'))
 }
 
 main().catch(err => {
