@@ -14,7 +14,17 @@ ui/
     layout.css       — header, main, save bar, responsive breakpoints
     components.css   — panels, fields, toggles, badges, buttons, toasts, model selector
     whatsapp.css     — estilos específicos del panel WhatsApp
-  js/                — (futuro) JS modularizado
+  js/
+    i18n.js          — traducciones ES/EN + t() + toggleLang()
+    state.js         — variables de estado global
+    utils.js         — esc(), setStatus(), showToast()
+    fields.js        — builders de campos (text, secret, num, bool, model, select, info)
+    panels.js        — builders de paneles + togglePanel()
+    whatsapp.js      — polling, connect, disconnect, renderWa()
+    modules.js       — renderModulePanels(), toggleModule(), refreshModuleStates()
+    render.js        — render() principal
+    handlers.js      — onChange, save, apply, resetDb, triggerScan
+    app.js           — init() (carga última)
   assets/            — imágenes estáticas (mascota, logos)
 ```
 
@@ -44,7 +54,7 @@ ui/
 
 ## Plan de modularización (en progreso)
 - **Ronda 1** ✅: Extraer CSS a archivos separados
-- **Ronda 2**: Extraer JS a archivos separados (i18n.js, state.js, render.js, etc.)
+- **Ronda 2** ✅: Extraer JS a 10 archivos separados (i18n, state, utils, fields, panels, whatsapp, modules, render, handlers, app)
 - **Ronda 3**: Implementar sidebar layout estilo HubSpot + navigation.js
 - **Ronda 4**: Polish (responsive sidebar, iconos, transiciones)
 
