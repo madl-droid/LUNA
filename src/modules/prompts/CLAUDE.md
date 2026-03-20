@@ -33,3 +33,4 @@ Prompts editables desde oficina, almacenados en DB, con cache en memoria. Campai
 - Campaign match usa score invertido: fuse.js 0=perfecto → matchScore = 1 - score
 - `invalidateCache()` recarga async — breve momento sin cache
 - Si tabla campaigns no existe, queries fallan silenciosamente
+- **Helpers HTTP**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js`. NO redefinir localmente.

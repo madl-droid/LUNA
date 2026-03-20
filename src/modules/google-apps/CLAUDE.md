@@ -63,3 +63,4 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - auth-url siempre incluye gmail scopes por conveniencia (si email está activo, comparte este OAuth; si no, no afecta)
 - Email ya NO depende de google-apps — puede autenticarse solo con su propio EmailOAuthManager
 - `google-auth-library` y `googleapis` ya están instalados en package.json
+- **Helpers HTTP y config**: usa `jsonResponse`, `parseBody` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.

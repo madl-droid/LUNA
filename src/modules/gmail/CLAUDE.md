@@ -73,3 +73,4 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - Subject encoding: se usa =?UTF-8?B?...?= para caracteres especiales
 - Si google-apps Y email tienen credenciales Google, se prefiere el OAuth compartido de google-apps
 - Las rutas auth-url/auth-callback/auth-disconnect solo funcionan en modo standalone
+- **Helpers HTTP y config**: usa `jsonResponse`, `parseBody` de `kernel/http-helpers.js` y `numEnv`, `boolEnv`, `floatEnvMin` de `kernel/config-helpers.js`. NO redefinir localmente.

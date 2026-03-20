@@ -46,3 +46,4 @@
 - `qualification_*` migró de contacts a agent_contacts. Lead-scoring usa agentId.
 - El FTS trigger mapea `summary_language` al diccionario PG automáticamente.
 - pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration.
+- **Config helpers**: usa `numEnv`, `boolEnv` de `kernel/config-helpers.js` en configSchema. NO escribir `.transform(Number).pipe(...)` manualmente.

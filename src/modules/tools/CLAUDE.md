@@ -52,3 +52,4 @@ await toolRegistry.registerTool({
 - PIPELINE_MAX_TOOL_CALLS_PER_TURN se comparte con el config del pipeline — declarado en este módulo para que sea configurable desde oficina
 - Los módulos que registran tools deben listar 'tools' en depends[] para garantizar orden de init
 - Al desactivar un módulo, sus tools desaparecen del catálogo pero persisten en DB (re-aparecen al reactivar)
+- **Helpers HTTP y config**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.

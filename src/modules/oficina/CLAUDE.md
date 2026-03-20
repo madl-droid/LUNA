@@ -40,3 +40,4 @@ La UI **no tiene paneles hardcodeados** por módulo. `renderModulePanels()` iter
 - .env se monta como volumen Docker para que edits persistan entre deploys.
 - `reset-db` trunca tablas y hace flushdb en Redis — solo usar en testing/staging.
 - Si agregas assets estáticos, copiarlos en Dockerfile a dist/modules/oficina/.
+- **Helpers HTTP**: `server.ts` usa `jsonResponse`, `readBody` de `kernel/http-helpers.js`. NO redefinir localmente.

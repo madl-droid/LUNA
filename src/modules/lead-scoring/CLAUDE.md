@@ -53,7 +53,7 @@ Califica leads usando BANT + criterios custom. Extraccion natural por LLM, scori
 - Recalculacion batch usa transaccion SQL
 
 ## Trampas
-- El kernel server necesita el fix de query params (url.split('?')[0]) para que las rutas GET con params funcionen
 - Config se guarda en instance/qualifying.json (archivo JSON), NO en .env
 - Max 10 criterios (4 BANT + 6 custom)
 - Tool solo se registra si modulo tools esta activo (depends: ['tools'])
+- **Helpers HTTP y config**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js`. NO redefinir localmente.

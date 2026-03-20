@@ -26,3 +26,4 @@ Escanea APIs de Anthropic y Google AI para descubrir modelos disponibles, detect
 - Requiere API keys válidas (ANTHROPIC_API_KEY y/o GOOGLE_AI_API_KEY). Sin keys, scan falla silenciosamente.
 - El auto-replace modifica el .env directamente — los cambios persisten
 - Si ambos providers fallan, el scan retorna resultado parcial (no error)
+- **Helpers HTTP y config**: usa `jsonResponse` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.

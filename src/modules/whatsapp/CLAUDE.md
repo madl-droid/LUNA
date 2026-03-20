@@ -52,3 +52,4 @@ Canal WhatsApp usando Baileys 7.x. Recibe y envía mensajes, expone estado a ofi
 - Estructura de mensajes Baileys varía por tipo — siempre probar normalizeMessage con mensajes reales
 - NO usar filesystem para auth — todo va en PostgreSQL
 - La carpeta `instance/wa-auth/` ya NO se usa — puede eliminarse de staging/production
+- **Helpers HTTP y config**: usa `jsonResponse` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.
