@@ -7,9 +7,31 @@
 
 export interface GoogleChatConfig {
   GOOGLE_CHAT_SERVICE_ACCOUNT_KEY: string
-  GOOGLE_CHAT_PROJECT_NUMBER: string
   GOOGLE_CHAT_WEBHOOK_TOKEN: string
   GOOGLE_CHAT_MAX_MESSAGE_LENGTH: number
+}
+
+// ═══════════════════════════════════════════
+// Service Account key validation
+// ═══════════════════════════════════════════
+
+export interface ServiceAccountKeyInfo {
+  valid: boolean
+  projectId: string | null
+  clientEmail: string | null
+  clientId: string | null
+  errors: string[]
+}
+
+// ═══════════════════════════════════════════
+// Setup guide info
+// ═══════════════════════════════════════════
+
+export interface SetupGuideStep {
+  step: number
+  title: { es: string; en: string }
+  description: { es: string; en: string }
+  done: boolean
 }
 
 // ═══════════════════════════════════════════

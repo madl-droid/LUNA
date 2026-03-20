@@ -12,6 +12,7 @@ import type {
   GoogleChatStatus,
   ChatEvent,
   SendResult,
+  ServiceAccountKeyInfo,
 } from './types.js'
 
 const logger = pino({ name: 'google-chat:adapter' })
@@ -207,6 +208,73 @@ export class GoogleChatAdapter {
       [email, 'DM'],
     )
     return res.rows[0]?.space_name ?? null
+  }
+
+  // ─── Validation ───────────────────────────────────
+
+  /** Validate a service account key JSON without initializing the adapter */
+  static validateServiceAccountKey(keyInput: string): ServiceAccountKeyInfo {
+    const result: ServiceAccountKeyInfo = {
+      valid: false,
+      projectId: null,
+      clientEmail: null,
+      clientId: null,
+      errors: [],
+    }
+
+    if (!keyInput || !keyInput.trim()) {
+      result.errors.push('El JSON del Service Account está vacío / Service Account JSON is empty')
+      return result
+    }
+
+    let parsed: Record<string, unknown>
+    try {
+      const trimmed = keyInput.trim()
+      if (trimmed.startsWith('{')) {
+        parsed = JSON.parse(trimmed) as Record<string, unknown>
+      } else {
+        // Try reading as file path
+        try {
+          const content = readFileSync(trimmed, 'utf-8')
+          parsed = JSON.parse(content) as Record<string, unknown>
+        } catch {
+          result.errors.push('No se pudo leer el archivo. Verifica la ruta / Could not read file. Check the path')
+          return result
+        }
+      }
+    } catch {
+      result.errors.push('JSON inválido. Asegúrate de pegar el contenido completo del archivo .json / Invalid JSON. Make sure to paste the complete .json file content')
+      return result
+    }
+
+    // Check required fields
+    if (parsed.type !== 'service_account') {
+      result.errors.push('El JSON no es de tipo "service_account". Descarga el JSON correcto desde Google Cloud Console → IAM → Service Accounts → Keys / JSON is not type "service_account". Download the correct JSON from Google Cloud Console → IAM → Service Accounts → Keys')
+    }
+
+    if (!parsed.private_key || typeof parsed.private_key !== 'string') {
+      result.errors.push('Falta el campo "private_key" / Missing "private_key" field')
+    }
+
+    if (!parsed.client_email || typeof parsed.client_email !== 'string') {
+      result.errors.push('Falta el campo "client_email" / Missing "client_email" field')
+    } else {
+      result.clientEmail = parsed.client_email as string
+    }
+
+    if (parsed.project_id && typeof parsed.project_id === 'string') {
+      result.projectId = parsed.project_id as string
+    }
+
+    if (parsed.client_id && typeof parsed.client_id === 'string') {
+      result.clientId = parsed.client_id as string
+    }
+
+    if (result.errors.length === 0) {
+      result.valid = true
+    }
+
+    return result
   }
 
   // ─── Private helpers ─────────────────────────────

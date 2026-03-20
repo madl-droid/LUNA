@@ -8,7 +8,7 @@ import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody } from '../../kernel/http-helpers.js'
 import { numEnv } from '../../kernel/config-helpers.js'
 import { GoogleChatAdapter } from './adapter.js'
-import type { GoogleChatConfig, ChatEvent } from './types.js'
+import type { GoogleChatConfig, ChatEvent, SetupGuideStep } from './types.js'
 
 const logger = pino({ name: 'google-chat' })
 
@@ -18,6 +18,7 @@ let _registry: Registry | null = null
 // ─── API Routes ─────────────────────────────────
 
 const apiRoutes: ApiRoute[] = [
+  // ── Webhook (Google Chat llama aquí) ──
   {
     method: 'POST',
     path: 'webhook',
@@ -27,7 +28,6 @@ const apiRoutes: ApiRoute[] = [
         return
       }
 
-      // Verify webhook token
       const authHeader = req.headers['authorization'] as string | undefined
       if (!adapter.verifyWebhookToken(authHeader)) {
         jsonResponse(res, 401, { error: 'Unauthorized' })
@@ -46,7 +46,6 @@ const apiRoutes: ApiRoute[] = [
         const normalized = await adapter.handleWebhookEvent(event)
 
         if (normalized) {
-          // Fire incoming hook — engine will process asynchronously
           await _registry.runHook('message:incoming', {
             id: normalized.id,
             channelName: normalized.channelName,
@@ -58,33 +57,75 @@ const apiRoutes: ApiRoute[] = [
           })
         }
 
-        // Always respond 200 to Google Chat webhooks
+        // Always 200 to avoid retries from Google
         jsonResponse(res, 200, {})
       } catch (err) {
         logger.error({ err }, 'Error processing webhook event')
-        jsonResponse(res, 200, {}) // Still 200 to avoid retries from Google
+        jsonResponse(res, 200, {})
       }
     },
   },
+
+  // ── Status ──
   {
     method: 'GET',
     path: 'status',
     handler: async (_req, res) => {
       const moduleEnabled = _registry?.isActive('google-chat') ?? false
       if (!adapter) {
-        jsonResponse(res, 200, { status: 'not_initialized', botEmail: null, activeSpaces: 0, moduleEnabled })
+        jsonResponse(res, 200, {
+          status: 'not_initialized',
+          botEmail: null,
+          activeSpaces: 0,
+          moduleEnabled,
+          configured: false,
+        })
         return
       }
       const state = adapter.getState()
-      jsonResponse(res, 200, { ...state, moduleEnabled })
+      jsonResponse(res, 200, { ...state, moduleEnabled, configured: true })
     },
   },
+
+  // ── Validate Service Account Key (sin guardar) ──
+  {
+    method: 'POST',
+    path: 'validate-key',
+    handler: async (req, res) => {
+      try {
+        const body = await parseBody<{ key: string }>(req)
+        if (!body?.key) {
+          jsonResponse(res, 400, { error: 'Missing "key" field in request body' })
+          return
+        }
+
+        const result = GoogleChatAdapter.validateServiceAccountKey(body.key)
+        jsonResponse(res, 200, result)
+      } catch (err) {
+        jsonResponse(res, 400, {
+          valid: false,
+          projectId: null,
+          clientEmail: null,
+          clientId: null,
+          errors: ['Error procesando la solicitud / Error processing request: ' + String(err)],
+        })
+      }
+    },
+  },
+
+  // ── Test Connection (con credenciales ya guardadas) ──
   {
     method: 'POST',
     path: 'test-connection',
     handler: async (_req, res) => {
       if (!adapter) {
-        jsonResponse(res, 400, { error: 'Google Chat adapter not initialized' })
+        jsonResponse(res, 200, {
+          ok: false,
+          status: 'not_initialized',
+          botEmail: null,
+          activeSpaces: 0,
+          error: 'Primero configura el Service Account Key y guarda los cambios / First configure the Service Account Key and save changes',
+        })
         return
       }
       const state = adapter.getState()
@@ -94,6 +135,95 @@ const apiRoutes: ApiRoute[] = [
         botEmail: state.botEmail,
         activeSpaces: state.activeSpaces,
         error: state.lastError,
+      })
+    },
+  },
+
+  // ── Setup Guide (instrucciones paso a paso) ──
+  {
+    method: 'GET',
+    path: 'setup-guide',
+    handler: async (_req, res) => {
+      const state = adapter?.getState()
+      const hasKey = !!(_registry?.getConfig<GoogleChatConfig>('google-chat').GOOGLE_CHAT_SERVICE_ACCOUNT_KEY)
+      const isConnected = state?.status === 'connected'
+      const hasSpaces = (state?.activeSpaces ?? 0) > 0
+
+      // Build webhook URL from request host
+      const webhookPath = '/oficina/api/google-chat/webhook'
+
+      const steps: SetupGuideStep[] = [
+        {
+          step: 1,
+          title: {
+            es: 'Crear proyecto en Google Cloud',
+            en: 'Create Google Cloud project',
+          },
+          description: {
+            es: 'Ve a console.cloud.google.com, crea un proyecto nuevo (o usa uno existente) y habilita la "Google Chat API" desde la biblioteca de APIs.',
+            en: 'Go to console.cloud.google.com, create a new project (or use an existing one) and enable the "Google Chat API" from the API library.',
+          },
+          done: hasKey, // If they have a key, they already have a project
+        },
+        {
+          step: 2,
+          title: {
+            es: 'Crear Service Account',
+            en: 'Create Service Account',
+          },
+          description: {
+            es: 'En Google Cloud Console ve a IAM y administración > Cuentas de servicio > Crear cuenta de servicio. Dale un nombre descriptivo (ej: "luna-chat-bot"). Luego ve a la pestaña "Claves", crea una clave nueva tipo JSON y descarga el archivo.',
+            en: 'In Google Cloud Console go to IAM & Admin > Service Accounts > Create Service Account. Give it a descriptive name (e.g., "luna-chat-bot"). Then go to the "Keys" tab, create a new JSON key and download the file.',
+          },
+          done: hasKey,
+        },
+        {
+          step: 3,
+          title: {
+            es: 'Pegar el JSON aquí',
+            en: 'Paste the JSON here',
+          },
+          description: {
+            es: 'Abre el archivo .json descargado, copia TODO su contenido y pégalo en el campo "Service Account Key" de arriba. Haz clic en Guardar. El sistema validará automáticamente que el JSON sea correcto.',
+            en: 'Open the downloaded .json file, copy ALL its content and paste it in the "Service Account Key" field above. Click Save. The system will automatically validate the JSON is correct.',
+          },
+          done: hasKey && isConnected,
+        },
+        {
+          step: 4,
+          title: {
+            es: 'Configurar la Chat App en Google Cloud',
+            en: 'Configure the Chat App in Google Cloud',
+          },
+          description: {
+            es: `En Google Cloud Console ve a "APIs y servicios" > "Google Chat API" > pestaña "Configuración". Llena: nombre del bot, avatar, descripción. En "Configuración de conexión" selecciona "URL de extremo de la app" y pega: {webhookUrl}. En "Visibilidad" elige quién puede usar el bot. Haz clic en Guardar.`,
+            en: `In Google Cloud Console go to "APIs & Services" > "Google Chat API" > "Configuration" tab. Fill in: bot name, avatar, description. Under "Connection settings" select "App URL" and paste: {webhookUrl}. Under "Visibility" choose who can use the bot. Click Save.`,
+          },
+          done: hasSpaces,
+        },
+        {
+          step: 5,
+          title: {
+            es: 'Enviar un mensaje de prueba',
+            en: 'Send a test message',
+          },
+          description: {
+            es: 'Abre Google Chat en chat.google.com, busca el bot por su nombre y envíale un mensaje directo. Si todo está bien configurado, el bot lo recibirá y responderá.',
+            en: 'Open Google Chat at chat.google.com, search for the bot by its name and send it a direct message. If everything is configured correctly, the bot will receive and respond.',
+          },
+          done: hasSpaces,
+        },
+      ]
+
+      jsonResponse(res, 200, {
+        webhookPath,
+        steps,
+        currentState: {
+          hasKey,
+          isConnected,
+          hasSpaces,
+          botEmail: state?.botEmail ?? null,
+        },
       })
     },
   },
@@ -123,7 +253,7 @@ async function runMigrations(db: import('pg').Pool): Promise<void> {
 
 const manifest: ModuleManifest = {
   name: 'google-chat',
-  version: '1.0.0',
+  version: '1.1.0',
   description: {
     es: 'Canal de Google Chat via webhook y Chat API (Service Account)',
     en: 'Google Chat channel via webhook and Chat API (Service Account)',
@@ -135,7 +265,6 @@ const manifest: ModuleManifest = {
 
   configSchema: z.object({
     GOOGLE_CHAT_SERVICE_ACCOUNT_KEY: z.string().default(''),
-    GOOGLE_CHAT_PROJECT_NUMBER: z.string().default(''),
     GOOGLE_CHAT_WEBHOOK_TOKEN: z.string().default(''),
     GOOGLE_CHAT_MAX_MESSAGE_LENGTH: numEnv(4096),
   }),
@@ -143,42 +272,39 @@ const manifest: ModuleManifest = {
   oficina: {
     title: { es: 'Google Chat', en: 'Google Chat' },
     info: {
-      es: 'Canal Google Chat para Google Workspace. Usa Service Account para autenticación.',
-      en: 'Google Chat channel for Google Workspace. Uses Service Account for authentication.',
+      es: 'Canal Google Chat para Google Workspace. Usa la guia de configuracion (boton "Ver guia") para conectar paso a paso.',
+      en: 'Google Chat channel for Google Workspace. Use the setup guide ("View guide" button) to connect step by step.',
     },
     order: 15,
     fields: [
       {
         key: 'GOOGLE_CHAT_SERVICE_ACCOUNT_KEY',
         type: 'secret',
-        label: { es: 'Service Account Key (JSON)', en: 'Service Account Key (JSON)' },
-        info: {
-          es: 'JSON del service account de Google Cloud o ruta al archivo .json',
-          en: 'Google Cloud service account JSON or path to .json file',
+        label: {
+          es: 'Service Account Key (JSON)',
+          en: 'Service Account Key (JSON)',
         },
-      },
-      {
-        key: 'GOOGLE_CHAT_PROJECT_NUMBER',
-        type: 'text',
-        label: { es: 'Project Number', en: 'Project Number' },
         info: {
-          es: 'Número del proyecto en Google Cloud Console',
-          en: 'Project number from Google Cloud Console',
+          es: 'Pega aqui el contenido completo del archivo JSON descargado de Google Cloud Console (IAM > Cuentas de servicio > Claves > Crear clave JSON). Al guardar, el sistema validara automaticamente el JSON y extraera el email del bot y el ID del proyecto.',
+          en: 'Paste here the complete content of the JSON file downloaded from Google Cloud Console (IAM > Service Accounts > Keys > Create JSON key). On save, the system will automatically validate the JSON and extract the bot email and project ID.',
         },
       },
       {
         key: 'GOOGLE_CHAT_WEBHOOK_TOKEN',
         type: 'secret',
-        label: { es: 'Webhook Token', en: 'Webhook Token' },
+        label: {
+          es: 'Token de verificacion (opcional)',
+          en: 'Verification token (optional)',
+        },
         info: {
-          es: 'Token secreto para verificar requests del webhook (opcional en dev)',
-          en: 'Secret token to verify webhook requests (optional in dev)',
+          es: 'Token secreto para verificar que los mensajes vienen de Google Chat. Si se deja vacio, se aceptan todos los requests (solo para desarrollo). En produccion, configura un token aqui y en Google Cloud Console.',
+          en: 'Secret token to verify messages come from Google Chat. If left empty, all requests are accepted (development only). In production, set a token here and in Google Cloud Console.',
         },
       },
       {
         key: 'GOOGLE_CHAT_CONNECTION_STATUS',
         type: 'text',
-        label: { es: 'Estado de conexión', en: 'Connection status' },
+        label: { es: 'Estado de conexion', en: 'Connection status' },
         info: {
           es: 'Estado actual del canal Google Chat (solo lectura)',
           en: 'Current Google Chat channel status (read-only)',
@@ -198,9 +324,18 @@ const manifest: ModuleManifest = {
 
     // Skip initialization if no service account configured
     if (!config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY) {
-      logger.warn('No GOOGLE_CHAT_SERVICE_ACCOUNT_KEY configured — module active but not connected')
+      logger.warn('No GOOGLE_CHAT_SERVICE_ACCOUNT_KEY configured — module active but not connected. Use the setup guide in oficina to configure.')
       return
     }
+
+    // Validate key before initializing
+    const validation = GoogleChatAdapter.validateServiceAccountKey(config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY)
+    if (!validation.valid) {
+      logger.error({ errors: validation.errors }, 'Invalid Service Account Key — check the setup guide in oficina')
+      return
+    }
+
+    logger.info({ projectId: validation.projectId, botEmail: validation.clientEmail }, 'Service Account Key validated')
 
     adapter = new GoogleChatAdapter(config, db)
 
@@ -212,7 +347,6 @@ const manifest: ModuleManifest = {
       // `to` can be a space name (spaces/XXX) or an email address
       let spaceName = payload.to
       if (!spaceName.startsWith('spaces/')) {
-        // Try to resolve email → space name
         const resolved = await adapter.resolveSpaceForEmail(payload.to)
         if (!resolved) {
           logger.warn({ to: payload.to }, 'Cannot resolve Google Chat space for recipient')
