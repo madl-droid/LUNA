@@ -2,10 +2,7 @@
 // Depends on: i18n (t, lang), state (moduleStates, currentValues), utils (esc, showToast), fields (*)
 
 function renderModulePanels() {
-  let h = `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
-    <span class="panel-title">${t('sec_modules')}</span>
-    <span class="panel-chevron">&#9660;</span>
-  </div><div class="panel-body"><div class="panel-info">${t('sec_modules_info')}</div>`
+  let h = ''
 
   // Filter: skip oficina itself (it's the panel we're in)
   const displayModules = moduleStates.filter(m => m.name !== 'oficina')
@@ -50,7 +47,6 @@ function renderModulePanels() {
     h += `</div>`
   }
 
-  h += `</div></div>`
   return h
 }
 

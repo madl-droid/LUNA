@@ -30,7 +30,7 @@ async function init() {
     startWaPolling()
   } catch (err) {
     setStatus(t('errorConnect'), 'error')
-    document.getElementById('main').innerHTML = '<div class="loading">' + t('errorConnect') + '</div>'
+    document.getElementById('content').innerHTML = '<div class="loading">' + t('errorConnect') + '</div>'
   }
 }
 

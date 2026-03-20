@@ -1,7 +1,7 @@
 // navigation.js — Sidebar navigation logic
 // Depends on: i18n (t, lang), state (waState, moduleStates)
 
-let activeSection = 'whatsapp'
+let activeSection = localStorage.getItem('luna-active-section') || 'whatsapp'
 
 // Section definitions: id, i18n key, icon, group
 const NAV_SECTIONS = [
@@ -35,8 +35,21 @@ const NAV_GROUPS = {
 
 function navigateTo(sectionId) {
   activeSection = sectionId
-  renderSidebar()
-  renderContent()
+  localStorage.setItem('luna-active-section', sectionId)
+
+  // Fade transition
+  const content = document.getElementById('content')
+  if (content) {
+    content.classList.add('content-fade-out')
+    setTimeout(() => {
+      renderSidebar()
+      renderContent()
+      content.classList.remove('content-fade-out')
+    }, 120)
+  } else {
+    renderSidebar()
+    renderContent()
+  }
 }
 
 function getBadgeForSection(sec) {
@@ -81,4 +94,10 @@ function renderSidebar() {
   }
 
   el.innerHTML = h
+
+  // On mobile, scroll active item into view
+  const activeEl = el.querySelector('.sidebar-item.active')
+  if (activeEl && window.innerWidth <= 768) {
+    activeEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  }
 }
