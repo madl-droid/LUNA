@@ -24,6 +24,19 @@ function envBool(key: string, fallback: boolean): boolean {
   return v === 'true'
 }
 
+/**
+ * Read up to `max` numbered env vars (KEY_1, KEY_2, KEY_3).
+ * Returns array of non-empty messages, or fallback if none found.
+ */
+function envMessages(prefix: string, max: number, fallback: string[]): string[] {
+  const msgs: string[] = []
+  for (let i = 1; i <= max; i++) {
+    const v = getEnv(`${prefix}_${i}`)
+    if (v) msgs.push(v)
+  }
+  return msgs.length > 0 ? msgs : fallback
+}
+
 function envProvider(key: string, fallback: LLMProvider): LLMProvider {
   const v = getEnv(key) as LLMProvider | undefined
   return v ?? fallback
@@ -99,12 +112,12 @@ export function loadEngineConfig(): EngineConfig {
     // Session
     sessionReopenWindowMs: envInt('SESSION_REOPEN_WINDOW_MS', 86400000), // 24h
 
-    // Naturalidad: aviso de proceso (per-channel)
-    ackWhatsappTriggerMs: envInt('ACK_WHATSAPP_TRIGGER_MS', 3000),
-    ackWhatsappHoldMs: envInt('ACK_WHATSAPP_HOLD_MS', 2000),
-    ackWhatsappMessage: env('ACK_WHATSAPP_MESSAGE', 'Un momento, estoy revisando eso...'),
-    ackEmailTriggerMs: envInt('ACK_EMAIL_TRIGGER_MS', 0),
-    ackEmailHoldMs: envInt('ACK_EMAIL_HOLD_MS', 0),
-    ackEmailMessage: env('ACK_EMAIL_MESSAGE', 'Recibí tu mensaje, te respondo en breve.'),
+    // Avisos de proceso (per-channel) — hasta 3 mensajes, se elige al azar
+    avisoWaTriggerMs: envInt('AVISO_WA_TRIGGER_MS', 3000),
+    avisoWaHoldMs: envInt('AVISO_WA_HOLD_MS', 2000),
+    avisoWaMessages: envMessages('AVISO_WA_MSG', 3, ['Un momento, estoy revisando eso...']),
+    avisoEmailTriggerMs: envInt('AVISO_EMAIL_TRIGGER_MS', 0),
+    avisoEmailHoldMs: envInt('AVISO_EMAIL_HOLD_MS', 0),
+    avisoEmailMessages: envMessages('AVISO_EMAIL_MSG', 3, ['Recibí tu mensaje, te respondo en breve.']),
   }
 }

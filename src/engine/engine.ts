@@ -109,15 +109,15 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
     }, 'Phase 2 done')
 
     // ═══ PHASE 3+4: Execute + Compose (with aviso de proceso timer) ═══
-    const ackConfig = getAckConfig(ctx.message.channelName, engineConfig)
-    let ackSentAt: number | undefined = undefined
-    const ackTimer = ackConfig.triggerMs > 0
+    const avisoConfig = getAvisoConfig(ctx.message.channelName, engineConfig)
+    let avisoSentAt: number | undefined = undefined
+    const avisoTimer = avisoConfig.triggerMs > 0 && avisoConfig.messages.length > 0
       ? setTimeout(() => {
-          ackSentAt = Date.now()
-          sendProcessingAck(ctx, ackConfig.message, registry).catch(err =>
+          avisoSentAt = Date.now()
+          sendAviso(ctx, pickAviso(avisoConfig.messages), registry).catch(err =>
             logger.warn({ err, traceId }, 'Failed to send aviso de proceso'),
           )
-        }, ackConfig.triggerMs)
+        }, avisoConfig.triggerMs)
       : null
 
     const p3Start = Date.now()
@@ -137,7 +137,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
     const composed = await phase4Compose(ctx, evaluation, execution, engineConfig, registry)
     const phase4DurationMs = Date.now() - p4Start
 
-    if (ackTimer) clearTimeout(ackTimer)
+    if (avisoTimer) clearTimeout(avisoTimer)
 
     logger.info({
       traceId,
@@ -147,9 +147,9 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
     }, 'Phase 4 done')
 
     // Si se envió aviso de proceso, retener la respuesta el tiempo configurado
-    if (ackSentAt !== undefined) {
-      const elapsed = Date.now() - ackSentAt
-      const holdMs = ackConfig.holdMs - elapsed
+    if (avisoSentAt !== undefined) {
+      const elapsed = Date.now() - avisoSentAt
+      const holdMs = avisoConfig.holdMs - elapsed
       if (holdMs > 0) {
         logger.info({ traceId, holdMs }, 'Reteniendo respuesta tras aviso de proceso')
         await new Promise(resolve => setTimeout(resolve, holdMs))
@@ -242,28 +242,37 @@ export function getEngineConfig(): EngineConfig {
 }
 
 /**
- * Returns per-channel ack config (trigger delay, hold delay, message text).
+ * Returns per-channel aviso config (trigger delay, hold delay, messages pool).
  */
-function getAckConfig(channel: string, config: EngineConfig): { triggerMs: number; holdMs: number; message: string } {
+function getAvisoConfig(channel: string, config: EngineConfig): { triggerMs: number; holdMs: number; messages: string[] } {
   if (channel === 'whatsapp') {
-    return { triggerMs: config.ackWhatsappTriggerMs, holdMs: config.ackWhatsappHoldMs, message: config.ackWhatsappMessage }
+    return { triggerMs: config.avisoWaTriggerMs, holdMs: config.avisoWaHoldMs, messages: config.avisoWaMessages }
   }
   if (channel === 'email') {
-    return { triggerMs: config.ackEmailTriggerMs, holdMs: config.ackEmailHoldMs, message: config.ackEmailMessage }
+    return { triggerMs: config.avisoEmailTriggerMs, holdMs: config.avisoEmailHoldMs, messages: config.avisoEmailMessages }
   }
-  return { triggerMs: 0, holdMs: 0, message: '' }
+  return { triggerMs: 0, holdMs: 0, messages: [] }
+}
+
+/**
+ * Picks a random message from the aviso pool.
+ */
+function pickAviso(messages: string[]): string {
+  if (messages.length === 0) return ''
+  if (messages.length === 1) return messages[0]!
+  return messages[Math.floor(Math.random() * messages.length)]!
 }
 
 /**
  * Envía un aviso de proceso al canal del mensaje original.
  * Mensaje configurable desde oficina, nunca generado por LLM.
  */
-async function sendProcessingAck(ctx: ContextBundle, text: string, reg: Registry): Promise<void> {
+async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promise<void> {
   await reg.runHook('message:send', {
     channel: ctx.message.channelName,
     to: ctx.message.from,
     content: { type: 'text', text },
     correlationId: ctx.traceId,
   })
-  logger.info({ traceId: ctx.traceId, to: ctx.message.from }, 'Aviso de proceso enviado')
+  logger.info({ traceId: ctx.traceId, to: ctx.message.from, text }, 'Aviso de proceso enviado')
 }

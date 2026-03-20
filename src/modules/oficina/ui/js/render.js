@@ -171,14 +171,18 @@ function renderFollowupSection() {
 
 function renderNaturalidadSection() {
   return panelBody([
-    `<div class="field"><span class="field-label" style="font-weight:600;opacity:.7">${t('sub_ack_whatsapp')}</span></div>`,
-    numField('ACK_WHATSAPP_TRIGGER_MS', 'f_ACK_WHATSAPP_TRIGGER_MS', 'i_ACK_WHATSAPP_TRIGGER_MS'),
-    numField('ACK_WHATSAPP_HOLD_MS', 'f_ACK_WHATSAPP_HOLD_MS', 'i_ACK_WHATSAPP_HOLD_MS'),
-    textField('ACK_WHATSAPP_MESSAGE', 'f_ACK_WHATSAPP_MESSAGE', 'i_ACK_WHATSAPP_MESSAGE'),
-    `<div class="field"><span class="field-label" style="font-weight:600;opacity:.7">${t('sub_ack_email')}</span></div>`,
-    numField('ACK_EMAIL_TRIGGER_MS', 'f_ACK_EMAIL_TRIGGER_MS', 'i_ACK_EMAIL_TRIGGER_MS'),
-    numField('ACK_EMAIL_HOLD_MS', 'f_ACK_EMAIL_HOLD_MS', 'i_ACK_EMAIL_HOLD_MS'),
-    textField('ACK_EMAIL_MESSAGE', 'f_ACK_EMAIL_MESSAGE', 'i_ACK_EMAIL_MESSAGE'),
+    `<div class="field"><span class="field-label" style="font-weight:600;opacity:.7">${t('sub_aviso_whatsapp')}</span></div>`,
+    numField('AVISO_WA_TRIGGER_MS', 'f_AVISO_WA_TRIGGER_MS', 'i_AVISO_TRIGGER_MS'),
+    numField('AVISO_WA_HOLD_MS', 'f_AVISO_WA_HOLD_MS', 'i_AVISO_HOLD_MS'),
+    textField('AVISO_WA_MSG_1', 'f_AVISO_MSG_1', 'i_AVISO_MSG'),
+    textField('AVISO_WA_MSG_2', 'f_AVISO_MSG_2', 'i_AVISO_MSG'),
+    textField('AVISO_WA_MSG_3', 'f_AVISO_MSG_3', 'i_AVISO_MSG'),
+    `<div class="field"><span class="field-label" style="font-weight:600;opacity:.7">${t('sub_aviso_email')}</span></div>`,
+    numField('AVISO_EMAIL_TRIGGER_MS', 'f_AVISO_EMAIL_TRIGGER_MS', 'i_AVISO_TRIGGER_MS'),
+    numField('AVISO_EMAIL_HOLD_MS', 'f_AVISO_EMAIL_HOLD_MS', 'i_AVISO_HOLD_MS'),
+    textField('AVISO_EMAIL_MSG_1', 'f_AVISO_MSG_1', 'i_AVISO_MSG'),
+    textField('AVISO_EMAIL_MSG_2', 'f_AVISO_MSG_2', 'i_AVISO_MSG'),
+    textField('AVISO_EMAIL_MSG_3', 'f_AVISO_MSG_3', 'i_AVISO_MSG'),
   ])
 }
 
