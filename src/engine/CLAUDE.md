@@ -51,8 +51,17 @@ mocks/
 
 Campos nuevos: `agentId`, `contactMemory`, `pendingCommitments`, `relevantSummaries`, `leadStatus`.
 
+## Naturalidad: aviso de proceso (per-channel)
+
+Config independiente por canal. Cada canal tiene trigger, hold y mensaje configurable desde oficina:
+- **WhatsApp**: `ACK_WHATSAPP_TRIGGER_MS` (3000), `ACK_WHATSAPP_HOLD_MS` (2000), `ACK_WHATSAPP_MESSAGE`
+- **Email**: `ACK_EMAIL_TRIGGER_MS` (0=off), `ACK_EMAIL_HOLD_MS` (0), `ACK_EMAIL_MESSAGE`
+
+Si la respuesta tarda más del trigger, se envía el aviso via `message:send` hook. Tras enviar, la respuesta real se retiene el hold configurado. Trigger=0 desactiva por canal. Mensajes editables desde oficina, nunca generados por LLM.
+
 ## Trampas
 
 - memory:manager es opcional — fallback a SQL directo en todas las fases
 - Pipeline log fire-and-forget via `memoryManager.savePipelineLog()`
 - Persist messages usa dual-write (Redis buffer + PG async) via memory:manager
+- `needsAcknowledgment` en EvaluatorOutput ya no se consume en phase3 — el aviso de proceso ahora es por timer en engine.ts, no por decisión del evaluador

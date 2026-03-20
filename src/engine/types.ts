@@ -389,7 +389,11 @@ export interface EngineConfig {
   // Session
   sessionReopenWindowMs: number
 
-  // Naturalidad: aviso de proceso
-  ackTriggerMs: number
-  ackHoldResponseMs: number
+  // Naturalidad: aviso de proceso (per-channel)
+  ackWhatsappTriggerMs: number
+  ackWhatsappHoldMs: number
+  ackWhatsappMessage: string
+  ackEmailTriggerMs: number
+  ackEmailHoldMs: number
+  ackEmailMessage: string
 }
