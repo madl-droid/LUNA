@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { numEnv, boolEnv } from '../../kernel/config-helpers.js'
 import { MemoryManager } from './memory-manager.js'
 
 let manager: MemoryManager | null = null
@@ -23,25 +24,25 @@ const manifest: ModuleManifest = {
 
   configSchema: z.object({
     // Buffer and sessions
-    MEMORY_BUFFER_MESSAGE_COUNT: z.string().transform(Number).pipe(z.number().int()).default('50'),
-    MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN: z.string().transform(Number).pipe(z.number().int()).default('30'),
-    MEMORY_SESSION_MAX_TTL_HOURS: z.string().transform(Number).pipe(z.number().int()).default('24'),
-    MEMORY_COMPRESSION_THRESHOLD: z.string().transform(Number).pipe(z.number().int()).default('30'),
-    MEMORY_COMPRESSION_KEEP_RECENT: z.string().transform(Number).pipe(z.number().int()).default('10'),
+    MEMORY_BUFFER_MESSAGE_COUNT: numEnv(50),
+    MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN: numEnv(30),
+    MEMORY_SESSION_MAX_TTL_HOURS: numEnv(24),
+    MEMORY_COMPRESSION_THRESHOLD: numEnv(30),
+    MEMORY_COMPRESSION_KEEP_RECENT: numEnv(10),
 
     // Compression and models
     MEMORY_COMPRESSION_MODEL: z.string().default('claude-haiku-4-5-20251001'),
     MEMORY_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
-    MEMORY_MAX_CONTACT_MEMORY_WORDS: z.string().transform(Number).pipe(z.number().int()).default('2000'),
+    MEMORY_MAX_CONTACT_MEMORY_WORDS: numEnv(2000),
 
     // Retention and purge
-    MEMORY_SUMMARY_RETENTION_DAYS: z.string().transform(Number).pipe(z.number().int()).default('90'),
-    MEMORY_ARCHIVE_RETENTION_YEARS: z.string().transform(Number).pipe(z.number().int()).default('5'),
-    MEMORY_PIPELINE_LOGS_RETENTION_DAYS: z.string().transform(Number).pipe(z.number().int()).default('90'),
-    MEMORY_MEDIA_IMAGE_RETENTION_YEARS: z.string().transform(Number).pipe(z.number().int()).default('5'),
-    MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: z.string().transform((v: string) => v === 'true').default('true'),
-    MEMORY_PURGE_MERGED_SUMMARIES: z.string().transform((v: string) => v === 'true').default('false'),
-    MEMORY_RECOMPRESSION_INTERVAL_DAYS: z.string().transform(Number).pipe(z.number().int()).default('30'),
+    MEMORY_SUMMARY_RETENTION_DAYS: numEnv(90),
+    MEMORY_ARCHIVE_RETENTION_YEARS: numEnv(5),
+    MEMORY_PIPELINE_LOGS_RETENTION_DAYS: numEnv(90),
+    MEMORY_MEDIA_IMAGE_RETENTION_YEARS: numEnv(5),
+    MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolEnv(true),
+    MEMORY_PURGE_MERGED_SUMMARIES: boolEnv(false),
+    MEMORY_RECOMPRESSION_INTERVAL_DAYS: numEnv(30),
 
     // Batch crons
     MEMORY_BATCH_COMPRESS_CRON: z.string().default('0 2 * * *'),

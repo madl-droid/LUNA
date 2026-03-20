@@ -4,6 +4,8 @@
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse } from '../../kernel/http-helpers.js'
+import { numEnv } from '../../kernel/config-helpers.js'
 import { startScanner, stopScanner, scanModels, getLastScanResult } from './scanner.js'
 
 let _registry: Registry | null = null
@@ -23,7 +25,7 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     ANTHROPIC_API_KEY: z.string().default(''),
     GOOGLE_AI_API_KEY: z.string().default(''),
-    MODEL_SCAN_INTERVAL_MS: z.string().transform(Number).pipe(z.number().int()).default('21600000'),
+    MODEL_SCAN_INTERVAL_MS: numEnv(21600000),
   }),
 
   oficina: {
@@ -43,8 +45,7 @@ const manifest: ModuleManifest = {
         path: 'status',
         handler: async (_req, res) => {
           const scan = getLastScanResult()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify(scan ?? { anthropic: [], google: [], lastScanAt: null, replacements: [] }))
+          jsonResponse(res, 200, scan ?? { anthropic: [], google: [], lastScanAt: null, replacements: [] })
         },
       },
       {
@@ -56,8 +57,7 @@ const manifest: ModuleManifest = {
             anthropic: scan?.anthropic.map(m => m.id) ?? [],
             gemini: scan?.google.map(m => m.id) ?? [],
           }
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ models, scan }))
+          jsonResponse(res, 200, { models, scan })
         },
       },
       {
@@ -66,17 +66,15 @@ const manifest: ModuleManifest = {
         handler: async (_req, res) => {
           try {
             const result = await scanModels(_registry!)
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({
+            jsonResponse(res, 200, {
               ok: true,
               anthropic: result.anthropic.length,
               google: result.google.length,
               replacements: result.replacements,
               errors: result.errors,
-            }))
+            })
           } catch (err) {
-            res.writeHead(500, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Scan failed: ' + String(err) }))
+            jsonResponse(res, 500, { error: 'Scan failed: ' + String(err) })
           }
         },
       },

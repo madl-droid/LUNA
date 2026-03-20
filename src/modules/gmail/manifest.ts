@@ -6,6 +6,8 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
+import { jsonResponse, parseBody } from '../../kernel/http-helpers.js'
+import { numEnv, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
 import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
@@ -27,25 +29,6 @@ const pollerState: EmailPollerState = {
   messagesProcessed: 0,
   errors: 0,
   lastError: null,
-}
-
-function jsonResponse(res: import('node:http').ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
-
-function parseBody(req: import('node:http').IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => {
-      try {
-        const body = Buffer.concat(chunks).toString()
-        resolve(body ? JSON.parse(body) : {})
-      } catch (err) { reject(err) }
-    })
-    req.on('error', reject)
-  })
 }
 
 // ─── Migrations ────────────────────────────
@@ -405,21 +388,21 @@ const manifest: ModuleManifest = {
   depends: [], // google-apps es opcional — si está activo se comparte su OAuth, si no email usa el suyo
 
   configSchema: z.object({
-    EMAIL_POLL_INTERVAL_MS: z.string().transform(Number).pipe(z.number().int().positive()).default('60000'),
-    EMAIL_MAX_ATTACHMENT_SIZE_MB: z.string().transform(Number).pipe(z.number().positive()).default('16'),
+    EMAIL_POLL_INTERVAL_MS: numEnv(60000),
+    EMAIL_MAX_ATTACHMENT_SIZE_MB: floatEnvMin(0, 16),
     EMAIL_NOREPLY_ADDRESSES: z.string().default(''),
     EMAIL_NOREPLY_PATTERNS: z.string().default(''),
     EMAIL_PROCESS_LABELS: z.string().default('INBOX'),
     EMAIL_SKIP_LABELS: z.string().default('SPAM,TRASH'),
-    EMAIL_AUTO_MARK_READ: z.string().transform((v) => v === 'true').default('true'),
-    EMAIL_INCLUDE_SIGNATURE: z.string().transform((v) => v === 'true').default('true'),
-    EMAIL_MAX_HISTORY_FETCH: z.string().transform(Number).pipe(z.number().int().positive()).default('20'),
+    EMAIL_AUTO_MARK_READ: boolEnv(true),
+    EMAIL_INCLUDE_SIGNATURE: boolEnv(true),
+    EMAIL_MAX_HISTORY_FETCH: numEnv(20),
     // OAuth standalone (cuando google-apps no está activo)
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
     GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/gmail/oauth2callback'),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
-    GOOGLE_TOKEN_REFRESH_BUFFER_MS: z.string().transform(Number).pipe(z.number().int().positive()).default('300000'),
+    GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
   }),
 
   oficina: {

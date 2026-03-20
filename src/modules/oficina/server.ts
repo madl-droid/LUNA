@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import type * as http from 'node:http'
 import type { Registry } from '../../kernel/registry.js'
 import type { ApiRoute } from '../../kernel/types.js'
+import { jsonResponse, readBody } from '../../kernel/http-helpers.js'
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import pino from 'pino'
@@ -20,20 +21,6 @@ try {
   const pkg = require('../../../package.json') as { version?: string }
   packageJsonVersion = pkg.version ?? 'dev'
 } catch { /* fallback to dev */ }
-
-function jsonResponse(res: http.ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
-
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()))
-    req.on('error', reject)
-  })
-}
 
 function findEnvFile(): string {
   const candidates = [
