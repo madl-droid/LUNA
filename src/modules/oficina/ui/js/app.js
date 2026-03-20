@@ -4,16 +4,19 @@
 async function init() {
   document.getElementById('lang-btn').textContent = lang === 'es' ? 'EN' : 'ES'
   try {
-    const [configRes, versionRes, modelsRes, modulesRes] = await Promise.all([
+    const [configRes, versionRes, modelsRes, modulesRes, googleRes] = await Promise.all([
       fetch('/oficina/api/oficina/config'),
       fetch('/oficina/api/oficina/version'),
       fetch('/oficina/api/model-scanner/models'),
       fetch('/oficina/api/oficina/modules'),
+      fetch('/oficina/api/gmail/auth-status').catch(() => null),
     ])
     const configData = await configRes.json()
     const versionData = await versionRes.json()
     const modelsData = await modelsRes.json()
     const modulesData = await modulesRes.json()
+    const googleData = googleRes ? await googleRes.json().catch(() => null) : null
+    if (googleData) googleAuthState = { connected: googleData.connected ?? false, email: googleData.email ?? null, loading: false }
 
     const v = versionData.version ?? 'dev'
     document.getElementById('build-ver').textContent = 'v' + (v.length > 7 ? v.slice(0, 7) : v)

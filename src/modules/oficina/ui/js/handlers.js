@@ -108,3 +108,70 @@ async function triggerScan() {
     } else { showToast(t('scanError'), 'error') }
   } catch { showToast(t('scanError'), 'error') }
 }
+
+async function refreshGoogleStatus() {
+  try {
+    const res = await fetch('/oficina/api/gmail/auth-status')
+    const data = await res.json()
+    googleAuthState = { connected: data.connected ?? false, email: data.email ?? null, loading: false }
+  } catch {
+    googleAuthState = { connected: false, email: null, loading: false }
+  }
+  if (activeSection === 'google') renderContent()
+}
+
+async function googleConnect() {
+  try {
+    googleAuthState.loading = true
+    renderContent()
+    const res = await fetch('/oficina/api/gmail/auth-url')
+    const data = await res.json()
+    if (data.url) {
+      showToast(t('googleConnecting'), 'success')
+      const popup = window.open(data.url, 'google-oauth', 'width=500,height=620,scrollbars=yes')
+      // Poll for completion (popup closes or token appears)
+      const poll = setInterval(async () => {
+        try {
+          const statusRes = await fetch('/oficina/api/gmail/auth-status')
+          const statusData = await statusRes.json()
+          if (statusData.connected) {
+            clearInterval(poll)
+            if (popup && !popup.closed) popup.close()
+            googleAuthState = { connected: true, email: statusData.email ?? null, loading: false }
+            showToast(t('googleConnectSuccess'), 'success')
+            renderContent()
+          } else if (popup && popup.closed) {
+            clearInterval(poll)
+            googleAuthState.loading = false
+            renderContent()
+          }
+        } catch { clearInterval(poll) }
+      }, 2000)
+    } else {
+      showToast(data.error || t('googleConnectError'), 'error')
+      googleAuthState.loading = false
+      renderContent()
+    }
+  } catch {
+    showToast(t('googleConnectError'), 'error')
+    googleAuthState.loading = false
+    renderContent()
+  }
+}
+
+async function googleDisconnect() {
+  if (!confirm(t('googleDisconnectConfirm'))) return
+  try {
+    const res = await fetch('/oficina/api/gmail/auth-disconnect', { method: 'POST' })
+    const data = await res.json()
+    if (data.ok) {
+      googleAuthState = { connected: false, email: null, loading: false }
+      showToast(t('googleDisconnectSuccess'), 'success')
+      renderContent()
+    } else {
+      showToast(data.error || t('googleDisconnectError'), 'error')
+    }
+  } catch {
+    showToast(t('googleDisconnectError'), 'error')
+  }
+}

@@ -8,3 +8,4 @@ let waPolling = null
 let lastScan = null
 let moduleStates = []
 let _pendingApply = false
+let googleAuthState = { connected: false, email: null, loading: false }

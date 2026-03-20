@@ -144,6 +144,21 @@ const i18n = {
     i_ACK_EMAIL_TRIGGER_MS: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico. 0 = desactivado.',
     i_ACK_EMAIL_HOLD_MS: 'Tiempo que se retiene la respuesta real despues del aviso, para que no lleguen juntos.',
     i_ACK_EMAIL_MESSAGE: 'Texto del aviso que recibe el contacto mientras se prepara la respuesta.',
+    // Google OAuth
+    googleConnectBtn: 'Conectar con Google',
+    googleDisconnectBtn: 'Desconectar Google',
+    googleConnected: 'Cuenta conectada',
+    googleNotConnected: 'Sin conexion',
+    googleConnecting: 'Abriendo autenticacion de Google...',
+    googleConnectSuccess: 'Google conectado correctamente',
+    googleConnectError: 'Error al conectar con Google',
+    googleDisconnectConfirm: 'Desconectar Google? LUNA perdera acceso a Gmail, Sheets y Calendar.',
+    googleDisconnectSuccess: 'Google desconectado',
+    googleDisconnectError: 'Error al desconectar Google',
+    googleRefreshStatus: 'Actualizar estado',
+    googleConnectedAs: 'Conectado como',
+    googleAuthInfo: 'Esta autenticacion OAuth2 es compartida por Gmail, Google Sheets y Google Calendar. Conecta una sola vez y todos los modulos la usan.',
+    googleModulesTitle: 'Modulos que usan esta conexion',
   },
   en: {
     connected: 'Connected', saving: 'Saving...', saved: 'Saved', errorConnect: 'Connection error',
@@ -284,6 +299,21 @@ const i18n = {
     i_ACK_EMAIL_TRIGGER_MS: 'If the response takes longer than this, an automatic notice is sent. 0 = disabled.',
     i_ACK_EMAIL_HOLD_MS: 'How long to hold back the real response after the notice, so they do not arrive together.',
     i_ACK_EMAIL_MESSAGE: 'Text the contact receives while the response is being prepared.',
+    // Google OAuth
+    googleConnectBtn: 'Connect with Google',
+    googleDisconnectBtn: 'Disconnect Google',
+    googleConnected: 'Account connected',
+    googleNotConnected: 'Not connected',
+    googleConnecting: 'Opening Google authentication...',
+    googleConnectSuccess: 'Google connected successfully',
+    googleConnectError: 'Error connecting to Google',
+    googleDisconnectConfirm: 'Disconnect Google? LUNA will lose access to Gmail, Sheets, and Calendar.',
+    googleDisconnectSuccess: 'Google disconnected',
+    googleDisconnectError: 'Error disconnecting Google',
+    googleRefreshStatus: 'Refresh status',
+    googleConnectedAs: 'Connected as',
+    googleAuthInfo: 'This OAuth2 authentication is shared by Gmail, Google Sheets, and Google Calendar. Connect once and all modules use it.',
+    googleModulesTitle: 'Modules using this connection',
   }
 }
 
