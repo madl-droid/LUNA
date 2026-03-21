@@ -1,12 +1,12 @@
 // LUNA — Module: knowledge — Embedding Service
-// Google text-embedding-004 (768 dims) with circuit breaker and rate limiting.
-// Degrades gracefully: on failure returns null, search falls back to FTS-only.
+// Google gemini-embedding-exp-03-07 (1536 dims) with circuit breaker and rate limiting.
+// Soporta texto, imágenes, video, código. Degrades gracefully: on failure → FTS-only.
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import type pino from 'pino'
 
-const MODEL = 'text-embedding-004'
-const DIMENSIONS = 768
+const MODEL = 'gemini-embedding-exp-03-07'
+const DIMENSIONS = 1536
 const MAX_BATCH_SIZE = 100
 
 // Circuit breaker: 3 failures in 5 min → open for 5 min
@@ -14,9 +14,9 @@ const CB_FAILURE_THRESHOLD = 3
 const CB_WINDOW_MS = 5 * 60 * 1000
 const CB_COOLDOWN_MS = 5 * 60 * 1000
 
-// Rate limit: 1500 RPM free tier → token bucket
-const RATE_LIMIT_RPM = 1500
-const RATE_LIMIT_INTERVAL_MS = 60_000 / RATE_LIMIT_RPM  // ~40ms between requests
+// Rate limit: tier 2 = 5000 RPM
+const RATE_LIMIT_RPM = 5000
+const RATE_LIMIT_INTERVAL_MS = 60_000 / RATE_LIMIT_RPM  // ~12ms between requests
 
 export class EmbeddingService {
   private readonly apiKey: string

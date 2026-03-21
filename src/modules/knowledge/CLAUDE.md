@@ -1,6 +1,6 @@
 # Knowledge v2 — Base de conocimiento del agente
 
-Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsqueda híbrida: pgvector cosine + FTS PostgreSQL. Categorías como tabla (max 25). Core docs como flag (max 3). Embeddings via Google text-embedding-004 (768 dims).
+Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsqueda híbrida: pgvector cosine + FTS PostgreSQL. Categorías como tabla (max 25). Core docs como flag (max 3). Embeddings via Google gemini-embedding-exp-03-07 (1536 dims, soporta texto/imágenes/video/código).
 
 ## Archivos
 - `manifest.ts` — lifecycle v2, configSchema (14 params), ~25 apiRoutes, tool registration
@@ -9,7 +9,7 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 - `pg-store.ts` — 8 tablas: documents, chunks, faqs, sync_sources, gaps, categories, document_categories, api_connectors, web_sources
 - `search-engine.ts` — búsqueda híbrida: pgvector cosine + FTS + FAQ FTS. Category boost via searchHint. Degradación a FTS si sin embeddings.
 - `cache.ts` — Redis cache para KnowledgeInjection (TTL 5min), invalidación en cambios core/categorías/connectors
-- `embedding-service.ts` — Google text-embedding-004 via @google/generative-ai. Circuit breaker (3 fallas → 5min down). Rate limit 1500 RPM.
+- `embedding-service.ts` — Google gemini-embedding-exp-03-07 (1536 dims) via @google/generative-ai. Circuit breaker (3 fallas → 5min down). Rate limit 5000 RPM (tier 2).
 - `vectorize-worker.ts` — BullMQ cola knowledge:vectorize. Jobs: document (inmediato) y bulk (cooldown 1hr). Redis mutex para bulk.
 - `sync-manager.ts` — sync periódico: Google Drive + URLs. Frecuencias: 6h-1m. autoCategoryId en vez de autoCategory string.
 - `faq-manager.ts` — CRUD FAQs + import desde file/sheets
