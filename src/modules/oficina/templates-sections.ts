@@ -364,6 +364,8 @@ export function renderEngineMetricsSection(data: SectionData): string {
       </script>
     </div>
   </div>`
+}
+
 export function renderScheduledTasksSection(data: SectionData): string {
   if (data.scheduledTasksHtml) return data.scheduledTasksHtml
   // Fallback if render service not available
