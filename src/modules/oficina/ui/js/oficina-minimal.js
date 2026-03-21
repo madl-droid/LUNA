@@ -9,6 +9,37 @@
   var flash = document.querySelector('[data-flash]')
   if (flash) setTimeout(function () { flash.remove() }, 3500)
 
+  // === Hamburger menu (mobile drawer) ===
+  var sidebar = document.getElementById('sidebar')
+  var hamburger = document.getElementById('hamburger')
+  var overlay = document.createElement('div')
+  overlay.className = 'sidebar-overlay'
+  document.body.appendChild(overlay)
+
+  window.toggleSidebar = function () {
+    if (!sidebar || !hamburger) return
+    var isOpen = sidebar.classList.toggle('open')
+    hamburger.classList.toggle('open', isOpen)
+    overlay.classList.toggle('visible', isOpen)
+  }
+
+  overlay.addEventListener('click', function () {
+    if (sidebar) sidebar.classList.remove('open')
+    if (hamburger) hamburger.classList.remove('open')
+    overlay.classList.remove('visible')
+  })
+
+  // Close sidebar on link click (mobile)
+  if (sidebar) {
+    sidebar.querySelectorAll('.sidebar-item').forEach(function (item) {
+      item.addEventListener('click', function () {
+        sidebar.classList.remove('open')
+        if (hamburger) hamburger.classList.remove('open')
+        overlay.classList.remove('visible')
+      })
+    })
+  }
+
   // === Panel collapse ===
   window.togglePanel = function (header) {
     header.closest('.panel').classList.toggle('collapsed')

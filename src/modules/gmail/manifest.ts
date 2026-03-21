@@ -412,6 +412,8 @@ const manifest: ModuleManifest = {
       en: 'Email channel via Gmail API. Requires Google API connected. Emails are processed by the engine as messages.',
     },
     order: 12,
+    group: 'channels',
+    icon: '&#9993;',
     fields: [
       {
         key: 'EMAIL_POLL_INTERVAL_MS',

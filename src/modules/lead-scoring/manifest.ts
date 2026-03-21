@@ -284,6 +284,8 @@ const manifest: ModuleManifest = {
       en: 'Configure qualification criteria, thresholds, and view system leads.',
     },
     order: 15,
+    group: 'leads',
+    icon: '&#128202;',
     apiRoutes: createApiRoutes(),
   },
 

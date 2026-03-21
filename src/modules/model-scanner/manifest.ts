@@ -35,6 +35,8 @@ const manifest: ModuleManifest = {
       en: 'Scans provider APIs to discover models and replace deprecated ones.',
     },
     order: 50,
+    group: 'system',
+    icon: '&#128270;',
     fields: [
       { key: 'ANTHROPIC_API_KEY', type: 'secret', label: { es: 'API Key Anthropic', en: 'Anthropic API Key' } },
       { key: 'GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Google AI', en: 'Google AI API Key' } },

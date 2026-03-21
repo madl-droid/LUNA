@@ -118,16 +118,76 @@ function infoTooltip(id: string, key: string, lang: Lang): string {
   return `<div class="info-tooltip" id="info-${id}">${t(key, lang)}</div>`
 }
 
+// --- New field types (Phase 1) ---
+
+export function dividerField(label: string): string {
+  return `<div class="field-divider"><span class="field-divider-label">${esc(label)}</span></div>`
+}
+
+export function readonlyField(key: string, value: string, label: string): string {
+  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span></div>
+    <span class="field-readonly">${esc(value)}</span></div>`
+}
+
+export function tagsField(key: string, value: string, lang: Lang, label: string, separator = ','): string {
+  const tags = value ? value.split(separator).map(t => t.trim()).filter(Boolean) : []
+  const tagsHtml = tags.map(tag =>
+    `<span class="field-tag">${esc(tag)}<button type="button" class="field-tag-remove" data-tag-key="${esc(key)}" data-tag-value="${esc(tag)}">&times;</button></span>`
+  ).join('')
+  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span></div>
+    <div class="field-tags-wrap">
+      <div class="field-tags" data-tags-for="${esc(key)}">${tagsHtml}</div>
+      <input type="text" class="field-tag-input" data-tag-add="${esc(key)}" placeholder="${t('fieldTagsAdd', lang)}">
+      <input type="hidden" name="${esc(key)}" value="${esc(value)}" data-original="${esc(value)}" data-separator="${esc(separator)}">
+    </div>
+  </div>`
+}
+
+export function durationField(key: string, value: string, lang: Lang, label: string, unit = 'ms', infoKey?: string): string {
+  const info = infoKey ? infoBtn(key) : ''
+  const tooltip = infoKey ? infoTooltip(key, infoKey, lang) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${info}</div>
+    <div class="field-duration">
+      <input type="text" inputmode="numeric" name="${esc(key)}" value="${esc(value)}" data-original="${esc(value)}">
+      <span class="field-duration-unit">${esc(unit)}</span>
+    </div>
+  </div>${tooltip}`
+}
+
 export function renderOficinaField(field: OficinaField, value: string, lang: Lang): string {
   const label = field.label ? (field.label[lang] || field.label['es'] || field.key) : field.key
-  // field.info available for future tooltip support on dynamic fields
-  const replaceLabel = (html: string) => html.replace('class="field-label">' + field.key, 'class="field-label">' + esc(label))
+  const infoId = field.info ? field.key : undefined
+  const infoHtml = field.info ? infoBtn(field.key) : ''
+  const tooltipHtml = field.info ? infoTooltip(field.key, '', lang).replace(`>${t('', lang)}<`, `>${field.info[lang] || field.info['es'] || ''}<`) : ''
+
+  // Helper to add info button to field-left and tooltip after
+  const withInfo = (html: string) => {
+    if (!field.info) return html
+    // Insert info button after field-label span
+    const labelEnd = html.indexOf('</span>')
+    if (labelEnd === -1) return html
+    const afterLabel = labelEnd + '</span>'.length
+    const withBtn = html.slice(0, afterLabel) + infoHtml + html.slice(afterLabel)
+    // Add tooltip div at end
+    return withBtn + `<div class="info-tooltip" id="info-${field.key}">${esc(field.info[lang] || field.info['es'] || '')}</div>`
+  }
+
   switch (field.type) {
-    case 'secret': return replaceLabel(secretField(field.key, value, lang))
-    case 'boolean': return replaceLabel(boolField(field.key, value, lang))
-    case 'number': return replaceLabel(numField(field.key, value, lang))
-    case 'select': return selectField(field.key, value, field.options ?? [], lang, label)
-    case 'textarea': return replaceLabel(textareaField(field.key, value, lang))
-    default: return replaceLabel(textField(field.key, value, lang))
+    case 'divider': return dividerField(label)
+    case 'readonly': return readonlyField(field.key, value, label)
+    case 'tags': return tagsField(field.key, value, lang, label, field.separator)
+    case 'duration': return durationField(field.key, value, lang, label, field.unit || 'ms', infoId)
+    case 'secret': return withInfo(secretField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
+    case 'boolean': return withInfo(boolField(field.key, value, lang, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
+    case 'number': {
+      const numHtml = field.unit
+        ? durationField(field.key, value, lang, label, field.unit, infoId)
+        : withInfo(numField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
+      return numHtml
+    }
+    case 'select': return withInfo(selectField(field.key, value, field.options ?? [], lang, label))
+    case 'textarea': return withInfo(textareaField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
+    case 'model-select': return withInfo(textField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
+    default: return withInfo(textField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
   }
 }

@@ -322,6 +322,8 @@ const manifest: ModuleManifest = {
       en: 'Phone calls with real-time conversational AI powered by Gemini Live.',
     },
     order: 15,
+    group: 'channels',
+    icon: '&#128222;',
     fields: [
       {
         key: 'TWILIO_ACCOUNT_SID',

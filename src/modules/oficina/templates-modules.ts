@@ -29,12 +29,12 @@ export function renderModulePanels(modules: ModuleInfo[], config: Record<string,
     const isActive = mod.active
     const canToggle = mod.removable !== false
 
-    h += `<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow-sm)">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-primary)">
+    h += `<div class="module-panel">
+      <div class="module-panel-header">
         <div>
-          <span style="font-size:15px;font-weight:600;color:var(--text-primary)">${esc(title)}</span>
+          <span class="module-panel-title">${esc(title)}</span>
           <span class="panel-badge ${isActive ? 'badge-active' : 'badge-soon'}" style="margin-left:8px">${isActive ? t('activated', lang) : t('deactivated', lang)}</span>
-          <span style="font-size:11px;color:var(--text-tertiary);margin-left:8px">${esc(mod.type)}</span>
+          <span class="module-panel-type">${esc(mod.type)}</span>
         </div>
         ${canToggle ? `<form method="POST" action="/oficina/modules/toggle" style="margin:0">
           <input type="hidden" name="module" value="${esc(mod.name)}">
@@ -46,7 +46,7 @@ export function renderModulePanels(modules: ModuleInfo[], config: Record<string,
       </div>`
 
     if (isActive && mod.oficina?.fields && mod.oficina.fields.length > 0) {
-      h += `<div style="padding:8px 16px 14px;border-top:1px solid var(--border-light);background:var(--bg-secondary)">`
+      h += `<div class="module-panel-body">`
       if (info) h += `<div class="panel-info">${esc(info)}</div>`
       for (const field of mod.oficina.fields) {
         const value = config[field.key] ?? ''

@@ -739,6 +739,8 @@ const manifest: ModuleManifest = {
       en: 'Manage documents, categories, FAQs, API connectors, and web sources.',
     },
     order: 12,
+    group: 'data',
+    icon: '&#128218;',
     fields: [
       {
         key: 'KNOWLEDGE_DIR',

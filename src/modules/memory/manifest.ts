@@ -61,6 +61,8 @@ const manifest: ModuleManifest = {
       en: 'Message buffer in Redis + persistence in PostgreSQL. 3 tiers: hot (messages), warm (summaries), cold (contact memory).',
     },
     order: 40,
+    group: 'data',
+    icon: '&#128190;',
     fields: [
       // ── Buffer y sesiones ──
       { key: 'MEMORY_BUFFER_MESSAGE_COUNT', type: 'number', label: { es: 'Mensajes en buffer', en: 'Buffer message count' } },

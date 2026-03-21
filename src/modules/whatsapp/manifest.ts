@@ -92,6 +92,8 @@ const manifest: ModuleManifest = {
       en: 'Direct WhatsApp connection. Credentials stored in database, not filesystem.',
     },
     order: 10,
+    group: 'channels',
+    icon: '&#128172;',
     fields: [
       {
         key: 'WHATSAPP_CONNECTED_NUMBER',

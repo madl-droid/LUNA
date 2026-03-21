@@ -11,10 +11,11 @@ import { jsonResponse, parseQuery, readBody } from '../../kernel/http-helpers.js
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
-import { pageLayout } from './templates.js'
+import { pageLayout, type DynamicSidebarModule } from './templates.js'
 import { renderSection } from './templates-sections.js'
 import type { SectionData } from './templates-sections.js'
 import type { ModuleInfo } from './templates-modules.js'
+import { renderModulePanels } from './templates-modules.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'oficina' })
@@ -100,6 +101,7 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
   waConnected: boolean
   gmailConnected: boolean
   googleAppsConnected: boolean
+  dynamicModules: DynamicSidebarModule[]
 }> {
   // Config: DB > .env > defaults
   const envFile = findEnvFile()
@@ -184,6 +186,22 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     }
   } catch { /* google-apps not available */ }
 
+  // Dynamic sidebar modules (modules with oficina.group defined)
+  const dynamicModules: DynamicSidebarModule[] = []
+  for (const m of moduleStates) {
+    const manifest = registry.listModules().find(lm => lm.manifest.name === m.name)?.manifest
+    if (manifest?.oficina?.group) {
+      dynamicModules.push({
+        name: manifest.name,
+        group: manifest.oficina.group,
+        icon: manifest.oficina.icon || '&#128230;',
+        order: manifest.oficina.order,
+        title: manifest.oficina.title,
+        active: m.active,
+      })
+    }
+  }
+
   return {
     config,
     version,
@@ -196,6 +214,7 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     waConnected: waState.status === 'connected',
     gmailConnected: gmailAuth.connected,
     googleAppsConnected: googleAppsAuth.connected,
+    dynamicModules,
   }
 }
 
@@ -381,7 +400,17 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* module not available */ }
       }
 
-      const content = renderSection(section, sectionData)
+      // Try custom section renderer first, then fall back to dynamic module rendering
+      let content = renderSection(section, sectionData)
+
+      if (!content) {
+        // Try rendering as a dynamic module page (module with oficina.fields)
+        const modInfo = data.moduleStates.find(m => m.name === section)
+        if (modInfo && modInfo.active && modInfo.oficina?.fields && modInfo.oficina.fields.length > 0) {
+          content = renderModulePanels([modInfo], data.config, lang, section)
+        }
+      }
+
       if (!content) {
         res.writeHead(404, { 'Content-Type': 'text/plain' })
         res.end('Section not found')
@@ -397,6 +426,7 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         waConnected: data.waConnected,
         gmailConnected: data.gmailConnected,
         googleAppsConnected: data.googleAppsConnected,
+        dynamicModules: data.dynamicModules,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
