@@ -1,4 +1,4 @@
-// scheduled-tasks/api-routes.ts — CRUD + trigger API routes
+// scheduled-tasks/api-routes.ts — CRUD + trigger + user groups API routes
 
 import type { Pool } from 'pg'
 import type { ApiRoute } from '../../kernel/types.js'
@@ -24,6 +24,67 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
+    // GET /oficina/api/scheduled-tasks/groups — user groups with users for recipient dropdown
+    {
+      method: 'GET',
+      path: 'groups',
+      handler: async (_req, res) => {
+        try {
+          const usersDb = registry.getOptional<{
+            getAllListConfigs(): Promise<Array<{ listType: string; displayName: string; isEnabled: boolean }>>
+            listUsers(listType: string, activeOnly?: boolean): Promise<Array<{ id: string; senderId: string; displayName: string | null; channel: string }>>
+          }>('users:db')
+
+          if (!usersDb) {
+            jsonResponse(res, 200, { groups: [] })
+            return
+          }
+
+          const configs = await usersDb.getAllListConfigs()
+          const groups = []
+          for (const cfg of configs) {
+            if (!cfg.isEnabled) continue
+            const users = await usersDb.listUsers(cfg.listType)
+            groups.push({
+              listType: cfg.listType,
+              displayName: cfg.displayName,
+              users: users.map(u => ({
+                id: u.id,
+                senderId: u.senderId,
+                displayName: u.displayName,
+                channel: u.channel,
+              })),
+            })
+          }
+          jsonResponse(res, 200, { groups })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /oficina/api/scheduled-tasks/tools — available tools for action selector
+    {
+      method: 'GET',
+      path: 'tools',
+      handler: async (_req, res) => {
+        try {
+          const toolsReg = registry.getOptional<{
+            getCatalog(): Array<{ name: string; description: string; category: string }>
+          }>('tools:registry')
+
+          if (!toolsReg) {
+            jsonResponse(res, 200, { tools: [] })
+            return
+          }
+
+          jsonResponse(res, 200, { tools: toolsReg.getCatalog() })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // POST /oficina/api/scheduled-tasks/create
     {
       method: 'POST',
@@ -31,12 +92,20 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       handler: async (req, res) => {
         try {
           const input = await parseBody<CreateTaskInput>(req)
-          if (!input.name || !input.prompt || !input.cron) {
-            jsonResponse(res, 400, { error: 'name, prompt, and cron are required' })
+          if (!input.name || !input.prompt) {
+            jsonResponse(res, 400, { error: 'name and prompt are required' })
             return
           }
+          // cron required only for cron trigger type
+          if ((!input.trigger_type || input.trigger_type === 'cron') && !input.cron) {
+            jsonResponse(res, 400, { error: 'cron is required for cron-triggered tasks' })
+            return
+          }
+          // Default cron for non-cron triggers
+          if (!input.cron) input.cron = '0 0 31 2 *' // never fires via cron
+
           const task = await store.createTask(db, input)
-          if (task.enabled) {
+          if (task.enabled && task.trigger_type === 'cron') {
             await scheduleTask(task)
           }
           jsonResponse(res, 201, { task })
@@ -62,8 +131,8 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
             jsonResponse(res, 404, { error: 'Task not found' })
             return
           }
-          // Reschedule (handles enable/disable + cron changes)
-          if (task.enabled) {
+          // Reschedule cron tasks (handles enable/disable + cron changes)
+          if (task.trigger_type === 'cron' && task.enabled) {
             await scheduleTask(task)
           } else {
             await unscheduleTask(task.id)

@@ -9,16 +9,26 @@ import * as store from './store.js'
 import { startScheduler, stopScheduler } from './scheduler.js'
 import { createApiRoutes } from './api-routes.js'
 import { renderTasksSection } from './templates.js'
+import { executeTask } from './executor.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'scheduled-tasks' })
 
+/** Event hooks that can trigger tasks */
+const SUPPORTED_EVENTS = [
+  'contact:new',
+  'contact:status_changed',
+  'message:incoming',
+  'module:activated',
+  'module:deactivated',
+] as const
+
 const manifest: ModuleManifest = {
   name: 'scheduled-tasks',
-  version: '1.0.0',
+  version: '2.0.0',
   description: {
-    es: 'Tareas programadas que el agente ejecuta automaticamente',
-    en: 'Scheduled tasks the agent executes automatically',
+    es: 'Tareas programadas con destinatarios, acciones y triggers',
+    en: 'Scheduled tasks with recipients, actions, and triggers',
   },
   type: 'feature',
   removable: true,
@@ -44,15 +54,11 @@ const manifest: ModuleManifest = {
     const db = registry.getDb()
     const redis = registry.getRedis()
 
-    // Ensure DB tables
+    // Ensure DB tables + migrations
     await store.ensureTables(db)
 
-    // Set up API routes (mutate the array so oficina picks them up)
+    // Set up API routes
     const routes = createApiRoutes(db, registry, config)
-
-    // Add the UI route that renders tasks inline (used by oficina section)
-    // Not needed since we render inline in the section, but keep list endpoint
-
     if (manifest.oficina) {
       manifest.oficina.apiRoutes = routes
     }
@@ -60,11 +66,59 @@ const manifest: ModuleManifest = {
     // Provide render function so oficina can call it
     registry.provide('scheduled-tasks:renderSection', async (lang: 'es' | 'en') => {
       const tasks = await store.listTasks(db)
-      return renderTasksSection(tasks, lang)
+
+      // Fetch user groups for the template
+      let userGroups: Array<{ listType: string; displayName: string; isEnabled: boolean; users: Array<{ id: string; senderId: string; displayName: string | null; channel: string }> }> = []
+      try {
+        const usersDb = registry.getOptional<{
+          getAllListConfigs(): Promise<Array<{ listType: string; displayName: string; isEnabled: boolean }>>
+          listUsers(listType: string, activeOnly?: boolean): Promise<Array<{ id: string; senderId: string; displayName: string | null; channel: string }>>
+        }>('users:db')
+        if (usersDb) {
+          const configs = await usersDb.getAllListConfigs()
+          for (const cfg of configs) {
+            if (!cfg.isEnabled) continue
+            const users = await usersDb.listUsers(cfg.listType)
+            userGroups.push({
+              listType: cfg.listType,
+              displayName: cfg.displayName,
+              isEnabled: cfg.isEnabled,
+              users: users.map(u => ({ id: u.id, senderId: u.senderId, displayName: u.displayName, channel: u.channel })),
+            })
+          }
+        }
+      } catch { /* users module not available */ }
+
+      // Fetch available tools for the action selector
+      let availableTools: Array<{ name: string; displayName: string }> = []
+      try {
+        const toolsReg = registry.getOptional<{
+          getCatalog(): Array<{ name: string; description: string }>
+        }>('tools:registry')
+        if (toolsReg) {
+          availableTools = toolsReg.getCatalog().map(t => ({ name: t.name, displayName: t.name }))
+        }
+      } catch { /* tools module not available */ }
+
+      return renderTasksSection(tasks, lang, userGroups, availableTools)
     })
 
-    // Start scheduler if enabled
+    // Register event-based triggers
     if (config.SCHEDULED_TASKS_ENABLED) {
+      for (const eventName of SUPPORTED_EVENTS) {
+        registry.addHook('scheduled-tasks', eventName, async (payload, correlationId) => {
+          const tasks = await store.getTasksByEvent(db, eventName)
+          for (const task of tasks) {
+            try {
+              await executeTask(db, registry, task, config)
+            } catch (err) {
+              logger.error({ taskId: task.id, event: eventName, err }, 'Event-triggered task failed')
+            }
+          }
+        }, 100) // low priority so other handlers run first
+      }
+
+      // Start cron scheduler
       await startScheduler(db, redis, registry, config)
     } else {
       logger.info('Scheduled tasks disabled by config')
