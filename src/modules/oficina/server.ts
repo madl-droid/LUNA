@@ -354,6 +354,17 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         googleAuth: data.googleAuth,
         moduleStates: data.moduleStates,
       }
+
+      // Scheduled tasks: render via module service (needs lang)
+      if (section === 'scheduled-tasks') {
+        try {
+          const renderFn = registry.getOptional<(lang: string) => Promise<string>>('scheduled-tasks:renderSection')
+          if (renderFn) {
+            sectionData.scheduledTasksHtml = await renderFn(lang)
+          }
+        } catch { /* module not available */ }
+      }
+
       const content = renderSection(section, sectionData)
       if (!content) {
         res.writeHead(404, { 'Content-Type': 'text/plain' })

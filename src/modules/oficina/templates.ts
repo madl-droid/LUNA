@@ -20,6 +20,7 @@ const NAV_SECTIONS = [
   { id: 'naturalidad', key: 'sec_naturalidad', icon: '&#127917;', group: 'pipeline' },
   // Leads
   { id: 'lead-scoring', key: 'sec_lead_scoring', icon: '&#128202;', group: 'leads' },
+  { id: 'scheduled-tasks', key: 'sec_scheduled_tasks', icon: '&#128197;', group: 'leads' },
   // System
   { id: 'modules', key: 'sec_modules', icon: '&#128230;', group: 'system' },
   { id: 'db', key: 'sec_db', icon: '&#128452;', group: 'system' },

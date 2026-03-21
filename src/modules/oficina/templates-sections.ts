@@ -12,6 +12,7 @@ export interface SectionData {
   waState?: { status: string; qrDataUrl: string | null; lastDisconnectReason: string | null; moduleEnabled: boolean }
   googleAuth?: { connected: boolean; email: string | null }
   moduleStates?: ModuleInfo[]
+  scheduledTasksHtml?: string
 }
 
 function panelBody(fieldsHtml: string[]): string {
@@ -363,6 +364,12 @@ export function renderEngineMetricsSection(data: SectionData): string {
       </script>
     </div>
   </div>`
+export function renderScheduledTasksSection(data: SectionData): string {
+  if (data.scheduledTasksHtml) return data.scheduledTasksHtml
+  // Fallback if render service not available
+  return `<div class="panel"><div class="panel-body" style="border-top:none;padding:20px;text-align:center;color:var(--text-tertiary)">
+    ${data.lang === 'es' ? 'Modulo de tareas programadas no disponible.' : 'Scheduled tasks module not available.'}
+  </div></div>`
 }
 
 export function renderSection(section: string, data: SectionData): string | null {
@@ -377,6 +384,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'naturalidad': return renderNaturalidadSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'engine-metrics': return renderEngineMetricsSection(data)
+    case 'scheduled-tasks': return renderScheduledTasksSection(data)
     case 'modules': return renderModulesSection(data)
     case 'db': return renderDbSection(data)
     case 'redis': return renderRedisSection(data)
