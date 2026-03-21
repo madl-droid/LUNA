@@ -95,8 +95,11 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
   lastScan: { lastScanAt: string; replacements: Array<{ configKey: string; oldModel: string; newModel: string }> } | null
   moduleStates: ModuleInfo[]
   waState: { status: string; qrDataUrl: string | null; lastDisconnectReason: string | null; moduleEnabled: boolean }
-  googleAuth: { connected: boolean; email: string | null }
+  gmailAuth: { connected: boolean; email: string | null }
+  googleAppsAuth: { connected: boolean; email: string | null }
   waConnected: boolean
+  gmailConnected: boolean
+  googleAppsConnected: boolean
 }> {
   // Config: DB > .env > defaults
   const envFile = findEnvFile()
@@ -168,9 +171,18 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     }
   } catch { /* whatsapp not available */ }
 
-  // Google auth — gmail doesn't expose a service, only API routes.
-  // Initial SSR render shows "not connected" — client JS can refresh via API.
-  const googleAuth = { connected: false, email: null as string | null }
+  // Gmail auth — only API routes, no server-side state available at SSR time.
+  const gmailAuth = { connected: false, email: null as string | null }
+  // Google Apps auth — try to get state from OAuthManager service.
+  const googleAppsAuth = { connected: false, email: null as string | null }
+  try {
+    const oauthState = registry.getOptional<{ getState(): { status: string; email: string | null } }>('google-apps:oauth')
+    if (oauthState) {
+      const state = oauthState.getState()
+      googleAppsAuth.connected = state.status === 'connected' || state.status === 'active'
+      googleAppsAuth.email = state.email
+    }
+  } catch { /* google-apps not available */ }
 
   return {
     config,
@@ -179,8 +191,11 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     lastScan,
     moduleStates,
     waState,
-    googleAuth,
+    gmailAuth,
+    googleAppsAuth,
     waConnected: waState.status === 'connected',
+    gmailConnected: gmailAuth.connected,
+    googleAppsConnected: googleAppsAuth.connected,
   }
 }
 
@@ -351,7 +366,8 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         allModels: data.allModels,
         lastScan: data.lastScan,
         waState: data.waState,
-        googleAuth: data.googleAuth,
+        gmailAuth: data.gmailAuth,
+        googleAppsAuth: data.googleAppsAuth,
         moduleStates: data.moduleStates,
       }
 
@@ -379,6 +395,8 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         version: data.version,
         flash,
         waConnected: data.waConnected,
+        gmailConnected: data.gmailConnected,
+        googleAppsConnected: data.googleAppsConnected,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
