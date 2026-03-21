@@ -1,5 +1,5 @@
-// LUNA — Module: knowledge — PostgreSQL Store
-// Persistencia: documentos, chunks, FAQs, sync sources.
+// LUNA — Module: knowledge — PostgreSQL Store v2
+// Persistencia: documentos, chunks, FAQs, sync sources, categories, API connectors, web sources.
 
 import type { Pool } from 'pg'
 import pino from 'pino'
@@ -9,12 +9,17 @@ import type {
   KnowledgeFAQ,
   KnowledgeSyncSource,
   KnowledgeCategory,
+  KnowledgeApiConnector,
+  KnowledgeWebSource,
   SyncFrequency,
   FAQSourceType,
   DocumentSourceType,
   DocumentMetadata,
+  EmbeddingStatus,
   KnowledgeStats,
   UpgradeSuggestion,
+  ApiAuthType,
+  ApiAuthConfig,
 } from './types.js'
 
 const logger = pino({ name: 'knowledge:pg' })
@@ -25,22 +30,46 @@ export class KnowledgePgStore {
   // ─── Migrations ────────────────────────────
 
   async runMigrations(): Promise<void> {
+    // Enable pgvector extension (may already exist from memory module)
+    await this.db.query(`CREATE EXTENSION IF NOT EXISTS vector`)
+
     await this.db.query(`
-      CREATE TABLE IF NOT EXISTS knowledge_documents (
+      CREATE TABLE IF NOT EXISTS knowledge_categories (
         id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         title         text NOT NULL,
-        category      text NOT NULL DEFAULT 'consultable',
-        source_type   text NOT NULL DEFAULT 'upload',
-        source_ref    text,
-        content_hash  text NOT NULL,
-        file_path     text,
-        mime_type     text NOT NULL,
-        metadata      jsonb NOT NULL DEFAULT '{}',
-        chunk_count   int NOT NULL DEFAULT 0,
-        hit_count     int NOT NULL DEFAULT 0,
-        last_hit_at   timestamptz,
-        created_at    timestamptz NOT NULL DEFAULT now(),
-        updated_at    timestamptz NOT NULL DEFAULT now()
+        description   text NOT NULL DEFAULT '',
+        is_default    boolean NOT NULL DEFAULT false,
+        position      int NOT NULL DEFAULT 0,
+        created_at    timestamptz NOT NULL DEFAULT now()
+      )
+    `)
+
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_documents (
+        id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        title             text NOT NULL,
+        description       text NOT NULL DEFAULT '',
+        is_core           boolean NOT NULL DEFAULT false,
+        source_type       text NOT NULL DEFAULT 'upload',
+        source_ref        text,
+        content_hash      text NOT NULL,
+        file_path         text,
+        mime_type         text NOT NULL,
+        metadata          jsonb NOT NULL DEFAULT '{}',
+        chunk_count       int NOT NULL DEFAULT 0,
+        hit_count         int NOT NULL DEFAULT 0,
+        last_hit_at       timestamptz,
+        embedding_status  text NOT NULL DEFAULT 'pending',
+        created_at        timestamptz NOT NULL DEFAULT now(),
+        updated_at        timestamptz NOT NULL DEFAULT now()
+      )
+    `)
+
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_document_categories (
+        document_id   uuid NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+        category_id   uuid NOT NULL REFERENCES knowledge_categories(id) ON DELETE CASCADE,
+        PRIMARY KEY (document_id, category_id)
       )
     `)
 
@@ -52,21 +81,16 @@ export class KnowledgePgStore {
         section       text,
         chunk_index   int NOT NULL,
         page          int,
+        has_embedding boolean NOT NULL DEFAULT false,
+        embedding     vector(1536),
         tsv           tsvector,
         created_at    timestamptz NOT NULL DEFAULT now()
       )
     `)
 
-    // GIN index on tsvector for Full Text Search
-    await this.db.query(`
-      CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tsv
-        ON knowledge_chunks USING GIN(tsv)
-    `)
-
-    await this.db.query(`
-      CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc
-        ON knowledge_chunks(document_id)
-    `)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tsv ON knowledge_chunks USING GIN(tsv)`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(document_id)`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WHERE has_embedding = true`)
 
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS knowledge_faqs (
@@ -90,7 +114,7 @@ export class KnowledgePgStore {
         label             text NOT NULL,
         ref               text NOT NULL,
         frequency         text NOT NULL DEFAULT '24h',
-        auto_category     text NOT NULL DEFAULT 'consultable',
+        auto_category_id  text,
         last_sync_at      timestamptz,
         last_sync_status  text,
         file_count        int NOT NULL DEFAULT 0,
@@ -98,12 +122,40 @@ export class KnowledgePgStore {
       )
     `)
 
-    // Table for tracking knowledge gaps (queries with no results)
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS knowledge_gaps (
         id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         query       text NOT NULL,
         created_at  timestamptz NOT NULL DEFAULT now()
+      )
+    `)
+
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_api_connectors (
+        id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        title               text NOT NULL,
+        description         text NOT NULL DEFAULT '',
+        base_url            text NOT NULL,
+        auth_type           text NOT NULL DEFAULT 'none',
+        auth_config         jsonb NOT NULL DEFAULT '{}',
+        query_instructions  text NOT NULL DEFAULT '',
+        active              boolean NOT NULL DEFAULT true,
+        created_at          timestamptz NOT NULL DEFAULT now()
+      )
+    `)
+
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_web_sources (
+        id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        url                 text NOT NULL,
+        title               text NOT NULL,
+        description         text NOT NULL DEFAULT '',
+        category_id         text,
+        cache_hash          text,
+        cached_at           timestamptz,
+        refresh_frequency   text NOT NULL DEFAULT '24h',
+        chunk_count         int NOT NULL DEFAULT 0,
+        created_at          timestamptz NOT NULL DEFAULT now()
       )
     `)
 
@@ -114,28 +166,34 @@ export class KnowledgePgStore {
 
   async insertDocument(doc: {
     title: string
-    category: KnowledgeCategory
+    description?: string
+    isCore?: boolean
     sourceType: DocumentSourceType
     sourceRef: string | null
     contentHash: string
     filePath: string | null
     mimeType: string
     metadata: DocumentMetadata
+    category?: KnowledgeCategory
   }): Promise<string> {
     const res = await this.db.query<{ id: string }>(
       `INSERT INTO knowledge_documents
-        (title, category, source_type, source_ref, content_hash, file_path, mime_type, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (title, description, is_core, source_type, source_ref, content_hash, file_path, mime_type, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
-      [doc.title, doc.category, doc.sourceType, doc.sourceRef, doc.contentHash,
-       doc.filePath, doc.mimeType, JSON.stringify(doc.metadata)],
+      [doc.title, doc.description ?? '', doc.isCore ?? false, doc.sourceType, doc.sourceRef,
+       doc.contentHash, doc.filePath, doc.mimeType, JSON.stringify(doc.metadata)],
     )
     return res.rows[0]!.id
   }
 
   async getDocument(id: string): Promise<KnowledgeDocument | null> {
     const res = await this.db.query<KnowledgeDocumentRow>(
-      `SELECT * FROM knowledge_documents WHERE id = $1`, [id],
+      `SELECT d.*, COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+       FROM knowledge_documents d
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       WHERE d.id = $1
+       GROUP BY d.id`, [id],
     )
     const row = res.rows[0]
     if (!row) return null
@@ -144,7 +202,11 @@ export class KnowledgePgStore {
 
   async getDocumentByHash(contentHash: string): Promise<KnowledgeDocument | null> {
     const res = await this.db.query<KnowledgeDocumentRow>(
-      `SELECT * FROM knowledge_documents WHERE content_hash = $1`, [contentHash],
+      `SELECT d.*, COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+       FROM knowledge_documents d
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       WHERE d.content_hash = $1
+       GROUP BY d.id`, [contentHash],
     )
     const row = res.rows[0]
     if (!row) return null
@@ -153,7 +215,11 @@ export class KnowledgePgStore {
 
   async getDocumentBySourceRef(sourceRef: string): Promise<KnowledgeDocument | null> {
     const res = await this.db.query<KnowledgeDocumentRow>(
-      `SELECT * FROM knowledge_documents WHERE source_ref = $1`, [sourceRef],
+      `SELECT d.*, COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+       FROM knowledge_documents d
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       WHERE d.source_ref = $1
+       GROUP BY d.id`, [sourceRef],
     )
     const row = res.rows[0]
     if (!row) return null
@@ -170,12 +236,8 @@ export class KnowledgePgStore {
     const params: unknown[] = []
     let idx = 1
 
-    if (opts.category) {
-      conditions.push(`category = $${idx++}`)
-      params.push(opts.category)
-    }
     if (opts.search) {
-      conditions.push(`title ILIKE $${idx++}`)
+      conditions.push(`d.title ILIKE $${idx++}`)
       params.push(`%${opts.search}%`)
     }
 
@@ -184,13 +246,17 @@ export class KnowledgePgStore {
     const offset = opts.offset ?? 0
 
     const countRes = await this.db.query<{ count: string }>(
-      `SELECT count(*) as count FROM knowledge_documents ${where}`, params,
+      `SELECT count(*) as count FROM knowledge_documents d ${where}`, params,
     )
     const total = parseInt(countRes.rows[0]!.count, 10)
 
     const dataRes = await this.db.query<KnowledgeDocumentRow>(
-      `SELECT * FROM knowledge_documents ${where}
-       ORDER BY updated_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT d.*, COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+       FROM knowledge_documents d
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       ${where}
+       GROUP BY d.id
+       ORDER BY d.updated_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     )
 
@@ -200,13 +266,6 @@ export class KnowledgePgStore {
     }
   }
 
-  async updateDocumentCategory(id: string, category: KnowledgeCategory): Promise<void> {
-    await this.db.query(
-      `UPDATE knowledge_documents SET category = $1, updated_at = now() WHERE id = $2`,
-      [category, id],
-    )
-  }
-
   async updateDocumentHash(id: string, contentHash: string, chunkCount: number): Promise<void> {
     await this.db.query(
       `UPDATE knowledge_documents
@@ -214,6 +273,39 @@ export class KnowledgePgStore {
        WHERE id = $3`,
       [contentHash, chunkCount, id],
     )
+  }
+
+  async updateDocumentCore(id: string, isCore: boolean): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_documents SET is_core = $1, updated_at = now() WHERE id = $2`,
+      [isCore, id],
+    )
+  }
+
+  async updateDocumentEmbeddingStatus(id: string, status: EmbeddingStatus): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_documents SET embedding_status = $1, updated_at = now() WHERE id = $2`,
+      [status, id],
+    )
+  }
+
+  async getCoreDocumentCount(): Promise<number> {
+    const res = await this.db.query<{ count: string }>(
+      `SELECT count(*) as count FROM knowledge_documents WHERE is_core = true`,
+    )
+    return parseInt(res.rows[0]!.count, 10)
+  }
+
+  async getCoreDocuments(): Promise<KnowledgeDocument[]> {
+    const res = await this.db.query<KnowledgeDocumentRow>(
+      `SELECT d.*, COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+       FROM knowledge_documents d
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       WHERE d.is_core = true
+       GROUP BY d.id
+       ORDER BY d.title`,
+    )
+    return res.rows.map(mapDocRow)
   }
 
   async incrementHitCount(documentId: string): Promise<void> {
@@ -226,21 +318,61 @@ export class KnowledgePgStore {
   }
 
   async deleteDocument(id: string): Promise<void> {
-    // Chunks are CASCADE deleted
     await this.db.query(`DELETE FROM knowledge_documents WHERE id = $1`, [id])
   }
 
   async getDocumentsForDowngrade(days: number): Promise<KnowledgeDocument[]> {
     const res = await this.db.query<KnowledgeDocumentRow>(
-      `SELECT * FROM knowledge_documents
-       WHERE category = 'core'
+      `SELECT d.*, COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+       FROM knowledge_documents d
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       WHERE d.is_core = true
          AND (
-           (hit_count = 0 AND created_at < now() - interval '1 day' * $1)
-           OR (last_hit_at IS NOT NULL AND last_hit_at < now() - interval '1 day' * $1)
-         )`,
+           (d.hit_count = 0 AND d.created_at < now() - interval '1 day' * $1)
+           OR (d.last_hit_at IS NOT NULL AND d.last_hit_at < now() - interval '1 day' * $1)
+         )
+       GROUP BY d.id`,
       [days],
     )
     return res.rows.map(mapDocRow)
+  }
+
+  // ─── Document Categories ──────────────────
+
+  async assignDocumentCategory(documentId: string, categoryId: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO knowledge_document_categories (document_id, category_id) VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [documentId, categoryId],
+    )
+  }
+
+  // ─── Categories CRUD ─────────────────────
+
+  async listCategories(): Promise<KnowledgeCategory[]> {
+    const res = await this.db.query<CategoryRow>(
+      `SELECT * FROM knowledge_categories ORDER BY position, created_at`,
+    )
+    return res.rows.map(mapCategoryRow)
+  }
+
+  async getDefaultCategory(): Promise<KnowledgeCategory | null> {
+    const res = await this.db.query<CategoryRow>(
+      `SELECT * FROM knowledge_categories WHERE is_default = true LIMIT 1`,
+    )
+    const row = res.rows[0]
+    if (!row) return null
+    return mapCategoryRow(row)
+  }
+
+  async findCategoryByTitle(title: string): Promise<KnowledgeCategory | null> {
+    const res = await this.db.query<CategoryRow>(
+      `SELECT * FROM knowledge_categories WHERE lower(title) = lower($1) LIMIT 1`,
+      [title],
+    )
+    const row = res.rows[0]
+    if (!row) return null
+    return mapCategoryRow(row)
   }
 
   // ─── Chunks CRUD ───────────────────────────
@@ -253,10 +385,8 @@ export class KnowledgePgStore {
   }>): Promise<void> {
     if (chunks.length === 0) return
 
-    // Delete existing chunks for this doc
     await this.db.query(`DELETE FROM knowledge_chunks WHERE document_id = $1`, [documentId])
 
-    // Insert batch
     const values: string[] = []
     const params: unknown[] = []
     let idx = 1
@@ -272,20 +402,20 @@ export class KnowledgePgStore {
       params,
     )
 
-    // Update chunk count
     await this.db.query(
       `UPDATE knowledge_documents SET chunk_count = $1, updated_at = now() WHERE id = $2`,
       [chunks.length, documentId],
     )
   }
 
-  async searchChunksFTS(query: string, category: KnowledgeCategory, limit: number): Promise<Array<{
+  async searchChunksFTS(query: string, limit: number): Promise<Array<{
     chunkId: string
     documentId: string
     content: string
     section: string | null
-    score: number
+    rank: number
     documentTitle: string
+    categoryIds: string[]
   }>> {
     const res = await this.db.query<{
       chunk_id: string
@@ -294,6 +424,7 @@ export class KnowledgePgStore {
       section: string | null
       rank: number
       document_title: string
+      category_ids: string[]
     }>(
       `SELECT
         c.id as chunk_id,
@@ -301,14 +432,16 @@ export class KnowledgePgStore {
         c.content,
         c.section,
         ts_rank(c.tsv, plainto_tsquery('spanish', $1)) as rank,
-        d.title as document_title
+        d.title as document_title,
+        COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
-       WHERE d.category = $2
-         AND c.tsv @@ plainto_tsquery('spanish', $1)
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       WHERE c.tsv @@ plainto_tsquery('spanish', $1)
+       GROUP BY c.id, c.document_id, c.content, c.section, c.tsv, d.title
        ORDER BY rank DESC
-       LIMIT $3`,
-      [query, category, limit],
+       LIMIT $2`,
+      [query, limit],
     )
 
     return res.rows.map(r => ({
@@ -316,9 +449,119 @@ export class KnowledgePgStore {
       documentId: r.document_id,
       content: r.content,
       section: r.section,
-      score: r.rank,
+      rank: r.rank,
       documentTitle: r.document_title,
+      categoryIds: r.category_ids,
     }))
+  }
+
+  async searchChunksVector(embedding: number[], limit: number): Promise<Array<{
+    chunkId: string
+    documentId: string
+    content: string
+    section: string | null
+    similarity: number
+    documentTitle: string
+    categoryIds: string[]
+  }>> {
+    const embStr = `[${embedding.join(',')}]`
+    const res = await this.db.query<{
+      chunk_id: string
+      document_id: string
+      content: string
+      section: string | null
+      similarity: number
+      document_title: string
+      category_ids: string[]
+    }>(
+      `SELECT
+        c.id as chunk_id,
+        c.document_id,
+        c.content,
+        c.section,
+        1 - (c.embedding <=> $1::vector) as similarity,
+        d.title as document_title,
+        COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+       FROM knowledge_chunks c
+       JOIN knowledge_documents d ON d.id = c.document_id
+       LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
+       WHERE c.has_embedding = true
+       GROUP BY c.id, c.document_id, c.content, c.section, c.embedding, d.title
+       ORDER BY c.embedding <=> $1::vector
+       LIMIT $2`,
+      [embStr, limit],
+    )
+
+    return res.rows.map(r => ({
+      chunkId: r.chunk_id,
+      documentId: r.document_id,
+      content: r.content,
+      section: r.section,
+      similarity: r.similarity,
+      documentTitle: r.document_title,
+      categoryIds: r.category_ids,
+    }))
+  }
+
+  async searchFaqsFTS(query: string, limit: number): Promise<Array<{
+    faqId: string
+    question: string
+    answer: string
+    rank: number
+  }>> {
+    const res = await this.db.query<{
+      id: string
+      question: string
+      answer: string
+      rank: number
+    }>(
+      `SELECT id, question, answer,
+        ts_rank(to_tsvector('spanish', question || ' ' || answer), plainto_tsquery('spanish', $1)) as rank
+       FROM knowledge_faqs
+       WHERE active = true
+         AND to_tsvector('spanish', question || ' ' || answer) @@ plainto_tsquery('spanish', $1)
+       ORDER BY rank DESC
+       LIMIT $2`,
+      [query, limit],
+    )
+
+    return res.rows.map(r => ({
+      faqId: r.id,
+      question: r.question,
+      answer: r.answer,
+      rank: r.rank,
+    }))
+  }
+
+  async getChunksWithoutEmbedding(documentId?: string): Promise<Array<{
+    id: string
+    content: string
+    documentId: string
+  }>> {
+    if (documentId) {
+      const res = await this.db.query<{ id: string; content: string; document_id: string }>(
+        `SELECT id, content, document_id FROM knowledge_chunks
+         WHERE document_id = $1 AND has_embedding = false
+         ORDER BY chunk_index`,
+        [documentId],
+      )
+      return res.rows.map(r => ({ id: r.id, content: r.content, documentId: r.document_id }))
+    }
+
+    const res = await this.db.query<{ id: string; content: string; document_id: string }>(
+      `SELECT id, content, document_id FROM knowledge_chunks
+       WHERE has_embedding = false
+       ORDER BY document_id, chunk_index`,
+    )
+    return res.rows.map(r => ({ id: r.id, content: r.content, documentId: r.document_id }))
+  }
+
+  async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
+    const embStr = `[${embedding.join(',')}]`
+    await this.db.query(
+      `UPDATE knowledge_chunks SET embedding = $1::vector, has_embedding = true WHERE id = $2`,
+      [embStr, chunkId],
+    )
   }
 
   async getAllChunksByCategory(category: KnowledgeCategory): Promise<Array<{
@@ -336,9 +579,7 @@ export class KnowledgePgStore {
       `SELECT c.content, d.title, c.document_id, c.section
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
-       WHERE d.category = $1
        ORDER BY c.document_id, c.chunk_index`,
-      [category],
     )
     return res.rows.map(r => ({
       content: r.content,
@@ -491,13 +732,13 @@ export class KnowledgePgStore {
     label: string
     ref: string
     frequency: SyncFrequency
-    autoCategory: KnowledgeCategory
+    autoCategoryId: string | null
   }): Promise<string> {
     const res = await this.db.query<{ id: string }>(
-      `INSERT INTO knowledge_sync_sources (type, label, ref, frequency, auto_category)
+      `INSERT INTO knowledge_sync_sources (type, label, ref, frequency, auto_category_id)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [src.type, src.label, src.ref, src.frequency, src.autoCategory],
+      [src.type, src.label, src.ref, src.frequency, src.autoCategoryId],
     )
     return res.rows[0]!.id
   }
@@ -505,7 +746,7 @@ export class KnowledgePgStore {
   async updateSyncSource(id: string, updates: {
     label?: string
     frequency?: SyncFrequency
-    autoCategory?: KnowledgeCategory
+    autoCategoryId?: string | null
   }): Promise<void> {
     const sets: string[] = []
     const params: unknown[] = []
@@ -513,7 +754,7 @@ export class KnowledgePgStore {
 
     if (updates.label !== undefined) { sets.push(`label = $${idx++}`); params.push(updates.label) }
     if (updates.frequency !== undefined) { sets.push(`frequency = $${idx++}`); params.push(updates.frequency) }
-    if (updates.autoCategory !== undefined) { sets.push(`auto_category = $${idx++}`); params.push(updates.autoCategory) }
+    if (updates.autoCategoryId !== undefined) { sets.push(`auto_category_id = $${idx++}`); params.push(updates.autoCategoryId) }
 
     if (sets.length === 0) return
     params.push(id)
@@ -553,6 +794,145 @@ export class KnowledgePgStore {
     )
   }
 
+  // ─── API Connectors CRUD ──────────────────
+
+  async insertApiConnector(data: Omit<KnowledgeApiConnector, 'id' | 'createdAt' | 'active'>): Promise<string> {
+    const res = await this.db.query<{ id: string }>(
+      `INSERT INTO knowledge_api_connectors (title, description, base_url, auth_type, auth_config, query_instructions)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [data.title, data.description, data.baseUrl, data.authType,
+       JSON.stringify(data.authConfig), data.queryInstructions],
+    )
+    return res.rows[0]!.id
+  }
+
+  async updateApiConnector(id: string, updates: Partial<KnowledgeApiConnector>): Promise<void> {
+    const sets: string[] = []
+    const params: unknown[] = []
+    let idx = 1
+
+    if (updates.title !== undefined) { sets.push(`title = $${idx++}`); params.push(updates.title) }
+    if (updates.description !== undefined) { sets.push(`description = $${idx++}`); params.push(updates.description) }
+    if (updates.baseUrl !== undefined) { sets.push(`base_url = $${idx++}`); params.push(updates.baseUrl) }
+    if (updates.authType !== undefined) { sets.push(`auth_type = $${idx++}`); params.push(updates.authType) }
+    if (updates.authConfig !== undefined) { sets.push(`auth_config = $${idx++}`); params.push(JSON.stringify(updates.authConfig)) }
+    if (updates.queryInstructions !== undefined) { sets.push(`query_instructions = $${idx++}`); params.push(updates.queryInstructions) }
+    if (updates.active !== undefined) { sets.push(`active = $${idx++}`); params.push(updates.active) }
+
+    if (sets.length === 0) return
+    params.push(id)
+
+    await this.db.query(
+      `UPDATE knowledge_api_connectors SET ${sets.join(', ')} WHERE id = $${idx}`,
+      params,
+    )
+  }
+
+  async deleteApiConnector(id: string): Promise<void> {
+    await this.db.query(`DELETE FROM knowledge_api_connectors WHERE id = $1`, [id])
+  }
+
+  async listApiConnectors(): Promise<KnowledgeApiConnector[]> {
+    const res = await this.db.query<ApiConnectorRow>(
+      `SELECT * FROM knowledge_api_connectors ORDER BY created_at DESC`,
+    )
+    return res.rows.map(mapApiConnectorRow)
+  }
+
+  async getApiConnector(id: string): Promise<KnowledgeApiConnector | null> {
+    const res = await this.db.query<ApiConnectorRow>(
+      `SELECT * FROM knowledge_api_connectors WHERE id = $1`, [id],
+    )
+    const row = res.rows[0]
+    if (!row) return null
+    return mapApiConnectorRow(row)
+  }
+
+  async countApiConnectors(): Promise<number> {
+    const res = await this.db.query<{ count: string }>(
+      `SELECT count(*) as count FROM knowledge_api_connectors`,
+    )
+    return parseInt(res.rows[0]!.count, 10)
+  }
+
+  // ─── Web Sources CRUD ─────────────────────
+
+  async insertWebSource(data: {
+    url: string
+    title: string
+    description: string
+    categoryId: string | null
+    refreshFrequency: SyncFrequency
+  }): Promise<string> {
+    const res = await this.db.query<{ id: string }>(
+      `INSERT INTO knowledge_web_sources (url, title, description, category_id, refresh_frequency)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [data.url, data.title, data.description, data.categoryId, data.refreshFrequency],
+    )
+    return res.rows[0]!.id
+  }
+
+  async updateWebSource(id: string, updates: Partial<{
+    url: string
+    title: string
+    description: string
+    categoryId: string | null
+    refreshFrequency: SyncFrequency
+    cacheHash: string
+    cachedAt: Date
+    chunkCount: number
+  }>): Promise<void> {
+    const sets: string[] = []
+    const params: unknown[] = []
+    let idx = 1
+
+    if (updates.url !== undefined) { sets.push(`url = $${idx++}`); params.push(updates.url) }
+    if (updates.title !== undefined) { sets.push(`title = $${idx++}`); params.push(updates.title) }
+    if (updates.description !== undefined) { sets.push(`description = $${idx++}`); params.push(updates.description) }
+    if (updates.categoryId !== undefined) { sets.push(`category_id = $${idx++}`); params.push(updates.categoryId) }
+    if (updates.refreshFrequency !== undefined) { sets.push(`refresh_frequency = $${idx++}`); params.push(updates.refreshFrequency) }
+    if (updates.cacheHash !== undefined) { sets.push(`cache_hash = $${idx++}`); params.push(updates.cacheHash) }
+    if (updates.cachedAt !== undefined) { sets.push(`cached_at = $${idx++}`); params.push(updates.cachedAt) }
+    if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
+
+    if (sets.length === 0) return
+    params.push(id)
+
+    await this.db.query(
+      `UPDATE knowledge_web_sources SET ${sets.join(', ')} WHERE id = $${idx}`,
+      params,
+    )
+  }
+
+  async deleteWebSource(id: string): Promise<void> {
+    await this.db.query(`DELETE FROM knowledge_web_sources WHERE id = $1`, [id])
+  }
+
+  async listWebSources(): Promise<KnowledgeWebSource[]> {
+    const res = await this.db.query<WebSourceRow>(
+      `SELECT * FROM knowledge_web_sources ORDER BY created_at DESC`,
+    )
+    return res.rows.map(mapWebSourceRow)
+  }
+
+  async getWebSource(id: string): Promise<KnowledgeWebSource | null> {
+    const res = await this.db.query<WebSourceRow>(
+      `SELECT * FROM knowledge_web_sources WHERE id = $1`, [id],
+    )
+    const row = res.rows[0]
+    if (!row) return null
+    return mapWebSourceRow(row)
+  }
+
+  async countWebSources(): Promise<number> {
+    const res = await this.db.query<{ count: string }>(
+      `SELECT count(*) as count FROM knowledge_web_sources`,
+    )
+    return parseInt(res.rows[0]!.count, 10)
+  }
+
   // ─── Gaps ──────────────────────────────────
 
   async recordGap(query: string): Promise<void> {
@@ -578,20 +958,23 @@ export class KnowledgePgStore {
   // ─── Stats ─────────────────────────────────
 
   async getStats(): Promise<KnowledgeStats> {
-    const [docs, chunks, faqs, syncs, top, gaps] = await Promise.all([
-      this.db.query<{ total: string; core: string; consultable: string }>(`
-        SELECT
-          count(*) as total,
-          count(*) FILTER (WHERE category = 'core') as core,
-          count(*) FILTER (WHERE category = 'consultable') as consultable
+    const [docs, chunks, faqs, syncs, categories, connectors, webSources, top, gaps] = await Promise.all([
+      this.db.query<{ total: string; core: string }>(`
+        SELECT count(*) as total, count(*) FILTER (WHERE is_core = true) as core
         FROM knowledge_documents
       `),
-      this.db.query<{ count: string }>(`SELECT count(*) as count FROM knowledge_chunks`),
+      this.db.query<{ total: string; embedded: string }>(`
+        SELECT count(*) as total, count(*) FILTER (WHERE has_embedding = true) as embedded
+        FROM knowledge_chunks
+      `),
       this.db.query<{ total: string; active: string }>(`
         SELECT count(*) as total, count(*) FILTER (WHERE active = true) as active
         FROM knowledge_faqs
       `),
       this.db.query<{ count: string }>(`SELECT count(*) as count FROM knowledge_sync_sources`),
+      this.db.query<{ count: string }>(`SELECT count(*) as count FROM knowledge_categories`),
+      this.db.query<{ count: string }>(`SELECT count(*) as count FROM knowledge_api_connectors`),
+      this.db.query<{ count: string }>(`SELECT count(*) as count FROM knowledge_web_sources`),
       this.db.query<{ id: string; title: string; hit_count: number }>(
         `SELECT id, title, hit_count FROM knowledge_documents ORDER BY hit_count DESC LIMIT 10`,
       ),
@@ -599,16 +982,20 @@ export class KnowledgePgStore {
     ])
 
     const docRow = docs.rows[0]!
+    const chunkRow = chunks.rows[0]!
     const faqRow = faqs.rows[0]!
 
     return {
       totalDocuments: parseInt(docRow.total, 10),
       coreDocuments: parseInt(docRow.core, 10),
-      consultableDocuments: parseInt(docRow.consultable, 10),
-      totalChunks: parseInt(chunks.rows[0]!.count, 10),
+      totalChunks: parseInt(chunkRow.total, 10),
+      embeddedChunks: parseInt(chunkRow.embedded, 10),
       totalFaqs: parseInt(faqRow.total, 10),
       activeFaqs: parseInt(faqRow.active, 10),
       syncSources: parseInt(syncs.rows[0]!.count, 10),
+      categories: parseInt(categories.rows[0]!.count, 10),
+      apiConnectors: parseInt(connectors.rows[0]!.count, 10),
+      webSources: parseInt(webSources.rows[0]!.count, 10),
       topDocuments: top.rows.map(r => ({ id: r.id, title: r.title, hitCount: r.hit_count })),
       recentGaps: gaps,
     }
@@ -618,17 +1005,17 @@ export class KnowledgePgStore {
 
   async getUpgradeSuggestions(minHits: number): Promise<UpgradeSuggestion[]> {
     const res = await this.db.query<{
-      id: string; title: string; category: string; hit_count: number
+      id: string; title: string; is_core: boolean; hit_count: number
     }>(
-      `SELECT id, title, category, hit_count FROM knowledge_documents
-       WHERE category = 'consultable' AND hit_count >= $1
+      `SELECT id, title, is_core, hit_count FROM knowledge_documents
+       WHERE is_core = false AND hit_count >= $1
        ORDER BY hit_count DESC LIMIT 20`,
       [minHits],
     )
     return res.rows.map(r => ({
       documentId: r.id,
       title: r.title,
-      category: r.category as KnowledgeCategory,
+      isCore: r.is_core,
       hitCount: r.hit_count,
       reason: `Consultado ${r.hit_count} veces — considerar promover a core`,
     }))
@@ -640,7 +1027,8 @@ export class KnowledgePgStore {
 interface KnowledgeDocumentRow {
   id: string
   title: string
-  category: string
+  description: string
+  is_core: boolean
   source_type: string
   source_ref: string | null
   content_hash: string
@@ -650,6 +1038,8 @@ interface KnowledgeDocumentRow {
   chunk_count: number
   hit_count: number
   last_hit_at: Date | null
+  embedding_status: string
+  category_ids: string[]
   created_at: Date
   updated_at: Date
 }
@@ -658,7 +1048,8 @@ function mapDocRow(r: KnowledgeDocumentRow): KnowledgeDocument {
   return {
     id: r.id,
     title: r.title,
-    category: r.category as KnowledgeCategory,
+    description: r.description,
+    isCore: r.is_core,
     sourceType: r.source_type as DocumentSourceType,
     sourceRef: r.source_ref,
     contentHash: r.content_hash,
@@ -668,6 +1059,8 @@ function mapDocRow(r: KnowledgeDocumentRow): KnowledgeDocument {
     chunkCount: r.chunk_count,
     hitCount: r.hit_count,
     lastHitAt: r.last_hit_at,
+    embeddingStatus: r.embedding_status as EmbeddingStatus,
+    categoryIds: r.category_ids,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -707,7 +1100,7 @@ interface SyncSourceRow {
   label: string
   ref: string
   frequency: string
-  auto_category: string
+  auto_category_id: string | null
   last_sync_at: Date | null
   last_sync_status: string | null
   file_count: number
@@ -721,10 +1114,84 @@ function mapSyncRow(r: SyncSourceRow): KnowledgeSyncSource {
     label: r.label,
     ref: r.ref,
     frequency: r.frequency as SyncFrequency,
-    autoCategory: r.auto_category as KnowledgeCategory,
+    autoCategoryId: r.auto_category_id,
     lastSyncAt: r.last_sync_at,
     lastSyncStatus: r.last_sync_status,
     fileCount: r.file_count,
+    createdAt: r.created_at,
+  }
+}
+
+interface CategoryRow {
+  id: string
+  title: string
+  description: string
+  is_default: boolean
+  position: number
+  created_at: Date
+}
+
+function mapCategoryRow(r: CategoryRow): KnowledgeCategory {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    isDefault: r.is_default,
+    position: r.position,
+    createdAt: r.created_at,
+  }
+}
+
+interface ApiConnectorRow {
+  id: string
+  title: string
+  description: string
+  base_url: string
+  auth_type: string
+  auth_config: ApiAuthConfig
+  query_instructions: string
+  active: boolean
+  created_at: Date
+}
+
+function mapApiConnectorRow(r: ApiConnectorRow): KnowledgeApiConnector {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    baseUrl: r.base_url,
+    authType: r.auth_type as ApiAuthType,
+    authConfig: r.auth_config,
+    queryInstructions: r.query_instructions,
+    active: r.active,
+    createdAt: r.created_at,
+  }
+}
+
+interface WebSourceRow {
+  id: string
+  url: string
+  title: string
+  description: string
+  category_id: string | null
+  cache_hash: string | null
+  cached_at: Date | null
+  refresh_frequency: string
+  chunk_count: number
+  created_at: Date
+}
+
+function mapWebSourceRow(r: WebSourceRow): KnowledgeWebSource {
+  return {
+    id: r.id,
+    url: r.url,
+    title: r.title,
+    description: r.description,
+    categoryId: r.category_id,
+    cacheHash: r.cache_hash,
+    cachedAt: r.cached_at,
+    refreshFrequency: r.refresh_frequency as SyncFrequency,
+    chunkCount: r.chunk_count,
     createdAt: r.created_at,
   }
 }
