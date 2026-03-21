@@ -16,10 +16,12 @@ export interface ModuleInfo {
   } | null
 }
 
-export function renderModulePanels(modules: ModuleInfo[], config: Record<string, string>, lang: Lang): string {
+export function renderModulePanels(modules: ModuleInfo[], config: Record<string, string>, lang: Lang, filterName?: string): string {
   let h = ''
 
-  const displayModules = modules.filter(m => m.name !== 'oficina')
+  const displayModules = filterName
+    ? modules.filter(m => m.name === filterName)
+    : modules.filter(m => m.name !== 'oficina')
 
   for (const mod of displayModules) {
     const title = mod.oficina?.title ? (mod.oficina.title[lang] || mod.oficina.title.es || mod.name) : mod.name

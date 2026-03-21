@@ -212,14 +212,14 @@
     resetForm.submit()
   }
 
-  // === Google OAuth ===
-  window.googleConnect = function () {
+  // === Gmail OAuth ===
+  window.gmailConnect = function () {
     fetch('/oficina/api/gmail/auth-url')
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.url) {
-          showToast('Opening Google auth...', 'success')
-          var popup = window.open(data.url, 'google-oauth', 'width=500,height=620,scrollbars=yes')
+          showToast('Opening Gmail auth...', 'success')
+          var popup = window.open(data.url, 'gmail-oauth', 'width=500,height=620,scrollbars=yes')
           var poll = setInterval(function () {
             fetch('/oficina/api/gmail/auth-status')
               .then(function (r) { return r.json() })
@@ -227,7 +227,7 @@
                 if (s.connected) {
                   clearInterval(poll)
                   if (popup && !popup.closed) popup.close()
-                  showToast('Google connected', 'success')
+                  showToast('Gmail connected', 'success')
                   location.reload()
                 } else if (popup && popup.closed) {
                   clearInterval(poll)
@@ -239,26 +239,78 @@
           showToast(data.error || 'Error', 'error')
         }
       })
-      .catch(function () { showToast('Error connecting', 'error') })
+      .catch(function () { showToast('Error connecting Gmail', 'error') })
   }
 
-  window.googleDisconnect = function () {
-    if (!confirm('Disconnect Google?')) return
+  window.gmailDisconnect = function () {
+    if (!confirm('Disconnect Gmail?')) return
     fetch('/oficina/api/gmail/auth-disconnect', { method: 'POST' })
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.ok) {
-          showToast('Google disconnected', 'success')
+          showToast('Gmail disconnected', 'success')
           location.reload()
         } else {
           showToast(data.error || 'Error', 'error')
         }
       })
-      .catch(function () { showToast('Error disconnecting', 'error') })
+      .catch(function () { showToast('Error disconnecting Gmail', 'error') })
   }
 
-  window.refreshGoogleStatus = function () {
+  window.refreshGmailStatus = function () {
     fetch('/oficina/api/gmail/auth-status')
+      .then(function (r) { return r.json() })
+      .then(function () { location.reload() })
+      .catch(function () { showToast('Error', 'error') })
+  }
+
+  // === Google Apps OAuth ===
+  window.googleAppsConnect = function () {
+    fetch('/oficina/api/google-apps/auth-url')
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (data.url) {
+          showToast('Opening Google Apps auth...', 'success')
+          var popup = window.open(data.url, 'google-apps-oauth', 'width=500,height=620,scrollbars=yes')
+          var poll = setInterval(function () {
+            fetch('/oficina/api/google-apps/status')
+              .then(function (r) { return r.json() })
+              .then(function (s) {
+                if (s.status === 'connected' || s.status === 'active') {
+                  clearInterval(poll)
+                  if (popup && !popup.closed) popup.close()
+                  showToast('Google Apps connected', 'success')
+                  location.reload()
+                } else if (popup && popup.closed) {
+                  clearInterval(poll)
+                }
+              })
+              .catch(function () { clearInterval(poll) })
+          }, 2000)
+        } else {
+          showToast(data.error || 'Error', 'error')
+        }
+      })
+      .catch(function () { showToast('Error connecting Google Apps', 'error') })
+  }
+
+  window.googleAppsDisconnect = function () {
+    if (!confirm('Disconnect Google Apps?')) return
+    fetch('/oficina/api/google-apps/disconnect', { method: 'POST' })
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (data.ok) {
+          showToast('Google Apps disconnected', 'success')
+          location.reload()
+        } else {
+          showToast(data.error || 'Error', 'error')
+        }
+      })
+      .catch(function () { showToast('Error disconnecting Google Apps', 'error') })
+  }
+
+  window.refreshGoogleAppsStatus = function () {
+    fetch('/oficina/api/google-apps/status')
       .then(function (r) { return r.json() })
       .then(function () { location.reload() })
       .catch(function () { showToast('Error', 'error') })

@@ -6,8 +6,7 @@ import { esc } from './templates-fields.js'
 const NAV_SECTIONS = [
   // Channels
   { id: 'whatsapp', key: 'sec_whatsapp', icon: '&#128172;', group: 'channels' },
-  { id: 'email', key: 'sec_email', icon: '&#9993;', group: 'channels', soon: true },
-  { id: 'google', key: 'sec_google', icon: '&#128279;', group: 'channels', soon: true },
+  { id: 'email', key: 'sec_email', icon: '&#9993;', group: 'channels' },
   // AI
   { id: 'apikeys', key: 'sec_apikeys', icon: '&#128273;', group: 'ai' },
   { id: 'models', key: 'sec_models', icon: '&#129504;', group: 'ai' },
@@ -21,6 +20,8 @@ const NAV_SECTIONS = [
   // Leads
   { id: 'lead-scoring', key: 'sec_lead_scoring', icon: '&#128202;', group: 'leads' },
   { id: 'scheduled-tasks', key: 'sec_scheduled_tasks', icon: '&#128197;', group: 'leads' },
+  // Tools
+  { id: 'google-apps', key: 'sec_google_apps', icon: '&#128279;', group: 'tools' },
   // System
   { id: 'modules', key: 'sec_modules', icon: '&#128230;', group: 'system' },
   { id: 'db', key: 'sec_db', icon: '&#128452;', group: 'system' },
@@ -32,6 +33,7 @@ const NAV_GROUPS: Record<string, Record<string, string>> = {
   ai: { es: 'Inteligencia Artificial', en: 'AI' },
   pipeline: { es: 'Pipeline', en: 'Pipeline' },
   leads: { es: 'Leads', en: 'Leads' },
+  tools: { es: 'Herramientas', en: 'Tools' },
   system: { es: 'Sistema', en: 'System' },
 }
 
@@ -42,6 +44,8 @@ export interface PageOptions {
   version: string
   flash?: string
   waConnected?: boolean
+  gmailConnected?: boolean
+  googleAppsConnected?: boolean
 }
 
 export function pageLayout(opts: PageOptions): string {
@@ -115,11 +119,17 @@ function renderSidebar(opts: PageOptions): string {
 }
 
 function getBadgeForSection(sec: typeof NAV_SECTIONS[number], opts: PageOptions): string {
-  if ('soon' in sec && sec.soon) return '<span class="nav-badge badge-soon">soon</span>'
+  if ('soon' in sec && (sec as { soon?: boolean }).soon) return '<span class="nav-badge badge-soon">soon</span>'
   if (sec.id === 'whatsapp') {
     if (opts.waConnected === true) return '<span class="nav-badge badge-active">&#9679;</span>'
     if (opts.waConnected === false) return '<span class="nav-badge badge-off">&#9679;</span>'
     return ''
+  }
+  if (sec.id === 'email') {
+    return opts.gmailConnected ? '<span class="nav-badge badge-active">&#9679;</span>' : '<span class="nav-badge badge-off">&#9679;</span>'
+  }
+  if (sec.id === 'google-apps') {
+    return opts.googleAppsConnected ? '<span class="nav-badge badge-active">&#9679;</span>' : '<span class="nav-badge badge-off">&#9679;</span>'
   }
   return ''
 }
