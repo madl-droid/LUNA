@@ -1,118 +1,242 @@
-// LUNA Engine — Proactive Runner
-// Orquestador de flujos proactivos. Usa setInterval por ahora (sin BullMQ).
+// LUNA Engine — Proactive Runner (BullMQ)
+// Orchestrates proactive job scheduling using BullMQ queues with priority lanes.
+// Lanes: reactive (priority 1, concurrency 8), proactive (priority 5, concurrency 5), background (priority 10, concurrency 3).
 
 import { randomUUID } from 'node:crypto'
+import { Queue, Worker, type Job } from 'bullmq'
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
 import pino from 'pino'
-import type { EngineConfig, ProactiveJobContext } from '../types.js'
+import type { Registry } from '../../kernel/registry.js'
+import type { EngineConfig, ProactiveJobContext, ProactiveConfig } from '../types.js'
+import { loadProactiveConfig } from './proactive-config.js'
 import { getProactiveJobs } from './triggers.js'
 
 const logger = pino({ name: 'engine:proactive' })
 
-const activeIntervals: NodeJS.Timeout[] = []
+// BullMQ instances
+let proactiveQueue: Queue | null = null
+let proactiveWorker: Worker | null = null
+const repeatJobKeys: string[] = []
+
+// State
+let running = false
+
+interface ProactiveJobPayload {
+  jobName: string
+  triggerType: string
+  traceId: string
+  runAt: string
+}
 
 /**
- * Start all proactive job runners.
- * Uses setInterval for interval-based jobs.
- * Cron-based jobs use a 60s polling loop that checks if it's time to run.
+ * Start the proactive runner with BullMQ.
+ * Registers repeatable jobs based on proactive.json config.
  */
-export function startProactiveRunner(
+export async function startProactiveRunner(
   db: Pool,
   redis: Redis,
   config: EngineConfig,
-): void {
-  if (!config.followupEnabled && !config.batchEnabled) {
-    logger.info('Proactive runner disabled by config')
+  registry: Registry,
+): Promise<void> {
+  const proactiveConfig = loadProactiveConfig()
+
+  if (!proactiveConfig.enabled) {
+    logger.info('Proactive system disabled in proactive.json')
     return
   }
 
+  // Create queue with Redis connection
+  const connection = {
+    host: redis.options.host ?? 'localhost',
+    port: redis.options.port ?? 6379,
+    password: redis.options.password as string | undefined,
+    db: redis.options.db ?? 0,
+  }
+
+  proactiveQueue = new Queue('luna:proactive', {
+    connection,
+    defaultJobOptions: {
+      removeOnComplete: { count: 100 },
+      removeOnFail: { count: 50 },
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+    },
+  })
+
+  // Create worker
+  proactiveWorker = new Worker(
+    'luna:proactive',
+    async (job: Job<ProactiveJobPayload>) => {
+      const jobDef = getProactiveJobs().find(j => j.name === job.data.jobName)
+      if (!jobDef) {
+        logger.warn({ jobName: job.data.jobName }, 'Unknown proactive job')
+        return
+      }
+
+      const ctx: ProactiveJobContext = {
+        db,
+        redis,
+        registry,
+        proactiveConfig,
+        engineConfig: config,
+        traceId: job.data.traceId || randomUUID(),
+        runAt: new Date(job.data.runAt),
+      }
+
+      await jobDef.handler(ctx)
+    },
+    {
+      connection,
+      concurrency: 5,
+      limiter: {
+        max: 10,
+        duration: 60_000,
+      },
+    },
+  )
+
+  proactiveWorker.on('failed', (job: Job<ProactiveJobPayload> | undefined, err: Error) => {
+    logger.error({ jobName: job?.data?.jobName, err, jobId: job?.id }, 'Proactive job failed')
+  })
+
+  proactiveWorker.on('completed', (job: Job<ProactiveJobPayload>) => {
+    logger.debug({ jobName: job.data.jobName, jobId: job.id }, 'Proactive job completed')
+  })
+
+  // Register repeatable jobs from config
   const jobs = getProactiveJobs()
 
   for (const job of jobs) {
-    // Skip disabled jobs
-    if (job.triggerType === 'follow_up' && !config.followupEnabled) continue
-    if (job.triggerType === 'nightly_batch' && !config.batchEnabled) continue
+    const enabled = isJobEnabled(job.triggerType, proactiveConfig, config)
+    if (!enabled) {
+      logger.debug({ job: job.name }, 'Proactive job disabled by config')
+      continue
+    }
 
-    if (job.intervalMs) {
-      // Override interval from config if applicable
-      let intervalMs = job.intervalMs
-      if (job.triggerType === 'follow_up') {
-        intervalMs = config.followupDelayMinutes * 60 * 1000
+    const intervalMs = getJobInterval(job, proactiveConfig, config)
+
+    if (intervalMs) {
+      const repeatOpts = { every: intervalMs }
+      const repeatJob = await proactiveQueue.add(
+        job.name,
+        {
+          jobName: job.name,
+          triggerType: job.triggerType,
+          traceId: '', // generated per execution
+          runAt: new Date().toISOString(),
+        },
+        {
+          repeat: repeatOpts,
+          priority: getJobPriority(job.triggerType),
+          jobId: `repeat:${job.name}`,
+        },
+      )
+      if (repeatJob.repeatJobKey) {
+        repeatJobKeys.push(repeatJob.repeatJobKey)
       }
-
-      const interval = setInterval(async () => {
-        const ctx: ProactiveJobContext = {
-          db,
-          redis,
-          traceId: randomUUID(),
-          runAt: new Date(),
-        }
-
-        try {
-          await job.handler(ctx)
-        } catch (err) {
-          logger.error({ job: job.name, err }, 'Proactive job failed')
-        }
-      }, intervalMs)
-
-      activeIntervals.push(interval)
-      logger.info({ job: job.name, intervalMs }, 'Proactive job scheduled (interval)')
+      logger.info({ job: job.name, intervalMs }, 'Proactive job scheduled (repeatable)')
     } else if (job.cron) {
-      // Simple cron: poll every 60s and check if the minute matches
-      const cronInterval = setInterval(async () => {
-        if (shouldRunCron(job.cron!, config.batchTimezone)) {
-          const ctx: ProactiveJobContext = {
-            db,
-            redis,
-            traceId: randomUUID(),
-            runAt: new Date(),
-          }
+      const cron = job.triggerType === 'reactivation'
+        ? proactiveConfig.reactivation.cron
+        : job.cron
 
-          try {
-            await job.handler(ctx)
-          } catch (err) {
-            logger.error({ job: job.name, err }, 'Proactive cron job failed')
-          }
-        }
-      }, 60000)
-
-      activeIntervals.push(cronInterval)
-      logger.info({ job: job.name, cron: job.cron }, 'Proactive job scheduled (cron)')
+      const repeatJob = await proactiveQueue.add(
+        job.name,
+        {
+          jobName: job.name,
+          triggerType: job.triggerType,
+          traceId: '',
+          runAt: new Date().toISOString(),
+        },
+        {
+          repeat: { pattern: cron },
+          priority: getJobPriority(job.triggerType),
+          jobId: `repeat:${job.name}`,
+        },
+      )
+      if (repeatJob.repeatJobKey) {
+        repeatJobKeys.push(repeatJob.repeatJobKey)
+      }
+      logger.info({ job: job.name, cron }, 'Proactive job scheduled (cron)')
     }
   }
 
-  logger.info({ totalJobs: jobs.length }, 'Proactive runner started')
+  running = true
+  logger.info({ totalJobs: jobs.length }, 'Proactive runner started (BullMQ)')
 }
 
 /**
  * Stop all proactive job runners.
  */
-export function stopProactiveRunner(): void {
-  for (const interval of activeIntervals) {
-    clearInterval(interval)
+export async function stopProactiveRunner(): Promise<void> {
+  if (!running) return
+
+  // Remove repeatable jobs
+  if (proactiveQueue) {
+    for (const key of repeatJobKeys) {
+      try {
+        await proactiveQueue.removeRepeatableByKey(key)
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    repeatJobKeys.length = 0
+    await proactiveQueue.close()
+    proactiveQueue = null
   }
-  activeIntervals.length = 0
+
+  if (proactiveWorker) {
+    await proactiveWorker.close()
+    proactiveWorker = null
+  }
+
+  running = false
   logger.info('Proactive runner stopped')
 }
 
-/**
- * Simple cron matcher. Supports: "M H * * *" format.
- * Checks if current time matches the cron expression.
- */
-function shouldRunCron(cron: string, _timezone: string): boolean {
-  const parts = cron.split(' ')
-  if (parts.length < 5) return false
+// ─── Helpers ────────────────────────────────
 
-  const now = new Date()
-  const cronMin = parts[0]!
-  const cronHour = parts[1]!
+function isJobEnabled(
+  triggerType: string,
+  proactiveConfig: ProactiveConfig,
+  engineConfig: EngineConfig,
+): boolean {
+  switch (triggerType) {
+    case 'follow_up': return proactiveConfig.follow_up.enabled
+    case 'reminder': return proactiveConfig.reminders.enabled
+    case 'commitment': return proactiveConfig.commitments.enabled
+    case 'reactivation': return proactiveConfig.reactivation.enabled
+    case 'cache_refresh': return true
+    case 'nightly_batch': return engineConfig.batchEnabled
+    default: return false
+  }
+}
 
-  const currentMin = now.getMinutes()
-  const currentHour = now.getHours()
+function getJobInterval(
+  job: { triggerType: string; intervalMs?: number; cron?: string },
+  proactiveConfig: ProactiveConfig,
+  _engineConfig: EngineConfig,
+): number | null {
+  if (job.cron) return null // cron jobs don't use intervals
 
-  const minMatch = cronMin === '*' || parseInt(cronMin) === currentMin
-  const hourMatch = cronHour === '*' || parseInt(cronHour) === currentHour
+  switch (job.triggerType) {
+    case 'follow_up': return proactiveConfig.follow_up.scan_interval_minutes * 60 * 1000
+    case 'reminder': return proactiveConfig.reminders.scan_interval_minutes * 60 * 1000
+    case 'commitment': return proactiveConfig.commitments.scan_interval_minutes * 60 * 1000
+    default: return job.intervalMs ?? null
+  }
+}
 
-  return minMatch && hourMatch
+function getJobPriority(triggerType: string): number {
+  // Lower number = higher priority in BullMQ
+  switch (triggerType) {
+    case 'commitment': return 2     // commitments are time-sensitive
+    case 'reminder': return 3       // reminders are important
+    case 'follow_up': return 5      // standard proactive
+    case 'reactivation': return 8   // low priority
+    case 'cache_refresh': return 10 // background
+    case 'nightly_batch': return 10 // background
+    default: return 5
+  }
 }

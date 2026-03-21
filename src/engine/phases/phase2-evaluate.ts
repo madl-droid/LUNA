@@ -3,8 +3,8 @@
 // Analiza intención, emoción, riesgo, genera plan de ejecución.
 
 import pino from 'pino'
-import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig } from '../types.js'
-import { buildEvaluatorPrompt } from '../prompts/evaluator.js'
+import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig, ProactiveContextBundle } from '../types.js'
+import { buildEvaluatorPrompt, buildProactiveEvaluatorPrompt } from '../prompts/evaluator.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { getCatalog } from '../mocks/tool-registry.js'
 
@@ -21,36 +21,61 @@ const DEFAULT_EVALUATOR_OUTPUT: EvaluatorOutput = {
   needsAcknowledgment: false,
 }
 
+// Proactive fallback: NO_ACTION (safe default — don't send anything)
+const PROACTIVE_NO_ACTION: EvaluatorOutput = {
+  intent: 'no_action',
+  emotion: 'neutral',
+  injectionRisk: false,
+  onScope: true,
+  executionPlan: [],
+  toolsNeeded: [],
+  needsAcknowledgment: false,
+}
+
+/**
+ * Check if a ContextBundle is a proactive context.
+ */
+function isProactiveContext(ctx: ContextBundle): ctx is ProactiveContextBundle {
+  return 'isProactive' in ctx && (ctx as ProactiveContextBundle).isProactive === true
+}
+
 /**
  * Execute Phase 2: Evaluate the situation with LLM.
+ * Supports both reactive (incoming message) and proactive (outbound trigger) modes.
  */
 export async function phase2Evaluate(
   ctx: ContextBundle,
   config: EngineConfig,
 ): Promise<EvaluatorOutput> {
   const startMs = Date.now()
+  const proactive = isProactiveContext(ctx)
 
-  logger.info({ traceId: ctx.traceId, intent: 'evaluating' }, 'Phase 2 start')
+  logger.info({ traceId: ctx.traceId, intent: 'evaluating', proactive }, 'Phase 2 start')
 
-  // If quick action was detected in phase 1, skip LLM
-  if (ctx.quickAction) {
+  // If quick action was detected in phase 1, skip LLM (reactive only)
+  if (!proactive && ctx.quickAction) {
     const quickResult = handleQuickAction(ctx)
     const durationMs = Date.now() - startMs
     logger.info({ traceId: ctx.traceId, durationMs, quickAction: ctx.quickAction.type }, 'Phase 2 quick action')
     return quickResult
   }
 
-  // Build prompt
+  // Build prompt (different for proactive vs reactive)
   const toolCatalog = getCatalog()
-  const { system, userMessage } = buildEvaluatorPrompt(ctx, toolCatalog)
+  const { system, userMessage } = proactive
+    ? buildProactiveEvaluatorPrompt(ctx, toolCatalog)
+    : buildEvaluatorPrompt(ctx, toolCatalog)
+
+  // Choose model: proactive uses its own model config
+  const provider = proactive ? config.proactiveProvider : config.classifyProvider
+  const model = proactive ? config.proactiveModel : config.classifyModel
 
   try {
-    // Call evaluator LLM
     const result = await callLLMWithFallback(
       {
-        task: 'evaluate',
-        provider: config.classifyProvider,
-        model: config.classifyModel,
+        task: proactive ? 'proactive-evaluate' : 'evaluate',
+        provider,
+        model,
         system,
         messages: [{ role: 'user', content: userMessage }],
         maxTokens: 512,
@@ -72,13 +97,18 @@ export async function phase2Evaluate(
       planSteps: parsed.executionPlan.length,
       provider: result.provider,
       model: result.model,
+      proactive,
     }, 'Phase 2 complete')
 
     return parsed
   } catch (err) {
     const durationMs = Date.now() - startMs
-    logger.error({ traceId: ctx.traceId, durationMs, err }, 'Phase 2 LLM failed, using default')
-    return { ...DEFAULT_EVALUATOR_OUTPUT, rawResponse: String(err) }
+    logger.error({ traceId: ctx.traceId, durationMs, err, proactive }, 'Phase 2 LLM failed')
+    // Proactive: safe default is NO_ACTION (don't send anything on failure)
+    // Reactive: safe default is respond_only (still answer the human)
+    return proactive
+      ? { ...PROACTIVE_NO_ACTION, rawResponse: String(err) }
+      : { ...DEFAULT_EVALUATOR_OUTPUT, rawResponse: String(err) }
   }
 }
 

@@ -137,8 +137,8 @@ export interface AgentContact {
 // Commitments
 // ═══════════════════════════════════════════
 
-export type CommitmentStatus = 'pending' | 'in_progress' | 'waiting' | 'done' | 'overdue' | 'no_show' | 'cancelled'
-export type CommitmentType = 'action' | 'meeting' | 'demo' | 'call' | 'appointment' | 'follow_up' | 'send_material' | 'wait_response'
+export type CommitmentStatus = 'pending' | 'in_progress' | 'waiting' | 'done' | 'overdue' | 'no_show' | 'cancelled' | 'failed'
+export type CommitmentType = 'action' | 'meeting' | 'demo' | 'call' | 'appointment' | 'follow_up' | 'send_material' | 'wait_response' | string
 export type CommitmentPriority = 'low' | 'normal' | 'high' | 'urgent'
 
 export interface Commitment {
@@ -169,6 +169,9 @@ export interface Commitment {
   sortOrder: number
   watchMetadata?: Record<string, unknown> | null
   reminderSent: boolean
+  requiresTool?: string | null
+  autoCancelAt?: Date | null
+  createdVia?: 'tool' | 'auto_detect' | null
   metadata?: Record<string, unknown>
   createdAt: Date
   updatedAt: Date

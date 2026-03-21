@@ -22,7 +22,7 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
-    stopEngine()
+    await stopEngine()
   },
 }
 

@@ -14,6 +14,8 @@ import { phase3Execute } from './phases/phase3-execute.js'
 import { phase4Compose } from './phases/phase4-compose.js'
 import { phase5Validate } from './phases/phase5-validate.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
+import { loadProactiveConfig } from './proactive/proactive-config.js'
+import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
 
 const logger = pino({ name: 'engine' })
 
@@ -62,10 +64,18 @@ export function initEngine(reg: Registry): void {
     }
   })
 
-  // Start proactive runner
+  // Load proactive config and register tools
+  const proactiveConfig = loadProactiveConfig()
+  registerCreateCommitmentTool(registry, proactiveConfig).catch(err =>
+    logger.warn({ err }, 'Failed to register create_commitment tool'),
+  )
+
+  // Start proactive runner (BullMQ)
   const db = registry.getDb()
   const redis = registry.getRedis()
-  startProactiveRunner(db, redis, engineConfig)
+  startProactiveRunner(db, redis, engineConfig, registry).catch(err =>
+    logger.error({ err }, 'Failed to start proactive runner'),
+  )
 
   logger.info('Engine initialized')
 }
@@ -229,8 +239,8 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
 /**
  * Stop the engine. Call on shutdown.
  */
-export function stopEngine(): void {
-  stopProactiveRunner()
+export async function stopEngine(): Promise<void> {
+  await stopProactiveRunner()
   logger.info('Engine stopped')
 }
 

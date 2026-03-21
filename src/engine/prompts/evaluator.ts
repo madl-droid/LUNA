@@ -1,7 +1,7 @@
 // LUNA Engine — Evaluator Prompt Builder (Phase 2)
 // Construye el prompt para el modelo evaluador que analiza intención y genera plan.
 
-import type { ContextBundle, ToolCatalogEntry } from '../types.js'
+import type { ContextBundle, ToolCatalogEntry, ProactiveContextBundle } from '../types.js'
 
 const EVALUATOR_SYSTEM = `Eres el módulo evaluador de LUNA, un agente de ventas por WhatsApp/email.
 Tu trabajo es analizar el mensaje del contacto y generar un plan de ejecución.
@@ -196,4 +196,131 @@ function filterToolsByPermissions(
 
   // Filter by allowed tool names
   return catalog.filter(t => ctx.userPermissions.tools.includes(t.name))
+}
+
+// ═══════════════════════════════════════════
+// Proactive evaluator prompt
+// ═══════════════════════════════════════════
+
+const PROACTIVE_EVALUATOR_SYSTEM = `You are the proactive evaluator of LUNA, an AI sales agent for WhatsApp/email.
+You are deciding whether to proactively reach out to a contact and what to do.
+
+RESPOND EXCLUSIVELY in valid JSON. No additional text, no markdown, no backticks.
+
+Response structure:
+{
+  "intent": "string - what action to take (follow_up, reminder, fulfill_commitment, cancel_commitment, reactivate, escalate, no_action)",
+  "emotion": "string - tone to use (warm, professional, urgent, casual, empathetic)",
+  "injection_risk": false,
+  "on_scope": true,
+  "execution_plan": [
+    {
+      "type": "respond_only | api_call | workflow",
+      "tool": "tool_name (only if type=api_call)",
+      "params": {},
+      "description": "what this step does"
+    }
+  ],
+  "tools_needed": ["list of required tools"],
+  "needs_acknowledgment": false
+}
+
+Rules:
+- CRITICAL: Return intent="no_action" if:
+  - The context suggests the contact should NOT be contacted right now
+  - A commitment cannot be fulfilled and should wait
+  - The situation has already been handled
+  - There is not enough context to generate a useful message
+- For follow-ups: consider how many previous follow-ups were sent. Vary the approach.
+- For reminders: include event details. Be concise and helpful.
+- For commitments: if the commitment has a required tool, include it in the plan.
+  - If the tool is unavailable or the commitment can't be fulfilled, use intent="escalate" or intent="cancel_commitment"
+- For reactivation: be gentle, reference past interactions if available.
+- The contact is NOT expecting this message. Be natural, not robotic.
+- Never reference internal systems or that this is automated.`
+
+/**
+ * Build proactive evaluator prompt for Phase 2 in proactive mode.
+ */
+export function buildProactiveEvaluatorPrompt(
+  ctx: ProactiveContextBundle,
+  toolCatalog: ToolCatalogEntry[],
+): { system: string; userMessage: string } {
+  let system = PROACTIVE_EVALUATOR_SYSTEM
+
+  // Add available tools
+  if (toolCatalog.length > 0) {
+    system += '\n\nAvailable tools:'
+    for (const tool of toolCatalog) {
+      system += `\n- ${tool.name} [${tool.category}]: ${tool.description}`
+    }
+  }
+
+  const parts: string[] = []
+  const trigger = ctx.proactiveTrigger
+
+  // Trigger context
+  parts.push(`[Proactive trigger: ${trigger.type}]`)
+  parts.push(`[Reason: ${trigger.reason}]`)
+
+  if (trigger.isOverdue) {
+    parts.push(`[OVERDUE — this commitment is past its deadline]`)
+  }
+
+  // Contact context
+  if (ctx.contact) {
+    parts.push(`[Contact: ${ctx.contact.displayName ?? 'Unknown'}, status: ${ctx.contact.qualificationStatus ?? 'unknown'}]`)
+  }
+
+  // Lead status
+  if (ctx.leadStatus) {
+    parts.push(`[Lead status: ${ctx.leadStatus}]`)
+  }
+
+  // Contact memory
+  if (ctx.contactMemory) {
+    if (ctx.contactMemory.summary) {
+      parts.push(`[Contact memory: ${ctx.contactMemory.summary}]`)
+    }
+    if (ctx.contactMemory.key_facts.length > 0) {
+      parts.push(`[Key facts:]`)
+      for (const f of ctx.contactMemory.key_facts.slice(0, 8)) {
+        parts.push(`- ${f.fact}`)
+      }
+    }
+  }
+
+  // Commitment data (for commitment triggers)
+  if (trigger.commitmentData) {
+    const c = trigger.commitmentData
+    parts.push(`[Commitment to fulfill:]`)
+    parts.push(`- Type: ${c.commitmentType}`)
+    parts.push(`- Description: ${c.description}`)
+    parts.push(`- Priority: ${c.priority}`)
+    if (c.dueAt) parts.push(`- Due: ${c.dueAt.toISOString()}`)
+    if (c.requiresTool) parts.push(`- Required tool: ${c.requiresTool}`)
+    parts.push(`- Attempts so far: ${c.attemptCount}`)
+  }
+
+  // Other pending commitments
+  if (ctx.pendingCommitments.length > 0) {
+    parts.push(`[Other pending commitments:]`)
+    for (const c of ctx.pendingCommitments.slice(0, 3)) {
+      const due = c.dueAt ? ` (due: ${c.dueAt.toISOString().split('T')[0]})` : ''
+      parts.push(`- [${c.commitmentType}] ${c.description}${due}`)
+    }
+  }
+
+  // Recent history
+  if (ctx.history.length > 0) {
+    parts.push(`[Recent conversation:]`)
+    for (const msg of ctx.history.slice(-5)) {
+      parts.push(`${msg.role === 'user' ? 'Contact' : 'Agent'}: ${msg.content.substring(0, 200)}`)
+    }
+  }
+
+  // Channel
+  parts.push(`[Channel: ${ctx.message.channelName}]`)
+
+  return { system, userMessage: parts.join('\n') }
 }

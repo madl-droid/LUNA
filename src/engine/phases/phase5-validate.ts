@@ -18,6 +18,9 @@ import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { StoredMessage } from '../../modules/memory/types.js'
 import { detectOutputInjection, detectSensitiveData } from '../utils/injection-detector.js'
 import { formatForChannel, calculateTypingDelay } from '../utils/message-formatter.js'
+import { markFarewell, setContactLock } from '../proactive/guards.js'
+import { detectCommitments } from '../proactive/commitment-detector.js'
+import { loadProactiveConfig } from '../proactive/proactive-config.js'
 
 const logger = pino({ name: 'engine:phase5' })
 
@@ -71,6 +74,28 @@ export async function phase5Validate(
 
   // 8. Enqueue sheets sync
   enqueueSheetsSync(ctx, redis)
+
+  // 9. Proactive guard signals: farewell detection + contact lock
+  if (deliveryResult.sent && ctx.contactId) {
+    // If evaluation intent is farewell, mark for conversation guard
+    if (evaluation.intent === 'farewell') {
+      markFarewell(ctx.contactId, redis).catch(() => {})
+    }
+    // Set contact lock for reactive conversations (auto-expires after session TTL)
+    const isProactive = 'isProactive' in ctx && (ctx as Record<string, unknown>).isProactive
+    if (!isProactive) {
+      setContactLock(ctx.contactId, redis, config.sessionTtlMs).catch(() => {})
+    }
+
+    // 10. Commitment auto-detection (Via B) — fire-and-forget, only for reactive
+    if (!isProactive) {
+      const proactiveConfig = loadProactiveConfig()
+      detectCommitments(
+        responseText, ctx.contactId, ctx.agentId, ctx.session.id,
+        registry, config, proactiveConfig,
+      ).catch(() => {})
+    }
+  }
 
   const durationMs = Date.now() - startMs
   logger.info({

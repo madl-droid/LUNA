@@ -415,9 +415,10 @@ export class PgStore {
       `INSERT INTO commitments (
         agent_id, contact_id, session_id, commitment_by, description, category,
         priority, commitment_type, due_at, scheduled_at, event_starts_at, event_ends_at,
-        external_id, external_provider, assigned_to, status, parent_id, sort_order, metadata
+        external_id, external_provider, assigned_to, status, parent_id, sort_order,
+        requires_tool, auto_cancel_at, created_via, metadata
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING id`,
       [
         commitment.agentId, commitment.contactId, commitment.sessionId ?? null,
@@ -428,6 +429,8 @@ export class PgStore {
         commitment.externalId ?? null, commitment.externalProvider ?? null,
         commitment.assignedTo ?? null, commitment.status,
         commitment.parentId ?? null, commitment.sortOrder ?? 0,
+        commitment.requiresTool ?? null, commitment.autoCancelAt ?? null,
+        commitment.createdVia ?? 'tool',
         JSON.stringify(commitment.metadata ?? {}),
       ],
     )
@@ -776,6 +779,9 @@ export class PgStore {
       sortOrder: (row.sort_order as number) ?? 0,
       watchMetadata: row.watch_metadata as Record<string, unknown> | null,
       reminderSent: (row.reminder_sent as boolean) ?? false,
+      requiresTool: (row.requires_tool as string | null) ?? null,
+      autoCancelAt: row.auto_cancel_at ? new Date(row.auto_cancel_at as string) : null,
+      createdVia: (row.created_via as 'tool' | 'auto_detect' | null) ?? null,
       metadata: (row.metadata ?? {}) as Record<string, unknown>,
       createdAt: new Date(row.created_at as string),
       updatedAt: new Date(row.updated_at as string),

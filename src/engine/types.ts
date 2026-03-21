@@ -278,7 +278,8 @@ export interface SubagentResult {
 export type ProactiveTriggerType =
   | 'follow_up'
   | 'reminder'
-  | 'commitment_check'
+  | 'commitment'
+  | 'reactivation'
   | 'cache_refresh'
   | 'nightly_batch'
 
@@ -293,8 +294,112 @@ export interface ProactiveJob {
 export interface ProactiveJobContext {
   db: import('pg').Pool
   redis: import('ioredis').Redis
+  registry: import('../kernel/registry.js').Registry
+  proactiveConfig: ProactiveConfig
+  engineConfig: EngineConfig
   traceId: string
   runAt: Date
+}
+
+// ═══════════════════════════════════════════
+// Proactive config (from instance/proactive.json)
+// ═══════════════════════════════════════════
+
+export interface ProactiveConfig {
+  enabled: boolean
+  business_hours: {
+    start: number
+    end: number
+    timezone: string
+    days: number[]
+  }
+  follow_up: {
+    enabled: boolean
+    scan_interval_minutes: number
+    inactivity_hours: number
+    max_attempts: number
+    cross_channel: boolean
+  }
+  reminders: {
+    enabled: boolean
+    scan_interval_minutes: number
+    hours_before_event: number
+    notify_salesperson: boolean
+  }
+  commitments: {
+    enabled: boolean
+    scan_interval_minutes: number
+    max_attempts: number
+    generic_auto_cancel_hours: number
+    commitment_types: CommitmentTypeConfig[]
+  }
+  reactivation: {
+    enabled: boolean
+    cron: string
+    days_inactive: number
+    max_attempts: number
+    max_per_run: number
+  }
+  guards: {
+    max_proactive_per_day_per_contact: number
+    cooldown_minutes: number
+    conversation_guard_hours: number
+  }
+}
+
+export interface CommitmentTypeConfig {
+  type: string
+  max_due_hours: number
+  requires_tool: string | null
+  auto_cancel_hours: number
+}
+
+// ═══════════════════════════════════════════
+// Proactive context — simplified Phase 1 output
+// ═══════════════════════════════════════════
+
+export interface ProactiveContextBundle extends ContextBundle {
+  isProactive: true
+  proactiveTrigger: ProactiveTrigger
+}
+
+export interface ProactiveTrigger {
+  type: ProactiveTriggerType
+  triggerId?: string
+  reason: string
+  commitmentData?: import('../modules/memory/types.js').Commitment
+  isOverdue?: boolean
+}
+
+// ═══════════════════════════════════════════
+// Proactive candidate — found by scanner
+// ═══════════════════════════════════════════
+
+export interface ProactiveCandidate {
+  contactId: string
+  channelContactId: string
+  channel: import('../channels/types.js').ChannelName
+  displayName: string | null
+  triggerType: ProactiveTriggerType
+  triggerId?: string
+  reason: string
+  commitmentData?: import('../modules/memory/types.js').Commitment
+  isOverdue?: boolean
+}
+
+// ═══════════════════════════════════════════
+// Outreach log entry
+// ═══════════════════════════════════════════
+
+export interface OutreachLogEntry {
+  contactId: string
+  triggerType: ProactiveTriggerType
+  triggerId?: string
+  channel: string
+  actionTaken: 'sent' | 'no_action' | 'blocked' | 'error'
+  guardBlocked?: string
+  messageId?: string
+  metadata?: Record<string, unknown>
 }
 
 // ═══════════════════════════════════════════

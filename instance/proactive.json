@@ -1,0 +1,72 @@
+{
+  "enabled": true,
+  "business_hours": {
+    "start": 8,
+    "end": 17,
+    "timezone": "America/Bogota",
+    "days": [1, 2, 3, 4, 5]
+  },
+  "follow_up": {
+    "enabled": true,
+    "scan_interval_minutes": 15,
+    "inactivity_hours": 4,
+    "max_attempts": 3,
+    "cross_channel": false
+  },
+  "reminders": {
+    "enabled": true,
+    "scan_interval_minutes": 30,
+    "hours_before_event": 2,
+    "notify_salesperson": true
+  },
+  "commitments": {
+    "enabled": true,
+    "scan_interval_minutes": 5,
+    "max_attempts": 5,
+    "generic_auto_cancel_hours": 24,
+    "commitment_types": [
+      {
+        "type": "send_quote",
+        "max_due_hours": 24,
+        "requires_tool": "send_email",
+        "auto_cancel_hours": 48
+      },
+      {
+        "type": "send_info",
+        "max_due_hours": 4,
+        "requires_tool": "send_whatsapp",
+        "auto_cancel_hours": 24
+      },
+      {
+        "type": "follow_up",
+        "max_due_hours": 72,
+        "requires_tool": null,
+        "auto_cancel_hours": 96
+      },
+      {
+        "type": "check_availability",
+        "max_due_hours": 2,
+        "requires_tool": "check_calendar",
+        "auto_cancel_hours": 6
+      },
+      {
+        "type": "schedule_meeting",
+        "max_due_hours": 24,
+        "requires_tool": "create_event",
+        "auto_cancel_hours": 48
+      }
+    ]
+  },
+  "reactivation": {
+    "enabled": false,
+    "cron": "0 9 * * 1-5",
+    "days_inactive": 7,
+    "max_attempts": 2,
+    "max_per_run": 20
+  },
+  "guards": {
+    "max_proactive_per_day_per_contact": 3,
+    "cooldown_minutes": 60,
+    "conversation_guard_hours": 4
+  }
+}

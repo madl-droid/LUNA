@@ -2,6 +2,7 @@
 // Re-exports para consumo externo.
 
 export { initEngine, processMessage, stopEngine, getEngineConfig } from './engine.js'
+export { processProactive } from './proactive/proactive-pipeline.js'
 
 // Types
 export type {
@@ -23,6 +24,12 @@ export type {
   ToolDefinition,
   ProactiveJob,
   ProactiveJobContext,
+  ProactiveConfig,
+  ProactiveContextBundle,
+  ProactiveTrigger,
+  ProactiveCandidate,
+  CommitmentTypeConfig,
+  OutreachLogEntry,
   LLMCallOptions,
   LLMCallResult,
   LLMProvider,

@@ -1,36 +1,44 @@
 // LUNA Engine — Proactive Triggers
 // Definición de triggers para flujos proactivos.
+// Intervals/crons are overridden by proactive.json config in proactive-runner.
 
-import type { ProactiveJob, ProactiveJobContext } from '../types.js'
+import type { ProactiveJob } from '../types.js'
 import { runFollowUp } from './jobs/follow-up.js'
 import { runReminder } from './jobs/reminder.js'
 import { runCommitmentCheck } from './jobs/commitment-check.js'
+import { runReactivation } from './jobs/reactivation.js'
 import { runCacheRefresh } from './jobs/cache-refresh.js'
 import { runNightlyBatch } from './jobs/nightly-batch.js'
 
 /**
  * Get all proactive job definitions.
- * Intervals and crons are overridden by config in proactive-runner.
+ * Intervals and crons are overridden by proactive.json in proactive-runner.
  */
 export function getProactiveJobs(): ProactiveJob[] {
   return [
     {
-      name: 'follow-up',
+      name: 'follow-up-scanner',
       triggerType: 'follow_up',
-      intervalMs: 15 * 60 * 1000,  // every 15 min (configurable)
+      intervalMs: 15 * 60 * 1000,  // default: every 15 min
       handler: runFollowUp,
     },
     {
-      name: 'reminder',
+      name: 'reminder-scanner',
       triggerType: 'reminder',
-      intervalMs: 30 * 60 * 1000,  // every 30 min
+      intervalMs: 30 * 60 * 1000,  // default: every 30 min
       handler: runReminder,
     },
     {
-      name: 'commitment-check',
-      triggerType: 'commitment_check',
-      intervalMs: 5 * 60 * 1000,  // every 5 min
+      name: 'commitment-scanner',
+      triggerType: 'commitment',
+      intervalMs: 5 * 60 * 1000,   // default: every 5 min
       handler: runCommitmentCheck,
+    },
+    {
+      name: 'reactivation-scanner',
+      triggerType: 'reactivation',
+      cron: '0 9 * * 1-5',  // default: Mon-Fri 9 AM (overridden by config)
+      handler: runReactivation,
     },
     {
       name: 'cache-refresh',
@@ -41,7 +49,7 @@ export function getProactiveJobs(): ProactiveJob[] {
     {
       name: 'nightly-batch',
       triggerType: 'nightly_batch',
-      cron: '0 2 * * *',  // daily at 2 AM (configurable)
+      cron: '0 2 * * *',  // daily at 2 AM
       handler: runNightlyBatch,
     },
   ]
