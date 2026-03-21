@@ -1,152 +1,101 @@
-// LUNA — Module: knowledge — Search Engine
-// Búsqueda híbrida: FTS PostgreSQL + fuse.js fuzzy + FAQ match.
+// LUNA — Module: knowledge — Search Engine v2
+// Búsqueda híbrida: pgvector cosine + FTS PostgreSQL + FAQ FTS.
+// Elimina fuse.js. Degrada a solo FTS si embeddings no disponibles.
 
-import Fuse from 'fuse.js'
 import pino from 'pino'
+import type { Redis } from 'ioredis'
 import type { KnowledgePgStore } from './pg-store.js'
-import type { KnowledgeCache } from './cache.js'
-import type {
-  KnowledgeCategory,
-  KnowledgeSearchResult,
-  KnowledgeSearchOptions,
-  KnowledgeFAQ,
-} from './types.js'
+import type { EmbeddingService } from './embedding-service.js'
+import type { KnowledgeSearchResult, KnowledgeSearchOptions } from './types.js'
 
 const logger = pino({ name: 'knowledge:search' })
 
-interface FuseEntry {
-  content: string
-  source: string
-  documentId: string
-  section: string | null
-}
-
-interface FuseFAQEntry {
-  text: string
-  faqId: string
-  answer: string
-}
-
 // Weights for hybrid scoring
-const FTS_WEIGHT = 0.4
-const FUZZY_WEIGHT = 0.4
-const FAQ_WEIGHT = 0.2
+const VECTOR_WEIGHT = 0.6
+const FTS_WEIGHT = 0.3
+const FAQ_WEIGHT = 0.1
+
+// Degraded mode (no embeddings available)
+const FTS_WEIGHT_DEGRADED = 0.8
+const FAQ_WEIGHT_DEGRADED = 0.2
+
+// Category boost when searchHint matches
+const CATEGORY_BOOST = 0.2
+
+// Query embedding cache TTL
+const QUERY_CACHE_TTL_S = 600 // 10 min
 
 export class KnowledgeSearchEngine {
-  private coreIndex: Fuse<FuseEntry> | null = null
-  private consultableIndex: Fuse<FuseEntry> | null = null
-  private faqIndex: Fuse<FuseFAQEntry> | null = null
-
   constructor(
     private pgStore: KnowledgePgStore,
-    private cache: KnowledgeCache,
+    private embeddingService: EmbeddingService | null,
+    private redis: Redis,
   ) {}
 
   /**
-   * Build in-memory fuse.js indices from database.
+   * Search all knowledge (consultable — not core docs).
+   * Uses vector + FTS hybrid, with optional category boost via searchHint.
    */
-  async rebuildIndices(): Promise<void> {
-    const [coreChunks, consultableChunks, faqs] = await Promise.all([
-      this.pgStore.getAllChunksByCategory('core'),
-      this.pgStore.getAllChunksByCategory('consultable'),
-      this.pgStore.getActiveFAQs(),
-    ])
-
-    this.coreIndex = this.buildFuseIndex(coreChunks)
-    this.consultableIndex = this.buildFuseIndex(consultableChunks)
-    this.faqIndex = this.buildFAQIndex(faqs)
-
-    // Cache core data in Redis
-    await this.cache.setCoreIndex(coreChunks, faqs)
-
-    logger.info({
-      coreChunks: coreChunks.length,
-      consultableChunks: consultableChunks.length,
-      faqs: faqs.length,
-    }, 'Search indices rebuilt')
-  }
-
-  /**
-   * Search core knowledge (always injected in Phase 1).
-   */
-  async searchCore(query: string, limit = 5): Promise<KnowledgeSearchResult[]> {
-    return this.hybridSearch(query, 'core', limit)
-  }
-
-  /**
-   * Search consultable knowledge (on-demand via tool).
-   */
-  async searchConsultable(query: string, limit = 5): Promise<KnowledgeSearchResult[]> {
-    return this.hybridSearch(query, 'consultable', limit)
-  }
-
-  /**
-   * Invalidate indices (called when docs change).
-   */
-  invalidate(): void {
-    this.coreIndex = null
-    this.consultableIndex = null
-    this.faqIndex = null
-  }
-
-  /**
-   * Invalidate only core index.
-   */
-  invalidateCore(): void {
-    this.coreIndex = null
-    this.faqIndex = null
-    this.cache.invalidate().catch(() => {})
-  }
-
-  // ─── Internal ──────────────────────────────
-
-  private async hybridSearch(
-    query: string,
-    category: KnowledgeCategory,
-    limit: number,
-  ): Promise<KnowledgeSearchResult[]> {
+  async search(query: string, opts: KnowledgeSearchOptions = {}): Promise<KnowledgeSearchResult[]> {
     if (!query.trim()) return []
 
-    // Ensure indices are loaded
-    await this.ensureIndices()
+    const limit = opts.limit ?? 5
+    const searchHint = opts.searchHint ?? null
 
-    // Run FTS + fuzzy in parallel
-    const [ftsResults, fuseResults, faqResults] = await Promise.all([
-      this.pgStore.searchChunksFTS(query, category, limit * 2),
-      this.fuseSearch(query, category, limit * 2),
-      category === 'core' ? this.faqSearch(query, limit) : Promise.resolve([]),
+    // Determine if embeddings are available
+    const embeddingsAvailable = this.embeddingService?.isAvailable() ?? false
+
+    // Get query embedding (with cache)
+    let queryEmbedding: number[] | null = null
+    if (embeddingsAvailable && this.embeddingService) {
+      queryEmbedding = await this.getCachedQueryEmbedding(query)
+    }
+
+    // Run searches in parallel
+    const [vectorResults, ftsResults, faqResults] = await Promise.all([
+      queryEmbedding
+        ? this.pgStore.searchChunksVector(queryEmbedding, limit * 2)
+        : Promise.resolve([]),
+      this.pgStore.searchChunksFTS(query, limit * 2),
+      this.pgStore.searchFaqsFTS(query, limit),
     ])
 
-    // Merge and score
-    const scored = new Map<string, KnowledgeSearchResult & { combinedScore: number }>()
+    // Choose weights based on availability
+    const useVector = queryEmbedding !== null && vectorResults.length > 0
+    const wVector = useVector ? VECTOR_WEIGHT : 0
+    const wFts = useVector ? FTS_WEIGHT : FTS_WEIGHT_DEGRADED
+    const wFaq = useVector ? FAQ_WEIGHT : FAQ_WEIGHT_DEGRADED
 
-    // Add FTS results
-    for (const r of ftsResults) {
-      const key = `chunk:${r.chunkId}`
-      scored.set(key, {
+    // Merge and score chunks
+    const scored = new Map<string, KnowledgeSearchResult & { combinedScore: number; categoryIds: string[] }>()
+
+    // Add vector results
+    for (const r of vectorResults) {
+      scored.set(r.chunkId, {
         content: r.content,
         source: r.documentTitle,
         score: 0,
         type: 'chunk',
         documentId: r.documentId,
-        combinedScore: r.score * FTS_WEIGHT,
+        combinedScore: r.similarity * wVector,
+        categoryIds: r.categoryIds ?? [],
       })
     }
 
-    // Add/merge fuzzy results
-    for (const r of fuseResults) {
-      const key = `chunk:${r.documentId}:${r.content.substring(0, 50)}`
-      const existing = scored.get(key)
+    // Add/merge FTS results
+    for (const r of ftsResults) {
+      const existing = scored.get(r.chunkId)
       if (existing) {
-        existing.combinedScore += r.score * FUZZY_WEIGHT
+        existing.combinedScore += r.rank * wFts
       } else {
-        scored.set(key, {
+        scored.set(r.chunkId, {
           content: r.content,
-          source: r.source,
+          source: r.documentTitle,
           score: 0,
           type: 'chunk',
           documentId: r.documentId,
-          combinedScore: r.score * FUZZY_WEIGHT,
+          combinedScore: r.rank * wFts,
+          categoryIds: r.categoryIds ?? [],
         })
       }
     }
@@ -159,8 +108,21 @@ export class KnowledgeSearchEngine {
         score: 0,
         type: 'faq',
         faqId: r.faqId,
-        combinedScore: r.score * FAQ_WEIGHT,
+        combinedScore: r.rank * wFaq,
+        categoryIds: [],
       })
+    }
+
+    // Apply category boost if searchHint is provided
+    if (searchHint) {
+      const matchedCategory = await this.pgStore.findCategoryByTitle(searchHint)
+      if (matchedCategory) {
+        for (const entry of scored.values()) {
+          if (entry.categoryIds.includes(matchedCategory.id)) {
+            entry.combinedScore += CATEGORY_BOOST
+          }
+        }
+      }
     }
 
     // Sort by combined score, normalize, and take top N
@@ -170,81 +132,61 @@ export class KnowledgeSearchEngine {
 
     // Normalize scores to 0-1
     const maxScore = sorted[0]?.combinedScore ?? 1
-    return sorted.map(({ combinedScore, ...rest }) => ({
+    return sorted.map(({ combinedScore, categoryIds: _cats, ...rest }) => ({
       ...rest,
       score: maxScore > 0 ? combinedScore / maxScore : 0,
     }))
   }
 
-  private async ensureIndices(): Promise<void> {
-    if (this.coreIndex && this.consultableIndex && this.faqIndex) return
-    await this.rebuildIndices()
-  }
-
-  private fuseSearch(
-    query: string,
-    category: KnowledgeCategory,
-    limit: number,
-  ): Promise<Array<{ content: string; source: string; documentId: string; score: number }>> {
-    const index = category === 'core' ? this.coreIndex : this.consultableIndex
-    if (!index) return Promise.resolve([])
-
-    const results = index.search(query, { limit })
-    return Promise.resolve(
-      results.map(r => ({
-        content: r.item.content,
-        source: r.item.source,
-        documentId: r.item.documentId,
-        score: 1 - (r.score ?? 0),  // fuse.js: 0=perfect match, invert
-      })),
-    )
-  }
-
-  private faqSearch(
-    query: string,
-    limit: number,
-  ): Promise<Array<{ question: string; answer: string; faqId: string; score: number }>> {
-    if (!this.faqIndex) return Promise.resolve([])
-
-    const results = this.faqIndex.search(query, { limit })
-    return Promise.resolve(
-      results.map(r => ({
-        question: r.item.text,
-        answer: r.item.answer,
-        faqId: r.item.faqId,
-        score: 1 - (r.score ?? 0),
-      })),
-    )
-  }
-
-  private buildFuseIndex(chunks: Array<{
-    content: string; source: string; documentId: string; section: string | null
-  }>): Fuse<FuseEntry> {
-    return new Fuse(chunks, {
-      keys: ['content'],
-      threshold: 0.4,
-      includeScore: true,
-      minMatchCharLength: 3,
-      ignoreLocation: true,
-    })
-  }
-
-  private buildFAQIndex(faqs: KnowledgeFAQ[]): Fuse<FuseFAQEntry> {
-    // Index both question and its variants
-    const entries: FuseFAQEntry[] = []
-    for (const faq of faqs) {
-      entries.push({ text: faq.question, faqId: faq.id, answer: faq.answer })
-      for (const variant of faq.variants) {
-        entries.push({ text: variant, faqId: faq.id, answer: faq.answer })
+  /**
+   * Invalidate query embedding cache.
+   */
+  async invalidateQueryCache(): Promise<void> {
+    try {
+      const keys = await this.redis.keys('knowledge:qemb:*')
+      if (keys.length > 0) {
+        await this.redis.del(...keys)
       }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  // ─── Internal ──────────────────────────────
+
+  private async getCachedQueryEmbedding(query: string): Promise<number[] | null> {
+    const cacheKey = `knowledge:qemb:${this.hashQuery(query)}`
+
+    // Try cache first
+    try {
+      const cached = await this.redis.get(cacheKey)
+      if (cached) return JSON.parse(cached) as number[]
+    } catch {
+      // Cache miss or error — generate fresh
     }
 
-    return new Fuse(entries, {
-      keys: ['text'],
-      threshold: 0.35,  // slightly stricter for FAQ matching
-      includeScore: true,
-      minMatchCharLength: 3,
-      ignoreLocation: true,
-    })
+    // Generate embedding
+    const embedding = await this.embeddingService!.generateEmbedding(query)
+    if (!embedding) return null
+
+    // Cache it
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(embedding), 'EX', QUERY_CACHE_TTL_S)
+    } catch {
+      // Non-critical
+    }
+
+    return embedding
+  }
+
+  private hashQuery(query: string): string {
+    // Simple hash for cache key — not cryptographic, just for dedup
+    let hash = 0
+    for (let i = 0; i < query.length; i++) {
+      const char = query.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash |= 0 // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36)
   }
 }

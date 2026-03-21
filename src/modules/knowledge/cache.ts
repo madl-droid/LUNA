@@ -1,14 +1,14 @@
-// LUNA — Module: knowledge — Redis Cache
-// Cache de conocimiento core para no re-buscar en cada mensaje.
+// LUNA — Module: knowledge — Redis Cache v2
+// Cache de KnowledgeInjection (Phase 1) + query embeddings.
+// Invalida cuando cambian docs core, categorías o API connectors.
 
 import type { Redis } from 'ioredis'
 import pino from 'pino'
-import type { KnowledgeFAQ } from './types.js'
+import type { KnowledgeInjection } from './types.js'
 
 const logger = pino({ name: 'knowledge:cache' })
 
-const KEY_CORE_INDEX = 'knowledge:core:index'
-const KEY_CORE_FAQS = 'knowledge:core:faqs'
+const KEY_INJECTION = 'knowledge:injection'
 const KEY_CORE_HASH = 'knowledge:core:hash'
 
 export class KnowledgeCache {
@@ -21,58 +21,47 @@ export class KnowledgeCache {
     this.ttlSeconds = ttlMinutes * 60
   }
 
-  async setCoreIndex(
-    chunks: Array<{ content: string; source: string; documentId: string; section: string | null }>,
-    faqs: KnowledgeFAQ[],
-  ): Promise<void> {
+  /**
+   * Cache the KnowledgeInjection object (Phase 1 consumes this).
+   * TTL 5 min — short because core docs/categories/connectors rarely change.
+   */
+  async setInjection(injection: KnowledgeInjection): Promise<void> {
     try {
-      const hash = this.computeHash(chunks, faqs)
-      const pipeline = this.redis.pipeline()
-
-      pipeline.set(KEY_CORE_INDEX, JSON.stringify(chunks), 'EX', this.ttlSeconds)
-      pipeline.set(KEY_CORE_FAQS, JSON.stringify(faqs), 'EX', this.ttlSeconds)
-      pipeline.set(KEY_CORE_HASH, hash, 'EX', this.ttlSeconds)
-
-      await pipeline.exec()
-      logger.debug({ chunks: chunks.length, faqs: faqs.length }, 'Core cache updated')
+      const INJECTION_TTL = 300 // 5 min
+      await this.redis.set(KEY_INJECTION, JSON.stringify(injection), 'EX', INJECTION_TTL)
+      logger.debug('Injection cache updated')
     } catch (err) {
-      logger.warn({ err }, 'Failed to update core cache')
+      logger.warn({ err }, 'Failed to cache injection')
     }
   }
 
-  async getCoreIndex(): Promise<Array<{
-    content: string; source: string; documentId: string; section: string | null
-  }> | null> {
+  /**
+   * Get cached KnowledgeInjection or null if expired/missing.
+   */
+  async getInjection(): Promise<KnowledgeInjection | null> {
     try {
-      const data = await this.redis.get(KEY_CORE_INDEX)
+      const data = await this.redis.get(KEY_INJECTION)
       if (!data) return null
-      return JSON.parse(data) as Array<{
-        content: string; source: string; documentId: string; section: string | null
-      }>
+      return JSON.parse(data) as KnowledgeInjection
     } catch {
       return null
     }
   }
 
-  async getCoreFAQs(): Promise<KnowledgeFAQ[] | null> {
+  /**
+   * Set core content hash for staleness detection.
+   */
+  async setCoreHash(hash: string): Promise<void> {
     try {
-      const data = await this.redis.get(KEY_CORE_FAQS)
-      if (!data) return null
-      return JSON.parse(data) as KnowledgeFAQ[]
-    } catch {
-      return null
-    }
-  }
-
-  async invalidate(): Promise<void> {
-    try {
-      await this.redis.del(KEY_CORE_INDEX, KEY_CORE_FAQS, KEY_CORE_HASH)
-      logger.debug('Core cache invalidated')
+      await this.redis.set(KEY_CORE_HASH, hash, 'EX', this.ttlSeconds)
     } catch (err) {
-      logger.warn({ err }, 'Failed to invalidate core cache')
+      logger.warn({ err }, 'Failed to set core hash')
     }
   }
 
+  /**
+   * Check if core content is stale (hash missing or expired).
+   */
   async isStale(): Promise<boolean> {
     try {
       const exists = await this.redis.exists(KEY_CORE_HASH)
@@ -82,13 +71,16 @@ export class KnowledgeCache {
     }
   }
 
-  private computeHash(
-    chunks: Array<{ content: string; documentId: string }>,
-    faqs: KnowledgeFAQ[],
-  ): string {
-    // Simple hash: count + first/last IDs
-    const chunkSig = `${chunks.length}:${chunks[0]?.documentId ?? ''}:${chunks[chunks.length - 1]?.documentId ?? ''}`
-    const faqSig = `${faqs.length}:${faqs[0]?.id ?? ''}:${faqs[faqs.length - 1]?.id ?? ''}`
-    return `${chunkSig}|${faqSig}`
+  /**
+   * Invalidate all cached knowledge data.
+   * Called when core docs, categories, or API connectors change.
+   */
+  async invalidate(): Promise<void> {
+    try {
+      await this.redis.del(KEY_INJECTION, KEY_CORE_HASH)
+      logger.debug('Knowledge cache invalidated')
+    } catch (err) {
+      logger.warn({ err }, 'Failed to invalidate cache')
+    }
   }
 }
