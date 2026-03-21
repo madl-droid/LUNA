@@ -96,6 +96,12 @@ export interface QuickAction {
   matched: string
 }
 
+export interface KnowledgeInjection {
+  coreDocuments: Array<{ title: string; description: string }>
+  categories: Array<{ id: string; title: string; description: string }>
+  apiConnectors: Array<{ title: string; description: string }>
+}
+
 export interface ContextBundle {
   // Original message
   message: IncomingMessage
@@ -120,8 +126,11 @@ export interface ContextBundle {
   // Campaign
   campaign: CampaignInfo | null
 
-  // RAG
+  // RAG — legacy fallback matches
   knowledgeMatches: KnowledgeMatch[]
+
+  // Knowledge v2 — structured injection for evaluator
+  knowledgeInjection: KnowledgeInjection | null
 
   // History
   history: HistoryMessage[]
@@ -171,6 +180,8 @@ export interface EvaluatorOutput {
   executionPlan: ExecutionStep[]
   toolsNeeded: string[]
   needsAcknowledgment: boolean
+  searchQuery?: string      // v2: query for search_knowledge tool
+  searchHint?: string       // v2: category title hint for boosting
   rawResponse?: string
 }
 

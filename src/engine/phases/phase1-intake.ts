@@ -17,6 +17,7 @@ import type {
   UserType,
   UserPermissions,
   CampaignInfo,
+  KnowledgeInjection,
 } from '../types.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { ContactMemory } from '../../modules/memory/types.js'
@@ -71,21 +72,33 @@ export async function phase1Intake(
   const agentId = await resolveAgentId(memoryManager)
 
   // 6-10. Load context in parallel (graceful degradation)
+  // Knowledge v2: try knowledge:manager.getInjection() first, fallback to rag-local
+  const knowledgeManagerSvc = registry.getOptional<{ getInjection(): Promise<KnowledgeInjection> }>('knowledge:manager')
+
   const [
     contactResult,
     campaignResult,
     knowledgeResult,
+    knowledgeInjectionResult,
     sheetsCacheResult,
   ] = await Promise.allSettled([
     findContact(db, message.from, message.channelName),
     detectCampaign(db, message, normalizedText),
-    normalizedText ? searchKnowledge(normalizedText, config.knowledgeDir, 3) : Promise.resolve([]),
+    // Fallback RAG — only if knowledge module not active
+    !knowledgeManagerSvc && normalizedText
+      ? searchKnowledge(normalizedText, config.knowledgeDir, 3)
+      : Promise.resolve([]),
+    // Knowledge v2 injection
+    knowledgeManagerSvc
+      ? knowledgeManagerSvc.getInjection()
+      : Promise.resolve(null),
     loadSheetsCache(redis),
   ])
 
   const contact = contactResult.status === 'fulfilled' ? contactResult.value : null
   const campaign = campaignResult.status === 'fulfilled' ? campaignResult.value : null
   const knowledgeMatches = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
+  const knowledgeInjection = knowledgeInjectionResult.status === 'fulfilled' ? knowledgeInjectionResult.value : null
   const sheetsData = sheetsCacheResult.status === 'fulfilled' ? sheetsCacheResult.value : null
 
   if (contactResult.status === 'rejected') logger.warn({ err: contactResult.reason, traceId }, 'Contact lookup failed')
@@ -148,6 +161,7 @@ export async function phase1Intake(
     quickAction,
     campaign,
     knowledgeMatches,
+    knowledgeInjection,
     history,
     contactMemory,
     pendingCommitments,

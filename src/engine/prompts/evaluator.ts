@@ -36,7 +36,9 @@ Reglas:
 - Para consultas de agenda: type=api_call, tool=get_availability o schedule
 - Para consultas complejas que requieren múltiples pasos: type=subagent
 - Para búsquedas web: type=web_search
-- Para consultar historial/sesiones previas: type=memory_lookup`
+- Para consultar historial/sesiones previas: type=memory_lookup
+- Si necesitas buscar en la base de conocimiento: incluye "search_query" y opcionalmente "search_hint" (título de categoría) en tu respuesta
+- search_hint prioriza resultados de esa categoría pero nunca excluye otras`
 
 const TOOL_CATALOG_HEADER = `\nTools disponibles (solo usar las listadas):`
 const TOOL_CATALOG_COMPACT_HEADER = `\nTools disponibles (catálogo resumido — pide definición completa si la necesitas):`
@@ -127,8 +129,32 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
     parts.push(`[Campaña: ${ctx.campaign.name}]`)
   }
 
-  // Knowledge matches
-  if (ctx.knowledgeMatches.length > 0) {
+  // Knowledge v2 injection (structured catalog for evaluator)
+  if (ctx.knowledgeInjection) {
+    const inj = ctx.knowledgeInjection
+    if (inj.coreDocuments.length > 0) {
+      parts.push(`[Documentos core disponibles:]`)
+      for (const d of inj.coreDocuments) {
+        parts.push(`- ${d.title}: ${d.description}`)
+      }
+    }
+    if (inj.categories.length > 0) {
+      parts.push(`[Categorías de conocimiento:]`)
+      for (const c of inj.categories) {
+        parts.push(`- ${c.title}: ${c.description}`)
+      }
+    }
+    if (inj.apiConnectors.length > 0) {
+      parts.push(`[APIs disponibles:]`)
+      for (const a of inj.apiConnectors) {
+        parts.push(`- ${a.title}: ${a.description}`)
+      }
+    }
+    parts.push(`[Si necesitas buscar conocimiento, indica search_query y opcionalmente search_hint (título de categoría para priorizar)]`)
+  }
+
+  // Knowledge matches (legacy fallback)
+  if (!ctx.knowledgeInjection && ctx.knowledgeMatches.length > 0) {
     parts.push(`[Información relevante encontrada:]`)
     for (const match of ctx.knowledgeMatches) {
       parts.push(`- ${match.content.substring(0, 200)}`)
