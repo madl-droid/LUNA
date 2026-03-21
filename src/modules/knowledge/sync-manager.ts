@@ -7,7 +7,7 @@ import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeManager } from './knowledge-manager.js'
-import type { KnowledgeSyncSource, SyncFrequency, KnowledgeCategory } from './types.js'
+import type { KnowledgeSyncSource, SyncFrequency } from './types.js'
 import { SYNC_FREQUENCY_MS, type KnowledgeConfig } from './types.js'
 import { isSupportedMimeType, GOOGLE_NATIVE_TYPES, resolveMimeType } from './extractors/index.js'
 import { isSlidesAvailable, extractSlides } from './extractors/slides.js'
@@ -143,7 +143,7 @@ export class SyncManager {
 
       for (const file of result.files) {
         try {
-          await this.syncDriveFile(file, source.autoCategory)
+          await this.syncDriveFile(file, source.autoCategoryId)
           synced++
         } catch (err) {
           logger.warn({ fileId: file.id, fileName: file.name, err }, 'Failed to sync Drive file')
@@ -159,7 +159,7 @@ export class SyncManager {
 
   private async syncDriveFile(
     file: { id: string; name: string; mimeType: string; modifiedTime?: string },
-    autoCategory: KnowledgeCategory,
+    autoCategoryId: string | null,
   ): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const driveService = this.registry.get<any>('google:drive')
@@ -191,7 +191,8 @@ export class SyncManager {
         await this.pgStore.insertChunks(existing.id, chunks)
       } else {
         const buffer = Buffer.from(extracted.text, 'utf-8')
-        await this.knowledgeManager.addDocument(buffer, file.name, autoCategory, {
+        await this.knowledgeManager.addDocument(buffer, file.name, {
+          categoryIds: autoCategoryId ? [autoCategoryId] : [],
           sourceType: 'drive',
           sourceRef: file.id,
           mimeType: 'text/plain',
@@ -241,7 +242,8 @@ export class SyncManager {
       logger.info({ id: existing.id, title: file.name }, 'Drive document updated')
     } else {
       // New document
-      await this.knowledgeManager.addDocument(buffer, file.name, autoCategory, {
+      await this.knowledgeManager.addDocument(buffer, file.name, {
+        categoryIds: autoCategoryId ? [autoCategoryId] : [],
         sourceType: 'drive',
         sourceRef: file.id,
         mimeType: effectiveMime,
@@ -292,7 +294,8 @@ export class SyncManager {
         await this.pgStore.insertChunks(existing.id, chunks)
       } else {
         // New
-        await this.knowledgeManager.addDocument(buffer, fileName, source.autoCategory, {
+        await this.knowledgeManager.addDocument(buffer, fileName, {
+          categoryIds: source.autoCategoryId ? [source.autoCategoryId] : [],
           sourceType: 'url',
           sourceRef: source.ref,
           mimeType,

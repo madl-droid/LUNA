@@ -1,20 +1,22 @@
-// LUNA — Module: knowledge — Knowledge Manager
+// LUNA — Module: knowledge — Knowledge Manager v2
 // Orquestador principal. Servicio expuesto como 'knowledge:manager'.
+// v2: categorías como tabla, embeddings async, KnowledgeInjection, API connectors.
 
 import { createHash } from 'node:crypto'
-import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises'
+import { writeFile, mkdir, unlink } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeSearchEngine } from './search-engine.js'
 import type { KnowledgeCache } from './cache.js'
+import type { VectorizeWorker } from './vectorize-worker.js'
 import type {
-  KnowledgeCategory,
   KnowledgeConfig,
   KnowledgeDocument,
   KnowledgeSearchResult,
   KnowledgeSearchOptions,
+  KnowledgeInjection,
   KnowledgeStats,
   UpgradeSuggestion,
   DocumentMetadata,
@@ -26,6 +28,8 @@ import { chunkSections } from './extractors/chunker.js'
 const logger = pino({ name: 'knowledge:manager' })
 
 export class KnowledgeManager {
+  private vectorizeWorker: VectorizeWorker | null = null
+
   constructor(
     private pgStore: KnowledgePgStore,
     private searchEngine: KnowledgeSearchEngine,
@@ -34,20 +38,27 @@ export class KnowledgeManager {
     private registry: Registry,
   ) {}
 
+  setVectorizeWorker(worker: VectorizeWorker): void {
+    this.vectorizeWorker = worker
+  }
+
   // ─── Document management ───────────────────
 
   /**
    * Add a document from a file buffer (upload or sync).
+   * v2: accepts categoryIds[] instead of single category string.
    */
   async addDocument(
     buffer: Buffer,
     fileName: string,
-    category: KnowledgeCategory,
     options: {
+      isCore?: boolean
+      categoryIds?: string[]
       sourceType?: DocumentSourceType
       sourceRef?: string
       mimeType?: string
       metadata?: DocumentMetadata
+      description?: string
     } = {},
   ): Promise<KnowledgeDocument> {
     // Check file size
@@ -66,6 +77,21 @@ export class KnowledgeManager {
       return existing
     }
 
+    // Validate core limit
+    if (options.isCore) {
+      const coreCount = await this.pgStore.getCoreDocumentCount()
+      if (coreCount >= this.config.KNOWLEDGE_MAX_CORE_DOCS) {
+        throw new Error(`Core document limit reached (max ${this.config.KNOWLEDGE_MAX_CORE_DOCS}). Remove a core doc first.`)
+      }
+    }
+
+    // Ensure at least one category (default)
+    let categoryIds = options.categoryIds ?? []
+    if (categoryIds.length === 0) {
+      const defaultCat = await this.pgStore.getDefaultCategory()
+      if (defaultCat) categoryIds = [defaultCat.id]
+    }
+
     // Resolve MIME type
     const mimeType = resolveMimeType(fileName, options.mimeType)
 
@@ -82,19 +108,12 @@ export class KnowledgeManager {
     // Chunk the extracted content
     const chunks = chunkSections(extracted.sections)
 
-    // Check core limit
-    if (category === 'core') {
-      const stats = await this.pgStore.getStats()
-      if (stats.totalChunks + chunks.length > this.config.KNOWLEDGE_CORE_MAX_CHUNKS * 2) {
-        logger.warn({ chunks: chunks.length }, 'Adding document may exceed core chunk guidance')
-      }
-    }
-
     // Persist document
     const title = extracted.metadata.originalName ?? fileName
     const docId = await this.pgStore.insertDocument({
       title,
-      category,
+      description: options.description ?? '',
+      isCore: options.isCore ?? false,
       sourceType: options.sourceType ?? 'upload',
       sourceRef: options.sourceRef ?? null,
       contentHash,
@@ -103,13 +122,25 @@ export class KnowledgeManager {
       metadata: { ...extracted.metadata, ...options.metadata },
     })
 
-    // Persist chunks
+    // Persist chunks (available for FTS immediately)
     await this.pgStore.insertChunks(docId, chunks)
 
-    // Rebuild search indices
-    this.searchEngine.invalidate()
+    // Assign categories
+    for (const catId of categoryIds) {
+      await this.pgStore.assignDocumentCategory(docId, catId)
+    }
 
-    logger.info({ id: docId, title, category, chunks: chunks.length }, 'Document added')
+    // Enqueue vectorization (async — doesn't block)
+    if (this.vectorizeWorker) {
+      this.vectorizeWorker.enqueueDocument(docId).catch(err => {
+        logger.warn({ err, docId }, 'Failed to enqueue vectorization')
+      })
+    }
+
+    // Invalidate caches
+    if (options.isCore) await this.cache.invalidate()
+
+    logger.info({ id: docId, title, isCore: options.isCore, chunks: chunks.length }, 'Document added')
     return (await this.pgStore.getDocument(docId))!
   }
 
@@ -132,102 +163,106 @@ export class KnowledgeManager {
 
     await this.pgStore.deleteDocument(id)
 
-    // Invalidate indices
-    if (doc.category === 'core') {
-      this.searchEngine.invalidateCore()
-    } else {
-      this.searchEngine.invalidate()
-    }
+    if (doc.isCore) await this.cache.invalidate()
 
     logger.info({ id, title: doc.title }, 'Document removed')
   }
 
   /**
-   * Change document category (core ↔ consultable).
+   * Set core flag on a document.
    */
-  async updateCategory(id: string, category: KnowledgeCategory): Promise<void> {
+  async setCore(id: string, isCore: boolean): Promise<void> {
     const doc = await this.pgStore.getDocument(id)
     if (!doc) throw new Error(`Document "${id}" not found`)
-    if (doc.category === category) return
+    if (doc.isCore === isCore) return
 
-    await this.pgStore.updateDocumentCategory(id, category)
-    this.searchEngine.invalidate()
+    if (isCore) {
+      const coreCount = await this.pgStore.getCoreDocumentCount()
+      if (coreCount >= this.config.KNOWLEDGE_MAX_CORE_DOCS) {
+        throw new Error(`Core document limit reached (max ${this.config.KNOWLEDGE_MAX_CORE_DOCS})`)
+      }
+    }
+
+    await this.pgStore.updateDocumentCore(id, isCore)
     await this.cache.invalidate()
 
-    logger.info({ id, title: doc.title, from: doc.category, to: category }, 'Document category changed')
-  }
-
-  /**
-   * Re-process a document (re-extract and re-chunk).
-   */
-  async reprocessDocument(id: string): Promise<void> {
-    const doc = await this.pgStore.getDocument(id)
-    if (!doc || !doc.filePath) throw new Error(`Document "${id}" not found or has no file`)
-
-    const knowledgeDir = resolve(process.cwd(), this.config.KNOWLEDGE_DIR)
-    const buffer = await readFile(join(knowledgeDir, doc.filePath))
-    const extracted = await extractContent(buffer, doc.title, doc.mimeType, this.registry)
-    const chunks = chunkSections(extracted.sections)
-
-    const newHash = createHash('sha256').update(buffer).digest('hex')
-    await this.pgStore.updateDocumentHash(id, newHash, chunks.length)
-    await this.pgStore.insertChunks(id, chunks)
-
-    this.searchEngine.invalidate()
-    logger.info({ id, title: doc.title, chunks: chunks.length }, 'Document reprocessed')
+    logger.info({ id, title: doc.title, isCore }, 'Document core flag changed')
   }
 
   // ─── Search ────────────────────────────────
 
   /**
-   * Search core knowledge (for Phase 1 injection).
+   * Search consultable knowledge (for tool use in Phase 3).
+   * Accepts searchHint for category boost.
    */
-  async searchCore(query: string, limit = 3): Promise<KnowledgeSearchResult[]> {
-    const results = await this.searchEngine.searchCore(query, limit)
-    // Track hits (fire-and-forget)
+  async searchConsultable(query: string, limit = 5, searchHint?: string): Promise<KnowledgeSearchResult[]> {
+    const results = await this.searchEngine.search(query, { limit, searchHint })
     this.trackHits(results)
-    // Record gap if no results
     if (results.length === 0 && query.trim().length > 5) {
       this.pgStore.recordGap(query).catch(() => {})
     }
     return results
   }
+
+  // ─── Injection (Phase 1) ───────────────────
 
   /**
-   * Search consultable knowledge (for tool use).
+   * Get KnowledgeInjection for Phase 1 context.
+   * Returns cached version if available.
    */
-  async searchConsultable(query: string, limit = 5): Promise<KnowledgeSearchResult[]> {
-    const results = await this.searchEngine.searchConsultable(query, limit)
-    this.trackHits(results)
-    if (results.length === 0 && query.trim().length > 5) {
-      this.pgStore.recordGap(query).catch(() => {})
+  async getInjection(): Promise<KnowledgeInjection> {
+    // Try cache first
+    const cached = await this.cache.getInjection()
+    if (cached) return cached
+
+    // Build fresh
+    const [coreDocs, categories, connectors] = await Promise.all([
+      this.pgStore.getCoreDocuments(),
+      this.pgStore.listCategories(),
+      this.pgStore.listApiConnectors(),
+    ])
+
+    const injection: KnowledgeInjection = {
+      coreDocuments: coreDocs.map(d => ({ title: d.title, description: d.description })),
+      categories: categories.map(c => ({ id: c.id, title: c.title, description: c.description })),
+      apiConnectors: connectors
+        .filter(c => c.active)
+        .map(c => ({ title: c.title, description: c.description })),
     }
-    return results
+
+    // Cache it
+    await this.cache.setInjection(injection)
+
+    return injection
   }
 
-  // ─── Rebuild ───────────────────────────────
+  // ─── Vectorization ─────────────────────────
 
-  async rebuildIndex(): Promise<void> {
-    await this.searchEngine.rebuildIndices()
-    logger.info('Full index rebuild completed')
+  /**
+   * Trigger bulk vectorization (manual button in oficina).
+   * Respects 1hr cooldown.
+   */
+  async triggerBulkVectorization(): Promise<{ enqueued: boolean; reason?: string }> {
+    if (!this.vectorizeWorker) {
+      return { enqueued: false, reason: 'Vectorize worker not available' }
+    }
+    return this.vectorizeWorker.enqueueBulk()
   }
 
   // ─── Auto-downgrade ────────────────────────
 
   /**
    * Downgrade core documents that haven't been used in N days.
-   * Called periodically by BullMQ job.
    */
   async runAutoDowngrade(): Promise<number> {
     const docs = await this.pgStore.getDocumentsForDowngrade(this.config.KNOWLEDGE_AUTO_DOWNGRADE_DAYS)
 
     for (const doc of docs) {
-      await this.pgStore.updateDocumentCategory(doc.id, 'consultable')
-      logger.info({ id: doc.id, title: doc.title, hitCount: doc.hitCount }, 'Auto-downgraded to consultable')
+      await this.pgStore.updateDocumentCore(doc.id, false)
+      logger.info({ id: doc.id, title: doc.title, hitCount: doc.hitCount }, 'Auto-downgraded from core')
     }
 
     if (docs.length > 0) {
-      this.searchEngine.invalidate()
       await this.cache.invalidate()
     }
 
@@ -241,8 +276,15 @@ export class KnowledgeManager {
   }
 
   async getUpgradeSuggestions(): Promise<UpgradeSuggestion[]> {
-    // Suggest upgrade if consultable doc has >= 5 hits
     return this.pgStore.getUpgradeSuggestions(5)
+  }
+
+  // ─── Rebuild ───────────────────────────────
+
+  async rebuildIndex(): Promise<void> {
+    await this.searchEngine.invalidateQueryCache()
+    await this.cache.invalidate()
+    logger.info('Index and cache invalidated')
   }
 
   // ─── Private ───────────────────────────────
