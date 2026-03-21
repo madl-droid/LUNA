@@ -1,10 +1,10 @@
 # LUNA — Agente IA de Leads
 
 ## Qué es
-Agente de IA que atiende leads por WhatsApp y email. Califica, agenda, hace seguimiento, escala a humanos. Single-instance per server. Un repo, múltiples deploys.
+Agente de IA que atiende leads por WhatsApp, email, Google Chat y llamadas de voz. Califica, agenda, hace seguimiento, escala a humanos. Single-instance per server. Un repo, múltiples deploys.
 
 ## Stack
-TypeScript / Node.js ≥22 (ESM), PostgreSQL, Redis + BullMQ, Baileys (WhatsApp), Google OAuth2 (Gmail, Calendar, Sheets), LLMs: Anthropic + OpenAI + Google.
+TypeScript / Node.js ≥22 (ESM), PostgreSQL + pgvector, Redis + BullMQ, Baileys (WhatsApp), Twilio (voz), Google OAuth2 (Gmail, Calendar, Sheets, Chat), LLMs: Anthropic + OpenAI + Google.
 
 ## Arquitectura
 Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada módulo exporta un `manifest.ts` con lifecycle (init/stop), hooks tipados, config schema y definición de UI.
@@ -129,7 +129,7 @@ import type { StoredMessage } from '../memory/types.js'
 - NO implementar voz ni llamadas fuera del módulo twilio-voice — toda la lógica de voz vive ahí
 - pgvector ya está integrado (memory + knowledge v2). NO agregar bases vectoriales externas (Pinecone, Weaviate, etc.)
 - NO guardar archivos en la base de datos — media queda en disco en instance/knowledge/media/
-- NO construir dashboard — es V2
+- NO construir SPA para oficina — usar SSR con templates server-side
 - NO hacer sync bidireccional con Google Sheets — Postgres es fuente de verdad, writes a Sheets son async
 - NO usar import sin extensión .js en paths relativos — ESM lo requiere
 - NO acceder arrays por índice sin `!` o `?.` — `noUncheckedIndexedAccess` está activo en tsconfig. `arr[0]` es `T | undefined`. Usar `arr[0]!` cuando hay guard previo (`if (arr.length > 0)`) o `arr[0]?.prop` cuando no hay guard.
