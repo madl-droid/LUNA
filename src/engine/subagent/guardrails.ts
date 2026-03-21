@@ -9,11 +9,14 @@ const logger = pino({ name: 'engine:guardrails' })
 
 // Default guardrails
 const DEFAULTS: SubagentConfig = {
-  maxIterations: 3,
+  maxIterations: 5,
   timeoutMs: 20000,
   maxTokenBudget: 15000,
   allowedTools: [],
 }
+
+// Hard ceiling — even if tenant sets higher, never exceed this
+const MAX_ITERATIONS_CEILING = 10
 
 /**
  * Load subagent guardrails from instance/config.json or use defaults.
@@ -28,7 +31,7 @@ export async function loadGuardrails(
     const subagent = config.subagent ?? {}
 
     return {
-      maxIterations: subagent.maxIterations ?? defaults.maxIterations ?? DEFAULTS.maxIterations,
+      maxIterations: Math.min(subagent.maxIterations ?? defaults.maxIterations ?? DEFAULTS.maxIterations, MAX_ITERATIONS_CEILING),
       timeoutMs: subagent.timeoutMs ?? defaults.timeoutMs ?? DEFAULTS.timeoutMs,
       maxTokenBudget: subagent.maxTokenBudget ?? defaults.maxTokenBudget ?? DEFAULTS.maxTokenBudget,
       allowedTools: subagent.allowedTools ?? defaults.allowedTools ?? DEFAULTS.allowedTools,
@@ -36,7 +39,7 @@ export async function loadGuardrails(
   } catch {
     logger.debug('No subagent config in instance/config.json, using defaults')
     return {
-      maxIterations: defaults.maxIterations ?? DEFAULTS.maxIterations,
+      maxIterations: Math.min(defaults.maxIterations ?? DEFAULTS.maxIterations, MAX_ITERATIONS_CEILING),
       timeoutMs: defaults.timeoutMs ?? DEFAULTS.timeoutMs,
       maxTokenBudget: defaults.maxTokenBudget ?? DEFAULTS.maxTokenBudget,
       allowedTools: defaults.allowedTools ?? DEFAULTS.allowedTools,

@@ -15,6 +15,7 @@ const NAV_SECTIONS = [
   { id: 'llm-cb', key: 'sec_llm_cb', icon: '&#128268;', group: 'ai' },
   // Pipeline
   { id: 'pipeline', key: 'sec_pipeline', icon: '&#9654;', group: 'pipeline' },
+  { id: 'engine-metrics', key: 'sec_engine_metrics', icon: '&#128200;', group: 'pipeline' },
   { id: 'followup', key: 'sec_followup', icon: '&#128260;', group: 'pipeline' },
   { id: 'naturalidad', key: 'sec_naturalidad', icon: '&#127917;', group: 'pipeline' },
   // Leads

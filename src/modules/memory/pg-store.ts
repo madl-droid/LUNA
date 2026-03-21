@@ -564,9 +564,10 @@ export class PgStore {
           phase1_ms, phase2_ms, phase2_result, phase3_ms, phase3_result,
           phase4_ms, phase5_ms, total_ms,
           tokens_input, tokens_output, estimated_cost,
-          models_used, tools_called, had_subagent, had_fallback, error
+          models_used, tools_called, had_subagent, had_fallback, error,
+          replan_attempts, subagent_iterations
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
         [
           entry.messageId ?? null, entry.agentId, entry.contactId, entry.sessionId ?? null,
           entry.phase1Ms ?? null, entry.phase2Ms ?? null,
@@ -578,6 +579,7 @@ export class PgStore {
           entry.modelsUsed ?? null, entry.toolsCalled ?? null,
           entry.hadSubagent ?? false, entry.hadFallback ?? false,
           entry.error ?? null,
+          entry.replanAttempts ?? 0, entry.subagentIterations ?? 0,
         ],
       )
     } catch (err) {

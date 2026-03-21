@@ -156,6 +156,8 @@ export function renderPipelineSection(data: SectionData): string {
     numField('PIPELINE_MAX_TOOL_CALLS_PER_TURN', cv(data, 'PIPELINE_MAX_TOOL_CALLS_PER_TURN'), data.lang, 'f_PIPELINE_MAX_TOOL_CALLS_PER_TURN', 'i_PIPELINE_TOOLS'),
     numField('PIPELINE_MAX_CONVERSATION_TURNS', cv(data, 'PIPELINE_MAX_CONVERSATION_TURNS'), data.lang, 'f_PIPELINE_MAX_CONVERSATION_TURNS', 'i_PIPELINE_TURNS'),
     numField('PIPELINE_SESSION_TTL_MS', cv(data, 'PIPELINE_SESSION_TTL_MS'), data.lang, 'f_PIPELINE_SESSION_TTL_MS', 'i_PIPELINE_TTL'),
+    numField('SUBAGENT_MAX_ITERATIONS', cv(data, 'SUBAGENT_MAX_ITERATIONS') || '5', data.lang, 'f_SUBAGENT_MAX_ITERATIONS', 'i_SUBAGENT_ITER'),
+    numField('PIPELINE_MAX_REPLAN_ATTEMPTS', cv(data, 'PIPELINE_MAX_REPLAN_ATTEMPTS') || '2', data.lang, 'f_PIPELINE_MAX_REPLAN_ATTEMPTS', 'i_PIPELINE_REPLAN'),
   ])
 }
 
@@ -278,6 +280,90 @@ export function renderRedisSection(data: SectionData): string {
   ])
 }
 
+export function renderEngineMetricsSection(data: SectionData): string {
+  const lang = data.lang
+  const title = lang === 'en' ? 'Engine Performance' : 'Rendimiento del engine'
+  const loading = lang === 'en' ? 'Loading metrics...' : 'Cargando métricas...'
+  const periodLabel = lang === 'en' ? 'Period' : 'Periodo'
+  // Headers
+  const hTotal = lang === 'en' ? 'Executions' : 'Ejecuciones'
+  const hReplan = lang === 'en' ? 'With replan' : 'Con replan'
+  const hAvgReplan = lang === 'en' ? 'Avg replans' : 'Avg replans'
+  const hMaxReplan = lang === 'en' ? 'Max replans' : 'Max replans'
+  const hSubagent = lang === 'en' ? 'With subagent' : 'Con subagent'
+  const hAvgSubIter = lang === 'en' ? 'Avg subagent iter' : 'Avg iter subagent'
+  const hMaxSubIter = lang === 'en' ? 'Max subagent iter' : 'Max iter subagent'
+  const hAvgMs = lang === 'en' ? 'Avg latency (ms)' : 'Latencia prom (ms)'
+  const hP95 = lang === 'en' ? 'P95 latency (ms)' : 'Latencia P95 (ms)'
+  const hTrends = lang === 'en' ? 'Daily Trends (30d)' : 'Tendencias diarias (30d)'
+  const hDay = lang === 'en' ? 'Day' : 'Día'
+
+  return `<div class="panel">
+    <div class="panel-header"><span class="panel-title">${esc(title)}</span></div>
+    <div class="panel-body">
+      <div style="margin-bottom:12px">
+        <label>${esc(periodLabel)}:
+          <select id="metrics-period" style="margin-left:4px">
+            <option value="24h">24h</option>
+            <option value="7d">7d</option>
+            <option value="30d">30d</option>
+          </select>
+        </label>
+      </div>
+      <div id="metrics-summary">${esc(loading)}</div>
+      <table id="metrics-table" style="width:100%;border-collapse:collapse;display:none">
+        <tr>
+          <th>${esc(hTotal)}</th><th>${esc(hReplan)}</th><th>${esc(hAvgReplan)}</th><th>${esc(hMaxReplan)}</th>
+          <th>${esc(hSubagent)}</th><th>${esc(hAvgSubIter)}</th><th>${esc(hMaxSubIter)}</th>
+          <th>${esc(hAvgMs)}</th><th>${esc(hP95)}</th>
+        </tr>
+        <tbody id="metrics-summary-row"></tbody>
+      </table>
+      <h4 style="margin-top:16px">${esc(hTrends)}</h4>
+      <table id="metrics-trends" style="width:100%;border-collapse:collapse;display:none">
+        <tr>
+          <th>${esc(hDay)}</th><th>${esc(hTotal)}</th><th>${esc(hAvgReplan)}</th>
+          <th>${esc(hAvgSubIter)}</th><th>${esc(hAvgMs)}</th>
+        </tr>
+        <tbody id="metrics-trends-rows"></tbody>
+      </table>
+      <script>
+      (function(){
+        var sel=document.getElementById('metrics-period');
+        function load(){
+          var p=sel.value;
+          fetch('/oficina/api/oficina/engine-metrics?period='+p)
+            .then(function(r){return r.json()})
+            .then(function(d){
+              var s=d.summary||{};
+              document.getElementById('metrics-summary').style.display='none';
+              var t=document.getElementById('metrics-table');t.style.display='table';
+              document.getElementById('metrics-summary-row').innerHTML=
+                '<tr><td>'+n(s.total_executions)+'</td><td>'+n(s.executions_with_replan)+'</td>'
+                +'<td>'+n(s.avg_replan_attempts)+'</td><td>'+n(s.max_replan_attempts)+'</td>'
+                +'<td>'+n(s.executions_with_subagent)+'</td><td>'+n(s.avg_subagent_iterations)+'</td>'
+                +'<td>'+n(s.max_subagent_iterations)+'</td><td>'+n(s.avg_total_ms)+'</td>'
+                +'<td>'+n(s.p95_total_ms)+'</td></tr>';
+              var rows=d.trends||[];
+              var tb=document.getElementById('metrics-trends-rows');
+              var tt=document.getElementById('metrics-trends');
+              if(rows.length>0){
+                tt.style.display='table';
+                tb.innerHTML=rows.map(function(r){
+                  return '<tr><td>'+r.day+'</td><td>'+n(r.total)+'</td><td>'+n(r.avg_replan)
+                    +'</td><td>'+n(r.avg_subagent_iter)+'</td><td>'+n(r.avg_ms)+'</td></tr>';
+                }).join('');
+              }
+            })
+            .catch(function(){document.getElementById('metrics-summary').textContent='Error loading metrics'});
+        }
+        function n(v){return v==null?'-':v}
+        sel.addEventListener('change',load);
+        load();
+      })();
+      </script>
+    </div>
+  </div>`
 export function renderScheduledTasksSection(data: SectionData): string {
   if (data.scheduledTasksHtml) return data.scheduledTasksHtml
   // Fallback if render service not available
@@ -297,6 +383,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'followup': return renderFollowupSection(data)
     case 'naturalidad': return renderNaturalidadSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
+    case 'engine-metrics': return renderEngineMetricsSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
     case 'modules': return renderModulesSection(data)
     case 'db': return renderDbSection(data)

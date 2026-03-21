@@ -97,9 +97,12 @@ export function loadEngineConfig(): EngineConfig {
     batchTimezone: env('BATCH_TIMEZONE', 'America/Mexico_City'),
 
     // Subagent defaults
-    subagentMaxIterations: envInt('SUBAGENT_MAX_ITERATIONS', 3),
+    subagentMaxIterations: envInt('SUBAGENT_MAX_ITERATIONS', 5),
     subagentTimeoutMs: envInt('SUBAGENT_TIMEOUT_MS', 20000),
     subagentMaxTokenBudget: envInt('SUBAGENT_MAX_TOKEN_BUDGET', 15000),
+
+    // Replanning
+    maxReplanAttempts: Math.min(envInt('PIPELINE_MAX_REPLAN_ATTEMPTS', 2), 5),
 
     // API keys
     anthropicApiKey: env('ANTHROPIC_API_KEY', ''),
