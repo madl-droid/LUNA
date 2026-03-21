@@ -1,6 +1,6 @@
-// LUNA — Module: knowledge
+// LUNA — Module: knowledge v2
 // Base de conocimiento del agente. Documentos, FAQs, sync, búsqueda híbrida.
-// Dos modos: core (siempre inyectado) y consultable (bajo demanda via tool).
+// v2: categorías como tabla, embeddings vectoriales, API connectors, web sources.
 
 import { z } from 'zod'
 import pino from 'pino'
@@ -8,13 +8,17 @@ import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import { numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
-import type { KnowledgeConfig, KnowledgeCategory, SyncFrequency } from './types.js'
+import type { KnowledgeConfig, SyncFrequency } from './types.js'
 import { KnowledgePgStore } from './pg-store.js'
 import { KnowledgeSearchEngine } from './search-engine.js'
 import { KnowledgeCache } from './cache.js'
 import { KnowledgeManager } from './knowledge-manager.js'
+import { EmbeddingService } from './embedding-service.js'
+import { VectorizeWorker } from './vectorize-worker.js'
 import { SyncManager } from './sync-manager.js'
 import { FAQManager } from './faq-manager.js'
+import { ApiConnectorManager } from './api-connector.js'
+import { WebSourceManager } from './web-source-manager.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 
 const logger = pino({ name: 'knowledge' })
@@ -23,6 +27,9 @@ let pgStore: KnowledgePgStore | null = null
 let knowledgeManager: KnowledgeManager | null = null
 let syncManager: SyncManager | null = null
 let faqManager: FAQManager | null = null
+let apiConnectorManager: ApiConnectorManager | null = null
+let webSourceManager: WebSourceManager | null = null
+let vectorizeWorker: VectorizeWorker | null = null
 let downgradeTimer: ReturnType<typeof setInterval> | null = null
 
 // ═══════════════════════════════════════════
@@ -45,6 +52,14 @@ function getPgStore(): KnowledgePgStore {
   if (!pgStore) throw new Error('Knowledge module not initialized')
   return pgStore
 }
+function getApiConnectorManager(): ApiConnectorManager {
+  if (!apiConnectorManager) throw new Error('Knowledge module not initialized')
+  return apiConnectorManager
+}
+function getWebSourceManager(): WebSourceManager {
+  if (!webSourceManager) throw new Error('Knowledge module not initialized')
+  return webSourceManager
+}
 
 // ═══════════════════════════════════════════
 // API Routes
@@ -54,7 +69,7 @@ function createApiRoutes(): ApiRoute[] {
   return [
     // ─── Documents ───
 
-    // GET /oficina/api/knowledge/documents?category=&search=&limit=50&offset=0
+    // GET /oficina/api/knowledge/documents?categoryId=&search=&limit=50&offset=0
     {
       method: 'GET',
       path: 'documents',
@@ -62,7 +77,7 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const q = parseQuery(req)
           const result = await getPgStore().listDocuments({
-            category: (q.get('category') as KnowledgeCategory) ?? undefined,
+            categoryId: q.get('categoryId') ?? undefined,
             search: q.get('search') ?? undefined,
             limit: q.has('limit') ? parseInt(q.get('limit')!, 10) : 50,
             offset: q.has('offset') ? parseInt(q.get('offset')!, 10) : 0,
@@ -75,7 +90,6 @@ function createApiRoutes(): ApiRoute[] {
     },
 
     // POST /oficina/api/knowledge/documents/upload
-    // Body: JSON { fileName, category, content (base64) }
     {
       method: 'POST',
       path: 'documents/upload',
@@ -83,8 +97,10 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const body = await parseBody<{
             fileName: string
-            category?: KnowledgeCategory
             content: string  // base64
+            isCore?: boolean
+            categoryIds?: string[]
+            description?: string
             mimeType?: string
           }>(req)
 
@@ -94,12 +110,12 @@ function createApiRoutes(): ApiRoute[] {
           }
 
           const buffer = Buffer.from(body.content, 'base64')
-          const doc = await getManager().addDocument(
-            buffer,
-            body.fileName,
-            body.category ?? 'consultable',
-            { mimeType: body.mimeType },
-          )
+          const doc = await getManager().addDocument(buffer, body.fileName, {
+            isCore: body.isCore,
+            categoryIds: body.categoryIds,
+            description: body.description,
+            mimeType: body.mimeType,
+          })
 
           jsonResponse(res, 201, { document: doc })
         } catch (err) {
@@ -108,18 +124,18 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/knowledge/documents/category
+    // PUT /oficina/api/knowledge/documents/core
     {
       method: 'PUT',
-      path: 'documents/category',
+      path: 'documents/core',
       handler: async (req, res) => {
         try {
-          const body = await parseBody<{ id: string; category: KnowledgeCategory }>(req)
-          if (!body.id || !body.category) {
-            jsonResponse(res, 400, { error: 'Missing id or category' })
+          const body = await parseBody<{ id: string; isCore: boolean }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Missing id' })
             return
           }
-          await getManager().updateCategory(body.id, body.category)
+          await getManager().setCore(body.id, body.isCore)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -127,7 +143,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // DELETE /oficina/api/knowledge/documents/delete
+    // POST /oficina/api/knowledge/documents/delete
     {
       method: 'POST',
       path: 'documents/delete',
@@ -146,18 +162,56 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/documents/reprocess
+    // ─── Categories ───
+
+    // GET /oficina/api/knowledge/categories
+    {
+      method: 'GET',
+      path: 'categories',
+      handler: async (_req, res) => {
+        try {
+          const categories = await getPgStore().listCategories()
+          jsonResponse(res, 200, { categories })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /oficina/api/knowledge/categories
     {
       method: 'POST',
-      path: 'documents/reprocess',
+      path: 'categories',
       handler: async (req, res) => {
         try {
-          const body = await parseBody<{ id: string }>(req)
+          const body = await parseBody<{ title: string; description?: string }>(req)
+          if (!body.title) {
+            jsonResponse(res, 400, { error: 'Missing title' })
+            return
+          }
+          const id = await getPgStore().insertCategory({
+            title: body.title,
+            description: body.description ?? '',
+          })
+          jsonResponse(res, 201, { id })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /oficina/api/knowledge/categories
+    {
+      method: 'PUT',
+      path: 'categories',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string; title?: string; description?: string }>(req)
           if (!body.id) {
             jsonResponse(res, 400, { error: 'Missing id' })
             return
           }
-          await getManager().reprocessDocument(body.id)
+          await getPgStore().updateCategory(body.id, body)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -165,9 +219,196 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // POST /oficina/api/knowledge/categories/delete
+    {
+      method: 'POST',
+      path: 'categories/delete',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Missing id' })
+            return
+          }
+          await getPgStore().deleteCategory(body.id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // ─── API Connectors ───
+
+    // GET /oficina/api/knowledge/api-connectors
+    {
+      method: 'GET',
+      path: 'api-connectors',
+      handler: async (_req, res) => {
+        try {
+          const connectors = await getApiConnectorManager().list()
+          jsonResponse(res, 200, { connectors })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /oficina/api/knowledge/api-connectors
+    {
+      method: 'POST',
+      path: 'api-connectors',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{
+            title: string; description: string; baseUrl: string
+            authType: string; authConfig: Record<string, string>
+            queryInstructions: string
+          }>(req)
+          if (!body.title || !body.baseUrl) {
+            jsonResponse(res, 400, { error: 'Missing title or baseUrl' })
+            return
+          }
+          const id = await getApiConnectorManager().create(body as Parameters<ApiConnectorManager['create']>[0])
+          jsonResponse(res, 201, { id })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /oficina/api/knowledge/api-connectors/delete
+    {
+      method: 'POST',
+      path: 'api-connectors/delete',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Missing id' })
+            return
+          }
+          await getApiConnectorManager().remove(body.id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // ─── Web Sources ───
+
+    // GET /oficina/api/knowledge/web-sources
+    {
+      method: 'GET',
+      path: 'web-sources',
+      handler: async (_req, res) => {
+        try {
+          const sources = await getWebSourceManager().list()
+          jsonResponse(res, 200, { sources })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /oficina/api/knowledge/web-sources
+    {
+      method: 'POST',
+      path: 'web-sources',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{
+            url: string; title: string; description?: string
+            categoryId?: string; refreshFrequency?: SyncFrequency
+          }>(req)
+          if (!body.url || !body.title) {
+            jsonResponse(res, 400, { error: 'Missing url or title' })
+            return
+          }
+          const id = await getWebSourceManager().create(body)
+          jsonResponse(res, 201, { id })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /oficina/api/knowledge/web-sources/delete
+    {
+      method: 'POST',
+      path: 'web-sources/delete',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Missing id' })
+            return
+          }
+          await getWebSourceManager().remove(body.id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /oficina/api/knowledge/web-sources/cache
+    {
+      method: 'POST',
+      path: 'web-sources/cache',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Missing id' })
+            return
+          }
+          await getWebSourceManager().cacheWebSource(body.id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // ─── Vectorization ───
+
+    // POST /oficina/api/knowledge/vectorize
+    {
+      method: 'POST',
+      path: 'vectorize',
+      handler: async (_req, res) => {
+        try {
+          const result = await getManager().triggerBulkVectorization()
+          jsonResponse(res, 200, result)
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /oficina/api/knowledge/vectorize/status
+    {
+      method: 'GET',
+      path: 'vectorize/status',
+      handler: async (_req, res) => {
+        try {
+          if (!vectorizeWorker) {
+            jsonResponse(res, 200, { available: false })
+            return
+          }
+          const status = await vectorizeWorker.getStatus()
+          jsonResponse(res, 200, { available: true, ...status })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // ─── FAQs ───
 
-    // GET /oficina/api/knowledge/faqs?category=&search=&limit=50&offset=0
+    // GET /oficina/api/knowledge/faqs
     {
       method: 'GET',
       path: 'faqs',
@@ -194,17 +435,13 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            question: string
-            answer: string
-            variants?: string[]
-            category?: string
+            question: string; answer: string
+            variants?: string[]; category?: string
           }>(req)
-
           if (!body.question || !body.answer) {
             jsonResponse(res, 400, { error: 'Missing question or answer' })
             return
           }
-
           const id = await getFaqManager().createFAQ(body)
           jsonResponse(res, 201, { id })
         } catch (err) {
@@ -220,19 +457,13 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            id: string
-            question?: string
-            answer?: string
-            variants?: string[]
-            category?: string | null
-            active?: boolean
+            id: string; question?: string; answer?: string
+            variants?: string[]; category?: string | null; active?: boolean
           }>(req)
-
           if (!body.id) {
             jsonResponse(res, 400, { error: 'Missing id' })
             return
           }
-
           await getFaqManager().updateFAQ(body.id, body)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
@@ -267,12 +498,9 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            content: string  // base64
-            spreadsheetId?: string  // for sheets mode
+            content: string; spreadsheetId?: string
           }>(req)
-
           const source = getFaqManager().getSourceType()
-
           if (source === 'file') {
             if (!body.content) {
               jsonResponse(res, 400, { error: 'Missing content (base64 encoded file)' })
@@ -289,7 +517,7 @@ function createApiRoutes(): ApiRoute[] {
             const count = await getFaqManager().syncFromSheets(body.spreadsheetId)
             jsonResponse(res, 200, { ok: true, imported: count })
           } else {
-            jsonResponse(res, 400, { error: 'Import not available in manual mode. Use CRUD endpoints.' })
+            jsonResponse(res, 400, { error: 'Import not available in manual mode.' })
           }
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -306,8 +534,7 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (_req, res) => {
         try {
           const sources = await getPgStore().listSyncSources()
-          const driveAvailable = !!_req // always true — checked at front
-          jsonResponse(res, 200, { sources, driveAvailable })
+          jsonResponse(res, 200, { sources })
         } catch (err) {
           jsonResponse(res, 500, { error: String(err) })
         }
@@ -321,30 +548,22 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            type: 'drive' | 'url'
-            label: string
-            ref: string
-            frequency?: SyncFrequency
-            autoCategory?: KnowledgeCategory
+            type: 'drive' | 'url'; label: string; ref: string
+            frequency?: SyncFrequency; autoCategoryId?: string
           }>(req)
-
           if (!body.type || !body.label || !body.ref) {
             jsonResponse(res, 400, { error: 'Missing type, label, or ref' })
             return
           }
-
           const id = await getPgStore().insertSyncSource({
             type: body.type,
             label: body.label,
             ref: body.ref,
             frequency: body.frequency ?? '24h',
-            autoCategory: body.autoCategory ?? 'consultable',
+            autoCategoryId: body.autoCategoryId ?? null,
           })
-
-          // Schedule the new source
           const source = await getPgStore().getSyncSource(id)
           if (source) getSyncManager().scheduleSync(source)
-
           jsonResponse(res, 201, { id })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -359,25 +578,17 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            id: string
-            label?: string
-            frequency?: SyncFrequency
-            autoCategory?: KnowledgeCategory
+            id: string; label?: string; frequency?: SyncFrequency; autoCategoryId?: string
           }>(req)
-
           if (!body.id) {
             jsonResponse(res, 400, { error: 'Missing id' })
             return
           }
-
           await getPgStore().updateSyncSource(body.id, body)
-
-          // Reschedule if frequency changed
           if (body.frequency) {
             const source = await getPgStore().getSyncSource(body.id)
             if (source) getSyncManager().scheduleSync(source)
           }
-
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -424,9 +635,9 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // ─── Search (for testing/debugging) ───
+    // ─── Search & Stats ───
 
-    // GET /oficina/api/knowledge/search?q=&mode=core|consultable&limit=5
+    // GET /oficina/api/knowledge/search?q=&hint=&limit=5
     {
       method: 'GET',
       path: 'search',
@@ -434,21 +645,15 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const q = parseQuery(req)
           const query = q.get('q') ?? ''
-          const mode = (q.get('mode') as KnowledgeCategory) ?? 'core'
+          const hint = q.get('hint') ?? undefined
           const limit = q.has('limit') ? parseInt(q.get('limit')!, 10) : 5
-
-          const results = mode === 'core'
-            ? await getManager().searchCore(query, limit)
-            : await getManager().searchConsultable(query, limit)
-
+          const results = await getManager().searchConsultable(query, limit, hint)
           jsonResponse(res, 200, { results })
         } catch (err) {
           jsonResponse(res, 500, { error: String(err) })
         }
       },
     },
-
-    // ─── Stats and suggestions ───
 
     // GET /oficina/api/knowledge/stats
     {
@@ -500,10 +705,10 @@ function createApiRoutes(): ApiRoute[] {
 
 const manifest: ModuleManifest = {
   name: 'knowledge',
-  version: '1.0.0',
+  version: '2.0.0',
   description: {
-    es: 'Base de conocimiento del agente — documentos, FAQs, sync desde Drive/URLs',
-    en: 'Agent knowledge base — documents, FAQs, sync from Drive/URLs',
+    es: 'Base de conocimiento v2 — embeddings vectoriales, categorías, API connectors, web sources',
+    en: 'Knowledge base v2 — vector embeddings, categories, API connectors, web sources',
   },
   type: 'feature',
   removable: true,
@@ -518,13 +723,20 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_AUTO_DOWNGRADE_DAYS: numEnvMin(1, 30),
     KNOWLEDGE_FAQ_SOURCE: z.string().default('manual'),
     KNOWLEDGE_SYNC_ENABLED: boolEnv(true),
+    KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(''),
+    KNOWLEDGE_EMBEDDING_ENABLED: boolEnv(true),
+    KNOWLEDGE_VECTORIZE_CONCURRENCY: numEnvMin(1, 1),
+    KNOWLEDGE_MAX_WEB_SOURCES: numEnvMin(1, 3),
+    KNOWLEDGE_MAX_API_CONNECTORS: numEnvMin(1, 10),
+    KNOWLEDGE_MAX_CATEGORIES: numEnvMin(1, 25),
+    KNOWLEDGE_MAX_CORE_DOCS: numEnvMin(1, 3),
   }),
 
   oficina: {
     title: { es: 'Base de Conocimiento', en: 'Knowledge Base' },
     info: {
-      es: 'Gestiona documentos, FAQs y fuentes de sincronización para el agente.',
-      en: 'Manage documents, FAQs, and sync sources for the agent.',
+      es: 'Gestiona documentos, categorías, FAQs, API connectors y web sources.',
+      en: 'Manage documents, categories, FAQs, API connectors, and web sources.',
     },
     order: 12,
     fields: [
@@ -540,10 +752,10 @@ const manifest: ModuleManifest = {
         label: { es: 'Tamaño máximo de archivo (MB)', en: 'Max file size (MB)' },
       },
       {
-        key: 'KNOWLEDGE_CORE_MAX_CHUNKS',
+        key: 'KNOWLEDGE_MAX_CORE_DOCS',
         type: 'number',
-        label: { es: 'Máx. chunks core (guía)', en: 'Max core chunks (guide)' },
-        info: { es: 'Referencia para limitar conocimiento inyectado', en: 'Guidance for injected knowledge limit' },
+        label: { es: 'Máx. documentos core', en: 'Max core documents' },
+        info: { es: 'Máximo de documentos marcados como core (inyectados siempre)', en: 'Max documents marked as core (always injected)' },
       },
       {
         key: 'KNOWLEDGE_CACHE_TTL_MIN',
@@ -555,18 +767,14 @@ const manifest: ModuleManifest = {
         type: 'number',
         label: { es: 'Auto-downgrade: días sin uso', en: 'Auto-downgrade: days without use' },
         info: {
-          es: 'Docs core sin hits en este período bajan a consultable automáticamente',
-          en: 'Core docs without hits in this period are auto-downgraded to consultable',
+          es: 'Docs core sin hits en este período pierden el flag core automáticamente',
+          en: 'Core docs without hits in this period lose core flag automatically',
         },
       },
       {
         key: 'KNOWLEDGE_FAQ_SOURCE',
         type: 'select',
         label: { es: 'Fuente de FAQs', en: 'FAQ source' },
-        info: {
-          es: 'Solo una fuente activa. Cambiar elimina FAQs existentes.',
-          en: 'Only one active source. Changing deletes existing FAQs.',
-        },
         options: [
           { value: 'manual', label: 'Manual (crear desde oficina)' },
           { value: 'sheets', label: 'Google Sheets (sync)' },
@@ -577,10 +785,21 @@ const manifest: ModuleManifest = {
         key: 'KNOWLEDGE_SYNC_ENABLED',
         type: 'boolean',
         label: { es: 'Sincronización habilitada', en: 'Sync enabled' },
+      },
+      {
+        key: 'KNOWLEDGE_EMBEDDING_ENABLED',
+        type: 'boolean',
+        label: { es: 'Embeddings habilitados', en: 'Embeddings enabled' },
         info: {
-          es: 'Habilita sync periódico desde Drive y URLs',
-          en: 'Enable periodic sync from Drive and URLs',
+          es: 'Habilita búsqueda semántica via Google text-embedding-004',
+          en: 'Enable semantic search via Google text-embedding-004',
         },
+      },
+      {
+        key: 'KNOWLEDGE_GOOGLE_AI_API_KEY',
+        type: 'text',
+        label: { es: 'Google AI API Key', en: 'Google AI API Key' },
+        info: { es: 'Para embeddings (text-embedding-004)', en: 'For embeddings (text-embedding-004)' },
       },
     ],
     apiRoutes: createApiRoutes(),
@@ -595,28 +814,48 @@ const manifest: ModuleManifest = {
     pgStore = new KnowledgePgStore(db)
     await pgStore.runMigrations()
 
+    // Ensure default category exists
+    await pgStore.ensureDefaultCategory()
+
     // Initialize cache
     const cache = new KnowledgeCache(redis, config.KNOWLEDGE_CACHE_TTL_MIN)
 
+    // Initialize embedding service (if enabled and API key provided)
+    let embeddingService: EmbeddingService | null = null
+    if (config.KNOWLEDGE_EMBEDDING_ENABLED && config.KNOWLEDGE_GOOGLE_AI_API_KEY) {
+      embeddingService = new EmbeddingService(config.KNOWLEDGE_GOOGLE_AI_API_KEY, logger)
+      logger.info('Embedding service initialized')
+    } else {
+      logger.info('Embeddings disabled — search will use FTS only')
+    }
+
     // Initialize search engine
-    const searchEngine = new KnowledgeSearchEngine(pgStore, cache)
+    const searchEngine = new KnowledgeSearchEngine(pgStore, embeddingService, redis)
 
     // Initialize knowledge manager
     knowledgeManager = new KnowledgeManager(pgStore, searchEngine, cache, config, registry)
 
+    // Initialize vectorize worker (if embeddings enabled)
+    if (embeddingService) {
+      vectorizeWorker = new VectorizeWorker(redis, pgStore, embeddingService, logger)
+      knowledgeManager.setVectorizeWorker(vectorizeWorker)
+      logger.info('Vectorize worker initialized')
+    }
+
     // Initialize FAQ manager
-    faqManager = new FAQManager(pgStore, searchEngine, cache, config, registry)
+    faqManager = new FAQManager(pgStore, searchEngine as never, cache as never, config, registry)
 
     // Initialize sync manager
     syncManager = new SyncManager(pgStore, knowledgeManager, config, registry, redis)
 
+    // Initialize API connector manager
+    apiConnectorManager = new ApiConnectorManager(pgStore)
+
+    // Initialize web source manager
+    webSourceManager = new WebSourceManager(pgStore, redis, registry)
+
     // Register service
     registry.provide('knowledge:manager', knowledgeManager)
-
-    // Build initial indices
-    searchEngine.rebuildIndices().catch(err => {
-      logger.warn({ err }, 'Initial index build failed — will retry on first search')
-    })
 
     // Start sync sources
     syncManager.startAll().catch(err => {
@@ -640,9 +879,9 @@ const manifest: ModuleManifest = {
                 type: 'string',
                 description: 'Consulta de búsqueda en lenguaje natural',
               },
-              category: {
+              category_hint: {
                 type: 'string',
-                description: 'Filtrar por categoría temática (opcional)',
+                description: 'Título de categoría para priorizar resultados (opcional)',
               },
             },
             required: ['query'],
@@ -651,7 +890,8 @@ const manifest: ModuleManifest = {
         handler: async (input) => {
           try {
             const query = input.query as string
-            const results = await knowledgeManager!.searchConsultable(query, 5)
+            const hint = input.category_hint as string | undefined
+            const results = await knowledgeManager!.searchConsultable(query, 5, hint)
             return {
               success: true,
               data: {
@@ -688,14 +928,18 @@ const manifest: ModuleManifest = {
 
     // Listen for config changes
     registry.addHook('knowledge', 'oficina:config_applied', async () => {
-      logger.info('Config applied — rebuilding indices')
-      await searchEngine.rebuildIndices()
+      logger.info('Config applied — invalidating caches')
+      await cache.invalidate()
     })
 
-    logger.info('Knowledge module initialized')
+    logger.info('Knowledge module v2 initialized')
   },
 
   async stop() {
+    if (vectorizeWorker) {
+      await vectorizeWorker.stop()
+      vectorizeWorker = null
+    }
     if (syncManager) syncManager.stopAll()
     if (downgradeTimer) {
       clearInterval(downgradeTimer)
@@ -705,6 +949,8 @@ const manifest: ModuleManifest = {
     knowledgeManager = null
     syncManager = null
     faqManager = null
+    apiConnectorManager = null
+    webSourceManager = null
     logger.info('Knowledge module stopped')
   },
 }
