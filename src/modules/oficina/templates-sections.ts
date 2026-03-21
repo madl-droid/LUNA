@@ -10,7 +10,8 @@ export interface SectionData {
   allModels?: Record<string, string[]>
   lastScan?: { lastScanAt: string; replacements: Array<{ configKey: string; oldModel: string; newModel: string }> } | null
   waState?: { status: string; qrDataUrl: string | null; lastDisconnectReason: string | null; moduleEnabled: boolean }
-  googleAuth?: { connected: boolean; email: string | null }
+  gmailAuth?: { connected: boolean; email: string | null }
+  googleAppsAuth?: { connected: boolean; email: string | null }
   moduleStates?: ModuleInfo[]
   scheduledTasksHtml?: string
 }
@@ -197,26 +198,16 @@ export function renderModulesSection(data: SectionData): string {
   return renderModulePanels(data.moduleStates ?? [], data.config, data.lang)
 }
 
-export function renderGoogleSection(data: SectionData): string {
-  const ga = data.googleAuth ?? { connected: false, email: null }
-  const modules = data.moduleStates ?? []
+export function renderEmailSection(data: SectionData): string {
+  const ga = data.gmailAuth ?? { connected: false, email: null }
 
   const statusDot = ga.connected
     ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:6px"></span>`
     : `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--error);margin-right:6px"></span>`
 
   const statusLabel = ga.connected
-    ? `${statusDot}<span style="color:var(--success);font-weight:500">${t('googleConnected', data.lang)}</span>${ga.email ? ` — <span style="color:var(--text-secondary)">${esc(ga.email)}</span>` : ''}`
-    : `${statusDot}<span style="color:var(--error);font-weight:500">${t('googleNotConnected', data.lang)}</span>`
-
-  const gmailMod = modules.find(m => m.name === 'gmail')
-  const sheetsMod = modules.find(m => m.name === 'google-apps' || m.name === 'google-sheets')
-  const calendarMod = modules.find(m => m.name === 'google-calendar')
-  const activeModules = [
-    gmailMod?.active ? 'Gmail' : null,
-    sheetsMod?.active ? 'Google Sheets' : null,
-    calendarMod?.active ? 'Google Calendar' : null,
-  ].filter(Boolean) as string[]
+    ? `${statusDot}<span style="color:var(--success);font-weight:500">${t('gmailConnected', data.lang)}</span>${ga.email ? ` — <span style="color:var(--text-secondary)">${esc(ga.email)}</span>` : ''}`
+    : `${statusDot}<span style="color:var(--error);font-weight:500">${t('gmailNotConnected', data.lang)}</span>`
 
   const googleSvg = `<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle;margin-right:8px" xmlns="http://www.w3.org/2000/svg">
     <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
@@ -227,31 +218,75 @@ export function renderGoogleSection(data: SectionData): string {
 
   return `<div class="panel">
     <div class="panel-body" style="border-top:none">
-      <div class="panel-info">${t('googleAuthInfo', data.lang)}</div>
+      <div class="panel-info">${t('gmailAuthInfo', data.lang)}</div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border-light)">
         <div style="font-size:15px">${statusLabel}</div>
-        <button type="button" class="wa-btn" onclick="refreshGoogleStatus()" style="font-size:12px;padding:5px 12px;background:var(--bg-primary);color:var(--text-secondary);border:1px solid var(--border)">${t('googleRefreshStatus', data.lang)}</button>
+        <button type="button" class="wa-btn" onclick="refreshGmailStatus()" style="font-size:12px;padding:5px 12px;background:var(--bg-primary);color:var(--text-secondary);border:1px solid var(--border)">${t('googleRefreshStatus', data.lang)}</button>
       </div>
 
       <div style="padding:16px 0 8px;display:flex;gap:10px;flex-wrap:wrap">
         ${!ga.connected ? `
-        <button type="button" class="wa-btn wa-btn-connect" onclick="googleConnect()" style="font-size:14px;padding:9px 20px">
+        <button type="button" class="wa-btn wa-btn-connect" onclick="gmailConnect()" style="font-size:14px;padding:9px 20px">
           ${googleSvg}
-          ${t('googleConnectBtn', data.lang)}
+          ${t('gmailConnectBtn', data.lang)}
         </button>` : `
-        <button type="button" class="wa-btn" onclick="googleDisconnect()" style="font-size:14px;padding:9px 20px;background:var(--error);color:#fff">
-          ${t('googleDisconnectBtn', data.lang)}
+        <button type="button" class="wa-btn" onclick="gmailDisconnect()" style="font-size:14px;padding:9px 20px;background:var(--error);color:#fff">
+          ${t('gmailDisconnectBtn', data.lang)}
+        </button>`}
+      </div>
+    </div>
+  </div>
+  ${renderModulePanels(data.moduleStates ?? [], data.config, data.lang, 'gmail')}`
+}
+
+export function renderGoogleAppsSection(data: SectionData): string {
+  const ga = data.googleAppsAuth ?? { connected: false, email: null }
+
+  const statusDot = ga.connected
+    ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:6px"></span>`
+    : `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--error);margin-right:6px"></span>`
+
+  const statusLabel = ga.connected
+    ? `${statusDot}<span style="color:var(--success);font-weight:500">${t('googleAppsConnected', data.lang)}</span>${ga.email ? ` — <span style="color:var(--text-secondary)">${esc(ga.email)}</span>` : ''}`
+    : `${statusDot}<span style="color:var(--error);font-weight:500">${t('googleAppsNotConnected', data.lang)}</span>`
+
+  const googleSvg = `<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle;margin-right:8px" xmlns="http://www.w3.org/2000/svg">
+    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+    <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+  </svg>`
+
+  const serviceList = ['Drive', 'Sheets', 'Docs', 'Slides', 'Calendar']
+
+  return `<div class="panel">
+    <div class="panel-body" style="border-top:none">
+      <div class="panel-info">${t('googleAppsAuthInfo', data.lang)}</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border-light)">
+        <div style="font-size:15px">${statusLabel}</div>
+        <button type="button" class="wa-btn" onclick="refreshGoogleAppsStatus()" style="font-size:12px;padding:5px 12px;background:var(--bg-primary);color:var(--text-secondary);border:1px solid var(--border)">${t('googleRefreshStatus', data.lang)}</button>
+      </div>
+
+      <div style="padding:16px 0 8px;display:flex;gap:10px;flex-wrap:wrap">
+        ${!ga.connected ? `
+        <button type="button" class="wa-btn wa-btn-connect" onclick="googleAppsConnect()" style="font-size:14px;padding:9px 20px">
+          ${googleSvg}
+          ${t('googleAppsConnectBtn', data.lang)}
+        </button>` : `
+        <button type="button" class="wa-btn" onclick="googleAppsDisconnect()" style="font-size:14px;padding:9px 20px;background:var(--error);color:#fff">
+          ${t('googleAppsDisconnectBtn', data.lang)}
         </button>`}
       </div>
 
-      ${activeModules.length > 0 ? `
-      <div style="margin-top:8px">
-        <span style="font-size:12px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;font-weight:600">${t('googleModulesTitle', data.lang)}: </span>
-        ${activeModules.map(m => `<span class="panel-badge badge-active" style="margin-right:4px">${m}</span>`).join('')}
-      </div>` : ''}
+      <div style="margin-top:12px">
+        <span style="font-size:12px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;font-weight:600">${t('googleAppsServicesTitle', data.lang)}: </span>
+        ${serviceList.map(s => `<span class="panel-badge badge-active" style="margin-right:4px">${s}</span>`).join('')}
+      </div>
     </div>
-  </div>`
+  </div>
+  ${renderModulePanels(data.moduleStates ?? [], data.config, data.lang, 'google-apps')}`
 }
 
 export function renderComingSoonSection(data: SectionData): string {
@@ -390,8 +425,8 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'modules': return renderModulesSection(data)
     case 'db': return renderDbSection(data)
     case 'redis': return renderRedisSection(data)
-    case 'google': return renderGoogleSection(data)
-    case 'email': return renderComingSoonSection(data)
+    case 'google-apps': return renderGoogleAppsSection(data)
+    case 'email': return renderEmailSection(data)
     default: return null
   }
 }
