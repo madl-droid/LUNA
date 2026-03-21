@@ -127,7 +127,7 @@ import type { StoredMessage } from '../memory/types.js'
 - NO leer process.env fuera de kernel/config.ts — módulos usan registry.getConfig()
 - NO implementar Meta Cloud API adapter — solo archivo placeholder vacío
 - NO implementar voz ni llamadas fuera del módulo twilio-voice — toda la lógica de voz vive ahí
-- NO agregar vector database (pgvector, Pinecone) — fuse.js fuzzy search basta para V1
+- pgvector ya está integrado (memory + knowledge v2). NO agregar bases vectoriales externas (Pinecone, Weaviate, etc.)
 - NO guardar archivos en la base de datos — media queda en disco en instance/knowledge/media/
 - NO construir dashboard — es V2
 - NO hacer sync bidireccional con Google Sheets — Postgres es fuente de verdad, writes a Sheets son async
