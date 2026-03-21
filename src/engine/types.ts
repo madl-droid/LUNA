@@ -248,6 +248,19 @@ export interface PipelineResult {
   deliveryResult?: DeliveryResult
   error?: string
   skippedByQuickAction?: boolean
+  replanAttempts: number
+  subagentIterationsUsed: number
+}
+
+// ═══════════════════════════════════════════
+// Replanning context (passed to phase2 on retry)
+// ═══════════════════════════════════════════
+
+export interface ReplanContext {
+  attempt: number
+  previousPlan: ExecutionStep[]
+  failedSteps: StepResult[]
+  partialData: Record<string, unknown>
 }
 
 // ═══════════════════════════════════════════
@@ -493,6 +506,9 @@ export interface EngineConfig {
   subagentMaxIterations: number
   subagentTimeoutMs: number
   subagentMaxTokenBudget: number
+
+  // Replanning
+  maxReplanAttempts: number
 
   // API keys
   anthropicApiKey: string

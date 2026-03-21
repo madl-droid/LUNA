@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import type * as http from 'node:http'
 import type { Registry } from '../../kernel/registry.js'
 import type { ApiRoute } from '../../kernel/types.js'
-import { jsonResponse, readBody } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseQuery, readBody } from '../../kernel/http-helpers.js'
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
@@ -571,6 +571,72 @@ export function createApiRoutes(): ApiRoute[] {
         } catch (err) {
           logger.error({ err }, 'Failed to reset databases')
           jsonResponse(res, 500, { error: 'Failed to reset: ' + String(err) })
+        }
+      },
+    },
+
+    // GET /oficina/api/oficina/engine-metrics?period=24h|7d|30d
+    {
+      method: 'GET',
+      path: 'engine-metrics',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) {
+            jsonResponse(res, 500, { error: 'Registry not available' })
+            return
+          }
+
+          const query = parseQuery(req)
+          const period = query.get('period') || '24h'
+          const intervalMap: Record<string, string> = {
+            '24h': '24 hours',
+            '7d': '7 days',
+            '30d': '30 days',
+          }
+          const interval = intervalMap[period] ?? '24 hours'
+
+          const db = registry.getDb()
+
+          // Summary aggregates
+          const summaryResult = await db.query(
+            `SELECT
+              COUNT(*)::int AS total_executions,
+              COUNT(*) FILTER (WHERE replan_attempts > 0)::int AS executions_with_replan,
+              ROUND(AVG(replan_attempts), 2)::float AS avg_replan_attempts,
+              COALESCE(MAX(replan_attempts), 0)::int AS max_replan_attempts,
+              COUNT(*) FILTER (WHERE subagent_iterations > 0)::int AS executions_with_subagent,
+              ROUND(AVG(subagent_iterations) FILTER (WHERE subagent_iterations > 0), 2)::float AS avg_subagent_iterations,
+              COALESCE(MAX(subagent_iterations), 0)::int AS max_subagent_iterations,
+              ROUND(AVG(total_ms))::int AS avg_total_ms,
+              ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_ms))::int AS p95_total_ms
+            FROM pipeline_logs
+            WHERE created_at > now() - $1::interval`,
+            [interval],
+          )
+
+          // Daily trends (last 30 days max)
+          const trendsResult = await db.query(
+            `SELECT
+              date_trunc('day', created_at)::date AS day,
+              COUNT(*)::int AS total,
+              ROUND(AVG(replan_attempts), 2)::float AS avg_replan,
+              ROUND(AVG(subagent_iterations) FILTER (WHERE subagent_iterations > 0), 2)::float AS avg_subagent_iter,
+              ROUND(AVG(total_ms))::int AS avg_ms
+            FROM pipeline_logs
+            WHERE created_at > now() - interval '30 days'
+            GROUP BY 1 ORDER BY 1`,
+          )
+
+          jsonResponse(res, 200, {
+            period,
+            summary: summaryResult.rows[0] ?? {},
+            trends: trendsResult.rows,
+          })
+        } catch (err) {
+          logger.error({ err }, 'Failed to fetch engine metrics')
+          jsonResponse(res, 500, { error: 'Failed to fetch metrics' })
         }
       },
     },

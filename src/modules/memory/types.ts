@@ -261,4 +261,6 @@ export interface PipelineLogEntry {
   hadSubagent?: boolean
   hadFallback?: boolean
   error?: string | null
+  replanAttempts?: number | null
+  subagentIterations?: number | null
 }

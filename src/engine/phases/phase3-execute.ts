@@ -249,7 +249,7 @@ async function executeSubagent(
     stepIndex: index,
     type: 'subagent',
     success: result.success,
-    data: result.data,
+    data: { result: result.data, iterations: result.iterations, tokensUsed: result.tokensUsed },
     error: result.error,
     durationMs: Date.now() - startMs,
   }

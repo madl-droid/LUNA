@@ -3,7 +3,7 @@
 // Analiza intención, emoción, riesgo, genera plan de ejecución.
 
 import pino from 'pino'
-import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig, ProactiveContextBundle } from '../types.js'
+import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig, ProactiveContextBundle, ReplanContext } from '../types.js'
 import { buildEvaluatorPrompt, buildProactiveEvaluatorPrompt } from '../prompts/evaluator.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { getCatalog } from '../mocks/tool-registry.js'
@@ -46,14 +46,15 @@ function isProactiveContext(ctx: ContextBundle): ctx is ProactiveContextBundle {
 export async function phase2Evaluate(
   ctx: ContextBundle,
   config: EngineConfig,
+  replanContext?: ReplanContext,
 ): Promise<EvaluatorOutput> {
   const startMs = Date.now()
   const proactive = isProactiveContext(ctx)
 
-  logger.info({ traceId: ctx.traceId, intent: 'evaluating', proactive }, 'Phase 2 start')
+  logger.info({ traceId: ctx.traceId, intent: 'evaluating', proactive, replanAttempt: replanContext?.attempt }, 'Phase 2 start')
 
   // If quick action was detected in phase 1, skip LLM (reactive only)
-  if (!proactive && ctx.quickAction) {
+  if (!proactive && ctx.quickAction && !replanContext) {
     const quickResult = handleQuickAction(ctx)
     const durationMs = Date.now() - startMs
     logger.info({ traceId: ctx.traceId, durationMs, quickAction: ctx.quickAction.type }, 'Phase 2 quick action')
@@ -62,9 +63,27 @@ export async function phase2Evaluate(
 
   // Build prompt (different for proactive vs reactive)
   const toolCatalog = getCatalog()
-  const { system, userMessage } = proactive
+  let { system, userMessage } = proactive
     ? buildProactiveEvaluatorPrompt(ctx, toolCatalog)
     : buildEvaluatorPrompt(ctx, toolCatalog)
+
+  // Inject replanning context if this is a replan attempt
+  if (replanContext) {
+    const failedList = replanContext.failedSteps
+      .map(s => `- Step ${s.stepIndex} (${s.type}): ${s.error ?? 'unknown error'}`)
+      .join('\n')
+    const partialKeys = Object.keys(replanContext.partialData)
+    const partialSummary = partialKeys.length > 0
+      ? partialKeys.map(k => `- ${k}: ${JSON.stringify(replanContext.partialData[k]).slice(0, 200)}`).join('\n')
+      : '(ninguno)'
+
+    userMessage += `\n\n## REPLANNING (intento ${replanContext.attempt})
+El plan anterior falló en estos pasos:
+${failedList}
+Datos parciales obtenidos:
+${partialSummary}
+Genera un nuevo plan que tome en cuenta estos resultados. No repitas pasos que ya tuvieron éxito.`
+  }
 
   // Choose model: proactive uses its own model config
   const provider = proactive ? config.proactiveProvider : config.classifyProvider

@@ -5,7 +5,7 @@
 import pino from 'pino'
 import type { Registry } from '../kernel/registry.js'
 import type { IncomingMessage } from '../channels/types.js'
-import type { PipelineResult, EngineConfig, ContextBundle } from './types.js'
+import type { PipelineResult, EngineConfig, ContextBundle, ReplanContext } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
 import { phase1Intake } from './phases/phase1-intake.js'
@@ -107,8 +107,8 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
 
     // ═══ PHASE 2: Evaluate Situation ═══
     const p2Start = Date.now()
-    const evaluation = await phase2Evaluate(ctx, engineConfig)
-    const phase2DurationMs = Date.now() - p2Start
+    let evaluation = await phase2Evaluate(ctx, engineConfig)
+    let phase2DurationMs = Date.now() - p2Start
 
     logger.info({
       traceId,
@@ -131,8 +131,48 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       : null
 
     const p3Start = Date.now()
-    const execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
+    let execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
+
+    // ═══ REPLANNING LOOP ═══
+    let replanAttempts = 0
+    const maxReplan = engineConfig.maxReplanAttempts
+
+    while (
+      !execution.allSucceeded &&
+      replanAttempts < maxReplan &&
+      execution.results.some(r => !r.success && r.type !== 'respond_only')
+    ) {
+      replanAttempts++
+
+      const replanCtx: ReplanContext = {
+        attempt: replanAttempts,
+        previousPlan: evaluation.executionPlan,
+        failedSteps: execution.results.filter(r => !r.success),
+        partialData: execution.partialData,
+      }
+
+      logger.info({
+        traceId,
+        replanAttempt: replanAttempts,
+        failedSteps: replanCtx.failedSteps.length,
+      }, 'Replanning — re-evaluating after failed steps')
+
+      const replanP2Start = Date.now()
+      evaluation = await phase2Evaluate(ctx, engineConfig, replanCtx)
+      phase2DurationMs += Date.now() - replanP2Start
+
+      execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
+    }
+
     const phase3DurationMs = Date.now() - p3Start
+
+    // Collect subagent iterations from execution results
+    let subagentIterationsUsed = 0
+    for (const r of execution.results) {
+      if (r.type === 'subagent' && r.data && typeof r.data === 'object' && 'iterations' in (r.data as Record<string, unknown>)) {
+        subagentIterationsUsed += (r.data as { iterations: number }).iterations
+      }
+    }
 
     logger.info({
       traceId,
@@ -140,6 +180,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       durationMs: phase3DurationMs,
       allSucceeded: execution.allSucceeded,
       stepResults: execution.results.length,
+      replanAttempts,
     }, 'Phase 3 done')
 
     // ═══ PHASE 4: Compose Response ═══
@@ -196,6 +237,8 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
         phase5Ms: phase5DurationMs,
         totalMs: totalDurationMs,
         toolsCalled: evaluation.toolsNeeded,
+        replanAttempts,
+        subagentIterations: subagentIterationsUsed || null,
       }).catch(() => {})
     }
 
@@ -212,6 +255,8 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       executionOutput: execution,
       responseText: composed.responseText,
       deliveryResult: delivery,
+      replanAttempts,
+      subagentIterationsUsed,
     }
   } catch (err) {
     const totalDurationMs = Date.now() - totalStart
@@ -232,6 +277,8 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       phase5DurationMs: 0,
       totalDurationMs,
       error: String(err),
+      replanAttempts: 0,
+      subagentIterationsUsed: 0,
     }
   }
 }

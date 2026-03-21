@@ -68,6 +68,7 @@ export async function processProactive(
         phase4DurationMs: 0, phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         error: `Blocked by guard: ${guardResult.blockedBy}`,
+        replanAttempts: 0, subagentIterationsUsed: 0,
       }
     }
 
@@ -98,6 +99,7 @@ export async function processProactive(
         phase3DurationMs: 0, phase4DurationMs: 0, phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         evaluatorOutput: evaluation,
+        replanAttempts: 0, subagentIterationsUsed: 0,
       }
     }
 
@@ -178,6 +180,7 @@ export async function processProactive(
       executionOutput: execution,
       responseText: composed.responseText,
       deliveryResult: delivery,
+      replanAttempts: 0, subagentIterationsUsed: 0,
     }
   } catch (err) {
     const totalDurationMs = Date.now() - totalStart
@@ -198,6 +201,7 @@ export async function processProactive(
       phase4DurationMs: 0, phase5DurationMs: 0,
       totalDurationMs,
       error: String(err),
+      replanAttempts: 0, subagentIterationsUsed: 0,
     }
   }
 }
