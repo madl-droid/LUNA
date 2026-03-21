@@ -36,6 +36,7 @@ src/
     twilio-voice/    — canal de voz: Twilio + Gemini Live (ver CLAUDE.md)
     engine/          — wrapper del pipeline para el kernel (ver CLAUDE.md)
     knowledge/       — base de conocimiento: docs, FAQs, sync, búsqueda (ver CLAUDE.md)
+    scheduled-tasks/ — tareas programadas del agente (ver CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
 deploy/              — docker-compose + deploy (ver deploy/CLAUDE.md)
@@ -188,6 +189,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/google-chat/CLAUDE.md` — canal Google Chat (webhook + Chat API, Service Account)
 - `src/modules/twilio-voice/CLAUDE.md` — canal de voz (Twilio + Gemini Live)
 - `src/modules/knowledge/CLAUDE.md` — base de conocimiento (docs, FAQs, sync Drive/URLs, búsqueda híbrida)
+- `src/modules/scheduled-tasks/CLAUDE.md` — tareas programadas (cron, BullMQ, ejecucion LLM)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 
