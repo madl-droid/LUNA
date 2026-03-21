@@ -30,7 +30,7 @@
 ## Docker compose
 - `.env` montado como volumen (persiste edits desde oficina entre deploys)
 - `instance/` montado como volumen (config operacional + knowledge)
-- PostgreSQL 16 + Redis 7 como servicios con health checks
+- PostgreSQL 16 + pgvector (`pgvector/pgvector:pg16`) + Redis 7 como servicios con health checks
 - Traefik labels para routing y SSL automático
 - `BUILD_VERSION` como build arg (mostrado en oficina)
 
@@ -55,6 +55,9 @@
 - `NODE_ENV` — development | staging | production | test
 - `BUILD_VERSION` — inyectado en build de Docker
 - Ver `deploy/.env.example` para lista completa
+
+## Trampas
+- **NO usar `postgres:16-alpine`** como imagen — LUNA requiere pgvector (`pgvector/pgvector:pg16`). Sin pgvector, memory v3 y knowledge v2 fallan con `42P01` (tabla/extensión no existe).
 
 ## Secrets de GitHub Actions
 - `SSH_HOST` — IP o dominio del servidor
