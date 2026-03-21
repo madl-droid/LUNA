@@ -356,6 +356,14 @@ export class KnowledgePgStore {
     return res.rows.map(mapCategoryRow)
   }
 
+  async ensureDefaultCategory(): Promise<void> {
+    const existing = await this.getDefaultCategory()
+    if (existing) return
+    await this.db.query(
+      `INSERT INTO knowledge_categories (title, description, is_default, position) VALUES ('General', 'Categoría por defecto', true, 0)`,
+    )
+  }
+
   async getDefaultCategory(): Promise<KnowledgeCategory | null> {
     const res = await this.db.query<CategoryRow>(
       `SELECT * FROM knowledge_categories WHERE is_default = true LIMIT 1`,
@@ -363,6 +371,14 @@ export class KnowledgePgStore {
     const row = res.rows[0]
     if (!row) return null
     return mapCategoryRow(row)
+  }
+
+  async insertCategory(data: { title: string; description?: string }): Promise<string> {
+    const res = await this.db.query<{ id: string }>(
+      `INSERT INTO knowledge_categories (title, description) VALUES ($1, $2) RETURNING id`,
+      [data.title, data.description ?? ''],
+    )
+    return res.rows[0]!.id
   }
 
   async findCategoryByTitle(title: string): Promise<KnowledgeCategory | null> {
@@ -373,6 +389,21 @@ export class KnowledgePgStore {
     const row = res.rows[0]
     if (!row) return null
     return mapCategoryRow(row)
+  }
+
+  async updateCategory(id: string, updates: { title?: string; description?: string }): Promise<void> {
+    const sets: string[] = []
+    const vals: unknown[] = []
+    let idx = 1
+    if (updates.title !== undefined) { sets.push(`title = $${idx++}`); vals.push(updates.title) }
+    if (updates.description !== undefined) { sets.push(`description = $${idx++}`); vals.push(updates.description) }
+    if (sets.length === 0) return
+    vals.push(id)
+    await this.db.query(`UPDATE knowledge_categories SET ${sets.join(', ')} WHERE id = $${idx}`, vals)
+  }
+
+  async deleteCategory(id: string): Promise<void> {
+    await this.db.query(`DELETE FROM knowledge_categories WHERE id = $1 AND is_default = false`, [id])
   }
 
   // ─── Chunks CRUD ───────────────────────────

@@ -77,7 +77,7 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const q = parseQuery(req)
           const result = await getPgStore().listDocuments({
-            categoryId: q.get('categoryId') ?? undefined,
+            category: undefined,
             search: q.get('search') ?? undefined,
             limit: q.has('limit') ? parseInt(q.get('limit')!, 10) : 50,
             offset: q.has('offset') ? parseInt(q.get('offset')!, 10) : 0,

@@ -35,14 +35,14 @@ export class VectorizeWorker {
     this.log = logger.child({ component: 'vectorize-worker' })
 
     this.queue = new Queue<VectorizeJobData>(QUEUE_NAME, {
-      connection: redis,
+      connection: redis as never,
     })
 
     this.worker = new Worker<VectorizeJobData>(
       QUEUE_NAME,
       async (job) => this.processJob(job.data),
       {
-        connection: redis,
+        connection: redis as never,
         concurrency: 1,
       },
     )

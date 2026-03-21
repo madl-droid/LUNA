@@ -279,6 +279,7 @@ async function buildProactiveContext(
     quickAction: null,
     campaign: null,
     knowledgeMatches: [],
+    knowledgeInjection: null,
     history,
     contactMemory,
     pendingCommitments,

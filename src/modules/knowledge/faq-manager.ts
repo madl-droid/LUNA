@@ -184,7 +184,7 @@ export class FAQManager {
   // ─── Private ───────────────────────────────
 
   private invalidateSearch(): void {
-    this.searchEngine.invalidateCore()
+    this.searchEngine.invalidateQueryCache()
     this.cache.invalidate().catch(() => {})
   }
 }
