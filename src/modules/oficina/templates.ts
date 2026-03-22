@@ -3,38 +3,65 @@
 import { t, type Lang } from './templates-i18n.js'
 import { esc } from './templates-fields.js'
 
-const NAV_SECTIONS = [
-  // Channels
-  { id: 'whatsapp', key: 'sec_whatsapp', icon: '&#128172;', group: 'channels' },
-  { id: 'email', key: 'sec_email', icon: '&#9993;', group: 'channels' },
-  // AI
-  { id: 'apikeys', key: 'sec_apikeys', icon: '&#128273;', group: 'ai' },
-  { id: 'models', key: 'sec_models', icon: '&#129504;', group: 'ai' },
-  { id: 'llm-limits', key: 'sec_llm_limits', icon: '&#9881;', group: 'ai' },
-  { id: 'llm-cb', key: 'sec_llm_cb', icon: '&#128268;', group: 'ai' },
-  // Pipeline
-  { id: 'pipeline', key: 'sec_pipeline', icon: '&#9654;', group: 'pipeline' },
-  { id: 'engine-metrics', key: 'sec_engine_metrics', icon: '&#128200;', group: 'pipeline' },
-  { id: 'followup', key: 'sec_followup', icon: '&#128260;', group: 'pipeline' },
-  { id: 'naturalidad', key: 'sec_naturalidad', icon: '&#127917;', group: 'pipeline' },
-  // Leads
-  { id: 'lead-scoring', key: 'sec_lead_scoring', icon: '&#128202;', group: 'leads' },
-  { id: 'scheduled-tasks', key: 'sec_scheduled_tasks', icon: '&#128197;', group: 'leads' },
-  // Tools
-  { id: 'google-apps', key: 'sec_google_apps', icon: '&#128279;', group: 'tools' },
-  // System
-  { id: 'modules', key: 'sec_modules', icon: '&#128230;', group: 'system' },
-  { id: 'db', key: 'sec_db', icon: '&#128452;', group: 'system' },
-  { id: 'redis', key: 'sec_redis', icon: '&#9889;', group: 'system' },
-] as const
+// ═══════════════════════════════════════════
+// Sidebar categories (hardcoded, order matters)
+// ═══════════════════════════════════════════
 
-const NAV_GROUPS: Record<string, Record<string, string>> = {
-  channels: { es: 'Canales', en: 'Channels' },
-  ai: { es: 'Inteligencia Artificial', en: 'AI' },
-  pipeline: { es: 'Pipeline', en: 'Pipeline' },
-  leads: { es: 'Leads', en: 'Leads' },
-  tools: { es: 'Herramientas', en: 'Tools' },
-  system: { es: 'Sistema', en: 'System' },
+interface SidebarCategory {
+  id: string
+  key: string  // i18n key (cat_*)
+}
+
+const CATEGORIES: SidebarCategory[] = [
+  { id: 'channels', key: 'cat_channels' },
+  { id: 'agent', key: 'cat_agent' },
+  { id: 'leads', key: 'cat_leads' },
+  { id: 'data', key: 'cat_data' },
+  { id: 'modules', key: 'cat_modules' },
+  { id: 'system', key: 'cat_system' },
+]
+
+// Fixed sections: have custom renderers in templates-sections.ts
+// These always appear in the sidebar regardless of module state
+interface FixedSection {
+  id: string
+  key: string
+  icon: string
+  group: string
+  order: number
+}
+
+const FIXED_SECTIONS: FixedSection[] = [
+  // Channels
+  { id: 'whatsapp', key: 'sec_whatsapp', icon: '&#128172;', group: 'channels', order: 10 },
+  { id: 'email', key: 'sec_email', icon: '&#9993;', group: 'channels', order: 12 },
+  // Agent
+  { id: 'pipeline', key: 'sec_pipeline_unified', icon: '&#9654;', group: 'agent', order: 20 },
+  { id: 'engine-metrics', key: 'sec_engine_metrics', icon: '&#128200;', group: 'agent', order: 25 },
+  // Leads
+  { id: 'lead-scoring', key: 'sec_lead_scoring', icon: '&#128202;', group: 'leads', order: 15 },
+  // Modules
+  { id: 'google-apps', key: 'sec_google_apps', icon: '&#128279;', group: 'modules', order: 15 },
+  { id: 'modules', key: 'sec_modules', icon: '&#128230;', group: 'modules', order: 99 },
+  // System
+  { id: 'llm', key: 'sec_llm_unified', icon: '&#129504;', group: 'system', order: 1 },
+  { id: 'infra', key: 'sec_infra', icon: '&#128452;', group: 'system', order: 90 },
+]
+
+// IDs of fixed sections (used to avoid duplicates with dynamic modules)
+const FIXED_IDS = new Set(FIXED_SECTIONS.map(s => s.id))
+
+// ═══════════════════════════════════════════
+// Dynamic module info (passed from server)
+// ═══════════════════════════════════════════
+
+export interface DynamicSidebarModule {
+  name: string
+  group: string
+  icon: string
+  order: number
+  title: { es: string; en: string }
+  active: boolean
 }
 
 export interface PageOptions {
@@ -46,7 +73,13 @@ export interface PageOptions {
   waConnected?: boolean
   gmailConnected?: boolean
   googleAppsConnected?: boolean
+  /** Active modules with oficina.group defined */
+  dynamicModules?: DynamicSidebarModule[]
 }
+
+// ═══════════════════════════════════════════
+// Page layout
+// ═══════════════════════════════════════════
 
 export function pageLayout(opts: PageOptions): string {
   return `<!DOCTYPE html>
@@ -79,12 +112,21 @@ export function pageLayout(opts: PageOptions): string {
 </html>`
 }
 
+// ═══════════════════════════════════════════
+// Header
+// ═══════════════════════════════════════════
+
 function renderHeader(opts: PageOptions): string {
   const otherLang = opts.lang === 'es' ? 'en' : 'es'
   const langLabel = opts.lang === 'es' ? 'EN' : 'ES'
   const v = opts.version.length > 7 ? opts.version.slice(0, 7) : opts.version
   return `<header>
-    <h1>Oficina <span>| LUNA</span></h1>
+    <div class="header-left">
+      <button class="hamburger" id="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <h1>Oficina <span>| LUNA</span></h1>
+    </div>
     <div class="header-right">
       <span class="build-ver">v${esc(v)}</span>
       <a href="?lang=${otherLang}" class="lang-toggle">${langLabel}</a>
@@ -93,58 +135,137 @@ function renderHeader(opts: PageOptions): string {
   </header>`
 }
 
+// ═══════════════════════════════════════════
+// Sidebar — hardcoded categories + dynamic items
+// ═══════════════════════════════════════════
+
+interface SidebarItem {
+  id: string
+  label: string
+  icon: string
+  order: number
+  badge?: string
+}
+
 function renderSidebar(opts: PageOptions): string {
-  let h = ''
-  let currentGroup = ''
+  const dynModules = opts.dynamicModules ?? []
 
-  for (const sec of NAV_SECTIONS) {
-    if (sec.group !== currentGroup) {
-      if (currentGroup) h += '</div>'
-      currentGroup = sec.group
-      const groupLabel = NAV_GROUPS[currentGroup]?.[opts.lang] || currentGroup
-      h += `<div class="sidebar-group"><div class="sidebar-group-title">${groupLabel}</div>`
-    }
+  // Build items per category
+  const categoryItems: Record<string, SidebarItem[]> = {}
 
-    const isActive = opts.section === sec.id
-    const badge = getBadgeForSection(sec, opts)
-    h += `<a href="/oficina/${sec.id}?lang=${opts.lang}" class="sidebar-item ${isActive ? 'active' : ''}">
-      <span class="nav-icon">${sec.icon}</span>
-      <span>${t(sec.key, opts.lang)}</span>
-      ${badge}
-    </a>`
+  for (const cat of CATEGORIES) {
+    categoryItems[cat.id] = []
   }
-  if (currentGroup) h += '</div>'
+
+  // 1. Add fixed sections
+  for (const sec of FIXED_SECTIONS) {
+    const items = categoryItems[sec.group]
+    if (!items) continue
+    items.push({
+      id: sec.id,
+      label: t(sec.key, opts.lang),
+      icon: sec.icon,
+      order: sec.order,
+      badge: getBadge(sec.id, opts),
+    })
+  }
+
+  // 2. Add dynamic modules (only if not already a fixed section)
+  for (const mod of dynModules) {
+    if (FIXED_IDS.has(mod.name)) continue
+    if (!mod.active) continue
+    const group = mod.group
+    if (!categoryItems[group]) {
+      // Unknown group — add as new category (key = group name as fallback)
+      categoryItems[group] = []
+      CATEGORIES.push({ id: group, key: group })
+    }
+    categoryItems[group]!.push({
+      id: mod.name,
+      label: mod.title[opts.lang] || mod.title.es || mod.name,
+      icon: mod.icon || '&#128230;',
+      order: mod.order,
+    })
+  }
+
+  // 3. Sort items within each category by order
+  for (const items of Object.values(categoryItems)) {
+    items.sort((a, b) => a.order - b.order)
+  }
+
+  // 4. Render
+  let h = ''
+  for (const cat of CATEGORIES) {
+    const items = categoryItems[cat.id]
+    if (!items || items.length === 0) continue
+
+    const groupLabel = t(cat.key, opts.lang)
+    h += `<div class="sidebar-group"><div class="sidebar-group-title">${groupLabel}</div>`
+
+    for (const item of items) {
+      const isActive = opts.section === item.id
+      h += `<a href="/oficina/${item.id}?lang=${opts.lang}" class="sidebar-item ${isActive ? 'active' : ''}">
+        <span class="nav-icon">${item.icon}</span>
+        <span>${item.label}</span>
+        ${item.badge || ''}
+      </a>`
+    }
+    h += '</div>'
+  }
 
   return `<nav class="sidebar" id="sidebar">${h}</nav>`
 }
 
-function getBadgeForSection(sec: typeof NAV_SECTIONS[number], opts: PageOptions): string {
-  if ('soon' in sec && (sec as { soon?: boolean }).soon) return '<span class="nav-badge badge-soon">soon</span>'
-  if (sec.id === 'whatsapp') {
+function getBadge(sectionId: string, opts: PageOptions): string {
+  if (sectionId === 'whatsapp') {
     if (opts.waConnected === true) return '<span class="nav-badge badge-active">&#9679;</span>'
     if (opts.waConnected === false) return '<span class="nav-badge badge-off">&#9679;</span>'
-    return ''
   }
-  if (sec.id === 'email') {
+  if (sectionId === 'email') {
     return opts.gmailConnected ? '<span class="nav-badge badge-active">&#9679;</span>' : '<span class="nav-badge badge-off">&#9679;</span>'
   }
-  if (sec.id === 'google-apps') {
+  if (sectionId === 'google-apps') {
     return opts.googleAppsConnected ? '<span class="nav-badge badge-active">&#9679;</span>' : '<span class="nav-badge badge-off">&#9679;</span>'
   }
   return ''
 }
 
-function renderSectionHeader(opts: PageOptions): string {
-  const sec = NAV_SECTIONS.find(s => s.id === opts.section)
-  const title = sec ? t(sec.key, opts.lang) : opts.section
-  const descKey = sec ? sec.key + '_info' : ''
-  const desc = descKey ? t(descKey, opts.lang) : ''
+// ═══════════════════════════════════════════
+// Section header
+// ═══════════════════════════════════════════
 
-  return `<div class="section-header">
-    <div class="section-title">${title}</div>
-    ${desc && desc !== descKey ? `<div class="section-desc">${desc}</div>` : ''}
-  </div>`
+function renderSectionHeader(opts: PageOptions): string {
+  // Try fixed section first
+  const fixed = FIXED_SECTIONS.find(s => s.id === opts.section)
+  if (fixed) {
+    const title = t(fixed.key, opts.lang)
+    const descKey = fixed.key + '_info'
+    const desc = t(descKey, opts.lang)
+    return `<div class="section-header">
+      <div class="section-title">${title}</div>
+      ${desc && desc !== descKey ? `<div class="section-desc">${desc}</div>` : ''}
+    </div>`
+  }
+
+  // Try dynamic module
+  const dynMod = (opts.dynamicModules ?? []).find(m => m.name === opts.section)
+  if (dynMod) {
+    const title = dynMod.title[opts.lang] || dynMod.title.es || opts.section
+    // Try i18n info key, fall back to nothing
+    const infoKey = 'sec_' + opts.section.replace(/-/g, '_') + '_info'
+    const info = t(infoKey, opts.lang)
+    return `<div class="section-header">
+      <div class="section-title">${esc(title)}</div>
+      ${info && info !== infoKey ? `<div class="section-desc">${info}</div>` : ''}
+    </div>`
+  }
+
+  return `<div class="section-header"><div class="section-title">${esc(opts.section)}</div></div>`
 }
+
+// ═══════════════════════════════════════════
+// Save bar
+// ═══════════════════════════════════════════
 
 function renderSaveBar(opts: PageOptions): string {
   return `<form method="POST" action="/oficina/save" class="save-bar" id="save-form">
@@ -156,6 +277,10 @@ function renderSaveBar(opts: PageOptions): string {
     <button type="submit" formaction="/oficina/apply" class="btn-save btn-apply" id="btn-apply" disabled>${t('applyBtn', opts.lang)}</button>
   </form>`
 }
+
+// ═══════════════════════════════════════════
+// Flash messages
+// ═══════════════════════════════════════════
 
 function renderFlash(flash: string, lang: Lang): string {
   const messages: Record<string, string> = {

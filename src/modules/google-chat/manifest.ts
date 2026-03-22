@@ -276,6 +276,8 @@ const manifest: ModuleManifest = {
       en: 'Google Chat channel for Google Workspace. Use the setup guide ("View guide" button) to connect step by step.',
     },
     order: 15,
+    group: 'channels',
+    icon: '&#128488;',
     fields: [
       {
         key: 'GOOGLE_CHAT_SERVICE_ACCOUNT_KEY',

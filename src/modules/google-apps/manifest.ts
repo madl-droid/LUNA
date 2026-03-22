@@ -172,6 +172,8 @@ const manifest: ModuleManifest = {
       en: 'OAuth2 connection to Google. Enables Drive, Sheets, Docs, Slides and Calendar. Each service can be toggled individually.',
     },
     order: 15,
+    group: 'modules',
+    icon: '&#128279;',
     fields: [
       {
         key: 'GOOGLE_CLIENT_ID',

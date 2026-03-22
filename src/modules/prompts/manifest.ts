@@ -148,6 +148,8 @@ const manifest: ModuleManifest = {
       en: 'Edit the prompts that define the agent\'s personality, job, rules and relationships. Changes apply immediately.',
     },
     order: 5,
+    group: 'agent',
+    icon: '&#128221;',
     fields: [
       {
         key: 'PROMPT_IDENTITY',

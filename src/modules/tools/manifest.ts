@@ -167,6 +167,8 @@ const manifest: ModuleManifest = {
     title: { es: 'Herramientas', en: 'Tools' },
     info: { es: 'Configuración global de herramientas del agente', en: 'Global agent tools configuration' },
     order: 30,
+    group: 'agent',
+    icon: '&#128295;',
     fields: [
       {
         key: 'TOOLS_RETRY_BACKOFF_MS',

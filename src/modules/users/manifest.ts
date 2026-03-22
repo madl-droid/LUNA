@@ -41,6 +41,8 @@ const manifest: ModuleManifest = {
       en: 'User lists (admin, coworker, custom) and permissions by type.',
     },
     order: 15,
+    group: 'system',
+    icon: '&#128101;',
     fields: [
       {
         key: 'USER_TYPE_CACHE_TTL',

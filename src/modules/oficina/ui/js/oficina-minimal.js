@@ -9,6 +9,37 @@
   var flash = document.querySelector('[data-flash]')
   if (flash) setTimeout(function () { flash.remove() }, 3500)
 
+  // === Hamburger menu (mobile drawer) ===
+  var sidebar = document.getElementById('sidebar')
+  var hamburger = document.getElementById('hamburger')
+  var overlay = document.createElement('div')
+  overlay.className = 'sidebar-overlay'
+  document.body.appendChild(overlay)
+
+  window.toggleSidebar = function () {
+    if (!sidebar || !hamburger) return
+    var isOpen = sidebar.classList.toggle('open')
+    hamburger.classList.toggle('open', isOpen)
+    overlay.classList.toggle('visible', isOpen)
+  }
+
+  overlay.addEventListener('click', function () {
+    if (sidebar) sidebar.classList.remove('open')
+    if (hamburger) hamburger.classList.remove('open')
+    overlay.classList.remove('visible')
+  })
+
+  // Close sidebar on link click (mobile)
+  if (sidebar) {
+    sidebar.querySelectorAll('.sidebar-item').forEach(function (item) {
+      item.addEventListener('click', function () {
+        sidebar.classList.remove('open')
+        if (hamburger) hamburger.classList.remove('open')
+        overlay.classList.remove('visible')
+      })
+    })
+  }
+
   // === Panel collapse ===
   window.togglePanel = function (header) {
     header.closest('.panel').classList.toggle('collapsed')
@@ -182,7 +213,7 @@
           var repDiv = document.getElementById('scan-replacements')
           if (repDiv && data.replacements && data.replacements.length > 0) {
             repDiv.innerHTML = data.replacements.map(function (r) {
-              return '<div style="font-size:13px;color:var(--warning);padding:6px 10px;background:rgba(255,149,0,0.08);border-radius:6px;margin-bottom:4px">' +
+              return '<div class="scan-replacement">' +
                 r.configKey + ': <s>' + r.oldModel + '</s> → <b>' + r.newModel + '</b></div>'
             }).join('')
           }
@@ -325,6 +356,58 @@
     el.textContent = msg
     document.body.appendChild(el)
     setTimeout(function () { el.remove() }, 3500)
+  }
+
+  // === Tags field interactivity ===
+  document.querySelectorAll('[data-tag-add]').forEach(function (input) {
+    var key = input.getAttribute('data-tag-add')
+    var hidden = document.querySelector('input[type="hidden"][name="' + key + '"]')
+    if (!hidden) return
+    var sep = hidden.getAttribute('data-separator') || ','
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return
+      e.preventDefault()
+      var val = input.value.trim()
+      if (!val) return
+      var current = hidden.value ? hidden.value.split(sep).map(function (s) { return s.trim() }).filter(Boolean) : []
+      if (current.indexOf(val) !== -1) { input.value = ''; return }
+      current.push(val)
+      hidden.value = current.join(sep + ' ')
+      input.value = ''
+      rebuildTags(key, hidden, sep)
+      checkDirty()
+    })
+  })
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-tag-key]')
+    if (!btn) return
+    var key = btn.getAttribute('data-tag-key')
+    var tagVal = btn.getAttribute('data-tag-value')
+    var hidden = document.querySelector('input[type="hidden"][name="' + key + '"]')
+    if (!hidden) return
+    var sep = hidden.getAttribute('data-separator') || ','
+    var current = hidden.value.split(sep).map(function (s) { return s.trim() }).filter(Boolean)
+    current = current.filter(function (t) { return t !== tagVal })
+    hidden.value = current.join(sep + ' ')
+    rebuildTags(key, hidden, sep)
+    checkDirty()
+  })
+
+  function rebuildTags(key, hidden, sep) {
+    var container = document.querySelector('[data-tags-for="' + key + '"]')
+    if (!container) return
+    var tags = hidden.value ? hidden.value.split(sep).map(function (s) { return s.trim() }).filter(Boolean) : []
+    container.innerHTML = tags.map(function (tag) {
+      return '<span class="field-tag">' + escHtml(tag)
+        + '<button type="button" class="field-tag-remove" data-tag-key="' + escHtml(key)
+        + '" data-tag-value="' + escHtml(tag) + '">&times;</button></span>'
+    }).join('')
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
   }
 
   // Initial dirty check

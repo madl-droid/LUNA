@@ -45,6 +45,8 @@ const manifest: ModuleManifest = {
     title: { es: 'Tareas Programadas', en: 'Scheduled Tasks' },
     info: { es: 'Tareas que el agente ejecuta automaticamente', en: 'Tasks the agent runs automatically' },
     order: 45,
+    group: 'agent',
+    icon: '&#128197;',
     apiRoutes: [], // populated in init()
   },
 

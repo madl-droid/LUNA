@@ -84,6 +84,8 @@ const manifest: ModuleManifest = {
       en: 'Centralized LLM provider management: routing, circuit breaker, costs and security.',
     },
     order: 10,
+    group: 'system',
+    icon: '&#129504;',
     fields: [
       // API Keys
       { key: 'ANTHROPIC_API_KEY', type: 'secret', label: { es: 'API Key Anthropic', en: 'Anthropic API Key' } },

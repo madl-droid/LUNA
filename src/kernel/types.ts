@@ -257,12 +257,28 @@ export interface ModuleManifest {
 // Oficina definition per module
 // ═══════════════════════════════════════════
 
+export type OficinaFieldType =
+  | 'text' | 'textarea' | 'secret' | 'number' | 'boolean' | 'select'
+  | 'divider' | 'tags' | 'readonly' | 'duration' | 'model-select'
+
 export interface OficinaField {
   key: string
-  type: 'text' | 'textarea' | 'secret' | 'number' | 'boolean' | 'select'
+  type: OficinaFieldType
   label: { es: string; en: string }
   info?: { es: string; en: string }
   options?: Array<{ value: string; label: string }>
+  /** Number constraints */
+  min?: number
+  max?: number
+  step?: number
+  /** Visual unit suffix (e.g. "ms", "min", "tokens") */
+  unit?: string
+  /** Placeholder text */
+  placeholder?: string
+  /** Separator for tags type (default ",") */
+  separator?: string
+  /** Rows for textarea */
+  rows?: number
 }
 
 export interface ApiRoute {
@@ -270,6 +286,9 @@ export interface ApiRoute {
   path: string
   handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>
 }
+
+/** Sidebar category for grouping modules */
+export type OficinaGroup = 'channels' | 'agent' | 'leads' | 'data' | 'modules' | 'system' | string
 
 export interface ModuleOficinaDef {
   /** Título del panel en la oficina */
@@ -280,6 +299,12 @@ export interface ModuleOficinaDef {
 
   /** Orden de aparición (menor = más arriba) */
   order: number
+
+  /** Sidebar category — determines which group this module appears in */
+  group?: OficinaGroup
+
+  /** Sidebar icon (HTML entity or emoji) */
+  icon?: string
 
   /** Campos del formulario. Se renderizan automáticamente. */
   fields?: OficinaField[]
