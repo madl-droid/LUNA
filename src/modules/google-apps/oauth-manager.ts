@@ -48,11 +48,19 @@ export class OAuthManager {
     private config: GoogleApiConfig,
     private db: Pool,
   ) {
+    // No redirect_uri in constructor — it's set dynamically per request
     this.client = new OAuth2Client(
       config.GOOGLE_CLIENT_ID,
       config.GOOGLE_CLIENT_SECRET,
-      config.GOOGLE_REDIRECT_URI,
     )
+  }
+
+  /** Re-create OAuth client with new credentials (for setup-credentials flow) */
+  updateCredentials(clientId: string, clientSecret: string): void {
+    this.config.GOOGLE_CLIENT_ID = clientId
+    this.config.GOOGLE_CLIENT_SECRET = clientSecret
+    this.client = new OAuth2Client(clientId, clientSecret)
+    logger.info('Google Apps OAuth credentials updated')
   }
 
   async initialize(): Promise<void> {
@@ -158,13 +166,16 @@ export class OAuthManager {
     return this.state.status === 'connected'
   }
 
+  hasCredentials(): boolean {
+    return !!(this.config.GOOGLE_CLIENT_ID && this.config.GOOGLE_CLIENT_SECRET)
+  }
+
   /**
    * Generate authorization URL for initial OAuth2 flow.
-   * User visits this URL → grants permissions → redirects with code.
+   * redirect_uri is built dynamically from the incoming request.
    */
-  generateAuthUrl(enabledServices: string[]): string {
+  generateAuthUrl(enabledServices: string[], redirectUri: string): string {
     const scopes: string[] = []
-    // Siempre incluir gmail si el módulo email está habilitado
     for (const service of enabledServices) {
       const svcScopes = SCOPES_BY_SERVICE[service]
       if (svcScopes) scopes.push(...svcScopes)
@@ -175,17 +186,18 @@ export class OAuthManager {
     return this.client.generateAuthUrl({
       access_type: 'offline',
       scope: [...new Set(scopes)],
-      prompt: 'consent', // Forzar consent para obtener refresh_token
+      prompt: 'consent',
       include_granted_scopes: true,
+      redirect_uri: redirectUri,
     })
   }
 
   /**
    * Exchange authorization code for tokens.
-   * Called from the OAuth callback route.
+   * Must use the same redirect_uri as generateAuthUrl.
    */
-  async handleAuthCallback(code: string): Promise<void> {
-    const { tokens } = await this.client.getToken(code)
+  async handleAuthCallback(code: string, redirectUri: string): Promise<void> {
+    const { tokens } = await this.client.getToken({ code, redirect_uri: redirectUri })
     this.client.setCredentials(tokens)
 
     const expiryDate = tokens.expiry_date ?? Date.now() + 3600 * 1000

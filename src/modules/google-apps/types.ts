@@ -10,7 +10,6 @@ import type { OAuth2Client } from 'google-auth-library'
 export interface GoogleApiConfig {
   GOOGLE_CLIENT_ID: string
   GOOGLE_CLIENT_SECRET: string
-  GOOGLE_REDIRECT_URI: string
   GOOGLE_REFRESH_TOKEN: string
   GOOGLE_ENABLED_SERVICES: string // comma-separated: 'drive,sheets,docs,slides,calendar'
   GOOGLE_TOKEN_REFRESH_BUFFER_MS: number

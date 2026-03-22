@@ -6,7 +6,7 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { jsonResponse, parseBody } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, parseQuery, buildBaseUrl } from '../../kernel/http-helpers.js'
 import { numEnv, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
 import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
@@ -29,6 +29,11 @@ const pollerState: EmailPollerState = {
   messagesProcessed: 0,
   errors: 0,
   lastError: null,
+}
+
+/** Build the OAuth redirect URI from the request */
+function getRedirectUri(req: import('node:http').IncomingMessage): string {
+  return `${buildBaseUrl(req)}/console/api/gmail/oauth2callback`
 }
 
 // ─── Migrations ────────────────────────────
@@ -272,38 +277,150 @@ const apiRoutes: ApiRoute[] = [
       jsonResponse(res, 200, { email, isNoReply: gmailAdapter.isNoReply(email) })
     },
   },
-  // ─── Auth standalone routes (solo cuando google-apps no está activo) ──
+  // ─── Auth standalone routes ──────────────────────
   {
     method: 'GET',
     path: 'auth-status',
-    handler: async (_req, res) => {
+    handler: async (req, res) => {
+      const hasCredentials = standaloneOAuth?.hasCredentials() ?? false
+      const redirectUri = getRedirectUri(req)
+
       // Si google-apps está activo, redirigir a su status
       if (!usingStandaloneAuth) {
         const oauthManager = _registry?.getOptional<OAuthManager>('google:oauth-manager')
         if (oauthManager) {
           const state = oauthManager.getState()
-          jsonResponse(res, 200, { standalone: false, ...state })
+          jsonResponse(res, 200, { standalone: false, hasCredentials: oauthManager.hasCredentials(), redirectUri, ...state })
           return
         }
       }
       if (!standaloneOAuth) {
-        jsonResponse(res, 200, { standalone: true, status: 'not_configured', email: null })
+        jsonResponse(res, 200, { standalone: true, status: 'not_configured', email: null, hasCredentials: false, redirectUri })
         return
       }
       const state = standaloneOAuth.getState()
-      jsonResponse(res, 200, { standalone: true, ...state })
+      jsonResponse(res, 200, { standalone: true, hasCredentials, redirectUri, ...state })
+    },
+  },
+  {
+    method: 'POST',
+    path: 'setup-credentials',
+    handler: async (req, res) => {
+      if (!usingStandaloneAuth) {
+        jsonResponse(res, 400, { error: 'Standalone auth not active — use google-apps module' })
+        return
+      }
+      try {
+        const body = await parseBody<{ clientId: string; clientSecret: string }>(req)
+        if (!body.clientId || !body.clientSecret) {
+          jsonResponse(res, 400, { error: 'Missing clientId or clientSecret' })
+          return
+        }
+
+        // Save to .env and config-store
+        if (_registry) {
+          const configStore = _registry.getOptional<{ set(key: string, value: string): Promise<void> }>('console:config-store')
+          if (configStore) {
+            await configStore.set('GMAIL_CLIENT_ID', body.clientId)
+            await configStore.set('GMAIL_CLIENT_SECRET', body.clientSecret)
+          }
+        }
+
+        // Re-initialize OAuth manager with new credentials
+        const db = _registry!.getDb()
+        if (!standaloneOAuth) {
+          standaloneOAuth = new EmailOAuthManager({
+            GMAIL_CLIENT_ID: body.clientId,
+            GMAIL_CLIENT_SECRET: body.clientSecret,
+            GMAIL_REFRESH_TOKEN: '',
+            GMAIL_TOKEN_REFRESH_BUFFER_MS: 300000,
+          }, db)
+        } else {
+          standaloneOAuth.updateCredentials(body.clientId, body.clientSecret)
+        }
+
+        // Generate auth URL
+        const redirectUri = getRedirectUri(req)
+        const url = standaloneOAuth.generateAuthUrl(redirectUri)
+        jsonResponse(res, 200, { ok: true, authUrl: url })
+      } catch (err) {
+        jsonResponse(res, 500, { error: 'Setup failed: ' + String(err) })
+      }
     },
   },
   {
     method: 'GET',
     path: 'auth-url',
-    handler: async (_req, res) => {
+    handler: async (req, res) => {
       if (!usingStandaloneAuth || !standaloneOAuth) {
         jsonResponse(res, 400, { error: 'Standalone auth not active — use google-apps module for authentication' })
         return
       }
-      const url = standaloneOAuth.generateAuthUrl()
+      if (!standaloneOAuth.hasCredentials()) {
+        jsonResponse(res, 400, { error: 'No credentials configured — use setup-credentials first', needsSetup: true })
+        return
+      }
+      const redirectUri = getRedirectUri(req)
+      const url = standaloneOAuth.generateAuthUrl(redirectUri)
       jsonResponse(res, 200, { url })
+    },
+  },
+  {
+    method: 'GET',
+    path: 'oauth2callback',
+    handler: async (req, res) => {
+      const query = parseQuery(req)
+      const code = query.get('code')
+      const error = query.get('error')
+
+      if (error) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body><h2>Error: ${error}</h2><script>setTimeout(function(){window.close()},3000)</script></body></html>`)
+        return
+      }
+
+      if (!code) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body><h2>Missing authorization code</h2></body></html>`)
+        return
+      }
+
+      try {
+        const redirectUri = getRedirectUri(req)
+
+        // Use standalone or shared OAuth
+        if (usingStandaloneAuth && standaloneOAuth) {
+          await standaloneOAuth.handleAuthCallback(code, redirectUri)
+
+          // Initialize adapter and polling if not done
+          if (!gmailAdapter && _registry) {
+            const config = _registry.getConfig<EmailConfig>('gmail')
+            gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
+            _registry.provide('email:adapter', gmailAdapter)
+            startPolling(config.EMAIL_POLL_INTERVAL_MS)
+          }
+        }
+
+        // Return HTML that closes the popup
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body>
+          <div style="text-align:center;padding:40px;font-family:system-ui">
+            <h2 style="color:#16a34a">&#10003; Gmail conectado</h2>
+            <p>Esta ventana se cerrara automaticamente...</p>
+          </div>
+          <script>setTimeout(function(){window.close()},2000)</script>
+        </body></html>`)
+      } catch (err) {
+        logger.error({ err }, 'Gmail OAuth callback failed')
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body>
+          <div style="text-align:center;padding:40px;font-family:system-ui">
+            <h2 style="color:#dc2626">Error de autenticacion</h2>
+            <p>${String(err)}</p>
+          </div>
+          <script>setTimeout(function(){window.close()},5000)</script>
+        </body></html>`)
+      }
     },
   },
   {
@@ -321,7 +438,8 @@ const apiRoutes: ApiRoute[] = [
           jsonResponse(res, 400, { error: 'Missing authorization code' })
           return
         }
-        await standaloneOAuth.handleAuthCallback(code)
+        const redirectUri = getRedirectUri(req)
+        await standaloneOAuth.handleAuthCallback(code, redirectUri)
 
         // Ahora que tenemos auth, inicializar adapter y polling
         if (!gmailAdapter && _registry) {
@@ -377,7 +495,7 @@ const apiRoutes: ApiRoute[] = [
 
 const manifest: ModuleManifest = {
   name: 'gmail',
-  version: '1.0.0',
+  version: '1.1.0',
   description: {
     es: 'Canal de email via Gmail API. Recibe, responde, reenvía y envía correos.',
     en: 'Email channel via Gmail API. Receives, replies, forwards and sends emails.',
@@ -398,11 +516,10 @@ const manifest: ModuleManifest = {
     EMAIL_INCLUDE_SIGNATURE: boolEnv(true),
     EMAIL_MAX_HISTORY_FETCH: numEnv(20),
     // OAuth standalone (cuando google-apps no está activo)
-    GOOGLE_CLIENT_ID: z.string().default(''),
-    GOOGLE_CLIENT_SECRET: z.string().default(''),
-    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/console/api/gmail/oauth2callback'),
-    GOOGLE_REFRESH_TOKEN: z.string().default(''),
-    GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
+    GMAIL_CLIENT_ID: z.string().default(''),
+    GMAIL_CLIENT_SECRET: z.string().default(''),
+    GMAIL_REFRESH_TOKEN: z.string().default(''),
+    GMAIL_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
   }),
 
   console: {
@@ -469,31 +586,6 @@ const manifest: ModuleManifest = {
         label: { es: 'Tamaño máx. adjunto (MB)', en: 'Max attachment size (MB)' },
         info: { es: 'Tamaño máximo permitido por adjunto en MB (default: 16)', en: 'Maximum allowed attachment size in MB (default: 16)' },
       },
-      // OAuth standalone — se muestran siempre, se usan solo si google-apps no está activo
-      {
-        key: 'GOOGLE_CLIENT_ID',
-        type: 'secret',
-        label: { es: 'Google Client ID (standalone)', en: 'Google Client ID (standalone)' },
-        info: { es: 'OAuth2 Client ID — solo necesario si el módulo Google API no está activo', en: 'OAuth2 Client ID — only needed if Google API module is not active' },
-      },
-      {
-        key: 'GOOGLE_CLIENT_SECRET',
-        type: 'secret',
-        label: { es: 'Google Client Secret (standalone)', en: 'Google Client Secret (standalone)' },
-        info: { es: 'OAuth2 Client Secret — solo necesario si el módulo Google API no está activo', en: 'OAuth2 Client Secret — only needed if Google API module is not active' },
-      },
-      {
-        key: 'GOOGLE_REDIRECT_URI',
-        type: 'text',
-        label: { es: 'Redirect URI (standalone)', en: 'Redirect URI (standalone)' },
-        info: { es: 'URI de redirección OAuth2 para email standalone', en: 'OAuth2 redirect URI for email standalone' },
-      },
-      {
-        key: 'GOOGLE_REFRESH_TOKEN',
-        type: 'secret',
-        label: { es: 'Refresh Token (standalone)', en: 'Refresh Token (standalone)' },
-        info: { es: 'Token de refresco — solo necesario si el módulo Google API no está activo', en: 'Refresh token — only needed if Google API module is not active' },
-      },
     ],
     apiRoutes,
   },
@@ -520,13 +612,12 @@ const manifest: ModuleManifest = {
     } else {
       // Opción 2: OAuth standalone con credenciales propias
       usingStandaloneAuth = true
-      if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {
+      if (config.GMAIL_CLIENT_ID && config.GMAIL_CLIENT_SECRET) {
         standaloneOAuth = new EmailOAuthManager({
-          GOOGLE_CLIENT_ID: config.GOOGLE_CLIENT_ID,
-          GOOGLE_CLIENT_SECRET: config.GOOGLE_CLIENT_SECRET,
-          GOOGLE_REDIRECT_URI: config.GOOGLE_REDIRECT_URI,
-          GOOGLE_REFRESH_TOKEN: config.GOOGLE_REFRESH_TOKEN,
-          GOOGLE_TOKEN_REFRESH_BUFFER_MS: config.GOOGLE_TOKEN_REFRESH_BUFFER_MS,
+          GMAIL_CLIENT_ID: config.GMAIL_CLIENT_ID,
+          GMAIL_CLIENT_SECRET: config.GMAIL_CLIENT_SECRET,
+          GMAIL_REFRESH_TOKEN: config.GMAIL_REFRESH_TOKEN,
+          GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
         }, db)
 
         try {
@@ -539,7 +630,14 @@ const manifest: ModuleManifest = {
         oauthConnected = standaloneOAuth.isConnected()
         logger.info('Email using standalone OAuth (gmail-only scopes)')
       } else {
-        logger.warn('No OAuth available — configure Google credentials in email settings or activate google-apps module')
+        // Create uninitialized manager — wizard will configure credentials later
+        standaloneOAuth = new EmailOAuthManager({
+          GMAIL_CLIENT_ID: '',
+          GMAIL_CLIENT_SECRET: '',
+          GMAIL_REFRESH_TOKEN: '',
+          GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
+        }, db)
+        logger.warn('No OAuth available — configure Google credentials from console wizard')
       }
     }
 

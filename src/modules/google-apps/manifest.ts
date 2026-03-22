@@ -6,7 +6,7 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { jsonResponse, parseBody } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, parseQuery, buildBaseUrl } from '../../kernel/http-helpers.js'
 import { numEnv } from '../../kernel/config-helpers.js'
 import { OAuthManager } from './oauth-manager.js'
 import { DriveService } from './drive-service.js'
@@ -21,6 +21,11 @@ const logger = pino({ name: 'google-apps' })
 
 let oauthManager: OAuthManager | null = null
 let _registry: Registry | null = null
+
+/** Build the OAuth redirect URI from the request */
+function getRedirectUri(req: import('node:http').IncomingMessage): string {
+  return `${buildBaseUrl(req)}/console/api/google-apps/oauth2callback`
+}
 
 // ─── Migrations ────────────────────────────
 
@@ -59,7 +64,66 @@ const apiRoutes: ApiRoute[] = [
         lastRefreshAt: state.lastRefreshAt,
         expiresAt: state.expiresAt,
         error: state.error,
+        hasCredentials: oauthManager.hasCredentials(),
       })
+    },
+  },
+  {
+    method: 'GET',
+    path: 'auth-status',
+    handler: async (req, res) => {
+      const redirectUri = getRedirectUri(req)
+      if (!oauthManager) {
+        jsonResponse(res, 200, { status: 'not_initialized', email: null, hasCredentials: false, redirectUri })
+        return
+      }
+      const state = oauthManager.getState()
+      jsonResponse(res, 200, {
+        ...state,
+        hasCredentials: oauthManager.hasCredentials(),
+        redirectUri,
+      })
+    },
+  },
+  {
+    method: 'POST',
+    path: 'setup-credentials',
+    handler: async (req, res) => {
+      try {
+        const body = await parseBody<{ clientId: string; clientSecret: string }>(req)
+        if (!body.clientId || !body.clientSecret) {
+          jsonResponse(res, 400, { error: 'Missing clientId or clientSecret' })
+          return
+        }
+
+        // Save to config-store
+        if (_registry) {
+          const configStore = _registry.getOptional<{ set(key: string, value: string): Promise<void> }>('console:config-store')
+          if (configStore) {
+            await configStore.set('GOOGLE_CLIENT_ID', body.clientId)
+            await configStore.set('GOOGLE_CLIENT_SECRET', body.clientSecret)
+          }
+        }
+
+        // Re-initialize OAuth manager with new credentials
+        if (oauthManager) {
+          oauthManager.updateCredentials(body.clientId, body.clientSecret)
+        } else {
+          const db = _registry!.getDb()
+          const config = _registry!.getConfig<GoogleApiConfig>('google-apps')
+          oauthManager = new OAuthManager({ ...config, GOOGLE_CLIENT_ID: body.clientId, GOOGLE_CLIENT_SECRET: body.clientSecret }, db)
+        }
+
+        // Generate auth URL
+        const redirectUri = getRedirectUri(req)
+        const config = _registry!.getConfig<GoogleApiConfig>('google-apps')
+        const enabledServices = parseEnabledServices(config.GOOGLE_ENABLED_SERVICES)
+        enabledServices.push('gmail')
+        const url = oauthManager.generateAuthUrl([...new Set(enabledServices)], redirectUri)
+        jsonResponse(res, 200, { ok: true, authUrl: url })
+      } catch (err) {
+        jsonResponse(res, 500, { error: 'Setup failed: ' + String(err) })
+      }
     },
   },
   {
@@ -70,12 +134,65 @@ const apiRoutes: ApiRoute[] = [
         jsonResponse(res, 400, { error: 'OAuth manager not initialized' })
         return
       }
+      if (!oauthManager.hasCredentials()) {
+        jsonResponse(res, 400, { error: 'No credentials configured — use setup-credentials first', needsSetup: true })
+        return
+      }
       const config = _registry.getConfig<GoogleApiConfig>('google-apps')
       const enabledServices = parseEnabledServices(config.GOOGLE_ENABLED_SERVICES)
       // Siempre incluir gmail para el módulo email
       enabledServices.push('gmail')
-      const url = oauthManager.generateAuthUrl([...new Set(enabledServices)])
+      const redirectUri = getRedirectUri(req)
+      const url = oauthManager.generateAuthUrl([...new Set(enabledServices)], redirectUri)
       jsonResponse(res, 200, { url })
+    },
+  },
+  {
+    method: 'GET',
+    path: 'oauth2callback',
+    handler: async (req, res) => {
+      const query = parseQuery(req)
+      const code = query.get('code')
+      const error = query.get('error')
+
+      if (error) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body><h2>Error: ${error}</h2><script>setTimeout(function(){window.close()},3000)</script></body></html>`)
+        return
+      }
+
+      if (!code) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body><h2>Missing authorization code</h2></body></html>`)
+        return
+      }
+
+      try {
+        if (!oauthManager) {
+          throw new Error('OAuth manager not initialized')
+        }
+        const redirectUri = getRedirectUri(req)
+        await oauthManager.handleAuthCallback(code, redirectUri)
+
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body>
+          <div style="text-align:center;padding:40px;font-family:system-ui">
+            <h2 style="color:#16a34a">&#10003; Google Apps conectado</h2>
+            <p>Esta ventana se cerrara automaticamente...</p>
+          </div>
+          <script>setTimeout(function(){window.close()},2000)</script>
+        </body></html>`)
+      } catch (err) {
+        logger.error({ err }, 'Google Apps OAuth callback failed')
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body>
+          <div style="text-align:center;padding:40px;font-family:system-ui">
+            <h2 style="color:#dc2626">Error de autenticacion</h2>
+            <p>${String(err)}</p>
+          </div>
+          <script>setTimeout(function(){window.close()},5000)</script>
+        </body></html>`)
+      }
     },
   },
   {
@@ -93,7 +210,8 @@ const apiRoutes: ApiRoute[] = [
           jsonResponse(res, 400, { error: 'Missing authorization code' })
           return
         }
-        await oauthManager.handleAuthCallback(code)
+        const redirectUri = getRedirectUri(req)
+        await oauthManager.handleAuthCallback(code, redirectUri)
         jsonResponse(res, 200, { ok: true, state: oauthManager.getState() })
       } catch (err) {
         jsonResponse(res, 500, { error: 'Auth callback failed: ' + String(err) })
@@ -144,7 +262,7 @@ function parseEnabledServices(csv: string): string[] {
 
 const manifest: ModuleManifest = {
   name: 'google-apps',
-  version: '1.0.0',
+  version: '1.1.0',
   description: {
     es: 'Integración Google API: OAuth2, Drive, Sheets, Docs, Slides, Calendar',
     en: 'Google API integration: OAuth2, Drive, Sheets, Docs, Slides, Calendar',
@@ -157,7 +275,6 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
-    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/console/api/google-apps/oauth2callback'),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
     GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar'),
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
@@ -175,30 +292,6 @@ const manifest: ModuleManifest = {
     group: 'modules',
     icon: '&#128279;',
     fields: [
-      {
-        key: 'GOOGLE_CLIENT_ID',
-        type: 'secret',
-        label: { es: 'Client ID', en: 'Client ID' },
-        info: { es: 'OAuth2 Client ID de Google Cloud Console', en: 'OAuth2 Client ID from Google Cloud Console' },
-      },
-      {
-        key: 'GOOGLE_CLIENT_SECRET',
-        type: 'secret',
-        label: { es: 'Client Secret', en: 'Client Secret' },
-        info: { es: 'OAuth2 Client Secret de Google Cloud Console', en: 'OAuth2 Client Secret from Google Cloud Console' },
-      },
-      {
-        key: 'GOOGLE_REDIRECT_URI',
-        type: 'text',
-        label: { es: 'Redirect URI', en: 'Redirect URI' },
-        info: { es: 'URI de redirección OAuth2 (debe coincidir con Google Cloud Console)', en: 'OAuth2 redirect URI (must match Google Cloud Console)' },
-      },
-      {
-        key: 'GOOGLE_REFRESH_TOKEN',
-        type: 'secret',
-        label: { es: 'Refresh Token', en: 'Refresh Token' },
-        info: { es: 'Token de refresco OAuth2 (se obtiene tras autorización inicial)', en: 'OAuth2 refresh token (obtained after initial authorization)' },
-      },
       {
         key: 'GOOGLE_ENABLED_SERVICES',
         type: 'text',
@@ -234,7 +327,7 @@ const manifest: ModuleManifest = {
         logger.warn({ err }, 'OAuth initialization failed — connect manually from console')
       }
     } else {
-      logger.info('Google API credentials not configured — set them from console')
+      logger.info('Google API credentials not configured — use console wizard to set them')
     }
 
     // Registrar servicio OAuth

@@ -330,35 +330,239 @@
     resetForm.submit()
   }
 
-  // === Gmail OAuth ===
-  window.gmailConnect = function () {
-    fetch('/console/api/gmail/auth-url')
+  // === Google OAuth Wizard ===
+  // Shared wizard for Gmail and Google Apps — shows setup instructions + credential input
+  // on first connection, then triggers OAuth flow.
+
+  var WIZARD_CONFIGS = {
+    gmail: {
+      statusUrl: '/console/api/gmail/auth-status',
+      authUrl: '/console/api/gmail/auth-url',
+      setupUrl: '/console/api/gmail/setup-credentials',
+      disconnectUrl: '/console/api/gmail/auth-disconnect',
+      pollStatusUrl: '/console/api/gmail/auth-status',
+      pollKey: 'connected',
+      label: 'Gmail',
+      apis: 'Gmail API',
+      scopes: 'Gmail (lectura, envio, modificacion)'
+    },
+    'google-apps': {
+      statusUrl: '/console/api/google-apps/auth-status',
+      authUrl: '/console/api/google-apps/auth-url',
+      setupUrl: '/console/api/google-apps/setup-credentials',
+      disconnectUrl: '/console/api/google-apps/disconnect',
+      pollStatusUrl: '/console/api/google-apps/status',
+      pollKey: 'status',
+      pollValue: 'connected',
+      label: 'Google Apps',
+      apis: 'Google Drive API, Google Sheets API, Google Docs API, Google Slides API, Google Calendar API, Gmail API',
+      scopes: 'Drive, Sheets, Docs, Slides, Calendar, Gmail'
+    }
+  }
+
+  function openOAuthWizard(moduleKey) {
+    var cfg = WIZARD_CONFIGS[moduleKey]
+    if (!cfg) return
+
+    // First check if credentials already exist
+    fetch(cfg.statusUrl)
       .then(function (r) { return r.json() })
       .then(function (data) {
+        if (data.hasCredentials) {
+          // Credentials exist — go directly to OAuth
+          startOAuthFlow(moduleKey, cfg)
+        } else {
+          // No credentials — show wizard
+          showWizardModal(moduleKey, cfg, data.redirectUri || '')
+        }
+      })
+      .catch(function () { showToast('Error checking auth status', 'error') })
+  }
+
+  function showWizardModal(moduleKey, cfg, redirectUri) {
+    var lang = document.documentElement.lang || 'es'
+    var isEs = lang === 'es'
+
+    // Remove existing modal
+    var existing = document.getElementById('oauth-wizard-modal')
+    if (existing) existing.remove()
+
+    var modal = document.createElement('div')
+    modal.id = 'oauth-wizard-modal'
+    modal.className = 'wizard-overlay'
+    modal.innerHTML = '<div class="wizard-modal">'
+      + '<button class="wizard-close" onclick="closeWizard()">&times;</button>'
+      + '<div class="wizard-steps">'
+      // Step indicator
+      + '<div class="wizard-step-indicator"><span class="wizard-dot active" data-step="1">1</span><span class="wizard-dot-line"></span><span class="wizard-dot" data-step="2">2</span></div>'
+      // Step 1: Instructions
+      + '<div class="wizard-page active" data-wizard-page="1">'
+      + '<h3>' + (isEs ? 'Configurar ' + cfg.label : 'Configure ' + cfg.label) + '</h3>'
+      + '<div class="wizard-instructions">'
+      + '<p>' + (isEs ? 'Para conectar ' + cfg.label + ', necesitas crear un proyecto en Google Cloud Console (uso personal):' : 'To connect ' + cfg.label + ', create a project in Google Cloud Console (personal use):') + '</p>'
+      + '<ol>'
+      + '<li>' + (isEs ? 'Ve a <strong>console.cloud.google.com</strong>' : 'Go to <strong>console.cloud.google.com</strong>') + '</li>'
+      + '<li>' + (isEs ? 'Crea un nuevo proyecto o usa uno existente' : 'Create a new project or use an existing one') + '</li>'
+      + '<li>' + (isEs ? 'En el menu lateral: <strong>APIs y servicios > Biblioteca</strong>' : 'In the sidebar: <strong>APIs & Services > Library</strong>') + '</li>'
+      + '<li>' + (isEs ? 'Busca y habilita: <strong>' + cfg.apis + '</strong>' : 'Search and enable: <strong>' + cfg.apis + '</strong>') + '</li>'
+      + '<li>' + (isEs ? 'Ve a <strong>APIs y servicios > Pantalla de consentimiento</strong>' : 'Go to <strong>APIs & Services > OAuth consent screen</strong>') + '</li>'
+      + '<li>' + (isEs ? 'Tipo de usuario: <strong>Externo</strong>. Completa los campos obligatorios' : 'User type: <strong>External</strong>. Fill required fields') + '</li>'
+      + '<li>' + (isEs ? 'Agrega los scopes: <strong>' + cfg.scopes + '</strong>' : 'Add scopes: <strong>' + cfg.scopes + '</strong>') + '</li>'
+      + '<li>' + (isEs ? 'En <strong>Usuarios de prueba</strong>, agrega tu email de Google' : 'Under <strong>Test users</strong>, add your Google email') + '</li>'
+      + '<li>' + (isEs ? 'Ve a <strong>Credenciales > Crear credenciales > ID de cliente OAuth</strong>' : 'Go to <strong>Credentials > Create credentials > OAuth client ID</strong>') + '</li>'
+      + '<li>' + (isEs ? 'Tipo: <strong>Aplicacion web</strong>' : 'Type: <strong>Web application</strong>') + '</li>'
+      + '<li>' + (isEs ? 'En <strong>URIs de redireccionamiento autorizados</strong>, agrega:' : 'Under <strong>Authorized redirect URIs</strong>, add:') + '<br>'
+      + '<code class="wizard-uri">' + escHtml(redirectUri || (location.origin + '/console/api/' + moduleKey + '/oauth2callback')) + '</code>'
+      + '<button type="button" class="wizard-copy-btn" onclick="copyWizardUri(this)">'
+      + (isEs ? 'Copiar' : 'Copy') + '</button></li>'
+      + '<li>' + (isEs ? 'Copia el <strong>Client ID</strong> y <strong>Client Secret</strong>' : 'Copy the <strong>Client ID</strong> and <strong>Client Secret</strong>') + '</li>'
+      + '</ol>'
+      + '</div>'
+      + '<div class="wizard-actions">'
+      + '<button class="wizard-btn wizard-btn-primary" onclick="wizardNext()">' + (isEs ? 'Continuar' : 'Continue') + '</button>'
+      + '</div>'
+      + '</div>'
+      // Step 2: Credentials input
+      + '<div class="wizard-page" data-wizard-page="2">'
+      + '<h3>' + (isEs ? 'Credenciales de ' + cfg.label : cfg.label + ' Credentials') + '</h3>'
+      + '<div class="wizard-form">'
+      + '<label class="wizard-label">Client ID</label>'
+      + '<input type="text" id="wizard-client-id" class="wizard-input" placeholder="xxxxxxxxx.apps.googleusercontent.com" autocomplete="off" />'
+      + '<label class="wizard-label">Client Secret</label>'
+      + '<input type="password" id="wizard-client-secret" class="wizard-input" placeholder="GOCSPX-xxxxxxxxxx" autocomplete="off" />'
+      + '<p class="wizard-hint">' + (isEs ? 'Estos valores se guardan encriptados en la base de datos.' : 'These values are stored encrypted in the database.') + '</p>'
+      + '</div>'
+      + '<div class="wizard-actions">'
+      + '<button class="wizard-btn wizard-btn-secondary" onclick="wizardBack()">' + (isEs ? 'Atras' : 'Back') + '</button>'
+      + '<button class="wizard-btn wizard-btn-primary" id="wizard-submit" onclick="wizardSubmit(\'' + moduleKey + '\')">' + (isEs ? 'Conectar' : 'Connect') + '</button>'
+      + '</div>'
+      + '</div>'
+      + '</div>'
+      + '</div>'
+    document.body.appendChild(modal)
+
+    // Close on overlay click
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeWizard()
+    })
+  }
+
+  window.closeWizard = function () {
+    var m = document.getElementById('oauth-wizard-modal')
+    if (m) m.remove()
+  }
+
+  window.copyWizardUri = function (btn) {
+    var code = btn.previousElementSibling
+    if (!code) return
+    navigator.clipboard.writeText(code.textContent).then(function () {
+      var orig = btn.textContent
+      btn.textContent = '✓'
+      setTimeout(function () { btn.textContent = orig }, 1500)
+    })
+  }
+
+  window.wizardNext = function () {
+    var p1 = document.querySelector('[data-wizard-page="1"]')
+    var p2 = document.querySelector('[data-wizard-page="2"]')
+    var d1 = document.querySelector('.wizard-dot[data-step="1"]')
+    var d2 = document.querySelector('.wizard-dot[data-step="2"]')
+    if (p1) p1.classList.remove('active')
+    if (p2) p2.classList.add('active')
+    if (d1) d1.classList.remove('active')
+    if (d2) d2.classList.add('active')
+  }
+
+  window.wizardBack = function () {
+    var p1 = document.querySelector('[data-wizard-page="1"]')
+    var p2 = document.querySelector('[data-wizard-page="2"]')
+    var d1 = document.querySelector('.wizard-dot[data-step="1"]')
+    var d2 = document.querySelector('.wizard-dot[data-step="2"]')
+    if (p2) p2.classList.remove('active')
+    if (p1) p1.classList.add('active')
+    if (d2) d2.classList.remove('active')
+    if (d1) d1.classList.add('active')
+  }
+
+  window.wizardSubmit = function (moduleKey) {
+    var cfg = WIZARD_CONFIGS[moduleKey]
+    if (!cfg) return
+    var clientId = document.getElementById('wizard-client-id')
+    var clientSecret = document.getElementById('wizard-client-secret')
+    var submitBtn = document.getElementById('wizard-submit')
+
+    if (!clientId || !clientSecret || !clientId.value.trim() || !clientSecret.value.trim()) {
+      showToast('Client ID y Client Secret son requeridos', 'error')
+      return
+    }
+
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '...' }
+
+    fetch(cfg.setupUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: clientId.value.trim(), clientSecret: clientSecret.value.trim() })
+    })
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (data.ok && data.authUrl) {
+          closeWizard()
+          showToast('Credentials saved — opening OAuth...', 'success')
+          openOAuthPopup(moduleKey, cfg, data.authUrl)
+        } else {
+          showToast(data.error || 'Error', 'error')
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Conectar' }
+        }
+      })
+      .catch(function () {
+        showToast('Error saving credentials', 'error')
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Conectar' }
+      })
+  }
+
+  function startOAuthFlow(moduleKey, cfg) {
+    fetch(cfg.authUrl)
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (data.needsSetup) {
+          // Credentials were deleted — show wizard
+          fetch(cfg.statusUrl)
+            .then(function (r) { return r.json() })
+            .then(function (s) { showWizardModal(moduleKey, cfg, s.redirectUri || '') })
+          return
+        }
         if (data.url) {
-          showToast('Opening Gmail auth...', 'success')
-          var popup = window.open(data.url, 'gmail-oauth', 'width=500,height=620,scrollbars=yes')
-          var poll = setInterval(function () {
-            fetch('/console/api/gmail/auth-status')
-              .then(function (r) { return r.json() })
-              .then(function (s) {
-                if (s.connected) {
-                  clearInterval(poll)
-                  if (popup && !popup.closed) popup.close()
-                  showToast('Gmail connected', 'success')
-                  location.reload()
-                } else if (popup && popup.closed) {
-                  clearInterval(poll)
-                }
-              })
-              .catch(function () { clearInterval(poll) })
-          }, 2000)
+          openOAuthPopup(moduleKey, cfg, data.url)
         } else {
           showToast(data.error || 'Error', 'error')
         }
       })
-      .catch(function () { showToast('Error connecting Gmail', 'error') })
+      .catch(function () { showToast('Error', 'error') })
   }
+
+  function openOAuthPopup(moduleKey, cfg, url) {
+    showToast('Opening ' + cfg.label + ' auth...', 'success')
+    var popup = window.open(url, moduleKey + '-oauth', 'width=500,height=620,scrollbars=yes')
+    var poll = setInterval(function () {
+      fetch(cfg.pollStatusUrl)
+        .then(function (r) { return r.json() })
+        .then(function (s) {
+          var isConnected = cfg.pollValue ? s[cfg.pollKey] === cfg.pollValue : s[cfg.pollKey]
+          if (isConnected) {
+            clearInterval(poll)
+            if (popup && !popup.closed) popup.close()
+            showToast(cfg.label + ' connected', 'success')
+            location.reload()
+          } else if (popup && popup.closed) {
+            clearInterval(poll)
+          }
+        })
+        .catch(function () { clearInterval(poll) })
+    }, 2000)
+  }
+
+  // === Gmail OAuth ===
+  window.gmailConnect = function () { openOAuthWizard('gmail') }
 
   window.gmailDisconnect = function () {
     if (!confirm('Disconnect Gmail?')) return
@@ -383,34 +587,7 @@
   }
 
   // === Google Apps OAuth ===
-  window.googleAppsConnect = function () {
-    fetch('/console/api/google-apps/auth-url')
-      .then(function (r) { return r.json() })
-      .then(function (data) {
-        if (data.url) {
-          showToast('Opening Google Apps auth...', 'success')
-          var popup = window.open(data.url, 'google-apps-oauth', 'width=500,height=620,scrollbars=yes')
-          var poll = setInterval(function () {
-            fetch('/console/api/google-apps/status')
-              .then(function (r) { return r.json() })
-              .then(function (s) {
-                if (s.status === 'connected' || s.status === 'active') {
-                  clearInterval(poll)
-                  if (popup && !popup.closed) popup.close()
-                  showToast('Google Apps connected', 'success')
-                  location.reload()
-                } else if (popup && popup.closed) {
-                  clearInterval(poll)
-                }
-              })
-              .catch(function () { clearInterval(poll) })
-          }, 2000)
-        } else {
-          showToast(data.error || 'Error', 'error')
-        }
-      })
-      .catch(function () { showToast('Error connecting Google Apps', 'error') })
-  }
+  window.googleAppsConnect = function () { openOAuthWizard('google-apps') }
 
   window.googleAppsDisconnect = function () {
     if (!confirm('Disconnect Google Apps?')) return

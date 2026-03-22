@@ -16,11 +16,10 @@ const GMAIL_SCOPES = [
 ]
 
 export interface EmailOAuthConfig {
-  GOOGLE_CLIENT_ID: string
-  GOOGLE_CLIENT_SECRET: string
-  GOOGLE_REDIRECT_URI: string
-  GOOGLE_REFRESH_TOKEN: string
-  GOOGLE_TOKEN_REFRESH_BUFFER_MS: number
+  GMAIL_CLIENT_ID: string
+  GMAIL_CLIENT_SECRET: string
+  GMAIL_REFRESH_TOKEN: string
+  GMAIL_TOKEN_REFRESH_BUFFER_MS: number
 }
 
 export interface EmailAuthState {
@@ -34,9 +33,7 @@ export interface EmailAuthState {
 
 /**
  * OAuth2 manager minimalista para email standalone.
- * Misma interfaz pública que OAuthManager de google-apps (getClient, getState, isConnected,
- * generateAuthUrl, handleAuthCallback, disconnect) para que el manifest de email
- * pueda usar cualquiera de los dos sin cambiar el código.
+ * Redirect URI se construye dinámicamente desde el request (no desde config).
  */
 export class EmailOAuthManager {
   private client: OAuth2Client
@@ -54,11 +51,19 @@ export class EmailOAuthManager {
     private config: EmailOAuthConfig,
     private db: Pool,
   ) {
+    // No redirect_uri in constructor — it's set dynamically per request
     this.client = new OAuth2Client(
-      config.GOOGLE_CLIENT_ID,
-      config.GOOGLE_CLIENT_SECRET,
-      config.GOOGLE_REDIRECT_URI,
+      config.GMAIL_CLIENT_ID,
+      config.GMAIL_CLIENT_SECRET,
     )
+  }
+
+  /** Re-create OAuth client with new credentials (for setup-credentials flow) */
+  updateCredentials(clientId: string, clientSecret: string): void {
+    this.config.GMAIL_CLIENT_ID = clientId
+    this.config.GMAIL_CLIENT_SECRET = clientSecret
+    this.client = new OAuth2Client(clientId, clientSecret)
+    logger.info('Email OAuth credentials updated')
   }
 
   async initialize(): Promise<void> {
@@ -76,20 +81,20 @@ export class EmailOAuthManager {
 
       const now = Date.now()
       const expiresIn = stored.expiresAt.getTime() - now
-      if (expiresIn < this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS) {
+      if (expiresIn < this.config.GMAIL_TOKEN_REFRESH_BUFFER_MS) {
         await this.refreshAccessToken()
       } else {
         this.state.status = 'connected'
-        this.scheduleRefresh(expiresIn - this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS)
+        this.scheduleRefresh(expiresIn - this.config.GMAIL_TOKEN_REFRESH_BUFFER_MS)
       }
       logger.info({ email: this.state.email }, 'Email OAuth restored from DB')
       return
     }
 
     // 2. Si hay refresh token en config, usarlo
-    if (this.config.GOOGLE_REFRESH_TOKEN) {
+    if (this.config.GMAIL_REFRESH_TOKEN) {
       this.client.setCredentials({
-        refresh_token: this.config.GOOGLE_REFRESH_TOKEN,
+        refresh_token: this.config.GMAIL_REFRESH_TOKEN,
       })
       await this.refreshAccessToken()
       logger.info({ email: this.state.email }, 'Email OAuth initialized from config refresh token')
@@ -122,13 +127,13 @@ export class EmailOAuthManager {
 
       await this.saveTokenToDb({
         accessToken: credentials.access_token ?? '',
-        refreshToken: credentials.refresh_token ?? this.config.GOOGLE_REFRESH_TOKEN,
+        refreshToken: credentials.refresh_token ?? this.config.GMAIL_REFRESH_TOKEN,
         expiresAt: new Date(expiryDate),
         scopes: this.state.scopes,
         email: this.state.email,
       })
 
-      const refreshIn = expiryDate - Date.now() - this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS
+      const refreshIn = expiryDate - Date.now() - this.config.GMAIL_TOKEN_REFRESH_BUFFER_MS
       this.scheduleRefresh(Math.max(refreshIn, 60_000))
 
       logger.info(
@@ -155,17 +160,24 @@ export class EmailOAuthManager {
     return this.state.status === 'connected'
   }
 
-  generateAuthUrl(): string {
+  hasCredentials(): boolean {
+    return !!(this.config.GMAIL_CLIENT_ID && this.config.GMAIL_CLIENT_SECRET)
+  }
+
+  /** Generate auth URL with dynamic redirect_uri from the request */
+  generateAuthUrl(redirectUri: string): string {
     return this.client.generateAuthUrl({
       access_type: 'offline',
       scope: GMAIL_SCOPES,
       prompt: 'consent',
       include_granted_scopes: true,
+      redirect_uri: redirectUri,
     })
   }
 
-  async handleAuthCallback(code: string): Promise<void> {
-    const { tokens } = await this.client.getToken(code)
+  /** Exchange code for tokens, using the same redirect_uri used in generateAuthUrl */
+  async handleAuthCallback(code: string, redirectUri: string): Promise<void> {
+    const { tokens } = await this.client.getToken({ code, redirect_uri: redirectUri })
     this.client.setCredentials(tokens)
 
     const expiryDate = tokens.expiry_date ?? Date.now() + 3600 * 1000
@@ -185,13 +197,13 @@ export class EmailOAuthManager {
 
     await this.saveTokenToDb({
       accessToken: tokens.access_token ?? '',
-      refreshToken: tokens.refresh_token ?? this.config.GOOGLE_REFRESH_TOKEN,
+      refreshToken: tokens.refresh_token ?? this.config.GMAIL_REFRESH_TOKEN,
       expiresAt: new Date(expiryDate),
       scopes: this.state.scopes,
       email: this.state.email,
     })
 
-    const refreshIn = expiryDate - Date.now() - this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS
+    const refreshIn = expiryDate - Date.now() - this.config.GMAIL_TOKEN_REFRESH_BUFFER_MS
     this.scheduleRefresh(Math.max(refreshIn, 60_000))
 
     logger.info({ email: this.state.email }, 'Email OAuth callback handled — connected')

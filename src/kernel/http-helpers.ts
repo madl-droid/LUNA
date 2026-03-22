@@ -38,3 +38,10 @@ export function getPathname(req: IncomingMessage): string {
   const url = new URL(req.url ?? '', 'http://localhost')
   return url.pathname
 }
+
+/** Build absolute URL from request headers (host + x-forwarded-proto) */
+export function buildBaseUrl(req: IncomingMessage): string {
+  const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || 'https'
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost'
+  return `${proto}://${host}`
+}

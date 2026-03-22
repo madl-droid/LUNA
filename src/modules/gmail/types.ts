@@ -12,11 +12,10 @@ export interface EmailConfig {
   EMAIL_INCLUDE_SIGNATURE: boolean
   EMAIL_MAX_HISTORY_FETCH: number
   // OAuth standalone (cuando google-apps no está activo)
-  GOOGLE_CLIENT_ID: string
-  GOOGLE_CLIENT_SECRET: string
-  GOOGLE_REDIRECT_URI: string
-  GOOGLE_REFRESH_TOKEN: string
-  GOOGLE_TOKEN_REFRESH_BUFFER_MS: number
+  GMAIL_CLIENT_ID: string
+  GMAIL_CLIENT_SECRET: string
+  GMAIL_REFRESH_TOKEN: string
+  GMAIL_TOKEN_REFRESH_BUFFER_MS: number
 }
 
 export interface EmailMessage {
