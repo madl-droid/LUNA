@@ -301,6 +301,16 @@ export function renderModulesSection(data: SectionData): string {
 
 export function renderEmailSection(data: SectionData): string {
   const ga = data.gmailAuth ?? { connected: false, email: null }
+  const moduleActive = data.moduleStates?.some(m => m.name === 'gmail' && m.active) ?? false
+
+  if (!moduleActive) {
+    const msg = data.lang === 'es'
+      ? 'El modulo Gmail no esta activado. Activalo desde la seccion <a href="/console/modules">Modulos</a> para poder conectar.'
+      : 'The Gmail module is not active. Activate it from the <a href="/console/modules">Modules</a> section to connect.'
+    return `<div class="panel"><div class="panel-body panel-body-flat">
+      <div class="panel-info module-inactive-notice">${msg}</div>
+    </div></div>`
+  }
 
   const statusLabel = ga.connected
     ? `<span class="status-dot connected"></span><span class="status-label connected">${t('gmailConnected', data.lang)}</span>${ga.email ? ` — <span class="status-email">${esc(ga.email)}</span>` : ''}`
@@ -331,6 +341,16 @@ export function renderEmailSection(data: SectionData): string {
 
 export function renderGoogleAppsSection(data: SectionData): string {
   const ga = data.googleAppsAuth ?? { connected: false, email: null }
+  const moduleActive = data.moduleStates?.some(m => m.name === 'google-apps' && m.active) ?? false
+
+  if (!moduleActive) {
+    const msg = data.lang === 'es'
+      ? 'El modulo Google Apps no esta activado. Activalo desde la seccion <a href="/console/modules">Modulos</a> para poder conectar.'
+      : 'The Google Apps module is not active. Activate it from the <a href="/console/modules">Modules</a> section to connect.'
+    return `<div class="panel"><div class="panel-body panel-body-flat">
+      <div class="panel-info module-inactive-notice">${msg}</div>
+    </div></div>`
+  }
 
   const statusLabel = ga.connected
     ? `<span class="status-dot connected"></span><span class="status-label connected">${t('googleAppsConnected', data.lang)}</span>${ga.email ? ` — <span class="status-email">${esc(ga.email)}</span>` : ''}`
