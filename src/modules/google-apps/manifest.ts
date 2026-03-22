@@ -23,9 +23,9 @@ const logger = pino({ name: 'google-apps' })
 let oauthManager: OAuthManager | null = null
 let _registry: Registry | null = null
 
-/** Build the OAuth redirect URI from the request */
+/** Build the shared OAuth redirect URI from the request */
 function getRedirectUri(req: import('node:http').IncomingMessage): string {
-  return `${buildBaseUrl(req)}/console/api/google-apps/oauth2callback`
+  return `${buildBaseUrl(req)}/console/oauth/callback`
 }
 
 // ─── Migrations ────────────────────────────

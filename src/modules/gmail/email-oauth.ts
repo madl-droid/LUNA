@@ -165,13 +165,14 @@ export class EmailOAuthManager {
   }
 
   /** Generate auth URL with dynamic redirect_uri from the request */
-  generateAuthUrl(redirectUri: string): string {
+  generateAuthUrl(redirectUri: string, state?: string): string {
     return this.client.generateAuthUrl({
       access_type: 'offline',
       scope: GMAIL_SCOPES,
       prompt: 'consent',
       include_granted_scopes: true,
       redirect_uri: redirectUri,
+      state: state || 'gmail',
     })
   }
 

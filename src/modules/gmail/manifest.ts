@@ -32,9 +32,9 @@ const pollerState: EmailPollerState = {
   lastError: null,
 }
 
-/** Build the OAuth redirect URI from the request */
+/** Build the shared OAuth redirect URI from the request */
 function getRedirectUri(req: import('node:http').IncomingMessage): string {
-  return `${buildBaseUrl(req)}/console/api/gmail/oauth2callback`
+  return `${buildBaseUrl(req)}/console/oauth/callback`
 }
 
 // ─── Migrations ────────────────────────────
@@ -638,6 +638,11 @@ const manifest: ModuleManifest = {
     if (authClient) {
       gmailAdapter = new GmailAdapter(authClient, config)
       registry.provide('email:adapter', gmailAdapter)
+    }
+
+    // Expose standalone OAuth manager for shared callback dispatch
+    if (standaloneOAuth) {
+      registry.provide('gmail:oauth-manager', standaloneOAuth)
     }
 
     // Cargar estado previo

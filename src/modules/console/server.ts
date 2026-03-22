@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import type * as http from 'node:http'
 import type { Registry } from '../../kernel/registry.js'
 import type { ApiRoute } from '../../kernel/types.js'
-import { jsonResponse, parseQuery, readBody } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseQuery, readBody, buildBaseUrl, oauthCallbackPage } from '../../kernel/http-helpers.js'
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
@@ -173,16 +173,30 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     }
   } catch { /* whatsapp not available */ }
 
-  // Gmail auth — only API routes, no server-side state available at SSR time.
+  // Gmail auth — check standalone OAuth or shared OAuth
   const gmailAuth = { connected: false, email: null as string | null }
+  try {
+    const gmailOAuth = registry.getOptional<{ isConnected(): boolean; getState(): { email: string | null } }>('gmail:oauth-manager')
+    if (gmailOAuth && gmailOAuth.isConnected()) {
+      gmailAuth.connected = true
+      gmailAuth.email = gmailOAuth.getState().email
+    } else {
+      // Fallback: shared google-apps OAuth
+      const sharedOAuth = registry.getOptional<{ isConnected(): boolean; getState(): { email: string | null } }>('google:oauth-manager')
+      if (sharedOAuth && sharedOAuth.isConnected()) {
+        gmailAuth.connected = true
+        gmailAuth.email = sharedOAuth.getState().email
+      }
+    }
+  } catch { /* gmail not available */ }
+
   // Google Apps auth — try to get state from OAuthManager service.
   const googleAppsAuth = { connected: false, email: null as string | null }
   try {
-    const oauthState = registry.getOptional<{ getState(): { status: string; email: string | null } }>('google-apps:oauth')
-    if (oauthState) {
-      const state = oauthState.getState()
-      googleAppsAuth.connected = state.status === 'connected' || state.status === 'active'
-      googleAppsAuth.email = state.email
+    const oauthManager = registry.getOptional<{ isConnected(): boolean; getState(): { status: string; email: string | null } }>('google:oauth-manager')
+    if (oauthManager) {
+      googleAppsAuth.connected = oauthManager.isConnected()
+      googleAppsAuth.email = oauthManager.getState().email
     }
   } catch { /* google-apps not available */ }
 
@@ -262,6 +276,64 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
     }
 
     // 2. API routes — handled by kernel (mounted separately), skip here
+
+    // 2b. Shared OAuth callback — GET /console/oauth/callback?code=...&state=gmail|google-apps
+    if (localUrl === '/oauth/callback' && req.method === 'GET') {
+      const query = new URL(url, 'http://localhost').searchParams
+      const code = query.get('code')
+      const error = query.get('error')
+      const state = query.get('state') || ''
+
+      if (error) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(oauthCallbackPage({ success: false, title: 'Error de autorizacion', message: error }))
+        return true
+      }
+      if (!code) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(oauthCallbackPage({ success: false, title: 'Error', message: 'Codigo de autorizacion no recibido' }))
+        return true
+      }
+
+      const redirectUri = `${buildBaseUrl(req)}/console/oauth/callback`
+      try {
+        let email = ''
+        if (state === 'gmail') {
+          const gmailOAuth = registry.getOptional<{ handleAuthCallback(code: string, uri: string): Promise<void>; getState(): { email: string | null }; getClient(): unknown; isConnected(): boolean }>('gmail:oauth-manager')
+          if (!gmailOAuth) throw new Error('Gmail OAuth manager not available')
+          await gmailOAuth.handleAuthCallback(code, redirectUri)
+          email = gmailOAuth.getState().email ?? ''
+          // Initialize adapter if needed
+          if (!registry.getOptional<unknown>('email:adapter') && gmailOAuth.isConnected()) {
+            try {
+              // Trigger adapter init by running the gmail module's post-auth hook
+              const gmailMod = registry.getModule('gmail')
+              if (gmailMod?.active) {
+                // Adapter will be created on next status check or page load
+              }
+            } catch { /* non-critical */ }
+          }
+        } else {
+          const gappsOAuth = registry.getOptional<{ handleAuthCallback(code: string, uri: string): Promise<void>; getState(): { email: string | null } }>('google:oauth-manager')
+          if (!gappsOAuth) throw new Error('Google Apps OAuth manager not available')
+          await gappsOAuth.handleAuthCallback(code, redirectUri)
+          email = gappsOAuth.getState().email ?? ''
+        }
+
+        const label = state === 'gmail' ? 'Gmail' : 'Google Apps'
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(oauthCallbackPage({
+          success: true,
+          title: `${label} conectado`,
+          message: email ? `Autenticado como ${email}` : 'Esta ventana se cerrara automaticamente',
+        }))
+      } catch (err) {
+        logger.error({ err, state }, 'OAuth callback failed')
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(oauthCallbackPage({ success: false, title: 'Error de autenticacion', message: String(err) }))
+      }
+      return true
+    }
 
     // 3. POST handlers (form submissions)
     if (req.method === 'POST') {

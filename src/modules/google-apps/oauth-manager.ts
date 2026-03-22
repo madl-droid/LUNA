@@ -174,7 +174,7 @@ export class OAuthManager {
    * Generate authorization URL for initial OAuth2 flow.
    * redirect_uri is built dynamically from the incoming request.
    */
-  generateAuthUrl(enabledServices: string[], redirectUri: string): string {
+  generateAuthUrl(enabledServices: string[], redirectUri: string, state?: string): string {
     const scopes: string[] = []
     for (const service of enabledServices) {
       const svcScopes = SCOPES_BY_SERVICE[service]
@@ -189,6 +189,7 @@ export class OAuthManager {
       prompt: 'consent',
       include_granted_scopes: true,
       redirect_uri: redirectUri,
+      state: state || 'google-apps',
     })
   }
 
