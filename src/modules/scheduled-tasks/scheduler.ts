@@ -11,7 +11,7 @@ import { executeTask } from './executor.js'
 
 const logger = pino({ name: 'scheduled-tasks' })
 
-const QUEUE_NAME = 'luna:scheduled-tasks'
+const QUEUE_NAME = 'luna-scheduled-tasks'
 
 let queue: Queue | null = null
 let worker: Worker | null = null
