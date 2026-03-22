@@ -154,40 +154,60 @@ export function durationField(key: string, value: string, lang: Lang, label: str
   </div>${tooltip}`
 }
 
+/** Render a field-left with label + optional info button/tooltip */
+function fieldLeft(key: string, label: string, info?: { es: string; en: string }, lang?: Lang): string {
+  const infoHtml = info ? infoBtn(key) : ''
+  return `<div class="field-left"><span class="field-label">${esc(label)}</span>${infoHtml}</div>`
+}
+
+function infoTooltipDirect(key: string, info: { es: string; en: string }, lang: Lang): string {
+  return `<div class="info-tooltip" id="info-${key}">${esc(info[lang] || info['es'] || '')}</div>`
+}
+
+/** Render a generic input field directly (no string replacement) */
+function directField(key: string, value: string, label: string, inputType: string, info?: { es: string; en: string }, lang?: Lang): string {
+  const inputMode = inputType === 'number' ? ' inputmode="numeric"' : ''
+  const type = inputType === 'number' ? 'text' : inputType
+  const tooltip = info && lang ? infoTooltipDirect(key, info, lang) : ''
+  return `<div class="field">${fieldLeft(key, label, info, lang)}
+    <input type="${type}"${inputMode} name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
+}
+
 export function renderOficinaField(field: OficinaField, value: string, lang: Lang): string {
   const label = field.label ? (field.label[lang] || field.label['es'] || field.key) : field.key
-  const infoId = field.info ? field.key : undefined
-  const infoHtml = field.info ? infoBtn(field.key) : ''
-  const tooltipHtml = field.info ? infoTooltip(field.key, '', lang).replace(`>${t('', lang)}<`, `>${field.info[lang] || field.info['es'] || ''}<`) : ''
-
-  // Helper to add info button to field-left and tooltip after
-  const withInfo = (html: string) => {
-    if (!field.info) return html
-    // Insert info button after field-label span
-    const labelEnd = html.indexOf('</span>')
-    if (labelEnd === -1) return html
-    const afterLabel = labelEnd + '</span>'.length
-    const withBtn = html.slice(0, afterLabel) + infoHtml + html.slice(afterLabel)
-    // Add tooltip div at end
-    return withBtn + `<div class="info-tooltip" id="info-${field.key}">${esc(field.info[lang] || field.info['es'] || '')}</div>`
-  }
+  const info = field.info
+  const tooltip = info ? infoTooltipDirect(field.key, info, lang) : ''
 
   switch (field.type) {
     case 'divider': return dividerField(label)
     case 'readonly': return readonlyField(field.key, value, label)
     case 'tags': return tagsField(field.key, value, lang, label, field.separator)
-    case 'duration': return durationField(field.key, value, lang, label, field.unit || 'ms', infoId)
-    case 'secret': return withInfo(secretField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
-    case 'boolean': return withInfo(boolField(field.key, value, lang, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
-    case 'number': {
-      const numHtml = field.unit
-        ? durationField(field.key, value, lang, label, field.unit, infoId)
-        : withInfo(numField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
-      return numHtml
+    case 'duration': return durationField(field.key, value, lang, label, field.unit || 'ms', info ? field.key : undefined)
+    case 'secret':
+      return `<div class="field">${fieldLeft(field.key, label, info, lang)}
+        <input type="password" name="${field.key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
+    case 'boolean': {
+      const checked = value === 'true'
+      return `<div class="toggle-field">
+        <span class="field-label">${esc(label)}</span>${info ? infoBtn(field.key) : ''}
+        <label class="toggle"><input type="checkbox" name="${field.key}" value="true" ${checked ? 'checked' : ''} data-original="${esc(value)}"><span class="toggle-slider"></span></label>
+        <input type="hidden" name="${field.key}" value="${checked ? 'true' : 'false'}" data-original="${esc(value)}">
+      </div>${tooltip}`
     }
-    case 'select': return withInfo(selectField(field.key, value, field.options ?? [], lang, label))
-    case 'textarea': return withInfo(textareaField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
-    case 'model-select': return withInfo(textField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
-    default: return withInfo(textField(field.key, value, lang, undefined, undefined).replace('class="field-label">' + field.key, 'class="field-label">' + esc(label)))
+    case 'number':
+      return field.unit
+        ? durationField(field.key, value, lang, label, field.unit, info ? field.key : undefined)
+        : directField(field.key, value, label, 'number', info, lang)
+    case 'select':
+      return selectField(field.key, value, field.options ?? [], lang, label) + tooltip
+    case 'textarea': {
+      const rows = field.rows ? ` rows="${field.rows}"` : ''
+      return `<div class="field">${fieldLeft(field.key, label, info, lang)}
+        <textarea name="${field.key}" data-original="${esc(value)}"${rows}>${esc(value)}</textarea></div>${tooltip}`
+    }
+    case 'model-select':
+      return directField(field.key, value, label, 'text', info, lang)
+    default:
+      return directField(field.key, value, label, 'text', info, lang)
   }
 }

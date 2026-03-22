@@ -18,12 +18,14 @@ const i18nContent = fs.readFileSync(I18N_FILE, 'utf-8')
 
 function extractKeys(langBlock: string): Set<string> {
   const keys = new Set<string>()
-  // Match unquoted word keys followed by colon (e.g. "connected:" or "f_LLM_CLASSIFY:")
+  // Strip string values to avoid matching words inside them
+  // Replace 'value' and "value" with empty strings
+  const stripped = langBlock.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""')
+  // Now match word: patterns — these are only real keys
   const regex = /\b(\w+)\s*:/g
   let match: RegExpExecArray | null
-  while ((match = regex.exec(langBlock)) !== null) {
+  while ((match = regex.exec(stripped)) !== null) {
     const key = match[1]!
-    // Skip non-key patterns (CSS-like values that might appear in strings)
     if (key.length < 2) continue
     keys.add(key)
   }

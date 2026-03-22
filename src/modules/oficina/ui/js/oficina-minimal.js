@@ -358,6 +358,58 @@
     setTimeout(function () { el.remove() }, 3500)
   }
 
+  // === Tags field interactivity ===
+  document.querySelectorAll('[data-tag-add]').forEach(function (input) {
+    var key = input.getAttribute('data-tag-add')
+    var hidden = document.querySelector('input[type="hidden"][name="' + key + '"]')
+    if (!hidden) return
+    var sep = hidden.getAttribute('data-separator') || ','
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return
+      e.preventDefault()
+      var val = input.value.trim()
+      if (!val) return
+      var current = hidden.value ? hidden.value.split(sep).map(function (s) { return s.trim() }).filter(Boolean) : []
+      if (current.indexOf(val) !== -1) { input.value = ''; return }
+      current.push(val)
+      hidden.value = current.join(sep + ' ')
+      input.value = ''
+      rebuildTags(key, hidden, sep)
+      checkDirty()
+    })
+  })
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-tag-key]')
+    if (!btn) return
+    var key = btn.getAttribute('data-tag-key')
+    var tagVal = btn.getAttribute('data-tag-value')
+    var hidden = document.querySelector('input[type="hidden"][name="' + key + '"]')
+    if (!hidden) return
+    var sep = hidden.getAttribute('data-separator') || ','
+    var current = hidden.value.split(sep).map(function (s) { return s.trim() }).filter(Boolean)
+    current = current.filter(function (t) { return t !== tagVal })
+    hidden.value = current.join(sep + ' ')
+    rebuildTags(key, hidden, sep)
+    checkDirty()
+  })
+
+  function rebuildTags(key, hidden, sep) {
+    var container = document.querySelector('[data-tags-for="' + key + '"]')
+    if (!container) return
+    var tags = hidden.value ? hidden.value.split(sep).map(function (s) { return s.trim() }).filter(Boolean) : []
+    container.innerHTML = tags.map(function (tag) {
+      return '<span class="field-tag">' + escHtml(tag)
+        + '<button type="button" class="field-tag-remove" data-tag-key="' + escHtml(key)
+        + '" data-tag-value="' + escHtml(tag) + '">&times;</button></span>'
+    }).join('')
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+  }
+
   // Initial dirty check
   checkDirty()
 })()
