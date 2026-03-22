@@ -457,6 +457,18 @@ const manifest: ModuleManifest = {
         label: { es: 'Max emails por poll', en: 'Max emails per poll' },
         info: { es: 'Máximo de emails a obtener por ciclo de polling (default: 20)', en: 'Maximum emails to fetch per poll cycle (default: 20)' },
       },
+      {
+        key: 'EMAIL_INCLUDE_SIGNATURE',
+        type: 'boolean',
+        label: { es: 'Incluir firma', en: 'Include signature' },
+        info: { es: 'Incluir firma de Gmail al enviar emails', en: 'Include Gmail signature when sending emails' },
+      },
+      {
+        key: 'EMAIL_MAX_ATTACHMENT_SIZE_MB',
+        type: 'number',
+        label: { es: 'Tamaño máx. adjunto (MB)', en: 'Max attachment size (MB)' },
+        info: { es: 'Tamaño máximo permitido por adjunto en MB (default: 16)', en: 'Maximum allowed attachment size in MB (default: 16)' },
+      },
       // OAuth standalone — se muestran siempre, se usan solo si google-apps no está activo
       {
         key: 'GOOGLE_CLIENT_ID',

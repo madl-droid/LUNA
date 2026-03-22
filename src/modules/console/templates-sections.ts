@@ -137,6 +137,47 @@ export function renderLlmUnifiedSection(data: SectionData): string {
     </div>
   </div>`
 
+  // Panel 5: Routing overrides (force provider per task)
+  const routeLabel = data.lang === 'es' ? 'Enrutamiento' : 'Routing'
+  const routeInfo = data.lang === 'es'
+    ? 'Forzar un provider específico por tarea. Dejar vacío para usar fallback chain automática.'
+    : 'Force a specific provider per task. Leave empty to use automatic fallback chain.'
+  h += `<div class="panel collapsed">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${routeLabel}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${routeInfo}</div>
+      ${textField('LLM_ROUTE_CLASSIFY', cv(data, 'LLM_ROUTE_CLASSIFY'), data.lang, data.lang === 'es' ? 'Clasificar' : 'Classify')}
+      ${textField('LLM_ROUTE_RESPOND', cv(data, 'LLM_ROUTE_RESPOND'), data.lang, data.lang === 'es' ? 'Responder' : 'Respond')}
+      ${textField('LLM_ROUTE_COMPLEX', cv(data, 'LLM_ROUTE_COMPLEX'), data.lang, data.lang === 'es' ? 'Complejo' : 'Complex')}
+      ${textField('LLM_ROUTE_TOOLS', cv(data, 'LLM_ROUTE_TOOLS'), data.lang, data.lang === 'es' ? 'Herramientas' : 'Tools')}
+      ${textField('LLM_ROUTE_PROACTIVE', cv(data, 'LLM_ROUTE_PROACTIVE'), data.lang, data.lang === 'es' ? 'Proactivo' : 'Proactive')}
+    </div>
+  </div>`
+
+  // Panel 6: Rate limits per provider
+  const rateLabel = data.lang === 'es' ? 'Límites de tasa' : 'Rate Limits'
+  const rateInfo = data.lang === 'es'
+    ? 'Requests por minuto (RPM) y tokens por minuto (TPM) por provider. 0 = sin límite.'
+    : 'Requests per minute (RPM) and tokens per minute (TPM) per provider. 0 = no limit.'
+  h += `<div class="panel collapsed">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${rateLabel}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${rateInfo}</div>
+      ${numField('LLM_RPM_ANTHROPIC', cv(data, 'LLM_RPM_ANTHROPIC'), data.lang, 'RPM Anthropic')}
+      ${numField('LLM_RPM_GOOGLE', cv(data, 'LLM_RPM_GOOGLE'), data.lang, 'RPM Google')}
+      ${numField('LLM_RPM_OPENAI', cv(data, 'LLM_RPM_OPENAI'), data.lang, 'RPM OpenAI')}
+      ${numField('LLM_TPM_ANTHROPIC', cv(data, 'LLM_TPM_ANTHROPIC'), data.lang, 'TPM Anthropic')}
+      ${numField('LLM_TPM_GOOGLE', cv(data, 'LLM_TPM_GOOGLE'), data.lang, 'TPM Google')}
+      ${numField('LLM_TPM_OPENAI', cv(data, 'LLM_TPM_OPENAI'), data.lang, 'TPM OpenAI')}
+    </div>
+  </div>`
+
   return h
 }
 

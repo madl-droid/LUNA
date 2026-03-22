@@ -67,6 +67,7 @@ const manifest: ModuleManifest = {
       // ── Buffer y sesiones ──
       { key: 'MEMORY_BUFFER_MESSAGE_COUNT', type: 'number', label: { es: 'Mensajes en buffer', en: 'Buffer message count' } },
       { key: 'MEMORY_SESSION_MAX_TTL_HOURS', type: 'number', label: { es: 'TTL sesión (horas)', en: 'Session TTL (hours)' } },
+      { key: 'MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN', type: 'number', label: { es: 'Timeout inactividad (min)', en: 'Inactivity timeout (min)' }, info: { es: 'Minutos sin actividad para cerrar sesión automáticamente', en: 'Minutes of inactivity before auto-closing session' } },
       { key: 'MEMORY_COMPRESSION_THRESHOLD', type: 'number', label: { es: 'Umbral de compresión', en: 'Compression threshold' } },
       { key: 'MEMORY_COMPRESSION_KEEP_RECENT', type: 'number', label: { es: 'Mensajes recientes a conservar', en: 'Recent messages to keep' } },
 

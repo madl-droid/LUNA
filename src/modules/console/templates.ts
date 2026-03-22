@@ -65,7 +65,7 @@ const FIXED_SECTIONS: FixedSection[] = [
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
-const FIXED_IDS = new Set(FIXED_SECTIONS.map(s => s.id))
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail']) // gmail covered by fixed 'email' section
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 const ICON_OVERRIDES: Record<string, string> = {
