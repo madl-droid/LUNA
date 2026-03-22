@@ -150,11 +150,11 @@
 
   .sidebar {
     position: fixed;
-    left: -300px;
+    left: -280px;
     top: 0;
-    width: 300px;
-    min-width: 300px;
-    max-width: 300px;
+    width: min(280px, 85vw);
+    min-width: 0;
+    max-width: 85vw;
     height: 100vh;
     z-index: 90;
     transition: left 0.3s ease;
@@ -167,9 +167,11 @@
     box-shadow: var(--shadow-float);
   }
 
-  .content-area { padding: 16px 12px 100px; }
+  .content-area { padding: 16px 12px 100px; max-width: 100%; }
 }
 
 @media (max-width: 480px) {
   .content-area { padding: 12px 8px 100px; }
+  .sidebar-item { padding: 10px 12px; font-size: 14px; gap: 10px; }
+  .sidebar-group-title { padding: 14px 8px 6px; }
 }

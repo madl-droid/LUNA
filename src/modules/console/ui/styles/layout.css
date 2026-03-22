@@ -511,11 +511,17 @@ main { flex: 1; min-height: 0; }
   .header-search { max-width: 200px; }
   .header-user-info { display: none; }
   .header-brand-text { display: none; }
-  .save-bar { left: 0; right: 0; transform: translateY(100%); border-radius: 0; }
+  .save-bar { width: 100%; left: 0; right: 0; transform: translateY(100%); border-radius: 0; padding: 12px 16px; }
   .save-bar.visible { transform: translateY(0); }
+  .save-bar-label { font-size: 12px; }
+  .save-bar button, .save-bar a { padding: 7px 16px; font-size: 12px; }
 }
 
 @media (max-width: 480px) {
   .header-search { max-width: 140px; }
   .header-user { display: none; }
-}
+  .save-bar { padding: 10px 12px; }
+  .save-bar-phase { flex-wrap: wrap; gap: 8px; }
+  .save-bar-label { width: 100%; font-size: 11px; }
+  .save-bar-actions { width: 100%; justify-content: flex-end; }
+

@@ -239,7 +239,7 @@
 .toast {
   position: fixed;
   top: 70px;
-  right: 24px;
+  right: max(12px, 2vw);
   padding: 10px 18px;
   border-radius: 0.5rem;
   font-size: 13px;
@@ -249,6 +249,7 @@
   box-shadow: var(--shadow-subtle);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+  max-width: calc(100vw - 24px);
 }
 
 .toast.success {
@@ -522,7 +523,9 @@
   padding: 4px 8px;
   font-size: 12px;
   color: var(--on-surface);
-  width: 100px;
+  flex: 1;
+  min-width: 80px;
+  max-width: 140px;
 }
 
 .field-tag-input:focus {

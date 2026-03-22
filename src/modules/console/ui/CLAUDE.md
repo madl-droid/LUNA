@@ -1,47 +1,101 @@
-# Console UI — Guía de desarrollo
+# Console UI — Development Guide
 
-## Qué es
-Archivos estáticos (CSS, JS) servidos desde `/console/static/`. El HTML es generado server-side por templates TypeScript.
+## What it is
+Static files (CSS, JS) served from `/console/static/`. HTML is generated server-side by TypeScript templates in the parent directory.
 
-## Estructura de archivos
+## File Structure
 ```
 ui/
-  CLAUDE.md          — esta guía
-  DESIGN.md          — paleta de colores, tipografía, componentes (referencia visual)
+  CLAUDE.md          — this guide
+  DESIGN.md          — full design system spec (Crystal Light & Tonal Depth)
   js/
-    console-minimal.js — JS minimal (~415 líneas): hamburger, WA polling, dirty tracking, toasts, model switch, Google OAuth, panel collapse
+    console-minimal.js — client JS: dropdowns, dirty tracking, save bar state machine,
+                         toggle instant-apply, WA polling, model switch, toasts,
+                         Google OAuth, notifications API, test mode
   styles/
-    base.css         — reset, CSS variables (:root), tipografía
-    layout.css       — header, main, save bar, responsive breakpoints
-    components.css   — panels, fields, toggles, badges, buttons, toasts, model selector
-    whatsapp.css     — estilos específicos del panel WhatsApp
-    sidebar.css      — sidebar navigation layout
-  assets/            — imágenes estáticas (mascota, logos)
+    base.css         — CSS variables (:root), reset, typography
+    layout.css       — header, search, dropdowns, save bar, responsive
+    components.css   — panels, fields, toggles, badges, buttons, toasts
+    sidebar.css      — sidebar nav, content area, mobile drawer
+    whatsapp.css     — WhatsApp panel specifics
+  assets/            — static images (mascota, logos)
 ```
 
-## Arquitectura (SSR)
-- El servidor genera el HTML completo con datos embebidos (templates-*.ts en el directorio padre)
-- `console-minimal.js` maneja solo la interactividad que requiere JS:
-  - WhatsApp polling y connect/disconnect
-  - Dirty tracking (habilita/deshabilita botones Save/Apply)
-  - Model provider switch (actualiza opciones de modelo)
-  - Model scanner trigger
-  - Google OAuth (popup + polling)
-  - Toast auto-dismiss
-  - Panel collapse
+## Architecture (SSR)
+- Server generates full HTML with embedded data (templates-*.ts)
+- `console-minimal.js` handles client interactivity only
+- No SPA, no framework — vanilla JS
 
-## Cómo se sirven los archivos
-- `server.ts` sirve `/console/static/*` mapeando a `ui/` (dev) o `dist/console/` (prod)
-- Seguridad: path traversal bloqueado con `path.resolve` + verificación de directorio base
-- MIME types soportados: .css, .js, .png, .jpg, .gif, .svg, .ico, .webp
+## Design System: Crystal Light & Tonal Depth
+Full spec in `DESIGN.md`. Key principles:
 
-## Convenciones
-- CSS: kebab-case para clases (`.panel-header`, `.wa-badge`)
-- Variables CSS: `--categoria-nombre` (`--bg-primary`, `--text-secondary`)
-- IDs HTML: kebab-case (`wa-inner`, `btn-save`)
-- Nunca usar `#000000` ni `#ffffff` puros — usar tokens de DESIGN.md
+### Colors
+- **Primary:** `#FF5E0E` (Fox orange) — CTAs, active states
+- **Secondary:** `#FFB800` (gold) — brand icon gradient
+- **Tertiary:** `#E62111` (crimson) — errors, destructive
+- **Neutral:** `#F5F5F7` — base surface
 
-## Trampas
-- Los CSS se sirven con `Cache-Control: no-cache` — cambios se reflejan al recargar sin hard refresh.
-- En deploy Docker, copiar `ui/styles/` y `ui/js/` al dist (ver Dockerfile).
-- `console-minimal.js` usa `data-original` attributes para dirty tracking — los templates DEBEN incluirlos.
+### Core Rules
+- **No borders for sectioning** — use tonal background shifts only
+- **Subtle shadows only** — `0 1px 4px rgba(0,0,0,0.05)` on hover
+- **SVG monochrome icons** — all icons are stroke-based SVGs that inherit `currentColor`. Override module emoji icons via `ICON_OVERRIDES` map in `templates.ts`
+- **SVG flags** for language selection — emoji flags don't render reliably
+
+### Icons System
+Fixed sections and dynamic modules both use monochrome SVG icons:
+- `templates.ts` defines `ICONS` object with SVG helper
+- `ICON_OVERRIDES` map overrides emoji icons from module manifests
+- Icons use `stroke="currentColor"` and `stroke-width="1.8"`
+- In sidebar: 20x20px; in header: 16-18px
+
+## Save Bar (Two-Phase State Machine)
+1. **Hidden** — no pending changes
+2. **Dirty** — text/select field changed → dark bar slides up with "Descartar" + "Guardar"
+3. **Saved** — after fetch-based save (no reload) → bar shows "Aplicar cambios" (green)
+4. **Applied** — POST hot-reload + redirect
+
+### Key behaviors
+- `Guardar` saves via fetch without page reload, then transitions to phase 2
+- `Aplicar cambios` does a normal POST that hot-reloads config
+- Toggles bypass save bar entirely — they apply instantly via fetch
+- If toggle is clicked with dirty fields → confirm dialog warns about unsaved changes
+
+## Header Structure
+Single row: Brand | Search | Notifications + Language + Status + User
+
+### Dropdowns
+- Any `[data-dropdown="<id>"]` button toggles panel with matching id
+- Close on outside click or Escape
+- Notification panel: populated via `window.lunaNotifications.add({title, text, type})`
+- Language: SVG flag icons, 4 languages (ES/EN/PT/FR)
+- User menu: test mode toggle (with confirm) + reset DB (only in test mode) + logout
+
+### Status Dot
+CSS classes for JS to set: default (green), `.warning`, `.error`, `.offline`
+Tooltip shown on hover via CSS (`.header-status-tooltip`)
+
+## Responsive Breakpoints
+| Breakpoint | Changes |
+|------------|---------|
+| 768px | Sidebar → off-canvas drawer (max 85vw), fields stack, save bar full-width |
+| 480px | Brand text hidden, user hidden, save bar wraps, reduced padding |
+
+## Conventions
+- CSS: kebab-case classes (`.panel-header`, `.save-bar-phase`)
+- CSS variables: `--category-name` (`--primary`, `--on-surface-variant`)
+- HTML IDs: kebab-case (`btn-save`, `notif-dot`)
+- All colors via CSS variables — never hardcode hex in components
+- Border-radius: `0.5rem` for containers, `1.5rem` for pill buttons
+- Transitions: `0.15s ease` for hover, `0.3s cubic-bezier` for slide animations
+
+## How static files are served
+- `server.ts` maps `/console/static/*` to `ui/` (dev) or `dist/console/` (prod)
+- `Cache-Control: no-cache, no-store, must-revalidate` — changes reflect on reload
+- MIME types: .css, .js, .png, .jpg, .gif, .svg, .ico, .webp
+
+## Traps
+- `dist/console/` is checked first — if old build exists, it serves stale files
+- Toggles send immediate fetch POST — don't add them to dirty tracking
+- `data-original` attributes drive dirty tracking — templates MUST include them
+- `ICON_OVERRIDES` in templates.ts must be updated when adding new modules
+- SVG flags are inline in templates.ts — emoji flags don't work (Alpine Linux + some browsers)

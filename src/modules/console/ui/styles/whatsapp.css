@@ -72,7 +72,7 @@
   margin-bottom: 12px;
 }
 
-.wa-qr-box img { border-radius: 0.5rem; max-width: 260px; }
+.wa-qr-box img { border-radius: 0.5rem; max-width: min(260px, 85vw); }
 .wa-qr-label { margin-top: 8px; font-size: 13px; color: var(--on-surface-variant); }
 .wa-qr-hidden { display: none; }
 
