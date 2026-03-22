@@ -9,7 +9,7 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
 - `manifest-ref.ts` — singleton para acceder al Registry desde handlers de ruta
 - `server.ts` — SSR router (GET pages, POST handlers), APIs REST, static files, redirects
 - `templates.ts` — layout HTML: header con hamburger, sidebar dinámico por categorías, save bar, flash
-- `templates-i18n.ts` — diccionario i18n ES/EN server-side (~400 keys), `t()`, `detectLang()`
+- `templates-i18n.ts` — diccionario i18n ES/EN server-side (210 keys/lang), `t()`, `detectLang()`
 - `templates-fields.ts` — field builders: text, secret, num, bool, select, textarea, modelDropdown, divider, readonly, tags, duration
 - `templates-sections.ts` — section renderers: unified LLM (4 panels), unified Pipeline (3 panels), whatsapp, email, google-apps, engine-metrics, lead-scoring, scheduled-tasks, modules, db, redis
 - `templates-modules.ts` — dynamic module panels from manifest.oficina.fields
@@ -17,7 +17,7 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
 - `ui/styles/*.css` — 5 CSS files (base, layout, components, whatsapp, sidebar)
 
 ## Sidebar dinámico
-- 6 categorías hardcodeadas: Canales, Agente, Leads, Datos, Módulos, Sistema
+- 6 categorías con i18n keys (`cat_channels`, `cat_agent`, etc.) vía `t()`
 - Items fijos (secciones con renderers custom) + items dinámicos (módulos activos con `oficina.group`)
 - Los módulos declaran `group` e `icon` en su `manifest.oficina` para aparecer automáticamente
 - Mobile: hamburger menu con drawer lateral (no horizontal scroll)
@@ -53,7 +53,7 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
 - Config write: DB primary + .env backup (regex preserva comentarios).
 - `manifest-ref.ts` singleton para acceso al registry desde API routes.
 - Helpers HTTP: usa `jsonResponse`, `readBody` de `kernel/http-helpers.js`. NO redefinir.
-- Sidebar: categorías hardcodeadas en `templates.ts`, items dinámicos desde `dynamicModules`.
+- Sidebar: categorías i18n en `templates.ts`, items dinámicos desde `dynamicModules`.
 
 ## Trampas
 - .env se monta como volumen Docker para que edits persistan entre deploys.

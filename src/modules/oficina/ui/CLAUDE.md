@@ -9,7 +9,7 @@ ui/
   CLAUDE.md          — esta guía
   DESIGN.md          — paleta de colores, tipografía, componentes (referencia visual)
   js/
-    oficina-minimal.js — JS minimal (~200 líneas): WA polling, dirty tracking, toasts, model switch
+    oficina-minimal.js — JS minimal (~415 líneas): hamburger, WA polling, dirty tracking, toasts, model switch, Google OAuth, panel collapse
   styles/
     base.css         — reset, CSS variables (:root), tipografía
     layout.css       — header, main, save bar, responsive breakpoints
@@ -29,13 +29,6 @@ ui/
   - Google OAuth (popup + polling)
   - Toast auto-dismiss
   - Panel collapse
-
-## Workstream B: Diseño
-Solo tocar archivos en `styles/*.css` y `DESIGN.md`. No modificar templates ni server.
-Si se necesita una clase CSS nueva:
-1. Agregarla al CSS
-2. Pedir a Workstream A que la use en los templates
-3. Actualizar el contrato de clases en `../CLAUDE.md`
 
 ## Cómo se sirven los archivos
 - `server.ts` sirve `/oficina/static/*` mapeando a `ui/` (dev) o `dist/oficina/` (prod)
