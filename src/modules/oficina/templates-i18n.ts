@@ -183,6 +183,11 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     googleAppsAuthInfo: 'Autenticacion OAuth2 para servicios Google: Drive, Sheets, Docs, Slides, Calendar. Permisos completos.',
     googleAppsServicesTitle: 'Servicios disponibles',
     googleRefreshStatus: 'Actualizar estado',
+    // Unified section labels
+    sec_llm_unified: 'LLM (API Keys, Modelos, Limites)',
+    sec_llm_unified_info: 'Todo sobre los proveedores de IA: claves, modelos, limites de tokens, circuit breaker.',
+    sec_pipeline_unified: 'Pipeline (Limites, Follow-up, Naturalidad)',
+    sec_pipeline_unified_info: 'Configuracion del pipeline de conversacion: limites, seguimiento automatico, avisos naturales.',
     // Sidebar category titles
     cat_channels: 'Canales',
     cat_agent: 'Agente',
@@ -394,6 +399,11 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     googleAppsAuthInfo: 'OAuth2 authentication for Google services: Drive, Sheets, Docs, Slides, Calendar. Full permissions.',
     googleAppsServicesTitle: 'Available services',
     googleRefreshStatus: 'Refresh status',
+    // Unified section labels
+    sec_llm_unified: 'LLM (API Keys, Models, Limits)',
+    sec_llm_unified_info: 'Everything about AI providers: keys, models, token limits, circuit breaker.',
+    sec_pipeline_unified: 'Pipeline (Limits, Follow-up, Natural Feel)',
+    sec_pipeline_unified_info: 'Conversation pipeline config: limits, automatic follow-up, natural feel notices.',
     // Sidebar category titles
     cat_channels: 'Channels',
     cat_agent: 'Agent',

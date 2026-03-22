@@ -177,6 +177,178 @@ export function renderNaturalidadSection(data: SectionData): string {
   ])
 }
 
+// ═══════════════════════════════════════════
+// Unified LLM page — apikeys + models + limits + circuit breaker
+// ═══════════════════════════════════════════
+
+export function renderLlmUnifiedSection(data: SectionData): string {
+  let h = ''
+
+  // Panel 1: API Keys
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_apikeys', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_apikeys_info', data.lang)}</div>
+      ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang, 'f_ANTHROPIC_API_KEY', 'i_ANTHROPIC_API_KEY')}
+      ${secretField('OPENAI_API_KEY', cv(data, 'OPENAI_API_KEY'), data.lang, 'f_OPENAI_API_KEY', 'i_OPENAI_API_KEY')}
+      ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang, 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY')}
+    </div>
+  </div>`
+
+  // Panel 2: Models
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_models', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_models_info', data.lang)}</div>
+      ${renderModelsContent(data)}
+    </div>
+  </div>`
+
+  // Panel 3: Limits & Tokens
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_llm_limits', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_llm_limits_info', data.lang)}</div>
+      ${numField('LLM_MAX_INPUT_TOKENS', cv(data, 'LLM_MAX_INPUT_TOKENS'), data.lang, 'f_LLM_MAX_INPUT_TOKENS')}
+      ${numField('LLM_MAX_OUTPUT_TOKENS', cv(data, 'LLM_MAX_OUTPUT_TOKENS'), data.lang, 'f_LLM_MAX_OUTPUT_TOKENS')}
+      ${numField('LLM_TEMPERATURE_CLASSIFY', cv(data, 'LLM_TEMPERATURE_CLASSIFY'), data.lang, 'f_LLM_TEMPERATURE_CLASSIFY', 'i_TEMPERATURE_CLASSIFY')}
+      ${numField('LLM_TEMPERATURE_RESPOND', cv(data, 'LLM_TEMPERATURE_RESPOND'), data.lang, 'f_LLM_TEMPERATURE_RESPOND', 'i_TEMPERATURE_RESPOND')}
+      ${numField('LLM_TEMPERATURE_COMPLEX', cv(data, 'LLM_TEMPERATURE_COMPLEX'), data.lang, 'f_LLM_TEMPERATURE_COMPLEX', 'i_TEMPERATURE_COMPLEX')}
+      ${numField('LLM_REQUEST_TIMEOUT_MS', cv(data, 'LLM_REQUEST_TIMEOUT_MS'), data.lang, 'f_LLM_REQUEST_TIMEOUT_MS')}
+    </div>
+  </div>`
+
+  // Panel 4: Circuit Breaker
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_llm_cb', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_llm_cb_info', data.lang)}</div>
+      ${numField('LLM_CIRCUIT_BREAKER_FAILURES', cv(data, 'LLM_CIRCUIT_BREAKER_FAILURES'), data.lang, 'f_LLM_CIRCUIT_BREAKER_FAILURES', 'i_LLM_CB_FAILURES')}
+      ${numField('LLM_CIRCUIT_BREAKER_WINDOW_MS', cv(data, 'LLM_CIRCUIT_BREAKER_WINDOW_MS'), data.lang, 'f_LLM_CIRCUIT_BREAKER_WINDOW_MS', 'i_LLM_CB_WINDOW')}
+      ${numField('LLM_CIRCUIT_BREAKER_COOLDOWN_MS', cv(data, 'LLM_CIRCUIT_BREAKER_COOLDOWN_MS'), data.lang, 'f_LLM_CIRCUIT_BREAKER_COOLDOWN_MS', 'i_LLM_CB_COOLDOWN')}
+    </div>
+  </div>`
+
+  return h
+}
+
+/** Inner content for the models panel (reused by both standalone and unified) */
+function renderModelsContent(data: SectionData): string {
+  const models = data.allModels ?? { anthropic: [], gemini: [] }
+  const modelTasks: [string, string, string][] = [
+    ['LLM_CLASSIFY', 'f_LLM_CLASSIFY', 'i_LLM_CLASSIFY'],
+    ['LLM_RESPOND', 'f_LLM_RESPOND', 'i_LLM_RESPOND'],
+    ['LLM_COMPLEX', 'f_LLM_COMPLEX', 'i_LLM_COMPLEX'],
+    ['LLM_TOOLS', 'f_LLM_TOOLS', 'i_LLM_TOOLS'],
+    ['LLM_COMPRESS', 'f_LLM_COMPRESS', 'i_LLM_COMPRESS'],
+    ['LLM_PROACTIVE', 'f_LLM_PROACTIVE', 'i_LLM_PROACTIVE'],
+  ]
+  const fallbackTasks: [string, string, string][] = [
+    ['LLM_FALLBACK_CLASSIFY', 'f_LLM_FB_CLASSIFY', 'i_LLM_FB_CLASSIFY'],
+    ['LLM_FALLBACK_RESPOND', 'f_LLM_FB_RESPOND', 'i_LLM_FB_RESPOND'],
+    ['LLM_FALLBACK_COMPLEX', 'f_LLM_FB_COMPLEX', 'i_LLM_FB_COMPLEX'],
+  ]
+
+  const scanInfo = data.lastScan
+    ? `<span class="scan-info">${t('lastScan', data.lang)}: ${esc(data.lastScan.lastScanAt)}</span>`
+    : ''
+  const scanReplacements = (data.lastScan?.replacements?.length)
+    ? data.lastScan.replacements.map(r =>
+        `<div class="scan-replacement">
+          ${esc(r.configKey)}: <s>${esc(r.oldModel)}</s> ${t('scanReplaced', data.lang)} <b>${esc(r.newModel)}</b>
+        </div>`
+      ).join('') : ''
+
+  let h = `<div class="scan-bar">
+    <button type="button" class="wa-btn wa-btn-connect" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
+    ${scanInfo}
+  </div>
+  <div id="scan-replacements">${scanReplacements}</div>
+  <div class="section-label">${t('models_primary', data.lang)}</div>`
+
+  for (const [prefix, labelKey, infoKey] of modelTasks) {
+    h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || 'anthropic', cv(data, prefix + '_MODEL'), models, data.lang, labelKey, infoKey)
+  }
+  h += `<div class="section-label with-border">${t('models_fallback', data.lang)}</div>`
+  for (const [prefix, labelKey, infoKey] of fallbackTasks) {
+    h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || 'anthropic', cv(data, prefix + '_MODEL'), models, data.lang, labelKey, infoKey)
+  }
+  h += `<script type="application/json" id="models-data">${JSON.stringify(models)}</script>`
+  return h
+}
+
+// ═══════════════════════════════════════════
+// Unified Pipeline page — pipeline + follow-up + naturalidad
+// ═══════════════════════════════════════════
+
+export function renderPipelineUnifiedSection(data: SectionData): string {
+  let h = ''
+
+  // Panel 1: Pipeline limits
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_pipeline', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_pipeline_info', data.lang)}</div>
+      ${numField('PIPELINE_MAX_TOOL_CALLS_PER_TURN', cv(data, 'PIPELINE_MAX_TOOL_CALLS_PER_TURN'), data.lang, 'f_PIPELINE_MAX_TOOL_CALLS_PER_TURN', 'i_PIPELINE_TOOLS')}
+      ${numField('PIPELINE_MAX_CONVERSATION_TURNS', cv(data, 'PIPELINE_MAX_CONVERSATION_TURNS'), data.lang, 'f_PIPELINE_MAX_CONVERSATION_TURNS', 'i_PIPELINE_TURNS')}
+      ${numField('PIPELINE_SESSION_TTL_MS', cv(data, 'PIPELINE_SESSION_TTL_MS'), data.lang, 'f_PIPELINE_SESSION_TTL_MS', 'i_PIPELINE_TTL')}
+      ${numField('SUBAGENT_MAX_ITERATIONS', cv(data, 'SUBAGENT_MAX_ITERATIONS') || '5', data.lang, 'f_SUBAGENT_MAX_ITERATIONS', 'i_SUBAGENT_ITER')}
+      ${numField('PIPELINE_MAX_REPLAN_ATTEMPTS', cv(data, 'PIPELINE_MAX_REPLAN_ATTEMPTS') || '2', data.lang, 'f_PIPELINE_MAX_REPLAN_ATTEMPTS', 'i_PIPELINE_REPLAN')}
+    </div>
+  </div>`
+
+  // Panel 2: Follow-up
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_followup', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_followup_info', data.lang)}</div>
+      ${boolField('FOLLOWUP_ENABLED', cv(data, 'FOLLOWUP_ENABLED') || 'false', data.lang, 'f_FOLLOWUP_ENABLED')}
+      ${numField('FOLLOWUP_DELAY_MINUTES', cv(data, 'FOLLOWUP_DELAY_MINUTES'), data.lang, 'f_FOLLOWUP_DELAY_MINUTES', 'i_FOLLOWUP_DELAY')}
+      ${numField('FOLLOWUP_MAX_ATTEMPTS', cv(data, 'FOLLOWUP_MAX_ATTEMPTS'), data.lang, 'f_FOLLOWUP_MAX_ATTEMPTS', 'i_FOLLOWUP_MAX')}
+      ${numField('FOLLOWUP_COLD_AFTER_ATTEMPTS', cv(data, 'FOLLOWUP_COLD_AFTER_ATTEMPTS'), data.lang, 'f_FOLLOWUP_COLD_AFTER_ATTEMPTS', 'i_FOLLOWUP_COLD')}
+    </div>
+  </div>`
+
+  // Panel 3: Naturalidad
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_naturalidad', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_naturalidad_info', data.lang)}</div>
+      <div class="field-divider"><span class="field-divider-label">${t('sub_ack_whatsapp', data.lang)}</span></div>
+      ${numField('ACK_WHATSAPP_TRIGGER_MS', cv(data, 'ACK_WHATSAPP_TRIGGER_MS'), data.lang, 'f_ACK_WHATSAPP_TRIGGER_MS', 'i_ACK_WHATSAPP_TRIGGER_MS')}
+      ${numField('ACK_WHATSAPP_HOLD_MS', cv(data, 'ACK_WHATSAPP_HOLD_MS'), data.lang, 'f_ACK_WHATSAPP_HOLD_MS', 'i_ACK_WHATSAPP_HOLD_MS')}
+      ${textField('ACK_WHATSAPP_MESSAGE', cv(data, 'ACK_WHATSAPP_MESSAGE'), data.lang, 'f_ACK_WHATSAPP_MESSAGE', 'i_ACK_WHATSAPP_MESSAGE')}
+      <div class="field-divider"><span class="field-divider-label">${t('sub_ack_email', data.lang)}</span></div>
+      ${numField('ACK_EMAIL_TRIGGER_MS', cv(data, 'ACK_EMAIL_TRIGGER_MS'), data.lang, 'f_ACK_EMAIL_TRIGGER_MS', 'i_ACK_EMAIL_TRIGGER_MS')}
+      ${numField('ACK_EMAIL_HOLD_MS', cv(data, 'ACK_EMAIL_HOLD_MS'), data.lang, 'f_ACK_EMAIL_HOLD_MS', 'i_ACK_EMAIL_HOLD_MS')}
+      ${textField('ACK_EMAIL_MESSAGE', cv(data, 'ACK_EMAIL_MESSAGE'), data.lang, 'f_ACK_EMAIL_MESSAGE', 'i_ACK_EMAIL_MESSAGE')}
+    </div>
+  </div>`
+
+  return h
+}
+
 export function renderLeadScoringSection(data: SectionData): string {
   return `<div class="panel">
     <div class="panel-header" onclick="window.location.href='/oficina/api/lead-scoring/ui'" style="cursor:pointer">
@@ -192,7 +364,6 @@ export function renderModulesSection(data: SectionData): string {
 
 export function renderEmailSection(data: SectionData): string {
   const ga = data.gmailAuth ?? { connected: false, email: null }
-  const connClass = ga.connected ? 'connected' : 'disconnected'
 
   const statusLabel = ga.connected
     ? `<span class="status-dot connected"></span><span class="status-label connected">${t('gmailConnected', data.lang)}</span>${ga.email ? ` — <span class="status-email">${esc(ga.email)}</span>` : ''}`
@@ -379,18 +550,25 @@ export function renderScheduledTasksSection(data: SectionData): string {
   </div></div>`
 }
 
+/** Old section IDs that redirect to unified pages */
+export const SECTION_REDIRECTS: Record<string, string> = {
+  'apikeys': 'llm',
+  'models': 'llm',
+  'llm-limits': 'llm',
+  'llm-cb': 'llm',
+  'followup': 'pipeline',
+  'naturalidad': 'pipeline',
+}
+
 export function renderSection(section: string, data: SectionData): string | null {
   switch (section) {
     case 'whatsapp': return renderWhatsappSection(data)
-    case 'apikeys': return renderApiKeysSection(data)
-    case 'models': return renderModelsSection(data)
-    case 'llm-limits': return renderLimitsSection(data)
-    case 'llm-cb': return renderCbSection(data)
-    case 'pipeline': return renderPipelineSection(data)
-    case 'followup': return renderFollowupSection(data)
-    case 'naturalidad': return renderNaturalidadSection(data)
-    case 'lead-scoring': return renderLeadScoringSection(data)
+    // Unified LLM page (replaces apikeys, models, llm-limits, llm-cb)
+    case 'llm': return renderLlmUnifiedSection(data)
+    // Unified Pipeline page (replaces pipeline, followup, naturalidad)
+    case 'pipeline': return renderPipelineUnifiedSection(data)
     case 'engine-metrics': return renderEngineMetricsSection(data)
+    case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
     case 'modules': return renderModulesSection(data)
     case 'db': return renderDbSection(data)

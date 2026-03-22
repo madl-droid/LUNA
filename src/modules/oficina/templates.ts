@@ -36,20 +36,15 @@ const FIXED_SECTIONS: FixedSection[] = [
   { id: 'whatsapp', key: 'sec_whatsapp', icon: '&#128172;', group: 'channels', order: 10 },
   { id: 'email', key: 'sec_email', icon: '&#9993;', group: 'channels', order: 12 },
   // Agent
-  { id: 'pipeline', key: 'sec_pipeline', icon: '&#9654;', group: 'agent', order: 20 },
-  { id: 'engine-metrics', key: 'sec_engine_metrics', icon: '&#128200;', group: 'agent', order: 21 },
-  { id: 'followup', key: 'sec_followup', icon: '&#128260;', group: 'agent', order: 22 },
-  { id: 'naturalidad', key: 'sec_naturalidad', icon: '&#127917;', group: 'agent', order: 23 },
+  { id: 'pipeline', key: 'sec_pipeline_unified', icon: '&#9654;', group: 'agent', order: 20 },
+  { id: 'engine-metrics', key: 'sec_engine_metrics', icon: '&#128200;', group: 'agent', order: 25 },
   // Leads
   { id: 'lead-scoring', key: 'sec_lead_scoring', icon: '&#128202;', group: 'leads', order: 15 },
   // Modules
   { id: 'google-apps', key: 'sec_google_apps', icon: '&#128279;', group: 'modules', order: 15 },
   { id: 'modules', key: 'sec_modules', icon: '&#128230;', group: 'modules', order: 99 },
   // System
-  { id: 'apikeys', key: 'sec_apikeys', icon: '&#128273;', group: 'system', order: 1 },
-  { id: 'models', key: 'sec_models', icon: '&#129504;', group: 'system', order: 2 },
-  { id: 'llm-limits', key: 'sec_llm_limits', icon: '&#9881;', group: 'system', order: 3 },
-  { id: 'llm-cb', key: 'sec_llm_cb', icon: '&#128268;', group: 'system', order: 4 },
+  { id: 'llm', key: 'sec_llm_unified', icon: '&#129504;', group: 'system', order: 1 },
   { id: 'db', key: 'sec_db', icon: '&#128452;', group: 'system', order: 90 },
   { id: 'redis', key: 'sec_redis', icon: '&#9889;', group: 'system', order: 91 },
 ]

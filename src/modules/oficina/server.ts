@@ -12,7 +12,7 @@ import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
 import { pageLayout, type DynamicSidebarModule } from './templates.js'
-import { renderSection } from './templates-sections.js'
+import { renderSection, SECTION_REDIRECTS } from './templates-sections.js'
 import type { SectionData } from './templates-sections.js'
 import type { ModuleInfo } from './templates-modules.js'
 import { renderModulePanels } from './templates-modules.js'
@@ -361,7 +361,16 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
-      const section = pathOnly.replace(/^\//, '')
+      let section = pathOnly.replace(/^\//, '')
+
+      // Redirect old section IDs to unified pages
+      const redirectTo = SECTION_REDIRECTS[section]
+      if (redirectTo) {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/oficina/${redirectTo}?lang=${lang}` })
+        res.end()
+        return true
+      }
 
       // Only handle known sections (skip API routes, static files, etc.)
       if (section.startsWith('api/') || section.startsWith('static/')) {
