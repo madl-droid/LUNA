@@ -400,9 +400,9 @@ function renderSectionHeader(opts: PageOptions): string {
 // ═══════════════════════════════════════════
 
 function renderSaveBar(opts: PageOptions): string {
-  const discardLabel = opts.lang === 'es' ? 'Descartar' : opts.lang === 'pt' ? 'Descartar' : opts.lang === 'fr' ? 'Annuler' : 'Discard'
-  const saveLabel = opts.lang === 'es' ? 'Guardar' : opts.lang === 'pt' ? 'Salvar' : opts.lang === 'fr' ? 'Enregistrer' : 'Save'
-  const applyLabel = opts.lang === 'es' ? 'Aplicar cambios' : opts.lang === 'pt' ? 'Aplicar' : opts.lang === 'fr' ? 'Appliquer' : 'Apply changes'
+  const discardLabel = opts.lang === 'es' ? 'Descartar' : 'Discard'
+  const saveLabel = opts.lang === 'es' ? 'Guardar' : 'Save'
+  const applyLabel = opts.lang === 'es' ? 'Aplicar cambios' : 'Apply changes'
 
   return `<!-- Save bar: Phase 1 (dirty): Descartar + Guardar. Phase 2 (saved): Aplicar. -->
   <div class="save-bar" id="save-bar">
