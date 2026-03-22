@@ -253,6 +253,48 @@
   to { transform: translateX(0); opacity: 1; }
 }
 
+/* ═══ Metrics (engine-metrics section) ═══ */
+.metrics-period-row {
+  margin-bottom: 12px;
+}
+
+.metrics-period-select {
+  margin-left: 4px;
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  display: none;
+}
+
+.metrics-table th,
+.metrics-table td {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.metrics-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.metrics-trends-title {
+  margin-top: 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ═══ Panel link variant (clickable header like lead-scoring) ═══ */
+.panel-header-link { cursor: pointer; }
+.panel-chevron-right { transform: rotate(-90deg); }
+
 /* ═══ Status row (used in email, google-apps sections) ═══ */
 .status-row {
   display: flex;
