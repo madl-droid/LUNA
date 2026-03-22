@@ -45,8 +45,7 @@ const FIXED_SECTIONS: FixedSection[] = [
   { id: 'modules', key: 'sec_modules', icon: '&#128230;', group: 'modules', order: 99 },
   // System
   { id: 'llm', key: 'sec_llm_unified', icon: '&#129504;', group: 'system', order: 1 },
-  { id: 'db', key: 'sec_db', icon: '&#128452;', group: 'system', order: 90 },
-  { id: 'redis', key: 'sec_redis', icon: '&#9889;', group: 'system', order: 91 },
+  { id: 'infra', key: 'sec_infra', icon: '&#128452;', group: 'system', order: 90 },
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)

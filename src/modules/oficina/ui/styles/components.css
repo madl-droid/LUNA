@@ -45,6 +45,14 @@
   border-top: 1px solid var(--border-light);
 }
 
+.panel-body-flat { border-top: none; }
+
+.panel-body-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
 .panel-info {
   font-size: 13px;
   color: var(--text-secondary);
@@ -407,11 +415,17 @@
   margin-left: 8px;
 }
 
+.module-badge { margin-left: 8px; }
+.module-toggle-form { margin: 0; }
+
 .module-panel-body {
   padding: 8px 16px 14px;
   border-top: 1px solid var(--border-light);
   background: var(--bg-secondary);
 }
+
+/* ═══ Google icon (inline SVG) ═══ */
+.google-icon { vertical-align: middle; margin-right: 8px; }
 
 /* ═══ Btn secondary (refresh status, small actions) ═══ */
 .btn-secondary {

@@ -157,6 +157,25 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     // Pipeline extra fields
     i_SUBAGENT_ITER: 'Cuantas iteraciones puede ejecutar un subagente antes de detenerse.',
     i_PIPELINE_REPLAN: 'Cuantas veces puede el pipeline re-evaluar su plan si el primer intento falla.',
+    // Engine metrics
+    em_title: 'Rendimiento del engine',
+    em_loading: 'Cargando metricas...',
+    em_period: 'Periodo',
+    em_total: 'Ejecuciones',
+    em_replan: 'Con replan',
+    em_avg_replan: 'Avg replans',
+    em_max_replan: 'Max replans',
+    em_subagent: 'Con subagent',
+    em_avg_sub_iter: 'Avg iter subagent',
+    em_max_sub_iter: 'Max iter subagent',
+    em_avg_ms: 'Latencia prom (ms)',
+    em_p95: 'Latencia P95 (ms)',
+    em_trends: 'Tendencias diarias (30d)',
+    em_day: 'Dia',
+    em_error: 'Error al cargar metricas',
+    // Infrastructure
+    sec_infra: 'Infraestructura',
+    sec_infra_info: 'Conexion a PostgreSQL y Redis. Normalmente se configura en docker-compose.',
     // Gmail OAuth
     gmailConnectBtn: 'Conectar Gmail',
     gmailDisconnectBtn: 'Desconectar Gmail',
@@ -373,6 +392,25 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     // Pipeline extra fields
     i_SUBAGENT_ITER: 'How many iterations a subagent can execute before stopping.',
     i_PIPELINE_REPLAN: 'How many times the pipeline can re-evaluate its plan if the first attempt fails.',
+    // Engine metrics
+    em_title: 'Engine Performance',
+    em_loading: 'Loading metrics...',
+    em_period: 'Period',
+    em_total: 'Executions',
+    em_replan: 'With replan',
+    em_avg_replan: 'Avg replans',
+    em_max_replan: 'Max replans',
+    em_subagent: 'With subagent',
+    em_avg_sub_iter: 'Avg subagent iter',
+    em_max_sub_iter: 'Max subagent iter',
+    em_avg_ms: 'Avg latency (ms)',
+    em_p95: 'P95 latency (ms)',
+    em_trends: 'Daily Trends (30d)',
+    em_day: 'Day',
+    em_error: 'Error loading metrics',
+    // Infrastructure
+    sec_infra: 'Infrastructure',
+    sec_infra_info: 'PostgreSQL and Redis connection. Usually configured in docker-compose.',
     // Gmail OAuth
     gmailConnectBtn: 'Connect Gmail',
     gmailDisconnectBtn: 'Disconnect Gmail',

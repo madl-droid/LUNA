@@ -16,8 +16,15 @@ export interface SectionData {
   scheduledTasksHtml?: string
 }
 
+const GOOGLE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" class="google-icon" xmlns="http://www.w3.org/2000/svg">
+  <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+  <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+  <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+  <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+</svg>`
+
 function panelBody(fieldsHtml: string[]): string {
-  return `<div class="panel"><div class="panel-body" style="border-top:none">${fieldsHtml.join('')}</div></div>`
+  return `<div class="panel"><div class="panel-body panel-body-flat">${fieldsHtml.join('')}</div></div>`
 }
 
 function cv(data: SectionData, key: string): string {
@@ -262,15 +269,10 @@ export function renderEmailSection(data: SectionData): string {
     ? `<span class="status-dot connected"></span><span class="status-label connected">${t('gmailConnected', data.lang)}</span>${ga.email ? ` — <span class="status-email">${esc(ga.email)}</span>` : ''}`
     : `<span class="status-dot disconnected"></span><span class="status-label disconnected">${t('gmailNotConnected', data.lang)}</span>`
 
-  const googleSvg = `<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle;margin-right:8px" xmlns="http://www.w3.org/2000/svg">
-    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
-    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
-    <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
-    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
-  </svg>`
+  const googleSvg = GOOGLE_SVG
 
   return `<div class="panel">
-    <div class="panel-body" style="border-top:none">
+    <div class="panel-body panel-body-flat">
       <div class="panel-info">${t('gmailAuthInfo', data.lang)}</div>
       <div class="status-row">
         <div class="status-label">${statusLabel}</div>
@@ -297,17 +299,12 @@ export function renderGoogleAppsSection(data: SectionData): string {
     ? `<span class="status-dot connected"></span><span class="status-label connected">${t('googleAppsConnected', data.lang)}</span>${ga.email ? ` — <span class="status-email">${esc(ga.email)}</span>` : ''}`
     : `<span class="status-dot disconnected"></span><span class="status-label disconnected">${t('googleAppsNotConnected', data.lang)}</span>`
 
-  const googleSvg = `<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle;margin-right:8px" xmlns="http://www.w3.org/2000/svg">
-    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
-    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
-    <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
-    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
-  </svg>`
+  const googleSvg = GOOGLE_SVG
 
   const serviceList = ['Drive', 'Sheets', 'Docs', 'Slides', 'Calendar']
 
   return `<div class="panel">
-    <div class="panel-body" style="border-top:none">
+    <div class="panel-body panel-body-flat">
       <div class="panel-info">${t('googleAppsAuthInfo', data.lang)}</div>
       <div class="status-row">
         <div class="status-label">${statusLabel}</div>
@@ -331,47 +328,54 @@ export function renderGoogleAppsSection(data: SectionData): string {
   ${renderModulePanels(data.moduleStates ?? [], data.config, data.lang, 'google-apps')}`
 }
 
-export function renderDbSection(data: SectionData): string {
-  return panelBody([
-    textField('DB_HOST', cv(data, 'DB_HOST'), data.lang),
-    textField('DB_PORT', cv(data, 'DB_PORT'), data.lang),
-    textField('DB_NAME', cv(data, 'DB_NAME'), data.lang),
-    textField('DB_USER', cv(data, 'DB_USER'), data.lang),
-    secretField('DB_PASSWORD', cv(data, 'DB_PASSWORD'), data.lang),
-  ])
-}
+// ═══════════════════════════════════════════
+// Unified Infrastructure page — DB + Redis
+// ═══════════════════════════════════════════
 
-export function renderRedisSection(data: SectionData): string {
-  return panelBody([
-    textField('REDIS_HOST', cv(data, 'REDIS_HOST'), data.lang),
-    textField('REDIS_PORT', cv(data, 'REDIS_PORT'), data.lang),
-    secretField('REDIS_PASSWORD', cv(data, 'REDIS_PASSWORD'), data.lang),
-  ])
+export function renderInfraUnifiedSection(data: SectionData): string {
+  let h = ''
+
+  // Panel 1: PostgreSQL
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_db', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_db_info', data.lang)}</div>
+      ${textField('DB_HOST', cv(data, 'DB_HOST'), data.lang)}
+      ${textField('DB_PORT', cv(data, 'DB_PORT'), data.lang)}
+      ${textField('DB_NAME', cv(data, 'DB_NAME'), data.lang)}
+      ${textField('DB_USER', cv(data, 'DB_USER'), data.lang)}
+      ${secretField('DB_PASSWORD', cv(data, 'DB_PASSWORD'), data.lang)}
+    </div>
+  </div>`
+
+  // Panel 2: Redis
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_redis', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_redis_info', data.lang)}</div>
+      ${textField('REDIS_HOST', cv(data, 'REDIS_HOST'), data.lang)}
+      ${textField('REDIS_PORT', cv(data, 'REDIS_PORT'), data.lang)}
+      ${secretField('REDIS_PASSWORD', cv(data, 'REDIS_PASSWORD'), data.lang)}
+    </div>
+  </div>`
+
+  return h
 }
 
 export function renderEngineMetricsSection(data: SectionData): string {
   const lang = data.lang
-  const title = lang === 'en' ? 'Engine Performance' : 'Rendimiento del engine'
-  const loading = lang === 'en' ? 'Loading metrics...' : 'Cargando métricas...'
-  const periodLabel = lang === 'en' ? 'Period' : 'Periodo'
-  // Headers
-  const hTotal = lang === 'en' ? 'Executions' : 'Ejecuciones'
-  const hReplan = lang === 'en' ? 'With replan' : 'Con replan'
-  const hAvgReplan = lang === 'en' ? 'Avg replans' : 'Avg replans'
-  const hMaxReplan = lang === 'en' ? 'Max replans' : 'Max replans'
-  const hSubagent = lang === 'en' ? 'With subagent' : 'Con subagent'
-  const hAvgSubIter = lang === 'en' ? 'Avg subagent iter' : 'Avg iter subagent'
-  const hMaxSubIter = lang === 'en' ? 'Max subagent iter' : 'Max iter subagent'
-  const hAvgMs = lang === 'en' ? 'Avg latency (ms)' : 'Latencia prom (ms)'
-  const hP95 = lang === 'en' ? 'P95 latency (ms)' : 'Latencia P95 (ms)'
-  const hTrends = lang === 'en' ? 'Daily Trends (30d)' : 'Tendencias diarias (30d)'
-  const hDay = lang === 'en' ? 'Day' : 'Día'
 
   return `<div class="panel">
-    <div class="panel-header"><span class="panel-title">${esc(title)}</span></div>
+    <div class="panel-header"><span class="panel-title">${t('em_title', lang)}</span></div>
     <div class="panel-body">
       <div class="metrics-period-row">
-        <label>${esc(periodLabel)}:
+        <label>${t('em_period', lang)}:
           <select id="metrics-period" class="metrics-period-select">
             <option value="24h">24h</option>
             <option value="7d">7d</option>
@@ -379,20 +383,20 @@ export function renderEngineMetricsSection(data: SectionData): string {
           </select>
         </label>
       </div>
-      <div id="metrics-summary">${esc(loading)}</div>
+      <div id="metrics-summary">${t('em_loading', lang)}</div>
       <table id="metrics-table" class="metrics-table">
         <tr>
-          <th>${esc(hTotal)}</th><th>${esc(hReplan)}</th><th>${esc(hAvgReplan)}</th><th>${esc(hMaxReplan)}</th>
-          <th>${esc(hSubagent)}</th><th>${esc(hAvgSubIter)}</th><th>${esc(hMaxSubIter)}</th>
-          <th>${esc(hAvgMs)}</th><th>${esc(hP95)}</th>
+          <th>${t('em_total', lang)}</th><th>${t('em_replan', lang)}</th><th>${t('em_avg_replan', lang)}</th><th>${t('em_max_replan', lang)}</th>
+          <th>${t('em_subagent', lang)}</th><th>${t('em_avg_sub_iter', lang)}</th><th>${t('em_max_sub_iter', lang)}</th>
+          <th>${t('em_avg_ms', lang)}</th><th>${t('em_p95', lang)}</th>
         </tr>
         <tbody id="metrics-summary-row"></tbody>
       </table>
-      <h4 class="metrics-trends-title">${esc(hTrends)}</h4>
+      <h4 class="metrics-trends-title">${t('em_trends', lang)}</h4>
       <table id="metrics-trends" class="metrics-table">
         <tr>
-          <th>${esc(hDay)}</th><th>${esc(hTotal)}</th><th>${esc(hAvgReplan)}</th>
-          <th>${esc(hAvgSubIter)}</th><th>${esc(hAvgMs)}</th>
+          <th>${t('em_day', lang)}</th><th>${t('em_total', lang)}</th><th>${t('em_avg_replan', lang)}</th>
+          <th>${t('em_avg_sub_iter', lang)}</th><th>${t('em_avg_ms', lang)}</th>
         </tr>
         <tbody id="metrics-trends-rows"></tbody>
       </table>
@@ -424,7 +428,7 @@ export function renderEngineMetricsSection(data: SectionData): string {
                 }).join('');
               }
             })
-            .catch(function(){document.getElementById('metrics-summary').textContent='Error loading metrics'});
+            .catch(function(){document.getElementById('metrics-summary').textContent='${t('em_error', lang)}'});
         }
         function n(v){return v==null?'-':v}
         sel.addEventListener('change',load);
@@ -438,7 +442,7 @@ export function renderEngineMetricsSection(data: SectionData): string {
 export function renderScheduledTasksSection(data: SectionData): string {
   if (data.scheduledTasksHtml) return data.scheduledTasksHtml
   // Fallback if render service not available
-  return `<div class="panel"><div class="panel-body" style="border-top:none;padding:20px;text-align:center;color:var(--text-tertiary)">
+  return `<div class="panel"><div class="panel-body panel-body-flat panel-body-empty">
     ${data.lang === 'es' ? 'Modulo de tareas programadas no disponible.' : 'Scheduled tasks module not available.'}
   </div></div>`
 }
@@ -451,6 +455,8 @@ export const SECTION_REDIRECTS: Record<string, string> = {
   'llm-cb': 'llm',
   'followup': 'pipeline',
   'naturalidad': 'pipeline',
+  'db': 'infra',
+  'redis': 'infra',
 }
 
 export function renderSection(section: string, data: SectionData): string | null {
@@ -464,8 +470,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
     case 'modules': return renderModulesSection(data)
-    case 'db': return renderDbSection(data)
-    case 'redis': return renderRedisSection(data)
+    case 'infra': return renderInfraUnifiedSection(data)
     case 'google-apps': return renderGoogleAppsSection(data)
     case 'email': return renderEmailSection(data)
     default: return null

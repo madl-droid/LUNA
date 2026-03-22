@@ -33,10 +33,10 @@ export function renderModulePanels(modules: ModuleInfo[], config: Record<string,
       <div class="module-panel-header">
         <div>
           <span class="module-panel-title">${esc(title)}</span>
-          <span class="panel-badge ${isActive ? 'badge-active' : 'badge-soon'}" style="margin-left:8px">${isActive ? t('activated', lang) : t('deactivated', lang)}</span>
+          <span class="panel-badge module-badge ${isActive ? 'badge-active' : 'badge-soon'}">${isActive ? t('activated', lang) : t('deactivated', lang)}</span>
           <span class="module-panel-type">${esc(mod.type)}</span>
         </div>
-        ${canToggle ? `<form method="POST" action="/oficina/modules/toggle" style="margin:0">
+        ${canToggle ? `<form method="POST" action="/oficina/modules/toggle" class="module-toggle-form">
           <input type="hidden" name="module" value="${esc(mod.name)}">
           <input type="hidden" name="active" value="${isActive ? 'false' : 'true'}">
           <input type="hidden" name="_section" value="modules">
