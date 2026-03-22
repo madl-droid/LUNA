@@ -331,15 +331,16 @@
   }
 
   // === Google OAuth Wizard ===
-  // Shared wizard for Gmail and Google Apps — shows setup instructions + credential input
-  // on first connection, then triggers OAuth flow.
+  // 4-step wizard: account type → project setup → credentials creation → credential input
+
+  var COPY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+  var CHECK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
 
   var WIZARD_CONFIGS = {
     gmail: {
       statusUrl: '/console/api/gmail/auth-status',
       authUrl: '/console/api/gmail/auth-url',
       setupUrl: '/console/api/gmail/setup-credentials',
-      disconnectUrl: '/console/api/gmail/auth-disconnect',
       pollStatusUrl: '/console/api/gmail/auth-status',
       pollKey: 'connected',
       label: 'Gmail',
@@ -350,7 +351,6 @@
       statusUrl: '/console/api/google-apps/auth-status',
       authUrl: '/console/api/google-apps/auth-url',
       setupUrl: '/console/api/google-apps/setup-credentials',
-      disconnectUrl: '/console/api/google-apps/disconnect',
       pollStatusUrl: '/console/api/google-apps/status',
       pollKey: 'status',
       pollValue: 'connected',
@@ -360,19 +360,19 @@
     }
   }
 
+  // Wizard state
+  var _wizardModuleKey = ''
+  var _wizardAccountType = '' // 'workspace' or 'personal'
+
   function openOAuthWizard(moduleKey) {
     var cfg = WIZARD_CONFIGS[moduleKey]
     if (!cfg) return
-
-    // First check if credentials already exist
     fetch(cfg.statusUrl)
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.hasCredentials) {
-          // Credentials exist — go directly to OAuth
           startOAuthFlow(moduleKey, cfg)
         } else {
-          // No credentials — show wizard
           showWizardModal(moduleKey, cfg, data.redirectUri || '')
         }
       })
@@ -382,8 +382,9 @@
   function showWizardModal(moduleKey, cfg, redirectUri) {
     var lang = document.documentElement.lang || 'es'
     var isEs = lang === 'es'
+    var uri = redirectUri || (location.origin + '/console/api/' + moduleKey + '/oauth2callback')
+    _wizardModuleKey = moduleKey
 
-    // Remove existing modal
     var existing = document.getElementById('oauth-wizard-modal')
     if (existing) existing.remove()
 
@@ -393,95 +394,169 @@
     modal.innerHTML = '<div class="wizard-modal">'
       + '<button class="wizard-close" onclick="closeWizard()">&times;</button>'
       + '<div class="wizard-steps">'
-      // Step indicator
-      + '<div class="wizard-step-indicator"><span class="wizard-dot active" data-step="1">1</span><span class="wizard-dot-line"></span><span class="wizard-dot" data-step="2">2</span></div>'
-      // Step 1: Instructions
+      // Step indicator (4 steps)
+      + '<div class="wizard-step-indicator">'
+      + '<span class="wizard-dot active" data-step="1">1</span><span class="wizard-dot-line"></span>'
+      + '<span class="wizard-dot" data-step="2">2</span><span class="wizard-dot-line"></span>'
+      + '<span class="wizard-dot" data-step="3">3</span><span class="wizard-dot-line"></span>'
+      + '<span class="wizard-dot" data-step="4">4</span>'
+      + '</div>'
+
+      // ── Step 1: Account type ──
       + '<div class="wizard-page active" data-wizard-page="1">'
-      + '<h3>' + (isEs ? 'Configurar ' + cfg.label : 'Configure ' + cfg.label) + '</h3>'
+      + '<h3>' + (isEs ? 'Tipo de cuenta Google' : 'Google Account Type') + '</h3>'
+      + '<p class="wizard-text">' + (isEs
+        ? 'Las instrucciones de configuracion dependen del tipo de cuenta que usaras:'
+        : 'Setup instructions depend on which type of account you will use:') + '</p>'
+      + '<div class="wizard-choice-group">'
+      + '<button class="wizard-choice" onclick="wizardSetAccountType(\'workspace\')">'
+      + '<div class="wizard-choice-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h4"/></svg></div>'
+      + '<div class="wizard-choice-label">' + (isEs ? 'Google Workspace' : 'Google Workspace') + '</div>'
+      + '<div class="wizard-choice-desc">' + (isEs
+        ? 'Dominio corporativo (tu@empresa.com). No requiere usuarios de prueba.'
+        : 'Corporate domain (you@company.com). No test users needed.') + '</div>'
+      + '</button>'
+      + '<button class="wizard-choice" onclick="wizardSetAccountType(\'personal\')">'
+      + '<div class="wizard-choice-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 00-16 0"/></svg></div>'
+      + '<div class="wizard-choice-label">' + (isEs ? 'Cuenta personal' : 'Personal account') + '</div>'
+      + '<div class="wizard-choice-desc">' + (isEs
+        ? 'Gmail personal (@gmail.com). Requiere registrar usuarios de prueba.'
+        : 'Personal Gmail (@gmail.com). Requires adding test users.') + '</div>'
+      + '</button>'
+      + '</div>'
+      + '</div>'
+
+      // ── Step 2: Project setup + APIs ──
+      + '<div class="wizard-page" data-wizard-page="2">'
+      + '<h3>' + (isEs ? 'Crear proyecto y habilitar APIs' : 'Create Project & Enable APIs') + '</h3>'
       + '<div class="wizard-instructions">'
-      + '<p>' + (isEs ? 'Para conectar ' + cfg.label + ', necesitas crear un proyecto en Google Cloud Console (uso personal):' : 'To connect ' + cfg.label + ', create a project in Google Cloud Console (personal use):') + '</p>'
       + '<ol>'
-      + '<li>' + (isEs ? 'Ve a <strong>console.cloud.google.com</strong>' : 'Go to <strong>console.cloud.google.com</strong>') + '</li>'
+      + '<li>' + (isEs
+        ? 'Abre <a href="https://console.cloud.google.com" target="_blank" rel="noopener"><strong>Google Cloud Console</strong></a>'
+        : 'Open <a href="https://console.cloud.google.com" target="_blank" rel="noopener"><strong>Google Cloud Console</strong></a>') + '</li>'
       + '<li>' + (isEs ? 'Crea un nuevo proyecto o usa uno existente' : 'Create a new project or use an existing one') + '</li>'
-      + '<li>' + (isEs ? 'En el menu lateral: <strong>APIs y servicios > Biblioteca</strong>' : 'In the sidebar: <strong>APIs & Services > Library</strong>') + '</li>'
-      + '<li>' + (isEs ? 'Busca y habilita: <strong>' + cfg.apis + '</strong>' : 'Search and enable: <strong>' + cfg.apis + '</strong>') + '</li>'
-      + '<li>' + (isEs ? 'Ve a <strong>APIs y servicios > Pantalla de consentimiento</strong>' : 'Go to <strong>APIs & Services > OAuth consent screen</strong>') + '</li>'
-      + '<li>' + (isEs ? 'Tipo de usuario: <strong>Externo</strong>. Completa los campos obligatorios' : 'User type: <strong>External</strong>. Fill required fields') + '</li>'
-      + '<li>' + (isEs ? 'Agrega los scopes: <strong>' + cfg.scopes + '</strong>' : 'Add scopes: <strong>' + cfg.scopes + '</strong>') + '</li>'
-      + '<li>' + (isEs ? 'En <strong>Usuarios de prueba</strong>, agrega tu email de Google' : 'Under <strong>Test users</strong>, add your Google email') + '</li>'
-      + '<li>' + (isEs ? 'Ve a <strong>Credenciales > Crear credenciales > ID de cliente OAuth</strong>' : 'Go to <strong>Credentials > Create credentials > OAuth client ID</strong>') + '</li>'
-      + '<li>' + (isEs ? 'Tipo: <strong>Aplicacion web</strong>' : 'Type: <strong>Web application</strong>') + '</li>'
-      + '<li>' + (isEs ? 'En <strong>URIs de redireccionamiento autorizados</strong>, agrega:' : 'Under <strong>Authorized redirect URIs</strong>, add:') + '<br>'
-      + '<code class="wizard-uri">' + escHtml(redirectUri || (location.origin + '/console/api/' + moduleKey + '/oauth2callback')) + '</code>'
-      + '<button type="button" class="wizard-copy-btn" onclick="copyWizardUri(this)">'
-      + (isEs ? 'Copiar' : 'Copy') + '</button></li>'
-      + '<li>' + (isEs ? 'Copia el <strong>Client ID</strong> y <strong>Client Secret</strong>' : 'Copy the <strong>Client ID</strong> and <strong>Client Secret</strong>') + '</li>'
+      + '<li>' + (isEs
+        ? 'En el menu lateral: <strong>APIs y servicios</strong> &gt; <strong>Biblioteca</strong>'
+        : 'In the sidebar: <strong>APIs & Services</strong> &gt; <strong>Library</strong>') + '</li>'
+      + '<li>' + (isEs
+        ? 'Busca y habilita: <strong>' + cfg.apis + '</strong>'
+        : 'Search and enable: <strong>' + cfg.apis + '</strong>') + '</li>'
+      + '<li>' + (isEs
+        ? 'Ve a <strong>APIs y servicios</strong> &gt; <strong>Pantalla de consentimiento OAuth</strong>'
+        : 'Go to <strong>APIs & Services</strong> &gt; <strong>OAuth consent screen</strong>') + '</li>'
+      // Account-type-specific instructions
+      + '<li data-account-workspace>' + (isEs
+        ? 'Tipo de usuario: <strong>Interno</strong> (disponible en Workspace). Completa los campos obligatorios.'
+        : 'User type: <strong>Internal</strong> (available on Workspace). Fill required fields.') + '</li>'
+      + '<li data-account-personal>' + (isEs
+        ? 'Tipo de usuario: <strong>Externo</strong>. Completa los campos obligatorios.'
+        : 'User type: <strong>External</strong>. Fill required fields.') + '</li>'
+      + '<li>' + (isEs
+        ? 'Agrega los scopes: <strong>' + cfg.scopes + '</strong>'
+        : 'Add scopes: <strong>' + cfg.scopes + '</strong>') + '</li>'
+      + '<li data-account-personal>' + (isEs
+        ? 'En <strong>Usuarios de prueba</strong>, agrega tu email de Google'
+        : 'Under <strong>Test users</strong>, add your Google email') + '</li>'
       + '</ol>'
       + '</div>'
       + '<div class="wizard-actions">'
-      + '<button class="wizard-btn wizard-btn-primary" onclick="wizardNext()">' + (isEs ? 'Continuar' : 'Continue') + '</button>'
+      + '<button class="wizard-btn wizard-btn-secondary" onclick="wizardGoTo(1)">' + (isEs ? 'Atras' : 'Back') + '</button>'
+      + '<button class="wizard-btn wizard-btn-primary" onclick="wizardGoTo(3)">' + (isEs ? 'Continuar' : 'Continue') + '</button>'
       + '</div>'
       + '</div>'
-      // Step 2: Credentials input
-      + '<div class="wizard-page" data-wizard-page="2">'
-      + '<h3>' + (isEs ? 'Credenciales de ' + cfg.label : cfg.label + ' Credentials') + '</h3>'
-      + '<div class="wizard-form">'
-      + '<label class="wizard-label">Client ID</label>'
-      + '<input type="text" id="wizard-client-id" class="wizard-input" placeholder="xxxxxxxxx.apps.googleusercontent.com" autocomplete="off" />'
-      + '<label class="wizard-label">Client Secret</label>'
-      + '<input type="password" id="wizard-client-secret" class="wizard-input" placeholder="GOCSPX-xxxxxxxxxx" autocomplete="off" />'
-      + '<p class="wizard-hint">' + (isEs ? 'Estos valores se guardan encriptados en la base de datos.' : 'These values are stored encrypted in the database.') + '</p>'
+
+      // ── Step 3: Create credentials ──
+      + '<div class="wizard-page" data-wizard-page="3">'
+      + '<h3>' + (isEs ? 'Crear credenciales OAuth' : 'Create OAuth Credentials') + '</h3>'
+      + '<div class="wizard-instructions">'
+      + '<ol>'
+      + '<li>' + (isEs
+        ? 'En <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener"><strong>Credenciales</strong></a>, haz clic en <strong>Crear credenciales</strong> &gt; <strong>ID de cliente OAuth</strong>'
+        : 'In <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener"><strong>Credentials</strong></a>, click <strong>Create credentials</strong> &gt; <strong>OAuth client ID</strong>') + '</li>'
+      + '<li>' + (isEs
+        ? 'Tipo de aplicacion: <strong>Aplicacion web</strong>'
+        : 'Application type: <strong>Web application</strong>') + '</li>'
+      + '<li>' + (isEs
+        ? 'En <strong>URIs de redireccionamiento autorizados</strong>, agrega:'
+        : 'Under <strong>Authorized redirect URIs</strong>, add:')
+      + '<div class="wizard-uri-box">'
+      + '<code class="wizard-uri">' + escHtml(uri) + '</code>'
+      + '<button type="button" class="wizard-copy-icon" onclick="copyWizardUri(this)" title="' + (isEs ? 'Copiar' : 'Copy') + '">' + COPY_ICON + '</button>'
+      + '</div></li>'
+      + '<li>' + (isEs
+        ? 'Haz clic en <strong>Crear</strong>. Copia el <strong>Client ID</strong> y <strong>Client Secret</strong> que aparecen &mdash; los necesitaras en el siguiente paso.'
+        : 'Click <strong>Create</strong>. Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> shown &mdash; you will need them in the next step.') + '</li>'
+      + '</ol>'
       + '</div>'
       + '<div class="wizard-actions">'
-      + '<button class="wizard-btn wizard-btn-secondary" onclick="wizardBack()">' + (isEs ? 'Atras' : 'Back') + '</button>'
+      + '<button class="wizard-btn wizard-btn-secondary" onclick="wizardGoTo(2)">' + (isEs ? 'Atras' : 'Back') + '</button>'
+      + '<button class="wizard-btn wizard-btn-primary" onclick="wizardGoTo(4)">' + (isEs ? 'Continuar' : 'Continue') + '</button>'
+      + '</div>'
+      + '</div>'
+
+      // ── Step 4: Credential input ──
+      + '<div class="wizard-page" data-wizard-page="4">'
+      + '<h3>' + (isEs ? 'Ingresar credenciales' : 'Enter Credentials') + '</h3>'
+      + '<div class="wizard-form">'
+      + '<label class="wizard-label">Client ID</label>'
+      + '<input type="text" id="wizard-client-id" class="wizard-input" placeholder="xxxxxxxxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false" />'
+      + '<label class="wizard-label">Client Secret</label>'
+      + '<input type="password" id="wizard-client-secret" class="wizard-input" placeholder="GOCSPX-xxxxxxxxxx" autocomplete="off" />'
+      + '<p class="wizard-hint">' + (isEs
+        ? 'Estos valores se guardan encriptados en la base de datos.'
+        : 'These values are stored encrypted in the database.') + '</p>'
+      + '</div>'
+      + '<div class="wizard-actions">'
+      + '<button class="wizard-btn wizard-btn-secondary" onclick="wizardGoTo(3)">' + (isEs ? 'Atras' : 'Back') + '</button>'
       + '<button class="wizard-btn wizard-btn-primary" id="wizard-submit" onclick="wizardSubmit(\'' + moduleKey + '\')">' + (isEs ? 'Conectar' : 'Connect') + '</button>'
       + '</div>'
       + '</div>'
-      + '</div>'
-      + '</div>'
-    document.body.appendChild(modal)
 
-    // Close on overlay click
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) closeWizard()
-    })
+      + '</div></div>'
+    document.body.appendChild(modal)
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeWizard() })
   }
 
   window.closeWizard = function () {
     var m = document.getElementById('oauth-wizard-modal')
     if (m) m.remove()
+    _wizardModuleKey = ''
+    _wizardAccountType = ''
+  }
+
+  window.wizardSetAccountType = function (type) {
+    _wizardAccountType = type
+    // Show/hide account-specific instructions
+    document.querySelectorAll('[data-account-workspace]').forEach(function (el) {
+      el.style.display = type === 'workspace' ? '' : 'none'
+    })
+    document.querySelectorAll('[data-account-personal]').forEach(function (el) {
+      el.style.display = type === 'personal' ? '' : 'none'
+    })
+    wizardGoTo(2)
+  }
+
+  window.wizardGoTo = function (step) {
+    var pages = document.querySelectorAll('[data-wizard-page]')
+    var dots = document.querySelectorAll('.wizard-dot[data-step]')
+    pages.forEach(function (p) { p.classList.remove('active') })
+    dots.forEach(function (d) {
+      var s = parseInt(d.getAttribute('data-step'), 10)
+      d.classList.toggle('active', s <= step)
+    })
+    var target = document.querySelector('[data-wizard-page="' + step + '"]')
+    if (target) target.classList.add('active')
   }
 
   window.copyWizardUri = function (btn) {
-    var code = btn.previousElementSibling
+    var box = btn.closest('.wizard-uri-box')
+    var code = box ? box.querySelector('.wizard-uri') : null
     if (!code) return
     navigator.clipboard.writeText(code.textContent).then(function () {
-      var orig = btn.textContent
-      btn.textContent = '✓'
-      setTimeout(function () { btn.textContent = orig }, 1500)
+      btn.innerHTML = CHECK_ICON
+      btn.classList.add('copied')
+      setTimeout(function () { btn.innerHTML = COPY_ICON; btn.classList.remove('copied') }, 2000)
     })
-  }
-
-  window.wizardNext = function () {
-    var p1 = document.querySelector('[data-wizard-page="1"]')
-    var p2 = document.querySelector('[data-wizard-page="2"]')
-    var d1 = document.querySelector('.wizard-dot[data-step="1"]')
-    var d2 = document.querySelector('.wizard-dot[data-step="2"]')
-    if (p1) p1.classList.remove('active')
-    if (p2) p2.classList.add('active')
-    if (d1) d1.classList.remove('active')
-    if (d2) d2.classList.add('active')
-  }
-
-  window.wizardBack = function () {
-    var p1 = document.querySelector('[data-wizard-page="1"]')
-    var p2 = document.querySelector('[data-wizard-page="2"]')
-    var d1 = document.querySelector('.wizard-dot[data-step="1"]')
-    var d2 = document.querySelector('.wizard-dot[data-step="2"]')
-    if (p2) p2.classList.remove('active')
-    if (p1) p1.classList.add('active')
-    if (d2) d2.classList.remove('active')
-    if (d1) d1.classList.add('active')
   }
 
   window.wizardSubmit = function (moduleKey) {
@@ -490,9 +565,10 @@
     var clientId = document.getElementById('wizard-client-id')
     var clientSecret = document.getElementById('wizard-client-secret')
     var submitBtn = document.getElementById('wizard-submit')
+    var isEs = (document.documentElement.lang || 'es') === 'es'
 
     if (!clientId || !clientSecret || !clientId.value.trim() || !clientSecret.value.trim()) {
-      showToast('Client ID y Client Secret son requeridos', 'error')
+      showToast(isEs ? 'Client ID y Client Secret son requeridos' : 'Client ID and Client Secret are required', 'error')
       return
     }
 
@@ -507,16 +583,15 @@
       .then(function (data) {
         if (data.ok && data.authUrl) {
           closeWizard()
-          showToast('Credentials saved — opening OAuth...', 'success')
           openOAuthPopup(moduleKey, cfg, data.authUrl)
         } else {
           showToast(data.error || 'Error', 'error')
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Conectar' }
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEs ? 'Conectar' : 'Connect' }
         }
       })
       .catch(function () {
-        showToast('Error saving credentials', 'error')
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Conectar' }
+        showToast('Error', 'error')
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEs ? 'Conectar' : 'Connect' }
       })
   }
 
@@ -525,7 +600,6 @@
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.needsSetup) {
-          // Credentials were deleted — show wizard
           fetch(cfg.statusUrl)
             .then(function (r) { return r.json() })
             .then(function (s) { showWizardModal(moduleKey, cfg, s.redirectUri || '') })
@@ -541,7 +615,8 @@
   }
 
   function openOAuthPopup(moduleKey, cfg, url) {
-    showToast('Opening ' + cfg.label + ' auth...', 'success')
+    var isEs = (document.documentElement.lang || 'es') === 'es'
+    showToast((isEs ? 'Abriendo autorizacion de ' : 'Opening ') + cfg.label + '...', 'success')
     var popup = window.open(url, moduleKey + '-oauth', 'width=500,height=620,scrollbars=yes')
     var poll = setInterval(function () {
       fetch(cfg.pollStatusUrl)
@@ -551,7 +626,7 @@
           if (isConnected) {
             clearInterval(poll)
             if (popup && !popup.closed) popup.close()
-            showToast(cfg.label + ' connected', 'success')
+            showToast(cfg.label + (isEs ? ' conectado' : ' connected'), 'success')
             location.reload()
           } else if (popup && popup.closed) {
             clearInterval(poll)
