@@ -91,7 +91,7 @@ export interface ExtractionResult {
 }
 
 // ═══════════════════════════════════════════
-// Lead view (for oficina UI)
+// Lead view (for console UI)
 // ═══════════════════════════════════════════
 
 export interface LeadSummary {

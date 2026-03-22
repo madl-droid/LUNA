@@ -1,4 +1,4 @@
-// oficina-minimal.js — Minimal client-side JS for SSR oficina
+// console-minimal.js — Minimal client-side JS for SSR console
 // Only handles: WA polling, panel collapse, info tooltips, toast dismiss,
 // dirty tracking, model dropdown switch, model scanner, reset DB, Google OAuth
 
@@ -155,11 +155,11 @@
     checkDirty()
   })
 
-  // === WhatsApp polling (only on /oficina/whatsapp) ===
+  // === WhatsApp polling (only on /console/whatsapp) ===
   var waInner = document.getElementById('wa-inner')
   if (waInner) {
     setInterval(function () {
-      fetch('/oficina/api/whatsapp/status')
+      fetch('/console/api/whatsapp/status')
         .then(function (r) { return r.ok ? r.json() : null })
         .then(function (data) {
           if (!data) return
@@ -192,12 +192,12 @@
 
   window.waConnect = function () {
     showToast('Connecting...', 'success')
-    fetch('/oficina/api/whatsapp/connect', { method: 'POST' }).catch(function () {})
+    fetch('/console/api/whatsapp/connect', { method: 'POST' }).catch(function () {})
   }
 
   window.waDisconnect = function () {
     if (!confirm('Disconnect WhatsApp?')) return
-    fetch('/oficina/api/whatsapp/disconnect', { method: 'POST' })
+    fetch('/console/api/whatsapp/disconnect', { method: 'POST' })
       .then(function () { showToast('Disconnected', 'success') })
       .catch(function () {})
   }
@@ -205,7 +205,7 @@
   // === Model scanner ===
   window.triggerScan = function () {
     showToast('Scanning...', 'success')
-    fetch('/oficina/api/model-scanner/scan', { method: 'POST' })
+    fetch('/console/api/model-scanner/scan', { method: 'POST' })
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.ok) {
@@ -218,7 +218,7 @@
             }).join('')
           }
           // Refresh models data for dropdowns
-          fetch('/oficina/api/model-scanner/models')
+          fetch('/console/api/model-scanner/models')
             .then(function (r) { return r.json() })
             .then(function (d) { if (d.models) modelsData = d.models })
             .catch(function () {})
@@ -237,7 +237,7 @@
     // Submit as form POST
     var resetForm = document.createElement('form')
     resetForm.method = 'POST'
-    resetForm.action = '/oficina/reset-db'
+    resetForm.action = '/console/reset-db'
     resetForm.innerHTML = '<input type="hidden" name="_section" value="' + section + '"><input type="hidden" name="_lang" value="' + lang + '">'
     document.body.appendChild(resetForm)
     resetForm.submit()
@@ -245,14 +245,14 @@
 
   // === Gmail OAuth ===
   window.gmailConnect = function () {
-    fetch('/oficina/api/gmail/auth-url')
+    fetch('/console/api/gmail/auth-url')
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.url) {
           showToast('Opening Gmail auth...', 'success')
           var popup = window.open(data.url, 'gmail-oauth', 'width=500,height=620,scrollbars=yes')
           var poll = setInterval(function () {
-            fetch('/oficina/api/gmail/auth-status')
+            fetch('/console/api/gmail/auth-status')
               .then(function (r) { return r.json() })
               .then(function (s) {
                 if (s.connected) {
@@ -275,7 +275,7 @@
 
   window.gmailDisconnect = function () {
     if (!confirm('Disconnect Gmail?')) return
-    fetch('/oficina/api/gmail/auth-disconnect', { method: 'POST' })
+    fetch('/console/api/gmail/auth-disconnect', { method: 'POST' })
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.ok) {
@@ -289,7 +289,7 @@
   }
 
   window.refreshGmailStatus = function () {
-    fetch('/oficina/api/gmail/auth-status')
+    fetch('/console/api/gmail/auth-status')
       .then(function (r) { return r.json() })
       .then(function () { location.reload() })
       .catch(function () { showToast('Error', 'error') })
@@ -297,14 +297,14 @@
 
   // === Google Apps OAuth ===
   window.googleAppsConnect = function () {
-    fetch('/oficina/api/google-apps/auth-url')
+    fetch('/console/api/google-apps/auth-url')
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.url) {
           showToast('Opening Google Apps auth...', 'success')
           var popup = window.open(data.url, 'google-apps-oauth', 'width=500,height=620,scrollbars=yes')
           var poll = setInterval(function () {
-            fetch('/oficina/api/google-apps/status')
+            fetch('/console/api/google-apps/status')
               .then(function (r) { return r.json() })
               .then(function (s) {
                 if (s.status === 'connected' || s.status === 'active') {
@@ -327,7 +327,7 @@
 
   window.googleAppsDisconnect = function () {
     if (!confirm('Disconnect Google Apps?')) return
-    fetch('/oficina/api/google-apps/disconnect', { method: 'POST' })
+    fetch('/console/api/google-apps/disconnect', { method: 'POST' })
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.ok) {
@@ -341,7 +341,7 @@
   }
 
   window.refreshGoogleAppsStatus = function () {
-    fetch('/oficina/api/google-apps/status')
+    fetch('/console/api/google-apps/status')
       .then(function (r) { return r.json() })
       .then(function () { location.reload() })
       .catch(function () { showToast('Error', 'error') })

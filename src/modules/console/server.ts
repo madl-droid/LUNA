@@ -1,4 +1,4 @@
-// LUNA — Oficina server logic (SSR multi-page)
+// LUNA — Console server logic (SSR multi-page)
 // Sirve páginas SSR, APIs para config y módulos, y archivos estáticos.
 
 import * as fs from 'node:fs'
@@ -18,7 +18,7 @@ import type { ModuleInfo } from './templates-modules.js'
 import { renderModulePanels } from './templates-modules.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'oficina' })
+const logger = pino({ name: 'console' })
 
 // Read package.json version once at import time
 let packageJsonVersion = 'dev'
@@ -145,15 +145,15 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
       type: m.manifest.type,
       active: m.active,
       removable: m.manifest.removable,
-      oficina: m.manifest.oficina ? {
-        title: m.manifest.oficina.title,
-        info: m.manifest.oficina.info,
-        fields: m.manifest.oficina.fields,
+      console: m.manifest.console ? {
+        title: m.manifest.console.title,
+        info: m.manifest.console.info,
+        fields: m.manifest.console.fields,
       } : null,
     }))
     moduleStates.sort((a, b) => {
-      const aOrder = registry.listModules().find(m => m.manifest.name === a.name)?.manifest.oficina?.order ?? 999
-      const bOrder = registry.listModules().find(m => m.manifest.name === b.name)?.manifest.oficina?.order ?? 999
+      const aOrder = registry.listModules().find(m => m.manifest.name === a.name)?.manifest.console?.order ?? 999
+      const bOrder = registry.listModules().find(m => m.manifest.name === b.name)?.manifest.console?.order ?? 999
       return aOrder - bOrder
     })
   } catch { /* ignore */ }
@@ -186,17 +186,17 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     }
   } catch { /* google-apps not available */ }
 
-  // Dynamic sidebar modules (modules with oficina.group defined)
+  // Dynamic sidebar modules (modules with console.group defined)
   const dynamicModules: DynamicSidebarModule[] = []
   for (const m of moduleStates) {
     const manifest = registry.listModules().find(lm => lm.manifest.name === m.name)?.manifest
-    if (manifest?.oficina?.group) {
+    if (manifest?.console?.group) {
       dynamicModules.push({
         name: manifest.name,
-        group: manifest.oficina.group,
-        icon: manifest.oficina.icon || '&#128230;',
-        order: manifest.oficina.order,
-        title: manifest.oficina.title,
+        group: manifest.console.group,
+        icon: manifest.console.icon || '&#128230;',
+        order: manifest.console.order,
+        title: manifest.console.title,
         active: m.active,
       })
     }
@@ -219,13 +219,13 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
 }
 
 /**
- * Creates the request handler for serving /oficina (SSR multi-page)
+ * Creates the request handler for serving /console (SSR multi-page)
  */
-export function createOficinaHandler(registry: Registry): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<boolean> {
+export function createConsoleHandler(registry: Registry): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<boolean> {
   return async (req, res) => {
     const url = req.url ?? '/'
     const [urlPath] = url.split('?')
-    const localUrl = (urlPath ?? '/').slice('/oficina'.length) || '/'
+    const localUrl = (urlPath ?? '/').slice('/console'.length) || '/'
 
     // 1. Static files — serve CSS, JS, images
     if (localUrl.startsWith('/static/') && req.method === 'GET') {
@@ -236,8 +236,8 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
       const baseDirs = [
-        path.resolve(process.cwd(), 'dist', 'oficina'),
-        path.resolve(process.cwd(), 'src', 'modules', 'oficina', 'ui'),
+        path.resolve(process.cwd(), 'dist', 'console'),
+        path.resolve(process.cwd(), 'src', 'modules', 'console', 'ui'),
       ]
       const mimeTypes: Record<string, string> = {
         '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -283,11 +283,11 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
           logger.info(`Config saved: ${Object.keys(updates).join(', ')}`)
         } catch (err) {
           logger.error({ err }, 'Failed to save config')
-          res.writeHead(302, { Location: `/oficina/${section}?flash=error&lang=${lang}` })
+          res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
           res.end()
           return true
         }
-        res.writeHead(302, { Location: `/oficina/${section}?flash=saved&lang=${lang}` })
+        res.writeHead(302, { Location: `/console/${section}?flash=saved&lang=${lang}` })
         res.end()
         return true
       }
@@ -308,11 +308,11 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
           logger.info('Config saved and hot-reloaded')
         } catch (err) {
           logger.error({ err }, 'Failed to apply config')
-          res.writeHead(302, { Location: `/oficina/${section}?flash=error&lang=${lang}` })
+          res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
           res.end()
           return true
         }
-        res.writeHead(302, { Location: `/oficina/${section}?flash=applied&lang=${lang}` })
+        res.writeHead(302, { Location: `/console/${section}?flash=applied&lang=${lang}` })
         res.end()
         return true
       }
@@ -326,7 +326,7 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         } catch (err) {
           logger.error({ err }, 'Failed to reset databases')
         }
-        res.writeHead(302, { Location: `/oficina/${section}?flash=reset&lang=${lang}` })
+        res.writeHead(302, { Location: `/console/${section}?flash=reset&lang=${lang}` })
         res.end()
         return true
       }
@@ -342,7 +342,7 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
         } catch (err) {
           logger.error({ err, module: modName }, 'Failed to toggle module')
         }
-        res.writeHead(302, { Location: `/oficina/modules?flash=toggled&lang=${lang}` })
+        res.writeHead(302, { Location: `/console/modules?flash=toggled&lang=${lang}` })
         res.end()
         return true
       }
@@ -353,10 +353,10 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
       // Strip query string for path matching
       const pathOnly = localUrl.split('?')[0]!
 
-      // Redirect root to /oficina/whatsapp
+      // Redirect root to /console/whatsapp
       if (pathOnly === '/' || pathOnly === '') {
         const lang = detectLang(req)
-        res.writeHead(302, { Location: `/oficina/whatsapp?lang=${lang}` })
+        res.writeHead(302, { Location: `/console/whatsapp?lang=${lang}` })
         res.end()
         return true
       }
@@ -367,7 +367,7 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
       const redirectTo = SECTION_REDIRECTS[section]
       if (redirectTo) {
         const lang = detectLang(req)
-        res.writeHead(302, { Location: `/oficina/${redirectTo}?lang=${lang}` })
+        res.writeHead(302, { Location: `/console/${redirectTo}?lang=${lang}` })
         res.end()
         return true
       }
@@ -413,9 +413,9 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
       let content = renderSection(section, sectionData)
 
       if (!content) {
-        // Try rendering as a dynamic module page (module with oficina.fields)
+        // Try rendering as a dynamic module page (module with console.fields)
         const modInfo = data.moduleStates.find(m => m.name === section)
-        if (modInfo && modInfo.active && modInfo.oficina?.fields && modInfo.oficina.fields.length > 0) {
+        if (modInfo && modInfo.active && modInfo.console?.fields && modInfo.console.fields.length > 0) {
           content = renderModulePanels([modInfo], data.config, lang, section)
         }
       }
@@ -447,11 +447,11 @@ export function createOficinaHandler(registry: Registry): (req: http.IncomingMes
 }
 
 /**
- * Creates API routes for oficina module endpoints
+ * Creates API routes for console module endpoints
  */
 export function createApiRoutes(): ApiRoute[] {
   return [
-    // GET /oficina/api/oficina/version
+    // GET /console/api/console/version
     {
       method: 'GET',
       path: 'version',
@@ -461,7 +461,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/oficina/config — return current config (DB > .env > defaults)
+    // GET /console/api/console/config — return current config (DB > .env > defaults)
     {
       method: 'GET',
       path: 'config',
@@ -487,7 +487,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/oficina/config — update config (DB primary + .env backward compat)
+    // PUT /console/api/console/config — update config (DB primary + .env backward compat)
     {
       method: 'PUT',
       path: 'config',
@@ -518,7 +518,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/oficina/apply — hot-reload config
+    // POST /console/api/console/apply — hot-reload config
     {
       method: 'POST',
       path: 'apply',
@@ -534,7 +534,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/oficina/modules — list all modules with their oficina defs
+    // GET /console/api/console/modules — list all modules with their console defs
     {
       method: 'GET',
       path: 'modules',
@@ -554,15 +554,15 @@ export function createApiRoutes(): ApiRoute[] {
             type: m.manifest.type,
             removable: m.manifest.removable,
             active: m.active,
-            oficina: m.manifest.oficina ? {
-              title: m.manifest.oficina.title,
-              info: m.manifest.oficina.info,
-              order: m.manifest.oficina.order,
-              fields: m.manifest.oficina.fields,
+            console: m.manifest.console ? {
+              title: m.manifest.console.title,
+              info: m.manifest.console.info,
+              order: m.manifest.console.order,
+              fields: m.manifest.console.fields,
             } : null,
           }))
 
-          modules.sort((a, b) => (a.oficina?.order ?? 999) - (b.oficina?.order ?? 999))
+          modules.sort((a, b) => (a.console?.order ?? 999) - (b.console?.order ?? 999))
           jsonResponse(res, 200, { modules })
         } catch (err) {
           logger.error({ err }, 'Failed to list modules')
@@ -571,7 +571,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/oficina/activate
+    // POST /console/api/console/activate
     {
       method: 'POST',
       path: 'activate',
@@ -594,7 +594,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/oficina/deactivate
+    // POST /console/api/console/deactivate
     {
       method: 'POST',
       path: 'deactivate',
@@ -617,7 +617,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/oficina/reset-db — testing only
+    // POST /console/api/console/reset-db — testing only
     {
       method: 'POST',
       path: 'reset-db',
@@ -643,7 +643,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/oficina/engine-metrics?period=24h|7d|30d
+    // GET /console/api/console/engine-metrics?period=24h|7d|30d
     {
       method: 'GET',
       path: 'engine-metrics',

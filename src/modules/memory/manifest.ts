@@ -54,7 +54,7 @@ const manifest: ModuleManifest = {
     MEMORY_BATCH_ARCHIVE_PURGE_CRON: z.string().default('0 5 1 * *'),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Memoria', en: 'Memory' },
     info: {
       es: 'Buffer de mensajes en Redis + persistencia en PostgreSQL. 3 niveles: caliente (mensajes), tibio (resúmenes), frío (memoria de contacto).',

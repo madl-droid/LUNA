@@ -1,6 +1,6 @@
 # WhatsApp — Canal de mensajería via Baileys
 
-Canal WhatsApp usando Baileys 7.x. Recibe y envía mensajes, expone estado a oficina.
+Canal WhatsApp usando Baileys 7.x. Recibe y envía mensajes, expone estado a console.
 
 ## Archivos
 - `manifest.ts` — lifecycle, hooks, API routes, configSchema
@@ -30,9 +30,9 @@ Canal WhatsApp usando Baileys 7.x. Recibe y envía mensajes, expone estado a ofi
 - **Dispara** `message:incoming` → cuando llega un mensaje del usuario
 
 ## Servicio registrado
-- `whatsapp:adapter` — instancia de BaileysAdapter, consumida por oficina para estado/QR
+- `whatsapp:adapter` — instancia de BaileysAdapter, consumida por console para estado/QR
 
-## API routes (montadas en /oficina/api/whatsapp/)
+## API routes (montadas en /console/api/whatsapp/)
 - `GET /status` — estado de conexión + QR + connectedNumber
 - `POST /connect` — inicializar WhatsApp (genera QR)
 - `POST /disconnect` — logout + limpiar credenciales de DB

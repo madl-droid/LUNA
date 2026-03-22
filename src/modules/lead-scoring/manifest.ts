@@ -1,6 +1,6 @@
 // LUNA — Module: lead-scoring
 // Sistema de calificación de leads. BANT + criterios custom, scoring por código,
-// extracción natural por LLM, UI personalizable en oficina.
+// extracción natural por LLM, UI personalizable en console.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -37,7 +37,7 @@ function createApiRoutes(): ApiRoute[] {
   return [
     // ─── Config endpoints ───
 
-    // GET /oficina/api/lead-scoring/config
+    // GET /console/api/lead-scoring/config
     {
       method: 'GET',
       path: 'config',
@@ -51,7 +51,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/lead-scoring/config
+    // PUT /console/api/lead-scoring/config
     {
       method: 'PUT',
       path: 'config',
@@ -66,7 +66,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/lead-scoring/recalculate
+    // POST /console/api/lead-scoring/recalculate
     {
       method: 'POST',
       path: 'recalculate',
@@ -98,7 +98,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── Stats endpoint ───
 
-    // GET /oficina/api/lead-scoring/stats
+    // GET /console/api/lead-scoring/stats
     {
       method: 'GET',
       path: 'stats',
@@ -114,7 +114,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── Lead endpoints ───
 
-    // GET /oficina/api/lead-scoring/leads?status=X&search=Y&limit=50&offset=0&sort=score&dir=desc
+    // GET /console/api/lead-scoring/leads?status=X&search=Y&limit=50&offset=0&sort=score&dir=desc
     {
       method: 'GET',
       path: 'leads',
@@ -136,7 +136,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/lead-scoring/lead?id=X
+    // GET /console/api/lead-scoring/lead?id=X
     {
       method: 'GET',
       path: 'lead',
@@ -160,7 +160,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/lead-scoring/lead-status
+    // PUT /console/api/lead-scoring/lead-status
     {
       method: 'PUT',
       path: 'lead-status',
@@ -199,7 +199,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/lead-scoring/disqualify
+    // POST /console/api/lead-scoring/disqualify
     {
       method: 'POST',
       path: 'disqualify',
@@ -229,7 +229,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── UI endpoint ───
 
-    // GET /oficina/api/lead-scoring/ui
+    // GET /console/api/lead-scoring/ui
     {
       method: 'GET',
       path: 'ui',
@@ -277,7 +277,7 @@ const manifest: ModuleManifest = {
     LEAD_SCORING_CONFIG_PATH: z.string().default('instance/qualifying.json'),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Calificación de Leads', en: 'Lead Scoring' },
     info: {
       es: 'Configura criterios de calificación, umbrales, y visualiza leads del sistema.',
@@ -306,7 +306,7 @@ const manifest: ModuleManifest = {
     await registerExtractionTool(registry, configStore)
 
     // Listen for config apply → reload + optional recalculate
-    registry.addHook('lead-scoring', 'oficina:config_applied', async () => {
+    registry.addHook('lead-scoring', 'console:config_applied', async () => {
       const store = configStore!
       const oldConfig = store.getConfig()
       const newConfig = store.reload()

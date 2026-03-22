@@ -322,7 +322,7 @@ function pickAviso(messages: string[]): string {
 
 /**
  * Envía un aviso de proceso al canal del mensaje original.
- * Mensaje configurable desde oficina, nunca generado por LLM.
+ * Mensaje configurable desde console, nunca generado por LLM.
  */
 async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promise<void> {
   await reg.runHook('message:send', {

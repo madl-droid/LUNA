@@ -83,8 +83,8 @@ const apiRoutes: ApiRoute[] = [
         const host = req.headers['host'] ?? 'localhost'
         const protocol = req.headers['x-forwarded-proto'] ?? 'https'
         const baseUrl = `${protocol}://${host}`
-        const twimlUrl = `${baseUrl}/oficina/api/twilio-voice/webhook/outbound-twiml`
-        const statusUrl = `${baseUrl}/oficina/api/twilio-voice/webhook/status`
+        const twimlUrl = `${baseUrl}/console/api/twilio-voice/webhook/outbound-twiml`
+        const statusUrl = `${baseUrl}/console/api/twilio-voice/webhook/status`
         const mediaStreamUrl = `wss://${host}/twilio/media-stream`
 
         const result = await callManager.initiateOutboundCall(
@@ -312,7 +312,7 @@ const manifest: ModuleManifest = {
     VOICE_GOOGLE_API_KEY: z.string().default(''),
   }),
 
-  oficina: {
+  console: {
     title: {
       es: 'Llamadas de voz (Twilio + Gemini)',
       en: 'Voice calls (Twilio + Gemini)',

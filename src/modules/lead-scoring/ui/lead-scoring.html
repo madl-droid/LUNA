@@ -287,7 +287,7 @@
   <header>
     <h1><span>LUNA</span> Calificacion de Leads</h1>
     <div class="header-right">
-      <a href="/oficina" class="back-btn" id="back-btn">Oficina</a>
+      <a href="/console" class="back-btn" id="back-btn">Console</a>
       <button class="lang-toggle" id="lang-btn" onclick="toggleLang()">EN</button>
     </div>
   </header>
@@ -432,7 +432,7 @@ const i18n = {
     sec_disqualify: 'Motivos de Descalificacion',
     sec_disqualify_info: 'Cuando se detecta uno de estos motivos, el lead se mueve automaticamente al estado correspondiente.',
     sec_options: 'Opciones',
-    back: 'Oficina',
+    back: 'Console',
     th_name: 'Nombre', th_channel: 'Canal', th_score: 'Score', th_status: 'Estado',
     th_msgs: 'Msgs', th_last: 'Ultima actividad',
     th_key: 'Clave', th_name_es: 'Nombre (ES)', th_name_en: 'Nombre (EN)',
@@ -478,7 +478,7 @@ const i18n = {
     sec_disqualify: 'Disqualification Reasons',
     sec_disqualify_info: 'When one of these reasons is detected, the lead is automatically moved to the corresponding status.',
     sec_options: 'Options',
-    back: 'Oficina',
+    back: 'Console',
     th_name: 'Name', th_channel: 'Channel', th_score: 'Score', th_status: 'Status',
     th_msgs: 'Msgs', th_last: 'Last activity',
     th_key: 'Key', th_name_es: 'Name (ES)', th_name_en: 'Name (EN)',
@@ -535,7 +535,7 @@ let leadsPage = 0
 const PAGE_SIZE = 25
 let searchTimeout = null
 
-const API = '/oficina/api/lead-scoring'
+const API = '/console/api/lead-scoring'
 
 const ALL_ACTIONS = [
   { value: 'scheduled', labelKey: 'act_scheduled' },

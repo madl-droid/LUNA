@@ -28,7 +28,7 @@ const manifest: ModuleManifest = {
     MODEL_SCAN_INTERVAL_MS: numEnv(21600000),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Escáner de Modelos LLM', en: 'LLM Model Scanner' },
     info: {
       es: 'Escanea APIs de providers para descubrir modelos y reemplazar deprecados.',

@@ -44,7 +44,7 @@ Qué pasa cuando un lead califica depende del negocio:
 - `purchase_complete` — el cliente finaliza la compra por la asesoría del agente
 
 ## Config
-Todo vive en `instance/qualifying.json`. La oficina lo edita, hot-reload vía Apply.
+Todo vive en `instance/qualifying.json`. La console lo edita, hot-reload vía Apply.
 Los datos extraídos viven en `contacts.qualification_data` (JSONB).
 El score vive en `contacts.qualification_score` (INT).
 

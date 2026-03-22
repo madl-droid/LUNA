@@ -25,7 +25,7 @@ Implementar el sistema de proactividad completo de LUNA: follow-ups automáticos
 ### No completado ❌
 - Scheduled tasks (sección 2.5 de spec): excluido por acuerdo, spec separada
 - Tests unitarios: no solicitados en este scope
-- Oficina UI para proactive.json: futuro scope
+- Console UI para proactive.json: futuro scope
 
 ### Archivos creados/modificados
 **Creados (14):**

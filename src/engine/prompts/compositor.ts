@@ -62,7 +62,7 @@ export async function buildCompositorPrompt(
   system: string
   userMessage: string
 }> {
-  // Try prompts:service first (DB-backed, editable from oficina)
+  // Try prompts:service first (DB-backed, editable from console)
   const promptsService = registry?.getOptional<PromptsService>('prompts:service') ?? null
 
   let identity = ''

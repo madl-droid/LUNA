@@ -1,12 +1,12 @@
-# INFORME DE CIERRE — Sesion: Oficina Redesign (Audit + Fases 0-3)
+# INFORME DE CIERRE — Sesion: Console Redesign (Audit + Fases 0-3)
 ## Branch: claude/audit-office-software-dJWsd
 
 ### Objetivos definidos
-Auditar y rediseñar el módulo oficina: sidebar dinámico, tipos de campo nuevos, unificación de secciones, mobile hamburger, limpieza de código.
+Auditar y rediseñar el módulo console: sidebar dinámico, tipos de campo nuevos, unificación de secciones, mobile hamburger, limpieza de código.
 
 ### Completado
 - **Fase 0+1**: Foundation + Dynamic sidebar
-  - Kernel types extendidos (OficinaField con 11 tipos, ModuleOficinaDef con group/icon)
+  - Kernel types extendidos (ConsoleField con 11 tipos, ModuleConsoleDef con group/icon)
   - 14 manifests de módulos con group e icon
   - Sidebar dinámico: 6 categorías hardcodeadas + items dinámicos desde registry
   - Módulos activos obtienen página propia automática
@@ -27,7 +27,7 @@ Auditar y rediseñar el módulo oficina: sidebar dinámico, tipos de campo nuevo
   - 7 renderers standalone eliminados (código muerto)
   - Engine-metrics inline styles migrados a CSS
   - Lead-scoring inline styles migrados a CSS
-  - CLAUDE.md de oficina actualizado
+  - CLAUDE.md de console actualizado
 
 ### No completado
 - Unificar engine-metrics dentro del pipeline (es un dashboard, se mantuvo separado)
@@ -37,23 +37,23 @@ Auditar y rediseñar el módulo oficina: sidebar dinámico, tipos de campo nuevo
 ### Archivos creados/modificados
 **Creados:**
 - `scripts/validate-i18n.ts` — validación de claves i18n
-- `docs/reports/oficina-redesign-report.md` — este informe
+- `docs/reports/console-redesign-report.md` — este informe
 
 **Modificados (kernel):**
-- `src/kernel/types.ts` — OficinaFieldType, OficinaField (props), OficinaGroup, ModuleOficinaDef (group, icon)
+- `src/kernel/types.ts` — ConsoleFieldType, ConsoleField (props), ConsoleGroup, ModuleConsoleDef (group, icon)
 
-**Modificados (oficina):**
-- `src/modules/oficina/templates.ts` — sidebar dinámico por categorías, hamburger
-- `src/modules/oficina/templates-sections.ts` — unified LLM/Pipeline, dead code removal, CSS migration
-- `src/modules/oficina/templates-fields.ts` — 5 nuevos field renderers
-- `src/modules/oficina/templates-modules.ts` — inline styles → CSS classes
-- `src/modules/oficina/templates-i18n.ts` — ~50 keys nuevas/corregidas
-- `src/modules/oficina/server.ts` — dynamicModules, module pages, redirects
-- `src/modules/oficina/CLAUDE.md` — actualizado
-- `src/modules/oficina/ui/js/oficina-minimal.js` — hamburger drawer
-- `src/modules/oficina/ui/styles/components.css` — metrics, status-row, module-panel, divider, tags, duration, btn-secondary, btn-danger
-- `src/modules/oficina/ui/styles/layout.css` — header-left, hamburger
-- `src/modules/oficina/ui/styles/sidebar.css` — drawer mobile
+**Modificados (console):**
+- `src/modules/console/templates.ts` — sidebar dinámico por categorías, hamburger
+- `src/modules/console/templates-sections.ts` — unified LLM/Pipeline, dead code removal, CSS migration
+- `src/modules/console/templates-fields.ts` — 5 nuevos field renderers
+- `src/modules/console/templates-modules.ts` — inline styles → CSS classes
+- `src/modules/console/templates-i18n.ts` — ~50 keys nuevas/corregidas
+- `src/modules/console/server.ts` — dynamicModules, module pages, redirects
+- `src/modules/console/CLAUDE.md` — actualizado
+- `src/modules/console/ui/js/console-minimal.js` — hamburger drawer
+- `src/modules/console/ui/styles/components.css` — metrics, status-row, module-panel, divider, tags, duration, btn-secondary, btn-danger
+- `src/modules/console/ui/styles/layout.css` — header-left, hamburger
+- `src/modules/console/ui/styles/sidebar.css` — drawer mobile
 
 **Modificados (manifests — 14 módulos):**
 - whatsapp, gmail, google-chat, twilio-voice (group: channels)
@@ -64,10 +64,10 @@ Auditar y rediseñar el módulo oficina: sidebar dinámico, tipos de campo nuevo
 - llm, model-scanner, users (group: system)
 
 ### Interfaces expuestas
-- `OficinaFieldType` — tipo union con 11 variantes
-- `OficinaGroup` — tipo union para categorías del sidebar
-- `OficinaField.min/max/step/unit/placeholder/separator/rows` — props nuevas
-- `ModuleOficinaDef.group/icon` — categoría e icono del sidebar
+- `ConsoleFieldType` — tipo union con 11 variantes
+- `ConsoleGroup` — tipo union para categorías del sidebar
+- `ConsoleField.min/max/step/unit/placeholder/separator/rows` — props nuevas
+- `ModuleConsoleDef.group/icon` — categoría e icono del sidebar
 - `DynamicSidebarModule` — interfaz para módulos dinámicos en el sidebar
 - `SECTION_REDIRECTS` — mapa de redirects de URLs viejas
 - `dividerField()`, `readonlyField()`, `tagsField()`, `durationField()` — renderers nuevos
@@ -76,7 +76,7 @@ Auditar y rediseñar el módulo oficina: sidebar dinámico, tipos de campo nuevo
 Ninguna nueva.
 
 ### Tests
-No hay tests unitarios para oficina (SSR). Build TypeScript pasa con 0 errores.
+No hay tests unitarios para console (SSR). Build TypeScript pasa con 0 errores.
 Script validate-i18n.ts funciona (detecta asimetría ES/EN).
 
 ### Decisiones técnicas
@@ -93,6 +93,6 @@ Script validate-i18n.ts funciona (detecta asimetría ES/EN).
 - ~160 claves i18n "no usadas" en templates pero usadas en client JS — script no las valida
 
 ### Notas para integración
-- Módulos nuevos solo necesitan `group` e `icon` en su manifest.oficina para aparecer en el sidebar
-- URLs viejas (/oficina/apikeys, etc.) redirigen automáticamente — no rompen bookmarks
+- Módulos nuevos solo necesitan `group` e `icon` en su manifest.console para aparecer en el sidebar
+- URLs viejas (/console/apikeys, etc.) redirigen automáticamente — no rompen bookmarks
 - El sidebar ahora depende de `dynamicModules` pasado desde server — si no se pasa, solo muestra items fijos

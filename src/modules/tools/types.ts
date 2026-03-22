@@ -30,7 +30,7 @@ export interface ToolParameterSchema {
 }
 
 // ═══════════════════════════════════════════
-// Tool settings — config por tool (DB, oficina)
+// Tool settings — config por tool (DB, console)
 // ═══════════════════════════════════════════
 
 export interface ToolSettings {

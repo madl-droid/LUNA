@@ -32,7 +32,7 @@ Canal Google Chat para Google Workspace. Recibe mensajes via webhook, envía via
 ## Servicio registrado
 - `google-chat:adapter` — instancia de GoogleChatAdapter
 
-## API routes (montadas en /oficina/api/google-chat/)
+## API routes (montadas en /console/api/google-chat/)
 - `POST /webhook` — endpoint para Google Chat (configurar como HTTP endpoint en GCP)
 - `GET /status` — estado de conexión, botEmail, activeSpaces, configured
 - `POST /validate-key` — valida JSON del service account, retorna info extraída

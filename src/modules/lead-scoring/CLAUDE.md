@@ -1,9 +1,9 @@
 # Lead Scoring — Sistema de calificacion de leads
 
-Califica leads usando BANT + criterios custom. Extraccion natural por LLM, scoring por codigo, UI personalizable en oficina.
+Califica leads usando BANT + criterios custom. Extraccion natural por LLM, scoring por codigo, UI personalizable en console.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, oficina (apiRoutes), servicios
+- `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios
 - `types.ts` — QualifyingConfig, QualificationStatus, ScoreResult, LeadSummary/Detail
 - `scoring-engine.ts` — motor de scoring: calcula puntos, transiciones de estado, merge de datos
 - `config-store.ts` — lee/escribe instance/qualifying.json, hot-reload, validacion
@@ -21,7 +21,7 @@ Califica leads usando BANT + criterios custom. Extraccion natural por LLM, scori
 - `lead-scoring:queries` — instancia de LeadQueries
 
 ## Hook consumido
-- `oficina:config_applied` — recarga qualifying.json, recalcula scores si config cambio
+- `console:config_applied` — recarga qualifying.json, recalcula scores si config cambio
 
 ## Hook emitido
 - `contact:status_changed` — cuando cambia qualification_status de un lead
@@ -29,7 +29,7 @@ Califica leads usando BANT + criterios custom. Extraccion natural por LLM, scori
 ## Tool registrada
 - `extract_qualification` — extrae datos BANT del mensaje via LLM barato, actualiza DB
 
-## API routes (montadas en /oficina/api/lead-scoring/)
+## API routes (montadas en /console/api/lead-scoring/)
 - `GET /config` — config actual de qualifying.json
 - `PUT /config` — guardar config nueva
 - `POST /recalculate` — recalcular scores de todos los leads

@@ -1,4 +1,4 @@
-// scheduled-tasks/templates.ts — SSR HTML for oficina section
+// scheduled-tasks/templates.ts — SSR HTML for console section
 
 import type { ScheduledTask, UserGroupInfo } from './types.js'
 
@@ -323,7 +323,7 @@ function renderScript(
 ): string {
   return `<script>
 (function() {
-  const API = '/oficina/api/scheduled-tasks'
+  const API = '/console/api/scheduled-tasks'
   const L = ${JSON.stringify(labels[lang])}
   const USER_GROUPS = ${JSON.stringify(userGroups)}
   const TOOLS = ${JSON.stringify(availableTools)}

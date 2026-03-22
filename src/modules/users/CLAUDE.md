@@ -5,14 +5,14 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 ## Archivos
 - `types.ts` — UserType, UserResolution, UserPermissions, UserListEntry, UserListConfig
 - `index.ts` — exports públicos (resolveUserType, getUserPermissions, invalidateUserCache)
-- `manifest.ts` — ModuleManifest, configSchema, init/stop, oficina fields
+- `manifest.ts` — ModuleManifest, configSchema, init/stop, console fields
 - `resolver.ts` — resolveUserType() con cache Redis → DB lookup → lead fallback
 - `permissions.ts` — getUserPermissions(), ensureAdminHasAccess()
 - `cache.ts` — UserCache: get/set/invalidate en Redis (key: user_type:{senderId}:{channel})
 - `db.ts` — UsersDb: DDL, CRUD, resolución SQL, config de listas
 - `sync/sheet-sync.ts` — Skeleton para Google Sheets (requiere módulo Google OAuth)
 - `sync/csv-import.ts` — Parser CSV manual + import masivo
-- `sync/api-handler.ts` — API routes CRUD bajo /oficina/api/users/
+- `sync/api-handler.ts` — API routes CRUD bajo /console/api/users/
 
 ## Manifest
 - **type:** core-module
@@ -30,7 +30,7 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 - `users:permissions` — función getUserPermissions
 - `users:invalidate` — función invalidateUserCache
 
-## API Routes (bajo /oficina/api/users/)
+## API Routes (bajo /console/api/users/)
 - `GET status` — estado del módulo y conteos
 - `POST create` — crear usuario en lista
 - `POST update` — actualizar usuario
@@ -52,7 +52,7 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 - `user_list_config` — config por tipo de lista (permisos, sync, behavior)
 
 ## Trampas
-- Admin IDs se agregan desde oficina POR CANAL (WhatsApp=número, email=correo, etc.)
+- Admin IDs se agregan desde console POR CANAL (WhatsApp=número, email=correo, etc.)
 - Máximo 5 tipos de lista (admin + 4 configurables)
 - Admin máximo 5 usuarios por instancia
 - Sheet sync solo funciona si hay módulo Google OAuth activo

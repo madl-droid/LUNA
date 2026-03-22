@@ -28,6 +28,6 @@
     "src/engine",
     "src/llm",
     "src/memory",
-    "src/oficina"
+    "src/console"
   ]
 }

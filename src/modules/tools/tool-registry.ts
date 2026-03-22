@@ -67,7 +67,7 @@ export class ToolRegistry {
       definition.parameters,
     )
 
-    // Cargar settings de DB (puede tener enabled=false configurado desde oficina)
+    // Cargar settings de DB (puede tener enabled=false configurado desde console)
     const settings = await this.pgStore.getToolSettings(name) ?? {
       toolName: name,
       enabled: true,

@@ -400,12 +400,12 @@ const manifest: ModuleManifest = {
     // OAuth standalone (cuando google-apps no está activo)
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
-    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/gmail/oauth2callback'),
+    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/console/api/gmail/oauth2callback'),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Email (Gmail)', en: 'Email (Gmail)' },
     info: {
       es: 'Canal de correo electrónico via Gmail API. Requiere Google API conectado. Los emails se procesan por el engine como mensajes.',
@@ -520,7 +520,7 @@ const manifest: ModuleManifest = {
         try {
           await standaloneOAuth.initialize()
         } catch (err) {
-          logger.warn({ err }, 'Standalone OAuth initialization failed — connect from oficina')
+          logger.warn({ err }, 'Standalone OAuth initialization failed — connect from console')
         }
 
         authClient = standaloneOAuth.getClient()

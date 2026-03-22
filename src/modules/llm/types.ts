@@ -214,7 +214,7 @@ export interface UsageSummary {
 }
 
 // ═══════════════════════════════════════════
-// Provider status (for oficina)
+// Provider status (for console)
 // ═══════════════════════════════════════════
 
 export interface ProviderStatus {

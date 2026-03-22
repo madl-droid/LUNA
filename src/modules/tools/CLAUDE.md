@@ -3,7 +3,7 @@
 Registro, ejecución y configuración de tools que los módulos proveen al pipeline. Las tools se invocan en Phase 3 (Execute Plan).
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, oficina (fields + apiRoutes), servicio `tools:registry`
+- `manifest.ts` — lifecycle, configSchema, console (fields + apiRoutes), servicio `tools:registry`
 - `types.ts` — ToolDefinition, ToolSettings, ToolResult, ToolHandler, formatos nativos (Anthropic/OpenAI/Gemini)
 - `tool-registry.ts` — clase central: registro en memoria + DB sync + catálogo + ejecución
 - `tool-executor.ts` — retry con backoff exponencial, timeout, paralelismo (Promise.allSettled)
@@ -25,7 +25,7 @@ Registro, ejecución y configuración de tools que los módulos proveen al pipel
 ## Hook consumido
 - `module:deactivated` — limpia tools del módulo desactivado
 
-## API routes (montadas en /oficina/api/tools/)
+## API routes (montadas en /console/api/tools/)
 - `GET /by-module?module=nombre` — tools de un módulo con settings
 - `PUT /settings` — { toolName, enabled?, maxRetries?, maxUsesPerLoop? }
 - `GET /access?tool=nombre` — reglas de acceso por contact_type
@@ -43,13 +43,13 @@ await toolRegistry.registerTool({
 ```
 
 ## Patrones
-- `upsertTool()` actualiza metadata pero NUNCA sobreescribe enabled/maxRetries/maxUsesPerLoop (controlados por oficina)
+- `upsertTool()` actualiza metadata pero NUNCA sobreescribe enabled/maxRetries/maxUsesPerLoop (controlados por console)
 - Ejecución log es fire-and-forget (no bloquea pipeline)
 - Access rules: deny-list por contact_type. Sin regla = permitido.
 - Tool converter: las 3 providers usan JSON Schema; la diferencia es el wrapping (input_schema vs function.parameters vs parameters)
 
 ## Trampas
-- PIPELINE_MAX_TOOL_CALLS_PER_TURN se comparte con el config del pipeline — declarado en este módulo para que sea configurable desde oficina
+- PIPELINE_MAX_TOOL_CALLS_PER_TURN se comparte con el config del pipeline — declarado en este módulo para que sea configurable desde console
 - Los módulos que registran tools deben listar 'tools' en depends[] para garantizar orden de init
 - Al desactivar un módulo, sus tools desaparecen del catálogo pero persisten en DB (re-aparecen al reactivar)
 - **Helpers HTTP y config**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.

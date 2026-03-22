@@ -1,4 +1,4 @@
-// LUNA — Oficina registry reference
+// LUNA — Console registry reference
 // Shared mutable reference so API route handlers can access the registry.
 // Set by manifest.init(), read by server.ts route handlers.
 

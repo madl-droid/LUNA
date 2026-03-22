@@ -41,7 +41,7 @@ const manifest: ModuleManifest = {
     SCHEDULED_TASKS_EXECUTION_TIMEOUT_MS: numEnv(120_000),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Tareas Programadas', en: 'Scheduled Tasks' },
     info: { es: 'Tareas que el agente ejecuta automaticamente', en: 'Tasks the agent runs automatically' },
     order: 45,
@@ -61,11 +61,11 @@ const manifest: ModuleManifest = {
 
     // Set up API routes
     const routes = createApiRoutes(db, registry, config)
-    if (manifest.oficina) {
-      manifest.oficina.apiRoutes = routes
+    if (manifest.console) {
+      manifest.console.apiRoutes = routes
     }
 
-    // Provide render function so oficina can call it
+    // Provide render function so console can call it
     registry.provide('scheduled-tasks:renderSection', async (lang: 'es' | 'en') => {
       const tasks = await store.listTasks(db)
 

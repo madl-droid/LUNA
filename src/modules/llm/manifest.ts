@@ -77,7 +77,7 @@ const manifest: ModuleManifest = {
     LLM_FALLBACK_CHAIN: z.string().default('anthropic,google,openai'),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Gateway LLM', en: 'LLM Gateway' },
     info: {
       es: 'Gestión centralizada de proveedores LLM: routing, circuit breaker, costos y seguridad.',

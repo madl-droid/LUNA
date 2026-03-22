@@ -8,8 +8,8 @@ Tres branches sobre `pruebas` que implementan sistemas complementarios pero con 
 
 1. **Memory module** = dueño único de los 5 niveles de memoria (Caliente, Tibio, Frío, Archivo, Prospectivo)
 2. **Engine** consume memory vía `registry.getOptional('memory:manager')` — nunca SQL directo en fases
-3. **Prompts module** = fuente definitiva de prompts (DB + oficina). Archivos en `instance/knowledge/` son solo seed
-4. **Token budgets** configurables desde oficina
+3. **Prompts module** = fuente definitiva de prompts (DB + console). Archivos en `instance/knowledge/` son solo seed
+4. **Token budgets** configurables desde console
 5. **Fact maintenance**: engine detecta necesidad → invoca memory:manager vía service
 6. **Nightly batch (DMN)**: se ejecuta como job registrado por memory module
 7. **pgvector**: autorizado, se mantiene para embeddings en session_summaries
@@ -129,7 +129,7 @@ Tres branches sobre `pruebas` que implementan sistemas complementarios pero con 
 
 ### Fase 4: Prompts module
 
-**Objetivo**: Prompts dinámicos desde oficina, integrados al compositor.
+**Objetivo**: Prompts dinámicos desde console, integrados al compositor.
 
 **Desde branch `dynamic-prompts-campaigns`**:
 
@@ -150,7 +150,7 @@ Tres branches sobre `pruebas` que implementan sistemas complementarios pero con 
 - Agregar `ChannelResponseFormat` interface a `src/kernel/types.ts`
 
 #### 4c. Oficina UI
-- `src/modules/oficina/ui/config-ui.html` — agregar soporte para textarea field
+- `src/modules/console/ui/config-ui.html` — agregar soporte para textarea field
 
 #### 4d. Engine compositor refactor (`src/engine/prompts/compositor.ts`)
 - Usar `PromptsService.getCompositorPrompts(userType)` como fuente principal
@@ -168,8 +168,8 @@ Tres branches sobre `pruebas` que implementan sistemas complementarios pero con 
 - `src/modules/whatsapp/manifest.ts` — agregar `registry.provide('whatsapp:responseFormat', {...})`
 - `src/modules/gmail/manifest.ts` — agregar `registry.provide('email:responseFormat', {...})`
 
-#### 4g. Token budgets desde oficina
-- Agregar campos en oficina para `EVALUATOR_TOKEN_BUDGET` y `COMPOSITOR_TOKEN_BUDGET`
+#### 4g. Token budgets desde console
+- Agregar campos en console para `EVALUATOR_TOKEN_BUDGET` y `COMPOSITOR_TOKEN_BUDGET`
 - Pueden ir como config del módulo engine o prompts
 
 **Archivos modificados/creados**: ~15 archivos

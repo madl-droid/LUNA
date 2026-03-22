@@ -20,7 +20,7 @@ function createApiRoutes(): ApiRoute[] {
   }
 
   return [
-    // GET /oficina/api/tools/by-module/:moduleName
+    // GET /console/api/tools/by-module/:moduleName
     // Ruta: by-module?module=nombre
     {
       method: 'GET',
@@ -41,7 +41,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/tools/settings
+    // PUT /console/api/tools/settings
     {
       method: 'PUT',
       path: 'settings',
@@ -69,7 +69,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/tools/access?tool=nombre
+    // GET /console/api/tools/access?tool=nombre
     {
       method: 'GET',
       path: 'access',
@@ -89,7 +89,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/tools/access
+    // PUT /console/api/tools/access
     {
       method: 'PUT',
       path: 'access',
@@ -112,7 +112,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/tools/executions?tool=nombre&limit=50
+    // GET /console/api/tools/executions?tool=nombre&limit=50
     {
       method: 'GET',
       path: 'executions',
@@ -129,7 +129,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/tools/catalog
+    // GET /console/api/tools/catalog
     {
       method: 'GET',
       path: 'catalog',
@@ -163,7 +163,7 @@ const manifest: ModuleManifest = {
     PIPELINE_MAX_TOOL_CALLS_PER_TURN: numEnv(5),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Herramientas', en: 'Tools' },
     info: { es: 'Configuración global de herramientas del agente', en: 'Global agent tools configuration' },
     order: 30,

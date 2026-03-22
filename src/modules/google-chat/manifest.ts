@@ -150,7 +150,7 @@ const apiRoutes: ApiRoute[] = [
       const hasSpaces = (state?.activeSpaces ?? 0) > 0
 
       // Build webhook URL from request host
-      const webhookPath = '/oficina/api/google-chat/webhook'
+      const webhookPath = '/console/api/google-chat/webhook'
 
       const steps: SetupGuideStep[] = [
         {
@@ -269,7 +269,7 @@ const manifest: ModuleManifest = {
     GOOGLE_CHAT_MAX_MESSAGE_LENGTH: numEnv(4096),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Google Chat', en: 'Google Chat' },
     info: {
       es: 'Canal Google Chat para Google Workspace. Usa la guia de configuracion (boton "Ver guia") para conectar paso a paso.',
@@ -326,14 +326,14 @@ const manifest: ModuleManifest = {
 
     // Skip initialization if no service account configured
     if (!config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY) {
-      logger.warn('No GOOGLE_CHAT_SERVICE_ACCOUNT_KEY configured — module active but not connected. Use the setup guide in oficina to configure.')
+      logger.warn('No GOOGLE_CHAT_SERVICE_ACCOUNT_KEY configured — module active but not connected. Use the setup guide in console to configure.')
       return
     }
 
     // Validate key before initializing
     const validation = GoogleChatAdapter.validateServiceAccountKey(config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY)
     if (!validation.valid) {
-      logger.error({ errors: validation.errors }, 'Invalid Service Account Key — check the setup guide in oficina')
+      logger.error({ errors: validation.errors }, 'Invalid Service Account Key — check the setup guide in console')
       return
     }
 

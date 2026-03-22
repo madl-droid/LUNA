@@ -3,7 +3,7 @@
 Gateway centralizado para Anthropic, Google (Gemini) y OpenAI. Circuit breaker, routing por tarea, tracking de uso/costos, seguridad contra prompt injection.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, oficina fields/routes
+- `manifest.ts` — lifecycle, configSchema, console fields/routes
 - `types.ts` — todos los tipos del módulo (providers, routes, requests, responses, usage)
 - `llm-gateway.ts` — orquestador principal: routing → rate limit → budget → circuit breaker → retry → call → tracking → sanitize
 - `circuit-breaker.ts` — patrón circuit breaker por provider (CLOSED → OPEN → HALF-OPEN)
@@ -19,7 +19,7 @@ Gateway centralizado para Anthropic, Google (Gemini) y OpenAI. Circuit breaker, 
 - Servicio: `llm:gateway` (LLMGateway instance)
 - Hooks: escucha `llm:chat`, `llm:models_available`. Emite `llm:provider_down`, `llm:provider_up`.
 
-## API routes (montadas en /oficina/api/llm/)
+## API routes (montadas en /console/api/llm/)
 - `GET /status` — estado de providers, circuit breakers, costo del día
 - `GET /models` — modelos disponibles (query: ?provider=anthropic)
 - `POST /models/refresh` — re-escanear modelos desde APIs

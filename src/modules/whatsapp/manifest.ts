@@ -85,7 +85,7 @@ const manifest: ModuleManifest = {
     WHATSAPP_MAX_RECONNECT_ATTEMPTS: numEnv(10),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'WhatsApp (Baileys)', en: 'WhatsApp (Baileys)' },
     info: {
       es: 'Conexión directa a WhatsApp. Credenciales almacenadas en la base de datos, no en el filesystem.',

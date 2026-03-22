@@ -35,9 +35,9 @@ export interface HookMap {
   'llm:provider_down':      [{ provider: string; reason: string }, void]
   'llm:provider_up':        [{ provider: string }, void]
 
-  // Oficina
-  'oficina:config_saved':   [{ keys: string[] }, void]
-  'oficina:config_applied': [Record<string, never>, void]
+  // Console
+  'console:config_saved':   [{ keys: string[] }, void]
+  'console:config_applied': [Record<string, never>, void]
 
   // Contactos
   'contact:new':            [{ contactId: string; channel: string }, void]
@@ -225,10 +225,10 @@ export interface ModuleManifest {
   /** Descripción corta, en ambos idiomas */
   description: { es: string; en: string }
 
-  /** Tipo de módulo — afecta cómo la oficina lo muestra */
+  /** Tipo de módulo — afecta cómo la console lo muestra */
   type: ModuleType
 
-  /** Si es false, no se puede desactivar desde la oficina */
+  /** Si es false, no se puede desactivar desde la console */
   removable: boolean
 
   /** Si es true, se activa automáticamente la primera vez que se descubre.
@@ -243,8 +243,8 @@ export interface ModuleManifest {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   configSchema?: ZodObject<any>
 
-  /** Definición de cómo se ve este módulo en la oficina */
-  oficina?: ModuleOficinaDef
+  /** Definición de cómo se ve este módulo en la console */
+  console?: ModuleConsoleDef
 
   /** Se llama al activar el módulo */
   init: (registry: Registry) => Promise<void>
@@ -254,16 +254,16 @@ export interface ModuleManifest {
 }
 
 // ═══════════════════════════════════════════
-// Oficina definition per module
+// Console definition per module
 // ═══════════════════════════════════════════
 
-export type OficinaFieldType =
+export type ConsoleFieldType =
   | 'text' | 'textarea' | 'secret' | 'number' | 'boolean' | 'select'
   | 'divider' | 'tags' | 'readonly' | 'duration' | 'model-select'
 
-export interface OficinaField {
+export interface ConsoleField {
   key: string
-  type: OficinaFieldType
+  type: ConsoleFieldType
   label: { es: string; en: string }
   info?: { es: string; en: string }
   options?: Array<{ value: string; label: string }>
@@ -288,10 +288,10 @@ export interface ApiRoute {
 }
 
 /** Sidebar category for grouping modules */
-export type OficinaGroup = 'channels' | 'agent' | 'leads' | 'data' | 'modules' | 'system' | string
+export type ConsoleGroup = 'channels' | 'agent' | 'leads' | 'data' | 'modules' | 'system' | string
 
-export interface ModuleOficinaDef {
-  /** Título del panel en la oficina */
+export interface ModuleConsoleDef {
+  /** Título del panel en la console */
   title: { es: string; en: string }
 
   /** Descripción debajo del título */
@@ -301,15 +301,15 @@ export interface ModuleOficinaDef {
   order: number
 
   /** Sidebar category — determines which group this module appears in */
-  group?: OficinaGroup
+  group?: ConsoleGroup
 
   /** Sidebar icon (HTML entity or emoji) */
   icon?: string
 
   /** Campos del formulario. Se renderizan automáticamente. */
-  fields?: OficinaField[]
+  fields?: ConsoleField[]
 
-  /** Endpoints API custom bajo /oficina/api/{moduleName}/ */
+  /** Endpoints API custom bajo /console/api/{moduleName}/ */
   apiRoutes?: ApiRoute[]
 }
 

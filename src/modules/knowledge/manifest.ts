@@ -69,7 +69,7 @@ function createApiRoutes(): ApiRoute[] {
   return [
     // ─── Documents ───
 
-    // GET /oficina/api/knowledge/documents?categoryId=&search=&limit=50&offset=0
+    // GET /console/api/knowledge/documents?categoryId=&search=&limit=50&offset=0
     {
       method: 'GET',
       path: 'documents',
@@ -89,7 +89,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/documents/upload
+    // POST /console/api/knowledge/documents/upload
     {
       method: 'POST',
       path: 'documents/upload',
@@ -124,7 +124,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/knowledge/documents/core
+    // PUT /console/api/knowledge/documents/core
     {
       method: 'PUT',
       path: 'documents/core',
@@ -143,7 +143,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/documents/delete
+    // POST /console/api/knowledge/documents/delete
     {
       method: 'POST',
       path: 'documents/delete',
@@ -164,7 +164,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── Categories ───
 
-    // GET /oficina/api/knowledge/categories
+    // GET /console/api/knowledge/categories
     {
       method: 'GET',
       path: 'categories',
@@ -178,7 +178,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/categories
+    // POST /console/api/knowledge/categories
     {
       method: 'POST',
       path: 'categories',
@@ -200,7 +200,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/knowledge/categories
+    // PUT /console/api/knowledge/categories
     {
       method: 'PUT',
       path: 'categories',
@@ -219,7 +219,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/categories/delete
+    // POST /console/api/knowledge/categories/delete
     {
       method: 'POST',
       path: 'categories/delete',
@@ -240,7 +240,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── API Connectors ───
 
-    // GET /oficina/api/knowledge/api-connectors
+    // GET /console/api/knowledge/api-connectors
     {
       method: 'GET',
       path: 'api-connectors',
@@ -254,7 +254,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/api-connectors
+    // POST /console/api/knowledge/api-connectors
     {
       method: 'POST',
       path: 'api-connectors',
@@ -277,7 +277,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/api-connectors/delete
+    // POST /console/api/knowledge/api-connectors/delete
     {
       method: 'POST',
       path: 'api-connectors/delete',
@@ -298,7 +298,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── Web Sources ───
 
-    // GET /oficina/api/knowledge/web-sources
+    // GET /console/api/knowledge/web-sources
     {
       method: 'GET',
       path: 'web-sources',
@@ -312,7 +312,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/web-sources
+    // POST /console/api/knowledge/web-sources
     {
       method: 'POST',
       path: 'web-sources',
@@ -334,7 +334,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/web-sources/delete
+    // POST /console/api/knowledge/web-sources/delete
     {
       method: 'POST',
       path: 'web-sources/delete',
@@ -353,7 +353,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/web-sources/cache
+    // POST /console/api/knowledge/web-sources/cache
     {
       method: 'POST',
       path: 'web-sources/cache',
@@ -374,7 +374,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── Vectorization ───
 
-    // POST /oficina/api/knowledge/vectorize
+    // POST /console/api/knowledge/vectorize
     {
       method: 'POST',
       path: 'vectorize',
@@ -388,7 +388,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/knowledge/vectorize/status
+    // GET /console/api/knowledge/vectorize/status
     {
       method: 'GET',
       path: 'vectorize/status',
@@ -408,7 +408,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── FAQs ───
 
-    // GET /oficina/api/knowledge/faqs
+    // GET /console/api/knowledge/faqs
     {
       method: 'GET',
       path: 'faqs',
@@ -428,7 +428,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/faqs
+    // POST /console/api/knowledge/faqs
     {
       method: 'POST',
       path: 'faqs',
@@ -450,7 +450,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/knowledge/faqs
+    // PUT /console/api/knowledge/faqs
     {
       method: 'PUT',
       path: 'faqs',
@@ -472,7 +472,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/faqs/delete
+    // POST /console/api/knowledge/faqs/delete
     {
       method: 'POST',
       path: 'faqs/delete',
@@ -491,7 +491,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/faqs/import
+    // POST /console/api/knowledge/faqs/import
     {
       method: 'POST',
       path: 'faqs/import',
@@ -527,7 +527,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── Sync sources ───
 
-    // GET /oficina/api/knowledge/sync-sources
+    // GET /console/api/knowledge/sync-sources
     {
       method: 'GET',
       path: 'sync-sources',
@@ -541,7 +541,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/sync-sources
+    // POST /console/api/knowledge/sync-sources
     {
       method: 'POST',
       path: 'sync-sources',
@@ -571,7 +571,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /oficina/api/knowledge/sync-sources
+    // PUT /console/api/knowledge/sync-sources
     {
       method: 'PUT',
       path: 'sync-sources',
@@ -596,7 +596,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/sync-sources/delete
+    // POST /console/api/knowledge/sync-sources/delete
     {
       method: 'POST',
       path: 'sync-sources/delete',
@@ -616,7 +616,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/sync-sources/sync-now
+    // POST /console/api/knowledge/sync-sources/sync-now
     {
       method: 'POST',
       path: 'sync-sources/sync-now',
@@ -637,7 +637,7 @@ function createApiRoutes(): ApiRoute[] {
 
     // ─── Search & Stats ───
 
-    // GET /oficina/api/knowledge/search?q=&hint=&limit=5
+    // GET /console/api/knowledge/search?q=&hint=&limit=5
     {
       method: 'GET',
       path: 'search',
@@ -655,7 +655,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/knowledge/stats
+    // GET /console/api/knowledge/stats
     {
       method: 'GET',
       path: 'stats',
@@ -669,7 +669,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /oficina/api/knowledge/suggestions
+    // GET /console/api/knowledge/suggestions
     {
       method: 'GET',
       path: 'suggestions',
@@ -683,7 +683,7 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /oficina/api/knowledge/rebuild-index
+    // POST /console/api/knowledge/rebuild-index
     {
       method: 'POST',
       path: 'rebuild-index',
@@ -732,7 +732,7 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_MAX_CORE_DOCS: numEnvMin(1, 3),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Base de Conocimiento', en: 'Knowledge Base' },
     info: {
       es: 'Gestiona documentos, categorías, FAQs, API connectors y web sources.',
@@ -778,7 +778,7 @@ const manifest: ModuleManifest = {
         type: 'select',
         label: { es: 'Fuente de FAQs', en: 'FAQ source' },
         options: [
-          { value: 'manual', label: 'Manual (crear desde oficina)' },
+          { value: 'manual', label: 'Manual (crear desde console)' },
           { value: 'sheets', label: 'Google Sheets (sync)' },
           { value: 'file', label: 'Archivo (Excel/CSV upload)' },
         ],
@@ -929,7 +929,7 @@ const manifest: ModuleManifest = {
     downgradeTimer.unref()
 
     // Listen for config changes
-    registry.addHook('knowledge', 'oficina:config_applied', async () => {
+    registry.addHook('knowledge', 'console:config_applied', async () => {
       logger.info('Config applied — invalidating caches')
       await cache.invalidate()
     })

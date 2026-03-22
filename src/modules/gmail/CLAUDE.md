@@ -3,7 +3,7 @@
 Canal que recibe emails via polling de Gmail API, los procesa por el engine, y envía respuestas. Soporta reply, reply-all, forward, adjuntos. La firma se toma de la cuenta de Google (no se genera).
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, oficina fields, API routes, migrations, polling
+- `manifest.ts` — lifecycle, configSchema, console fields, API routes, migrations, polling
 - `types.ts` — EmailMessage, EmailAttachment, EmailSendOptions, EmailReplyOptions, EmailForwardOptions, EmailConfig
 - `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, filtro no-reply, parsing MIME
 - `email-oauth.ts` — OAuth2 standalone para Gmail-only (se usa cuando google-apps no está activo)
@@ -27,7 +27,7 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 ## Servicio registrado
 - `email:adapter` — GmailAdapter instance
 
-## API Routes (bajo /oficina/api/email/)
+## API Routes (bajo /console/api/email/)
 - `GET /status` — estado del poller + conexión OAuth + standaloneAuth flag
 - `POST /poll-now` — forzar poll inmediato
 - `POST /send` — enviar email { to, subject, bodyHtml, cc?, bodyText? }

@@ -10,7 +10,7 @@ import { scheduleTask, unscheduleTask, triggerNow } from './scheduler.js'
 
 export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledTasksConfig): ApiRoute[] {
   return [
-    // GET /oficina/api/scheduled-tasks/list
+    // GET /console/api/scheduled-tasks/list
     {
       method: 'GET',
       path: 'list',
@@ -24,7 +24,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
-    // GET /oficina/api/scheduled-tasks/groups — user groups with users for recipient dropdown
+    // GET /console/api/scheduled-tasks/groups — user groups with users for recipient dropdown
     {
       method: 'GET',
       path: 'groups',
@@ -63,7 +63,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
-    // GET /oficina/api/scheduled-tasks/tools — available tools for action selector
+    // GET /console/api/scheduled-tasks/tools — available tools for action selector
     {
       method: 'GET',
       path: 'tools',
@@ -85,7 +85,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
-    // POST /oficina/api/scheduled-tasks/create
+    // POST /console/api/scheduled-tasks/create
     {
       method: 'POST',
       path: 'create',
@@ -115,7 +115,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
-    // PUT /oficina/api/scheduled-tasks/update
+    // PUT /console/api/scheduled-tasks/update
     {
       method: 'PUT',
       path: 'update',
@@ -144,7 +144,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
-    // DELETE /oficina/api/scheduled-tasks/delete
+    // DELETE /console/api/scheduled-tasks/delete
     {
       method: 'DELETE',
       path: 'delete',
@@ -164,7 +164,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
-    // POST /oficina/api/scheduled-tasks/trigger
+    // POST /console/api/scheduled-tasks/trigger
     {
       method: 'POST',
       path: 'trigger',
@@ -188,7 +188,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
       },
     },
 
-    // GET /oficina/api/scheduled-tasks/executions
+    // GET /console/api/scheduled-tasks/executions
     {
       method: 'GET',
       path: 'executions',

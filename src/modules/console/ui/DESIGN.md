@@ -1,4 +1,4 @@
-# Luna Oficina — Guía de Diseño
+# Luna Console — Guía de Diseño
 
 ## Filosofía
 Estilo Apple: limpio, minimalista, mucho espacio en blanco, tipografía clara, bordes sutiles. Sin ruido visual.
@@ -51,7 +51,7 @@ Estilo Apple: limpio, minimalista, mucho espacio en blanco, tipografía clara, b
 - Anti-aliasing: `-webkit-font-smoothing: antialiased`
 
 ## Header
-- Formato: **Oficina | LUNA** — relevancia visual en "Oficina" (grande, bold), "LUNA" más pequeño en accent color
+- Formato: **Console | LUNA** — relevancia visual en "Console" (grande, bold), "LUNA" más pequeño en accent color
 - Backdrop blur estilo Apple (frosted glass): `backdrop-filter: saturate(180%) blur(20px)`
 
 ## Bordes

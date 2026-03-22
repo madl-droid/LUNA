@@ -239,7 +239,7 @@ export class KnowledgeManager {
   // ─── Vectorization ─────────────────────────
 
   /**
-   * Trigger bulk vectorization (manual button in oficina).
+   * Trigger bulk vectorization (manual button in console).
    * Respects 1hr cooldown.
    */
   async triggerBulkVectorization(): Promise<{ enqueued: boolean; reason?: string }> {

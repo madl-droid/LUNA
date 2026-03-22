@@ -3,7 +3,7 @@
 Llamadas telefónicas con IA conversacional en tiempo real. Twilio provee la telefonía, Gemini Live la conversación.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema (16 params), oficina fields, 9 API routes
+- `manifest.ts` — lifecycle, configSchema (16 params), console fields, 9 API routes
 - `types.ts` — tipos: call states, Twilio events, Gemini Live messages, DB rows
 - `twilio-adapter.ts` — REST client Twilio (make/hangup calls, TwiML, signature validation)
 - `media-stream.ts` — WebSocket server para Twilio Media Streams (audio bidireccional)
@@ -26,7 +26,7 @@ Llamadas telefónicas con IA conversacional en tiempo real. Twilio provee la tel
 ## Hooks
 Emite: `call:incoming`, `call:outgoing`, `call:connected`, `call:ended`, `call:transcript`
 
-## API Routes (bajo /oficina/api/twilio-voice/)
+## API Routes (bajo /console/api/twilio-voice/)
 - `GET /status` — estado de Twilio y llamadas activas
 - `GET /calls` — lista de llamadas (?limit, ?offset, ?status)
 - `POST /calls` — iniciar llamada outbound { to, agentId?, context? }

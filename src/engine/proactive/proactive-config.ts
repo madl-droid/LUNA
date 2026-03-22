@@ -99,7 +99,7 @@ export function loadProactiveConfig(): ProactiveConfig {
 }
 
 /**
- * Force reload (e.g., when oficina saves new config).
+ * Force reload (e.g., when console saves new config).
  */
 export function reloadProactiveConfig(): ProactiveConfig {
   cached = null

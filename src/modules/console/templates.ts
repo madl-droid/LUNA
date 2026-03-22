@@ -73,7 +73,7 @@ export interface PageOptions {
   waConnected?: boolean
   gmailConnected?: boolean
   googleAppsConnected?: boolean
-  /** Active modules with oficina.group defined */
+  /** Active modules with console.group defined */
   dynamicModules?: DynamicSidebarModule[]
 }
 
@@ -87,15 +87,15 @@ export function pageLayout(opts: PageOptions): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Luna — Oficina</title>
+  <title>Luna — Console</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/oficina/static/styles/base.css">
-  <link rel="stylesheet" href="/oficina/static/styles/layout.css">
-  <link rel="stylesheet" href="/oficina/static/styles/components.css">
-  <link rel="stylesheet" href="/oficina/static/styles/whatsapp.css">
-  <link rel="stylesheet" href="/oficina/static/styles/sidebar.css">
+  <link rel="stylesheet" href="/console/static/styles/base.css">
+  <link rel="stylesheet" href="/console/static/styles/layout.css">
+  <link rel="stylesheet" href="/console/static/styles/components.css">
+  <link rel="stylesheet" href="/console/static/styles/whatsapp.css">
+  <link rel="stylesheet" href="/console/static/styles/sidebar.css">
 </head>
 <body>
   ${renderHeader(opts)}
@@ -107,7 +107,7 @@ export function pageLayout(opts: PageOptions): string {
     </div>
   </main>
   ${renderSaveBar(opts)}
-  <script src="/oficina/static/js/oficina-minimal.js"></script>
+  <script src="/console/static/js/console-minimal.js"></script>
 </body>
 </html>`
 }
@@ -125,7 +125,7 @@ function renderHeader(opts: PageOptions): string {
       <button class="hamburger" id="hamburger" onclick="toggleSidebar()" aria-label="Menu">
         <span></span><span></span><span></span>
       </button>
-      <h1>Oficina <span>| LUNA</span></h1>
+      <h1>Console <span>| LUNA</span></h1>
     </div>
     <div class="header-right">
       <span class="build-ver">v${esc(v)}</span>
@@ -204,7 +204,7 @@ function renderSidebar(opts: PageOptions): string {
 
     for (const item of items) {
       const isActive = opts.section === item.id
-      h += `<a href="/oficina/${item.id}?lang=${opts.lang}" class="sidebar-item ${isActive ? 'active' : ''}">
+      h += `<a href="/console/${item.id}?lang=${opts.lang}" class="sidebar-item ${isActive ? 'active' : ''}">
         <span class="nav-icon">${item.icon}</span>
         <span>${item.label}</span>
         ${item.badge || ''}
@@ -268,13 +268,13 @@ function renderSectionHeader(opts: PageOptions): string {
 // ═══════════════════════════════════════════
 
 function renderSaveBar(opts: PageOptions): string {
-  return `<form method="POST" action="/oficina/save" class="save-bar" id="save-form">
+  return `<form method="POST" action="/console/save" class="save-bar" id="save-form">
     <input type="hidden" name="_section" value="${opts.section}">
     <input type="hidden" name="_lang" value="${opts.lang}">
     <button type="button" class="btn-resetdb" id="btn-resetdb" onclick="resetDb()">${t('resetDbBtn', opts.lang)}</button>
-    <a href="/oficina/${opts.section}?lang=${opts.lang}" class="btn-reset" id="btn-reset">${t('discard', opts.lang)}</a>
+    <a href="/console/${opts.section}?lang=${opts.lang}" class="btn-reset" id="btn-reset">${t('discard', opts.lang)}</a>
     <button type="submit" class="btn-save" id="btn-save" disabled>${t('save', opts.lang)}</button>
-    <button type="submit" formaction="/oficina/apply" class="btn-save btn-apply" id="btn-apply" disabled>${t('applyBtn', opts.lang)}</button>
+    <button type="submit" formaction="/console/apply" class="btn-save btn-apply" id="btn-apply" disabled>${t('applyBtn', opts.lang)}</button>
   </form>`
 }
 

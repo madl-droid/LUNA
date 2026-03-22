@@ -206,7 +206,7 @@ export class LLMGateway {
   }
 
   /**
-   * Get status of all providers (for oficina).
+   * Get status of all providers (for console).
    */
   async getProviderStatus(): Promise<ProviderStatus[]> {
     const statuses: ProviderStatus[] = []
@@ -277,7 +277,7 @@ export class LLMGateway {
       }
     }
 
-    // Fire hook to notify oficina
+    // Fire hook to notify console
     if (this.registry) {
       for (const [provider, models] of this.modelCache) {
         await this.registry.callHook('llm:models_available', { provider })
@@ -316,7 +316,7 @@ export class LLMGateway {
   }
 
   /**
-   * Update a task route (from oficina).
+   * Update a task route (from console).
    */
   setRoute(task: LLMTask, route: TaskRoute): void {
     this.router.setRoute(task, route)

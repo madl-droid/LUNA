@@ -27,16 +27,16 @@ async function main(): Promise<void> {
 
   // Mount API routes from active modules
   for (const mod of registry.listModules()) {
-    if (mod.active && mod.manifest.oficina?.apiRoutes) {
-      server.mountModuleRoutes(mod.manifest.name, mod.manifest.oficina.apiRoutes)
+    if (mod.active && mod.manifest.console?.apiRoutes) {
+      server.mountModuleRoutes(mod.manifest.name, mod.manifest.console.apiRoutes)
     }
   }
 
   // Auto-mount/unmount routes when modules are activated/deactivated at runtime
   registry.addHook('kernel', 'module:activated', async (payload) => {
     const mod = registry.getModule(payload.name)
-    if (mod?.manifest.oficina?.apiRoutes) {
-      server.mountModuleRoutes(mod.manifest.name, mod.manifest.oficina.apiRoutes)
+    if (mod?.manifest.console?.apiRoutes) {
+      server.mountModuleRoutes(mod.manifest.name, mod.manifest.console.apiRoutes)
     }
   })
 

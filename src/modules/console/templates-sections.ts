@@ -247,7 +247,7 @@ export function renderPipelineUnifiedSection(data: SectionData): string {
 
 export function renderLeadScoringSection(data: SectionData): string {
   return `<div class="panel">
-    <div class="panel-header panel-header-link" onclick="window.location.href='/oficina/api/lead-scoring/ui'">
+    <div class="panel-header panel-header-link" onclick="window.location.href='/console/api/lead-scoring/ui'">
       <span class="panel-title">${t('sec_lead_scoring', data.lang)} <span class="panel-badge badge-active">${t('sec_lead_scoring_badge', data.lang)}</span></span>
       <span class="panel-chevron panel-chevron-right">&#9660;</span>
     </div>
@@ -401,7 +401,7 @@ export function renderEngineMetricsSection(data: SectionData): string {
         var sel=document.getElementById('metrics-period');
         function load(){
           var p=sel.value;
-          fetch('/oficina/api/oficina/engine-metrics?period='+p)
+          fetch('/console/api/console/engine-metrics?period='+p)
             .then(function(r){return r.json()})
             .then(function(d){
               var s=d.summary||{};

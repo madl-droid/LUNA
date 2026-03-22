@@ -1,9 +1,9 @@
 # Scheduled Tasks — Tareas programadas del agente
 
-Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Soporta cron, eventos del sistema y ejecucion manual. Incluye destinatarios (grupos/usuarios), acciones post-ejecucion (tools, mensajes, hooks) y UI nativa en oficina.
+Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Soporta cron, eventos del sistema y ejecucion manual. Incluye destinatarios (grupos/usuarios), acciones post-ejecucion (tools, mensajes, hooks) y UI nativa en console.
 
 ## Archivos
-- `manifest.ts` — lifecycle, config schema, oficina def, API routes, event hooks
+- `manifest.ts` — lifecycle, config schema, console def, API routes, event hooks
 - `types.ts` — ScheduledTask, TaskRecipient, TaskAction, TriggerType, UserGroupInfo
 - `store.ts` — CRUD PostgreSQL (scheduled_tasks + scheduled_task_executions, JSONB)
 - `scheduler.ts` — BullMQ queue/worker para cron scheduling
@@ -17,9 +17,9 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 - **configSchema**: `SCHEDULED_TASKS_ENABLED`, `SCHEDULED_TASKS_MAX_CONCURRENT`, `SCHEDULED_TASKS_EXECUTION_TIMEOUT_MS`
 
 ## Servicios expuestos
-- `scheduled-tasks:renderSection` — `(lang) => Promise<string>` renderiza la seccion para oficina
+- `scheduled-tasks:renderSection` — `(lang) => Promise<string>` renderiza la seccion para console
 
-## API routes (bajo /oficina/api/scheduled-tasks/)
+## API routes (bajo /console/api/scheduled-tasks/)
 - `GET list` — lista todas las tareas
 - `GET groups` — grupos de usuarios con sus miembros (para dropdown)
 - `GET tools` — herramientas disponibles (para selector de acciones)
@@ -51,7 +51,7 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 - Placeholder `{{result}}` en textos se reemplaza por el output del LLM
 
 ## Trampas
-- API routes se populan en init() mutando manifest.oficina.apiRoutes
+- API routes se populan en init() mutando manifest.console.apiRoutes
 - El render HTML se provee via registry service (no import directo)
 - BullMQ connection usa host/port/password de redis.options
 - Migraciones ALTER TABLE IF NOT EXISTS corren en ensureTables

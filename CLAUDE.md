@@ -24,7 +24,7 @@ src/
   modules/
     whatsapp/        — canal WhatsApp Baileys (ver CLAUDE.md)
     memory/          — memoria Redis+PG (ver CLAUDE.md)
-    oficina/         — panel de control web (ver CLAUDE.md)
+    console/         — panel de control web (ver CLAUDE.md)
     llm/             — gateway LLM unificado (ver CLAUDE.md)
     model-scanner/   — escáner de modelos LLM (ver CLAUDE.md)
     users/           — listas de usuarios y permisos (ver CLAUDE.md)
@@ -47,7 +47,7 @@ docs/                — arquitectura (docs/architecture/) y reportes de sesión
 ## Cómo crear un nuevo módulo
 1. Crear `src/modules/{nombre}/manifest.ts` exportando `ModuleManifest` (de `../../kernel/types.js`)
 2. Definir: name, version, description, type (`core-module`|`channel`|`feature`|`provider`), init(), stop()
-3. Config: agregar `configSchema` (Zod) + `.env.example`. UI: definir `oficina.fields`/`apiRoutes`.
+3. Config: agregar `configSchema` (Zod) + `.env.example`. UI: definir `console.fields`/`apiRoutes`.
 4. Dependencias: declarar `depends: ['otro-modulo']`.
 5. **OBLIGATORIO: Crear `CLAUDE.md`** en el directorio del módulo (ver template en sección "Mantenimiento" abajo). Agregar entrada a la lista de "Módulos documentados".
 6. **OBLIGATORIO: Usar helpers del kernel** — ver sección "REGLA: No duplicar helpers HTTP ni config schemas" abajo.
@@ -130,7 +130,7 @@ import type { StoredMessage } from '../memory/types.js'
 - NO implementar voz ni llamadas fuera del módulo twilio-voice — toda la lógica de voz vive ahí
 - pgvector ya está integrado (memory + knowledge v2). NO agregar bases vectoriales externas (Pinecone, Weaviate, etc.)
 - NO guardar archivos en la base de datos — media queda en disco en instance/knowledge/media/
-- NO construir SPA para oficina — usar SSR con templates server-side
+- NO construir SPA para console — usar SSR con templates server-side
 - NO hacer sync bidireccional con Google Sheets — Postgres es fuente de verdad, writes a Sheets son async
 - NO usar import sin extensión .js en paths relativos — ESM lo requiere
 - NO acceder arrays por índice sin `!` o `?.` — `noUncheckedIndexedAccess` está activo en tsconfig. `arr[0]` es `T | undefined`. Usar `arr[0]!` cuando hay guard previo (`if (arr.length > 0)`) o `arr[0]?.prop` cuando no hay guard.
@@ -176,15 +176,15 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/kernel/CLAUDE.md` — core del sistema modular
 - `src/modules/whatsapp/CLAUDE.md` — canal WhatsApp (Baileys)
 - `src/modules/memory/CLAUDE.md` — memoria Redis+PG
-- `src/modules/oficina/CLAUDE.md` — panel de control web
+- `src/modules/console/CLAUDE.md` — panel de control web
 - `src/modules/model-scanner/CLAUDE.md` — escáner de modelos LLM
 - `src/modules/users/CLAUDE.md` — listas de usuarios y permisos
 - `src/modules/llm/CLAUDE.md` — gateway LLM unificado (circuit breaker, routing, tracking, seguridad)
 - `src/modules/tools/CLAUDE.md` — herramientas del agente (registro, ejecución, tool calling nativo)
-- `src/modules/lead-scoring/CLAUDE.md` — calificación de leads (BANT + custom, scoring, UI oficina)
+- `src/modules/lead-scoring/CLAUDE.md` — calificación de leads (BANT + custom, scoring, UI console)
 - `src/modules/google-apps/CLAUDE.md` — provider Google (OAuth2, Drive, Sheets, Docs, Slides, Calendar)
 - `src/modules/gmail/CLAUDE.md` — canal de email via Gmail API (send, reply, forward, attachments)
-- `src/modules/prompts/CLAUDE.md` — gestión centralizada de prompts del agente (slots, campaigns, oficina)
+- `src/modules/prompts/CLAUDE.md` — gestión centralizada de prompts del agente (slots, campaigns, console)
 - `src/modules/engine/CLAUDE.md` — wrapper del pipeline para el kernel
 - `src/modules/google-chat/CLAUDE.md` — canal Google Chat (webhook + Chat API, Service Account)
 - `src/modules/twilio-voice/CLAUDE.md` — canal de voz (Twilio + Gemini Live)

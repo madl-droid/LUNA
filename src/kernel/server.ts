@@ -39,10 +39,10 @@ export class Server {
     logger.debug({ pathPrefix }, 'WebSocket upgrade handler registered')
   }
 
-  /** Mount API routes for a module under /oficina/api/{moduleName}/ */
+  /** Mount API routes for a module under /console/api/{moduleName}/ */
   mountModuleRoutes(moduleName: string, apiRoutes: ApiRoute[]): void {
     for (const route of apiRoutes) {
-      const fullPath = `/oficina/api/${moduleName}/${route.path}`
+      const fullPath = `/console/api/${moduleName}/${route.path}`
       this.routes.push({
         method: route.method,
         fullPath,
@@ -92,12 +92,12 @@ export class Server {
         return
       }
 
-      // Let modules handle custom URL patterns (oficina serves HTML at /oficina)
+      // Let modules handle custom URL patterns (console serves HTML at /console)
       // This is done via a special hook
-      if (url.startsWith('/oficina')) {
-        const oficinaMod = this.registry.getModule('oficina')
-        if (oficinaMod?.active) {
-          const handler = this.registry.getOptional<(req: http.IncomingMessage, res: http.ServerResponse) => Promise<boolean>>('oficina:requestHandler')
+      if (url.startsWith('/console')) {
+        const consoleMod = this.registry.getModule('console')
+        if (consoleMod?.active) {
+          const handler = this.registry.getOptional<(req: http.IncomingMessage, res: http.ServerResponse) => Promise<boolean>>('console:requestHandler')
           if (handler) {
             const handled = await handler(req, res)
             if (handled) return

@@ -10,7 +10,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-const OFICINA_DIR = path.resolve('src/modules/oficina')
+const OFICINA_DIR = path.resolve('src/modules/console')
 const I18N_FILE = path.join(OFICINA_DIR, 'templates-i18n.ts')
 
 // 1. Extract defined keys from i18n file

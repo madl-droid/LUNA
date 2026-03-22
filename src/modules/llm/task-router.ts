@@ -153,7 +153,7 @@ export class TaskRouter {
   }
 
   /**
-   * Update a specific task route (from oficina UI).
+   * Update a specific task route (from console UI).
    */
   setRoute(task: LLMTask, route: TaskRoute): void {
     this.routes.set(task, route)

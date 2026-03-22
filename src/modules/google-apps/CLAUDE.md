@@ -3,7 +3,7 @@
 Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar. Expone OAuth client y servicios para otros módulos (email, users).
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, oficina fields, API routes, migrations
+- `manifest.ts` — lifecycle, configSchema, console fields, API routes, migrations
 - `types.ts` — interfaces de todos los servicios (Drive, Sheets, Docs, Slides, Calendar, OAuth)
 - `oauth-manager.ts` — OAuth2 flow completo: init, refresh, callback, disconnect, persistencia en DB
 - `drive-service.ts` — CRUD archivos/carpetas, compartir, permisos, descargar, exportar
@@ -27,7 +27,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - `google:slides` — SlidesService (si habilitado)
 - `google:calendar` — CalendarService (si habilitado)
 
-## API Routes (bajo /oficina/api/google-apps/)
+## API Routes (bajo /console/api/google-apps/)
 - `GET /status` — estado OAuth + servicios
 - `GET /auth-url` — genera URL para autorización OAuth2
 - `POST /auth-callback` — { code } — intercambia código por tokens

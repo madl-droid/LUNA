@@ -1,13 +1,13 @@
-// LUNA — Module: oficina
+// LUNA — Module: console
 // Panel de control del agente. Renderiza paneles de módulos dinámicamente.
 
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { createOficinaHandler, createApiRoutes } from './server.js'
+import { createConsoleHandler, createApiRoutes } from './server.js'
 import { setRegistryRef } from './manifest-ref.js'
 
 const manifest: ModuleManifest = {
-  name: 'oficina',
+  name: 'console',
   version: '1.0.0',
   description: {
     es: 'Panel de control y configuración del agente',
@@ -18,8 +18,8 @@ const manifest: ModuleManifest = {
   activateByDefault: true,
   depends: [],
 
-  oficina: {
-    title: { es: 'Oficina', en: 'Oficina' },
+  console: {
+    title: { es: 'Console', en: 'Console' },
     order: 0,
     apiRoutes: createApiRoutes(),
   },
@@ -28,8 +28,8 @@ const manifest: ModuleManifest = {
     setRegistryRef(registry)
 
     // Expose request handler for HTML serving (kernel server calls this)
-    const handler = createOficinaHandler(registry)
-    registry.provide('oficina:requestHandler', handler)
+    const handler = createConsoleHandler(registry)
+    registry.provide('console:requestHandler', handler)
   },
 
   async stop() {

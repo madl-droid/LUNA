@@ -37,7 +37,7 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 ## Auto-downgrade
 - Job diario: docs con is_core=true sin hits en AUTO_DOWNGRADE_DAYS → is_core=false
 
-## API routes (bajo /oficina/api/knowledge/)
+## API routes (bajo /console/api/knowledge/)
 - Documents: GET /documents, POST /documents/upload, PUT /documents/core, POST /documents/delete
 - Categories: GET /categories, POST /categories, PUT /categories, POST /categories/delete
 - API Connectors: GET /api-connectors, POST /api-connectors, POST /api-connectors/delete

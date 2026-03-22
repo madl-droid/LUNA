@@ -28,11 +28,11 @@
 - Staging: `luna-s.madl98.cloud`
 
 ## Docker compose
-- `.env` montado como volumen (persiste edits desde oficina entre deploys)
+- `.env` montado como volumen (persiste edits desde console entre deploys)
 - `instance/` montado como volumen (config operacional + knowledge)
 - PostgreSQL 16 + pgvector (`pgvector/pgvector:pg16`) + Redis 7 como servicios con health checks
 - Traefik labels para routing y SSL automático
-- `BUILD_VERSION` como build arg (mostrado en oficina)
+- `BUILD_VERSION` como build arg (mostrado en console)
 
 ## Portabilidad — nuevo servidor
 1. Instalar Docker y Traefik

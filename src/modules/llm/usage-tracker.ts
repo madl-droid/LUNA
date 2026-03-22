@@ -261,7 +261,7 @@ export class UsageTracker {
   }
 
   /**
-   * Update cost table (e.g., from oficina config).
+   * Update cost table (e.g., from console config).
    */
   updateCostTable(table: Record<string, { inputPer1M: number; outputPer1M: number }>): void {
     this.costTable = { ...this.costTable, ...table }

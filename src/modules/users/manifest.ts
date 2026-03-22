@@ -34,7 +34,7 @@ const manifest: ModuleManifest = {
     SHEET_SYNC_INTERVAL: numEnv(3600000),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Usuarios y Permisos', en: 'Users & Permissions' },
     info: {
       es: 'Listas de usuarios (admin, coworker, custom) y permisos por tipo.',
@@ -95,8 +95,8 @@ const manifest: ModuleManifest = {
 
     // Mount API routes
     const apiRoutes = createApiRoutes(registry, db, cache)
-    if (manifest.oficina) {
-      manifest.oficina.apiRoutes = apiRoutes
+    if (manifest.console) {
+      manifest.console.apiRoutes = apiRoutes
     }
 
     // Start sheet sync (will check for Google OAuth availability)

@@ -1,8 +1,8 @@
-# AUDITORÍA COMPLETA — Módulo Oficina
+# AUDITORÍA COMPLETA — Módulo Console
 
 ## Resumen ejecutivo
 
-La oficina es funcional pero tiene problemas estructurales importantes: **1 error de sintaxis que rompe compilación**, **~8 claves i18n faltantes** que muestran nombres crudos en la UI, una **arquitectura de navegación híbrida** (mezcla de páginas hardcodeadas y contenido dinámico de módulos), y **múltiples módulos con UI registrada que nunca se muestra** como sidebar items dedicados.
+La console es funcional pero tiene problemas estructurales importantes: **1 error de sintaxis que rompe compilación**, **~8 claves i18n faltantes** que muestran nombres crudos en la UI, una **arquitectura de navegación híbrida** (mezcla de páginas hardcodeadas y contenido dinámico de módulos), y **múltiples módulos con UI registrada que nunca se muestra** como sidebar items dedicados.
 
 ---
 
@@ -18,7 +18,7 @@ Falta el `}` de cierre de `renderEngineMetricsSection()`. La función termina en
 export function renderScheduledTasksSection(...) {      // ← siguiente función SIN } previo
 ```
 
-**Impacto**: Si TypeScript compila con tsc estricto, esto rompe el build completo. Afecta toda la oficina, no solo lead-scoring.
+**Impacto**: Si TypeScript compila con tsc estricto, esto rompe el build completo. Afecta toda la console, no solo lead-scoring.
 
 ### 1.2 Claves i18n faltantes — Sección Google (`templates-sections.ts:200-255`)
 
@@ -67,7 +67,7 @@ El template usa prefijo `ACK_` pero i18n tiene prefijo `AVISO_`:
 
 **Impacto**: Info tooltips de subagent y replan muestran el key name.
 
-### 1.5 Strings hardcodeados en JS sin i18n (`oficina-minimal.js`)
+### 1.5 Strings hardcodeados en JS sin i18n (`console-minimal.js`)
 
 ```javascript
 // Línea 163: No usa i18n
@@ -103,17 +103,17 @@ if (!confirm('Disconnect Google?')) return
 
 ### 2.1 Navegación híbrida: hardcodeada vs dinámica
 
-**Problema central**: La sidebar tiene 17 secciones hardcodeadas en `NAV_SECTIONS` (templates.ts:6-28), pero los módulos registran su propia UI vía `manifest.oficina`. Hay una **desconexión** entre ambos sistemas:
+**Problema central**: La sidebar tiene 17 secciones hardcodeadas en `NAV_SECTIONS` (templates.ts:6-28), pero los módulos registran su propia UI vía `manifest.console`. Hay una **desconexión** entre ambos sistemas:
 
 **Secciones hardcodeadas en sidebar** (17):
 `whatsapp`, `email`, `google`, `apikeys`, `models`, `llm-limits`, `llm-cb`, `pipeline`, `engine-metrics`, `followup`, `naturalidad`, `lead-scoring`, `scheduled-tasks`, `modules`, `db`, `redis`
 
 **Módulos con UI registrada en manifest** (15):
-`oficina`, `prompts`, `llm`, `whatsapp`, `knowledge`, `gmail`, `google-apps`, `google-chat`, `twilio-voice`, `lead-scoring`, `users`, `tools`, `memory`, `model-scanner`, `scheduled-tasks`
+`console`, `prompts`, `llm`, `whatsapp`, `knowledge`, `gmail`, `google-apps`, `google-chat`, `twilio-voice`, `lead-scoring`, `users`, `tools`, `memory`, `model-scanner`, `scheduled-tasks`
 
 **Resultado**: Hay módulos con UI completa que **nunca aparecen como sección propia en la sidebar**:
 
-| Módulo | Tiene oficina.fields | Tiene API routes | Tiene sidebar item? |
+| Módulo | Tiene console.fields | Tiene API routes | Tiene sidebar item? |
 |---|---|---|---|
 | `users` | 3 fields + 9 API routes | SI | **NO** |
 | `knowledge` | 9 fields + 25+ API routes | SI | **NO** |
@@ -133,16 +133,16 @@ Hay **4 patrones diferentes** de cómo se renderiza una sección:
 
 1. **Hardcodeado en templates-sections.ts** — WhatsApp, API Keys, Models, etc. (12 secciones)
 2. **Delegación a servicio** — Scheduled Tasks usa `registry.getOptional('scheduled-tasks:renderSection')`
-3. **Redirect externo** — Lead Scoring redirige a `/oficina/api/lead-scoring/ui` (SPA separada)
-4. **Dinámico desde manifest** — Módulos en la sección "Módulos" renderizan fields de `manifest.oficina.fields`
+3. **Redirect externo** — Lead Scoring redirige a `/console/api/lead-scoring/ui` (SPA separada)
+4. **Dinámico desde manifest** — Módulos en la sección "Módulos" renderizan fields de `manifest.console.fields`
 
 Esto genera inconsistencia de UX: unas secciones son pages normales, otra abre una SPA separada, otra delega el HTML a otro módulo.
 
 ### 2.3 Secciones que mezclan config del kernel con config de módulos
 
-La sección "API Keys" muestra `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_AI_API_KEY` — que son config del módulo `llm`. La sección "Models" muestra `LLM_*` — también del módulo `llm`. Pero estas secciones están hardcodeadas en la oficina, no vienen del manifest del módulo `llm`.
+La sección "API Keys" muestra `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_AI_API_KEY` — que son config del módulo `llm`. La sección "Models" muestra `LLM_*` — también del módulo `llm`. Pero estas secciones están hardcodeadas en la console, no vienen del manifest del módulo `llm`.
 
-**Duplicación**: El módulo `llm` declara 18 campos en su `oficina.fields`, incluyendo las API keys y modelos. Pero la oficina renderiza sus propias versiones hardcodeadas de estos mismos campos.
+**Duplicación**: El módulo `llm` declara 18 campos en su `console.fields`, incluyendo las API keys y modelos. Pero la console renderiza sus propias versiones hardcodeadas de estos mismos campos.
 
 ---
 
@@ -167,10 +167,10 @@ La sección "API Keys" muestra `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_AI
 
 ### 3.3 Lead Scoring — Patrón de redirect roto
 
-Al hacer click en "Lead Scoring" se redirige a `/oficina/api/lead-scoring/ui` — una SPA completamente separada. Esto:
-- Sale del layout de la oficina (no hay sidebar, no hay header, no hay save bar)
+Al hacer click en "Lead Scoring" se redirige a `/console/api/lead-scoring/ui` — una SPA completamente separada. Esto:
+- Sale del layout de la console (no hay sidebar, no hay header, no hay save bar)
 - No hay forma de volver excepto el botón "back" del browser
-- No comparte el sistema de i18n de la oficina
+- No comparte el sistema de i18n de la console
 - No comparte el dirty tracking ni el save/apply flow
 
 ### 3.4 Save bar siempre visible
@@ -197,7 +197,7 @@ Cada toggle tiene un `<input type="checkbox">` + `<input type="hidden">` con el 
 
 Los nombres amigables de modelos están hardcodeados en:
 - `templates-fields.ts:61-75` (server-side)
-- `oficina-minimal.js:96-110` (client-side)
+- `console-minimal.js:96-110` (client-side)
 
 Ambas listas deben mantenerse sincronizadas manualmente. Cuando se agrega un nuevo modelo, hay que actualizar 2 archivos. Deberían venir del model-scanner o de una sola fuente.
 
@@ -205,7 +205,7 @@ Ambas listas deben mantenerse sincronizadas manualmente. Cuando se agrega un nue
 
 Las 17 secciones de navegación están definidas estáticamente. Agregar una nueva sección requiere editar `templates.ts`, `templates-sections.ts`, `templates-i18n.ts`, y `server.ts`.
 
-**Propuesta**: Los módulos ya declaran `oficina.title`, `oficina.info`, `oficina.order`, `oficina.fields`. Se podría generar la sidebar dinámicamente desde los manifests.
+**Propuesta**: Los módulos ya declaran `console.title`, `console.info`, `console.order`, `console.fields`. Se podría generar la sidebar dinámicamente desde los manifests.
 
 ### 4.3 Secciones AI hardcodeadas
 
@@ -227,14 +227,14 @@ El módulo `gmail` está completamente implementado con 11 config fields y 9 API
 
 ### 5.3 Doble representación de WhatsApp
 WhatsApp tiene:
-1. Su propia sección hardcodeada en el sidebar (`/oficina/whatsapp`)
-2. Un panel en "Módulos Activos" con `oficina.fields` del manifest
+1. Su propia sección hardcodeada en el sidebar (`/console/whatsapp`)
+2. Un panel en "Módulos Activos" con `console.fields` del manifest
 
 El usuario puede ver info de WhatsApp en 2 lugares con diferente nivel de detalle.
 
 ### 5.4 API routes duplicadas
-- `POST /oficina/api/oficina/reset-db` (API JSON)
-- `POST /oficina/reset-db` (form POST con redirect)
+- `POST /console/api/console/reset-db` (API JSON)
+- `POST /console/reset-db` (form POST con redirect)
 
 Ambas hacen lo mismo (truncate + flushdb).
 
@@ -321,16 +321,16 @@ GOOGLE APPS
 
 SISTEMA
 ├── Memoria           (módulo memory — buffer, TTL, compresión, retención)
-├── Engine Metrics    (oficina — métricas de rendimiento, solo lectura)
-├── Módulos           (oficina — toggle activation, overview)
+├── Engine Metrics    (console — métricas de rendimiento, solo lectura)
+├── Módulos           (console — toggle activation, overview)
 ├── Base de Datos     (kernel — PostgreSQL connection)
 └── Redis             (kernel — Redis connection)
 ```
 
 ### Principios de la nueva arquitectura
 
-1. **Cada módulo es una página** — Si un módulo declara `oficina.fields` o `oficina.apiRoutes`, genera automáticamente un item en la sidebar
-2. **Categorías dinámicas** — Los módulos declaran `oficina.group` (channel, agent, ai, leads, system) y `oficina.order`
+1. **Cada módulo es una página** — Si un módulo declara `console.fields` o `console.apiRoutes`, genera automáticamente un item en la sidebar
+2. **Categorías dinámicas** — Los módulos declaran `console.group` (channel, agent, ai, leads, system) y `console.order`
 3. **Sin duplicación** — Los campos vienen del manifest, no hardcodeados en templates-sections
 4. **Secciones custom** — Para UX especiales (WhatsApp QR, Google OAuth popup), el módulo puede proveer una función `renderSection` vía servicio
 5. **Lead Scoring integrado** — En vez de redirect a SPA separada, renderizar inline como los demás
@@ -346,7 +346,7 @@ Cuando un módulo se activa, su sección debería aparecer automáticamente en l
 Crear un script que verifique que toda clave usada en templates exista en ambos idiomas del diccionario. Hoy las claves faltantes pasan silenciosamente.
 
 ### 8.3 Generación de campos desde configSchema
-Los módulos ya declaran su `configSchema` (Zod). Los `oficina.fields` podrían generarse automáticamente desde el schema en vez de duplicar la definición.
+Los módulos ya declaran su `configSchema` (Zod). Los `console.fields` podrían generarse automáticamente desde el schema en vez de duplicar la definición.
 
 ### 8.4 Cache busting para assets estáticos
 CSS/JS se cachea 24h sin versionado. Agregar hash o query param al path de los assets.

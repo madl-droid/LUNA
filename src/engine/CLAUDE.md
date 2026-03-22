@@ -75,11 +75,11 @@ mocks/
 
 ## Avisos de proceso (per-channel)
 
-Config independiente por canal. Cada canal tiene trigger, hold y hasta 3 mensajes configurables desde oficina:
+Config independiente por canal. Cada canal tiene trigger, hold y hasta 3 mensajes configurables desde console:
 - **WhatsApp**: `AVISO_WA_TRIGGER_MS` (3000), `AVISO_WA_HOLD_MS` (2000), `AVISO_WA_MSG_1..3`
 - **Email**: `AVISO_EMAIL_TRIGGER_MS` (0=off), `AVISO_EMAIL_HOLD_MS` (0), `AVISO_EMAIL_MSG_1..3`
 
-Si la respuesta tarda más del trigger, se elige un aviso al azar del pool y se envía via `message:send` hook. Tras enviar, la respuesta real se retiene el hold configurado. Trigger=0 desactiva por canal. Mensajes editables desde oficina, nunca generados por LLM.
+Si la respuesta tarda más del trigger, se elige un aviso al azar del pool y se envía via `message:send` hook. Tras enviar, la respuesta real se retiene el hold configurado. Trigger=0 desactiva por canal. Mensajes editables desde console, nunca generados por LLM.
 
 ## Commitments
 

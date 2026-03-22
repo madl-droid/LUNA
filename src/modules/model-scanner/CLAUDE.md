@@ -10,7 +10,7 @@ Escanea APIs de Anthropic y Google AI para descubrir modelos disponibles, detect
 - type: `feature`, removable: true, activateByDefault: true
 - configSchema: ANTHROPIC_API_KEY, GOOGLE_AI_API_KEY, MODEL_SCAN_INTERVAL_MS (default: 21600000 = 6h)
 
-## API routes (montadas en /oficina/api/model-scanner/)
+## API routes (montadas en /console/api/model-scanner/)
 - `GET /status` — último resultado de scan (modelos por provider, fecha, reemplazos)
 - `GET /models` — modelos disponibles por provider + último resultado de scan
 - `POST /scan` — disparar scan manual
@@ -19,7 +19,7 @@ Escanea APIs de Anthropic y Google AI para descubrir modelos disponibles, detect
 - Scan periódico configurable (default cada 6 horas)
 - Detecta modelos deprecados por familia (haiku, sonnet, opus, flash, pro)
 - Si un modelo configurado ya no existe, auto-reemplaza por el más reciente de su familia
-- Guarda modelos disponibles en instance/config.json para display en oficina
+- Guarda modelos disponibles en instance/config.json para display en console
 - Scan al iniciar + intervalo periódico
 
 ## Trampas

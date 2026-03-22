@@ -1,5 +1,5 @@
 // LUNA — Users module: API route handlers
-// Endpoints CRUD para gestionar usuarios y listas desde la oficina.
+// Endpoints CRUD para gestionar usuarios y listas desde la console.
 
 import type { ServerResponse } from 'node:http'
 import pino from 'pino'
@@ -26,7 +26,7 @@ function error(res: ServerResponse, message: string, status = 400): void {
 
 export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCache): ApiRoute[] {
   return [
-    // GET /oficina/api/users/status — module status
+    // GET /console/api/users/status — module status
     {
       method: 'GET',
       path: 'status',
@@ -40,7 +40,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/create — create user in list
+    // POST /console/api/users/create — create user in list
     {
       method: 'POST',
       path: 'create',
@@ -77,7 +77,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/update — update user
+    // POST /console/api/users/update — update user
     {
       method: 'POST',
       path: 'update',
@@ -107,7 +107,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/deactivate — soft delete
+    // POST /console/api/users/deactivate — soft delete
     {
       method: 'POST',
       path: 'deactivate',
@@ -130,7 +130,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/list — list users in a list
+    // POST /console/api/users/list — list users in a list
     {
       method: 'POST',
       path: 'list',
@@ -148,7 +148,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/bulk-import — import CSV or JSON array
+    // POST /console/api/users/bulk-import — import CSV or JSON array
     {
       method: 'POST',
       path: 'bulk-import',
@@ -185,7 +185,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/trigger-sync — trigger sheet sync for a list
+    // POST /console/api/users/trigger-sync — trigger sheet sync for a list
     {
       method: 'POST',
       path: 'trigger-sync',
@@ -210,7 +210,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/config-list — get/update list config
+    // POST /console/api/users/config-list — get/update list config
     {
       method: 'POST',
       path: 'config-list',
@@ -278,7 +278,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       },
     },
 
-    // POST /oficina/api/users/resolve — test resolution (for debugging)
+    // POST /console/api/users/resolve — test resolution (for debugging)
     {
       method: 'POST',
       path: 'resolve',

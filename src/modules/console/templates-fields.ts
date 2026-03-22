@@ -1,7 +1,7 @@
 // templates-fields.ts — Server-side field builders (migrated from ui/js/fields.js)
 
 import { t, type Lang } from './templates-i18n.js'
-import type { OficinaField } from '../../kernel/types.js'
+import type { ConsoleField } from '../../kernel/types.js'
 
 export function esc(s: string): string {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
@@ -173,7 +173,7 @@ function directField(key: string, value: string, label: string, inputType: strin
     <input type="${type}"${inputMode} name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
 }
 
-export function renderOficinaField(field: OficinaField, value: string, lang: Lang): string {
+export function renderConsoleField(field: ConsoleField, value: string, lang: Lang): string {
   const label = field.label ? (field.label[lang] || field.label['es'] || field.key) : field.key
   const info = field.info
   const tooltip = info ? infoTooltipDirect(field.key, info, lang) : ''

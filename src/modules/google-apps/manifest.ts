@@ -157,7 +157,7 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
-    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/oficina/api/google-apps/oauth2callback'),
+    GOOGLE_REDIRECT_URI: z.string().default('http://localhost:3000/console/api/google-apps/oauth2callback'),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
     GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar'),
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
@@ -165,7 +165,7 @@ const manifest: ModuleManifest = {
     GOOGLE_API_RETRY_MAX: numEnv(2),
   }),
 
-  oficina: {
+  console: {
     title: { es: 'Google API', en: 'Google API' },
     info: {
       es: 'Conexión OAuth2 a Google. Habilita Drive, Sheets, Docs, Slides y Calendar. Cada servicio se activa/desactiva individualmente.',
@@ -231,10 +231,10 @@ const manifest: ModuleManifest = {
       try {
         await oauthManager.initialize()
       } catch (err) {
-        logger.warn({ err }, 'OAuth initialization failed — connect manually from oficina')
+        logger.warn({ err }, 'OAuth initialization failed — connect manually from console')
       }
     } else {
-      logger.info('Google API credentials not configured — set them from oficina')
+      logger.info('Google API credentials not configured — set them from console')
     }
 
     // Registrar servicio OAuth

@@ -1,9 +1,9 @@
 # Prompts — Gestión centralizada de prompts del agente
 
-Prompts editables desde oficina, almacenados en DB, con cache en memoria. Campaign matching via fuse.js.
+Prompts editables desde console, almacenados en DB, con cache en memoria. Campaign matching via fuse.js.
 
 ## Archivos
-- `manifest.ts` — lifecycle, oficina fields (textarea), API routes, sync con config_store
+- `manifest.ts` — lifecycle, console fields (textarea), API routes, sync con config_store
 - `types.ts` — PromptSlot, PromptRecord, CompositorPrompts, PromptsService
 - `pg-queries.ts` — CRUD para prompt_slots + ALTER campaigns (match_phrases, threshold, prompt_context)
 - `prompts-service.ts` — PromptsServiceImpl con cache Map, seed desde archivos/defaults, generación evaluador
@@ -25,7 +25,7 @@ Prompts editables desde oficina, almacenados en DB, con cache en memoria. Campai
 ## Servicio expuesto
 - `prompts:service` — PromptsService interface
 
-## API Routes (bajo /oficina/api/prompts/)
+## API Routes (bajo /console/api/prompts/)
 - GET/PUT slots, POST generate-evaluator, CRUD campaigns
 
 ## Trampas

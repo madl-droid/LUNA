@@ -1,5 +1,5 @@
 // LUNA — Module: prompts
-// Gestión centralizada de prompts del agente. Editables desde oficina, con cache en memoria.
+// Gestión centralizada de prompts del agente. Editables desde console, con cache en memoria.
 // Campaign matching via fuse.js. Evaluador generado on-demand por LLM.
 
 import pino from 'pino'
@@ -141,7 +141,7 @@ const manifest: ModuleManifest = {
   depends: [], // llm is optional (only for evaluator generation)
   configSchema: z.object({}),
 
-  oficina: {
+  console: {
     title: { es: 'Prompts del Agente', en: 'Agent Prompts' },
     info: {
       es: 'Edita los prompts que definen la personalidad, trabajo, reglas y relaciones del agente. Los cambios se aplican inmediatamente.',
@@ -187,21 +187,21 @@ const manifest: ModuleManifest = {
     // Expose service
     registry.provide('prompts:service', service)
 
-    // Sync oficina fields with DB content
-    await syncOficinaFields(registry)
+    // Sync console fields with DB content
+    await syncConsoleFields(registry)
 
-    // Hot-reload when oficina saves/applies config
-    registry.addHook('prompts', 'oficina:config_saved', async (payload) => {
+    // Hot-reload when console saves/applies config
+    registry.addHook('prompts', 'console:config_saved', async (payload) => {
       const keys = payload.keys ?? []
       const promptKeys = keys.filter((k: string) => k.startsWith('PROMPT_'))
       if (promptKeys.length > 0 && service) {
-        await syncFromOficina(registry)
+        await syncFromConsole(registry)
       }
     })
 
-    registry.addHook('prompts', 'oficina:config_applied', async () => {
+    registry.addHook('prompts', 'console:config_applied', async () => {
       if (service) {
-        await syncFromOficina(registry)
+        await syncFromConsole(registry)
         service.invalidateCache()
       }
     })
@@ -215,9 +215,9 @@ const manifest: ModuleManifest = {
 }
 
 /**
- * Load prompt content from DB into config_store so oficina fields show current values.
+ * Load prompt content from DB into config_store so console fields show current values.
  */
-async function syncOficinaFields(registry: Registry): Promise<void> {
+async function syncConsoleFields(registry: Registry): Promise<void> {
   if (!service) return
   const configStore = await import('../../kernel/config-store.js')
   const db = registry.getDb()
@@ -237,9 +237,9 @@ async function syncOficinaFields(registry: Registry): Promise<void> {
 }
 
 /**
- * When oficina saves PROMPT_* fields, sync them back to prompt_slots table.
+ * When console saves PROMPT_* fields, sync them back to prompt_slots table.
  */
-async function syncFromOficina(registry: Registry): Promise<void> {
+async function syncFromConsole(registry: Registry): Promise<void> {
   if (!service) return
   const configStore = await import('../../kernel/config-store.js')
   const db = registry.getDb()
