@@ -9,16 +9,16 @@ import { esc } from './templates-fields.js'
 
 interface SidebarCategory {
   id: string
-  label: { es: string; en: string }
+  key: string  // i18n key (cat_*)
 }
 
 const CATEGORIES: SidebarCategory[] = [
-  { id: 'channels', label: { es: 'Canales', en: 'Channels' } },
-  { id: 'agent', label: { es: 'Agente', en: 'Agent' } },
-  { id: 'leads', label: { es: 'Leads', en: 'Leads' } },
-  { id: 'data', label: { es: 'Datos', en: 'Data' } },
-  { id: 'modules', label: { es: 'Modulos', en: 'Modules' } },
-  { id: 'system', label: { es: 'Sistema', en: 'System' } },
+  { id: 'channels', key: 'cat_channels' },
+  { id: 'agent', key: 'cat_agent' },
+  { id: 'leads', key: 'cat_leads' },
+  { id: 'data', key: 'cat_data' },
+  { id: 'modules', key: 'cat_modules' },
+  { id: 'system', key: 'cat_system' },
 ]
 
 // Fixed sections: have custom renderers in templates-sections.ts
@@ -176,9 +176,9 @@ function renderSidebar(opts: PageOptions): string {
     if (!mod.active) continue
     const group = mod.group
     if (!categoryItems[group]) {
-      // Unknown group — add as new category
+      // Unknown group — add as new category (key = group name as fallback)
       categoryItems[group] = []
-      CATEGORIES.push({ id: group, label: { es: group, en: group } })
+      CATEGORIES.push({ id: group, key: group })
     }
     categoryItems[group]!.push({
       id: mod.name,
@@ -199,7 +199,7 @@ function renderSidebar(opts: PageOptions): string {
     const items = categoryItems[cat.id]
     if (!items || items.length === 0) continue
 
-    const groupLabel = cat.label[opts.lang] || cat.label.es
+    const groupLabel = t(cat.key, opts.lang)
     h += `<div class="sidebar-group"><div class="sidebar-group-title">${groupLabel}</div>`
 
     for (const item of items) {

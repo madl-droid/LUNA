@@ -133,6 +133,13 @@ main {
 .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-reset { background: transparent; border: 1px solid var(--border); color: var(--text-primary); }
 .btn-reset:hover { background: var(--bg-tertiary); }
+.btn-resetdb {
+  background: transparent;
+  border: 1px solid var(--error);
+  color: var(--error);
+  margin-right: auto;
+}
+.btn-resetdb:hover { background: rgba(255,59,48,0.08); }
 
 .loading {
   text-align: center;

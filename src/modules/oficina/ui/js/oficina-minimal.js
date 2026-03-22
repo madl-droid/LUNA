@@ -213,7 +213,7 @@
           var repDiv = document.getElementById('scan-replacements')
           if (repDiv && data.replacements && data.replacements.length > 0) {
             repDiv.innerHTML = data.replacements.map(function (r) {
-              return '<div style="font-size:13px;color:var(--warning);padding:6px 10px;background:rgba(255,149,0,0.08);border-radius:6px;margin-bottom:4px">' +
+              return '<div class="scan-replacement">' +
                 r.configKey + ': <s>' + r.oldModel + '</s> → <b>' + r.newModel + '</b></div>'
             }).join('')
           }

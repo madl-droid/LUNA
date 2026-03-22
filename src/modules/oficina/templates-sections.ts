@@ -23,10 +23,6 @@ const GOOGLE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" class="googl
   <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
 </svg>`
 
-function panelBody(fieldsHtml: string[]): string {
-  return `<div class="panel"><div class="panel-body panel-body-flat">${fieldsHtml.join('')}</div></div>`
-}
-
 function cv(data: SectionData, key: string): string {
   return data.config[key] ?? ''
 }
@@ -372,7 +368,7 @@ export function renderEngineMetricsSection(data: SectionData): string {
   const lang = data.lang
 
   return `<div class="panel">
-    <div class="panel-header"><span class="panel-title">${t('em_title', lang)}</span></div>
+    <div class="panel-header" onclick="togglePanel(this)"><span class="panel-title">${t('em_title', lang)}</span><span class="panel-chevron">&#9660;</span></div>
     <div class="panel-body">
       <div class="metrics-period-row">
         <label>${t('em_period', lang)}:
@@ -443,7 +439,7 @@ export function renderScheduledTasksSection(data: SectionData): string {
   if (data.scheduledTasksHtml) return data.scheduledTasksHtml
   // Fallback if render service not available
   return `<div class="panel"><div class="panel-body panel-body-flat panel-body-empty">
-    ${data.lang === 'es' ? 'Modulo de tareas programadas no disponible.' : 'Scheduled tasks module not available.'}
+    ${t('sec_scheduled_tasks_unavailable', data.lang)}
   </div></div>`
 }
 
