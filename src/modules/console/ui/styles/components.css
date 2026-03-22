@@ -833,6 +833,16 @@
   margin-top: 8px;
 }
 
+.wizard-error {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .wizard-actions {
   display: flex;
   justify-content: flex-end;

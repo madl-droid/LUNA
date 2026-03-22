@@ -505,6 +505,7 @@
       + '<p class="wizard-hint">' + (isEs
         ? 'Estos valores se guardan encriptados en la base de datos.'
         : 'These values are stored encrypted in the database.') + '</p>'
+      + '<div id="wizard-error" class="wizard-error" style="display:none"></div>'
       + '</div>'
       + '<div class="wizard-actions">'
       + '<button class="wizard-btn wizard-btn-secondary" onclick="wizardGoTo(3)">' + (isEs ? 'Atras' : 'Back') + '</button>'
@@ -559,6 +560,21 @@
     })
   }
 
+  function showWizardError(msg) {
+    var container = document.getElementById('wizard-error')
+    if (container) {
+      container.textContent = msg
+      container.style.display = 'block'
+    } else {
+      showToast(msg, 'error')
+    }
+  }
+
+  function hideWizardError() {
+    var container = document.getElementById('wizard-error')
+    if (container) container.style.display = 'none'
+  }
+
   window.wizardSubmit = function (moduleKey) {
     var cfg = WIZARD_CONFIGS[moduleKey]
     if (!cfg) return
@@ -566,9 +582,10 @@
     var clientSecret = document.getElementById('wizard-client-secret')
     var submitBtn = document.getElementById('wizard-submit')
     var isEs = (document.documentElement.lang || 'es') === 'es'
+    hideWizardError()
 
     if (!clientId || !clientSecret || !clientId.value.trim() || !clientSecret.value.trim()) {
-      showToast(isEs ? 'Client ID y Client Secret son requeridos' : 'Client ID and Client Secret are required', 'error')
+      showWizardError(isEs ? 'Client ID y Client Secret son requeridos' : 'Client ID and Client Secret are required')
       return
     }
 
@@ -585,12 +602,18 @@
           closeWizard()
           openOAuthPopup(moduleKey, cfg, data.authUrl)
         } else {
-          showToast(data.error || 'Error', 'error')
+          var errMsg = data.error || 'Error'
+          if (errMsg === 'Not found') {
+            errMsg = isEs
+              ? 'El modulo ' + cfg.label + ' no esta activado. Activalo primero desde la consola.'
+              : cfg.label + ' module is not active. Activate it first from the console.'
+          }
+          showWizardError(errMsg)
           if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEs ? 'Conectar' : 'Connect' }
         }
       })
       .catch(function () {
-        showToast('Error', 'error')
+        showWizardError(isEs ? 'Error de conexion' : 'Connection error')
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isEs ? 'Conectar' : 'Connect' }
       })
   }
