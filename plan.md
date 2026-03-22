@@ -8,7 +8,7 @@ Renombrar todo lo relacionado a "oficina" por "console" en el codebase. Afecta ~
 | Contexto | Antes | Después |
 |----------|-------|---------|
 | Directorio módulo | `src/modules/oficina/` | `src/modules/console/` |
-| Directorio legacy | `src/oficina/` | `src/console/` |
+| Directorio legacy | `src/oficina/` | **eliminar** (código muerto) |
 | Propiedad manifest | `oficina: { ... }` | `console: { ... }` |
 | Tipo TS | `ModuleOficinaDef` | `ModuleConsoleDef` |
 | Tipo TS | `OficinaField` | `ConsoleField` |
