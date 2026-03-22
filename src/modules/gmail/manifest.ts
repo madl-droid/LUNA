@@ -6,7 +6,7 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { jsonResponse, parseBody, parseQuery, buildBaseUrl } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, parseQuery, buildBaseUrl, oauthCallbackPage } from '../../kernel/http-helpers.js'
 import { numEnv, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
 import * as configStore from '../../kernel/config-store.js'
 import type { OAuthManager } from '../google-apps/oauth-manager.js'
@@ -291,16 +291,16 @@ const apiRoutes: ApiRoute[] = [
         const oauthManager = _registry?.getOptional<OAuthManager>('google:oauth-manager')
         if (oauthManager) {
           const state = oauthManager.getState()
-          jsonResponse(res, 200, { standalone: false, hasCredentials: oauthManager.hasCredentials(), redirectUri, ...state })
+          jsonResponse(res, 200, { standalone: false, connected: oauthManager.isConnected(), hasCredentials: oauthManager.hasCredentials(), redirectUri, ...state })
           return
         }
       }
       if (!standaloneOAuth) {
-        jsonResponse(res, 200, { standalone: true, status: 'not_configured', email: null, hasCredentials: false, redirectUri })
+        jsonResponse(res, 200, { standalone: true, connected: false, status: 'not_configured', email: null, hasCredentials: false, redirectUri })
         return
       }
       const state = standaloneOAuth.getState()
-      jsonResponse(res, 200, { standalone: true, hasCredentials, redirectUri, ...state })
+      jsonResponse(res, 200, { standalone: true, connected: standaloneOAuth.isConnected(), hasCredentials, redirectUri, ...state })
     },
   },
   {
@@ -376,13 +376,13 @@ const apiRoutes: ApiRoute[] = [
 
       if (error) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body><h2>Error: ${error}</h2><script>setTimeout(function(){window.close()},3000)</script></body></html>`)
+        res.end(oauthCallbackPage({ success: false, title: 'Error de autorizacion', message: error }))
         return
       }
 
       if (!code) {
         res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body><h2>Missing authorization code</h2></body></html>`)
+        res.end(oauthCallbackPage({ success: false, title: 'Error', message: 'Codigo de autorizacion no recibido' }))
         return
       }
 
@@ -402,25 +402,17 @@ const apiRoutes: ApiRoute[] = [
           }
         }
 
-        // Return HTML that closes the popup
+        const email = standaloneOAuth?.getState().email ?? ''
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body>
-          <div style="text-align:center;padding:40px;font-family:system-ui">
-            <h2 style="color:#16a34a">&#10003; Gmail conectado</h2>
-            <p>Esta ventana se cerrara automaticamente...</p>
-          </div>
-          <script>setTimeout(function(){window.close()},2000)</script>
-        </body></html>`)
+        res.end(oauthCallbackPage({
+          success: true,
+          title: 'Gmail conectado',
+          message: email ? `Autenticado como ${email}` : 'Esta ventana se cerrara automaticamente',
+        }))
       } catch (err) {
         logger.error({ err }, 'Gmail OAuth callback failed')
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body>
-          <div style="text-align:center;padding:40px;font-family:system-ui">
-            <h2 style="color:#dc2626">Error de autenticacion</h2>
-            <p>${String(err)}</p>
-          </div>
-          <script>setTimeout(function(){window.close()},5000)</script>
-        </body></html>`)
+        res.end(oauthCallbackPage({ success: false, title: 'Error de autenticacion', message: String(err) }))
       }
     },
   },

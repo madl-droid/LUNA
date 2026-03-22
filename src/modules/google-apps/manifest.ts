@@ -6,7 +6,7 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { jsonResponse, parseBody, parseQuery, buildBaseUrl } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, parseQuery, buildBaseUrl, oauthCallbackPage } from '../../kernel/http-helpers.js'
 import { numEnv } from '../../kernel/config-helpers.js'
 import * as configStore from '../../kernel/config-store.js'
 import { OAuthManager } from './oauth-manager.js'
@@ -158,13 +158,13 @@ const apiRoutes: ApiRoute[] = [
 
       if (error) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body><h2>Error: ${error}</h2><script>setTimeout(function(){window.close()},3000)</script></body></html>`)
+        res.end(oauthCallbackPage({ success: false, title: 'Error de autorizacion', message: error }))
         return
       }
 
       if (!code) {
         res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body><h2>Missing authorization code</h2></body></html>`)
+        res.end(oauthCallbackPage({ success: false, title: 'Error', message: 'Codigo de autorizacion no recibido' }))
         return
       }
 
@@ -175,24 +175,17 @@ const apiRoutes: ApiRoute[] = [
         const redirectUri = getRedirectUri(req)
         await oauthManager.handleAuthCallback(code, redirectUri)
 
+        const email = oauthManager.getState().email ?? ''
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body>
-          <div style="text-align:center;padding:40px;font-family:system-ui">
-            <h2 style="color:#16a34a">&#10003; Google Apps conectado</h2>
-            <p>Esta ventana se cerrara automaticamente...</p>
-          </div>
-          <script>setTimeout(function(){window.close()},2000)</script>
-        </body></html>`)
+        res.end(oauthCallbackPage({
+          success: true,
+          title: 'Google Apps conectado',
+          message: email ? `Autenticado como ${email}` : 'Esta ventana se cerrara automaticamente',
+        }))
       } catch (err) {
         logger.error({ err }, 'Google Apps OAuth callback failed')
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<!DOCTYPE html><html><body>
-          <div style="text-align:center;padding:40px;font-family:system-ui">
-            <h2 style="color:#dc2626">Error de autenticacion</h2>
-            <p>${String(err)}</p>
-          </div>
-          <script>setTimeout(function(){window.close()},5000)</script>
-        </body></html>`)
+        res.end(oauthCallbackPage({ success: false, title: 'Error de autenticacion', message: String(err) }))
       }
     },
   },
