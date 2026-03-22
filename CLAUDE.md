@@ -45,6 +45,9 @@ docs/                — arquitectura (docs/architecture/) y reportes de sesión
 ```
 
 ## Cómo crear un nuevo módulo
+**OBLIGATORIO: Consultar `docs/architecture/module-system.md` para la guía completa.** Reglas condensadas en `src/modules/CLAUDE.md` (se carga automáticamente al trabajar en módulos).
+
+Resumen rápido:
 1. Crear `src/modules/{nombre}/manifest.ts` exportando `ModuleManifest` (de `../../kernel/types.js`)
 2. Definir: name, version, description, type (`core-module`|`channel`|`feature`|`provider`), init(), stop()
 3. Config: agregar `configSchema` (Zod) + `.env.example`. UI: definir `console.fields`/`apiRoutes`.
@@ -173,6 +176,7 @@ Cada módulo bajo `src/` tiene (o debería tener) su propio CLAUDE.md con contex
 Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, config), Hooks/Servicios, API routes, Patrones, Trampas.
 
 ### Módulos documentados
+- `src/modules/CLAUDE.md` — **reglas de creación de módulos** (se carga automáticamente al trabajar en cualquier módulo)
 - `src/kernel/CLAUDE.md` — core del sistema modular
 - `src/modules/whatsapp/CLAUDE.md` — canal WhatsApp (Baileys)
 - `src/modules/memory/CLAUDE.md` — memoria Redis+PG
@@ -194,5 +198,6 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 
 ### Docs de referencia (consultar cuando sea relevante)
+- `docs/architecture/module-system.md` — **guía completa de creación de módulos** (tipos, lifecycle, manifest, registry, hooks, servicios, config, console)
 - `docs/architecture/pipeline.md` — pipeline de 5 pasos y tabla de modelos LLM
 - `docs/architecture/lead-status.md` — máquina de estados de calificación de leads
