@@ -8,6 +8,7 @@ import type { Pool } from 'pg'
 import type { Registry } from './registry.js'
 import type { ModuleManifest } from './types.js'
 import { getAllEnv } from './config.js'
+import * as configStore from './config-store.js'
 
 const logger = pino({ name: 'kernel:loader' })
 
@@ -49,8 +50,12 @@ export async function loadModules(registry: Registry): Promise<void> {
   // 6. Topological sort by dependencies
   const sorted = topologicalSort(toActivate)
 
-  // 6b. Parse configSchemas from env vars and store validated config
-  const env = getAllEnv()
+  // 6b. Parse configSchemas: config_store (DB) overrides .env, which overrides defaults
+  let dbConfig: Record<string, string> = {}
+  try {
+    dbConfig = await configStore.getAll(db)
+  } catch { /* config_store may not exist yet on first run */ }
+  const env = { ...getAllEnv(), ...dbConfig }
   for (const manifest of discovered) {
     if (manifest.configSchema) {
       try {

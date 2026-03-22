@@ -8,6 +8,7 @@ import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery, buildBaseUrl } from '../../kernel/http-helpers.js'
 import { numEnv } from '../../kernel/config-helpers.js'
+import * as configStore from '../../kernel/config-store.js'
 import { OAuthManager } from './oauth-manager.js'
 import { DriveService } from './drive-service.js'
 import { SheetsService } from './sheets-service.js'
@@ -96,13 +97,13 @@ const apiRoutes: ApiRoute[] = [
           return
         }
 
-        // Save to config-store
+        // Persist to config_store (encrypted) + .env
         if (_registry) {
-          const configStore = _registry.getOptional<{ set(key: string, value: string): Promise<void> }>('console:config-store')
-          if (configStore) {
-            await configStore.set('GOOGLE_CLIENT_ID', body.clientId)
-            await configStore.set('GOOGLE_CLIENT_SECRET', body.clientSecret)
-          }
+          const db = _registry.getDb()
+          await configStore.setMultiple(db, {
+            GOOGLE_CLIENT_ID: body.clientId,
+            GOOGLE_CLIENT_SECRET: body.clientSecret,
+          })
         }
 
         // Re-initialize OAuth manager with new credentials
