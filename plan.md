@@ -76,10 +76,11 @@ Cambiar propiedad `oficina: { title, info, fields, apiRoutes }` → `console: { 
 - `Dockerfile`: `dist/oficina/` → `dist/console/`
 - `tsconfig.json`: path mapping si existe
 
-### Paso 10: Directorio legacy
+### Paso 10: Eliminar directorio legacy
 ```bash
-git mv src/oficina src/console
+git rm -r src/oficina
 ```
+Es código muerto: 0 imports, excluido del build en tsconfig.json, marcado como @deprecated. Reemplazado completamente por `src/modules/oficina/` (ahora `src/modules/console/`).
 
 ### Paso 11: Documentación (todos los CLAUDE.md + docs)
 - `CLAUDE.md` (raíz)
