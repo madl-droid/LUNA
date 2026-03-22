@@ -251,7 +251,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const ext = path.extname(resolved).toLowerCase()
           const contentType = mimeTypes[ext] || 'application/octet-stream'
           const data = fs.readFileSync(resolved)
-          res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=86400' })
+          res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-cache, no-store, must-revalidate' })
           res.end(data)
           return true
         }

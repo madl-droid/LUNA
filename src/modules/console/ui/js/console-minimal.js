@@ -51,74 +51,161 @@
     if (el) el.classList.toggle('visible')
   }
 
-  // === Dirty tracking (Save/Apply enable) ===
-  var saveBtn = document.getElementById('btn-save')
-  var applyBtn = document.getElementById('btn-apply')
-  var form = document.getElementById('save-form')
+  // === Save bar state machine ===
+  // Phase "dirty": Descartar + Guardar visible
+  // Phase "saved": Aplicar cambios visible (after successful save)
+  var saveBar = document.getElementById('save-bar')
+  var saveForm = document.getElementById('save-form')
+  var phaseDirty = saveBar ? saveBar.querySelector('[data-phase="dirty"]') : null
+  var phaseSaved = saveBar ? saveBar.querySelector('[data-phase="saved"]') : null
 
-  function checkDirty() {
-    if (!form) return
-    var dirty = false
-    var inputs = form.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
+  function setSaveBarPhase(phase) {
+    if (!saveBar) return
+    if (phase === 'hidden') {
+      saveBar.classList.remove('visible')
+    } else if (phase === 'dirty') {
+      if (phaseDirty) phaseDirty.style.display = 'flex'
+      if (phaseSaved) phaseSaved.style.display = 'none'
+      saveBar.classList.add('visible')
+    } else if (phase === 'saved') {
+      if (phaseDirty) phaseDirty.style.display = 'none'
+      if (phaseSaved) phaseSaved.style.display = 'flex'
+      saveBar.classList.add('visible')
+    }
+  }
+
+  function isDirty() {
+    var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i]
-      var current = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value
-      if (current !== el.getAttribute('data-original')) {
-        dirty = true
-        el.classList.add('modified')
-      } else {
-        el.classList.remove('modified')
-      }
+      // Skip toggles — they apply instantly
+      if (el.type === 'checkbox' && el.closest('.toggle-field')) continue
+      if (el.type === 'hidden' && el.closest('.toggle-field')) continue
+      var current = el.value
+      if (current !== el.getAttribute('data-original')) return true
     }
-    if (saveBtn) saveBtn.disabled = !dirty
-    if (applyBtn) applyBtn.disabled = !dirty
+    return false
   }
 
-  // Also track inputs outside the save-form (e.g. in wa-inner)
-  document.addEventListener('input', function (e) {
-    var el = e.target
-    if (el.hasAttribute && el.hasAttribute('data-original')) {
-      var current = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value
+  function checkDirty() {
+    var dirty = isDirty()
+    // Update modified classes on non-toggle inputs
+    var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
+    for (var i = 0; i < inputs.length; i++) {
+      var el = inputs[i]
+      if (el.type === 'checkbox' && el.closest('.toggle-field')) continue
+      if (el.type === 'hidden' && el.closest('.toggle-field')) continue
+      var current = el.value
       el.classList.toggle('modified', current !== el.getAttribute('data-original'))
     }
-    checkDirty()
+    setSaveBarPhase(dirty ? 'dirty' : 'hidden')
+  }
+
+  // Track non-toggle input/change
+  document.addEventListener('input', function (e) {
+    var el = e.target
+    if (el.closest && el.closest('.toggle-field')) return // skip toggles
+    if (el.hasAttribute && el.hasAttribute('data-original')) checkDirty()
   })
+
   document.addEventListener('change', function (e) {
     var el = e.target
-    // Handle toggle checkboxes: update hidden sibling
-    if (el.type === 'checkbox' && el.closest('.toggle-field')) {
-      var hidden = el.closest('.toggle-field').querySelector('input[type="hidden"]')
-      if (hidden) hidden.value = el.checked ? 'true' : 'false'
-    }
+    if (el.closest && el.closest('.toggle-field')) return // skip toggles
     checkDirty()
   })
 
-  // Before form submit, sync checkbox values to hidden fields
-  if (form) {
-    form.addEventListener('submit', function () {
-      var toggles = form.querySelectorAll('.toggle-field')
-      for (var i = 0; i < toggles.length; i++) {
-        var cb = toggles[i].querySelector('input[type="checkbox"]')
-        var hidden = toggles[i].querySelector('input[type="hidden"]')
-        if (cb && hidden) hidden.value = cb.checked ? 'true' : 'false'
+  // Save via fetch (no page reload) → show "Aplicar" phase
+  if (saveForm) {
+    saveForm.addEventListener('submit', function (e) {
+      e.preventDefault()
+
+      // Collect all non-toggle inputs into URLSearchParams
+      var body = new URLSearchParams()
+      var formData = new FormData(saveForm)
+      formData.forEach(function (v, k) { body.append(k, v) })
+
+      // Also collect inputs outside the form (e.g. wa-inner)
+      var allInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
+      for (var i = 0; i < allInputs.length; i++) {
+        var inp = allInputs[i]
+        if (inp.closest('.toggle-field')) continue
+        if (saveForm.contains(inp)) continue
+        body.append(inp.name, inp.value)
       }
-      // Also collect inputs from #wa-inner (phone fields) and add to form
-      var waInner = document.getElementById('wa-inner')
-      if (waInner) {
-        var waInputs = waInner.querySelectorAll('input[name]')
-        for (var j = 0; j < waInputs.length; j++) {
-          var inp = waInputs[j]
-          if (!form.querySelector('input[name="' + inp.name + '"]')) {
-            var clone = document.createElement('input')
-            clone.type = 'hidden'
-            clone.name = inp.name
-            clone.value = inp.value
-            form.appendChild(clone)
+
+      fetch('/console/save', { method: 'POST', body: body })
+        .then(function (r) {
+          if (r.ok || r.redirected) {
+            showToast(document.documentElement.lang === 'es' ? 'Guardado' : 'Saved', 'success')
+            // Update data-original so fields are no longer dirty
+            allInputs.forEach(function (inp) {
+              if (inp.closest('.toggle-field')) return
+              inp.setAttribute('data-original', inp.value)
+              inp.classList.remove('modified')
+            })
+            // Switch to "saved" phase → show Aplicar
+            setSaveBarPhase('saved')
+          } else {
+            showToast('Error', 'error')
           }
-        }
-      }
+        })
+        .catch(function () { showToast('Error', 'error') })
     })
   }
+
+  // === Toggle instant apply ===
+  // Toggles (.toggle-field checkboxes) apply immediately via fetch, bypassing save flow
+  document.addEventListener('change', function (e) {
+    var el = e.target
+    if (el.type !== 'checkbox' || !el.closest('.toggle-field')) return
+
+    var toggleField = el.closest('.toggle-field')
+    var hidden = toggleField.querySelector('input[type="hidden"]')
+    if (!hidden || !hidden.name) return
+
+    // If there are dirty non-toggle fields, warn
+    if (isDirty()) {
+      var lang = document.documentElement.lang || 'es'
+      var msg = lang === 'es'
+        ? 'Hay cambios sin guardar que se pueden perder. ¿Continuar?'
+        : 'There are unsaved changes that may be lost. Continue?'
+      if (!confirm(msg)) {
+        // Revert toggle
+        el.checked = !el.checked
+        return
+      }
+    }
+
+    // Update hidden value
+    hidden.value = el.checked ? 'true' : 'false'
+
+    // Save immediately via fetch
+    var section = document.querySelector('input[name="_section"]')
+    var lang2 = document.querySelector('input[name="_lang"]')
+    var body = new URLSearchParams()
+    body.append('_section', section ? section.value : '')
+    body.append('_lang', lang2 ? lang2.value : 'es')
+    body.append(hidden.name, hidden.value)
+
+    fetch('/console/apply', { method: 'POST', body: body, headers: { 'X-Instant-Toggle': '1' } })
+      .then(function (r) {
+        if (r.ok || r.redirected) {
+          showToast(el.checked ? 'Activado' : 'Desactivado', 'success')
+          // Update data-original so it's no longer "dirty"
+          hidden.setAttribute('data-original', hidden.value)
+          if (el.hasAttribute('data-original')) el.setAttribute('data-original', el.checked ? 'true' : 'false')
+        } else {
+          showToast('Error', 'error')
+          el.checked = !el.checked
+          hidden.value = el.checked ? 'true' : 'false'
+        }
+      })
+      .catch(function () {
+        showToast('Error', 'error')
+        el.checked = !el.checked
+        hidden.value = el.checked ? 'true' : 'false'
+      })
+  })
 
   // === Model dropdown provider switch ===
   var modelsDataEl = document.getElementById('models-data')
@@ -410,6 +497,134 @@
     return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
   }
 
-  // Initial dirty check
-  checkDirty()
+  // === Header dropdowns (notifications, lang, user menu) ===
+  // Any button with data-dropdown="<id>" toggles the panel with that id
+  document.addEventListener('click', function (e) {
+    var trigger = e.target.closest('[data-dropdown]')
+    if (trigger) {
+      e.stopPropagation()
+      var panelId = trigger.getAttribute('data-dropdown')
+      var panel = document.getElementById(panelId)
+      if (!panel) return
+      var wasOpen = panel.classList.contains('open')
+      // Close all dropdowns first
+      document.querySelectorAll('.header-dropdown.open').forEach(function (d) { d.classList.remove('open') })
+      // Toggle clicked one
+      if (!wasOpen) panel.classList.add('open')
+      return
+    }
+    // Click inside dropdown — don't close (unless it's a link)
+    if (e.target.closest('.header-dropdown')) return
+    // Click outside — close all
+    document.querySelectorAll('.header-dropdown.open').forEach(function (d) { d.classList.remove('open') })
+  })
+
+  // Close dropdowns on Escape
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.header-dropdown.open').forEach(function (d) { d.classList.remove('open') })
+    }
+  })
+
+  // === Notification API ===
+  // Exposes window.lunaNotifications for the reflex/system to push notifications
+  // Usage:
+  //   lunaNotifications.add({ title: 'Error', text: 'LLM provider down', type: 'error' })
+  //   lunaNotifications.add({ title: 'Info', text: 'Config applied', type: 'info' })
+  //   lunaNotifications.clear()
+  //
+  // Types: 'error' | 'warning' | 'info' | 'success'
+  // Items are stored in-memory (not persisted). Max 20 items.
+  window.lunaNotifications = (function () {
+    var items = []
+    var MAX = 20
+    var notifList = document.getElementById('notif-list')
+    var notifDot = document.getElementById('notif-dot')
+
+    function render() {
+      if (!notifList) return
+      if (items.length === 0) {
+        notifList.innerHTML = '<div class="dropdown-empty">' + (document.documentElement.lang === 'es' ? 'Sin notificaciones nuevas' : 'No new notifications') + '</div>'
+        if (notifDot) notifDot.classList.remove('active')
+        return
+      }
+      if (notifDot) notifDot.classList.add('active')
+      notifList.innerHTML = items.map(function (n) {
+        var iconSvg = n.type === 'error'
+          ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
+          : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+        return '<div class="notif-item' + (n.read ? '' : ' notif-unread') + '" data-notif-idx="' + n.idx + '">'
+          + '<div class="notif-icon">' + iconSvg + '</div>'
+          + '<div class="notif-content">'
+          + '<div class="notif-title">' + escHtml(n.title) + '</div>'
+          + (n.text ? '<div class="notif-text">' + escHtml(n.text) + '</div>' : '')
+          + '<div class="notif-time">' + escHtml(n.time || '') + '</div>'
+          + '</div></div>'
+      }).join('')
+    }
+
+    function add(opts) {
+      var now = new Date()
+      items.unshift({
+        title: opts.title || '',
+        text: opts.text || '',
+        type: opts.type || 'info',
+        time: now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0'),
+        read: false,
+        idx: Date.now()
+      })
+      if (items.length > MAX) items = items.slice(0, MAX)
+      render()
+    }
+
+    function clear() {
+      items = []
+      render()
+    }
+
+    function markAllRead() {
+      items.forEach(function (n) { n.read = true })
+      render()
+    }
+
+    render()
+    return { add: add, clear: clear, markAllRead: markAllRead, items: items }
+  })()
+
+  // Mark notifications read when opening the panel
+  var notifBtn = document.getElementById('btn-notifications')
+  if (notifBtn) {
+    notifBtn.addEventListener('click', function () {
+      setTimeout(function () { window.lunaNotifications.markAllRead() }, 300)
+    })
+  }
+
+  // === Test mode toggle (in user dropdown) ===
+  var testModeCb = document.getElementById('test-mode-cb')
+  var resetDbMenu = document.getElementById('btn-resetdb-menu')
+
+  if (testModeCb) {
+    testModeCb.addEventListener('change', function () {
+      if (testModeCb.checked) {
+        var lang = document.documentElement.lang || 'es'
+        var msg = lang === 'es'
+          ? '¿Activar modo de pruebas? Esto habilita acciones destructivas como limpiar la base de datos.'
+          : 'Enable test mode? This enables destructive actions like database reset.'
+        if (!confirm(msg)) {
+          testModeCb.checked = false
+          return
+        }
+      }
+      if (resetDbMenu) resetDbMenu.style.display = testModeCb.checked ? 'flex' : 'none'
+    })
+  }
+
+  if (resetDbMenu) {
+    resetDbMenu.addEventListener('click', function () {
+      window.resetDb()
+    })
+  }
+
+  // Initial state: save bar hidden
+  setSaveBarPhase('hidden')
 })()

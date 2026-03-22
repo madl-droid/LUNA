@@ -42,6 +42,6 @@ ui/
 - Nunca usar `#000000` ni `#ffffff` puros — usar tokens de DESIGN.md
 
 ## Trampas
-- Los CSS se cargan con `Cache-Control: max-age=86400` — en dev puede cachear. Usa hard refresh.
+- Los CSS se sirven con `Cache-Control: no-cache` — cambios se reflejan al recargar sin hard refresh.
 - En deploy Docker, copiar `ui/styles/` y `ui/js/` al dist (ver Dockerfile).
 - `console-minimal.js` usa `data-original` attributes para dirty tracking — los templates DEBEN incluirlos.
