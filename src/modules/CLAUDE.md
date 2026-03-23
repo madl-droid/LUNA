@@ -27,6 +27,12 @@ import type { Registry } from '../../kernel/registry.js'
   - `instant`: mensajería instantánea (WhatsApp, Google Chat)
   - `async`: comunicación asíncrona (email)
   - `voice`: llamadas de voz (Twilio)
+- `console.connectionWizard`: **OBLIGATORIO si type='channel'**. Define las instrucciones de conexión.
+  - Las instrucciones DEBEN venir del módulo (no de la UI). La consola las lee del manifest.
+  - Cada paso incluye título + instrucciones HTML bilingües + campos opcionales
+  - Links externos DEBEN incluir `target="_blank"` y el SVG de redirect icon
+  - El `saveEndpoint` DEBE persistir credenciales en `config_store` (AES-256-GCM)
+  - Incluir `operationParams` para parámetros estándar (autoReconnect, maxRetries, retryInterval)
 - `removable`: `false` solo para core-module
 - `init(registry)`: inicialización del módulo
 - `stop()`: cleanup de recursos
@@ -102,3 +108,6 @@ API routes se montan en `/oficina/api/{moduleName}/{path}`.
 - [ ] Panel visible en `/oficina`
 - [ ] Toggle OFF/ON funciona
 - [ ] CLAUDE.md creado y agregado a lista en CLAUDE.md raíz
+- [ ] **Si type='channel'**: `connectionWizard` definido con instrucciones, links, y campos
+- [ ] **Si type='channel'**: credenciales se guardan en `config_store` (sobrevive reinicios)
+- [ ] **Si type='channel'**: `channelType` y `operationParams` definidos

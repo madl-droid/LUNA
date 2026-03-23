@@ -653,10 +653,19 @@
   color: #fff;
 }
 
+.wizard-dot.active + .wizard-dot-line {
+  background: var(--primary, #FF5E0E);
+}
+
 .wizard-dot-line {
   width: 40px;
   height: 2px;
   background: var(--surface-container, #e8e8e8);
+  transition: background 0.2s ease;
+}
+
+.wizard-dot-line.active {
+  background: var(--primary, #FF5E0E);
 }
 
 .wizard-page {
@@ -671,6 +680,45 @@
   font-size: 1.1rem;
   font-weight: 600;
   margin: 0 0 16px;
+  color: var(--on-surface, #1a1a1a);
+}
+
+/* Wizard step blocks (from module manifest) */
+.wizard-step {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--surface-container, #e8e8e8);
+}
+
+.wizard-step:last-of-type {
+  border-bottom: none;
+  margin-bottom: 8px;
+}
+
+.wizard-step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.wizard-step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary, #FF5E0E);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.wizard-step-title {
+  font-size: 0.9rem;
+  font-weight: 600;
   color: var(--on-surface, #1a1a1a);
 }
 
@@ -899,6 +947,21 @@
 
 .wizard-btn-secondary:hover {
   background: var(--surface-container-high, #ddd);
+}
+
+/* ═══ WhatsApp QR code container ═══ */
+.wa-qr-container {
+  display: inline-block;
+  padding: 16px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.wa-qr-img {
+  display: block;
+  max-width: 240px;
+  border-radius: 4px;
 }
 
 /* ═══ Channel cards grid (Canales section) ═══ */

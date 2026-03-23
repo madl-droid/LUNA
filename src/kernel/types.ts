@@ -318,18 +318,39 @@ export interface ModuleConsoleDef {
   /** Endpoints API custom bajo /console/api/{moduleName}/ */
   apiRoutes?: ApiRoute[]
 
-  /** Wizard de conexión para canales. OBLIGATORIO si type='channel'.
+  /** Wizard de conexión para canales. **OBLIGATORIO** si type='channel'.
    *  Define los pasos que el modal de conexión muestra al usuario.
    *  Cada paso tiene instrucciones bilingües y campos opcionales.
-   *  Los links externos deben incluir URL completa (se renderizan con icono de redirect). */
+   *  Los links externos deben incluir URL completa con target="_blank" y SVG redirect icon.
+   *
+   *  Las instrucciones de conexión DEBEN definirse aquí (en el módulo del canal),
+   *  NO en la UI. La consola extrae este campo del manifest para renderizar el modal.
+   *  El saveEndpoint DEBE persistir credenciales en config_store (AES-256-GCM). */
   connectionWizard?: ConnectionWizardDef
 }
 
-/** Definición del wizard de conexión para un canal */
+/** Definición del wizard de conexión para un canal.
+ *
+ *  OBLIGATORIO para módulos con type='channel'. Cada canal debe incluir
+ *  las instrucciones de conexión en su manifest, NO en la UI.
+ *  La consola lee `connectionWizard` del manifest para renderizar el modal.
+ *
+ *  Las instrucciones deben incluir:
+ *  1. Links externos a las plataformas relevantes (con target="_blank" y icono de redirect)
+ *  2. Pasos detallados para obtener credenciales
+ *  3. Campos de input para las credenciales (en los steps correspondientes)
+ *
+ *  Patrón de extracción:
+ *  - La UI obtiene el wizard via `manifest.console.connectionWizard`
+ *  - Los pasos se renderizan secuencialmente en un modal
+ *  - Los campos (fields) generan inputs cuyo valor se envía al saveEndpoint
+ *  - El saveEndpoint del módulo valida y persiste en config_store (AES-256-GCM)
+ */
 export interface ConnectionWizardStep {
   /** Título del paso (bilingüe) */
   title: { es: string; en: string }
-  /** Instrucciones HTML del paso (bilingüe). Puede incluir <a href="..." target="_blank"> para links externos */
+  /** Instrucciones HTML del paso (bilingüe). Puede incluir <a href="..." target="_blank"> para links externos.
+   *  Los links externos DEBEN incluir el SVG de redirect icon para abrir en nueva pestaña. */
   instructions: { es: string; en: string }
   /** Campos de input que el usuario debe completar en este paso (opcionales) */
   fields?: Array<{
@@ -340,18 +361,42 @@ export interface ConnectionWizardStep {
   }>
 }
 
+/** Parámetros estándar de operación para el canal. Se muestran en el modal
+ *  después de los pasos del wizard como configuración inicial. */
+export interface ChannelOperationParams {
+  /** Si el canal debe intentar reconectarse automáticamente tras una desconexión */
+  autoReconnect?: { es: string; en: string }
+  /** Máximo de reintentos de conexión antes de marcar como error */
+  maxRetries?: { es: string; en: string }
+  /** Intervalo entre reintentos (en ms) */
+  retryIntervalMs?: { es: string; en: string }
+  /** Parámetros adicionales específicos del canal */
+  custom?: Array<{
+    key: string
+    label: { es: string; en: string }
+    type: 'text' | 'number' | 'boolean'
+    defaultValue?: string
+  }>
+}
+
 export interface ConnectionWizardDef {
   /** Título del modal (bilingüe) */
   title: { es: string; en: string }
-  /** Pasos del wizard. Cada paso se muestra secuencialmente. */
+  /** Pasos del wizard. Cada paso se muestra secuencialmente.
+   *  Las instrucciones de conexión DEBEN estar aquí (en el módulo del canal),
+   *  NO hardcodeadas en la UI de la consola. */
   steps: ConnectionWizardStep[]
   /** Endpoint API para guardar las credenciales: POST /console/api/{moduleName}/{savePath}
-   *  Recibe JSON con los valores de todos los fields de todos los steps. */
+   *  Recibe JSON con los valores de todos los fields de todos los steps.
+   *  DEBE persistir en config_store (DB encriptada con AES-256-GCM) para
+   *  sobrevivir reinicios del contenedor. */
   saveEndpoint?: string
   /** Si true, después de guardar se llama a POST /console/apply para hot-reload */
   applyAfterSave?: boolean
   /** Endpoint API para verificar conexión después de guardar (GET). Opcional. */
   verifyEndpoint?: string
+  /** Parámetros estándar de operación del canal (reconexión, reintentos, etc.) */
+  operationParams?: ChannelOperationParams
 }
 
 // ═══════════════════════════════════════════

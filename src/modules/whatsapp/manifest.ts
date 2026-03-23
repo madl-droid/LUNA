@@ -28,7 +28,7 @@ const apiRoutes: ApiRoute[] = [
       let qrDataUrl: string | null = null
       if (state.qr) {
         try {
-          qrDataUrl = await QRCode.toDataURL(state.qr, { width: 300, margin: 2, color: { dark: '#e2e8f0', light: '#0f172a' } })
+          qrDataUrl = await QRCode.toDataURL(state.qr, { width: 300, margin: 2, color: { dark: '#1a1a1a', light: '#ffffff' } })
         } catch { /* ignore */ }
       }
       jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason, connectedNumber: state.connectedNumber, moduleEnabled })
@@ -129,6 +129,11 @@ const manifest: ModuleManifest = {
         },
       ],
       verifyEndpoint: 'status',
+      operationParams: {
+        autoReconnect: { es: 'Reconexion automatica tras desconexion', en: 'Auto-reconnect after disconnection' },
+        maxRetries: { es: 'Maximo de reintentos de reconexion', en: 'Max reconnection attempts' },
+        retryIntervalMs: { es: 'Intervalo entre reintentos (ms)', en: 'Retry interval (ms)' },
+      },
     },
   },
 

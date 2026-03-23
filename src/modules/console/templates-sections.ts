@@ -656,30 +656,12 @@ function metricCell(field: string, label: string, info: string, nd: string): str
 function renderMetricsForType(channelType: 'instant' | 'async' | 'voice', channelId: string, lang: Lang): string {
   const nd = t('ch_no_data', lang)
 
-  if (channelType === 'instant') {
-    return `<div class="ch-card-metrics ch-metrics-4" data-channel="${esc(channelId)}" data-type="instant">
-      ${metricCell('active', t('ch_m_active', lang), t('ch_m_active_info', lang), nd)}
-      ${metricCell('new_24h', t('ch_m_new', lang), t('ch_m_new_info', lang), nd)}
-      ${metricCell('outbound', t('ch_m_outbound', lang), t('ch_m_outbound_info', lang), nd)}
-      ${metricCell('inbound', t('ch_m_inbound', lang), t('ch_m_inbound_info', lang), nd)}
-    </div>`
-  }
-
-  if (channelType === 'async') {
-    return `<div class="ch-card-metrics ch-metrics-4" data-channel="${esc(channelId)}" data-type="async">
-      ${metricCell('active', t('ch_m_interactions', lang), t('ch_m_interactions_info', lang), nd)}
-      ${metricCell('received', t('ch_m_received', lang), t('ch_m_received_info', lang), nd)}
-      ${metricCell('sent', t('ch_m_sent', lang), t('ch_m_sent_info', lang), nd)}
-      ${metricCell('avg_duration_s', t('ch_m_avg_duration', lang), t('ch_m_avg_duration_info', lang), nd)}
-    </div>`
-  }
-
-  // voice — 4 metrics: exitosas, fallidas, duracion promedio, salientes vs entrantes
-  return `<div class="ch-card-metrics ch-metrics-4" data-channel="${esc(channelId)}" data-type="voice">
-    ${metricCell('successful', t('ch_m_successful', lang), t('ch_m_successful_info', lang), nd)}
-    ${metricCell('failed', t('ch_m_failed', lang), t('ch_m_failed_info', lang), nd)}
-    ${metricCell('avg_duration_s', t('ch_m_voice_duration', lang), t('ch_m_voice_duration_info', lang), nd)}
-    ${metricCell('outbound', t('ch_m_voice_outbound', lang), t('ch_m_voice_outbound_info', lang), nd)}
+  // Standardized 4 metrics for ALL channel types: active, inbound, outbound, avg_duration_s
+  return `<div class="ch-card-metrics ch-metrics-4" data-channel="${esc(channelId)}" data-type="${channelType}">
+    ${metricCell('active', t('ch_m_active', lang), t('ch_m_active_info_' + channelType, lang) || t('ch_m_active_info', lang), nd)}
+    ${metricCell('inbound', t('ch_m_inbound', lang), t('ch_m_inbound_info_' + channelType, lang) || t('ch_m_inbound_info', lang), nd)}
+    ${metricCell('outbound', t('ch_m_outbound', lang), t('ch_m_outbound_info_' + channelType, lang) || t('ch_m_outbound_info', lang), nd)}
+    ${metricCell('avg_duration_s', t('ch_m_avg_duration', lang), t('ch_m_avg_duration_info_' + channelType, lang) || t('ch_m_avg_duration_info', lang), nd)}
   </div>`
 }
 
@@ -786,7 +768,24 @@ export function renderChannelsSection(data: SectionData): string {
     </div>`
   }).join('')
 
-  return `${filterBar}<div class="ch-grid" id="ch-grid">${cardsHtml}</div>`
+  // Embed wizard data from module manifests so the client-side JS reads instructions
+  // from the module, not hardcoded in the UI.
+  const wizardData: Record<string, unknown> = {}
+  for (const mod of (data.moduleStates ?? [])) {
+    if (mod.type !== 'channel') continue
+    if (mod.connectionWizard) {
+      wizardData[mod.name] = {
+        title: mod.connectionWizard.title,
+        steps: mod.connectionWizard.steps,
+        saveEndpoint: mod.connectionWizard.saveEndpoint,
+        applyAfterSave: mod.connectionWizard.applyAfterSave,
+        verifyEndpoint: mod.connectionWizard.verifyEndpoint,
+      }
+    }
+  }
+
+  return `${filterBar}<div class="ch-grid" id="ch-grid">${cardsHtml}</div>
+<script type="application/json" id="channel-wizards-data">${JSON.stringify(wizardData)}</script>`
 }
 
 /** Old section IDs that redirect to unified pages */

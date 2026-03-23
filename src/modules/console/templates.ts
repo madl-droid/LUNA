@@ -100,6 +100,13 @@ export interface DynamicSidebarModule {
   active: boolean
 }
 
+/** Info about a connected/active channel for sidebar submenu */
+export interface SidebarChannelInfo {
+  id: string
+  name: string
+  status: 'connected' | 'disconnected' | 'inactive'
+}
+
 export interface PageOptions {
   section: string
   content: string
@@ -113,6 +120,8 @@ export interface PageOptions {
   dynamicModules?: DynamicSidebarModule[]
   /** When rendering a channel settings page nested under /console/channels/{id} */
   channelSettingsId?: string
+  /** Active channel modules for sidebar submenu under Canales */
+  channelModules?: SidebarChannelInfo[]
 }
 
 // ═══════════════════════════════════════════
@@ -353,6 +362,25 @@ function renderSidebar(opts: PageOptions): string {
         <span>${item.label}</span>
         ${item.badge || ''}
       </a>`
+
+      // Channel submenu: show active channels under "Canales" when it's active
+      if (item.id === 'channels' && (isActive || opts.channelSettingsId)) {
+        const channels = opts.channelModules ?? []
+        if (channels.length > 0) {
+          nav += '<div class="sidebar-submenu">'
+          for (const ch of channels) {
+            const chActive = opts.channelSettingsId === ch.id
+            const statusClass = ch.status === 'connected' ? 'connected' : ch.status === 'disconnected' ? 'disconnected' : 'inactive'
+            const chIcon = ICON_OVERRIDES[ch.id] || ICONS.fallback
+            nav += `<a href="/console/channels/${ch.id}?lang=${opts.lang}" class="sidebar-submenu-item ${chActive ? 'active' : ''}">
+              <span class="nav-icon-sm">${chIcon}</span>
+              <span>${ch.name}</span>
+              <span class="sidebar-status-dot ${statusClass}"></span>
+            </a>`
+          }
+          nav += '</div>'
+        }
+      }
     }
     nav += '</div>'
   }

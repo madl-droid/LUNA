@@ -614,6 +614,14 @@ const manifest: ModuleManifest = {
       saveEndpoint: 'auth-callback',
       applyAfterSave: true,
       verifyEndpoint: 'auth-status',
+      operationParams: {
+        autoReconnect: { es: 'Refresco automatico de token OAuth', en: 'Automatic OAuth token refresh' },
+        maxRetries: { es: 'Reintentos de polling ante error', en: 'Polling retries on error' },
+        retryIntervalMs: { es: 'Intervalo de polling de emails (ms)', en: 'Email polling interval (ms)' },
+        custom: [
+          { key: 'EMAIL_AUTO_MARK_READ', label: { es: 'Marcar como leido al procesar', en: 'Mark as read on process' }, type: 'boolean', defaultValue: 'true' },
+        ],
+      },
     },
   },
 

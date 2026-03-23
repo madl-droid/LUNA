@@ -11,7 +11,7 @@ import { jsonResponse, parseQuery, readBody, buildBaseUrl, oauthCallbackPage } f
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
-import { pageLayout, type DynamicSidebarModule } from './templates.js'
+import { pageLayout, type DynamicSidebarModule, type SidebarChannelInfo } from './templates.js'
 import { renderSection, SECTION_REDIRECTS } from './templates-sections.js'
 import type { SectionData } from './templates-sections.js'
 import type { ModuleInfo } from './templates-modules.js'
@@ -553,6 +553,19 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       // and keep the original section for content rendering
       const sidebarSection = channelSettingsId ? 'channels' : section
 
+      // Build channel list for sidebar submenu
+      const channelModules: SidebarChannelInfo[] = []
+      for (const mod of data.moduleStates) {
+        if (mod.type !== 'channel' || !mod.active) continue
+        let chStatus: SidebarChannelInfo['status'] = 'disconnected'
+        if (mod.name === 'whatsapp' && data.waConnected) chStatus = 'connected'
+        else if (mod.name === 'gmail' && data.gmailConnected) chStatus = 'connected'
+        else if (mod.name === 'google-chat' && data.googleChatConnected) chStatus = 'connected'
+        // For others, default to disconnected (status checked client-side)
+        const chTitle = mod.console?.title?.[lang] ?? mod.name
+        channelModules.push({ id: mod.name, name: chTitle, status: chStatus })
+      }
+
       const html = pageLayout({
         section: sidebarSection,
         content,
@@ -564,6 +577,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         gmailConnected: data.gmailConnected,
         googleAppsConnected: data.googleAppsConnected,
         dynamicModules: data.dynamicModules,
+        channelModules,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
@@ -875,104 +889,43 @@ export function createApiRoutes(): ApiRoute[] {
             whereTime = `created_at > now() - '${interval}'::interval`
           }
 
-          if (chType === 'instant') {
-            // Active conversations (sessions with activity in last 24h)
-            const activeRes = await db.query(
-              `SELECT COUNT(*)::int AS active FROM sessions WHERE channel_name = $1 AND last_activity_at > now() - interval '24 hours'`,
-              [channel],
-            )
-            // New conversations in last 24h
-            const newRes = await db.query(
-              `SELECT COUNT(*)::int AS new_count FROM sessions WHERE channel_name = $1 AND started_at > now() - interval '24 hours'`,
-              [channel],
-            )
-            // Outbound (agent-initiated) in period
-            const outRes = await db.query(
-              `SELECT COUNT(DISTINCT session_id)::int AS outbound FROM messages WHERE channel_name = $1 AND sender_type = 'agent' AND ${whereTime} AND session_id IN (SELECT id FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')})`,
-              [channel],
-            )
-            // Inbound (user-initiated) in period
-            const inRes = await db.query(
-              `SELECT COUNT(DISTINCT session_id)::int AS inbound FROM messages WHERE channel_name = $1 AND sender_type = 'user' AND ${whereTime} AND session_id IN (SELECT id FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')})`,
-              [channel],
-            )
-            jsonResponse(res, 200, {
-              channel, period, type: 'instant',
-              active: activeRes.rows[0]?.active ?? 0,
-              new_24h: newRes.rows[0]?.new_count ?? 0,
-              outbound: outRes.rows[0]?.outbound ?? 0,
-              inbound: inRes.rows[0]?.inbound ?? 0,
-            })
-          } else if (chType === 'async') {
-            // Active interactions
-            const activeRes = await db.query(
-              `SELECT COUNT(*)::int AS active FROM sessions WHERE channel_name = $1 AND last_activity_at > now() - interval '24 hours'`,
-              [channel],
-            )
-            // Received messages in period
-            const recvRes = await db.query(
-              `SELECT COUNT(*)::int AS received FROM messages WHERE channel_name = $1 AND sender_type = 'user' AND ${whereTime}`,
-              [channel],
-            )
-            // Sent messages in period
-            const sentRes = await db.query(
-              `SELECT COUNT(*)::int AS sent FROM messages WHERE channel_name = $1 AND sender_type = 'agent' AND ${whereTime}`,
-              [channel],
-            )
-            // Avg interaction duration in period
-            const durRes = await db.query(
-              `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (last_activity_at - started_at))))::int AS avg_duration_s FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')} AND last_activity_at > started_at`,
-              [channel],
-            )
-            jsonResponse(res, 200, {
-              channel, period, type: 'async',
-              active: activeRes.rows[0]?.active ?? 0,
-              received: recvRes.rows[0]?.received ?? 0,
-              sent: sentRes.rows[0]?.sent ?? 0,
-              avg_duration_s: durRes.rows[0]?.avg_duration_s ?? 0,
-            })
-          } else if (chType === 'voice') {
-            // Successful calls in period
-            const succRes = await db.query(
-              `SELECT COUNT(*)::int AS successful FROM sessions WHERE channel_name = $1 AND message_count > 0 AND ${whereTime.replace(/created_at/g, 'started_at')}`,
-              [channel],
-            )
-            // Failed calls in period
-            const failRes = await db.query(
-              `SELECT COUNT(*)::int AS failed FROM sessions WHERE channel_name = $1 AND message_count = 0 AND ${whereTime.replace(/created_at/g, 'started_at')}`,
-              [channel],
-            )
-            // Avg call duration in period
-            const durRes = await db.query(
-              `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (last_activity_at - started_at))))::int AS avg_duration_s FROM sessions WHERE channel_name = $1 AND message_count > 0 AND ${whereTime.replace(/created_at/g, 'started_at')} AND last_activity_at > started_at`,
-              [channel],
-            )
-            // Outbound calls (agent-initiated) — check if first message is from agent
-            const outRes = await db.query(
-              `SELECT COUNT(DISTINCT s.id)::int AS outbound FROM sessions s WHERE s.channel_name = $1 AND ${whereTime.replace(/created_at/g, 's.started_at')} AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.sender_type = 'agent' ORDER BY m.created_at LIMIT 1)`,
-              [channel],
-            )
-            jsonResponse(res, 200, {
-              channel, period, type: 'voice',
-              successful: succRes.rows[0]?.successful ?? 0,
-              failed: failRes.rows[0]?.failed ?? 0,
-              avg_duration_s: durRes.rows[0]?.avg_duration_s ?? 0,
-              outbound: outRes.rows[0]?.outbound ?? 0,
-            })
-          } else {
-            jsonResponse(res, 400, { error: 'Unknown channel type' })
-          }
+          // Standardized 4 metrics for ALL channel types: active, inbound, outbound, avg_duration_s
+          // Active sessions with activity in last 24h
+          const activeRes = await db.query(
+            `SELECT COUNT(*)::int AS active FROM sessions WHERE channel_name = $1 AND last_activity_at > now() - interval '24 hours'`,
+            [channel],
+          )
+
+          // Inbound (client-initiated) in period
+          const inRes = await db.query(
+            `SELECT COUNT(DISTINCT session_id)::int AS inbound FROM messages WHERE channel_name = $1 AND sender_type = 'user' AND ${whereTime} AND session_id IN (SELECT id FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')})`,
+            [channel],
+          )
+
+          // Outbound (agent-initiated) in period
+          const outRes = await db.query(
+            `SELECT COUNT(DISTINCT session_id)::int AS outbound FROM messages WHERE channel_name = $1 AND sender_type = 'agent' AND ${whereTime} AND session_id IN (SELECT id FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')})`,
+            [channel],
+          )
+
+          // Avg session/call duration in period
+          const durRes = await db.query(
+            `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (last_activity_at - started_at))))::int AS avg_duration_s FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')} AND last_activity_at > started_at`,
+            [channel],
+          )
+
+          jsonResponse(res, 200, {
+            channel, period, type: chType,
+            active: activeRes.rows[0]?.active ?? 0,
+            inbound: inRes.rows[0]?.inbound ?? 0,
+            outbound: outRes.rows[0]?.outbound ?? 0,
+            avg_duration_s: durRes.rows[0]?.avg_duration_s ?? 0,
+          })
         } catch (err) {
           // Tables may not exist yet — return zeros gracefully
           logger.warn({ err, channel: parseQuery(req).get('channel') }, 'Channel metrics query failed (tables may not exist)')
-          const chType = parseQuery(req).get('type') || 'instant'
-          if (chType === 'instant') {
-            jsonResponse(res, 200, { channel: '', period: '30d', type: 'instant', active: 0, new_24h: 0, outbound: 0, inbound: 0 })
-          } else if (chType === 'async') {
-            jsonResponse(res, 200, { channel: '', period: '30d', type: 'async', active: 0, received: 0, sent: 0, avg_duration_s: 0 })
-          } else {
-            jsonResponse(res, 200, { channel: '', period: '30d', type: 'voice', successful: 0, failed: 0, avg_duration_s: 0, outbound: 0 })
-          }
+          const fallbackType = parseQuery(req).get('type') || 'instant'
+          jsonResponse(res, 200, { channel: '', period: '30d', type: fallbackType, active: 0, inbound: 0, outbound: 0, avg_duration_s: 0 })
         }
       },
     },

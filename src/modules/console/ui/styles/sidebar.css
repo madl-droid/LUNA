@@ -110,6 +110,69 @@
   color: #ffffff;
 }
 
+/* ═══ Channel submenu ═══ */
+.sidebar-submenu {
+  padding: 4px 0 4px 18px;
+}
+
+.sidebar-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-radius: 0.4rem;
+  user-select: none;
+  text-decoration: none;
+  margin-bottom: 1px;
+}
+
+.sidebar-submenu-item:hover {
+  color: var(--on-surface);
+  background: var(--surface-container-low);
+}
+
+.sidebar-submenu-item.active {
+  color: var(--primary);
+  background: rgba(255, 94, 14, 0.08);
+  font-weight: 600;
+}
+
+.sidebar-submenu-item .nav-icon-sm {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--on-surface-dim);
+}
+
+.sidebar-submenu-item .nav-icon-sm svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar-submenu-item.active .nav-icon-sm {
+  color: var(--primary);
+}
+
+.sidebar-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-status-dot.connected { background: var(--success, #34c759); }
+.sidebar-status-dot.disconnected { background: #007aff; }
+.sidebar-status-dot.inactive { background: var(--on-surface-dim, #999); }
+
 /* ═══ Content area ═══ */
 .content-area {
   flex: 1;

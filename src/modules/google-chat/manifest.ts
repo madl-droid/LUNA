@@ -319,10 +319,17 @@ const manifest: ModuleManifest = {
       title: { es: 'Conectar Google Chat', en: 'Connect Google Chat' },
       steps: [
         {
-          title: { es: 'Crear Service Account', en: 'Create Service Account' },
+          title: { es: 'Crear proyecto en Google Cloud', en: 'Create Google Cloud project' },
           instructions: {
-            es: '<ol><li>Ve a <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">Google Cloud > Cuentas de servicio <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Haz clic en <strong>Crear cuenta de servicio</strong>.</li><li>Pon un nombre descriptivo (ej: "LUNA Chat Bot").</li><li>No necesitas asignar roles. Haz clic en <strong>Listo</strong>.</li></ol>',
-            en: '<ol><li>Go to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">Google Cloud > Service accounts <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Click <strong>Create service account</strong>.</li><li>Give it a descriptive name (e.g. "LUNA Chat Bot").</li><li>No roles needed. Click <strong>Done</strong>.</li></ol>',
+            es: '<ol><li>Ve a <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.</li><li>Crea un <strong>proyecto nuevo</strong> (o selecciona uno existente).</li><li>Anota el <strong>ID del proyecto</strong> — lo necesitaras mas adelante.</li></ol>',
+            en: '<ol><li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.</li><li>Create a <strong>new project</strong> (or select an existing one).</li><li>Note the <strong>Project ID</strong> — you will need it later.</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Crear cuenta de servicio', en: 'Create Service Account' },
+          instructions: {
+            es: '<ol><li>Ve a <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">IAM y administracion > Cuentas de servicio <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.</li><li>Haz clic en <strong>Crear cuenta de servicio</strong>.</li><li>Pon un nombre descriptivo (ej: "LUNA Chat Bot").</li><li>No necesitas asignar roles. Haz clic en <strong>Listo</strong>.</li></ol>',
+            en: '<ol><li>Go to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">IAM & Admin > Service accounts <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.</li><li>Click <strong>Create service account</strong>.</li><li>Give it a descriptive name (e.g. "LUNA Chat Bot").</li><li>No roles needed. Click <strong>Done</strong>.</li></ol>',
           },
         },
         {
@@ -353,6 +360,14 @@ const manifest: ModuleManifest = {
       saveEndpoint: 'validate-key',
       applyAfterSave: true,
       verifyEndpoint: 'status',
+      operationParams: {
+        autoReconnect: { es: 'Reconexion automatica del servicio', en: 'Automatic service reconnection' },
+        maxRetries: { es: 'Reintentos de autenticacion del Service Account', en: 'Service Account auth retries' },
+        retryIntervalMs: { es: 'Intervalo entre reintentos (ms)', en: 'Retry interval (ms)' },
+        custom: [
+          { key: 'GOOGLE_CHAT_MAX_MESSAGE_LENGTH', label: { es: 'Largo maximo de mensaje', en: 'Max message length' }, type: 'number', defaultValue: '4096' },
+        ],
+      },
     },
   },
 

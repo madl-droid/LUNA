@@ -41,6 +41,18 @@ El estado del canal se indica con el borde del icono (`.ch-card-icon`):
 
 Se controla con `data-status` en el `.ch-card`: `connected` | `disconnected` | `inactive` | `error`.
 
+### Métricas estandarizadas por tipo de canal
+Todos los tipos de canal muestran las mismas 4 métricas: **active**, **inbound**, **outbound**, **avg_duration_s**.
+Las descripciones varían por tipo (i18n keys con sufijo `_instant`, `_async`, `_voice`).
+
+### Connection wizard (instrucciones desde el módulo)
+Las instrucciones del wizard de conexión vienen del `manifest.console.connectionWizard` del módulo, NO hardcodeadas en la UI.
+- El server embebe los datos del wizard en `<script id="channel-wizards-data">` como JSON
+- El cliente JS lee este JSON y renderiza los pasos dinámicamente
+- Los links externos DEBEN incluir `target="_blank"` y el SVG de redirect icon
+- Los campos (fields) se guardan via `/console/save` → `configStore.setMultiple()` (AES-256-GCM)
+- **REQUISITO**: Todo módulo `type='channel'` DEBE declarar `connectionWizard` en su manifest
+
 ### Sistema de mensajes de error (`.ch-card-error`)
 Barra de error roja con border-left que aparece debajo de la descripción cuando tiene contenido.
 - Se muestra automáticamente si `data-status="error"` en el card padre, o si el div tiene texto
