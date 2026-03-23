@@ -1018,6 +1018,8 @@
       var step = steps[i]
       var stepTitle = step.title ? step.title[lk] : ''
       var instructions = step.instructions ? step.instructions[lk] : ''
+      // Replace {BASE_URL} placeholder with actual server origin
+      instructions = instructions.replace(/\{BASE_URL\}/g, location.origin)
       var isLast = i === totalSteps - 1
 
       body += '<div class="wizard-page' + (i === 0 ? ' active' : '') + '" data-page="' + i + '">'
@@ -1044,12 +1046,12 @@
       if (i === 0) {
         body += '<button class="wizard-btn wizard-btn-secondary" onclick="closeConnectModal()">' + (isEs ? 'Cancelar' : 'Cancel') + '</button>'
       } else {
-        body += '<button class="wizard-btn wizard-btn-secondary" onclick="wizardGoTo(' + (i - 1) + ')">' + (isEs ? 'Anterior' : 'Back') + '</button>'
+        body += '<button class="wizard-btn wizard-btn-secondary" onclick="chWizardGoTo(' + (i - 1) + ')">' + (isEs ? 'Anterior' : 'Back') + '</button>'
       }
       if (isLast) {
         body += '<button class="wizard-btn wizard-btn-primary" onclick="saveWizardFields(\'' + channelId + '\', \'' + lang + '\', ' + (wizard.saveEndpoint ? "'" + wizard.saveEndpoint + "'" : 'null') + ')">' + (isEs ? 'Guardar y conectar' : 'Save & connect') + '</button>'
       } else {
-        body += '<button class="wizard-btn wizard-btn-primary" onclick="wizardGoTo(' + (i + 1) + ')">' + (isEs ? 'Siguiente' : 'Next') + '</button>'
+        body += '<button class="wizard-btn wizard-btn-primary" onclick="chWizardGoTo(' + (i + 1) + ')">' + (isEs ? 'Siguiente' : 'Next') + '</button>'
       }
       body += '</div>'
       body += '</div>' // end wizard-page
@@ -1058,11 +1060,13 @@
     createConnectModal(title, body)
   }
 
-  // Navigate wizard tabs
-  window.wizardGoTo = function (pageIdx) {
-    var pages = document.querySelectorAll('.wizard-page')
-    var dots = document.querySelectorAll('.wizard-dot')
-    var lines = document.querySelectorAll('.wizard-dot-line')
+  // Navigate channel wizard tabs (uses data-page, 0-based — separate from OAuth wizard)
+  window.chWizardGoTo = function (pageIdx) {
+    var modal = document.getElementById('ch-connect-modal')
+    if (!modal) return
+    var pages = modal.querySelectorAll('[data-page]')
+    var dots = modal.querySelectorAll('.wizard-dot')
+    var lines = modal.querySelectorAll('.wizard-dot-line')
     for (var i = 0; i < pages.length; i++) {
       pages[i].classList.toggle('active', i === pageIdx)
     }
@@ -1073,11 +1077,24 @@
       lines[k].classList.toggle('active', k < pageIdx)
     }
     // Hide any previous error
-    var errs = document.querySelectorAll('.wizard-error')
+    var errs = modal.querySelectorAll('.wizard-error')
     for (var e = 0; e < errs.length; e++) errs[e].style.display = 'none'
     // Scroll modal to top
-    var modal = document.querySelector('.wizard-modal')
-    if (modal) modal.scrollTop = 0
+    var mBody = modal.querySelector('.wizard-modal')
+    if (mBody) mBody.scrollTop = 0
+  }
+
+  // Copy URI helper for channel wizards (reuses pattern from OAuth wizard)
+  window.copyChWizardUri = function (btn) {
+    var box = btn.closest('.wizard-uri-box')
+    var code = box ? box.querySelector('.wizard-uri') : null
+    if (!code) return
+    navigator.clipboard.writeText(code.textContent).then(function () {
+      var origHtml = btn.innerHTML
+      btn.innerHTML = CHECK_ICON
+      btn.classList.add('copied')
+      setTimeout(function () { btn.innerHTML = origHtml; btn.classList.remove('copied') }, 2000)
+    })
   }
 
   // Generic save: collect all wizard field values and POST to /console/save + /console/apply
@@ -1160,9 +1177,10 @@
         var ws = waSteps[p]
         var isLastWa = p === totalWa - 1
 
+        var waInstr = (ws.instructions[lk] || '').replace(/\{BASE_URL\}/g, location.origin)
         body += '<div class="wizard-page' + (p === 0 ? ' active' : '') + '" data-page="' + p + '">'
         body += '<div class="wizard-page-title">' + (ws.title[lk] || '') + '</div>'
-        body += '<div class="wizard-instructions">' + (ws.instructions[lk] || '') + '</div>'
+        body += '<div class="wizard-instructions">' + waInstr + '</div>'
 
         // Last step: QR area
         if (isLastWa) {
@@ -1179,7 +1197,7 @@
           body += '<button class="wizard-btn wizard-btn-secondary" onclick="closeConnectModal()">' + (isEs ? 'Cancelar' : 'Cancel') + '</button>'
           body += '<button class="wizard-btn wizard-btn-primary" onclick="wizardGoToWa(' + (p + 1) + ', \'' + lang + '\')">' + (isEs ? 'Siguiente' : 'Next') + '</button>'
         } else {
-          body += '<button class="wizard-btn wizard-btn-secondary" onclick="wizardGoTo(' + (p - 1) + ')">' + (isEs ? 'Anterior' : 'Back') + '</button>'
+          body += '<button class="wizard-btn wizard-btn-secondary" onclick="chWizardGoTo(' + (p - 1) + ')">' + (isEs ? 'Anterior' : 'Back') + '</button>'
           if (!isLastWa) {
             body += '<button class="wizard-btn wizard-btn-primary" onclick="wizardGoToWa(' + (p + 1) + ', \'' + lang + '\')">' + (isEs ? 'Siguiente' : 'Next') + '</button>'
           }
@@ -1206,7 +1224,7 @@
   var _waQrExpiry = 0
 
   window.wizardGoToWa = function (pageIdx, lang) {
-    wizardGoTo(pageIdx)
+    chWizardGoTo(pageIdx)
     // Check if this is the last page (QR page) — auto-start QR
     var pages = document.querySelectorAll('.wizard-page')
     if (pageIdx === pages.length - 1) {

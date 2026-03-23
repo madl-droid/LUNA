@@ -648,8 +648,13 @@
   font-size: 1rem;
   font-weight: 600;
   color: var(--on-surface, #1a1a1a);
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
+
+/* Spacing between wizard elements inside pages */
+.wizard-page .wizard-instructions { margin-bottom: 20px; }
+.wizard-page .wizard-label { margin-top: 12px; }
+.wizard-page .wizard-actions { margin-top: 24px; }
 
 .wizard-step-indicator {
   display: flex;

@@ -33,6 +33,12 @@ import type { Registry } from '../../kernel/registry.js'
   - Links externos DEBEN incluir `target="_blank"` y el SVG de redirect icon
   - El `saveEndpoint` DEBE persistir credenciales en `config_store` (AES-256-GCM)
   - Incluir `operationParams` para parámetros estándar (autoReconnect, maxRetries, retryInterval)
+  - **URLs del servidor**: si el canal requiere un webhook o callback URL, usar `{BASE_URL}` como placeholder.
+    La UI lo reemplaza con `location.origin`. Ejemplo: `{BASE_URL}/console/api/mi-canal/webhook`
+    La URL debe mostrarse en un `.wizard-uri-box` con botón de copiar.
+  - **Verificar instrucciones**: al crear/modificar un canal, verificar que las instrucciones estén actualizadas
+    y que todos los enlaces a plataformas externas sigan siendo válidos.
+  - **Reinicio requerido**: agregar un nuevo canal requiere reiniciar el contenedor para que el wizard se cargue.
 - `removable`: `false` solo para core-module
 - `init(registry)`: inicialización del módulo
 - `stop()`: cleanup de recursos
