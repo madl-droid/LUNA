@@ -532,11 +532,22 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* module not available */ }
       }
 
-      // Try custom section renderer first, then fall back to dynamic module rendering
-      let content = renderSection(section, sectionData)
+      // Channel settings pages: use the 2-column channel settings renderer
+      let content: string | null = null
+      if (channelSettingsId) {
+        const chMod = data.moduleStates.find(m => m.name === channelSettingsId)
+        if (chMod && chMod.type === 'channel') {
+          const { renderChannelSettingsPage } = await import('./templates-channel-settings.js')
+          content = renderChannelSettingsPage(chMod, sectionData)
+        }
+      }
+
+      // Try custom section renderer, then fall back to dynamic module rendering
+      if (!content) {
+        content = renderSection(section, sectionData)
+      }
 
       if (!content) {
-        // Try rendering as a dynamic module page (module with console.fields)
         const modInfo = data.moduleStates.find(m => m.name === section)
         if (modInfo && modInfo.active && modInfo.console?.fields && modInfo.console.fields.length > 0) {
           content = renderModulePanels([modInfo], data.config, lang, section)

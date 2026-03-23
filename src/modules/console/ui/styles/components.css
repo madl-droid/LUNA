@@ -1393,4 +1393,323 @@
   .filter-bar .ch-filter-sep, .filter-bar .filter-sep { display: none; }
   .filter-bar .ch-filter-group, .filter-bar .filter-group { justify-content: space-between; }
   .filter-bar .ch-filter-select, .filter-bar .filter-select { flex: 1; }
+  /* Channel settings: stack to single column */
+  .chs-layout { grid-template-columns: 1fr !important; }
+  .chs-sidebar { position: static; }
+}
+
+/* ═══ Channel Settings — 2-column layout ═══ */
+
+.chs-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 28px;
+  align-items: start;
+}
+
+.chs-main { min-width: 0; }
+
+.chs-sidebar {
+  position: sticky;
+  top: 85px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Status banner ── */
+.chs-banner {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.chs-banner-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 0.75rem;
+  background: var(--surface-container-low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--on-surface-variant);
+}
+
+.chs-banner-info { flex: 1; min-width: 0; }
+
+.chs-banner-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.chs-banner-desc {
+  font-size: 0.8rem;
+  color: var(--on-surface-variant);
+  margin-top: 2px;
+}
+
+.chs-banner-status {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 1rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chs-badge-active {
+  background: rgba(52, 199, 89, 0.1);
+  color: #1a8f3a;
+}
+
+.chs-badge-inactive {
+  background: var(--surface-container-high);
+  color: var(--on-surface-dim);
+}
+
+/* ── Config sections ── */
+.chs-section {
+  margin-bottom: 28px;
+}
+
+.chs-section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--outline-variant, #e0e0e0);
+}
+
+/* Override default field styles inside chs for cleaner look */
+.chs-field {
+  margin-bottom: 20px;
+}
+
+.chs-field .field {
+  grid-template-columns: 1fr;
+}
+
+.chs-field .field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-variant);
+  margin-bottom: 6px;
+}
+
+.chs-field-readonly {
+  margin-bottom: 16px;
+}
+
+.chs-field-readonly .chs-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-variant);
+  margin-bottom: 4px;
+}
+
+.chs-field-readonly .chs-field-value {
+  font-size: 0.9rem;
+  color: var(--on-surface);
+  padding: 8px 0;
+}
+
+/* Half-width field pairs */
+.chs-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.chs-field-row .chs-field { margin-bottom: 0; }
+
+/* ── Toggle rows (boolean fields) ── */
+.chs-toggle-row {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--outline-variant, #e8e8e8);
+}
+
+.chs-toggle-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 0.5rem;
+  background: var(--surface-container-low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--on-surface-variant);
+}
+
+.chs-toggle-text { flex: 1; min-width: 0; }
+
+.chs-toggle-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.chs-toggle-desc {
+  font-size: 0.78rem;
+  color: var(--on-surface-variant);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* ── Connection card (sidebar) ── */
+.chs-connection-card {
+  text-align: center;
+  padding: 28px 20px;
+}
+
+.chs-connection-icon {
+  position: relative;
+  display: inline-flex;
+  margin-bottom: 12px;
+}
+
+.chs-connection-icon svg {
+  width: 40px;
+  height: 40px;
+  color: var(--on-surface-variant);
+}
+
+.chs-connection-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--surface-container-lowest, #fff);
+}
+
+.chs-connection-dot.connected { background: var(--success, #34c759); }
+.chs-connection-dot.disconnected { background: var(--on-surface-dim, #999); }
+
+.chs-connection-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  margin-bottom: 4px;
+}
+
+.chs-connection-info {
+  font-size: 0.82rem;
+  color: var(--on-surface-variant);
+  margin-bottom: 4px;
+}
+
+.chs-connection-account {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--on-surface);
+  margin-bottom: 16px;
+}
+
+.chs-connect-btn,
+.chs-reconnect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid var(--outline-variant, #e0e0e0);
+  background: var(--surface-container-lowest, #fff);
+  color: var(--on-surface);
+  margin-top: 12px;
+}
+
+.chs-connect-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+}
+
+.chs-connect-btn:hover { opacity: 0.9; }
+.chs-reconnect-btn:hover { background: var(--surface-container-low); }
+
+/* ── Sidebar cards ── */
+.chs-card {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 20px;
+}
+
+/* ── Tip card ── */
+.chs-tip-card {
+  padding: 20px;
+}
+
+.chs-tip-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-container-low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  color: var(--on-surface-variant);
+}
+
+.chs-tip-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  margin-bottom: 6px;
+}
+
+.chs-tip-text {
+  font-size: 0.8rem;
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+}
+
+/* ── Activity card ── */
+.chs-activity-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--on-surface-dim);
+  margin-bottom: 14px;
+}
+
+.chs-activity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--surface-container, #f0f0f0);
+  font-size: 0.85rem;
+  color: var(--on-surface-variant);
+}
+
+.chs-activity-row:last-child { border-bottom: none; }
+
+.chs-activity-val {
+  font-weight: 600;
+  color: var(--on-surface);
 }

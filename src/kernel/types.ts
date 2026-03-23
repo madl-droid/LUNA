@@ -285,6 +285,14 @@ export interface ConsoleField {
   separator?: string
   /** Rows for textarea */
   rows?: number
+
+  // ── Layout hints for channel settings pages ──
+  /** Field width: 'half' = 50% (side-by-side pairs), 'full' = 100% (default) */
+  width?: 'half' | 'full'
+  /** Icon HTML for boolean toggle rows (SVG string) */
+  icon?: string
+  /** Description below label for boolean toggle rows (bilingüe) */
+  description?: { es: string; en: string }
 }
 
 export interface ApiRoute {

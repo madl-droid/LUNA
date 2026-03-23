@@ -117,12 +117,14 @@ const manifest: ModuleManifest = {
         type: 'number',
         label: { es: 'Intervalo de reconexion (ms)', en: 'Reconnection interval (ms)' },
         info: { es: 'Tiempo entre intentos de reconexion automatica', en: 'Time between automatic reconnection attempts' },
+        width: 'half',
       },
       {
         key: 'WHATSAPP_MAX_RECONNECT_ATTEMPTS',
         type: 'number',
         label: { es: 'Max intentos de reconexion', en: 'Max reconnection attempts' },
         info: { es: 'Intentos maximos antes de marcar como error', en: 'Maximum attempts before marking as error' },
+        width: 'half',
       },
       { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
       {
@@ -130,12 +132,14 @@ const manifest: ModuleManifest = {
         type: 'number',
         label: { es: 'Tiempo para aviso (ms)', en: 'Acknowledgment trigger (ms)' },
         info: { es: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico. 0 = desactivado.', en: 'If the response takes longer than this, an automatic acknowledgment is sent. 0 = disabled.' },
+        width: 'half',
       },
       {
         key: 'ACK_WHATSAPP_HOLD_MS',
         type: 'number',
         label: { es: 'Pausa antes de respuesta (ms)', en: 'Hold before response (ms)' },
         info: { es: 'Tiempo que se retiene la respuesta real despues del aviso, para que no lleguen juntos.', en: 'Time the real response is held after the ack, so they don\'t arrive together.' },
+        width: 'half',
       },
       {
         key: 'ACK_WHATSAPP_MESSAGE',
