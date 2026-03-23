@@ -84,6 +84,9 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     WHATSAPP_RECONNECT_INTERVAL_MS: numEnv(5000),
     WHATSAPP_MAX_RECONNECT_ATTEMPTS: numEnv(10),
+    ACK_WHATSAPP_TRIGGER_MS: numEnv(0),
+    ACK_WHATSAPP_HOLD_MS: numEnv(1500),
+    ACK_WHATSAPP_MESSAGE: z.string().default(''),
   }),
 
   console: {
@@ -98,15 +101,47 @@ const manifest: ModuleManifest = {
     fields: [
       {
         key: 'WHATSAPP_CONNECTED_NUMBER',
-        type: 'text',
+        type: 'readonly',
         label: { es: 'Numero conectado', en: 'Connected number' },
         info: { es: 'Numero de WhatsApp vinculado actualmente (solo lectura)', en: 'Currently linked WhatsApp number (read-only)' },
       },
       {
         key: 'WHATSAPP_CONNECTION_STATUS',
-        type: 'text',
+        type: 'readonly',
         label: { es: 'Estado de conexion', en: 'Connection status' },
         info: { es: 'Estado actual de la conexion WhatsApp (solo lectura)', en: 'Current WhatsApp connection status (read-only)' },
+      },
+      { key: '_divider_reconnect', type: 'divider', label: { es: 'Reconexion', en: 'Reconnection' } },
+      {
+        key: 'WHATSAPP_RECONNECT_INTERVAL_MS',
+        type: 'number',
+        label: { es: 'Intervalo de reconexion (ms)', en: 'Reconnection interval (ms)' },
+        info: { es: 'Tiempo entre intentos de reconexion automatica', en: 'Time between automatic reconnection attempts' },
+      },
+      {
+        key: 'WHATSAPP_MAX_RECONNECT_ATTEMPTS',
+        type: 'number',
+        label: { es: 'Max intentos de reconexion', en: 'Max reconnection attempts' },
+        info: { es: 'Intentos maximos antes de marcar como error', en: 'Maximum attempts before marking as error' },
+      },
+      { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
+      {
+        key: 'ACK_WHATSAPP_TRIGGER_MS',
+        type: 'number',
+        label: { es: 'Tiempo para aviso (ms)', en: 'Acknowledgment trigger (ms)' },
+        info: { es: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico. 0 = desactivado.', en: 'If the response takes longer than this, an automatic acknowledgment is sent. 0 = disabled.' },
+      },
+      {
+        key: 'ACK_WHATSAPP_HOLD_MS',
+        type: 'number',
+        label: { es: 'Pausa antes de respuesta (ms)', en: 'Hold before response (ms)' },
+        info: { es: 'Tiempo que se retiene la respuesta real despues del aviso, para que no lleguen juntos.', en: 'Time the real response is held after the ack, so they don\'t arrive together.' },
+      },
+      {
+        key: 'ACK_WHATSAPP_MESSAGE',
+        type: 'text',
+        label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
+        info: { es: 'Texto del aviso. Se envia automaticamente si la respuesta tarda.', en: 'Acknowledgment text. Sent automatically if the response is slow.' },
       },
     ],
     apiRoutes,

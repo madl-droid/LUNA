@@ -514,6 +514,10 @@ const manifest: ModuleManifest = {
     GMAIL_CLIENT_SECRET: z.string().default(''),
     GMAIL_REFRESH_TOKEN: z.string().default(''),
     GMAIL_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
+    // Naturalidad — avisos automaticos cuando la respuesta tarda
+    ACK_EMAIL_TRIGGER_MS: numEnv(0),
+    ACK_EMAIL_HOLD_MS: numEnv(2000),
+    ACK_EMAIL_MESSAGE: z.string().default(''),
   }),
 
   console: {
@@ -579,6 +583,25 @@ const manifest: ModuleManifest = {
         type: 'number',
         label: { es: 'Tamaño máx. adjunto (MB)', en: 'Max attachment size (MB)' },
         info: { es: 'Tamaño máximo permitido por adjunto en MB (default: 16)', en: 'Maximum allowed attachment size in MB (default: 16)' },
+      },
+      { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
+      {
+        key: 'ACK_EMAIL_TRIGGER_MS',
+        type: 'number',
+        label: { es: 'Tiempo para aviso (ms)', en: 'Acknowledgment trigger (ms)' },
+        info: { es: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico por email. 0 = desactivado.', en: 'If the response takes longer than this, an automatic email ack is sent. 0 = disabled.' },
+      },
+      {
+        key: 'ACK_EMAIL_HOLD_MS',
+        type: 'number',
+        label: { es: 'Pausa antes de respuesta (ms)', en: 'Hold before response (ms)' },
+        info: { es: 'Tiempo que se retiene la respuesta real despues del aviso por email.', en: 'Time the real response is held after the email ack.' },
+      },
+      {
+        key: 'ACK_EMAIL_MESSAGE',
+        type: 'text',
+        label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
+        info: { es: 'Texto del aviso de email. Se envia automaticamente si la respuesta tarda.', en: 'Email ack text. Sent automatically if the response is slow.' },
       },
     ],
     apiRoutes,

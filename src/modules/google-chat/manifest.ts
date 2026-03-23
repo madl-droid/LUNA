@@ -306,11 +306,21 @@ const manifest: ModuleManifest = {
       },
       {
         key: 'GOOGLE_CHAT_CONNECTION_STATUS',
-        type: 'text',
+        type: 'readonly',
         label: { es: 'Estado de conexion', en: 'Connection status' },
         info: {
           es: 'Estado actual del canal Google Chat (solo lectura)',
           en: 'Current Google Chat channel status (read-only)',
+        },
+      },
+      { key: '_divider_config', type: 'divider', label: { es: 'Configuracion', en: 'Configuration' } },
+      {
+        key: 'GOOGLE_CHAT_MAX_MESSAGE_LENGTH',
+        type: 'number',
+        label: { es: 'Largo maximo de mensaje', en: 'Max message length' },
+        info: {
+          es: 'Caracteres maximos por mensaje. Google Chat trunca a 4096.',
+          en: 'Max characters per message. Google Chat truncates at 4096.',
         },
       },
     ],

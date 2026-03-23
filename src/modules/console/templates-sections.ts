@@ -72,7 +72,7 @@ export function renderWhatsappSection(data: SectionData): string {
       </div>
     </div>
   </div>
-  `
+  ${renderModulePanels(data.moduleStates ?? [], data.config, data.lang, 'whatsapp')}`
 }
 
 // ═══════════════════════════════════════════
@@ -266,22 +266,17 @@ export function renderPipelineUnifiedSection(data: SectionData): string {
     </div>
   </div>`
 
-  // Panel 3: Naturalidad
+  // Panel 3: Naturalidad — ACK params moved to each channel's settings page
+  const natInfo = data.lang === 'es'
+    ? 'Los avisos de naturalidad (acknowledgments) se configuran ahora en la pestaña de ajustes de cada canal: WhatsApp y Gmail.'
+    : 'Naturalness acknowledgments are now configured in each channel\'s settings tab: WhatsApp and Gmail.'
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${t('sec_naturalidad', data.lang)}</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
-      <div class="panel-info">${t('sec_naturalidad_info', data.lang)}</div>
-      <div class="field-divider"><span class="field-divider-label">${t('sub_ack_whatsapp', data.lang)}</span></div>
-      ${numField('ACK_WHATSAPP_TRIGGER_MS', cv(data, 'ACK_WHATSAPP_TRIGGER_MS'), data.lang, 'f_ACK_WHATSAPP_TRIGGER_MS', 'i_ACK_WHATSAPP_TRIGGER_MS')}
-      ${numField('ACK_WHATSAPP_HOLD_MS', cv(data, 'ACK_WHATSAPP_HOLD_MS'), data.lang, 'f_ACK_WHATSAPP_HOLD_MS', 'i_ACK_WHATSAPP_HOLD_MS')}
-      ${textField('ACK_WHATSAPP_MESSAGE', cv(data, 'ACK_WHATSAPP_MESSAGE'), data.lang, 'f_ACK_WHATSAPP_MESSAGE', 'i_ACK_WHATSAPP_MESSAGE')}
-      <div class="field-divider"><span class="field-divider-label">${t('sub_ack_email', data.lang)}</span></div>
-      ${numField('ACK_EMAIL_TRIGGER_MS', cv(data, 'ACK_EMAIL_TRIGGER_MS'), data.lang, 'f_ACK_EMAIL_TRIGGER_MS', 'i_ACK_EMAIL_TRIGGER_MS')}
-      ${numField('ACK_EMAIL_HOLD_MS', cv(data, 'ACK_EMAIL_HOLD_MS'), data.lang, 'f_ACK_EMAIL_HOLD_MS', 'i_ACK_EMAIL_HOLD_MS')}
-      ${textField('ACK_EMAIL_MESSAGE', cv(data, 'ACK_EMAIL_MESSAGE'), data.lang, 'f_ACK_EMAIL_MESSAGE', 'i_ACK_EMAIL_MESSAGE')}
+      <div class="panel-info">${natInfo}</div>
     </div>
   </div>`
 

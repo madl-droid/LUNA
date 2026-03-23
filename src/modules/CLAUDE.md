@@ -117,3 +117,12 @@ API routes se montan en `/oficina/api/{moduleName}/{path}`.
 - [ ] **Si type='channel'**: `connectionWizard` definido con instrucciones, links, y campos
 - [ ] **Si type='channel'**: credenciales se guardan en `config_store` (sobrevive reinicios)
 - [ ] **Si type='channel'**: `channelType` y `operationParams` definidos
+- [ ] **Si type='channel'**: TODOS los params configurables del canal en `console.fields` (no en otra sección)
+
+## Regla: parámetros de canal solo en su pestaña
+
+**TODOS los parámetros configurables de un canal van EXCLUSIVAMENTE en `console.fields` del manifest del canal.**
+No poner params de un canal en otra sección (Pipeline, Naturalidad, etc.). La pestaña de ajustes de cada canal
+(`/console/channels/{id}`) debe ser el ÚNICO lugar donde el usuario configura ese canal.
+
+Esto incluye: credenciales, timeouts, mensajes, avisos de naturalidad (ACK_*), reconexión, límites.
