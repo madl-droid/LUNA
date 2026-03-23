@@ -277,7 +277,7 @@ export class EmailOAuthManager {
         accessToken: row.access_token,
         refreshToken: row.refresh_token,
         expiresAt: new Date(row.expires_at),
-        scopes: JSON.parse(row.scopes ?? '[]'),
+        scopes: Array.isArray(row.scopes) ? row.scopes : JSON.parse(row.scopes ?? '[]'),
         email: row.email,
       }
     } catch (err) {
