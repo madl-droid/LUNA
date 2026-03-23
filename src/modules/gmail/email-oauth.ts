@@ -67,8 +67,14 @@ export class EmailOAuthManager {
   }
 
   async initialize(): Promise<void> {
+    if (!this.config.GMAIL_CLIENT_ID || !this.config.GMAIL_CLIENT_SECRET) {
+      logger.warn('No Gmail credentials — OAuth not connected')
+      return
+    }
+
     // 1. Intentar cargar token de DB
     const stored = await this.loadTokenFromDb()
+    logger.debug({ hasStoredToken: !!stored }, 'Token DB lookup result')
     if (stored) {
       this.client.setCredentials({
         refresh_token: stored.refreshToken,
@@ -274,7 +280,8 @@ export class EmailOAuthManager {
         scopes: JSON.parse(row.scopes ?? '[]'),
         email: row.email,
       }
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Failed to load email token from DB')
       return null
     }
   }

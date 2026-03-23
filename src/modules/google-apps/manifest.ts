@@ -119,7 +119,7 @@ const apiRoutes: ApiRoute[] = [
         const redirectUri = getRedirectUri(req)
         const config = _registry!.getConfig<GoogleApiConfig>('google-apps')
         const enabledServices = parseEnabledServices(config.GOOGLE_ENABLED_SERVICES)
-        enabledServices.push('gmail')
+        // Gmail scopes removed — gmail module handles its own OAuth now
         const url = oauthManager.generateAuthUrl([...new Set(enabledServices)], redirectUri)
         jsonResponse(res, 200, { ok: true, authUrl: url })
       } catch (err) {

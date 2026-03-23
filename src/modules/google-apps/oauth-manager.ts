@@ -10,11 +10,6 @@ const logger = pino({ name: 'google-apps:oauth' })
 
 // Scopes por servicio — se combinan según los servicios habilitados
 export const SCOPES_BY_SERVICE: Record<string, string[]> = {
-  gmail: [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/gmail.modify',
-  ],
   drive: [
     'https://www.googleapis.com/auth/drive',
   ],

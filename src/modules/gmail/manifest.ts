@@ -623,14 +623,41 @@ const manifest: ModuleManifest = {
         oauthConnected = standaloneOAuth.isConnected()
         logger.info('Email using standalone OAuth (gmail-only scopes)')
       } else {
-        // Create uninitialized manager — wizard will configure credentials later
-        standaloneOAuth = new EmailOAuthManager({
-          GMAIL_CLIENT_ID: '',
-          GMAIL_CLIENT_SECRET: '',
-          GMAIL_REFRESH_TOKEN: '',
-          GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
-        }, db)
-        logger.warn('No OAuth available — configure Google credentials from console wizard')
+        // Try loading credentials from config_store (wizard may have saved them)
+        let storedClientId = ''
+        let storedClientSecret = ''
+        try {
+          storedClientId = await configStore.get(db, 'GMAIL_CLIENT_ID') ?? ''
+          storedClientSecret = await configStore.get(db, 'GMAIL_CLIENT_SECRET') ?? ''
+        } catch { /* config_store may not be ready */ }
+
+        if (storedClientId && storedClientSecret) {
+          standaloneOAuth = new EmailOAuthManager({
+            GMAIL_CLIENT_ID: storedClientId,
+            GMAIL_CLIENT_SECRET: storedClientSecret,
+            GMAIL_REFRESH_TOKEN: '',
+            GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
+          }, db)
+
+          try {
+            await standaloneOAuth.initialize()
+          } catch (err) {
+            logger.warn({ err }, 'Standalone OAuth initialization failed — connect from console')
+          }
+
+          authClient = standaloneOAuth.getClient()
+          oauthConnected = standaloneOAuth.isConnected()
+          logger.info('Email using standalone OAuth from config_store credentials')
+        } else {
+          // Create uninitialized manager — wizard will configure credentials later
+          standaloneOAuth = new EmailOAuthManager({
+            GMAIL_CLIENT_ID: '',
+            GMAIL_CLIENT_SECRET: '',
+            GMAIL_REFRESH_TOKEN: '',
+            GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
+          }, db)
+          logger.warn('No OAuth available — configure Google credentials from console wizard')
+        }
       }
     }
 
