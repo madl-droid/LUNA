@@ -977,7 +977,9 @@
     modal.className = 'wizard-overlay'
     modal.innerHTML = '<div class="wizard-modal">'
       + '<button class="wizard-close" onclick="closeConnectModal()">&times;</button>'
-      + '<div class="wizard-steps"><h3>' + title + '</h3>' + bodyHtml + '</div></div>'
+      + '<div class="wizard-steps">'
+      + '<div class="wizard-title">' + title + '</div>'
+      + bodyHtml + '</div></div>'
     modal.addEventListener('click', function (e) { if (e.target === modal) closeConnectModal() })
     document.body.appendChild(modal)
     return modal
@@ -992,6 +994,7 @@
   }
 
   // Tabbed wizard renderer: each step is a separate page with dot indicator + navigation
+  // Layout per page: step title (no number) → instructions → fields → nav buttons
   function renderWizardFromManifest(channelId, wizard, lang) {
     var isEs = (lang || 'es') === 'es'
     var lk = isEs ? 'es' : 'en'
@@ -999,8 +1002,11 @@
     var title = (wizard.title && wizard.title[lk]) || channelId
     var totalSteps = steps.length
 
-    // Dot indicator
-    var body = '<div class="wizard-step-indicator" id="wizard-dots">'
+    // Step count label
+    var body = '<div class="wizard-step-count">' + totalSteps + (isEs ? ' pasos' : ' steps') + '</div>'
+
+    // Dot indicator (numbers inside dots)
+    body += '<div class="wizard-step-indicator" id="wizard-dots">'
     for (var d = 0; d < totalSteps; d++) {
       if (d > 0) body += '<div class="wizard-dot-line"></div>'
       body += '<div class="wizard-dot' + (d === 0 ? ' active' : '') + '" data-dot="' + d + '">' + (d + 1) + '</div>'
@@ -1015,7 +1021,7 @@
       var isLast = i === totalSteps - 1
 
       body += '<div class="wizard-page' + (i === 0 ? ' active' : '') + '" data-page="' + i + '">'
-      body += '<div class="wizard-step-header"><span class="wizard-step-num">' + (i + 1) + '</span><span class="wizard-step-title">' + stepTitle + '</span></div>'
+      body += '<div class="wizard-page-title">' + stepTitle + '</div>'
       body += '<div class="wizard-instructions">' + instructions + '</div>'
 
       if (step.fields && step.fields.length > 0) {
@@ -1033,7 +1039,7 @@
       }
 
       // Navigation buttons per page
-      body += '<div id="ch-wizard-error" class="wizard-error" style="display:none"></div>'
+      body += '<div class="wizard-error" style="display:none"></div>'
       body += '<div class="wizard-actions">'
       if (i === 0) {
         body += '<button class="wizard-btn wizard-btn-secondary" onclick="closeConnectModal()">' + (isEs ? 'Cancelar' : 'Cancel') + '</button>'
@@ -1138,21 +1144,24 @@
       var waSteps = wizard.steps || []
       var totalWa = waSteps.length
 
+      // Step count
+      var body = '<div class="wizard-step-count">' + totalWa + (isEs ? ' pasos' : ' steps') + '</div>'
+
       // Dot indicator
-      var body = '<div class="wizard-step-indicator" id="wizard-dots">'
+      body += '<div class="wizard-step-indicator" id="wizard-dots">'
       for (var d = 0; d < totalWa; d++) {
         if (d > 0) body += '<div class="wizard-dot-line"></div>'
         body += '<div class="wizard-dot' + (d === 0 ? ' active' : '') + '" data-dot="' + d + '">' + (d + 1) + '</div>'
       }
       body += '</div>'
 
-      // Page 1: instructions from manifest
+      // Pages from manifest
       for (var p = 0; p < totalWa; p++) {
         var ws = waSteps[p]
         var isLastWa = p === totalWa - 1
 
         body += '<div class="wizard-page' + (p === 0 ? ' active' : '') + '" data-page="' + p + '">'
-        body += '<div class="wizard-step-header"><span class="wizard-step-num">' + (p + 1) + '</span><span class="wizard-step-title">' + (ws.title[lk] || '') + '</span></div>'
+        body += '<div class="wizard-page-title">' + (ws.title[lk] || '') + '</div>'
         body += '<div class="wizard-instructions">' + (ws.instructions[lk] || '') + '</div>'
 
         // Last step: QR area
@@ -1182,17 +1191,9 @@
       createConnectModal(waTitle, body)
 
     } else if (channelId === 'gmail') {
-      // ── Gmail: check OAuth status first, then show manifest wizard ──
-      fetch('/console/api/email/auth-status')
-        .then(function (r) { return r.json() })
-        .then(function (data) {
-          if (data.connected) {
-            showToast(isEs ? 'Gmail ya esta conectado' : 'Gmail is already connected', 'success')
-          } else {
-            renderWizardFromManifest('gmail', wizard, lang)
-          }
-        })
-        .catch(function () { renderWizardFromManifest('gmail', wizard, lang) })
+      // ── Gmail: uses the same OAuth wizard as Google Apps (openOAuthWizard) ──
+      // This wizard has the full flow: account type, project setup, credentials, callback URL
+      openOAuthWizard('gmail')
 
     } else {
       // ── Generic: google-chat, twilio-voice, future channels — all from manifest ──

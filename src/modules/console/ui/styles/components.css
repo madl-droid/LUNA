@@ -626,6 +626,31 @@
   padding: 24px 28px 20px;
 }
 
+.wizard-title {
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--on-surface, #1a1a1a);
+  margin-bottom: 16px;
+}
+
+.wizard-step-count {
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--on-surface-dim, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+
+.wizard-page-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--on-surface, #1a1a1a);
+  margin-bottom: 12px;
+}
+
 .wizard-step-indicator {
   display: flex;
   align-items: center;
@@ -683,44 +708,7 @@
   color: var(--on-surface, #1a1a1a);
 }
 
-/* Wizard step blocks (from module manifest) */
-.wizard-step {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--surface-container, #e8e8e8);
-}
-
-.wizard-step:last-of-type {
-  border-bottom: none;
-  margin-bottom: 8px;
-}
-
-.wizard-step-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.wizard-step-num {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--primary, #FF5E0E);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.wizard-step-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--on-surface, #1a1a1a);
-}
+/* Wizard step blocks — no longer used (tabs replaced inline steps) */
 
 .wizard-instructions {
   font-size: 0.85rem;
@@ -1389,7 +1377,7 @@
   .model-row { grid-template-columns: 1fr; }
   .field-duration { flex-direction: column; align-items: stretch; }
   .wizard-modal { max-width: 95vw; }
-  .wizard-steps { padding: 16px 18px; }
+  .wizard-steps { padding: 20px 24px; }
   .ch-grid { grid-template-columns: 1fr; }
   .ch-card-top { flex-wrap: wrap; }
   .ch-metrics-4 { grid-template-columns: repeat(2, 1fr); }
