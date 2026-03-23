@@ -29,6 +29,11 @@
   margin-bottom: 4px;
 }
 
+/* First group without title — add top spacing so first item isn't flush with edge */
+.sidebar-group:first-child:not(:has(.sidebar-group-title)) {
+  padding-top: 4px;
+}
+
 .sidebar-group-title {
   font-size: 11px;
   font-weight: 700;
@@ -110,7 +115,6 @@
   flex: 1;
   min-width: 0;
   padding: 28px 36px 100px;
-  max-width: 860px;
   transition: opacity 0.12s ease;
 }
 
@@ -151,15 +155,15 @@
   .sidebar {
     position: fixed;
     left: -280px;
-    top: 0;
+    top: 57px;
     width: min(280px, 85vw);
     min-width: 0;
     max-width: 85vw;
-    height: 100vh;
+    height: calc(100vh - 57px);
     z-index: 90;
     transition: left 0.3s ease;
     box-shadow: none;
-    padding-top: 12px;
+    padding-top: 8px;
   }
 
   .sidebar.open {
@@ -167,11 +171,11 @@
     box-shadow: var(--shadow-float);
   }
 
-  .content-area { padding: 16px 12px 100px; max-width: 100%; }
+  .content-area { padding: 20px 20px 100px; max-width: 100%; overflow-x: hidden; }
 }
 
 @media (max-width: 480px) {
-  .content-area { padding: 12px 8px 100px; }
+  .content-area { padding: 20px 16px 100px; }
   .sidebar-item { padding: 10px 12px; font-size: 14px; gap: 10px; }
   .sidebar-group-title { padding: 14px 8px 6px; }
 }

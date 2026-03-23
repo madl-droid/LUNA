@@ -112,6 +112,7 @@ header {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .header-icon-btn {
@@ -335,27 +336,20 @@ header {
   margin: 4px 0;
 }
 
-/* Toggle inside dropdown — fixed size, no stretch */
-.toggle.toggle-sm {
-  width: 40px;
-  height: 22px;
+/* Toggle inside dropdown — ensure no stretch */
+.dropdown-item .toggle.toggle-sm {
   margin-left: auto;
   flex-shrink: 0;
 }
 
-.toggle-sm .toggle-slider {
-  border-radius: 22px;
+/* Language items inside user dropdown */
+.dropdown-lang-section {
+  display: flex;
+  flex-direction: column;
 }
 
-.toggle-sm .toggle-slider::before {
-  width: 18px;
-  height: 18px;
-  top: 2px;
-  left: 2px;
-}
-
-.toggle-sm input:checked + .toggle-slider::before {
-  transform: translateX(18px);
+.dropdown-lang-section .dropdown-item {
+  font-size: 13px;
 }
 
 /* Wider user dropdown */
@@ -505,6 +499,10 @@ main { flex: 1; min-height: 0; }
 
 .loading { text-align: center; padding: 64px; color: var(--on-surface-dim); }
 
+/* Mobile search — hidden on desktop */
+.header-search-mobile { display: none; }
+.header-search-overlay { display: none; }
+
 /* ═══ Responsive ═══ */
 @media (max-width: 768px) {
   header { padding: 8px 12px; gap: 10px; }
@@ -518,8 +516,49 @@ main { flex: 1; min-height: 0; }
 }
 
 @media (max-width: 480px) {
-  .header-search { max-width: 140px; }
-  .header-user { display: none; }
+  /* Search: move to header-right as icon-only button, expand as overlay on tap */
+  .header-center { display: none; }
+  .header-search-mobile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    border-radius: 0.5rem;
+    border: none;
+    background: transparent;
+    color: var(--on-surface-variant);
+    cursor: pointer;
+  }
+  .header-search-overlay.visible {
+    display: flex;
+    position: fixed;
+    top: 57px;
+    left: 16px;
+    right: 16px;
+    padding: 6px 10px;
+    background: var(--surface-container-lowest);
+    z-index: 101;
+    box-shadow: var(--shadow-float);
+    border-radius: 0.5rem;
+    gap: 6px;
+    align-items: center;
+  }
+  .header-search-overlay input {
+    flex: 1;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 0.4rem;
+    background: var(--surface);
+    color: var(--on-surface);
+    font-size: 13px;
+    font-family: inherit;
+    min-width: 0;
+  }
+  .header-search-overlay input:focus { outline: none; box-shadow: 0 0 0 2px var(--primary-light); }
+  .header-search-overlay button {
+    background: none; border: none; color: var(--on-surface-dim); cursor: pointer; padding: 4px; font-size: 14px; flex-shrink: 0;
+  }
   .save-bar { padding: 10px 12px; }
   .save-bar-phase { flex-wrap: wrap; gap: 8px; }
   .save-bar-label { width: 100%; font-size: 11px; }

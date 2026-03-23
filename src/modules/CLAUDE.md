@@ -23,6 +23,10 @@ import type { Registry } from '../../kernel/registry.js'
 - `version`: semver. Ej: `'1.0.0'`
 - `description`: `{ es: '...', en: '...' }` — bilingüe obligatorio
 - `type`: `'core-module'` | `'provider'` | `'channel'` | `'feature'`
+- `channelType`: **OBLIGATORIO si type='channel'**: `'instant'` | `'async'` | `'voice'`
+  - `instant`: mensajería instantánea (WhatsApp, Google Chat)
+  - `async`: comunicación asíncrona (email)
+  - `voice`: llamadas de voz (Twilio)
 - `removable`: `false` solo para core-module
 - `init(registry)`: inicialización del módulo
 - `stop()`: cleanup de recursos

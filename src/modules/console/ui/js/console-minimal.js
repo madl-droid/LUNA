@@ -9,6 +9,20 @@
   var flash = document.querySelector('[data-flash]')
   if (flash) setTimeout(function () { flash.remove() }, 3500)
 
+  // === Mobile search overlay ===
+  window.openMobileSearch = function () {
+    var overlay = document.getElementById('search-overlay')
+    if (overlay) {
+      overlay.classList.add('visible')
+      var input = document.getElementById('mobile-search-input')
+      if (input) input.focus()
+    }
+  }
+  window.closeMobileSearch = function () {
+    var overlay = document.getElementById('search-overlay')
+    if (overlay) overlay.classList.remove('visible')
+  }
+
   // === Hamburger menu (mobile drawer) ===
   var sidebar = document.getElementById('sidebar')
   var hamburger = document.getElementById('hamburger')
@@ -21,6 +35,8 @@
     var isOpen = sidebar.classList.toggle('open')
     hamburger.classList.toggle('open', isOpen)
     overlay.classList.toggle('visible', isOpen)
+    // Scroll sidebar to top when opening
+    if (isOpen) sidebar.scrollTop = 0
   }
 
   overlay.addEventListener('click', function () {
@@ -902,4 +918,326 @@
 
   // Initial state: save bar hidden
   setSaveBarPhase('hidden')
+
+  // === Channel cards: toggle & metrics ===
+
+  // Submit a toggle form for channel activation
+  function submitChannelToggle(moduleName, active, redirect) {
+    var form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/console/modules/toggle'
+    form.style.display = 'none'
+    var fields = { module: moduleName, active: active ? 'true' : 'false', _redirect: redirect }
+    for (var key in fields) {
+      var input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = key
+      input.value = fields[key]
+      form.appendChild(input)
+    }
+    document.body.appendChild(form)
+    form.submit()
+  }
+
+  // Toggle with confirmation for deactivation
+  window.toggleChannelConfirm = function (checkbox) {
+    var moduleName = checkbox.getAttribute('data-module')
+    var active = checkbox.checked
+    var redirect = checkbox.getAttribute('data-redirect') || '/console/channels'
+
+    if (!active) {
+      // Deactivating — ask for confirmation
+      var msg = document.documentElement.lang === 'es'
+        ? 'Desactivar este canal? Se detendran todas las conexiones activas.'
+        : 'Deactivate this channel? All active connections will be stopped.'
+      if (!confirm(msg)) {
+        checkbox.checked = true // revert
+        return
+      }
+    }
+    submitChannelToggle(moduleName, active, redirect)
+  }
+
+  // Kept for backward compat
+  window.toggleChannel = window.toggleChannelConfirm
+
+  // ── Connect channel: inline flow modals ──
+  var _chConnectPoll = null
+
+  function closeConnectModal() {
+    var m = document.getElementById('ch-connect-modal')
+    if (m) m.remove()
+    if (_chConnectPoll) { clearInterval(_chConnectPoll); _chConnectPoll = null }
+  }
+
+  function createConnectModal(title, bodyHtml) {
+    closeConnectModal()
+    var modal = document.createElement('div')
+    modal.id = 'ch-connect-modal'
+    modal.className = 'wizard-overlay'
+    modal.innerHTML = '<div class="wizard-modal">'
+      + '<button class="wizard-close" onclick="closeConnectModal()">&times;</button>'
+      + '<div class="wizard-steps"><h3>' + title + '</h3>' + bodyHtml + '</div></div>'
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeConnectModal() })
+    document.body.appendChild(modal)
+    return modal
+  }
+  window.closeConnectModal = closeConnectModal
+
+  window.channelConnect = function (channelId, lang) {
+    var isEs = (lang || 'es') === 'es'
+
+    if (channelId === 'whatsapp') {
+      // ── WhatsApp: connect API → show QR → poll status ──
+      var title = isEs ? 'Conectar WhatsApp' : 'Connect WhatsApp'
+      var body = '<div class="wizard-instructions">'
+        + '<p>' + (isEs ? 'Sigue estos pasos para vincular tu dispositivo:' : 'Follow these steps to link your device:') + '</p>'
+        + '<ol><li>' + (isEs ? 'Haz clic en <strong>Generar QR</strong> abajo.' : 'Click <strong>Generate QR</strong> below.') + '</li>'
+        + '<li>' + (isEs ? 'Abre WhatsApp en tu telefono.' : 'Open WhatsApp on your phone.') + '</li>'
+        + '<li>' + (isEs ? 'Ve a <strong>Ajustes > Dispositivos vinculados > Vincular dispositivo</strong>.' : 'Go to <strong>Settings > Linked devices > Link a device</strong>.') + '</li>'
+        + '<li>' + (isEs ? 'Escanea el codigo QR que aparece abajo.' : 'Scan the QR code shown below.') + '</li></ol>'
+        + '</div>'
+        + '<div id="ch-wa-qr-area" style="text-align:center;padding:16px 0;min-height:80px">'
+        + '<button class="wizard-btn wizard-btn-primary" onclick="startWhatsAppQR(\'' + lang + '\')">' + (isEs ? 'Generar QR' : 'Generate QR') + '</button>'
+        + '</div>'
+        + '<div id="ch-wa-status" style="text-align:center;font-size:13px;color:var(--on-surface-variant)"></div>'
+      createConnectModal(title, body)
+
+    } else if (channelId === 'gmail') {
+      // ── Gmail: trigger existing OAuth wizard ──
+      // The showWizardModal function is already defined elsewhere in this file
+      // Check auth status first, then open wizard
+      fetch('/console/api/email/auth-status')
+        .then(function (r) { return r.json() })
+        .then(function (data) {
+          if (data.connected) {
+            showToast(isEs ? 'Gmail ya esta conectado' : 'Gmail is already connected', 'success')
+          } else if (typeof showWizardModal === 'function') {
+            showWizardModal('email', data, data.redirectUri || '')
+          } else {
+            // Fallback: go to settings page
+            window.location.href = '/console/channels/gmail?lang=' + lang
+          }
+        })
+        .catch(function () { window.location.href = '/console/channels/gmail?lang=' + lang })
+
+    } else if (channelId === 'google-chat') {
+      // ── Google Chat: service account key input ──
+      var title = isEs ? 'Conectar Google Chat' : 'Connect Google Chat'
+      var body = '<div class="wizard-instructions">'
+        + '<p>' + (isEs ? 'Necesitas un Service Account de Google Cloud:' : 'You need a Google Cloud Service Account:') + '</p>'
+        + '<ol><li>' + (isEs ? 'Ve a <strong>Google Cloud Console > IAM > Cuentas de servicio</strong>.' : 'Go to <strong>Google Cloud Console > IAM > Service accounts</strong>.') + '</li>'
+        + '<li>' + (isEs ? 'Crea una cuenta de servicio y descarga el JSON.' : 'Create a service account and download the JSON.') + '</li>'
+        + '<li>' + (isEs ? 'Habilita la <strong>Chat API</strong> en tu proyecto.' : 'Enable the <strong>Chat API</strong> in your project.') + '</li>'
+        + '<li>' + (isEs ? 'Pega el JSON completo abajo y haz clic en <strong>Validar y guardar</strong>.' : 'Paste the full JSON below and click <strong>Validate & save</strong>.') + '</li></ol>'
+        + '</div>'
+        + '<textarea id="ch-gchat-key" class="wizard-input" rows="6" placeholder="' + (isEs ? 'Pega el JSON del Service Account aqui...' : 'Paste Service Account JSON here...') + '" style="width:100%;resize:vertical;font-family:monospace;font-size:12px"></textarea>'
+        + '<div id="ch-gchat-error" class="wizard-error" style="display:none"></div>'
+        + '<div class="wizard-actions">'
+        + '<button class="wizard-btn wizard-btn-secondary" onclick="closeConnectModal()">' + (isEs ? 'Cancelar' : 'Cancel') + '</button>'
+        + '<button class="wizard-btn wizard-btn-primary" onclick="saveGoogleChatKey(\'' + lang + '\')">' + (isEs ? 'Validar y guardar' : 'Validate & save') + '</button>'
+        + '</div>'
+      createConnectModal(title, body)
+
+    } else if (channelId === 'twilio-voice') {
+      // ── Twilio: credential inputs ──
+      var title = isEs ? 'Conectar Twilio Voice' : 'Connect Twilio Voice'
+      var body = '<div class="wizard-instructions">'
+        + '<p>' + (isEs ? 'Ingresa tus credenciales de Twilio:' : 'Enter your Twilio credentials:') + '</p>'
+        + '</div>'
+        + '<label class="wizard-label">Account SID</label>'
+        + '<input id="ch-twilio-sid" class="wizard-input" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">'
+        + '<label class="wizard-label">Auth Token</label>'
+        + '<input id="ch-twilio-token" class="wizard-input" type="password" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">'
+        + '<label class="wizard-label">' + (isEs ? 'Numero de telefono' : 'Phone number') + '</label>'
+        + '<input id="ch-twilio-phone" class="wizard-input" placeholder="+1234567890">'
+        + '<div id="ch-twilio-error" class="wizard-error" style="display:none"></div>'
+        + '<div class="wizard-actions">'
+        + '<button class="wizard-btn wizard-btn-secondary" onclick="closeConnectModal()">' + (isEs ? 'Cancelar' : 'Cancel') + '</button>'
+        + '<button class="wizard-btn wizard-btn-primary" onclick="saveTwilioCredentials(\'' + lang + '\')">' + (isEs ? 'Guardar y conectar' : 'Save & connect') + '</button>'
+        + '</div>'
+      createConnectModal(title, body)
+    }
+  }
+
+  // WhatsApp: start connection and poll for QR
+  window.startWhatsAppQR = function (lang) {
+    var isEs = (lang || 'es') === 'es'
+    var qrArea = document.getElementById('ch-wa-qr-area')
+    var statusEl = document.getElementById('ch-wa-status')
+    if (!qrArea) return
+
+    qrArea.innerHTML = '<div style="color:var(--on-surface-dim)">' + (isEs ? 'Iniciando conexion...' : 'Starting connection...') + '</div>'
+
+    fetch('/console/api/whatsapp/connect', { method: 'POST' })
+      .then(function () {
+        // Start polling for QR
+        _chConnectPoll = setInterval(function () {
+          fetch('/console/api/whatsapp/status')
+            .then(function (r) { return r.json() })
+            .then(function (data) {
+              if (data.status === 'connected') {
+                clearInterval(_chConnectPoll); _chConnectPoll = null
+                qrArea.innerHTML = '<div style="color:var(--success);font-weight:600;font-size:16px">&#10003; ' + (isEs ? 'Conectado exitosamente' : 'Connected successfully') + '</div>'
+                if (statusEl) statusEl.textContent = data.connectedNumber ? (isEs ? 'Numero: ' : 'Number: ') + data.connectedNumber : ''
+                setTimeout(function () { closeConnectModal(); window.location.reload() }, 2000)
+              } else if (data.qrDataUrl) {
+                qrArea.innerHTML = '<img src="' + data.qrDataUrl + '" style="max-width:260px;border-radius:8px" alt="QR">'
+                if (statusEl) statusEl.textContent = isEs ? 'Escanea este codigo con WhatsApp' : 'Scan this code with WhatsApp'
+              } else if (data.status === 'connecting') {
+                if (statusEl) statusEl.textContent = isEs ? 'Conectando...' : 'Connecting...'
+              }
+            })
+        }, 2000)
+      })
+      .catch(function () {
+        qrArea.innerHTML = '<div style="color:var(--error)">' + (isEs ? 'Error al iniciar conexion' : 'Error starting connection') + '</div>'
+      })
+  }
+
+  // Google Chat: validate and save service account key
+  window.saveGoogleChatKey = function (lang) {
+    var isEs = (lang || 'es') === 'es'
+    var keyEl = document.getElementById('ch-gchat-key')
+    var errEl = document.getElementById('ch-gchat-error')
+    if (!keyEl) return
+    var keyJson = keyEl.value.trim()
+    if (!keyJson) { errEl.textContent = isEs ? 'Pega el JSON del Service Account' : 'Paste the Service Account JSON'; errEl.style.display = 'block'; return }
+
+    // Validate first
+    fetch('/console/api/google-chat/validate-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: keyJson }) })
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (data.error) { errEl.textContent = data.error; errEl.style.display = 'block'; return }
+        // Save via config
+        return fetch('/console/save', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: '_section=google-chat&_lang=' + lang + '&GOOGLE_CHAT_SERVICE_ACCOUNT_KEY=' + encodeURIComponent(keyJson) })
+          .then(function () {
+            return fetch('/console/apply', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: '_section=google-chat&_lang=' + lang })
+          })
+          .then(function () { closeConnectModal(); showToast(isEs ? 'Google Chat conectado' : 'Google Chat connected', 'success'); window.location.reload() })
+      })
+      .catch(function () { errEl.textContent = isEs ? 'Error de conexion' : 'Connection error'; errEl.style.display = 'block' })
+  }
+
+  // Twilio: save credentials
+  window.saveTwilioCredentials = function (lang) {
+    var isEs = (lang || 'es') === 'es'
+    var sid = document.getElementById('ch-twilio-sid')
+    var token = document.getElementById('ch-twilio-token')
+    var phone = document.getElementById('ch-twilio-phone')
+    var errEl = document.getElementById('ch-twilio-error')
+    if (!sid || !token || !phone) return
+    if (!sid.value.trim() || !token.value.trim()) { errEl.textContent = isEs ? 'Account SID y Auth Token son requeridos' : 'Account SID and Auth Token are required'; errEl.style.display = 'block'; return }
+
+    var body = '_section=twilio-voice&_lang=' + lang
+      + '&TWILIO_ACCOUNT_SID=' + encodeURIComponent(sid.value.trim())
+      + '&TWILIO_AUTH_TOKEN=' + encodeURIComponent(token.value.trim())
+      + '&TWILIO_PHONE_NUMBER=' + encodeURIComponent(phone.value.trim())
+    fetch('/console/save', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
+      .then(function () {
+        return fetch('/console/apply', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: '_section=twilio-voice&_lang=' + lang })
+      })
+      .then(function () { closeConnectModal(); showToast(isEs ? 'Twilio configurado' : 'Twilio configured', 'success'); window.location.reload() })
+      .catch(function () { errEl.textContent = isEs ? 'Error al guardar' : 'Save error'; errEl.style.display = 'block' })
+  }
+
+  // Disconnect channel — confirm then call the channel's disconnect API
+  window.channelDisconnect = function (channelId, lang) {
+    var msg = document.documentElement.lang === 'es'
+      ? 'Desconectar este canal? LUNA dejara de recibir y enviar mensajes por este medio.'
+      : 'Disconnect this channel? LUNA will stop receiving and sending messages through this medium.'
+    if (!confirm(msg)) return
+
+    // Call disconnect API for known channels
+    var apiMap = {
+      whatsapp: '/console/api/whatsapp/disconnect',
+      gmail: '/console/api/email/auth-disconnect',
+    }
+    var apiUrl = apiMap[channelId]
+    if (apiUrl) {
+      fetch(apiUrl, { method: 'POST' })
+        .then(function () { window.location.reload() })
+        .catch(function () { window.location.reload() })
+    } else {
+      window.location.reload()
+    }
+  }
+
+  // Format seconds into human readable duration
+  function formatDuration(seconds) {
+    if (!seconds || seconds <= 0) return '--'
+    if (seconds < 60) return seconds + 's'
+    if (seconds < 3600) return Math.round(seconds / 60) + 'min'
+    var h = Math.floor(seconds / 3600)
+    var m = Math.round((seconds % 3600) / 60)
+    return h + 'h ' + m + 'min'
+  }
+
+  // Format number with locale
+  function formatNum(n) {
+    if (n == null || n === '--') return '--'
+    return Number(n).toLocaleString()
+  }
+
+  // Fetch and render channel metrics
+  function loadChannelMetrics(metricsEl, period) {
+    var channel = metricsEl.getAttribute('data-channel')
+    var type = metricsEl.getAttribute('data-type')
+    if (!channel || !type) return
+
+    fetch('/console/api/console/channel-metrics?channel=' + encodeURIComponent(channel) + '&type=' + encodeURIComponent(type) + '&period=' + encodeURIComponent(period))
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        // Update all data-field elements inside this metrics container
+        var fields = metricsEl.querySelectorAll('[data-field]')
+        for (var i = 0; i < fields.length; i++) {
+          var field = fields[i]
+          var key = field.getAttribute('data-field')
+          var val = data[key]
+          if (key === 'avg_duration_s') {
+            field.textContent = formatDuration(val)
+          } else {
+            field.textContent = formatNum(val)
+          }
+        }
+      })
+      .catch(function () {
+        // Leave as --
+      })
+  }
+
+  // Load all channel metrics with global period
+  function loadAllChannelMetrics(period) {
+    var allMetrics = document.querySelectorAll('.ch-card-metrics')
+    for (var i = 0; i < allMetrics.length; i++) {
+      loadChannelMetrics(allMetrics[i], period)
+    }
+  }
+
+  // Initialize on page load
+  var globalPeriod = document.getElementById('ch-period-global')
+  if (globalPeriod) {
+    loadAllChannelMetrics(globalPeriod.value)
+    globalPeriod.addEventListener('change', function () {
+      loadAllChannelMetrics(this.value)
+    })
+  }
+
+  // Channel status filter
+  var statusFilter = document.getElementById('ch-filter-status')
+  var typeFilter = document.getElementById('ch-filter-type')
+  function applyChannelFilters() {
+    var status = statusFilter ? statusFilter.value : 'all'
+    var type = typeFilter ? typeFilter.value : 'all'
+    var cards = document.querySelectorAll('.ch-card')
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i]
+      var matchStatus = status === 'all' || card.getAttribute('data-filter-status') === status
+      var matchType = type === 'all' || card.getAttribute('data-filter-type') === type
+      card.style.display = (matchStatus && matchType) ? '' : 'none'
+    }
+  }
+  if (statusFilter) statusFilter.addEventListener('change', applyChannelFilters)
+  if (typeFilter) typeFilter.addEventListener('change', applyChannelFilters)
 })()

@@ -76,6 +76,7 @@ const manifest: ModuleManifest = {
     en: 'WhatsApp channel using Baileys (direct connection, DB auth)',
   },
   type: 'channel',
+  channelType: 'instant',
   removable: true,
   activateByDefault: true,
   depends: [],
@@ -109,6 +110,26 @@ const manifest: ModuleManifest = {
       },
     ],
     apiRoutes,
+    connectionWizard: {
+      title: { es: 'Conectar WhatsApp', en: 'Connect WhatsApp' },
+      steps: [
+        {
+          title: { es: 'Prepara tu telefono', en: 'Prepare your phone' },
+          instructions: {
+            es: '<ol><li>Abre <strong>WhatsApp</strong> en tu telefono.</li><li>Ve a <strong>Ajustes</strong> (o Menu) > <strong>Dispositivos vinculados</strong>.</li><li>Toca <strong>Vincular un dispositivo</strong>.</li><li>Cuando se active la camara, haz clic en <strong>Siguiente</strong> para generar el QR.</li></ol>',
+            en: '<ol><li>Open <strong>WhatsApp</strong> on your phone.</li><li>Go to <strong>Settings</strong> (or Menu) > <strong>Linked devices</strong>.</li><li>Tap <strong>Link a device</strong>.</li><li>When the camera activates, click <strong>Next</strong> to generate the QR.</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Escanea el codigo QR', en: 'Scan the QR code' },
+          instructions: {
+            es: '<p>Apunta la camara de tu telefono al codigo QR que aparece abajo. La conexion se establecera automaticamente.</p>',
+            en: '<p>Point your phone camera at the QR code below. The connection will be established automatically.</p>',
+          },
+        },
+      ],
+      verifyEndpoint: 'status',
+    },
   },
 
   async init(registry: Registry) {

@@ -101,6 +101,7 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
   waConnected: boolean
   gmailConnected: boolean
   googleAppsConnected: boolean
+  googleChatConnected: boolean
   dynamicModules: DynamicSidebarModule[]
 }> {
   // Config: DB > .env > defaults
@@ -143,6 +144,7 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     moduleStates = registry.listModules().map(m => ({
       name: m.manifest.name,
       type: m.manifest.type,
+      channelType: m.manifest.channelType,
       active: m.active,
       removable: m.manifest.removable,
       console: m.manifest.console ? {
@@ -150,6 +152,17 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
         info: m.manifest.console.info,
         fields: m.manifest.console.fields,
       } : null,
+      connectionWizard: m.manifest.console?.connectionWizard ? {
+        title: m.manifest.console.connectionWizard.title,
+        steps: m.manifest.console.connectionWizard.steps.map(s => ({
+          title: s.title,
+          instructions: s.instructions,
+          fields: s.fields,
+        })),
+        saveEndpoint: m.manifest.console.connectionWizard.saveEndpoint,
+        applyAfterSave: m.manifest.console.connectionWizard.applyAfterSave,
+        verifyEndpoint: m.manifest.console.connectionWizard.verifyEndpoint,
+      } : undefined,
     }))
     moduleStates.sort((a, b) => {
       const aOrder = registry.listModules().find(m => m.manifest.name === a.name)?.manifest.console?.order ?? 999
@@ -200,6 +213,15 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     }
   } catch { /* google-apps not available */ }
 
+  // Google Chat — check if adapter is connected
+  let googleChatConnected = false
+  try {
+    const chatAdapter = registry.getOptional<{ getState(): { status: string } }>('google-chat:adapter')
+    if (chatAdapter) {
+      googleChatConnected = chatAdapter.getState().status === 'connected'
+    }
+  } catch { /* google-chat not available */ }
+
   // Dynamic sidebar modules (modules with console.group defined)
   const dynamicModules: DynamicSidebarModule[] = []
   for (const m of moduleStates) {
@@ -228,6 +250,7 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
     waConnected: waState.status === 'connected',
     gmailConnected: gmailAuth.connected,
     googleAppsConnected: googleAppsAuth.connected,
+    googleChatConnected,
     dynamicModules,
   }
 }
@@ -414,7 +437,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch (err) {
           logger.error({ err, module: modName }, 'Failed to toggle module')
         }
-        res.writeHead(302, { Location: `/console/modules?flash=toggled&lang=${lang}` })
+        const redirect = body['_redirect'] || `/console/modules?flash=toggled&lang=${lang}`
+        const sep = redirect.includes('?') ? '&' : '?'
+        res.writeHead(302, { Location: `${redirect}${sep}flash=toggled` })
         res.end()
         return true
       }
@@ -425,18 +450,33 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       // Strip query string for path matching
       const pathOnly = localUrl.split('?')[0]!
 
-      // Redirect root to /console/whatsapp
+      // Redirect root to /console/channels
       if (pathOnly === '/' || pathOnly === '') {
         const lang = detectLang(req)
-        res.writeHead(302, { Location: `/console/whatsapp?lang=${lang}` })
+        res.writeHead(302, { Location: `/console/channels?lang=${lang}` })
         res.end()
         return true
       }
 
       let section = pathOnly.replace(/^\//, '')
 
-      // Redirect old section IDs to unified pages
-      const redirectTo = SECTION_REDIRECTS[section]
+      // Nested channel settings: /console/channels/{channelId} → render channel section inside channels layout
+      let channelSettingsId: string | null = null
+      const channelMatch = section.match(/^channels\/(.+)$/)
+      if (channelMatch?.[1]) {
+        channelSettingsId = channelMatch[1]
+        // Map channel ID to its section renderer ID
+        const channelSectionMap: Record<string, string> = {
+          'whatsapp': 'whatsapp',
+          'gmail': 'email',
+          'google-chat': 'google-chat',
+          'twilio-voice': 'twilio-voice',
+        }
+        section = channelSectionMap[channelSettingsId] ?? channelSettingsId
+      }
+
+      // Redirect old section IDs to unified pages (skip if already a nested channel route)
+      const redirectTo = !channelSettingsId ? SECTION_REDIRECTS[section] : undefined
       if (redirectTo) {
         const lang = detectLang(req)
         res.writeHead(302, { Location: `/console/${redirectTo}?lang=${lang}` })
@@ -468,6 +508,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         waState: data.waState,
         gmailAuth: data.gmailAuth,
         googleAppsAuth: data.googleAppsAuth,
+        googleChatConnected: data.googleChatConnected,
         moduleStates: data.moduleStates,
       }
 
@@ -508,10 +549,15 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
+      // For nested channel settings, set section to 'channels' for sidebar highlighting
+      // and keep the original section for content rendering
+      const sidebarSection = channelSettingsId ? 'channels' : section
+
       const html = pageLayout({
-        section,
+        section: sidebarSection,
         content,
         lang,
+        channelSettingsId: channelSettingsId ?? undefined,
         version: data.version,
         flash,
         waConnected: data.waConnected,
@@ -787,6 +833,146 @@ export function createApiRoutes(): ApiRoute[] {
         } catch (err) {
           logger.error({ err }, 'Failed to fetch engine metrics')
           jsonResponse(res, 500, { error: 'Failed to fetch metrics' })
+        }
+      },
+    },
+
+    // GET /console/api/console/channel-metrics?channel=whatsapp&period=30d
+    {
+      method: 'GET',
+      path: 'channel-metrics',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) {
+            jsonResponse(res, 500, { error: 'Registry not available' })
+            return
+          }
+
+          const query = parseQuery(req)
+          const channel = query.get('channel') || ''
+          const period = query.get('period') || '30d'
+          const chType = query.get('type') || 'instant'
+
+          const db = registry.getDb()
+
+          // Build WHERE clause for time filtering
+          const truncMap: Record<string, string> = {
+            'today': 'day', 'this_week': 'week', 'this_month': 'month',
+            'this_quarter': 'quarter', 'this_half': 'quarter', 'this_year': 'year',
+          }
+          const intervalMap: Record<string, string> = {
+            '1h': '1 hour', '24h': '24 hours', '7d': '7 days', '30d': '30 days',
+            '90d': '90 days', '180d': '180 days', '365d': '365 days',
+          }
+          let whereTime: string
+          if (truncMap[period]) {
+            const unit = period === 'this_half' ? `date_trunc('month', now()) - interval '5 months'` : `date_trunc('${truncMap[period]}', now())`
+            whereTime = `created_at >= ${unit}`
+          } else {
+            const interval = intervalMap[period] ?? '30 days'
+            whereTime = `created_at > now() - '${interval}'::interval`
+          }
+
+          if (chType === 'instant') {
+            // Active conversations (sessions with activity in last 24h)
+            const activeRes = await db.query(
+              `SELECT COUNT(*)::int AS active FROM sessions WHERE channel_name = $1 AND last_activity_at > now() - interval '24 hours'`,
+              [channel],
+            )
+            // New conversations in last 24h
+            const newRes = await db.query(
+              `SELECT COUNT(*)::int AS new_count FROM sessions WHERE channel_name = $1 AND started_at > now() - interval '24 hours'`,
+              [channel],
+            )
+            // Outbound (agent-initiated) in period
+            const outRes = await db.query(
+              `SELECT COUNT(DISTINCT session_id)::int AS outbound FROM messages WHERE channel_name = $1 AND sender_type = 'agent' AND ${whereTime} AND session_id IN (SELECT id FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')})`,
+              [channel],
+            )
+            // Inbound (user-initiated) in period
+            const inRes = await db.query(
+              `SELECT COUNT(DISTINCT session_id)::int AS inbound FROM messages WHERE channel_name = $1 AND sender_type = 'user' AND ${whereTime} AND session_id IN (SELECT id FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')})`,
+              [channel],
+            )
+            jsonResponse(res, 200, {
+              channel, period, type: 'instant',
+              active: activeRes.rows[0]?.active ?? 0,
+              new_24h: newRes.rows[0]?.new_count ?? 0,
+              outbound: outRes.rows[0]?.outbound ?? 0,
+              inbound: inRes.rows[0]?.inbound ?? 0,
+            })
+          } else if (chType === 'async') {
+            // Active interactions
+            const activeRes = await db.query(
+              `SELECT COUNT(*)::int AS active FROM sessions WHERE channel_name = $1 AND last_activity_at > now() - interval '24 hours'`,
+              [channel],
+            )
+            // Received messages in period
+            const recvRes = await db.query(
+              `SELECT COUNT(*)::int AS received FROM messages WHERE channel_name = $1 AND sender_type = 'user' AND ${whereTime}`,
+              [channel],
+            )
+            // Sent messages in period
+            const sentRes = await db.query(
+              `SELECT COUNT(*)::int AS sent FROM messages WHERE channel_name = $1 AND sender_type = 'agent' AND ${whereTime}`,
+              [channel],
+            )
+            // Avg interaction duration in period
+            const durRes = await db.query(
+              `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (last_activity_at - started_at))))::int AS avg_duration_s FROM sessions WHERE channel_name = $1 AND ${whereTime.replace(/created_at/g, 'started_at')} AND last_activity_at > started_at`,
+              [channel],
+            )
+            jsonResponse(res, 200, {
+              channel, period, type: 'async',
+              active: activeRes.rows[0]?.active ?? 0,
+              received: recvRes.rows[0]?.received ?? 0,
+              sent: sentRes.rows[0]?.sent ?? 0,
+              avg_duration_s: durRes.rows[0]?.avg_duration_s ?? 0,
+            })
+          } else if (chType === 'voice') {
+            // Successful calls in period
+            const succRes = await db.query(
+              `SELECT COUNT(*)::int AS successful FROM sessions WHERE channel_name = $1 AND message_count > 0 AND ${whereTime.replace(/created_at/g, 'started_at')}`,
+              [channel],
+            )
+            // Failed calls in period
+            const failRes = await db.query(
+              `SELECT COUNT(*)::int AS failed FROM sessions WHERE channel_name = $1 AND message_count = 0 AND ${whereTime.replace(/created_at/g, 'started_at')}`,
+              [channel],
+            )
+            // Avg call duration in period
+            const durRes = await db.query(
+              `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (last_activity_at - started_at))))::int AS avg_duration_s FROM sessions WHERE channel_name = $1 AND message_count > 0 AND ${whereTime.replace(/created_at/g, 'started_at')} AND last_activity_at > started_at`,
+              [channel],
+            )
+            // Outbound calls (agent-initiated) — check if first message is from agent
+            const outRes = await db.query(
+              `SELECT COUNT(DISTINCT s.id)::int AS outbound FROM sessions s WHERE s.channel_name = $1 AND ${whereTime.replace(/created_at/g, 's.started_at')} AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.sender_type = 'agent' ORDER BY m.created_at LIMIT 1)`,
+              [channel],
+            )
+            jsonResponse(res, 200, {
+              channel, period, type: 'voice',
+              successful: succRes.rows[0]?.successful ?? 0,
+              failed: failRes.rows[0]?.failed ?? 0,
+              avg_duration_s: durRes.rows[0]?.avg_duration_s ?? 0,
+              outbound: outRes.rows[0]?.outbound ?? 0,
+            })
+          } else {
+            jsonResponse(res, 400, { error: 'Unknown channel type' })
+          }
+        } catch (err) {
+          // Tables may not exist yet — return zeros gracefully
+          logger.warn({ err, channel: parseQuery(req).get('channel') }, 'Channel metrics query failed (tables may not exist)')
+          const chType = parseQuery(req).get('type') || 'instant'
+          if (chType === 'instant') {
+            jsonResponse(res, 200, { channel: '', period: '30d', type: 'instant', active: 0, new_24h: 0, outbound: 0, inbound: 0 })
+          } else if (chType === 'async') {
+            jsonResponse(res, 200, { channel: '', period: '30d', type: 'async', active: 0, received: 0, sent: 0, avg_duration_s: 0 })
+          } else {
+            jsonResponse(res, 200, { channel: '', period: '30d', type: 'voice', successful: 0, failed: 0, avg_duration_s: 0, outbound: 0 })
+          }
         }
       },
     },

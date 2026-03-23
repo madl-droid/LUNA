@@ -259,6 +259,7 @@ const manifest: ModuleManifest = {
     en: 'Google Chat channel via webhook and Chat API (Service Account)',
   },
   type: 'channel',
+  channelType: 'instant',
   removable: true,
   activateByDefault: false,
   depends: [],
@@ -314,6 +315,45 @@ const manifest: ModuleManifest = {
       },
     ],
     apiRoutes,
+    connectionWizard: {
+      title: { es: 'Conectar Google Chat', en: 'Connect Google Chat' },
+      steps: [
+        {
+          title: { es: 'Crear Service Account', en: 'Create Service Account' },
+          instructions: {
+            es: '<ol><li>Ve a <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">Google Cloud > Cuentas de servicio <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Haz clic en <strong>Crear cuenta de servicio</strong>.</li><li>Pon un nombre descriptivo (ej: "LUNA Chat Bot").</li><li>No necesitas asignar roles. Haz clic en <strong>Listo</strong>.</li></ol>',
+            en: '<ol><li>Go to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">Google Cloud > Service accounts <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Click <strong>Create service account</strong>.</li><li>Give it a descriptive name (e.g. "LUNA Chat Bot").</li><li>No roles needed. Click <strong>Done</strong>.</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Descargar clave JSON', en: 'Download JSON key' },
+          instructions: {
+            es: '<ol><li>Haz clic en la cuenta de servicio que creaste.</li><li>Ve a la pestaña <strong>Claves</strong>.</li><li>Haz clic en <strong>Agregar clave > Crear clave nueva > JSON</strong>.</li><li>Se descargara un archivo <code>.json</code>. Guardalo en un lugar seguro.</li></ol>',
+            en: '<ol><li>Click on the service account you created.</li><li>Go to the <strong>Keys</strong> tab.</li><li>Click <strong>Add key > Create new key > JSON</strong>.</li><li>A <code>.json</code> file will download. Keep it safe.</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Habilitar Chat API y configurar bot', en: 'Enable Chat API and configure bot' },
+          instructions: {
+            es: '<ol><li>Ve a <a href="https://console.cloud.google.com/apis/library/chat.googleapis.com" target="_blank" rel="noopener">Chat API <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> y haz clic en <strong>Habilitar</strong>.</li><li>Ve a <a href="https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat" target="_blank" rel="noopener">Configuracion de Chat API <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> y configura el bot (nombre, avatar, endpoint HTTP).</li></ol>',
+            en: '<ol><li>Go to <a href="https://console.cloud.google.com/apis/library/chat.googleapis.com" target="_blank" rel="noopener">Chat API <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> and click <strong>Enable</strong>.</li><li>Go to <a href="https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat" target="_blank" rel="noopener">Chat API Configuration <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> and configure the bot (name, avatar, HTTP endpoint).</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Pegar clave JSON', en: 'Paste JSON key' },
+          instructions: {
+            es: '<p>Abre el archivo <code>.json</code> que descargaste y pega todo su contenido aqui:</p>',
+            en: '<p>Open the <code>.json</code> file you downloaded and paste its entire contents here:</p>',
+          },
+          fields: [
+            { key: 'GOOGLE_CHAT_SERVICE_ACCOUNT_KEY', label: { es: 'Service Account JSON', en: 'Service Account JSON' }, type: 'textarea', placeholder: '{"type":"service_account","project_id":"..."}' },
+          ],
+        },
+      ],
+      saveEndpoint: 'validate-key',
+      applyAfterSave: true,
+      verifyEndpoint: 'status',
+    },
   },
 
   async init(registry: Registry) {

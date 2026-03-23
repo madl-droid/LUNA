@@ -228,6 +228,12 @@ export interface ModuleManifest {
   /** Tipo de módulo — afecta cómo la console lo muestra */
   type: ModuleType
 
+  /** Solo para type='channel': tipo de comunicación del canal.
+   *  - 'instant': mensajería instantánea (WhatsApp, Google Chat)
+   *  - 'async': comunicación asíncrona (email)
+   *  - 'voice': llamadas de voz */
+  channelType?: 'instant' | 'async' | 'voice'
+
   /** Si es false, no se puede desactivar desde la console */
   removable: boolean
 
@@ -311,6 +317,41 @@ export interface ModuleConsoleDef {
 
   /** Endpoints API custom bajo /console/api/{moduleName}/ */
   apiRoutes?: ApiRoute[]
+
+  /** Wizard de conexión para canales. OBLIGATORIO si type='channel'.
+   *  Define los pasos que el modal de conexión muestra al usuario.
+   *  Cada paso tiene instrucciones bilingües y campos opcionales.
+   *  Los links externos deben incluir URL completa (se renderizan con icono de redirect). */
+  connectionWizard?: ConnectionWizardDef
+}
+
+/** Definición del wizard de conexión para un canal */
+export interface ConnectionWizardStep {
+  /** Título del paso (bilingüe) */
+  title: { es: string; en: string }
+  /** Instrucciones HTML del paso (bilingüe). Puede incluir <a href="..." target="_blank"> para links externos */
+  instructions: { es: string; en: string }
+  /** Campos de input que el usuario debe completar en este paso (opcionales) */
+  fields?: Array<{
+    key: string
+    label: { es: string; en: string }
+    type: 'text' | 'secret' | 'textarea'
+    placeholder?: string
+  }>
+}
+
+export interface ConnectionWizardDef {
+  /** Título del modal (bilingüe) */
+  title: { es: string; en: string }
+  /** Pasos del wizard. Cada paso se muestra secuencialmente. */
+  steps: ConnectionWizardStep[]
+  /** Endpoint API para guardar las credenciales: POST /console/api/{moduleName}/{savePath}
+   *  Recibe JSON con los valores de todos los fields de todos los steps. */
+  saveEndpoint?: string
+  /** Si true, después de guardar se llama a POST /console/apply para hot-reload */
+  applyAfterSave?: boolean
+  /** Endpoint API para verificar conexión después de guardar (GET). Opcional. */
+  verifyEndpoint?: string
 }
 
 // ═══════════════════════════════════════════

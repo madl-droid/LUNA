@@ -901,6 +901,425 @@
   background: var(--surface-container-high, #ddd);
 }
 
+/* ═══ Channel cards grid (Canales section) ═══ */
+.ch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 20px;
+}
+
+.ch-card {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: box-shadow 0.2s ease;
+}
+
+.ch-card:hover {
+  box-shadow: var(--shadow-float);
+}
+
+/* Top row: icon + title + status + toggle */
+.ch-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ch-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--on-surface-dim);
+  background: var(--surface-container-low);
+  transition: color 0.2s ease, background 0.2s ease;
+  position: relative;
+  cursor: default;
+}
+
+.ch-card-title-area {
+  flex: 1;
+  min-width: 0;
+}
+
+.ch-card-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  line-height: 1.2;
+}
+
+.ch-card-type {
+  font-size: 11px;
+  color: var(--on-surface-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* Push toggle to the right */
+.ch-card-top .toggle {
+  flex-shrink: 0;
+}
+
+/* Status indicator — icon border + color + background tint */
+.ch-card[data-status="connected"] .ch-card-icon { border-color: var(--success); color: var(--success); background: rgba(52, 199, 89, 0.08); }
+.ch-card[data-status="disconnected"] .ch-card-icon { border-color: #007aff; color: #007aff; background: rgba(0, 122, 255, 0.08); }
+.ch-card[data-status="inactive"] .ch-card-icon { border-color: var(--on-surface-dim); color: var(--on-surface-dim); background: var(--surface-container-low); }
+.ch-card[data-status="error"] .ch-card-icon { border-color: var(--error); color: var(--error); background: rgba(230, 33, 17, 0.06); }
+
+/* Status tooltip bubble on icon hover */
+.ch-icon-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--on-surface);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 0.4rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 50;
+}
+
+.ch-icon-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--on-surface);
+}
+
+.ch-card-icon:hover .ch-icon-tooltip {
+  opacity: 1;
+}
+
+/* Error/warning message bar — shown when it has content.
+ * Usage: set textContent or data-error on .ch-card-error to show a message.
+ * The bar is visible when it has any text content or data-status="error" on parent card.
+ * Colors: red border-left for errors. Can be extended with .ch-card-warning for amber. */
+.ch-card-error {
+  display: none;
+  padding: 8px 12px;
+  border-radius: 0.5rem;
+  background: rgba(230, 33, 17, 0.06);
+  border-left: 3px solid var(--error);
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Show when card has error status or when bar has content */
+.ch-card[data-status="error"] .ch-card-error,
+.ch-card-error:not(:empty) {
+  display: block;
+}
+
+/* Description */
+.ch-card-desc {
+  font-size: 0.82rem;
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+  min-height: 3em;
+}
+
+/* Breadcrumb */
+.ch-breadcrumb {
+  font-size: 12px;
+  color: var(--on-surface-dim);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ch-breadcrumb a {
+  color: var(--on-surface-dim);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.ch-breadcrumb a:hover { color: var(--primary); }
+
+.ch-breadcrumb-sep {
+  color: var(--on-surface-dim);
+  font-size: 10px;
+}
+
+/* Filter bar — reusable dashed border pattern */
+.filter-bar {
+  background: transparent;
+  border: 1.5px dashed var(--outline-variant);
+  border-radius: 0.75rem;
+  padding: 14px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-bar .ch-filter-group,
+.filter-bar .filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-bar .ch-filter-label,
+.filter-bar .filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.filter-bar .ch-filter-select,
+.filter-bar .filter-select {
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: 0.5rem;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--on-surface);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.filter-bar .ch-filter-select:focus,
+.filter-bar .filter-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 94, 14, 0.08);
+}
+
+.filter-bar .ch-filter-sep,
+.filter-bar .filter-sep {
+  width: 1px;
+  height: 24px;
+  background: var(--outline-variant);
+}
+
+/* ch-filters uses filter-bar as base */
+
+/* Metrics area — 4 columns on desktop */
+.ch-card-metrics {
+  display: grid;
+  gap: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.ch-metrics-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.ch-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--outline-variant);
+}
+
+.ch-metric:last-child {
+  border-right: none;
+}
+
+.ch-metric-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  position: relative;
+}
+
+.ch-metric-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--on-surface-dim);
+  font-weight: 600;
+}
+
+.ch-info-btn {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-container-high);
+  color: var(--on-surface-dim);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: serif;
+  font-style: italic;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.ch-info-btn:hover {
+  background: var(--surface-container-highest);
+  color: var(--primary);
+}
+
+/* Dark bubble tooltip — shows on hover of the (i) button */
+.ch-info-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: var(--on-surface);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 400;
+  font-style: normal;
+  padding: 6px 12px;
+  border-radius: 0.4rem;
+  white-space: normal;
+  width: max-content;
+  max-width: 220px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 50;
+}
+
+/* Arrow pointing down */
+.ch-info-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 16px;
+  border: 5px solid transparent;
+  border-top-color: var(--on-surface);
+}
+
+/* Show on hover of the parent (i) button */
+.ch-info-btn:hover + .ch-info-tip,
+.ch-info-tip:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ch-metric-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Footer — always at bottom of card */
+.ch-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.ch-footer-spacer {
+  flex: 1;
+}
+
+/* Uniform action buttons — same height & style */
+.ch-btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 1.5rem;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.ch-btn-gear {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+}
+
+.ch-btn-gear:hover {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.ch-btn-connect {
+  background: rgba(52, 199, 89, 0.12);
+  color: #1a8f3a;
+}
+
+.ch-btn-connect:hover {
+  background: rgba(52, 199, 89, 0.22);
+}
+
+.ch-btn-disconnect {
+  background: rgba(230, 33, 17, 0.08);
+  color: var(--error);
+}
+
+.ch-btn-disconnect:hover {
+  background: rgba(230, 33, 17, 0.16);
+}
+
+/* Inactive card */
+.ch-card-inactive {
+  opacity: 0.6;
+}
+
+.ch-card-inactive:hover {
+  opacity: 1;
+}
+
+/* Toggle small variant — used in cards, filter bars, compact UI */
+.toggle.toggle-sm {
+  width: 38px;
+  height: 22px;
+}
+
+.toggle-sm .toggle-slider {
+  border-radius: 22px;
+}
+
+.toggle-sm .toggle-slider::before {
+  width: 18px;
+  height: 18px;
+  top: 2px;
+  left: 2px;
+}
+
+.toggle-sm input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
 /* ═══ Responsive ═══ */
 @media (max-width: 768px) {
   .field { grid-template-columns: 1fr; }
@@ -908,4 +1327,14 @@
   .field-duration { flex-direction: column; align-items: stretch; }
   .wizard-modal { max-width: 95vw; }
   .wizard-steps { padding: 16px 18px; }
+  .ch-grid { grid-template-columns: 1fr; }
+  .ch-card-top { flex-wrap: wrap; }
+  .ch-metrics-4 { grid-template-columns: repeat(2, 1fr); }
+  .ch-metric:nth-child(2) { border-right: none; }
+  .ch-metric:nth-child(1), .ch-metric:nth-child(2) { border-bottom: 1px solid var(--outline-variant); }
+  /* Filter bar: stack groups, hide vertical separators */
+  .filter-bar { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 16px; }
+  .filter-bar .ch-filter-sep, .filter-bar .filter-sep { display: none; }
+  .filter-bar .ch-filter-group, .filter-bar .filter-group { justify-content: space-between; }
+  .filter-bar .ch-filter-select, .filter-bar .filter-select { flex: 1; }
 }

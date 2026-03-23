@@ -494,6 +494,7 @@ const manifest: ModuleManifest = {
     en: 'Email channel via Gmail API. Receives, replies, forwards and sends emails.',
   },
   type: 'channel',
+  channelType: 'async',
   removable: true,
   activateByDefault: false,
   depends: [], // google-apps es opcional — si está activo se comparte su OAuth, si no email usa el suyo
@@ -581,6 +582,39 @@ const manifest: ModuleManifest = {
       },
     ],
     apiRoutes,
+    connectionWizard: {
+      title: { es: 'Conectar Gmail', en: 'Connect Gmail' },
+      steps: [
+        {
+          title: { es: 'Crear proyecto en Google Cloud', en: 'Create Google Cloud project' },
+          instructions: {
+            es: '<ol><li>Ve a <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Crea un proyecto nuevo (o selecciona uno existente).</li><li>Ve a <strong>APIs y servicios > Pantalla de consentimiento</strong> y configura como "Interno" o "Externo".</li></ol>',
+            en: '<ol><li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Create a new project (or select an existing one).</li><li>Go to <strong>APIs & Services > OAuth consent screen</strong> and configure as "Internal" or "External".</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Habilitar Gmail API y crear credenciales', en: 'Enable Gmail API and create credentials' },
+          instructions: {
+            es: '<ol><li>En <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener">Gmail API <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>, haz clic en <strong>Habilitar</strong>.</li><li>Ve a <strong>Credenciales > Crear credenciales > ID de cliente OAuth</strong>.</li><li>Tipo: <strong>Aplicacion web</strong>. Copia el Client ID y Client Secret.</li></ol>',
+            en: '<ol><li>In <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener">Gmail API <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>, click <strong>Enable</strong>.</li><li>Go to <strong>Credentials > Create credentials > OAuth client ID</strong>.</li><li>Type: <strong>Web application</strong>. Copy Client ID and Client Secret.</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Ingresa las credenciales', en: 'Enter credentials' },
+          instructions: {
+            es: '<p>Ingresa el Client ID y Client Secret que obtuviste en el paso anterior:</p>',
+            en: '<p>Enter the Client ID and Client Secret from the previous step:</p>',
+          },
+          fields: [
+            { key: 'GMAIL_CLIENT_ID', label: { es: 'Client ID', en: 'Client ID' }, type: 'text', placeholder: 'xxxxx.apps.googleusercontent.com' },
+            { key: 'GMAIL_CLIENT_SECRET', label: { es: 'Client Secret', en: 'Client Secret' }, type: 'secret', placeholder: 'GOCSPX-...' },
+          ],
+        },
+      ],
+      saveEndpoint: 'auth-callback',
+      applyAfterSave: true,
+      verifyEndpoint: 'auth-status',
+    },
   },
 
   async init(registry: Registry) {

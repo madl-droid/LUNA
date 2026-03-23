@@ -35,6 +35,7 @@ interface FixedSection {
 const svgIcon = (d: string) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
 
 const ICONS = {
+  channels: svgIcon('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><line x1="10" y1="6.5" x2="14" y2="6.5"/><line x1="10" y1="17.5" x2="14" y2="17.5"/>'),
   whatsapp: svgIcon('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>'),
   email: svgIcon('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'),
   pipeline: svgIcon('<circle cx="12" cy="12" r="3"/><path d="M12 2v7m0 6v7M2 12h7m6 0h7"/><path d="m4.93 4.93 4.24 4.24m5.66 5.66 4.24 4.24m0-14.14-4.24 4.24m-5.66 5.66-4.24 4.24"/>'),
@@ -48,9 +49,8 @@ const ICONS = {
 }
 
 const FIXED_SECTIONS: FixedSection[] = [
-  // Channels
-  { id: 'whatsapp', key: 'sec_whatsapp', icon: ICONS.whatsapp, group: 'channels', order: 10 },
-  { id: 'email', key: 'sec_email', icon: ICONS.email, group: 'channels', order: 12 },
+  // Channels — solo la pestaña unificada; los canales individuales se gestionan desde ahí
+  { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'channels', order: 1 },
   // Agent
   { id: 'pipeline', key: 'sec_pipeline_unified', icon: ICONS.pipeline, group: 'agent', order: 20 },
   { id: 'engine-metrics', key: 'sec_engine_metrics', icon: ICONS.metrics, group: 'agent', order: 25 },
@@ -65,7 +65,8 @@ const FIXED_SECTIONS: FixedSection[] = [
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail']) // gmail covered by fixed 'email' section
+// Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 const ICON_OVERRIDES: Record<string, string> = {
@@ -110,6 +111,8 @@ export interface PageOptions {
   googleAppsConnected?: boolean
   /** Active modules with console.group defined */
   dynamicModules?: DynamicSidebarModule[]
+  /** When rendering a channel settings page nested under /console/channels/{id} */
+  channelSettingsId?: string
 }
 
 // ═══════════════════════════════════════════
@@ -142,6 +145,10 @@ export function pageLayout(opts: PageOptions): string {
     </div>
   </main>
   ${renderSaveBar(opts)}
+  <div class="header-search-overlay" id="search-overlay">
+    <input type="text" placeholder="${i18n('search', opts.lang)}" id="mobile-search-input">
+    <button onclick="closeMobileSearch()">&#10005;</button>
+  </div>
   <script src="/console/static/js/console-minimal.js"></script>
 </body>
 </html>`
@@ -156,7 +163,7 @@ const LANG_LABELS: Record<string, string> = { es: 'Español', en: 'English', pt:
 const LANG_FLAGS: Record<string, string> = {
   es: `<svg width="20" height="14" viewBox="0 0 20 14" class="lang-flag"><rect width="20" height="14" rx="2" fill="#c60b1e"/><rect y="3.5" width="20" height="7" fill="#ffc400"/></svg>`,
   en: `<svg width="20" height="14" viewBox="0 0 20 14" class="lang-flag"><rect width="20" height="14" rx="2" fill="#b22234"/><rect y="0" width="20" height="1.08" fill="#fff"/><rect y="2.15" width="20" height="1.08" fill="#fff"/><rect y="4.31" width="20" height="1.08" fill="#fff"/><rect y="6.46" width="20" height="1.08" fill="#fff"/><rect y="8.62" width="20" height="1.08" fill="#fff"/><rect y="10.77" width="20" height="1.08" fill="#fff"/><rect y="12.92" width="20" height="1.08" fill="#fff"/><rect width="8" height="7.54" fill="#3c3b6e"/></svg>`,
-  pt: `<svg width="20" height="14" viewBox="0 0 14 14" class="lang-flag"><rect width="20" height="14" rx="2" fill="#009c3b"/><polygon points="10,7 5,2 0,7 5,12" fill="#ffdf00"/><circle cx="5" cy="7" r="2.2" fill="#002776"/></svg>`,
+  pt: `<svg width="20" height="14" viewBox="0 0 20 14" class="lang-flag"><rect width="20" height="14" rx="2" fill="#009c3b"/><polygon points="10,7 3,1.5 10,7 3,12.5" fill="#ffdf00"/><polygon points="10,2 17,7 10,12 3,7" fill="#ffdf00"/><circle cx="10" cy="7" r="2.8" fill="#002776"/></svg>`,
   fr: `<svg width="20" height="14" viewBox="0 0 20 14" class="lang-flag"><rect width="20" height="14" rx="2" fill="#fff"/><rect width="6.67" height="14" fill="#002395"/><rect x="13.33" width="6.67" height="14" fill="#ed2939"/></svg>`,
 }
 const AVAILABLE_LANGS = ['es', 'en', 'pt', 'fr'] as const
@@ -210,6 +217,10 @@ function renderHeader(opts: PageOptions): string {
       </div>
     </div>
     <div class="header-right">
+      <!-- Mobile search icon (visible only <=480px via CSS) -->
+      <button class="header-search-mobile" id="btn-search-mobile" onclick="openMobileSearch()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
       <!-- Notifications -->
       <div class="header-dropdown-wrap">
         <button class="header-icon-btn" id="btn-notifications" data-dropdown="notif-panel">
@@ -221,13 +232,6 @@ function renderHeader(opts: PageOptions): string {
           <div class="dropdown-body" id="notif-list">
             <div class="dropdown-empty">${i18n('noNotif', opts.lang)}</div>
           </div>
-        </div>
-      </div>
-      <!-- Language -->
-      <div class="header-dropdown-wrap">
-        <button class="header-icon-btn" data-dropdown="lang-panel"><span class="lang-flag">${LANG_FLAGS[opts.lang] ?? '🌐'}</span> ${opts.lang.toUpperCase()}</button>
-        <div class="header-dropdown header-dropdown-sm" id="lang-panel">
-          ${langOptions}
         </div>
       </div>
       <!-- Status dot with tooltip -->
@@ -255,6 +259,10 @@ function renderHeader(opts: PageOptions): string {
           <div class="dropdown-item dropdown-item-danger" id="btn-resetdb-menu" style="display:none">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             ${i18n('resetDb', opts.lang)}
+          </div>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-lang-section">
+            ${langOptions}
           </div>
           <div class="dropdown-divider"></div>
           <a href="/console/logout" class="dropdown-item dropdown-item-danger">
@@ -303,9 +311,11 @@ function renderSidebar(opts: PageOptions): string {
   }
 
   // 2. Add dynamic modules (only if not already a fixed section)
+  //    Skip channel modules — they are managed from the unified Canales tab
   for (const mod of dynModules) {
     if (FIXED_IDS.has(mod.name)) continue
     if (!mod.active) continue
+    if (mod.group === 'channels') continue
     const group = mod.group
     if (!categoryItems[group]) {
       // Unknown group — add as new category (key = group name as fallback)
@@ -332,7 +342,9 @@ function renderSidebar(opts: PageOptions): string {
     if (!items || items.length === 0) continue
 
     const groupLabel = t(cat.key, opts.lang)
-    nav += `<div class="sidebar-group"><div class="sidebar-group-title">${groupLabel}</div>`
+    // Hide category title for channels group (only has the unified "Canales" tab)
+    const titleHtml = cat.id === 'channels' ? '' : `<div class="sidebar-group-title">${groupLabel}</div>`
+    nav += `<div class="sidebar-group">${titleHtml}`
 
     for (const item of items) {
       const isActive = opts.section === item.id
@@ -367,13 +379,51 @@ function getBadge(sectionId: string, opts: PageOptions): string {
 // ═══════════════════════════════════════════
 
 function renderSectionHeader(opts: PageOptions): string {
+  // Breadcrumb
+  const consoleLbl = opts.lang === 'es' ? 'Consola' : 'Console'
+  const channelsLbl = t('sec_channels', opts.lang)
+  const sep = '<span class="ch-breadcrumb-sep">&#9656;</span>'
+  let breadcrumb = ''
+
+  if (opts.channelSettingsId) {
+    // 3rd level: Consola > Canales > ChannelName
+    const chNames: Record<string, string> = {
+      'whatsapp': 'WhatsApp (Baileys)', 'gmail': 'Gmail',
+      'google-chat': t('sec_google_chat', opts.lang), 'twilio-voice': t('sec_twilio_voice', opts.lang),
+    }
+    const chName = chNames[opts.channelSettingsId] ?? opts.channelSettingsId
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console/channels?lang=${opts.lang}">${channelsLbl}</a>${sep}
+      <span>${esc(chName)}</span>
+    </div>`
+  } else if (opts.section === 'channels') {
+    // 2nd level: Consola > Canales
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <span>${channelsLbl}</span>
+    </div>`
+  }
+
+  // Channel settings page: use channel name as title, skip section desc
+  if (opts.channelSettingsId) {
+    const chNames: Record<string, string> = {
+      'whatsapp': 'WhatsApp (Baileys)', 'gmail': 'Gmail',
+      'google-chat': t('sec_google_chat', opts.lang), 'twilio-voice': t('sec_twilio_voice', opts.lang),
+    }
+    const chName = chNames[opts.channelSettingsId] ?? opts.channelSettingsId
+    return `${breadcrumb}<div class="section-header">
+      <div class="section-title">${esc(chName)}</div>
+    </div>`
+  }
+
   // Try fixed section first
   const fixed = FIXED_SECTIONS.find(s => s.id === opts.section)
   if (fixed) {
     const title = t(fixed.key, opts.lang)
     const descKey = fixed.key + '_info'
     const desc = t(descKey, opts.lang)
-    return `<div class="section-header">
+    return `${breadcrumb}<div class="section-header">
       <div class="section-title">${title}</div>
       ${desc && desc !== descKey ? `<div class="section-desc">${desc}</div>` : ''}
     </div>`

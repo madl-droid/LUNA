@@ -289,6 +289,7 @@ const manifest: ModuleManifest = {
     en: 'Voice calls with Twilio + Gemini Live',
   },
   type: 'channel',
+  channelType: 'voice',
   removable: true,
   activateByDefault: false,
   depends: ['memory', 'llm'],
@@ -414,6 +415,32 @@ const manifest: ModuleManifest = {
       },
     ],
     apiRoutes,
+    connectionWizard: {
+      title: { es: 'Conectar Twilio Voice', en: 'Connect Twilio Voice' },
+      steps: [
+        {
+          title: { es: 'Obtener credenciales de Twilio', en: 'Get Twilio credentials' },
+          instructions: {
+            es: '<ol><li>Crea una cuenta en <a href="https://www.twilio.com/try-twilio" target="_blank" rel="noopener">Twilio <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> (o inicia sesion si ya tienes una).</li><li>Ve al <a href="https://console.twilio.com/" target="_blank" rel="noopener">Twilio Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.</li><li>En la pagina principal encontraras tu <strong>Account SID</strong> y <strong>Auth Token</strong>.</li><li>Ve a <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" target="_blank" rel="noopener">Phone Numbers <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> y compra o selecciona un numero con capacidad de voz.</li></ol>',
+            en: '<ol><li>Create an account at <a href="https://www.twilio.com/try-twilio" target="_blank" rel="noopener">Twilio <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> (or sign in).</li><li>Go to <a href="https://console.twilio.com/" target="_blank" rel="noopener">Twilio Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.</li><li>On the main page you will find your <strong>Account SID</strong> and <strong>Auth Token</strong>.</li><li>Go to <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" target="_blank" rel="noopener">Phone Numbers <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a> and buy or select a voice-capable number.</li></ol>',
+          },
+        },
+        {
+          title: { es: 'Ingresa las credenciales', en: 'Enter credentials' },
+          instructions: {
+            es: '<p>Ingresa los datos de tu cuenta Twilio:</p>',
+            en: '<p>Enter your Twilio account details:</p>',
+          },
+          fields: [
+            { key: 'TWILIO_ACCOUNT_SID', label: { es: 'Account SID', en: 'Account SID' }, type: 'text', placeholder: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' },
+            { key: 'TWILIO_AUTH_TOKEN', label: { es: 'Auth Token', en: 'Auth Token' }, type: 'secret', placeholder: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' },
+            { key: 'TWILIO_PHONE_NUMBER', label: { es: 'Numero de telefono', en: 'Phone number' }, type: 'text', placeholder: '+1234567890' },
+          ],
+        },
+      ],
+      applyAfterSave: true,
+      verifyEndpoint: 'status',
+    },
   },
 
   async init(registry: Registry): Promise<void> {

@@ -7,6 +7,7 @@ import type { ConsoleField } from '../../kernel/types.js'
 export interface ModuleInfo {
   name: string
   type: string
+  channelType?: 'instant' | 'async' | 'voice'
   active: boolean
   removable: boolean
   console?: {
@@ -14,6 +15,17 @@ export interface ModuleInfo {
     info?: { es: string; en: string }
     fields?: ConsoleField[]
   } | null
+  connectionWizard?: {
+    title: { es: string; en: string }
+    steps: Array<{
+      title: { es: string; en: string }
+      instructions: { es: string; en: string }
+      fields?: Array<{ key: string; label: { es: string; en: string }; type: string; placeholder?: string }>
+    }>
+    saveEndpoint?: string
+    applyAfterSave?: boolean
+    verifyEndpoint?: string
+  }
 }
 
 export function renderModulePanels(modules: ModuleInfo[], config: Record<string, string>, lang: Lang, filterName?: string): string {

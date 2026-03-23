@@ -20,7 +20,33 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
 - 6 categorías con i18n keys (`cat_channels`, `cat_agent`, etc.) vía `t()`
 - Items fijos (secciones con renderers custom) + items dinámicos (módulos activos con `console.group`)
 - Los módulos declaran `group` e `icon` en su `manifest.console` para aparecer automáticamente
+- **Canales NO aparecen individualmente en el sidebar** — se gestionan desde la pestaña unificada `/console/channels`
+- Módulos con `group: 'channels'` se excluyen del sidebar dinámico automáticamente
 - Mobile: hamburger menu con drawer lateral (no horizontal scroll)
+
+## Pestaña Canales (`/console/channels`)
+- Vista unificada de todos los canales como cards en grid responsive (2 por fila desktop, 1 mobile)
+- Cada card: icono con borde de color por estado, nombre, tipo, toggle, descripción, métricas, botones
+- Los canales se detectan automáticamente: cualquier módulo con `type: 'channel'` aparece aquí
+- Activar/desactivar canales directamente desde esta pestaña (POST a `/console/modules/toggle` con `_redirect`)
+- Los módulos channel DEBEN declarar `channelType`: `'instant'` | `'async'` | `'voice'`
+- Barra de filtros (`.filter-bar`): periodo de métricas, estado, tipo de canal
+
+### Sistema de estado visual por color del icono
+El estado del canal se indica con el borde del icono (`.ch-card-icon`):
+- **Gris** (`--on-surface-dim`): Inactivo (módulo desactivado)
+- **Azul** (`#007aff`): Desconectado (activo pero sin conexión)
+- **Verde** (`--success`): Conectado
+- **Rojo** (`--error`): Error
+
+Se controla con `data-status` en el `.ch-card`: `connected` | `disconnected` | `inactive` | `error`.
+
+### Sistema de mensajes de error (`.ch-card-error`)
+Barra de error roja con border-left que aparece debajo de la descripción cuando tiene contenido.
+- Se muestra automáticamente si `data-status="error"` en el card padre, o si el div tiene texto
+- Para mostrar un error desde JS: `card.querySelector('.ch-card-error').textContent = 'mensaje'`
+- Para limpiar: `card.querySelector('.ch-card-error').textContent = ''`
+- Extensible: agregar `.ch-card-warning` con amber para advertencias
 
 ## Páginas unificadas
 - `/console/llm` — 4 paneles colapsables: API Keys, Modelos, Límites, Circuit Breaker

@@ -12,6 +12,7 @@ export interface SectionData {
   waState?: { status: string; qrDataUrl: string | null; lastDisconnectReason: string | null; moduleEnabled: boolean }
   gmailAuth?: { connected: boolean; email: string | null }
   googleAppsAuth?: { connected: boolean; email: string | null }
+  googleChatConnected?: boolean
   moduleStates?: ModuleInfo[]
   scheduledTasksHtml?: string
   leadScoringHtml?: string
@@ -509,6 +510,285 @@ export function renderScheduledTasksSection(data: SectionData): string {
   </div></div>`
 }
 
+// ═══════════════════════════════════════════
+// Channels overview — card grid
+// ═══════════════════════════════════════════
+
+interface ChannelCard {
+  id: string
+  moduleName: string
+  channelType: 'instant' | 'async' | 'voice'
+  name: string
+  description: string
+  icon: string
+  iconBg: string
+  status: 'connected' | 'disconnected' | 'inactive' | 'error'
+  active: boolean
+  settingsUrl: string
+}
+
+// Icons use currentColor — color is controlled by CSS based on data-status
+const CHANNEL_ICONS: Record<string, { svg: string; bg: string }> = {
+  whatsapp: {
+    svg: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`,
+    bg: 'rgba(37, 211, 102, 0.08)',
+  },
+  gmail: {
+    svg: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
+    bg: 'rgba(234, 67, 53, 0.08)',
+  },
+  'google-chat': {
+    svg: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    bg: 'rgba(26, 115, 232, 0.08)',
+  },
+  'twilio-voice': {
+    svg: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+    bg: 'rgba(242, 47, 70, 0.08)',
+  },
+}
+
+const CHANNEL_DESCRIPTIONS: Record<string, Record<string, string>> = {
+  whatsapp: {
+    es: 'Atencion al cliente y seguimiento de leads en tiempo real a traves de WhatsApp Business. Conversaciones directas, QR para vincular dispositivo, reconexion automatica.',
+    en: 'Real-time customer support and lead follow-up through WhatsApp Business. Direct conversations, QR device linking, automatic reconnection.',
+  },
+  gmail: {
+    es: 'Procesamiento inteligente de correos electronicos entrantes y salientes via Gmail API. Respuestas automaticas, hilos de conversacion, filtrado de no-reply y adjuntos.',
+    en: 'Intelligent processing of incoming and outgoing emails via Gmail API. Automatic replies, conversation threads, no-reply filtering and attachments.',
+  },
+  'google-chat': {
+    es: 'Colaboracion interna en Google Workspace. El agente responde consultas del equipo en espacios y mensajes directos como bot de Chat.',
+    en: 'Internal collaboration via Google Workspace. The agent answers team queries in spaces and direct messages as a Chat bot.',
+  },
+  'twilio-voice': {
+    es: 'Llamadas de voz con IA conversacional en tiempo real usando Twilio y Gemini Live. Atiende llamadas entrantes y realiza llamadas salientes con sintesis de voz natural.',
+    en: 'Real-time conversational AI voice calls using Twilio and Gemini Live. Handles incoming calls and makes outbound calls with natural voice synthesis.',
+  },
+}
+
+function buildChannelCards(data: SectionData): ChannelCard[] {
+  const lang = data.lang
+  const modules = data.moduleStates ?? []
+  const cards: ChannelCard[] = []
+
+  const channelDefs: Array<{ id: string; moduleName: string; sectionId: string; defaultType: 'instant' | 'async' | 'voice' }> = [
+    { id: 'whatsapp', moduleName: 'whatsapp', sectionId: 'whatsapp', defaultType: 'instant' },
+    { id: 'gmail', moduleName: 'gmail', sectionId: 'email', defaultType: 'async' },
+    { id: 'google-chat', moduleName: 'google-chat', sectionId: 'google-chat', defaultType: 'instant' },
+    { id: 'twilio-voice', moduleName: 'twilio-voice', sectionId: 'twilio-voice', defaultType: 'voice' },
+  ]
+
+  for (const ch of channelDefs) {
+    const mod = modules.find(m => m.name === ch.moduleName)
+    const isActive = mod?.active ?? false
+    const channelType = mod?.channelType ?? ch.defaultType
+
+    let status: ChannelCard['status'] = 'inactive'
+    if (isActive) {
+      status = 'disconnected'
+      if (ch.id === 'whatsapp' && data.waState) {
+        status = data.waState.status === 'connected' ? 'connected' : 'disconnected'
+      }
+      if (ch.id === 'gmail' && data.gmailAuth) {
+        status = data.gmailAuth.connected ? 'connected' : 'disconnected'
+      }
+      if (ch.id === 'google-chat') {
+        status = data.googleChatConnected ? 'connected' : 'disconnected'
+      }
+    }
+
+    const iconInfo = CHANNEL_ICONS[ch.id] ?? { svg: '', bg: 'rgba(0,0,0,0.05)' }
+    const desc = CHANNEL_DESCRIPTIONS[ch.id]?.[lang] ?? CHANNEL_DESCRIPTIONS[ch.id]?.es ?? ''
+    const name = t('sec_' + ch.id.replace(/-/g, '_'), lang) || ch.id
+
+    cards.push({
+      id: ch.id,
+      moduleName: ch.moduleName,
+      channelType,
+      name: ch.id === 'gmail' ? 'Gmail' : ch.id === 'whatsapp' ? 'WhatsApp (Baileys)' : name,
+      description: desc,
+      icon: iconInfo.svg,
+      iconBg: iconInfo.bg,
+      status,
+      active: isActive,
+      settingsUrl: `/console/channels/${ch.id}?lang=${lang}`,
+    })
+  }
+
+  // Dynamic channel modules not in the hardcoded list
+  for (const mod of modules) {
+    if (mod.type !== 'channel') continue
+    if (channelDefs.some(c => c.moduleName === mod.name)) continue
+
+    const iconInfo = CHANNEL_ICONS[mod.name] ?? { svg: '', bg: 'rgba(0,0,0,0.05)' }
+    const title = mod.console?.title?.[lang as 'es' | 'en'] ?? mod.name
+    cards.push({
+      id: mod.name,
+      moduleName: mod.name,
+      channelType: mod.channelType ?? 'instant',
+      name: title,
+      description: '',
+      icon: iconInfo.svg,
+      iconBg: iconInfo.bg,
+      status: mod.active ? 'connected' : 'inactive',
+      active: mod.active,
+      settingsUrl: `/console/channels/${mod.name}?lang=${lang}`,
+    })
+  }
+
+  return cards
+}
+
+const GEAR_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`
+
+// Helper: renders a single metric cell with label + hover tooltip
+function metricCell(field: string, label: string, info: string, nd: string): string {
+  return `<div class="ch-metric">
+    <div class="ch-metric-head">
+      <span class="ch-metric-label">${label}</span>
+      <span class="ch-info-btn" tabindex="0">i</span>
+      <div class="ch-info-tip">${info}</div>
+    </div>
+    <span class="ch-metric-value" data-field="${field}">${nd}</span>
+  </div>`
+}
+
+function renderMetricsForType(channelType: 'instant' | 'async' | 'voice', channelId: string, lang: Lang): string {
+  const nd = t('ch_no_data', lang)
+
+  if (channelType === 'instant') {
+    return `<div class="ch-card-metrics ch-metrics-4" data-channel="${esc(channelId)}" data-type="instant">
+      ${metricCell('active', t('ch_m_active', lang), t('ch_m_active_info', lang), nd)}
+      ${metricCell('new_24h', t('ch_m_new', lang), t('ch_m_new_info', lang), nd)}
+      ${metricCell('outbound', t('ch_m_outbound', lang), t('ch_m_outbound_info', lang), nd)}
+      ${metricCell('inbound', t('ch_m_inbound', lang), t('ch_m_inbound_info', lang), nd)}
+    </div>`
+  }
+
+  if (channelType === 'async') {
+    return `<div class="ch-card-metrics ch-metrics-4" data-channel="${esc(channelId)}" data-type="async">
+      ${metricCell('active', t('ch_m_interactions', lang), t('ch_m_interactions_info', lang), nd)}
+      ${metricCell('received', t('ch_m_received', lang), t('ch_m_received_info', lang), nd)}
+      ${metricCell('sent', t('ch_m_sent', lang), t('ch_m_sent_info', lang), nd)}
+      ${metricCell('avg_duration_s', t('ch_m_avg_duration', lang), t('ch_m_avg_duration_info', lang), nd)}
+    </div>`
+  }
+
+  // voice — 4 metrics: exitosas, fallidas, duracion promedio, salientes vs entrantes
+  return `<div class="ch-card-metrics ch-metrics-4" data-channel="${esc(channelId)}" data-type="voice">
+    ${metricCell('successful', t('ch_m_successful', lang), t('ch_m_successful_info', lang), nd)}
+    ${metricCell('failed', t('ch_m_failed', lang), t('ch_m_failed_info', lang), nd)}
+    ${metricCell('avg_duration_s', t('ch_m_voice_duration', lang), t('ch_m_voice_duration_info', lang), nd)}
+    ${metricCell('outbound', t('ch_m_voice_outbound', lang), t('ch_m_voice_outbound_info', lang), nd)}
+  </div>`
+}
+
+export function renderChannelsSection(data: SectionData): string {
+  const cards = buildChannelCards(data)
+  const lang = data.lang
+
+  // Period options in order
+  const periods = [
+    ['1h', t('ch_period_1h', lang)],
+    ['today', t('ch_period_today', lang)],
+    ['24h', t('ch_period_24h', lang)],
+    ['this_week', t('ch_period_this_week', lang)],
+    ['7d', t('ch_period_7d', lang)],
+    ['this_month', t('ch_period_this_month', lang)],
+    ['30d', t('ch_period_30d', lang)],
+    ['this_quarter', t('ch_period_this_quarter', lang)],
+    ['90d', t('ch_period_90d', lang)],
+    ['this_half', t('ch_period_this_half', lang)],
+    ['180d', t('ch_period_180d', lang)],
+    ['this_year', t('ch_period_this_year', lang)],
+    ['365d', t('ch_period_365d', lang)],
+  ]
+  const periodOpts = periods.map(([v, l]) => `<option value="${v}"${v === '30d' ? ' selected' : ''}>${l}</option>`).join('')
+
+  // Filter bar
+  const filterBar = `<div class="filter-bar">
+    <div class="ch-filter-group">
+      <span class="ch-filter-label">${t('ch_filter_metrics', lang)}</span>
+      <select class="ch-filter-select" id="ch-period-global">${periodOpts}</select>
+    </div>
+    <div class="ch-filter-sep"></div>
+    <div class="ch-filter-group">
+      <span class="ch-filter-label">${t('ch_filter_status', lang)}</span>
+      <select class="ch-filter-select" id="ch-filter-status">
+        <option value="all">${t('ch_filter_all', lang)}</option>
+        <option value="active">${t('ch_filter_active', lang)}</option>
+        <option value="inactive">${t('ch_filter_inactive', lang)}</option>
+        <option value="disconnected">${t('ch_filter_disconnected', lang)}</option>
+      </select>
+    </div>
+    <div class="ch-filter-sep"></div>
+    <div class="ch-filter-group">
+      <span class="ch-filter-label">${t('ch_filter_type', lang)}</span>
+      <select class="ch-filter-select" id="ch-filter-type">
+        <option value="all">${t('ch_filter_all', lang)}</option>
+        <option value="instant">${t('ch_type_instant', lang)}</option>
+        <option value="async">${t('ch_type_async', lang)}</option>
+        <option value="voice">${t('ch_type_voice', lang)}</option>
+      </select>
+    </div>
+  </div>`
+
+  const cardsHtml = cards.map(card => {
+    const typeLabel = t('ch_type_' + card.channelType, lang)
+    const statusLabels: Record<string, string> = {
+      connected: t('ch_connected', lang),
+      disconnected: t('ch_disconnected', lang),
+      inactive: t('ch_inactive', lang),
+      error: t('ch_error', lang),
+    }
+    const toggleChecked = card.active ? 'checked' : ''
+    const filterStatus = card.active ? (card.status === 'disconnected' ? 'disconnected' : 'active') : 'inactive'
+
+    // SVG icons for connect/disconnect — same size as gear (16x16)
+    const plugSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>`
+    const unplugSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`
+
+    let connectionBtn = ''
+    if (card.active && card.status === 'connected') {
+      connectionBtn = `<button class="ch-btn-action ch-btn-disconnect" onclick="channelDisconnect('${esc(card.id)}', '${lang}')">${unplugSvg} ${t('ch_disconnect', lang)}</button>`
+    } else if (card.active && card.status !== 'connected') {
+      connectionBtn = `<button class="ch-btn-action ch-btn-connect" onclick="channelConnect('${esc(card.id)}', '${lang}')">${plugSvg} ${t('ch_connect', lang)}</button>`
+    }
+
+    // Footer: config + connect/disconnect only when active
+    const footerHtml = card.active
+      ? `<div class="ch-card-footer"><a href="${card.settingsUrl}" class="ch-btn-action ch-btn-gear" title="${t('ch_settings', lang)}">${GEAR_SVG} ${t('ch_settings', lang)}</a><span class="ch-footer-spacer"></span>${connectionBtn}</div>`
+      : ''
+
+    // Status tooltip text
+    const statusLabel = statusLabels[card.status] ?? card.status
+
+    return `
+    <div class="ch-card${card.active ? '' : ' ch-card-inactive'}" data-channel-id="${esc(card.id)}" data-status="${card.status}" data-filter-status="${filterStatus}" data-filter-type="${card.channelType}">
+      <div class="ch-card-top">
+        <div class="ch-card-icon" title="${statusLabel}">
+          ${card.icon}
+          <span class="ch-icon-tooltip">${statusLabel}</span>
+        </div>
+        <div class="ch-card-title-area">
+          <div class="ch-card-name">${esc(card.name)}</div>
+          <div class="ch-card-type">${esc(typeLabel)}</div>
+        </div>
+        <label class="toggle toggle-sm">
+          <input type="checkbox" ${toggleChecked} data-module="${esc(card.moduleName)}" data-redirect="/console/channels?lang=${lang}" onchange="toggleChannelConfirm(this)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="ch-card-desc">${esc(card.description)}</div>
+      <div class="ch-card-error"></div>
+      ${card.active ? renderMetricsForType(card.channelType, card.id, lang) : ''}
+      ${footerHtml}
+    </div>`
+  }).join('')
+
+  return `${filterBar}<div class="ch-grid" id="ch-grid">${cardsHtml}</div>`
+}
+
 /** Old section IDs that redirect to unified pages */
 export const SECTION_REDIRECTS: Record<string, string> = {
   'apikeys': 'llm',
@@ -518,11 +798,15 @@ export const SECTION_REDIRECTS: Record<string, string> = {
   'followup': 'pipeline',
   'naturalidad': 'pipeline',
   'db': 'infra',
+  // Old channel direct URLs → nested under channels
+  'whatsapp': 'channels/whatsapp',
+  'email': 'channels/gmail',
   'redis': 'infra',
 }
 
 export function renderSection(section: string, data: SectionData): string | null {
   switch (section) {
+    case 'channels': return renderChannelsSection(data)
     case 'whatsapp': return renderWhatsappSection(data)
     // Unified LLM page (replaces apikeys, models, llm-limits, llm-cb)
     case 'llm': return renderLlmUnifiedSection(data)
