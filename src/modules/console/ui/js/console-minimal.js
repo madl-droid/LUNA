@@ -407,9 +407,12 @@
     var modal = document.createElement('div')
     modal.id = 'oauth-wizard-modal'
     modal.className = 'wizard-overlay'
+    var wizardTitle = isEs ? ('Conectar ' + cfg.label) : ('Connect ' + cfg.label)
     modal.innerHTML = '<div class="wizard-modal">'
       + '<button class="wizard-close" onclick="closeWizard()">&times;</button>'
       + '<div class="wizard-steps">'
+      + '<div class="wizard-title">' + wizardTitle + '</div>'
+      + '<div class="wizard-step-count">4 ' + (isEs ? 'pasos' : 'steps') + '</div>'
       // Step indicator (4 steps)
       + '<div class="wizard-step-indicator">'
       + '<span class="wizard-dot active" data-step="1">1</span><span class="wizard-dot-line"></span>'
@@ -1222,14 +1225,30 @@
   // WhatsApp: navigate to QR step — auto-triggers QR generation on last step
   var _waCountdownInterval = null
   var _waQrExpiry = 0
+  var _waLastQrUrl = '' // Track last QR to detect changes
+  var _waIsFirstQr = true // First QR lasts 60s, subsequent ones 20s (Baileys default)
 
   window.wizardGoToWa = function (pageIdx, lang) {
     chWizardGoTo(pageIdx)
-    // Check if this is the last page (QR page) — auto-start QR
     var pages = document.querySelectorAll('.wizard-page')
     if (pageIdx === pages.length - 1) {
       startWhatsAppQRAuto(lang)
     }
+  }
+
+  function startWaCountdown(seconds, countdownEl, isEs) {
+    _waQrExpiry = seconds
+    if (_waCountdownInterval) clearInterval(_waCountdownInterval)
+    _waCountdownInterval = setInterval(function () {
+      _waQrExpiry--
+      if (countdownEl) {
+        if (_waQrExpiry > 0) {
+          countdownEl.textContent = (isEs ? 'El codigo expira en ' : 'Code expires in ') + _waQrExpiry + 's'
+        } else {
+          countdownEl.textContent = isEs ? 'Actualizando codigo...' : 'Refreshing code...'
+        }
+      }
+    }, 1000)
   }
 
   function startWhatsAppQRAuto(lang) {
@@ -1239,9 +1258,11 @@
     var countdownEl = document.getElementById('ch-wa-countdown')
     if (!qrArea) return
 
-    // Clear any previous polling/countdown
+    // Reset state
     if (_chConnectPoll) { clearInterval(_chConnectPoll); _chConnectPoll = null }
     if (_waCountdownInterval) { clearInterval(_waCountdownInterval); _waCountdownInterval = null }
+    _waLastQrUrl = ''
+    _waIsFirstQr = true
 
     qrArea.innerHTML = '<div style="color:var(--on-surface-dim)">' + (isEs ? 'Generando codigo QR...' : 'Generating QR code...') + '</div>'
     if (countdownEl) countdownEl.textContent = ''
@@ -1260,21 +1281,16 @@
                 if (countdownEl) countdownEl.textContent = ''
                 setTimeout(function () { closeConnectModal(); window.location.reload() }, 2000)
               } else if (data.qrDataUrl) {
-                qrArea.innerHTML = '<div class="wa-qr-container"><img src="' + data.qrDataUrl + '" alt="QR" class="wa-qr-img"></div>'
-                if (statusEl) statusEl.textContent = isEs ? 'Escanea este codigo con WhatsApp' : 'Scan this code with WhatsApp'
-                // Start/reset countdown (QR codes expire in ~20s, new one comes every poll)
-                _waQrExpiry = 20
-                if (_waCountdownInterval) clearInterval(_waCountdownInterval)
-                _waCountdownInterval = setInterval(function () {
-                  _waQrExpiry--
-                  if (countdownEl) {
-                    if (_waQrExpiry > 0) {
-                      countdownEl.textContent = (isEs ? 'El codigo expira en ' : 'Code expires in ') + _waQrExpiry + 's'
-                    } else {
-                      countdownEl.textContent = isEs ? 'Actualizando codigo...' : 'Refreshing code...'
-                    }
-                  }
-                }, 1000)
+                // Only reset countdown when QR actually changes (new image from Baileys)
+                if (data.qrDataUrl !== _waLastQrUrl) {
+                  _waLastQrUrl = data.qrDataUrl
+                  qrArea.innerHTML = '<div class="wa-qr-container"><img src="' + data.qrDataUrl + '" alt="QR" class="wa-qr-img"></div>'
+                  if (statusEl) statusEl.textContent = isEs ? 'Escanea este codigo con WhatsApp' : 'Scan this code with WhatsApp'
+                  // Baileys: first QR = 60s, subsequent = 20s
+                  var qrDuration = _waIsFirstQr ? 60 : 20
+                  _waIsFirstQr = false
+                  startWaCountdown(qrDuration, countdownEl, isEs)
+                }
               } else if (data.status === 'connecting') {
                 if (statusEl) statusEl.textContent = isEs ? 'Conectando...' : 'Connecting...'
               }
