@@ -481,6 +481,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* module not available */ }
       }
 
+      // Lead scoring: render inline via module service
+      if (section === 'lead-scoring') {
+        try {
+          const renderFn = registry.getOptional<(lang: string) => string>('lead-scoring:renderSection')
+          if (renderFn) {
+            sectionData.leadScoringHtml = renderFn(lang)
+          }
+        } catch { /* module not available */ }
+      }
+
       // Try custom section renderer first, then fall back to dynamic module rendering
       let content = renderSection(section, sectionData)
 

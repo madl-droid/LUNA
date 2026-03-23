@@ -4,6 +4,8 @@
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { renderLeadScoringConsole } from './templates.js'
 import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
@@ -235,7 +237,9 @@ function createApiRoutes(): ApiRoute[] {
       path: 'ui',
       handler: async (_req, res) => {
         try {
+          const thisDir = path.dirname(fileURLToPath(import.meta.url))
           const candidates = [
+            path.resolve(thisDir, 'ui', 'lead-scoring.html'),
             path.resolve(process.cwd(), 'dist', 'modules', 'lead-scoring', 'ui', 'lead-scoring.html'),
             path.resolve(process.cwd(), 'src', 'modules', 'lead-scoring', 'ui', 'lead-scoring.html'),
           ]
@@ -301,6 +305,11 @@ const manifest: ModuleManifest = {
     // Register services
     registry.provide('lead-scoring:config', configStore)
     registry.provide('lead-scoring:queries', leadQueries)
+
+    // Provide renderSection service for inline console embedding (SSR)
+    registry.provide('lead-scoring:renderSection', (lang: 'es' | 'en') => {
+      return renderLeadScoringConsole(configStore!, lang)
+    })
 
     // Register extraction tool
     await registerExtractionTool(registry, configStore)

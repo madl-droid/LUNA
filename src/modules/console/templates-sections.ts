@@ -14,6 +14,7 @@ export interface SectionData {
   googleAppsAuth?: { connected: boolean; email: string | null }
   moduleStates?: ModuleInfo[]
   scheduledTasksHtml?: string
+  leadScoringHtml?: string
 }
 
 const GOOGLE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" class="google-icon" xmlns="http://www.w3.org/2000/svg">
@@ -287,6 +288,10 @@ export function renderPipelineUnifiedSection(data: SectionData): string {
 }
 
 export function renderLeadScoringSection(data: SectionData): string {
+  if (data.leadScoringHtml) {
+    return data.leadScoringHtml
+  }
+  // Fallback: link to standalone page
   return `<div class="panel">
     <div class="panel-header panel-header-link" onclick="window.location.href='/console/api/lead-scoring/ui'">
       <span class="panel-title">${t('sec_lead_scoring', data.lang)} <span class="panel-badge badge-active">${t('sec_lead_scoring_badge', data.lang)}</span></span>
