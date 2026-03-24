@@ -186,8 +186,8 @@ const apiRoutes: ApiRoute[] = [
             body: JSON.stringify({
               input: { text: body.text },
               voice: {
-                languageCode: getEffectiveLanguage(config, registry),
-                name: `${getEffectiveLanguage(config, registry)}-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`,
+                languageCode: getEffectiveLanguage(config, _registry!),
+                name: `${getEffectiveLanguage(config, _registry!)}-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`,
               },
               audioConfig: { audioEncoding: 'MP3' },
             }),

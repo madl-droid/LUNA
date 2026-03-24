@@ -35,6 +35,8 @@ export interface GoogleChatConfig {
   GOOGLE_CHAT_BATCH_WAIT_SECONDS: number
   GOOGLE_CHAT_PRECLOSE_FOLLOWUP_HOURS: number
   GOOGLE_CHAT_PRECLOSE_MESSAGE: string
+  GOOGLE_CHAT_ANTISPAM_MAX: number
+  GOOGLE_CHAT_ANTISPAM_WINDOW_MS: number
 }
 
 // ═══════════════════════════════════════════

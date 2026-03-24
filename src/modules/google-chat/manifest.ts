@@ -64,7 +64,7 @@ const apiRoutes: ApiRoute[] = [
             channelMessageId: normalized.channelMessageId,
             from: normalized.from,
             timestamp: normalized.timestamp,
-            content: normalized.content,
+            content: { ...normalized.content, type: normalized.content.type as IncomingMessage['content']['type'] },
             raw: normalized.raw,
           }
 
@@ -312,6 +312,9 @@ const manifest: ModuleManifest = {
     GOOGLE_CHAT_BATCH_WAIT_SECONDS: numEnvMin(0, 0),
     GOOGLE_CHAT_PRECLOSE_FOLLOWUP_HOURS: numEnvMin(0, 1),
     GOOGLE_CHAT_PRECLOSE_MESSAGE: z.string().default('¿Sigues ahí? Tu sesión se cerrará pronto por inactividad. Si necesitas algo más, escríbeme.'),
+    // Anti-spam (short-window burst protection)
+    GOOGLE_CHAT_ANTISPAM_MAX: numEnv(5),
+    GOOGLE_CHAT_ANTISPAM_WINDOW_MS: numEnv(60000),
   }),
 
   console: {
@@ -468,6 +471,21 @@ const manifest: ModuleManifest = {
         label: { es: 'Max mensajes por dia', en: 'Max messages per day' },
         info: { es: 'Maximo de mensajes por dia por contacto.', en: 'Max messages per day per contact.' },
         min: 1, max: 1000, width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_ANTISPAM_MAX',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Anti-spam: max mensajes', en: 'Anti-spam: max messages' },
+        info: { es: 'Maximo de mensajes del agente en la ventana anti-spam. 0 = desactivado.', en: 'Max agent messages in anti-spam window. 0 = disabled.' },
+        min: 0, max: 20,
+      },
+      {
+        key: 'GOOGLE_CHAT_ANTISPAM_WINDOW_MS',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Anti-spam: ventana (ms)', en: 'Anti-spam: window (ms)' },
+        info: { es: 'Duracion de la ventana anti-spam en milisegundos (default: 60000 = 1 min).', en: 'Anti-spam window duration in ms (default: 60000 = 1 min).' },
       },
       { key: '_divider_session', type: 'divider', label: { es: 'Sesion', en: 'Session' } },
       {
@@ -730,8 +748,8 @@ function buildChannelConfig(cfg: GoogleChatConfig): import('../../channels/types
     // Google Chat API does NOT support typing indicators for bots/apps.
     // Verified: no endpoint exists in chat.googleapis.com v1 for bot typing state.
     supportsTypingIndicator: false,
-    antiSpamMaxPerWindow: 0,
-    antiSpamWindowMs: 0,
+    antiSpamMaxPerWindow: cfg.GOOGLE_CHAT_ANTISPAM_MAX,
+    antiSpamWindowMs: cfg.GOOGLE_CHAT_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,
   }
 }

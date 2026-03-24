@@ -169,6 +169,9 @@ function validateOutput(text: string): ValidationResult {
  * Check per-contact rate limits. Reads from channel config service if available,
  * falls back to engine config for backwards compatibility.
  */
+/** System-wide hard cap: no contact receives more than this per hour, regardless of channel config */
+const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
+
 async function checkRateLimit(
   redis: Redis,
   to: string,
@@ -179,10 +182,15 @@ async function checkRateLimit(
   // Get rate limits from channel config service (if channel provides one)
   const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
   const cc = channelSvc?.get()
-  const limitHour = cc?.rateLimitHour ?? 0
-  const limitDay = cc?.rateLimitDay ?? 0
   const antiSpamMax = cc?.antiSpamMaxPerWindow ?? 0
   const antiSpamWindowMs = cc?.antiSpamWindowMs ?? 0
+
+  // Effective hourly limit: channel config capped by system max (20)
+  const channelLimitHour = cc?.rateLimitHour ?? 0
+  const limitHour = channelLimitHour > 0
+    ? Math.min(channelLimitHour, SYSTEM_MAX_MESSAGES_PER_HOUR)
+    : SYSTEM_MAX_MESSAGES_PER_HOUR
+  const limitDay = cc?.rateLimitDay ?? 0
 
   try {
     // Anti-spam: short-window burst protection (e.g., max 5 messages in 60s)
@@ -199,18 +207,19 @@ async function checkRateLimit(
       await pipeline.exec()
     }
 
-    // Standard rate limits (hourly/daily)
-    if (limitHour <= 0 && limitDay <= 0) return true
-
-    const hourKey = `rate:${to}:hour`
-    const dayKey = `rate:${to}:day`
+    // Standard rate limits (hourly capped by system max, daily)
+    const hourKey = `rate:${channel}:${to}:hour`
+    const dayKey = `rate:${channel}:${to}:day`
 
     const [hourCount, dayCount] = await Promise.all([
       redis.get(hourKey),
       redis.get(dayKey),
     ])
 
-    if (limitHour > 0 && hourCount && parseInt(hourCount) >= limitHour) return false
+    if (hourCount && parseInt(hourCount) >= limitHour) {
+      logger.warn({ to, channel, hourCount, limitHour }, 'Hourly rate limit reached')
+      return false
+    }
     if (limitDay > 0 && dayCount && parseInt(dayCount) >= limitDay) return false
 
     const pipeline = redis.pipeline()

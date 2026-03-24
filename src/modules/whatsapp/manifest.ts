@@ -100,6 +100,9 @@ const manifest: ModuleManifest = {
     // Rate limits
     WHATSAPP_RATE_LIMIT_HOUR: numEnvMin(1, 30),
     WHATSAPP_RATE_LIMIT_DAY: numEnvMin(1, 200),
+    // Anti-spam (short-window burst protection)
+    WHATSAPP_ANTISPAM_MAX: numEnv(5),
+    WHATSAPP_ANTISPAM_WINDOW_MS: numEnv(60000),
     // Socket tuning
     WHATSAPP_MARK_ONLINE: boolEnv(true),
     WHATSAPP_REJECT_CALLS: boolEnv(true),
@@ -207,6 +210,21 @@ const manifest: ModuleManifest = {
         min: 1,
         max: 1000,
         width: 'half',
+      },
+      {
+        key: 'WHATSAPP_ANTISPAM_MAX',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Anti-spam: max mensajes', en: 'Anti-spam: max messages' },
+        info: { es: 'Maximo de mensajes del agente en la ventana anti-spam. 0 = desactivado.', en: 'Max agent messages in anti-spam window. 0 = disabled.' },
+        min: 0, max: 20,
+      },
+      {
+        key: 'WHATSAPP_ANTISPAM_WINDOW_MS',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Anti-spam: ventana (ms)', en: 'Anti-spam: window (ms)' },
+        info: { es: 'Duracion de la ventana anti-spam en milisegundos (default: 60000 = 1 min).', en: 'Anti-spam window duration in ms (default: 60000 = 1 min).' },
       },
       { key: '_divider_socket', type: 'divider', label: { es: 'Comportamiento', en: 'Behavior' } },
       {
@@ -440,14 +458,19 @@ const manifest: ModuleManifest = {
 
     // Register message handler: incoming messages → batcher
     adapter.onMessage(async (msg) => {
+      const incoming: IncomingMessage = {
+        id: msg.id,
+        channelName: msg.channelName as IncomingMessage['channelName'],
+        channelMessageId: msg.channelMessageId,
+        from: msg.from,
+        timestamp: msg.timestamp,
+        content: { ...msg.content, type: (msg.content.type || 'text') as IncomingMessage['content']['type'] },
+        raw: msg.raw,
+      }
       if (batcher) {
-        batcher.add(msg)
+        batcher.add(incoming)
       } else {
-        await registry.runHook('message:incoming', {
-          id: msg.id, channelName: msg.channelName,
-          channelMessageId: msg.channelMessageId, from: msg.from,
-          timestamp: msg.timestamp, content: msg.content, raw: msg.raw,
-        })
+        await registry.runHook('message:incoming', incoming)
       }
     })
 
@@ -503,6 +526,8 @@ interface WhatsAppFullConfig {
   WHATSAPP_AVISO_STYLE: string
   WHATSAPP_RATE_LIMIT_HOUR: number
   WHATSAPP_RATE_LIMIT_DAY: number
+  WHATSAPP_ANTISPAM_MAX: number
+  WHATSAPP_ANTISPAM_WINDOW_MS: number
   WHATSAPP_MARK_ONLINE: boolean
   WHATSAPP_REJECT_CALLS: boolean
   WHATSAPP_REJECT_CALL_MESSAGE: string
@@ -542,8 +567,8 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     typingDelayMaxMs: 3000,
     channelType: 'instant',
     supportsTypingIndicator: true,
-    antiSpamMaxPerWindow: 0,
-    antiSpamWindowMs: 0,
+    antiSpamMaxPerWindow: cfg.WHATSAPP_ANTISPAM_MAX,
+    antiSpamWindowMs: cfg.WHATSAPP_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,
   }
 }
