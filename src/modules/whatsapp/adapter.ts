@@ -33,6 +33,9 @@ export interface WhatsAppConfig {
   WHATSAPP_PRIVACY_STATUS: string
   WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
   WHATSAPP_AGENT_NAME: string
+  WHATSAPP_BATCH_WAIT_SECONDS: number
+  WHATSAPP_SESSION_TIMEOUT_HOURS: number
+  WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: number
 }
 
 export interface AdapterCallbacks {

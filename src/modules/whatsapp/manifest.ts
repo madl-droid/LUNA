@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse } from '../../kernel/http-helpers.js'
-import { numEnv, boolEnv } from '../../kernel/config-helpers.js'
+import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { BaileysAdapter } from './adapter.js'
 import * as configStore from '../../kernel/config-store.js'
 import QRCode from 'qrcode'
@@ -98,6 +98,12 @@ const manifest: ModuleManifest = {
     WHATSAPP_PRIVACY_READ_RECEIPTS: boolEnv(true),
     // Agent name (for @mention detection in groups)
     WHATSAPP_AGENT_NAME: z.string().default('Luna'),
+    // Message batching: wait time (seconds) to collect messages before processing
+    WHATSAPP_BATCH_WAIT_SECONDS: numEnvMin(15, 30),
+    // Session inactivity timeout (hours) — max 24h per Meta policies
+    WHATSAPP_SESSION_TIMEOUT_HOURS: numEnvMin(1, 24),
+    // Pre-close follow-up: hours before session timeout to send a reminder
+    WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: numEnvMin(0, 1),
   }),
 
   console: {
@@ -183,6 +189,37 @@ const manifest: ModuleManifest = {
         label: { es: 'Nombre del agente', en: 'Agent name' },
         info: { es: 'Nombre para deteccion de @mencion en grupos (default: Luna)', en: 'Name for @mention detection in groups (default: Luna)' },
       },
+      { key: '_divider_session', type: 'divider', label: { es: 'Sesion y batching', en: 'Session & batching' } },
+      {
+        key: 'WHATSAPP_BATCH_WAIT_SECONDS',
+        type: 'number',
+        label: { es: 'Espera de batching (seg)', en: 'Batch wait (sec)' },
+        info: { es: 'Segundos de espera para acumular mensajes antes de procesar. Min 15, max 120.', en: 'Seconds to wait and collect messages before processing. Min 15, max 120.' },
+        min: 15,
+        max: 120,
+        unit: 's',
+        width: 'half',
+      },
+      {
+        key: 'WHATSAPP_SESSION_TIMEOUT_HOURS',
+        type: 'number',
+        label: { es: 'Timeout de sesion (horas)', en: 'Session timeout (hours)' },
+        info: { es: 'Horas de inactividad para cerrar la sesion. Max 24h (politica de Meta).', en: 'Inactivity hours to close the session. Max 24h (Meta policy).' },
+        min: 1,
+        max: 24,
+        unit: 'h',
+        width: 'half',
+      },
+      {
+        key: 'WHATSAPP_PRECLOSE_FOLLOWUP_HOURS',
+        type: 'number',
+        label: { es: 'Follow-up pre-cierre (horas)', en: 'Pre-close follow-up (hours)' },
+        info: { es: 'Horas antes del cierre de sesion para enviar un recordatorio si se espera respuesta del cliente. 0 = desactivado.', en: 'Hours before session close to send a reminder if awaiting client response. 0 = disabled.' },
+        min: 0,
+        max: 23,
+        unit: 'h',
+        width: 'half',
+      },
       { key: '_divider_privacy', type: 'divider', label: { es: 'Privacidad', en: 'Privacy' } },
       {
         key: 'WHATSAPP_PRIVACY_LAST_SEEN',
@@ -264,6 +301,9 @@ const manifest: ModuleManifest = {
       WHATSAPP_PRIVACY_STATUS: string
       WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
       WHATSAPP_AGENT_NAME: string
+      WHATSAPP_BATCH_WAIT_SECONDS: number
+      WHATSAPP_SESSION_TIMEOUT_HOURS: number
+      WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: number
     }>('whatsapp')
 
     const db = registry.getDb()
