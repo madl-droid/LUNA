@@ -121,8 +121,9 @@ export class AttachmentProcessorImpl implements AttachmentProcessor {
   }
 
   private async extractPdf(data: Buffer): Promise<string> {
-    const pdfParse = (await import('pdf-parse')).default
-    const result = await pdfParse(data)
+    const { PDFParse } = await import('pdf-parse')
+    const parser = new PDFParse({ data: new Uint8Array(data) })
+    const result = await parser.getText()
     return result.text?.trim() ?? ''
   }
 
