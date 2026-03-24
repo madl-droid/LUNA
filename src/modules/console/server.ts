@@ -124,11 +124,11 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
   // Version
   const version = kernelConfig.buildVersion || packageJsonVersion || 'dev'
 
-  // Models: try to get from model-scanner's exported function
+  // Models: try to get from LLM module's integrated model scanner
   let allModels: Record<string, string[]> = { anthropic: [], gemini: [] }
   let lastScan: { lastScanAt: string; replacements: Array<{ configKey: string; oldModel: string; newModel: string }> } | null = null
   try {
-    const { getLastScanResult } = await import('../model-scanner/scanner.js')
+    const { getLastScanResult } = await import('../llm/model-scanner.js')
     const scan = getLastScanResult()
     if (scan) {
       allModels = {
@@ -137,7 +137,7 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
       }
       lastScan = scan.lastScanAt ? { lastScanAt: scan.lastScanAt, replacements: scan.replacements ?? [] } : null
     }
-  } catch { /* model-scanner not available */ }
+  } catch { /* llm model-scanner not available */ }
 
   // Module states
   let moduleStates: ModuleInfo[] = []

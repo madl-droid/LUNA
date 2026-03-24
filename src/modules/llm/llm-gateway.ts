@@ -25,7 +25,16 @@ import {
   type TaskRoute,
   type CircuitBreakerConfig,
   type UsageSummary,
+  type TTSRequest,
+  type TTSResponse,
+  type ScanResult,
 } from './types.js'
+import {
+  scanModels,
+  startScanner,
+  stopScanner,
+  getLastScanResult,
+} from './model-scanner.js'
 
 const logger = pino({ name: 'llm:gateway' })
 
@@ -103,9 +112,14 @@ export class LLMGateway {
   /**
    * Initialize database tables and start background processes.
    */
-  async init(db: Pool): Promise<void> {
+  async init(db: Pool, scanIntervalMs?: number): Promise<void> {
     await pgStore.ensureTables(db)
     this.tracker.startCleanup()
+
+    // Start model scanner if registry available
+    if (this.registry && scanIntervalMs !== undefined) {
+      startScanner(this.registry, scanIntervalMs)
+    }
   }
 
   /**
@@ -113,6 +127,7 @@ export class LLMGateway {
    */
   stop(): void {
     this.tracker.stop()
+    stopScanner()
   }
 
   // ═══════════════════════════════════════════
@@ -337,6 +352,77 @@ export class LLMGateway {
    */
   getCircuitBreakerStatus() {
     return this.breakers.allSnapshots()
+  }
+
+  // ═══════════════════════════════════════════
+  // TTS (Text-to-Speech)
+  // ═══════════════════════════════════════════
+
+  /**
+   * Synthesize text to speech via Google Cloud TTS.
+   * Uses the Google API key from LLM config.
+   */
+  async tts(request: TTSRequest): Promise<TTSResponse> {
+    const apiKey = this.apiKeys.get('GOOGLE_AI_API_KEY')
+    if (!apiKey) {
+      throw new Error('No Google API key configured for TTS')
+    }
+
+    const languageCode = request.languageCode ?? 'es-US'
+    const audioEncoding = request.audioEncoding ?? 'MP3'
+
+    const ttsResponse = await fetch(
+      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: { text: request.text },
+          voice: {
+            languageCode,
+            name: request.voice,
+          },
+          audioConfig: { audioEncoding },
+        }),
+      },
+    )
+
+    if (!ttsResponse.ok) {
+      const errText = await ttsResponse.text()
+      throw new Error(`TTS synthesis failed: ${errText}`)
+    }
+
+    const data = await ttsResponse.json() as { audioContent: string }
+    const mimeMap: Record<string, string> = {
+      MP3: 'audio/mp3',
+      LINEAR16: 'audio/wav',
+      OGG_OPUS: 'audio/ogg',
+    }
+
+    return {
+      audioBase64: data.audioContent,
+      mimeType: mimeMap[audioEncoding] ?? 'audio/mp3',
+      voice: request.voice,
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  // Model scanner
+  // ═══════════════════════════════════════════
+
+  /**
+   * Trigger a manual model scan.
+   */
+  async scanModels(): Promise<ScanResult> {
+    if (!this.registry) throw new Error('Registry not set')
+    return scanModels(this.registry)
+  }
+
+  /**
+   * Get last scan result.
+   */
+  getLastScanResult(): ScanResult | null {
+    return getLastScanResult()
   }
 
   // ═══════════════════════════════════════════

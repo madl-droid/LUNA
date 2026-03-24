@@ -1,43 +1,20 @@
 // LUNA — LLM Model Scanner
-// Escanea periódicamente las APIs de los proveedores LLM para descubrir
-// modelos disponibles. Si un modelo configurado fue descontinuado, lo
-// reemplaza automáticamente por el sucesor de la misma familia.
+// Escanea APIs de providers, detecta modelos deprecados, auto-reemplaza.
+// Integrado como servicio interno del módulo LLM.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import pino from 'pino'
-import { config, reloadInstanceConfig } from '../config.js'
+import type { Registry } from '../../kernel/registry.js'
+import { getEnv } from '../../kernel/config.js'
+import type { ScannedModel, ScanResult, ModelReplacement } from './types.js'
 
-const logger = pino({ name: 'model-scanner', level: config.logLevel })
-
-// ═══════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════
-export interface ScannedModel {
-  id: string
-  displayName: string
-  provider: 'anthropic' | 'google'
-  family: string      // haiku, sonnet, opus, flash, pro
-  createdAt: string
-}
-
-export interface ScanResult {
-  anthropic: ScannedModel[]
-  google: ScannedModel[]
-  lastScanAt: string
-  replacements: Replacement[]
-}
-
-interface Replacement {
-  configKey: string
-  oldModel: string
-  newModel: string
-  reason: string
-}
+const logger = pino({ name: 'llm:model-scanner' })
 
 // ═══════════════════════════════════════════
 // Family detection
 // ═══════════════════════════════════════════
+
 const ANTHROPIC_FAMILIES = ['haiku', 'sonnet', 'opus'] as const
 const GOOGLE_FAMILIES = ['flash', 'pro'] as const
 
@@ -52,6 +29,7 @@ function detectFamily(modelId: string): string {
 // ═══════════════════════════════════════════
 // API calls
 // ═══════════════════════════════════════════
+
 async function fetchAnthropicModels(apiKey: string): Promise<ScannedModel[]> {
   try {
     const res = await fetch('https://api.anthropic.com/v1/models', {
@@ -108,7 +86,6 @@ async function fetchGoogleModels(apiKey: string): Promise<ScannedModel[]> {
 // Replacement logic
 // ═══════════════════════════════════════════
 
-/** Find best replacement: same family, most recent */
 function findReplacement(missingId: string, available: ScannedModel[]): ScannedModel | null {
   const family = detectFamily(missingId)
   const candidates = available
@@ -117,55 +94,13 @@ function findReplacement(missingId: string, available: ScannedModel[]): ScannedM
   return candidates[0] ?? null
 }
 
-/** All config keys that hold a model ID (env-level config) */
-const MODEL_CONFIG_KEYS = [
-  'LLM_CLASSIFY_MODEL',
-  'LLM_RESPOND_MODEL',
-  'LLM_COMPLEX_MODEL',
-  'LLM_TOOLS_MODEL',
-  'LLM_COMPRESS_MODEL',
-  'LLM_PROACTIVE_MODEL',
-  'LLM_FALLBACK_CLASSIFY_MODEL',
-  'LLM_FALLBACK_RESPOND_MODEL',
-  'LLM_FALLBACK_COMPLEX_MODEL',
-] as const
-
-/** Map from config key to how to read current value from config object */
-function getConfiguredModel(key: string): string {
-  switch (key) {
-    case 'LLM_CLASSIFY_MODEL': return config.llm.classify.model
-    case 'LLM_RESPOND_MODEL': return config.llm.respond.model
-    case 'LLM_COMPLEX_MODEL': return config.llm.complex.model
-    case 'LLM_TOOLS_MODEL': return config.llm.tools.model
-    case 'LLM_COMPRESS_MODEL': return config.llm.compress.model
-    case 'LLM_PROACTIVE_MODEL': return config.llm.proactive.model
-    case 'LLM_FALLBACK_CLASSIFY_MODEL': return config.llm.fallback.classifyModel
-    case 'LLM_FALLBACK_RESPOND_MODEL': return config.llm.fallback.respondModel
-    case 'LLM_FALLBACK_COMPLEX_MODEL': return config.llm.fallback.complexModel
-    default: return ''
-  }
-}
-
-function getConfiguredProvider(key: string): string {
-  switch (key) {
-    case 'LLM_CLASSIFY_MODEL': return config.llm.classify.provider
-    case 'LLM_RESPOND_MODEL': return config.llm.respond.provider
-    case 'LLM_COMPLEX_MODEL': return config.llm.complex.provider
-    case 'LLM_TOOLS_MODEL': return config.llm.tools.provider
-    case 'LLM_COMPRESS_MODEL': return config.llm.compress.provider
-    case 'LLM_PROACTIVE_MODEL': return config.llm.proactive.provider
-    case 'LLM_FALLBACK_CLASSIFY_MODEL': return config.llm.fallback.classifyProvider
-    case 'LLM_FALLBACK_RESPOND_MODEL': return config.llm.fallback.respondProvider
-    case 'LLM_FALLBACK_COMPLEX_MODEL': return config.llm.fallback.complexProvider
-    default: return 'anthropic'
-  }
-}
-
 // ═══════════════════════════════════════════
 // Instance config update
 // ═══════════════════════════════════════════
+
 function updateInstanceConfigModels(anthropicModels: ScannedModel[], googleModels: ScannedModel[]): void {
   const configPath = path.resolve('instance/config.json')
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
   let instanceConfig: Record<string, unknown> = {}
   try {
     if (fs.existsSync(configPath)) {
@@ -183,13 +118,13 @@ function updateInstanceConfigModels(anthropicModels: ScannedModel[], googleModel
   instanceConfig.llm = llm
 
   fs.writeFileSync(configPath, JSON.stringify(instanceConfig, null, 2), 'utf-8')
-  reloadInstanceConfig()
 }
 
 // ═══════════════════════════════════════════
 // .env update
 // ═══════════════════════════════════════════
-function updateEnvFile(replacements: Replacement[]): void {
+
+function updateEnvFile(replacements: ModelReplacement[]): void {
   if (replacements.length === 0) return
 
   const envPath = path.resolve('.env')
@@ -208,41 +143,62 @@ function updateEnvFile(replacements: Replacement[]): void {
 // ═══════════════════════════════════════════
 // Main scan
 // ═══════════════════════════════════════════
+
 let _lastScanResult: ScanResult | null = null
 
 export function getLastScanResult(): ScanResult | null {
   return _lastScanResult
 }
 
-export async function scanModels(): Promise<ScanResult> {
+/** All config keys that hold a model ID */
+const MODEL_CONFIG_KEYS = [
+  'LLM_CLASSIFY_MODEL',
+  'LLM_RESPOND_MODEL',
+  'LLM_COMPLEX_MODEL',
+  'LLM_TOOLS_MODEL',
+  'LLM_COMPRESS_MODEL',
+  'LLM_PROACTIVE_MODEL',
+  'LLM_FALLBACK_CLASSIFY_MODEL',
+  'LLM_FALLBACK_RESPOND_MODEL',
+  'LLM_FALLBACK_COMPLEX_MODEL',
+] as const
+
+export async function scanModels(registry: Registry): Promise<ScanResult> {
   logger.info('Starting model scan...')
 
-  const anthropicKey = config.apiKeys.anthropic
-  const googleKey = config.apiKeys.googleAi
+  const config = registry.getConfig<{ ANTHROPIC_API_KEY: string; GOOGLE_AI_API_KEY: string }>('llm')
+  const anthropicKey = config.ANTHROPIC_API_KEY
+  const googleKey = config.GOOGLE_AI_API_KEY
+  const errors: Array<{ provider: string; message: string }> = []
+
+  if (!anthropicKey) {
+    errors.push({ provider: 'anthropic', message: 'ANTHROPIC_API_KEY is not configured. Set it in API Keys to scan Anthropic models.' })
+  }
+  if (!googleKey) {
+    errors.push({ provider: 'google', message: 'GOOGLE_AI_API_KEY is not configured. Set it in API Keys to scan Google models.' })
+  }
 
   const anthropicModels = anthropicKey ? await fetchAnthropicModels(anthropicKey) : []
   const googleModels = googleKey ? await fetchGoogleModels(googleKey) : []
 
-  logger.info({ anthropic: anthropicModels.length, google: googleModels.length }, 'Models discovered')
+  logger.info({ anthropic: anthropicModels.length, google: googleModels.length, errors: errors.length }, 'Models discovered')
 
-  // Update instance config with discovered models
   if (anthropicModels.length > 0 || googleModels.length > 0) {
     updateInstanceConfigModels(anthropicModels, googleModels)
   }
 
   // Check for deprecated models and auto-replace
-  const allAvailable = [...anthropicModels, ...googleModels]
-  const allAvailableIds = new Set(allAvailable.map(m => m.id))
-  const replacements: Replacement[] = []
+  const allAvailableIds = new Set([...anthropicModels, ...googleModels].map(m => m.id))
+  const replacements: ModelReplacement[] = []
 
   for (const key of MODEL_CONFIG_KEYS) {
-    const currentModel = getConfiguredModel(key)
+    const currentModel = getEnv(key)
     if (!currentModel) continue
 
-    const provider = getConfiguredProvider(key)
+    const providerKey = key.includes('FALLBACK') ? `LLM_FALLBACK_${key.split('_').pop()}_PROVIDER` : key.replace('_MODEL', '_PROVIDER')
+    const provider = getEnv(providerKey) ?? 'anthropic'
     const providerModels = provider === 'google' ? googleModels : anthropicModels
 
-    // Skip check if provider has no key (can't verify)
     if (providerModels.length === 0) continue
 
     if (!allAvailableIds.has(currentModel)) {
@@ -261,13 +217,8 @@ export async function scanModels(): Promise<ScanResult> {
     }
   }
 
-  // Apply replacements to .env + reload
   if (replacements.length > 0) {
     updateEnvFile(replacements)
-    // Reload config so changes take effect
-    const { reloadEnvConfig } = await import('../config.js')
-    reloadEnvConfig()
-    logger.info({ count: replacements.length }, 'Applied model replacements')
   }
 
   const result: ScanResult = {
@@ -275,6 +226,7 @@ export async function scanModels(): Promise<ScanResult> {
     google: googleModels,
     lastScanAt: new Date().toISOString(),
     replacements,
+    errors: errors.length > 0 ? errors : undefined,
   }
 
   _lastScanResult = result
@@ -284,21 +236,21 @@ export async function scanModels(): Promise<ScanResult> {
 // ═══════════════════════════════════════════
 // Periodic scanner
 // ═══════════════════════════════════════════
-const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
+
 let _intervalId: ReturnType<typeof setInterval> | null = null
 
-export function startModelScanner(intervalMs = DEFAULT_INTERVAL_MS): void {
+export function startScanner(registry: Registry, intervalMs = 21600000): void {
   // Run immediately on start
-  scanModels().catch(err => logger.error({ err }, 'Initial model scan failed'))
+  scanModels(registry).catch(err => logger.error({ err }, 'Initial model scan failed'))
 
   _intervalId = setInterval(() => {
-    scanModels().catch(err => logger.error({ err }, 'Periodic model scan failed'))
+    scanModels(registry).catch(err => logger.error({ err }, 'Periodic model scan failed'))
   }, intervalMs)
 
   logger.info({ intervalHours: intervalMs / 3600000 }, 'Model scanner started')
 }
 
-export function stopModelScanner(): void {
+export function stopScanner(): void {
   if (_intervalId) {
     clearInterval(_intervalId)
     _intervalId = null

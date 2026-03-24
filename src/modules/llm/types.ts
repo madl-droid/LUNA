@@ -51,6 +51,7 @@ export type LLMTask =
   | 'proactive'
   | 'vision'
   | 'stt'
+  | 'tts'
   | 'image_gen'
   | 'web_search'
   | 'compress'
@@ -311,6 +312,9 @@ export interface LLMModuleConfig {
 
   // Fallback chain order
   LLM_FALLBACK_CHAIN: string
+
+  // Model scanner
+  MODEL_SCAN_INTERVAL_MS: number
 }
 
 // ═══════════════════════════════════════════
@@ -332,4 +336,55 @@ export const DEFAULT_COST_TABLE: Record<string, { inputPer1M: number; outputPer1
   'gpt-4.1-mini': { inputPer1M: 0.40, outputPer1M: 1.60 },
   'gpt-4.1-nano': { inputPer1M: 0.10, outputPer1M: 0.40 },
   'o3-mini': { inputPer1M: 1.10, outputPer1M: 4.40 },
+}
+
+// ═══════════════════════════════════════════
+// TTS (Text-to-Speech)
+// ═══════════════════════════════════════════
+
+export interface TTSRequest {
+  /** Text to synthesize */
+  text: string
+  /** Voice name (e.g. 'Kore', 'Aoede', or a Wavenet voice name) */
+  voice: string
+  /** Language code (default: 'es-US') */
+  languageCode?: string
+  /** Audio encoding (default: 'MP3') */
+  audioEncoding?: 'MP3' | 'LINEAR16' | 'OGG_OPUS'
+}
+
+export interface TTSResponse {
+  /** Base64-encoded audio content */
+  audioBase64: string
+  /** MIME type of the audio */
+  mimeType: string
+  /** Voice used */
+  voice: string
+}
+
+// ═══════════════════════════════════════════
+// Model scanner types
+// ═══════════════════════════════════════════
+
+export interface ScannedModel {
+  id: string
+  displayName: string
+  provider: 'anthropic' | 'google'
+  family: string
+  createdAt: string
+}
+
+export interface ScanResult {
+  anthropic: ScannedModel[]
+  google: ScannedModel[]
+  lastScanAt: string
+  replacements: ModelReplacement[]
+  errors?: Array<{ provider: string; message: string }>
+}
+
+export interface ModelReplacement {
+  configKey: string
+  oldModel: string
+  newModel: string
+  reason: string
 }
