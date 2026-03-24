@@ -91,15 +91,16 @@ async function pollForEmails(): Promise<void> {
 
   pollerState.status = 'polling'
   try {
+    // Reload config on each poll cycle to pick up console changes
+    const config = _registry.getConfig<EmailConfig>('gmail')
+    gmailAdapter.reloadConfig(config)
+
     let messages = await gmailAdapter.fetchNewMessages(lastHistoryId ?? undefined)
 
     // Actualizar history ID
     try {
       lastHistoryId = await gmailAdapter.getHistoryId()
     } catch { /* non-critical */ }
-
-    // Only-first-in-thread: keep only the most recent message per thread
-    const config = _registry.getConfig<EmailConfig>('gmail')
     if (config.EMAIL_ONLY_FIRST_IN_THREAD && messages.length > 1) {
       const byThread = new Map<string, EmailMessage>()
       for (const msg of messages) {
@@ -976,7 +977,16 @@ const manifest: ModuleManifest = {
     // Hook: cuando el engine quiere enviar email
     registry.addHook('gmail', 'message:send', async (payload) => {
       if (payload.channel !== 'email') return
-      if (!gmailAdapter) return
+      if (!gmailAdapter || !_registry) return
+
+      // Read fresh config for hot-reloadable params
+      const freshConfig = _registry.getConfig<EmailConfig>('gmail')
+
+      // Sync rate limiter account type if changed
+      if (rateLimiter) {
+        const freshAccountType = (freshConfig.EMAIL_ACCOUNT_TYPE === 'free' ? 'free' : 'workspace') as 'workspace' | 'free'
+        rateLimiter.updateAccountType(freshAccountType)
+      }
 
       // Rate limit check
       if (rateLimiter && !(await rateLimiter.canSend())) {
@@ -989,14 +999,18 @@ const manifest: ModuleManifest = {
         return
       }
 
+      // Reload adapter config so footer picks up changes
+      gmailAdapter.reloadConfig(freshConfig)
+
       const bodyHtml = payload.content.text ?? ''
       const to = payload.to
+      const sendDb = _registry.getDb()
 
       try {
         let result: { messageId: string; threadId: string }
 
         // Try to reply to existing thread instead of sending new email
-        const threadRow = await db.query(
+        const threadRow = await sendDb.query(
           `SELECT thread_id, last_message_gmail_id FROM email_threads WHERE contact_id = $1 AND closed_at IS NULL ORDER BY last_message_at DESC LIMIT 1`,
           [to],
         ).catch(() => ({ rows: [] }))
@@ -1004,8 +1018,8 @@ const manifest: ModuleManifest = {
         const existingThread = threadRow.rows[0] as { thread_id: string; last_message_gmail_id: string } | undefined
 
         if (existingThread?.last_message_gmail_id) {
-          // Reply to existing thread
-          const replyAll = config.EMAIL_REPLY_MODE === 'reply-all'
+          // Reply to existing thread — read fresh reply mode
+          const replyAll = freshConfig.EMAIL_REPLY_MODE === 'reply-all'
           result = await gmailAdapter.reply({
             originalMessageId: existingThread.last_message_gmail_id,
             bodyHtml,
@@ -1111,58 +1125,60 @@ const manifest: ModuleManifest = {
       }
     })
 
-    // Register session management jobs
-    if (config.EMAIL_SESSION_INACTIVITY_HOURS > 0) {
-      // Pre-close follow-up job
-      if (config.EMAIL_PRECLOSE_FOLLOWUP_HOURS > 0 && config.EMAIL_PRECLOSE_FOLLOWUP_TEXT) {
-        const followupThresholdHours = config.EMAIL_SESSION_INACTIVITY_HOURS - config.EMAIL_PRECLOSE_FOLLOWUP_HOURS
-        if (followupThresholdHours > 0) {
-          await registry.runHook('job:register', {
-            jobName: 'email-preclose-followup',
-            intervalMs: 15 * 60 * 1000, // scan every 15 min
-            handler: async () => {
-              if (!_registry) return
-              const jdb = _registry.getDb()
-              const candidates = await jdb.query(`
-                SELECT thread_id, contact_id FROM email_threads
-                WHERE closed_at IS NULL
-                  AND followup_sent_at IS NULL
-                  AND last_message_at < NOW() - INTERVAL '${followupThresholdHours} hours'
-                  AND last_message_at > NOW() - INTERVAL '${config.EMAIL_SESSION_INACTIVITY_HOURS} hours'
-              `)
-              for (const row of candidates.rows as Array<{ thread_id: string; contact_id: string }>) {
-                await _registry.runHook('message:send', {
-                  channel: 'email',
-                  to: row.contact_id,
-                  content: { type: 'text', text: config.EMAIL_PRECLOSE_FOLLOWUP_TEXT },
-                })
-                await jdb.query('UPDATE email_threads SET followup_sent_at = NOW() WHERE thread_id = $1', [row.thread_id])
-                logger.info({ threadId: row.thread_id, contactId: row.contact_id }, 'Pre-close follow-up sent')
-              }
-            },
-          })
-        }
-      }
+    // Register session management jobs (read fresh config inside handlers for hot reload)
+    await registry.runHook('job:register', {
+      jobName: 'email-preclose-followup',
+      intervalMs: 15 * 60 * 1000, // scan every 15 min
+      handler: async () => {
+        if (!_registry) return
+        const freshCfg = _registry.getConfig<EmailConfig>('gmail')
+        if (freshCfg.EMAIL_SESSION_INACTIVITY_HOURS <= 0) return
+        if (freshCfg.EMAIL_PRECLOSE_FOLLOWUP_HOURS <= 0 || !freshCfg.EMAIL_PRECLOSE_FOLLOWUP_TEXT) return
+        const followupThreshold = freshCfg.EMAIL_SESSION_INACTIVITY_HOURS - freshCfg.EMAIL_PRECLOSE_FOLLOWUP_HOURS
+        if (followupThreshold <= 0) return
 
-      // Session close job
-      await registry.runHook('job:register', {
-        jobName: 'email-session-close',
-        intervalMs: 30 * 60 * 1000, // scan every 30 min
-        handler: async () => {
-          if (!_registry) return
-          const jdb = _registry.getDb()
-          const result = await jdb.query(`
-            UPDATE email_threads SET closed_at = NOW()
-            WHERE closed_at IS NULL
-              AND last_message_at < NOW() - INTERVAL '${config.EMAIL_SESSION_INACTIVITY_HOURS} hours'
-            RETURNING thread_id
-          `)
-          if (result.rowCount && result.rowCount > 0) {
-            logger.info({ closed: result.rowCount }, 'Email sessions closed due to inactivity')
-          }
-        },
-      })
-    }
+        const jdb = _registry.getDb()
+        const candidates = await jdb.query(
+          `SELECT thread_id, contact_id FROM email_threads
+           WHERE closed_at IS NULL
+             AND followup_sent_at IS NULL
+             AND last_message_at < NOW() - make_interval(hours => $1)
+             AND last_message_at > NOW() - make_interval(hours => $2)`,
+          [followupThreshold, freshCfg.EMAIL_SESSION_INACTIVITY_HOURS],
+        )
+        for (const row of candidates.rows as Array<{ thread_id: string; contact_id: string }>) {
+          await _registry.runHook('message:send', {
+            channel: 'email',
+            to: row.contact_id,
+            content: { type: 'text', text: freshCfg.EMAIL_PRECLOSE_FOLLOWUP_TEXT },
+          })
+          await jdb.query('UPDATE email_threads SET followup_sent_at = NOW() WHERE thread_id = $1', [row.thread_id])
+          logger.info({ threadId: row.thread_id, contactId: row.contact_id }, 'Pre-close follow-up sent')
+        }
+      },
+    })
+
+    await registry.runHook('job:register', {
+      jobName: 'email-session-close',
+      intervalMs: 30 * 60 * 1000, // scan every 30 min
+      handler: async () => {
+        if (!_registry) return
+        const freshCfg = _registry.getConfig<EmailConfig>('gmail')
+        if (freshCfg.EMAIL_SESSION_INACTIVITY_HOURS <= 0) return
+
+        const jdb = _registry.getDb()
+        const result = await jdb.query(
+          `UPDATE email_threads SET closed_at = NOW()
+           WHERE closed_at IS NULL
+             AND last_message_at < NOW() - make_interval(hours => $1)
+           RETURNING thread_id`,
+          [freshCfg.EMAIL_SESSION_INACTIVITY_HOURS],
+        )
+        if (result.rowCount && result.rowCount > 0) {
+          logger.info({ closed: result.rowCount }, 'Email sessions closed due to inactivity')
+        }
+      },
+    })
 
     // Iniciar polling si OAuth está conectado
     if (oauthConnected && gmailAdapter) {

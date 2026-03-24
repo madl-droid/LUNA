@@ -18,13 +18,13 @@ const logger = pino({ name: 'email:gmail' })
 
 export class GmailAdapter {
   private gmail
-  private noReplyAddresses: Set<string>
-  private noReplyPatterns: RegExp[]
-  private processLabels: string[]
-  private skipLabels: string[]
-  private ignoreSubjects: string[]
-  private allowedDomains: Set<string>
-  private blockedDomains: Set<string>
+  private noReplyAddresses: Set<string> = new Set()
+  private noReplyPatterns: RegExp[] = []
+  private processLabels: string[] = []
+  private skipLabels: string[] = []
+  private ignoreSubjects: string[] = []
+  private allowedDomains: Set<string> = new Set()
+  private blockedDomains: Set<string> = new Set()
   private labelCache: Map<string, string> = new Map()
 
   constructor(
@@ -32,6 +32,12 @@ export class GmailAdapter {
     private config: EmailConfig,
   ) {
     this.gmail = google.gmail({ version: 'v1', auth })
+    this.reloadConfig(config)
+  }
+
+  /** Reload parsed filter lists from config. Called on each poll cycle to pick up console changes. */
+  reloadConfig(config: EmailConfig): void {
+    this.config = config
     this.noReplyAddresses = new Set(
       config.EMAIL_NOREPLY_ADDRESSES.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     )
