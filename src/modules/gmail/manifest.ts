@@ -12,6 +12,7 @@ import * as configStore from '../../kernel/config-store.js'
 import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
+import { EmailRateLimiter } from './rate-limiter.js'
 import type { EmailConfig, EmailPollerState, EmailMessage, LunaLabelIds } from './types.js'
 
 const logger = pino({ name: 'gmail' })
@@ -24,6 +25,7 @@ let standaloneOAuth: EmailOAuthManager | null = null
 // Indica si email usa su propio OAuth (true) o el de google-apps (false)
 let usingStandaloneAuth = false
 let lunaLabels: LunaLabelIds = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
+let rateLimiter: EmailRateLimiter | null = null
 
 const pollerState: EmailPollerState = {
   status: 'stopped',
@@ -86,12 +88,25 @@ async function pollForEmails(): Promise<void> {
 
   pollerState.status = 'polling'
   try {
-    const messages = await gmailAdapter.fetchNewMessages(lastHistoryId ?? undefined)
+    let messages = await gmailAdapter.fetchNewMessages(lastHistoryId ?? undefined)
 
     // Actualizar history ID
     try {
       lastHistoryId = await gmailAdapter.getHistoryId()
     } catch { /* non-critical */ }
+
+    // Only-first-in-thread: keep only the most recent message per thread
+    const config = _registry.getConfig<EmailConfig>('gmail')
+    if (config.EMAIL_ONLY_FIRST_IN_THREAD && messages.length > 1) {
+      const byThread = new Map<string, EmailMessage>()
+      for (const msg of messages) {
+        const existing = byThread.get(msg.threadId)
+        if (!existing || msg.date > existing.date) {
+          byThread.set(msg.threadId, msg)
+        }
+      }
+      messages = [...byThread.values()]
+    }
 
     for (const msg of messages) {
       try {
@@ -138,12 +153,18 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
       last_message_at = $4, message_count = email_threads.message_count + 1, last_message_gmail_id = $5
   `, [msg.threadId, msg.from, msg.subject, msg.date, msg.id])
 
+  // Min body length check (skip empty/trivial emails)
+  const textContent = msg.bodyText || stripHtml(msg.bodyHtml)
+  if (textContent.trim().length < 2 && msg.attachments.length === 0) {
+    logger.debug({ messageId: msg.id, from: msg.from }, 'Skipping email with empty body')
+    return
+  }
+
   // Construir contenido para el engine
   const attachmentSummary = msg.attachments.length > 0
     ? `\n[Adjuntos: ${msg.attachments.map((a) => `${a.filename} (${a.mimeType})`).join(', ')}]`
     : ''
 
-  const textContent = msg.bodyText || stripHtml(msg.bodyHtml)
   const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${textContent}${attachmentSummary}`
 
   // Fire message:incoming hook para que el engine lo procese
@@ -195,6 +216,18 @@ function stripHtml(html: string): string {
 // ─── API Routes ────────────────────────────
 
 const apiRoutes: ApiRoute[] = [
+  {
+    method: 'GET',
+    path: 'rate-limits',
+    handler: async (_req, res) => {
+      if (!rateLimiter) {
+        jsonResponse(res, 200, { hourly: 0, daily: 0, limits: { perHour: 0, perDay: 0 }, canSend: false })
+        return
+      }
+      const usage = await rateLimiter.getUsage()
+      jsonResponse(res, 200, usage)
+    },
+  },
   {
     method: 'GET',
     path: 'status',
@@ -882,21 +915,60 @@ const manifest: ModuleManifest = {
       pollerState.messagesProcessed = stateRow.rows[0].messages_processed ?? 0
     }
 
+    // Initialize rate limiter
+    const redis = registry.getRedis()
+    const accountType = (config.EMAIL_ACCOUNT_TYPE === 'free' ? 'free' : 'workspace') as 'workspace' | 'free'
+    rateLimiter = new EmailRateLimiter(accountType, redis)
+
     // Hook: cuando el engine quiere enviar email
     registry.addHook('gmail', 'message:send', async (payload) => {
       if (payload.channel !== 'email') return
       if (!gmailAdapter) return
 
-      // El contenido puede ser text/html
+      // Rate limit check
+      if (rateLimiter && !(await rateLimiter.canSend())) {
+        logger.warn({ to: payload.to }, 'Email rate limit reached — skipping send')
+        await registry.runHook('message:sent', {
+          channel: 'email',
+          to: payload.to,
+          success: false,
+        })
+        return
+      }
+
       const bodyHtml = payload.content.text ?? ''
       const to = payload.to
 
       try {
-        const result = await gmailAdapter.sendEmail({
-          to: [to],
-          subject: '', // El subject se maneja por thread
-          bodyHtml,
-        })
+        let result: { messageId: string; threadId: string }
+
+        // Try to reply to existing thread instead of sending new email
+        const threadRow = await db.query(
+          `SELECT thread_id, last_message_gmail_id FROM email_threads WHERE contact_id = $1 AND closed_at IS NULL ORDER BY last_message_at DESC LIMIT 1`,
+          [to],
+        ).catch(() => ({ rows: [] }))
+
+        const existingThread = threadRow.rows[0] as { thread_id: string; last_message_gmail_id: string } | undefined
+
+        if (existingThread?.last_message_gmail_id) {
+          // Reply to existing thread
+          const replyAll = config.EMAIL_REPLY_MODE === 'reply-all'
+          result = await gmailAdapter.reply({
+            originalMessageId: existingThread.last_message_gmail_id,
+            bodyHtml,
+            replyAll,
+          })
+        } else {
+          // New email (no existing thread)
+          result = await gmailAdapter.sendEmail({
+            to: [to],
+            subject: '',
+            bodyHtml,
+          })
+        }
+
+        // Record send for rate limiting
+        if (rateLimiter) await rateLimiter.recordSend()
 
         await registry.runHook('message:sent', {
           channel: 'email',
@@ -1006,6 +1078,7 @@ const manifest: ModuleManifest = {
     gmailAdapter = null
     _registry = null
     lunaLabels = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
+    rateLimiter = null
   },
 }
 
