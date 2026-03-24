@@ -4,7 +4,7 @@
 // Can be overridden via config (EMAIL_RATE_LIMIT_PER_HOUR, EMAIL_RATE_LIMIT_PER_DAY).
 
 import pino from 'pino'
-import type IoRedis from 'ioredis'
+import type { Redis } from 'ioredis'
 
 const logger = pino({ name: 'email:rate-limiter' })
 
@@ -27,7 +27,7 @@ export class EmailRateLimiter {
 
   constructor(
     private accountType: 'workspace' | 'free',
-    private redis: IoRedis,
+    private redis: Redis,
     customLimits?: { perHour?: number; perDay?: number },
   ) {
     const defaults = DEFAULT_LIMITS[accountType] ?? DEFAULT_LIMITS.workspace
