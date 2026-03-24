@@ -8,12 +8,12 @@ import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse } from '../../kernel/http-helpers.js'
 import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { BaileysAdapter } from './adapter.js'
-import { MessageBatcher } from './message-batcher.js'
+import { MessageBatcher } from '../../channels/message-batcher.js'
 import * as configStore from '../../kernel/config-store.js'
 import QRCode from 'qrcode'
 
 import pino from 'pino'
-import type { IncomingMessage } from './adapter.js'
+import type { IncomingMessage } from '../../channels/types.js'
 
 const manifestLogger = pino({ name: 'whatsapp:manifest' })
 
@@ -96,6 +96,7 @@ const manifest: ModuleManifest = {
     WHATSAPP_AVISO_TRIGGER_MS: numEnv(3000),
     WHATSAPP_AVISO_HOLD_MS: numEnv(2000),
     WHATSAPP_AVISO_MESSAGE: z.string().default('Un momento, estoy revisando eso...'),
+    WHATSAPP_AVISO_STYLE: z.string().default('casual'),
     // Rate limits
     WHATSAPP_RATE_LIMIT_HOUR: numEnvMin(1, 30),
     WHATSAPP_RATE_LIMIT_DAY: numEnvMin(1, 200),
@@ -108,8 +109,6 @@ const manifest: ModuleManifest = {
     WHATSAPP_PRIVACY_PROFILE_PIC: z.string().default(''),
     WHATSAPP_PRIVACY_STATUS: z.string().default(''),
     WHATSAPP_PRIVACY_READ_RECEIPTS: boolEnv(true),
-    // Agent name (for @mention detection in groups)
-    WHATSAPP_AGENT_NAME: z.string().default('Luna'),
     // Message batching: wait time (seconds) to collect messages before processing
     WHATSAPP_BATCH_WAIT_SECONDS: numEnvMin(15, 30),
     // Session inactivity timeout (hours) — max 24h per Meta policies
@@ -177,6 +176,19 @@ const manifest: ModuleManifest = {
         label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
         info: { es: 'Texto del aviso. Se envia automaticamente si la respuesta tarda.', en: 'Acknowledgment text. Sent automatically if the response is slow.' },
       },
+      {
+        key: 'WHATSAPP_AVISO_STYLE',
+        type: 'select',
+        width: 'half',
+        label: { es: 'Estilo de aviso', en: 'Ack style' },
+        info: { es: 'formal/casual/express: elige al azar del pool. dynamic: rota secuencialmente.', en: 'formal/casual/express: random pick from pool. dynamic: sequential rotation.' },
+        options: [
+          { value: 'formal', label: 'Formal' },
+          { value: 'casual', label: 'Casual' },
+          { value: 'express', label: 'Express' },
+          { value: 'dynamic', label: 'Dynamic' },
+        ],
+      },
       { key: '_divider_rate', type: 'divider', label: { es: 'Limites de envio', en: 'Rate limits' } },
       {
         key: 'WHATSAPP_RATE_LIMIT_HOUR',
@@ -214,12 +226,6 @@ const manifest: ModuleManifest = {
         type: 'text',
         label: { es: 'Mensaje al rechazar llamada', en: 'Call rejection message' },
         info: { es: 'Texto enviado al contacto cuando se rechaza una llamada', en: 'Text sent to the contact when a call is rejected' },
-      },
-      {
-        key: 'WHATSAPP_AGENT_NAME',
-        type: 'text',
-        label: { es: 'Nombre del agente', en: 'Agent name' },
-        info: { es: 'Nombre para deteccion de @mencion en grupos (default: Luna)', en: 'Name for @mention detection in groups (default: Luna)' },
       },
       { key: '_divider_session', type: 'divider', label: { es: 'Sesion y batching', en: 'Session & batching' } },
       {
@@ -335,6 +341,13 @@ const manifest: ModuleManifest = {
     // Falls back to hostname only for local dev without INSTANCE_ID set.
     const instanceId = process.env.INSTANCE_ID || 'luna-default'
 
+    // ── Agent name: read from centralized prompts config ──
+    const getAgentName = (): string => {
+      const svc = registry.getOptional<import('../prompts/types.js').PromptsService>('prompts:service')
+      if (svc) return svc.getAgentName()
+      return 'Luna'
+    }
+
     adapter = new BaileysAdapter(config as import('./adapter.js').WhatsAppConfig, db, instanceId, {
       onConnected: async () => {
         if (_registry && !_registry.isActive('whatsapp')) {
@@ -353,7 +366,7 @@ const manifest: ModuleManifest = {
           pino.default({ name: 'whatsapp:manifest' }).warn({ err }, 'Failed to persist connection metadata')
         }
       },
-    })
+    }, getAgentName)
 
     // Register hook: when pipeline sends a message for whatsapp channel
     registry.addHook('whatsapp', 'message:send', async (payload) => {
@@ -487,6 +500,7 @@ interface WhatsAppFullConfig {
   WHATSAPP_AVISO_TRIGGER_MS: number
   WHATSAPP_AVISO_HOLD_MS: number
   WHATSAPP_AVISO_MESSAGE: string
+  WHATSAPP_AVISO_STYLE: string
   WHATSAPP_RATE_LIMIT_HOUR: number
   WHATSAPP_RATE_LIMIT_DAY: number
   WHATSAPP_MARK_ONLINE: boolean
@@ -496,7 +510,6 @@ interface WhatsAppFullConfig {
   WHATSAPP_PRIVACY_PROFILE_PIC: string
   WHATSAPP_PRIVACY_STATUS: string
   WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
-  WHATSAPP_AGENT_NAME: string
   WHATSAPP_BATCH_WAIT_SECONDS: number
   WHATSAPP_SESSION_TIMEOUT_HOURS: number
   WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: number
@@ -519,10 +532,19 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     avisoTriggerMs: cfg.WHATSAPP_AVISO_TRIGGER_MS,
     avisoHoldMs: cfg.WHATSAPP_AVISO_HOLD_MS,
     avisoMessages: cfg.WHATSAPP_AVISO_MESSAGE ? [cfg.WHATSAPP_AVISO_MESSAGE] : [],
+    avisoStyle: (cfg.WHATSAPP_AVISO_STYLE || 'casual') as import('../../channels/types.js').AvisoStyle,
     sessionTimeoutMs: cfg.WHATSAPP_SESSION_TIMEOUT_HOURS * 3600000,
     batchWaitSeconds: cfg.WHATSAPP_BATCH_WAIT_SECONDS,
     precloseFollowupMs: cfg.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS * 3600000,
     precloseFollowupMessage: cfg.WHATSAPP_PRECLOSE_MESSAGE,
+    typingDelayMsPerChar: 50,
+    typingDelayMinMs: 500,
+    typingDelayMaxMs: 3000,
+    channelType: 'instant',
+    supportsTypingIndicator: true,
+    antiSpamMaxPerWindow: 0,
+    antiSpamWindowMs: 0,
+    floodThreshold: 20,
   }
 }
 

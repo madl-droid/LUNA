@@ -41,6 +41,14 @@ export interface PromptsService {
   listAll(): Promise<PromptRecord[]>
   matchCampaign(text: string): CampaignMatchResult | null
   invalidateCache(): void
-  /** Agent name for @mention detection in groups/rooms. Single source of truth for all instant channels. */
+  /** Agent first name. Single source of truth for all channels. Default: 'Luna'. */
   getAgentName(): string
+  /** Agent last name. Default: '' (empty). */
+  getAgentLastName(): string
+  /** Agent full name (first + last, trimmed). Used for signatures, greetings, etc. */
+  getAgentFullName(): string
+  /** Agent language code (e.g. 'es', 'en'). Default: 'es'. */
+  getLanguage(): string
+  /** Agent accent / locale (BCP-47, e.g. 'es-MX', 'en-US'). Default: 'es-MX'. */
+  getAccent(): string
 }

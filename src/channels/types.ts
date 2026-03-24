@@ -60,6 +60,9 @@ export type MessageHandler = (message: IncomingMessage) => Promise<void>
  * All values must have sensible defaults so the engine works even if the
  * channel module is not active or hasn't registered its config service.
  */
+/** Aviso message style — determines tone of auto-ack messages */
+export type AvisoStyle = 'formal' | 'casual' | 'express' | 'dynamic'
+
 export interface ChannelRuntimeConfig {
   /** Max messages per hour to this contact (0 = unlimited) */
   rateLimitHour: number
@@ -71,6 +74,8 @@ export interface ChannelRuntimeConfig {
   avisoHoldMs: number
   /** Pool of aviso messages (one is picked at random) */
   avisoMessages: string[]
+  /** Aviso message style: formal, casual, express, dynamic (rotates among styles) */
+  avisoStyle: AvisoStyle
   /** Session inactivity timeout in ms */
   sessionTimeoutMs: number
   /** Batch wait time in seconds (0 = no batching) */
@@ -79,4 +84,28 @@ export interface ChannelRuntimeConfig {
   precloseFollowupMs: number
   /** Message text for the pre-close follow-up */
   precloseFollowupMessage: string
+
+  // ── Typing delay (per-channel, used by engine for composing between bubbles) ──
+  /** Ms per character for simulated typing delay */
+  typingDelayMsPerChar: number
+  /** Minimum typing delay in ms */
+  typingDelayMinMs: number
+  /** Maximum typing delay in ms */
+  typingDelayMaxMs: number
+
+  // ── Channel capabilities ──
+  /** Channel type: instant, async, voice */
+  channelType: 'instant' | 'async' | 'voice'
+  /** Whether the channel API supports typing/composing indicators */
+  supportsTypingIndicator: boolean
+
+  // ── Anti-spam (outbound — prevents agent from spamming a contact) ──
+  /** Max outbound messages per window (0 = disabled) */
+  antiSpamMaxPerWindow: number
+  /** Anti-spam window size in ms */
+  antiSpamWindowMs: number
+
+  // ── Anti-flooding (inbound — groups rapid user messages) ──
+  /** Threshold to trigger immediate flush of batch (0 = disabled) */
+  floodThreshold: number
 }

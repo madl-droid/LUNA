@@ -32,7 +32,6 @@ export interface WhatsAppConfig {
   WHATSAPP_PRIVACY_PROFILE_PIC: string
   WHATSAPP_PRIVACY_STATUS: string
   WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
-  WHATSAPP_AGENT_NAME: string
 }
 
 export interface AdapterCallbacks {
@@ -89,12 +88,14 @@ export class BaileysAdapter {
   private pool: Pool
   private instanceId: string
   private callbacks: AdapterCallbacks
+  private getAgentName: () => string
 
-  constructor(config: WhatsAppConfig, pool: Pool, instanceId: string, callbacks?: AdapterCallbacks) {
+  constructor(config: WhatsAppConfig, pool: Pool, instanceId: string, callbacks?: AdapterCallbacks, getAgentName?: () => string) {
     this.config = config
     this.pool = pool
     this.instanceId = instanceId
     this.callbacks = callbacks ?? {}
+    this.getAgentName = getAgentName ?? (() => 'Luna')
   }
 
   getState(): BaileysState {
@@ -372,7 +373,7 @@ export class BaileysAdapter {
     }
 
     // Method 2 & 3: Text-based detection
-    const agentName = this.config.WHATSAPP_AGENT_NAME.toLowerCase()
+    const agentName = this.getAgentName().toLowerCase()
     const lowerText = text.toLowerCase().trim()
 
     if (lowerText.includes(`@${agentName}`)) return true
@@ -383,7 +384,7 @@ export class BaileysAdapter {
   }
 
   private stripMentionTag(text: string): string {
-    const agentName = this.config.WHATSAPP_AGENT_NAME
+    const agentName = this.getAgentName()
     // Remove @number mentions (e.g., @5491155551234)
     let cleaned = text.replace(/@\d{7,15}/g, '').trim()
     // Remove @agentName (case-insensitive)

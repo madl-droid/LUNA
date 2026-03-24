@@ -21,6 +21,13 @@ let mediaServer: MediaStreamServer | null = null
 let twilioAdapter: TwilioAdapter | null = null
 let _registry: Registry | null = null
 
+/** Resolve effective voice language: per-channel override → global accent from prompts */
+function getEffectiveLanguage(config: TwilioVoiceConfig, registry: Registry): string {
+  if (config.VOICE_GEMINI_LANGUAGE) return config.VOICE_GEMINI_LANGUAGE
+  const promptsSvc = registry.getOptional<{ getAccent(): string }>('prompts:service')
+  return promptsSvc?.getAccent() || 'es-MX'
+}
+
 // ═══════════════════════════════════════════
 // API Routes
 // ═══════════════════════════════════════════
@@ -179,8 +186,8 @@ const apiRoutes: ApiRoute[] = [
             body: JSON.stringify({
               input: { text: body.text },
               voice: {
-                languageCode: config.VOICE_GEMINI_LANGUAGE || 'es-US',
-                name: `${config.VOICE_GEMINI_LANGUAGE || 'es-US'}-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`,
+                languageCode: getEffectiveLanguage(config, registry),
+                name: `${getEffectiveLanguage(config, registry)}-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`,
               },
               audioConfig: { audioEncoding: 'MP3' },
             }),
@@ -673,10 +680,19 @@ const manifest: ModuleManifest = {
         avisoTriggerMs: 0, // no aviso for voice — Gemini handles conversation in real-time
         avisoHoldMs: 0,
         avisoMessages: [],
+        avisoStyle: 'formal',
         sessionTimeoutMs: config.VOICE_SESSION_TIMEOUT_HOURS * 3600000,
         batchWaitSeconds: 0, // no batching for voice
         precloseFollowupMs: 0,
         precloseFollowupMessage: '',
+        typingDelayMsPerChar: 0, // not applicable for voice
+        typingDelayMinMs: 0,
+        typingDelayMaxMs: 0,
+        channelType: 'voice',
+        supportsTypingIndicator: false, // voice has no typing indicator
+        antiSpamMaxPerWindow: 0,
+        antiSpamWindowMs: 0,
+        floodThreshold: 0, // no batching/flood for voice
       }),
     })
 

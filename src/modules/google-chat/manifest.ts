@@ -8,6 +8,8 @@ import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody } from '../../kernel/http-helpers.js'
 import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { GoogleChatAdapter } from './adapter.js'
+import { MessageBatcher } from '../../channels/message-batcher.js'
+import type { IncomingMessage } from '../../channels/types.js'
 import type { GoogleChatConfig, ChatEvent, SetupGuideStep } from './types.js'
 import type { PromptsService } from '../prompts/types.js'
 import * as configStore from '../../kernel/config-store.js'
@@ -15,6 +17,7 @@ import * as configStore from '../../kernel/config-store.js'
 const logger = pino({ name: 'google-chat' })
 
 let adapter: GoogleChatAdapter | null = null
+let batcher: MessageBatcher | null = null
 let _registry: Registry | null = null
 // Map contact → last threadName (for reply-in-thread)
 const lastThreadByContact = new Map<string, string>()
@@ -54,15 +57,23 @@ const apiRoutes: ApiRoute[] = [
           if (normalized.threadName) {
             lastThreadByContact.set(normalized.from, normalized.threadName)
           }
-          await _registry.runHook('message:incoming', {
+
+          const incomingMsg: IncomingMessage = {
             id: normalized.id,
-            channelName: normalized.channelName,
+            channelName: normalized.channelName as IncomingMessage['channelName'],
             channelMessageId: normalized.channelMessageId,
             from: normalized.from,
             timestamp: normalized.timestamp,
             content: normalized.content,
             raw: normalized.raw,
-          })
+          }
+
+          // Route through batcher if available (instant channel batching)
+          if (batcher) {
+            batcher.add(incomingMsg)
+          } else {
+            await _registry.runHook('message:incoming', incomingMsg)
+          }
         }
 
         // Always 200 to avoid retries from Google
@@ -294,6 +305,7 @@ const manifest: ModuleManifest = {
     GOOGLE_CHAT_AVISO_TRIGGER_MS: numEnv(3000),
     GOOGLE_CHAT_AVISO_HOLD_MS: numEnv(2000),
     GOOGLE_CHAT_AVISO_MESSAGE: z.string().default('Un momento, estoy revisando eso...'),
+    GOOGLE_CHAT_AVISO_STYLE: z.string().default('casual'),
     GOOGLE_CHAT_RATE_LIMIT_HOUR: numEnvMin(1, 30),
     GOOGLE_CHAT_RATE_LIMIT_DAY: numEnvMin(1, 200),
     GOOGLE_CHAT_SESSION_TIMEOUT_HOURS: numEnvMin(1, 24),
@@ -429,6 +441,19 @@ const manifest: ModuleManifest = {
         label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
         info: { es: 'Texto del aviso automatico si la respuesta tarda.', en: 'Ack text sent automatically if the response is slow.' },
       },
+      {
+        key: 'GOOGLE_CHAT_AVISO_STYLE',
+        type: 'select',
+        width: 'half',
+        label: { es: 'Estilo de aviso', en: 'Ack style' },
+        info: { es: 'formal/casual/express: elige al azar. dynamic: rota secuencialmente.', en: 'formal/casual/express: random pick. dynamic: sequential rotation.' },
+        options: [
+          { value: 'formal', label: 'Formal' },
+          { value: 'casual', label: 'Casual' },
+          { value: 'express', label: 'Express' },
+          { value: 'dynamic', label: 'Dynamic' },
+        ],
+      },
       { key: '_divider_rate', type: 'divider', label: { es: 'Limites de envio', en: 'Rate limits' } },
       {
         key: 'GOOGLE_CHAT_RATE_LIMIT_HOUR',
@@ -544,6 +569,28 @@ const manifest: ModuleManifest = {
     }
     registry.provide('channel-config:google-chat', channelConfigService)
 
+    // ── Message Batcher (instant channel batching) ──
+    const dispatchBatch = async (messages: IncomingMessage[]) => {
+      if (messages.length === 0) return
+      const base = messages[0]!
+      if (messages.length > 1) {
+        const allTexts = messages
+          .map(m => m.content.text ?? '')
+          .filter(t => t.length > 0)
+        base.content = { ...base.content, text: allTexts.join('\n') }
+        logger.info({ from: base.from, count: messages.length }, 'Batched messages concatenated')
+      }
+      await registry.runHook('message:incoming', {
+        id: base.id, channelName: base.channelName,
+        channelMessageId: base.channelMessageId, from: base.from,
+        timestamp: base.timestamp, content: base.content, raw: base.raw,
+      })
+    }
+
+    if (config.GOOGLE_CHAT_BATCH_WAIT_SECONDS > 0) {
+      batcher = new MessageBatcher(config.GOOGLE_CHAT_BATCH_WAIT_SECONDS, dispatchBatch, 20)
+    }
+
     // ── Hook: outbound messages (ALWAYS register) ──
     registry.addHook('google-chat', 'message:send', async (payload) => {
       if (payload.channel !== 'google-chat') return
@@ -583,6 +630,17 @@ const manifest: ModuleManifest = {
       const fresh = registry.getConfig<GoogleChatConfig>('google-chat')
       Object.assign(config, fresh)
       if (adapter) adapter.rebuildWhitelist()
+      // Update or create/destroy batcher based on new config
+      if (fresh.GOOGLE_CHAT_BATCH_WAIT_SECONDS > 0) {
+        if (batcher) {
+          batcher.updateWaitSeconds(fresh.GOOGLE_CHAT_BATCH_WAIT_SECONDS)
+        } else {
+          batcher = new MessageBatcher(fresh.GOOGLE_CHAT_BATCH_WAIT_SECONDS, dispatchBatch, 20)
+        }
+      } else if (batcher) {
+        batcher.clearAll()
+        batcher = null
+      }
       logger.info('Google Chat config hot-reloaded')
 
       // If adapter doesn't exist yet but key is now configured, create it
@@ -639,6 +697,10 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    if (batcher) {
+      batcher.clearAll()
+      batcher = null
+    }
     if (adapter) {
       adapter.shutdown()
       adapter = null
@@ -656,10 +718,21 @@ function buildChannelConfig(cfg: GoogleChatConfig): import('../../channels/types
     avisoTriggerMs: cfg.GOOGLE_CHAT_AVISO_TRIGGER_MS,
     avisoHoldMs: cfg.GOOGLE_CHAT_AVISO_HOLD_MS,
     avisoMessages: cfg.GOOGLE_CHAT_AVISO_MESSAGE ? [cfg.GOOGLE_CHAT_AVISO_MESSAGE] : [],
+    avisoStyle: (cfg.GOOGLE_CHAT_AVISO_STYLE || 'casual') as import('../../channels/types.js').AvisoStyle,
     sessionTimeoutMs: cfg.GOOGLE_CHAT_SESSION_TIMEOUT_HOURS * 3600000,
     batchWaitSeconds: cfg.GOOGLE_CHAT_BATCH_WAIT_SECONDS,
     precloseFollowupMs: cfg.GOOGLE_CHAT_PRECLOSE_FOLLOWUP_HOURS * 3600000,
     precloseFollowupMessage: cfg.GOOGLE_CHAT_PRECLOSE_MESSAGE,
+    typingDelayMsPerChar: 50,
+    typingDelayMinMs: 500,
+    typingDelayMaxMs: 3000,
+    channelType: 'instant',
+    // Google Chat API does NOT support typing indicators for bots/apps.
+    // Verified: no endpoint exists in chat.googleapis.com v1 for bot typing state.
+    supportsTypingIndicator: false,
+    antiSpamMaxPerWindow: 0,
+    antiSpamWindowMs: 0,
+    floodThreshold: 20,
   }
 }
 

@@ -740,6 +740,10 @@ const manifest: ModuleManifest = {
     ACK_EMAIL_TRIGGER_MS: numEnv(0),
     ACK_EMAIL_HOLD_MS: numEnv(2000),
     ACK_EMAIL_MESSAGE: z.string().default(''),
+    ACK_EMAIL_STYLE: z.string().default('formal'),
+    // Firma de email
+    EMAIL_SIGNATURE_MODE: z.string().default('gmail'),    // gmail | custom | auto
+    EMAIL_SIGNATURE_TEXT: z.string().default(''),          // only used if mode = 'custom'
   }),
 
   console: {
@@ -847,6 +851,33 @@ const manifest: ModuleManifest = {
         type: 'text',
         label: { es: 'Texto del pie', en: 'Footer text' },
         info: { es: 'Texto que aparece al final de cada email (solo si el pie esta habilitado)', en: 'Text shown at the end of each email (only if footer is enabled)' },
+      },
+      // ── Firma de email ──
+      { key: '_divider_signature', type: 'divider', label: { es: 'Firma', en: 'Signature' } },
+      {
+        key: 'EMAIL_SIGNATURE_MODE',
+        type: 'select',
+        width: 'half',
+        label: { es: 'Modo de firma', en: 'Signature mode' },
+        info: {
+          es: 'gmail: usa la firma de la cuenta de Gmail. custom: usa el texto personalizado de abajo. auto: gmail si existe, sino custom.',
+          en: 'gmail: use Gmail account signature. custom: use custom text below. auto: gmail if available, otherwise custom.',
+        },
+        options: [
+          { value: 'gmail', label: 'Gmail' },
+          { value: 'custom', label: 'Custom' },
+          { value: 'auto', label: 'Auto' },
+        ],
+      },
+      {
+        key: 'EMAIL_SIGNATURE_TEXT',
+        type: 'textarea',
+        rows: 4,
+        label: { es: 'Firma personalizada', en: 'Custom signature' },
+        info: {
+          es: 'Texto de firma personalizada. Solo se usa cuando el modo es "custom" o "auto" (si Gmail no tiene firma).',
+          en: 'Custom signature text. Only used when mode is "custom" or "auto" (if Gmail has no signature).',
+        },
       },
       // ── Filtrado ──
       { key: '_divider_filtering', type: 'divider', label: { es: 'Filtrado', en: 'Filtering' } },
@@ -967,6 +998,19 @@ const manifest: ModuleManifest = {
         type: 'text',
         label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
         info: { es: 'Texto del aviso de email. Se envia automaticamente si la respuesta tarda.', en: 'Email ack text. Sent automatically if the response is slow.' },
+      },
+      {
+        key: 'ACK_EMAIL_STYLE',
+        type: 'select',
+        width: 'half',
+        label: { es: 'Estilo de aviso', en: 'Ack style' },
+        info: { es: 'formal/casual/express: elige al azar. dynamic: rota secuencialmente.', en: 'formal/casual/express: random pick. dynamic: sequential rotation.' },
+        options: [
+          { value: 'formal', label: 'Formal' },
+          { value: 'casual', label: 'Casual' },
+          { value: 'express', label: 'Express' },
+          { value: 'dynamic', label: 'Dynamic' },
+        ],
       },
       { key: '_divider_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' } },
       {
@@ -1112,6 +1156,30 @@ const manifest: ModuleManifest = {
 
     // Expose label accessor so engine/tools can read custom label instructions
     registry.provide('gmail:label-instructions', () => resolvedCustomLabels)
+
+    // ── Channel Config Service (standard pattern — engine reads this) ──
+    registry.provide('channel-config:email', {
+      get: (): import('../../channels/types.js').ChannelRuntimeConfig => ({
+        rateLimitHour: config.EMAIL_RATE_LIMIT_PER_HOUR,
+        rateLimitDay: config.EMAIL_RATE_LIMIT_PER_DAY,
+        avisoTriggerMs: config.ACK_EMAIL_TRIGGER_MS,
+        avisoHoldMs: config.ACK_EMAIL_HOLD_MS,
+        avisoMessages: config.ACK_EMAIL_MESSAGE ? [config.ACK_EMAIL_MESSAGE] : [],
+        avisoStyle: (config.ACK_EMAIL_STYLE || 'formal') as import('../../channels/types.js').AvisoStyle,
+        sessionTimeoutMs: config.EMAIL_SESSION_INACTIVITY_HOURS * 3600000,
+        batchWaitSeconds: config.EMAIL_BATCH_WAIT_MS / 1000,
+        precloseFollowupMs: config.EMAIL_PRECLOSE_FOLLOWUP_HOURS * 3600000,
+        precloseFollowupMessage: config.EMAIL_PRECLOSE_FOLLOWUP_TEXT,
+        typingDelayMsPerChar: 0,
+        typingDelayMinMs: 0,
+        typingDelayMaxMs: 0,
+        channelType: 'async',
+        supportsTypingIndicator: false,
+        antiSpamMaxPerWindow: 0,
+        antiSpamWindowMs: 0,
+        floodThreshold: 0,
+      }),
+    })
 
     // Cargar estado previo
     const stateRow = await db.query(
@@ -1274,12 +1342,22 @@ const manifest: ModuleManifest = {
       }
     })
 
-    // Hook: re-ensure labels on config apply (custom labels may have changed)
+    // Hook: full config hot-reload when console applies changes
     registry.addHook('gmail', 'console:config_applied', async () => {
+      const fresh = registry.getConfig<EmailConfig>('gmail')
+      Object.assign(config, fresh)
       if (gmailAdapter) {
+        gmailAdapter.reloadConfig(fresh)
         logger.info('Config applied — re-ensuring Gmail labels')
         await ensureAllLabels()
       }
+      if (rateLimiter) {
+        rateLimiter.updateAccountType(fresh.EMAIL_ACCOUNT_TYPE as 'workspace' | 'free', {
+          perHour: fresh.EMAIL_RATE_LIMIT_PER_HOUR || undefined,
+          perDay: fresh.EMAIL_RATE_LIMIT_PER_DAY || undefined,
+        })
+      }
+      logger.info('Gmail config hot-reloaded')
     })
 
     // Register session management jobs (read fresh config inside handlers for hot reload)

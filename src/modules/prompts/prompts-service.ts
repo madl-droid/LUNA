@@ -56,10 +56,33 @@ export class PromptsServiceImpl implements PromptsService {
     this.db = db
   }
 
-  /** Agent name for @mention detection in groups/rooms. Reads from centralized config. */
+  /** Agent first name. Single source of truth for all channels. */
   getAgentName(): string {
-    const cfg = this.registry.getConfig<{ AGENT_NAME: string }>('prompts')
-    return cfg.AGENT_NAME
+    const cfg = this.registry.getConfig<{ AGENT_NAME: string; AGENT_LAST_NAME: string }>('prompts')
+    return cfg.AGENT_NAME || 'Luna'
+  }
+
+  /** Agent last name. */
+  getAgentLastName(): string {
+    const cfg = this.registry.getConfig<{ AGENT_LAST_NAME: string }>('prompts')
+    return cfg.AGENT_LAST_NAME || ''
+  }
+
+  /** Agent full name (first + last, trimmed). */
+  getAgentFullName(): string {
+    return `${this.getAgentName()} ${this.getAgentLastName()}`.trim()
+  }
+
+  /** Agent language code (e.g. 'es', 'en'). */
+  getLanguage(): string {
+    const cfg = this.registry.getConfig<{ AGENT_LANGUAGE: string }>('prompts')
+    return cfg.AGENT_LANGUAGE || 'es'
+  }
+
+  /** Agent accent / locale (BCP-47). */
+  getAccent(): string {
+    const cfg = this.registry.getConfig<{ AGENT_ACCENT: string }>('prompts')
+    return cfg.AGENT_ACCENT || 'es-MX'
   }
 
   /**
