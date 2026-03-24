@@ -1,0 +1,121 @@
+/* whatsapp.css — WhatsApp panel specific styles
+ * Crystal Light & Tonal Depth */
+
+.wa-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.wa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 1.5rem;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.wa-badge.disconnected { background: rgba(255,59,48,0.1); color: var(--error); }
+.wa-badge.connecting { background: rgba(255,149,0,0.1); color: var(--warning); }
+.wa-badge.connected { background: rgba(52,199,89,0.1); color: var(--success); }
+.wa-badge.qr_ready { background: rgba(0,122,255,0.1); color: var(--info); }
+.wa-badge.not_initialized { background: var(--surface-container-high); color: var(--on-surface-variant); }
+
+.wa-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.wa-badge.disconnected .wa-dot { background: var(--error); }
+.wa-badge.connecting .wa-dot { background: var(--warning); animation: pulse 1.5s infinite; }
+.wa-badge.connected .wa-dot { background: var(--success); }
+.wa-badge.qr_ready .wa-dot { background: var(--info); animation: pulse 1.5s infinite; }
+.wa-badge.not_initialized .wa-dot { background: var(--on-surface-dim); }
+
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.wa-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wa-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 1.5rem;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.wa-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.wa-btn-connect { background: var(--success); color: #ffffff; }
+.wa-btn-connect:hover:not(:disabled) { filter: brightness(0.9); }
+.wa-btn-disconnect { background: var(--error); color: #ffffff; }
+.wa-btn-disconnect:hover:not(:disabled) { filter: brightness(0.9); }
+
+.wa-qr-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background: var(--surface-container-low);
+  border-radius: 0.5rem;
+  margin-bottom: 12px;
+}
+
+.wa-qr-box img { border-radius: 0.5rem; max-width: min(260px, 85vw); }
+.wa-qr-label { margin-top: 8px; font-size: 13px; color: var(--on-surface-variant); }
+.wa-qr-hidden { display: none; }
+
+.wa-phones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding-top: 2.75rem;
+}
+
+.wa-phones label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  margin-bottom: 6px;
+}
+
+.wa-phones input {
+  background: var(--surface-container-low);
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  padding: 8px 10px;
+  color: var(--on-surface);
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.wa-phones input:focus {
+  outline: none;
+  background: var(--surface-container-lowest);
+  box-shadow: 0 0 0 3px rgba(168,57,0,0.12);
+}
+
+.wa-phones input.modified {
+  box-shadow: 0 0 0 2px rgba(255,149,0,0.3);
+}
+
+.wa-reason { font-size: 13px; color: var(--on-surface-variant); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .wa-phones { grid-template-columns: 1fr; }
+}

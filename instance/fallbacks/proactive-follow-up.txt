@@ -1,0 +1,1 @@
+Hola {{name}}, ¿cómo estás? Te escribo para dar seguimiento a nuestra conversación anterior. ¿Hay algo en lo que pueda ayudarte?

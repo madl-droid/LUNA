@@ -7,11 +7,16 @@ COPY src/ ./src/
 RUN npm run build
 
 FROM node:22-alpine
+ARG BUILD_VERSION=dev
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist/
-COPY src/oficina/config-ui.html ./dist/oficina/config-ui.html
+ENV BUILD_VERSION=${BUILD_VERSION}
+COPY src/modules/console/ui/styles/ ./dist/console/styles/
+COPY src/modules/console/ui/js/ ./dist/console/js/
+COPY src/modules/lead-scoring/ui/ ./dist/modules/lead-scoring/ui/
+
 COPY .env.example ./.env.example
 COPY .env.schema ./.env.schema
 COPY instance/config.json ./instance/config.json

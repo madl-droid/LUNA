@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna — Calificacion de Leads</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a; color: #e2e8f0; min-height: 100vh;
+    }
+    header {
+      background: #1e293b; border-bottom: 1px solid #334155;
+      padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    header h1 { font-size: 1.25rem; font-weight: 600; }
+    header h1 span { color: #38bdf8; font-weight: 700; }
+    .header-right { display: flex; align-items: center; gap: 1rem; }
+    .lang-toggle {
+      background: #334155; border: 1px solid #475569; border-radius: 6px;
+      color: #e2e8f0; font-size: 0.75rem; padding: 4px 10px; cursor: pointer; font-weight: 600;
+    }
+    .lang-toggle:hover { background: #475569; }
+    .back-btn {
+      background: #334155; border: 1px solid #475569; border-radius: 6px;
+      color: #e2e8f0; font-size: 0.75rem; padding: 4px 12px; cursor: pointer;
+      text-decoration: none; font-weight: 500;
+    }
+    .back-btn:hover { background: #475569; }
+    main { max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem 5rem; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; margin-bottom: 1.25rem; border-bottom: 2px solid #334155; }
+    .tab {
+      padding: 0.6rem 1.5rem; font-size: 0.85rem; font-weight: 500; cursor: pointer;
+      color: #94a3b8; border-bottom: 2px solid transparent; margin-bottom: -2px;
+      transition: all 0.2s; background: none; border-top: none; border-left: none; border-right: none;
+    }
+    .tab:hover { color: #e2e8f0; }
+    .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Panels */
+    .panel {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+      margin-bottom: 1.25rem; overflow: hidden;
+    }
+    .panel-header {
+      padding: 0.875rem 1.25rem; display: flex; align-items: center;
+      justify-content: space-between; cursor: pointer; user-select: none;
+    }
+    .panel-header:hover { background: rgba(255,255,255,0.02); }
+    .panel-title { font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+    .panel-chevron { color: #64748b; transition: transform 0.2s; font-size: 0.7rem; }
+    .panel.collapsed .panel-chevron { transform: rotate(-90deg); }
+    .panel.collapsed .panel-body { display: none; }
+    .panel-body { padding: 0 1.25rem 1.25rem; border-top: 1px solid #334155; }
+    .panel-info { font-size: 0.75rem; color: #64748b; padding: 0.75rem 0 0.5rem; line-height: 1.5; }
+
+    /* Form fields */
+    .field {
+      display: grid; grid-template-columns: 1fr 1.5fr; gap: 0.75rem;
+      align-items: center; padding: 0.6rem 0; border-bottom: 1px solid rgba(51,65,85,0.4);
+    }
+    .field:last-child { border-bottom: none; }
+    .field-label { font-size: 0.8rem; font-weight: 500; color: #cbd5e1; }
+    .field input, .field select {
+      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+      padding: 0.45rem 0.65rem; color: #e2e8f0; font-size: 0.8rem;
+      font-family: 'SF Mono', 'Fira Code', monospace; width: 100%;
+    }
+    .field input:focus, .field select:focus {
+      outline: none; border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56,189,248,0.2);
+    }
+
+    /* Criteria table */
+    .criteria-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.5rem; }
+    .criteria-table th {
+      text-align: left; padding: 0.5rem 0.75rem; color: #64748b; font-weight: 600;
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 1px solid #334155;
+    }
+    .criteria-table td {
+      padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(51,65,85,0.4);
+      vertical-align: middle;
+    }
+    .criteria-table tr:last-child td { border-bottom: none; }
+    .criteria-table input, .criteria-table select {
+      background: #0f172a; border: 1px solid #334155; border-radius: 4px;
+      padding: 0.3rem 0.5rem; color: #e2e8f0; font-size: 0.75rem; width: 100%;
+    }
+    .criteria-table input:focus, .criteria-table select:focus {
+      outline: none; border-color: #38bdf8;
+    }
+    .criteria-table .weight-input { width: 60px; text-align: center; }
+
+    /* Toggle */
+    .toggle { position: relative; width: 36px; height: 20px; display: inline-block; flex-shrink: 0; }
+    .toggle input { display: none; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: #475569; border-radius: 20px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+      background: #94a3b8; top: 3px; left: 3px; transition: all 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: #22c55e; }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(16px); background: #fff; }
+
+    /* Buttons */
+    .btn {
+      padding: 0.4rem 1rem; border: none; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 500; cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-success { background: #22c55e; color: #000; }
+    .btn-success:hover:not(:disabled) { background: #16a34a; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-ghost { background: #334155; color: #e2e8f0; }
+    .btn-ghost:hover { background: #475569; }
+    .btn-small { padding: 0.25rem 0.6rem; font-size: 0.7rem; }
+
+    /* Disqualify reasons table */
+    .dq-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.5rem; }
+    .dq-table th {
+      text-align: left; padding: 0.5rem 0.75rem; color: #64748b; font-weight: 600;
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 1px solid #334155;
+    }
+    .dq-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(51,65,85,0.4); }
+    .dq-table input, .dq-table select {
+      background: #0f172a; border: 1px solid #334155; border-radius: 4px;
+      padding: 0.3rem 0.5rem; color: #e2e8f0; font-size: 0.75rem; width: 100%;
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem;
+    }
+    .stat-card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      padding: 0.75rem 1.25rem; min-width: 100px; flex: 1;
+    }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: #e2e8f0; }
+    .stat-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+
+    /* Leads table */
+    .leads-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .leads-table th {
+      text-align: left; padding: 0.6rem 0.75rem; color: #64748b; font-weight: 600;
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 2px solid #334155; cursor: pointer; user-select: none;
+    }
+    .leads-table th:hover { color: #e2e8f0; }
+    .leads-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid rgba(51,65,85,0.4); }
+    .leads-table tr:hover { background: rgba(255,255,255,0.02); cursor: pointer; }
+
+    /* Status badges */
+    .status-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .status-new { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .status-qualifying { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .status-qualified { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .status-scheduled { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .status-attended { background: rgba(168,85,247,0.15); color: #a855f7; }
+    .status-converted { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .status-out_of_zone { background: rgba(239,68,68,0.15); color: #f87171; }
+    .status-not_interested { background: rgba(239,68,68,0.15); color: #f87171; }
+    .status-cold { background: rgba(100,116,139,0.15); color: #64748b; }
+    .status-blocked { background: rgba(239,68,68,0.25); color: #f87171; }
+
+    /* Score bar */
+    .score-bar {
+      width: 60px; height: 6px; background: #334155; border-radius: 3px;
+      display: inline-block; vertical-align: middle; margin-right: 6px;
+    }
+    .score-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+    .score-low .score-bar-fill { background: #64748b; }
+    .score-mid .score-bar-fill { background: #fbbf24; }
+    .score-high .score-bar-fill { background: #4ade80; }
+
+    /* Lead detail modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      width: 90%; max-width: 700px; max-height: 85vh; overflow-y: auto;
+      padding: 1.5rem;
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .modal-header h2 { font-size: 1.1rem; font-weight: 600; }
+    .modal-close {
+      background: none; border: none; color: #64748b; font-size: 1.25rem;
+      cursor: pointer; padding: 0.25rem;
+    }
+    .modal-close:hover { color: #e2e8f0; }
+
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
+    .detail-item { }
+    .detail-label { font-size: 0.65rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+    .detail-value { font-size: 0.85rem; color: #e2e8f0; margin-top: 0.15rem; }
+
+    .criteria-detail { margin-bottom: 1rem; }
+    .criteria-detail h3 { font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.5rem; }
+    .criteria-row {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0;
+      font-size: 0.8rem; border-bottom: 1px solid rgba(51,65,85,0.3);
+    }
+    .criteria-row:last-child { border-bottom: none; }
+    .criteria-key { color: #94a3b8; width: 100px; flex-shrink: 0; }
+    .criteria-val { color: #e2e8f0; flex: 1; }
+    .criteria-pts { color: #64748b; font-size: 0.7rem; width: 60px; text-align: right; }
+
+    .messages-section { margin-top: 1rem; }
+    .messages-section h3 { font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.5rem; }
+    .msg-list { max-height: 300px; overflow-y: auto; }
+    .msg-bubble {
+      max-width: 80%; padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.4rem;
+      font-size: 0.78rem; line-height: 1.4;
+    }
+    .msg-user { background: #334155; margin-right: auto; border-bottom-left-radius: 2px; }
+    .msg-agent { background: #1e3a5f; margin-left: auto; border-bottom-right-radius: 2px; }
+    .msg-time { font-size: 0.6rem; color: #64748b; margin-top: 0.15rem; }
+
+    /* Filter bar */
+    .filter-bar {
+      display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;
+    }
+    .filter-bar input, .filter-bar select {
+      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+      padding: 0.4rem 0.65rem; color: #e2e8f0; font-size: 0.8rem;
+    }
+    .filter-bar input:focus, .filter-bar select:focus {
+      outline: none; border-color: #38bdf8;
+    }
+    .filter-bar input { width: 200px; }
+
+    /* Pagination */
+    .pagination {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 1rem; font-size: 0.75rem; color: #64748b;
+    }
+    .pagination button {
+      background: #334155; border: 1px solid #475569; border-radius: 6px;
+      color: #e2e8f0; padding: 0.3rem 0.8rem; font-size: 0.75rem; cursor: pointer;
+    }
+    .pagination button:hover { background: #475569; }
+    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Save bar */
+    .save-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: #1e293b; border-top: 1px solid #334155;
+      padding: 0.75rem 2rem; display: flex; justify-content: flex-end; gap: 0.75rem;
+    }
+
+    .toast {
+      position: fixed; top: 70px; right: 24px; padding: 10px 18px;
+      border-radius: 8px; font-size: 0.8rem; font-weight: 500; z-index: 300;
+      animation: slideIn 0.3s ease;
+    }
+    .toast.success { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+    .toast.error { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+    @keyframes slideIn { from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1} }
+
+    .weight-total { font-size: 0.7rem; padding: 0.5rem 0.75rem; }
+    .weight-total.ok { color: #4ade80; }
+    .weight-total.warn { color: #fbbf24; }
+
+    /* Actions row */
+    .actions-row { display: flex; gap: 0.5rem; padding: 0.75rem 0; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span>LUNA</span> Calificacion de Leads</h1>
+    <div class="header-right">
+      <a href="/console" class="back-btn" id="back-btn">Console</a>
+      <button class="lang-toggle" id="lang-btn" onclick="toggleLang()">EN</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('config')" id="tab-config">Configuracion</button>
+      <button class="tab" onclick="switchTab('leads')" id="tab-leads">Leads</button>
+    </div>
+
+    <!-- ═══ CONFIG TAB ═══ -->
+    <div class="tab-content active" id="content-config">
+
+      <!-- Criteria -->
+      <div class="panel" id="criteria-panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_criteria">Criterios de Calificacion</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <div class="panel-info" data-t="sec_criteria_info">Define los criterios que LUNA usa para calificar leads. BANT (Budget, Authority, Need, Timeline) viene por defecto. Puedes agregar hasta 6 criterios custom.</div>
+          <div id="criteria-container"></div>
+          <div class="actions-row">
+            <button class="btn btn-ghost btn-small" onclick="addCriterion()" id="btn-add-criterion">+ Agregar criterio</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thresholds -->
+      <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_thresholds">Umbrales de Puntuacion</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <div class="panel-info" data-t="sec_thresholds_info">Define los rangos de puntuacion. Score 0 a "Frio" = lead frio. "Frio+1" a "Calificado-1" = en calificacion. "Calificado" a 100 = calificado.</div>
+          <div id="thresholds-container"></div>
+        </div>
+      </div>
+
+      <!-- Qualified Actions -->
+      <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_actions">Acciones Post-Calificacion</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <div class="panel-info" data-t="sec_actions_info">Que sucede cuando un lead se califica. Selecciona las acciones disponibles y cual es la predeterminada.</div>
+          <div id="actions-container"></div>
+        </div>
+      </div>
+
+      <!-- Disqualify Reasons -->
+      <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_disqualify">Motivos de Descalificacion</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <div class="panel-info" data-t="sec_disqualify_info">Cuando se detecta uno de estos motivos, el lead se mueve automaticamente al estado correspondiente.</div>
+          <div id="disqualify-container"></div>
+          <div class="actions-row">
+            <button class="btn btn-ghost btn-small" onclick="addDisqualifyReason()" id="btn-add-dq">+ Agregar motivo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_options">Opciones</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <div id="options-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ LEADS TAB ═══ -->
+    <div class="tab-content" id="content-leads">
+      <div class="stats-bar" id="stats-bar"></div>
+      <div class="filter-bar">
+        <input type="text" placeholder="Buscar..." id="lead-search" oninput="debounceSearch()">
+        <select id="lead-status-filter" onchange="loadLeads()">
+          <option value="">Todos los estados</option>
+        </select>
+        <select id="lead-sort" onchange="loadLeads()">
+          <option value="updated">Recientes</option>
+          <option value="score">Puntuacion</option>
+          <option value="created">Creacion</option>
+        </select>
+        <button class="btn btn-ghost btn-small" onclick="loadLeads()">Actualizar</button>
+      </div>
+      <div class="panel">
+        <div class="panel-body" style="padding-top:0.75rem">
+          <table class="leads-table">
+            <thead>
+              <tr>
+                <th data-t="th_name">Nombre</th>
+                <th data-t="th_channel">Canal</th>
+                <th data-t="th_score">Score</th>
+                <th data-t="th_status">Estado</th>
+                <th data-t="th_msgs">Msgs</th>
+                <th data-t="th_last">Ultima actividad</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="leads-tbody"></tbody>
+          </table>
+          <div class="pagination" id="pagination"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Lead Detail Modal -->
+  <div class="modal-overlay hidden" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modal-content"></div>
+  </div>
+
+  <!-- Save Bar (config tab only) -->
+  <div class="save-bar" id="save-bar">
+    <button class="btn btn-ghost" onclick="resetConfig()" id="btn-discard">Descartar</button>
+    <button class="btn btn-primary" onclick="saveConfig()" id="btn-save" disabled>Guardar</button>
+    <button class="btn btn-success" onclick="recalculate()" id="btn-recalc">Recalcular</button>
+  </div>
+
+<script>
+// ═══════════════════════════════════════════
+// i18n
+// ═══════════════════════════════════════════
+const i18n = {
+  es: {
+    tab_config: 'Configuracion', tab_leads: 'Leads',
+    sec_criteria: 'Criterios de Calificacion',
+    sec_criteria_info: 'Define los criterios que LUNA usa para calificar leads. BANT (Budget, Authority, Need, Timeline) viene por defecto. Puedes agregar hasta 6 criterios custom.',
+    sec_thresholds: 'Umbrales de Puntuacion',
+    sec_thresholds_info: 'Define los rangos de puntuacion. Score 0 a "Frio" = lead frio. "Frio+1" a "Calificado-1" = en calificacion. "Calificado" a 100 = calificado.',
+    sec_actions: 'Acciones Post-Calificacion',
+    sec_actions_info: 'Que sucede cuando un lead se califica. Selecciona las acciones disponibles y cual es la predeterminada.',
+    sec_disqualify: 'Motivos de Descalificacion',
+    sec_disqualify_info: 'Cuando se detecta uno de estos motivos, el lead se mueve automaticamente al estado correspondiente.',
+    sec_options: 'Opciones',
+    back: 'Console',
+    th_name: 'Nombre', th_channel: 'Canal', th_score: 'Score', th_status: 'Estado',
+    th_msgs: 'Msgs', th_last: 'Ultima actividad',
+    th_key: 'Clave', th_name_es: 'Nombre (ES)', th_name_en: 'Nombre (EN)',
+    th_type: 'Tipo', th_weight: 'Peso', th_required: 'Req', th_never_ask: 'No preguntar',
+    th_options: 'Opciones', th_actions: '',
+    th_dq_key: 'Clave', th_dq_name_es: 'Nombre (ES)', th_dq_name_en: 'Nombre (EN)',
+    th_dq_target: 'Estado destino',
+    add_criterion: '+ Agregar criterio', add_dq: '+ Agregar motivo',
+    discard: 'Descartar', save: 'Guardar', recalc: 'Recalcular',
+    saved: 'Configuracion guardada', save_error: 'Error al guardar',
+    recalc_done: 'Recalculacion completada', recalc_error: 'Error al recalcular',
+    threshold_cold: 'Frio (max)', threshold_qualified: 'Calificado (min)',
+    weight_total: 'Total de pesos',
+    opt_recalc: 'Recalcular scores al cambiar config',
+    opt_max_custom: 'Max criterios custom',
+    search: 'Buscar...', all_status: 'Todos los estados',
+    sort_updated: 'Recientes', sort_score: 'Puntuacion', sort_created: 'Creacion',
+    refresh: 'Actualizar', detail: 'Detalle', no_leads: 'No hay leads',
+    prev: 'Anterior', next: 'Siguiente',
+    showing: 'Mostrando', of: 'de',
+    detail_score: 'Puntuacion', detail_status: 'Estado', detail_channel: 'Canal',
+    detail_created: 'Creado', detail_updated: 'Actualizado', detail_activity: 'Ultima actividad',
+    detail_msgs: 'Mensajes', detail_criteria: 'Criterios', detail_messages: 'Mensajes recientes',
+    detail_disqualify: 'Descalificar',
+    act_scheduled: 'Agendado', act_transferred_to_sales: 'Transferido a ventas',
+    act_sold: 'Vendido', act_purchase_complete: 'Compra completada',
+    default_action: 'Accion por defecto',
+    status_new: 'Nuevo', status_qualifying: 'En calificacion', status_qualified: 'Calificado',
+    status_scheduled: 'Agendado', status_attended: 'Atendido', status_converted: 'Convertido',
+    status_out_of_zone: 'Fuera de zona', status_not_interested: 'No interesado',
+    status_cold: 'Frio', status_blocked: 'Bloqueado',
+    confirm_delete: 'Eliminar este criterio?',
+    confirm_delete_dq: 'Eliminar este motivo?',
+  },
+  en: {
+    tab_config: 'Configuration', tab_leads: 'Leads',
+    sec_criteria: 'Qualification Criteria',
+    sec_criteria_info: 'Define the criteria LUNA uses to qualify leads. BANT (Budget, Authority, Need, Timeline) comes by default. You can add up to 6 custom criteria.',
+    sec_thresholds: 'Score Thresholds',
+    sec_thresholds_info: 'Define score ranges. Score 0 to "Cold" = cold lead. "Cold+1" to "Qualified-1" = qualifying. "Qualified" to 100 = qualified.',
+    sec_actions: 'Post-Qualification Actions',
+    sec_actions_info: 'What happens when a lead qualifies. Select available actions and which is the default.',
+    sec_disqualify: 'Disqualification Reasons',
+    sec_disqualify_info: 'When one of these reasons is detected, the lead is automatically moved to the corresponding status.',
+    sec_options: 'Options',
+    back: 'Console',
+    th_name: 'Name', th_channel: 'Channel', th_score: 'Score', th_status: 'Status',
+    th_msgs: 'Msgs', th_last: 'Last activity',
+    th_key: 'Key', th_name_es: 'Name (ES)', th_name_en: 'Name (EN)',
+    th_type: 'Type', th_weight: 'Weight', th_required: 'Req', th_never_ask: 'Never ask',
+    th_options: 'Options', th_actions: '',
+    th_dq_key: 'Key', th_dq_name_es: 'Name (ES)', th_dq_name_en: 'Name (EN)',
+    th_dq_target: 'Target status',
+    add_criterion: '+ Add criterion', add_dq: '+ Add reason',
+    discard: 'Discard', save: 'Save', recalc: 'Recalculate',
+    saved: 'Configuration saved', save_error: 'Failed to save',
+    recalc_done: 'Recalculation complete', recalc_error: 'Recalculation failed',
+    threshold_cold: 'Cold (max)', threshold_qualified: 'Qualified (min)',
+    weight_total: 'Total weight',
+    opt_recalc: 'Recalculate scores on config change',
+    opt_max_custom: 'Max custom criteria',
+    search: 'Search...', all_status: 'All statuses',
+    sort_updated: 'Recent', sort_score: 'Score', sort_created: 'Created',
+    refresh: 'Refresh', detail: 'Detail', no_leads: 'No leads found',
+    prev: 'Previous', next: 'Next',
+    showing: 'Showing', of: 'of',
+    detail_score: 'Score', detail_status: 'Status', detail_channel: 'Channel',
+    detail_created: 'Created', detail_updated: 'Updated', detail_activity: 'Last activity',
+    detail_msgs: 'Messages', detail_criteria: 'Criteria', detail_messages: 'Recent messages',
+    detail_disqualify: 'Disqualify',
+    act_scheduled: 'Scheduled', act_transferred_to_sales: 'Transferred to sales',
+    act_sold: 'Sold', act_purchase_complete: 'Purchase complete',
+    default_action: 'Default action',
+    status_new: 'New', status_qualifying: 'Qualifying', status_qualified: 'Qualified',
+    status_scheduled: 'Scheduled', status_attended: 'Attended', status_converted: 'Converted',
+    status_out_of_zone: 'Out of zone', status_not_interested: 'Not interested',
+    status_cold: 'Cold', status_blocked: 'Blocked',
+    confirm_delete: 'Delete this criterion?',
+    confirm_delete_dq: 'Delete this reason?',
+  }
+}
+
+let lang = localStorage.getItem('luna-lang') || 'es'
+function t(key) { return i18n[lang]?.[key] ?? i18n.es[key] ?? key }
+function toggleLang() {
+  lang = lang === 'es' ? 'en' : 'es'
+  localStorage.setItem('luna-lang', lang)
+  document.getElementById('lang-btn').textContent = lang === 'es' ? 'EN' : 'ES'
+  renderAll()
+}
+
+// ═══════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════
+let config = null
+let originalConfig = null
+let leadsData = { leads: [], total: 0 }
+let stats = {}
+let leadsPage = 0
+const PAGE_SIZE = 25
+let searchTimeout = null
+
+const API = '/console/api/lead-scoring'
+
+const ALL_ACTIONS = [
+  { value: 'scheduled', labelKey: 'act_scheduled' },
+  { value: 'transferred_to_sales', labelKey: 'act_transferred_to_sales' },
+  { value: 'sold', labelKey: 'act_sold' },
+  { value: 'purchase_complete', labelKey: 'act_purchase_complete' },
+]
+
+const ALL_STATUSES = [
+  'new','qualifying','qualified','scheduled','attended','converted',
+  'out_of_zone','not_interested','cold','blocked'
+]
+
+const DQ_TARGET_STATUSES = ['not_interested','out_of_zone','cold','blocked']
+
+// ═══════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════
+async function init() {
+  document.getElementById('lang-btn').textContent = lang === 'es' ? 'EN' : 'ES'
+  try {
+    const res = await fetch(API + '/config')
+    const data = await res.json()
+    config = data.config
+    originalConfig = JSON.parse(JSON.stringify(config))
+    renderAll()
+  } catch (err) {
+    showToast('Failed to load config', 'error')
+  }
+}
+
+// ═══════════════════════════════════════════
+// Tabs
+// ═══════════════════════════════════════════
+let activeTab = 'config'
+function switchTab(tab) {
+  activeTab = tab
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'))
+  document.getElementById('tab-' + tab).classList.add('active')
+  document.getElementById('content-' + tab).classList.add('active')
+  document.getElementById('save-bar').style.display = tab === 'config' ? 'flex' : 'none'
+  if (tab === 'leads') { loadStats(); loadLeads() }
+}
+
+// ═══════════════════════════════════════════
+// Render All
+// ═══════════════════════════════════════════
+function renderAll() {
+  document.getElementById('tab-config').textContent = t('tab_config')
+  document.getElementById('tab-leads').textContent = t('tab_leads')
+  document.getElementById('back-btn').textContent = t('back')
+  document.getElementById('btn-discard').textContent = t('discard')
+  document.getElementById('btn-save').textContent = t('save')
+  document.getElementById('btn-recalc').textContent = t('recalc')
+  document.getElementById('btn-add-criterion').textContent = t('add_criterion')
+  document.getElementById('btn-add-dq').textContent = t('add_dq')
+  document.getElementById('lead-search').placeholder = t('search')
+
+  // Update i18n text nodes
+  document.querySelectorAll('[data-t]').forEach(el => {
+    el.textContent = t(el.dataset.t)
+  })
+
+  if (config) {
+    renderCriteria()
+    renderThresholds()
+    renderActions()
+    renderDisqualify()
+    renderOptions()
+  }
+
+  // Status filter options
+  const sf = document.getElementById('lead-status-filter')
+  sf.innerHTML = `<option value="">${t('all_status')}</option>` +
+    ALL_STATUSES.map(s => `<option value="${s}">${t('status_'+s)}</option>`).join('')
+
+  // Sort options
+  const so = document.getElementById('lead-sort')
+  so.innerHTML = `<option value="updated">${t('sort_updated')}</option>
+    <option value="score">${t('sort_score')}</option>
+    <option value="created">${t('sort_created')}</option>`
+
+  updateSaveBtn()
+}
+
+// ═══════════════════════════════════════════
+// Criteria
+// ═══════════════════════════════════════════
+function renderCriteria() {
+  const c = document.getElementById('criteria-container')
+  let h = `<table class="criteria-table"><thead><tr>
+    <th>${t('th_key')}</th><th>${t('th_name_es')}</th><th>${t('th_name_en')}</th>
+    <th>${t('th_type')}</th><th>${t('th_options')}</th><th>${t('th_weight')}</th>
+    <th>${t('th_required')}</th><th>${t('th_never_ask')}</th><th></th>
+  </tr></thead><tbody>`
+
+  config.criteria.forEach((cr, i) => {
+    h += `<tr>
+      <td><input value="${esc(cr.key)}" onchange="updateCriterion(${i},'key',this.value)" style="width:80px"></td>
+      <td><input value="${esc(cr.name.es)}" onchange="updateCriterion(${i},'name_es',this.value)"></td>
+      <td><input value="${esc(cr.name.en)}" onchange="updateCriterion(${i},'name_en',this.value)"></td>
+      <td><select onchange="updateCriterion(${i},'type',this.value)">
+        <option value="text" ${cr.type==='text'?'selected':''}>Text</option>
+        <option value="enum" ${cr.type==='enum'?'selected':''}>Enum</option>
+        <option value="boolean" ${cr.type==='boolean'?'selected':''}>Boolean</option>
+      </select></td>
+      <td><input value="${esc((cr.options||[]).join(','))}" onchange="updateCriterion(${i},'options',this.value)" placeholder="opt1,opt2" ${cr.type!=='enum'?'disabled':''}></td>
+      <td><input type="number" class="weight-input" value="${cr.weight}" min="0" max="100" onchange="updateCriterion(${i},'weight',this.value)"></td>
+      <td style="text-align:center"><label class="toggle"><input type="checkbox" ${cr.required?'checked':''} onchange="updateCriterion(${i},'required',this.checked)"><span class="toggle-slider"></span></label></td>
+      <td style="text-align:center"><label class="toggle"><input type="checkbox" ${cr.neverAskDirectly?'checked':''} onchange="updateCriterion(${i},'neverAskDirectly',this.checked)"><span class="toggle-slider"></span></label></td>
+      <td><button class="btn btn-danger btn-small" onclick="removeCriterion(${i})">X</button></td>
+    </tr>`
+  })
+  h += '</tbody></table>'
+
+  const totalWeight = config.criteria.reduce((s,c) => s + c.weight, 0)
+  const cls = totalWeight === 100 ? 'ok' : 'warn'
+  h += `<div class="weight-total ${cls}">${t('weight_total')}: ${totalWeight}/100</div>`
+
+  c.innerHTML = h
+}
+
+function updateCriterion(i, field, value) {
+  const cr = config.criteria[i]
+  if (field === 'key') cr.key = value
+  else if (field === 'name_es') cr.name.es = value
+  else if (field === 'name_en') cr.name.en = value
+  else if (field === 'type') { cr.type = value; if (value !== 'enum') delete cr.options }
+  else if (field === 'options') cr.options = value.split(',').map(s => s.trim()).filter(Boolean)
+  else if (field === 'weight') cr.weight = parseInt(value, 10) || 0
+  else if (field === 'required') cr.required = value
+  else if (field === 'neverAskDirectly') cr.neverAskDirectly = value
+  renderCriteria()
+  updateSaveBtn()
+}
+
+function addCriterion() {
+  const maxTotal = 4 + config.maxCustomCriteria
+  if (config.criteria.length >= maxTotal) {
+    showToast(`Max ${maxTotal} criteria`, 'error')
+    return
+  }
+  config.criteria.push({
+    key: 'custom_' + Date.now(),
+    name: { es: 'Nuevo criterio', en: 'New criterion' },
+    type: 'text', weight: 0, required: false, neverAskDirectly: false,
+  })
+  renderCriteria()
+  updateSaveBtn()
+}
+
+function removeCriterion(i) {
+  if (!confirm(t('confirm_delete'))) return
+  config.criteria.splice(i, 1)
+  renderCriteria()
+  updateSaveBtn()
+}
+
+// ═══════════════════════════════════════════
+// Thresholds
+// ═══════════════════════════════════════════
+function renderThresholds() {
+  const c = document.getElementById('thresholds-container')
+  c.innerHTML = `
+    <div class="field">
+      <span class="field-label">${t('threshold_cold')}</span>
+      <input type="number" value="${config.thresholds.cold}" min="0" max="99"
+        onchange="config.thresholds.cold=parseInt(this.value);updateSaveBtn()">
+    </div>
+    <div class="field">
+      <span class="field-label">${t('threshold_qualified')}</span>
+      <input type="number" value="${config.thresholds.qualified}" min="1" max="100"
+        onchange="config.thresholds.qualified=parseInt(this.value);updateSaveBtn()">
+    </div>
+    <div class="panel-info" style="padding-top:0.5rem">
+      0 - ${config.thresholds.cold} = <span class="status-badge status-cold">${t('status_cold')}</span>
+      &nbsp; ${config.thresholds.cold + 1} - ${config.thresholds.qualified - 1} = <span class="status-badge status-qualifying">${t('status_qualifying')}</span>
+      &nbsp; ${config.thresholds.qualified} - 100 = <span class="status-badge status-qualified">${t('status_qualified')}</span>
+    </div>`
+}
+
+// ═══════════════════════════════════════════
+// Actions
+// ═══════════════════════════════════════════
+function renderActions() {
+  const c = document.getElementById('actions-container')
+  let h = ''
+  ALL_ACTIONS.forEach(a => {
+    const enabled = config.qualifiedActions.includes(a.value)
+    h += `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid rgba(51,65,85,0.4)">
+      <label class="toggle"><input type="checkbox" ${enabled?'checked':''}
+        onchange="toggleAction('${a.value}',this.checked)"><span class="toggle-slider"></span></label>
+      <span class="field-label">${t(a.labelKey)}</span>
+    </div>`
+  })
+  h += `<div class="field" style="margin-top:0.5rem">
+    <span class="field-label">${t('default_action')}</span>
+    <select onchange="config.defaultQualifiedAction=this.value;updateSaveBtn()">
+      ${config.qualifiedActions.map(a =>
+        `<option value="${a}" ${a===config.defaultQualifiedAction?'selected':''}>${t('act_'+a)}</option>`
+      ).join('')}
+    </select>
+  </div>`
+  c.innerHTML = h
+}
+
+function toggleAction(action, enabled) {
+  if (enabled) {
+    if (!config.qualifiedActions.includes(action)) config.qualifiedActions.push(action)
+  } else {
+    config.qualifiedActions = config.qualifiedActions.filter(a => a !== action)
+    if (config.defaultQualifiedAction === action && config.qualifiedActions.length > 0) {
+      config.defaultQualifiedAction = config.qualifiedActions[0]
+    }
+  }
+  renderActions()
+  updateSaveBtn()
+}
+
+// ═══════════════════════════════════════════
+// Disqualify Reasons
+// ═══════════════════════════════════════════
+function renderDisqualify() {
+  const c = document.getElementById('disqualify-container')
+  let h = `<table class="dq-table"><thead><tr>
+    <th>${t('th_dq_key')}</th><th>${t('th_dq_name_es')}</th><th>${t('th_dq_name_en')}</th>
+    <th>${t('th_dq_target')}</th><th></th>
+  </tr></thead><tbody>`
+
+  config.disqualifyReasons.forEach((dr, i) => {
+    h += `<tr>
+      <td><input value="${esc(dr.key)}" onchange="updateDQ(${i},'key',this.value)" style="width:100px"></td>
+      <td><input value="${esc(dr.name.es)}" onchange="updateDQ(${i},'name_es',this.value)"></td>
+      <td><input value="${esc(dr.name.en)}" onchange="updateDQ(${i},'name_en',this.value)"></td>
+      <td><select onchange="updateDQ(${i},'targetStatus',this.value)">
+        ${DQ_TARGET_STATUSES.map(s => `<option value="${s}" ${s===dr.targetStatus?'selected':''}>${t('status_'+s)}</option>`).join('')}
+      </select></td>
+      <td><button class="btn btn-danger btn-small" onclick="removeDQ(${i})">X</button></td>
+    </tr>`
+  })
+  h += '</tbody></table>'
+  c.innerHTML = h
+}
+
+function updateDQ(i, field, value) {
+  const dr = config.disqualifyReasons[i]
+  if (field === 'key') dr.key = value
+  else if (field === 'name_es') dr.name.es = value
+  else if (field === 'name_en') dr.name.en = value
+  else if (field === 'targetStatus') dr.targetStatus = value
+  updateSaveBtn()
+}
+
+function addDisqualifyReason() {
+  config.disqualifyReasons.push({
+    key: 'reason_' + Date.now(),
+    name: { es: 'Nuevo motivo', en: 'New reason' },
+    targetStatus: 'not_interested',
+  })
+  renderDisqualify()
+  updateSaveBtn()
+}
+
+function removeDQ(i) {
+  if (!confirm(t('confirm_delete_dq'))) return
+  config.disqualifyReasons.splice(i, 1)
+  renderDisqualify()
+  updateSaveBtn()
+}
+
+// ═══════════════════════════════════════════
+// Options
+// ═══════════════════════════════════════════
+function renderOptions() {
+  const c = document.getElementById('options-container')
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid rgba(51,65,85,0.4)">
+      <label class="toggle"><input type="checkbox" ${config.recalculateOnConfigChange?'checked':''}
+        onchange="config.recalculateOnConfigChange=this.checked;updateSaveBtn()"><span class="toggle-slider"></span></label>
+      <span class="field-label">${t('opt_recalc')}</span>
+    </div>
+    <div class="field">
+      <span class="field-label">${t('opt_max_custom')}</span>
+      <input type="number" value="${config.maxCustomCriteria}" min="0" max="6"
+        onchange="config.maxCustomCriteria=parseInt(this.value);updateSaveBtn()">
+    </div>`
+}
+
+// ═══════════════════════════════════════════
+// Save / Reset
+// ═══════════════════════════════════════════
+function updateSaveBtn() {
+  const changed = JSON.stringify(config) !== JSON.stringify(originalConfig)
+  document.getElementById('btn-save').disabled = !changed
+}
+
+function resetConfig() {
+  config = JSON.parse(JSON.stringify(originalConfig))
+  renderAll()
+}
+
+async function saveConfig() {
+  try {
+    const res = await fetch(API + '/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      originalConfig = JSON.parse(JSON.stringify(config))
+      updateSaveBtn()
+      showToast(t('saved'), 'success')
+    } else {
+      showToast(data.error || t('save_error'), 'error')
+    }
+  } catch { showToast(t('save_error'), 'error') }
+}
+
+async function recalculate() {
+  try {
+    const res = await fetch(API + '/recalculate', { method: 'POST' })
+    const data = await res.json()
+    if (data.ok) {
+      showToast(`${t('recalc_done')} (${data.recalculated})`, 'success')
+    } else { showToast(t('recalc_error'), 'error') }
+  } catch { showToast(t('recalc_error'), 'error') }
+}
+
+// ═══════════════════════════════════════════
+// Leads Tab
+// ═══════════════════════════════════════════
+async function loadStats() {
+  try {
+    const res = await fetch(API + '/stats')
+    const data = await res.json()
+    stats = data.stats || {}
+    renderStats()
+  } catch {}
+}
+
+function renderStats() {
+  const bar = document.getElementById('stats-bar')
+  const keys = ['total', 'new', 'qualifying', 'qualified', 'scheduled', 'converted', 'cold']
+  bar.innerHTML = keys.map(k => {
+    const val = stats[k] || 0
+    const label = k === 'total' ? 'Total' : t('status_' + k)
+    return `<div class="stat-card"><div class="stat-value">${val}</div><div class="stat-label">${label}</div></div>`
+  }).join('')
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => { leadsPage = 0; loadLeads() }, 300)
+}
+
+async function loadLeads() {
+  const search = document.getElementById('lead-search').value
+  const status = document.getElementById('lead-status-filter').value
+  const sort = document.getElementById('lead-sort').value
+
+  const params = new URLSearchParams({
+    limit: String(PAGE_SIZE),
+    offset: String(leadsPage * PAGE_SIZE),
+    sort,
+    dir: sort === 'score' ? 'desc' : 'desc',
+  })
+  if (search) params.set('search', search)
+  if (status) params.set('status', status)
+
+  try {
+    const res = await fetch(API + '/leads?' + params.toString())
+    leadsData = await res.json()
+    renderLeads()
+  } catch {
+    document.getElementById('leads-tbody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;color:#64748b;padding:2rem">${t('no_leads')}</td></tr>`
+  }
+}
+
+function renderLeads() {
+  const tbody = document.getElementById('leads-tbody')
+  if (!leadsData.leads || leadsData.leads.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#64748b;padding:2rem">${t('no_leads')}</td></tr>`
+    document.getElementById('pagination').innerHTML = ''
+    return
+  }
+
+  tbody.innerHTML = leadsData.leads.map(l => {
+    const scoreClass = l.qualificationScore <= 30 ? 'score-low' : l.qualificationScore >= 70 ? 'score-high' : 'score-mid'
+    const ago = l.lastActivityAt ? timeAgo(l.lastActivityAt) : '-'
+    return `<tr onclick="openDetail('${l.contactId}')">
+      <td>${esc(l.displayName || l.channelContactId || '-')}</td>
+      <td style="font-size:0.75rem;color:#94a3b8">${esc(l.channel)} ${esc(l.channelContactId ? l.channelContactId.slice(-4) : '')}</td>
+      <td>
+        <span class="${scoreClass}"><span class="score-bar"><span class="score-bar-fill" style="width:${l.qualificationScore}%"></span></span></span>
+        <span style="font-size:0.75rem">${l.qualificationScore}</span>
+      </td>
+      <td><span class="status-badge status-${l.qualificationStatus}">${t('status_'+l.qualificationStatus)}</span></td>
+      <td style="font-size:0.75rem;color:#94a3b8">${l.messageCount}</td>
+      <td style="font-size:0.75rem;color:#94a3b8">${ago}</td>
+      <td><button class="btn btn-ghost btn-small" onclick="event.stopPropagation();openDetail('${l.contactId}')">${t('detail')}</button></td>
+    </tr>`
+  }).join('')
+
+  // Pagination
+  const totalPages = Math.ceil(leadsData.total / PAGE_SIZE)
+  document.getElementById('pagination').innerHTML = `
+    <span>${t('showing')} ${leadsPage * PAGE_SIZE + 1}-${Math.min((leadsPage + 1) * PAGE_SIZE, leadsData.total)} ${t('of')} ${leadsData.total}</span>
+    <div style="display:flex;gap:0.5rem">
+      <button onclick="leadsPage--;loadLeads()" ${leadsPage===0?'disabled':''}>${t('prev')}</button>
+      <button onclick="leadsPage++;loadLeads()" ${leadsPage>=totalPages-1?'disabled':''}>${t('next')}</button>
+    </div>`
+}
+
+// ═══════════════════════════════════════════
+// Lead Detail Modal
+// ═══════════════════════════════════════════
+async function openDetail(contactId) {
+  try {
+    const res = await fetch(API + '/lead?id=' + encodeURIComponent(contactId))
+    const data = await res.json()
+    if (!data.lead) return
+
+    const l = data.lead
+    const modal = document.getElementById('modal-content')
+    const scoreClass = l.qualificationScore <= 30 ? 'score-low' : l.qualificationScore >= 70 ? 'score-high' : 'score-mid'
+
+    // Criteria detail
+    let criteriaHtml = ''
+    if (config && config.criteria) {
+      criteriaHtml = config.criteria.map(cr => {
+        const val = l.qualificationData[cr.key]
+        const filled = val !== undefined && val !== null && val !== ''
+        return `<div class="criteria-row">
+          <span class="criteria-key">${esc(cr.name[lang] || cr.name.es)}</span>
+          <span class="criteria-val" style="color:${filled?'#e2e8f0':'#475569'}">${filled ? esc(String(val)) : '-'}</span>
+          <span class="criteria-pts">${cr.weight}pts</span>
+        </div>`
+      }).join('')
+    }
+
+    // Messages
+    let msgsHtml = ''
+    if (l.recentMessages && l.recentMessages.length > 0) {
+      msgsHtml = l.recentMessages.map(m => {
+        const cls = m.senderType === 'user' ? 'msg-user' : 'msg-agent'
+        const text = m.content?.text || JSON.stringify(m.content)
+        const time = new Date(m.createdAt).toLocaleString()
+        return `<div class="msg-bubble ${cls}">
+          ${esc(text)}
+          <div class="msg-time">${time}</div>
+        </div>`
+      }).join('')
+    } else {
+      msgsHtml = `<div style="color:#64748b;font-size:0.8rem;padding:1rem 0">No messages in buffer</div>`
+    }
+
+    // Disqualify dropdown
+    let dqHtml = ''
+    if (config && config.disqualifyReasons) {
+      const opts = config.disqualifyReasons.map(dr =>
+        `<option value="${dr.key}">${dr.name[lang] || dr.name.es}</option>`
+      ).join('')
+      dqHtml = `<div style="display:flex;gap:0.5rem;align-items:center;margin-top:1rem;padding-top:0.75rem;border-top:1px solid #334155">
+        <select id="dq-select" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:0.4rem 0.65rem;color:#e2e8f0;font-size:0.8rem">
+          ${opts}
+        </select>
+        <button class="btn btn-danger btn-small" onclick="disqualifyLead('${l.contactId}')">${t('detail_disqualify')}</button>
+      </div>`
+    }
+
+    modal.innerHTML = `
+      <div class="modal-header">
+        <h2>${esc(l.displayName || l.channelContactId || 'Lead')}</h2>
+        <button class="modal-close" onclick="closeModal()">&#10005;</button>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item"><div class="detail-label">${t('detail_score')}</div>
+          <div class="detail-value"><span class="${scoreClass}"><span class="score-bar" style="width:80px"><span class="score-bar-fill" style="width:${l.qualificationScore}%"></span></span></span> ${l.qualificationScore}/100</div></div>
+        <div class="detail-item"><div class="detail-label">${t('detail_status')}</div>
+          <div class="detail-value"><span class="status-badge status-${l.qualificationStatus}">${t('status_'+l.qualificationStatus)}</span></div></div>
+        <div class="detail-item"><div class="detail-label">${t('detail_channel')}</div>
+          <div class="detail-value">${l.channels.map(ch => esc(ch.channel + ': ' + ch.channelContactId)).join(', ')}</div></div>
+        <div class="detail-item"><div class="detail-label">${t('detail_msgs')}</div>
+          <div class="detail-value">${l.messageCount}</div></div>
+        <div class="detail-item"><div class="detail-label">${t('detail_created')}</div>
+          <div class="detail-value">${new Date(l.createdAt).toLocaleDateString()}</div></div>
+        <div class="detail-item"><div class="detail-label">${t('detail_activity')}</div>
+          <div class="detail-value">${l.lastActivityAt ? timeAgo(l.lastActivityAt) : '-'}</div></div>
+      </div>
+      <div class="criteria-detail">
+        <h3>${t('detail_criteria')}</h3>
+        ${criteriaHtml || '<div style="color:#64748b;font-size:0.8rem">No criteria data</div>'}
+      </div>
+      <div class="messages-section">
+        <h3>${t('detail_messages')}</h3>
+        <div class="msg-list">${msgsHtml}</div>
+      </div>
+      ${dqHtml}`
+
+    document.getElementById('modal-overlay').classList.remove('hidden')
+  } catch (err) {
+    showToast('Failed to load detail', 'error')
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden')
+}
+
+async function disqualifyLead(contactId) {
+  const reasonKey = document.getElementById('dq-select').value
+  try {
+    const res = await fetch(API + '/disqualify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contactId, reasonKey }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      closeModal()
+      loadLeads()
+      loadStats()
+      showToast('Lead disqualified', 'success')
+    }
+  } catch { showToast('Failed to disqualify', 'error') }
+}
+
+// ═══════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════
+function togglePanel(header) { header.closest('.panel').classList.toggle('collapsed') }
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
+
+function timeAgo(iso) {
+  const d = new Date(iso)
+  const now = new Date()
+  const diff = Math.floor((now - d) / 1000)
+  if (diff < 60) return diff + 's'
+  if (diff < 3600) return Math.floor(diff/60) + 'm'
+  if (diff < 86400) return Math.floor(diff/3600) + 'h'
+  return Math.floor(diff/86400) + 'd'
+}
+
+function showToast(msg, type) {
+  const old = document.querySelector('.toast'); if(old) old.remove()
+  const el = document.createElement('div')
+  el.className = 'toast ' + type; el.textContent = msg
+  document.body.appendChild(el)
+  setTimeout(() => el.remove(), 3500)
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal()
+})
+
+init()
+</script>
+</body>
+</html>

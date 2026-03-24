@@ -19,5 +19,15 @@
     "noUnusedParameters": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "src/config.ts",
+    "src/channels",
+    "src/engine",
+    "src/llm",
+    "src/memory",
+    "src/console"
+  ]
 }
