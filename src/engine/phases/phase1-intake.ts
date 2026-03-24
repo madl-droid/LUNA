@@ -103,14 +103,15 @@ export async function phase1Intake(
 
   if (contactResult.status === 'rejected') logger.warn({ err: contactResult.reason, traceId }, 'Contact lookup failed')
 
-  // 11. Load or create session
+  // 11. Load or create session (channel-specific timeout if configured)
+  const sessionWindowMs = await getChannelSessionTimeout(db, message.channelName, config.sessionReopenWindowMs)
   const session = await loadOrCreateSession(
     db,
     contact?.id ?? null,
     message.from,
     message.channelName,
     agentId,
-    config.sessionReopenWindowMs,
+    sessionWindowMs,
   )
 
   // 12-15. Load memory context in parallel
@@ -398,4 +399,21 @@ async function loadSheetsCache(redis: Redis): Promise<Record<string, unknown> | 
   } catch {
     return null
   }
+}
+
+/**
+ * Get channel-specific session timeout from config_store, or fall back to engine default.
+ * WhatsApp module writes WHATSAPP_SESSION_TIMEOUT_MS to config_store.
+ */
+async function getChannelSessionTimeout(db: Pool, channel: string, defaultMs: number): Promise<number> {
+  try {
+    const key = `${channel.toUpperCase()}_SESSION_TIMEOUT_MS`
+    const configStore = await import('../../kernel/config-store.js')
+    const value = await configStore.get(db, key)
+    if (value) {
+      const parsed = parseInt(value, 10)
+      if (!isNaN(parsed) && parsed > 0) return parsed
+    }
+  } catch { /* fallback */ }
+  return defaultMs
 }

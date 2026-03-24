@@ -8,10 +8,18 @@ import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse } from '../../kernel/http-helpers.js'
 import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { BaileysAdapter } from './adapter.js'
+import { MessageBatcher } from './message-batcher.js'
 import * as configStore from '../../kernel/config-store.js'
 import QRCode from 'qrcode'
 
+import pino from 'pino'
+import type { IncomingMessage } from './adapter.js'
+
+const manifestLogger = pino({ name: 'whatsapp:manifest' })
+
 let adapter: BaileysAdapter | null = null
+let batcher: MessageBatcher | null = null
+let precloseTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let _registry: Registry | null = null
 
 const apiRoutes: ApiRoute[] = [
@@ -372,17 +380,66 @@ const manifest: ModuleManifest = {
       await adapter.getPresenceManager().sendPaused(payload.to)
     })
 
-    // Register message handler: incoming messages → fire hook
-    adapter.onMessage(async (msg) => {
+    // Persist session timeout to config_store so the engine can read it
+    const sessionTimeoutMs = config.WHATSAPP_SESSION_TIMEOUT_HOURS * 3600000
+    await configStore.set(db, 'WHATSAPP_SESSION_TIMEOUT_MS', String(sessionTimeoutMs), false).catch(() => {})
+
+    // Message batcher: accumulates messages from the same sender before dispatching
+    const dispatchBatch = async (messages: IncomingMessage[]) => {
+      if (messages.length === 0) return
+
+      // Use the first message as base, concatenate text from all
+      const base = messages[0]!
+      if (messages.length > 1) {
+        const allTexts = messages
+          .map(m => m.content.text ?? '')
+          .filter(t => t.length > 0)
+        base.content = {
+          ...base.content,
+          text: allTexts.join('\n'),
+        }
+        manifestLogger.info({ from: base.from, count: messages.length }, 'Batched messages concatenated')
+      }
+
       await registry.runHook('message:incoming', {
-        id: msg.id,
-        channelName: msg.channelName,
-        channelMessageId: msg.channelMessageId,
-        from: msg.from,
-        timestamp: msg.timestamp,
-        content: msg.content,
-        raw: msg.raw,
+        id: base.id,
+        channelName: base.channelName,
+        channelMessageId: base.channelMessageId,
+        from: base.from,
+        timestamp: base.timestamp,
+        content: base.content,
+        raw: base.raw,
       })
+
+      // Schedule pre-close follow-up after dispatching
+      schedulePrecloseFollowup(base.from, config.WHATSAPP_SESSION_TIMEOUT_HOURS, config.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS, registry)
+    }
+
+    batcher = new MessageBatcher(config.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
+
+    // Register message handler: incoming messages → batcher
+    adapter.onMessage(async (msg) => {
+      if (batcher) {
+        batcher.add(msg)
+      } else {
+        // Fallback: direct dispatch (no batching)
+        await registry.runHook('message:incoming', {
+          id: msg.id,
+          channelName: msg.channelName,
+          channelMessageId: msg.channelMessageId,
+          from: msg.from,
+          timestamp: msg.timestamp,
+          content: msg.content,
+          raw: msg.raw,
+        })
+      }
+    })
+
+    // Listen for sent messages to reschedule pre-close follow-up (session activity)
+    registry.addHook('whatsapp', 'message:sent', async (payload) => {
+      if (payload.channel !== 'whatsapp') return
+      // Reschedule follow-up timer on every sent message (extends session activity)
+      schedulePrecloseFollowup(payload.to, config.WHATSAPP_SESSION_TIMEOUT_HOURS, config.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS, registry)
     })
 
     // Expose adapter as service for other modules
@@ -393,12 +450,61 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    if (batcher) {
+      batcher.clearAll()
+      batcher = null
+    }
+    // Clear all pre-close timers
+    for (const timer of precloseTimers.values()) {
+      clearTimeout(timer)
+    }
+    precloseTimers.clear()
     if (adapter) {
       await adapter.shutdown()
       adapter = null
     }
     _registry = null
   },
+}
+
+/**
+ * Schedule a pre-close follow-up reminder for a contact.
+ * Fires N hours before session timeout if still awaiting a response.
+ * Clears any existing timer for this contact (debounce on activity).
+ */
+function schedulePrecloseFollowup(
+  contactId: string,
+  sessionTimeoutHours: number,
+  precloseHours: number,
+  registry: Registry,
+): void {
+  // Clear existing timer for this contact
+  const existing = precloseTimers.get(contactId)
+  if (existing) clearTimeout(existing)
+
+  // 0 = disabled
+  if (precloseHours <= 0 || precloseHours >= sessionTimeoutHours) return
+
+  const delayMs = (sessionTimeoutHours - precloseHours) * 3600000
+
+  const timer = setTimeout(async () => {
+    precloseTimers.delete(contactId)
+    try {
+      manifestLogger.info({ contactId, precloseHours }, 'Sending pre-close follow-up')
+      await registry.runHook('message:send', {
+        channel: 'whatsapp',
+        to: contactId,
+        content: {
+          type: 'text',
+          text: '¿Sigues ahí? Tu sesión se cerrará pronto por inactividad. Si necesitas algo más, escríbeme.',
+        },
+      })
+    } catch (err) {
+      manifestLogger.warn({ err, contactId }, 'Failed to send pre-close follow-up')
+    }
+  }, delayMs)
+
+  precloseTimers.set(contactId, timer)
 }
 
 export default manifest
