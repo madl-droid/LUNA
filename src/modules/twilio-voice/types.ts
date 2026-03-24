@@ -6,10 +6,30 @@
 // ═══════════════════════════════════════════
 
 export interface TwilioVoiceConfig {
+  // Twilio credentials
   TWILIO_ACCOUNT_SID: string
   TWILIO_AUTH_TOKEN: string
   TWILIO_PHONE_NUMBER: string
+  // Gemini Live — API & model
+  VOICE_GOOGLE_API_KEY: string
+  VOICE_GEMINI_MODEL: string
   VOICE_GEMINI_VOICE: string
+  VOICE_GEMINI_LANGUAGE: string
+  // Gemini Live — generation config
+  VOICE_GEMINI_TEMPERATURE: number
+  VOICE_GEMINI_TOP_P: number
+  VOICE_GEMINI_TOP_K: number
+  VOICE_GEMINI_MAX_OUTPUT_TOKENS: number
+  // Gemini Live — VAD (Voice Activity Detection) nativo
+  VOICE_VAD_START_SENSITIVITY: string
+  VOICE_VAD_END_SENSITIVITY: string
+  VOICE_VAD_PREFIX_PADDING_MS: number
+  VOICE_VAD_SILENCE_DURATION_MS: number
+  VOICE_BARGE_IN_ENABLED: boolean
+  VOICE_GEMINI_CONNECTION_TIMEOUT_MS: number
+  // Silence detector local (RMS-based)
+  VOICE_SILENCE_RMS_THRESHOLD: number
+  // Call behavior
   VOICE_PREVIEW_TEXT: string
   VOICE_ANSWER_DELAY_RINGS: number
   VOICE_SILENCE_TIMEOUT_MS: number
@@ -21,7 +41,10 @@ export interface TwilioVoiceConfig {
   VOICE_MAX_CALL_DURATION_MS: number
   VOICE_MAX_CONCURRENT_CALLS: number
   VOICE_ENABLED: boolean
-  VOICE_GOOGLE_API_KEY: string
+  // Channel runtime config (for engine integration)
+  VOICE_RATE_LIMIT_HOUR: number
+  VOICE_RATE_LIMIT_DAY: number
+  VOICE_SESSION_TIMEOUT_HOURS: number
 }
 
 // ═══════════════════════════════════════════
@@ -161,8 +184,21 @@ export interface GeminiLiveConfig {
   apiKey: string
   model: string
   voice: string
+  language: string
   systemInstruction: string
   tools: GeminiToolDeclaration[]
+  // Generation config
+  temperature: number
+  topP: number
+  topK: number
+  maxOutputTokens: number
+  // VAD config
+  vadStartSensitivity: string
+  vadEndSensitivity: string
+  vadPrefixPaddingMs: number
+  vadSilenceDurationMs: number
+  bargeInEnabled: boolean
+  connectionTimeoutMs: number
 }
 
 export interface GeminiSetupMessage {
@@ -170,16 +206,31 @@ export interface GeminiSetupMessage {
     model: string
     generationConfig: {
       responseModalities: string[]
+      temperature?: number
+      topP?: number
+      topK?: number
+      maxOutputTokens?: number
       speechConfig: {
         voiceConfig: {
           prebuiltVoiceConfig: {
             voiceName: string
           }
         }
+        languageCode?: string
       }
     }
     systemInstruction: {
       parts: Array<{ text: string }>
+    }
+    realtimeInputConfig?: {
+      automaticActivityDetection?: {
+        disabled?: boolean
+        startOfSpeechSensitivity?: string
+        endOfSpeechSensitivity?: string
+        prefixPaddingMs?: number
+        silenceDurationMs?: number
+      }
+      activityHandling?: string
     }
     tools?: Array<{
       functionDeclarations: GeminiToolDeclaration[]
@@ -286,10 +337,56 @@ export interface VoicePreviewRequest {
 // Gemini voices
 // ═══════════════════════════════════════════
 
-export const GEMINI_VOICES = [
-  { value: 'Aoede', label: 'Aoede (femenina, c\u00e1lida)' },
+/** Half-cascade voices (compatible with gemini-2.5-flash) */
+export const GEMINI_VOICES_STANDARD = [
+  { value: 'Aoede', label: 'Aoede (femenina, cálida)' },
   { value: 'Charon', label: 'Charon (masculina, profesional)' },
-  { value: 'Fenrir', label: 'Fenrir (masculina, en\u00e9rgica)' },
+  { value: 'Fenrir', label: 'Fenrir (masculina, enérgica)' },
   { value: 'Kore', label: 'Kore (femenina, profesional)' },
+  { value: 'Leda', label: 'Leda (femenina, cálida)' },
+  { value: 'Orus', label: 'Orus (masculina, seria)' },
   { value: 'Puck', label: 'Puck (masculina, amigable)' },
+  { value: 'Zephyr', label: 'Zephyr (neutro, suave)' },
+] as const
+
+/** Native audio voices (for gemini-*-native-audio models) — 30 voices */
+export const GEMINI_VOICES_NATIVE = [
+  { value: 'Achernar', label: 'Achernar' },
+  { value: 'Achird', label: 'Achird' },
+  { value: 'Algenib', label: 'Algenib' },
+  { value: 'Algieba', label: 'Algieba' },
+  { value: 'Alnilam', label: 'Alnilam' },
+  { value: 'Aoede', label: 'Aoede' },
+  { value: 'Autonoe', label: 'Autonoe' },
+  { value: 'Callirrhoe', label: 'Callirrhoe' },
+  { value: 'Charon', label: 'Charon' },
+  { value: 'Despina', label: 'Despina' },
+  { value: 'Enceladus', label: 'Enceladus' },
+  { value: 'Erinome', label: 'Erinome' },
+  { value: 'Fenrir', label: 'Fenrir' },
+  { value: 'Gacrux', label: 'Gacrux' },
+  { value: 'Iapetus', label: 'Iapetus' },
+  { value: 'Kore', label: 'Kore' },
+  { value: 'Laomedeia', label: 'Laomedeia' },
+  { value: 'Leda', label: 'Leda' },
+  { value: 'Orus', label: 'Orus' },
+  { value: 'Puck', label: 'Puck' },
+  { value: 'Pulcherrima', label: 'Pulcherrima' },
+  { value: 'Rasalgethi', label: 'Rasalgethi' },
+  { value: 'Sadachbia', label: 'Sadachbia' },
+  { value: 'Sadaltager', label: 'Sadaltager' },
+  { value: 'Schedar', label: 'Schedar' },
+  { value: 'Sulafat', label: 'Sulafat' },
+  { value: 'Umbriel', label: 'Umbriel' },
+  { value: 'Vindemiatrix', label: 'Vindemiatrix' },
+  { value: 'Zephyr', label: 'Zephyr' },
+  { value: 'Zubenelgenubi', label: 'Zubenelgenubi' },
+] as const
+
+/** Combined list: standard voices first, then native-only voices */
+export const GEMINI_VOICES = [
+  ...GEMINI_VOICES_STANDARD,
+  ...GEMINI_VOICES_NATIVE.filter(v =>
+    !GEMINI_VOICES_STANDARD.some(s => s.value === v.value),
+  ),
 ] as const

@@ -40,7 +40,7 @@ export class CallManager {
     this.mediaServer = mediaServer
     this.twilioAdapter = twilioAdapter
 
-    this.silenceDetector = new SilenceDetector(config.VOICE_SILENCE_TIMEOUT_MS, {
+    this.silenceDetector = new SilenceDetector(config.VOICE_SILENCE_TIMEOUT_MS, config.VOICE_SILENCE_RMS_THRESHOLD, {
       onSilenceDetected: (callId) => this.handleSilence(callId),
       onFinalSilence: (callId) => this.handleFinalSilence(callId),
     })
@@ -177,10 +177,21 @@ export class CallManager {
     const gemini = new GeminiLiveSession(
       {
         apiKey,
-        model: 'gemini-2.5-flash',
+        model: this.config.VOICE_GEMINI_MODEL,
         voice: this.config.VOICE_GEMINI_VOICE,
+        language: this.config.VOICE_GEMINI_LANGUAGE,
         systemInstruction: context.systemInstruction,
         tools: context.tools,
+        temperature: this.config.VOICE_GEMINI_TEMPERATURE,
+        topP: this.config.VOICE_GEMINI_TOP_P,
+        topK: this.config.VOICE_GEMINI_TOP_K,
+        maxOutputTokens: this.config.VOICE_GEMINI_MAX_OUTPUT_TOKENS,
+        vadStartSensitivity: this.config.VOICE_VAD_START_SENSITIVITY,
+        vadEndSensitivity: this.config.VOICE_VAD_END_SENSITIVITY,
+        vadPrefixPaddingMs: this.config.VOICE_VAD_PREFIX_PADDING_MS,
+        vadSilenceDurationMs: this.config.VOICE_VAD_SILENCE_DURATION_MS,
+        bargeInEnabled: this.config.VOICE_BARGE_IN_ENABLED,
+        connectionTimeoutMs: this.config.VOICE_GEMINI_CONNECTION_TIMEOUT_MS,
       },
       {
         onAudio: (audioBase64, _mimeType) => {

@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, readBody, parseQuery } from '../../kernel/http-helpers.js'
-import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
+import { numEnv, numEnvMin, boolEnv, floatEnv, floatEnvMin } from '../../kernel/config-helpers.js'
 import type { Server } from '../../kernel/server.js'
 import type { TwilioVoiceConfig, InitiateCallRequest, VoicePreviewRequest } from './types.js'
 import { GEMINI_VOICES } from './types.js'
@@ -295,10 +295,30 @@ const manifest: ModuleManifest = {
   depends: ['memory', 'llm'],
 
   configSchema: z.object({
+    // ── Twilio credentials ──
     TWILIO_ACCOUNT_SID: z.string().default(''),
     TWILIO_AUTH_TOKEN: z.string().default(''),
     TWILIO_PHONE_NUMBER: z.string().default(''),
+    // ── Gemini Live — API & model ──
+    VOICE_GOOGLE_API_KEY: z.string().default(''),
+    VOICE_GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
     VOICE_GEMINI_VOICE: z.string().default('Kore'),
+    VOICE_GEMINI_LANGUAGE: z.string().default(''),
+    // ── Gemini Live — generation config ──
+    VOICE_GEMINI_TEMPERATURE: floatEnvMin(0, 0.7),
+    VOICE_GEMINI_TOP_P: floatEnvMin(0, 0.95),
+    VOICE_GEMINI_TOP_K: numEnvMin(0, 40),
+    VOICE_GEMINI_MAX_OUTPUT_TOKENS: numEnvMin(0, 1024),
+    // ── Gemini Live — VAD nativo ──
+    VOICE_VAD_START_SENSITIVITY: z.string().default('START_SENSITIVITY_HIGH'),
+    VOICE_VAD_END_SENSITIVITY: z.string().default('END_SENSITIVITY_HIGH'),
+    VOICE_VAD_PREFIX_PADDING_MS: numEnvMin(0, 20),
+    VOICE_VAD_SILENCE_DURATION_MS: numEnvMin(0, 500),
+    VOICE_BARGE_IN_ENABLED: boolEnv(true),
+    VOICE_GEMINI_CONNECTION_TIMEOUT_MS: numEnvMin(1000, 15000),
+    // ── Silence detector local ──
+    VOICE_SILENCE_RMS_THRESHOLD: numEnvMin(0, 200),
+    // ── Call behavior ──
     VOICE_PREVIEW_TEXT: z.string().default('Hola, soy tu asistente virtual. \u00bfEn qu\u00e9 puedo ayudarte hoy?'),
     VOICE_ANSWER_DELAY_RINGS: numEnvMin(1, 2),
     VOICE_SILENCE_TIMEOUT_MS: numEnv(10000),
@@ -310,7 +330,10 @@ const manifest: ModuleManifest = {
     VOICE_MAX_CALL_DURATION_MS: numEnv(1800000),
     VOICE_MAX_CONCURRENT_CALLS: numEnvMin(1, 5),
     VOICE_ENABLED: boolEnv(true),
-    VOICE_GOOGLE_API_KEY: z.string().default(''),
+    // ── Channel runtime config (engine integration) ──
+    VOICE_RATE_LIMIT_HOUR: numEnvMin(0, 0),
+    VOICE_RATE_LIMIT_DAY: numEnvMin(0, 0),
+    VOICE_SESSION_TIMEOUT_HOURS: numEnvMin(1, 1),
   }),
 
   console: {
@@ -326,6 +349,7 @@ const manifest: ModuleManifest = {
     group: 'channels',
     icon: '&#128222;',
     fields: [
+      // ── Twilio credentials ──
       {
         key: 'TWILIO_ACCOUNT_SID',
         type: 'secret',
@@ -339,14 +363,30 @@ const manifest: ModuleManifest = {
       {
         key: 'TWILIO_PHONE_NUMBER',
         type: 'text',
-        label: { es: 'N\u00famero de tel\u00e9fono Twilio', en: 'Twilio Phone Number' },
-        info: { es: 'N\u00famero con formato internacional (+1234567890)', en: 'International format number (+1234567890)' },
+        label: { es: 'Numero de telefono Twilio', en: 'Twilio Phone Number' },
+        info: { es: 'Numero con formato internacional (+1234567890)', en: 'International format number (+1234567890)' },
       },
+      // ── Gemini Live — API & modelo ──
+      { key: '_divider_gemini', type: 'divider', label: { es: 'Gemini Live', en: 'Gemini Live' } },
       {
         key: 'VOICE_GOOGLE_API_KEY',
         type: 'secret',
         label: { es: 'Google API Key (Gemini Live)', en: 'Google API Key (Gemini Live)' },
-        info: { es: 'Dejar vac\u00edo para usar la key del m\u00f3dulo LLM', en: 'Leave empty to use the LLM module key' },
+        info: { es: 'Dejar vacio para usar la key del modulo LLM', en: 'Leave empty to use the LLM module key' },
+      },
+      {
+        key: 'VOICE_GEMINI_MODEL',
+        type: 'text',
+        label: { es: 'Modelo Gemini Live', en: 'Gemini Live model' },
+        info: { es: 'Modelo a usar (ej: gemini-2.5-flash, gemini-2.5-flash-native-audio-preview)', en: 'Model to use (e.g., gemini-2.5-flash, gemini-2.5-flash-native-audio-preview)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_LANGUAGE',
+        type: 'text',
+        label: { es: 'Idioma (languageCode)', en: 'Language (languageCode)' },
+        info: { es: 'Codigo BCP-47 (ej: es-ES, en-US). Vacio = auto-detect', en: 'BCP-47 code (e.g., es-ES, en-US). Empty = auto-detect' },
+        width: 'half',
       },
       {
         key: 'VOICE_GEMINI_VOICE',
@@ -358,8 +398,84 @@ const manifest: ModuleManifest = {
         key: 'VOICE_PREVIEW_TEXT',
         type: 'textarea',
         label: { es: 'Texto de preview de voz', en: 'Voice preview text' },
-        info: { es: 'Texto que se usar\u00e1 para previsualizar la voz seleccionada', en: 'Text used to preview the selected voice' },
+        info: { es: 'Texto que se usara para previsualizar la voz seleccionada', en: 'Text used to preview the selected voice' },
       },
+      // ── Generacion ──
+      { key: '_divider_generation', type: 'divider', label: { es: 'Generacion (LLM)', en: 'Generation (LLM)' } },
+      {
+        key: 'VOICE_GEMINI_TEMPERATURE',
+        type: 'number',
+        label: { es: 'Temperatura', en: 'Temperature' },
+        info: { es: 'Creatividad de respuestas (0.0-2.0). Mas alto = mas variado/natural', en: 'Response creativity (0.0-2.0). Higher = more varied/natural' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_TOP_P',
+        type: 'number',
+        label: { es: 'Top P', en: 'Top P' },
+        info: { es: 'Nucleus sampling (0.0-1.0). Controla diversidad de tokens', en: 'Nucleus sampling (0.0-1.0). Controls token diversity' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_TOP_K',
+        type: 'number',
+        label: { es: 'Top K', en: 'Top K' },
+        info: { es: 'Limita tokens candidatos por paso de generacion', en: 'Limits candidate tokens per generation step' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_MAX_OUTPUT_TOKENS',
+        type: 'number',
+        label: { es: 'Max tokens de salida', en: 'Max output tokens' },
+        info: { es: 'Maximo de tokens por respuesta. Previene divagaciones', en: 'Max tokens per response. Prevents rambling' },
+        width: 'half',
+      },
+      // ── VAD nativo de Gemini ──
+      { key: '_divider_vad', type: 'divider', label: { es: 'Deteccion de voz (VAD Gemini)', en: 'Voice detection (Gemini VAD)' } },
+      {
+        key: 'VOICE_VAD_START_SENSITIVITY',
+        type: 'select',
+        label: { es: 'Sensibilidad inicio de habla', en: 'Start of speech sensitivity' },
+        info: { es: 'HIGH = detecta voces suaves. LOW = solo voces claras', en: 'HIGH = detects soft voices. LOW = only clear voices' },
+        options: [
+          { value: 'START_SENSITIVITY_HIGH', label: 'Alta (High)' },
+          { value: 'START_SENSITIVITY_LOW', label: 'Baja (Low)' },
+        ],
+        width: 'half',
+      },
+      {
+        key: 'VOICE_VAD_END_SENSITIVITY',
+        type: 'select',
+        label: { es: 'Sensibilidad fin de habla', en: 'End of speech sensitivity' },
+        info: { es: 'LOW = espera mas antes de cortar (bueno para pausas). HIGH = corta rapido', en: 'LOW = waits longer before cutting (good for pauses). HIGH = cuts quickly' },
+        options: [
+          { value: 'END_SENSITIVITY_HIGH', label: 'Alta (High)' },
+          { value: 'END_SENSITIVITY_LOW', label: 'Baja (Low)' },
+        ],
+        width: 'half',
+      },
+      {
+        key: 'VOICE_VAD_PREFIX_PADDING_MS',
+        type: 'number',
+        label: { es: 'Padding pre-habla (ms)', en: 'Pre-speech padding (ms)' },
+        info: { es: 'Audio incluido antes del inicio de habla para no cortar palabras', en: 'Audio included before speech start to avoid cutting words' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_VAD_SILENCE_DURATION_MS',
+        type: 'number',
+        label: { es: 'Silencio para fin de turno (ms)', en: 'Silence for end of turn (ms)' },
+        info: { es: 'Duracion de silencio para que Gemini considere fin de turno del caller', en: 'Silence duration for Gemini to consider caller turn ended' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_BARGE_IN_ENABLED',
+        type: 'boolean',
+        label: { es: 'Permitir interrupciones (barge-in)', en: 'Allow interruptions (barge-in)' },
+        info: { es: 'Si el caller puede interrumpir al agente mientras habla', en: 'Whether the caller can interrupt the agent while speaking' },
+      },
+      // ── Comportamiento de llamada ──
+      { key: '_divider_behavior', type: 'divider', label: { es: 'Comportamiento de llamada', en: 'Call behavior' } },
       {
         key: 'VOICE_GREETING_INBOUND',
         type: 'textarea',
@@ -374,13 +490,29 @@ const manifest: ModuleManifest = {
         key: 'VOICE_ANSWER_DELAY_RINGS',
         type: 'number',
         label: { es: 'Timbrazos antes de contestar', en: 'Rings before answering' },
-        info: { es: 'N\u00famero de timbrazos para parecer natural (m\u00ednimo 1)', en: 'Number of rings for natural feel (minimum 1)' },
+        info: { es: 'Numero de timbrazos para parecer natural (minimo 1)', en: 'Number of rings for natural feel (minimum 1)' },
+        width: 'half',
       },
+      {
+        key: 'VOICE_FILLER_MESSAGE',
+        type: 'text',
+        label: { es: 'Mensaje de espera (procesando)', en: 'Filler message (processing)' },
+      },
+      // ── Silencio y timeouts ──
+      { key: '_divider_silence', type: 'divider', label: { es: 'Silencio y timeouts', en: 'Silence & timeouts' } },
       {
         key: 'VOICE_SILENCE_TIMEOUT_MS',
         type: 'number',
         label: { es: 'Timeout de silencio (ms)', en: 'Silence timeout (ms)' },
-        info: { es: 'Tiempo sin habla antes de preguntar si sigue ah\u00ed', en: 'Time without speech before prompting' },
+        info: { es: 'Tiempo sin habla antes de preguntar si sigue ahi', en: 'Time without speech before prompting' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_SILENCE_RMS_THRESHOLD',
+        type: 'number',
+        label: { es: 'Umbral RMS de silencio', en: 'Silence RMS threshold' },
+        info: { es: 'Nivel de energia por debajo del cual se considera silencio (menor = mas sensible)', en: 'Energy level below which audio is considered silence (lower = more sensitive)' },
+        width: 'half',
       },
       {
         key: 'VOICE_SILENCE_MESSAGE',
@@ -388,25 +520,56 @@ const manifest: ModuleManifest = {
         label: { es: 'Mensaje de silencio', en: 'Silence message' },
       },
       {
-        key: 'VOICE_FILLER_MESSAGE',
-        type: 'text',
-        label: { es: 'Mensaje de espera (procesando)', en: 'Filler message (processing)' },
-      },
-      {
         key: 'VOICE_GOODBYE_TIMEOUT_MS',
         type: 'number',
         label: { es: 'Timeout de despedida (ms)', en: 'Goodbye timeout (ms)' },
         info: { es: 'Tiempo tras despedida antes de colgar', en: 'Time after goodbye before hanging up' },
+        width: 'half',
       },
+      {
+        key: 'VOICE_GEMINI_CONNECTION_TIMEOUT_MS',
+        type: 'number',
+        label: { es: 'Timeout de conexion Gemini (ms)', en: 'Gemini connection timeout (ms)' },
+        info: { es: 'Tiempo maximo para conectar WebSocket a Gemini Live', en: 'Maximum time to connect WebSocket to Gemini Live' },
+        width: 'half',
+      },
+      // ── Limites ──
+      { key: '_divider_limits', type: 'divider', label: { es: 'Limites', en: 'Limits' } },
       {
         key: 'VOICE_MAX_CALL_DURATION_MS',
         type: 'number',
-        label: { es: 'Duraci\u00f3n m\u00e1xima de llamada (ms)', en: 'Max call duration (ms)' },
+        label: { es: 'Duracion maxima de llamada (ms)', en: 'Max call duration (ms)' },
+        width: 'half',
       },
       {
         key: 'VOICE_MAX_CONCURRENT_CALLS',
         type: 'number',
-        label: { es: 'M\u00e1ximo de llamadas simult\u00e1neas', en: 'Max concurrent calls' },
+        label: { es: 'Maximo de llamadas simultaneas', en: 'Max concurrent calls' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_RATE_LIMIT_HOUR',
+        type: 'number',
+        label: { es: 'Max llamadas/hora por contacto', en: 'Max calls/hour per contact' },
+        info: { es: '0 = sin limite', en: '0 = unlimited' },
+        min: 0,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_RATE_LIMIT_DAY',
+        type: 'number',
+        label: { es: 'Max llamadas/dia por contacto', en: 'Max calls/day per contact' },
+        info: { es: '0 = sin limite', en: '0 = unlimited' },
+        min: 0,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_SESSION_TIMEOUT_HOURS',
+        type: 'number',
+        label: { es: 'Timeout de sesion (horas)', en: 'Session timeout (hours)' },
+        info: { es: 'Horas de inactividad para cerrar la sesion', en: 'Inactivity hours to close the session' },
+        min: 1,
+        width: 'half',
       },
       {
         key: 'VOICE_ENABLED',
@@ -473,8 +636,8 @@ const manifest: ModuleManifest = {
     // Create tables
     await createTables(db)
 
-    // Load config
-    const config = registry.getConfig<TwilioVoiceConfig>('twilio-voice')
+    // Load config (mutable for hot-reload)
+    let config = registry.getConfig<TwilioVoiceConfig>('twilio-voice')
 
     // Initialize adapters
     twilioAdapter = new TwilioAdapter(config)
@@ -501,9 +664,33 @@ const manifest: ModuleManifest = {
       })
     }
 
+    // ── Channel Config Service ──
+    // Provides runtime config to the engine via registry.getOptional('channel-config:voice')
+    registry.provide('channel-config:voice', {
+      get: (): import('../../channels/types.js').ChannelRuntimeConfig => ({
+        rateLimitHour: config.VOICE_RATE_LIMIT_HOUR,
+        rateLimitDay: config.VOICE_RATE_LIMIT_DAY,
+        avisoTriggerMs: 0, // no aviso for voice — Gemini handles conversation in real-time
+        avisoHoldMs: 0,
+        avisoMessages: [],
+        sessionTimeoutMs: config.VOICE_SESSION_TIMEOUT_HOURS * 3600000,
+        batchWaitSeconds: 0, // no batching for voice
+        precloseFollowupMs: 0,
+        precloseFollowupMessage: '',
+      }),
+    })
+
     // Provide services
     registry.provide('twilio-voice:callManager', callManager)
     registry.provide('twilio-voice:adapter', twilioAdapter)
+
+    // ── Hot-reload: re-read config when console applies changes ──
+    registry.addHook('twilio-voice', 'console:config_applied', async () => {
+      const fresh = registry.getConfig<TwilioVoiceConfig>('twilio-voice')
+      Object.assign(config, fresh)
+      const pino = await import('pino')
+      pino.default({ name: 'twilio-voice' }).info('Config hot-reloaded')
+    })
 
     const pino = await import('pino')
     const logger = pino.default({ name: 'twilio-voice' })
