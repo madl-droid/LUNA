@@ -73,13 +73,29 @@ mocks/
 6. Rate limit (max mensajes proactivos/día/contacto)
 7. Conversation guard (farewell intent, overdue bypasses)
 
-## Avisos de proceso (per-channel)
+## Avisos de proceso (per-channel, via Channel Config Service)
 
-Config independiente por canal. Cada canal tiene trigger, hold y hasta 3 mensajes configurables desde console:
-- **WhatsApp**: `AVISO_WA_TRIGGER_MS` (3000), `AVISO_WA_HOLD_MS` (2000), `AVISO_WA_MSG_1..3`
-- **Email**: `AVISO_EMAIL_TRIGGER_MS` (0=off), `AVISO_EMAIL_HOLD_MS` (0), `AVISO_EMAIL_MSG_1..3`
+Cada canal provee su config de aviso via servicio `channel-config:{nombre}` (ver `src/channels/types.ts`).
+El engine lee: `registry.getOptional('channel-config:{channel}')?.get()` → `{ avisoTriggerMs, avisoHoldMs, avisoMessages }`.
 
-Si la respuesta tarda más del trigger, se elige un aviso al azar del pool y se envía via `message:send` hook. Tras enviar, la respuesta real se retiene el hold configurado. Trigger=0 desactiva por canal. Mensajes editables desde console, nunca generados por LLM.
+- Si el canal no provee servicio, el engine usa defaults de `engine/config.ts` (email) o desactiva (otros)
+- Si la respuesta tarda más del `avisoTriggerMs`, se elige un aviso al azar del pool y se envía via `message:send`
+- Tras enviar, la respuesta real se retiene el `avisoHoldMs` configurado
+- `avisoTriggerMs=0` desactiva por canal
+- Mensajes editables desde console (en la sección del canal), nunca generados por LLM
+- Patrón para agregar a un canal nuevo: ver `docs/architecture/channel-guide.md`
+
+## Rate limits (per-channel, via Channel Config Service)
+
+`checkRateLimit()` en phase5 lee `rateLimitHour` y `rateLimitDay` del servicio `channel-config:{channel}`.
+- Si el canal no provee servicio, no aplica rate limit
+- Contadores en Redis con TTL (1h y 24h)
+- 0 = sin límite
+
+## Session timeout (per-channel, via Channel Config Service)
+
+`getChannelSessionTimeout()` en phase1 lee `sessionTimeoutMs` del servicio `channel-config:{channel}`.
+- Si el canal no provee servicio, usa el default del engine (`sessionReopenWindowMs`)
 
 ## Commitments
 
