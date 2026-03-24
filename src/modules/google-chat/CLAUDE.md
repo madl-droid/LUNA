@@ -1,61 +1,65 @@
 # Google Chat — Canal de mensajería via Google Chat API
 
 Canal Google Chat para Google Workspace. Recibe mensajes via webhook, envía via Chat API con Service Account.
+Sigue el patrón estándar de canales instant (igual que WhatsApp): channel-config service, hot-reload, mention en rooms.
 
 ## Archivos
-- `manifest.ts` — lifecycle, hooks, API routes, configSchema, migraciones
-- `adapter.ts` — GoogleChatAdapter: auth, webhook handling, envío de mensajes, tracking de spaces, validación de key
-- `types.ts` — interfaces (ChatEvent, GoogleChatConfig, GoogleChatState, SendResult, ServiceAccountKeyInfo, SetupGuideStep)
+- `manifest.ts` — lifecycle, hooks, API routes, configSchema, channel-config service, hot-reload, migraciones
+- `adapter.ts` — GoogleChatAdapter: auth, webhook handling, rooms/mention, threads, retries, cards, validación
+- `types.ts` — interfaces (ChatEvent, GoogleChatConfig, GoogleChatState, SendResult, ChatCardAction)
 
 ## Manifest
-- type: `channel`, removable: true, activateByDefault: false
-- depends: [] (independiente de google-apps)
-- configSchema: GOOGLE_CHAT_SERVICE_ACCOUNT_KEY, GOOGLE_CHAT_WEBHOOK_TOKEN, GOOGLE_CHAT_MAX_MESSAGE_LENGTH
+- type: `channel`, channelType: `instant`, removable: true, activateByDefault: false
+- depends: [] (independiente, lee AGENT_NAME de prompts:service si disponible)
+- configSchema: conexión, rooms, threads, retries, cards, channel-runtime (aviso, rate, session, preclose)
 
-## Autenticación
-- Usa **Service Account** (no User OAuth) — estándar de Google para bots de Chat
-- El JSON del service account se pasa via GOOGLE_CHAT_SERVICE_ACCOUNT_KEY (inline JSON o path a archivo)
-- Scope: `https://www.googleapis.com/auth/chat.bot`
-- No depende del módulo google-apps
+## Nombre del agente (AGENT_NAME)
+- Se lee de `prompts:service.getAgentName()` (centralizado en módulo prompts)
+- Usado para @mention detection en rooms/spaces (mismo patrón que WhatsApp)
+- Fallback a 'Luna' si prompts no está disponible
+- **REGLA**: todos los canales instant DEBEN usar `prompts:service.getAgentName()`, NO hardcodear nombres
 
-## Setup simplificado
-- `POST /validate-key` — valida JSON del service account sin guardarlo, extrae project_id, client_email, client_id
-- `GET /setup-guide` — retorna guía paso a paso con estado de cada paso (done/pending)
-- Al guardar el key, el sistema valida automáticamente antes de inicializar
-- Errores de validación son bilingües (es/en) y específicos
+## Channel Config Service
+- Provee `channel-config:google-chat` → `{ get(): ChannelRuntimeConfig }`
+- Engine lee aviso, rate limits, session timeout y pre-close via este servicio
+- `buildChannelConfig()` al final del manifest (mismo patrón que WhatsApp)
+
+## Hot-reload
+- Escucha hook `console:config_applied` → Object.assign(config, fresh) + rebuild whitelist
 
 ## Hooks
-- **Escucha** `message:send` → envía mensaje via Chat API cuando `payload.channel === 'google-chat'`
-- **Dispara** `message:incoming` → cuando llega un MESSAGE via webhook
-- **Dispara** `message:sent` → después de enviar un mensaje
+- **Escucha** `message:send` → envía mensaje por Chat API (con reply-in-thread si configurado)
+- **Escucha** `console:config_applied` → hot-reload de config
+- **Dispara** `message:incoming` → cuando llega MESSAGE o CARD_CLICKED (si habilitado)
+- **Dispara** `message:sent` → después de enviar
 
-## Servicio registrado
-- `google-chat:adapter` — instancia de GoogleChatAdapter
+## Rooms (mismo patrón que WhatsApp grupos)
+- DM_ONLY: si true, ignora ROOM/SPACE
+- REQUIRE_MENTION: en rooms, solo procesa si bot es @mencionado o llamado por nombre
+- Detección: (1) argumentText ≠ text (Google removió @mention), (2) @agentName en texto, (3) nombre como prefijo
+- SPACE_WHITELIST: comma-separated de space names permitidos
+
+## Threads
+- REPLY_IN_THREAD: respuestas van al mismo hilo (usa messageReplyOption)
+- PROCESS_THREADS: si false, no procesa mensajes de hilos
+- threadName se almacena en map por contacto (lastThreadByContact)
+
+## Retries
+- MAX_RETRIES + RETRY_DELAY_MS con backoff lineal
+- Solo reintenta errores transitorios (5xx). 4xx no se reintenta.
+
+## Cards (CARD_CLICKED)
+- PROCESS_CARD_CLICKS: gate on/off
+- CARD_CLICK_ACTION: 'respond' (procesar como mensaje), 'log' (solo log), 'ignore'
 
 ## API routes (montadas en /console/api/google-chat/)
-- `POST /webhook` — endpoint para Google Chat (configurar como HTTP endpoint en GCP)
-- `GET /status` — estado de conexión, botEmail, activeSpaces, configured
-- `POST /validate-key` — valida JSON del service account, retorna info extraída
-- `POST /test-connection` — verifica que el service account funciona
-- `GET /setup-guide` — guía paso a paso con webhookPath y estado de cada paso
+- `POST /webhook`, `GET /status`, `POST /validate-key`, `POST /test-connection`, `GET /setup-guide`
 
 ## Tablas
-- `google_chat_spaces` — tracking de spaces donde el bot está activo
-
-## Flujo de mensajes
-- **Incoming**: Google Chat POST → /webhook → verifyToken → handleWebhookEvent → normalize → `message:incoming` hook
-- **Outgoing**: Engine → `message:send` hook → resolve space → adapter.sendMessage → Chat API → `message:sent` hook
-
-## Patrones
-- Webhook siempre responde HTTP 200 (incluso en error) para evitar retries de Google
-- ADDED_TO_SPACE/REMOVED_FROM_SPACE se trackean en DB, no llegan al pipeline
-- `argumentText` se usa sobre `text` cuando disponible (text sin @mention del bot)
-- Messages de tipo BOT se ignoran (solo procesa HUMAN)
-- Validación del key al init — si el JSON es inválido, el módulo queda activo pero desconectado
+- `google_chat_spaces` — tracking de spaces activos (PK: space_name)
 
 ## Trampas
-- NO usar User OAuth para bots de Chat — viola políticas de Google
-- Service Account JSON puede contener newlines — aceptar inline JSON o path a archivo
-- Google Chat trunca mensajes a 4096 chars — adapter trunca antes de enviar
-- El módulo arranca sin error si no hay service account configurado — solo logea warning
-- **Helpers HTTP y config**: usa `jsonResponse`, `parseBody`, `readBody` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.
+- Webhook SIEMPRE responde HTTP 200 (evitar retries de Google)
+- Service Account JSON puede tener newlines — aceptar inline JSON o path
+- Google Chat trunca a 4096 chars — adapter trunca antes de enviar
+- **Helpers**: usa `jsonResponse`, `parseBody` de `kernel/http-helpers.js` y `numEnv`, `numEnvMin`, `boolEnv` de `kernel/config-helpers.js`

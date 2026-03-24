@@ -260,8 +260,36 @@ El engine **nunca importa código del canal**. Solo lee el servicio `channel-con
 | Canal | Módulo | channelType | Channel Config Service |
 |---|---|---|---|
 | WhatsApp | `src/modules/whatsapp/` | instant | ✅ `channel-config:whatsapp` |
+| Google Chat | `src/modules/google-chat/` | instant | ✅ `channel-config:google-chat` |
 | Email (Gmail) | `src/modules/gmail/` | async | ❌ (pendiente migración) |
-| Google Chat | `src/modules/google-chat/` | instant | ❌ (pendiente migración) |
 | Voz (Twilio) | `src/modules/twilio-voice/` | voice | ❌ (pendiente migración) |
 
-WhatsApp es la implementación de referencia completa del patrón channel-config.
+WhatsApp y Google Chat son las implementaciones de referencia del patrón channel-config para canales `instant`.
+
+## REGLA: Nombre del agente en canales instant
+
+Todos los canales de tipo `channelType: 'instant'` DEBEN obtener el nombre del agente de `prompts:service.getAgentName()`. Esto se usa para:
+- Detección de @menciones en grupos/rooms
+- Filtrado de mensajes que no van dirigidos al bot
+
+**Patrón estándar:**
+```typescript
+// En init() del manifest:
+const getAgentName = (): string => {
+  const svc = registry.getOptional<PromptsService>('prompts:service')
+  if (svc) return svc.getAgentName()
+  return 'Luna' // fallback
+}
+// Pasar al adapter
+adapter = new MyAdapter(config, db, getAgentName)
+```
+
+**NO hardcodear nombres de agente en los canales.** El valor se configura centralizadamente en el módulo `prompts` (`AGENT_NAME` en configSchema, editable desde console).
+
+## REGLA: Rooms/grupos en canales instant
+
+Todos los canales `instant` que soporten conversaciones grupales (WhatsApp grupos, Google Chat rooms) DEBEN seguir el mismo patrón:
+1. Detectar si el mensaje viene de un grupo/room
+2. Solo procesar si el bot fue @mencionado o llamado por nombre
+3. Usar `prompts:service.getAgentName()` para la detección
+4. Limpiar la @mención del texto antes de procesar (argumentText o stripMentionTag)
