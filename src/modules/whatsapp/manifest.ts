@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse } from '../../kernel/http-helpers.js'
-import { numEnv } from '../../kernel/config-helpers.js'
+import { numEnv, boolEnv } from '../../kernel/config-helpers.js'
 import { BaileysAdapter } from './adapter.js'
 import * as configStore from '../../kernel/config-store.js'
 import QRCode from 'qrcode'
@@ -87,6 +87,17 @@ const manifest: ModuleManifest = {
     ACK_WHATSAPP_TRIGGER_MS: numEnv(0),
     ACK_WHATSAPP_HOLD_MS: numEnv(1500),
     ACK_WHATSAPP_MESSAGE: z.string().default(''),
+    // Socket tuning
+    WHATSAPP_MARK_ONLINE: boolEnv(true),
+    WHATSAPP_REJECT_CALLS: boolEnv(true),
+    WHATSAPP_REJECT_CALL_MESSAGE: z.string().default('No puedo atender llamadas. Escríbeme por chat.'),
+    // Privacy
+    WHATSAPP_PRIVACY_LAST_SEEN: z.string().default(''),
+    WHATSAPP_PRIVACY_PROFILE_PIC: z.string().default(''),
+    WHATSAPP_PRIVACY_STATUS: z.string().default(''),
+    WHATSAPP_PRIVACY_READ_RECEIPTS: boolEnv(true),
+    // Agent name (for @mention detection in groups)
+    WHATSAPP_AGENT_NAME: z.string().default('Luna'),
   }),
 
   console: {
@@ -147,6 +158,70 @@ const manifest: ModuleManifest = {
         label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
         info: { es: 'Texto del aviso. Se envia automaticamente si la respuesta tarda.', en: 'Acknowledgment text. Sent automatically if the response is slow.' },
       },
+      { key: '_divider_socket', type: 'divider', label: { es: 'Comportamiento', en: 'Behavior' } },
+      {
+        key: 'WHATSAPP_MARK_ONLINE',
+        type: 'boolean',
+        label: { es: 'Marcar como en linea', en: 'Mark as online' },
+        info: { es: 'Si el bot aparece como en linea en WhatsApp', en: 'Whether the bot appears as online on WhatsApp' },
+      },
+      {
+        key: 'WHATSAPP_REJECT_CALLS',
+        type: 'boolean',
+        label: { es: 'Rechazar llamadas', en: 'Reject calls' },
+        info: { es: 'Rechaza llamadas automaticamente y envia un mensaje', en: 'Automatically reject calls and send a message' },
+      },
+      {
+        key: 'WHATSAPP_REJECT_CALL_MESSAGE',
+        type: 'text',
+        label: { es: 'Mensaje al rechazar llamada', en: 'Call rejection message' },
+        info: { es: 'Texto enviado al contacto cuando se rechaza una llamada', en: 'Text sent to the contact when a call is rejected' },
+      },
+      {
+        key: 'WHATSAPP_AGENT_NAME',
+        type: 'text',
+        label: { es: 'Nombre del agente', en: 'Agent name' },
+        info: { es: 'Nombre para deteccion de @mencion en grupos (default: Luna)', en: 'Name for @mention detection in groups (default: Luna)' },
+      },
+      { key: '_divider_privacy', type: 'divider', label: { es: 'Privacidad', en: 'Privacy' } },
+      {
+        key: 'WHATSAPP_PRIVACY_LAST_SEEN',
+        type: 'select',
+        label: { es: 'Ultima conexion', en: 'Last seen' },
+        info: { es: 'Quien puede ver tu ultima conexion (vacio = no cambiar)', en: 'Who can see your last seen (empty = dont change)' },
+        options: [
+          { value: '', label: 'No cambiar' },
+          { value: 'all', label: 'Todos' },
+          { value: 'contacts', label: 'Contactos' },
+          { value: 'none', label: 'Nadie' },
+        ],
+      },
+      {
+        key: 'WHATSAPP_PRIVACY_PROFILE_PIC',
+        type: 'select',
+        label: { es: 'Foto de perfil', en: 'Profile picture' },
+        info: { es: 'Quien puede ver tu foto de perfil', en: 'Who can see your profile picture' },
+        options: [
+          { value: '', label: 'No cambiar' },
+          { value: 'all', label: 'Todos' },
+          { value: 'contacts', label: 'Contactos' },
+          { value: 'none', label: 'Nadie' },
+        ],
+      },
+      {
+        key: 'WHATSAPP_PRIVACY_READ_RECEIPTS',
+        type: 'boolean',
+        label: { es: 'Confirmacion de lectura', en: 'Read receipts' },
+        info: { es: 'Si se envian checks azules al leer mensajes', en: 'Whether blue checks are sent when reading messages' },
+      },
+      { key: '_divider_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' } },
+      {
+        key: 'FORMAT_INSTRUCTIONS_WHATSAPP',
+        type: 'textarea',
+        label: { es: 'Instrucciones de formato', en: 'Format instructions' },
+        info: { es: 'Instrucciones que el compositor usa para dar formato a las respuestas de WhatsApp. Dejar vacío para usar el default.', en: 'Instructions the compositor uses to format WhatsApp responses. Leave empty for default.' },
+        rows: 6,
+      },
     ],
     apiRoutes,
     connectionWizard: {
@@ -181,6 +256,14 @@ const manifest: ModuleManifest = {
     const config = registry.getConfig<{
       WHATSAPP_RECONNECT_INTERVAL_MS: number
       WHATSAPP_MAX_RECONNECT_ATTEMPTS: number
+      WHATSAPP_MARK_ONLINE: boolean
+      WHATSAPP_REJECT_CALLS: boolean
+      WHATSAPP_REJECT_CALL_MESSAGE: string
+      WHATSAPP_PRIVACY_LAST_SEEN: string
+      WHATSAPP_PRIVACY_PROFILE_PIC: string
+      WHATSAPP_PRIVACY_STATUS: string
+      WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
+      WHATSAPP_AGENT_NAME: string
     }>('whatsapp')
 
     const db = registry.getDb()
@@ -215,7 +298,16 @@ const manifest: ModuleManifest = {
 
       const result = await adapter.sendMessage(payload.to, {
         to: payload.to,
-        content: { type: payload.content.type as 'text', text: payload.content.text },
+        content: {
+          type: payload.content.type,
+          text: payload.content.text,
+          mediaUrl: payload.content.mediaUrl,
+          caption: payload.content.caption,
+          audioBuffer: payload.content.audioBuffer,
+          audioDurationSeconds: payload.content.audioDurationSeconds,
+          ptt: payload.content.ptt,
+        },
+        quotedRaw: payload.quotedRaw,
       })
 
       await registry.runHook('message:sent', {
@@ -224,6 +316,20 @@ const manifest: ModuleManifest = {
         channelMessageId: result.channelMessageId,
         success: result.success,
       })
+    })
+
+    // Presence: show "typing..." when engine is composing
+    registry.addHook('whatsapp', 'channel:composing', async (payload) => {
+      if (payload.channel !== 'whatsapp') return
+      if (!adapter) return
+      await adapter.getPresenceManager().sendComposing(payload.to)
+    })
+
+    // Presence: clear typing after all messages sent
+    registry.addHook('whatsapp', 'channel:send_complete', async (payload) => {
+      if (payload.channel !== 'whatsapp') return
+      if (!adapter) return
+      await adapter.getPresenceManager().sendPaused(payload.to)
     })
 
     // Register message handler: incoming messages → fire hook

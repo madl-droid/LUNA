@@ -56,10 +56,44 @@ export async function phase5Validate(
     return { sent: false, error: 'Rate limit exceeded' }
   }
 
-  // 3. Format for channel
+  // 3. Check if TTS should be used (audio response for audio input)
+  const ttsService = registry.getOptional<{
+    shouldAutoTTS(channel: string, inputType: string): boolean
+    synthesize(text: string): Promise<{ audioBuffer: Buffer; durationSeconds: number } | null>
+  }>('tts:service')
+
+  if (ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType)) {
+    const ttsResult = await ttsService.synthesize(responseText)
+    if (ttsResult) {
+      const audioDelivery = await sendAudioMessage(ctx, ttsResult, registry)
+      if (audioDelivery.sent) {
+        // Continue to persist, update session, etc. with the audio delivery result
+        const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
+        await persistMessages(ctx, responseText, evaluation, db, memoryManager)
+        await updateLeadQualification(ctx, registry, db, memoryManager)
+        await updateSession(ctx, db)
+        enqueueSheetsSync(ctx, redis)
+        if (ctx.contactId) {
+          if (evaluation.intent === 'farewell') markFarewell(ctx.contactId, redis).catch(() => {})
+          const isProactive = 'isProactive' in ctx && (ctx as Record<string, unknown>).isProactive
+          if (!isProactive) {
+            setContactLock(ctx.contactId, redis, config.sessionTtlMs).catch(() => {})
+            const proactiveConfig = loadProactiveConfig()
+            detectCommitments(responseText, ctx.contactId, ctx.agentId, ctx.session.id, registry, config, proactiveConfig).catch(() => {})
+          }
+        }
+        const durationMs = Date.now() - startMs
+        logger.info({ traceId: ctx.traceId, durationMs, sent: true, format: 'audio' }, 'Phase 5 complete (TTS)')
+        return audioDelivery
+      }
+      logger.warn({ traceId: ctx.traceId }, 'TTS send failed, falling through to text')
+    }
+  }
+
+  // 4. Format for channel
   const parts = formatForChannel(responseText, ctx.message.channelName)
 
-  // 4. Send via channel adapter
+  // 5. Send via channel adapter
   const deliveryResult = await sendMessages(ctx, parts, registry)
 
   // 5. Persist messages via memory:manager (or fallback to direct DB)
@@ -164,6 +198,51 @@ async function checkRateLimit(
   }
 }
 
+async function sendAudioMessage(
+  ctx: ContextBundle,
+  ttsResult: { audioBuffer: Buffer; durationSeconds: number },
+  registry: Registry,
+): Promise<DeliveryResult> {
+  // Determine send target (group vs individual)
+  let sendTo = ctx.message.from
+  const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
+  if (rawMsg?.key?.remoteJid?.endsWith('@g.us')) {
+    sendTo = rawMsg.key.remoteJid
+  }
+
+  await registry.runHook('channel:composing', {
+    channel: ctx.message.channelName,
+    to: sendTo,
+    correlationId: ctx.traceId,
+  }).catch(() => {})
+
+  try {
+    await registry.runHook('message:send', {
+      channel: ctx.message.channelName,
+      to: sendTo,
+      content: {
+        type: 'audio',
+        audioBuffer: ttsResult.audioBuffer,
+        audioDurationSeconds: ttsResult.durationSeconds,
+        ptt: true,
+      },
+      correlationId: ctx.traceId,
+    })
+
+    await registry.runHook('channel:send_complete', {
+      channel: ctx.message.channelName,
+      to: sendTo,
+      messageCount: 1,
+      correlationId: ctx.traceId,
+    }).catch(() => {})
+
+    return { sent: true, channelMessageId: undefined }
+  } catch (err) {
+    logger.error({ err, traceId: ctx.traceId }, 'Failed to send audio message')
+    return { sent: false, error: String(err) }
+  }
+}
+
 async function sendMessages(
   ctx: ContextBundle,
   parts: string[],
@@ -171,10 +250,33 @@ async function sendMessages(
 ): Promise<DeliveryResult> {
   let lastMessageId: string | undefined
 
+  // For group messages, send to the group JID, not the individual sender
+  let sendTo = ctx.message.from
+  const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
+  const groupJid = rawMsg?.key?.remoteJid
+  const isGroupReply = groupJid?.endsWith('@g.us') ?? false
+  if (isGroupReply && groupJid) {
+    sendTo = groupJid
+  }
+
+  // Fire composing before first message
+  await registry.runHook('channel:composing', {
+    channel: ctx.message.channelName,
+    to: sendTo,
+    correlationId: ctx.traceId,
+  }).catch(() => {})
+
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!
 
     if (ctx.message.channelName === 'whatsapp' && i > 0) {
+      // Fire composing between bubbles
+      await registry.runHook('channel:composing', {
+        channel: ctx.message.channelName,
+        to: sendTo,
+        correlationId: ctx.traceId,
+      }).catch(() => {})
+
       const delay = calculateTypingDelay(part)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
@@ -182,8 +284,10 @@ async function sendMessages(
     try {
       await registry.runHook('message:send', {
         channel: ctx.message.channelName,
-        to: ctx.message.from,
+        to: sendTo,
         content: { type: 'text', text: part },
+        // Quote original message in groups (first bubble only)
+        quotedRaw: (isGroupReply && i === 0) ? ctx.message.raw : undefined,
         correlationId: ctx.traceId,
       })
       lastMessageId = randomUUID()
@@ -192,6 +296,14 @@ async function sendMessages(
       return { sent: false, error: String(err) }
     }
   }
+
+  // Fire send_complete after all parts sent
+  await registry.runHook('channel:send_complete', {
+    channel: ctx.message.channelName,
+    to: sendTo,
+    messageCount: parts.length,
+    correlationId: ctx.traceId,
+  }).catch(() => {})
 
   return { sent: true, channelMessageId: lastMessageId }
 }

@@ -603,6 +603,14 @@ const manifest: ModuleManifest = {
         label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
         info: { es: 'Texto del aviso de email. Se envia automaticamente si la respuesta tarda.', en: 'Email ack text. Sent automatically if the response is slow.' },
       },
+      { key: '_divider_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' } },
+      {
+        key: 'FORMAT_INSTRUCTIONS_EMAIL',
+        type: 'textarea',
+        label: { es: 'Instrucciones de formato', en: 'Format instructions' },
+        info: { es: 'Instrucciones que el compositor usa para dar formato a las respuestas de email. Dejar vacío para usar el default.', en: 'Instructions the compositor uses to format email responses. Leave empty for default.' },
+        rows: 6,
+      },
     ],
     apiRoutes,
     connectionWizard: {

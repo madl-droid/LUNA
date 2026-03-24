@@ -170,6 +170,7 @@ export async function phase1Intake(
     sheetsData,
     normalizedText,
     messageType,
+    responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
   }
 }
