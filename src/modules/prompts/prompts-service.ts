@@ -56,6 +56,12 @@ export class PromptsServiceImpl implements PromptsService {
     this.db = db
   }
 
+  /** Agent name for @mention detection in groups/rooms. Reads from centralized config. */
+  getAgentName(): string {
+    const cfg = this.registry.getConfig<{ AGENT_NAME: string }>('prompts')
+    return cfg.AGENT_NAME
+  }
+
   /**
    * Load all prompts from DB into cache. Seed if empty.
    */

@@ -57,6 +57,10 @@ Resumen rápido:
 5. **OBLIGATORIO: Crear `CLAUDE.md`** en el directorio del módulo (ver template en sección "Mantenimiento" abajo). Agregar entrada a la lista de "Módulos documentados".
 6. **OBLIGATORIO: Usar helpers del kernel** — ver sección "REGLA: No duplicar helpers HTTP ni config schemas" abajo.
 
+## REGLA: Nombre del agente en canales instant
+
+**Todos los canales `channelType: 'instant'`** obtienen el nombre del agente de `prompts:service.getAgentName()`. NO hardcodear nombres. El valor se configura en el módulo `prompts` (campo `AGENT_NAME`). Se usa para detección de @menciones en grupos/rooms. Ver `docs/architecture/channel-guide.md` para el patrón completo.
+
 ## REGLA MAXIMA: Config distribuido
 
 **Ningún módulo lee `process.env` directamente.**

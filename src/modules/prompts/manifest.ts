@@ -139,7 +139,9 @@ const manifest: ModuleManifest = {
   removable: true,
   activateByDefault: true,
   depends: [], // llm is optional (only for evaluator generation)
-  configSchema: z.object({}),
+  configSchema: z.object({
+    AGENT_NAME: z.string().default('Luna'),
+  }),
 
   console: {
     title: { es: 'Prompts del Agente', en: 'Agent Prompts' },
@@ -151,6 +153,15 @@ const manifest: ModuleManifest = {
     group: 'agent',
     icon: '&#128221;',
     fields: [
+      {
+        key: 'AGENT_NAME',
+        type: 'text',
+        label: { es: 'Nombre del agente', en: 'Agent name' },
+        info: {
+          es: 'Nombre usado para deteccion de @mencion en grupos/rooms de canales instantaneos (WhatsApp, Google Chat, etc). Fuente unica de verdad para todos los canales.',
+          en: 'Name used for @mention detection in groups/rooms of instant channels (WhatsApp, Google Chat, etc). Single source of truth for all channels.',
+        },
+      },
       {
         key: 'PROMPT_IDENTITY',
         type: 'textarea',

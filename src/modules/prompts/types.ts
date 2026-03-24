@@ -41,4 +41,6 @@ export interface PromptsService {
   listAll(): Promise<PromptRecord[]>
   matchCampaign(text: string): CampaignMatchResult | null
   invalidateCache(): void
+  /** Agent name for @mention detection in groups/rooms. Single source of truth for all instant channels. */
+  getAgentName(): string
 }

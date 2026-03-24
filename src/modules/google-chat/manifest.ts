@@ -6,14 +6,18 @@ import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody } from '../../kernel/http-helpers.js'
-import { numEnv } from '../../kernel/config-helpers.js'
+import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { GoogleChatAdapter } from './adapter.js'
 import type { GoogleChatConfig, ChatEvent, SetupGuideStep } from './types.js'
+import type { PromptsService } from '../prompts/types.js'
+import * as configStore from '../../kernel/config-store.js'
 
 const logger = pino({ name: 'google-chat' })
 
 let adapter: GoogleChatAdapter | null = null
 let _registry: Registry | null = null
+// Map contact → last threadName (for reply-in-thread)
+const lastThreadByContact = new Map<string, string>()
 
 // ─── API Routes ─────────────────────────────────
 
@@ -46,6 +50,10 @@ const apiRoutes: ApiRoute[] = [
         const normalized = await adapter.handleWebhookEvent(event)
 
         if (normalized) {
+          // Store threadName for reply-in-thread when engine responds
+          if (normalized.threadName) {
+            lastThreadByContact.set(normalized.from, normalized.threadName)
+          }
           await _registry.runHook('message:incoming', {
             id: normalized.id,
             channelName: normalized.channelName,
@@ -265,9 +273,33 @@ const manifest: ModuleManifest = {
   depends: [],
 
   configSchema: z.object({
+    // Connection
     GOOGLE_CHAT_SERVICE_ACCOUNT_KEY: z.string().default(''),
     GOOGLE_CHAT_WEBHOOK_TOKEN: z.string().default(''),
     GOOGLE_CHAT_MAX_MESSAGE_LENGTH: numEnv(4096),
+    // Room behavior
+    GOOGLE_CHAT_DM_ONLY: boolEnv(false),
+    GOOGLE_CHAT_REQUIRE_MENTION: boolEnv(true),
+    GOOGLE_CHAT_SPACE_WHITELIST: z.string().default(''),
+    // Threads
+    GOOGLE_CHAT_REPLY_IN_THREAD: boolEnv(true),
+    GOOGLE_CHAT_PROCESS_THREADS: boolEnv(true),
+    // Retries
+    GOOGLE_CHAT_MAX_RETRIES: numEnvMin(0, 3),
+    GOOGLE_CHAT_RETRY_DELAY_MS: numEnv(1000),
+    // Cards
+    GOOGLE_CHAT_PROCESS_CARD_CLICKS: boolEnv(false),
+    GOOGLE_CHAT_CARD_CLICK_ACTION: z.string().default('respond'),
+    // Channel runtime config (read by engine via channel-config service)
+    GOOGLE_CHAT_AVISO_TRIGGER_MS: numEnv(3000),
+    GOOGLE_CHAT_AVISO_HOLD_MS: numEnv(2000),
+    GOOGLE_CHAT_AVISO_MESSAGE: z.string().default('Un momento, estoy revisando eso...'),
+    GOOGLE_CHAT_RATE_LIMIT_HOUR: numEnvMin(1, 30),
+    GOOGLE_CHAT_RATE_LIMIT_DAY: numEnvMin(1, 200),
+    GOOGLE_CHAT_SESSION_TIMEOUT_HOURS: numEnvMin(1, 24),
+    GOOGLE_CHAT_BATCH_WAIT_SECONDS: numEnvMin(0, 0),
+    GOOGLE_CHAT_PRECLOSE_FOLLOWUP_HOURS: numEnvMin(0, 1),
+    GOOGLE_CHAT_PRECLOSE_MESSAGE: z.string().default('¿Sigues ahí? Tu sesión se cerrará pronto por inactividad. Si necesitas algo más, escríbeme.'),
   }),
 
   console: {
@@ -283,45 +315,155 @@ const manifest: ModuleManifest = {
       {
         key: 'GOOGLE_CHAT_SERVICE_ACCOUNT_KEY',
         type: 'secret',
-        label: {
-          es: 'Service Account Key (JSON)',
-          en: 'Service Account Key (JSON)',
-        },
+        label: { es: 'Service Account Key (JSON)', en: 'Service Account Key (JSON)' },
         info: {
-          es: 'Pega aqui el contenido completo del archivo JSON descargado de Google Cloud Console (IAM > Cuentas de servicio > Claves > Crear clave JSON). Al guardar, el sistema validara automaticamente el JSON y extraera el email del bot y el ID del proyecto.',
-          en: 'Paste here the complete content of the JSON file downloaded from Google Cloud Console (IAM > Service Accounts > Keys > Create JSON key). On save, the system will automatically validate the JSON and extract the bot email and project ID.',
+          es: 'Pega aqui el contenido completo del archivo JSON descargado de Google Cloud Console (IAM > Cuentas de servicio > Claves > Crear clave JSON).',
+          en: 'Paste here the complete content of the JSON file downloaded from Google Cloud Console (IAM > Service Accounts > Keys > Create JSON key).',
         },
       },
       {
         key: 'GOOGLE_CHAT_WEBHOOK_TOKEN',
         type: 'secret',
-        label: {
-          es: 'Token de verificacion (opcional)',
-          en: 'Verification token (optional)',
-        },
+        label: { es: 'Token de verificacion (opcional)', en: 'Verification token (optional)' },
         info: {
-          es: 'Token secreto para verificar que los mensajes vienen de Google Chat. Si se deja vacio, se aceptan todos los requests (solo para desarrollo). En produccion, configura un token aqui y en Google Cloud Console.',
-          en: 'Secret token to verify messages come from Google Chat. If left empty, all requests are accepted (development only). In production, set a token here and in Google Cloud Console.',
+          es: 'Token secreto para verificar webhooks. Vacio = acepta todo (solo desarrollo).',
+          en: 'Secret token to verify webhooks. Empty = accept all (development only).',
         },
       },
       {
         key: 'GOOGLE_CHAT_CONNECTION_STATUS',
         type: 'readonly',
         label: { es: 'Estado de conexion', en: 'Connection status' },
-        info: {
-          es: 'Estado actual del canal Google Chat (solo lectura)',
-          en: 'Current Google Chat channel status (read-only)',
-        },
+        info: { es: 'Estado actual del canal (solo lectura)', en: 'Current channel status (read-only)' },
       },
       { key: '_divider_config', type: 'divider', label: { es: 'Configuracion', en: 'Configuration' } },
       {
         key: 'GOOGLE_CHAT_MAX_MESSAGE_LENGTH',
         type: 'number',
         label: { es: 'Largo maximo de mensaje', en: 'Max message length' },
-        info: {
-          es: 'Caracteres maximos por mensaje. Google Chat trunca a 4096.',
-          en: 'Max characters per message. Google Chat truncates at 4096.',
-        },
+        info: { es: 'Caracteres maximos por mensaje. Google Chat trunca a 4096.', en: 'Max characters per message. Google Chat truncates at 4096.' },
+      },
+      { key: '_divider_rooms', type: 'divider', label: { es: 'Comportamiento en Rooms', en: 'Room Behavior' } },
+      {
+        key: 'GOOGLE_CHAT_DM_ONLY',
+        type: 'boolean',
+        label: { es: 'Solo DMs', en: 'DMs only' },
+        info: { es: 'Si esta activo, ignora mensajes de rooms/spaces y solo procesa mensajes directos.', en: 'If enabled, ignores room/space messages and only processes direct messages.' },
+      },
+      {
+        key: 'GOOGLE_CHAT_REQUIRE_MENTION',
+        type: 'boolean',
+        label: { es: 'Requerir mencion en rooms', en: 'Require mention in rooms' },
+        info: { es: 'En rooms/spaces, solo responde si el bot es @mencionado o llamado por nombre. DMs siempre se procesan. Mismo patron que WhatsApp.', en: 'In rooms/spaces, only responds if the bot is @mentioned or called by name. DMs are always processed. Same pattern as WhatsApp.' },
+      },
+      {
+        key: 'GOOGLE_CHAT_SPACE_WHITELIST',
+        type: 'text',
+        label: { es: 'Whitelist de spaces', en: 'Space whitelist' },
+        info: { es: 'Lista de space names permitidos separados por coma (ej: spaces/AAA,spaces/BBB). Vacio = todos permitidos.', en: 'Comma-separated list of allowed space names (e.g. spaces/AAA,spaces/BBB). Empty = all allowed.' },
+      },
+      { key: '_divider_threads', type: 'divider', label: { es: 'Threads', en: 'Threads' } },
+      {
+        key: 'GOOGLE_CHAT_REPLY_IN_THREAD',
+        type: 'boolean',
+        label: { es: 'Responder en thread', en: 'Reply in thread' },
+        info: { es: 'Si esta activo, las respuestas se envian como reply en el mismo hilo del mensaje original.', en: 'If enabled, replies are sent in the same thread as the original message.' },
+      },
+      {
+        key: 'GOOGLE_CHAT_PROCESS_THREADS',
+        type: 'boolean',
+        label: { es: 'Procesar mensajes en threads', en: 'Process threaded messages' },
+        info: { es: 'Si esta activo, procesa mensajes de hilos. Si esta desactivado, solo procesa mensajes raiz.', en: 'If enabled, processes messages from threads. If disabled, only processes root messages.' },
+      },
+      { key: '_divider_retries', type: 'divider', label: { es: 'Reintentos', en: 'Retries' } },
+      {
+        key: 'GOOGLE_CHAT_MAX_RETRIES',
+        type: 'number',
+        label: { es: 'Reintentos de envio', en: 'Send retries' },
+        info: { es: 'Reintentos al fallar el envio de mensaje (solo errores transitorios 5xx).', en: 'Retries on message send failure (transient 5xx errors only).' },
+        min: 0, max: 10, width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_RETRY_DELAY_MS',
+        type: 'number',
+        label: { es: 'Delay entre reintentos (ms)', en: 'Retry delay (ms)' },
+        info: { es: 'Milisegundos base entre reintentos (se multiplica por intento).', en: 'Base milliseconds between retries (multiplied by attempt number).' },
+        min: 100, max: 30000, width: 'half',
+      },
+      { key: '_divider_cards', type: 'divider', label: { es: 'Cards', en: 'Cards' } },
+      {
+        key: 'GOOGLE_CHAT_PROCESS_CARD_CLICKS',
+        type: 'boolean',
+        label: { es: 'Procesar clicks en cards', en: 'Process card clicks' },
+        info: { es: 'Si esta activo, eventos CARD_CLICKED se procesan segun la accion seleccionada.', en: 'If enabled, CARD_CLICKED events are processed according to the selected action.' },
+      },
+      {
+        key: 'GOOGLE_CHAT_CARD_CLICK_ACTION',
+        type: 'select',
+        label: { es: 'Accion al click en card', en: 'Card click action' },
+        info: { es: 'Que hacer cuando se hace click en un boton de card.', en: 'What to do when a card button is clicked.' },
+        options: [
+          { value: 'respond', label: 'Responder / Respond' },
+          { value: 'log', label: 'Solo log / Log only' },
+          { value: 'ignore', label: 'Ignorar / Ignore' },
+        ],
+      },
+      { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
+      {
+        key: 'GOOGLE_CHAT_AVISO_TRIGGER_MS',
+        type: 'number',
+        label: { es: 'Tiempo para aviso (ms)', en: 'Acknowledgment trigger (ms)' },
+        info: { es: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico. 0 = desactivado.', en: 'If the response takes longer than this, an automatic ack is sent. 0 = disabled.' },
+        width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_AVISO_HOLD_MS',
+        type: 'number',
+        label: { es: 'Pausa antes de respuesta (ms)', en: 'Hold before response (ms)' },
+        info: { es: 'Tiempo que se retiene la respuesta real despues del aviso.', en: 'Time the real response is held after the ack.' },
+        width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_AVISO_MESSAGE',
+        type: 'text',
+        label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
+        info: { es: 'Texto del aviso automatico si la respuesta tarda.', en: 'Ack text sent automatically if the response is slow.' },
+      },
+      { key: '_divider_rate', type: 'divider', label: { es: 'Limites de envio', en: 'Rate limits' } },
+      {
+        key: 'GOOGLE_CHAT_RATE_LIMIT_HOUR',
+        type: 'number',
+        label: { es: 'Max mensajes por hora', en: 'Max messages per hour' },
+        info: { es: 'Maximo de mensajes por hora por contacto.', en: 'Max messages per hour per contact.' },
+        min: 1, max: 100, width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_RATE_LIMIT_DAY',
+        type: 'number',
+        label: { es: 'Max mensajes por dia', en: 'Max messages per day' },
+        info: { es: 'Maximo de mensajes por dia por contacto.', en: 'Max messages per day per contact.' },
+        min: 1, max: 1000, width: 'half',
+      },
+      { key: '_divider_session', type: 'divider', label: { es: 'Sesion', en: 'Session' } },
+      {
+        key: 'GOOGLE_CHAT_SESSION_TIMEOUT_HOURS',
+        type: 'number',
+        label: { es: 'Timeout de sesion (horas)', en: 'Session timeout (hours)' },
+        info: { es: 'Horas de inactividad para cerrar la sesion.', en: 'Inactivity hours to close the session.' },
+        min: 1, max: 72, unit: 'h', width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_PRECLOSE_FOLLOWUP_HOURS',
+        type: 'number',
+        label: { es: 'Follow-up pre-cierre (horas)', en: 'Pre-close follow-up (hours)' },
+        info: { es: 'Horas antes del cierre para enviar recordatorio. 0 = desactivado.', en: 'Hours before close to send reminder. 0 = disabled.' },
+        min: 0, max: 23, unit: 'h', width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_PRECLOSE_MESSAGE',
+        type: 'text',
+        label: { es: 'Mensaje pre-cierre', en: 'Pre-close message' },
+        info: { es: 'Texto del recordatorio antes de cerrar sesion por inactividad.', en: 'Reminder text before closing session due to inactivity.' },
       },
     ],
     apiRoutes,
@@ -389,6 +531,13 @@ const manifest: ModuleManifest = {
     // Run migrations
     await runMigrations(db)
 
+    // ── Agent name: read from centralized prompts config ──
+    const getAgentName = (): string => {
+      const svc = registry.getOptional<PromptsService>('prompts:service')
+      if (svc) return svc.getAgentName()
+      return 'Luna'
+    }
+
     // Skip initialization if no service account configured
     if (!config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY) {
       logger.warn('No GOOGLE_CHAT_SERVICE_ACCOUNT_KEY configured — module active but not connected. Use the setup guide in console to configure.')
@@ -404,9 +553,9 @@ const manifest: ModuleManifest = {
 
     logger.info({ projectId: validation.projectId, botEmail: validation.clientEmail }, 'Service Account Key validated')
 
-    adapter = new GoogleChatAdapter(config, db)
+    adapter = new GoogleChatAdapter(config, db, getAgentName)
 
-    // Register hook: outbound messages for google-chat channel
+    // ── Hook: outbound messages ──
     registry.addHook('google-chat', 'message:send', async (payload) => {
       if (payload.channel !== 'google-chat') return
       if (!adapter) return
@@ -428,7 +577,9 @@ const manifest: ModuleManifest = {
       }
 
       const text = payload.content.text ?? ''
-      const result = await adapter.sendMessage(spaceName, text)
+      // Use stored threadName for reply-in-thread
+      const threadName = lastThreadByContact.get(payload.to)
+      const result = await adapter.sendMessage(spaceName, text, threadName)
 
       await registry.runHook('message:sent', {
         channel: 'google-chat',
@@ -438,14 +589,35 @@ const manifest: ModuleManifest = {
       })
     })
 
+    // ── Channel Config Service (pattern from WhatsApp) ──
+    const channelConfigService = {
+      get: () => buildChannelConfig(config),
+    }
+    registry.provide('channel-config:google-chat', channelConfigService)
+
+    // ── Hot-reload: re-read config when console applies changes ──
+    registry.addHook('google-chat', 'console:config_applied', async () => {
+      const fresh = registry.getConfig<GoogleChatConfig>('google-chat')
+      Object.assign(config, fresh)
+      if (adapter) adapter.rebuildWhitelist()
+      logger.info('Google Chat config hot-reloaded')
+    })
+
+    // ── Connection status sync to config_store ──
+    try {
+      await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'connecting', false)
+    } catch { /* non-critical */ }
+
     // Expose adapter as service
     registry.provide('google-chat:adapter', adapter)
 
     // Initialize adapter (verify service account, connect to API)
     try {
       await adapter.initialize()
+      await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'connected', false).catch(() => {})
     } catch (err) {
       logger.error({ err }, 'Google Chat adapter initialization failed — webhook will still accept events once resolved')
+      await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'error', false).catch(() => {})
     }
   },
 
@@ -456,6 +628,22 @@ const manifest: ModuleManifest = {
     }
     _registry = null
   },
+}
+
+// ─── Channel Config builder (same pattern as WhatsApp) ──
+
+function buildChannelConfig(cfg: GoogleChatConfig): import('../../channels/types.js').ChannelRuntimeConfig {
+  return {
+    rateLimitHour: cfg.GOOGLE_CHAT_RATE_LIMIT_HOUR,
+    rateLimitDay: cfg.GOOGLE_CHAT_RATE_LIMIT_DAY,
+    avisoTriggerMs: cfg.GOOGLE_CHAT_AVISO_TRIGGER_MS,
+    avisoHoldMs: cfg.GOOGLE_CHAT_AVISO_HOLD_MS,
+    avisoMessages: cfg.GOOGLE_CHAT_AVISO_MESSAGE ? [cfg.GOOGLE_CHAT_AVISO_MESSAGE] : [],
+    sessionTimeoutMs: cfg.GOOGLE_CHAT_SESSION_TIMEOUT_HOURS * 3600000,
+    batchWaitSeconds: cfg.GOOGLE_CHAT_BATCH_WAIT_SECONDS,
+    precloseFollowupMs: cfg.GOOGLE_CHAT_PRECLOSE_FOLLOWUP_HOURS * 3600000,
+    precloseFollowupMessage: cfg.GOOGLE_CHAT_PRECLOSE_MESSAGE,
+  }
 }
 
 export default manifest

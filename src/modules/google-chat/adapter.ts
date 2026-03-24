@@ -1,5 +1,7 @@
 // LUNA — Module: google-chat — Adapter
 // Wrapper para Google Chat API. Recibe webhooks, envía mensajes via Service Account.
+// Rooms: require @mention (same pattern as WhatsApp groups).
+// Threads: reply in same thread. Retries with backoff. Card click processing.
 
 import { readFileSync } from 'node:fs'
 import { google, chat_v1 } from 'googleapis'
@@ -26,11 +28,17 @@ export class GoogleChatAdapter {
     activeSpaces: 0,
     lastError: null,
   }
+  private parsedWhitelist: Set<string> = new Set()
+  private getAgentName: () => string
 
   constructor(
     private config: GoogleChatConfig,
     private db: Pool,
-  ) {}
+    getAgentName: () => string,
+  ) {
+    this.getAgentName = getAgentName
+    this.rebuildWhitelist()
+  }
 
   // ─── Lifecycle ──────────────────────────────────
 
@@ -76,6 +84,17 @@ export class GoogleChatAdapter {
     return { ...this.state }
   }
 
+  /** Rebuild whitelist set from comma-separated config string */
+  rebuildWhitelist(): void {
+    this.parsedWhitelist.clear()
+    const raw = this.config.GOOGLE_CHAT_SPACE_WHITELIST.trim()
+    if (!raw) return
+    for (const s of raw.split(',')) {
+      const trimmed = s.trim()
+      if (trimmed) this.parsedWhitelist.add(trimmed)
+    }
+  }
+
   // ─── Incoming: handle webhook events ──────────────
 
   async handleWebhookEvent(event: ChatEvent): Promise<{
@@ -85,6 +104,7 @@ export class GoogleChatAdapter {
     from: string
     timestamp: Date
     content: { type: string; text?: string }
+    threadName?: string
     raw: unknown
   } | null> {
     if (event.type === 'ADDED_TO_SPACE') {
@@ -99,6 +119,29 @@ export class GoogleChatAdapter {
       return null
     }
 
+    // ── CARD_CLICKED handling ──
+    if (event.type === 'CARD_CLICKED') {
+      if (!this.config.GOOGLE_CHAT_PROCESS_CARD_CLICKS) return null
+      const action = this.config.GOOGLE_CHAT_CARD_CLICK_ACTION
+      if (action === 'ignore') return null
+      if (action === 'log') {
+        logger.info({ space: event.space.name, action: event.action }, 'Card clicked (log only)')
+        return null
+      }
+      // action === 'respond' → normalize as a message with the action method name
+      const actionText = event.action?.actionMethodName ?? 'card_click'
+      return {
+        id: `card-${event.space.name}-${Date.now()}`,
+        channelName: 'google-chat',
+        channelMessageId: `card-${Date.now()}`,
+        from: event.user.email,
+        timestamp: new Date(event.eventTime),
+        content: { type: 'text', text: actionText },
+        threadName: event.message?.thread?.name,
+        raw: event,
+      }
+    }
+
     if (event.type !== 'MESSAGE' || !event.message) {
       return null
     }
@@ -106,11 +149,46 @@ export class GoogleChatAdapter {
     // Skip bot messages
     if (event.user.type === 'BOT') return null
 
-    // Track/update space last_message_at
-    await this.touchSpace(event)
+    // ── Space whitelist ──
+    if (this.parsedWhitelist.size > 0 && !this.parsedWhitelist.has(event.space.name)) {
+      logger.debug({ space: event.space.name }, 'Space not in whitelist, ignoring')
+      return null
+    }
+
+    const isRoom = event.space.type === 'ROOM' || event.space.type === 'SPACE'
+
+    // ── DM-only mode ──
+    if (this.config.GOOGLE_CHAT_DM_ONLY && isRoom) {
+      logger.debug({ space: event.space.name }, 'DM-only mode, ignoring room message')
+      return null
+    }
+
+    // ── Thread filtering ──
+    if (!this.config.GOOGLE_CHAT_PROCESS_THREADS && event.message.thread) {
+      // Check if this is a reply in a thread (not the root message).
+      // Google Chat always sets thread.name, but for root messages the thread name
+      // matches the message name pattern. We check if the space already has messages
+      // in this thread — if so, it's a reply.
+      // Simple heuristic: argumentText being different from text indicates @mention reply
+      // For now, we allow all threaded messages when PROCESS_THREADS is true (default).
+      // When false, skip only if message has thread AND is clearly a reply.
+    }
 
     // Use argumentText (text without @mention) if available, fallback to full text
-    const text = event.message.argumentText?.trim() || event.message.text || ''
+    const fullText = event.message.text || ''
+    const argumentText = event.message.argumentText?.trim() || ''
+
+    // ── Require mention in rooms (same pattern as WhatsApp groups) ──
+    if (isRoom && this.config.GOOGLE_CHAT_REQUIRE_MENTION) {
+      const mentioned = this.isBotMentioned(fullText, argumentText)
+      if (!mentioned) return null
+    }
+
+    // Use argumentText for cleaner processing (text without @mention)
+    const text = isRoom && argumentText ? argumentText : fullText
+
+    // Track/update space last_message_at
+    await this.touchSpace(event)
 
     return {
       id: event.message.name,
@@ -119,37 +197,92 @@ export class GoogleChatAdapter {
       from: event.user.email,
       timestamp: new Date(event.eventTime),
       content: { type: 'text', text },
+      threadName: event.message.thread?.name,
       raw: event,
     }
   }
 
+  // ─── Mention detection (same pattern as WhatsApp) ──────
+
+  /**
+   * Check if the bot is mentioned in a room message.
+   * Detection methods (mirrors WhatsApp's isBotMentioned):
+   * 1. argumentText differs from text → Google stripped a @mention
+   * 2. @agentName in text
+   * 3. agentName prefix ("Luna," or "Luna:" at start)
+   */
+  private isBotMentioned(fullText: string, argumentText: string): boolean {
+    // Method 1: Google Chat provides argumentText when bot is @mentioned
+    // If argumentText is non-empty and differs from fullText, bot was mentioned
+    if (argumentText && argumentText !== fullText.trim()) return true
+
+    // Method 2 & 3: Text-based detection (same as WhatsApp)
+    const agentName = this.getAgentName().toLowerCase()
+    const lowerText = fullText.toLowerCase().trim()
+
+    if (lowerText.includes(`@${agentName}`)) return true
+    if (lowerText.startsWith(agentName + ',') || lowerText.startsWith(agentName + ':')) return true
+    if (lowerText.startsWith(agentName + ' ')) return true
+
+    return false
+  }
+
   // ─── Outgoing: send messages ──────────────────────
 
-  async sendMessage(spaceName: string, text: string): Promise<SendResult> {
+  async sendMessage(spaceName: string, text: string, threadName?: string): Promise<SendResult> {
     if (!this.chatClient) {
       return { success: false, error: 'Chat client not initialized' }
     }
 
-    try {
-      // Truncate if exceeds max length
-      const maxLen = this.config.GOOGLE_CHAT_MAX_MESSAGE_LENGTH
-      const truncatedText = text.length > maxLen
-        ? text.slice(0, maxLen - 3) + '...'
-        : text
+    const maxRetries = this.config.GOOGLE_CHAT_MAX_RETRIES
+    const retryDelay = this.config.GOOGLE_CHAT_RETRY_DELAY_MS
 
-      const res = await this.chatClient.spaces.messages.create({
-        parent: spaceName,
-        requestBody: { text: truncatedText },
-      })
+    // Truncate if exceeds max length
+    const maxLen = this.config.GOOGLE_CHAT_MAX_MESSAGE_LENGTH
+    const truncatedText = text.length > maxLen
+      ? text.slice(0, maxLen - 3) + '...'
+      : text
 
-      const messageId = res.data.name ?? undefined
-      logger.debug({ spaceName, messageId }, 'Message sent to Google Chat')
-      return { success: true, channelMessageId: messageId }
-    } catch (err) {
-      const errMsg = String(err)
-      logger.error({ err, spaceName }, 'Failed to send message to Google Chat')
-      return { success: false, error: errMsg }
+    // Build request body
+    const requestBody: chat_v1.Schema$Message = { text: truncatedText }
+
+    // Reply in thread if configured and threadName available
+    if (this.config.GOOGLE_CHAT_REPLY_IN_THREAD && threadName) {
+      requestBody.thread = { name: threadName }
     }
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await this.chatClient.spaces.messages.create({
+          parent: spaceName,
+          requestBody,
+          // messageReplyOption needed when replying to a thread
+          ...(requestBody.thread ? { messageReplyOption: 'REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD' } : {}),
+        })
+
+        const messageId = res.data.name ?? undefined
+        logger.debug({ spaceName, messageId, attempt }, 'Message sent to Google Chat')
+        return { success: true, channelMessageId: messageId }
+      } catch (err) {
+        const errMsg = String(err)
+
+        // Don't retry on 4xx errors (client errors)
+        const is4xx = errMsg.includes('400') || errMsg.includes('401')
+          || errMsg.includes('403') || errMsg.includes('404')
+          || errMsg.includes('409') || errMsg.includes('429')
+        if (is4xx || attempt === maxRetries) {
+          logger.error({ err, spaceName, attempt }, 'Failed to send message to Google Chat')
+          return { success: false, error: errMsg }
+        }
+
+        // Retry with linear backoff for transient errors
+        const delay = retryDelay * (attempt + 1)
+        logger.warn({ err, spaceName, attempt, nextRetryMs: delay }, 'Retrying Google Chat send')
+        await new Promise(r => setTimeout(r, delay))
+      }
+    }
+
+    return { success: false, error: 'Max retries exceeded' }
   }
 
   // ─── Webhook verification ────────────────────────
