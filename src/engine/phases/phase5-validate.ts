@@ -91,6 +91,11 @@ export async function phase5Validate(
     }
   }
 
+  // 4a. Send attachment fallback messages (before main response)
+  if (ctx.attachmentContext?.fallbackMessages.length) {
+    await sendFallbackMessages(ctx, ctx.attachmentContext.fallbackMessages, registry)
+  }
+
   // 4. Format for channel
   const parts = formatForChannel(responseText, ctx.message.channelName)
 
@@ -479,4 +484,34 @@ async function updateLeadQualification(
 
 function enqueueSheetsSync(ctx: ContextBundle, _redis: Redis): void {
   logger.debug({ traceId: ctx.traceId, contactId: ctx.contactId }, 'Sheets sync enqueued (noop)')
+}
+
+/**
+ * Send attachment fallback messages (disabled types, too large, etc.)
+ * as separate messages before the main response.
+ */
+async function sendFallbackMessages(
+  ctx: ContextBundle,
+  messages: string[],
+  registry: Registry,
+): Promise<void> {
+  let sendTo = ctx.message.from
+  const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
+  const groupJid = rawMsg?.key?.remoteJid
+  if (groupJid?.endsWith('@g.us')) {
+    sendTo = groupJid
+  }
+
+  for (const msg of messages) {
+    try {
+      await registry.runHook('message:send', {
+        channel: ctx.message.channelName,
+        to: sendTo,
+        content: { type: 'text', text: msg },
+        correlationId: ctx.traceId,
+      })
+    } catch (err) {
+      logger.warn({ err, traceId: ctx.traceId }, 'Failed to send attachment fallback message')
+    }
+  }
 }

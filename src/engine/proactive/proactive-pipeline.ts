@@ -292,6 +292,7 @@ async function buildProactiveContext(
     sheetsData: null,
     normalizedText: '',
     messageType: 'text',
+    attachmentContext: null,
     responseFormat: 'text',
     possibleInjection: false,
     isProactive: true,

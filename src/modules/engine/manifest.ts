@@ -4,6 +4,9 @@
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { initEngine, stopEngine } from '../../engine/index.js'
+import { runAttachmentMigration } from '../../engine/attachments/migration.js'
+import { registerQueryAttachmentTool } from '../../engine/attachments/tools/query-attachment.js'
+import { registerWebExploreTool } from '../../engine/attachments/tools/web-explore.js'
 
 const manifest: ModuleManifest = {
   name: 'engine',
@@ -18,7 +21,15 @@ const manifest: ModuleManifest = {
   depends: ['memory', 'llm'],
 
   async init(registry: Registry) {
+    // Run attachment_extractions table migration
+    const db = registry.getDb()
+    await runAttachmentMigration(db)
+
     initEngine(registry)
+
+    // Register attachment tools (after engine init, tools:registry may now be available)
+    await registerQueryAttachmentTool(registry)
+    await registerWebExploreTool(registry)
   },
 
   async stop() {

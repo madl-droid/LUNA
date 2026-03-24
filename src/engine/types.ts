@@ -151,6 +151,9 @@ export interface ContextBundle {
   // Response format preference (text, audio, or auto)
   responseFormat: 'text' | 'audio' | 'auto'
 
+  // Attachment context (processed attachments + URLs)
+  attachmentContext: import('./attachments/types.js').AttachmentContext | null
+
   // Injection flag from basic regex check
   possibleInjection: boolean
 }
@@ -519,6 +522,16 @@ export interface EngineConfig {
 
   // Session
   sessionReopenWindowMs: number
+
+  // Attachments
+  attachmentEnabled: boolean
+  attachmentSmallDocTokens: number
+  attachmentMediumDocTokens: number
+  attachmentSummaryMaxTokens: number
+  attachmentCacheTtlMs: number
+  attachmentUrlFetchTimeoutMs: number
+  attachmentUrlMaxSizeMb: number
+  attachmentUrlEnabled: boolean
 
   // Avisos: now fully per-channel via channel-config:{name} services
 }

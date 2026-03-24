@@ -751,6 +751,11 @@ function buildChannelConfig(cfg: GoogleChatConfig): import('../../channels/types
     antiSpamMaxPerWindow: cfg.GOOGLE_CHAT_ANTISPAM_MAX,
     antiSpamWindowMs: cfg.GOOGLE_CHAT_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,
+    attachments: {
+      enabledCategories: ['images', 'documents'],
+      maxFileSizeMb: 25,
+      maxAttachmentsPerMessage: 5,
+    },
   }
 }
 

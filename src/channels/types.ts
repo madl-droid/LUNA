@@ -24,6 +24,7 @@ export interface IncomingMessage {
   from: string
   timestamp: Date
   content: MessageContent
+  attachments?: AttachmentMeta[]
   raw?: unknown
 }
 
@@ -37,6 +38,16 @@ export interface SendResult {
   success: boolean
   channelMessageId?: string
   error?: string
+}
+
+/** Metadata for an attachment received from a channel */
+export interface AttachmentMeta {
+  id: string
+  filename: string
+  mimeType: string
+  size: number
+  /** Lazy loader — fetches the actual binary data on demand */
+  getData: () => Promise<Buffer>
 }
 
 export interface MediaPayload {
@@ -108,4 +119,8 @@ export interface ChannelRuntimeConfig {
   // ── Anti-flooding (inbound — groups rapid user messages) ──
   /** Threshold to trigger immediate flush of batch (0 = disabled) */
   floodThreshold: number
+
+  // ── Attachment processing config ──
+  /** Per-channel attachment configuration (optional — engine uses defaults if absent) */
+  attachments?: import('../engine/attachments/types.js').ChannelAttachmentConfig
 }

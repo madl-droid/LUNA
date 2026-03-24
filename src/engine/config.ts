@@ -111,6 +111,16 @@ export function loadEngineConfig(): EngineConfig {
     // Session
     sessionReopenWindowMs: envInt('SESSION_REOPEN_WINDOW_MS', 86400000), // 24h
 
+    // Attachments
+    attachmentEnabled: envBool('ATTACHMENT_ENABLED', true),
+    attachmentSmallDocTokens: envInt('ATTACHMENT_SMALL_DOC_TOKENS', 8000),
+    attachmentMediumDocTokens: envInt('ATTACHMENT_MEDIUM_DOC_TOKENS', 32000),
+    attachmentSummaryMaxTokens: envInt('ATTACHMENT_SUMMARY_MAX_TOKENS', 2000),
+    attachmentCacheTtlMs: envInt('ATTACHMENT_CACHE_TTL_MS', 3600000), // 1h
+    attachmentUrlFetchTimeoutMs: envInt('ATTACHMENT_URL_FETCH_TIMEOUT_MS', 10000),
+    attachmentUrlMaxSizeMb: envInt('ATTACHMENT_URL_MAX_SIZE_MB', 5),
+    attachmentUrlEnabled: envBool('ATTACHMENT_URL_ENABLED', true),
+
     // Avisos de proceso: now fully per-channel via channel-config:{name} services
     // (legacy WA/email aviso fields removed — each channel defines its own in configSchema)
   }

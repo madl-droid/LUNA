@@ -570,6 +570,11 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     antiSpamMaxPerWindow: cfg.WHATSAPP_ANTISPAM_MAX,
     antiSpamWindowMs: cfg.WHATSAPP_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,
+    attachments: {
+      enabledCategories: ['images', 'documents', 'audio'],
+      maxFileSizeMb: 25,
+      maxAttachmentsPerMessage: 5,
+    },
   }
 }
 

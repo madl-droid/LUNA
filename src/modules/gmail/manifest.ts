@@ -244,34 +244,19 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
     return
   }
 
-  // Process attachments via attachments module (if available)
-  let attachmentSummary = ''
-  const attachmentProcessor = _registry.getOptional<import('../attachments/types.js').AttachmentProcessor>('attachments:processor')
-  if (attachmentProcessor && msg.attachments.length > 0 && gmailAdapter) {
-    try {
-      const adapter = gmailAdapter
-      const inputs = msg.attachments.map((att) => ({
+  // Build attachment metadata for engine processing (Phase 1 handles extraction now)
+  const adapter = gmailAdapter
+  const attachmentMetas = msg.attachments.length > 0
+    ? msg.attachments.map((att) => ({
+        id: att.id,
         filename: att.filename,
         mimeType: att.mimeType,
         size: att.size,
         getData: () => adapter.downloadAttachment(msg.id, att.id).then((b) => b ?? Buffer.alloc(0)),
       }))
-      const processed = await attachmentProcessor.process(inputs)
-      attachmentSummary = processed
-        .filter((p) => p.summary)
-        .map((p) => `\n${p.summary}`)
-        .join('')
-    } catch (err) {
-      logger.warn({ messageId: msg.id, err }, 'Attachment processing failed — using basic summary')
-      attachmentSummary = msg.attachments.length > 0
-        ? `\n[Adjuntos: ${msg.attachments.map((a) => `${a.filename} (${a.mimeType})`).join(', ')}]`
-        : ''
-    }
-  } else if (msg.attachments.length > 0) {
-    attachmentSummary = `\n[Adjuntos: ${msg.attachments.map((a) => `${a.filename} (${a.mimeType})`).join(', ')}]`
-  }
+    : undefined
 
-  const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${textContent}${attachmentSummary}`
+  const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${textContent}`
 
   // Fire message:incoming hook para que el engine lo procese
   await _registry.runHook('message:incoming', {
@@ -284,6 +269,7 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
       type: 'text',
       text: fullContent,
     },
+    attachments: attachmentMetas,
     raw: msg,
   })
 
@@ -1178,6 +1164,11 @@ const manifest: ModuleManifest = {
         antiSpamMaxPerWindow: 0,
         antiSpamWindowMs: 0,
         floodThreshold: 0,
+        attachments: {
+          enabledCategories: ['documents', 'spreadsheets', 'images', 'presentations', 'text'],
+          maxFileSizeMb: 25,
+          maxAttachmentsPerMessage: 10,
+        },
       }),
     })
 

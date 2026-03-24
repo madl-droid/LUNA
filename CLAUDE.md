@@ -37,9 +37,9 @@ src/
     engine/          — wrapper del pipeline para el kernel (ver CLAUDE.md)
     knowledge/       — base de conocimiento: docs, FAQs, sync, búsqueda (ver CLAUDE.md)
     scheduled-tasks/ — tareas programadas del agente (ver CLAUDE.md)
-    attachments/     — procesamiento de adjuntos cross-channel (ver CLAUDE.md)
     tts/             — síntesis de voz: Google Cloud TTS (ver CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
+    attachments/     — subsistema de adjuntos del engine (types, processor, url-extractor, injection-validator, audio-transcriber, tools)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
 deploy/              — docker-compose + deploy (ver deploy/CLAUDE.md)
 instance/            — config operacional (config.json) + knowledge/media/
@@ -200,7 +200,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/twilio-voice/CLAUDE.md` — canal de voz (Twilio + Gemini Live)
 - `src/modules/knowledge/CLAUDE.md` — base de conocimiento (docs, FAQs, sync Drive/URLs, búsqueda híbrida)
 - `src/modules/scheduled-tasks/CLAUDE.md` — tareas programadas (cron, BullMQ, ejecucion LLM)
-- `src/modules/attachments/CLAUDE.md` — procesamiento de adjuntos cross-channel (PDF, Word, Excel, imagenes)
+- `src/engine/attachments/` — subsistema de adjuntos del engine (reemplaza módulo standalone src/modules/attachments/)
 - `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Cloud TTS, OGG_OPUS, PTT voice notes)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue

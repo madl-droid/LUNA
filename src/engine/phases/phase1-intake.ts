@@ -26,6 +26,8 @@ import { detectInputInjection } from '../utils/injection-detector.js'
 import { detectQuickAction } from '../utils/quick-actions.js'
 import { searchKnowledge } from '../utils/rag-local.js'
 import { resolveUserType, getUserPermissions } from '../mocks/user-resolver.js'
+import { processAttachments, buildFallbackMessages } from '../attachments/processor.js'
+import type { AttachmentContext, ChannelAttachmentConfig } from '../attachments/types.js'
 
 const logger = pino({ name: 'engine:phase1' })
 
@@ -70,6 +72,34 @@ export async function phase1Intake(
 
   // 5. Resolve agent ID
   const agentId = await resolveAgentId(memoryManager)
+
+  // 5b. Process attachments + URLs (runs in parallel with context loading below)
+  let attachmentContextPromise: Promise<AttachmentContext | null> = Promise.resolve(null)
+  if (config.attachmentEnabled && (message.attachments?.length || normalizedText)) {
+    const channelAttConfig = getChannelAttachmentConfig(registry, message.channelName)
+    attachmentContextPromise = processAttachments(
+      message.attachments ?? [],
+      normalizedText,
+      channelAttConfig,
+      {
+        enabled: config.attachmentEnabled,
+        smallDocTokens: config.attachmentSmallDocTokens,
+        mediumDocTokens: config.attachmentMediumDocTokens,
+        summaryMaxTokens: config.attachmentSummaryMaxTokens,
+        cacheTtlMs: config.attachmentCacheTtlMs,
+        urlFetchTimeoutMs: config.attachmentUrlFetchTimeoutMs,
+        urlMaxSizeMb: config.attachmentUrlMaxSizeMb,
+        urlEnabled: config.attachmentUrlEnabled,
+      },
+      'pending-session', // session ID not yet known; updated after session resolution
+      registry,
+      db,
+      redis,
+    ).catch(err => {
+      logger.warn({ err, traceId }, 'Attachment processing failed')
+      return null
+    })
+  }
 
   // 6-10. Load context in parallel (graceful degradation)
   // Knowledge v2: try knowledge:manager.getInjection() first, fallback to rag-local
@@ -135,6 +165,15 @@ export async function phase1Intake(
   const relevantSummaries = summariesResult.status === 'fulfilled' ? summariesResult.value : []
   const leadStatus = leadStatusResult.status === 'fulfilled' ? leadStatusResult.value : null
 
+  // Resolve attachment context (was processing in parallel)
+  const attachmentContext = await attachmentContextPromise
+  // Add fallback messages from disabled/failed attachments
+  if (attachmentContext) {
+    const channelAttConfig = getChannelAttachmentConfig(registry, message.channelName)
+    const fallbacks = buildFallbackMessages(attachmentContext.attachments, channelAttConfig)
+    attachmentContext.fallbackMessages.push(...fallbacks)
+  }
+
   // Invalidate context cache (new message = new context)
   if (contact?.id && memoryManager) {
     memoryManager.invalidateContext(contact.id, agentId).catch(() => {})
@@ -171,6 +210,7 @@ export async function phase1Intake(
     sheetsData,
     normalizedText,
     messageType,
+    attachmentContext,
     responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
   }
@@ -416,4 +456,24 @@ function getChannelSessionTimeout(registry: Registry, channel: string, defaultMs
     if (timeout > 0) return timeout
   }
   return defaultMs
+}
+
+/** Default attachment config when no channel-specific config exists */
+const DEFAULT_ATTACHMENT_CONFIG: ChannelAttachmentConfig = {
+  enabledCategories: ['documents', 'images', 'text'],
+  maxFileSizeMb: 25,
+  maxAttachmentsPerMessage: 10,
+}
+
+/**
+ * Get channel-specific attachment config from the channel config service.
+ * Falls back to a sensible default if the channel doesn't provide one.
+ */
+function getChannelAttachmentConfig(registry: Registry, channel: string): ChannelAttachmentConfig {
+  const svc = registry.getOptional<{ get(): { attachments?: ChannelAttachmentConfig } }>(`channel-config:${channel}`)
+  if (svc) {
+    const config = svc.get().attachments
+    if (config) return config
+  }
+  return DEFAULT_ATTACHMENT_CONFIG
 }
