@@ -49,8 +49,8 @@ export async function phase5Validate(
     responseText = validation.sanitizedText
   }
 
-  // 2. Check rate limits
-  const rateLimitOk = await checkRateLimit(redis, ctx.message.from, ctx.message.channelName, config)
+  // 2. Check rate limits (reads from channel config service)
+  const rateLimitOk = await checkRateLimit(redis, ctx.message.from, ctx.message.channelName, config, registry)
   if (!rateLimitOk) {
     logger.warn({ traceId: ctx.traceId, to: ctx.message.from }, 'Rate limit exceeded')
     return { sent: false, error: 'Rate limit exceeded' }
@@ -164,13 +164,24 @@ function validateOutput(text: string): ValidationResult {
   return { passed: false, issues, sanitizedText: sanitized }
 }
 
+/**
+ * Check per-contact rate limits. Reads from channel config service if available,
+ * falls back to engine config for backwards compatibility.
+ */
 async function checkRateLimit(
   redis: Redis,
   to: string,
   channel: string,
   config: EngineConfig,
+  registry: Registry,
 ): Promise<boolean> {
-  if (channel !== 'whatsapp') return true
+  // Get rate limits from channel config service (if channel provides one)
+  const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
+  const limitHour = channelSvc ? channelSvc.get().rateLimitHour : (channel === 'whatsapp' ? config.waRateLimitHour : 0)
+  const limitDay = channelSvc ? channelSvc.get().rateLimitDay : (channel === 'whatsapp' ? config.waRateLimitDay : 0)
+
+  // 0 = unlimited
+  if (limitHour <= 0 && limitDay <= 0) return true
 
   const hourKey = `rate:${to}:hour`
   const dayKey = `rate:${to}:day`
@@ -181,8 +192,8 @@ async function checkRateLimit(
       redis.get(dayKey),
     ])
 
-    if (hourCount && parseInt(hourCount) >= config.waRateLimitHour) return false
-    if (dayCount && parseInt(dayCount) >= config.waRateLimitDay) return false
+    if (limitHour > 0 && hourCount && parseInt(hourCount) >= limitHour) return false
+    if (limitDay > 0 && dayCount && parseInt(dayCount) >= limitDay) return false
 
     const pipeline = redis.pipeline()
     pipeline.incr(hourKey)

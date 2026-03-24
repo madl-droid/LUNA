@@ -92,9 +92,13 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     WHATSAPP_RECONNECT_INTERVAL_MS: numEnv(5000),
     WHATSAPP_MAX_RECONNECT_ATTEMPTS: numEnv(10),
-    ACK_WHATSAPP_TRIGGER_MS: numEnv(0),
-    ACK_WHATSAPP_HOLD_MS: numEnv(1500),
-    ACK_WHATSAPP_MESSAGE: z.string().default(''),
+    // Aviso de proceso (ack message when response is slow)
+    WHATSAPP_AVISO_TRIGGER_MS: numEnv(3000),
+    WHATSAPP_AVISO_HOLD_MS: numEnv(2000),
+    WHATSAPP_AVISO_MESSAGE: z.string().default('Un momento, estoy revisando eso...'),
+    // Rate limits
+    WHATSAPP_RATE_LIMIT_HOUR: numEnvMin(1, 30),
+    WHATSAPP_RATE_LIMIT_DAY: numEnvMin(1, 200),
     // Socket tuning
     WHATSAPP_MARK_ONLINE: boolEnv(true),
     WHATSAPP_REJECT_CALLS: boolEnv(true),
@@ -110,8 +114,9 @@ const manifest: ModuleManifest = {
     WHATSAPP_BATCH_WAIT_SECONDS: numEnvMin(15, 30),
     // Session inactivity timeout (hours) — max 24h per Meta policies
     WHATSAPP_SESSION_TIMEOUT_HOURS: numEnvMin(1, 24),
-    // Pre-close follow-up: hours before session timeout to send a reminder
+    // Pre-close follow-up
     WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: numEnvMin(0, 1),
+    WHATSAPP_PRECLOSE_MESSAGE: z.string().default('¿Sigues ahí? Tu sesión se cerrará pronto por inactividad. Si necesitas algo más, escríbeme.'),
   }),
 
   console: {
@@ -153,24 +158,43 @@ const manifest: ModuleManifest = {
       },
       { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
       {
-        key: 'ACK_WHATSAPP_TRIGGER_MS',
+        key: 'WHATSAPP_AVISO_TRIGGER_MS',
         type: 'number',
         label: { es: 'Tiempo para aviso (ms)', en: 'Acknowledgment trigger (ms)' },
         info: { es: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico. 0 = desactivado.', en: 'If the response takes longer than this, an automatic acknowledgment is sent. 0 = disabled.' },
         width: 'half',
       },
       {
-        key: 'ACK_WHATSAPP_HOLD_MS',
+        key: 'WHATSAPP_AVISO_HOLD_MS',
         type: 'number',
         label: { es: 'Pausa antes de respuesta (ms)', en: 'Hold before response (ms)' },
         info: { es: 'Tiempo que se retiene la respuesta real despues del aviso, para que no lleguen juntos.', en: 'Time the real response is held after the ack, so they don\'t arrive together.' },
         width: 'half',
       },
       {
-        key: 'ACK_WHATSAPP_MESSAGE',
+        key: 'WHATSAPP_AVISO_MESSAGE',
         type: 'text',
         label: { es: 'Mensaje de aviso', en: 'Acknowledgment message' },
         info: { es: 'Texto del aviso. Se envia automaticamente si la respuesta tarda.', en: 'Acknowledgment text. Sent automatically if the response is slow.' },
+      },
+      { key: '_divider_rate', type: 'divider', label: { es: 'Limites de envio', en: 'Rate limits' } },
+      {
+        key: 'WHATSAPP_RATE_LIMIT_HOUR',
+        type: 'number',
+        label: { es: 'Max mensajes por hora', en: 'Max messages per hour' },
+        info: { es: 'Maximo de mensajes por hora por contacto', en: 'Max messages per hour per contact' },
+        min: 1,
+        max: 100,
+        width: 'half',
+      },
+      {
+        key: 'WHATSAPP_RATE_LIMIT_DAY',
+        type: 'number',
+        label: { es: 'Max mensajes por dia', en: 'Max messages per day' },
+        info: { es: 'Maximo de mensajes por dia por contacto', en: 'Max messages per day per contact' },
+        min: 1,
+        max: 1000,
+        width: 'half',
       },
       { key: '_divider_socket', type: 'divider', label: { es: 'Comportamiento', en: 'Behavior' } },
       {
@@ -227,6 +251,12 @@ const manifest: ModuleManifest = {
         max: 23,
         unit: 'h',
         width: 'half',
+      },
+      {
+        key: 'WHATSAPP_PRECLOSE_MESSAGE',
+        type: 'text',
+        label: { es: 'Mensaje pre-cierre', en: 'Pre-close message' },
+        info: { es: 'Texto del recordatorio que se envia antes de cerrar la sesion por inactividad.', en: 'Reminder text sent before closing the session due to inactivity.' },
       },
       { key: '_divider_privacy', type: 'divider', label: { es: 'Privacidad', en: 'Privacy' } },
       {
@@ -298,28 +328,14 @@ const manifest: ModuleManifest = {
 
   async init(registry: Registry) {
     _registry = registry
-    const config = registry.getConfig<{
-      WHATSAPP_RECONNECT_INTERVAL_MS: number
-      WHATSAPP_MAX_RECONNECT_ATTEMPTS: number
-      WHATSAPP_MARK_ONLINE: boolean
-      WHATSAPP_REJECT_CALLS: boolean
-      WHATSAPP_REJECT_CALL_MESSAGE: string
-      WHATSAPP_PRIVACY_LAST_SEEN: string
-      WHATSAPP_PRIVACY_PROFILE_PIC: string
-      WHATSAPP_PRIVACY_STATUS: string
-      WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
-      WHATSAPP_AGENT_NAME: string
-      WHATSAPP_BATCH_WAIT_SECONDS: number
-      WHATSAPP_SESSION_TIMEOUT_HOURS: number
-      WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: number
-    }>('whatsapp')
+    const config = registry.getConfig<WhatsAppFullConfig>('whatsapp')
 
     const db = registry.getDb()
     // Stable instance ID: survives container recreation across deploys.
     // Falls back to hostname only for local dev without INSTANCE_ID set.
     const instanceId = process.env.INSTANCE_ID || 'luna-default'
 
-    adapter = new BaileysAdapter(config, db, instanceId, {
+    adapter = new BaileysAdapter(config as import('./adapter.js').WhatsAppConfig, db, instanceId, {
       onConnected: async () => {
         if (_registry && !_registry.isActive('whatsapp')) {
           try {
@@ -380,39 +396,31 @@ const manifest: ModuleManifest = {
       await adapter.getPresenceManager().sendPaused(payload.to)
     })
 
-    // Persist session timeout to config_store so the engine can read it
-    const sessionTimeoutMs = config.WHATSAPP_SESSION_TIMEOUT_HOURS * 3600000
-    await configStore.set(db, 'WHATSAPP_SESSION_TIMEOUT_MS', String(sessionTimeoutMs), false).catch(() => {})
+    // ── Channel Config Service ──
+    // Provides runtime config to the engine. Engine reads via registry.getOptional().
+    // Values are always fresh: buildChannelConfig() reads current config on each call.
+    const channelConfigService = {
+      get: () => buildChannelConfig(config),
+    }
+    registry.provide('channel-config:whatsapp', channelConfigService)
 
-    // Message batcher: accumulates messages from the same sender before dispatching
+    // ── Message Batcher ──
     const dispatchBatch = async (messages: IncomingMessage[]) => {
       if (messages.length === 0) return
-
-      // Use the first message as base, concatenate text from all
       const base = messages[0]!
       if (messages.length > 1) {
         const allTexts = messages
           .map(m => m.content.text ?? '')
           .filter(t => t.length > 0)
-        base.content = {
-          ...base.content,
-          text: allTexts.join('\n'),
-        }
+        base.content = { ...base.content, text: allTexts.join('\n') }
         manifestLogger.info({ from: base.from, count: messages.length }, 'Batched messages concatenated')
       }
-
       await registry.runHook('message:incoming', {
-        id: base.id,
-        channelName: base.channelName,
-        channelMessageId: base.channelMessageId,
-        from: base.from,
-        timestamp: base.timestamp,
-        content: base.content,
-        raw: base.raw,
+        id: base.id, channelName: base.channelName,
+        channelMessageId: base.channelMessageId, from: base.from,
+        timestamp: base.timestamp, content: base.content, raw: base.raw,
       })
-
-      // Schedule pre-close follow-up after dispatching
-      schedulePrecloseFollowup(base.from, config.WHATSAPP_SESSION_TIMEOUT_HOURS, config.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS, registry)
+      schedulePrecloseFollowup(base.from, config, registry)
     }
 
     batcher = new MessageBatcher(config.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
@@ -422,24 +430,28 @@ const manifest: ModuleManifest = {
       if (batcher) {
         batcher.add(msg)
       } else {
-        // Fallback: direct dispatch (no batching)
         await registry.runHook('message:incoming', {
-          id: msg.id,
-          channelName: msg.channelName,
-          channelMessageId: msg.channelMessageId,
-          from: msg.from,
-          timestamp: msg.timestamp,
-          content: msg.content,
-          raw: msg.raw,
+          id: msg.id, channelName: msg.channelName,
+          channelMessageId: msg.channelMessageId, from: msg.from,
+          timestamp: msg.timestamp, content: msg.content, raw: msg.raw,
         })
       }
     })
 
-    // Listen for sent messages to reschedule pre-close follow-up (session activity)
+    // Reschedule pre-close follow-up on every sent message (extends session activity)
     registry.addHook('whatsapp', 'message:sent', async (payload) => {
       if (payload.channel !== 'whatsapp') return
-      // Reschedule follow-up timer on every sent message (extends session activity)
-      schedulePrecloseFollowup(payload.to, config.WHATSAPP_SESSION_TIMEOUT_HOURS, config.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS, registry)
+      schedulePrecloseFollowup(payload.to, config, registry)
+    })
+
+    // ── Hot-reload: re-read config when console applies changes ──
+    registry.addHook('whatsapp', 'console:config_applied', async () => {
+      const fresh = registry.getConfig<WhatsAppFullConfig>('whatsapp')
+      // Update mutable references so all closures see the new values
+      Object.assign(config, fresh)
+      // Update batcher wait time
+      if (batcher) batcher.updateWaitSeconds(fresh.WHATSAPP_BATCH_WAIT_SECONDS)
+      manifestLogger.info('WhatsApp config hot-reloaded')
     })
 
     // Expose adapter as service for other modules
@@ -467,22 +479,67 @@ const manifest: ModuleManifest = {
   },
 }
 
+// ── Config type ──
+
+interface WhatsAppFullConfig {
+  WHATSAPP_RECONNECT_INTERVAL_MS: number
+  WHATSAPP_MAX_RECONNECT_ATTEMPTS: number
+  WHATSAPP_AVISO_TRIGGER_MS: number
+  WHATSAPP_AVISO_HOLD_MS: number
+  WHATSAPP_AVISO_MESSAGE: string
+  WHATSAPP_RATE_LIMIT_HOUR: number
+  WHATSAPP_RATE_LIMIT_DAY: number
+  WHATSAPP_MARK_ONLINE: boolean
+  WHATSAPP_REJECT_CALLS: boolean
+  WHATSAPP_REJECT_CALL_MESSAGE: string
+  WHATSAPP_PRIVACY_LAST_SEEN: string
+  WHATSAPP_PRIVACY_PROFILE_PIC: string
+  WHATSAPP_PRIVACY_STATUS: string
+  WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
+  WHATSAPP_AGENT_NAME: string
+  WHATSAPP_BATCH_WAIT_SECONDS: number
+  WHATSAPP_SESSION_TIMEOUT_HOURS: number
+  WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: number
+  WHATSAPP_PRECLOSE_MESSAGE: string
+}
+
+/**
+ * Build ChannelRuntimeConfig from WhatsApp module config.
+ * The engine reads this via registry.getOptional('channel-config:whatsapp').
+ *
+ * Pattern for other channels:
+ * 1. Define your params in your module's configSchema
+ * 2. In init(): registry.provide('channel-config:{name}', { get: () => buildConfig(cfg) })
+ * 3. Engine calls svc.get() to obtain ChannelRuntimeConfig
+ */
+function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/types.js').ChannelRuntimeConfig {
+  return {
+    rateLimitHour: cfg.WHATSAPP_RATE_LIMIT_HOUR,
+    rateLimitDay: cfg.WHATSAPP_RATE_LIMIT_DAY,
+    avisoTriggerMs: cfg.WHATSAPP_AVISO_TRIGGER_MS,
+    avisoHoldMs: cfg.WHATSAPP_AVISO_HOLD_MS,
+    avisoMessages: cfg.WHATSAPP_AVISO_MESSAGE ? [cfg.WHATSAPP_AVISO_MESSAGE] : [],
+    sessionTimeoutMs: cfg.WHATSAPP_SESSION_TIMEOUT_HOURS * 3600000,
+    batchWaitSeconds: cfg.WHATSAPP_BATCH_WAIT_SECONDS,
+    precloseFollowupMs: cfg.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS * 3600000,
+    precloseFollowupMessage: cfg.WHATSAPP_PRECLOSE_MESSAGE,
+  }
+}
+
 /**
  * Schedule a pre-close follow-up reminder for a contact.
- * Fires N hours before session timeout if still awaiting a response.
- * Clears any existing timer for this contact (debounce on activity).
+ * Reads config dynamically so hot-reload changes take effect.
  */
 function schedulePrecloseFollowup(
   contactId: string,
-  sessionTimeoutHours: number,
-  precloseHours: number,
+  config: WhatsAppFullConfig,
   registry: Registry,
 ): void {
-  // Clear existing timer for this contact
   const existing = precloseTimers.get(contactId)
   if (existing) clearTimeout(existing)
 
-  // 0 = disabled
+  const precloseHours = config.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS
+  const sessionTimeoutHours = config.WHATSAPP_SESSION_TIMEOUT_HOURS
   if (precloseHours <= 0 || precloseHours >= sessionTimeoutHours) return
 
   const delayMs = (sessionTimeoutHours - precloseHours) * 3600000
@@ -494,10 +551,7 @@ function schedulePrecloseFollowup(
       await registry.runHook('message:send', {
         channel: 'whatsapp',
         to: contactId,
-        content: {
-          type: 'text',
-          text: '¿Sigues ahí? Tu sesión se cerrará pronto por inactividad. Si necesitas algo más, escríbeme.',
-        },
+        content: { type: 'text', text: config.WHATSAPP_PRECLOSE_MESSAGE },
       })
     } catch (err) {
       manifestLogger.warn({ err, contactId }, 'Failed to send pre-close follow-up')

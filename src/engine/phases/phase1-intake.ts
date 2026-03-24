@@ -103,8 +103,8 @@ export async function phase1Intake(
 
   if (contactResult.status === 'rejected') logger.warn({ err: contactResult.reason, traceId }, 'Contact lookup failed')
 
-  // 11. Load or create session (channel-specific timeout if configured)
-  const sessionWindowMs = await getChannelSessionTimeout(db, message.channelName, config.sessionReopenWindowMs)
+  // 11. Load or create session (channel-specific timeout if available)
+  const sessionWindowMs = getChannelSessionTimeout(registry, message.channelName, config.sessionReopenWindowMs)
   const session = await loadOrCreateSession(
     db,
     contact?.id ?? null,
@@ -402,18 +402,18 @@ async function loadSheetsCache(redis: Redis): Promise<Record<string, unknown> | 
 }
 
 /**
- * Get channel-specific session timeout from config_store, or fall back to engine default.
- * WhatsApp module writes WHATSAPP_SESSION_TIMEOUT_MS to config_store.
+ * Get channel-specific session timeout from the channel config service.
+ * Each channel module provides 'channel-config:{name}' with a sessionTimeoutMs field.
+ * Falls back to engine default if the channel doesn't provide one.
+ *
+ * Pattern for new channels: provide 'channel-config:{channelName}' service
+ * implementing ChannelRuntimeConfig (see src/channels/types.ts).
  */
-async function getChannelSessionTimeout(db: Pool, channel: string, defaultMs: number): Promise<number> {
-  try {
-    const key = `${channel.toUpperCase()}_SESSION_TIMEOUT_MS`
-    const configStore = await import('../../kernel/config-store.js')
-    const value = await configStore.get(db, key)
-    if (value) {
-      const parsed = parseInt(value, 10)
-      if (!isNaN(parsed) && parsed > 0) return parsed
-    }
-  } catch { /* fallback */ }
+function getChannelSessionTimeout(registry: Registry, channel: string, defaultMs: number): number {
+  const svc = registry.getOptional<{ get(): { sessionTimeoutMs: number } }>(`channel-config:${channel}`)
+  if (svc) {
+    const timeout = svc.get().sessionTimeoutMs
+    if (timeout > 0) return timeout
+  }
   return defaultMs
 }
