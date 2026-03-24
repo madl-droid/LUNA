@@ -315,6 +315,11 @@ const manifest: ModuleManifest = {
     // Anti-spam (short-window burst protection)
     GOOGLE_CHAT_ANTISPAM_MAX: numEnv(5),
     GOOGLE_CHAT_ANTISPAM_WINDOW_MS: numEnv(60000),
+    // Attachment processing — Google Chat supports images and documents
+    GOOGLE_CHAT_ATT_IMAGES: boolEnv(true),
+    GOOGLE_CHAT_ATT_DOCUMENTS: boolEnv(true),
+    GOOGLE_CHAT_ATT_MAX_SIZE_MB: numEnvMin(1, 25),
+    GOOGLE_CHAT_ATT_MAX_PER_MSG: numEnvMin(1, 5),
   }),
 
   console: {
@@ -507,6 +512,40 @@ const manifest: ModuleManifest = {
         type: 'text',
         label: { es: 'Mensaje pre-cierre', en: 'Pre-close message' },
         info: { es: 'Texto del recordatorio antes de cerrar sesion por inactividad.', en: 'Reminder text before closing session due to inactivity.' },
+      },
+      { key: '_divider_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' } },
+      {
+        key: 'GOOGLE_CHAT_ATT_IMAGES',
+        type: 'boolean',
+        label: { es: 'Procesar imagenes', en: 'Process images' },
+        description: { es: 'Imagenes compartidas en Google Chat', en: 'Images shared in Google Chat' },
+        icon: '&#128247;',
+      },
+      {
+        key: 'GOOGLE_CHAT_ATT_DOCUMENTS',
+        type: 'boolean',
+        label: { es: 'Procesar documentos', en: 'Process documents' },
+        description: { es: 'PDF y documentos compartidos como adjuntos', en: 'PDF and documents shared as attachments' },
+        icon: '&#128196;',
+      },
+      {
+        key: 'GOOGLE_CHAT_ATT_MAX_SIZE_MB',
+        type: 'number',
+        label: { es: 'Tamano max (MB)', en: 'Max size (MB)' },
+        info: { es: 'Tamano maximo de archivo a procesar por este canal', en: 'Maximum file size to process for this channel' },
+        min: 1,
+        max: 50,
+        unit: 'MB',
+        width: 'half',
+      },
+      {
+        key: 'GOOGLE_CHAT_ATT_MAX_PER_MSG',
+        type: 'number',
+        label: { es: 'Max adjuntos por mensaje', en: 'Max attachments per message' },
+        info: { es: 'Maximo de adjuntos a procesar por mensaje', en: 'Maximum attachments to process per message' },
+        min: 1,
+        max: 15,
+        width: 'half',
       },
     ],
     apiRoutes,
@@ -751,11 +790,19 @@ function buildChannelConfig(cfg: GoogleChatConfig): import('../../channels/types
     antiSpamMaxPerWindow: cfg.GOOGLE_CHAT_ANTISPAM_MAX,
     antiSpamWindowMs: cfg.GOOGLE_CHAT_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,
-    attachments: {
-      enabledCategories: ['images', 'documents'],
-      maxFileSizeMb: 25,
-      maxAttachmentsPerMessage: 5,
-    },
+    attachments: buildGoogleChatAttachmentConfig(cfg),
+  }
+}
+
+/** Build per-channel attachment config from Google Chat config fields */
+function buildGoogleChatAttachmentConfig(cfg: GoogleChatConfig): import('../../engine/attachments/types.js').ChannelAttachmentConfig {
+  const categories: import('../../engine/attachments/types.js').AttachmentCategory[] = []
+  if (cfg.GOOGLE_CHAT_ATT_IMAGES) categories.push('images')
+  if (cfg.GOOGLE_CHAT_ATT_DOCUMENTS) categories.push('documents')
+  return {
+    enabledCategories: categories,
+    maxFileSizeMb: cfg.GOOGLE_CHAT_ATT_MAX_SIZE_MB,
+    maxAttachmentsPerMessage: cfg.GOOGLE_CHAT_ATT_MAX_PER_MSG,
   }
 }
 

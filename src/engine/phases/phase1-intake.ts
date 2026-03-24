@@ -27,7 +27,7 @@ import { detectQuickAction } from '../utils/quick-actions.js'
 import { searchKnowledge } from '../utils/rag-local.js'
 import { resolveUserType, getUserPermissions } from '../mocks/user-resolver.js'
 import { processAttachments, buildFallbackMessages } from '../attachments/processor.js'
-import type { AttachmentContext, ChannelAttachmentConfig } from '../attachments/types.js'
+import type { AttachmentContext, AttachmentEngineConfig, ChannelAttachmentConfig } from '../attachments/types.js'
 
 const logger = pino({ name: 'engine:phase1' })
 
@@ -77,21 +77,15 @@ export async function phase1Intake(
   let attachmentContextPromise: Promise<AttachmentContext | null> = Promise.resolve(null)
   if (config.attachmentEnabled && (message.attachments?.length || normalizedText)) {
     const channelAttConfig = getChannelAttachmentConfig(registry, message.channelName)
+    const attEngineConfig = getAttachmentEngineConfig(registry, config)
     attachmentContextPromise = processAttachments(
       message.attachments ?? [],
       normalizedText,
       channelAttConfig,
-      {
-        enabled: config.attachmentEnabled,
-        smallDocTokens: config.attachmentSmallDocTokens,
-        mediumDocTokens: config.attachmentMediumDocTokens,
-        summaryMaxTokens: config.attachmentSummaryMaxTokens,
-        cacheTtlMs: config.attachmentCacheTtlMs,
-        urlFetchTimeoutMs: config.attachmentUrlFetchTimeoutMs,
-        urlMaxSizeMb: config.attachmentUrlMaxSizeMb,
-        urlEnabled: config.attachmentUrlEnabled,
-      },
+      attEngineConfig,
+      message.channelName,
       'pending-session', // session ID not yet known; updated after session resolution
+      message.id,
       registry,
       db,
       redis,
@@ -476,4 +470,24 @@ function getChannelAttachmentConfig(registry: Registry, channel: string): Channe
     if (config) return config
   }
   return DEFAULT_ATTACHMENT_CONFIG
+}
+
+/**
+ * Get attachment engine config from registry service (hot-reloadable via console).
+ * Falls back to static EngineConfig values if the service is not available.
+ */
+function getAttachmentEngineConfig(registry: Registry, fallback: EngineConfig): AttachmentEngineConfig {
+  const svc = registry.getOptional<{ get(): AttachmentEngineConfig }>('engine:attachment-config')
+  if (svc) return svc.get()
+  // Fallback to static config from loadEngineConfig()
+  return {
+    enabled: fallback.attachmentEnabled,
+    smallDocTokens: fallback.attachmentSmallDocTokens,
+    mediumDocTokens: fallback.attachmentMediumDocTokens,
+    summaryMaxTokens: fallback.attachmentSummaryMaxTokens,
+    cacheTtlMs: fallback.attachmentCacheTtlMs,
+    urlFetchTimeoutMs: fallback.attachmentUrlFetchTimeoutMs,
+    urlMaxSizeMb: fallback.attachmentUrlMaxSizeMb,
+    urlEnabled: fallback.attachmentUrlEnabled,
+  }
 }

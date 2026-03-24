@@ -47,6 +47,15 @@ export interface EmailConfig {
   GMAIL_CLIENT_SECRET: string
   GMAIL_REFRESH_TOKEN: string
   GMAIL_TOKEN_REFRESH_BUFFER_MS: number
+  // Attachment processing config
+  EMAIL_ATT_IMAGES: boolean
+  EMAIL_ATT_DOCUMENTS: boolean
+  EMAIL_ATT_SPREADSHEETS: boolean
+  EMAIL_ATT_PRESENTATIONS: boolean
+  EMAIL_ATT_TEXT: boolean
+  EMAIL_ATT_AUDIO: boolean
+  EMAIL_ATT_MAX_SIZE_MB: number
+  EMAIL_ATT_MAX_PER_MSG: number
 }
 
 export interface LunaLabelIds {

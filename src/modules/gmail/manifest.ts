@@ -730,6 +730,16 @@ const manifest: ModuleManifest = {
     // Firma de email
     EMAIL_SIGNATURE_MODE: z.string().default('gmail'),    // gmail | custom | auto
     EMAIL_SIGNATURE_TEXT: z.string().default(''),          // only used if mode = 'custom'
+    // Attachment processing — which file types to process on email channel
+    // Email supports all categories
+    EMAIL_ATT_IMAGES: boolEnv(true),
+    EMAIL_ATT_DOCUMENTS: boolEnv(true),
+    EMAIL_ATT_SPREADSHEETS: boolEnv(true),
+    EMAIL_ATT_PRESENTATIONS: boolEnv(true),
+    EMAIL_ATT_TEXT: boolEnv(true),
+    EMAIL_ATT_AUDIO: boolEnv(true),
+    EMAIL_ATT_MAX_SIZE_MB: numEnvMin(1, 25),
+    EMAIL_ATT_MAX_PER_MSG: numEnvMin(1, 10),
   }),
 
   console: {
@@ -1006,6 +1016,68 @@ const manifest: ModuleManifest = {
         info: { es: 'Instrucciones que el compositor usa para dar formato a las respuestas de email. Dejar vacío para usar el default.', en: 'Instructions the compositor uses to format email responses. Leave empty for default.' },
         rows: 6,
       },
+      { key: '_divider_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' } },
+      {
+        key: 'EMAIL_ATT_IMAGES',
+        type: 'boolean',
+        label: { es: 'Procesar imagenes', en: 'Process images' },
+        description: { es: 'Imagenes adjuntas en correos (JPEG, PNG, WebP, GIF)', en: 'Image attachments in emails (JPEG, PNG, WebP, GIF)' },
+        icon: '&#128247;',
+      },
+      {
+        key: 'EMAIL_ATT_DOCUMENTS',
+        type: 'boolean',
+        label: { es: 'Procesar documentos', en: 'Process documents' },
+        description: { es: 'PDF, Word (.docx, .doc)', en: 'PDF, Word (.docx, .doc)' },
+        icon: '&#128196;',
+      },
+      {
+        key: 'EMAIL_ATT_SPREADSHEETS',
+        type: 'boolean',
+        label: { es: 'Procesar hojas de calculo', en: 'Process spreadsheets' },
+        description: { es: 'Excel (.xlsx, .xls) y CSV', en: 'Excel (.xlsx, .xls) and CSV' },
+        icon: '&#128202;',
+      },
+      {
+        key: 'EMAIL_ATT_PRESENTATIONS',
+        type: 'boolean',
+        label: { es: 'Procesar presentaciones', en: 'Process presentations' },
+        description: { es: 'PowerPoint (.pptx, .ppt)', en: 'PowerPoint (.pptx, .ppt)' },
+        icon: '&#128218;',
+      },
+      {
+        key: 'EMAIL_ATT_TEXT',
+        type: 'boolean',
+        label: { es: 'Procesar archivos de texto', en: 'Process text files' },
+        description: { es: 'Archivos .txt, .md, .json', en: '.txt, .md, .json files' },
+        icon: '&#128221;',
+      },
+      {
+        key: 'EMAIL_ATT_AUDIO',
+        type: 'boolean',
+        label: { es: 'Procesar audio', en: 'Process audio' },
+        description: { es: 'Archivos de audio adjuntos (MP3, WAV, OGG)', en: 'Audio file attachments (MP3, WAV, OGG)' },
+        icon: '&#127908;',
+      },
+      {
+        key: 'EMAIL_ATT_MAX_SIZE_MB',
+        type: 'number',
+        label: { es: 'Tamano max (MB)', en: 'Max size (MB)' },
+        info: { es: 'Tamano maximo de adjunto a procesar (limite Gmail: 25 MB)', en: 'Maximum attachment size to process (Gmail limit: 25 MB)' },
+        min: 1,
+        max: 50,
+        unit: 'MB',
+        width: 'half',
+      },
+      {
+        key: 'EMAIL_ATT_MAX_PER_MSG',
+        type: 'number',
+        label: { es: 'Max adjuntos por email', en: 'Max attachments per email' },
+        info: { es: 'Maximo de adjuntos a procesar por correo', en: 'Maximum attachments to process per email' },
+        min: 1,
+        max: 15,
+        width: 'half',
+      },
     ],
     apiRoutes,
     connectionWizard: {
@@ -1164,11 +1236,7 @@ const manifest: ModuleManifest = {
         antiSpamMaxPerWindow: 0,
         antiSpamWindowMs: 0,
         floodThreshold: 0,
-        attachments: {
-          enabledCategories: ['documents', 'spreadsheets', 'images', 'presentations', 'text'],
-          maxFileSizeMb: 25,
-          maxAttachmentsPerMessage: 10,
-        },
+        attachments: buildEmailAttachmentConfig(config),
       }),
     })
 
@@ -1457,6 +1525,22 @@ function stopPolling(): void {
   }
   pollerState.status = 'stopped'
   logger.info('Email polling stopped')
+}
+
+/** Build per-channel attachment config from email config fields */
+function buildEmailAttachmentConfig(cfg: EmailConfig): import('../../engine/attachments/types.js').ChannelAttachmentConfig {
+  const categories: import('../../engine/attachments/types.js').AttachmentCategory[] = []
+  if (cfg.EMAIL_ATT_IMAGES) categories.push('images')
+  if (cfg.EMAIL_ATT_DOCUMENTS) categories.push('documents')
+  if (cfg.EMAIL_ATT_SPREADSHEETS) categories.push('spreadsheets')
+  if (cfg.EMAIL_ATT_PRESENTATIONS) categories.push('presentations')
+  if (cfg.EMAIL_ATT_TEXT) categories.push('text')
+  if (cfg.EMAIL_ATT_AUDIO) categories.push('audio')
+  return {
+    enabledCategories: categories,
+    maxFileSizeMb: cfg.EMAIL_ATT_MAX_SIZE_MB,
+    maxAttachmentsPerMessage: cfg.EMAIL_ATT_MAX_PER_MSG,
+  }
 }
 
 export default manifest

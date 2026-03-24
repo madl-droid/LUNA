@@ -95,12 +95,37 @@ export interface AttachmentEngineConfig {
   urlEnabled: boolean
 }
 
+/**
+ * System-wide hard limits — protects the pipeline from overload.
+ * These CANNOT be overridden by channel config (channel limits must be ≤ these).
+ */
+export const SYSTEM_HARD_LIMITS = {
+  /** Absolute max file size in MB — no file beyond this will be processed */
+  maxFileSizeMb: 50,
+  /** Absolute max attachments per message — excess will be skipped with fallback */
+  maxAttachmentsPerMessage: 15,
+} as const
+
+/**
+ * Per-channel platform capabilities — what each channel can physically receive.
+ * Channel config should only enable categories that the platform supports.
+ * Categories NOT in this list for a channel will be silently ignored even if enabled in config.
+ */
+export const CHANNEL_SUPPORTED_CATEGORIES: Record<string, AttachmentCategory[]> = {
+  whatsapp: ['images', 'documents', 'audio', 'spreadsheets', 'text'],
+  email: ['documents', 'spreadsheets', 'images', 'presentations', 'text', 'audio'],
+  'google-chat': ['images', 'documents'],
+  voice: [],
+}
+
 /** Predefined fallback messages (not LLM-generated) */
 export const FALLBACK_MESSAGES = {
   disabled_by_channel: 'Disculpa, no puedo ver {fileType} por este canal. Podrias enviarmelo como texto?',
   too_large: 'El archivo {filename} es demasiado grande ({sizeMb} MB). El limite es {maxMb} MB.',
   extraction_failed: 'No pude leer {filename}. Podrias enviarlo en otro formato?',
   unsupported_type: 'No reconozco el formato de {filename}. Los formatos soportados son: PDF, Word, Excel, imagenes y texto.',
+  too_many_attachments: 'Recibí {count} archivos pero solo puedo procesar {max} a la vez. Los primeros {max} fueron procesados, los demas fueron omitidos.',
+  system_limit_exceeded: 'El archivo {filename} excede el limite del sistema ({maxMb} MB). No puede ser procesado.',
 } as const
 
 /** MIME type to category mapping */

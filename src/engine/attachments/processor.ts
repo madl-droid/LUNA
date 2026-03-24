@@ -1,6 +1,12 @@
 // LUNA Engine — Attachment Processor
 // Main service that orchestrates attachment processing: download, extract, validate, cache.
 // Reuses knowledge extractors (PDF, DOCX, XLSX, images) — does NOT duplicate extraction logic.
+//
+// KEY DESIGN: Each attachment is processed independently (1 by 1, sequentially)
+// and persisted to DB immediately after processing. This ensures:
+// - Isolation: one attachment failure doesn't affect others
+// - Traceability: each attachment has its own DB row immediately
+// - Safety: system hard limits prevent pipeline overload
 
 import { randomUUID } from 'node:crypto'
 import pino from 'pino'
@@ -15,9 +21,14 @@ import type {
   ProcessedAttachment,
   AttachmentCategory,
   AttachmentSizeTier,
-  UrlExtraction,
 } from './types.js'
-import { MIME_TO_CATEGORY, CATEGORY_LABELS, FALLBACK_MESSAGES } from './types.js'
+import {
+  MIME_TO_CATEGORY,
+  CATEGORY_LABELS,
+  FALLBACK_MESSAGES,
+  SYSTEM_HARD_LIMITS,
+  CHANNEL_SUPPORTED_CATEGORIES,
+} from './types.js'
 import { validateInjection } from './injection-validator.js'
 import { transcribeAudio } from './audio-transcriber.js'
 import { detectUrls, extractUrls } from './url-extractor.js'
@@ -27,13 +38,19 @@ const logger = pino({ name: 'engine:attachments' })
 /**
  * Process all attachments and URLs for a message.
  * Called from Phase 1 (Intake) after normalization and injection detection.
+ *
+ * Each attachment is processed INDEPENDENTLY and sequentially (1 by 1).
+ * After each attachment is processed, it is immediately persisted to DB.
+ * System hard limits are enforced before channel limits.
  */
 export async function processAttachments(
   attachments: AttachmentMeta[],
   normalizedText: string,
   channelConfig: ChannelAttachmentConfig,
   engineConfig: AttachmentEngineConfig,
+  channelName: string,
   sessionId: string,
+  messageId: string,
   registry: Registry,
   db: Pool,
   redis: Redis,
@@ -47,22 +64,53 @@ export async function processAttachments(
 
   if (!engineConfig.enabled) return result
 
-  // Process file attachments
-  const attachmentLimit = Math.min(attachments.length, channelConfig.maxAttachmentsPerMessage)
-  const attSlice = attachments.slice(0, attachmentLimit)
-
-  const processedPromises = attSlice.map(att =>
-    processOneAttachment(att, channelConfig, engineConfig, sessionId, registry, redis),
+  // Enforce system hard limit on attachment count (cannot be overridden by channel)
+  const effectiveMaxCount = Math.min(
+    channelConfig.maxAttachmentsPerMessage,
+    SYSTEM_HARD_LIMITS.maxAttachmentsPerMessage,
   )
-  const processed = await Promise.allSettled(processedPromises)
 
-  for (const [i, p] of processed.entries()) {
-    if (p.status === 'fulfilled') {
-      result.attachments.push(p.value)
-    } else {
-      const att = attSlice[i]!
-      logger.error({ filename: att.filename, err: p.reason }, 'Attachment processing failed')
-      result.attachments.push({
+  // If more attachments than the limit, notify user about skipped ones
+  if (attachments.length > effectiveMaxCount) {
+    result.fallbackMessages.push(
+      FALLBACK_MESSAGES.too_many_attachments
+        .replace('{count}', String(attachments.length))
+        .replace(/\{max\}/g, String(effectiveMaxCount)),
+    )
+    logger.warn({
+      total: attachments.length,
+      limit: effectiveMaxCount,
+      channelLimit: channelConfig.maxAttachmentsPerMessage,
+      systemLimit: SYSTEM_HARD_LIMITS.maxAttachmentsPerMessage,
+      channelName,
+    }, 'Attachments exceed limit — excess will be skipped')
+  }
+
+  const attSlice = attachments.slice(0, effectiveMaxCount)
+
+  // Resolve effective enabled categories: intersection of channel config + platform capabilities
+  const platformCapabilities = CHANNEL_SUPPORTED_CATEGORIES[channelName] ?? []
+  const effectiveCategories = channelConfig.enabledCategories.filter(
+    cat => platformCapabilities.includes(cat),
+  )
+  const effectiveChannelConfig: ChannelAttachmentConfig = {
+    ...channelConfig,
+    enabledCategories: effectiveCategories,
+    // Enforce system hard limit on file size
+    maxFileSizeMb: Math.min(channelConfig.maxFileSizeMb, SYSTEM_HARD_LIMITS.maxFileSizeMb),
+  }
+
+  // Process each attachment independently and sequentially (1 by 1)
+  for (const att of attSlice) {
+    let processed: ProcessedAttachment
+
+    try {
+      processed = await processOneAttachment(
+        att, effectiveChannelConfig, engineConfig, sessionId, registry, redis,
+      )
+    } catch (err) {
+      logger.error({ filename: att.filename, err }, 'Attachment processing failed')
+      processed = {
         id: randomUUID(),
         filename: att.filename,
         mimeType: att.mimeType,
@@ -77,11 +125,19 @@ export async function processAttachments(
         injectionRisk: false,
         sourceType: 'file_attachment',
         sourceRef: att.id,
-      })
+      }
       result.fallbackMessages.push(
         FALLBACK_MESSAGES.extraction_failed.replace('{filename}', att.filename),
       )
     }
+
+    // Add to context immediately
+    result.attachments.push(processed)
+
+    // Persist to DB immediately (fire-and-forget per attachment)
+    persistOneAttachment(processed, sessionId, messageId, channelName, db).catch(err =>
+      logger.warn({ err, attachmentId: processed.id, filename: processed.filename }, 'Failed to persist attachment'),
+    )
   }
 
   // Process URLs in text
@@ -90,6 +146,14 @@ export async function processAttachments(
     if (urls.length > 0) {
       const urlResults = await extractUrls(urls, engineConfig)
       result.urls = urlResults
+
+      // Persist each URL extraction independently
+      for (const url of urlResults) {
+        if (url.status === 'needs_subagent' && !url.extractedText) continue
+        persistOneUrl(url, sessionId, messageId, channelName, db).catch(err =>
+          logger.warn({ err, url: url.url }, 'Failed to persist URL extraction'),
+        )
+      }
     }
   }
 
@@ -97,11 +161,6 @@ export async function processAttachments(
   result.totalTokens =
     result.attachments.reduce((sum, a) => sum + a.tokenEstimate, 0) +
     result.urls.reduce((sum, u) => sum + u.tokenEstimate, 0)
-
-  // Persist to DB (fire-and-forget)
-  persistAttachments(result, sessionId, db).catch(err =>
-    logger.warn({ err, sessionId }, 'Failed to persist attachment extractions'),
-  )
 
   return result
 }
@@ -120,6 +179,7 @@ async function processOneAttachment(
   // Check if category is enabled for this channel
   if (!channelConfig.enabledCategories.includes(category)) {
     const label = CATEGORY_LABELS[category] ?? att.mimeType
+    logger.debug({ filename: att.filename, category, label }, 'Attachment category disabled for channel')
     return {
       id,
       filename: att.filename,
@@ -138,9 +198,12 @@ async function processOneAttachment(
     }
   }
 
-  // Size check
-  const maxBytes = channelConfig.maxFileSizeMb * 1024 * 1024
+  // Size check: enforce min(channel limit, system hard limit)
+  const effectiveMaxMb = Math.min(channelConfig.maxFileSizeMb, SYSTEM_HARD_LIMITS.maxFileSizeMb)
+  const maxBytes = effectiveMaxMb * 1024 * 1024
   if (att.size > maxBytes) {
+    // Distinguish between system hard limit and channel limit
+    const isSystemLimit = att.size > SYSTEM_HARD_LIMITS.maxFileSizeMb * 1024 * 1024
     return {
       id,
       filename: att.filename,
@@ -152,7 +215,7 @@ async function processOneAttachment(
       tokenEstimate: 0,
       sizeTier: 'small',
       cacheKey: null,
-      status: 'too_large',
+      status: isSystemLimit ? 'too_large' : 'too_large',
       injectionRisk: false,
       sourceType: 'file_attachment',
       sourceRef: att.id,
@@ -315,11 +378,12 @@ export function buildFallbackMessages(
       }
       case 'too_large': {
         const sizeMb = (att.sizeBytes / 1024 / 1024).toFixed(1)
+        const effectiveMax = Math.min(channelConfig.maxFileSizeMb, SYSTEM_HARD_LIMITS.maxFileSizeMb)
         messages.push(
           FALLBACK_MESSAGES.too_large
             .replace('{filename}', att.filename)
             .replace('{sizeMb}', sizeMb)
-            .replace('{maxMb}', String(channelConfig.maxFileSizeMb)),
+            .replace('{maxMb}', String(effectiveMax)),
         )
         break
       }
@@ -328,71 +392,73 @@ export function buildFallbackMessages(
           FALLBACK_MESSAGES.extraction_failed.replace('{filename}', att.filename),
         )
         break
-      case 'disabled_by_channel':
-        // Already handled above
-        break
     }
   }
 
   return messages
 }
 
-/** Persist processed attachments to DB (fire-and-forget) */
-async function persistAttachments(
-  context: AttachmentContext,
+/** Persist a single processed attachment to DB immediately */
+async function persistOneAttachment(
+  att: ProcessedAttachment,
   sessionId: string,
+  messageId: string,
+  channel: string,
   db: Pool,
 ): Promise<void> {
-  for (const att of context.attachments) {
-    if (att.status === 'disabled_by_channel') continue
+  if (att.status === 'disabled_by_channel') return
 
-    await db.query(
-      `INSERT INTO attachment_extractions
-       (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       ON CONFLICT DO NOTHING`,
-      [
-        att.id,
-        sessionId,
-        '', // message_id populated later by engine
-        '', // channel populated later
-        att.filename,
-        att.mimeType,
-        att.sizeBytes,
-        att.category,
-        att.sourceType,
-        att.extractedText,
-        att.tokenEstimate,
-        att.status,
-        att.injectionRisk,
-        att.sourceRef,
-      ],
-    )
-  }
+  await db.query(
+    `INSERT INTO attachment_extractions
+     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     ON CONFLICT DO NOTHING`,
+    [
+      att.id,
+      sessionId,
+      messageId,
+      channel,
+      att.filename,
+      att.mimeType,
+      att.sizeBytes,
+      att.category,
+      att.sourceType,
+      att.extractedText,
+      att.tokenEstimate,
+      att.status,
+      att.injectionRisk,
+      att.sourceRef,
+    ],
+  )
+}
 
-  for (const url of context.urls) {
-    if (url.status === 'needs_subagent' && !url.extractedText) continue
-
-    await db.query(
-      `INSERT INTO attachment_extractions
-       (session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-       ON CONFLICT DO NOTHING`,
-      [
-        sessionId,
-        '',
-        '',
-        url.title ?? url.url,
-        'text/html',
-        0,
-        'web_link',
-        'url_extraction',
-        url.extractedText,
-        url.tokenEstimate,
-        url.status,
-        url.injectionRisk,
-        url.url,
-      ],
-    )
-  }
+/** Persist a single URL extraction to DB immediately */
+async function persistOneUrl(
+  url: import('./types.js').UrlExtraction,
+  sessionId: string,
+  messageId: string,
+  channel: string,
+  db: Pool,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO attachment_extractions
+     (session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     ON CONFLICT DO NOTHING`,
+    [
+      sessionId,
+      messageId,
+      channel,
+      url.title ?? url.url,
+      'text/html',
+      0,
+      'web_link',
+      'url_extraction',
+      url.extractedText,
+      url.tokenEstimate,
+      url.status,
+      url.injectionRisk,
+      url.url,
+    ],
+  )
 }
