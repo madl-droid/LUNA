@@ -7,8 +7,8 @@ import { calculateRms } from './audio-converter.js'
 
 const logger = pino({ name: 'twilio-voice:silence' })
 
-/** RMS threshold below which audio is considered silence */
-const SILENCE_RMS_THRESHOLD = 200
+/** Default RMS threshold below which audio is considered silence */
+const DEFAULT_SILENCE_RMS_THRESHOLD = 200
 
 export type SilenceState = 'listening' | 'prompting' | 'final-warning'
 
@@ -26,10 +26,12 @@ interface CallSilenceState {
 export class SilenceDetector {
   private calls = new Map<string, CallSilenceState>()
   private timeoutMs: number
+  private rmsThreshold: number
   private events: SilenceEvents
 
-  constructor(timeoutMs: number, events: SilenceEvents) {
+  constructor(timeoutMs: number, rmsThreshold: number, events: SilenceEvents) {
     this.timeoutMs = timeoutMs
+    this.rmsThreshold = rmsThreshold || DEFAULT_SILENCE_RMS_THRESHOLD
     this.events = events
   }
 
@@ -53,7 +55,7 @@ export class SilenceDetector {
     if (!callState) return
 
     const rms = calculateRms(pcmBuffer)
-    if (rms > SILENCE_RMS_THRESHOLD) {
+    if (rms > this.rmsThreshold) {
       // Voice activity detected — reset
       callState.lastVoiceActivity = Date.now()
       if (callState.state !== 'listening') {

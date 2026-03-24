@@ -44,8 +44,9 @@ export class GeminiLiveSession {
    * Connect to Gemini Live API and send setup message.
    */
   async connect(): Promise<void> {
-    const model = this.config.model || 'gemini-2.5-flash'
+    const model = this.config.model
     const url = `${GEMINI_LIVE_BASE_URL}?key=${this.config.apiKey}`
+    const connectionTimeoutMs = this.config.connectionTimeoutMs
 
     return new Promise<void>((resolve, reject) => {
       this.ws = new WebSocket(url)
@@ -55,7 +56,7 @@ export class GeminiLiveSession {
           this.ws?.close()
           reject(new Error('Gemini Live connection timeout'))
         }
-      }, 15000)
+      }, connectionTimeoutMs)
 
       this.ws.on('open', () => {
         this.connected = true
@@ -165,21 +166,43 @@ export class GeminiLiveSession {
   private sendSetup(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
 
+    const speechConfig: GeminiSetupMessage['setup']['generationConfig']['speechConfig'] = {
+      voiceConfig: {
+        prebuiltVoiceConfig: {
+          voiceName: this.config.voice,
+        },
+      },
+    }
+
+    // Add languageCode if configured
+    if (this.config.language) {
+      speechConfig.languageCode = this.config.language
+    }
+
     const setup: GeminiSetupMessage = {
       setup: {
-        model: `models/${this.config.model || 'gemini-2.5-flash'}`,
+        model: `models/${this.config.model}`,
         generationConfig: {
           responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: this.config.voice || 'Kore',
-              },
-            },
-          },
+          temperature: this.config.temperature,
+          topP: this.config.topP,
+          topK: this.config.topK,
+          maxOutputTokens: this.config.maxOutputTokens,
+          speechConfig,
         },
         systemInstruction: {
           parts: [{ text: this.config.systemInstruction }],
+        },
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            startOfSpeechSensitivity: this.config.vadStartSensitivity,
+            endOfSpeechSensitivity: this.config.vadEndSensitivity,
+            prefixPaddingMs: this.config.vadPrefixPaddingMs,
+            silenceDurationMs: this.config.vadSilenceDurationMs,
+          },
+          activityHandling: this.config.bargeInEnabled
+            ? 'START_OF_ACTIVITY_INTERRUPTS'
+            : 'NO_INTERRUPTION',
         },
       },
     }
@@ -192,7 +215,12 @@ export class GeminiLiveSession {
     }
 
     this.ws.send(JSON.stringify(setup))
-    logger.debug('Gemini Live setup message sent')
+    logger.debug({
+      model: setup.setup.model,
+      voice: speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName,
+      temperature: this.config.temperature,
+      bargeIn: this.config.bargeInEnabled,
+    }, 'Gemini Live setup message sent')
   }
 
   private handleMessage(data: import('ws').RawData): void {

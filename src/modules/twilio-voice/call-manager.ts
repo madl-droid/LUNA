@@ -40,7 +40,7 @@ export class CallManager {
     this.mediaServer = mediaServer
     this.twilioAdapter = twilioAdapter
 
-    this.silenceDetector = new SilenceDetector(config.VOICE_SILENCE_TIMEOUT_MS, {
+    this.silenceDetector = new SilenceDetector(config.VOICE_SILENCE_TIMEOUT_MS, config.VOICE_SILENCE_RMS_THRESHOLD, {
       onSilenceDetected: (callId) => this.handleSilence(callId),
       onFinalSilence: (callId) => this.handleFinalSilence(callId),
     })
@@ -55,6 +55,11 @@ export class CallManager {
     to: string,
     mediaStreamUrl: string,
   ): Promise<string> {
+    if (!this.config.VOICE_ENABLED) {
+      logger.info({ callSid }, 'Voice calls disabled, rejecting incoming call')
+      return `<?xml version="1.0" encoding="UTF-8"?><Response><Say language="es-MX">Lo siento, este servicio no est\u00e1 disponible en este momento.</Say><Hangup/></Response>`
+    }
+
     if (this.activeCalls.size >= this.config.VOICE_MAX_CONCURRENT_CALLS) {
       logger.warn({ callSid, activeCalls: this.activeCalls.size }, 'Max concurrent calls reached')
       return `<?xml version="1.0" encoding="UTF-8"?><Response><Say language="es-MX">Lo siento, en este momento no puedo atender tu llamada. Por favor intenta m\u00e1s tarde.</Say><Hangup/></Response>`
@@ -89,6 +94,10 @@ export class CallManager {
     statusCallbackUrl: string | undefined,
     mediaStreamUrl: string,
   ): Promise<{ callSid: string; callId: string }> {
+    if (!this.config.VOICE_ENABLED) {
+      throw new Error('Voice calls are disabled')
+    }
+
     if (this.activeCalls.size >= this.config.VOICE_MAX_CONCURRENT_CALLS) {
       throw new Error('Max concurrent calls reached')
     }
@@ -177,10 +186,21 @@ export class CallManager {
     const gemini = new GeminiLiveSession(
       {
         apiKey,
-        model: 'gemini-2.5-flash',
+        model: this.config.VOICE_GEMINI_MODEL,
         voice: this.config.VOICE_GEMINI_VOICE,
+        language: this.config.VOICE_GEMINI_LANGUAGE,
         systemInstruction: context.systemInstruction,
         tools: context.tools,
+        temperature: this.config.VOICE_GEMINI_TEMPERATURE,
+        topP: this.config.VOICE_GEMINI_TOP_P,
+        topK: this.config.VOICE_GEMINI_TOP_K,
+        maxOutputTokens: this.config.VOICE_GEMINI_MAX_OUTPUT_TOKENS,
+        vadStartSensitivity: this.config.VOICE_VAD_START_SENSITIVITY,
+        vadEndSensitivity: this.config.VOICE_VAD_END_SENSITIVITY,
+        vadPrefixPaddingMs: this.config.VOICE_VAD_PREFIX_PADDING_MS,
+        vadSilenceDurationMs: this.config.VOICE_VAD_SILENCE_DURATION_MS,
+        bargeInEnabled: this.config.VOICE_BARGE_IN_ENABLED,
+        connectionTimeoutMs: this.config.VOICE_GEMINI_CONNECTION_TIMEOUT_MS,
       },
       {
         onAudio: (audioBase64, _mimeType) => {
@@ -236,7 +256,7 @@ export class CallManager {
       this.maxDurationTimers.set(streamSid, setTimeout(() => {
         logger.warn({ callSid, streamSid }, 'Max call duration reached')
         gemini.sendTextInput('[SISTEMA] La llamada ha alcanzado la duraci\u00f3n m\u00e1xima. Informa al caller y termin la llamada.')
-        setTimeout(() => this.endCall(streamSid, 'max-duration'), 15000)
+        setTimeout(() => this.endCall(streamSid, 'max-duration'), this.config.VOICE_GOODBYE_TIMEOUT_MS)
       }, this.config.VOICE_MAX_CALL_DURATION_MS))
 
       logger.info({ callSid, streamSid, voice: this.config.VOICE_GEMINI_VOICE }, 'Audio bridge established')
