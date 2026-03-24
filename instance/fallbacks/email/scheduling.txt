@@ -1,0 +1,1 @@
+Estimado/a {{name}}, lamentamos informarle que no pudimos acceder a la agenda en este momento. Por favor, intente nuevamente en unos minutos y con gusto le ayudaremos a agendar.

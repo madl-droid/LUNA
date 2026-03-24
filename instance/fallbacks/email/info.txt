@@ -1,0 +1,1 @@
+Estimado/a {{name}}, lamentamos informarle que no pudimos consultar la información solicitada en este momento. Por favor, intente nuevamente en unos minutos.

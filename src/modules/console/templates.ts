@@ -380,6 +380,14 @@ function renderSidebar(opts: PageOptions): string {
               <span class="sidebar-status-dot ${statusClass}"></span>
             </a>`
           }
+          // ACK Messages — last item in channels submenu
+          const ackActive = opts.channelSettingsId === 'ack-messages'
+          const ackLabel = opts.lang === 'es' ? 'Mensajes ACK' : 'ACK Messages'
+          const ackIcon = svgIcon('<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>')
+          nav += `<a href="/console/channels/ack-messages?lang=${opts.lang}" class="sidebar-submenu-item ${ackActive ? 'active' : ''}">
+            <span class="nav-icon-sm">${ackIcon}</span>
+            <span>${ackLabel}</span>
+          </a>`
           nav += '</div>'
         }
       }

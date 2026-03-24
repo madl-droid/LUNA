@@ -2,8 +2,6 @@
 // 1 llamada LLM (modelo compositor). Genera respuesta conversacional.
 // El LLM NO tiene tools. Solo recibe datos y escribe.
 
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type {
@@ -15,11 +13,9 @@ import type {
 } from '../types.js'
 import { buildCompositorPrompt, clearPromptCache } from '../prompts/compositor.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
+import { loadFallback } from '../fallbacks/fallback-loader.js'
 
 const logger = pino({ name: 'engine:phase4' })
-
-// Fallback templates loaded from instance/fallbacks/
-const fallbackTemplates = new Map<string, string>()
 
 /**
  * Execute Phase 4: Compose the response with LLM.
@@ -76,42 +72,20 @@ export async function phase4Compose(
     const durationMs = Date.now() - startMs
     logger.error({ traceId: ctx.traceId, durationMs, err }, 'Phase 4 LLM failed, using fallback template')
 
-    // Use fallback template
-    const fallbackText = await getFallbackTemplate(evaluation.intent, config.knowledgeDir)
+    // Use fallback template with per-channel cascade
+    const channelName = ctx.message.channelName
+    const contactName = ctx.contact?.displayName ?? undefined
+    const fallbackDir = config.knowledgeDir.replace(/\/knowledge\/?$/, '/fallbacks')
+    const fallbackText = await loadFallback(
+      evaluation.intent,
+      channelName,
+      { name: contactName, channel: channelName },
+      fallbackDir,
+    )
 
     return {
       responseText: fallbackText,
       rawResponse: `FALLBACK: ${String(err)}`,
     }
   }
-}
-
-/**
- * Get a fallback template for a given intent.
- */
-async function getFallbackTemplate(intent: string, knowledgeDir: string): Promise<string> {
-  // Check cache
-  const cached = fallbackTemplates.get(intent)
-  if (cached) return cached
-
-  // Try to load from instance/fallbacks/
-  const fallbackDir = join(knowledgeDir, '..', 'fallbacks')
-  try {
-    const content = await readFile(join(fallbackDir, `${intent}.txt`), 'utf-8')
-    fallbackTemplates.set(intent, content.trim())
-    return content.trim()
-  } catch {
-    // Generic fallback
-  }
-
-  // Try generic fallback
-  try {
-    const content = await readFile(join(fallbackDir, 'generic.txt'), 'utf-8')
-    fallbackTemplates.set('_generic', content.trim())
-    return content.trim()
-  } catch {
-    // Hardcoded last resort
-  }
-
-  return 'Disculpa, estoy teniendo dificultades técnicas en este momento. ¿Podrías intentar de nuevo en unos minutos?'
 }

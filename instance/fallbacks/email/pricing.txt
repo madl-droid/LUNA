@@ -1,0 +1,1 @@
+Estimado/a {{name}}, lamentamos informarle que no pudimos obtener la información de precios solicitada en este momento. Estamos trabajando para resolver el inconveniente. Por favor, intente nuevamente en unos minutos.

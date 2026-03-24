@@ -1,0 +1,1 @@
+Estimado/a {{name}}, lamentamos informarle que no pudimos procesar su consulta en este momento. Le pedimos disculpas por las molestias. Por favor, intente nuevamente en unos minutos.

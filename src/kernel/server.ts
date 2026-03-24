@@ -77,9 +77,10 @@ export class Server {
       }
 
       // Try matched module routes (strip query params for matching)
+      // Supports exact match and prefix match (for routes with path params like /ack-messages/:id)
       const urlPath = url.split('?')[0]
       const matched = this.routes.find(r =>
-        r.method === method && urlPath === r.fullPath
+        r.method === method && (urlPath === r.fullPath || urlPath!.startsWith(r.fullPath + '/'))
       )
       if (matched) {
         try {

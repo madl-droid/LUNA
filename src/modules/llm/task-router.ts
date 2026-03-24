@@ -82,6 +82,13 @@ const DEFAULT_ROUTES: TaskRoute[] = [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.2 },
     ],
   },
+  {
+    task: 'ack',
+    primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.8, maxTokens: 30 },
+    fallbacks: [
+      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.8, maxTokens: 30 },
+    ],
+  },
 ]
 
 // ═══════════════════════════════════════════

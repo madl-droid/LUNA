@@ -54,6 +54,7 @@ export type LLMTask =
   | 'image_gen'
   | 'web_search'
   | 'compress'
+  | 'ack'
   | 'custom'
 
 // ═══════════════════════════════════════════
