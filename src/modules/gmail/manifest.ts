@@ -191,10 +191,32 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
     return
   }
 
-  // Construir contenido para el engine
-  const attachmentSummary = msg.attachments.length > 0
-    ? `\n[Adjuntos: ${msg.attachments.map((a) => `${a.filename} (${a.mimeType})`).join(', ')}]`
-    : ''
+  // Process attachments via attachments module (if available)
+  let attachmentSummary = ''
+  const attachmentProcessor = _registry.getOptional<import('../attachments/types.js').AttachmentProcessor>('attachments:processor')
+  if (attachmentProcessor && msg.attachments.length > 0 && gmailAdapter) {
+    try {
+      const adapter = gmailAdapter
+      const inputs = msg.attachments.map((att) => ({
+        filename: att.filename,
+        mimeType: att.mimeType,
+        size: att.size,
+        getData: () => adapter.downloadAttachment(msg.id, att.id).then((b) => b ?? Buffer.alloc(0)),
+      }))
+      const processed = await attachmentProcessor.process(inputs)
+      attachmentSummary = processed
+        .filter((p) => p.summary)
+        .map((p) => `\n${p.summary}`)
+        .join('')
+    } catch (err) {
+      logger.warn({ messageId: msg.id, err }, 'Attachment processing failed — using basic summary')
+      attachmentSummary = msg.attachments.length > 0
+        ? `\n[Adjuntos: ${msg.attachments.map((a) => `${a.filename} (${a.mimeType})`).join(', ')}]`
+        : ''
+    }
+  } else if (msg.attachments.length > 0) {
+    attachmentSummary = `\n[Adjuntos: ${msg.attachments.map((a) => `${a.filename} (${a.mimeType})`).join(', ')}]`
+  }
 
   const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${textContent}${attachmentSummary}`
 
