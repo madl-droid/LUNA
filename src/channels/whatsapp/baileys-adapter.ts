@@ -5,7 +5,6 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaile
 import type { WASocket, BaileysEventMap } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import { v4 as uuidv4 } from 'uuid'
-import * as fs from 'node:fs'
 import pino from 'pino'
 import { config } from '../../config.js'
 import type { ChannelAdapter } from '../channel-adapter.js'
@@ -13,70 +12,31 @@ import type { ChannelName, OutgoingMessage, SendResult, MessageHandler, Incoming
 
 const logger = pino({ name: 'baileys-adapter', level: config.logLevel })
 
-export type BaileysStatus = 'disconnected' | 'connecting' | 'connected' | 'qr_ready'
-
-export interface BaileysState {
-  status: BaileysStatus
-  qr: string | null
-  lastDisconnectReason: string | null
-}
-
 export class BaileysAdapter implements ChannelAdapter {
   readonly channelName: ChannelName = 'whatsapp'
   private socket: WASocket | null = null
   private messageHandlers: MessageHandler[] = []
   private reconnectAttempts = 0
-  private _status: BaileysStatus = 'disconnected'
-  private _qr: string | null = null
-  private _lastDisconnectReason: string | null = null
-  private _autoReconnect = true
-
-  getState(): BaileysState {
-    return {
-      status: this._status,
-      qr: this._qr,
-      lastDisconnectReason: this._lastDisconnectReason,
-    }
-  }
 
   async initialize(): Promise<void> {
-    this._status = 'connecting'
-    this._qr = null
-    this._autoReconnect = true
-
-    // Ensure auth directory exists
-    const authDir = config.whatsapp.authDir
-    if (!fs.existsSync(authDir)) {
-      fs.mkdirSync(authDir, { recursive: true })
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(authDir)
+    const { state, saveCreds } = await useMultiFileAuthState(config.whatsapp.authDir)
     const { version } = await fetchLatestBaileysVersion()
 
     this.socket = makeWASocket({
       version,
       auth: state,
+      printQRInTerminal: config.instanceConfig.whatsapp.baileys.printQRInTerminal,
       logger: pino({ level: 'silent' }) as never,
     })
 
     this.socket.ev.on('creds.update', saveCreds)
 
     this.socket.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update
-
-      if (qr) {
-        this._qr = qr
-        this._status = 'qr_ready'
-        logger.info('QR code available for scanning')
-      }
+      const { connection, lastDisconnect } = update
 
       if (connection === 'close') {
-        this._qr = null
         const reason = (lastDisconnect?.error as Boom)?.output?.statusCode
-        this._lastDisconnectReason = DisconnectReason[reason as number] ?? String(reason)
-        this._status = 'disconnected'
-
-        const shouldReconnect = this._autoReconnect && reason !== DisconnectReason.loggedOut
+        const shouldReconnect = reason !== DisconnectReason.loggedOut
 
         if (shouldReconnect && this.reconnectAttempts < config.whatsapp.maxReconnectAttempts) {
           this.reconnectAttempts++
@@ -89,9 +49,6 @@ export class BaileysAdapter implements ChannelAdapter {
 
       if (connection === 'open') {
         this.reconnectAttempts = 0
-        this._qr = null
-        this._status = 'connected'
-        this._lastDisconnectReason = null
         logger.info('WhatsApp connected successfully')
       }
     })
@@ -120,32 +77,11 @@ export class BaileysAdapter implements ChannelAdapter {
   }
 
   async shutdown(): Promise<void> {
-    this._autoReconnect = false
     if (this.socket) {
       this.socket.end(undefined)
       this.socket = null
     }
-    this._status = 'disconnected'
-    this._qr = null
     logger.info('Baileys adapter shut down')
-  }
-
-  async disconnect(): Promise<void> {
-    this._autoReconnect = false
-    if (this.socket) {
-      await this.socket.logout()
-      this.socket.end(undefined)
-      this.socket = null
-    }
-    // Remove auth state so next connect starts fresh with QR
-    const authDir = config.whatsapp.authDir
-    if (fs.existsSync(authDir)) {
-      fs.rmSync(authDir, { recursive: true, force: true })
-    }
-    this._status = 'disconnected'
-    this._qr = null
-    this.reconnectAttempts = 0
-    logger.info('WhatsApp disconnected and session cleared')
   }
 
   async sendMessage(to: string, message: OutgoingMessage): Promise<SendResult> {

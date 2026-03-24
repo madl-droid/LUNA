@@ -1,1 +1,0 @@
-Hola {{name}}, ha pasado un tiempo desde nuestra última conversación. Quería saber si puedo ayudarte en algo o si tienes alguna consulta nueva.

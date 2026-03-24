@@ -7,5 +7,3 @@ instance/wa-auth/
 instance/knowledge/media/
 *.log
 coverage/
-workers/
-.claude/

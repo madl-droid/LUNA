@@ -1,1 +1,0 @@
-Hola {{name}}, te recuerdo que tienes una cita programada próximamente. Si necesitas reprogramar o tienes alguna pregunta, no dudes en escribirme.

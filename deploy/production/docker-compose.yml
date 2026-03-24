@@ -6,16 +6,22 @@ services:
     env_file: .env
     ports:
       - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+      - "${ADMIN_PORT:-3002}:${ADMIN_PORT:-3002}"
     labels:
+      # Main app — Traefik router
       - "traefik.enable=true"
       - "traefik.http.routers.luna-prod.rule=Host(`${DOMAIN}`)"
       - "traefik.http.routers.luna-prod.entrypoints=websecure"
       - "traefik.http.routers.luna-prod.tls.certresolver=letsencrypt"
       - "traefik.http.services.luna-prod.loadbalancer.server.port=${APP_PORT:-3000}"
+      # Admin UI — Traefik router (subdomain: admin.DOMAIN)
+      - "traefik.http.routers.luna-admin.rule=Host(`admin.${DOMAIN}`)"
+      - "traefik.http.routers.luna-admin.entrypoints=websecure"
+      - "traefik.http.routers.luna-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.luna-admin.loadbalancer.server.port=${ADMIN_PORT:-3002}"
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - ./instance:/app/instance
-      - ./.env:/app/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,7 +29,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: pgvector/pgvector:pg16
+    image: postgres:16-alpine
     container_name: LUNA-postgres
     restart: unless-stopped
     environment:

@@ -1,1 +1,0 @@
-Hola {{name}}, te escribo respecto a lo que te había comentado. Quedo atento a cualquier pregunta que tengas.
