@@ -164,14 +164,19 @@ export class GoogleChatAdapter {
     }
 
     // ── Thread filtering ──
-    if (!this.config.GOOGLE_CHAT_PROCESS_THREADS && event.message.thread) {
-      // Check if this is a reply in a thread (not the root message).
-      // Google Chat always sets thread.name, but for root messages the thread name
-      // matches the message name pattern. We check if the space already has messages
-      // in this thread — if so, it's a reply.
-      // Simple heuristic: argumentText being different from text indicates @mention reply
-      // For now, we allow all threaded messages when PROCESS_THREADS is true (default).
-      // When false, skip only if message has thread AND is clearly a reply.
+    // When PROCESS_THREADS is false, skip messages that are replies in threads.
+    // Google Chat always populates thread.name, even for root messages. To distinguish
+    // root vs reply: if the message name starts with the thread name, it IS the root.
+    if (!this.config.GOOGLE_CHAT_PROCESS_THREADS && event.message.thread?.name) {
+      const threadName = event.message.thread.name
+      const messageName = event.message.name
+      // Root message: its name starts with the same path as the thread.
+      // Reply: message name differs from thread's origin message.
+      const isRoot = messageName === threadName || messageName.startsWith(threadName + '/')
+      if (!isRoot) {
+        logger.debug({ space: event.space.name, thread: threadName }, 'Thread processing disabled, skipping reply')
+        return null
+      }
     }
 
     // Use argumentText (text without @mention) if available, fallback to full text

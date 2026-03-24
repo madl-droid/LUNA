@@ -538,24 +538,13 @@ const manifest: ModuleManifest = {
       return 'Luna'
     }
 
-    // Skip initialization if no service account configured
-    if (!config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY) {
-      logger.warn('No GOOGLE_CHAT_SERVICE_ACCOUNT_KEY configured — module active but not connected. Use the setup guide in console to configure.')
-      return
+    // ── Channel Config Service (ALWAYS register, even without key) ──
+    const channelConfigService = {
+      get: () => buildChannelConfig(config),
     }
+    registry.provide('channel-config:google-chat', channelConfigService)
 
-    // Validate key before initializing
-    const validation = GoogleChatAdapter.validateServiceAccountKey(config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY)
-    if (!validation.valid) {
-      logger.error({ errors: validation.errors }, 'Invalid Service Account Key — check the setup guide in console')
-      return
-    }
-
-    logger.info({ projectId: validation.projectId, botEmail: validation.clientEmail }, 'Service Account Key validated')
-
-    adapter = new GoogleChatAdapter(config, db, getAgentName)
-
-    // ── Hook: outbound messages ──
+    // ── Hook: outbound messages (ALWAYS register) ──
     registry.addHook('google-chat', 'message:send', async (payload) => {
       if (payload.channel !== 'google-chat') return
       if (!adapter) return
@@ -589,24 +578,52 @@ const manifest: ModuleManifest = {
       })
     })
 
-    // ── Channel Config Service (pattern from WhatsApp) ──
-    const channelConfigService = {
-      get: () => buildChannelConfig(config),
-    }
-    registry.provide('channel-config:google-chat', channelConfigService)
-
-    // ── Hot-reload: re-read config when console applies changes ──
+    // ── Hot-reload: re-read config when console applies changes (ALWAYS register) ──
     registry.addHook('google-chat', 'console:config_applied', async () => {
       const fresh = registry.getConfig<GoogleChatConfig>('google-chat')
       Object.assign(config, fresh)
       if (adapter) adapter.rebuildWhitelist()
       logger.info('Google Chat config hot-reloaded')
+
+      // If adapter doesn't exist yet but key is now configured, create it
+      if (!adapter && fresh.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY) {
+        const validation = GoogleChatAdapter.validateServiceAccountKey(fresh.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY)
+        if (validation.valid) {
+          logger.info('Service Account Key detected after hot-reload, initializing adapter...')
+          adapter = new GoogleChatAdapter(config, db, getAgentName)
+          registry.provide('google-chat:adapter', adapter)
+          try {
+            await adapter.initialize()
+            await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'connected', false).catch(() => {})
+          } catch (err) {
+            logger.error({ err }, 'Google Chat adapter initialization failed after hot-reload')
+            await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'error', false).catch(() => {})
+          }
+        }
+      }
     })
 
+    // ── Skip adapter initialization if no service account configured ──
+    if (!config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY) {
+      logger.warn('No GOOGLE_CHAT_SERVICE_ACCOUNT_KEY configured — module active but not connected. Configure via console, no restart needed.')
+      await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'not_configured', false).catch(() => {})
+      return
+    }
+
+    // Validate key before initializing
+    const validation = GoogleChatAdapter.validateServiceAccountKey(config.GOOGLE_CHAT_SERVICE_ACCOUNT_KEY)
+    if (!validation.valid) {
+      logger.error({ errors: validation.errors }, 'Invalid Service Account Key — check the setup guide in console')
+      await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'error', false).catch(() => {})
+      return
+    }
+
+    logger.info({ projectId: validation.projectId, botEmail: validation.clientEmail }, 'Service Account Key validated')
+
+    adapter = new GoogleChatAdapter(config, db, getAgentName)
+
     // ── Connection status sync to config_store ──
-    try {
-      await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'connecting', false)
-    } catch { /* non-critical */ }
+    await configStore.set(db, 'GOOGLE_CHAT_CONNECTION_STATUS', 'connecting', false).catch(() => {})
 
     // Expose adapter as service
     registry.provide('google-chat:adapter', adapter)
