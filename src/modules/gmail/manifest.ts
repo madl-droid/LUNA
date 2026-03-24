@@ -27,6 +27,9 @@ let usingStandaloneAuth = false
 let lunaLabels: LunaLabelIds = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
 let rateLimiter: EmailRateLimiter | null = null
 
+// Batching: debounce per thread/sender — stores pending messages and timer handles
+const pendingBatch = new Map<string, { messages: EmailMessage[]; timer: ReturnType<typeof setTimeout> }>()
+
 const pollerState: EmailPollerState = {
   status: 'stopped',
   lastPollAt: null,
@@ -108,14 +111,42 @@ async function pollForEmails(): Promise<void> {
       messages = [...byThread.values()]
     }
 
+    const batchWaitMs = config.EMAIL_BATCH_WAIT_MS
     for (const msg of messages) {
-      try {
-        await processIncomingEmail(msg)
-        pollerState.messagesProcessed++
-      } catch (err) {
-        pollerState.errors++
-        pollerState.lastError = err instanceof Error ? err.message : String(err)
-        logger.error({ messageId: msg.id, err }, 'Failed to process email')
+      if (batchWaitMs > 0) {
+        // Batching mode: debounce per threadId
+        const key = msg.threadId || msg.from
+        const existing = pendingBatch.get(key)
+        if (existing) {
+          clearTimeout(existing.timer)
+          existing.messages.push(msg)
+        } else {
+          pendingBatch.set(key, { messages: [msg], timer: null as unknown as ReturnType<typeof setTimeout> })
+        }
+        const batch = pendingBatch.get(key)!
+        batch.timer = setTimeout(async () => {
+          pendingBatch.delete(key)
+          // Process only the most recent message in the batch
+          const latest = batch.messages.sort((a, b) => b.date.getTime() - a.date.getTime())[0]!
+          try {
+            await processIncomingEmail(latest)
+            pollerState.messagesProcessed++
+          } catch (err) {
+            pollerState.errors++
+            pollerState.lastError = err instanceof Error ? err.message : String(err)
+            logger.error({ messageId: latest.id, err }, 'Failed to process batched email')
+          }
+        }, batchWaitMs)
+      } else {
+        // Immediate processing
+        try {
+          await processIncomingEmail(msg)
+          pollerState.messagesProcessed++
+        } catch (err) {
+          pollerState.errors++
+          pollerState.lastError = err instanceof Error ? err.message : String(err)
+          logger.error({ messageId: msg.id, err }, 'Failed to process email')
+        }
       }
     }
 
@@ -1058,6 +1089,59 @@ const manifest: ModuleManifest = {
       }
     })
 
+    // Register session management jobs
+    if (config.EMAIL_SESSION_INACTIVITY_HOURS > 0) {
+      // Pre-close follow-up job
+      if (config.EMAIL_PRECLOSE_FOLLOWUP_HOURS > 0 && config.EMAIL_PRECLOSE_FOLLOWUP_TEXT) {
+        const followupThresholdHours = config.EMAIL_SESSION_INACTIVITY_HOURS - config.EMAIL_PRECLOSE_FOLLOWUP_HOURS
+        if (followupThresholdHours > 0) {
+          await registry.runHook('job:register', {
+            jobName: 'email-preclose-followup',
+            intervalMs: 15 * 60 * 1000, // scan every 15 min
+            handler: async () => {
+              if (!_registry) return
+              const jdb = _registry.getDb()
+              const candidates = await jdb.query(`
+                SELECT thread_id, contact_id FROM email_threads
+                WHERE closed_at IS NULL
+                  AND followup_sent_at IS NULL
+                  AND last_message_at < NOW() - INTERVAL '${followupThresholdHours} hours'
+                  AND last_message_at > NOW() - INTERVAL '${config.EMAIL_SESSION_INACTIVITY_HOURS} hours'
+              `)
+              for (const row of candidates.rows as Array<{ thread_id: string; contact_id: string }>) {
+                await _registry.runHook('message:send', {
+                  channel: 'email',
+                  to: row.contact_id,
+                  content: { type: 'text', text: config.EMAIL_PRECLOSE_FOLLOWUP_TEXT },
+                })
+                await jdb.query('UPDATE email_threads SET followup_sent_at = NOW() WHERE thread_id = $1', [row.thread_id])
+                logger.info({ threadId: row.thread_id, contactId: row.contact_id }, 'Pre-close follow-up sent')
+              }
+            },
+          })
+        }
+      }
+
+      // Session close job
+      await registry.runHook('job:register', {
+        jobName: 'email-session-close',
+        intervalMs: 30 * 60 * 1000, // scan every 30 min
+        handler: async () => {
+          if (!_registry) return
+          const jdb = _registry.getDb()
+          const result = await jdb.query(`
+            UPDATE email_threads SET closed_at = NOW()
+            WHERE closed_at IS NULL
+              AND last_message_at < NOW() - INTERVAL '${config.EMAIL_SESSION_INACTIVITY_HOURS} hours'
+            RETURNING thread_id
+          `)
+          if (result.rowCount && result.rowCount > 0) {
+            logger.info({ closed: result.rowCount }, 'Email sessions closed due to inactivity')
+          }
+        },
+      })
+    }
+
     // Iniciar polling si OAuth está conectado
     if (oauthConnected && gmailAdapter) {
       startPolling(config.EMAIL_POLL_INTERVAL_MS)
@@ -1070,6 +1154,11 @@ const manifest: ModuleManifest = {
 
   async stop() {
     stopPolling()
+    // Clear pending batch timers
+    for (const [, batch] of pendingBatch) {
+      clearTimeout(batch.timer)
+    }
+    pendingBatch.clear()
     if (standaloneOAuth) {
       await standaloneOAuth.shutdown()
       standaloneOAuth = null
