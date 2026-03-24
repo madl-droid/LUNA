@@ -285,8 +285,8 @@ function renderSingleField(f: ConsoleField, val: string, lang: Lang): string {
 function renderPeriodFilter(channelId: string, lang: Lang): string {
   const label = lang === 'es' ? 'Periodo' : 'Period'
   const periods: Array<[string, string]> = lang === 'es'
-    ? [['today', 'Hoy'], ['24h', '24h'], ['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['180d', '180 dias']]
-    : [['today', 'Today'], ['24h', '24h'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['180d', '180 days']]
+    ? [['today', 'Hoy'], ['24h', '24 horas'], ['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['180d', '180 dias']]
+    : [['today', 'Today'], ['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['180d', '180 days']]
   const opts = periods.map(([v, l]) => `<option value="${v}"${v === '30d' ? ' selected' : ''}>${l}</option>`).join('')
 
   return `<div class="chs-period-filter" id="chs-period-wrap">
