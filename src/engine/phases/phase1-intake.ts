@@ -103,14 +103,15 @@ export async function phase1Intake(
 
   if (contactResult.status === 'rejected') logger.warn({ err: contactResult.reason, traceId }, 'Contact lookup failed')
 
-  // 11. Load or create session
+  // 11. Load or create session (channel-specific timeout if available)
+  const sessionWindowMs = getChannelSessionTimeout(registry, message.channelName, config.sessionReopenWindowMs)
   const session = await loadOrCreateSession(
     db,
     contact?.id ?? null,
     message.from,
     message.channelName,
     agentId,
-    config.sessionReopenWindowMs,
+    sessionWindowMs,
   )
 
   // 12-15. Load memory context in parallel
@@ -170,6 +171,7 @@ export async function phase1Intake(
     sheetsData,
     normalizedText,
     messageType,
+    responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
   }
 }
@@ -397,4 +399,21 @@ async function loadSheetsCache(redis: Redis): Promise<Record<string, unknown> | 
   } catch {
     return null
   }
+}
+
+/**
+ * Get channel-specific session timeout from the channel config service.
+ * Each channel module provides 'channel-config:{name}' with a sessionTimeoutMs field.
+ * Falls back to engine default if the channel doesn't provide one.
+ *
+ * Pattern for new channels: provide 'channel-config:{channelName}' service
+ * implementing ChannelRuntimeConfig (see src/channels/types.ts).
+ */
+function getChannelSessionTimeout(registry: Registry, channel: string, defaultMs: number): number {
+  const svc = registry.getOptional<{ get(): { sessionTimeoutMs: number } }>(`channel-config:${channel}`)
+  if (svc) {
+    const timeout = svc.get().sessionTimeoutMs
+    if (timeout > 0) return timeout
+  }
+  return defaultMs
 }

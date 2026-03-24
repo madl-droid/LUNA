@@ -148,6 +148,9 @@ export interface ContextBundle {
   normalizedText: string
   messageType: MessageContent['type']
 
+  // Response format preference (text, audio, or auto)
+  responseFormat: 'text' | 'audio' | 'auto'
+
   // Injection flag from basic regex check
   possibleInjection: boolean
 }

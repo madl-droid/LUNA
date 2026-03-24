@@ -10,8 +10,8 @@ import type { PromptsService } from '../../modules/prompts/types.js'
 
 const logger = pino({ name: 'engine:prompts:compositor' })
 
-// Channel-specific format limits
-const CHANNEL_LIMITS: Record<string, string> = {
+// Default channel format instructions (overridable via config_store)
+const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
   whatsapp: `FORMATO WHATSAPP:
 - Máximo 300 caracteres por mensaje
 - Usa lenguaje conversacional, informal pero profesional
@@ -28,7 +28,20 @@ const CHANNEL_LIMITS: Record<string, string> = {
 - Usa párrafos cortos`,
 }
 
-const DEFAULT_LIMIT = CHANNEL_LIMITS.whatsapp
+/**
+ * Get channel format instructions. Checks config_store first, falls back to defaults.
+ */
+async function getChannelLimit(channel: string, registry?: Registry): Promise<string> {
+  if (registry) {
+    try {
+      const configStore = await import('../../kernel/config-store.js')
+      const db = registry.getDb()
+      const custom = await configStore.get(db, `FORMAT_INSTRUCTIONS_${channel.toUpperCase()}`)
+      if (custom) return custom
+    } catch { /* fallback to default */ }
+  }
+  return DEFAULT_CHANNEL_LIMITS[channel] ?? DEFAULT_CHANNEL_LIMITS.whatsapp ?? ''
+}
 
 // Cache for knowledge files
 const fileCache = new Map<string, string>()
@@ -111,8 +124,8 @@ y guiarlos hacia una decisión de compra o agendamiento.`)
     systemParts.push(`\n--- CONTEXTO DE RELACIÓN ---\n${relationship}`)
   }
 
-  // Channel format limits
-  const channelLimit = CHANNEL_LIMITS[ctx.message.channelName] ?? DEFAULT_LIMIT
+  // Channel format limits (overridable via config_store)
+  const channelLimit = await getChannelLimit(ctx.message.channelName, registry)
   if (responseFormat) {
     systemParts.push(`\n--- FORMATO ---\n${responseFormat}\n${channelLimit}`)
   } else {

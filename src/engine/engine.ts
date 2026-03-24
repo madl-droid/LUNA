@@ -299,12 +299,20 @@ export function getEngineConfig(): EngineConfig {
 }
 
 /**
- * Returns per-channel aviso config (trigger delay, hold delay, messages pool).
+ * Returns per-channel aviso config from the channel's runtime config service.
+ * Each channel module provides 'channel-config:{name}' via registry.
+ * Falls back to engine config for backwards compatibility.
+ *
+ * Pattern: to add aviso support for a new channel, have the channel module
+ * provide a 'channel-config:{channelName}' service implementing ChannelRuntimeConfig.
  */
 function getAvisoConfig(channel: string, config: EngineConfig): { triggerMs: number; holdMs: number; messages: string[] } {
-  if (channel === 'whatsapp') {
-    return { triggerMs: config.avisoWaTriggerMs, holdMs: config.avisoWaHoldMs, messages: config.avisoWaMessages }
+  const channelSvc = registry.getOptional<{ get(): import('../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
+  if (channelSvc) {
+    const cc = channelSvc.get()
+    return { triggerMs: cc.avisoTriggerMs, holdMs: cc.avisoHoldMs, messages: cc.avisoMessages }
   }
+  // Backwards compatibility: fall back to engine config for email
   if (channel === 'email') {
     return { triggerMs: config.avisoEmailTriggerMs, holdMs: config.avisoEmailHoldMs, messages: config.avisoEmailMessages }
   }

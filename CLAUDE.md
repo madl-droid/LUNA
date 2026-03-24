@@ -38,6 +38,7 @@ src/
     knowledge/       — base de conocimiento: docs, FAQs, sync, búsqueda (ver CLAUDE.md)
     scheduled-tasks/ — tareas programadas del agente (ver CLAUDE.md)
     attachments/     — procesamiento de adjuntos cross-channel (ver CLAUDE.md)
+    tts/             — síntesis de voz: Google Cloud TTS (ver CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
 deploy/              — docker-compose + deploy (ver deploy/CLAUDE.md)
@@ -196,10 +197,12 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/knowledge/CLAUDE.md` — base de conocimiento (docs, FAQs, sync Drive/URLs, búsqueda híbrida)
 - `src/modules/scheduled-tasks/CLAUDE.md` — tareas programadas (cron, BullMQ, ejecucion LLM)
 - `src/modules/attachments/CLAUDE.md` — procesamiento de adjuntos cross-channel (PDF, Word, Excel, imagenes)
+- `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Cloud TTS, OGG_OPUS, PTT voice notes)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 
 ### Docs de referencia (consultar cuando sea relevante)
 - `docs/architecture/module-system.md` — **guía completa de creación de módulos** (tipos, lifecycle, manifest, registry, hooks, servicios, config, console)
+- `docs/architecture/channel-guide.md` — **guía completa de creación de canales** (channel-config service, hooks, hot-reload, console fields, checklist)
 - `docs/architecture/pipeline.md` — pipeline de 5 pasos y tabla de modelos LLM
 - `docs/architecture/lead-status.md` — máquina de estados de calificación de leads

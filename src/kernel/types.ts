@@ -27,6 +27,8 @@ export interface HookMap {
   'message:before_respond': [BeforeRespondPayload, void]
   'message:response_ready': [ResponseReadyPayload, void]
   'message:send':           [SendPayload, void]
+  'channel:composing':      [ChannelComposingPayload, void]
+  'channel:send_complete':  [ChannelSendCompletePayload, void]
   'message:sent':           [SentPayload, void]
 
   // LLM (pipeline ↔ providers)
@@ -97,7 +99,29 @@ export interface ResponseReadyPayload {
 export interface SendPayload {
   channel: string
   to: string
-  content: { type: string; text?: string; mediaUrl?: string; caption?: string }
+  content: {
+    type: string
+    text?: string
+    mediaUrl?: string
+    caption?: string
+    audioBuffer?: Buffer
+    audioDurationSeconds?: number
+    ptt?: boolean
+  }
+  quotedRaw?: unknown
+  correlationId?: string
+}
+
+export interface ChannelComposingPayload {
+  channel: string
+  to: string
+  correlationId?: string
+}
+
+export interface ChannelSendCompletePayload {
+  channel: string
+  to: string
+  messageCount: number
   correlationId?: string
 }
 
