@@ -37,6 +37,11 @@ export interface GoogleChatConfig {
   GOOGLE_CHAT_PRECLOSE_MESSAGE: string
   GOOGLE_CHAT_ANTISPAM_MAX: number
   GOOGLE_CHAT_ANTISPAM_WINDOW_MS: number
+  // Attachment processing config
+  GOOGLE_CHAT_ATT_IMAGES: boolean
+  GOOGLE_CHAT_ATT_DOCUMENTS: boolean
+  GOOGLE_CHAT_ATT_MAX_SIZE_MB: number
+  GOOGLE_CHAT_ATT_MAX_PER_MSG: number
 }
 
 // ═══════════════════════════════════════════

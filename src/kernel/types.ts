@@ -73,6 +73,13 @@ export interface IncomingHookPayload {
   from: string
   timestamp: Date
   content: { type: string; text?: string; mediaUrl?: string; caption?: string }
+  attachments?: Array<{
+    id: string
+    filename: string
+    mimeType: string
+    size: number
+    getData: () => Promise<Buffer>
+  }>
   raw?: unknown
 }
 
