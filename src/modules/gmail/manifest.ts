@@ -13,7 +13,7 @@ import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
 import { EmailRateLimiter } from './rate-limiter.js'
-import type { EmailConfig, EmailPollerState, EmailMessage, LunaLabelIds } from './types.js'
+import type { EmailConfig, EmailPollerState, EmailMessage, LunaLabelIds, CustomLabel, ResolvedCustomLabel } from './types.js'
 
 const logger = pino({ name: 'gmail' })
 
@@ -25,7 +25,59 @@ let standaloneOAuth: EmailOAuthManager | null = null
 // Indica si email usa su propio OAuth (true) o el de google-apps (false)
 let usingStandaloneAuth = false
 let lunaLabels: LunaLabelIds = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
+let resolvedCustomLabels: ResolvedCustomLabel[] = []
 let rateLimiter: EmailRateLimiter | null = null
+
+/** Parse custom labels from config JSON string */
+function parseCustomLabels(json: string): CustomLabel[] {
+  try {
+    const arr = JSON.parse(json)
+    if (!Array.isArray(arr)) return []
+    return arr.filter((item: unknown) => {
+      const obj = item as Record<string, unknown>
+      return typeof obj?.name === 'string' && obj.name.trim() && typeof obj?.instruction === 'string'
+    }) as CustomLabel[]
+  } catch {
+    return []
+  }
+}
+
+/** Ensure all LUNA labels (default + custom) exist in Gmail. Called on connect and reconnect. */
+async function ensureAllLabels(): Promise<void> {
+  if (!gmailAdapter || !_registry) return
+
+  const config = _registry.getConfig<EmailConfig>('gmail')
+
+  try {
+    // Default labels — always present
+    lunaLabels = {
+      agent: await gmailAdapter.ensureLabel('LUNA/Agent'),
+      escalated: await gmailAdapter.ensureLabel('LUNA/Escalated'),
+      converted: await gmailAdapter.ensureLabel('LUNA/Converted'),
+      humanLoop: await gmailAdapter.ensureLabel('LUNA/Human-Loop'),
+      ignored: await gmailAdapter.ensureLabel('LUNA/Ignored'),
+    }
+    logger.info({ lunaLabels }, 'LUNA default Gmail labels ensured')
+
+    // Custom labels from config
+    const customs = parseCustomLabels(config.EMAIL_CUSTOM_LABELS)
+    resolvedCustomLabels = []
+    for (const custom of customs) {
+      try {
+        const labelName = custom.name.startsWith('LUNA/') ? custom.name : `LUNA/${custom.name}`
+        const id = await gmailAdapter.ensureLabel(labelName)
+        resolvedCustomLabels.push({ ...custom, name: labelName, id })
+      } catch (err) {
+        logger.warn({ label: custom.name, err }, 'Failed to ensure custom label')
+      }
+    }
+    if (resolvedCustomLabels.length > 0) {
+      logger.info({ count: resolvedCustomLabels.length, labels: resolvedCustomLabels.map((l) => l.name) }, 'Custom Gmail labels ensured')
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to ensure LUNA labels — label features disabled')
+  }
+}
 
 // Batching: debounce per thread/sender — stores pending messages and timer handles
 const pendingBatch = new Map<string, { messages: EmailMessage[]; timer: ReturnType<typeof setTimeout> }>()
@@ -364,6 +416,52 @@ const apiRoutes: ApiRoute[] = [
       }
     },
   },
+  // ─── Labels routes ──────────────────────────
+  {
+    method: 'GET',
+    path: 'labels',
+    handler: async (_req, res) => {
+      const defaultLabels = Object.entries(lunaLabels)
+        .filter(([, id]) => id !== null)
+        .map(([key, id]) => ({ key, name: `LUNA/${key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, '-$1')}`, id, type: 'default' as const }))
+      const customLabelsOut = resolvedCustomLabels.map((l) => ({ key: l.name, name: l.name, id: l.id, type: 'custom' as const, instruction: l.instruction }))
+      jsonResponse(res, 200, { labels: [...defaultLabels, ...customLabelsOut] })
+    },
+  },
+  {
+    method: 'GET',
+    path: 'label-instructions',
+    handler: async (_req, res) => {
+      // Returns label instructions for the agent/engine to know when to apply each label
+      const instructions = resolvedCustomLabels.map((l) => ({
+        name: l.name,
+        id: l.id,
+        instruction: l.instruction,
+      }))
+      jsonResponse(res, 200, { customLabels: instructions })
+    },
+  },
+  {
+    method: 'POST',
+    path: 'apply-label',
+    handler: async (req, res) => {
+      if (!gmailAdapter) {
+        jsonResponse(res, 400, { error: 'Gmail adapter not initialized' })
+        return
+      }
+      try {
+        const body = await parseBody<{ messageId: string; labelId: string }>(req)
+        if (!body.messageId || !body.labelId) {
+          jsonResponse(res, 400, { error: 'Missing messageId or labelId' })
+          return
+        }
+        await gmailAdapter.addLabels(body.messageId, [body.labelId])
+        jsonResponse(res, 200, { ok: true })
+      } catch (err) {
+        jsonResponse(res, 500, { error: 'Failed to apply label: ' + String(err) })
+      }
+    },
+  },
   {
     method: 'POST',
     path: 'check-noreply',
@@ -497,6 +595,7 @@ const apiRoutes: ApiRoute[] = [
             const config = _registry.getConfig<EmailConfig>('gmail')
             gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
             _registry.provide('email:adapter', gmailAdapter)
+            await ensureAllLabels()
             startPolling(config.EMAIL_POLL_INTERVAL_MS)
           }
         }
@@ -538,6 +637,7 @@ const apiRoutes: ApiRoute[] = [
           const config = _registry.getConfig<EmailConfig>('gmail')
           gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
           _registry.provide('email:adapter', gmailAdapter)
+          await ensureAllLabels()
           startPolling(config.EMAIL_POLL_INTERVAL_MS)
         }
 
@@ -619,6 +719,12 @@ const manifest: ModuleManifest = {
     EMAIL_BLOCKED_DOMAINS: z.string().default(''),
     // Rate limiting
     EMAIL_ACCOUNT_TYPE: z.string().default('workspace'),
+    EMAIL_RATE_LIMIT_PER_HOUR: numEnv(0),  // 0 = use defaults per account type
+    EMAIL_RATE_LIMIT_PER_DAY: numEnv(0),   // 0 = use defaults per account type
+    // Always CC
+    EMAIL_ALWAYS_CC: z.string().default(''),
+    // Custom labels (JSON array of { name, instruction })
+    EMAIL_CUSTOM_LABELS: z.string().default('[]'),
     // Batching
     EMAIL_BATCH_WAIT_MS: numEnv(0),
     // Session management
@@ -708,6 +814,14 @@ const manifest: ModuleManifest = {
         ],
       },
       {
+        key: 'EMAIL_ALWAYS_CC',
+        type: 'text',
+        width: 'half',
+        label: { es: 'Siempre copiar a (CC)', en: 'Always CC to' },
+        info: { es: 'Direcciones separadas por coma que recibiran copia de todos los emails enviados por el agente.', en: 'Comma-separated addresses that receive a copy of all emails sent by the agent.' },
+        placeholder: 'supervisor@empresa.com, ventas@empresa.com',
+      },
+      {
         key: 'EMAIL_BATCH_WAIT_MS',
         type: 'number',
         width: 'half',
@@ -774,12 +888,40 @@ const manifest: ModuleManifest = {
       {
         key: 'EMAIL_ACCOUNT_TYPE',
         type: 'select',
+        width: 'half',
         label: { es: 'Tipo de cuenta', en: 'Account type' },
-        info: { es: 'Workspace: 80/h, 2000/dia. Free: 20/h, 500/dia. Controla los limites de envio automatico.', en: 'Workspace: 80/h, 2000/day. Free: 20/h, 500/day. Controls automatic send limits.' },
+        info: { es: 'Controla los limites de envio por defecto. Workspace: 80/h, 1500/dia. Free: 20/h, 400/dia.', en: 'Controls default send limits. Workspace: 80/h, 1500/day. Free: 20/h, 400/day.' },
         options: [
           { value: 'workspace', label: 'Google Workspace' },
           { value: 'free', label: 'Gmail (free)' },
         ],
+      },
+      {
+        key: 'EMAIL_RATE_LIMIT_PER_HOUR',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Limite por hora (custom)', en: 'Hourly limit (custom)' },
+        info: { es: 'Sobreescribe el limite por hora. 0 = usar default del tipo de cuenta.', en: 'Override hourly limit. 0 = use account type default.' },
+      },
+      {
+        key: 'EMAIL_RATE_LIMIT_PER_DAY',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Limite por dia (custom)', en: 'Daily limit (custom)' },
+        info: { es: 'Sobreescribe el limite diario. 0 = usar default del tipo de cuenta.', en: 'Override daily limit. 0 = use account type default.' },
+      },
+      // ── Etiquetas personalizadas ──
+      { key: '_divider_labels', type: 'divider', label: { es: 'Etiquetas personalizadas', en: 'Custom labels' } },
+      {
+        key: 'EMAIL_CUSTOM_LABELS',
+        type: 'textarea',
+        rows: 5,
+        label: { es: 'Etiquetas personalizadas (JSON)', en: 'Custom labels (JSON)' },
+        info: {
+          es: 'Array JSON de etiquetas extra. Cada una tiene "name" (nombre en Gmail) e "instruction" (instruccion para el agente). Las etiquetas default (Agent, Escalated, Converted, Human-Loop, Ignored) siempre existen. Ejemplo: [{"name":"Hot-Lead","instruction":"Aplicar cuando el lead muestra interes fuerte de compra"}]',
+          en: 'JSON array of extra labels. Each has "name" (Gmail label name) and "instruction" (instruction for the agent). Default labels (Agent, Escalated, Converted, Human-Loop, Ignored) always exist. Example: [{"name":"Hot-Lead","instruction":"Apply when lead shows strong buying intent"}]',
+        },
+        placeholder: '[{"name":"Hot-Lead","instruction":"Apply when lead shows strong buying intent"}]',
       },
       // ── Sesiones ──
       { key: '_divider_sessions', type: 'divider', label: { es: 'Sesiones', en: 'Sessions' } },
@@ -960,6 +1102,9 @@ const manifest: ModuleManifest = {
       registry.provide('gmail:oauth-manager', standaloneOAuth)
     }
 
+    // Expose label accessor so engine/tools can read custom label instructions
+    registry.provide('gmail:label-instructions', () => resolvedCustomLabels)
+
     // Cargar estado previo
     const stateRow = await db.query(
       `SELECT last_history_id, messages_processed FROM email_state WHERE id = 'primary'`,
@@ -969,10 +1114,14 @@ const manifest: ModuleManifest = {
       pollerState.messagesProcessed = stateRow.rows[0].messages_processed ?? 0
     }
 
-    // Initialize rate limiter
+    // Initialize rate limiter with optional custom limits
     const redis = registry.getRedis()
     const accountType = (config.EMAIL_ACCOUNT_TYPE === 'free' ? 'free' : 'workspace') as 'workspace' | 'free'
-    rateLimiter = new EmailRateLimiter(accountType, redis)
+    const customLimits = {
+      perHour: config.EMAIL_RATE_LIMIT_PER_HOUR || undefined,
+      perDay: config.EMAIL_RATE_LIMIT_PER_DAY || undefined,
+    }
+    rateLimiter = new EmailRateLimiter(accountType, redis, customLimits)
 
     // Hook: cuando el engine quiere enviar email
     registry.addHook('gmail', 'message:send', async (payload) => {
@@ -982,10 +1131,13 @@ const manifest: ModuleManifest = {
       // Read fresh config for hot-reloadable params
       const freshConfig = _registry.getConfig<EmailConfig>('gmail')
 
-      // Sync rate limiter account type if changed
+      // Sync rate limiter account type and custom limits if changed
       if (rateLimiter) {
         const freshAccountType = (freshConfig.EMAIL_ACCOUNT_TYPE === 'free' ? 'free' : 'workspace') as 'workspace' | 'free'
-        rateLimiter.updateAccountType(freshAccountType)
+        rateLimiter.updateAccountType(freshAccountType, {
+          perHour: freshConfig.EMAIL_RATE_LIMIT_PER_HOUR || undefined,
+          perDay: freshConfig.EMAIL_RATE_LIMIT_PER_DAY || undefined,
+        })
       }
 
       // Rate limit check
@@ -1053,20 +1205,9 @@ const manifest: ModuleManifest = {
       }
     })
 
-    // Initialize LUNA labels if connected
+    // Initialize LUNA labels if connected (default + custom)
     if (oauthConnected && gmailAdapter) {
-      try {
-        lunaLabels = {
-          agent: await gmailAdapter.ensureLabel('LUNA/Agent'),
-          escalated: await gmailAdapter.ensureLabel('LUNA/Escalated'),
-          converted: await gmailAdapter.ensureLabel('LUNA/Converted'),
-          humanLoop: await gmailAdapter.ensureLabel('LUNA/Human-Loop'),
-          ignored: await gmailAdapter.ensureLabel('LUNA/Ignored'),
-        }
-        logger.info({ lunaLabels }, 'LUNA Gmail labels initialized')
-      } catch (err) {
-        logger.warn({ err }, 'Failed to initialize LUNA labels — label features disabled')
-      }
+      await ensureAllLabels()
     }
 
     // Hook: react to contact status changes (escalation, conversion, etc.)
@@ -1122,6 +1263,14 @@ const manifest: ModuleManifest = {
         }
       } catch (err) {
         logger.warn({ contactId: payload.contactId, newStatus, err }, 'Failed to update Gmail labels on status change')
+      }
+    })
+
+    // Hook: re-ensure labels on config apply (custom labels may have changed)
+    registry.addHook('gmail', 'console:config_applied', async () => {
+      if (gmailAdapter) {
+        logger.info('Config applied — re-ensuring Gmail labels')
+        await ensureAllLabels()
       }
     })
 
@@ -1205,6 +1354,7 @@ const manifest: ModuleManifest = {
     gmailAdapter = null
     _registry = null
     lunaLabels = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
+    resolvedCustomLabels = []
     rateLimiter = null
   },
 }

@@ -377,6 +377,8 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           writeEnvFile(envFile, updates)
           await configStore.setMultiple(registry.getDb(), updates)
           logger.info(`Config saved: ${Object.keys(updates).join(', ')}`)
+          // Fire config_saved hook so modules can react
+          await registry.runHook('console:config_saved', { keys: Object.keys(updates) })
         } catch (err) {
           logger.error({ err }, 'Failed to save config')
           res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
@@ -401,7 +403,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             await configStore.setMultiple(registry.getDb(), updates)
           }
           reloadKernelConfig()
-          logger.info('Config saved and hot-reloaded')
+          // Reload all module configs from fresh env + DB, then notify modules
+          await registry.reloadAllModuleConfigs()
+          if (Object.keys(updates).length > 0) {
+            await registry.runHook('console:config_saved', { keys: Object.keys(updates) })
+          }
+          await registry.runHook('console:config_applied', {})
+          logger.info('Config saved, reloaded and applied')
         } catch (err) {
           logger.error({ err }, 'Failed to apply config')
           res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
@@ -660,9 +668,10 @@ export function createApiRoutes(): ApiRoute[] {
 
           try {
             const { getRegistryRef } = await import('./manifest-ref.js')
-            const registry = getRegistryRef()
-            if (registry) {
-              await configStore.setMultiple(registry.getDb(), updates)
+            const reg = getRegistryRef()
+            if (reg) {
+              await configStore.setMultiple(reg.getDb(), updates)
+              await reg.runHook('console:config_saved', { keys: Object.keys(updates) })
             }
           } catch (err) {
             logger.warn({ err }, 'Could not write config to DB, .env was updated')
@@ -684,7 +693,13 @@ export function createApiRoutes(): ApiRoute[] {
       handler: async (_req, res) => {
         try {
           reloadKernelConfig()
-          logger.info('Config hot-reloaded from disk')
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const reg = getRegistryRef()
+          if (reg) {
+            await reg.reloadAllModuleConfigs()
+            await reg.runHook('console:config_applied', {})
+          }
+          logger.info('Config hot-reloaded and applied')
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           logger.error({ err }, 'Failed to reload config')

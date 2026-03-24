@@ -22,6 +22,12 @@ export interface EmailConfig {
   EMAIL_BLOCKED_DOMAINS: string   // comma-separated
   // Rate limiting
   EMAIL_ACCOUNT_TYPE: 'workspace' | 'free'
+  EMAIL_RATE_LIMIT_PER_HOUR: number
+  EMAIL_RATE_LIMIT_PER_DAY: number
+  // Always CC
+  EMAIL_ALWAYS_CC: string
+  // Custom labels
+  EMAIL_CUSTOM_LABELS: string  // JSON array of { name, instruction }
   // Batching
   EMAIL_BATCH_WAIT_MS: number
   // Session management
@@ -45,6 +51,17 @@ export interface LunaLabelIds {
   converted: string | null
   humanLoop: string | null
   ignored: string | null
+}
+
+/** Custom label defined by user in console. Agent uses 'instruction' to decide when to apply it. */
+export interface CustomLabel {
+  name: string        // Label name in Gmail (e.g. "LUNA/Hot-Lead")
+  instruction: string // Instruction for the agent (e.g. "Apply when lead shows strong buying intent")
+}
+
+/** Resolved custom label with Gmail ID */
+export interface ResolvedCustomLabel extends CustomLabel {
+  id: string
 }
 
 export interface EmailMessage {

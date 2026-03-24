@@ -216,19 +216,48 @@ export class GmailAdapter {
   async sendEmail(options: EmailSendOptions): Promise<{ messageId: string; threadId: string }> {
     const rawEmail = this.buildRawEmail(options)
 
-    const res = await this.gmail.users.messages.send({
-      userId: 'me',
-      requestBody: {
-        raw: rawEmail,
-        threadId: options.threadId,
-      },
-    })
+    // Retry with exponential backoff on 429/5xx errors
+    const maxRetries = 3
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await this.gmail.users.messages.send({
+          userId: 'me',
+          requestBody: {
+            raw: rawEmail,
+            threadId: options.threadId,
+          },
+        })
 
-    logger.info({ to: options.to, subject: options.subject, messageId: res.data.id }, 'Email sent')
-    return {
-      messageId: res.data.id ?? '',
-      threadId: res.data.threadId ?? '',
+        logger.info({ to: options.to, subject: options.subject, messageId: res.data.id }, 'Email sent')
+        return {
+          messageId: res.data.id ?? '',
+          threadId: res.data.threadId ?? '',
+        }
+      } catch (err: unknown) {
+        const status = (err as { code?: number })?.code ?? (err as { status?: number })?.status ?? 0
+        const isRetryable = status === 429 || status === 500 || status === 503
+
+        if (isRetryable && attempt < maxRetries) {
+          const delayMs = Math.min(1000 * Math.pow(2, attempt), 8000)
+          logger.warn({ attempt: attempt + 1, status, delayMs, to: options.to }, 'Gmail API rate limit or server error — retrying')
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+          continue
+        }
+
+        // 403 daily limit or non-retryable
+        if (status === 403) {
+          const message = (err as { message?: string })?.message ?? ''
+          if (message.includes('dailyLimitExceeded') || message.includes('userRateLimitExceeded')) {
+            logger.error({ to: options.to, status }, 'Gmail daily/user quota exceeded — not retrying')
+          }
+        }
+
+        throw err
+      }
     }
+
+    // Should not reach here, but TypeScript needs it
+    throw new Error('sendEmail: max retries exceeded')
   }
 
   async reply(options: EmailReplyOptions): Promise<{ messageId: string; threadId: string }> {
@@ -483,7 +512,13 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
 
     // Headers
     lines.push(`To: ${options.to.join(', ')}`)
-    if (options.cc && options.cc.length > 0) lines.push(`Cc: ${options.cc.join(', ')}`)
+
+    // Merge explicit CC with always-CC from config
+    const alwaysCc = this.config.EMAIL_ALWAYS_CC
+      ? this.config.EMAIL_ALWAYS_CC.split(',').map((s) => s.trim()).filter(Boolean)
+      : []
+    const allCc = [...new Set([...(options.cc ?? []), ...alwaysCc])]
+    if (allCc.length > 0) lines.push(`Cc: ${allCc.join(', ')}`)
     if (options.bcc && options.bcc.length > 0) lines.push(`Bcc: ${options.bcc.join(', ')}`)
     lines.push(`Subject: =?UTF-8?B?${Buffer.from(options.subject).toString('base64')}?=`)
     lines.push('MIME-Version: 1.0')

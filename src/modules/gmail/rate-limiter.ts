@@ -1,15 +1,16 @@
 // LUNA — Module: gmail — Rate Limiter
 // Redis-backed rate limiter for Gmail API send operations.
-// Limits are hardcoded per account type to match Gmail's actual limits.
+// Default limits are conservative (below Gmail's actual API caps).
+// Can be overridden via config (EMAIL_RATE_LIMIT_PER_HOUR, EMAIL_RATE_LIMIT_PER_DAY).
 
 import pino from 'pino'
 import type IoRedis from 'ioredis'
 
 const logger = pino({ name: 'email:rate-limiter' })
 
-const LIMITS = {
-  workspace: { perHour: 80, perDay: 2000 },
-  free: { perHour: 20, perDay: 500 },
+const DEFAULT_LIMITS = {
+  workspace: { perHour: 80, perDay: 1500 },
+  free: { perHour: 20, perDay: 400 },
 } as const
 
 export interface RateLimitUsage {
@@ -17,6 +18,8 @@ export interface RateLimitUsage {
   daily: number
   limits: { perHour: number; perDay: number }
   canSend: boolean
+  remainingHourly: number
+  remainingDaily: number
 }
 
 export class EmailRateLimiter {
@@ -25,8 +28,13 @@ export class EmailRateLimiter {
   constructor(
     private accountType: 'workspace' | 'free',
     private redis: IoRedis,
+    customLimits?: { perHour?: number; perDay?: number },
   ) {
-    this.limits = LIMITS[accountType] ?? LIMITS.workspace
+    const defaults = DEFAULT_LIMITS[accountType] ?? DEFAULT_LIMITS.workspace
+    this.limits = {
+      perHour: customLimits?.perHour ?? defaults.perHour,
+      perDay: customLimits?.perDay ?? defaults.perDay,
+    }
   }
 
   async canSend(): Promise<boolean> {
@@ -60,12 +68,18 @@ export class EmailRateLimiter {
       daily,
       limits: this.limits,
       canSend: hourly < this.limits.perHour && daily < this.limits.perDay,
+      remainingHourly: Math.max(0, this.limits.perHour - hourly),
+      remainingDaily: Math.max(0, this.limits.perDay - daily),
     }
   }
 
-  updateAccountType(type: 'workspace' | 'free'): void {
+  updateAccountType(type: 'workspace' | 'free', customLimits?: { perHour?: number; perDay?: number }): void {
     this.accountType = type
-    this.limits = LIMITS[type] ?? LIMITS.workspace
+    const defaults = DEFAULT_LIMITS[type] ?? DEFAULT_LIMITS.workspace
+    this.limits = {
+      perHour: customLimits?.perHour ?? defaults.perHour,
+      perDay: customLimits?.perDay ?? defaults.perDay,
+    }
   }
 
   private async getHourlyCount(): Promise<number> {
