@@ -12,7 +12,7 @@ import * as configStore from '../../kernel/config-store.js'
 import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
-import type { EmailConfig, EmailPollerState, EmailMessage } from './types.js'
+import type { EmailConfig, EmailPollerState, EmailMessage, LunaLabelIds } from './types.js'
 
 const logger = pino({ name: 'gmail' })
 
@@ -23,6 +23,7 @@ let lastHistoryId: string | null = null
 let standaloneOAuth: EmailOAuthManager | null = null
 // Indica si email usa su propio OAuth (true) o el de google-apps (false)
 let usingStandaloneAuth = false
+let lunaLabels: LunaLabelIds = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
 
 const pollerState: EmailPollerState = {
   status: 'stopped',
@@ -71,6 +72,10 @@ async function runMigrations(db: import('pg').Pool): Promise<void> {
       updated_at TIMESTAMPTZ DEFAULT now()
     )
   `)
+  // Phase 2: additional columns for label tracking and session management
+  await db.query(`ALTER TABLE email_threads ADD COLUMN IF NOT EXISTS last_message_gmail_id TEXT`)
+  await db.query(`ALTER TABLE email_threads ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ`)
+  await db.query(`ALTER TABLE email_threads ADD COLUMN IF NOT EXISTS followup_sent_at TIMESTAMPTZ`)
   logger.info('Email migrations complete')
 }
 
@@ -124,14 +129,14 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
 
   const config = _registry.getConfig<EmailConfig>('gmail')
 
-  // Track thread
+  // Track thread (including Gmail message ID for label operations)
   const db = _registry.getDb()
   await db.query(`
-    INSERT INTO email_threads (thread_id, contact_id, subject, last_message_at, message_count)
-    VALUES ($1, $2, $3, $4, 1)
+    INSERT INTO email_threads (thread_id, contact_id, subject, last_message_at, message_count, last_message_gmail_id)
+    VALUES ($1, $2, $3, $4, 1, $5)
     ON CONFLICT (thread_id) DO UPDATE SET
-      last_message_at = $4, message_count = email_threads.message_count + 1
-  `, [msg.threadId, msg.from, msg.subject, msg.date])
+      last_message_at = $4, message_count = email_threads.message_count + 1, last_message_gmail_id = $5
+  `, [msg.threadId, msg.from, msg.subject, msg.date, msg.id])
 
   // Construir contenido para el engine
   const attachmentSummary = msg.attachments.length > 0
@@ -159,6 +164,13 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
   if (config.EMAIL_AUTO_MARK_READ) {
     await gmailAdapter.markAsRead(msg.id).catch((err) => {
       logger.warn({ messageId: msg.id, err }, 'Failed to mark email as read')
+    })
+  }
+
+  // Apply LUNA/Agent label
+  if (lunaLabels.agent) {
+    await gmailAdapter.addLabels(msg.id, [lunaLabels.agent]).catch((err) => {
+      logger.warn({ messageId: msg.id, err }, 'Failed to apply LUNA/Agent label')
     })
   }
 
@@ -902,6 +914,78 @@ const manifest: ModuleManifest = {
       }
     })
 
+    // Initialize LUNA labels if connected
+    if (oauthConnected && gmailAdapter) {
+      try {
+        lunaLabels = {
+          agent: await gmailAdapter.ensureLabel('LUNA/Agent'),
+          escalated: await gmailAdapter.ensureLabel('LUNA/Escalated'),
+          converted: await gmailAdapter.ensureLabel('LUNA/Converted'),
+          humanLoop: await gmailAdapter.ensureLabel('LUNA/Human-Loop'),
+          ignored: await gmailAdapter.ensureLabel('LUNA/Ignored'),
+        }
+        logger.info({ lunaLabels }, 'LUNA Gmail labels initialized')
+      } catch (err) {
+        logger.warn({ err }, 'Failed to initialize LUNA labels — label features disabled')
+      }
+    }
+
+    // Hook: react to contact status changes (escalation, conversion, etc.)
+    registry.addHook('gmail', 'contact:status_changed', async (payload) => {
+      if (!gmailAdapter || !_registry) return
+
+      const db = _registry.getDb()
+      // Find the email thread for this contact
+      const threadRow = await db.query(
+        `SELECT thread_id, last_message_gmail_id FROM email_threads WHERE contact_id = $1 ORDER BY last_message_at DESC LIMIT 1`,
+        [payload.contactId],
+      ).catch(() => ({ rows: [] }))
+
+      const row = threadRow.rows[0] as { thread_id: string; last_message_gmail_id: string } | undefined
+      if (!row?.last_message_gmail_id) return
+
+      const msgId = row.last_message_gmail_id
+      const newStatus = payload.to as string
+
+      try {
+        // Escalation to human
+        if (newStatus === 'human_handoff' || newStatus === 'escalated') {
+          const labelsToAdd = [lunaLabels.escalated, lunaLabels.humanLoop].filter(Boolean) as string[]
+          if (labelsToAdd.length > 0) await gmailAdapter.addLabels(msgId, labelsToAdd)
+          if (lunaLabels.agent) await gmailAdapter.removeLabels(msgId, [lunaLabels.agent]).catch(() => {})
+          await gmailAdapter.markAsUnread(msgId).catch(() => {})
+          await gmailAdapter.starMessage(msgId).catch(() => {})
+          await gmailAdapter.markAsImportant(msgId).catch(() => {})
+          logger.info({ contactId: payload.contactId, msgId }, 'Email escalated — labels + star + unread applied')
+        }
+
+        // Agent takes back from human
+        if (newStatus === 'active' && payload.from === 'human_handoff') {
+          if (lunaLabels.humanLoop) await gmailAdapter.removeLabels(msgId, [lunaLabels.humanLoop]).catch(() => {})
+          if (lunaLabels.agent) await gmailAdapter.addLabels(msgId, [lunaLabels.agent]).catch(() => {})
+          await gmailAdapter.unstarMessage(msgId).catch(() => {})
+          await gmailAdapter.removeImportant(msgId).catch(() => {})
+          logger.info({ contactId: payload.contactId, msgId }, 'Email de-escalated — human loop labels removed')
+        }
+
+        // Converted lead
+        if (newStatus === 'qualified' || newStatus === 'scheduled') {
+          const labelsToAdd = [lunaLabels.converted].filter(Boolean) as string[]
+          if (labelsToAdd.length > 0) await gmailAdapter.addLabels(msgId, labelsToAdd)
+          if (lunaLabels.agent) await gmailAdapter.removeLabels(msgId, [lunaLabels.agent]).catch(() => {})
+          logger.info({ contactId: payload.contactId, newStatus }, 'Email contact converted — label applied')
+        }
+
+        // Blocked / not interested
+        if (newStatus === 'blocked' || newStatus === 'not_interested') {
+          if (lunaLabels.agent) await gmailAdapter.removeLabels(msgId, [lunaLabels.agent]).catch(() => {})
+          logger.info({ contactId: payload.contactId, newStatus }, 'Email contact disengaged — agent label removed')
+        }
+      } catch (err) {
+        logger.warn({ contactId: payload.contactId, newStatus, err }, 'Failed to update Gmail labels on status change')
+      }
+    })
+
     // Iniciar polling si OAuth está conectado
     if (oauthConnected && gmailAdapter) {
       startPolling(config.EMAIL_POLL_INTERVAL_MS)
@@ -921,6 +1005,7 @@ const manifest: ModuleManifest = {
     usingStandaloneAuth = false
     gmailAdapter = null
     _registry = null
+    lunaLabels = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
   },
 }
 
