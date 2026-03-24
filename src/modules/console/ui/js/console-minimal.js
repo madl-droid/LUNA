@@ -3,6 +3,89 @@
 // dirty tracking, model dropdown switch, model scanner, reset DB, Google OAuth
 
 (function () {
+
+  // ═══ Custom dropdown (replaces native <select>) ═══
+  // Converts any <select> with class "js-custom-select" into a styled dropdown.
+  // After conversion, dispatches 'change' on the hidden <select> so existing listeners work.
+
+  function initCustomSelects() {
+    document.querySelectorAll('select.js-custom-select').forEach(function (sel) {
+      if (sel.getAttribute('data-custom-init')) return
+      sel.setAttribute('data-custom-init', '1')
+      sel.style.display = 'none'
+
+      var wrap = document.createElement('div')
+      wrap.className = 'custom-select'
+
+      var btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'custom-select-btn'
+      var arrowSvg = '<svg class="custom-select-arrow" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+      function updateLabel() {
+        var opt = sel.options[sel.selectedIndex]
+        btn.innerHTML = (opt ? opt.textContent : '') + ' ' + arrowSvg
+      }
+      updateLabel()
+
+      var panel = document.createElement('div')
+      panel.className = 'custom-select-panel'
+
+      function buildOptions() {
+        panel.innerHTML = ''
+        for (var i = 0; i < sel.options.length; i++) {
+          var opt = sel.options[i]
+          var item = document.createElement('button')
+          item.type = 'button'
+          item.className = 'custom-select-option' + (opt.selected ? ' selected' : '')
+          item.textContent = opt.textContent
+          item.setAttribute('data-value', opt.value)
+          item.addEventListener('click', (function (val) {
+            return function () {
+              sel.value = val
+              sel.dispatchEvent(new Event('change'))
+              wrap.classList.remove('open')
+              updateLabel()
+              // Update selected class
+              panel.querySelectorAll('.custom-select-option').forEach(function (o) {
+                o.classList.toggle('selected', o.getAttribute('data-value') === val)
+              })
+            }
+          })(opt.value))
+          panel.appendChild(item)
+        }
+      }
+      buildOptions()
+
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation()
+        // Close other open dropdowns
+        document.querySelectorAll('.custom-select.open').forEach(function (d) {
+          if (d !== wrap) d.classList.remove('open')
+        })
+        wrap.classList.toggle('open')
+      })
+
+      sel.parentNode.insertBefore(wrap, sel)
+      wrap.appendChild(btn)
+      wrap.appendChild(panel)
+      wrap.appendChild(sel) // keep hidden select inside for form submission
+    })
+
+    // Close on outside click
+    document.addEventListener('click', function () {
+      document.querySelectorAll('.custom-select.open').forEach(function (d) {
+        d.classList.remove('open')
+      })
+    })
+  }
+
+  // Init on load and after any dynamic content
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCustomSelects)
+  } else {
+    initCustomSelects()
+  }
   'use strict'
 
   // === Toast auto-dismiss ===
@@ -1308,6 +1391,74 @@
   // Legacy aliases
   window.saveGoogleChatKey = function (lang) { window.saveWizardFields('google-chat', lang, 'validate-key') }
   window.saveTwilioCredentials = function (lang) { window.saveWizardFields('twilio-voice', lang, null) }
+
+  // ── Budget modal ──
+  // Persists CHANNEL_BUDGET_{channelId} to config_store via /console/save + /console/apply
+  window.openBudgetModal = function (channelId, lang, currentBudget) {
+    var isEs = (lang || 'es') === 'es'
+    var title = isEs ? 'Configurar presupuesto' : 'Set budget'
+    var note = isEs
+      ? 'Presupuesto mensual (30 dias) en USD. Se ajusta proporcionalmente al periodo seleccionado en el filtro.'
+      : 'Monthly budget (30 days) in USD. Adjusts proportionally to the selected filter period.'
+    var saveLabel = isEs ? 'Guardar' : 'Save'
+    var cancelLabel = isEs ? 'Descartar' : 'Discard'
+    var inputLabel = isEs ? 'Presupuesto mensual (USD)' : 'Monthly budget (USD)'
+
+    var existing = document.getElementById('budget-modal')
+    if (existing) existing.remove()
+
+    var modal = document.createElement('div')
+    modal.id = 'budget-modal'
+    modal.className = 'wizard-overlay'
+    modal.innerHTML = '<div class="wizard-modal" style="max-width:400px">'
+      + '<button class="wizard-close" onclick="closeBudgetModal()">&times;</button>'
+      + '<div class="wizard-steps">'
+      + '<div class="wizard-title">' + title + '</div>'
+      + '<p class="wizard-text" style="font-size:0.82rem;color:var(--on-surface-variant);margin-bottom:16px">' + note + '</p>'
+      + '<label class="wizard-label">' + inputLabel + '</label>'
+      + '<input type="number" id="budget-input" class="wizard-input" min="0" step="1" value="' + (currentBudget || '') + '" placeholder="0">'
+      + '<div id="budget-error" class="wizard-error" style="display:none"></div>'
+      + '<div class="wizard-actions">'
+      + '<button class="wizard-btn wizard-btn-secondary" onclick="closeBudgetModal()">' + cancelLabel + '</button>'
+      + '<button class="wizard-btn wizard-btn-primary" onclick="saveBudget(\'' + channelId + '\', \'' + lang + '\')">' + saveLabel + '</button>'
+      + '</div>'
+      + '</div></div>'
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeBudgetModal() })
+    document.body.appendChild(modal)
+    var input = document.getElementById('budget-input')
+    if (input) input.focus()
+  }
+
+  window.closeBudgetModal = function () {
+    var m = document.getElementById('budget-modal')
+    if (m) m.remove()
+  }
+
+  window.saveBudget = function (channelId, lang) {
+    var isEs = (lang || 'es') === 'es'
+    var input = document.getElementById('budget-input')
+    var errEl = document.getElementById('budget-error')
+    if (!input) return
+    var val = parseInt(input.value, 10)
+    if (isNaN(val) || val < 0) {
+      if (errEl) { errEl.textContent = isEs ? 'Ingresa un valor valido' : 'Enter a valid value'; errEl.style.display = 'block' }
+      return
+    }
+    var key = 'CHANNEL_BUDGET_' + channelId.toUpperCase().replace(/-/g, '_')
+    var body = '_section=' + encodeURIComponent(channelId) + '&_lang=' + encodeURIComponent(lang) + '&' + encodeURIComponent(key) + '=' + val
+    fetch('/console/save', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
+      .then(function () {
+        return fetch('/console/apply', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: '_section=' + encodeURIComponent(channelId) + '&_lang=' + encodeURIComponent(lang) })
+      })
+      .then(function () {
+        closeBudgetModal()
+        showToast(isEs ? 'Presupuesto guardado' : 'Budget saved', 'success')
+        window.location.reload()
+      })
+      .catch(function () {
+        if (errEl) { errEl.textContent = isEs ? 'Error al guardar' : 'Save error'; errEl.style.display = 'block' }
+      })
+  }
 
   // Disconnect channel — confirm then call the channel's disconnect API
   window.channelDisconnect = function (channelId, lang) {

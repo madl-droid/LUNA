@@ -90,7 +90,7 @@ const manifest: ModuleManifest = {
   }),
 
   console: {
-    title: { es: 'WhatsApp (Baileys)', en: 'WhatsApp (Baileys)' },
+    title: { es: 'WhatsApp', en: 'WhatsApp' },
     info: {
       es: 'Conexión directa a WhatsApp. Credenciales almacenadas en la base de datos, no en el filesystem.',
       en: 'Direct WhatsApp connection. Credentials stored in database, not filesystem.',

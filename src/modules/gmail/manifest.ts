@@ -521,7 +521,7 @@ const manifest: ModuleManifest = {
   }),
 
   console: {
-    title: { es: 'Email (Gmail)', en: 'Email (Gmail)' },
+    title: { es: 'Gmail', en: 'Gmail' },
     info: {
       es: 'Canal de correo electrónico via Gmail API. Requiere Google API conectado. Los emails se procesan por el engine como mensajes.',
       en: 'Email channel via Gmail API. Requires Google API connected. Emails are processed by the engine as messages.',

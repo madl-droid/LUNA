@@ -15,6 +15,7 @@ import { pageLayout, type DynamicSidebarModule, type SidebarChannelInfo } from '
 import { renderSection, SECTION_REDIRECTS } from './templates-sections.js'
 import type { SectionData } from './templates-sections.js'
 import type { ModuleInfo } from './templates-modules.js'
+import { renderChannelSettingsPage } from './templates-channel-settings.js'
 import { renderModulePanels } from './templates-modules.js'
 import pino from 'pino'
 
@@ -537,7 +538,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       if (channelSettingsId) {
         const chMod = data.moduleStates.find(m => m.name === channelSettingsId)
         if (chMod && chMod.type === 'channel') {
-          const { renderChannelSettingsPage } = await import('./templates-channel-settings.js')
           content = renderChannelSettingsPage(chMod, sectionData)
         }
       }
@@ -577,11 +577,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         channelModules.push({ id: mod.name, name: chTitle, status: chStatus })
       }
 
+      // Get channel display name from manifest for breadcrumb/title
+      const channelDisplayName = channelSettingsId
+        ? data.moduleStates.find(m => m.name === channelSettingsId)?.console?.title?.[lang] ?? channelSettingsId
+        : undefined
+
       const html = pageLayout({
         section: sidebarSection,
         content,
         lang,
         channelSettingsId: channelSettingsId ?? undefined,
+        channelDisplayName,
         version: data.version,
         flash,
         waConnected: data.waConnected,

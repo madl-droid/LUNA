@@ -1121,7 +1121,7 @@
 /* Filter bar — reusable dashed border pattern */
 .filter-bar {
   background: transparent;
-  border: 1.5px dashed var(--outline-variant);
+  border: 1.5px dashed var(--on-surface-dim, #aaa);
   border-radius: 0.75rem;
   padding: 14px 20px;
   margin-bottom: 20px;
@@ -1148,25 +1148,88 @@
   white-space: nowrap;
 }
 
-.filter-bar .ch-filter-select,
-.filter-bar .filter-select {
-  background: var(--surface-container-low);
-  border: 1px solid var(--outline-variant);
+/* ═══ Custom dropdown (replaces native <select>) ═══ */
+.custom-select {
+  position: relative;
+  display: inline-block;
+}
+
+.custom-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-container-lowest, #fff);
+  border: none;
   border-radius: 0.5rem;
-  padding: 6px 10px;
+  padding: 8px 12px;
   font-size: 13px;
+  font-weight: 500;
   color: var(--on-surface);
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s ease;
+  box-shadow: 0 0 0 1px var(--surface-container-high, #ddd);
+  white-space: nowrap;
 }
 
-.filter-bar .ch-filter-select:focus,
-.filter-bar .filter-select:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(255, 94, 14, 0.08);
+.custom-select-btn:hover { box-shadow: 0 0 0 1px var(--on-surface-dim, #aaa); }
+.custom-select.open .custom-select-btn { box-shadow: 0 0 0 2px rgba(255, 94, 14, 0.2); }
+
+.custom-select-arrow {
+  width: 10px;
+  height: 10px;
+  color: var(--on-surface-dim, #999);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
 }
+
+.custom-select.open .custom-select-arrow { transform: rotate(180deg); }
+
+.custom-select-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  background: var(--surface-container-lowest, #fff);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow-float, 0 4px 24px rgba(0,0,0,0.12));
+  z-index: 200;
+  overflow: hidden;
+  animation: dropdownIn 0.12s ease;
+  padding: 4px 0;
+}
+
+.custom-select.open .custom-select-panel { display: block; }
+
+.custom-select-option {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--on-surface-variant);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+}
+
+.custom-select-option:hover {
+  background: var(--surface-container-low, #f5f5f5);
+}
+
+.custom-select-option.selected {
+  color: var(--primary, #FF5E0E);
+  font-weight: 600;
+}
+
+/* Legacy select hiding (in case any remain) */
+.filter-bar select.ch-filter-select,
+.filter-bar select.filter-select { display: none; }
 
 .filter-bar .ch-filter-sep,
 .filter-bar .filter-sep {
@@ -1417,61 +1480,61 @@
   gap: 16px;
 }
 
-/* ── Status banner ── */
-.chs-banner {
+/* ── Description + Error ── */
+.chs-desc {
+  font-size: 0.875rem;
+  color: var(--on-surface-variant);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+/* ── Status bar ── */
+.chs-status-bar {
   background: var(--surface-container-lowest);
   border-radius: 0.75rem;
-  padding: 20px 24px;
+  padding: 16px 20px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 28px;
+  gap: 14px;
+  margin-bottom: 24px;
 }
 
-.chs-banner-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 0.75rem;
-  background: var(--surface-container-low);
+/* Status bar reuses ch-card-icon + ch-btn-action from channel cards for consistency */
+.chs-status-bar[data-status="connected"] .ch-card-icon { border-color: var(--success); color: var(--success); background: rgba(52, 199, 89, 0.08); }
+.chs-status-bar[data-status="disconnected"] .ch-card-icon { border-color: #007aff; color: #007aff; background: rgba(0, 122, 255, 0.08); }
+.chs-status-bar[data-status="error"] .ch-card-icon { border-color: var(--error); color: var(--error); background: rgba(230, 33, 17, 0.06); }
+.chs-status-bar[data-status="inactive"] .ch-card-icon { border-color: var(--on-surface-dim); color: var(--on-surface-dim); }
+
+.chs-bar-info { flex: 1; min-width: 0; }
+
+.chs-bar-status {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--on-surface-variant);
-}
-
-.chs-banner-info { flex: 1; min-width: 0; }
-
-.chs-banner-title {
-  font-size: 0.95rem;
-  font-weight: 700;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
   color: var(--on-surface);
 }
 
-.chs-banner-desc {
+.chs-bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chs-bar-dot.connected { background: var(--success, #34c759); }
+.chs-bar-dot.disconnected { background: #007aff; }
+.chs-bar-dot.error { background: var(--error, #dc2626); }
+
+.chs-bar-detail {
   font-size: 0.8rem;
   color: var(--on-surface-variant);
   margin-top: 2px;
 }
 
-.chs-banner-status {
-  font-size: 0.78rem;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 1rem;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.chs-badge-active {
-  background: rgba(52, 199, 89, 0.1);
-  color: #1a8f3a;
-}
-
-.chs-badge-inactive {
-  background: var(--surface-container-high);
-  color: var(--on-surface-dim);
-}
+/* Connect/disconnect buttons reuse ch-btn-action from channel cards */
+.chs-status-bar .ch-btn-action { flex-shrink: 0; }
 
 /* ── Config sections ── */
 .chs-section {
@@ -1485,6 +1548,19 @@
   margin-bottom: 20px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--outline-variant, #e0e0e0);
+}
+
+/* Config panels inside channel settings: hover shadow + inner padding */
+.chs-main .panel {
+  transition: box-shadow 0.2s ease;
+}
+
+.chs-main .panel:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.chs-main .panel-body {
+  padding-top: 16px;
 }
 
 /* Override default field styles inside chs for cleaner look */
@@ -1573,82 +1649,7 @@
   line-height: 1.4;
 }
 
-/* ── Connection card (sidebar) ── */
-.chs-connection-card {
-  text-align: center;
-  padding: 28px 20px;
-}
-
-.chs-connection-icon {
-  position: relative;
-  display: inline-flex;
-  margin-bottom: 12px;
-}
-
-.chs-connection-icon svg {
-  width: 40px;
-  height: 40px;
-  color: var(--on-surface-variant);
-}
-
-.chs-connection-dot {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--surface-container-lowest, #fff);
-}
-
-.chs-connection-dot.connected { background: var(--success, #34c759); }
-.chs-connection-dot.disconnected { background: var(--on-surface-dim, #999); }
-
-.chs-connection-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--on-surface);
-  margin-bottom: 4px;
-}
-
-.chs-connection-info {
-  font-size: 0.82rem;
-  color: var(--on-surface-variant);
-  margin-bottom: 4px;
-}
-
-.chs-connection-account {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--on-surface);
-  margin-bottom: 16px;
-}
-
-.chs-connect-btn,
-.chs-reconnect-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 24px;
-  border-radius: 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border: 1px solid var(--outline-variant, #e0e0e0);
-  background: var(--surface-container-lowest, #fff);
-  color: var(--on-surface);
-  margin-top: 12px;
-}
-
-.chs-connect-btn {
-  background: var(--primary);
-  color: #fff;
-  border: none;
-}
-
-.chs-connect-btn:hover { opacity: 0.9; }
-.chs-reconnect-btn:hover { background: var(--surface-container-low); }
+/* (Connection card removed — replaced by inline status bar) */
 
 /* ── Sidebar cards ── */
 .chs-card {
@@ -1657,8 +1658,11 @@
   padding: 20px;
 }
 
-/* ── Tip card ── */
+/* ── Tip card (dashed border, no bg) ── */
 .chs-tip-card {
+  background: transparent;
+  border: 1.5px dashed var(--on-surface-dim, #aaa);
+  border-radius: 0.75rem;
   padding: 20px;
 }
 
@@ -1685,6 +1689,127 @@
   font-size: 0.8rem;
   color: var(--on-surface-variant);
   line-height: 1.5;
+}
+
+/* ── Period filter (sidebar) ── */
+.chs-period-filter {
+  background: transparent;
+  border: 1.5px dashed var(--on-surface-dim, #aaa);
+  border-radius: 0.75rem;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chs-period-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+
+/* chs-period-select styled in the shared filter-bar rule above */
+
+/* ── Budget card ── */
+.chs-budget-card { padding: 20px; }
+
+.chs-budget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.chs-budget-header .chs-activity-title { margin-bottom: 0; }
+
+.chs-budget-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--primary, #FF5E0E);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.chs-budget-edit-btn:hover {
+  background: rgba(255, 94, 14, 0.08);
+}
+
+.chs-budget-note {
+  font-size: 0.72rem;
+  color: var(--on-surface-dim);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.chs-budget-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--on-surface-variant);
+  margin-bottom: 8px;
+}
+
+.chs-budget-val {
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.chs-budget-val.chs-budget-over {
+  color: var(--error, #dc2626);
+}
+
+.chs-budget-bar {
+  height: 6px;
+  background: var(--surface-container, #e8e8e8);
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+  margin-bottom: 4px;
+}
+
+.chs-budget-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.chs-budget-bar-over {
+  height: 100%;
+}
+
+.chs-budget-warning {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--error, #dc2626);
+  margin-top: 4px;
+}
+
+.chs-budget-add-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--primary, #FF5E0E);
+  background: rgba(255, 94, 14, 0.06);
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chs-budget-add-btn:hover {
+  background: rgba(255, 94, 14, 0.12);
 }
 
 /* ── Activity card ── */

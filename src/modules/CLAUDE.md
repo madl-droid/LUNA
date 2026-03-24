@@ -27,6 +27,10 @@ import type { Registry } from '../../kernel/registry.js'
   - `instant`: mensajería instantánea (WhatsApp, Google Chat)
   - `async`: comunicación asíncrona (email)
   - `voice`: llamadas de voz (Twilio)
+- `console.title`: **OBLIGATORIO si type='channel'**. Nombre corto del canal (ej: "WhatsApp", "Gmail", "Twilio (Voz)").
+  Se usa en: sidebar submenu, cards de canales, breadcrumb, titulo de config, status bar. **Fuente única de verdad.**
+- `console.icon`: **OBLIGATORIO si type='channel'**. Icono HTML (emoji). Se sobreescribe por SVG en la UI.
+- `console.info`: **OBLIGATORIO si type='channel'**. Descripción corta bilingüe del canal.
 - `console.connectionWizard`: **OBLIGATORIO si type='channel'**. Define las instrucciones de conexión.
   - Las instrucciones DEBEN venir del módulo (no de la UI). La consola las lee del manifest.
   - Cada paso incluye título + instrucciones HTML bilingües + campos opcionales

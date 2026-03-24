@@ -122,6 +122,8 @@ export interface PageOptions {
   channelSettingsId?: string
   /** Active channel modules for sidebar submenu under Canales */
   channelModules?: SidebarChannelInfo[]
+  /** Channel display name from manifest (for channel settings pages) */
+  channelDisplayName?: string
 }
 
 // ═══════════════════════════════════════════
@@ -414,12 +416,8 @@ function renderSectionHeader(opts: PageOptions): string {
   let breadcrumb = ''
 
   if (opts.channelSettingsId) {
-    // 3rd level: Consola > Canales > ChannelName
-    const chNames: Record<string, string> = {
-      'whatsapp': 'WhatsApp (Baileys)', 'gmail': 'Gmail',
-      'google-chat': t('sec_google_chat', opts.lang), 'twilio-voice': t('sec_twilio_voice', opts.lang),
-    }
-    const chName = chNames[opts.channelSettingsId] ?? opts.channelSettingsId
+    // 3rd level: Consola > Canales > ChannelName (from manifest)
+    const chName = opts.channelDisplayName ?? opts.channelSettingsId
     breadcrumb = `<div class="ch-breadcrumb">
       <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <a href="/console/channels?lang=${opts.lang}">${channelsLbl}</a>${sep}
@@ -433,15 +431,12 @@ function renderSectionHeader(opts: PageOptions): string {
     </div>`
   }
 
-  // Channel settings page: use channel name as title, skip section desc
+  // Channel settings page: title from manifest
   if (opts.channelSettingsId) {
-    const chNames: Record<string, string> = {
-      'whatsapp': 'WhatsApp (Baileys)', 'gmail': 'Gmail',
-      'google-chat': t('sec_google_chat', opts.lang), 'twilio-voice': t('sec_twilio_voice', opts.lang),
-    }
-    const chName = chNames[opts.channelSettingsId] ?? opts.channelSettingsId
+    const configLabel = opts.lang === 'es' ? 'Configuracion' : 'Settings'
+    const chName = opts.channelDisplayName ?? opts.channelSettingsId
     return `${breadcrumb}<div class="section-header">
-      <div class="section-title">${esc(chName)}</div>
+      <div class="section-title">${configLabel} ${esc(chName)}</div>
     </div>`
   }
 

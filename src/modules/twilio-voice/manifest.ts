@@ -315,8 +315,8 @@ const manifest: ModuleManifest = {
 
   console: {
     title: {
-      es: 'Llamadas de voz (Twilio + Gemini)',
-      en: 'Voice calls (Twilio + Gemini)',
+      es: 'Twilio (Voz)',
+      en: 'Twilio (Voice)',
     },
     info: {
       es: 'Llamadas telef\u00f3nicas con IA conversacional en tiempo real usando Gemini Live.',

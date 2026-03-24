@@ -594,13 +594,14 @@ function buildChannelCards(data: SectionData): ChannelCard[] {
 
     const iconInfo = CHANNEL_ICONS[ch.id] ?? { svg: '', bg: 'rgba(0,0,0,0.05)' }
     const desc = CHANNEL_DESCRIPTIONS[ch.id]?.[lang] ?? CHANNEL_DESCRIPTIONS[ch.id]?.es ?? ''
-    const name = t('sec_' + ch.id.replace(/-/g, '_'), lang) || ch.id
+    // Read name from manifest console.title (single source of truth)
+    const name = mod?.console?.title?.[lang as 'es' | 'en'] ?? ch.id
 
     cards.push({
       id: ch.id,
       moduleName: ch.moduleName,
       channelType,
-      name: ch.id === 'gmail' ? 'Gmail' : ch.id === 'whatsapp' ? 'WhatsApp (Baileys)' : name,
+      name,
       description: desc,
       icon: iconInfo.svg,
       iconBg: iconInfo.bg,
@@ -666,19 +667,12 @@ export function renderChannelsSection(data: SectionData): string {
 
   // Period options in order
   const periods = [
-    ['1h', t('ch_period_1h', lang)],
     ['today', t('ch_period_today', lang)],
     ['24h', t('ch_period_24h', lang)],
-    ['this_week', t('ch_period_this_week', lang)],
     ['7d', t('ch_period_7d', lang)],
-    ['this_month', t('ch_period_this_month', lang)],
     ['30d', t('ch_period_30d', lang)],
-    ['this_quarter', t('ch_period_this_quarter', lang)],
     ['90d', t('ch_period_90d', lang)],
-    ['this_half', t('ch_period_this_half', lang)],
     ['180d', t('ch_period_180d', lang)],
-    ['this_year', t('ch_period_this_year', lang)],
-    ['365d', t('ch_period_365d', lang)],
   ]
   const periodOpts = periods.map(([v, l]) => `<option value="${v}"${v === '30d' ? ' selected' : ''}>${l}</option>`).join('')
 
@@ -686,12 +680,12 @@ export function renderChannelsSection(data: SectionData): string {
   const filterBar = `<div class="filter-bar">
     <div class="ch-filter-group">
       <span class="ch-filter-label">${t('ch_filter_metrics', lang)}</span>
-      <select class="ch-filter-select" id="ch-period-global">${periodOpts}</select>
+      <select class="ch-filter-select js-custom-select" id="ch-period-global">${periodOpts}</select>
     </div>
     <div class="ch-filter-sep"></div>
     <div class="ch-filter-group">
       <span class="ch-filter-label">${t('ch_filter_status', lang)}</span>
-      <select class="ch-filter-select" id="ch-filter-status">
+      <select class="ch-filter-select js-custom-select" id="ch-filter-status">
         <option value="all">${t('ch_filter_all', lang)}</option>
         <option value="active">${t('ch_filter_active', lang)}</option>
         <option value="inactive">${t('ch_filter_inactive', lang)}</option>
@@ -701,7 +695,7 @@ export function renderChannelsSection(data: SectionData): string {
     <div class="ch-filter-sep"></div>
     <div class="ch-filter-group">
       <span class="ch-filter-label">${t('ch_filter_type', lang)}</span>
-      <select class="ch-filter-select" id="ch-filter-type">
+      <select class="ch-filter-select js-custom-select" id="ch-filter-type">
         <option value="all">${t('ch_filter_all', lang)}</option>
         <option value="instant">${t('ch_type_instant', lang)}</option>
         <option value="async">${t('ch_type_async', lang)}</option>
