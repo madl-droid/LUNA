@@ -201,5 +201,6 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 
 ### Docs de referencia (consultar cuando sea relevante)
 - `docs/architecture/module-system.md` — **guía completa de creación de módulos** (tipos, lifecycle, manifest, registry, hooks, servicios, config, console)
+- `docs/architecture/channel-guide.md` — **guía completa de creación de canales** (channel-config service, hooks, hot-reload, console fields, checklist)
 - `docs/architecture/pipeline.md` — pipeline de 5 pasos y tabla de modelos LLM
 - `docs/architecture/lead-status.md` — máquina de estados de calificación de leads
