@@ -2,11 +2,10 @@
 // Main service that orchestrates attachment processing: download, extract, validate, cache.
 // Reuses knowledge extractors (PDF, DOCX, XLSX, images) — does NOT duplicate extraction logic.
 //
-// KEY DESIGN: Each attachment is processed independently (1 by 1, sequentially)
-// and persisted to DB immediately after processing. This ensures:
-// - Isolation: one attachment failure doesn't affect others
-// - Traceability: each attachment has its own DB row immediately
-// - Safety: system hard limits prevent pipeline overload
+// KEY DESIGN: Each attachment is an INDEPENDENT unit — processed, validated,
+// and persisted to DB individually. Processing runs in parallel with
+// concurrency control (max 3 simultaneous) to avoid overloading the system.
+// All results are collected and returned as a single AttachmentContext.
 
 import { randomUUID } from 'node:crypto'
 import pino from 'pino'
@@ -35,13 +34,41 @@ import { detectUrls, extractUrls } from './url-extractor.js'
 
 const logger = pino({ name: 'engine:attachments' })
 
+/** Max attachments processed simultaneously — prevents memory/CPU spikes */
+const MAX_CONCURRENT = 3
+
+/**
+ * Run async tasks in parallel with a concurrency limit.
+ * Each item is processed independently; results maintain input order.
+ */
+async function parallelWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+
+  async function runNext(): Promise<void> {
+    while (nextIndex < items.length) {
+      const i = nextIndex++
+      results[i] = await fn(items[i]!)
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => runNext())
+  await Promise.all(workers)
+  return results
+}
+
 /**
  * Process all attachments and URLs for a message.
  * Called from Phase 1 (Intake) after normalization and injection detection.
  *
- * Each attachment is processed INDEPENDENTLY and sequentially (1 by 1).
- * After each attachment is processed, it is immediately persisted to DB.
- * System hard limits are enforced before channel limits.
+ * Each attachment is processed as an INDEPENDENT file — its own extraction,
+ * validation, and DB record. Processing runs in parallel with concurrency
+ * control (MAX_CONCURRENT) so the system doesn't get overwhelmed.
+ * All results are collected into a single AttachmentContext for the engine.
  */
 export async function processAttachments(
   attachments: AttachmentMeta[],
@@ -100,44 +127,55 @@ export async function processAttachments(
     maxFileSizeMb: Math.min(channelConfig.maxFileSizeMb, SYSTEM_HARD_LIMITS.maxFileSizeMb),
   }
 
-  // Process each attachment independently and sequentially (1 by 1)
-  for (const att of attSlice) {
-    let processed: ProcessedAttachment
-
-    try {
-      processed = await processOneAttachment(
-        att, effectiveChannelConfig, engineConfig, sessionId, registry, redis,
-      )
-    } catch (err) {
-      logger.error({ filename: att.filename, err }, 'Attachment processing failed')
-      processed = {
-        id: randomUUID(),
-        filename: att.filename,
-        mimeType: att.mimeType,
-        category: resolveCategory(att.mimeType),
-        sizeBytes: att.size,
-        extractedText: null,
-        summary: null,
-        tokenEstimate: 0,
-        sizeTier: 'small',
-        cacheKey: null,
-        status: 'extraction_failed',
-        injectionRisk: false,
-        sourceType: 'file_attachment',
-        sourceRef: att.id,
+  // Process each attachment as an INDEPENDENT file, in parallel with concurrency control.
+  // Each gets its own extraction, validation, and DB row.
+  const processedResults = await parallelWithLimit(
+    attSlice,
+    MAX_CONCURRENT,
+    async (att): Promise<ProcessedAttachment> => {
+      try {
+        const processed = await processOneAttachment(
+          att, effectiveChannelConfig, engineConfig, sessionId, registry, redis,
+        )
+        // Persist to DB immediately after this individual file is done (fire-and-forget)
+        persistOneAttachment(processed, sessionId, messageId, channelName, db).catch(err =>
+          logger.warn({ err, attachmentId: processed.id, filename: processed.filename }, 'Failed to persist attachment'),
+        )
+        return processed
+      } catch (err) {
+        logger.error({ filename: att.filename, err }, 'Attachment processing failed')
+        const failed: ProcessedAttachment = {
+          id: randomUUID(),
+          filename: att.filename,
+          mimeType: att.mimeType,
+          category: resolveCategory(att.mimeType),
+          sizeBytes: att.size,
+          extractedText: null,
+          summary: null,
+          tokenEstimate: 0,
+          sizeTier: 'small',
+          cacheKey: null,
+          status: 'extraction_failed',
+          injectionRisk: false,
+          sourceType: 'file_attachment',
+          sourceRef: att.id,
+        }
+        persistOneAttachment(failed, sessionId, messageId, channelName, db).catch(e =>
+          logger.warn({ e, filename: att.filename }, 'Failed to persist failed attachment'),
+        )
+        return failed
       }
+    },
+  )
+
+  // Collect all independently-processed results into a single context
+  for (const processed of processedResults) {
+    result.attachments.push(processed)
+    if (processed.status === 'extraction_failed') {
       result.fallbackMessages.push(
-        FALLBACK_MESSAGES.extraction_failed.replace('{filename}', att.filename),
+        FALLBACK_MESSAGES.extraction_failed.replace('{filename}', processed.filename),
       )
     }
-
-    // Add to context immediately
-    result.attachments.push(processed)
-
-    // Persist to DB immediately (fire-and-forget per attachment)
-    persistOneAttachment(processed, sessionId, messageId, channelName, db).catch(err =>
-      logger.warn({ err, attachmentId: processed.id, filename: processed.filename }, 'Failed to persist attachment'),
-    )
   }
 
   // Process URLs in text
