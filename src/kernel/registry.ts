@@ -13,6 +13,7 @@ import type {
   ModuleManifest,
 } from './types.js'
 import { getAllEnv } from './config.js'
+import * as configStore from './config-store.js'
 
 const logger = pino({ name: 'registry' })
 
@@ -217,6 +218,27 @@ export class Registry {
 
   getConfig<T = Record<string, unknown>>(moduleName: string): T {
     return (this.moduleConfigs.get(moduleName) ?? {}) as T
+  }
+
+  /** Re-parse all module configSchemas with fresh env + DB values. Called on config apply. */
+  async reloadAllModuleConfigs(): Promise<void> {
+    let dbConfig: Record<string, string> = {}
+    try {
+      dbConfig = await configStore.getAll(this.db)
+    } catch { /* config_store may not be ready */ }
+    const env = { ...getAllEnv(), ...dbConfig }
+
+    for (const [name, mod] of this.modules) {
+      if (!mod.active || !mod.manifest.configSchema) continue
+      try {
+        const parsed = mod.manifest.configSchema.parse(env)
+        this.moduleConfigs.set(name, parsed as Record<string, unknown>)
+        logger.debug({ module: name }, 'Module config reloaded')
+      } catch (err) {
+        logger.warn({ module: name, err }, 'Failed to reload module config, keeping previous')
+      }
+    }
+    logger.info('All module configs reloaded from env + DB')
   }
 
   // ─── Infrastructure ──────────────────────
