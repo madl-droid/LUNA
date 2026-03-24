@@ -22,6 +22,10 @@ export class GmailAdapter {
   private noReplyPatterns: RegExp[]
   private processLabels: string[]
   private skipLabels: string[]
+  private ignoreSubjects: string[]
+  private allowedDomains: Set<string>
+  private blockedDomains: Set<string>
+  private labelCache: Map<string, string> = new Map()
 
   constructor(
     private auth: OAuth2Client,
@@ -38,6 +42,14 @@ export class GmailAdapter {
       .map((pattern) => new RegExp(pattern, 'i'))
     this.processLabels = config.EMAIL_PROCESS_LABELS.split(',').map((s) => s.trim()).filter(Boolean)
     this.skipLabels = config.EMAIL_SKIP_LABELS.split(',').map((s) => s.trim()).filter(Boolean)
+    this.ignoreSubjects = (config.EMAIL_IGNORE_SUBJECTS ?? '')
+      .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    this.allowedDomains = new Set(
+      (config.EMAIL_ALLOWED_DOMAINS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    )
+    this.blockedDomains = new Set(
+      (config.EMAIL_BLOCKED_DOMAINS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    )
   }
 
   // ─── Polling ───────────────────────────────
@@ -305,6 +317,97 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     }
   }
 
+  // ─── Label management ─────────────────────
+
+  async findLabelByName(name: string): Promise<string | null> {
+    const res = await this.gmail.users.labels.list({ userId: 'me' })
+    const labels = res.data.labels ?? []
+    const found = labels.find((l) => l.name === name)
+    return found?.id ?? null
+  }
+
+  async createLabel(name: string): Promise<string> {
+    const res = await this.gmail.users.labels.create({
+      userId: 'me',
+      requestBody: { name, labelListVisibility: 'labelShow', messageListVisibility: 'show' },
+    })
+    return res.data.id!
+  }
+
+  async ensureLabel(name: string): Promise<string> {
+    const cached = this.labelCache.get(name)
+    if (cached) return cached
+
+    let id = await this.findLabelByName(name)
+    if (!id) id = await this.createLabel(name)
+    this.labelCache.set(name, id)
+    return id
+  }
+
+  async addLabels(messageId: string, labelIds: string[]): Promise<void> {
+    if (labelIds.length === 0) return
+    await this.gmail.users.messages.modify({
+      userId: 'me',
+      id: messageId,
+      requestBody: { addLabelIds: labelIds },
+    })
+  }
+
+  async removeLabels(messageId: string, labelIds: string[]): Promise<void> {
+    if (labelIds.length === 0) return
+    await this.gmail.users.messages.modify({
+      userId: 'me',
+      id: messageId,
+      requestBody: { removeLabelIds: labelIds },
+    })
+  }
+
+  async starMessage(messageId: string): Promise<void> {
+    await this.addLabels(messageId, ['STARRED'])
+  }
+
+  async unstarMessage(messageId: string): Promise<void> {
+    await this.removeLabels(messageId, ['STARRED'])
+  }
+
+  async markAsImportant(messageId: string): Promise<void> {
+    await this.addLabels(messageId, ['IMPORTANT'])
+  }
+
+  async removeImportant(messageId: string): Promise<void> {
+    await this.removeLabels(messageId, ['IMPORTANT'])
+  }
+
+  async markAsUnread(messageId: string): Promise<void> {
+    await this.addLabels(messageId, ['UNREAD'])
+  }
+
+  async getThreadMessages(threadId: string): Promise<EmailMessage[]> {
+    const res = await this.gmail.users.threads.get({ userId: 'me', id: threadId, format: 'full' })
+    const messages: EmailMessage[] = []
+    for (const msg of res.data.messages ?? []) {
+      if (!msg.id) continue
+      const parsed = await this.getFullMessage(msg.id)
+      if (parsed) messages.push(parsed)
+    }
+    return messages
+  }
+
+  // ─── Domain & subject filtering ──────────────
+
+  isDomainBlocked(email: string): boolean {
+    const domain = email.split('@')[1]?.toLowerCase()
+    if (!domain) return false
+    if (this.allowedDomains.size > 0 && !this.allowedDomains.has(domain)) return true
+    if (this.blockedDomains.has(domain)) return true
+    return false
+  }
+
+  isSubjectIgnored(subject: string): boolean {
+    const lower = subject.toLowerCase()
+    return this.ignoreSubjects.some((pattern) => lower.includes(pattern))
+  }
+
   // ─── No-reply filtering ────────────────────
 
   isNoReply(email: string): boolean {
@@ -339,6 +442,18 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     // Skip no-reply
     if (this.isNoReply(message.from)) {
       logger.debug({ from: message.from }, 'Skipping no-reply message')
+      return true
+    }
+
+    // Skip blocked / non-allowed domains
+    if (this.isDomainBlocked(message.from)) {
+      logger.debug({ from: message.from }, 'Skipping domain-filtered message')
+      return true
+    }
+
+    // Skip ignored subjects
+    if (this.isSubjectIgnored(message.subject)) {
+      logger.debug({ subject: message.subject }, 'Skipping ignored-subject message')
       return true
     }
 
@@ -381,10 +496,16 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     }
 
     // Body — HTML es lo que va por defecto (incluye firma de Google)
+    let bodyHtml = options.bodyHtml
+    if (this.config.EMAIL_FOOTER_ENABLED && this.config.EMAIL_FOOTER_TEXT) {
+      const safeFooter = this.config.EMAIL_FOOTER_TEXT
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      bodyHtml += `<br/><hr style="border:none;border-top:1px solid #ccc;margin:16px 0"/><small style="color:#888">${safeFooter}</small>`
+    }
     lines.push('Content-Type: text/html; charset=UTF-8')
     lines.push('Content-Transfer-Encoding: base64')
     lines.push('')
-    lines.push(Buffer.from(options.bodyHtml).toString('base64'))
+    lines.push(Buffer.from(bodyHtml).toString('base64'))
 
     // Attachments
     if (hasAttachments && options.attachments) {

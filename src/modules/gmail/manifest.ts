@@ -7,7 +7,7 @@ import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery, buildBaseUrl, oauthCallbackPage } from '../../kernel/http-helpers.js'
-import { numEnv, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
+import { numEnv, numEnvMin, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
 import * as configStore from '../../kernel/config-store.js'
 import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
@@ -509,6 +509,23 @@ const manifest: ModuleManifest = {
     EMAIL_AUTO_MARK_READ: boolEnv(true),
     EMAIL_INCLUDE_SIGNATURE: boolEnv(true),
     EMAIL_MAX_HISTORY_FETCH: numEnv(20),
+    // Reply & footer
+    EMAIL_REPLY_MODE: z.string().default('reply-sender'),
+    EMAIL_FOOTER_ENABLED: boolEnv(false),
+    EMAIL_FOOTER_TEXT: z.string().default('Respondido por L.U.N.A - Agente de atencion al cliente'),
+    // Filtering
+    EMAIL_ONLY_FIRST_IN_THREAD: boolEnv(true),
+    EMAIL_IGNORE_SUBJECTS: z.string().default('Out of Office,Automatic reply,Fuera de oficina,Respuesta automatica'),
+    EMAIL_ALLOWED_DOMAINS: z.string().default(''),
+    EMAIL_BLOCKED_DOMAINS: z.string().default(''),
+    // Rate limiting
+    EMAIL_ACCOUNT_TYPE: z.string().default('workspace'),
+    // Batching
+    EMAIL_BATCH_WAIT_MS: numEnv(0),
+    // Session management
+    EMAIL_SESSION_INACTIVITY_HOURS: numEnvMin(1, 48),
+    EMAIL_PRECLOSE_FOLLOWUP_HOURS: numEnv(0),
+    EMAIL_PRECLOSE_FOLLOWUP_TEXT: z.string().default(''),
     // OAuth standalone (cuando google-apps no está activo)
     GMAIL_CLIENT_ID: z.string().default(''),
     GMAIL_CLIENT_SECRET: z.string().default(''),
@@ -530,12 +547,96 @@ const manifest: ModuleManifest = {
     group: 'channels',
     icon: '&#9993;',
     fields: [
+      // ── General ──
       {
         key: 'EMAIL_POLL_INTERVAL_MS',
         type: 'number',
+        width: 'half',
         label: { es: 'Intervalo de polling (ms)', en: 'Poll interval (ms)' },
-        info: { es: 'Cada cuántos milisegundos revisar nuevos emails (default: 60000 = 1 min)', en: 'How often to check for new emails in ms (default: 60000 = 1 min)' },
+        info: { es: 'Cada cuantos milisegundos revisar nuevos emails (default: 60000 = 1 min)', en: 'How often to check for new emails in ms (default: 60000 = 1 min)' },
       },
+      {
+        key: 'EMAIL_MAX_HISTORY_FETCH',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Max emails por poll', en: 'Max emails per poll' },
+        info: { es: 'Maximo de emails a obtener por ciclo de polling (default: 20)', en: 'Maximum emails to fetch per poll cycle (default: 20)' },
+      },
+      {
+        key: 'EMAIL_PROCESS_LABELS',
+        type: 'text',
+        width: 'half',
+        label: { es: 'Labels a procesar', en: 'Labels to process' },
+        info: { es: 'Labels de Gmail a monitorear (default: INBOX)', en: 'Gmail labels to monitor (default: INBOX)' },
+      },
+      {
+        key: 'EMAIL_SKIP_LABELS',
+        type: 'text',
+        width: 'half',
+        label: { es: 'Labels a ignorar', en: 'Labels to skip' },
+        info: { es: 'Labels que se ignoran (default: SPAM,TRASH)', en: 'Labels to ignore (default: SPAM,TRASH)' },
+      },
+      {
+        key: 'EMAIL_AUTO_MARK_READ',
+        type: 'boolean',
+        label: { es: 'Marcar como leido automaticamente', en: 'Auto mark as read' },
+        description: { es: 'Marcar emails como leidos despues de procesarlos', en: 'Mark emails as read after processing' },
+      },
+      {
+        key: 'EMAIL_INCLUDE_SIGNATURE',
+        type: 'boolean',
+        label: { es: 'Incluir firma', en: 'Include signature' },
+        description: { es: 'Incluir firma de Gmail al enviar emails', en: 'Include Gmail signature when sending emails' },
+      },
+      {
+        key: 'EMAIL_MAX_ATTACHMENT_SIZE_MB',
+        type: 'number',
+        label: { es: 'Tamano max. adjunto (MB)', en: 'Max attachment size (MB)' },
+        info: { es: 'Tamano maximo permitido por adjunto en MB (default: 16)', en: 'Maximum allowed attachment size in MB (default: 16)' },
+      },
+      // ── Respuestas ──
+      { key: '_divider_replies', type: 'divider', label: { es: 'Respuestas', en: 'Replies' } },
+      {
+        key: 'EMAIL_REPLY_MODE',
+        type: 'select',
+        width: 'half',
+        label: { es: 'Modo de respuesta', en: 'Reply mode' },
+        info: { es: 'A quien responder: solo al remitente, a todos, o que el agente decida', en: 'Who to reply to: sender only, all, or let the agent decide' },
+        options: [
+          { value: 'reply-sender', label: 'Reply sender' },
+          { value: 'reply-all', label: 'Reply all' },
+          { value: 'agent-decides', label: 'Agent decides' },
+        ],
+      },
+      {
+        key: 'EMAIL_BATCH_WAIT_MS',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Espera antes de procesar (ms)', en: 'Wait before processing (ms)' },
+        info: { es: 'Tiempo de espera para agrupar correcciones rapidas antes de procesar. 0 = procesar inmediatamente.', en: 'Wait time to batch quick corrections before processing. 0 = process immediately.' },
+      },
+      {
+        key: 'EMAIL_ONLY_FIRST_IN_THREAD',
+        type: 'boolean',
+        label: { es: 'Solo ultimo email por hilo', en: 'Only latest email per thread' },
+        description: { es: 'Si hay varios emails sin leer en un hilo, procesar solo el mas reciente', en: 'If multiple unread emails in a thread, only process the most recent' },
+      },
+      // ── Pie de email ──
+      { key: '_divider_footer', type: 'divider', label: { es: 'Pie de email', en: 'Email footer' } },
+      {
+        key: 'EMAIL_FOOTER_ENABLED',
+        type: 'boolean',
+        label: { es: 'Agregar pie de email', en: 'Add email footer' },
+        description: { es: 'Agregar un texto al final de cada email enviado por el agente', en: 'Append text at the end of every email sent by the agent' },
+      },
+      {
+        key: 'EMAIL_FOOTER_TEXT',
+        type: 'text',
+        label: { es: 'Texto del pie', en: 'Footer text' },
+        info: { es: 'Texto que aparece al final de cada email (solo si el pie esta habilitado)', en: 'Text shown at the end of each email (only if footer is enabled)' },
+      },
+      // ── Filtrado ──
+      { key: '_divider_filtering', type: 'divider', label: { es: 'Filtrado', en: 'Filtering' } },
       {
         key: 'EMAIL_NOREPLY_ADDRESSES',
         type: 'text',
@@ -549,51 +650,74 @@ const manifest: ModuleManifest = {
         info: { es: 'Patrones regex separados por coma para detectar no-reply', en: 'Comma-separated regex patterns to detect no-reply addresses' },
       },
       {
-        key: 'EMAIL_PROCESS_LABELS',
-        type: 'text',
-        label: { es: 'Labels a procesar', en: 'Labels to process' },
-        info: { es: 'Labels de Gmail a monitorear (default: INBOX)', en: 'Gmail labels to monitor (default: INBOX)' },
+        key: 'EMAIL_IGNORE_SUBJECTS',
+        type: 'tags',
+        separator: ',',
+        label: { es: 'Asuntos a ignorar', en: 'Subjects to ignore' },
+        info: { es: 'Asuntos que se ignoran automaticamente (ej: Out of Office, Respuesta automatica)', en: 'Subjects automatically ignored (e.g. Out of Office, Automatic reply)' },
       },
       {
-        key: 'EMAIL_SKIP_LABELS',
-        type: 'text',
-        label: { es: 'Labels a ignorar', en: 'Labels to skip' },
-        info: { es: 'Labels que se ignoran (default: SPAM,TRASH)', en: 'Labels to ignore (default: SPAM,TRASH)' },
+        key: 'EMAIL_ALLOWED_DOMAINS',
+        type: 'tags',
+        separator: ',',
+        label: { es: 'Dominios permitidos', en: 'Allowed domains' },
+        info: { es: 'Solo procesar emails de estos dominios (vacio = todos)', en: 'Only process emails from these domains (empty = all)' },
       },
       {
-        key: 'EMAIL_AUTO_MARK_READ',
-        type: 'boolean',
-        label: { es: 'Marcar como leído automáticamente', en: 'Auto mark as read' },
-        info: { es: 'Marcar emails como leídos después de procesarlos', en: 'Mark emails as read after processing' },
+        key: 'EMAIL_BLOCKED_DOMAINS',
+        type: 'tags',
+        separator: ',',
+        label: { es: 'Dominios bloqueados', en: 'Blocked domains' },
+        info: { es: 'Ignorar emails de estos dominios', en: 'Ignore emails from these domains' },
       },
+      // ── Limites de envio ──
+      { key: '_divider_ratelimit', type: 'divider', label: { es: 'Limites de envio', en: 'Send limits' } },
       {
-        key: 'EMAIL_MAX_HISTORY_FETCH',
+        key: 'EMAIL_ACCOUNT_TYPE',
+        type: 'select',
+        label: { es: 'Tipo de cuenta', en: 'Account type' },
+        info: { es: 'Workspace: 80/h, 2000/dia. Free: 20/h, 500/dia. Controla los limites de envio automatico.', en: 'Workspace: 80/h, 2000/day. Free: 20/h, 500/day. Controls automatic send limits.' },
+        options: [
+          { value: 'workspace', label: 'Google Workspace' },
+          { value: 'free', label: 'Gmail (free)' },
+        ],
+      },
+      // ── Sesiones ──
+      { key: '_divider_sessions', type: 'divider', label: { es: 'Sesiones', en: 'Sessions' } },
+      {
+        key: 'EMAIL_SESSION_INACTIVITY_HOURS',
         type: 'number',
-        label: { es: 'Max emails por poll', en: 'Max emails per poll' },
-        info: { es: 'Máximo de emails a obtener por ciclo de polling (default: 20)', en: 'Maximum emails to fetch per poll cycle (default: 20)' },
+        width: 'half',
+        label: { es: 'Inactividad para cerrar (h)', en: 'Inactivity to close (h)' },
+        info: { es: 'Horas de inactividad antes de cerrar la sesion de email (min: 1, max: 336 = 2 semanas)', en: 'Hours of inactivity before closing email session (min: 1, max: 336 = 2 weeks)' },
       },
       {
-        key: 'EMAIL_INCLUDE_SIGNATURE',
-        type: 'boolean',
-        label: { es: 'Incluir firma', en: 'Include signature' },
-        info: { es: 'Incluir firma de Gmail al enviar emails', en: 'Include Gmail signature when sending emails' },
-      },
-      {
-        key: 'EMAIL_MAX_ATTACHMENT_SIZE_MB',
+        key: 'EMAIL_PRECLOSE_FOLLOWUP_HOURS',
         type: 'number',
-        label: { es: 'Tamaño máx. adjunto (MB)', en: 'Max attachment size (MB)' },
-        info: { es: 'Tamaño máximo permitido por adjunto en MB (default: 16)', en: 'Maximum allowed attachment size in MB (default: 16)' },
+        width: 'half',
+        label: { es: 'Seguimiento pre-cierre (h)', en: 'Pre-close follow-up (h)' },
+        info: { es: 'Horas antes del cierre para enviar seguimiento. 0 = desactivado.', en: 'Hours before close to send follow-up. 0 = disabled.' },
       },
+      {
+        key: 'EMAIL_PRECLOSE_FOLLOWUP_TEXT',
+        type: 'textarea',
+        rows: 3,
+        label: { es: 'Mensaje de seguimiento', en: 'Follow-up message' },
+        info: { es: 'Texto del email de seguimiento antes de cerrar la sesion', en: 'Follow-up email text before closing the session' },
+      },
+      // ── Naturalidad ──
       { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
       {
         key: 'ACK_EMAIL_TRIGGER_MS',
         type: 'number',
+        width: 'half',
         label: { es: 'Tiempo para aviso (ms)', en: 'Acknowledgment trigger (ms)' },
         info: { es: 'Si la respuesta tarda mas de este tiempo, se envia un aviso automatico por email. 0 = desactivado.', en: 'If the response takes longer than this, an automatic email ack is sent. 0 = disabled.' },
       },
       {
         key: 'ACK_EMAIL_HOLD_MS',
         type: 'number',
+        width: 'half',
         label: { es: 'Pausa antes de respuesta (ms)', en: 'Hold before response (ms)' },
         info: { es: 'Tiempo que se retiene la respuesta real despues del aviso por email.', en: 'Time the real response is held after the email ack.' },
       },
