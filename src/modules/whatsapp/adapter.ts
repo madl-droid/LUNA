@@ -2,7 +2,7 @@
 // Adaptador de canal WhatsApp vía Baileys.
 // Auth state is stored in PostgreSQL, not on the filesystem.
 
-import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys'
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } from '@whiskeysockets/baileys'
 import type { WASocket, BaileysEventMap } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import { v4 as uuidv4 } from 'uuid'
@@ -69,6 +69,13 @@ export interface IncomingMessage {
   from: string
   timestamp: Date
   content: { type: string; text?: string; mediaUrl?: string; caption?: string }
+  attachments?: Array<{
+    id: string
+    filename: string
+    mimeType: string
+    size: number
+    getData: () => Promise<Buffer>
+  }>
   raw?: unknown
 }
 
@@ -339,6 +346,9 @@ export class BaileysAdapter {
     // Strip @mention tag from text for cleaner processing
     const cleanText = isGroup ? this.stripMentionTag(text) : text
 
+    // Build attachments array for media messages
+    const attachments = this.extractAttachments(msg)
+
     return {
       id: uuidv4(),
       channelName: 'whatsapp',
@@ -352,6 +362,7 @@ export class BaileysAdapter {
           : 'text',
         text: cleanText,
       },
+      attachments: attachments.length > 0 ? attachments : undefined,
       raw: msg,
     }
   }
@@ -394,6 +405,54 @@ export class BaileysAdapter {
     const prefixRegex = new RegExp(`^${agentName}[,:;]?\\s*`, 'i')
     cleaned = cleaned.replace(prefixRegex, '').trim()
     return cleaned || text
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private extractAttachments(msg: any): IncomingMessage['attachments'] & object {
+    const attachments: NonNullable<IncomingMessage['attachments']> = []
+    const m = msg.message
+
+    if (m?.imageMessage) {
+      attachments.push({
+        id: `wa-img-${msg.key.id}`,
+        filename: m.imageMessage.caption || `image-${msg.key.id}.jpg`,
+        mimeType: m.imageMessage.mimetype || 'image/jpeg',
+        size: m.imageMessage.fileLength ? Number(m.imageMessage.fileLength) : 0,
+        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+      })
+    }
+
+    if (m?.audioMessage) {
+      attachments.push({
+        id: `wa-audio-${msg.key.id}`,
+        filename: `audio-${msg.key.id}.ogg`,
+        mimeType: m.audioMessage.mimetype || 'audio/ogg; codecs=opus',
+        size: m.audioMessage.fileLength ? Number(m.audioMessage.fileLength) : 0,
+        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+      })
+    }
+
+    if (m?.documentMessage) {
+      attachments.push({
+        id: `wa-doc-${msg.key.id}`,
+        filename: m.documentMessage.fileName || `document-${msg.key.id}`,
+        mimeType: m.documentMessage.mimetype || 'application/octet-stream',
+        size: m.documentMessage.fileLength ? Number(m.documentMessage.fileLength) : 0,
+        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+      })
+    }
+
+    if (m?.videoMessage) {
+      attachments.push({
+        id: `wa-video-${msg.key.id}`,
+        filename: m.videoMessage.caption || `video-${msg.key.id}.mp4`,
+        mimeType: m.videoMessage.mimetype || 'video/mp4',
+        size: m.videoMessage.fileLength ? Number(m.videoMessage.fileLength) : 0,
+        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+      })
+    }
+
+    return attachments
   }
 
   private async applyPrivacySettings(): Promise<void> {

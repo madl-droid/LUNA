@@ -119,6 +119,15 @@ const manifest: ModuleManifest = {
     // Pre-close follow-up
     WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: numEnvMin(0, 1),
     WHATSAPP_PRECLOSE_MESSAGE: z.string().default('¿Sigues ahí? Tu sesión se cerrará pronto por inactividad. Si necesitas algo más, escríbeme.'),
+    // Attachment processing — which file types to process on this channel
+    // WhatsApp supports: images, documents, audio, spreadsheets (as docs), text (as docs)
+    WHATSAPP_ATT_IMAGES: boolEnv(true),
+    WHATSAPP_ATT_DOCUMENTS: boolEnv(true),
+    WHATSAPP_ATT_AUDIO: boolEnv(true),
+    WHATSAPP_ATT_SPREADSHEETS: boolEnv(true),
+    WHATSAPP_ATT_TEXT: boolEnv(true),
+    WHATSAPP_ATT_MAX_SIZE_MB: numEnvMin(1, 25),
+    WHATSAPP_ATT_MAX_PER_MSG: numEnvMin(1, 5),
   }),
 
   console: {
@@ -320,6 +329,61 @@ const manifest: ModuleManifest = {
         label: { es: 'Instrucciones de formato', en: 'Format instructions' },
         info: { es: 'Instrucciones que el compositor usa para dar formato a las respuestas de WhatsApp. Dejar vacío para usar el default.', en: 'Instructions the compositor uses to format WhatsApp responses. Leave empty for default.' },
         rows: 6,
+      },
+      { key: '_divider_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' } },
+      {
+        key: 'WHATSAPP_ATT_IMAGES',
+        type: 'boolean',
+        label: { es: 'Procesar imagenes', en: 'Process images' },
+        description: { es: 'Fotos y capturas recibidas por WhatsApp (JPEG, PNG, WebP, GIF)', en: 'Photos and screenshots received via WhatsApp (JPEG, PNG, WebP, GIF)' },
+        icon: '&#128247;',
+      },
+      {
+        key: 'WHATSAPP_ATT_DOCUMENTS',
+        type: 'boolean',
+        label: { es: 'Procesar documentos', en: 'Process documents' },
+        description: { es: 'PDF, Word y otros documentos enviados como adjunto', en: 'PDF, Word and other documents sent as attachments' },
+        icon: '&#128196;',
+      },
+      {
+        key: 'WHATSAPP_ATT_AUDIO',
+        type: 'boolean',
+        label: { es: 'Procesar audio', en: 'Process audio' },
+        description: { es: 'Notas de voz y audios (se transcriben a texto)', en: 'Voice notes and audio files (transcribed to text)' },
+        icon: '&#127908;',
+      },
+      {
+        key: 'WHATSAPP_ATT_SPREADSHEETS',
+        type: 'boolean',
+        label: { es: 'Procesar hojas de calculo', en: 'Process spreadsheets' },
+        description: { es: 'Excel y CSV enviados como documento', en: 'Excel and CSV sent as documents' },
+        icon: '&#128202;',
+      },
+      {
+        key: 'WHATSAPP_ATT_TEXT',
+        type: 'boolean',
+        label: { es: 'Procesar archivos de texto', en: 'Process text files' },
+        description: { es: 'Archivos .txt, .md, .json enviados como documento', en: '.txt, .md, .json files sent as documents' },
+        icon: '&#128221;',
+      },
+      {
+        key: 'WHATSAPP_ATT_MAX_SIZE_MB',
+        type: 'number',
+        label: { es: 'Tamano max (MB)', en: 'Max size (MB)' },
+        info: { es: 'Tamano maximo de archivo a procesar por este canal', en: 'Maximum file size to process for this channel' },
+        min: 1,
+        max: 50,
+        unit: 'MB',
+        width: 'half',
+      },
+      {
+        key: 'WHATSAPP_ATT_MAX_PER_MSG',
+        type: 'number',
+        label: { es: 'Max adjuntos por mensaje', en: 'Max attachments per message' },
+        info: { es: 'Maximo de adjuntos a procesar por mensaje o batch', en: 'Maximum attachments to process per message or batch' },
+        min: 1,
+        max: 15,
+        width: 'half',
       },
     ],
     apiRoutes,
@@ -539,6 +603,14 @@ interface WhatsAppFullConfig {
   WHATSAPP_SESSION_TIMEOUT_HOURS: number
   WHATSAPP_PRECLOSE_FOLLOWUP_HOURS: number
   WHATSAPP_PRECLOSE_MESSAGE: string
+  // Attachment config
+  WHATSAPP_ATT_IMAGES: boolean
+  WHATSAPP_ATT_DOCUMENTS: boolean
+  WHATSAPP_ATT_AUDIO: boolean
+  WHATSAPP_ATT_SPREADSHEETS: boolean
+  WHATSAPP_ATT_TEXT: boolean
+  WHATSAPP_ATT_MAX_SIZE_MB: number
+  WHATSAPP_ATT_MAX_PER_MSG: number
 }
 
 /**
@@ -570,6 +642,22 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     antiSpamMaxPerWindow: cfg.WHATSAPP_ANTISPAM_MAX,
     antiSpamWindowMs: cfg.WHATSAPP_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,
+    attachments: buildAttachmentConfig(cfg),
+  }
+}
+
+/** Build per-channel attachment config from WhatsApp config fields */
+function buildAttachmentConfig(cfg: WhatsAppFullConfig): import('../../engine/attachments/types.js').ChannelAttachmentConfig {
+  const categories: import('../../engine/attachments/types.js').AttachmentCategory[] = []
+  if (cfg.WHATSAPP_ATT_IMAGES) categories.push('images')
+  if (cfg.WHATSAPP_ATT_DOCUMENTS) categories.push('documents')
+  if (cfg.WHATSAPP_ATT_AUDIO) categories.push('audio')
+  if (cfg.WHATSAPP_ATT_SPREADSHEETS) categories.push('spreadsheets')
+  if (cfg.WHATSAPP_ATT_TEXT) categories.push('text')
+  return {
+    enabledCategories: categories,
+    maxFileSizeMb: cfg.WHATSAPP_ATT_MAX_SIZE_MB,
+    maxAttachmentsPerMessage: cfg.WHATSAPP_ATT_MAX_PER_MSG,
   }
 }
 
