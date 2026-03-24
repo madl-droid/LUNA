@@ -46,6 +46,12 @@ export class CallManager {
     })
   }
 
+  /** Get global accent/language from prompts:service (fallback for when VOICE_GEMINI_LANGUAGE is empty) */
+  private getGlobalAccent(): string {
+    const promptsSvc = this.registry.getOptional<{ getAccent(): string }>('prompts:service')
+    return promptsSvc?.getAccent() || 'es-MX'
+  }
+
   /**
    * Handle an incoming call webhook. Pre-loads context and returns TwiML.
    */
@@ -188,7 +194,7 @@ export class CallManager {
         apiKey,
         model: this.config.VOICE_GEMINI_MODEL,
         voice: this.config.VOICE_GEMINI_VOICE,
-        language: this.config.VOICE_GEMINI_LANGUAGE,
+        language: this.config.VOICE_GEMINI_LANGUAGE || this.getGlobalAccent(),
         systemInstruction: context.systemInstruction,
         tools: context.tools,
         temperature: this.config.VOICE_GEMINI_TEMPERATURE,

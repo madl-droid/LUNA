@@ -489,10 +489,6 @@ export interface EngineConfig {
   maxConversationTurns: number
   sessionTtlMs: number
 
-  // Rate limits
-  waRateLimitHour: number
-  waRateLimitDay: number
-
   // User type cache
   userTypeCacheTtlSeconds: number
 
@@ -524,11 +520,5 @@ export interface EngineConfig {
   // Session
   sessionReopenWindowMs: number
 
-  // Avisos de proceso (per-channel) — hasta 3 mensajes, se elige al azar
-  avisoWaTriggerMs: number
-  avisoWaHoldMs: number
-  avisoWaMessages: string[]
-  avisoEmailTriggerMs: number
-  avisoEmailHoldMs: number
-  avisoEmailMessages: string[]
+  // Avisos: now fully per-channel via channel-config:{name} services
 }

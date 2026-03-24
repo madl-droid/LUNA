@@ -17,7 +17,8 @@ import type {
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { StoredMessage } from '../../modules/memory/types.js'
 import { detectOutputInjection, detectSensitiveData } from '../utils/injection-detector.js'
-import { formatForChannel, calculateTypingDelay } from '../utils/message-formatter.js'
+import { formatForChannel } from '../utils/message-formatter.js'
+import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { markFarewell, setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
 import { loadProactiveConfig } from '../proactive/proactive-config.js'
@@ -168,6 +169,9 @@ function validateOutput(text: string): ValidationResult {
  * Check per-contact rate limits. Reads from channel config service if available,
  * falls back to engine config for backwards compatibility.
  */
+/** System-wide hard cap: no contact receives more than this per hour, regardless of channel config */
+const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
+
 async function checkRateLimit(
   redis: Redis,
   to: string,
@@ -177,22 +181,45 @@ async function checkRateLimit(
 ): Promise<boolean> {
   // Get rate limits from channel config service (if channel provides one)
   const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
-  const limitHour = channelSvc ? channelSvc.get().rateLimitHour : (channel === 'whatsapp' ? config.waRateLimitHour : 0)
-  const limitDay = channelSvc ? channelSvc.get().rateLimitDay : (channel === 'whatsapp' ? config.waRateLimitDay : 0)
+  const cc = channelSvc?.get()
+  const antiSpamMax = cc?.antiSpamMaxPerWindow ?? 0
+  const antiSpamWindowMs = cc?.antiSpamWindowMs ?? 0
 
-  // 0 = unlimited
-  if (limitHour <= 0 && limitDay <= 0) return true
-
-  const hourKey = `rate:${to}:hour`
-  const dayKey = `rate:${to}:day`
+  // Effective hourly limit: channel config capped by system max (20)
+  const channelLimitHour = cc?.rateLimitHour ?? 0
+  const limitHour = channelLimitHour > 0
+    ? Math.min(channelLimitHour, SYSTEM_MAX_MESSAGES_PER_HOUR)
+    : SYSTEM_MAX_MESSAGES_PER_HOUR
+  const limitDay = cc?.rateLimitDay ?? 0
 
   try {
+    // Anti-spam: short-window burst protection (e.g., max 5 messages in 60s)
+    if (antiSpamMax > 0 && antiSpamWindowMs > 0) {
+      const spamKey = `antispam:${channel}:${to}`
+      const count = await redis.get(spamKey)
+      if (count && parseInt(count) >= antiSpamMax) {
+        logger.warn({ to, channel, count, limit: antiSpamMax }, 'Anti-spam limit reached')
+        return false
+      }
+      const pipeline = redis.pipeline()
+      pipeline.incr(spamKey)
+      pipeline.pexpire(spamKey, antiSpamWindowMs)
+      await pipeline.exec()
+    }
+
+    // Standard rate limits (hourly capped by system max, daily)
+    const hourKey = `rate:${channel}:${to}:hour`
+    const dayKey = `rate:${channel}:${to}:day`
+
     const [hourCount, dayCount] = await Promise.all([
       redis.get(hourKey),
       redis.get(dayKey),
     ])
 
-    if (limitHour > 0 && hourCount && parseInt(hourCount) >= limitHour) return false
+    if (hourCount && parseInt(hourCount) >= limitHour) {
+      logger.warn({ to, channel, hourCount, limitHour }, 'Hourly rate limit reached')
+      return false
+    }
     if (limitDay > 0 && dayCount && parseInt(dayCount) >= limitDay) return false
 
     const pipeline = redis.pipeline()
@@ -280,16 +307,20 @@ async function sendMessages(
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!
 
-    if (ctx.message.channelName === 'whatsapp' && i > 0) {
-      // Fire composing between bubbles
-      await registry.runHook('channel:composing', {
-        channel: ctx.message.channelName,
-        to: sendTo,
-        correlationId: ctx.traceId,
-      }).catch(() => {})
+    // Typing delay between bubbles for instant channels (WhatsApp, Google Chat, etc.)
+    if (i > 0) {
+      const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
+      const cc = channelSvc?.get()
+      if (cc && cc.channelType === 'instant' && cc.typingDelayMsPerChar > 0) {
+        await registry.runHook('channel:composing', {
+          channel: ctx.message.channelName,
+          to: sendTo,
+          correlationId: ctx.traceId,
+        }).catch(() => {})
 
-      const delay = calculateTypingDelay(part)
-      await new Promise(resolve => setTimeout(resolve, delay))
+        const delay = calculateTypingDelay(part, cc.typingDelayMsPerChar, cc.typingDelayMinMs, cc.typingDelayMaxMs)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
     }
 
     try {

@@ -38,6 +38,10 @@ export interface EmailConfig {
   ACK_EMAIL_TRIGGER_MS: number
   ACK_EMAIL_HOLD_MS: number
   ACK_EMAIL_MESSAGE: string
+  ACK_EMAIL_STYLE: string
+  // Firma
+  EMAIL_SIGNATURE_MODE: string
+  EMAIL_SIGNATURE_TEXT: string
   // OAuth standalone (cuando google-apps no está activo)
   GMAIL_CLIENT_ID: string
   GMAIL_CLIENT_SECRET: string

@@ -79,12 +79,4 @@ function formatForEmail(text: string): string {
   return `<p>${html}</p>`
 }
 
-/**
- * Calculate typing delay for WhatsApp (simulate human typing).
- * Returns milliseconds to wait before sending.
- */
-export function calculateTypingDelay(text: string): number {
-  // ~50ms per character, min 500ms, max 3000ms
-  const delay = Math.min(3000, Math.max(500, text.length * 50))
-  return delay
-}
+// Typing delay moved to src/channels/typing-delay.ts (shared, configurable per-channel)

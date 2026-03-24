@@ -80,10 +80,6 @@ export function loadEngineConfig(): EngineConfig {
     maxConversationTurns: envInt('PIPELINE_MAX_CONVERSATION_TURNS', 50),
     sessionTtlMs: envInt('PIPELINE_SESSION_TTL_MS', 1800000),
 
-    // Rate limits (WA)
-    waRateLimitHour: envInt('WA_RATE_LIMIT_HOUR', 30),
-    waRateLimitDay: envInt('WA_RATE_LIMIT_DAY', 200),
-
     // User type cache
     userTypeCacheTtlSeconds: envInt('USER_TYPE_CACHE_TTL_SECONDS', 43200), // 12h
 
@@ -115,12 +111,7 @@ export function loadEngineConfig(): EngineConfig {
     // Session
     sessionReopenWindowMs: envInt('SESSION_REOPEN_WINDOW_MS', 86400000), // 24h
 
-    // Avisos de proceso (per-channel) — hasta 3 mensajes, se elige al azar
-    avisoWaTriggerMs: envInt('AVISO_WA_TRIGGER_MS', 3000),
-    avisoWaHoldMs: envInt('AVISO_WA_HOLD_MS', 2000),
-    avisoWaMessages: envMessages('AVISO_WA_MSG', 3, ['Un momento, estoy revisando eso...']),
-    avisoEmailTriggerMs: envInt('AVISO_EMAIL_TRIGGER_MS', 0),
-    avisoEmailHoldMs: envInt('AVISO_EMAIL_HOLD_MS', 0),
-    avisoEmailMessages: envMessages('AVISO_EMAIL_MSG', 3, ['Recibí tu mensaje, te respondo en breve.']),
+    // Avisos de proceso: now fully per-channel via channel-config:{name} services
+    // (legacy WA/email aviso fields removed — each channel defines its own in configSchema)
   }
 }

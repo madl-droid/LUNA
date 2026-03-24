@@ -141,6 +141,9 @@ const manifest: ModuleManifest = {
   depends: [], // llm is optional (only for evaluator generation)
   configSchema: z.object({
     AGENT_NAME: z.string().default('Luna'),
+    AGENT_LAST_NAME: z.string().default(''),
+    AGENT_LANGUAGE: z.string().default('es'),
+    AGENT_ACCENT: z.string().default('es-MX'),
   }),
 
   console: {
@@ -153,15 +156,56 @@ const manifest: ModuleManifest = {
     group: 'agent',
     icon: '&#128221;',
     fields: [
+      { key: '_divider_agent_identity', type: 'divider', label: { es: 'Identidad del agente', en: 'Agent identity' } },
       {
         key: 'AGENT_NAME',
         type: 'text',
-        label: { es: 'Nombre del agente', en: 'Agent name' },
+        label: { es: 'Nombre', en: 'First name' },
         info: {
-          es: 'Nombre usado para deteccion de @mencion en grupos/rooms de canales instantaneos (WhatsApp, Google Chat, etc). Fuente unica de verdad para todos los canales.',
-          en: 'Name used for @mention detection in groups/rooms of instant channels (WhatsApp, Google Chat, etc). Single source of truth for all channels.',
+          es: 'Nombre del agente. Usado para @mencion en canales instant, firmas, saludos. Fuente unica de verdad para todos los canales.',
+          en: 'Agent first name. Used for @mention in instant channels, signatures, greetings. Single source of truth for all channels.',
         },
+        width: 'half',
       },
+      {
+        key: 'AGENT_LAST_NAME',
+        type: 'text',
+        label: { es: 'Apellido', en: 'Last name' },
+        info: {
+          es: 'Apellido del agente. Opcional. Usado en firmas y presentaciones formales.',
+          en: 'Agent last name. Optional. Used in signatures and formal introductions.',
+        },
+        width: 'half',
+      },
+      {
+        key: 'AGENT_LANGUAGE',
+        type: 'select',
+        label: { es: 'Idioma', en: 'Language' },
+        info: {
+          es: 'Idioma principal del agente. Afecta mensajes de sistema, avisos, y preferencia de respuesta.',
+          en: 'Agent primary language. Affects system messages, ack messages, and response preference.',
+        },
+        options: [
+          { value: 'es', label: 'Español / Spanish' },
+          { value: 'en', label: 'English / Inglés' },
+          { value: 'pt', label: 'Português / Portuguese' },
+          { value: 'fr', label: 'Français / French' },
+          { value: 'de', label: 'Deutsch / German' },
+          { value: 'it', label: 'Italiano / Italian' },
+        ],
+        width: 'half',
+      },
+      {
+        key: 'AGENT_ACCENT',
+        type: 'text',
+        label: { es: 'Acento / Locale', en: 'Accent / Locale' },
+        info: {
+          es: 'Código BCP-47 (ej: es-MX, es-ES, en-US, pt-BR). Usado para voz (TTS/STT) y regionalismos.',
+          en: 'BCP-47 code (e.g. es-MX, es-ES, en-US, pt-BR). Used for voice (TTS/STT) and regional expressions.',
+        },
+        width: 'half',
+      },
+      { key: '_divider_prompts', type: 'divider', label: { es: 'Prompts del agente', en: 'Agent prompts' } },
       {
         key: 'PROMPT_IDENTITY',
         type: 'textarea',
