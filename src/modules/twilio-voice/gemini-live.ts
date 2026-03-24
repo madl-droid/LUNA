@@ -44,9 +44,9 @@ export class GeminiLiveSession {
    * Connect to Gemini Live API and send setup message.
    */
   async connect(): Promise<void> {
-    const model = this.config.model || 'gemini-2.5-flash'
+    const model = this.config.model
     const url = `${GEMINI_LIVE_BASE_URL}?key=${this.config.apiKey}`
-    const connectionTimeoutMs = this.config.connectionTimeoutMs || 15000
+    const connectionTimeoutMs = this.config.connectionTimeoutMs
 
     return new Promise<void>((resolve, reject) => {
       this.ws = new WebSocket(url)
@@ -169,7 +169,7 @@ export class GeminiLiveSession {
     const speechConfig: GeminiSetupMessage['setup']['generationConfig']['speechConfig'] = {
       voiceConfig: {
         prebuiltVoiceConfig: {
-          voiceName: this.config.voice || 'Kore',
+          voiceName: this.config.voice,
         },
       },
     }
@@ -181,7 +181,7 @@ export class GeminiLiveSession {
 
     const setup: GeminiSetupMessage = {
       setup: {
-        model: `models/${this.config.model || 'gemini-2.5-flash'}`,
+        model: `models/${this.config.model}`,
         generationConfig: {
           responseModalities: ['AUDIO'],
           temperature: this.config.temperature,
@@ -195,8 +195,8 @@ export class GeminiLiveSession {
         },
         realtimeInputConfig: {
           automaticActivityDetection: {
-            startOfSpeechSensitivity: this.config.vadStartSensitivity || 'START_SENSITIVITY_HIGH',
-            endOfSpeechSensitivity: this.config.vadEndSensitivity || 'END_SENSITIVITY_HIGH',
+            startOfSpeechSensitivity: this.config.vadStartSensitivity,
+            endOfSpeechSensitivity: this.config.vadEndSensitivity,
             prefixPaddingMs: this.config.vadPrefixPaddingMs,
             silenceDurationMs: this.config.vadSilenceDurationMs,
           },

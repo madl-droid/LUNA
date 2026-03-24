@@ -179,8 +179,8 @@ const apiRoutes: ApiRoute[] = [
             body: JSON.stringify({
               input: { text: body.text },
               voice: {
-                languageCode: 'es-US',
-                name: `es-US-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`,
+                languageCode: config.VOICE_GEMINI_LANGUAGE || 'es-US',
+                name: `${config.VOICE_GEMINI_LANGUAGE || 'es-US'}-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`,
               },
               audioConfig: { audioEncoding: 'MP3' },
             }),
