@@ -901,8 +901,8 @@ function renderUsersSection(data: SectionData): string {
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Canal' : 'Channel'}</span>
         <div class="custom-select" id="uf-channel-wrap">
-          <button type="button" class="custom-select-btn" onclick="this.parentElement.classList.toggle('open')">${lang === 'es' ? 'Todos' : 'All'} <svg class="custom-select-arrow" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <div class="custom-select-panel" style="padding:8px 12px;min-width:160px">
+          <button type="button" class="custom-select-btn" onclick="event.stopPropagation();this.parentElement.classList.toggle('open')">${lang === 'es' ? 'Todos' : 'All'} <svg class="custom-select-arrow" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="custom-select-panel" style="padding:8px 12px;min-width:160px" onclick="event.stopPropagation()">
             ${chCheckboxes}
           </div>
         </div>
@@ -1097,14 +1097,28 @@ function renderUsersSection(data: SectionData): string {
 
     window.validateUserModal=function(){
       var valid=true;
+      var errors=[];
       errorBox.style.display='none';
       form.querySelectorAll('.wizard-input').forEach(function(inp){inp.classList.remove('invalid')});
       form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
+
+      // Name required
+      var nameInp=document.getElementById('user-modal-name');
+      if(!nameInp.value.trim()){
+        nameInp.classList.add('invalid');
+        errors.push(lang==='es'?'El nombre es obligatorio.':'Name is required.');
+        valid=false;
+      }
+
+      // At least 1 contact on create
+      var isCreate=form.action.indexOf('/users/add')!==-1;
+      var hasContact=false;
 
       form.querySelectorAll('[data-channel]').forEach(function(inp){
         var ch=inp.getAttribute('data-channel');
         var val=inp.value.trim();
         if(!val)return;
+        hasContact=true;
         var pat=patterns[ch];
         if(pat&&!pat.test(val)){
           inp.classList.add('invalid');
@@ -1113,8 +1127,14 @@ function renderUsersSection(data: SectionData): string {
           valid=false;
         }
       });
+
+      if(isCreate&&!hasContact){
+        errors.push(lang==='es'?'Agrega al menos un dato de contacto.':'Add at least one contact.');
+        valid=false;
+      }
+
       if(!valid){
-        errorBox.textContent=lang==='es'?'Corrige los campos marcados en rojo.':'Fix the fields marked in red.';
+        errorBox.textContent=errors.length>0?errors.join(' '):(lang==='es'?'Corrige los campos marcados en rojo.':'Fix the fields marked in red.');
         errorBox.style.display='block';
       }
       return valid;
@@ -1188,7 +1208,12 @@ function renderUsersSection(data: SectionData): string {
     window.userSelChanged=function(lt){
       var bar=document.getElementById('sel-bar-'+lt);
       var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
-      if(bar) bar.classList.toggle('visible',cbs.length>0);
+      if(bar){
+        bar.classList.toggle('visible',cbs.length>0);
+        // Hide edit button when multiple selected (edit = single only)
+        var editBtn=bar.querySelector('[onclick*="userEditSelected"]');
+        if(editBtn)editBtn.style.display=cbs.length===1?'':'none';
+      }
     };
 
     // ── Deactivate/delete ──
