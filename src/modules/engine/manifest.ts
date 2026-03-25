@@ -99,19 +99,6 @@ const manifest: ModuleManifest = {
     group: 'system',
     icon: '&#9881;',
     fields: [
-      // ── Test Mode ──
-      { key: '_div_test', type: 'divider', label: { es: 'Modo de pruebas', en: 'Test mode' } },
-      {
-        key: 'ENGINE_TEST_MODE',
-        type: 'boolean',
-        label: { es: 'Modo de pruebas', en: 'Test mode' },
-        description: {
-          es: 'Cuando esta activo, solo los admins reciben respuesta. Los demas contactos se ignoran silenciosamente.',
-          en: 'When active, only admins receive responses. Other contacts are silently ignored.',
-        },
-        icon: '&#128274;',
-      },
-
       // ── Concurrency ──
       { key: '_div_concurrency', type: 'divider', label: { es: 'Concurrencia', en: 'Concurrency' } },
       {

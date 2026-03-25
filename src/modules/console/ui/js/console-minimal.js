@@ -976,22 +976,44 @@
     })
   }
 
-  // === Test mode toggle (in user dropdown) ===
+  // === Test mode toggle (in user dropdown) — persists ENGINE_TEST_MODE ===
   var testModeCb = document.getElementById('test-mode-cb')
   var resetDbMenu = document.getElementById('btn-resetdb-menu')
 
   if (testModeCb) {
     testModeCb.addEventListener('change', function () {
+      var lang = document.documentElement.lang || 'es'
       if (testModeCb.checked) {
-        var lang = document.documentElement.lang || 'es'
         var msg = lang === 'es'
-          ? '¿Activar modo de pruebas? Esto habilita acciones destructivas como limpiar la base de datos.'
-          : 'Enable test mode? This enables destructive actions like database reset.'
+          ? '¿Activar modo de pruebas? Solo los admins recibirán respuesta y se habilitarán acciones destructivas.'
+          : 'Enable test mode? Only admins will receive responses and destructive actions will be enabled.'
         if (!confirm(msg)) {
           testModeCb.checked = false
           return
         }
       }
+      var val = testModeCb.checked ? 'true' : 'false'
+      var section = (document.querySelector('input[name="_section"]') || {}).value || 'engine'
+      var body = new URLSearchParams()
+      body.append('_section', section)
+      body.append('_lang', lang)
+      body.append('ENGINE_TEST_MODE', val)
+
+      fetch('/console/apply', { method: 'POST', body: body, headers: { 'X-Instant-Toggle': '1' } })
+        .then(function (r) {
+          if (r.ok || r.redirected) {
+            showToast(testModeCb.checked
+              ? (lang === 'es' ? 'Modo de pruebas activado' : 'Test mode enabled')
+              : (lang === 'es' ? 'Modo de pruebas desactivado' : 'Test mode disabled'),
+              testModeCb.checked ? 'warning' : 'success')
+          } else {
+            throw new Error('save failed')
+          }
+        })
+        .catch(function () {
+          testModeCb.checked = !testModeCb.checked
+          showToast('Error', 'error')
+        })
       if (resetDbMenu) resetDbMenu.style.display = testModeCb.checked ? 'flex' : 'none'
     })
   }
