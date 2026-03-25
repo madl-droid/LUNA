@@ -278,7 +278,10 @@ const manifest: ModuleManifest = {
         provider: payload.provider as LLMProviderName | undefined,
         model: payload.model,
         system: payload.system,
-        messages: payload.messages.map(m => ({ role: m.role, content: m.content })),
+        messages: payload.messages.map(m => ({
+          role: m.role,
+          content: m.content as string | import('./types.js').ContentPart[],
+        })),
         maxTokens: payload.maxTokens,
         temperature: payload.temperature,
         tools: payload.tools,

@@ -25,12 +25,16 @@ import { loadProactiveConfig } from '../proactive/proactive-config.js'
 
 const logger = pino({ name: 'engine:phase5' })
 
-// Cache proactive config (loaded once, not every message)
+// Cache proactive config with TTL (reloaded every 5 minutes)
 let cachedProactiveConfig: ReturnType<typeof loadProactiveConfig> | null = null
+let proactiveConfigLoadedAt = 0
+const PROACTIVE_CONFIG_TTL_MS = 5 * 60 * 1000
 
 function getProactiveConfig() {
-  if (!cachedProactiveConfig) {
+  const now = Date.now()
+  if (!cachedProactiveConfig || (now - proactiveConfigLoadedAt) > PROACTIVE_CONFIG_TTL_MS) {
     cachedProactiveConfig = loadProactiveConfig()
+    proactiveConfigLoadedAt = now
   }
   return cachedProactiveConfig
 }
@@ -92,11 +96,13 @@ export async function phase5Validate(
     deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
   }
 
-  // 5. Post-send operations (fire-and-forget where possible)
+  // 5. Post-send operations (parallel — all are independent)
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
-  await persistMessages(ctx, responseText, evaluation, db, memoryManager)
-  await updateLeadQualification(ctx, registry, db, memoryManager)
-  await updateSession(ctx, db)
+  await Promise.all([
+    persistMessages(ctx, responseText, evaluation, db, memoryManager),
+    updateLeadQualification(ctx, registry, db, memoryManager),
+    updateSession(ctx, db),
+  ])
   enqueueSheetsSync(ctx, redis)
 
   // 6. Proactive guard signals
@@ -145,10 +151,19 @@ function validateOutput(text: string): ValidationResult {
   }
 
   let sanitized = text
-  sanitized = sanitized.replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+  // Anthropic API keys (must be before generic sk- pattern)
   sanitized = sanitized.replace(/sk-ant-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+  // OpenAI API keys
+  sanitized = sanitized.replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+  // Google API keys
   sanitized = sanitized.replace(/AIza[a-zA-Z0-9_-]{35}/g, '[REDACTED]')
+  // Bearer tokens
   sanitized = sanitized.replace(/Bearer\s+[a-zA-Z0-9._-]{20,}/g, 'Bearer [REDACTED]')
+  // Generic secrets (password=, secret=, token=)
+  sanitized = sanitized.replace(/(?:password|secret|token)\s*[:=]\s*\S{8,}/gi, (match) => {
+    const prefix = match.match(/^(?:password|secret|token)\s*[:=]\s*/i)?.[0] ?? ''
+    return `${prefix}[REDACTED]`
+  })
 
   return { passed: false, issues, sanitizedText: sanitized }
 }
@@ -174,18 +189,18 @@ async function checkRateLimit(
   const limitDay = cc?.rateLimitDay ?? 0
 
   try {
-    // Anti-spam burst protection
+    // Anti-spam burst protection (atomic: INCR first, then check)
     if (antiSpamMax > 0 && antiSpamWindowMs > 0) {
       const spamKey = `antispam:${channel}:${to}`
-      const count = await redis.get(spamKey)
-      if (count && parseInt(count) >= antiSpamMax) {
-        logger.warn({ to, channel, count, limit: antiSpamMax }, 'Anti-spam limit reached')
-        return false
-      }
       const pipeline = redis.pipeline()
       pipeline.incr(spamKey)
       pipeline.pexpire(spamKey, antiSpamWindowMs)
-      await pipeline.exec()
+      const results = await pipeline.exec()
+      const newCount = results?.[0]?.[1] as number | undefined
+      if (newCount && newCount > antiSpamMax) {
+        logger.warn({ to, channel, count: newCount, limit: antiSpamMax }, 'Anti-spam limit reached')
+        return false
+      }
     }
 
     // Standard rate limits
@@ -278,6 +293,11 @@ async function sendMessages(
     sendTo = groupJid
   }
 
+  // Resolve channel config once (outside loop)
+  const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
+  const cc = channelSvc?.get()
+  const isInstantWithDelay = cc && cc.channelType === 'instant' && cc.typingDelayMsPerChar > 0
+
   // Fire composing before first message
   await registry.runHook('channel:composing', {
     channel: ctx.message.channelName,
@@ -289,19 +309,15 @@ async function sendMessages(
     const part = parts[i]!
 
     // Typing delay between bubbles for instant channels
-    if (i > 0) {
-      const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
-      const cc = channelSvc?.get()
-      if (cc && cc.channelType === 'instant' && cc.typingDelayMsPerChar > 0) {
-        await registry.runHook('channel:composing', {
-          channel: ctx.message.channelName,
-          to: sendTo,
-          correlationId: ctx.traceId,
-        }).catch(() => {})
+    if (i > 0 && isInstantWithDelay) {
+      await registry.runHook('channel:composing', {
+        channel: ctx.message.channelName,
+        to: sendTo,
+        correlationId: ctx.traceId,
+      }).catch(() => {})
 
-        const delay = calculateTypingDelay(part, cc.typingDelayMsPerChar, cc.typingDelayMinMs, cc.typingDelayMaxMs)
-        await new Promise(resolve => setTimeout(resolve, delay))
-      }
+      const delay = calculateTypingDelay(part, cc!.typingDelayMsPerChar, cc!.typingDelayMinMs, cc!.typingDelayMaxMs)
+      await new Promise(resolve => setTimeout(resolve, delay))
     }
 
     try {

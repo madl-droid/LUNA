@@ -21,7 +21,7 @@ interface LLMGatewayLike {
     provider?: string
     model?: string
     system?: string
-    messages: Array<{ role: string; content: string }>
+    messages: Array<{ role: string; content: string | import('../../kernel/types.js').LLMContentPart[] }>
     maxTokens?: number
     temperature?: number
     tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
@@ -195,7 +195,7 @@ async function callAnthropic(model: string, options: LLMCallOptions): Promise<LL
     temperature: options.temperature ?? 0.7,
     messages: options.messages.map(m => ({
       role: m.role,
-      content: m.content,
+      content: buildAnthropicContent(m.content),
     })),
   }
 
@@ -253,13 +253,13 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
   // Convert message format: combine into Gemini history + last user message
   const history = options.messages.slice(0, -1).map(m => ({
     role: m.role === 'assistant' ? 'model' as const : 'user' as const,
-    parts: [{ text: m.content }],
+    parts: buildGeminiParts(m.content),
   }))
 
   const lastMessage = options.messages[options.messages.length - 1]!
 
   const chat = genModel.startChat({ history })
-  const result = await chat.sendMessage(lastMessage.content)
+  const result = await chat.sendMessage(buildGeminiParts(lastMessage.content))
   const response = result.response
 
   return {
@@ -283,7 +283,7 @@ async function callOpenAI(model: string, options: LLMCallOptions): Promise<LLMCa
   }
 
   for (const m of options.messages) {
-    messages.push({ role: m.role, content: m.content })
+    messages.push({ role: m.role, content: buildOpenAIContent(m.content) })
   }
 
   const response = await openaiClient.chat.completions.create({
@@ -302,4 +302,64 @@ async function callOpenAI(model: string, options: LLMCallOptions): Promise<LLMCa
     inputTokens: response.usage?.prompt_tokens ?? 0,
     outputTokens: response.usage?.completion_tokens ?? 0,
   }
+}
+
+// ─── Multimodal content helpers ──────────────
+
+type ContentInput = string | import('../types.js').LLMCallOptions['messages'][number]['content']
+
+/** Convert content to Anthropic format (string or ContentBlockParam[]) */
+function buildAnthropicContent(content: ContentInput): string | Anthropic.ContentBlockParam[] {
+  if (typeof content === 'string') return content
+  const blocks: Anthropic.ContentBlockParam[] = []
+  for (const part of content) {
+    if (part.type === 'text' && part.text) {
+      blocks.push({ type: 'text', text: part.text })
+    } else if (part.type === 'image_url' && part.data) {
+      blocks.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: (part.mimeType ?? 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+          data: part.data,
+        },
+      })
+    } else if (part.type === 'audio' && part.data) {
+      // Anthropic doesn't support audio natively — pass as text description
+      blocks.push({ type: 'text', text: `[Audio: ${part.mimeType ?? 'audio/ogg'}]` })
+    }
+  }
+  return blocks.length === 1 && blocks[0]?.type === 'text' ? (blocks[0] as { type: 'text'; text: string }).text : blocks
+}
+
+/** Convert content to Google Gemini parts format */
+function buildGeminiParts(content: ContentInput): Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> {
+  if (typeof content === 'string') return [{ text: content }]
+  return content.map(part => {
+    if (part.type === 'text' && part.text) return { text: part.text }
+    if ((part.type === 'image_url' || part.type === 'audio') && part.data) {
+      return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
+    }
+    return { text: part.text ?? '' }
+  })
+}
+
+/** Convert content to OpenAI format */
+function buildOpenAIContent(content: ContentInput): string | OpenAI.ChatCompletionContentPart[] {
+  if (typeof content === 'string') return content
+  const parts: OpenAI.ChatCompletionContentPart[] = []
+  for (const p of content) {
+    if (p.type === 'text' && p.text) {
+      parts.push({ type: 'text', text: p.text })
+    } else if (p.type === 'image_url' && p.data) {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: p.data.startsWith('http') ? p.data : `data:${p.mimeType ?? 'image/png'};base64,${p.data}` },
+      })
+    } else if (p.type === 'audio' && p.data) {
+      // OpenAI doesn't support audio in chat — pass as text description
+      parts.push({ type: 'text', text: `[Audio: ${p.mimeType ?? 'audio/ogg'}]` })
+    }
+  }
+  return parts.length === 1 && parts[0]?.type === 'text' ? parts[0].text : parts
 }

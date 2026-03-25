@@ -253,7 +253,7 @@ async function processOneAttachment(
       tokenEstimate: 0,
       sizeTier: 'small',
       cacheKey: null,
-      status: isSystemLimit ? 'too_large' : 'too_large',
+      status: isSystemLimit ? 'system_limit_exceeded' : 'too_large',
       injectionRisk: false,
       sourceType: 'file_attachment',
       sourceRef: att.id,
@@ -422,6 +422,14 @@ export function buildFallbackMessages(
             .replace('{filename}', att.filename)
             .replace('{sizeMb}', sizeMb)
             .replace('{maxMb}', String(effectiveMax)),
+        )
+        break
+      }
+      case 'system_limit_exceeded': {
+        messages.push(
+          FALLBACK_MESSAGES.system_limit_exceeded
+            .replace('{filename}', att.filename)
+            .replace('{maxMb}', String(SYSTEM_HARD_LIMITS.maxFileSizeMb)),
         )
         break
       }

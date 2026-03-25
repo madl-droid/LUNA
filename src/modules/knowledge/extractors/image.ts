@@ -25,8 +25,11 @@ export async function extractImage(
     task: 'knowledge-image-extract',
     system: 'Eres un asistente que describe imágenes de forma detallada y estructurada para una base de conocimiento. Describe todo el contenido visible: texto, diagramas, tablas, gráficos. Si hay texto, transcríbelo exactamente. Responde en español.',
     messages: [{
-      role: 'user',
-      content: `[image:${mimeType};base64,${base64}]\n\nDescribe detalladamente el contenido de esta imagen para indexarlo en una base de conocimiento.`,
+      role: 'user' as const,
+      content: [
+        { type: 'image_url' as const, data: base64, mimeType },
+        { type: 'text' as const, text: 'Describe detalladamente el contenido de esta imagen para indexarlo en una base de conocimiento.' },
+      ],
     }],
     maxTokens: 2000,
     temperature: 0.1,

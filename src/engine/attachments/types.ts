@@ -34,6 +34,7 @@ export type AttachmentStatus =
   | 'cached'
   | 'extraction_failed'
   | 'too_large'
+  | 'system_limit_exceeded'
   | 'disabled_by_channel'
   | 'unsupported_type'
   | 'needs_subagent'
