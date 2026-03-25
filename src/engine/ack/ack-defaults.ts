@@ -1,33 +1,13 @@
 // LUNA Engine — ACK default messages
 // Predefined pool of ack messages used when LLM ACK generation fails.
+// Keyed by tone (from channel config avisoStyle), not by channel name.
 
-/** Default ack messages keyed by channel name. '' = all channels. */
+/** Default ack messages keyed by tone. '' = neutral fallback. */
 export const DEFAULT_ACK_MESSAGES: Record<string, string[]> = {
   '': ['Un momento...', 'Dame un segundo...', 'Estoy en eso...'],
-  'whatsapp': ['Un momento...', 'Ya te reviso...', 'Un momento, déjame ver...'],
-  'email': ['Procesando su consulta...'],
-}
-
-/**
- * Error fallback messages: natural-sounding messages for when something fails.
- * These replace ACKs when the pipeline encounters an error — the user should
- * feel like they're talking to a person having a bad moment, not a machine.
- */
-export const ERROR_FALLBACK_MESSAGES: Record<string, string[]> = {
-  '': [
-    'Disculpa, tuve un problema técnico. ¿Podrías repetirme tu mensaje?',
-    'Perdona, algo falló de mi lado. ¿Me lo repites?',
-    'Lo siento, tuve una dificultad. ¿Podrías intentar de nuevo?',
-  ],
-  'whatsapp': [
-    'Ups, algo falló de mi lado 😅 ¿Me repites tu mensaje?',
-    'Perdón, tuve un problemita técnico. ¿Me lo envías de nuevo?',
-    'Disculpa, algo no salió bien. ¿Podrías repetirme eso?',
-    'Ay, se me cruzaron los cables. ¿Me escribes de nuevo?',
-  ],
-  'email': [
-    'Disculpe las molestias, tuvimos una dificultad técnica procesando su mensaje. Por favor, intente enviarlo nuevamente.',
-  ],
+  'casual': ['Un momento...', 'Ya te reviso...', 'Un momento, déjame ver...', 'Dame un segundo...'],
+  'formal': ['Un momento por favor...', 'Procesando su consulta...', 'Permítame un momento...'],
+  'express': ['Un seg...', 'Ya va...', 'Voy...'],
 }
 
 /** Generic action descriptions mapped from execution plan step types. */
@@ -42,14 +22,14 @@ export const ACTION_DESCRIPTIONS: Record<string, string> = {
 }
 
 /**
- * Pick a random error fallback message for a given channel.
- * Cascade: channel-specific → generic → hardcoded last resort.
+ * Pick a random default ACK message for a given tone.
+ * Cascade: tone-specific → neutral → hardcoded.
  */
-export function pickErrorFallback(channel: string): string {
-  const channelMsgs = ERROR_FALLBACK_MESSAGES[channel]
-  if (channelMsgs && channelMsgs.length > 0) {
-    return channelMsgs[Math.floor(Math.random() * channelMsgs.length)]!
+export function pickDefaultAck(tone: string): string {
+  const toneMessages = DEFAULT_ACK_MESSAGES[tone]
+  if (toneMessages && toneMessages.length > 0) {
+    return toneMessages[Math.floor(Math.random() * toneMessages.length)]!
   }
-  const generic = ERROR_FALLBACK_MESSAGES['']!
+  const generic = DEFAULT_ACK_MESSAGES['']!
   return generic[Math.floor(Math.random() * generic.length)]!
 }

@@ -15,6 +15,6 @@ export interface AckGenerationContext {
   userMessage: string
   /** Generic action description (never reveals internal plan) */
   actionType: string
-  /** Tone: casual for WhatsApp, formal for email, neutral otherwise */
-  tone: 'casual' | 'formal' | 'neutral'
+  /** Tone from channel config avisoStyle (casual, formal, express, etc.) */
+  tone: string
 }

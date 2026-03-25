@@ -17,7 +17,7 @@ import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
 import { generateAck, mapStepToAction } from './ack/ack-service.js'
-import { pickErrorFallback } from './ack/ack-defaults.js'
+import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 
 const logger = pino({ name: 'engine' })
@@ -190,12 +190,11 @@ async function processMessageInner(
     const avisoConfig = getAvisoConfig(ctx.message.channelName)
     let avisoSentAt: number | undefined = undefined
 
+    // Resolve tone from channel config (avisoStyle) — single source of truth
+    const channelTone = getChannelTone(ctx.message.channelName)
+
     // Determine action type for LLM ACK context
     const actionType = mapStepToAction(evaluation.executionPlan?.[0]?.type ?? 'respond_only')
-    const channelTone: 'casual' | 'formal' | 'neutral' =
-      ctx.message.channelName === 'email' ? 'formal'
-      : ctx.message.channelName === 'whatsapp' || ctx.message.channelName === 'google-chat' ? 'casual'
-      : 'neutral'
 
     avisoTimer = avisoConfig.triggerMs > 0
       ? setTimeout(async () => {
@@ -205,7 +204,7 @@ async function processMessageInner(
           // If pipeline failed, send error fallback instead of processing ACK
           if (pipelineState.failed) {
             try {
-              const errorMsg = pickErrorFallback(ctx.message.channelName)
+              const errorMsg = pickErrorFallback(channelTone)
               await sendAviso(ctx, errorMsg, registry)
             } catch (err) {
               logger.warn({ err, traceId }, 'Failed to send error fallback via aviso')
@@ -371,7 +370,8 @@ async function processMessageInner(
 
     // Send a natural error fallback so the user doesn't get silence
     try {
-      const errorMsg = pickErrorFallback(message.channelName)
+      const tone = getChannelTone(message.channelName)
+      const errorMsg = pickErrorFallback(tone)
       await registry.runHook('message:send', {
         channel: message.channelName,
         to: message.from,
@@ -439,6 +439,20 @@ function getAvisoConfig(channel: string): { triggerMs: number; holdMs: number } 
   }
   // No channel-config service → aviso disabled for this channel
   return { triggerMs: 0, holdMs: 0 }
+}
+
+/**
+ * Resolve the tone/style for a channel from its runtime config (avisoStyle).
+ * This is the single source of truth — ACKs and error fallbacks both use this.
+ */
+function getChannelTone(channel: string): string {
+  const channelSvc = registry.getOptional<{ get(): import('../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
+  if (channelSvc) {
+    const style = channelSvc.get().avisoStyle
+    // 'dynamic' rotates among styles — for one-off picks, default to casual
+    return style === 'dynamic' ? 'casual' : style
+  }
+  return ''
 }
 
 /**

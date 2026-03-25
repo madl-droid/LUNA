@@ -5,7 +5,7 @@
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { AckGenerationContext } from './types.js'
-import { DEFAULT_ACK_MESSAGES, ACTION_DESCRIPTIONS } from './ack-defaults.js'
+import { pickDefaultAck, ACTION_DESCRIPTIONS } from './ack-defaults.js'
 
 const logger = pino({ name: 'engine:ack' })
 
@@ -15,7 +15,7 @@ const ACK_TIMEOUT_MS = 3000
  * Generate a contextual ACK message.
  * 1. Try LLM (fast, cheap model with 3s timeout)
  * 2. If LLM fails → pick from DB pool
- * 3. If DB pool empty → pick from in-memory defaults
+ * 3. If DB pool empty → pick from in-memory defaults by tone
  * 4. Last resort → "Un momento..."
  */
 export async function generateAck(
@@ -70,41 +70,32 @@ export async function generateAck(
     logger.debug({ err }, 'LLM ACK failed, falling back to predefined pool')
   }
 
-  // Fallback to DB pool, then in-memory defaults
-  return getDefaultAck(registry, '')
+  // Fallback: DB pool, then in-memory defaults by tone
+  return getDefaultAck(registry, ctx.tone)
 }
 
 /**
  * Get a predefined ACK message from the DB pool or in-memory defaults.
+ * @param tone - The tone to match (casual, formal, express, etc.)
  */
 export async function getDefaultAck(
   registry: Registry,
-  channel: string,
+  tone: string,
 ): Promise<string> {
   // Try DB pool first
   try {
     const db = registry.getDb()
     const { rows } = await db.query<{ text: string }>(
       `SELECT text FROM ack_messages WHERE active = true AND (channel = $1 OR channel = '') ORDER BY random() LIMIT 1`,
-      [channel],
+      [tone],
     )
     if (rows[0]?.text) return rows[0].text
   } catch {
     // DB not available or table doesn't exist yet
   }
 
-  // In-memory defaults
-  const channelMessages = DEFAULT_ACK_MESSAGES[channel]
-  if (channelMessages && channelMessages.length > 0) {
-    return channelMessages[Math.floor(Math.random() * channelMessages.length)]!
-  }
-
-  const globalMessages = DEFAULT_ACK_MESSAGES['']
-  if (globalMessages && globalMessages.length > 0) {
-    return globalMessages[Math.floor(Math.random() * globalMessages.length)]!
-  }
-
-  return 'Un momento...'
+  // In-memory defaults by tone
+  return pickDefaultAck(tone)
 }
 
 /**

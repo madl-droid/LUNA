@@ -22,7 +22,7 @@ import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { markFarewell, setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
 import { loadProactiveConfig } from '../proactive/proactive-config.js'
-import { pickErrorFallback } from '../ack/ack-defaults.js'
+import { pickErrorFallback } from '../fallbacks/error-defaults.js'
 
 const logger = pino({ name: 'engine:phase5' })
 
@@ -101,7 +101,12 @@ export async function phase5Validate(
   if (!deliveryResult.sent) {
     logger.warn({ traceId: ctx.traceId }, 'Delivery failed after retries, sending error fallback')
     try {
-      const errorMsg = pickErrorFallback(ctx.message.channelName)
+      // Resolve tone from channel config
+      const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
+      const style = channelSvc?.get().avisoStyle ?? ''
+      const tone = style === 'dynamic' ? 'casual' : style
+
+      const errorMsg = pickErrorFallback(tone)
       let sendTo = ctx.message.from
       const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
       const groupJid = rawMsg?.key?.remoteJid
