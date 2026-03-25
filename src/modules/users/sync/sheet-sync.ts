@@ -1,5 +1,5 @@
-// LUNA — Users module: Google Sheets sync (skeleton)
-// Se activa solo cuando hay un módulo de Google OAuth conectado.
+// LUNA — Users module: Google Sheets sync
+// Se activa solo cuando el módulo google-apps está conectado con OAuth.
 // Sincroniza contactos desde una Google Sheet configurada por lista.
 
 import pino from 'pino'
@@ -106,17 +106,20 @@ export async function syncListFromSheet(
 
   logger.info({ listType, sheetUrl: syncConfig.sheetUrl }, 'Starting sheet sync')
 
-  // TODO: When Google OAuth module is implemented, use googleapis to read the sheet
-  // const sheets = google.sheets({ version: 'v4', auth })
-  // const response = await sheets.spreadsheets.values.get({
-  //   spreadsheetId: extractSheetId(syncConfig.sheetUrl),
-  //   range: syncConfig.sheetTab ?? 'Sheet1',
-  // })
-  // const rows = parseSheetRows(response.data.values)
+  // Use google:sheets service (provided by google-apps module)
+  const sheetsService = registry.getOptional<{
+    readRange(spreadsheetId: string, range: string): Promise<{ values: string[][] }>
+  }>('google:sheets')
 
-  // For now, return empty result since Google OAuth is not yet available
-  // When implemented: const rows = _parseSheetRows(response.data.values)
-  const rows: SheetRow[] = []
+  if (!sheetsService) {
+    throw new Error('Google Sheets service not available — google-apps module may not be active')
+  }
+
+  const spreadsheetId = extractSheetId(syncConfig.sheetUrl)
+  const range = syncConfig.sheetTab ? `${syncConfig.sheetTab}!A1:Z10000` : 'Sheet1!A1:Z10000'
+
+  const data = await sheetsService.readRange(spreadsheetId, range)
+  const rows: SheetRow[] = _parseSheetRows(data.values)
 
   // Deactivate existing sheet_sync entries for this list
   await db.deactivateBySource(listType, 'sheet_sync')
@@ -144,6 +147,16 @@ export async function syncListFromSheet(
 
   logger.info({ listType, ...result }, 'Sheet sync completed')
   return result
+}
+
+/**
+ * Extract the spreadsheet ID from a Google Sheets URL.
+ * Supports: https://docs.google.com/spreadsheets/d/{ID}/edit
+ * Also accepts a bare ID (no URL).
+ */
+function extractSheetId(sheetUrl: string): string {
+  const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
+  return match ? match[1]! : sheetUrl // fallback: treat as bare ID
 }
 
 /**

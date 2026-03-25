@@ -347,12 +347,12 @@ const manifest: ModuleManifest = {
   async init(registry: Registry) {
     const db = registry.getDb()
 
-    // Ensure ack_messages table exists (for ACK predefined pool)
+    // Ensure ack_messages table exists (for ACK predefined pool, keyed by tone)
     try {
       await db.query(`
         CREATE TABLE IF NOT EXISTS ack_messages (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          channel TEXT NOT NULL DEFAULT '',
+          tone TEXT NOT NULL DEFAULT '',
           text TEXT NOT NULL,
           active BOOLEAN DEFAULT true,
           sort_order INTEGER DEFAULT 0,
@@ -360,17 +360,33 @@ const manifest: ModuleManifest = {
           updated_at TIMESTAMPTZ DEFAULT now()
         )
       `)
+      // Migrate: if old 'channel' column exists, rename to 'tone' and remap values
+      try {
+        const { rows: cols } = await db.query(
+          `SELECT column_name FROM information_schema.columns WHERE table_name = 'ack_messages' AND column_name = 'channel'`,
+        )
+        if (cols.length > 0) {
+          await db.query(`ALTER TABLE ack_messages RENAME COLUMN channel TO tone`)
+          await db.query(`UPDATE ack_messages SET tone = 'casual' WHERE tone = 'whatsapp' OR tone = 'google-chat'`)
+          await db.query(`UPDATE ack_messages SET tone = 'formal' WHERE tone = 'email'`)
+        }
+      } catch { /* column already renamed or doesn't exist */ }
+
       // Seed only if table is empty
       const { rows } = await db.query(`SELECT COUNT(*)::int AS cnt FROM ack_messages`)
       if (rows[0]?.cnt === 0) {
         await db.query(`
-          INSERT INTO ack_messages (channel, text, sort_order) VALUES
+          INSERT INTO ack_messages (tone, text, sort_order) VALUES
             ('', 'Un momento...', 0),
             ('', 'Dame un segundo...', 1),
             ('', 'Estoy en eso...', 2),
-            ('whatsapp', 'Ya te reviso...', 0),
-            ('whatsapp', 'Un momento, déjame ver...', 1),
-            ('email', 'Procesando su consulta...', 0)
+            ('casual', 'Ya te reviso...', 0),
+            ('casual', 'Un momento, déjame ver...', 1),
+            ('casual', 'Dame un segundo...', 2),
+            ('formal', 'Un momento por favor...', 0),
+            ('formal', 'Procesando su consulta...', 1),
+            ('express', 'Un seg...', 0),
+            ('express', 'Ya va...', 1)
         `)
       }
     } catch {
