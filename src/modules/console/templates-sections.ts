@@ -887,21 +887,21 @@ function renderUsersSection(data: SectionData): string {
     html += `<div class="filter-bar">
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Nombre' : 'Name'}</span>
-        <select class="ch-filter-select" id="uf-sort" onchange="userFilterApply()">
+        <select class="ch-filter-select js-custom-select" id="uf-sort" onchange="userFilterApply()">
           <option value="asc">A → Z</option>
           <option value="desc">Z → A</option>
         </select>
       </div>
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Canal' : 'Channel'}</span>
-        <select class="ch-filter-select" id="uf-channel" onchange="userFilterApply()">
+        <select class="ch-filter-select js-custom-select" id="uf-channel" onchange="userFilterApply()">
           <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
           ${chFilterOpts}
         </select>
       </div>
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Fuente' : 'Source'}</span>
-        <select class="ch-filter-select" id="uf-source" onchange="userFilterApply()">
+        <select class="ch-filter-select js-custom-select" id="uf-source" onchange="userFilterApply()">
           <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
           <option value="manual">Manual</option>
           <option value="agent">${lang === 'es' ? 'Automatico' : 'Automatic'}</option>
@@ -909,11 +909,20 @@ function renderUsersSection(data: SectionData): string {
       </div>
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Ultima interaccion' : 'Last interaction'}</span>
-        <select class="ch-filter-select" id="uf-activity" onchange="userFilterApply()">
+        <select class="ch-filter-select js-custom-select" id="uf-activity" onchange="userFilterApply()">
           <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
           <option value="1h">1h</option><option value="12h">12h</option><option value="24h">24h</option>
           <option value="7d">7d</option><option value="30d">30d</option><option value="90d">90d</option>
           <option value="inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Por pagina' : 'Per page'}</span>
+        <select class="ch-filter-select js-custom-select" id="uf-perpage" onchange="userFilterApply()">
+          <option value="10">10</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="500">500</option>
         </select>
       </div>
       <div class="user-filter-search">
@@ -947,7 +956,7 @@ function renderUsersSection(data: SectionData): string {
 
     if (users.length > 0) {
       html += `<table class="users-table" id="tbl-${esc(lt)}"><thead><tr class="users-table-head">
-        ${canEdit(lt) ? '<th></th>' : ''}
+        ${canEdit(lt) ? `<th><input type="checkbox" class="user-cb" id="cb-all-${esc(lt)}" title="${lang === 'es' ? 'Seleccionar todos' : 'Select all'}" onclick="userToggleAll('${esc(lt)}')"></th>` : ''}
         <th>ID</th>
         <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
         <th>${lang === 'es' ? 'Datos de contacto' : 'Contact info'}</th>
@@ -989,7 +998,13 @@ function renderUsersSection(data: SectionData): string {
 
         // (contacts editing moved to modal)
       }
-      html += `</tbody></table>`
+      html += `</tbody></table>
+      <div class="ch-card-footer" id="pager-${esc(lt)}">
+        <span class="filter-label" id="pager-info-${esc(lt)}"></span>
+        <span class="ch-footer-spacer"></span>
+        <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(lt)}',-1)">&lsaquo; ${lang === 'es' ? 'Anterior' : 'Previous'}</button>
+        <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(lt)}',1)">${lang === 'es' ? 'Siguiente' : 'Next'} &rsaquo;</button>
+      </div>`
     } else {
       html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
@@ -1190,42 +1205,93 @@ function renderUsersSection(data: SectionData): string {
       alert(lang==='es'?'Eliminacion permanente aun no implementada.':'Permanent deletion not yet implemented.');
     };
 
-    // ── Filtering ──
-    window.userFilterApply=function(){
-      var sort=document.getElementById('uf-sort').value;
-      var channel=document.getElementById('uf-channel').value;
-      var source=document.getElementById('uf-source').value;
-      var activity=document.getElementById('uf-activity').value;
-      var search=(document.getElementById('uf-search').value||'').toLowerCase();
-
-      document.querySelectorAll('.users-table tbody tr[data-user-id]').forEach(function(tr){
-        var show=true;
-        // Channel filter
-        if(channel!=='all'){
-          var channels=(tr.getAttribute('data-channels')||'').split(',');
-          if(channels.indexOf(channel)===-1)show=false;
-        }
-        // Source filter
-        if(source!=='all'){
-          var s=tr.getAttribute('data-source')||'';
-          if(source==='manual'&&s!=='manual')show=false;
-          if(source==='agent'&&s==='manual')show=false;
-        }
-        // Activity filter (inactive)
-        if(activity==='inactive'){
-          if(tr.getAttribute('data-user-active')==='true')show=false;
-        } else if(activity!=='all'){
-          if(tr.getAttribute('data-user-active')!=='true')show=false;
-        }
-        // Search
-        if(search){
-          var haystack=(tr.getAttribute('data-search')||'').toLowerCase();
-          if(haystack.indexOf(search)===-1)show=false;
-        }
-        tr.style.display=show?'':'none';
+    // ── Select all ──
+    window.userToggleAll=function(lt){
+      var cbAll=document.getElementById('cb-all-'+lt);
+      var checked=cbAll?cbAll.checked:false;
+      document.querySelectorAll('.user-cb[data-list="'+lt+'"]').forEach(function(cb){
+        if(cb.closest('tr').style.display!=='none')cb.checked=checked;
       });
-      // TODO: sort by name (requires DOM reorder)
+      userSelChanged(lt);
     };
+
+    // ── Pagination state ──
+    var _page={};
+    window.userPage=function(lt,dir){
+      if(!_page[lt])_page[lt]=0;
+      _page[lt]=Math.max(0,_page[lt]+dir);
+      userFilterApply();
+    };
+
+    // ── Filtering + pagination ──
+    window.userFilterApply=function(){
+      var sortEl=document.getElementById('uf-sort');
+      var channelEl=document.getElementById('uf-channel');
+      var sourceEl=document.getElementById('uf-source');
+      var activityEl=document.getElementById('uf-activity');
+      var perpageEl=document.getElementById('uf-perpage');
+      var sort=sortEl?sortEl.value:'asc';
+      var channel=channelEl?channelEl.value:'all';
+      var source=sourceEl?sourceEl.value:'all';
+      var activity=activityEl?activityEl.value:'all';
+      var perpage=perpageEl?parseInt(perpageEl.value,10):50;
+      var search=(document.getElementById('uf-search')||{}).value||'';
+      search=search.toLowerCase();
+
+      // Collect all rows, filter, then paginate
+      var tables=document.querySelectorAll('.users-table');
+      tables.forEach(function(tbl){
+        var lt=tbl.id.replace('tbl-','');
+        var rows=Array.prototype.slice.call(tbl.querySelectorAll('tbody tr[data-user-id]'));
+
+        // Filter
+        var visible=rows.filter(function(tr){
+          if(channel!=='all'){
+            var chs=(tr.getAttribute('data-channels')||'').split(',');
+            if(chs.indexOf(channel)===-1)return false;
+          }
+          if(source!=='all'){
+            var s=tr.getAttribute('data-source')||'';
+            if(source==='manual'&&s!=='manual')return false;
+            if(source==='agent'&&s==='manual')return false;
+          }
+          if(activity==='inactive'){
+            if(tr.getAttribute('data-user-active')==='true')return false;
+          }else if(activity!=='all'){
+            if(tr.getAttribute('data-user-active')!=='true')return false;
+          }
+          if(search){
+            var h=(tr.getAttribute('data-search')||'').toLowerCase();
+            if(h.indexOf(search)===-1)return false;
+          }
+          return true;
+        });
+
+        // Sort by name
+        visible.sort(function(a,b){
+          var na=(a.getAttribute('data-user-name')||'').toLowerCase();
+          var nb=(b.getAttribute('data-user-name')||'').toLowerCase();
+          return sort==='desc'?nb.localeCompare(na):na.localeCompare(nb);
+        });
+
+        // Paginate
+        if(!_page[lt])_page[lt]=0;
+        var totalPages=Math.max(1,Math.ceil(visible.length/perpage));
+        if(_page[lt]>=totalPages)_page[lt]=totalPages-1;
+        var start=_page[lt]*perpage;
+        var end=start+perpage;
+
+        // Hide all, show paginated
+        rows.forEach(function(tr){tr.style.display='none'});
+        for(var i=start;i<Math.min(end,visible.length);i++){visible[i].style.display=''}
+
+        // Update pager info
+        var info=document.getElementById('pager-info-'+lt);
+        if(info)info.textContent=(start+1)+'-'+Math.min(end,visible.length)+' / '+visible.length;
+      });
+    };
+    // Initial filter
+    setTimeout(userFilterApply,100);
 
     // ── Perm sync ──
     document.querySelectorAll('.perm-cb').forEach(function(cb){
@@ -1234,6 +1300,9 @@ function renderUsersSection(data: SectionData): string {
         if(h){h.value=cb.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
       })
     });
+
+    // Re-init custom selects for filter bar (loaded after initial init)
+    if(typeof initCustomSelects==='function')initCustomSelects();
   })()</script>`
 
   // ── Config page: permissions + unregistered behavior ──
