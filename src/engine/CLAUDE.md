@@ -1,123 +1,86 @@
-# Engine — Pipeline de procesamiento de mensajes
+# Engine — Pipeline de procesamiento de mensajes (v2)
 
-Pipeline de 5 fases que procesa mensajes entrantes (reactivo) y contactos salientes (proactivo).
+Pipeline de 5 fases con concurrencia controlada. Procesa mensajes entrantes (reactivo) y contactos salientes (proactivo).
 
 ## Archivos
 
 ```
-engine.ts             — orquestador principal, entry point
+engine.ts             — orquestador principal, entry point, concurrency layers
 config.ts             — carga config de env vars
 index.ts              — re-exports públicos
-types.ts              — todos los types (ContextBundle v3, proactive types)
+types.ts              — todos los types (ContextBundle v4, AttachmentMetadata, proactive types)
+concurrency/
+  pipeline-semaphore.ts — semáforo global de pipelines (capa 1)
+  contact-lock.ts     — serialización per-contacto (capa 2)
+  step-semaphore.ts   — concurrencia de steps en Phase 3 (capa 3)
+  index.ts            — re-exports
 phases/
-  phase1-intake.ts    — normalización + context loading via memory:manager (<200ms)
+  phase1-intake.ts    — normalización + context loading via memory:manager + users:resolve (<200ms)
   phase2-evaluate.ts  — evaluación con LLM (reactivo + proactivo, NO_ACTION)
-  phase3-execute.ts   — ejecución del plan (router, memory lookup)
-  phase4-compose.ts   — composición de respuesta (LLM compositor)
+  phase3-execute.ts   — ejecución del plan (router, memory lookup, process_attachment, step semaphore)
+  phase4-compose.ts   — composición de respuesta (LLM con retries) + formato canal + TTS
   phase5-validate.ts  — validación + envío + persistencia + commitment auto-detect
+attachments/
+  classifier.ts       — clasificación lightweight de adjuntos (solo metadata, Phase 1)
+  processor.ts        — procesamiento pesado de adjuntos (Phase 3)
 subagent/
   subagent.ts         — mini-loop con barandas
   guardrails.ts       — límites configurables
 proactive/
-  proactive-runner.ts — orquestador BullMQ (queues, workers, repeatables)
-  proactive-pipeline.ts — pipeline proactivo (phase1 simplificada + phases 2-5)
-  proactive-config.ts — loader de instance/proactive.json
-  guards.ts           — 7 guardas de protección (idempotencia → conversation guard)
-  commitment-validator.ts — valida y clasifica commitments (known/generic/rejected)
-  commitment-detector.ts  — auto-detección Via B (fast LLM en phase5)
-  triggers.ts         — definición de jobs (follow-up, reminder, commitment, reactivation)
-  jobs/
-    follow-up.ts      — scanner de leads inactivos
-    reminder.ts       — scanner de eventos próximos
-    commitment-check.ts — scanner de commitments due/overdue + auto-cancel
-    reactivation.ts   — scanner de leads fríos
-    cache-refresh.ts  — cache refresh nocturno
-    nightly-batch.ts  — batch nocturno
-  tools/
-    create-commitment.ts — tool registrada en tools:registry
+  (sin cambios)
 prompts/
-  evaluator.ts        — prompt builder fase 2 (reactivo + proactivo)
+  evaluator.ts        — prompt builder fase 2 (inyecta attachment metadata, process_attachment en plan)
   compositor.ts       — prompt builder fase 4
 utils/
-  normalizer.ts, injection-detector.ts, rag-local.ts, quick-actions.ts,
+  normalizer.ts, injection-detector.ts, rag-local.ts,
   message-formatter.ts, llm-client.ts
 mocks/
-  user-resolver.ts, tool-registry.ts
+  tool-registry.ts    — TODO: reemplazar por tools:registry del módulo tools
 ```
+
+## Concurrencia (4 capas)
+
+1. **Pipeline Semaphore** (global): max N pipelines simultáneos, cola FIFO, backpressure si cola llena
+2. **Contact Lock** (per-contacto): serializa mensajes del mismo contacto, evita race conditions
+3. **Step Semaphore** (Phase 3): max N steps en paralelo dentro de un pipeline
+4. **Resource pools** (DB pool, LLM circuit breaker): ya existentes en kernel y módulo LLM
+
+## Modo de pruebas
+
+`ENGINE_TEST_MODE=true` → solo admins reciben respuesta. Non-admins se ignoran silenciosamente.
+Configurable desde consola y .env. Persiste al reinicio.
 
 ## Flujo reactivo
 
-1. `message:incoming` hook → `processMessage()`
-2. Phase 1: normalize, user type, context via `memory:manager` → ContextBundle v3
-3. Phase 2: LLM evaluator → intent, plan
-4. Phase 3: execute plan steps
-5. Phase 4: LLM compositor → response
-6. Phase 5: validate, send, persist, farewell detection, contact lock, commitment auto-detect
+1. Semaphore acquire → Contact lock → `processMessageInner()`
+2. Phase 1: normalize, user type via `users:resolve`, classify attachments (metadata only) → ContextBundle v4
+3. Test mode gate: si testMode && !admin → return silencioso
+4. Phase 2: LLM evaluator → intent, plan (puede incluir process_attachment steps)
+5. Phase 3: execute plan steps con step semaphore (process_attachment = heavy processing)
+6. Phase 4: LLM compositor (retries + fallback) → formato canal → TTS → CompositorOutput
+7. Phase 5: validate, send (pre-formatted), persist, proactive signals
 
-## Flujo proactivo
+## Adjuntos (2 fases)
 
-1. BullMQ scanner job detecta candidato (follow-up/reminder/commitment/reactivation)
-2. `processProactive(candidate)` ejecuta guardas (7 en orden)
-3. Phase 1 simplificada: contacto, historial, trigger, canal → ProactiveContextBundle
-4. Phase 2: evaluador proactivo (puede retornar NO_ACTION)
-5. Phase 3-5: idénticas al reactivo
-6. Post-send: cooldown, rate limit increment, outreach log, commitment update
+- **Phase 1**: `classifyAttachments()` → solo metadata (tipo, nombre, tamaño, mime) — <1ms
+- **Phase 2**: evaluador ve metadata, puede planificar `process_attachment` steps
+- **Phase 3**: `executeProcessAttachment()` → descarga, extrae texto, resume, transcribe audio
+- **Phase 4**: LLM compositor recibe datos procesados de Phase 3
 
-## Guardas proactivas (orden de ejecución)
+## Phase 4: Retries + Formato + TTS
 
-1. Idempotencia (Redis SET NX, TTL 24h)
-2. Horario laboral (timezone config, email bypasses)
-3. Contact lock (mutex — contacto en conversación activa)
-4. Outreach dedup (PG query, overdue bypasses)
-5. Cooldown (Redis, configurable minutes)
-6. Rate limit (max mensajes proactivos/día/contacto)
-7. Conversation guard (farewell intent, overdue bypasses)
-
-## Avisos de proceso (per-channel, via Channel Config Service)
-
-Cada canal provee su config de aviso via servicio `channel-config:{nombre}` (ver `src/channels/types.ts`).
-El engine lee: `registry.getOptional('channel-config:{channel}')?.get()` → `{ avisoTriggerMs, avisoHoldMs, avisoMessages }`.
-
-- Si el canal no provee servicio, el engine usa defaults de `engine/config.ts` (email) o desactiva (otros)
-- Si la respuesta tarda más del `avisoTriggerMs`, se elige un aviso al azar del pool y se envía via `message:send`
-- Tras enviar, la respuesta real se retiene el `avisoHoldMs` configurado
-- `avisoTriggerMs=0` desactiva por canal
-- Mensajes editables desde console (en la sección del canal), nunca generados por LLM
-- Patrón para agregar a un canal nuevo: ver `docs/architecture/channel-guide.md`
-
-## Rate limits (per-channel, via Channel Config Service)
-
-`checkRateLimit()` en phase5 lee `rateLimitHour` y `rateLimitDay` del servicio `channel-config:{channel}`.
-- Si el canal no provee servicio, no aplica rate limit
-- Contadores en Redis con TTL (1h y 24h)
-- 0 = sin límite
-
-## Session timeout (per-channel, via Channel Config Service)
-
-`getChannelSessionTimeout()` en phase1 lee `sessionTimeoutMs` del servicio `channel-config:{channel}`.
-- Si el canal no provee servicio, usa el default del engine (`sessionReopenWindowMs`)
-
-## Commitments
-
-Dos vías de creación:
-- **Vía A** (tool): Evaluador incluye `create_commitment` en plan → phase3 ejecuta → validador
-- **Vía B** (auto-detect): Phase5 fire-and-forget → LLM rápido detecta promesas → validador
-
-Validador clasifica: known (tipo en proactive.json), generic (auto_cancel corto), rejected.
-
-## Config
-
-- `instance/proactive.json` — config de proactividad por tenant
-- `instance/fallbacks/proactive-*.txt` — templates fallback
-- Env vars: LLM_PROACTIVE_MODEL, LLM_PROACTIVE_PROVIDER
+- LLM con retry por provider (configurable ENGINE_COMPOSE_RETRIES_PER_PROVIDER)
+- Primary (retry) → Fallback provider (retry) → Template de archivo
+- `formatForChannel()` → split WA, HTML email, etc.
+- TTS si `responseFormat === 'audio'`
+- Output: CompositorOutput con `formattedParts`, `audioBuffer?`, `outputFormat`
 
 ## Trampas
 
-- memory:manager es opcional — fallback a SQL directo en todas las fases
-- Pipeline log fire-and-forget via `memoryManager.savePipelineLog()`
-- Persist messages usa dual-write (Redis buffer + PG async) via memory:manager
-- `needsAcknowledgment` en EvaluatorOutput ya no se consume en phase3 — el aviso ahora es por timer en engine.ts, no por decisión del evaluador
+- users:resolve es opcional — fallback: todos son "lead" si módulo users no está activo
+- memory:manager es opcional — fallback a SQL directo
+- Attachment processing ahora en Phase 3, no Phase 1 (Phase 1 solo metadata)
+- Proactive config se cachea en Phase 5 (no relee archivo en cada mensaje)
+- tool-registry.ts sigue siendo mock — pendiente conectar tools:registry
 - Proactive NO_ACTION es el default seguro (no enviar nada si LLM falla)
 - Contact lock auto-expira con session TTL
-- BullMQ requiere Redis — graceful degradation si connection fails
-- Commitment auto-detect es fire-and-forget (no bloquea phase5)

@@ -16,12 +16,15 @@ import { phase5Validate } from './phases/phase5-validate.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
-import { generateAck, getDefaultAck, mapStepToAction } from './ack/ack-service.js'
+import { generateAck, mapStepToAction } from './ack/ack-service.js'
+import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 
 const logger = pino({ name: 'engine' })
 
 let engineConfig: EngineConfig
 let registry: Registry
+let pipelineSemaphore: PipelineSemaphore
+let contactLock: ContactLock
 
 /**
  * Initialize the engine. Call once at startup.
@@ -31,6 +34,10 @@ export function initEngine(reg: Registry): void {
 
   // Load config
   engineConfig = loadEngineConfig()
+
+  // Initialize concurrency controls
+  pipelineSemaphore = new PipelineSemaphore(engineConfig.maxConcurrentPipelines, engineConfig.maxQueueSize)
+  contactLock = new ContactLock()
 
   // Initialize LLM clients (direct SDK fallback)
   initLLMClients(engineConfig)
@@ -83,12 +90,53 @@ export function initEngine(reg: Registry): void {
 
 /**
  * Process an incoming message through the 5-phase pipeline.
+ * Protected by pipeline semaphore (global concurrency) and contact lock (per-contact serialization).
  */
 export async function processMessage(message: IncomingMessage): Promise<PipelineResult> {
   const totalStart = Date.now()
   const db = registry.getDb()
   const redis = registry.getRedis()
 
+  // ═══ CONCURRENCY LAYER 1: Pipeline Semaphore ═══
+  const acquireResult = await pipelineSemaphore.acquire(message.from)
+  if (acquireResult === 'rejected') {
+    logger.warn({ from: message.from, channel: message.channelName }, 'Backpressure — sending busy message')
+    try {
+      await registry.runHook('message:send', {
+        channel: message.channelName,
+        to: message.from,
+        content: { type: 'text', text: engineConfig.backpressureMessage },
+      })
+    } catch (err) {
+      logger.error({ err }, 'Failed to send backpressure message')
+    }
+    return {
+      traceId: 'backpressure',
+      success: true,
+      skipped: 'backpressure',
+      phase1DurationMs: 0, phase2DurationMs: 0, phase3DurationMs: 0,
+      phase4DurationMs: 0, phase5DurationMs: 0,
+      totalDurationMs: Date.now() - totalStart,
+      replanAttempts: 0, subagentIterationsUsed: 0,
+    }
+  }
+
+  try {
+    // ═══ CONCURRENCY LAYER 2: Per-Contact Serialization ═══
+    return await contactLock.withLock(message.from, () =>
+      processMessageInner(message, db, redis, totalStart),
+    )
+  } finally {
+    pipelineSemaphore.release()
+  }
+}
+
+async function processMessageInner(
+  message: IncomingMessage,
+  db: import('pg').Pool,
+  redis: import('ioredis').Redis,
+  totalStart: number,
+): Promise<PipelineResult> {
   let traceId = ''
 
   try {
@@ -103,8 +151,22 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       phase: 1,
       durationMs: phase1DurationMs,
       userType: ctx.userType,
-      quickAction: ctx.quickAction?.type,
+      attachments: ctx.attachmentMeta.length,
     }, 'Phase 1 done')
+
+    // ═══ TEST MODE GATE ═══
+    if (engineConfig.testMode && ctx.userType !== 'admin') {
+      logger.info({ traceId, userType: ctx.userType, from: message.from }, 'Test mode — ignoring non-admin')
+      return {
+        traceId,
+        success: true,
+        skipped: 'test_mode',
+        phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
+        phase4DurationMs: 0, phase5DurationMs: 0,
+        totalDurationMs: Date.now() - totalStart,
+        replanAttempts: 0, subagentIterationsUsed: 0,
+      }
+    }
 
     // ═══ PHASE 2: Evaluate Situation ═══
     const p2Start = Date.now()
@@ -313,6 +375,19 @@ export async function stopEngine(): Promise<void> {
  */
 export function getEngineConfig(): EngineConfig {
   return engineConfig
+}
+
+/**
+ * Get concurrency stats for monitoring.
+ */
+export function getEngineStats(): {
+  semaphore: ReturnType<PipelineSemaphore['stats']>
+  activeContacts: number
+} {
+  return {
+    semaphore: pipelineSemaphore.stats(),
+    activeContacts: contactLock.activeCount(),
+  }
 }
 
 /**

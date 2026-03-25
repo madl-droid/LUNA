@@ -1,5 +1,6 @@
-// LUNA Engine — Phase 5: Validate + Send + Persist (v3)
-// Validates output, formats, rate limits, sends, persists via memory:manager.
+// LUNA Engine — Phase 5: Validate + Send + Persist (v2)
+// Receives pre-formatted + pre-TTS output from Phase 4.
+// Validates, rate-limits, sends, persists, signals proactive guards.
 
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
@@ -17,7 +18,6 @@ import type {
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { StoredMessage } from '../../modules/memory/types.js'
 import { detectOutputInjection, detectSensitiveData } from '../utils/injection-detector.js'
-import { formatForChannel } from '../utils/message-formatter.js'
 import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { markFarewell, setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
@@ -25,8 +25,21 @@ import { loadProactiveConfig } from '../proactive/proactive-config.js'
 
 const logger = pino({ name: 'engine:phase5' })
 
+// Cache proactive config (loaded once, not every message)
+let cachedProactiveConfig: ReturnType<typeof loadProactiveConfig> | null = null
+
+function getProactiveConfig() {
+  if (!cachedProactiveConfig) {
+    cachedProactiveConfig = loadProactiveConfig()
+  }
+  return cachedProactiveConfig
+}
+
+/** System-wide hard cap: no contact receives more than this per hour */
+const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
+
 /**
- * Execute Phase 5: Validate, format, send, persist.
+ * Execute Phase 5: Validate, send pre-formatted output, persist.
  */
 export async function phase5Validate(
   ctx: ContextBundle,
@@ -43,93 +56,60 @@ export async function phase5Validate(
 
   // 1. Validate output
   const validation = validateOutput(composed.responseText)
-
   let responseText = composed.responseText
   if (!validation.passed) {
     logger.warn({ traceId: ctx.traceId, issues: validation.issues }, 'Output validation issues')
     responseText = validation.sanitizedText
   }
 
-  // 2. Check rate limits (reads from channel config service)
+  // 2. Check rate limits
   const rateLimitOk = await checkRateLimit(redis, ctx.message.from, ctx.message.channelName, config, registry)
   if (!rateLimitOk) {
     logger.warn({ traceId: ctx.traceId, to: ctx.message.from }, 'Rate limit exceeded')
     return { sent: false, error: 'Rate limit exceeded' }
   }
 
-  // 3. Check if TTS should be used (audio response for audio input)
-  const ttsService = registry.getOptional<{
-    shouldAutoTTS(channel: string, inputType: string): boolean
-    synthesize(text: string): Promise<{ audioBuffer: Buffer; durationSeconds: number } | null>
-  }>('tts:service')
-
-  if (ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType)) {
-    const ttsResult = await ttsService.synthesize(responseText)
-    if (ttsResult) {
-      const audioDelivery = await sendAudioMessage(ctx, ttsResult, registry)
-      if (audioDelivery.sent) {
-        // Continue to persist, update session, etc. with the audio delivery result
-        const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
-        await persistMessages(ctx, responseText, evaluation, db, memoryManager)
-        await updateLeadQualification(ctx, registry, db, memoryManager)
-        await updateSession(ctx, db)
-        enqueueSheetsSync(ctx, redis)
-        if (ctx.contactId) {
-          if (evaluation.intent === 'farewell') markFarewell(ctx.contactId, redis).catch(() => {})
-          const isProactive = 'isProactive' in ctx && (ctx as Record<string, unknown>).isProactive
-          if (!isProactive) {
-            setContactLock(ctx.contactId, redis, config.sessionTtlMs).catch(() => {})
-            const proactiveConfig = loadProactiveConfig()
-            detectCommitments(responseText, ctx.contactId, ctx.agentId, ctx.session.id, registry, config, proactiveConfig).catch(() => {})
-          }
-        }
-        const durationMs = Date.now() - startMs
-        logger.info({ traceId: ctx.traceId, durationMs, sent: true, format: 'audio' }, 'Phase 5 complete (TTS)')
-        return audioDelivery
-      }
-      logger.warn({ traceId: ctx.traceId }, 'TTS send failed, falling through to text')
-    }
-  }
-
-  // 4a. Send attachment fallback messages (before main response)
+  // 3. Send attachment fallback messages (before main response)
   if (ctx.attachmentContext?.fallbackMessages.length) {
     await sendFallbackMessages(ctx, ctx.attachmentContext.fallbackMessages, registry)
   }
 
-  // 4. Format for channel
-  const parts = formatForChannel(responseText, ctx.message.channelName)
+  // 4. Send response (Phase 4 already formatted + TTS'd)
+  let deliveryResult: DeliveryResult
 
-  // 5. Send via channel adapter
-  const deliveryResult = await sendMessages(ctx, parts, registry)
+  if (composed.outputFormat === 'audio' && composed.audioBuffer) {
+    deliveryResult = await sendAudioMessage(ctx, {
+      audioBuffer: composed.audioBuffer,
+      durationSeconds: composed.audioDurationSeconds ?? 0,
+    }, registry)
 
-  // 5. Persist messages via memory:manager (or fallback to direct DB)
+    // If audio failed, fall through to text
+    if (!deliveryResult.sent) {
+      logger.warn({ traceId: ctx.traceId }, 'Audio send failed, falling through to text')
+      deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+    }
+  } else {
+    deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+  }
+
+  // 5. Post-send operations (fire-and-forget where possible)
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
   await persistMessages(ctx, responseText, evaluation, db, memoryManager)
-
-  // 6. Update lead qualification
   await updateLeadQualification(ctx, registry, db, memoryManager)
-
-  // 7. Update session
   await updateSession(ctx, db)
-
-  // 8. Enqueue sheets sync
   enqueueSheetsSync(ctx, redis)
 
-  // 9. Proactive guard signals: farewell detection + contact lock
+  // 6. Proactive guard signals
   if (deliveryResult.sent && ctx.contactId) {
-    // If evaluation intent is farewell, mark for conversation guard
     if (evaluation.intent === 'farewell') {
       markFarewell(ctx.contactId, redis).catch(() => {})
     }
-    // Set contact lock for reactive conversations (auto-expires after session TTL)
+
     const isProactive = 'isProactive' in ctx && (ctx as Record<string, unknown>).isProactive
     if (!isProactive) {
       setContactLock(ctx.contactId, redis, config.sessionTtlMs).catch(() => {})
-    }
 
-    // 10. Commitment auto-detection (Via B) — fire-and-forget, only for reactive
-    if (!isProactive) {
-      const proactiveConfig = loadProactiveConfig()
+      const proactiveConfig = getProactiveConfig()
       detectCommitments(
         responseText, ctx.contactId, ctx.agentId, ctx.session.id,
         registry, config, proactiveConfig,
@@ -142,11 +122,14 @@ export async function phase5Validate(
     traceId: ctx.traceId,
     durationMs,
     sent: deliveryResult.sent,
-    parts: parts.length,
+    format: composed.outputFormat,
+    parts: composed.formattedParts.length,
   }, 'Phase 5 complete')
 
   return deliveryResult
 }
+
+// ─── Validation ──────────────────────────────
 
 function validateOutput(text: string): ValidationResult {
   const issues: string[] = []
@@ -170,12 +153,7 @@ function validateOutput(text: string): ValidationResult {
   return { passed: false, issues, sanitizedText: sanitized }
 }
 
-/**
- * Check per-contact rate limits. Reads from channel config service if available,
- * falls back to engine config for backwards compatibility.
- */
-/** System-wide hard cap: no contact receives more than this per hour, regardless of channel config */
-const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
+// ─── Rate Limiting ──────────────────────────────
 
 async function checkRateLimit(
   redis: Redis,
@@ -184,13 +162,11 @@ async function checkRateLimit(
   config: EngineConfig,
   registry: Registry,
 ): Promise<boolean> {
-  // Get rate limits from channel config service (if channel provides one)
   const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
   const cc = channelSvc?.get()
   const antiSpamMax = cc?.antiSpamMaxPerWindow ?? 0
   const antiSpamWindowMs = cc?.antiSpamWindowMs ?? 0
 
-  // Effective hourly limit: channel config capped by system max (20)
   const channelLimitHour = cc?.rateLimitHour ?? 0
   const limitHour = channelLimitHour > 0
     ? Math.min(channelLimitHour, SYSTEM_MAX_MESSAGES_PER_HOUR)
@@ -198,7 +174,7 @@ async function checkRateLimit(
   const limitDay = cc?.rateLimitDay ?? 0
 
   try {
-    // Anti-spam: short-window burst protection (e.g., max 5 messages in 60s)
+    // Anti-spam burst protection
     if (antiSpamMax > 0 && antiSpamWindowMs > 0) {
       const spamKey = `antispam:${channel}:${to}`
       const count = await redis.get(spamKey)
@@ -212,7 +188,7 @@ async function checkRateLimit(
       await pipeline.exec()
     }
 
-    // Standard rate limits (hourly capped by system max, daily)
+    // Standard rate limits
     const hourKey = `rate:${channel}:${to}:hour`
     const dayKey = `rate:${channel}:${to}:day`
 
@@ -241,12 +217,13 @@ async function checkRateLimit(
   }
 }
 
+// ─── Sending ──────────────────────────────
+
 async function sendAudioMessage(
   ctx: ContextBundle,
   ttsResult: { audioBuffer: Buffer; durationSeconds: number },
   registry: Registry,
 ): Promise<DeliveryResult> {
-  // Determine send target (group vs individual)
   let sendTo = ctx.message.from
   const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
   if (rawMsg?.key?.remoteJid?.endsWith('@g.us')) {
@@ -293,7 +270,6 @@ async function sendMessages(
 ): Promise<DeliveryResult> {
   let lastMessageId: string | undefined
 
-  // For group messages, send to the group JID, not the individual sender
   let sendTo = ctx.message.from
   const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
   const groupJid = rawMsg?.key?.remoteJid
@@ -312,7 +288,7 @@ async function sendMessages(
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!
 
-    // Typing delay between bubbles for instant channels (WhatsApp, Google Chat, etc.)
+    // Typing delay between bubbles for instant channels
     if (i > 0) {
       const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
       const cc = channelSvc?.get()
@@ -333,7 +309,6 @@ async function sendMessages(
         channel: ctx.message.channelName,
         to: sendTo,
         content: { type: 'text', text: part },
-        // Quote original message in groups (first bubble only)
         quotedRaw: (isGroupReply && i === 0) ? ctx.message.raw : undefined,
         correlationId: ctx.traceId,
       })
@@ -354,6 +329,8 @@ async function sendMessages(
 
   return { sent: true, channelMessageId: lastMessageId }
 }
+
+// ─── Persistence ──────────────────────────────
 
 async function persistMessages(
   ctx: ContextBundle,
@@ -437,6 +414,8 @@ async function persistMessages(
   }
 }
 
+// ─── Session & Lead ──────────────────────────────
+
 async function updateSession(ctx: ContextBundle, db: Pool): Promise<void> {
   try {
     await db.query(
@@ -486,10 +465,8 @@ function enqueueSheetsSync(ctx: ContextBundle, _redis: Redis): void {
   logger.debug({ traceId: ctx.traceId, contactId: ctx.contactId }, 'Sheets sync enqueued (noop)')
 }
 
-/**
- * Send attachment fallback messages (disabled types, too large, etc.)
- * as separate messages before the main response.
- */
+// ─── Fallback Messages ──────────────────────────────
+
 async function sendFallbackMessages(
   ctx: ContextBundle,
   messages: string[],

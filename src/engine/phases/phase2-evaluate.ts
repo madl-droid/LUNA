@@ -53,14 +53,6 @@ export async function phase2Evaluate(
 
   logger.info({ traceId: ctx.traceId, intent: 'evaluating', proactive, replanAttempt: replanContext?.attempt }, 'Phase 2 start')
 
-  // If quick action was detected in phase 1, skip LLM (reactive only)
-  if (!proactive && ctx.quickAction && !replanContext) {
-    const quickResult = handleQuickAction(ctx)
-    const durationMs = Date.now() - startMs
-    logger.info({ traceId: ctx.traceId, durationMs, quickAction: ctx.quickAction.type }, 'Phase 2 quick action')
-    return quickResult
-  }
-
   // Build prompt (different for proactive vs reactive)
   const toolCatalog = getCatalog()
   let { system, userMessage } = proactive
@@ -192,54 +184,3 @@ function parseExecutionPlan(plan: unknown): ExecutionStep[] {
   }))
 }
 
-/**
- * Handle quick actions without LLM.
- */
-function handleQuickAction(ctx: ContextBundle): EvaluatorOutput {
-  const qa = ctx.quickAction!
-
-  switch (qa.type) {
-    case 'stop':
-      return {
-        intent: 'stop',
-        emotion: 'neutral',
-        injectionRisk: false,
-        onScope: true,
-        executionPlan: [{ type: 'respond_only', description: 'Confirmar desuscripción' }],
-        toolsNeeded: [],
-        needsAcknowledgment: false,
-      }
-    case 'escalate':
-      return {
-        intent: 'escalate',
-        emotion: 'neutral',
-        injectionRisk: false,
-        onScope: true,
-        executionPlan: [
-          { type: 'api_call', tool: 'transfer_to_human', params: {}, description: 'Transferir a humano' },
-        ],
-        toolsNeeded: ['transfer_to_human'],
-        needsAcknowledgment: false,
-      }
-    case 'affirm':
-      return {
-        intent: 'affirmation',
-        emotion: 'happy',
-        injectionRisk: false,
-        onScope: true,
-        executionPlan: [{ type: 'respond_only', description: 'Continuar con flujo afirmativo' }],
-        toolsNeeded: [],
-        needsAcknowledgment: false,
-      }
-    case 'deny':
-      return {
-        intent: 'denial',
-        emotion: 'neutral',
-        injectionRisk: false,
-        onScope: true,
-        executionPlan: [{ type: 'respond_only', description: 'Manejar negativa del contacto' }],
-        toolsNeeded: [],
-        needsAcknowledgment: false,
-      }
-  }
-}
