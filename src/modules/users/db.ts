@@ -304,9 +304,18 @@ export class UsersDb {
     const result = await this.pool.query(
       `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
        VALUES ($1, $2, $3, false)
-       ON CONFLICT (channel, sender_id) DO NOTHING
+       ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = EXCLUDED.user_id
        RETURNING *`,
       [userId, channel, senderId.trim()],
+    )
+    return result.rows[0] ? this.mapContactRow(result.rows[0]) : null
+  }
+
+  /** Update the sender_id of an existing contact (e.g. phone number changed). */
+  async updateContact(contactId: string, newSenderId: string): Promise<UserContact | null> {
+    const result = await this.pool.query(
+      `UPDATE user_contacts SET sender_id = $1 WHERE id = $2 RETURNING *`,
+      [newSenderId.trim(), contactId],
     )
     return result.rows[0] ? this.mapContactRow(result.rows[0]) : null
   }

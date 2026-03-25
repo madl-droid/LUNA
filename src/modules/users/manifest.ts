@@ -99,7 +99,7 @@ const manifest: ModuleManifest = {
       const usersByType: Record<string, import('./types.js').UserWithContacts[]> = {}
       const counts: Record<string, number> = {}
       for (const c of configs) {
-        usersByType[c.listType] = await db!.listByType(c.listType)
+        usersByType[c.listType] = await db!.listByType(c.listType, false)
         counts[c.listType] = usersByType[c.listType]!.length
       }
       // Active channels for contact type dropdowns

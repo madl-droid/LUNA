@@ -1926,6 +1926,8 @@
 .users-table tr + tr td { border-top: 1px solid rgba(0,0,0,0.04); }
 .users-table tr[data-user-id] { cursor: pointer; transition: background 0.1s; }
 .users-table tr[data-user-id]:hover { background: var(--surface-container-low); }
+.users-table tr[data-user-active="false"] { opacity: 0.5; }
+.users-table tr[data-user-active="false"]:hover { opacity: 0.75; }
 
 .users-table code {
   font-size: 11px;
