@@ -7,31 +7,35 @@ import pino from 'pino'
 const logger = pino({ name: 'engine:contact-lock' })
 
 export class ContactLock {
-  private locks = new Map<string, Promise<void>>()
+  private locks = new Map<string, Promise<unknown>>()
 
   /**
    * Execute `fn` with exclusive access for `contactId`.
    * If another pipeline for the same contact is running, waits for it to finish first.
    * Different contacts run in parallel (no blocking).
+   *
+   * Uses promise chaining to guarantee serialization: each new call chains
+   * onto the previous promise, ensuring FIFO ordering without TOCTOU gaps.
    */
   async withLock<T>(contactId: string, fn: () => Promise<T>): Promise<T> {
-    // Wait for any existing pipeline for this contact
-    const existing = this.locks.get(contactId)
-    if (existing) {
-      logger.debug({ contactId }, 'Waiting for existing pipeline to finish')
-      await existing.catch(() => {})  // swallow — we just need to wait
-    }
+    // Chain onto the existing promise (if any) to guarantee serialization.
+    // This avoids the TOCTOU race of check-then-set: we atomically replace
+    // the lock with a new promise that waits for the previous one first.
+    const existing = this.locks.get(contactId) ?? Promise.resolve()
 
-    let releaseFn!: () => void
-    const lockPromise = new Promise<void>(r => { releaseFn = r })
-    this.locks.set(contactId, lockPromise)
+    const resultPromise = existing
+      .catch(() => {}) // swallow previous errors — we just need ordering
+      .then(() => fn())
+
+    // Atomically replace the lock — no gap between check and set
+    this.locks.set(contactId, resultPromise)
 
     try {
-      return await fn()
+      return await resultPromise
     } finally {
-      releaseFn()
-      // Only delete if our lock is still the current one
-      if (this.locks.get(contactId) === lockPromise) {
+      // Only delete if our promise is still the current one
+      // (a newer call may have already chained onto ours)
+      if (this.locks.get(contactId) === resultPromise) {
         this.locks.delete(contactId)
       }
     }

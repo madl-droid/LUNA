@@ -85,6 +85,23 @@ export async function phase3Execute(
 
   // Execute dependent steps sequentially (still through semaphore for resource control)
   for (const { step, index } of dependent) {
+    // Check if all dependencies succeeded before executing
+    const depsFailed = step.dependsOn?.some(depIdx => {
+      const depResult = results.find(r => r.stepIndex === depIdx)
+      return depResult && !depResult.success
+    })
+
+    if (depsFailed) {
+      results.push({
+        stepIndex: index,
+        type: step.type,
+        success: false,
+        error: `Skipped: dependency step(s) [${step.dependsOn!.join(', ')}] failed`,
+        durationMs: 0,
+      })
+      continue
+    }
+
     const result = await stepSemaphore.run(() =>
       executeStep(step, index, ctx, db, redis, config, registry),
     )

@@ -22,7 +22,7 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /^https?:\/\/192\.168\.\d+\.\d+/,
   /^https?:\/\/0\.0\.0\.0/,
   /^https?:\/\/\[::1\]/,
-  /^https?:\/\/\[fd/i,       // fd00::/8 ULA
+  /^https?:\/\/\[f[cd]/i,    // fc00::/7 ULA (covers both fc00::/8 and fd00::/8)
   /^https?:\/\/\[fe80:/i,    // link-local
   /^https?:\/\/169\.254\./,  // link-local IPv4
   /^https?:\/\/metadata\./i, // cloud metadata endpoints

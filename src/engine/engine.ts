@@ -63,6 +63,7 @@ export function initEngine(reg: Registry): void {
         text: payload.content.text,
         caption: payload.content.caption,
       },
+      attachments: payload.attachments as IncomingMessage['attachments'],
       raw: payload.raw,
     }
 
@@ -138,6 +139,7 @@ async function processMessageInner(
   totalStart: number,
 ): Promise<PipelineResult> {
   let traceId = ''
+  let avisoTimer: ReturnType<typeof setTimeout> | null = null
 
   try {
     // ═══ PHASE 1: Intake + Context Loading ═══
@@ -192,7 +194,7 @@ async function processMessageInner(
       : ctx.message.channelName === 'whatsapp' || ctx.message.channelName === 'google-chat' ? 'casual'
       : 'neutral'
 
-    const avisoTimer = avisoConfig.triggerMs > 0
+    avisoTimer = avisoConfig.triggerMs > 0
       ? setTimeout(async () => {
           avisoSentAt = Date.now()
           try {
@@ -338,6 +340,7 @@ async function processMessageInner(
       subagentIterationsUsed,
     }
   } catch (err) {
+    if (avisoTimer) clearTimeout(avisoTimer)
     const totalDurationMs = Date.now() - totalStart
 
     logger.error({
