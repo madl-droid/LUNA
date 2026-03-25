@@ -1890,6 +1890,9 @@
 
 /* ═══ Users section ═══ */
 
+/* Panel padding matching channel settings */
+.users-section .panel-body { padding: 16px 20px 20px; }
+
 .users-table {
   width: 100%;
   border-collapse: collapse;
@@ -2066,41 +2069,4 @@
 
 .user-add-contact-row button:hover { background: var(--surface-container-highest); }
 
-/* Edit user modal */
-.user-modal-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.3);
-  z-index: 900;
-  align-items: center;
-  justify-content: center;
-}
-
-.user-modal-overlay.visible { display: flex; }
-
-.user-modal {
-  background: var(--surface-container-lowest);
-  border-radius: 0.5rem;
-  box-shadow: var(--shadow-float, 0 4px 16px rgba(0,0,0,0.08));
-  padding: 24px;
-  width: min(460px, 90vw);
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.user-modal h3 {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 16px;
-  color: var(--on-surface);
-}
-
-.user-modal .field { margin-bottom: 8px; }
-
-.user-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
+/* User modal uses .wizard-overlay + .wizard-modal styles */
