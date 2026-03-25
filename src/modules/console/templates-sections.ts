@@ -832,6 +832,12 @@ const CH_PLACEHOLDER: Record<string, string> = {
   whatsapp: '+521234567890', gmail: 'user@example.com', 'google-chat': 'spaces/XXX/members/YYY', 'twilio-voice': '+15550123',
 }
 
+// SVG icons for action buttons
+const SVG_PLUS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>'
+const SVG_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+const SVG_DEACTIVATE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
+const SVG_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+
 function renderUsersSection(data: SectionData): string {
   const lang = data.lang
   const ud = data.usersData
@@ -850,12 +856,15 @@ function renderUsersSection(data: SectionData): string {
   }
 
   let html = warning
+  const canEdit = (lt: string) => lt !== 'lead'
+  const canDelete = (lt: string) => lt !== 'admin' && lt !== 'lead'
 
   // ── Panel per list type ──
   for (const cfg of configs) {
     const users = usersByType[cfg.listType] ?? []
     const isLead = cfg.listType === 'lead'
-    const count = counts[cfg.listType] ?? 0
+    const lt = cfg.listType
+    const count = counts[lt] ?? 0
     const badgeStyle = cfg.isEnabled ? 'badge-active' : 'badge-soon'
 
     html += `<div class="panel">
@@ -865,52 +874,62 @@ function renderUsersSection(data: SectionData): string {
       </div>
       <div class="panel-body">`
 
+    // Selection action bar (hidden by default, shown when checkboxes are checked)
+    if (canEdit(lt)) {
+      html += `<div class="user-selection-bar" id="sel-bar-${esc(lt)}">
+        <button type="button" class="act-btn act-btn-config" onclick="userEditSelected('${esc(lt)}', '${lang}')">${SVG_EDIT} ${lang === 'es' ? 'Editar' : 'Edit'}</button>
+        <button type="button" class="act-btn act-btn-remove" onclick="userDeactivateSelected('${esc(lt)}', '${lang}')">${SVG_DEACTIVATE} ${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>`
+      if (canDelete(lt)) {
+        html += `<button type="button" class="act-btn act-btn-remove" onclick="userDeleteSelected('${esc(lt)}', '${lang}')">${SVG_DELETE} ${lang === 'es' ? 'Eliminar' : 'Delete'}</button>`
+      }
+      html += `</div>`
+    }
+
     if (users.length > 0) {
-      html += `<table class="users-table"><tr>
+      html += `<table class="users-table" id="tbl-${esc(lt)}"><tr>
+        ${canEdit(lt) ? '<th></th>' : ''}
         <th>ID</th>
         <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
-        <th>${lang === 'es' ? 'Contactos' : 'Contacts'}</th>
-        <th>${lang === 'es' ? 'Fuente' : 'Source'}</th>
-        ${isLead ? '' : `<th></th>`}
+        <th>${lang === 'es' ? 'Datos de contacto' : 'Contact info'}</th>
+        <th>${lang === 'es' ? 'Estado' : 'Status'}</th>
       </tr>`
 
       for (const user of users) {
         const contactBadges = user.contacts.map(c =>
-          `<span class="user-contact-badge" title="${esc(c.senderId)}">${CH_SVG[c.channel] || ''} ${esc(c.senderId.length > 22 ? c.senderId.slice(0, 20) + '…' : c.senderId)}</span>`
+          `<span class="user-contact-badge">${CH_SVG[c.channel] || ''} ${esc(c.senderId.length > 22 ? c.senderId.slice(0, 20) + '…' : c.senderId)}</span>`
         ).join(' ')
 
-        html += `<tr data-user-id="${esc(user.id)}">
-          <td><code>${esc(user.id)}</code></td>
-          <td>${esc(user.displayName || '—')}</td>
-          <td>${contactBadges}</td>
-          <td><span class="user-source-badge">${esc(user.source)}</span></td>`
+        // Status: inactive → red label; active → last interaction time (placeholder for now)
+        const statusHtml = user.isActive
+          ? `<span class="user-status-active">—</span>`
+          : `<span class="user-status-inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</span>`
 
-        if (!isLead) {
-          html += `<td>
-            <form method="POST" action="/console/users/deactivate" style="display:inline">
-              <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
-              <input type="hidden" name="userId" value="${esc(user.id)}">
-              <button type="submit" class="btn-secondary" style="color:var(--error)" onclick="return confirm('${lang === 'es' ? '¿Desactivar?' : 'Deactivate?'}')">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
-            </form>
-          </td>`
+        html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}">`
+
+        if (canEdit(lt)) {
+          html += `<td><input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')"></td>`
         }
 
-        html += `</tr>`
+        html += `<td><code>${esc(user.id)}</code></td>
+          <td>${esc(user.displayName || '—')}</td>
+          <td>${contactBadges}</td>
+          <td>${statusHtml}</td>
+        </tr>`
 
-        // Contacts detail row — hidden by default, toggle via click on user row
-        if (!isLead) {
+        // Hidden contacts detail row (expand on click)
+        if (canEdit(lt)) {
           html += `<tr class="user-contacts-row" style="display:none"><td colspan="5"><div class="user-contacts-detail">`
           for (const c of user.contacts) {
             html += `<span class="user-contact-badge">${CH_SVG[c.channel] || ''} ${esc(c.senderId)}
-              <form method="POST" action="/console/users/remove-contact" style="display:inline">
+              <form method="POST" action="/console/users/remove-contact" style="display:inline" onclick="event.stopPropagation()">
                 <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
                 <input type="hidden" name="contactId" value="${esc(c.id)}">
                 <button type="submit" class="field-tag-remove" onclick="return confirm('${lang === 'es' ? '¿Quitar?' : 'Remove?'}')">&times;</button>
               </form>
             </span>`
           }
-          // Mini add-contact form
-          html += `<form method="POST" action="/console/users/add-contact" class="user-add-contact-row">
+          // Mini add-contact
+          html += `<form method="POST" action="/console/users/add-contact" class="user-add-contact-row" onclick="event.stopPropagation()">
             <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
             <input type="hidden" name="userId" value="${esc(user.id)}">
             <select name="channel">`
@@ -922,33 +941,18 @@ function renderUsersSection(data: SectionData): string {
           html += `</div></td></tr>`
         }
       }
-      html += `</table>
-        <script>(function(){
-          var rows=document.querySelectorAll('.users-table tr[data-user-id]');
-          rows.forEach(function(r){r.style.cursor='pointer';r.addEventListener('click',function(e){
-            if(e.target.closest('form')||e.target.closest('button'))return;
-            var detail=r.nextElementSibling;
-            if(detail&&detail.classList.contains('user-contacts-row')){detail.style.display=detail.style.display==='none'?'table-row':'none'}
-          })});
-          // Sync perm checkboxes to hidden inputs for save bar dirty tracking
-          document.querySelectorAll('.perm-cb').forEach(function(cb){
-            cb.addEventListener('change',function(){
-              var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
-              if(h){h.value=cb.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
-            })
-          })
-        })()</script>`
+      html += `</table>`
     } else {
       html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
 
-    // Add user form (not for leads)
+    // Add user button + form (not for leads)
     if (!isLead) {
       html += `<details class="user-add-form">
-        <summary>${lang === 'es' ? '+ Agregar usuario' : '+ Add user'}</summary>
+        <summary class="act-btn act-btn-add">${SVG_PLUS} ${lang === 'es' ? 'Agregar usuario' : 'Add user'}</summary>
         <form method="POST" action="/console/users/add" style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.5rem">
           <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
-          <input type="hidden" name="listType" value="${esc(cfg.listType)}">
+          <input type="hidden" name="listType" value="${esc(lt)}">
           <div class="field" style="margin:0">
             <div class="field-left"><span class="field-label">${lang === 'es' ? 'Nombre' : 'Name'}</span></div>
             <input type="text" name="displayName" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">
@@ -964,12 +968,103 @@ function renderUsersSection(data: SectionData): string {
           </div>`
       }
 
-      html += `<div class="user-form-actions"><button type="submit" class="btn-secondary">${lang === 'es' ? 'Crear usuario' : 'Create user'}</button></div>
+      html += `<div style="margin-top:0.5rem"><button type="submit" class="act-btn act-btn-add">${SVG_PLUS} ${lang === 'es' ? 'Crear' : 'Create'}</button></div>
         </form></details>`
     }
 
     html += `</div></div>`
   }
+
+  // Edit user modal (single, reused for all lists)
+  html += `<div class="user-modal-overlay" id="user-edit-modal">
+    <div class="user-modal">
+      <h3 id="edit-modal-title">${lang === 'es' ? 'Editar usuario' : 'Edit user'}</h3>
+      <form method="POST" action="/console/users/update" id="edit-modal-form">
+        <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+        <input type="hidden" name="userId" id="edit-modal-userId">
+        <div class="field">
+          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Nombre' : 'Name'}</span></div>
+          <input type="text" name="displayName" id="edit-modal-name">
+        </div>`
+
+  // One field per channel for adding missing contacts
+  for (let i = 0; i < channels.length; i++) {
+    const ch = channels[i]!
+    const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+    html += `<div class="field">
+        <div class="field-left"><span class="field-label">${CH_SVG[ch.id] || ''} ${esc(lbl)}</span></div>
+        <input type="text" id="edit-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}" disabled>
+      </div>`
+  }
+
+  html += `<div class="user-modal-footer">
+          <button type="button" class="act-btn act-btn-config" onclick="closeEditModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
+          <button type="submit" class="act-btn act-btn-add">${lang === 'es' ? 'Guardar' : 'Save'}</button>
+        </div>
+      </form>
+    </div>
+  </div>`
+
+  // Users JS — row expand, checkbox selection, edit modal
+  html += `<script>(function(){
+    // Row click → expand contacts
+    document.querySelectorAll('.users-table tr[data-user-id]').forEach(function(r){
+      r.addEventListener('click',function(e){
+        if(e.target.closest('form')||e.target.closest('button')||e.target.closest('input'))return;
+        var detail=r.nextElementSibling;
+        if(detail&&detail.classList.contains('user-contacts-row')){detail.style.display=detail.style.display==='none'?'table-row':'none'}
+      })
+    });
+    // Checkbox selection → show/hide action bar
+    window.userSelChanged=function(lt){
+      var bar=document.getElementById('sel-bar-'+lt);
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      if(bar) bar.classList.toggle('visible',cbs.length>0);
+    };
+    // Deactivate selected
+    window.userDeactivateSelected=function(lt,lang){
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      if(!cbs.length)return;
+      var msg=lang==='es'?'¿Desactivar '+cbs.length+' usuario(s)?':'Deactivate '+cbs.length+' user(s)?';
+      if(!confirm(msg))return;
+      cbs.forEach(function(cb){
+        var f=document.createElement('form');f.method='POST';f.action='/console/users/deactivate';
+        f.innerHTML='<input name="_section" value="users"><input name="_lang" value="'+lang+'"><input name="userId" value="'+cb.value+'">';
+        document.body.appendChild(f);f.submit();
+      });
+    };
+    // Delete selected (only if deactivated)
+    window.userDeleteSelected=function(lt,lang){
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      var allInactive=true;
+      cbs.forEach(function(cb){var tr=cb.closest('tr');if(tr&&tr.getAttribute('data-user-active')==='true')allInactive=false});
+      if(!allInactive){alert(lang==='es'?'Solo se pueden eliminar usuarios desactivados.':'Can only delete deactivated users.');return}
+      var msg=lang==='es'?'¿Eliminar permanentemente?':'Delete permanently?';
+      if(!confirm(msg))return;
+      // TODO: implement delete endpoint
+      alert(lang==='es'?'Eliminación permanente aún no implementada.':'Permanent deletion not yet implemented.');
+    };
+    // Edit selected (single)
+    window.userEditSelected=function(lt,lang){
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      if(cbs.length!==1){alert(lang==='es'?'Selecciona exactamente 1 usuario.':'Select exactly 1 user.');return}
+      var tr=cbs[0].closest('tr');
+      var uid=tr.getAttribute('data-user-id');
+      var name=tr.getAttribute('data-user-name')||'';
+      document.getElementById('edit-modal-userId').value=uid;
+      document.getElementById('edit-modal-name').value=name;
+      document.getElementById('user-edit-modal').classList.add('visible');
+    };
+    window.closeEditModal=function(){document.getElementById('user-edit-modal').classList.remove('visible')};
+    document.getElementById('user-edit-modal').addEventListener('click',function(e){if(e.target===this)closeEditModal()});
+    // Sync perm checkboxes to hidden inputs for save bar dirty tracking
+    document.querySelectorAll('.perm-cb').forEach(function(cb){
+      cb.addEventListener('change',function(){
+        var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
+        if(h){h.value=cb.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
+      })
+    });
+  })()</script>`
 
   // ── Permissions panels (per non-lead list) — integrated with save bar ──
   for (const cfg of configs) {
