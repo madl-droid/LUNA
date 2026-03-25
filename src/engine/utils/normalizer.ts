@@ -46,9 +46,14 @@ export function normalizeText(text: string | undefined | null): string {
   // Trim
   result = result.trim()
 
-  // Truncate
+  // Truncate safely (don't break mid-emoji or surrogate pair)
   if (result.length > MAX_TEXT_LENGTH) {
     result = result.substring(0, MAX_TEXT_LENGTH)
+    // If we cut in the middle of a surrogate pair, trim the orphan
+    const lastChar = result.charCodeAt(result.length - 1)
+    if (lastChar >= 0xD800 && lastChar <= 0xDBFF) {
+      result = result.substring(0, result.length - 1)
+    }
   }
 
   return result

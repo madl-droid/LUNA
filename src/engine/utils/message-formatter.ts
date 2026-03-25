@@ -1,11 +1,8 @@
 // LUNA Engine — Message Formatter
-// Formateo por canal: burbujas WA ≤300 chars, HTML email, etc.
+// Formateo por canal: burbujas WA por párrafo, HTML email, etc.
 
 import type { ChannelName } from '../../channels/types.js'
 import type { Registry } from '../../kernel/registry.js'
-
-const WA_MAX_CHARS = 300
-const WA_MAX_BUBBLES = 3
 
 /**
  * Format response text for a specific channel.
@@ -19,7 +16,8 @@ export function formatForChannel(
 ): string[] {
   switch (channel) {
     case 'whatsapp':
-      return formatForWhatsApp(text)
+    case 'google-chat':
+      return formatForInstant(text)
     case 'email':
       return [formatForEmail(text)]
     default:
@@ -28,48 +26,29 @@ export function formatForChannel(
 }
 
 /**
- * WhatsApp: split into ≤300 char bubbles, max 3 bubbles.
- * Splits on paragraph breaks, then sentence breaks if needed.
+ * Instant channels (WhatsApp, Google Chat): split on paragraph breaks.
+ * The LLM composes with \n\n as bubble separators — we just split there.
+ * Each paragraph becomes one message bubble.
  */
-function formatForWhatsApp(text: string): string[] {
-  // If short enough, single bubble
-  if (text.length <= WA_MAX_CHARS) return [text]
-
-  const bubbles: string[] = []
-  const paragraphs = text.split(/\n\n+/)
-
-  let current = ''
-
-  for (const para of paragraphs) {
-    if (bubbles.length >= WA_MAX_BUBBLES - 1) {
-      // Last bubble: dump remaining
-      current = current ? `${current}\n\n${para}` : para
-      continue
-    }
-
-    if (!current) {
-      current = para
-    } else if ((current + '\n\n' + para).length <= WA_MAX_CHARS) {
-      current = `${current}\n\n${para}`
-    } else {
-      bubbles.push(current.substring(0, WA_MAX_CHARS))
-      current = para
-    }
-  }
-
-  if (current) {
-    bubbles.push(current.substring(0, WA_MAX_CHARS))
-  }
-
-  return bubbles.slice(0, WA_MAX_BUBBLES)
+function formatForInstant(text: string): string[] {
+  const parts = text.split(/\n\n+/).map(p => p.trim()).filter(p => p.length > 0)
+  return parts.length > 0 ? parts : [text]
 }
 
 /**
  * Email: wrap in basic HTML structure.
+ * Escapes HTML entities first, then applies markdown-like formatting.
  */
 function formatForEmail(text: string): string {
-  // Convert markdown-like formatting to basic HTML
+  // Escape HTML entities to prevent XSS
   let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
+  // Apply markdown-like formatting on escaped text
+  html = html
     // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     // Italic

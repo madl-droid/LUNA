@@ -86,6 +86,7 @@ export class BaileysAdapter {
   private presenceManager = new PresenceManager()
   private messageHandlers: MessageHandler[] = []
   private reconnectAttempts = 0
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private _status: BaileysStatus = 'disconnected'
   private _qr: string | null = null
   private _lastDisconnectReason: string | null = null
@@ -118,6 +119,22 @@ export class BaileysAdapter {
     this._status = 'connecting'
     this._qr = null
     this._autoReconnect = true
+
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+
+    // Remove all listeners from previous socket to prevent duplication on reconnect
+    if (this.socket) {
+      this.socket.ev.removeAllListeners('creds.update')
+      this.socket.ev.removeAllListeners('connection.update')
+      this.socket.ev.removeAllListeners('messages.upsert')
+      this.socket.ev.removeAllListeners('call')
+      this.socket.end(undefined)
+      this.socket = null
+    }
 
     const { state, saveCreds } = await usePostgresAuthState(this.pool, this.instanceId)
     const { version } = await fetchLatestBaileysVersion()
@@ -157,7 +174,7 @@ export class BaileysAdapter {
         if (shouldReconnect && this.reconnectAttempts < this.config.WHATSAPP_MAX_RECONNECT_ATTEMPTS) {
           this.reconnectAttempts++
           logger.warn({ attempt: this.reconnectAttempts, reason }, 'WhatsApp disconnected, reconnecting...')
-          setTimeout(() => this.initialize(), this.config.WHATSAPP_RECONNECT_INTERVAL_MS)
+          this.reconnectTimer = setTimeout(() => this.initialize(), this.config.WHATSAPP_RECONNECT_INTERVAL_MS)
         } else {
           logger.error({ reason }, 'WhatsApp disconnected permanently')
         }
@@ -235,8 +252,16 @@ export class BaileysAdapter {
 
   async shutdown(): Promise<void> {
     this._autoReconnect = false
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
     this.presenceManager.setSocket(null)
     if (this.socket) {
+      this.socket.ev.removeAllListeners('creds.update')
+      this.socket.ev.removeAllListeners('connection.update')
+      this.socket.ev.removeAllListeners('messages.upsert')
+      this.socket.ev.removeAllListeners('call')
       this.socket.end(undefined)
       this.socket = null
     }
@@ -325,6 +350,9 @@ export class BaileysAdapter {
   private normalizeMessage(msg: any): IncomingMessage | null {
     const remoteJid: string = msg.key.remoteJid ?? ''
     if (!remoteJid) return null
+
+    // Ignore WhatsApp status broadcasts — they are not real messages
+    if (remoteJid === 'status@broadcast') return null
 
     const isGroup = remoteJid.endsWith('@g.us')
     const from = isGroup

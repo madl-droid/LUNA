@@ -387,7 +387,8 @@ async function loadOrCreateSession(
       [sessionId, contactId, channelContactId, channel, agentId, now],
     )
   } catch (err) {
-    logger.warn({ err, sessionId }, 'Failed to create session in DB (table may not exist yet)')
+    logger.error({ err, sessionId, channelContactId, channel }, 'Failed to create session in DB — cannot proceed without persisted session')
+    throw err
   }
 
   return {

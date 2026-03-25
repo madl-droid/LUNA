@@ -10,12 +10,16 @@ function env(key: string, fallback: string): string {
 
 function envInt(key: string, fallback: number): number {
   const v = getEnv(key)
-  return v ? parseInt(v, 10) : fallback
+  if (!v) return fallback
+  const parsed = parseInt(v, 10)
+  return Number.isNaN(parsed) ? fallback : parsed
 }
 
 function envFloat(key: string, fallback: number): number {
   const v = getEnv(key)
-  return v ? parseFloat(v) : fallback
+  if (!v) return fallback
+  const parsed = parseFloat(v)
+  return Number.isNaN(parsed) ? fallback : parsed
 }
 
 function envBool(key: string, fallback: boolean): boolean {

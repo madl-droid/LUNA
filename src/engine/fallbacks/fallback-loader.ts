@@ -10,8 +10,15 @@ const logger = pino({ name: 'engine:fallback-loader' })
 
 const HARDCODED_FALLBACK = 'Disculpa, estoy teniendo dificultades técnicas en este momento. ¿Podrías intentar de nuevo en unos minutos?'
 
-/** In-memory cache of loaded templates */
-const templateCache = new Map<string, string>()
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+interface CacheEntry {
+  content: string | null
+  cachedAt: number
+}
+
+/** In-memory cache of loaded templates with TTL */
+const templateCache = new Map<string, CacheEntry>()
 
 /**
  * Load a fallback template using the cascade:
@@ -51,19 +58,26 @@ export async function loadFallback(
 }
 
 /**
- * Load and cache a template file.
+ * Load and cache a template file with TTL.
  */
 async function loadTemplate(path: string): Promise<string | null> {
+  const now = Date.now()
   const cached = templateCache.get(path)
-  if (cached !== undefined) return cached || null
+
+  // Return from cache if within TTL
+  if (cached && (now - cached.cachedAt) < CACHE_TTL_MS) {
+    return cached.content
+  }
 
   try {
     const content = await readFile(path, 'utf-8')
     const trimmed = content.trim()
-    templateCache.set(path, trimmed)
-    return trimmed
+    const result = trimmed || null
+    templateCache.set(path, { content: result, cachedAt: now })
+    return result
   } catch {
-    templateCache.set(path, '')
+    // File doesn't exist — cache as null with TTL so we re-check later
+    templateCache.set(path, { content: null, cachedAt: now })
     return null
   }
 }

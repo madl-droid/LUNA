@@ -82,16 +82,16 @@ export async function getDefaultAck(
   registry: Registry,
   tone: string,
 ): Promise<string> {
-  // Try DB pool first
+  // Try DB pool first (ack_messages table has a 'tone' column matching avisoStyle values)
   try {
     const db = registry.getDb()
     const { rows } = await db.query<{ text: string }>(
-      `SELECT text FROM ack_messages WHERE active = true AND (channel = $1 OR channel = '') ORDER BY random() LIMIT 1`,
+      `SELECT text FROM ack_messages WHERE active = true AND (tone = $1 OR tone = '') ORDER BY random() LIMIT 1`,
       [tone],
     )
     if (rows[0]?.text) return rows[0].text
   } catch {
-    // DB not available or table doesn't exist yet
+    logger.debug({ tone }, 'ACK DB query failed or table missing, using in-memory defaults')
   }
 
   // In-memory defaults by tone

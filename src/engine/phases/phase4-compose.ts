@@ -12,7 +12,7 @@ import type {
   EngineConfig,
 } from '../types.js'
 import { buildCompositorPrompt } from '../prompts/compositor.js'
-import { callLLMWithFallback } from '../utils/llm-client.js'
+import { callLLM } from '../utils/llm-client.js'
 import { loadFallback } from '../fallbacks/fallback-loader.js'
 import { formatForChannel } from '../utils/message-formatter.js'
 
@@ -146,20 +146,15 @@ async function callWithRetries(
         await new Promise(resolve => setTimeout(resolve, delayMs))
       }
 
-      const result = await callLLMWithFallback(
-        {
-          task: 'compose',
-          provider: provider as import('../types.js').LLMProvider,
-          model,
-          system,
-          messages: [{ role: 'user', content: userMessage }],
-          maxTokens: config.maxOutputTokens,
-          temperature: config.temperatureRespond,
-        },
-        // No fallback at this level — we handle fallback ourselves
-        provider as import('../types.js').LLMProvider,
+      const result = await callLLM({
+        task: 'compose',
+        provider: provider as import('../types.js').LLMProvider,
         model,
-      )
+        system,
+        messages: [{ role: 'user', content: userMessage }],
+        maxTokens: config.maxOutputTokens,
+        temperature: config.temperatureRespond,
+      })
 
       logger.info({ traceId, provider: result.provider, model: result.model, attempt }, 'Phase 4 LLM succeeded')
       return result.text

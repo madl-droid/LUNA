@@ -78,17 +78,29 @@ export class MessageBatcher {
   private async flush(key: string): Promise<void> {
     const batch = this.pending.get(key)
     if (!batch) return
-    this.pending.delete(key)
 
     const messages = batch.messages
-    if (messages.length === 0) return
+    if (messages.length === 0) {
+      this.pending.delete(key)
+      return
+    }
 
     logger.info({ from: key, count: messages.length }, 'Flushing message batch')
 
     try {
       await this.handler(messages)
+      this.pending.delete(key)
     } catch (err) {
-      logger.error({ err, from: key, count: messages.length }, 'Batch handler failed')
+      logger.error({ err, from: key, count: messages.length }, 'Batch handler failed, retrying once')
+      // Retry once after 2s
+      try {
+        await new Promise(r => setTimeout(r, 2000))
+        await this.handler(messages)
+        this.pending.delete(key)
+      } catch (retryErr) {
+        logger.error({ err: retryErr, from: key, count: messages.length }, 'Batch handler retry failed — messages lost')
+        this.pending.delete(key)
+      }
     }
   }
 

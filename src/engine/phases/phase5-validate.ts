@@ -131,7 +131,6 @@ export async function phase5Validate(
     updateLeadQualification(ctx, registry, db, memoryManager),
     updateSession(ctx, db),
   ])
-  enqueueSheetsSync(ctx, redis)
 
   // 6. Proactive guard signals
   if (deliveryResult.sent && ctx.contactId) {
@@ -196,6 +195,28 @@ function validateOutput(text: string): ValidationResult {
 
 // ─── Rate Limiting ──────────────────────────────
 
+// Emergency in-memory rate limiter when Redis is down
+const emergencyRateLimiter = new Map<string, { count: number; resetAt: number }>()
+const EMERGENCY_LIMIT_PER_HOUR = 10
+
+function checkEmergencyRateLimit(to: string, channel: string): boolean {
+  const key = `${channel}:${to}`
+  const now = Date.now()
+  const entry = emergencyRateLimiter.get(key)
+
+  if (!entry || now > entry.resetAt) {
+    emergencyRateLimiter.set(key, { count: 1, resetAt: now + 3600_000 })
+    return true
+  }
+
+  entry.count++
+  if (entry.count > EMERGENCY_LIMIT_PER_HOUR) {
+    logger.warn({ to, channel, count: entry.count }, 'Emergency in-memory rate limit reached (Redis down)')
+    return false
+  }
+  return true
+}
+
 async function checkRateLimit(
   redis: Redis,
   to: string,
@@ -253,8 +274,8 @@ async function checkRateLimit(
 
     return true
   } catch (err) {
-    logger.warn({ err, to }, 'Rate limit check failed, allowing')
-    return true
+    logger.error({ err, to, channel }, 'Redis rate limit check failed — using emergency in-memory limiter')
+    return checkEmergencyRateLimit(to, channel)
   }
 }
 
@@ -540,10 +561,6 @@ async function updateLeadQualification(
       logger.warn({ err, contactId: ctx.contactId }, 'Failed to transition lead to qualifying')
     }
   }
-}
-
-function enqueueSheetsSync(ctx: ContextBundle, _redis: Redis): void {
-  logger.debug({ traceId: ctx.traceId, contactId: ctx.contactId }, 'Sheets sync enqueued (noop)')
 }
 
 // ─── Fallback Messages ──────────────────────────────

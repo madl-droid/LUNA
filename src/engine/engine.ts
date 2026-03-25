@@ -372,12 +372,17 @@ async function processMessageInner(
     try {
       const tone = getChannelTone(message.channelName)
       const errorMsg = pickErrorFallback(tone)
+      // Resolve group JID if applicable
+      const rawMsg = message.raw as Record<string, Record<string, string>> | undefined
+      const groupJid = rawMsg?.key?.remoteJid
+      const sendTo = groupJid?.endsWith('@g.us') ? groupJid : message.from
+
       await registry.runHook('message:send', {
         channel: message.channelName,
-        to: message.from,
+        to: sendTo,
         content: { type: 'text', text: errorMsg },
       })
-      logger.info({ traceId: traceId || 'unknown', to: message.from }, 'Error fallback sent')
+      logger.info({ traceId: traceId || 'unknown', to: sendTo }, 'Error fallback sent')
     } catch (sendErr) {
       logger.error({ sendErr, traceId: traceId || 'unknown' }, 'Failed to send error fallback')
     }
