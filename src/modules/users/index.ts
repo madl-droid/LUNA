@@ -1,17 +1,21 @@
 // LUNA — Users module public exports
-// S01 (engine) y otros módulos consumen estas funciones.
 
 export type {
   UserType,
   UnregisteredBehavior,
   UserResolution,
   UserPermissions,
-  UserListEntry,
+  User,
+  UserContact,
+  UserWithContacts,
+  UserInput,
   UserListConfig,
-  UserListInput,
-  BulkImportResult,
   SyncConfig,
+  BulkImportResult,
+  // Legacy
+  UserListEntry,
+  UserListInput,
 } from './types.js'
 
-export { resolveUserType, invalidateUserCache } from './resolver.js'
+export { resolveUserType, invalidateUserCache, invalidateUserCacheForUser } from './resolver.js'
 export { getUserPermissions } from './permissions.js'

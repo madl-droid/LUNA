@@ -452,6 +452,214 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         res.end()
         return true
       }
+
+      // User management routes — uses users:db and users:cache from registry
+
+      if (localUrl === '/users/add') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const displayName = body['displayName'] || null
+          const listType = body['listType'] || 'lead'
+
+          // Collect dynamic contact fields: contact_channel_0, contact_senderid_0, etc.
+          const contacts: Array<{ channel: string; senderId: string }> = []
+          for (let i = 0; i < 10; i++) {
+            const ch = body[`contact_channel_${i}`]
+            const sid = body[`contact_senderid_${i}`]
+            if (ch && sid && sid.trim()) contacts.push({ channel: ch, senderId: sid.trim() })
+          }
+
+          if (contacts.length === 0) throw new Error('At least one contact is required')
+
+          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts })
+          // Invalidate cache for all new contacts
+          for (const c of contacts) await usersCache.invalidate(c.senderId)
+
+          logger.info({ userId: user.id, listType, contacts: contacts.length }, 'User created from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to create user')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=user_added&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/update') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          if (!userId) throw new Error('Missing userId')
+
+          await usersDb.updateUser(userId, {
+            displayName: body['displayName'] || undefined,
+            listType: body['listType'] || undefined,
+          })
+
+          const contacts = await usersDb.getContactsForUser(userId)
+          for (const c of contacts) await usersCache.invalidate(c.senderId)
+
+          logger.info({ userId }, 'User updated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to update user')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=user_updated&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/deactivate') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          if (!userId) throw new Error('Missing userId')
+
+          const user = await usersDb.findUserById(userId)
+          if (user) {
+            await usersDb.deactivateUser(userId)
+            for (const c of user.contacts) await usersCache.invalidate(c.senderId)
+          }
+
+          logger.info({ userId }, 'User deactivated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to deactivate user')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=user_deactivated&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/add-contact') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          const channel = body['channel']
+          const senderId = body['senderId']
+          if (!userId || !channel || !senderId) throw new Error('Missing fields')
+
+          await usersDb.addContact(userId, channel, senderId)
+          await usersCache.invalidate(senderId)
+
+          logger.info({ userId, channel, senderId }, 'Contact added from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to add contact')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=contact_added&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/remove-contact') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const contactId = body['contactId']
+          if (!contactId) throw new Error('Missing contactId')
+
+          const removed = await usersDb.removeContact(contactId)
+          if (removed) await usersCache.invalidate(removed.senderId)
+
+          logger.info({ contactId }, 'Contact removed from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to remove contact')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=contact_removed&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/merge') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const keepId = body['keepId']
+          const mergeId = body['mergeId']
+          if (!keepId || !mergeId) throw new Error('Missing keepId or mergeId')
+
+          // Get all contacts before merge for cache invalidation
+          const keepContacts = await usersDb.getContactsForUser(keepId)
+          const mergeContacts = await usersDb.getContactsForUser(mergeId)
+
+          await usersDb.mergeUsers(keepId, mergeId)
+
+          for (const c of [...keepContacts, ...mergeContacts]) await usersCache.invalidate(c.senderId)
+
+          logger.info({ keepId, mergeId }, 'Users merged from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to merge users')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=users_merged&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/config') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const listType = body['listType']
+          if (!listType) throw new Error('Missing listType')
+
+          const config = await usersDb.getListConfig(listType)
+          const displayName = body['displayName'] || config?.displayName || listType
+
+          // Parse tools from form: perm_tool_xxx = 'on' checkboxes
+          const tools: string[] = []
+          const skills: string[] = []
+          for (const [key, value] of Object.entries(body)) {
+            if (key.startsWith('perm_tool_') && value === 'on') {
+              tools.push(key.replace('perm_tool_', ''))
+            }
+            if (key.startsWith('perm_skill_') && value === 'on') {
+              skills.push(key.replace('perm_skill_', ''))
+            }
+          }
+
+          // Check for "all" wildcard
+          if (body['perm_tools_all'] === 'on') tools.splice(0, tools.length, '*')
+          if (body['perm_skills_all'] === 'on') skills.splice(0, skills.length, '*')
+
+          const permissions = {
+            tools,
+            skills,
+            subagents: body['perm_subagents'] === 'on',
+            allAccess: listType === 'admin',
+          }
+
+          await usersDb.upsertListConfig(listType, displayName, permissions, {
+            isEnabled: body['isEnabled'] !== 'false',
+            unregisteredBehavior: (body['unregisteredBehavior'] || 'silence') as any,
+            unregisteredMessage: body['unregisteredMessage'] || null,
+            maxUsers: body['maxUsers'] ? parseInt(body['maxUsers'], 10) : config?.maxUsers ?? null,
+          })
+
+          await usersCache.invalidateAll()
+
+          logger.info({ listType }, 'User list config updated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to update user list config')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=config_saved&lang=${lang}` })
+        res.end()
+        return true
+      }
     }
 
     // 4. GET pages — SSR
@@ -538,6 +746,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const renderFn = registry.getOptional<(lang: string) => string>('lead-scoring:renderSection')
           if (renderFn) {
             sectionData.leadScoringHtml = renderFn(lang)
+          }
+        } catch { /* module not available */ }
+      }
+
+      // Users: fetch data from users module service
+      if (section === 'users') {
+        try {
+          const dataFn = registry.getOptional<() => Promise<unknown>>('users:sectionData')
+          if (dataFn) {
+            sectionData.usersData = await dataFn() as typeof sectionData.usersData
           }
         } catch { /* module not available */ }
       }

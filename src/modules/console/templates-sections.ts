@@ -16,6 +16,13 @@ export interface SectionData {
   moduleStates?: ModuleInfo[]
   scheduledTasksHtml?: string
   leadScoringHtml?: string
+  usersData?: {
+    configs: Array<{ listType: string; displayName: string; isEnabled: boolean; permissions: { tools: string[]; skills: string[]; subagents: boolean; allAccess: boolean }; unregisteredBehavior: string; unregisteredMessage: string | null; maxUsers: number | null }>
+    usersByType: Record<string, Array<{ id: string; displayName: string | null; listType: string; isActive: boolean; source: string; contacts: Array<{ id: string; channel: string; senderId: string; isPrimary: boolean }> }>>
+    counts: Record<string, number>
+    channels: Array<{ id: string; label: { es: string; en: string } | string }>
+    tools: Array<{ name: string; description: string; category?: string }>
+  }
 }
 
 const GOOGLE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" class="google-icon" xmlns="http://www.w3.org/2000/svg">
@@ -800,10 +807,271 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'engine-metrics': return renderEngineMetricsSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
+    case 'users': return renderUsersSection(data)
     case 'modules': return renderModulesSection(data)
     case 'infra': return renderInfraUnifiedSection(data)
     case 'google-apps': return renderGoogleAppsSection(data)
     case 'email': return renderEmailSection(data)
     default: return null
   }
+}
+
+// ═══════════════════════════════════════════
+// Users & Permissions section
+// ═══════════════════════════════════════════
+
+function renderUsersSection(data: SectionData): string {
+  const lang = data.lang
+  const ud = data.usersData
+  if (!ud) return `<div class="panel"><div class="panel-body">${lang === 'es' ? 'Módulo de usuarios no disponible.' : 'Users module not available.'}</div></div>`
+
+  const { configs, usersByType, counts, channels, tools } = ud
+
+  // Test mode warning
+  const testMode = data.config.ENGINE_TEST_MODE === 'true'
+  const adminCount = counts['admin'] ?? 0
+  let warning = ''
+  if (testMode && adminCount === 0) {
+    warning = `<div class="flash flash-error" style="margin-bottom:1rem">${lang === 'es'
+      ? '⚠ Modo de pruebas activo pero no hay admins configurados — nadie recibirá respuesta.'
+      : '⚠ Test mode active but no admins configured — nobody will receive responses.'}</div>`
+  }
+
+  // Channel icon map
+  const chIcon: Record<string, string> = {
+    whatsapp: '📱', gmail: '✉', 'google-chat': '💬', 'twilio-voice': '📞',
+  }
+  const chPlaceholder: Record<string, string> = {
+    whatsapp: '+521234567890', gmail: 'user@example.com', 'google-chat': 'spaces/XXX/members/YYY', 'twilio-voice': '+15550123',
+  }
+  const chLabel: Record<string, Record<string, string>> = {
+    whatsapp: { es: 'WhatsApp', en: 'WhatsApp' },
+    gmail: { es: 'Email', en: 'Email' },
+    'google-chat': { es: 'Google Chat', en: 'Google Chat' },
+    'twilio-voice': { es: 'Teléfono', en: 'Phone' },
+  }
+
+  let html = warning
+
+  // Render a panel per list type
+  for (const cfg of configs) {
+    const users = usersByType[cfg.listType] ?? []
+    const isLead = cfg.listType === 'lead'
+    const count = counts[cfg.listType] ?? 0
+    const badgeClass = cfg.isEnabled ? 'badge-success' : 'badge-dim'
+
+    html += `<div class="panel">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${esc(cfg.displayName)} <span class="badge ${badgeClass}">${count}</span></span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">`
+
+    // Users table
+    if (users.length > 0) {
+      html += `<table class="metrics-table" style="margin-bottom:1rem;width:100%">
+        <tr>
+          <th>ID</th>
+          <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
+          <th>${lang === 'es' ? 'Contactos' : 'Contacts'}</th>
+          <th>${lang === 'es' ? 'Fuente' : 'Source'}</th>
+          <th>${lang === 'es' ? 'Acciones' : 'Actions'}</th>
+        </tr>`
+
+      for (const user of users) {
+        const contactBadges = user.contacts.map(c =>
+          `<span class="badge badge-sm" title="${esc(c.senderId)}">${chIcon[c.channel] || '🔗'} ${esc(c.senderId.length > 20 ? c.senderId.slice(0, 18) + '…' : c.senderId)}</span>`
+        ).join(' ')
+
+        html += `<tr>
+          <td><code>${esc(user.id)}</code></td>
+          <td>${esc(user.displayName || '—')}</td>
+          <td>${contactBadges}</td>
+          <td><span class="badge badge-sm badge-dim">${esc(user.source)}</span></td>
+          <td>`
+
+        if (!isLead) {
+          html += `<form method="POST" action="/console/users/deactivate" style="display:inline">
+            <input type="hidden" name="_section" value="users">
+            <input type="hidden" name="_lang" value="${lang}">
+            <input type="hidden" name="userId" value="${esc(user.id)}">
+            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('${lang === 'es' ? '¿Desactivar usuario?' : 'Deactivate user?'}')">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
+          </form>`
+        }
+
+        html += `</td></tr>`
+
+        // Expandable contacts detail (for adding/removing contacts)
+        if (!isLead && user.contacts.length > 0) {
+          html += `<tr class="user-contacts-row"><td colspan="5" style="padding:0.5rem 1rem;background:var(--surface-container)">
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">`
+          for (const c of user.contacts) {
+            html += `<span class="badge" style="gap:4px">${chIcon[c.channel] || ''} ${esc(c.senderId)}
+              <form method="POST" action="/console/users/remove-contact" style="display:inline">
+                <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+                <input type="hidden" name="contactId" value="${esc(c.id)}">
+                <button type="submit" class="field-tag-remove" title="${lang === 'es' ? 'Quitar' : 'Remove'}" onclick="return confirm('${lang === 'es' ? '¿Quitar contacto?' : 'Remove contact?'}')">&times;</button>
+              </form>
+            </span>`
+          }
+          // Add contact mini-form
+          html += `<form method="POST" action="/console/users/add-contact" style="display:inline-flex;gap:4px;align-items:center">
+            <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+            <input type="hidden" name="userId" value="${esc(user.id)}">
+            <select name="channel" class="field-tag-input" style="width:auto">`
+          for (const ch of channels) {
+            const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+            html += `<option value="${esc(ch.id)}">${esc(lbl)}</option>`
+          }
+          html += `</select>
+            <input type="text" name="senderId" placeholder="ID" class="field-tag-input" style="width:140px" required>
+            <button type="submit" class="btn btn-sm">+</button>
+          </form>`
+          html += `</div></td></tr>`
+        }
+      }
+
+      html += `</table>`
+    } else {
+      html += `<p style="color:var(--on-surface-dim);margin:0.5rem 0">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
+    }
+
+    // Add user form (not for leads)
+    if (!isLead) {
+      html += `<details class="user-add-form" style="margin-top:0.5rem">
+        <summary class="btn btn-sm">${lang === 'es' ? '+ Agregar usuario' : '+ Add user'}</summary>
+        <form method="POST" action="/console/users/add" style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.5rem">
+          <input type="hidden" name="_section" value="users">
+          <input type="hidden" name="_lang" value="${lang}">
+          <input type="hidden" name="listType" value="${esc(cfg.listType)}">
+          <div class="field" style="margin:0">
+            <div class="field-left"><span class="field-label">${lang === 'es' ? 'Nombre' : 'Name'}</span></div>
+            <input type="text" name="displayName" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">
+          </div>`
+
+      // One contact row per active channel
+      for (let i = 0; i < channels.length; i++) {
+        const ch = channels[i]!
+        const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+        const placeholder = chPlaceholder[ch.id] || 'ID'
+        html += `<div class="field" style="margin:0">
+            <div class="field-left"><span class="field-label">${chIcon[ch.id] || ''} ${esc(lbl)}</span></div>
+            <input type="hidden" name="contact_channel_${i}" value="${esc(ch.id)}">
+            <input type="text" name="contact_senderid_${i}" placeholder="${esc(placeholder)}">
+          </div>`
+      }
+
+      html += `<div style="margin-top:0.25rem"><button type="submit" class="btn btn-primary btn-sm">${lang === 'es' ? 'Crear usuario' : 'Create user'}</button></div>
+        </form>
+      </details>`
+    }
+
+    html += `</div></div>`
+  }
+
+  // Permissions config panels (one per non-lead list)
+  for (const cfg of configs) {
+    if (cfg.listType === 'lead') continue
+
+    const perms = cfg.permissions
+    const isAllTools = perms.tools.includes('*')
+    const isAllSkills = perms.skills.includes('*')
+
+    html += `<div class="panel">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${lang === 'es' ? 'Permisos' : 'Permissions'}: ${esc(cfg.displayName)}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">
+        <form method="POST" action="/console/users/config">
+          <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+          <input type="hidden" name="listType" value="${esc(cfg.listType)}">
+          <input type="hidden" name="displayName" value="${esc(cfg.displayName)}">
+          <input type="hidden" name="isEnabled" value="${cfg.isEnabled ? 'true' : 'false'}">
+          <input type="hidden" name="maxUsers" value="${cfg.maxUsers ?? ''}">`
+
+    // Tools grid
+    html += `<div class="field-divider"><span class="field-divider-label">Tools</span></div>
+      <div class="toggle-field" style="margin-bottom:0.5rem">
+        <span class="field-label">${lang === 'es' ? 'Acceso total' : 'Full access'} (*)</span>
+        <label class="toggle toggle-sm"><input type="checkbox" name="perm_tools_all" ${isAllTools ? 'checked' : ''} onchange="document.querySelectorAll('.tool-cb-${esc(cfg.listType)}').forEach(function(e){e.disabled=this.checked}.bind(this))"><span class="toggle-slider"></span></label>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px;margin-bottom:1rem">`
+
+    // Group tools by category
+    const toolsByCategory = new Map<string, typeof tools>()
+    for (const tool of tools) {
+      const cat = tool.category || 'other'
+      if (!toolsByCategory.has(cat)) toolsByCategory.set(cat, [])
+      toolsByCategory.get(cat)!.push(tool)
+    }
+
+    for (const [cat, catTools] of toolsByCategory) {
+      html += `<div style="grid-column:1/-1;font-size:11px;font-weight:600;color:var(--on-surface-dim);text-transform:uppercase;margin-top:4px">${esc(cat)}</div>`
+      for (const tool of catTools) {
+        const checked = isAllTools || perms.tools.includes(tool.name)
+        html += `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+          <input type="checkbox" name="perm_tool_${esc(tool.name)}" class="tool-cb-${esc(cfg.listType)}" ${checked ? 'checked' : ''} ${isAllTools ? 'disabled' : ''}>
+          ${esc(tool.name)}
+        </label>`
+      }
+    }
+
+    html += `</div>`
+
+    // Subagents
+    html += `<div class="toggle-field">
+        <span class="field-label">Subagents</span>
+        <label class="toggle toggle-sm"><input type="checkbox" name="perm_subagents" ${perms.subagents ? 'checked' : ''}><span class="toggle-slider"></span></label>
+      </div>`
+
+    // Unregistered behavior (only on lead config but we show it on the admin panel for global config)
+    html += `<div style="margin-top:1rem"><button type="submit" class="btn btn-primary btn-sm">${lang === 'es' ? 'Guardar permisos' : 'Save permissions'}</button></div>
+        </form>
+      </div>
+    </div>`
+  }
+
+  // Unregistered behavior panel (global, from lead config)
+  const leadCfg = configs.find(c => c.listType === 'lead')
+  if (leadCfg) {
+    const behavior = leadCfg.unregisteredBehavior || 'silence'
+    html += `<div class="panel">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">
+        <form method="POST" action="/console/users/config">
+          <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+          <input type="hidden" name="listType" value="lead">
+          <input type="hidden" name="displayName" value="${esc(leadCfg.displayName)}">
+          <input type="hidden" name="isEnabled" value="${leadCfg.isEnabled ? 'true' : 'false'}">
+          <div class="field">
+            <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
+            <select name="unregisteredBehavior">
+              <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
+              <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje genérico' : 'Generic message'}</option>
+              <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
+              <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
+            </select>
+          </div>
+          <div class="field" id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'grid' : 'none'}">
+            <div class="field-left"><span class="field-label">${lang === 'es' ? 'Mensaje' : 'Message'}</span></div>
+            <textarea name="unregisteredMessage" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
+          </div>
+          <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary btn-sm">${lang === 'es' ? 'Guardar' : 'Save'}</button></div>
+        </form>
+        <script>
+        (function(){
+          var sel=document.querySelector('[name="unregisteredBehavior"]');
+          var msgField=document.getElementById('unregistered-msg-field');
+          if(sel&&msgField){sel.addEventListener('change',function(){msgField.style.display=sel.value==='generic_message'?'grid':'none'})}
+        })();
+        </script>
+      </div>
+    </div>`
+  }
+
+  return html
 }
