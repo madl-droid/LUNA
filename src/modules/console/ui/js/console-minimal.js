@@ -81,6 +81,7 @@
   }
 
   // Init on load and after any dynamic content
+  window.initCustomSelects = initCustomSelects
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initCustomSelects)
   } else {
