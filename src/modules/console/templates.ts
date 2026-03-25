@@ -51,6 +51,8 @@ const ICONS = {
 const FIXED_SECTIONS: FixedSection[] = [
   // Channels — solo la pestaña unificada; los canales individuales se gestionan desde ahí
   { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'channels', order: 1 },
+  // Contacts — right below channels
+  { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'channels', order: 2 },
   // Agent
   { id: 'pipeline', key: 'sec_pipeline_unified', icon: ICONS.pipeline, group: 'agent', order: 20 },
   { id: 'engine-metrics', key: 'sec_engine_metrics', icon: ICONS.metrics, group: 'agent', order: 25 },
@@ -66,7 +68,7 @@ const FIXED_SECTIONS: FixedSection[] = [
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
 // Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email'])
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 const ICON_OVERRIDES: Record<string, string> = {
@@ -126,6 +128,10 @@ export interface PageOptions {
   channelDisplayName?: string
   /** Whether ENGINE_TEST_MODE is currently active */
   testMode?: boolean
+  /** Active contacts sub-page (list type or 'config') */
+  contactsSubpage?: string
+  /** Available contact list types for sidebar submenu */
+  contactLists?: Array<{ listType: string; displayName: string; count: number }>
 }
 
 // ═══════════════════════════════════════════
@@ -366,6 +372,29 @@ function renderSidebar(opts: PageOptions): string {
         <span>${item.label}</span>
         ${item.badge || ''}
       </a>`
+
+      // Contacts submenu: show list types + config under "Contactos"
+      if (item.id === 'contacts' && (isActive || opts.contactsSubpage)) {
+        const lists = opts.contactLists ?? []
+        if (lists.length > 0) {
+          nav += '<div class="sidebar-submenu">'
+          for (const list of lists) {
+            const subActive = opts.contactsSubpage === list.listType
+            nav += `<a href="/console/contacts/${list.listType}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
+              <span>${esc(list.displayName)}</span>
+              <span class="panel-badge badge-active" style="margin-left:auto">${list.count}</span>
+            </a>`
+          }
+          // Config tab
+          const cfgActive = opts.contactsSubpage === 'config'
+          const cfgLabel = opts.lang === 'es' ? 'Configuracion' : 'Configuration'
+          nav += `<a href="/console/contacts/config?lang=${opts.lang}" class="sidebar-submenu-item ${cfgActive ? 'active' : ''}">
+            <span class="nav-icon-sm">${ICONS.server}</span>
+            <span>${cfgLabel}</span>
+          </a>`
+          nav += '</div>'
+        }
+      }
 
       // Channel submenu: show active channels under "Canales" when it's active
       if (item.id === 'channels' && (isActive || opts.channelSettingsId)) {

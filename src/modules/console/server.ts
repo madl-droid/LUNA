@@ -847,6 +847,28 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         section = channelSectionMap[channelSettingsId] ?? channelSettingsId
       }
 
+      // Nested contacts: /console/contacts/{subpage} → render contacts section with subpage
+      let contactsSubpage: string | null = null
+      const contactsMatch = section.match(/^contacts\/(.+)$/)
+      if (contactsMatch?.[1]) {
+        contactsSubpage = contactsMatch[1]
+        section = 'contacts'
+      }
+      // Redirect /console/contacts to first list type
+      if (section === 'contacts' && !contactsSubpage) {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/contacts/admin?lang=${lang}` })
+        res.end()
+        return true
+      }
+      // Redirect old /console/users to /console/contacts
+      if (section === 'users') {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/contacts/admin?lang=${lang}` })
+        res.end()
+        return true
+      }
+
       // Redirect old section IDs to unified pages (skip if already a nested channel route)
       const redirectTo = !channelSettingsId ? SECTION_REDIRECTS[section] : undefined
       if (redirectTo) {
@@ -904,12 +926,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* module not available */ }
       }
 
-      // Users: fetch data from users module service
-      if (section === 'users') {
+      // Contacts: fetch data from users module service
+      if (section === 'contacts') {
         try {
           const dataFn = registry.getOptional<() => Promise<unknown>>('users:sectionData')
           if (dataFn) {
             sectionData.usersData = await dataFn() as typeof sectionData.usersData
+            sectionData.contactsSubpage = contactsSubpage ?? undefined
           }
         } catch { /* module not available */ }
       }
@@ -965,6 +988,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         ? data.moduleStates.find(m => m.name === channelSettingsId)?.console?.title?.[lang] ?? channelSettingsId
         : undefined
 
+      // Build contacts submenu data
+      const contactLists = sectionData.usersData?.configs?.map(c => ({
+        listType: c.listType,
+        displayName: c.displayName,
+        count: sectionData.usersData?.counts?.[c.listType] ?? 0,
+      })) ?? []
+
       const html = pageLayout({
         section: sidebarSection,
         content,
@@ -979,6 +1009,8 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         dynamicModules: data.dynamicModules,
         channelModules,
         testMode: data.config.ENGINE_TEST_MODE === 'true',
+        contactsSubpage: contactsSubpage ?? undefined,
+        contactLists,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
