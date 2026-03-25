@@ -907,9 +907,16 @@ function renderUsersSection(data: SectionData): string {
         // Status: inactive → red label; active → last interaction time (placeholder for now)
         const statusHtml = user.isActive
           ? `<span class="user-status-active">—</span>`
-          : `<span class="user-status-inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</span>`
+          : `<span class="user-status-inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</span>
+             <form method="POST" action="/console/users/reactivate" style="display:inline;margin-left:4px">
+               <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+               <input type="hidden" name="userId" value="${esc(user.id)}">
+               <button type="submit" class="act-btn act-btn-add" style="font-size:10px;padding:3px 8px">${lang === 'es' ? 'Reactivar' : 'Reactivate'}</button>
+             </form>`
 
-        html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}">`
+        // Encode contacts as JSON for the edit modal
+        const contactsJson = JSON.stringify(Object.fromEntries(user.contacts.map(c => [c.channel, c.senderId])))
+        html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}" data-contacts="${esc(contactsJson)}">`
 
         if (canEdit(lt)) {
           html += `<td><input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')"></td>`
@@ -1010,29 +1017,19 @@ function renderUsersSection(data: SectionData): string {
       var tr=cbs[0].closest('tr');
       var uid=tr.getAttribute('data-user-id');
       var name=tr.getAttribute('data-user-name')||'';
+      var contactsStr=tr.getAttribute('data-contacts')||'{}';
+      var contacts={};try{contacts=JSON.parse(contactsStr)}catch(e){}
       document.getElementById('user-modal-title').textContent=lang==='es'?'Editar usuario':'Edit user';
       document.getElementById('user-modal-submit').textContent=lang==='es'?'Guardar':'Save';
       form.action='/console/users/update';
       document.getElementById('user-modal-userId').value=uid;
       document.getElementById('user-modal-listType').value=lt;
       document.getElementById('user-modal-name').value=name;
-      // Populate existing contacts from badges in the row
-      form.querySelectorAll('[id^="user-modal-ch-"]').forEach(function(inp){inp.value='';inp.disabled=false});
-      var badges=tr.querySelectorAll('.user-contact-badge');
-      badges.forEach(function(b){
-        var svg=b.querySelector('svg');
-        var text=b.textContent.trim();
-        // Find which channel this badge belongs to by matching SVG
-        var chInputs=form.querySelectorAll('[id^="user-modal-ch-"]');
-        chInputs.forEach(function(inp){
-          var chId=inp.id.replace('user-modal-ch-','');
-          var parentDiv=inp.closest('.chs-field');
-          if(parentDiv&&parentDiv.querySelector('svg')&&b.querySelector('svg')){
-            // Match by checking the hidden input value for this channel
-            var hiddenCh=inp.previousElementSibling;
-            if(hiddenCh&&hiddenCh.value===chId&&text){inp.value=text}
-          }
-        });
+      // Populate each channel input with current value
+      form.querySelectorAll('[id^="user-modal-ch-"]').forEach(function(inp){
+        var chId=inp.id.replace('user-modal-ch-','');
+        inp.value=contacts[chId]||'';
+        inp.disabled=false;
       });
       modal.style.display='flex';
     };

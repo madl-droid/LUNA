@@ -531,6 +531,20 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       // User management routes — uses users:db and users:cache from registry
 
+      // Contact ID validation per channel
+      function validateContactId(channel: string, senderId: string): boolean {
+        if (!senderId) return false
+        switch (channel) {
+          case 'whatsapp':
+          case 'twilio-voice':
+            return /^\+[0-9]{7,15}$/.test(senderId)
+          case 'gmail':
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderId)
+          default:
+            return senderId.length > 0
+        }
+      }
+
       if (localUrl === '/users/add') {
         try {
           const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
@@ -544,8 +558,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const contacts: Array<{ channel: string; senderId: string }> = []
           for (let i = 0; i < 10; i++) {
             const ch = body[`contact_channel_${i}`]
-            const sid = body[`contact_senderid_${i}`]
-            if (ch && sid && sid.trim()) contacts.push({ channel: ch, senderId: sid.trim() })
+            const sid = body[`contact_senderid_${i}`]?.trim()
+            if (!ch || !sid) continue
+            if (!validateContactId(ch, sid)) {
+              logger.warn({ channel: ch, senderId: sid }, 'Invalid contact format on create, skipping')
+              continue
+            }
+            contacts.push({ channel: ch, senderId: sid })
           }
 
           if (contacts.length === 0) throw new Error('At least one contact is required')
@@ -572,12 +591,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const userId = body['userId']
           if (!userId) throw new Error('Missing userId')
 
+          // Update name
           await usersDb.updateUser(userId, {
             displayName: body['displayName'] || undefined,
             listType: body['listType'] || undefined,
           })
 
-          // Sync contact fields from modal: contact_channel_0, contact_senderid_0
+          // Sync contacts: for each channel, update/add/remove
           const user = await usersDb.findUserById(userId)
           if (user) {
             for (let i = 0; i < 10; i++) {
@@ -585,16 +605,21 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
               const sid = body[`contact_senderid_${i}`]?.trim()
               if (!ch) continue
 
+              // Server-side validation
+              if (sid && !validateContactId(ch, sid)) {
+                logger.warn({ channel: ch, senderId: sid }, 'Invalid contact format, skipping')
+                continue
+              }
+
               const existing = user.contacts.find(c => c.channel === ch)
               if (sid && !existing) {
-                // Add new contact for this channel
+                // New contact for this channel
                 await usersDb.addContact(userId, ch, sid)
                 await usersCache.invalidate(sid)
               } else if (sid && existing && existing.senderId !== sid) {
-                // Changed — remove old, add new
-                try { await usersDb.removeContact(existing.id) } catch { /* last contact guard */ }
-                await usersDb.addContact(userId, ch, sid)
+                // Changed value — update in place
                 await usersCache.invalidate(existing.senderId)
+                await usersDb.updateContact(existing.id, sid)
                 await usersCache.invalidate(sid)
               } else if (!sid && existing) {
                 // Cleared — remove (only if not last)
@@ -638,6 +663,30 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           logger.error({ err }, 'Failed to deactivate user')
         }
         res.writeHead(302, { Location: `/console/users?flash=user_deactivated&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/reactivate') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          if (!userId) throw new Error('Missing userId')
+
+          await usersDb.updateUser(userId, {})  // triggers updated_at
+          // Reactivate by setting is_active = true
+          await registry.getDb().query(`UPDATE users SET is_active = true, updated_at = NOW() WHERE id = $1`, [userId])
+          const contacts = await usersDb.getContactsForUser(userId)
+          for (const c of contacts) await usersCache.invalidate(c.senderId)
+
+          logger.info({ userId }, 'User reactivated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to reactivate user')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=user_reactivated&lang=${lang}` })
         res.end()
         return true
       }
