@@ -941,22 +941,18 @@ function renderUsersSection(data: SectionData): string {
           <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
           <input type="hidden" name="userId" id="user-modal-userId">
           <input type="hidden" name="listType" id="user-modal-listType">
-          <div class="chs-field">
-            <label class="chs-field-label">${lang === 'es' ? 'Nombre' : 'Name'}</label>
-            <input type="text" name="displayName" id="user-modal-name" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">
-          </div>`
+          <label class="wizard-label">${lang === 'es' ? 'Nombre' : 'Name'}</label>
+          <input type="text" class="wizard-input" name="displayName" id="user-modal-name" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">`
 
   for (let i = 0; i < channels.length; i++) {
     const ch = channels[i]!
     const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
-    html += `<div class="chs-field">
-        <label class="chs-field-label">${CH_SVG[ch.id] || ''} ${esc(lbl)}</label>
+    html += `<label class="wizard-label">${CH_SVG[ch.id] || ''} ${esc(lbl)}</label>
         <input type="hidden" name="contact_channel_${i}" value="${esc(ch.id)}">
-        <input type="text" name="contact_senderid_${i}" id="user-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}">
-      </div>`
+        <input type="text" class="wizard-input" name="contact_senderid_${i}" id="user-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}">`
   }
 
-  html += `<div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+  html += `<div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:24px">
           <button type="button" class="act-btn act-btn-config" onclick="closeUserModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
           <button type="submit" class="act-btn act-btn-cta" id="user-modal-submit">${lang === 'es' ? 'Guardar' : 'Save'}</button>
         </div>
