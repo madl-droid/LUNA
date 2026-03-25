@@ -40,19 +40,13 @@ async function ensureTables(pool: Pool): Promise<void> {
 
 // ─── Serialization helpers ───────────────────────
 
-/** Serialize a value so it's safe for JSONB (handles Buffer/Uint8Array) */
-function toJsonb(obj: unknown): unknown {
-  try {
-    return JSON.parse(JSON.stringify(obj, BufferJSON.replacer))
-  } catch (err) {
-    // Fallback: handle BigInt and other non-serializable types
-    logger.warn({ err }, 'toJsonb primary serialization failed, using safe fallback')
-    const safe = JSON.stringify(obj, (key, value) => {
-      if (typeof value === 'bigint') return value.toString()
-      return BufferJSON.replacer(key, value)
-    })
-    return JSON.parse(safe)
-  }
+/**
+ * Serialize a value to a JSON string safe for PostgreSQL JSONB.
+ * Single serialization pass — avoids the double round-trip that corrupts
+ * Sets, typed arrays, and other non-plain objects.
+ */
+function toJsonString(obj: unknown): string {
+  return JSON.stringify(obj, BufferJSON.replacer)
 }
 
 /** Deserialize a JSONB value back, reconstructing Buffer/Uint8Array */
@@ -81,9 +75,9 @@ export async function usePostgresAuthState(
   const saveCreds = async () => {
     await pool.query(
       `INSERT INTO wa_auth_creds (instance_id, creds, updated_at)
-       VALUES ($1, $2, now())
-       ON CONFLICT (instance_id) DO UPDATE SET creds = $2, updated_at = now()`,
-      [instanceId, toJsonb(creds)],
+       VALUES ($1, $2::jsonb, now())
+       ON CONFLICT (instance_id) DO UPDATE SET creds = $2::jsonb, updated_at = now()`,
+      [instanceId, toJsonString(creds)],
     )
   }
 
@@ -112,7 +106,6 @@ export async function usePostgresAuthState(
 
     set: async (data) => {
       const client = await pool.connect()
-      let skippedKeys = 0
       try {
         await client.query('BEGIN')
         for (const category in data) {
@@ -121,20 +114,14 @@ export async function usePostgresAuthState(
           for (const id in entries) {
             const value = entries[id]
             if (value) {
-              try {
-                const jsonValue = toJsonb(value)
-                await client.query(
-                  `INSERT INTO wa_auth_keys (instance_id, category, key_id, value, updated_at)
-                   VALUES ($1, $2, $3, $4, now())
-                   ON CONFLICT (instance_id, category, key_id)
-                   DO UPDATE SET value = $4, updated_at = now()`,
-                  [instanceId, category, id, jsonValue],
-                )
-              } catch (keyErr) {
-                // Skip this key but don't abort the entire batch
-                skippedKeys++
-                logger.warn({ err: keyErr, category, keyId: id }, 'Skipping auth key — serialization or insert failed')
-              }
+              const jsonStr = toJsonString(value)
+              await client.query(
+                `INSERT INTO wa_auth_keys (instance_id, category, key_id, value, updated_at)
+                 VALUES ($1, $2, $3, $4::jsonb, now())
+                 ON CONFLICT (instance_id, category, key_id)
+                 DO UPDATE SET value = $4::jsonb, updated_at = now()`,
+                [instanceId, category, id, jsonStr],
+              )
             } else {
               await client.query(
                 `DELETE FROM wa_auth_keys
@@ -145,9 +132,6 @@ export async function usePostgresAuthState(
           }
         }
         await client.query('COMMIT')
-        if (skippedKeys > 0) {
-          logger.warn({ skippedKeys }, 'Auth state saved with skipped keys')
-        }
       } catch (err) {
         await client.query('ROLLBACK')
         throw err

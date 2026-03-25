@@ -338,7 +338,7 @@ async function processMessageInner(
         toolsCalled: evaluation.toolsNeeded,
         replanAttempts,
         subagentIterations: subagentIterationsUsed || null,
-      }).catch(() => {})
+      }).catch(err => logger.warn({ err, traceId }, 'Failed to save pipeline log'))
     }
 
     return {
