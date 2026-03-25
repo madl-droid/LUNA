@@ -883,7 +883,13 @@ function renderUsersSection(data: SectionData): string {
   let html = `<div class="users-section">${warning}`
 
   if (!isConfigPage) {
-    // Filter bar (same dashed style as channels)
+    // Channel multi-select checkboxes
+    const chCheckboxes = channels.map(ch => {
+      const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+      return `<label class="uf-ch-option"><input type="checkbox" value="${esc(ch.id)}" checked onchange="userFilterApply()"> ${esc(lbl)}</label>`
+    }).join('')
+
+    // Filter bar
     html += `<div class="filter-bar">
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Nombre' : 'Name'}</span>
@@ -894,10 +900,12 @@ function renderUsersSection(data: SectionData): string {
       </div>
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Canal' : 'Channel'}</span>
-        <select class="ch-filter-select js-custom-select" id="uf-channel" onchange="userFilterApply()">
-          <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
-          ${chFilterOpts}
-        </select>
+        <div class="custom-select" id="uf-channel-wrap">
+          <button type="button" class="custom-select-btn" onclick="this.parentElement.classList.toggle('open')">${lang === 'es' ? 'Todos' : 'All'} <svg class="custom-select-arrow" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="custom-select-panel" style="padding:8px 12px;min-width:160px">
+            ${chCheckboxes}
+          </div>
+        </div>
       </div>
       <div class="filter-group">
         <span class="filter-label">${lang === 'es' ? 'Fuente' : 'Source'}</span>
@@ -913,16 +921,6 @@ function renderUsersSection(data: SectionData): string {
           <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
           <option value="1h">1h</option><option value="12h">12h</option><option value="24h">24h</option>
           <option value="7d">7d</option><option value="30d">30d</option><option value="90d">90d</option>
-          <option value="inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</option>
-        </select>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">${lang === 'es' ? 'Por pagina' : 'Per page'}</span>
-        <select class="ch-filter-select js-custom-select" id="uf-perpage" onchange="userFilterApply()">
-          <option value="10">10</option>
-          <option value="50" selected>50</option>
-          <option value="100">100</option>
-          <option value="500">500</option>
         </select>
       </div>
       <div class="user-filter-search">
@@ -998,13 +996,7 @@ function renderUsersSection(data: SectionData): string {
 
         // (contacts editing moved to modal)
       }
-      html += `</tbody></table>
-      <div class="ch-card-footer" id="pager-${esc(lt)}">
-        <span class="filter-label" id="pager-info-${esc(lt)}"></span>
-        <span class="ch-footer-spacer"></span>
-        <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(lt)}',-1)">&lsaquo; ${lang === 'es' ? 'Anterior' : 'Previous'}</button>
-        <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(lt)}',1)">${lang === 'es' ? 'Siguiente' : 'Next'} &rsaquo;</button>
-      </div>`
+      html += `</tbody></table>`
     } else {
       html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
@@ -1023,7 +1015,21 @@ function renderUsersSection(data: SectionData): string {
       html += `</div></div>`
     }
 
-    html += `</div></div>`
+    html += `</div></div>
+    <div class="user-pager" id="pager-${esc(subpage)}">
+      <span class="user-pager-info" id="pager-info-${esc(subpage)}"></span>
+      <span class="ch-footer-spacer"></span>
+      <div class="filter-group">
+        <select class="ch-filter-select js-custom-select" id="uf-perpage" onchange="userFilterApply()">
+          <option value="10">10</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="500">500</option>
+        </select>
+      </div>
+      <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(subpage)}',-1)">&lsaquo; ${lang === 'es' ? 'Anterior' : 'Previous'}</button>
+      <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(subpage)}',1)">${lang === 'es' ? 'Siguiente' : 'Next'} &rsaquo;</button>
+    </div>`
   } // end of list type subpage
 
   // Build list type options for move-list dropdown
@@ -1226,15 +1232,24 @@ function renderUsersSection(data: SectionData): string {
     // ── Filtering + pagination ──
     window.userFilterApply=function(){
       var sortEl=document.getElementById('uf-sort');
-      var channelEl=document.getElementById('uf-channel');
       var sourceEl=document.getElementById('uf-source');
       var activityEl=document.getElementById('uf-activity');
       var perpageEl=document.getElementById('uf-perpage');
       var sort=sortEl?sortEl.value:'asc';
-      var channel=channelEl?channelEl.value:'all';
       var source=sourceEl?sourceEl.value:'all';
       var activity=activityEl?activityEl.value:'all';
       var perpage=perpageEl?parseInt(perpageEl.value,10):50;
+      // Multi-select channels
+      var channelCbs=document.querySelectorAll('.uf-ch-option input[type="checkbox"]');
+      var selectedChannels=[];
+      channelCbs.forEach(function(cb){if(cb.checked)selectedChannels.push(cb.value)});
+      var allChannels=channelCbs.length===selectedChannels.length;
+      // Update channel button label
+      var chBtn=document.querySelector('#uf-channel-wrap .custom-select-btn');
+      if(chBtn){
+        var arrow=' <svg class="custom-select-arrow" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        chBtn.innerHTML=(allChannels?(lang==='es'?'Todos':'All'):selectedChannels.length+' '+(lang==='es'?'canales':'channels'))+arrow;
+      }
       var search=(document.getElementById('uf-search')||{}).value||'';
       search=search.toLowerCase();
 
@@ -1246,9 +1261,11 @@ function renderUsersSection(data: SectionData): string {
 
         // Filter
         var visible=rows.filter(function(tr){
-          if(channel!=='all'){
+          if(!allChannels){
             var chs=(tr.getAttribute('data-channels')||'').split(',');
-            if(chs.indexOf(channel)===-1)return false;
+            var hasMatch=false;
+            for(var ci=0;ci<selectedChannels.length;ci++){if(chs.indexOf(selectedChannels[ci])!==-1){hasMatch=true;break}}
+            if(!hasMatch)return false;
           }
           if(source!=='all'){
             var s=tr.getAttribute('data-source')||'';
