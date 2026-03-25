@@ -283,7 +283,16 @@ async function callOpenAI(model: string, options: LLMCallOptions): Promise<LLMCa
   }
 
   for (const m of options.messages) {
-    messages.push({ role: m.role, content: buildOpenAIContent(m.content) })
+    const content = buildOpenAIContent(m.content)
+    if (m.role === 'user') {
+      messages.push({ role: 'user', content })
+    } else {
+      // Assistant messages only accept string or text/refusal parts (no images)
+      const textContent = typeof content === 'string'
+        ? content
+        : content.filter((p): p is OpenAI.ChatCompletionContentPartText => p.type === 'text')
+      messages.push({ role: 'assistant', content: textContent })
+    }
   }
 
   const response = await openaiClient.chat.completions.create({

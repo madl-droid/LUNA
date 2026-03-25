@@ -140,7 +140,7 @@ export async function startProactiveRunner(
       const cron = job.triggerType === 'reactivation'
         ? proactiveConfig.reactivation.cron
         : job.triggerType === 'nightly_batch'
-          ? engineConfig.batchCron
+          ? config.batchCron
           : job.cron
 
       const repeatJob = await proactiveQueue.add(
