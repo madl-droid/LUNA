@@ -606,6 +606,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         googleAppsConnected: data.googleAppsConnected,
         dynamicModules: data.dynamicModules,
         channelModules,
+        testMode: data.config.ENGINE_TEST_MODE === 'true',
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
