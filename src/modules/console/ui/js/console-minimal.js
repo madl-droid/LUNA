@@ -144,12 +144,6 @@
     header.closest('.panel').classList.toggle('collapsed')
   }
 
-  // === Info tooltips ===
-  window.toggleInfo = function (id) {
-    var el = document.getElementById(id)
-    if (el) el.classList.toggle('visible')
-  }
-
   // === Save bar state machine ===
   // Phase "dirty": Descartar + Guardar visible
   // Phase "saved": Aplicar cambios visible (after successful save)
