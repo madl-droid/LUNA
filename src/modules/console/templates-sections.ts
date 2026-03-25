@@ -954,7 +954,7 @@ function renderUsersSection(data: SectionData): string {
 
     if (users.length > 0) {
       html += `<table class="users-table" id="tbl-${esc(lt)}"><thead><tr class="users-table-head">
-        ${canEdit(lt) ? `<th><input type="checkbox" class="user-cb" id="cb-all-${esc(lt)}" title="${lang === 'es' ? 'Seleccionar todos' : 'Select all'}" onclick="userToggleAll('${esc(lt)}')"></th>` : ''}
+        <th><input type="checkbox" class="user-cb" id="cb-all-${esc(lt)}" title="${lang === 'es' ? 'Seleccionar todos' : 'Select all'}" onclick="userToggleAll('${esc(lt)}')"></th>
         <th>ID</th>
         <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
         <th>${lang === 'es' ? 'Datos de contacto' : 'Contact info'}</th>
@@ -983,11 +983,8 @@ function renderUsersSection(data: SectionData): string {
         const senderIds = user.contacts.map(c => c.senderId).join(' ')
         html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}" data-contacts="${esc(contactsJson)}" data-channels="${esc(channelList)}" data-source="${esc(user.source)}" data-search="${esc((user.displayName || '') + ' ' + senderIds)}">`
 
-        if (canEdit(lt)) {
-          html += `<td><input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')"></td>`
-        }
-
-        html += `<td><code>${esc(user.id)}</code></td>
+        html += `<td><input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')"></td>
+          <td><code>${esc(user.id)}</code></td>
           <td>${esc(user.displayName || '—')}</td>
           <td>${contactBadges}</td>
           <td><span class="user-source-badge">${esc(user.source)}</span></td>
@@ -1001,19 +998,19 @@ function renderUsersSection(data: SectionData): string {
       html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
 
-    // Footer row: add (left) + selection actions (right)
-    if (!isLead) {
-      html += `<div class="ch-card-footer">
-        <button type="button" class="act-btn act-btn-add" onclick="openAddUserModal('${esc(lt)}', '${lang}')">${SVG_PLUS} ${lang === 'es' ? 'Agregar usuario' : 'Add user'}</button>
-        <span class="ch-footer-spacer"></span>
-        <div class="user-selection-bar" id="sel-bar-${esc(lt)}">
-          <button type="button" class="act-btn act-btn-config" onclick="userEditSelected('${esc(lt)}', '${lang}')">${SVG_EDIT} ${lang === 'es' ? 'Editar' : 'Edit'}</button>
-          <button type="button" class="act-btn act-btn-remove" onclick="userDeactivateSelected('${esc(lt)}', '${lang}')">${SVG_DEACTIVATE} ${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>`
-      if (canDelete(lt)) {
-        html += `<button type="button" class="act-btn act-btn-remove" onclick="userDeleteSelected('${esc(lt)}', '${lang}')">${SVG_DELETE} ${lang === 'es' ? 'Eliminar' : 'Delete'}</button>`
-      }
-      html += `</div></div>`
+    // Footer row: add (left) + selection actions (right) — same template for all list types
+    html += `<div class="ch-card-footer">`
+    if (canEdit(lt)) {
+      html += `<button type="button" class="act-btn act-btn-add" onclick="openAddUserModal('${esc(lt)}', '${lang}')">${SVG_PLUS} ${lang === 'es' ? 'Agregar usuario' : 'Add user'}</button>`
     }
+    html += `<span class="ch-footer-spacer"></span>
+      <div class="user-selection-bar" id="sel-bar-${esc(lt)}">
+        ${canEdit(lt) ? `<button type="button" class="act-btn act-btn-config" onclick="userEditSelected('${esc(lt)}')">${SVG_EDIT} ${lang === 'es' ? 'Editar' : 'Edit'}</button>` : ''}
+        <button type="button" class="act-btn act-btn-remove" onclick="userDeactivateSelected('${esc(lt)}')">${SVG_DEACTIVATE} ${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>`
+    if (canDelete(lt)) {
+      html += `<button type="button" class="act-btn act-btn-remove" onclick="userDeleteSelected('${esc(lt)}')">${SVG_DELETE} ${lang === 'es' ? 'Eliminar' : 'Delete'}</button>`
+    }
+    html += `</div></div>`
 
     html += `</div></div>
     <div class="user-pager" id="pager-${esc(subpage)}">

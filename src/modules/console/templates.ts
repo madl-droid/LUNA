@@ -382,7 +382,7 @@ function renderSidebar(opts: PageOptions): string {
             const subActive = opts.contactsSubpage === list.listType
             nav += `<a href="/console/contacts/${list.listType}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
               <span>${esc(list.displayName)}</span>
-              <span class="panel-badge badge-active" style="margin-left:auto">${list.count}</span>
+              <span class="panel-badge badge-soon" style="margin-left:auto">${list.count}</span>
             </a>`
           }
           nav += '</div>'
