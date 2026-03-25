@@ -38,6 +38,7 @@ src/
     knowledge/       — base de conocimiento: docs, FAQs, sync, búsqueda (ver CLAUDE.md)
     scheduled-tasks/ — tareas programadas del agente (ver CLAUDE.md)
     tts/             — síntesis de voz: Google Cloud TTS (ver CLAUDE.md)
+    medilink/        — integración Medilink/HealthAtom: pacientes, citas, follow-up (ver CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
     attachments/     — subsistema de adjuntos del engine (types, processor, url-extractor, injection-validator, audio-transcriber, tools)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
@@ -202,6 +203,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/scheduled-tasks/CLAUDE.md` — tareas programadas (cron, BullMQ, ejecucion LLM)
 - `src/engine/attachments/` — subsistema de adjuntos del engine (reemplaza módulo standalone src/modules/attachments/)
 - `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Cloud TTS, OGG_OPUS, PTT voice notes)
+- `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 

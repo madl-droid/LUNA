@@ -6,18 +6,26 @@
 export interface MedilinkConfig {
   MEDILINK_API_TOKEN: string
   MEDILINK_BASE_URL: string
+  MEDILINK_WEBHOOK_PUBLIC_KEY: string
+  MEDILINK_WEBHOOK_PRIVATE_KEY: string
   MEDILINK_RATE_LIMIT_RPM: number
   MEDILINK_API_TIMEOUT_MS: number
-  MEDILINK_CACHE_TTL_MS: number
+  MEDILINK_AVAILABILITY_CACHE_TTL_MS: number
+  MEDILINK_REFERENCE_REFRESH_DAYS: number
+  MEDILINK_DEFAULT_BRANCH_ID: string
+  MEDILINK_DEFAULT_DURATION_MIN: number
+  MEDILINK_DEFAULT_STATUS_ID: string
   MEDILINK_FOLLOWUP_ENABLED: boolean
-  MEDILINK_FOLLOWUP_TOUCH0_ENABLED: boolean
   MEDILINK_FOLLOWUP_TOUCH1_DAYS_BEFORE: number
+  MEDILINK_FOLLOWUP_FALLBACK_A_HOURS: number
+  MEDILINK_FOLLOWUP_FALLBACK_B_DAYS_BEFORE: number
   MEDILINK_FOLLOWUP_TOUCH3_HOURS_BEFORE: number
   MEDILINK_FOLLOWUP_TOUCH4_HOURS_BEFORE: number
   MEDILINK_FOLLOWUP_NOSHOW_HOURS_AFTER: number
   MEDILINK_FOLLOWUP_REACTIVATION_DAYS: number
-  MEDILINK_FOLLOWUP_PREFERRED_CHANNEL: string
-  MEDILINK_SYNC_INTERVAL_MS: number
+  MEDILINK_REQUIRE_DOCUMENT_FOR_DEBTS: boolean
+  MEDILINK_AUTO_LINK_SINGLE_MATCH: boolean
+  MEDILINK_HEALTH_CHECK_INTERVAL_MS: number
 }
 
 // ─── API response envelope ───────────────
@@ -108,8 +116,8 @@ export interface MedilinkAppointment {
   hora_inicio: string
   hora_fin: string
   duracion: number
-  id_dentista: number
-  nombre_dentista: string
+  id_profesional: number
+  nombre_profesional: string
   id_sucursal: number
   nombre_sucursal: string
   id_sillon: number
@@ -119,7 +127,7 @@ export interface MedilinkAppointment {
 }
 
 export interface MedilinkAppointmentCreate {
-  id_dentista: number
+  id_profesional: number
   id_sucursal: number
   id_estado: number
   id_sillon: number
@@ -129,7 +137,6 @@ export interface MedilinkAppointmentCreate {
   hora_inicio: string
   duracion: number
   comentario?: string
-  videoconsulta?: boolean
 }
 
 export interface MedilinkAppointmentUpdate {
@@ -138,20 +145,25 @@ export interface MedilinkAppointmentUpdate {
   comentarios?: string
   fecha?: string
   hora_inicio?: string
-  id_dentista?: number
+  id_profesional?: number
   id_sillon?: number
 }
 
-// ─── Dentista (Professional) ─────────────
+// ─── Profesional (Professional) ──────────
 
-export interface MedilinkDentist {
+export interface MedilinkProfessional {
   id: number
+  rut: string | null
   nombre: string
   apellidos: string
+  celular: string | null
+  telefono: string | null
   email: string | null
+  id_especialidad: number | null
   especialidad: string | null
-  sucursales?: Array<{ id: number; nombre: string }>
-  tratamientos?: Array<{ id: number; nombre: string }>
+  agenda_online: boolean
+  intervalo: number | null
+  habilitado: boolean
   links?: { self: string }
 }
 
@@ -177,7 +189,7 @@ export interface MedilinkChair {
   links?: { self: string }
 }
 
-// ─── Tratamiento (Treatment) ─────────────
+// ─── Tratamiento / Atencion (Treatment) ──
 
 export interface MedilinkTreatment {
   id: number
@@ -196,12 +208,25 @@ export interface MedilinkAppointmentStatus {
   links?: { self: string }
 }
 
+// ─── Evolucion (Evolution/Procedure) ─────
+
+export interface MedilinkEvolution {
+  id: number
+  id_atencion: number
+  nombre_atencion: string
+  id_paciente: number
+  nombre_paciente: string
+  id_profesional: number
+  nombre_profesional: string
+  fecha: string
+  datos: string | null
+  habilitado: boolean
+}
+
 // ─── Agenda / Disponibilidad ─────────────
 
-export interface MedilinkAgendaSlot {
-  hora: string
-  sillones: Record<string, boolean | MedilinkAgendaBlock>
-}
+/** Raw agenda response: date → time → chair → availability */
+export type MedilinkAgendaRaw = Record<string, Record<string, Record<string, boolean | MedilinkAgendaBlock>>>
 
 export interface MedilinkAgendaBlock {
   tipo: string
@@ -215,91 +240,173 @@ export interface MedilinkAgendaBlock {
   nombre_paciente?: string
 }
 
-export interface MedilinkAgendaDay {
-  fecha: string
-  horas: MedilinkAgendaSlot[]
+/** Cleaned/processed availability slot for agent consumption */
+export interface AvailabilitySlot {
+  date: string
+  time: string
+  professionalId: number
+  professionalName: string
+  branchId: number
+  branchName: string
+  chairId: string
+  chairName: string
+  durationMinutes: number
 }
 
 // ─── Filter system ───────────────────────
 
-export type MedilinkFilterOperator =
-  | 'eq' | 'neq'
-  | 'gt' | 'gte'
-  | 'lt' | 'lte'
-  | 'like' | 'in'
+export type MedilinkFilter = Record<string, Record<string, string | number> | Array<Record<string, string | number>>>
 
-export type MedilinkFilter = Record<string, Record<string, string | number>>
+// ─── Webhook ─────────────────────────────
+
+export type WebhookAction = 'created' | 'modified' | 'deleted'
+
+export type WebhookEntity =
+  | 'cita' | 'paciente' | 'profesional' | 'contrato'
+  | 'horario' | 'horario_bloqueado' | 'horario_especial'
+
+export interface WebhookPayload {
+  action: WebhookAction
+  entity: WebhookEntity
+  data: { id: number } & Record<string, unknown>
+}
+
+export interface WebhookLogEntry {
+  id: string
+  entity: WebhookEntity
+  action: WebhookAction
+  medilinkId: number
+  payload: WebhookPayload
+  signatureValid: boolean
+  processed: boolean
+  error: string | null
+  receivedAt: Date
+}
 
 // ─── Audit log ───────────────────────────
 
-export interface MedilinkAuditEntry {
+export type AuditAction =
+  | 'view_patient' | 'view_appointments' | 'view_payments'
+  | 'view_evolutions' | 'create_patient' | 'create_appointment'
+  | 'reschedule_appointment' | 'edit_request'
+  | 'edit_approved' | 'edit_rejected'
+  | 'identity_check' | 'access_denied'
+
+export interface AuditEntry {
   id: string
   contactId: string
-  patientId: number
-  action: 'create' | 'update' | 'view'
-  field?: string
-  oldValue?: string
-  newValue?: string
-  requestedBy: string
-  approvedBy?: string | null
-  status: 'pending' | 'approved' | 'rejected' | 'auto'
-  reason?: string
+  agentId: string
+  medilinkPatientId: string | null
+  action: AuditAction
+  targetType: string
+  targetId: string | null
+  detail: Record<string, unknown>
+  verificationLevel: VerificationLevel | null
+  result: 'success' | 'denied' | 'pending' | 'error'
   createdAt: Date
-  resolvedAt?: Date | null
+}
+
+// ─── Edit requests ───────────────────────
+
+export type EditRequestStatus = 'pending' | 'approved' | 'rejected'
+
+export interface EditRequest {
+  id: string
+  medilinkPatientId: string
+  contactId: string
+  agentId: string
+  requestedChanges: Record<string, { old: string | null; new: string }>
+  reason: string | null
+  status: EditRequestStatus
+  reviewedBy: string | null
+  reviewedAt: Date | null
+  reviewNotes: string | null
+  createdAt: Date
 }
 
 // ─── Follow-up ───────────────────────────
 
 export type FollowUpTouchType =
-  | 'touch0_booking'
-  | 'touch1_7days_call'
-  | 'touch1_fallbackA_whatsapp'
-  | 'touch1_fallbackB_call'
-  | 'touch3_24h_prep'
-  | 'touch4_3h_reminder'
-  | 'noshow_recovery_1'
-  | 'noshow_recovery_2'
+  | 'touch_0' | 'touch_1'
+  | 'touch_1_fallback_a' | 'touch_1_fallback_b'
+  | 'touch_3' | 'touch_4'
+  | 'no_show_1' | 'no_show_2'
   | 'reactivation'
 
-export interface MedilinkFollowUp {
+export type FollowUpStatus = 'pending' | 'sent' | 'confirmed' | 'failed' | 'skipped'
+
+export interface FollowUp {
   id: string
-  appointmentId: number
-  patientId: number
+  medilinkAppointmentId: string
   contactId: string
+  agentId: string
+  appointmentDate: Date
   touchType: FollowUpTouchType
+  channel: 'whatsapp' | 'voice'
+  status: FollowUpStatus
   scheduledAt: Date
   executedAt: Date | null
-  status: 'pending' | 'sent' | 'responded' | 'skipped' | 'failed'
-  channel: 'whatsapp' | 'call' | 'email'
-  response?: string | null
-  metadata?: Record<string, unknown>
+  response: string | null
+  bullmqJobId: string | null
+  metadata: Record<string, unknown>
   createdAt: Date
 }
 
-// ─── Security context ────────────────────
+export interface FollowUpTemplate {
+  id: string
+  touchType: FollowUpTouchType
+  templateText: string
+  llmInstructions: string | null
+  useLlm: boolean
+  channel: 'whatsapp' | 'voice'
+  voiceScript: string | null
+  updatedAt: Date
+}
 
-export interface MedilinkSecurityContext {
+// ─── Security ────────────────────────────
+
+export type VerificationLevel = 'unverified' | 'phone_matched' | 'document_verified'
+
+export interface SecurityContext {
   contactId: string
   contactPhone: string
+  agentId: string
   medilinkPatientId: number | null
-  verified: boolean
+  verificationLevel: VerificationLevel
 }
 
-// ─── Patient-safe public data ────────────
+// ─── Scheduling rules ────────────────────
 
-export interface PatientPublicInfo {
-  id: number
-  nombres: string
-  apellidos: string
-  nombre_social: string | null
+export interface ProfessionalTreatmentRule {
+  id: string
+  medilinkProfessionalId: number
+  medilinkTreatmentId: number
+  professionalName: string
+  treatmentName: string
+  createdAt: Date
 }
 
-export interface PatientOwnInfo extends PatientPublicInfo {
-  rut: string | null
-  fecha_nacimiento: string | null
-  celular: string | null
-  email: string | null
-  tratamientos_activos: Array<{ nombre: string; fecha: string }>
-  deudas: Array<{ concepto: string; monto: number }> | null
-  proximas_citas: MedilinkAppointment[]
+export interface UserTypeRule {
+  id: string
+  userType: string
+  medilinkTreatmentId: number
+  treatmentName: string
+  allowed: boolean
+  notes: string | null
+  createdAt: Date
+}
+
+// ─── Rate limiter ────────────────────────
+
+export type RequestPriority = 'high' | 'medium' | 'low'
+
+// ─── Reference data cache ────────────────
+
+export interface ReferenceData {
+  branches: MedilinkBranch[]
+  professionals: MedilinkProfessional[]
+  treatments: MedilinkTreatment[]
+  statuses: MedilinkAppointmentStatus[]
+  chairs: MedilinkChair[]
+  loadedAt: Date
 }
