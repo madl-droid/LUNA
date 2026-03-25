@@ -867,12 +867,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         contactsSubpage = contactsMatch[1]
         section = 'contacts'
       }
-      // Redirect /console/contacts to first list type
+      // /console/contacts without subpage → show config page
       if (section === 'contacts' && !contactsSubpage) {
-        const lang = detectLang(req)
-        res.writeHead(302, { Location: `/console/contacts/admin?lang=${lang}` })
-        res.end()
-        return true
+        contactsSubpage = 'config'
       }
       // Redirect old /console/users to /console/contacts
       if (section === 'users') {
