@@ -469,6 +469,10 @@ const manifest: ModuleManifest = {
         quotedRaw: payload.quotedRaw,
       })
 
+      if (!result.success) {
+        throw new Error(`WhatsApp send failed: ${result.error ?? 'unknown error'}`)
+      }
+
       await registry.runHook('message:sent', {
         channel: 'whatsapp',
         to: payload.to,

@@ -17,6 +17,7 @@ import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
 import { generateAck, mapStepToAction } from './ack/ack-service.js'
+import { pickErrorFallback } from './ack/ack-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 
 const logger = pino({ name: 'engine' })
@@ -140,6 +141,8 @@ async function processMessageInner(
 ): Promise<PipelineResult> {
   let traceId = ''
   let avisoTimer: ReturnType<typeof setTimeout> | null = null
+  // Shared state so the ACK timer knows if the pipeline failed or completed
+  const pipelineState = { failed: false, completed: false }
 
   try {
     // ═══ PHASE 1: Intake + Context Loading ═══
@@ -196,6 +199,21 @@ async function processMessageInner(
 
     avisoTimer = avisoConfig.triggerMs > 0
       ? setTimeout(async () => {
+          // Don't send ACK if pipeline already completed successfully
+          if (pipelineState.completed) return
+
+          // If pipeline failed, send error fallback instead of processing ACK
+          if (pipelineState.failed) {
+            try {
+              const errorMsg = pickErrorFallback(ctx.message.channelName)
+              await sendAviso(ctx, errorMsg, registry)
+            } catch (err) {
+              logger.warn({ err, traceId }, 'Failed to send error fallback via aviso')
+            }
+            return
+          }
+
+          // Normal ACK: pipeline is still processing
           avisoSentAt = Date.now()
           try {
             const ackMsg = await generateAck({
@@ -269,6 +287,7 @@ async function processMessageInner(
     const composed = await phase4Compose(ctx, evaluation, execution, engineConfig, registry)
     const phase4DurationMs = Date.now() - p4Start
 
+    pipelineState.completed = true
     if (avisoTimer) clearTimeout(avisoTimer)
 
     logger.info({
@@ -340,6 +359,7 @@ async function processMessageInner(
       subagentIterationsUsed,
     }
   } catch (err) {
+    pipelineState.failed = true
     if (avisoTimer) clearTimeout(avisoTimer)
     const totalDurationMs = Date.now() - totalStart
 
@@ -348,6 +368,19 @@ async function processMessageInner(
       err,
       totalDurationMs,
     }, 'Pipeline error')
+
+    // Send a natural error fallback so the user doesn't get silence
+    try {
+      const errorMsg = pickErrorFallback(message.channelName)
+      await registry.runHook('message:send', {
+        channel: message.channelName,
+        to: message.from,
+        content: { type: 'text', text: errorMsg },
+      })
+      logger.info({ traceId: traceId || 'unknown', to: message.from }, 'Error fallback sent')
+    } catch (sendErr) {
+      logger.error({ sendErr, traceId: traceId || 'unknown' }, 'Failed to send error fallback')
+    }
 
     return {
       traceId: traceId || 'unknown',

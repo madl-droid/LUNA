@@ -22,6 +22,7 @@ import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { markFarewell, setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
 import { loadProactiveConfig } from '../proactive/proactive-config.js'
+import { pickErrorFallback } from '../ack/ack-defaults.js'
 
 const logger = pino({ name: 'engine:phase5' })
 
@@ -94,6 +95,28 @@ export async function phase5Validate(
     }
   } else {
     deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+  }
+
+  // 4b. If delivery failed after retries, send natural error fallback
+  if (!deliveryResult.sent) {
+    logger.warn({ traceId: ctx.traceId }, 'Delivery failed after retries, sending error fallback')
+    try {
+      const errorMsg = pickErrorFallback(ctx.message.channelName)
+      let sendTo = ctx.message.from
+      const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
+      const groupJid = rawMsg?.key?.remoteJid
+      if (groupJid?.endsWith('@g.us')) sendTo = groupJid
+
+      await registry.runHook('message:send', {
+        channel: ctx.message.channelName,
+        to: sendTo,
+        content: { type: 'text', text: errorMsg },
+        correlationId: ctx.traceId,
+      })
+      logger.info({ traceId: ctx.traceId, to: sendTo }, 'Error fallback sent to user')
+    } catch (fallbackErr) {
+      logger.error({ fallbackErr, traceId: ctx.traceId }, 'Failed to send error fallback — channel may be down')
+    }
   }
 
   // 5. Post-send operations (parallel — all are independent)
@@ -230,6 +253,37 @@ async function checkRateLimit(
   }
 }
 
+// ─── Retry helper ──────────────────────────────
+
+const SEND_MAX_RETRIES = 2
+const SEND_RETRY_BASE_DELAY_MS = 1000
+
+/**
+ * Retry a send operation with exponential backoff.
+ * Only retries on transient errors (connection, timeout, internal).
+ */
+async function sendWithRetry(
+  fn: () => Promise<void>,
+  traceId: string,
+  label: string,
+): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= SEND_MAX_RETRIES; attempt++) {
+    try {
+      await fn()
+      return
+    } catch (err) {
+      lastError = err
+      if (attempt < SEND_MAX_RETRIES) {
+        const delay = SEND_RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+        logger.warn({ err, traceId, attempt: attempt + 1, maxRetries: SEND_MAX_RETRIES, delay, label }, 'Send failed, retrying')
+        await new Promise(r => setTimeout(r, delay))
+      }
+    }
+  }
+  throw lastError
+}
+
 // ─── Sending ──────────────────────────────
 
 async function sendAudioMessage(
@@ -250,17 +304,21 @@ async function sendAudioMessage(
   }).catch(() => {})
 
   try {
-    await registry.runHook('message:send', {
-      channel: ctx.message.channelName,
-      to: sendTo,
-      content: {
-        type: 'audio',
-        audioBuffer: ttsResult.audioBuffer,
-        audioDurationSeconds: ttsResult.durationSeconds,
-        ptt: true,
-      },
-      correlationId: ctx.traceId,
-    })
+    await sendWithRetry(
+      () => registry.runHook('message:send', {
+        channel: ctx.message.channelName,
+        to: sendTo,
+        content: {
+          type: 'audio',
+          audioBuffer: ttsResult.audioBuffer,
+          audioDurationSeconds: ttsResult.durationSeconds,
+          ptt: true,
+        },
+        correlationId: ctx.traceId,
+      }),
+      ctx.traceId,
+      'audio',
+    )
 
     await registry.runHook('channel:send_complete', {
       channel: ctx.message.channelName,
@@ -271,7 +329,7 @@ async function sendAudioMessage(
 
     return { sent: true, channelMessageId: undefined }
   } catch (err) {
-    logger.error({ err, traceId: ctx.traceId }, 'Failed to send audio message')
+    logger.error({ err, traceId: ctx.traceId }, 'Failed to send audio message after retries')
     return { sent: false, error: String(err) }
   }
 }
@@ -319,16 +377,20 @@ async function sendMessages(
     }
 
     try {
-      await registry.runHook('message:send', {
-        channel: ctx.message.channelName,
-        to: sendTo,
-        content: { type: 'text', text: part },
-        quotedRaw: (isGroupReply && i === 0) ? ctx.message.raw : undefined,
-        correlationId: ctx.traceId,
-      })
+      await sendWithRetry(
+        () => registry.runHook('message:send', {
+          channel: ctx.message.channelName,
+          to: sendTo,
+          content: { type: 'text', text: part },
+          quotedRaw: (isGroupReply && i === 0) ? ctx.message.raw : undefined,
+          correlationId: ctx.traceId,
+        }),
+        ctx.traceId,
+        `text-part-${i}`,
+      )
       lastMessageId = randomUUID()
     } catch (err) {
-      logger.error({ err, traceId: ctx.traceId, part: i }, 'Failed to send message part')
+      logger.error({ err, traceId: ctx.traceId, part: i }, 'Failed to send message part after retries')
       return { sent: false, error: String(err) }
     }
   }
