@@ -879,7 +879,7 @@ function renderUsersSection(data: SectionData): string {
           `<span class="user-contact-badge" title="${esc(c.senderId)}">${CH_SVG[c.channel] || ''} ${esc(c.senderId.length > 22 ? c.senderId.slice(0, 20) + '…' : c.senderId)}</span>`
         ).join(' ')
 
-        html += `<tr>
+        html += `<tr data-user-id="${esc(user.id)}">
           <td><code>${esc(user.id)}</code></td>
           <td>${esc(user.displayName || '—')}</td>
           <td>${contactBadges}</td>
@@ -890,16 +890,16 @@ function renderUsersSection(data: SectionData): string {
             <form method="POST" action="/console/users/deactivate" style="display:inline">
               <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
               <input type="hidden" name="userId" value="${esc(user.id)}">
-              <button type="submit" class="user-form-actions btn-deactivate" onclick="return confirm('${lang === 'es' ? '¿Desactivar?' : 'Deactivate?'}')">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
+              <button type="submit" class="btn-secondary" style="color:var(--error)" onclick="return confirm('${lang === 'es' ? '¿Desactivar?' : 'Deactivate?'}')">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
             </form>
           </td>`
         }
 
         html += `</tr>`
 
-        // Contacts detail row with add/remove
+        // Contacts detail row — hidden by default, toggle via click on user row
         if (!isLead) {
-          html += `<tr><td colspan="${isLead ? 4 : 5}"><div class="user-contacts-detail">`
+          html += `<tr class="user-contacts-row" style="display:none"><td colspan="5"><div class="user-contacts-detail">`
           for (const c of user.contacts) {
             html += `<span class="user-contact-badge">${CH_SVG[c.channel] || ''} ${esc(c.senderId)}
               <form method="POST" action="/console/users/remove-contact" style="display:inline">
@@ -922,7 +922,22 @@ function renderUsersSection(data: SectionData): string {
           html += `</div></td></tr>`
         }
       }
-      html += `</table>`
+      html += `</table>
+        <script>(function(){
+          var rows=document.querySelectorAll('.users-table tr[data-user-id]');
+          rows.forEach(function(r){r.style.cursor='pointer';r.addEventListener('click',function(e){
+            if(e.target.closest('form')||e.target.closest('button'))return;
+            var detail=r.nextElementSibling;
+            if(detail&&detail.classList.contains('user-contacts-row')){detail.style.display=detail.style.display==='none'?'table-row':'none'}
+          })});
+          // Sync perm checkboxes to hidden inputs for save bar dirty tracking
+          document.querySelectorAll('.perm-cb').forEach(function(cb){
+            cb.addEventListener('change',function(){
+              var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
+              if(h){h.value=cb.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
+            })
+          })
+        })()</script>`
     } else {
       html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
@@ -949,16 +964,17 @@ function renderUsersSection(data: SectionData): string {
           </div>`
       }
 
-      html += `<div class="user-form-actions"><button type="submit" class="btn-save">${lang === 'es' ? 'Crear usuario' : 'Create user'}</button></div>
+      html += `<div class="user-form-actions"><button type="submit" class="btn-secondary">${lang === 'es' ? 'Crear usuario' : 'Create user'}</button></div>
         </form></details>`
     }
 
     html += `</div></div>`
   }
 
-  // ── Permissions panels (per non-lead list) ──
+  // ── Permissions panels (per non-lead list) — integrated with save bar ──
   for (const cfg of configs) {
     if (cfg.listType === 'lead') continue
+    const lt = cfg.listType
     const perms = cfg.permissions
     const isAllTools = perms.tools.includes('*')
 
@@ -967,20 +983,10 @@ function renderUsersSection(data: SectionData): string {
         <span class="panel-title">${lang === 'es' ? 'Permisos' : 'Permissions'}: ${esc(cfg.displayName)}</span>
         <span class="panel-chevron">&#9660;</span>
       </div>
-      <div class="panel-body">
-        <form method="POST" action="/console/users/config">
-          <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
-          <input type="hidden" name="listType" value="${esc(cfg.listType)}">
-          <input type="hidden" name="displayName" value="${esc(cfg.displayName)}">
-          <input type="hidden" name="isEnabled" value="${cfg.isEnabled ? 'true' : 'false'}">
-          <input type="hidden" name="maxUsers" value="${cfg.maxUsers ?? ''}">`
+      <div class="panel-body">`
 
-    // Tools
+    // Tools — tracked by save bar via hidden inputs
     html += `<div class="field-divider"><span class="field-divider-label">Tools</span></div>
-      <div class="toggle-field">
-        <span class="field-label">${lang === 'es' ? 'Acceso total (*)' : 'Full access (*)'}</span>
-        <label class="toggle toggle-sm"><input type="checkbox" name="perm_tools_all" ${isAllTools ? 'checked' : ''} onchange="document.querySelectorAll('.tool-cb-${esc(cfg.listType)}').forEach(function(e){e.disabled=this.checked}.bind(this))"><span class="toggle-slider"></span></label>
-      </div>
       <div class="perm-grid">`
 
     const toolsByCategory = new Map<string, typeof tools>()
@@ -993,21 +999,27 @@ function renderUsersSection(data: SectionData): string {
       html += `<div class="perm-grid-category">${esc(cat)}</div>`
       for (const tool of catTools) {
         const checked = isAllTools || perms.tools.includes(tool.name)
-        html += `<label><input type="checkbox" name="perm_tool_${esc(tool.name)}" class="tool-cb-${esc(cfg.listType)}" ${checked ? 'checked' : ''} ${isAllTools ? 'disabled' : ''}> ${esc(tool.name)}</label>`
+        const origVal = checked ? 'on' : ''
+        // Hidden input tracked by save bar; checkbox syncs it
+        html += `<label>
+          <input type="checkbox" class="perm-cb" ${checked ? 'checked' : ''} data-hidden="perm_${esc(lt)}_tool_${esc(tool.name)}">
+          <input type="hidden" name="perm_${esc(lt)}_tool_${esc(tool.name)}" value="${origVal}" data-original="${origVal}">
+          ${esc(tool.name)}</label>`
       }
     }
     html += `</div>`
 
     // Subagents
-    html += `<div class="toggle-field" style="margin-top:1rem">
+    const subOrig = perms.subagents ? 'on' : ''
+    html += `<div class="field" style="margin-top:1rem;display:flex;align-items:center;gap:8px">
         <span class="field-label">Subagents</span>
-        <label class="toggle toggle-sm"><input type="checkbox" name="perm_subagents" ${perms.subagents ? 'checked' : ''}><span class="toggle-slider"></span></label>
+        <input type="checkbox" class="perm-cb" ${perms.subagents ? 'checked' : ''} data-hidden="perm_${esc(lt)}_subagents">
+        <input type="hidden" name="perm_${esc(lt)}_subagents" value="${subOrig}" data-original="${subOrig}">
       </div>
-      <div class="user-form-actions"><button type="submit" class="btn-save">${lang === 'es' ? 'Guardar permisos' : 'Save permissions'}</button></div>
-        </form></div></div>`
+      </div></div>`
   }
 
-  // ── Unregistered behavior (from lead config) ──
+  // ── Unregistered behavior (from lead config) — integrated with save bar ──
   const leadCfg = configs.find(c => c.listType === 'lead')
   if (leadCfg) {
     const behavior = leadCfg.unregisteredBehavior || 'silence'
@@ -1017,26 +1029,19 @@ function renderUsersSection(data: SectionData): string {
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body">
-        <form method="POST" action="/console/users/config">
-          <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
-          <input type="hidden" name="listType" value="lead">
-          <input type="hidden" name="displayName" value="${esc(leadCfg.displayName)}">
-          <input type="hidden" name="isEnabled" value="${leadCfg.isEnabled ? 'true' : 'false'}">
-          <div class="field">
-            <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
-            <select name="unregisteredBehavior">
-              <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
-              <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje genérico' : 'Generic message'}</option>
-              <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
-              <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
-            </select>
-          </div>
-          <div class="field" id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'grid' : 'none'}">
-            <div class="field-left"><span class="field-label">${lang === 'es' ? 'Mensaje' : 'Message'}</span></div>
-            <textarea name="unregisteredMessage" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
-          </div>
-          <div class="user-form-actions"><button type="submit" class="btn-save">${lang === 'es' ? 'Guardar' : 'Save'}</button></div>
-        </form>
+        <div class="field">
+          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
+          <select name="unregisteredBehavior" data-original="${esc(behavior)}">
+            <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
+            <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje genérico' : 'Generic message'}</option>
+            <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
+            <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
+          </select>
+        </div>
+        <div class="field" id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'grid' : 'none'}">
+          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Mensaje' : 'Message'}</span></div>
+          <textarea name="unregisteredMessage" data-original="${esc(leadCfg.unregisteredMessage || '')}" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
+        </div>
         <script>
         (function(){
           var sel=document.querySelector('[name="unregisteredBehavior"]');

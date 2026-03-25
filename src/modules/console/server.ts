@@ -367,18 +367,94 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       if (localUrl === '/save') {
         const updates: Record<string, string> = {}
+        const userPermUpdates: Record<string, string> = {}
         for (const [k, v] of Object.entries(body)) {
-          if (!k.startsWith('_')) updates[k] = v
+          if (k.startsWith('_')) continue
+          // Route perm_* and unregisteredBehavior fields to users module
+          if (k.startsWith('perm_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
+            userPermUpdates[k] = v
+          } else {
+            updates[k] = v
+          }
         }
-        // Handle checkbox fields: unchecked checkboxes don't submit, hidden field has value
-        // Write to DB + .env
+
         try {
-          const envFile = findEnvFile()
-          writeEnvFile(envFile, updates)
-          await configStore.setMultiple(registry.getDb(), updates)
-          logger.info(`Config saved: ${Object.keys(updates).join(', ')}`)
-          // Fire config_saved hook so modules can react
-          await registry.runHook('console:config_saved', { keys: Object.keys(updates) })
+          // Standard config save (DB + .env)
+          if (Object.keys(updates).length > 0) {
+            const envFile = findEnvFile()
+            writeEnvFile(envFile, updates)
+            await configStore.setMultiple(registry.getDb(), updates)
+            logger.info(`Config saved: ${Object.keys(updates).join(', ')}`)
+            await registry.runHook('console:config_saved', { keys: Object.keys(updates) })
+          }
+
+          // Users permissions save (to user_list_config table)
+          if (Object.keys(userPermUpdates).length > 0) {
+            try {
+              const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+              const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+              if (usersDb && usersCache) {
+                // Group perm fields by list type: perm_{listType}_tool_{name}, perm_{listType}_subagents, etc.
+                const listUpdates = new Map<string, { tools: string[]; skills: string[]; subagents: boolean }>()
+
+                for (const [k, v] of Object.entries(userPermUpdates)) {
+                  const toolMatch = k.match(/^perm_(.+)_tool_(.+)$/)
+                  if (toolMatch) {
+                    const lt = toolMatch[1]!
+                    if (!listUpdates.has(lt)) listUpdates.set(lt, { tools: [], skills: [], subagents: false })
+                    if (v === 'on') listUpdates.get(lt)!.tools.push(toolMatch[2]!)
+                    continue
+                  }
+                  const allToolsMatch = k.match(/^perm_(.+)_tools_all$/)
+                  if (allToolsMatch && v === 'on') {
+                    const lt = allToolsMatch[1]!
+                    if (!listUpdates.has(lt)) listUpdates.set(lt, { tools: [], skills: [], subagents: false })
+                    listUpdates.get(lt)!.tools = ['*']
+                    continue
+                  }
+                  const subMatch = k.match(/^perm_(.+)_subagents$/)
+                  if (subMatch) {
+                    const lt = subMatch[1]!
+                    if (!listUpdates.has(lt)) listUpdates.set(lt, { tools: [], skills: [], subagents: false })
+                    listUpdates.get(lt)!.subagents = v === 'on'
+                    continue
+                  }
+                }
+
+                for (const [lt, perms] of listUpdates) {
+                  const existing = await usersDb.getListConfig(lt)
+                  if (existing) {
+                    await usersDb.upsertListConfig(lt, existing.displayName, {
+                      ...perms, allAccess: lt === 'admin',
+                    }, {
+                      isEnabled: existing.isEnabled,
+                      unregisteredBehavior: userPermUpdates['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' ?? existing.unregisteredBehavior,
+                      unregisteredMessage: userPermUpdates['unregisteredMessage'] ?? existing.unregisteredMessage,
+                      maxUsers: existing.maxUsers,
+                    })
+                  }
+                }
+
+                // Handle unregistered behavior without permission changes
+                if (userPermUpdates['unregisteredBehavior'] && listUpdates.size === 0) {
+                  const leadCfg = await usersDb.getListConfig('lead')
+                  if (leadCfg) {
+                    await usersDb.upsertListConfig('lead', leadCfg.displayName, leadCfg.permissions, {
+                      isEnabled: leadCfg.isEnabled,
+                      unregisteredBehavior: userPermUpdates['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads',
+                      unregisteredMessage: userPermUpdates['unregisteredMessage'] ?? leadCfg.unregisteredMessage,
+                      maxUsers: leadCfg.maxUsers,
+                    })
+                  }
+                }
+
+                await usersCache.invalidateAll()
+                logger.info({ lists: [...listUpdates.keys()] }, 'User permissions saved')
+              }
+            } catch (err) {
+              logger.error({ err }, 'Failed to save user permissions')
+            }
+          }
         } catch (err) {
           logger.error({ err }, 'Failed to save config')
           res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
