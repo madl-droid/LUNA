@@ -868,7 +868,60 @@ function renderUsersSection(data: SectionData): string {
       : 'Test mode active but no admins configured — nobody will receive responses.'}</div>`
   }
 
-  let html = `<div class="users-section">${warning}`
+  // Build channel options for filter
+  const chFilterOpts = channels.map(ch => {
+    const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+    return `<option value="${esc(ch.id)}">${esc(lbl)}</option>`
+  }).join('')
+
+  const svgSearch = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>'
+
+  const filterBar = `<div class="filter-bar">
+    <div class="filter-group">
+      <span class="filter-label">${lang === 'es' ? 'Nombre' : 'Name'}</span>
+      <select class="ch-filter-select" id="uf-sort" onchange="userFilterApply()">
+        <option value="asc">A → Z</option>
+        <option value="desc">Z → A</option>
+      </select>
+    </div>
+    <div class="filter-sep"></div>
+    <div class="filter-group">
+      <span class="filter-label">${lang === 'es' ? 'Canal' : 'Channel'}</span>
+      <select class="ch-filter-select" id="uf-channel" onchange="userFilterApply()">
+        <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+        ${chFilterOpts}
+      </select>
+    </div>
+    <div class="filter-sep"></div>
+    <div class="filter-group">
+      <span class="filter-label">${lang === 'es' ? 'Fuente' : 'Source'}</span>
+      <select class="ch-filter-select" id="uf-source" onchange="userFilterApply()">
+        <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+        <option value="manual">${lang === 'es' ? 'Manual' : 'Manual'}</option>
+        <option value="agent">${lang === 'es' ? 'Automatico' : 'Automatic'}</option>
+      </select>
+    </div>
+    <div class="filter-sep"></div>
+    <div class="filter-group">
+      <span class="filter-label">${lang === 'es' ? 'Ultima interaccion' : 'Last interaction'}</span>
+      <select class="ch-filter-select" id="uf-activity" onchange="userFilterApply()">
+        <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+        <option value="1h">1h</option>
+        <option value="12h">12h</option>
+        <option value="24h">24h</option>
+        <option value="7d">7 ${lang === 'es' ? 'dias' : 'days'}</option>
+        <option value="30d">30 ${lang === 'es' ? 'dias' : 'days'}</option>
+        <option value="90d">90 ${lang === 'es' ? 'dias' : 'days'}</option>
+        <option value="inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</option>
+      </select>
+    </div>
+    <div class="user-filter-search">
+      ${svgSearch}
+      <input type="text" id="uf-search" placeholder="${lang === 'es' ? 'Buscar por nombre o contacto...' : 'Search by name or contact...'}" oninput="userFilterApply()">
+    </div>
+  </div>`
+
+  let html = `<div class="users-section">${warning}${filterBar}`
   const canEdit = (lt: string) => lt !== 'lead'
   const canDelete = (lt: string) => lt !== 'admin' && lt !== 'lead'
 
@@ -914,9 +967,11 @@ function renderUsersSection(data: SectionData): string {
                <button type="submit" class="act-btn act-btn-add" style="font-size:10px;padding:3px 8px">${lang === 'es' ? 'Reactivar' : 'Reactivate'}</button>
              </form>`
 
-        // Encode contacts as JSON for the edit modal
+        // Data attributes for edit modal + filtering
         const contactsJson = JSON.stringify(Object.fromEntries(user.contacts.map(c => [c.channel, c.senderId])))
-        html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}" data-contacts="${esc(contactsJson)}">`
+        const channelList = user.contacts.map(c => c.channel).join(',')
+        const senderIds = user.contacts.map(c => c.senderId).join(' ')
+        html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}" data-contacts="${esc(contactsJson)}" data-channels="${esc(channelList)}" data-source="${esc(user.source)}" data-search="${esc((user.displayName || '') + ' ' + senderIds)}">`
 
         if (canEdit(lt)) {
           html += `<td><input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')"></td>`
@@ -953,27 +1008,46 @@ function renderUsersSection(data: SectionData): string {
     html += `</div></div>`
   }
 
+  // Build list type options for move-list dropdown
+  const listTypeOpts = configs.map(c =>
+    `<option value="${esc(c.listType)}">${esc(c.displayName)}</option>`
+  ).join('')
+
+  // Validation messages per channel
+  const chValidMsg: Record<string, Record<string, string>> = {
+    whatsapp: { es: 'Formato: +codigo pais seguido de numero (ej: +521234567890)', en: 'Format: +country code followed by number (e.g. +521234567890)' },
+    gmail: { es: 'Formato: email valido (ej: user@example.com)', en: 'Format: valid email (e.g. user@example.com)' },
+    'twilio-voice': { es: 'Formato E.164: +codigo pais seguido de numero (ej: +15550123)', en: 'E.164 format: +country code followed by number (e.g. +15550123)' },
+  }
+
   // User modal (wizard style — used for both add and edit)
   html += `<div class="wizard-overlay" id="user-modal" style="display:none" onclick="if(event.target===this)closeUserModal()">
     <div class="wizard-modal">
       <button class="wizard-close" onclick="closeUserModal()">&times;</button>
       <div class="wizard-steps">
         <div class="wizard-title" id="user-modal-title">${lang === 'es' ? 'Editar usuario' : 'Edit user'}</div>
-        <form method="POST" id="user-modal-form" action="/console/users/update">
+        <div class="wizard-error" id="user-modal-error" style="display:none"></div>
+        <form method="POST" id="user-modal-form" action="/console/users/update" onsubmit="return validateUserModal()">
           <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
           <input type="hidden" name="userId" id="user-modal-userId">
           <input type="hidden" name="listType" id="user-modal-listType">
+
           <label class="wizard-label">${lang === 'es' ? 'Nombre' : 'Name'}</label>
-          <input type="text" class="wizard-input" name="displayName" id="user-modal-name" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">`
+          <input type="text" class="wizard-input" name="displayName" id="user-modal-name" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">
+
+          <label class="wizard-label" id="user-modal-list-label" style="display:none">${lang === 'es' ? 'Mover a lista' : 'Move to list'}</label>
+          <select class="wizard-input" name="listType" id="user-modal-listSelect" style="display:none" onchange="userModalListChange(this)">
+            ${listTypeOpts}
+          </select>`
 
   for (let i = 0; i < channels.length; i++) {
     const ch = channels[i]!
     const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
-    const pat = CH_PATTERN[ch.id] ? ` pattern="${CH_PATTERN[ch.id]}"` : ''
-    const patTitle = CH_PATTERN_TITLE[ch.id] ? ` title="${esc(CH_PATTERN_TITLE[ch.id]![lang] || CH_PATTERN_TITLE[ch.id]!['es'] || '')}"` : ''
+    const errMsg = chValidMsg[ch.id] ? esc(chValidMsg[ch.id]![lang] || chValidMsg[ch.id]!['es'] || '') : ''
     html += `<label class="wizard-label">${CH_SVG[ch.id] || ''} ${esc(lbl)}</label>
         <input type="hidden" name="contact_channel_${i}" value="${esc(ch.id)}">
-        <input type="${ch.id === 'gmail' ? 'email' : 'text'}" class="wizard-input" name="contact_senderid_${i}" id="user-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}"${pat}${patTitle}>`
+        <input type="text" class="wizard-input" name="contact_senderid_${i}" id="user-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}" data-channel="${esc(ch.id)}">
+        <div class="wizard-field-error" id="user-modal-err-${esc(ch.id)}">${errMsg}</div>`
   }
 
   html += `<div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:24px">
@@ -985,81 +1059,172 @@ function renderUsersSection(data: SectionData): string {
   </div>
 </div>`
 
-  // Users JS — checkbox selection, modals, perm sync
+  // Users JS
   html += `<script>(function(){
     var modal=document.getElementById('user-modal');
     var form=document.getElementById('user-modal-form');
+    var errorBox=document.getElementById('user-modal-error');
+    var listLabel=document.getElementById('user-modal-list-label');
+    var listSelect=document.getElementById('user-modal-listSelect');
+    var lang=document.documentElement.lang||'es';
 
-    // Checkbox selection → show/hide action bar
-    window.userSelChanged=function(lt){
-      var bar=document.getElementById('sel-bar-'+lt);
-      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
-      if(bar) bar.classList.toggle('visible',cbs.length>0);
+    // ── Validation patterns ──
+    var patterns={whatsapp:/^\\+[0-9]{7,15}$/,'twilio-voice':/^\\+[0-9]{7,15}$/,gmail:/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/};
+
+    window.validateUserModal=function(){
+      var valid=true;
+      errorBox.style.display='none';
+      form.querySelectorAll('.wizard-input').forEach(function(inp){inp.classList.remove('invalid')});
+      form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
+
+      form.querySelectorAll('[data-channel]').forEach(function(inp){
+        var ch=inp.getAttribute('data-channel');
+        var val=inp.value.trim();
+        if(!val)return;
+        var pat=patterns[ch];
+        if(pat&&!pat.test(val)){
+          inp.classList.add('invalid');
+          var errEl=document.getElementById('user-modal-err-'+ch);
+          if(errEl)errEl.style.display='block';
+          valid=false;
+        }
+      });
+      if(!valid){
+        errorBox.textContent=lang==='es'?'Corrige los campos marcados en rojo.':'Fix the fields marked in red.';
+        errorBox.style.display='block';
+      }
+      return valid;
     };
 
-    // Open modal for adding a new user
-    window.openAddUserModal=function(lt,lang){
+    // ── Clear errors on input ──
+    form.addEventListener('input',function(e){
+      var inp=e.target;
+      if(inp.classList.contains('invalid')){
+        inp.classList.remove('invalid');
+        var ch=inp.getAttribute('data-channel');
+        if(ch){var err=document.getElementById('user-modal-err-'+ch);if(err)err.style.display='none'}
+      }
+    });
+
+    // ── Modal open: add ──
+    window.openAddUserModal=function(lt){
       document.getElementById('user-modal-title').textContent=lang==='es'?'Agregar usuario':'Add user';
       document.getElementById('user-modal-submit').textContent=lang==='es'?'Crear':'Create';
       form.action='/console/users/add';
       document.getElementById('user-modal-userId').value='';
       document.getElementById('user-modal-listType').value=lt;
       document.getElementById('user-modal-name').value='';
-      // Clear all channel fields
-      form.querySelectorAll('[id^="user-modal-ch-"]').forEach(function(inp){inp.value='';inp.disabled=false});
+      form.querySelectorAll('[data-channel]').forEach(function(inp){inp.value='';inp.classList.remove('invalid')});
+      form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
+      errorBox.style.display='none';
+      listLabel.style.display='none';listSelect.style.display='none';
       modal.style.display='flex';
     };
 
-    // Open modal for editing existing user
-    window.userEditSelected=function(lt,lang){
+    // ── Modal open: edit ──
+    window.userEditSelected=function(lt){
       var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
       if(cbs.length!==1){alert(lang==='es'?'Selecciona exactamente 1 usuario.':'Select exactly 1 user.');return}
       var tr=cbs[0].closest('tr');
       var uid=tr.getAttribute('data-user-id');
       var name=tr.getAttribute('data-user-name')||'';
-      var contactsStr=tr.getAttribute('data-contacts')||'{}';
-      var contacts={};try{contacts=JSON.parse(contactsStr)}catch(e){}
+      var contacts={};try{contacts=JSON.parse(tr.getAttribute('data-contacts')||'{}')}catch(e){}
       document.getElementById('user-modal-title').textContent=lang==='es'?'Editar usuario':'Edit user';
       document.getElementById('user-modal-submit').textContent=lang==='es'?'Guardar':'Save';
       form.action='/console/users/update';
       document.getElementById('user-modal-userId').value=uid;
       document.getElementById('user-modal-listType').value=lt;
       document.getElementById('user-modal-name').value=name;
-      // Populate each channel input with current value
-      form.querySelectorAll('[id^="user-modal-ch-"]').forEach(function(inp){
-        var chId=inp.id.replace('user-modal-ch-','');
+      form.querySelectorAll('[data-channel]').forEach(function(inp){
+        var chId=inp.getAttribute('data-channel');
         inp.value=contacts[chId]||'';
-        inp.disabled=false;
+        inp.classList.remove('invalid');
       });
+      form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
+      errorBox.style.display='none';
+      // Show list change dropdown
+      listLabel.style.display='block';listSelect.style.display='block';
+      listSelect.value=lt;
       modal.style.display='flex';
     };
 
-    window.closeUserModal=function(){modal.style.display='none'};
+    // ── List change confirm ──
+    var _origList='';
+    window.userModalListChange=function(sel){
+      if(!_origList)_origList=sel.getAttribute('data-orig')||sel.value;
+      if(sel.value!==_origList){
+        var msg=lang==='es'?'¿Mover este usuario a la lista "'+sel.options[sel.selectedIndex].text+'"?':'Move this user to the "'+sel.options[sel.selectedIndex].text+'" list?';
+        if(!confirm(msg)){sel.value=_origList}
+      }
+    };
 
-    // Deactivate selected
-    window.userDeactivateSelected=function(lt,lang){
+    window.closeUserModal=function(){modal.style.display='none';_origList=''};
+
+    // ── Checkbox selection ──
+    window.userSelChanged=function(lt){
+      var bar=document.getElementById('sel-bar-'+lt);
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      if(bar) bar.classList.toggle('visible',cbs.length>0);
+    };
+
+    // ── Deactivate/delete ──
+    window.userDeactivateSelected=function(lt){
       var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
       if(!cbs.length)return;
-      var msg=lang==='es'?'¿Desactivar '+cbs.length+' usuario(s)?':'Deactivate '+cbs.length+' user(s)?';
-      if(!confirm(msg))return;
+      if(!confirm(lang==='es'?'¿Desactivar '+cbs.length+' usuario(s)?':'Deactivate '+cbs.length+' user(s)?'))return;
       cbs.forEach(function(cb){
         var f=document.createElement('form');f.method='POST';f.action='/console/users/deactivate';
         f.innerHTML='<input name="_section" value="users"><input name="_lang" value="'+lang+'"><input name="userId" value="'+cb.value+'">';
         document.body.appendChild(f);f.submit();
       });
     };
-
-    // Delete selected (only if all deactivated)
-    window.userDeleteSelected=function(lt,lang){
+    window.userDeleteSelected=function(lt){
       var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
       var allInactive=true;
       cbs.forEach(function(cb){var tr=cb.closest('tr');if(tr&&tr.getAttribute('data-user-active')==='true')allInactive=false});
       if(!allInactive){alert(lang==='es'?'Solo se pueden eliminar usuarios desactivados.':'Can only delete deactivated users.');return}
       if(!confirm(lang==='es'?'¿Eliminar permanentemente?':'Delete permanently?'))return;
-      alert(lang==='es'?'Eliminación permanente aún no implementada.':'Permanent deletion not yet implemented.');
+      alert(lang==='es'?'Eliminacion permanente aun no implementada.':'Permanent deletion not yet implemented.');
     };
 
-    // Sync perm checkboxes to hidden inputs for save bar dirty tracking
+    // ── Filtering ──
+    window.userFilterApply=function(){
+      var sort=document.getElementById('uf-sort').value;
+      var channel=document.getElementById('uf-channel').value;
+      var source=document.getElementById('uf-source').value;
+      var activity=document.getElementById('uf-activity').value;
+      var search=(document.getElementById('uf-search').value||'').toLowerCase();
+
+      document.querySelectorAll('.users-table tbody tr[data-user-id]').forEach(function(tr){
+        var show=true;
+        // Channel filter
+        if(channel!=='all'){
+          var channels=(tr.getAttribute('data-channels')||'').split(',');
+          if(channels.indexOf(channel)===-1)show=false;
+        }
+        // Source filter
+        if(source!=='all'){
+          var s=tr.getAttribute('data-source')||'';
+          if(source==='manual'&&s!=='manual')show=false;
+          if(source==='agent'&&s==='manual')show=false;
+        }
+        // Activity filter (inactive)
+        if(activity==='inactive'){
+          if(tr.getAttribute('data-user-active')==='true')show=false;
+        } else if(activity!=='all'){
+          if(tr.getAttribute('data-user-active')!=='true')show=false;
+        }
+        // Search
+        if(search){
+          var haystack=(tr.getAttribute('data-search')||'').toLowerCase();
+          if(haystack.indexOf(search)===-1)show=false;
+        }
+        tr.style.display=show?'':'none';
+      });
+      // TODO: sort by name (requires DOM reorder)
+    };
+
+    // ── Perm sync ──
     document.querySelectorAll('.perm-cb').forEach(function(cb){
       cb.addEventListener('change',function(){
         var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
