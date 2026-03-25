@@ -385,14 +385,6 @@ function renderSidebar(opts: PageOptions): string {
               <span class="panel-badge badge-active" style="margin-left:auto">${list.count}</span>
             </a>`
           }
-          // Config tab
-          const cfgActive = opts.contactsSubpage === 'config'
-          const cfgLabel = opts.lang === 'es' ? 'Configuracion' : 'Configuration'
-          const gearIcon = svgIcon('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>')
-          nav += `<a href="/console/contacts/config?lang=${opts.lang}" class="sidebar-submenu-item ${cfgActive ? 'active' : ''}">
-            <span class="nav-icon-sm">${gearIcon}</span>
-            <span>${cfgLabel}</span>
-          </a>`
           nav += '</div>'
         }
       }
@@ -462,6 +454,27 @@ function renderSectionHeader(opts: PageOptions): string {
       <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <a href="/console/channels?lang=${opts.lang}">${channelsLbl}</a>${sep}
       <span>${esc(chName)}</span>
+    </div>`
+  } else if (opts.contactsSubpage && opts.contactsSubpage !== 'config') {
+    // 3rd level: Consola > Contactos > ListName
+    const contactsLbl = t('sec_contacts', opts.lang)
+    const listInfo = opts.contactLists?.find(l => l.listType === opts.contactsSubpage)
+    const listName = listInfo?.displayName ?? opts.contactsSubpage
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/contacts?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console/contacts?lang=${opts.lang}">${contactsLbl}</a>${sep}
+      <span>${esc(listName)}</span>
+    </div>`
+    // Return early with list-specific header
+    const listDesc: Record<string, Record<string, string>> = {
+      admin: { es: 'Usuarios con acceso total al sistema. Solo los admins reciben respuesta cuando el modo de pruebas esta activo. Maximo 5 por instancia.', en: 'Users with full system access. Only admins receive responses when test mode is active. Maximum 5 per instance.' },
+      lead: { es: 'Contactos capturados automaticamente por el agente. Esta tabla es gestionada por el sistema — los leads se registran y califican de forma automatica.', en: 'Contacts captured automatically by the agent. This table is managed by the system — leads are registered and scored automatically.' },
+      coworker: { es: 'Colaboradores del equipo con acceso limitado a herramientas. Configura los permisos desde la pestaña de configuracion.', en: 'Team collaborators with limited tool access. Configure permissions from the configuration tab.' },
+    }
+    const desc = listDesc[opts.contactsSubpage]?.[opts.lang] || listDesc[opts.contactsSubpage]?.['es'] || ''
+    return `${breadcrumb}<div class="section-header">
+      <div class="section-title">${esc(listName)}</div>
+      ${desc ? `<div class="section-desc">${desc}</div>` : ''}
     </div>`
   } else if (opts.section === 'channels') {
     // 2nd level: Consola > Canales

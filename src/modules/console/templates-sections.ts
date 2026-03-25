@@ -1021,8 +1021,8 @@ function renderUsersSection(data: SectionData): string {
       <span class="ch-footer-spacer"></span>
       <div class="filter-group">
         <select class="ch-filter-select js-custom-select" id="uf-perpage" onchange="userFilterApply()">
-          <option value="10">10</option>
-          <option value="50" selected>50</option>
+          <option value="10" selected>10</option>
+          <option value="50">50</option>
           <option value="100">100</option>
           <option value="500">500</option>
         </select>
@@ -1297,9 +1297,8 @@ function renderUsersSection(data: SectionData): string {
             if(source==='manual'&&s!=='manual')return false;
             if(source==='agent'&&s==='manual')return false;
           }
-          if(activity==='inactive'){
-            if(tr.getAttribute('data-user-active')==='true')return false;
-          }else if(activity!=='all'){
+          if(activity!=='all'){
+            // Time-based filters: show only active users (timestamps not available yet)
             if(tr.getAttribute('data-user-active')!=='true')return false;
           }
           if(search){
@@ -1323,7 +1322,13 @@ function renderUsersSection(data: SectionData): string {
         var start=_page[lt]*perpage;
         var end=start+perpage;
 
-        // Hide all, show paginated
+        // Reorder DOM to match sort, then hide/show for pagination
+        var tbody=tbl.querySelector('tbody');
+        if(tbody){
+          visible.forEach(function(tr){tbody.appendChild(tr)});
+          // Also append filtered-out rows at end (hidden)
+          rows.forEach(function(tr){if(visible.indexOf(tr)===-1)tbody.appendChild(tr)});
+        }
         rows.forEach(function(tr){tr.style.display='none'});
         for(var i=start;i<Math.min(end,visible.length);i++){visible[i].style.display=''}
 
