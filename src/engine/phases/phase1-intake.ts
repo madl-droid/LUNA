@@ -318,7 +318,7 @@ async function findContact(
 
     if (result.rows.length === 0) return null
 
-    const row = result.rows[0]
+    const row = result.rows[0]!
     return {
       id: row.id,
       channelContactId: row.channel_contact_id,
@@ -359,7 +359,7 @@ async function loadOrCreateSession(
       )
 
       if (result.rows.length > 0) {
-        const row = result.rows[0]
+        const row = result.rows[0]!
         return {
           id: row.id,
           contactId: row.contact_id,

@@ -231,7 +231,7 @@ async function buildProactiveContext(
     [candidate.contactId, candidate.channel],
   )
 
-  const contactRow = contactResult.rows[0]
+  const contactRow = contactResult.rows[0]!
   const contact = contactRow ? {
     id: contactRow.id,
     channelContactId: contactRow.channel_contact_id,

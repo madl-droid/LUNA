@@ -293,7 +293,7 @@ async function callOpenAI(model: string, options: LLMCallOptions): Promise<LLMCa
     temperature: options.temperature ?? 0.7,
   })
 
-  const choice = response.choices[0]
+  const choice = response.choices[0]!
 
   return {
     text: choice?.message?.content ?? '',
