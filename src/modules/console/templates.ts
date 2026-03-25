@@ -450,6 +450,22 @@ function renderSectionHeader(opts: PageOptions): string {
     </div>`
   }
 
+  // Build breadcrumb for non-channel sections too
+  if (!breadcrumb && opts.section !== 'channels') {
+    let sectionLabel = opts.section
+    const fixed = FIXED_SECTIONS.find(s => s.id === opts.section)
+    if (fixed) {
+      sectionLabel = t(fixed.key, opts.lang)
+    } else {
+      const dynMod = (opts.dynamicModules ?? []).find(m => m.name === opts.section)
+      if (dynMod) sectionLabel = dynMod.title[opts.lang] || dynMod.title.es || opts.section
+    }
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <span>${esc(sectionLabel)}</span>
+    </div>`
+  }
+
   // Try fixed section first
   const fixed = FIXED_SECTIONS.find(s => s.id === opts.section)
   if (fixed) {
@@ -466,16 +482,15 @@ function renderSectionHeader(opts: PageOptions): string {
   const dynMod = (opts.dynamicModules ?? []).find(m => m.name === opts.section)
   if (dynMod) {
     const title = dynMod.title[opts.lang] || dynMod.title.es || opts.section
-    // Try i18n info key, fall back to nothing
     const infoKey = 'sec_' + opts.section.replace(/-/g, '_') + '_info'
     const info = t(infoKey, opts.lang)
-    return `<div class="section-header">
+    return `${breadcrumb}<div class="section-header">
       <div class="section-title">${esc(title)}</div>
       ${info && info !== infoKey ? `<div class="section-desc">${info}</div>` : ''}
     </div>`
   }
 
-  return `<div class="section-header"><div class="section-title">${esc(opts.section)}</div></div>`
+  return `${breadcrumb}<div class="section-header"><div class="section-title">${esc(opts.section)}</div></div>`
 }
 
 // ═══════════════════════════════════════════
