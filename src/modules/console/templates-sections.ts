@@ -16,6 +16,7 @@ export interface SectionData {
   moduleStates?: ModuleInfo[]
   scheduledTasksHtml?: string
   leadScoringHtml?: string
+  contactsSubpage?: string
   usersData?: {
     configs: Array<{ listType: string; displayName: string; isEnabled: boolean; permissions: { tools: string[]; skills: string[]; subagents: boolean; allAccess: boolean }; unregisteredBehavior: string; unregisteredMessage: string | null; maxUsers: number | null }>
     usersByType: Record<string, Array<{ id: string; displayName: string | null; listType: string; isActive: boolean; source: string; contacts: Array<{ id: string; channel: string; senderId: string; isPrimary: boolean }> }>>
@@ -807,7 +808,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'engine-metrics': return renderEngineMetricsSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
-    case 'users': return renderUsersSection(data)
+    case 'contacts': return renderUsersSection(data)
     case 'modules': return renderModulesSection(data)
     case 'infra': return renderInfraUnifiedSection(data)
     case 'google-apps': return renderGoogleAppsSection(data)
@@ -868,7 +869,10 @@ function renderUsersSection(data: SectionData): string {
       : 'Test mode active but no admins configured — nobody will receive responses.'}</div>`
   }
 
-  // Build channel options for filter
+  const subpage = data.contactsSubpage || configs[0]?.listType || 'admin'
+  const isConfigPage = subpage === 'config'
+
+  // Channel filter options
   const chFilterOpts = channels.map(ch => {
     const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
     return `<option value="${esc(ch.id)}">${esc(lbl)}</option>`
@@ -876,69 +880,68 @@ function renderUsersSection(data: SectionData): string {
 
   const svgSearch = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>'
 
-  const filterBar = `<div class="filter-bar">
-    <div class="filter-group">
-      <span class="filter-label">${lang === 'es' ? 'Nombre' : 'Name'}</span>
-      <select class="ch-filter-select" id="uf-sort" onchange="userFilterApply()">
-        <option value="asc">A → Z</option>
-        <option value="desc">Z → A</option>
-      </select>
-    </div>
-    <div class="filter-sep"></div>
-    <div class="filter-group">
-      <span class="filter-label">${lang === 'es' ? 'Canal' : 'Channel'}</span>
-      <select class="ch-filter-select" id="uf-channel" onchange="userFilterApply()">
-        <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
-        ${chFilterOpts}
-      </select>
-    </div>
-    <div class="filter-sep"></div>
-    <div class="filter-group">
-      <span class="filter-label">${lang === 'es' ? 'Fuente' : 'Source'}</span>
-      <select class="ch-filter-select" id="uf-source" onchange="userFilterApply()">
-        <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
-        <option value="manual">${lang === 'es' ? 'Manual' : 'Manual'}</option>
-        <option value="agent">${lang === 'es' ? 'Automatico' : 'Automatic'}</option>
-      </select>
-    </div>
-    <div class="filter-sep"></div>
-    <div class="filter-group">
-      <span class="filter-label">${lang === 'es' ? 'Ultima interaccion' : 'Last interaction'}</span>
-      <select class="ch-filter-select" id="uf-activity" onchange="userFilterApply()">
-        <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
-        <option value="1h">1h</option>
-        <option value="12h">12h</option>
-        <option value="24h">24h</option>
-        <option value="7d">7 ${lang === 'es' ? 'dias' : 'days'}</option>
-        <option value="30d">30 ${lang === 'es' ? 'dias' : 'days'}</option>
-        <option value="90d">90 ${lang === 'es' ? 'dias' : 'days'}</option>
-        <option value="inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</option>
-      </select>
-    </div>
-    <div class="user-filter-search">
-      ${svgSearch}
-      <input type="text" id="uf-search" placeholder="${lang === 'es' ? 'Buscar por nombre o contacto...' : 'Search by name or contact...'}" oninput="userFilterApply()">
-    </div>
-  </div>`
+  let html = `<div class="users-section">${warning}`
 
-  let html = `<div class="users-section">${warning}${filterBar}`
+  if (!isConfigPage) {
+    // Filter bar (same dashed style as channels)
+    html += `<div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Nombre' : 'Name'}</span>
+        <select class="ch-filter-select" id="uf-sort" onchange="userFilterApply()">
+          <option value="asc">A → Z</option>
+          <option value="desc">Z → A</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Canal' : 'Channel'}</span>
+        <select class="ch-filter-select" id="uf-channel" onchange="userFilterApply()">
+          <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+          ${chFilterOpts}
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Fuente' : 'Source'}</span>
+        <select class="ch-filter-select" id="uf-source" onchange="userFilterApply()">
+          <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+          <option value="manual">Manual</option>
+          <option value="agent">${lang === 'es' ? 'Automatico' : 'Automatic'}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Ultima interaccion' : 'Last interaction'}</span>
+        <select class="ch-filter-select" id="uf-activity" onchange="userFilterApply()">
+          <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+          <option value="1h">1h</option><option value="12h">12h</option><option value="24h">24h</option>
+          <option value="7d">7d</option><option value="30d">30d</option><option value="90d">90d</option>
+          <option value="inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</option>
+        </select>
+      </div>
+      <div class="user-filter-search">
+        ${svgSearch}
+        <input type="text" id="uf-search" placeholder="${lang === 'es' ? 'Buscar contacto' : 'Search contact'}" oninput="userFilterApply()">
+      </div>
+    </div>`
+  }
+
   const canEdit = (lt: string) => lt !== 'lead'
   const canDelete = (lt: string) => lt !== 'admin' && lt !== 'lead'
 
-  // ── Panel per list type ──
-  for (const cfg of configs) {
+  // ── Show only the active subpage ──
+  if (isConfigPage) {
+    // Config page: permissions + unregistered behavior
+    // (rendered below after the list panels block)
+  } else {
+    const cfg = configs.find(c => c.listType === subpage)
+    if (!cfg) {
+      html += `<div class="panel"><div class="panel-body">${lang === 'es' ? 'Lista no encontrada.' : 'List not found.'}</div></div>`
+      return html + '</div>'
+    }
     const users = usersByType[cfg.listType] ?? []
     const isLead = cfg.listType === 'lead'
     const lt = cfg.listType
-    const count = counts[lt] ?? 0
-    const badgeStyle = cfg.isEnabled ? 'badge-active' : 'badge-soon'
 
-    html += `<div class="panel">
-      <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${esc(cfg.displayName)} <span class="panel-badge ${badgeStyle}">${count}</span></span>
-        <span class="panel-chevron">&#9660;</span>
-      </div>
-      <div class="panel-body">`
+    // Single panel for this list type
+    html += `<div class="panel"><div class="panel-body">`
 
     // (selection bar moved to footer row with add button)
 
@@ -1006,7 +1009,7 @@ function renderUsersSection(data: SectionData): string {
     }
 
     html += `</div></div>`
-  }
+  } // end of list type subpage
 
   // Build list type options for move-list dropdown
   const listTypeOpts = configs.map(c =>
@@ -1233,7 +1236,8 @@ function renderUsersSection(data: SectionData): string {
     });
   })()</script>`
 
-  // ── Permissions panels (per non-lead list) — integrated with save bar ──
+  // ── Config page: permissions + unregistered behavior ──
+  if (isConfigPage) {
   for (const cfg of configs) {
     if (cfg.listType === 'lead') continue
     const lt = cfg.listType
@@ -1313,6 +1317,7 @@ function renderUsersSection(data: SectionData): string {
         </script>
       </div></div>`
   }
+  } // end isConfigPage
 
   return html + '</div>'
 }
