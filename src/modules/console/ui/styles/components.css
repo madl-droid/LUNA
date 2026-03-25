@@ -1924,8 +1924,11 @@
 }
 
 .users-table tr + tr td { border-top: 1px solid rgba(0,0,0,0.04); }
-.users-table tr[data-user-id] { cursor: pointer; transition: background 0.1s; }
+.users-table tr[data-user-id] { cursor: default; transition: background 0.1s; }
 .users-table tr[data-user-id]:hover { background: var(--surface-container-low); }
+.users-table tr[data-user-id] .user-cb,
+.users-table tr[data-user-id] .act-btn,
+.users-table tr[data-user-id] button { cursor: pointer; }
 .users-table tr[data-user-active="false"] { opacity: 0.5; }
 .users-table tr[data-user-active="false"]:hover { opacity: 0.75; }
 
@@ -1989,15 +1992,15 @@
   color: var(--on-surface-dim);
 }
 
-/* Selection action bar — appears when checkboxes are checked */
+/* Selection action bar — always in flow, buttons hidden until visible */
 .user-selection-bar {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
+  visibility: hidden;
 }
 
-.user-selection-bar.visible { display: flex; }
+.user-selection-bar.visible { visibility: visible; }
 
 /* Add-user form inside details */
 .user-add-form { margin-top: 0.75rem; }
@@ -2077,5 +2080,53 @@
 }
 
 .user-add-contact-row button:hover { background: var(--surface-container-highest); }
+
+/* Inline validation error under wizard inputs */
+.wizard-field-error {
+  font-size: 0.75rem;
+  color: #dc2626;
+  margin-top: 4px;
+  display: none;
+}
+
+.wizard-input.invalid {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
+.wizard-input.invalid + .wizard-field-error { display: block; }
+
+/* Users filter bar search */
+.user-filter-search {
+  margin-left: auto;
+  position: relative;
+}
+
+.user-filter-search input {
+  font-size: 12px;
+  padding: 6px 12px 6px 30px;
+  background: var(--surface-container-low);
+  border: none;
+  border-radius: 0.5rem;
+  color: var(--on-surface);
+  width: 200px;
+  transition: box-shadow 0.15s ease;
+}
+
+.user-filter-search input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+.user-filter-search svg {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--on-surface-dim);
+  pointer-events: none;
+}
 
 /* User modal uses .wizard-overlay + .wizard-modal styles */
