@@ -2,6 +2,7 @@
 // Formateo por canal: burbujas WA ≤300 chars, HTML email, etc.
 
 import type { ChannelName } from '../../channels/types.js'
+import type { Registry } from '../../kernel/registry.js'
 
 const WA_MAX_CHARS = 300
 const WA_MAX_BUBBLES = 3
@@ -9,10 +10,12 @@ const WA_MAX_BUBBLES = 3
 /**
  * Format response text for a specific channel.
  * Returns array of message parts (e.g., multiple WA bubbles).
+ * Registry param reserved for future per-channel config from console.
  */
 export function formatForChannel(
   text: string,
   channel: ChannelName,
+  _registry?: Registry,
 ): string[] {
   switch (channel) {
     case 'whatsapp':

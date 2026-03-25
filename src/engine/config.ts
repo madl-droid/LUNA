@@ -123,5 +123,17 @@ export function loadEngineConfig(): EngineConfig {
 
     // Avisos de proceso: now fully per-channel via channel-config:{name} services
     // (legacy WA/email aviso fields removed — each channel defines its own in configSchema)
+
+    // Test mode: only admins receive responses
+    testMode: envBool('ENGINE_TEST_MODE', false),
+
+    // Concurrency
+    maxConcurrentPipelines: envInt('ENGINE_MAX_CONCURRENT_PIPELINES', 50),
+    maxQueueSize: envInt('ENGINE_MAX_QUEUE_SIZE', 200),
+    maxConcurrentSteps: envInt('ENGINE_MAX_CONCURRENT_STEPS', 5),
+    backpressureMessage: env('ENGINE_BACKPRESSURE_MESSAGE', 'Estamos atendiendo muchos clientes en este momento. Te responderemos pronto.'),
+
+    // Phase 4 retries per provider
+    composeRetriesPerProvider: envInt('ENGINE_COMPOSE_RETRIES_PER_PROVIDER', 1),
   }
 }

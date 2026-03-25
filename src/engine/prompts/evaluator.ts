@@ -16,7 +16,7 @@ Estructura de respuesta:
   "on_scope": true,
   "execution_plan": [
     {
-      "type": "respond_only | api_call | workflow | subagent | memory_lookup | web_search",
+      "type": "respond_only | api_call | workflow | subagent | memory_lookup | web_search | process_attachment",
       "tool": "nombre_tool (solo si type=api_call)",
       "params": {},
       "description": "qué hace este paso"
@@ -37,6 +37,7 @@ Reglas:
 - Para consultas complejas que requieren múltiples pasos: type=subagent
 - Para búsquedas web: type=web_search
 - Para consultar historial/sesiones previas: type=memory_lookup
+- Para procesar adjuntos (PDFs, imágenes, audio, documentos): type=process_attachment con params.index (índice del adjunto)
 - Si necesitas buscar en la base de conocimiento: incluye "search_query" y opcionalmente "search_hint" (título de categoría) en tu respuesta
 - search_hint prioriza resultados de esa categoría pero nunca excluye otras`
 
@@ -168,6 +169,16 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
     for (const msg of recent) {
       parts.push(`${msg.role === 'user' ? 'Contacto' : 'Agente'}: ${msg.content.substring(0, 200)}`)
     }
+  }
+
+  // Attachment metadata (Phase 1 classified, Phase 3 will process)
+  if (ctx.attachmentMeta.length > 0) {
+    parts.push(`[Adjuntos enviados por el contacto:]`)
+    for (const att of ctx.attachmentMeta) {
+      const sizeMb = att.size ? `${(att.size / (1024 * 1024)).toFixed(1)} MB` : 'tamaño desconocido'
+      parts.push(`- [${att.index}] ${att.type}: ${att.name ?? 'sin nombre'} (${sizeMb}, ${att.mime ?? 'mime desconocido'})`)
+    }
+    parts.push(`[Para procesar un adjunto, incluye { type: "process_attachment", params: { index: N } } en el plan]`)
   }
 
   // Injection warning

@@ -231,7 +231,7 @@ async function buildProactiveContext(
     [candidate.contactId, candidate.channel],
   )
 
-  const contactRow = contactResult.rows[0]
+  const contactRow = contactResult.rows[0]!
   const contact = contactRow ? {
     id: contactRow.id,
     channelContactId: contactRow.channel_contact_id,
@@ -280,7 +280,6 @@ async function buildProactiveContext(
     contact,
     session,
     isNewContact: false,
-    quickAction: null,
     campaign: null,
     knowledgeMatches: [],
     knowledgeInjection: null,
@@ -292,6 +291,7 @@ async function buildProactiveContext(
     sheetsData: null,
     normalizedText: '',
     messageType: 'text',
+    attachmentMeta: [],
     attachmentContext: null,
     responseFormat: 'text',
     possibleInjection: false,

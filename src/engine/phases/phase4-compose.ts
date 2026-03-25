@@ -1,5 +1,5 @@
-// LUNA Engine — Phase 4: Compose Response
-// 1 llamada LLM (modelo compositor). Genera respuesta conversacional.
+// LUNA Engine — Phase 4: Compose Response (v2)
+// LLM compositor + retries + channel formatting + TTS.
 // El LLM NO tiene tools. Solo recibe datos y escribe.
 
 import pino from 'pino'
@@ -11,14 +11,15 @@ import type {
   CompositorOutput,
   EngineConfig,
 } from '../types.js'
-import { buildCompositorPrompt, clearPromptCache } from '../prompts/compositor.js'
+import { buildCompositorPrompt } from '../prompts/compositor.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { loadFallback } from '../fallbacks/fallback-loader.js'
+import { formatForChannel } from '../utils/message-formatter.js'
 
 const logger = pino({ name: 'engine:phase4' })
 
 /**
- * Execute Phase 4: Compose the response with LLM.
+ * Execute Phase 4: Compose the response with LLM, format for channel, optional TTS.
  */
 export async function phase4Compose(
   ctx: ContextBundle,
@@ -40,52 +41,134 @@ export async function phase4Compose(
     registry,
   )
 
-  try {
-    const result = await callLLMWithFallback(
-      {
-        task: 'compose',
-        provider: config.respondProvider,
-        model: config.respondModel,
-        system,
-        messages: [{ role: 'user', content: userMessage }],
-        maxTokens: config.maxOutputTokens,
-        temperature: config.temperatureRespond,
-      },
-      config.fallbackRespondProvider,
-      config.fallbackRespondModel,
+  // ═══ LLM call with retries per provider ═══
+  let responseText: string | null = null
+  let rawResponse: string | undefined
+
+  // Try primary provider (with retries)
+  responseText = await callWithRetries(
+    config.respondProvider, config.respondModel,
+    system, userMessage, config, ctx.traceId,
+  )
+
+  // If primary failed, try fallback provider (with retries)
+  if (responseText === null) {
+    responseText = await callWithRetries(
+      config.fallbackRespondProvider, config.fallbackRespondModel,
+      system, userMessage, config, ctx.traceId,
     )
+  }
 
-    const durationMs = Date.now() - startMs
-    logger.info({
-      traceId: ctx.traceId,
-      durationMs,
-      responseLength: result.text.length,
-      provider: result.provider,
-      model: result.model,
-    }, 'Phase 4 complete')
+  // If both providers failed, use file-based fallback template
+  if (responseText === null) {
+    logger.error({ traceId: ctx.traceId }, 'Phase 4 — all LLM providers failed, using fallback template')
 
-    return {
-      responseText: result.text,
-      rawResponse: result.text,
-    }
-  } catch (err) {
-    const durationMs = Date.now() - startMs
-    logger.error({ traceId: ctx.traceId, durationMs, err }, 'Phase 4 LLM failed, using fallback template')
-
-    // Use fallback template with per-channel cascade
     const channelName = ctx.message.channelName
     const contactName = ctx.contact?.displayName ?? undefined
     const fallbackDir = config.knowledgeDir.replace(/\/knowledge\/?$/, '/fallbacks')
-    const fallbackText = await loadFallback(
+    responseText = await loadFallback(
       evaluation.intent,
       channelName,
       { name: contactName, channel: channelName },
       fallbackDir,
     )
+    rawResponse = 'FALLBACK: all providers failed'
+  }
 
-    return {
-      responseText: fallbackText,
-      rawResponse: `FALLBACK: ${String(err)}`,
+  // ═══ Channel formatting ═══
+  const formattedParts = formatForChannel(responseText, ctx.message.channelName, registry)
+
+  // ═══ TTS (if audio response needed) ═══
+  let audioBuffer: Buffer | undefined
+  let audioDurationSeconds: number | undefined
+  let outputFormat: 'text' | 'audio' = 'text'
+
+  if (registry) {
+    const ttsService = registry.getOptional<{
+      shouldAutoTTS(channel: string, inputType: string): boolean
+      synthesize(text: string): Promise<{ audioBuffer: Buffer; durationSeconds: number } | null>
+    }>('tts:service')
+
+    if (ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType)) {
+      try {
+        const ttsResult = await ttsService.synthesize(responseText)
+        if (ttsResult) {
+          audioBuffer = ttsResult.audioBuffer
+          audioDurationSeconds = ttsResult.durationSeconds
+          outputFormat = 'audio'
+          logger.info({ traceId: ctx.traceId, durationSeconds: ttsResult.durationSeconds }, 'TTS synthesis complete')
+        }
+      } catch (err) {
+        logger.warn({ err, traceId: ctx.traceId }, 'TTS synthesis failed, falling back to text')
+      }
     }
   }
+
+  const durationMs = Date.now() - startMs
+  logger.info({
+    traceId: ctx.traceId,
+    durationMs,
+    responseLength: responseText.length,
+    parts: formattedParts.length,
+    outputFormat,
+  }, 'Phase 4 complete')
+
+  return {
+    responseText,
+    formattedParts,
+    audioBuffer,
+    audioDurationSeconds,
+    outputFormat,
+    rawResponse,
+  }
+}
+
+/**
+ * Call LLM with retries (exponential backoff).
+ * Returns response text or null if all attempts fail.
+ */
+async function callWithRetries(
+  provider: string,
+  model: string,
+  system: string,
+  userMessage: string,
+  config: EngineConfig,
+  traceId: string,
+): Promise<string | null> {
+  const maxRetries = config.composeRetriesPerProvider
+  let lastError: unknown
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delayMs = 1000 * attempt  // 1s, 2s, 3s...
+        logger.info({ traceId, provider, model, attempt, delayMs }, 'Retrying LLM call')
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
+
+      const result = await callLLMWithFallback(
+        {
+          task: 'compose',
+          provider: provider as import('../types.js').LLMProvider,
+          model,
+          system,
+          messages: [{ role: 'user', content: userMessage }],
+          maxTokens: config.maxOutputTokens,
+          temperature: config.temperatureRespond,
+        },
+        // No fallback at this level — we handle fallback ourselves
+        provider as import('../types.js').LLMProvider,
+        model,
+      )
+
+      logger.info({ traceId, provider: result.provider, model: result.model, attempt }, 'Phase 4 LLM succeeded')
+      return result.text
+    } catch (err) {
+      lastError = err
+      logger.warn({ traceId, provider, model, attempt, err: String(err) }, 'Phase 4 LLM attempt failed')
+    }
+  }
+
+  logger.error({ traceId, provider, model, attempts: maxRetries + 1, lastError: String(lastError) }, 'Phase 4 — provider exhausted')
+  return null
 }

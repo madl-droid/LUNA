@@ -1,6 +1,6 @@
-// LUNA Engine — Phase 1: Intake + Context Loading (v3)
+// LUNA Engine — Phase 1: Intake + Context Loading (v4)
 // Código puro, sin LLM. Target: <200ms.
-// Normaliza, resuelve usuario, carga contexto (memory:manager), detecta quick actions.
+// Normaliza, resuelve usuario via users:resolve, carga contexto (memory:manager).
 
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
@@ -16,6 +16,7 @@ import type {
   EngineConfig,
   UserType,
   UserPermissions,
+  AttachmentMetadata,
   CampaignInfo,
   KnowledgeInjection,
 } from '../types.js'
@@ -23,11 +24,8 @@ import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { ContactMemory } from '../../modules/memory/types.js'
 import { normalizeText, detectMessageType } from '../utils/normalizer.js'
 import { detectInputInjection } from '../utils/injection-detector.js'
-import { detectQuickAction } from '../utils/quick-actions.js'
 import { searchKnowledge } from '../utils/rag-local.js'
-import { resolveUserType, getUserPermissions } from '../mocks/user-resolver.js'
-import { processAttachments, buildFallbackMessages } from '../attachments/processor.js'
-import type { AttachmentContext, AttachmentEngineConfig, ChannelAttachmentConfig } from '../attachments/types.js'
+import { classifyAttachments } from '../attachments/classifier.js'
 
 const logger = pino({ name: 'engine:phase1' })
 
@@ -56,44 +54,24 @@ export async function phase1Intake(
   const normalizedText = normalizeText(message.content.text)
   const messageType = detectMessageType(message.content)
 
-  // 2. Resolve user type (FIRST — before anything else)
-  const { userType, userPermissions } = await resolveUserWithCache(
+  // 2. Resolve user type via users:resolve service (FIRST — before anything else)
+  const { userType, userPermissions } = await resolveUser(
     message.from,
     message.channelName,
-    redis,
-    config.userTypeCacheTtlSeconds,
+    registry,
   )
 
-  // 3. Quick actions (regex: stop, escalate, yes/no)
-  const quickAction = detectQuickAction(normalizedText)
-
-  // 4. Detect possible prompt injection
+  // 3. Detect possible prompt injection
   const possibleInjection = detectInputInjection(normalizedText)
 
   // 5. Resolve agent ID
   const agentId = await resolveAgentId(memoryManager)
 
-  // 5b. Process attachments + URLs (runs in parallel with context loading below)
-  let attachmentContextPromise: Promise<AttachmentContext | null> = Promise.resolve(null)
-  if (config.attachmentEnabled && (message.attachments?.length || normalizedText)) {
-    const channelAttConfig = getChannelAttachmentConfig(registry, message.channelName)
-    const attEngineConfig = getAttachmentEngineConfig(registry, config)
-    attachmentContextPromise = processAttachments(
-      message.attachments ?? [],
-      normalizedText,
-      channelAttConfig,
-      attEngineConfig,
-      message.channelName,
-      'pending-session', // session ID not yet known; updated after session resolution
-      message.id,
-      registry,
-      db,
-      redis,
-    ).catch(err => {
-      logger.warn({ err, traceId }, 'Attachment processing failed')
-      return null
-    })
-  }
+  // 5b. Classify attachments (metadata only — NO processing, NO downloads)
+  // Heavy processing (transcription, extraction) moves to Phase 3 as 'process_attachment' steps
+  const attachmentMeta: AttachmentMetadata[] = config.attachmentEnabled
+    ? classifyAttachments(message)
+    : []
 
   // 6-10. Load context in parallel (graceful degradation)
   // Knowledge v2: try knowledge:manager.getInjection() first, fallback to rag-local
@@ -159,15 +137,6 @@ export async function phase1Intake(
   const relevantSummaries = summariesResult.status === 'fulfilled' ? summariesResult.value : []
   const leadStatus = leadStatusResult.status === 'fulfilled' ? leadStatusResult.value : null
 
-  // Resolve attachment context (was processing in parallel)
-  const attachmentContext = await attachmentContextPromise
-  // Add fallback messages from disabled/failed attachments
-  if (attachmentContext) {
-    const channelAttConfig = getChannelAttachmentConfig(registry, message.channelName)
-    const fallbacks = buildFallbackMessages(attachmentContext.attachments, channelAttConfig)
-    attachmentContext.fallbackMessages.push(...fallbacks)
-  }
-
   // Invalidate context cache (new message = new context)
   if (contact?.id && memoryManager) {
     memoryManager.invalidateContext(contact.id, agentId).catch(() => {})
@@ -180,6 +149,7 @@ export async function phase1Intake(
     memoryLoaded: !!contactMemory,
     commitments: pendingCommitments.length,
     summaries: relevantSummaries.length,
+    attachments: attachmentMeta.length,
   }, 'Phase 1 complete')
 
   return {
@@ -192,7 +162,6 @@ export async function phase1Intake(
     contact,
     session,
     isNewContact: !contact,
-    quickAction,
     campaign,
     knowledgeMatches,
     knowledgeInjection,
@@ -201,10 +170,11 @@ export async function phase1Intake(
     pendingCommitments,
     relevantSummaries,
     leadStatus,
-    sheetsData,
+    sheetsData: sheetsData, // TODO(future): evaluar si sheets cache debe cargarse aquí o bajo demanda
     normalizedText,
     messageType,
-    attachmentContext,
+    attachmentMeta,
+    attachmentContext: null, // populated by Phase 3 process_attachment steps
     responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
   }
@@ -284,34 +254,49 @@ async function loadHistoryFromDb(
   }
 }
 
-async function resolveUserWithCache(
+/** Default permissions when users module is not active */
+const DEFAULT_LEAD_PERMISSIONS: UserPermissions = {
+  tools: ['schedule', 'lookup_product'],
+  skills: ['respond', 'schedule'],
+  subagents: false,
+  canReceiveProactive: true,
+}
+
+/**
+ * Resolve user type via users:resolve service from registry.
+ * Falls back to 'lead' with basic permissions if users module is not active.
+ * No caching here — the users module handles its own Redis cache.
+ */
+async function resolveUser(
   senderId: string,
   channel: string,
-  redis: Redis,
-  ttlSeconds: number,
+  registry: Registry,
 ): Promise<{ userType: UserType; userPermissions: UserPermissions }> {
-  const cacheKey = `user_type:${senderId}:${channel}`
+  // Try the real users module resolver
+  const resolveFn = registry.getOptional<(senderId: string, channel: string) => Promise<{ userType: string; listName?: string }>>(
+    'users:resolve',
+  )
+  const permsFn = registry.getOptional<(userType: string) => Promise<UserPermissions>>(
+    'users:permissions',
+  )
 
-  try {
-    const cached = await redis.get(cacheKey)
-    if (cached) {
-      return JSON.parse(cached) as { userType: UserType; userPermissions: UserPermissions }
+  if (resolveFn) {
+    try {
+      const resolution = await resolveFn(senderId, channel)
+      const userType = resolution.userType as UserType
+      const permissions = permsFn
+        ? await permsFn(userType)
+        : DEFAULT_LEAD_PERMISSIONS
+      return { userType, userPermissions: permissions }
+    } catch (err) {
+      logger.warn({ err, senderId, channel }, 'users:resolve failed, falling back to lead')
     }
-  } catch (err) {
-    logger.warn({ err, senderId }, 'Redis cache read failed for user type')
+  } else {
+    logger.debug('users:resolve not available — all contacts treated as leads')
   }
 
-  const resolution = await resolveUserType(senderId, channel)
-  const permissions = await getUserPermissions(resolution.userType)
-  const result = { userType: resolution.userType, userPermissions: permissions }
-
-  try {
-    await redis.set(cacheKey, JSON.stringify(result), 'EX', ttlSeconds)
-  } catch (err) {
-    logger.warn({ err, senderId }, 'Redis cache write failed for user type')
-  }
-
-  return result
+  // Fallback: everyone is a lead
+  return { userType: 'lead', userPermissions: DEFAULT_LEAD_PERMISSIONS }
 }
 
 async function findContact(
@@ -333,7 +318,7 @@ async function findContact(
 
     if (result.rows.length === 0) return null
 
-    const row = result.rows[0]
+    const row = result.rows[0]!
     return {
       id: row.id,
       channelContactId: row.channel_contact_id,
@@ -374,7 +359,7 @@ async function loadOrCreateSession(
       )
 
       if (result.rows.length > 0) {
-        const row = result.rows[0]
+        const row = result.rows[0]!
         return {
           id: row.id,
           contactId: row.contact_id,
@@ -452,42 +437,3 @@ function getChannelSessionTimeout(registry: Registry, channel: string, defaultMs
   return defaultMs
 }
 
-/** Default attachment config when no channel-specific config exists */
-const DEFAULT_ATTACHMENT_CONFIG: ChannelAttachmentConfig = {
-  enabledCategories: ['documents', 'images', 'text'],
-  maxFileSizeMb: 25,
-  maxAttachmentsPerMessage: 10,
-}
-
-/**
- * Get channel-specific attachment config from the channel config service.
- * Falls back to a sensible default if the channel doesn't provide one.
- */
-function getChannelAttachmentConfig(registry: Registry, channel: string): ChannelAttachmentConfig {
-  const svc = registry.getOptional<{ get(): { attachments?: ChannelAttachmentConfig } }>(`channel-config:${channel}`)
-  if (svc) {
-    const config = svc.get().attachments
-    if (config) return config
-  }
-  return DEFAULT_ATTACHMENT_CONFIG
-}
-
-/**
- * Get attachment engine config from registry service (hot-reloadable via console).
- * Falls back to static EngineConfig values if the service is not available.
- */
-function getAttachmentEngineConfig(registry: Registry, fallback: EngineConfig): AttachmentEngineConfig {
-  const svc = registry.getOptional<{ get(): AttachmentEngineConfig }>('engine:attachment-config')
-  if (svc) return svc.get()
-  // Fallback to static config from loadEngineConfig()
-  return {
-    enabled: fallback.attachmentEnabled,
-    smallDocTokens: fallback.attachmentSmallDocTokens,
-    mediumDocTokens: fallback.attachmentMediumDocTokens,
-    summaryMaxTokens: fallback.attachmentSummaryMaxTokens,
-    cacheTtlMs: fallback.attachmentCacheTtlMs,
-    urlFetchTimeoutMs: fallback.attachmentUrlFetchTimeoutMs,
-    urlMaxSizeMb: fallback.attachmentUrlMaxSizeMb,
-    urlEnabled: fallback.attachmentUrlEnabled,
-  }
-}

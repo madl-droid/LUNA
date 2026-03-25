@@ -1,6 +1,6 @@
-// LUNA Engine — Phase 3: Execute Plan
+// LUNA Engine — Phase 3: Execute Plan (v2)
 // Router que lee el plan y ejecuta cada paso por tipo.
-// Ejecución paralela con Promise.allSettled cuando pasos son independientes.
+// Concurrencia controlada via StepSemaphore. Soporta process_attachment.
 
 import pino from 'pino'
 import type { Pool } from 'pg'
@@ -18,11 +18,15 @@ import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import { executeTool, getDefinition } from '../mocks/tool-registry.js'
 import { runSubagent } from '../subagent/subagent.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
+import { StepSemaphore } from '../concurrency/step-semaphore.js'
+import { processAttachments, buildFallbackMessages } from '../attachments/processor.js'
+import type { AttachmentEngineConfig, ChannelAttachmentConfig } from '../attachments/types.js'
 
 const logger = pino({ name: 'engine:phase3' })
 
 /**
  * Execute Phase 3: Run the execution plan from Phase 2.
+ * Steps run with concurrency controlled by StepSemaphore.
  */
 export async function phase3Execute(
   ctx: ContextBundle,
@@ -52,12 +56,15 @@ export async function phase3Execute(
   const { independent, dependent } = groupStepsByDependency(executionPlan)
 
   const results: StepResult[] = []
+  const stepSemaphore = new StepSemaphore(config.maxConcurrentSteps)
 
-  // Execute independent steps in parallel
+  // Execute independent steps in parallel (concurrency-limited)
   if (independent.length > 0) {
     const parallelResults = await Promise.allSettled(
       independent.map(({ step, index }) =>
-        executeStep(step, index, ctx, db, redis, config, registry),
+        stepSemaphore.run(() =>
+          executeStep(step, index, ctx, db, redis, config, registry),
+        ),
       ),
     )
 
@@ -76,9 +83,11 @@ export async function phase3Execute(
     }
   }
 
-  // Execute dependent steps sequentially
+  // Execute dependent steps sequentially (still through semaphore for resource control)
   for (const { step, index } of dependent) {
-    const result = await executeStep(step, index, ctx, db, redis, config, registry)
+    const result = await stepSemaphore.run(() =>
+      executeStep(step, index, ctx, db, redis, config, registry),
+    )
     results.push(result)
   }
 
@@ -87,6 +96,16 @@ export async function phase3Execute(
   for (const r of results) {
     if (r.success && r.data) {
       partialData[`step_${r.stepIndex}_${r.type}`] = r.data
+    }
+  }
+
+  // If attachments were processed, update ctx.attachmentContext for Phase 4
+  for (const r of results) {
+    if (r.type === 'process_attachment' && r.success && r.data) {
+      const attData = r.data as { attachmentContext: import('../attachments/types.js').AttachmentContext }
+      if (attData.attachmentContext) {
+        ctx.attachmentContext = attData.attachmentContext
+      }
     }
   }
 
@@ -110,7 +129,7 @@ async function executeStep(
   index: number,
   ctx: ContextBundle,
   db: Pool,
-  _redis: Redis,
+  redis: Redis,
   config: EngineConfig,
   registry: Registry,
 ): Promise<StepResult> {
@@ -132,6 +151,9 @@ async function executeStep(
 
       case 'web_search':
         return await executeWebSearch(step, index, config, startMs)
+
+      case 'process_attachment':
+        return await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
 
       case 'respond_only':
         return {
@@ -201,8 +223,6 @@ async function executeWorkflow(
   index: number,
   startMs: number,
 ): Promise<StepResult> {
-  // Workflows are sequences of deterministic steps
-  // For now, just execute as a tool call if tool is specified
   if (step.tool) {
     const result = await executeTool(step.tool, step.params ?? {})
     return {
@@ -234,7 +254,6 @@ async function executeSubagent(
   config: EngineConfig,
   startMs: number,
 ): Promise<StepResult> {
-  // Get tool definitions for allowed tools
   const toolNames = ctx.userPermissions.tools.includes('*')
     ? (step.params?.tools as string[] ?? [])
     : ctx.userPermissions.tools
@@ -257,7 +276,6 @@ async function executeSubagent(
 
 /**
  * Execute memory lookup via memory:manager (hybrid search + contact memory).
- * Falls back to direct DB query if memory module is not active.
  */
 async function executeMemoryLookup(
   step: ExecutionStep,
@@ -323,7 +341,7 @@ async function executeMemoryLookup(
 }
 
 /**
- * Execute web search via Gemini Flash with grounding, fallback to Anthropic web_search.
+ * Execute web search via Gemini Flash with grounding, fallback to Anthropic.
  */
 async function executeWebSearch(
   step: ExecutionStep,
@@ -337,7 +355,6 @@ async function executeWebSearch(
   }
 
   try {
-    // Try Google Gemini first (grounding)
     const result = await callLLMWithFallback(
       {
         task: 'web_search',
@@ -370,6 +387,103 @@ async function executeWebSearch(
 }
 
 /**
+ * Process attachments (downloads, extraction, transcription, summarization).
+ * This is the heavy processing that was previously in Phase 1.
+ * Now runs as a Phase 3 step so it can be planned by the evaluator.
+ */
+async function executeProcessAttachment(
+  step: ExecutionStep,
+  index: number,
+  ctx: ContextBundle,
+  db: Pool,
+  redis: Redis,
+  config: EngineConfig,
+  registry: Registry,
+  startMs: number,
+): Promise<StepResult> {
+  const message = ctx.message
+  if (!message.attachments?.length) {
+    return { stepIndex: index, type: 'process_attachment', success: true, data: { attachmentContext: null }, durationMs: Date.now() - startMs }
+  }
+
+  try {
+    const channelAttConfig = getChannelAttachmentConfig(registry, message.channelName)
+    const attEngineConfig = getAttachmentEngineConfig(registry, config)
+
+    const attachmentContext = await processAttachments(
+      message.attachments,
+      ctx.normalizedText,
+      channelAttConfig,
+      attEngineConfig,
+      message.channelName,
+      ctx.session.id,
+      message.id,
+      registry,
+      db,
+      redis,
+    )
+
+    // Build fallback messages for disabled/failed attachments
+    const fallbacks = buildFallbackMessages(attachmentContext.attachments, channelAttConfig)
+    attachmentContext.fallbackMessages.push(...fallbacks)
+
+    return {
+      stepIndex: index,
+      type: 'process_attachment',
+      success: true,
+      data: {
+        attachmentContext,
+        processedCount: attachmentContext.attachments.length,
+        totalTokens: attachmentContext.totalTokens,
+      },
+      durationMs: Date.now() - startMs,
+    }
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Attachment processing failed in Phase 3')
+    return {
+      stepIndex: index,
+      type: 'process_attachment',
+      success: false,
+      error: String(err),
+      durationMs: Date.now() - startMs,
+    }
+  }
+}
+
+// ─── Helpers ──────────────────────────────
+
+/** Default attachment config when no channel-specific config exists */
+const DEFAULT_ATTACHMENT_CONFIG: ChannelAttachmentConfig = {
+  enabledCategories: ['documents', 'images', 'text'],
+  maxFileSizeMb: 25,
+  maxAttachmentsPerMessage: 10,
+}
+
+function getChannelAttachmentConfig(registry: Registry, channel: string): ChannelAttachmentConfig {
+  const svc = registry.getOptional<{ get(): { attachments?: ChannelAttachmentConfig } }>(`channel-config:${channel}`)
+  if (svc) {
+    const config = svc.get().attachments
+    if (config) return config
+  }
+  return DEFAULT_ATTACHMENT_CONFIG
+}
+
+function getAttachmentEngineConfig(registry: Registry, fallback: EngineConfig): AttachmentEngineConfig {
+  const svc = registry.getOptional<{ get(): AttachmentEngineConfig }>('engine:attachment-config')
+  if (svc) return svc.get()
+  return {
+    enabled: fallback.attachmentEnabled,
+    smallDocTokens: fallback.attachmentSmallDocTokens,
+    mediumDocTokens: fallback.attachmentMediumDocTokens,
+    summaryMaxTokens: fallback.attachmentSummaryMaxTokens,
+    cacheTtlMs: fallback.attachmentCacheTtlMs,
+    urlFetchTimeoutMs: fallback.attachmentUrlFetchTimeoutMs,
+    urlMaxSizeMb: fallback.attachmentUrlMaxSizeMb,
+    urlEnabled: fallback.attachmentUrlEnabled,
+  }
+}
+
+/**
  * Group steps into independent (can run in parallel) and dependent (must be sequential).
  */
 function groupStepsByDependency(steps: ExecutionStep[]): {
@@ -390,4 +504,3 @@ function groupStepsByDependency(steps: ExecutionStep[]): {
 
   return { independent, dependent }
 }
-

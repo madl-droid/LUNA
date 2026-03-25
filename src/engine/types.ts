@@ -91,9 +91,12 @@ export interface HistoryMessage {
   timestamp: Date
 }
 
-export interface QuickAction {
-  type: 'stop' | 'escalate' | 'affirm' | 'deny'
-  matched: string
+export interface AttachmentMetadata {
+  index: number
+  type: 'document' | 'image' | 'audio' | 'spreadsheet' | 'presentation' | 'text' | 'unknown'
+  name: string | null
+  size: number | null
+  mime: string | null
 }
 
 export interface KnowledgeInjection {
@@ -119,9 +122,6 @@ export interface ContextBundle {
   contact: ContactInfo | null
   session: SessionInfo
   isNewContact: boolean
-
-  // Quick action detected (may skip LLM)
-  quickAction: QuickAction | null
 
   // Campaign
   campaign: CampaignInfo | null
@@ -151,7 +151,10 @@ export interface ContextBundle {
   // Response format preference (text, audio, or auto)
   responseFormat: 'text' | 'audio' | 'auto'
 
-  // Attachment context (processed attachments + URLs)
+  // Attachment metadata (lightweight, no processing)
+  attachmentMeta: AttachmentMetadata[]
+
+  // Attachment context (processed — populated by Phase 3, not Phase 1)
   attachmentContext: import('./attachments/types.js').AttachmentContext | null
 
   // Injection flag from basic regex check
@@ -169,6 +172,7 @@ export type ExecutionPlanType =
   | 'subagent'
   | 'memory_lookup'
   | 'web_search'
+  | 'process_attachment'
 
 export interface ExecutionStep {
   type: ExecutionPlanType
@@ -216,6 +220,10 @@ export interface ExecutionOutput {
 
 export interface CompositorOutput {
   responseText: string
+  formattedParts: string[]
+  audioBuffer?: Buffer
+  audioDurationSeconds?: number
+  outputFormat: 'text' | 'audio'
   rawResponse?: string
 }
 
@@ -253,7 +261,7 @@ export interface PipelineResult {
   responseText?: string
   deliveryResult?: DeliveryResult
   error?: string
-  skippedByQuickAction?: boolean
+  skipped?: 'test_mode' | 'backpressure'
   replanAttempts: number
   subagentIterationsUsed: number
 }
@@ -534,4 +542,16 @@ export interface EngineConfig {
   attachmentUrlEnabled: boolean
 
   // Avisos: now fully per-channel via channel-config:{name} services
+
+  // Test mode: only admins receive responses
+  testMode: boolean
+
+  // Concurrency
+  maxConcurrentPipelines: number
+  maxQueueSize: number
+  maxConcurrentSteps: number
+  backpressureMessage: string
+
+  // Phase 4 retries per provider
+  composeRetriesPerProvider: number
 }
