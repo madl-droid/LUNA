@@ -568,6 +568,15 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           }
 
           if (contacts.length === 0) throw new Error('At least one contact is required')
+          if (!displayName?.trim()) throw new Error('Name is required')
+
+          // Check for duplicate contacts
+          for (const c of contacts) {
+            const existing = await usersDb.resolveByContact(c.senderId, c.channel)
+            if (existing) {
+              throw new Error(`Contact ${c.senderId} (${c.channel}) already belongs to user ${existing.userId}`)
+            }
+          }
 
           const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts })
           // Invalidate cache for all new contacts
@@ -576,8 +585,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           logger.info({ userId: user.id, listType, contacts: contacts.length }, 'User created from console')
         } catch (err) {
           logger.error({ err }, 'Failed to create user')
+          const errMsg = encodeURIComponent((err as Error).message)
+          res.writeHead(302, { Location: `/console/contacts/${body['listType'] || 'admin'}?flash=error&error=${errMsg}&lang=${lang}` })
+          res.end()
+          return true
         }
-        res.writeHead(302, { Location: `/console/users?flash=user_added&lang=${lang}` })
+        res.writeHead(302, { Location: `/console/contacts/${body['listType'] || 'admin'}?flash=user_added&lang=${lang}` })
         res.end()
         return true
       }

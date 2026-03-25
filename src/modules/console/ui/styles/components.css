@@ -1914,7 +1914,7 @@
   padding: 10px 12px;
 }
 
-.users-table thead tr:first-child th:first-child { border-radius: 0.5rem 0 0 0; }
+.users-table thead tr:first-child th:first-child { border-radius: 0.5rem 0 0 0; width: 36px; text-align: center; }
 .users-table thead tr:first-child th:last-child { border-radius: 0 0.5rem 0 0; }
 
 .users-table td {
@@ -1938,7 +1938,7 @@
   font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
-.users-table .user-cb { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+.users-table .user-cb { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; vertical-align: middle; }
 
 /* Contact badges — same internal padding as channel cards */
 .user-contact-badge {
