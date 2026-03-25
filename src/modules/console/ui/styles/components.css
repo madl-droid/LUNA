@@ -126,14 +126,21 @@
 }
 
 /* ═══ Info button & tooltip ═══ */
+.info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
 .info-btn {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: none;
   background: var(--surface-container-high);
   color: var(--on-surface-dim);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
   display: inline-flex;
@@ -142,21 +149,50 @@
   flex-shrink: 0;
   font-family: serif;
   font-style: italic;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  line-height: 1;
 }
 
 .info-btn:hover { background: var(--surface-container-highest); color: var(--primary); }
 
 .info-tooltip {
-  display: none;
-  font-size: 13px;
-  color: var(--on-surface-variant);
-  padding: 6px 0 4px;
-  grid-column: 1 / -1;
-  line-height: 1.5;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: var(--on-surface);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 400;
+  font-style: normal;
+  padding: 6px 12px;
+  border-radius: 0.4rem;
+  white-space: normal;
+  width: max-content;
+  max-width: 260px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 50;
 }
 
-.info-tooltip.visible { display: block; }
+.info-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  border: 5px solid transparent;
+  border-top-color: var(--on-surface);
+}
+
+.info-btn:hover + .info-tooltip,
+.info-tooltip:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Legacy click-toggle support (remove once fully migrated) */
+.info-tooltip.visible { opacity: 1; pointer-events: auto; }
 
 /* ═══ Toggle switch (iOS style) ═══ */
 .toggle {

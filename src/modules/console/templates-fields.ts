@@ -9,26 +9,23 @@ export function esc(s: string): string {
 
 export function textField(key: string, value: string, lang: Lang, labelKey?: string, infoKey?: string): string {
   const label = labelKey ? t(labelKey, lang) : key
-  const info = infoKey ? `${infoBtn(key)}` : ''
-  const tooltip = infoKey ? infoTooltip(key, infoKey, lang) : ''
-  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${info}</div>
-    <input type="text" name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
+  const tip = infoKey ? infoBtnWithTip(key, t(infoKey, lang)) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${tip}</div>
+    <input type="text" name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>`
 }
 
 export function secretField(key: string, value: string, lang: Lang, labelKey?: string, infoKey?: string): string {
   const label = labelKey ? t(labelKey, lang) : key
-  const info = infoKey ? `${infoBtn(key)}` : ''
-  const tooltip = infoKey ? infoTooltip(key, infoKey, lang) : ''
-  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${info}</div>
-    <input type="password" name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
+  const tip = infoKey ? infoBtnWithTip(key, t(infoKey, lang)) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${tip}</div>
+    <input type="password" name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>`
 }
 
 export function numField(key: string, value: string, lang: Lang, labelKey?: string, infoKey?: string): string {
   const label = labelKey ? t(labelKey, lang) : key
-  const info = infoKey ? `${infoBtn(key)}` : ''
-  const tooltip = infoKey ? infoTooltip(key, infoKey, lang) : ''
-  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${info}</div>
-    <input type="text" inputmode="numeric" name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
+  const tip = infoKey ? infoBtnWithTip(key, t(infoKey, lang)) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${tip}</div>
+    <input type="text" inputmode="numeric" name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>`
 }
 
 export function boolField(key: string, value: string, lang: Lang, labelKey?: string): string {
@@ -52,10 +49,9 @@ export function selectField(key: string, value: string, options: Array<{value: s
 
 export function textareaField(key: string, value: string, lang: Lang, labelKey?: string, infoKey?: string): string {
   const label = labelKey ? t(labelKey, lang) : key
-  const info = infoKey ? `${infoBtn(key)}` : ''
-  const tooltip = infoKey ? infoTooltip(key, infoKey, lang) : ''
-  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${info}</div>
-    <textarea name="${key}" data-original="${esc(value)}">${esc(value)}</textarea></div>${tooltip}`
+  const tip = infoKey ? infoBtnWithTip(key, t(infoKey, lang)) : ''
+  return `<div class="field"><div class="field-left"><span class="field-label">${label}</span>${tip}</div>
+    <textarea name="${key}" data-original="${esc(value)}">${esc(value)}</textarea></div>`
 }
 
 const MODEL_NAMES: Record<string, string> = {
@@ -98,24 +94,20 @@ export function modelDropdown(
 
   const providerKey = prefix + '_PROVIDER'
   const modelKey = prefix + '_MODEL'
-  const info = infoKey ? infoBtn(prefix) : ''
-  const tooltip = infoKey ? infoTooltip(prefix, infoKey, lang) : ''
+  const tip = infoKey ? infoBtnWithTip(prefix, t(infoKey, lang)) : ''
 
   return `<div class="field">
-    <div class="field-left"><span class="field-label">${label}</span>${info}</div>
+    <div class="field-left"><span class="field-label">${label}</span>${tip}</div>
     <div class="model-row">
       <select name="${providerKey}" data-original="${esc(providerValue)}" data-model-provider="${prefix}">${providerOpts}</select>
       <select name="${modelKey}" data-original="${esc(modelValue)}" data-model-select="${prefix}">${modelOpts}</select>
     </div>
-  </div>${tooltip}`
+  </div>`
 }
 
-function infoBtn(id: string): string {
-  return ` <button class="info-btn" onclick="event.stopPropagation();toggleInfo('info-${id}')">i</button>`
-}
-
-function infoTooltip(id: string, key: string, lang: Lang): string {
-  return `<div class="info-tooltip" id="info-${id}">${t(key, lang)}</div>`
+/** (i) button + hover tooltip, wrapped in a positioned container */
+function infoBtnWithTip(id: string, text: string): string {
+  return ` <span class="info-wrap"><button class="info-btn">i</button><div class="info-tooltip" id="info-${id}">${text}</div></span>`
 }
 
 // --- New field types (Phase 1) ---
@@ -129,12 +121,12 @@ export function readonlyField(key: string, value: string, label: string): string
     <span class="field-readonly">${esc(value)}</span></div>`
 }
 
-export function tagsField(key: string, value: string, lang: Lang, label: string, separator = ','): string {
+export function tagsField(key: string, value: string, lang: Lang, label: string, separator = ',', tip = ''): string {
   const tags = value ? value.split(separator).map(t => t.trim()).filter(Boolean) : []
   const tagsHtml = tags.map(tag =>
     `<span class="field-tag">${esc(tag)}<button type="button" class="field-tag-remove" data-tag-key="${esc(key)}" data-tag-value="${esc(tag)}">&times;</button></span>`
   ).join('')
-  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span></div>
+  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
     <div class="field-tags-wrap">
       <div class="field-tags" data-tags-for="${esc(key)}">${tagsHtml}</div>
       <input type="text" class="field-tag-input" data-tag-add="${esc(key)}" placeholder="${t('fieldTagsAdd', lang)}">
@@ -143,67 +135,77 @@ export function tagsField(key: string, value: string, lang: Lang, label: string,
   </div>`
 }
 
-export function durationField(key: string, value: string, lang: Lang, label: string, unit = 'ms', infoKey?: string): string {
-  const info = infoKey ? infoBtn(key) : ''
-  const tooltip = infoKey ? infoTooltip(key, infoKey, lang) : ''
-  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${info}</div>
+export function durationField(key: string, value: string, lang: Lang, label: string, unit = 'ms', info?: { es: string; en: string } | string, lang2?: Lang): string {
+  // Support both old (infoKey string for i18n lookup) and new (info object) patterns
+  let tip = ''
+  if (typeof info === 'string') {
+    tip = infoBtnWithTip(key, t(info, lang))
+  } else if (info && lang2) {
+    tip = infoBtnWithTip(key, esc(info[lang2] || info['es'] || ''))
+  }
+  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
     <div class="field-duration">
       <input type="text" inputmode="numeric" name="${esc(key)}" value="${esc(value)}" data-original="${esc(value)}">
       <span class="field-duration-unit">${esc(unit)}</span>
     </div>
-  </div>${tooltip}`
+  </div>`
 }
 
-/** Render a field-left with label + optional info button/tooltip */
+/** Render a field-left with label + optional (i) hover tooltip */
 function fieldLeft(key: string, label: string, info?: { es: string; en: string }, lang?: Lang): string {
-  const infoHtml = info ? infoBtn(key) : ''
+  const infoHtml = info && lang ? infoBtnWithTip(key, esc(info[lang] || info['es'] || '')) : ''
   return `<div class="field-left"><span class="field-label">${esc(label)}</span>${infoHtml}</div>`
-}
-
-function infoTooltipDirect(key: string, info: { es: string; en: string }, lang: Lang): string {
-  return `<div class="info-tooltip" id="info-${key}">${esc(info[lang] || info['es'] || '')}</div>`
 }
 
 /** Render a generic input field directly (no string replacement) */
 function directField(key: string, value: string, label: string, inputType: string, info?: { es: string; en: string }, lang?: Lang): string {
   const inputMode = inputType === 'number' ? ' inputmode="numeric"' : ''
   const type = inputType === 'number' ? 'text' : inputType
-  const tooltip = info && lang ? infoTooltipDirect(key, info, lang) : ''
   return `<div class="field">${fieldLeft(key, label, info, lang)}
-    <input type="${type}"${inputMode} name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
+    <input type="${type}"${inputMode} name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>`
 }
 
 export function renderConsoleField(field: ConsoleField, value: string, lang: Lang): string {
   const label = field.label ? (field.label[lang] || field.label['es'] || field.key) : field.key
-  const info = field.info
-  const tooltip = info ? infoTooltipDirect(field.key, info, lang) : ''
+  const info = field.info ?? field.description
+  const tip = info ? infoBtnWithTip(field.key, esc(info[lang] || info['es'] || '')) : ''
 
   switch (field.type) {
     case 'divider': return dividerField(label)
-    case 'readonly': return readonlyField(field.key, value, label)
-    case 'tags': return tagsField(field.key, value, lang, label, field.separator)
-    case 'duration': return durationField(field.key, value, lang, label, field.unit || 'ms', info ? field.key : undefined)
+    case 'readonly':
+      return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
+        <span class="field-readonly">${esc(value)}</span></div>`
+    case 'tags':
+      return tagsField(field.key, value, lang, label, field.separator, tip)
+    case 'duration': return durationField(field.key, value, lang, label, field.unit || 'ms', info, lang)
     case 'secret':
       return `<div class="field">${fieldLeft(field.key, label, info, lang)}
-        <input type="password" name="${field.key}" value="${esc(value)}" data-original="${esc(value)}"></div>${tooltip}`
+        <input type="password" name="${field.key}" value="${esc(value)}" data-original="${esc(value)}"></div>`
     case 'boolean': {
       const checked = value === 'true'
       return `<div class="toggle-field">
-        <span class="field-label">${esc(label)}</span>${info ? infoBtn(field.key) : ''}
+        <span class="field-label">${esc(label)}</span>${tip}
         <label class="toggle"><input type="checkbox" name="${field.key}" value="true" ${checked ? 'checked' : ''} data-original="${esc(value)}"><span class="toggle-slider"></span></label>
         <input type="hidden" name="${field.key}" value="${checked ? 'true' : 'false'}" data-original="${esc(value)}">
-      </div>${tooltip}`
+      </div>`
     }
     case 'number':
       return field.unit
-        ? durationField(field.key, value, lang, label, field.unit, info ? field.key : undefined)
+        ? durationField(field.key, value, lang, label, field.unit, info, lang)
         : directField(field.key, value, label, 'number', info, lang)
-    case 'select':
-      return selectField(field.key, value, field.options ?? [], lang, label) + tooltip
+    case 'select': {
+      const opts = field.options ?? []
+      const optionsHtml = opts.map(o => {
+        const optLabel = typeof o.label === 'object' ? ((o.label as Record<string, string>)[lang] || (o.label as Record<string, string>)['es'] || o.value) : (o.label || o.value)
+        return `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(optLabel)}</option>`
+      }).join('')
+      return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
+        <select name="${field.key}" data-original="${esc(value)}">${optionsHtml}</select></div>`
+    }
     case 'textarea': {
       const rows = field.rows ? ` rows="${field.rows}"` : ''
       return `<div class="field">${fieldLeft(field.key, label, info, lang)}
-        <textarea name="${field.key}" data-original="${esc(value)}"${rows}>${esc(value)}</textarea></div>${tooltip}`
+        <textarea name="${field.key}" data-original="${esc(value)}"${rows}>${esc(value)}</textarea></div>`
     }
     case 'model-select':
       return directField(field.key, value, label, 'text', info, lang)
