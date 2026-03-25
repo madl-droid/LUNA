@@ -832,6 +832,19 @@ const CH_PLACEHOLDER: Record<string, string> = {
   whatsapp: '+521234567890', gmail: 'user@example.com', 'google-chat': 'spaces/XXX/members/YYY', 'twilio-voice': '+15550123',
 }
 
+// Validation patterns per channel (HTML5 pattern attribute)
+const CH_PATTERN: Record<string, string> = {
+  whatsapp: '\\+[0-9]{7,15}',
+  gmail: '[^@\\s]+@[^@\\s]+\\.[^@\\s]+',
+  'twilio-voice': '\\+[0-9]{7,15}',
+}
+
+const CH_PATTERN_TITLE: Record<string, Record<string, string>> = {
+  whatsapp: { es: 'Numero con codigo de pais: +521234567890', en: 'Phone with country code: +521234567890' },
+  gmail: { es: 'Email valido: user@example.com', en: 'Valid email: user@example.com' },
+  'twilio-voice': { es: 'Numero E.164: +15550123', en: 'E.164 number: +15550123' },
+}
+
 // SVG icons for action buttons
 const SVG_PLUS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>'
 const SVG_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
@@ -877,13 +890,14 @@ function renderUsersSection(data: SectionData): string {
     // (selection bar moved to footer row with add button)
 
     if (users.length > 0) {
-      html += `<table class="users-table" id="tbl-${esc(lt)}"><tr>
+      html += `<table class="users-table" id="tbl-${esc(lt)}"><thead><tr class="users-table-head">
         ${canEdit(lt) ? '<th></th>' : ''}
         <th>ID</th>
         <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
         <th>${lang === 'es' ? 'Datos de contacto' : 'Contact info'}</th>
+        <th>${lang === 'es' ? 'Fuente' : 'Source'}</th>
         <th>${lang === 'es' ? 'Estado' : 'Status'}</th>
-      </tr>`
+      </tr></thead><tbody>`
 
       for (const user of users) {
         const contactBadges = user.contacts.map(c =>
@@ -904,12 +918,13 @@ function renderUsersSection(data: SectionData): string {
         html += `<td><code>${esc(user.id)}</code></td>
           <td>${esc(user.displayName || '—')}</td>
           <td>${contactBadges}</td>
+          <td><span class="user-source-badge">${esc(user.source)}</span></td>
           <td>${statusHtml}</td>
         </tr>`
 
         // (contacts editing moved to modal)
       }
-      html += `</table>`
+      html += `</tbody></table>`
     } else {
       html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
@@ -947,9 +962,11 @@ function renderUsersSection(data: SectionData): string {
   for (let i = 0; i < channels.length; i++) {
     const ch = channels[i]!
     const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+    const pat = CH_PATTERN[ch.id] ? ` pattern="${CH_PATTERN[ch.id]}"` : ''
+    const patTitle = CH_PATTERN_TITLE[ch.id] ? ` title="${esc(CH_PATTERN_TITLE[ch.id]![lang] || CH_PATTERN_TITLE[ch.id]!['es'] || '')}"` : ''
     html += `<label class="wizard-label">${CH_SVG[ch.id] || ''} ${esc(lbl)}</label>
         <input type="hidden" name="contact_channel_${i}" value="${esc(ch.id)}">
-        <input type="text" class="wizard-input" name="contact_senderid_${i}" id="user-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}">`
+        <input type="${ch.id === 'gmail' ? 'email' : 'text'}" class="wizard-input" name="contact_senderid_${i}" id="user-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}"${pat}${patTitle}>`
   }
 
   html += `<div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:24px">

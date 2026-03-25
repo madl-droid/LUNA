@@ -1900,15 +1900,22 @@
   margin-bottom: 1rem;
 }
 
+.users-table-head {
+  background: var(--on-surface);
+}
+
 .users-table th {
   text-align: left;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--on-surface-dim);
-  padding: 8px 12px;
+  color: #fff;
+  padding: 10px 12px;
 }
+
+.users-table thead tr:first-child th:first-child { border-radius: 0.5rem 0 0 0; }
+.users-table thead tr:first-child th:last-child { border-radius: 0 0.5rem 0 0; }
 
 .users-table td {
   padding: 10px 12px;

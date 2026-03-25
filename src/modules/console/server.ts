@@ -577,6 +577,35 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             listType: body['listType'] || undefined,
           })
 
+          // Sync contact fields from modal: contact_channel_0, contact_senderid_0
+          const user = await usersDb.findUserById(userId)
+          if (user) {
+            for (let i = 0; i < 10; i++) {
+              const ch = body[`contact_channel_${i}`]
+              const sid = body[`contact_senderid_${i}`]?.trim()
+              if (!ch) continue
+
+              const existing = user.contacts.find(c => c.channel === ch)
+              if (sid && !existing) {
+                // Add new contact for this channel
+                await usersDb.addContact(userId, ch, sid)
+                await usersCache.invalidate(sid)
+              } else if (sid && existing && existing.senderId !== sid) {
+                // Changed — remove old, add new
+                try { await usersDb.removeContact(existing.id) } catch { /* last contact guard */ }
+                await usersDb.addContact(userId, ch, sid)
+                await usersCache.invalidate(existing.senderId)
+                await usersCache.invalidate(sid)
+              } else if (!sid && existing) {
+                // Cleared — remove (only if not last)
+                try {
+                  const removed = await usersDb.removeContact(existing.id)
+                  if (removed) await usersCache.invalidate(removed.senderId)
+                } catch { /* can't remove last contact */ }
+              }
+            }
+          }
+
           const contacts = await usersDb.getContactsForUser(userId)
           for (const c of contacts) await usersCache.invalidate(c.senderId)
 
