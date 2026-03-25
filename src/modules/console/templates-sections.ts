@@ -820,6 +820,18 @@ export function renderSection(section: string, data: SectionData): string | null
 // Users & Permissions section
 // ═══════════════════════════════════════════
 
+// SVG icons for channels (monochrome, stroke-based, inherit currentColor)
+const CH_SVG: Record<string, string> = {
+  whatsapp: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  gmail: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>',
+  'google-chat': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>',
+  'twilio-voice': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+}
+
+const CH_PLACEHOLDER: Record<string, string> = {
+  whatsapp: '+521234567890', gmail: 'user@example.com', 'google-chat': 'spaces/XXX/members/YYY', 'twilio-voice': '+15550123',
+}
+
 function renderUsersSection(data: SectionData): string {
   const lang = data.lang
   const ud = data.usersData
@@ -832,150 +844,123 @@ function renderUsersSection(data: SectionData): string {
   const adminCount = counts['admin'] ?? 0
   let warning = ''
   if (testMode && adminCount === 0) {
-    warning = `<div class="flash flash-error" style="margin-bottom:1rem">${lang === 'es'
-      ? '⚠ Modo de pruebas activo pero no hay admins configurados — nadie recibirá respuesta.'
-      : '⚠ Test mode active but no admins configured — nobody will receive responses.'}</div>`
-  }
-
-  // Channel icon map
-  const chIcon: Record<string, string> = {
-    whatsapp: '📱', gmail: '✉', 'google-chat': '💬', 'twilio-voice': '📞',
-  }
-  const chPlaceholder: Record<string, string> = {
-    whatsapp: '+521234567890', gmail: 'user@example.com', 'google-chat': 'spaces/XXX/members/YYY', 'twilio-voice': '+15550123',
-  }
-  const chLabel: Record<string, Record<string, string>> = {
-    whatsapp: { es: 'WhatsApp', en: 'WhatsApp' },
-    gmail: { es: 'Email', en: 'Email' },
-    'google-chat': { es: 'Google Chat', en: 'Google Chat' },
-    'twilio-voice': { es: 'Teléfono', en: 'Phone' },
+    warning = `<div class="flash flash-error">${lang === 'es'
+      ? 'Modo de pruebas activo pero no hay admins configurados — nadie recibirá respuesta.'
+      : 'Test mode active but no admins configured — nobody will receive responses.'}</div>`
   }
 
   let html = warning
 
-  // Render a panel per list type
+  // ── Panel per list type ──
   for (const cfg of configs) {
     const users = usersByType[cfg.listType] ?? []
     const isLead = cfg.listType === 'lead'
     const count = counts[cfg.listType] ?? 0
-    const badgeClass = cfg.isEnabled ? 'badge-success' : 'badge-dim'
+    const badgeStyle = cfg.isEnabled ? 'badge-active' : 'badge-soon'
 
     html += `<div class="panel">
       <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${esc(cfg.displayName)} <span class="badge ${badgeClass}">${count}</span></span>
+        <span class="panel-title">${esc(cfg.displayName)} <span class="panel-badge ${badgeStyle}">${count}</span></span>
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body">`
 
-    // Users table
     if (users.length > 0) {
-      html += `<table class="metrics-table" style="margin-bottom:1rem;width:100%">
-        <tr>
-          <th>ID</th>
-          <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
-          <th>${lang === 'es' ? 'Contactos' : 'Contacts'}</th>
-          <th>${lang === 'es' ? 'Fuente' : 'Source'}</th>
-          <th>${lang === 'es' ? 'Acciones' : 'Actions'}</th>
-        </tr>`
+      html += `<table class="users-table"><tr>
+        <th>ID</th>
+        <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
+        <th>${lang === 'es' ? 'Contactos' : 'Contacts'}</th>
+        <th>${lang === 'es' ? 'Fuente' : 'Source'}</th>
+        ${isLead ? '' : `<th></th>`}
+      </tr>`
 
       for (const user of users) {
         const contactBadges = user.contacts.map(c =>
-          `<span class="badge badge-sm" title="${esc(c.senderId)}">${chIcon[c.channel] || '🔗'} ${esc(c.senderId.length > 20 ? c.senderId.slice(0, 18) + '…' : c.senderId)}</span>`
+          `<span class="user-contact-badge" title="${esc(c.senderId)}">${CH_SVG[c.channel] || ''} ${esc(c.senderId.length > 22 ? c.senderId.slice(0, 20) + '…' : c.senderId)}</span>`
         ).join(' ')
 
         html += `<tr>
           <td><code>${esc(user.id)}</code></td>
           <td>${esc(user.displayName || '—')}</td>
           <td>${contactBadges}</td>
-          <td><span class="badge badge-sm badge-dim">${esc(user.source)}</span></td>
-          <td>`
+          <td><span class="user-source-badge">${esc(user.source)}</span></td>`
 
         if (!isLead) {
-          html += `<form method="POST" action="/console/users/deactivate" style="display:inline">
-            <input type="hidden" name="_section" value="users">
-            <input type="hidden" name="_lang" value="${lang}">
-            <input type="hidden" name="userId" value="${esc(user.id)}">
-            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('${lang === 'es' ? '¿Desactivar usuario?' : 'Deactivate user?'}')">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
-          </form>`
+          html += `<td>
+            <form method="POST" action="/console/users/deactivate" style="display:inline">
+              <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+              <input type="hidden" name="userId" value="${esc(user.id)}">
+              <button type="submit" class="user-form-actions btn-deactivate" onclick="return confirm('${lang === 'es' ? '¿Desactivar?' : 'Deactivate?'}')">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
+            </form>
+          </td>`
         }
 
-        html += `</td></tr>`
+        html += `</tr>`
 
-        // Expandable contacts detail (for adding/removing contacts)
-        if (!isLead && user.contacts.length > 0) {
-          html += `<tr class="user-contacts-row"><td colspan="5" style="padding:0.5rem 1rem;background:var(--surface-container)">
-            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">`
+        // Contacts detail row with add/remove
+        if (!isLead) {
+          html += `<tr><td colspan="${isLead ? 4 : 5}"><div class="user-contacts-detail">`
           for (const c of user.contacts) {
-            html += `<span class="badge" style="gap:4px">${chIcon[c.channel] || ''} ${esc(c.senderId)}
+            html += `<span class="user-contact-badge">${CH_SVG[c.channel] || ''} ${esc(c.senderId)}
               <form method="POST" action="/console/users/remove-contact" style="display:inline">
                 <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
                 <input type="hidden" name="contactId" value="${esc(c.id)}">
-                <button type="submit" class="field-tag-remove" title="${lang === 'es' ? 'Quitar' : 'Remove'}" onclick="return confirm('${lang === 'es' ? '¿Quitar contacto?' : 'Remove contact?'}')">&times;</button>
+                <button type="submit" class="field-tag-remove" onclick="return confirm('${lang === 'es' ? '¿Quitar?' : 'Remove?'}')">&times;</button>
               </form>
             </span>`
           }
-          // Add contact mini-form
-          html += `<form method="POST" action="/console/users/add-contact" style="display:inline-flex;gap:4px;align-items:center">
+          // Mini add-contact form
+          html += `<form method="POST" action="/console/users/add-contact" class="user-add-contact-row">
             <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
             <input type="hidden" name="userId" value="${esc(user.id)}">
-            <select name="channel" class="field-tag-input" style="width:auto">`
+            <select name="channel">`
           for (const ch of channels) {
             const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
             html += `<option value="${esc(ch.id)}">${esc(lbl)}</option>`
           }
-          html += `</select>
-            <input type="text" name="senderId" placeholder="ID" class="field-tag-input" style="width:140px" required>
-            <button type="submit" class="btn btn-sm">+</button>
-          </form>`
+          html += `</select><input type="text" name="senderId" placeholder="ID" required><button type="submit">+</button></form>`
           html += `</div></td></tr>`
         }
       }
-
       html += `</table>`
     } else {
-      html += `<p style="color:var(--on-surface-dim);margin:0.5rem 0">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
+      html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
 
     // Add user form (not for leads)
     if (!isLead) {
-      html += `<details class="user-add-form" style="margin-top:0.5rem">
-        <summary class="btn btn-sm">${lang === 'es' ? '+ Agregar usuario' : '+ Add user'}</summary>
+      html += `<details class="user-add-form">
+        <summary>${lang === 'es' ? '+ Agregar usuario' : '+ Add user'}</summary>
         <form method="POST" action="/console/users/add" style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.5rem">
-          <input type="hidden" name="_section" value="users">
-          <input type="hidden" name="_lang" value="${lang}">
+          <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
           <input type="hidden" name="listType" value="${esc(cfg.listType)}">
           <div class="field" style="margin:0">
             <div class="field-left"><span class="field-label">${lang === 'es' ? 'Nombre' : 'Name'}</span></div>
             <input type="text" name="displayName" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">
           </div>`
 
-      // One contact row per active channel
       for (let i = 0; i < channels.length; i++) {
         const ch = channels[i]!
         const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
-        const placeholder = chPlaceholder[ch.id] || 'ID'
         html += `<div class="field" style="margin:0">
-            <div class="field-left"><span class="field-label">${chIcon[ch.id] || ''} ${esc(lbl)}</span></div>
+            <div class="field-left"><span class="field-label">${CH_SVG[ch.id] || ''} ${esc(lbl)}</span></div>
             <input type="hidden" name="contact_channel_${i}" value="${esc(ch.id)}">
-            <input type="text" name="contact_senderid_${i}" placeholder="${esc(placeholder)}">
+            <input type="text" name="contact_senderid_${i}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}">
           </div>`
       }
 
-      html += `<div style="margin-top:0.25rem"><button type="submit" class="btn btn-primary btn-sm">${lang === 'es' ? 'Crear usuario' : 'Create user'}</button></div>
-        </form>
-      </details>`
+      html += `<div class="user-form-actions"><button type="submit" class="btn-save">${lang === 'es' ? 'Crear usuario' : 'Create user'}</button></div>
+        </form></details>`
     }
 
     html += `</div></div>`
   }
 
-  // Permissions config panels (one per non-lead list)
+  // ── Permissions panels (per non-lead list) ──
   for (const cfg of configs) {
     if (cfg.listType === 'lead') continue
-
     const perms = cfg.permissions
     const isAllTools = perms.tools.includes('*')
-    const isAllSkills = perms.skills.includes('*')
 
     html += `<div class="panel">
       <div class="panel-header" onclick="togglePanel(this)">
@@ -990,49 +975,39 @@ function renderUsersSection(data: SectionData): string {
           <input type="hidden" name="isEnabled" value="${cfg.isEnabled ? 'true' : 'false'}">
           <input type="hidden" name="maxUsers" value="${cfg.maxUsers ?? ''}">`
 
-    // Tools grid
+    // Tools
     html += `<div class="field-divider"><span class="field-divider-label">Tools</span></div>
-      <div class="toggle-field" style="margin-bottom:0.5rem">
-        <span class="field-label">${lang === 'es' ? 'Acceso total' : 'Full access'} (*)</span>
+      <div class="toggle-field">
+        <span class="field-label">${lang === 'es' ? 'Acceso total (*)' : 'Full access (*)'}</span>
         <label class="toggle toggle-sm"><input type="checkbox" name="perm_tools_all" ${isAllTools ? 'checked' : ''} onchange="document.querySelectorAll('.tool-cb-${esc(cfg.listType)}').forEach(function(e){e.disabled=this.checked}.bind(this))"><span class="toggle-slider"></span></label>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px;margin-bottom:1rem">`
+      <div class="perm-grid">`
 
-    // Group tools by category
     const toolsByCategory = new Map<string, typeof tools>()
     for (const tool of tools) {
       const cat = tool.category || 'other'
       if (!toolsByCategory.has(cat)) toolsByCategory.set(cat, [])
       toolsByCategory.get(cat)!.push(tool)
     }
-
     for (const [cat, catTools] of toolsByCategory) {
-      html += `<div style="grid-column:1/-1;font-size:11px;font-weight:600;color:var(--on-surface-dim);text-transform:uppercase;margin-top:4px">${esc(cat)}</div>`
+      html += `<div class="perm-grid-category">${esc(cat)}</div>`
       for (const tool of catTools) {
         const checked = isAllTools || perms.tools.includes(tool.name)
-        html += `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
-          <input type="checkbox" name="perm_tool_${esc(tool.name)}" class="tool-cb-${esc(cfg.listType)}" ${checked ? 'checked' : ''} ${isAllTools ? 'disabled' : ''}>
-          ${esc(tool.name)}
-        </label>`
+        html += `<label><input type="checkbox" name="perm_tool_${esc(tool.name)}" class="tool-cb-${esc(cfg.listType)}" ${checked ? 'checked' : ''} ${isAllTools ? 'disabled' : ''}> ${esc(tool.name)}</label>`
       }
     }
-
     html += `</div>`
 
     // Subagents
-    html += `<div class="toggle-field">
+    html += `<div class="toggle-field" style="margin-top:1rem">
         <span class="field-label">Subagents</span>
         <label class="toggle toggle-sm"><input type="checkbox" name="perm_subagents" ${perms.subagents ? 'checked' : ''}><span class="toggle-slider"></span></label>
-      </div>`
-
-    // Unregistered behavior (only on lead config but we show it on the admin panel for global config)
-    html += `<div style="margin-top:1rem"><button type="submit" class="btn btn-primary btn-sm">${lang === 'es' ? 'Guardar permisos' : 'Save permissions'}</button></div>
-        </form>
       </div>
-    </div>`
+      <div class="user-form-actions"><button type="submit" class="btn-save">${lang === 'es' ? 'Guardar permisos' : 'Save permissions'}</button></div>
+        </form></div></div>`
   }
 
-  // Unregistered behavior panel (global, from lead config)
+  // ── Unregistered behavior (from lead config) ──
   const leadCfg = configs.find(c => c.listType === 'lead')
   if (leadCfg) {
     const behavior = leadCfg.unregisteredBehavior || 'silence'
@@ -1060,7 +1035,7 @@ function renderUsersSection(data: SectionData): string {
             <div class="field-left"><span class="field-label">${lang === 'es' ? 'Mensaje' : 'Message'}</span></div>
             <textarea name="unregisteredMessage" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
           </div>
-          <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary btn-sm">${lang === 'es' ? 'Guardar' : 'Save'}</button></div>
+          <div class="user-form-actions"><button type="submit" class="btn-save">${lang === 'es' ? 'Guardar' : 'Save'}</button></div>
         </form>
         <script>
         (function(){
@@ -1069,8 +1044,7 @@ function renderUsersSection(data: SectionData): string {
           if(sel&&msgField){sel.addEventListener('change',function(){msgField.style.display=sel.value==='generic_message'?'grid':'none'})}
         })();
         </script>
-      </div>
-    </div>`
+      </div></div>`
   }
 
   return html
