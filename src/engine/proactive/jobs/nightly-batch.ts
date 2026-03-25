@@ -8,8 +8,6 @@ import type { MemoryManager } from '../../../modules/memory/memory-manager.js'
 
 const logger = pino({ name: 'engine:job:nightly-batch' })
 
-const DEFAULT_AGENT_ID = 'luna'
-
 interface NightlyConfig {
   scoringEnabled: boolean
   scoringThreshold: number
@@ -32,6 +30,17 @@ const DEFAULTS: NightlyConfig = {
   reportEnabled: true,
   reportSheetId: '',
   reportSheetName: 'Daily Report',
+}
+
+/** Get agent ID — consistent with other proactive jobs (project-wide default) */
+const DEFAULT_AGENT_ID = 'luna'
+function getAgentId(_ctx: ProactiveJobContext): string {
+  return DEFAULT_AGENT_ID
+}
+
+/** Get batch LLM model/provider from engine config (proactive task routing) */
+function getBatchModel(ctx: ProactiveJobContext): { provider?: string; model?: string } {
+  return { provider: ctx.engineConfig.proactiveProvider, model: ctx.engineConfig.proactiveModel }
 }
 
 function getNightlyConfig(ctx: ProactiveJobContext): NightlyConfig {
@@ -162,7 +171,7 @@ Evalúa este lead frío. Responde SOLO con JSON:
           )
           await ctx.registry.runHook('contact:status_changed', {
             contactId: row.id,
-            agentId: DEFAULT_AGENT_ID,
+            agentId: getAgentId(ctx),
             from: 'cold',
             to: 'qualifying',
           })
@@ -198,7 +207,7 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
   logger.info({ traceId: ctx.traceId, batchSize: config.compressionBatchSize }, 'Compressing old sessions')
 
   try {
-    const sessions = await memoryManager.getSessionsForCompression(DEFAULT_AGENT_ID)
+    const sessions = await memoryManager.getSessionsForCompression(getAgentId(ctx))
     const batch = sessions.slice(0, config.compressionBatchSize)
 
     if (batch.length === 0) {
@@ -218,10 +227,11 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
           .map(m => `[${m.role === 'assistant' ? 'Agente' : 'Usuario'}]: ${m.contentText || m.content?.text || ''}`)
           .join('\n')
 
+        const batchLlm = getBatchModel(ctx)
         const llmResult = await ctx.registry.callHook('llm:chat', {
           task: 'compress',
-          provider: 'google',
-          model: 'gemini-2.5-flash',
+          provider: batchLlm.provider,
+          model: batchLlm.model,
           system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente. Extrae la información clave.',
           messages: [{
             role: 'user' as const,
@@ -249,16 +259,22 @@ ${conversationText.slice(0, 15000)}`,
 
         await memoryManager.compressSession(
           session.sessionId,
-          DEFAULT_AGENT_ID,
+          getAgentId(ctx),
           session.contactId,
           session.channelIdentifier ?? null,
           {
-            summary: parsed.summary,
-            keyFacts: Array.isArray(parsed.keyFacts) ? parsed.keyFacts : [],
-            structuredData: parsed.structuredData ?? {},
+            summary: parsed.summary as string,
+            keyFacts: Array.isArray(parsed.keyFacts)
+              ? (parsed.keyFacts as Array<Record<string, unknown>>).map(kf => ({
+                  fact: String(kf.fact ?? ''),
+                  source: 'nightly-compression',
+                  confidence: typeof kf.confidence === 'number' ? kf.confidence : 0.8,
+                }))
+              : [],
+            structuredData: (parsed.structuredData ?? {}) as Record<string, unknown>,
             originalCount: messages.length,
             keptRecentCount: 0,
-            modelUsed: llmResult.model ?? 'gemini-2.5-flash',
+            modelUsed: llmResult.model ?? batchLlm.model ?? 'unknown',
             tokensUsed: (llmResult.inputTokens ?? 0) + (llmResult.outputTokens ?? 0),
           },
           session.startedAt,
@@ -338,10 +354,11 @@ async function generateDailyReport(ctx: ProactiveJobContext): Promise<void> {
     // Generate narrative summary via LLM
     let narrative: string | null = null
     try {
+      const reportLlm = getBatchModel(ctx)
       const llmResult = await ctx.registry.callHook('llm:chat', {
         task: 'custom',
-        provider: 'google',
-        model: 'gemini-2.5-flash',
+        provider: reportLlm.provider,
+        model: reportLlm.model,
         system: 'Genera reportes diarios concisos de operación de un agente de atención al cliente.',
         messages: [{
           role: 'user' as const,

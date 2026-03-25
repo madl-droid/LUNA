@@ -182,6 +182,10 @@ export class AnthropicAdapter implements ProviderAdapter {
             data: part.data,
           },
         })
+      } else if (part.type === 'audio' && part.data) {
+        // Anthropic doesn't support native audio — log and convert to text placeholder
+        logger.debug({ mimeType: part.mimeType }, 'Audio part not supported by Anthropic, converting to text placeholder')
+        blocks.push({ type: 'text', text: `[Audio: ${part.mimeType ?? 'audio/unknown'}]` })
       }
     }
     return blocks.length === 1 && blocks[0]!.type === 'text'

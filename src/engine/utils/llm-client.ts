@@ -21,7 +21,7 @@ interface LLMGatewayLike {
     provider?: string
     model?: string
     system?: string
-    messages: Array<{ role: string; content: string }>
+    messages: Array<{ role: string; content: string | import('../../kernel/types.js').LLMContentPart[] }>
     maxTokens?: number
     temperature?: number
     tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>

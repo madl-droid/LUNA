@@ -113,24 +113,24 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
       // IDF-weighted search: language-agnostic, no stop word lists needed
       const queryTerms = tokenize(query)
       const section = input.section ? String(input.section).toLowerCase() : null
-      const paragraphs = fullText.split(/\n\n+/).filter(p => p.trim().length > 0)
+      const paragraphs = fullText.split(/\n\n+/).filter((p: string) => p.trim().length > 0)
 
       if (paragraphs.length === 0 || queryTerms.length === 0) {
         return { success: true, data: { match: 'fallback', content: fullText.slice(0, 8000), note: 'Empty document or query.' } }
       }
 
       // Tokenize each paragraph once
-      const paraTokens = paragraphs.map(p => tokenize(p))
+      const paraTokens = paragraphs.map((p: string) => tokenize(p))
 
       // Build IDF from document: terms in many paragraphs get low weight (eliminates stop words in any language)
       const idf = buildIDF(queryTerms, paraTokens, paragraphs.length)
 
       // Score each paragraph using TF * IDF
-      const scored = paragraphs.map((para, idx) => {
+      const scored = paragraphs.map((para: string, idx: number) => {
         const tokens = paraTokens[idx]!
         let score = 0
         for (const term of queryTerms) {
-          const tf = tokens.filter(t => t === term).length
+          const tf = tokens.filter((t: string) => t === term).length
           score += tf * (idf.get(term) ?? 0)
         }
         if (section && para.toLowerCase().includes(section)) {
@@ -140,7 +140,7 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
         return { para, idx, score }
       })
 
-      scored.sort((a, b) => b.score - a.score)
+      scored.sort((a: { score: number }, b: { score: number }) => b.score - a.score)
 
       // Return top relevant paragraphs with minimum threshold (up to ~8K chars)
       const relevant: string[] = []
@@ -157,7 +157,7 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
 
       if (relevant.length === 0) {
         // Fallback: return longest paragraph (most likely to have real content vs headers)
-        const longest = paragraphs.reduce((a, b) => a.length >= b.length ? a : b, '')
+        const longest = paragraphs.reduce((a: string, b: string) => a.length >= b.length ? a : b, '')
         return {
           success: true,
           data: {
