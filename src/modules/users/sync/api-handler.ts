@@ -67,7 +67,12 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
             }
           }
 
-          const user = await db.createUser(body)
+          const user = await db.createUser({
+            listType: body.listType,
+            displayName: body.displayName,
+            contacts: [{ channel: body.channel, senderId: body.senderId }],
+            metadata: body.metadata,
+          })
           await cache.invalidate(body.senderId)
           json(res, { ok: true, user }, 201)
         } catch (err) {
@@ -98,7 +103,9 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
 
           if (!user) return error(res, 'User not found', 404)
 
-          await cache.invalidate(user.senderId)
+          // Invalidate cache for all contacts of this user
+          const contacts = await db.getContactsForUser(body.id)
+          for (const c of contacts) await cache.invalidate(c.senderId)
           json(res, { ok: true, user })
         } catch (err) {
           logger.error({ err }, 'Update user failed')
@@ -120,7 +127,9 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
           if (!existing) return error(res, 'User not found', 404)
 
           const ok = await db.deactivateUser(body.id)
-          if (ok) await cache.invalidate(existing.senderId)
+          if (ok) {
+            for (const c of existing.contacts) await cache.invalidate(c.senderId)
+          }
 
           json(res, { ok })
         } catch (err) {
@@ -139,7 +148,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
           const body = await parseBody<{ listType: string; includeInactive?: boolean }>(req)
           if (!body.listType) return error(res, 'Missing required field: listType')
 
-          const users = await db.listUsers(body.listType, !body.includeInactive)
+          const users = await db.listByType(body.listType, !body.includeInactive)
           json(res, { users, count: users.length })
         } catch (err) {
           logger.error({ err }, 'List users failed')

@@ -1,17 +1,18 @@
 // LUNA — Users module types
-// Tipos para resolución de usuarios y permisos.
+// Tipos para identidad unificada de usuario, contactos multi-canal y permisos.
 
 /** Tipos fijos del sistema. string permite custom lists. */
 export type UserType = 'admin' | 'coworker' | 'lead' | string
 
 /** Comportamiento cuando el contacto no está en ninguna lista y lead está desactivado. */
-export type UnregisteredBehavior = 'silence' | 'generic_message' | 'register_only'
+export type UnregisteredBehavior = 'silence' | 'generic_message' | 'register_only' | 'leads'
 
 /** Resultado de resolver el tipo de un contacto. */
 export interface UserResolution {
   userType: UserType
   listName: string
   contactId: string
+  userId?: string
   fromCache: boolean
 }
 
@@ -23,7 +24,52 @@ export interface UserPermissions {
   allAccess: boolean
 }
 
-/** Fila de la tabla user_lists. */
+// ═══════════════════════════════════════════
+// Unified user identity
+// ═══════════════════════════════════════════
+
+/** Fila de la tabla users (identidad unificada). */
+export interface User {
+  id: string               // USR-XXXXX
+  displayName: string | null
+  listType: string
+  metadata: Record<string, unknown>
+  isActive: boolean
+  source: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+/** Fila de la tabla user_contacts (forma de contacto por canal). */
+export interface UserContact {
+  id: string               // UUID
+  userId: string
+  channel: string
+  senderId: string         // phone, email, chat id, etc.
+  isPrimary: boolean
+  verified: boolean
+  createdAt: Date
+}
+
+/** Usuario con todos sus contactos. */
+export interface UserWithContacts extends User {
+  contacts: UserContact[]
+}
+
+/** Payload para crear un usuario nuevo con contactos. */
+export interface UserInput {
+  displayName?: string
+  listType: string
+  contacts: Array<{ channel: string; senderId: string }>
+  metadata?: Record<string, unknown>
+  source?: string
+}
+
+// ═══════════════════════════════════════════
+// Legacy aliases (backward compat for sync/)
+// ═══════════════════════════════════════════
+
+/** @deprecated Use User instead */
 export interface UserListEntry {
   id: string
   senderId: string
@@ -37,6 +83,20 @@ export interface UserListEntry {
   createdAt: Date
   updatedAt: Date
 }
+
+/** @deprecated Use UserInput instead */
+export interface UserListInput {
+  senderId: string
+  channel: string
+  listType: string
+  displayName?: string
+  metadata?: Record<string, unknown>
+  source?: string
+}
+
+// ═══════════════════════════════════════════
+// List config (unchanged)
+// ═══════════════════════════════════════════
 
 /** Config de una lista (tabla user_list_config). */
 export interface UserListConfig {
@@ -59,16 +119,6 @@ export interface SyncConfig {
   lastSyncAt?: string
   lastSyncStatus?: 'ok' | 'error'
   lastSyncError?: string
-}
-
-/** Payload para crear/actualizar un usuario en una lista. */
-export interface UserListInput {
-  senderId: string
-  channel: string
-  listType: string
-  displayName?: string
-  metadata?: Record<string, unknown>
-  source?: string
 }
 
 /** Payload para importación masiva. */

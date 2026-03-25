@@ -1,5 +1,5 @@
 // LUNA — Users module: User type resolution
-// Algoritmo: cache Redis → DB lookup → lead/unregistered fallback
+// Algoritmo: cache Redis → DB lookup (user_contacts JOIN users) → lead/unregistered fallback
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
@@ -23,7 +23,7 @@ export function initResolver(registry: Registry, cache: UserCache, db: UsersDb):
  * Resolve what type of user a sender is.
  *
  * 1. Check Redis cache (fast path, <1ms)
- * 2. Query DB: admin → coworker → custom lists (first match wins)
+ * 2. Query DB: user_contacts JOIN users (admin → coworker → custom, first match)
  * 3. If no match: lead (if enabled) or unregistered behavior
  * 4. Cache result in Redis with configured TTL
  */
@@ -39,26 +39,27 @@ export async function resolveUserType(senderId: string, channel: string): Promis
     return {
       userType: cached.userType,
       listName: cached.listName,
+      userId: cached.userId,
       contactId: senderId,
       fromCache: true,
     }
   }
 
-  // 2. DB lookup
-  const dbResult = await _db.resolveUser(senderId, channel)
+  // 2. DB lookup via user_contacts → users
+  const dbResult = await _db.resolveByContact(senderId, channel)
 
   let resolution: UserResolution
 
   if (dbResult) {
-    // Found in a list
     resolution = {
       userType: dbResult.listType,
       listName: dbResult.listName,
+      userId: dbResult.userId,
       contactId: senderId,
       fromCache: false,
     }
   } else {
-    // Not in any list — check lead config
+    // Not in any user — check lead config
     const leadConfig = await _db.getListConfig('lead')
 
     if (leadConfig?.isEnabled) {
@@ -69,7 +70,6 @@ export async function resolveUserType(senderId: string, channel: string): Promis
         fromCache: false,
       }
     } else {
-      // Lead disabled — apply unregistered behavior
       const behavior: UnregisteredBehavior = leadConfig?.unregisteredBehavior ?? 'silence'
       resolution = {
         userType: `_unregistered:${behavior}`,
@@ -86,6 +86,7 @@ export async function resolveUserType(senderId: string, channel: string): Promis
   await _cache.set(senderId, channel, {
     userType: resolution.userType,
     listName: resolution.listName,
+    userId: resolution.userId,
   })
 
   // 4. Fire hook
@@ -111,4 +112,16 @@ export async function resolveUserType(senderId: string, channel: string): Promis
 export async function invalidateUserCache(contactId: string): Promise<void> {
   if (!_cache) throw new Error('Users module not initialized')
   await _cache.invalidate(contactId)
+}
+
+/**
+ * Invalidate cache for all contacts of a user.
+ * Call after merge or user-level changes.
+ */
+export async function invalidateUserCacheForUser(userId: string): Promise<void> {
+  if (!_cache || !_db) throw new Error('Users module not initialized')
+  const contacts = await _db.getContactsForUser(userId)
+  for (const c of contacts) {
+    await _cache.invalidate(c.senderId)
+  }
 }

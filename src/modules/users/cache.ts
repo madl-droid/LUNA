@@ -12,6 +12,7 @@ const KEY_PREFIX = 'user_type'
 interface CachedResolution {
   userType: string
   listName: string
+  userId?: string
 }
 
 export class UserCache {

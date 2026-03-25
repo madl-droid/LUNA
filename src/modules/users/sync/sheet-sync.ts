@@ -131,10 +131,9 @@ export async function syncListFromSheet(
     const row = rows[i]!
     try {
       await db.createUser({
-        senderId: row.senderId,
-        channel: row.channel,
         listType,
         displayName: row.displayName,
+        contacts: [{ channel: row.channel, senderId: row.senderId }],
         metadata: row.metadata,
         source: 'sheet_sync',
       })
