@@ -10,13 +10,13 @@ Provider de gestion clinica: pacientes, citas, disponibilidad, seguimiento autom
 - `cache.ts` — Redis + in-memory para datos de referencia (30d TTL) y disponibilidad (10min TTL)
 - `webhook-handler.ts` — receptor webhooks Medilink: HMAC verify, dispatch a listeners
 - `security.ts` — **CRITICO**: verificacion identidad, control acceso, filtrado datos, audit
-- `tools.ts` — 10 herramientas del agente (disponibilidad, pacientes, citas, pagos, evoluciones)
-- `follow-up-scheduler.ts` — BullMQ: secuencia 9 toques (confirmacion, llamadas, no-show, reactivacion)
+- `tools.ts` — 11 herramientas del agente (disponibilidad, pacientes, citas, pagos, evoluciones, execute-followup)
+- `follow-up-scheduler.ts` — secuencia 9 toques, delega a scheduled-tasks (NO crea su propio BullMQ)
 - `pg-store.ts` — migraciones (7 tablas) y queries SQL
 
 ## Manifest
 - **type**: `provider`
-- **depends**: `['tools', 'memory']`
+- **depends**: `['tools', 'memory', 'scheduled-tasks']`
 - **configSchema**: MEDILINK_API_TOKEN, MEDILINK_BASE_URL, webhook keys, rate limit, cache TTLs, follow-up timing, security toggles
 
 ## Servicios expuestos
@@ -48,4 +48,6 @@ medilink_audit_log, medilink_edit_requests, medilink_follow_ups, medilink_profes
 - Vinculacion paciente-contacto en `agent_contacts.agent_data` JSONB (no tabla nueva)
 - `canAccess()` en security.ts es el guardian — verificar SIEMPRE antes de retornar datos
 - Follow-up calls requieren modulo `twilio-voice` activo, sino fallback a WhatsApp
+- Follow-ups usan `scheduled-tasks:api` (BullMQ compartido) — cada toque es una scheduled_task
+- Tool `medilink-execute-followup` es interno (ejecuta la logica de follow-up cuando scheduled-tasks dispara)
 - Webhook puede perderse (1 retry) — boton manual de refresh en consola

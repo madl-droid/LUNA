@@ -792,5 +792,43 @@ export async function registerMedilinkTools(
     },
   })
 
-  logger.info('10 Medilink tools registered')
+  // ═══════════════════════════════════════
+  // 11. EXECUTE FOLLOW-UP (INTERNAL — called by scheduled-tasks)
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-execute-followup',
+      displayName: 'Ejecutar seguimiento de cita',
+      description: 'Internal: ejecuta un toque de seguimiento de cita Medilink. Llamado automáticamente por tareas programadas.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: {
+        type: 'object',
+        properties: {
+          followUpId: { type: 'string', description: 'ID del follow-up a ejecutar' },
+        },
+        required: ['followUpId'],
+      },
+    },
+    handler: async (input) => {
+      try {
+        const followUpScheduler = registry.getOptional<{
+          executeFollowUp(followUpId: string): Promise<string>
+        }>('medilink:followup')
+
+        if (!followUpScheduler) {
+          return { success: false, error: 'Follow-up scheduler not available' }
+        }
+
+        const result = await followUpScheduler.executeFollowUp(input.followUpId as string)
+        return { success: true, data: { result } }
+      } catch (err) {
+        logger.error({ err, followUpId: input.followUpId }, 'execute-followup failed')
+        return { success: false, error: 'Error ejecutando seguimiento' }
+      }
+    },
+  })
+
+  logger.info('11 Medilink tools registered')
 }

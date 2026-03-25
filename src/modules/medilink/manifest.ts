@@ -285,7 +285,7 @@ const manifest: ModuleManifest = {
   type: 'provider',
   removable: true,
   activateByDefault: false,
-  depends: ['tools', 'memory'],
+  depends: ['tools', 'memory', 'scheduled-tasks'],
 
   configSchema: z.object({
     MEDILINK_API_TOKEN: z.string().default(''),
@@ -389,10 +389,9 @@ const manifest: ModuleManifest = {
     // Initialize webhook handler
     webhookHandler = new WebhookHandler(config, db, cache)
 
-    // Initialize follow-up scheduler
+    // Initialize follow-up scheduler (no own BullMQ — delegates to scheduled-tasks)
     if (config.MEDILINK_FOLLOWUP_ENABLED) {
       followUpScheduler = new FollowUpScheduler(registry, db, config)
-      await followUpScheduler.start(redis)
     }
 
     // Provide services to other modules
@@ -502,7 +501,6 @@ const manifest: ModuleManifest = {
       clearInterval(healthCheckTimer)
       healthCheckTimer = null
     }
-    await followUpScheduler?.stop()
     followUpScheduler = null
     rateLimiter?.stop()
     rateLimiter = null
