@@ -33,12 +33,11 @@ const INJECTION_PATTERNS = [
 
   // Data exfiltration via markdown/links
   /!\[.*\]\((?:https?:\/\/|\/\/|data:).*(?:key|token|secret)/i,
-  /\[.*\]\(https?:\/\/(?!(?:api\.anthropic|api\.openai|generativelanguage\.googleapis))/i,
+  /\[.*\]\(https?:\/\/(?!(?:api\.anthropic|generativelanguage\.googleapis))/i,
 ]
 
 // Patterns that should NEVER appear in responses (API key formats)
 const SENSITIVE_PATTERNS = [
-  /sk-[a-zA-Z0-9]{20,}/,                    // OpenAI keys
   /sk-ant-[a-zA-Z0-9-]{20,}/,               // Anthropic keys
   /AIza[a-zA-Z0-9_-]{35}/,                  // Google API keys
   /Bearer\s+[a-zA-Z0-9._-]{20,}/,           // Bearer tokens

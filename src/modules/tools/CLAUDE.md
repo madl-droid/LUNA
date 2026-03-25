@@ -4,10 +4,10 @@ Registro, ejecución y configuración de tools que los módulos proveen al pipel
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console (fields + apiRoutes), servicio `tools:registry`
-- `types.ts` — ToolDefinition, ToolSettings, ToolResult, ToolHandler, formatos nativos (Anthropic/OpenAI/Gemini)
+- `types.ts` — ToolDefinition, ToolSettings, ToolResult, ToolHandler, formatos nativos (Anthropic/Gemini)
 - `tool-registry.ts` — clase central: registro en memoria + DB sync + catálogo + ejecución
 - `tool-executor.ts` — retry con backoff exponencial, timeout, paralelismo (Promise.allSettled)
-- `tool-converter.ts` — funciones puras: ToolDefinition → formato nativo Anthropic/OpenAI/Gemini
+- `tool-converter.ts` — funciones puras: ToolDefinition → formato nativo Anthropic/Gemini
 - `pg-store.ts` — tablas: tools, tool_access_rules, tool_executions
 
 ## Manifest

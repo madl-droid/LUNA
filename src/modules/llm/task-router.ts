@@ -24,7 +24,6 @@ const DEFAULT_ROUTES: TaskRoute[] = [
     primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
-      { provider: 'openai', model: 'gpt-4o-mini', temperature: 0.1 },
     ],
   },
   {
@@ -32,7 +31,6 @@ const DEFAULT_ROUTES: TaskRoute[] = [
     primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7 },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
-      { provider: 'openai', model: 'gpt-4o-mini', temperature: 0.7 },
     ],
   },
   {
@@ -40,7 +38,6 @@ const DEFAULT_ROUTES: TaskRoute[] = [
     primary: { provider: 'anthropic', model: 'claude-opus-4-5-20251101', temperature: 0.5 },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-pro', temperature: 0.5 },
-      { provider: 'openai', model: 'gpt-4o', temperature: 0.5 },
     ],
   },
   {
@@ -48,7 +45,6 @@ const DEFAULT_ROUTES: TaskRoute[] = [
     primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
-      { provider: 'openai', model: 'gpt-4o-mini', temperature: 0.1 },
     ],
   },
   {
@@ -56,14 +52,12 @@ const DEFAULT_ROUTES: TaskRoute[] = [
     primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7 },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
-      { provider: 'openai', model: 'gpt-4o-mini', temperature: 0.7 },
     ],
   },
   {
     task: 'vision',
     primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     fallbacks: [
-      { provider: 'openai', model: 'gpt-4o' },
       { provider: 'google', model: 'gemini-2.5-pro' },
     ],
   },
@@ -71,7 +65,6 @@ const DEFAULT_ROUTES: TaskRoute[] = [
     task: 'web_search',
     primary: { provider: 'google', model: 'gemini-2.5-flash' },
     fallbacks: [
-      { provider: 'openai', model: 'gpt-4o-mini' },
       { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     ],
   },
@@ -107,7 +100,7 @@ export interface ResolvedRoute {
 
 export class TaskRouter {
   private routes: Map<LLMTask, TaskRoute> = new Map()
-  private fallbackChain: LLMProviderName[] = ['anthropic', 'google', 'openai']
+  private fallbackChain: LLMProviderName[] = ['anthropic', 'google']
 
   constructor(
     private readonly adapters: Map<LLMProviderName, ProviderAdapter>,
@@ -290,7 +283,6 @@ export class TaskRouter {
     const defaultVars: Record<LLMProviderName, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       google: 'GOOGLE_AI_API_KEY',
-      openai: 'OPENAI_API_KEY',
     }
     return this.apiKeys.get(defaultVars[provider]) ?? null
   }
@@ -299,7 +291,6 @@ export class TaskRouter {
     const defaults: Record<LLMProviderName, string> = {
       anthropic: 'claude-sonnet-4-5-20250929',
       google: 'gemini-2.5-flash',
-      openai: 'gpt-4o-mini',
     }
     return defaults[provider]
   }

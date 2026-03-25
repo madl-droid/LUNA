@@ -49,13 +49,13 @@
         "primaryProvider": {
           "type": "string",
           "title": "Provider principal",
-          "enum": ["anthropic", "gemini", "openai"],
+          "enum": ["anthropic", "gemini"],
           "default": "anthropic"
         },
         "fallbackProvider": {
           "type": "string",
           "title": "Provider fallback",
-          "enum": ["anthropic", "gemini", "openai"],
+          "enum": ["anthropic", "gemini"],
           "default": "gemini"
         },
         "models": {
@@ -148,7 +148,7 @@
       "properties": {
         "provider": {
           "type": "string",
-          "enum": ["anthropic", "gemini", "openai"]
+          "enum": ["anthropic", "gemini"]
         },
         "model": {
           "type": "string"

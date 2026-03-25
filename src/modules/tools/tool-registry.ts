@@ -131,7 +131,7 @@ export class ToolRegistry {
   }
 
   getToolsAsNative(
-    provider: 'anthropic' | 'openai' | 'google',
+    provider: 'anthropic' | 'google',
     contactType?: string,
   ): unknown[] {
     const defs = this.getEnabledToolDefinitions(contactType)

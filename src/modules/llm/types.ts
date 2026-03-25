@@ -5,7 +5,7 @@
 // Provider types
 // ═══════════════════════════════════════════
 
-export type LLMProviderName = 'anthropic' | 'google' | 'openai'
+export type LLMProviderName = 'anthropic' | 'google'
 
 export interface ProviderConfig {
   name: LLMProviderName
@@ -264,7 +264,6 @@ export interface ProviderAdapter {
 export interface LLMModuleConfig {
   // Provider API keys
   ANTHROPIC_API_KEY: string
-  OPENAI_API_KEY: string
   GOOGLE_AI_API_KEY: string
 
   // Per-capability API key overrides
@@ -285,15 +284,12 @@ export interface LLMModuleConfig {
   // Timeouts per provider
   LLM_TIMEOUT_ANTHROPIC_MS: number
   LLM_TIMEOUT_GOOGLE_MS: number
-  LLM_TIMEOUT_OPENAI_MS: number
 
   // Rate limits
   LLM_RPM_ANTHROPIC: number
   LLM_RPM_GOOGLE: number
-  LLM_RPM_OPENAI: number
   LLM_TPM_ANTHROPIC: number
   LLM_TPM_GOOGLE: number
-  LLM_TPM_OPENAI: number
 
   // Usage tracking
   LLM_USAGE_ENABLED: string
@@ -326,11 +322,4 @@ export const DEFAULT_COST_TABLE: Record<string, { inputPer1M: number; outputPer1
   // Google
   'gemini-2.5-flash': { inputPer1M: 0.15, outputPer1M: 0.60 },
   'gemini-2.5-pro': { inputPer1M: 1.25, outputPer1M: 10.00 },
-  // OpenAI
-  'gpt-4o': { inputPer1M: 2.50, outputPer1M: 10.00 },
-  'gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.60 },
-  'gpt-4.1': { inputPer1M: 2.00, outputPer1M: 8.00 },
-  'gpt-4.1-mini': { inputPer1M: 0.40, outputPer1M: 1.60 },
-  'gpt-4.1-nano': { inputPer1M: 0.10, outputPer1M: 0.40 },
-  'o3-mini': { inputPer1M: 1.10, outputPer1M: 4.40 },
 }

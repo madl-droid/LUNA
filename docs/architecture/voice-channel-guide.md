@@ -31,7 +31,7 @@ Canal de texto:                       Canal de voz:
 
 ```
 Teléfono ←PSTN→ Proveedor telefonía ←WS→ LUNA ←WS→ Modelo de voz (LLM)
-                 (Twilio, Vonage)          │         (Gemini Live, OpenAI RT)
+                 (Twilio, Vonage)          │         (Gemini Live)
                                            │
                                      ┌─────┴──────┐
                                      │  Contexto   │

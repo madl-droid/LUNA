@@ -4,7 +4,6 @@
 import type {
   ToolDefinition,
   AnthropicToolDef,
-  OpenAIToolDef,
   GeminiToolDef,
 } from './types.js'
 
@@ -16,21 +15,6 @@ export function toAnthropicTools(tools: ToolDefinition[]): AnthropicToolDef[] {
       type: 'object' as const,
       properties: tool.parameters.properties,
       required: tool.parameters.required,
-    },
-  }))
-}
-
-export function toOpenAITools(tools: ToolDefinition[]): OpenAIToolDef[] {
-  return tools.map((tool) => ({
-    type: 'function' as const,
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: {
-        type: 'object' as const,
-        properties: tool.parameters.properties,
-        required: tool.parameters.required,
-      },
     },
   }))
 }
@@ -49,13 +33,11 @@ export function toGeminiTools(tools: ToolDefinition[]): GeminiToolDef[] {
 
 export function toNativeTools(
   tools: ToolDefinition[],
-  provider: 'anthropic' | 'openai' | 'google',
+  provider: 'anthropic' | 'google',
 ): unknown[] {
   switch (provider) {
     case 'anthropic':
       return toAnthropicTools(tools)
-    case 'openai':
-      return toOpenAITools(tools)
     case 'google':
       return toGeminiTools(tools)
   }

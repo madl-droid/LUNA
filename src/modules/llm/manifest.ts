@@ -27,7 +27,6 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     // Provider API keys
     ANTHROPIC_API_KEY: z.string().default(''),
-    OPENAI_API_KEY: z.string().default(''),
     GOOGLE_AI_API_KEY: z.string().default(''),
 
     // Per-capability API key overrides
@@ -48,15 +47,12 @@ const manifest: ModuleManifest = {
     // Timeouts per provider
     LLM_TIMEOUT_ANTHROPIC_MS: numEnvMin(1000, 30000),
     LLM_TIMEOUT_GOOGLE_MS: numEnvMin(1000, 30000),
-    LLM_TIMEOUT_OPENAI_MS: numEnvMin(1000, 30000),
 
     // Rate limits per provider (0 = unlimited)
     LLM_RPM_ANTHROPIC: numEnvMin(0, 0),
     LLM_RPM_GOOGLE: numEnvMin(0, 0),
-    LLM_RPM_OPENAI: numEnvMin(0, 0),
     LLM_TPM_ANTHROPIC: numEnvMin(0, 0),
     LLM_TPM_GOOGLE: numEnvMin(0, 0),
-    LLM_TPM_OPENAI: numEnvMin(0, 0),
 
     // Usage tracking
     LLM_USAGE_ENABLED: z.string().default('true'),
@@ -74,7 +70,7 @@ const manifest: ModuleManifest = {
     LLM_ROUTE_PROACTIVE: z.string().default(''),
 
     // Fallback chain order (comma-separated)
-    LLM_FALLBACK_CHAIN: z.string().default('anthropic,google,openai'),
+    LLM_FALLBACK_CHAIN: z.string().default('anthropic,google'),
   }),
 
   console: {
@@ -89,7 +85,6 @@ const manifest: ModuleManifest = {
     fields: [
       // API Keys
       { key: 'ANTHROPIC_API_KEY', type: 'secret', label: { es: 'API Key Anthropic', en: 'Anthropic API Key' } },
-      { key: 'OPENAI_API_KEY', type: 'secret', label: { es: 'API Key OpenAI', en: 'OpenAI API Key' } },
       { key: 'GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Google AI', en: 'Google AI API Key' } },
       { key: 'LLM_VISION_API_KEY', type: 'secret', label: { es: 'API Key Vision (override)', en: 'Vision API Key (override)' },
         info: { es: 'Usar API key diferente para tareas de visión', en: 'Use different API key for vision tasks' } },
@@ -112,7 +107,6 @@ const manifest: ModuleManifest = {
       // Timeouts
       { key: 'LLM_TIMEOUT_ANTHROPIC_MS', type: 'number', label: { es: 'Timeout Anthropic (ms)', en: 'Anthropic timeout (ms)' } },
       { key: 'LLM_TIMEOUT_GOOGLE_MS', type: 'number', label: { es: 'Timeout Google (ms)', en: 'Google timeout (ms)' } },
-      { key: 'LLM_TIMEOUT_OPENAI_MS', type: 'number', label: { es: 'Timeout OpenAI (ms)', en: 'OpenAI timeout (ms)' } },
 
       // Budget
       { key: 'LLM_DAILY_BUDGET_USD', type: 'number', label: { es: 'Presupuesto diario (USD)', en: 'Daily budget (USD)' },
@@ -126,7 +120,7 @@ const manifest: ModuleManifest = {
 
       // Fallback chain
       { key: 'LLM_FALLBACK_CHAIN', type: 'text', label: { es: 'Cadena de fallback', en: 'Fallback chain' },
-        info: { es: 'Orden de proveedores separados por coma (ej: anthropic,google,openai)', en: 'Provider order comma-separated (e.g.: anthropic,google,openai)' } },
+        info: { es: 'Orden de proveedores separados por coma (ej: anthropic,google)', en: 'Provider order comma-separated (e.g.: anthropic,google)' } },
     ],
     apiRoutes: [
       // Provider status

@@ -4,7 +4,7 @@
 Agente de IA que atiende leads por WhatsApp, email, Google Chat y llamadas de voz. Califica, agenda, hace seguimiento, escala a humanos. Single-instance per server. Un repo, múltiples deploys.
 
 ## Stack
-TypeScript / Node.js ≥22 (ESM), PostgreSQL + pgvector, Redis + BullMQ, Baileys (WhatsApp), Twilio (voz), Google OAuth2 (Gmail, Calendar, Sheets, Chat), LLMs: Anthropic + OpenAI + Google.
+TypeScript / Node.js ≥22 (ESM), PostgreSQL + pgvector, Redis + BullMQ, Baileys (WhatsApp), Twilio (voz), Google OAuth2 (Gmail, Calendar, Sheets, Chat), LLMs: Anthropic + Google.
 
 ## Arquitectura
 Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada módulo exporta un `manifest.ts` con lifecycle (init/stop), hooks tipados, config schema y definición de UI.
@@ -15,7 +15,7 @@ Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada m�
 - Pipeline de 5 pasos (solo 2 usan LLM): ver `docs/architecture/pipeline.md`
 - Tabla de modelos y fallback chain: ver `docs/architecture/pipeline.md`
 - Lead status (máquina de estados): ver `docs/architecture/lead-status.md`
-- Fallback chain: Anthropic → OpenAI → Google. Circuit breaker: 5 fallas en 10 min → provider DOWN 5 min.
+- Fallback chain: Anthropic → Google. Circuit breaker: 5 fallas en 10 min → provider DOWN 5 min.
 
 ## Estructura de directorios
 ```

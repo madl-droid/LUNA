@@ -151,10 +151,8 @@ function validateOutput(text: string): ValidationResult {
   }
 
   let sanitized = text
-  // Anthropic API keys (must be before generic sk- pattern)
+  // Anthropic API keys
   sanitized = sanitized.replace(/sk-ant-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
-  // OpenAI API keys
-  sanitized = sanitized.replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
   // Google API keys
   sanitized = sanitized.replace(/AIza[a-zA-Z0-9_-]{35}/g, '[REDACTED]')
   // Bearer tokens

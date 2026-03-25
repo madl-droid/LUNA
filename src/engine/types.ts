@@ -433,7 +433,7 @@ export interface OutreachLogEntry {
 // LLM client types (direct SDK calls)
 // ═══════════════════════════════════════════
 
-export type LLMProvider = 'anthropic' | 'google' | 'openai'
+export type LLMProvider = 'anthropic' | 'google'
 
 export interface LLMCallOptions {
   task: string
@@ -522,7 +522,6 @@ export interface EngineConfig {
 
   // API keys
   anthropicApiKey: string
-  openaiApiKey: string
   googleApiKey: string
 
   // Knowledge

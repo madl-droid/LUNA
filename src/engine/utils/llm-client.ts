@@ -5,7 +5,6 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import OpenAI from 'openai'
 import pino from 'pino'
 import type { LLMCallOptions, LLMCallResult, LLMProvider, EngineConfig } from '../types.js'
 
@@ -63,7 +62,6 @@ export function hasGateway(): boolean {
 
 let anthropicClient: Anthropic | null = null
 let googleClient: GoogleGenerativeAI | null = null
-let openaiClient: OpenAI | null = null
 
 /**
  * Initialize LLM clients with API keys from config.
@@ -74,9 +72,6 @@ export function initLLMClients(config: EngineConfig): void {
   }
   if (config.googleApiKey) {
     googleClient = new GoogleGenerativeAI(config.googleApiKey)
-  }
-  if (config.openaiApiKey) {
-    openaiClient = new OpenAI({ apiKey: config.openaiApiKey })
   }
 }
 
@@ -177,8 +172,6 @@ async function callProvider(
       return callAnthropic(model, options)
     case 'google':
       return callGoogle(model, options)
-    case 'openai':
-      return callOpenAI(model, options)
     default:
       throw new Error(`Unknown LLM provider: ${provider}`)
   }
@@ -271,48 +264,6 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
   }
 }
 
-// ─── OpenAI ───────────────────────────────
-
-async function callOpenAI(model: string, options: LLMCallOptions): Promise<LLMCallResult> {
-  if (!openaiClient) throw new Error('OpenAI client not initialized')
-
-  const messages: OpenAI.ChatCompletionMessageParam[] = []
-
-  if (options.system) {
-    messages.push({ role: 'system', content: options.system })
-  }
-
-  for (const m of options.messages) {
-    const content = buildOpenAIContent(m.content)
-    if (m.role === 'user') {
-      messages.push({ role: 'user', content })
-    } else {
-      // Assistant messages only accept string or text/refusal parts (no images)
-      const textContent = typeof content === 'string'
-        ? content
-        : content.filter((p): p is OpenAI.ChatCompletionContentPartText => p.type === 'text')
-      messages.push({ role: 'assistant', content: textContent })
-    }
-  }
-
-  const response = await openaiClient.chat.completions.create({
-    model,
-    messages,
-    max_tokens: options.maxTokens ?? 2048,
-    temperature: options.temperature ?? 0.7,
-  })
-
-  const choice = response.choices[0]!
-
-  return {
-    text: choice?.message?.content ?? '',
-    provider: 'openai',
-    model: response.model,
-    inputTokens: response.usage?.prompt_tokens ?? 0,
-    outputTokens: response.usage?.completion_tokens ?? 0,
-  }
-}
-
 // ─── Multimodal content helpers ──────────────
 
 type ContentInput = string | import('../types.js').LLMCallOptions['messages'][number]['content']
@@ -353,22 +304,3 @@ function buildGeminiParts(content: ContentInput): Array<{ text: string } | { inl
   })
 }
 
-/** Convert content to OpenAI format */
-function buildOpenAIContent(content: ContentInput): string | OpenAI.ChatCompletionContentPart[] {
-  if (typeof content === 'string') return content
-  const parts: OpenAI.ChatCompletionContentPart[] = []
-  for (const p of content) {
-    if (p.type === 'text' && p.text) {
-      parts.push({ type: 'text', text: p.text })
-    } else if (p.type === 'image_url' && p.data) {
-      parts.push({
-        type: 'image_url',
-        image_url: { url: p.data.startsWith('http') ? p.data : `data:${p.mimeType ?? 'image/png'};base64,${p.data}` },
-      })
-    } else if (p.type === 'audio' && p.data) {
-      // OpenAI doesn't support audio in chat — pass as text description
-      parts.push({ type: 'text', text: `[Audio: ${p.mimeType ?? 'audio/ogg'}]` })
-    }
-  }
-  return parts.length === 1 && parts[0]?.type === 'text' ? parts[0].text : parts
-}

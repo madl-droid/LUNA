@@ -121,7 +121,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     deactivated: 'desactivado',
 
     f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
-    f_OPENAI_API_KEY: 'OpenAI',
     f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
     models_primary: 'Modelos principales',
     models_fallback: 'Modelos de fallback',
@@ -162,7 +161,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     f_MODULE_FOLLOWUP: 'Follow-up',
     f_MODULE_WEB_SEARCH: 'Busqueda web',
     i_ANTHROPIC_API_KEY: 'Clave de Anthropic para usar modelos Claude. Obtenla en console.anthropic.com.',
-    i_OPENAI_API_KEY: 'Clave de OpenAI. Actualmente solo se usa como fallback.',
     i_GOOGLE_AI_API_KEY: 'Clave de Google AI Studio para modelos Gemini.',
     i_LLM_CLASSIFY: 'Modelo que analiza cada mensaje entrante y decide la intencion del lead. Debe ser rapido y barato.',
     i_LLM_RESPOND: 'Modelo que genera la respuesta conversacional al lead. Balance entre calidad y velocidad.',
@@ -404,7 +402,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     deactivated: 'deactivated',
 
     f_ANTHROPIC_API_KEY: 'Anthropic (Claude)',
-    f_OPENAI_API_KEY: 'OpenAI',
     f_GOOGLE_AI_API_KEY: 'Google AI (Gemini)',
     models_primary: 'Primary models',
     models_fallback: 'Fallback models',
@@ -445,7 +442,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     f_MODULE_FOLLOWUP: 'Follow-up',
     f_MODULE_WEB_SEARCH: 'Web search',
     i_ANTHROPIC_API_KEY: 'Anthropic key for Claude models. Get it at console.anthropic.com.',
-    i_OPENAI_API_KEY: 'OpenAI key. Currently only used as fallback.',
     i_GOOGLE_AI_API_KEY: 'Google AI Studio key for Gemini models.',
     i_LLM_CLASSIFY: 'Model that analyzes each incoming message to determine lead intent. Should be fast and cheap.',
     i_LLM_RESPOND: 'Model that generates conversational replies to leads. Balance of quality and speed.',

@@ -35,7 +35,6 @@ const OUTPUT_PATTERNS: RegExp[] = [
 
 // Sensitive data patterns (should never appear in output)
 const SENSITIVE_PATTERNS: RegExp[] = [
-  /sk-[a-zA-Z0-9]{20,}/,                           // OpenAI API key
   /sk-ant-[a-zA-Z0-9]{20,}/,                       // Anthropic API key
   /AIza[a-zA-Z0-9_-]{35}/,                         // Google API key
   /Bearer\s+[a-zA-Z0-9._-]{20,}/,                  // Bearer tokens

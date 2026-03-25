@@ -102,7 +102,6 @@ export function loadEngineConfig(): EngineConfig {
 
     // API keys
     anthropicApiKey: env('ANTHROPIC_API_KEY', ''),
-    openaiApiKey: env('OPENAI_API_KEY', ''),
     googleApiKey: env('GOOGLE_AI_API_KEY', ''),
 
     // Knowledge

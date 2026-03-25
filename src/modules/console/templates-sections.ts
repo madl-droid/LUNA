@@ -91,7 +91,6 @@ export function renderLlmUnifiedSection(data: SectionData): string {
     <div class="panel-body">
       <div class="panel-info">${t('sec_apikeys_info', data.lang)}</div>
       ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang, 'f_ANTHROPIC_API_KEY', 'i_ANTHROPIC_API_KEY')}
-      ${secretField('OPENAI_API_KEY', cv(data, 'OPENAI_API_KEY'), data.lang, 'f_OPENAI_API_KEY', 'i_OPENAI_API_KEY')}
       ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang, 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY')}
     </div>
   </div>`
@@ -173,10 +172,8 @@ export function renderLlmUnifiedSection(data: SectionData): string {
       <div class="panel-info">${rateInfo}</div>
       ${numField('LLM_RPM_ANTHROPIC', cv(data, 'LLM_RPM_ANTHROPIC'), data.lang, 'RPM Anthropic')}
       ${numField('LLM_RPM_GOOGLE', cv(data, 'LLM_RPM_GOOGLE'), data.lang, 'RPM Google')}
-      ${numField('LLM_RPM_OPENAI', cv(data, 'LLM_RPM_OPENAI'), data.lang, 'RPM OpenAI')}
       ${numField('LLM_TPM_ANTHROPIC', cv(data, 'LLM_TPM_ANTHROPIC'), data.lang, 'TPM Anthropic')}
       ${numField('LLM_TPM_GOOGLE', cv(data, 'LLM_TPM_GOOGLE'), data.lang, 'TPM Google')}
-      ${numField('LLM_TPM_OPENAI', cv(data, 'LLM_TPM_OPENAI'), data.lang, 'TPM OpenAI')}
     </div>
   </div>`
 

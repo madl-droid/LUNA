@@ -37,5 +37,5 @@
 | Llamadas en vivo (V2) | Gemini Live | Google | — |
 
 ## Fallback chain
-Anthropic → OpenAI → Google.
+Anthropic → Google.
 Si un provider falla 5x en 10 min → marcarlo DOWN por 5 min (circuit breaker).

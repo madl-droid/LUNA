@@ -1,13 +1,13 @@
 # LLM — Gateway unificado de proveedores LLM
 
-Gateway centralizado para Anthropic, Google (Gemini) y OpenAI. Circuit breaker, routing por tarea, tracking de uso/costos, seguridad contra prompt injection.
+Gateway centralizado para Anthropic y Google (Gemini). Circuit breaker, routing por tarea, tracking de uso/costos, seguridad contra prompt injection.
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console fields/routes
 - `types.ts` — todos los tipos del módulo (providers, routes, requests, responses, usage)
 - `llm-gateway.ts` — orquestador principal: routing → rate limit → budget → circuit breaker → retry → call → tracking → sanitize
 - `circuit-breaker.ts` — patrón circuit breaker por provider (CLOSED → OPEN → HALF-OPEN)
-- `providers.ts` — adapters normalizados para Anthropic, Google, OpenAI (multimodal, tools, vision)
+- `providers.ts` — adapters normalizados para Anthropic y Google (multimodal, tools, vision)
 - `task-router.ts` — enruta tareas a providers según config, disponibilidad y circuit breaker
 - `usage-tracker.ts` — tracking Redis (hot counters) + PG (persistencia). Rate limits, budget.
 - `pg-store.ts` — tablas llm_usage, llm_daily_stats. Queries de resumen y limpieza.
@@ -15,7 +15,7 @@ Gateway centralizado para Anthropic, Google (Gemini) y OpenAI. Circuit breaker, 
 
 ## Manifest
 - type: `core-module`, removable: false, activateByDefault: true
-- configSchema: API keys (3 providers + 3 capability overrides), circuit breaker (threshold, window, recovery), retry, timeouts per provider, rate limits, budget, routing, fallback chain
+- configSchema: API keys (2 providers + 3 capability overrides), circuit breaker (threshold, window, recovery), retry, timeouts per provider, rate limits, budget, routing, fallback chain
 - Servicio: `llm:gateway` (LLMGateway instance)
 - Hooks: escucha `llm:chat`, `llm:models_available`. Emite `llm:provider_down`, `llm:provider_up`.
 

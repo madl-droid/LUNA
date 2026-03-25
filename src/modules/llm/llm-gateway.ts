@@ -75,7 +75,6 @@ export class LLMGateway {
     // Provider timeouts
     this.providerTimeouts.set('anthropic', config.LLM_TIMEOUT_ANTHROPIC_MS)
     this.providerTimeouts.set('google', config.LLM_TIMEOUT_GOOGLE_MS)
-    this.providerTimeouts.set('openai', config.LLM_TIMEOUT_OPENAI_MS)
 
     // Initialize adapters with their default keys
     this.initAdapters()
@@ -210,7 +209,7 @@ export class LLMGateway {
    */
   async getProviderStatus(): Promise<ProviderStatus[]> {
     const statuses: ProviderStatus[] = []
-    const providers: LLMProviderName[] = ['anthropic', 'google', 'openai']
+    const providers: LLMProviderName[] = ['anthropic', 'google']
 
     for (const name of providers) {
       const adapter = this.adapters.get(name)
@@ -259,7 +258,7 @@ export class LLMGateway {
    * Refresh model list from provider APIs.
    */
   async refreshModels(): Promise<void> {
-    const providers: LLMProviderName[] = ['anthropic', 'google', 'openai']
+    const providers: LLMProviderName[] = ['anthropic', 'google']
 
     const results = await Promise.allSettled(
       providers.map(async (name) => {
@@ -288,7 +287,6 @@ export class LLMGateway {
       {
         anthropic: this.modelCache.get('anthropic')?.length ?? 0,
         google: this.modelCache.get('google')?.length ?? 0,
-        openai: this.modelCache.get('openai')?.length ?? 0,
       },
       'Models refreshed',
     )
@@ -440,7 +438,6 @@ export class LLMGateway {
   private loadApiKeys(config: LLMModuleConfig): void {
     // Default provider keys
     if (config.ANTHROPIC_API_KEY) this.apiKeys.set('ANTHROPIC_API_KEY', config.ANTHROPIC_API_KEY)
-    if (config.OPENAI_API_KEY) this.apiKeys.set('OPENAI_API_KEY', config.OPENAI_API_KEY)
     if (config.GOOGLE_AI_API_KEY) this.apiKeys.set('GOOGLE_AI_API_KEY', config.GOOGLE_AI_API_KEY)
 
     // Per-capability overrides
@@ -453,7 +450,6 @@ export class LLMGateway {
     const keyMap: Record<LLMProviderName, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       google: 'GOOGLE_AI_API_KEY',
-      openai: 'OPENAI_API_KEY',
     }
 
     for (const [provider, envVar] of Object.entries(keyMap)) {
@@ -470,7 +466,6 @@ export class LLMGateway {
     const envVars: Record<LLMProviderName, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       google: 'GOOGLE_AI_API_KEY',
-      openai: 'OPENAI_API_KEY',
     }
     return !!this.apiKeys.get(envVars[provider])
   }
@@ -479,7 +474,6 @@ export class LLMGateway {
     const envVars: Record<LLMProviderName, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       google: 'GOOGLE_AI_API_KEY',
-      openai: 'OPENAI_API_KEY',
     }
     return this.apiKeys.get(envVars[provider]) ?? null
   }
