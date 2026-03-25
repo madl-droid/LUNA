@@ -440,7 +440,7 @@ export interface LLMCallOptions {
   provider?: LLMProvider
   model?: string
   system?: string
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  messages: Array<{ role: 'user' | 'assistant'; content: string | import('../kernel/types.js').LLMContentPart[] }>
   maxTokens?: number
   temperature?: number
   jsonMode?: boolean

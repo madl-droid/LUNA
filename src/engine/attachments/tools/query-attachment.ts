@@ -25,6 +25,29 @@ interface ToolRegistry {
   }): Promise<void>
 }
 
+/** Tokenize text: lowercase, split by whitespace/punctuation, filter short tokens */
+function tokenize(text: string): string[] {
+  return text.toLowerCase().split(/[\s,.;:!?()[\]{}"']+/).filter(t => t.length > 2)
+}
+
+/**
+ * Build IDF (Inverse Document Frequency) from the document itself.
+ * Language-agnostic: words appearing in many paragraphs automatically get low weight,
+ * effectively eliminating stop words in any language without hardcoded lists.
+ */
+function buildIDF(queryTerms: string[], paraTokens: string[][], totalParagraphs: number): Map<string, number> {
+  const idf = new Map<string, number>()
+  for (const term of queryTerms) {
+    let docsWithTerm = 0
+    for (const tokens of paraTokens) {
+      if (tokens.includes(term)) docsWithTerm++
+    }
+    // IDF = log(N / df). If term not found in any paragraph, IDF = 0
+    idf.set(term, docsWithTerm > 0 ? Math.log(totalParagraphs / docsWithTerm) : 0)
+  }
+  return idf
+}
+
 /**
  * Register the query_attachment tool with the tools registry.
  */
@@ -87,44 +110,60 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
         return { success: false, error: 'Attachment content expired from cache' }
       }
 
-      // Simple search: find paragraphs matching the query terms
-      const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2)
+      // IDF-weighted search: language-agnostic, no stop word lists needed
+      const queryTerms = tokenize(query)
       const section = input.section ? String(input.section).toLowerCase() : null
-      const paragraphs = fullText.split(/\n\n+/)
+      const paragraphs = fullText.split(/\n\n+/).filter(p => p.trim().length > 0)
 
+      if (paragraphs.length === 0 || queryTerms.length === 0) {
+        return { success: true, data: { match: 'fallback', content: fullText.slice(0, 8000), note: 'Empty document or query.' } }
+      }
+
+      // Tokenize each paragraph once
+      const paraTokens = paragraphs.map(p => tokenize(p))
+
+      // Build IDF from document: terms in many paragraphs get low weight (eliminates stop words in any language)
+      const idf = buildIDF(queryTerms, paraTokens, paragraphs.length)
+
+      // Score each paragraph using TF * IDF
       const scored = paragraphs.map((para, idx) => {
-        const lower = para.toLowerCase()
+        const tokens = paraTokens[idx]!
         let score = 0
         for (const term of queryTerms) {
-          if (lower.includes(term)) score += 1
+          const tf = tokens.filter(t => t === term).length
+          score += tf * (idf.get(term) ?? 0)
         }
-        if (section && lower.includes(section)) score += 3
+        if (section && para.toLowerCase().includes(section)) {
+          const maxIdf = Math.max(...[...idf.values()], 1)
+          score += 3 * maxIdf
+        }
         return { para, idx, score }
       })
 
       scored.sort((a, b) => b.score - a.score)
 
-      // Return top relevant paragraphs (up to ~8K chars)
+      // Return top relevant paragraphs with minimum threshold (up to ~8K chars)
       const relevant: string[] = []
       let totalChars = 0
       const MAX_CHARS = 8000
+      const MIN_SCORE = 0.5
 
       for (const item of scored) {
-        if (item.score === 0) break
+        if (item.score < MIN_SCORE) break
         if (totalChars + item.para.length > MAX_CHARS) break
         relevant.push(item.para)
         totalChars += item.para.length
       }
 
       if (relevant.length === 0) {
-        // Fallback: return first chunk
-        const fallback = fullText.slice(0, MAX_CHARS)
+        // Fallback: return longest paragraph (most likely to have real content vs headers)
+        const longest = paragraphs.reduce((a, b) => a.length >= b.length ? a : b, '')
         return {
           success: true,
           data: {
             match: 'fallback',
-            content: fallback,
-            note: 'No specific section matched the query. Showing beginning of document.',
+            content: longest.slice(0, MAX_CHARS),
+            note: 'No specific section matched the query. Showing longest paragraph.',
           },
         }
       }

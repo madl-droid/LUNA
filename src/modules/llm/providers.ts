@@ -31,6 +31,18 @@ function textContent(content: string | ContentPart[]): string {
     .join('')
 }
 
+/** Build Google Gemini content parts from string or ContentPart[] */
+function buildGoogleParts(content: string | ContentPart[]): Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> {
+  if (typeof content === 'string') return [{ text: content }]
+  return content.map(part => {
+    if (part.type === 'text' && part.text) return { text: part.text }
+    if ((part.type === 'image_url' || part.type === 'audio') && part.data) {
+      return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
+    }
+    return { text: part.text ?? '' }
+  })
+}
+
 // ═══════════════════════════════════════════
 // Anthropic Adapter
 // ═══════════════════════════════════════════
@@ -220,18 +232,18 @@ export class GoogleAdapter implements ProviderAdapter {
 
     const history = nonSystemMessages.slice(0, -1).map(m => ({
       role: m.role === 'assistant' ? 'model' as const : 'user' as const,
-      parts: [{ text: textContent(m.content) }],
+      parts: buildGoogleParts(m.content),
     }))
 
     const lastMessage = nonSystemMessages[nonSystemMessages.length - 1]!
-    const lastText = textContent(lastMessage.content)
+    const lastParts = buildGoogleParts(lastMessage.content)
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
     try {
       const chat = genModel.startChat({ history })
-      const result = await chat.sendMessage(lastText)
+      const result = await chat.sendMessage(lastParts)
       const response = result.response
 
       // Extract tool calls if any

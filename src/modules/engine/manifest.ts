@@ -67,6 +67,16 @@ const manifest: ModuleManifest = {
     ATTACHMENT_URL_ENABLED: boolEnv(true),
     ATTACHMENT_URL_FETCH_TIMEOUT_MS: numEnvMin(1000, 10000),
     ATTACHMENT_URL_MAX_SIZE_MB: numEnvMin(1, 5),
+    // Nightly batch
+    NIGHTLY_SCORING_ENABLED: boolEnv(true),
+    NIGHTLY_SCORING_THRESHOLD: numEnvMin(0, 40),
+    NIGHTLY_SCORING_BATCH_SIZE: numEnvMin(1, 100),
+    NIGHTLY_COMPRESSION_ENABLED: boolEnv(true),
+    NIGHTLY_COMPRESSION_MIN_MESSAGES: numEnvMin(10, 30),
+    NIGHTLY_COMPRESSION_BATCH_SIZE: numEnvMin(1, 20),
+    NIGHTLY_REPORT_ENABLED: boolEnv(true),
+    NIGHTLY_REPORT_SHEET_ID: z.string().default(''),
+    NIGHTLY_REPORT_SHEET_NAME: z.string().default('Daily Report'),
   }),
 
   console: {
@@ -226,6 +236,91 @@ const manifest: ModuleManifest = {
         unit: 'MB',
         width: 'half',
       },
+
+      // ── Nightly Batch ──
+      { key: '_div_nightly', type: 'divider', label: { es: 'Lote Nocturno', en: 'Nightly Batch' } },
+      {
+        key: 'NIGHTLY_SCORING_ENABLED',
+        type: 'boolean',
+        label: { es: 'Scoring de leads frios', en: 'Cold lead scoring' },
+        description: {
+          es: 'Re-evalua leads frios con LLM para decidir si vale la pena reactivarlos.',
+          en: 'Re-evaluate cold leads with LLM to decide if reactivation is worthwhile.',
+        },
+      },
+      {
+        key: 'NIGHTLY_SCORING_THRESHOLD',
+        type: 'number',
+        label: { es: 'Threshold de reactivacion', en: 'Reactivation threshold' },
+        description: {
+          es: 'Score minimo (0-100) para que un lead frio pase a qualifying automaticamente.',
+          en: 'Minimum score (0-100) for a cold lead to transition to qualifying automatically.',
+        },
+        min: 0,
+        max: 100,
+        width: 'half',
+      },
+      {
+        key: 'NIGHTLY_SCORING_BATCH_SIZE',
+        type: 'number',
+        label: { es: 'Batch size (scoring)', en: 'Batch size (scoring)' },
+        description: { es: 'Max leads procesados por ejecucion', en: 'Max leads processed per run' },
+        min: 1,
+        max: 500,
+        width: 'half',
+      },
+      {
+        key: 'NIGHTLY_COMPRESSION_ENABLED',
+        type: 'boolean',
+        label: { es: 'Compresion de sesiones', en: 'Session compression' },
+        description: {
+          es: 'Comprime sesiones con muchos mensajes a un resumen usando LLM.',
+          en: 'Compress sessions with many messages into a summary using LLM.',
+        },
+      },
+      {
+        key: 'NIGHTLY_COMPRESSION_MIN_MESSAGES',
+        type: 'number',
+        label: { es: 'Min mensajes para comprimir', en: 'Min messages to compress' },
+        description: { es: 'Una sesion necesita al menos esta cantidad de mensajes para ser comprimida.', en: 'A session needs at least this many messages to be compressed.' },
+        min: 10,
+        max: 200,
+        width: 'half',
+      },
+      {
+        key: 'NIGHTLY_COMPRESSION_BATCH_SIZE',
+        type: 'number',
+        label: { es: 'Batch size (compresion)', en: 'Batch size (compression)' },
+        description: { es: 'Max sesiones comprimidas por ejecucion', en: 'Max sessions compressed per run' },
+        min: 1,
+        max: 100,
+        width: 'half',
+      },
+      {
+        key: 'NIGHTLY_REPORT_ENABLED',
+        type: 'boolean',
+        label: { es: 'Reporte diario', en: 'Daily report' },
+        description: {
+          es: 'Genera metricas del dia y las sincroniza a Google Sheets.',
+          en: 'Generate daily metrics and sync them to Google Sheets.',
+        },
+      },
+      {
+        key: 'NIGHTLY_REPORT_SHEET_ID',
+        type: 'text',
+        label: { es: 'Spreadsheet ID', en: 'Spreadsheet ID' },
+        description: { es: 'ID del spreadsheet de Google donde sincronizar reportes', en: 'Google spreadsheet ID for report sync' },
+        placeholder: '1BxiMV...',
+        width: 'half',
+      },
+      {
+        key: 'NIGHTLY_REPORT_SHEET_NAME',
+        type: 'text',
+        label: { es: 'Nombre de hoja', en: 'Sheet name' },
+        description: { es: 'Nombre de la hoja dentro del spreadsheet', en: 'Sheet tab name within the spreadsheet' },
+        placeholder: 'Daily Report',
+        width: 'half',
+      },
     ],
     apiRoutes: [
       {
@@ -275,6 +370,22 @@ const manifest: ModuleManifest = {
     // Run attachment_extractions table migration
     await runAttachmentMigration(db)
 
+    // Ensure daily_reports table exists (for nightly batch)
+    try {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS daily_reports (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          report_date DATE NOT NULL UNIQUE,
+          metrics JSONB NOT NULL DEFAULT '{}',
+          narrative TEXT,
+          synced_to_sheets BOOLEAN DEFAULT false,
+          created_at TIMESTAMPTZ DEFAULT now()
+        )
+      `)
+    } catch {
+      // Non-critical — nightly batch will log and skip
+    }
+
     initEngine(registry)
 
     // Register attachment tools (after engine init, tools:registry may now be available)
@@ -297,6 +408,23 @@ const manifest: ModuleManifest = {
 
     registry.provide('engine:attachment-config', {
       get: buildAttEngineConfig,
+    })
+
+    // ── Nightly batch config service (hot-reloadable via console) ──
+    const buildNightlyConfig = () => ({
+      scoringEnabled: attConfig.NIGHTLY_SCORING_ENABLED,
+      scoringThreshold: attConfig.NIGHTLY_SCORING_THRESHOLD,
+      scoringBatchSize: attConfig.NIGHTLY_SCORING_BATCH_SIZE,
+      compressionEnabled: attConfig.NIGHTLY_COMPRESSION_ENABLED,
+      compressionMinMessages: attConfig.NIGHTLY_COMPRESSION_MIN_MESSAGES,
+      compressionBatchSize: attConfig.NIGHTLY_COMPRESSION_BATCH_SIZE,
+      reportEnabled: attConfig.NIGHTLY_REPORT_ENABLED,
+      reportSheetId: attConfig.NIGHTLY_REPORT_SHEET_ID,
+      reportSheetName: attConfig.NIGHTLY_REPORT_SHEET_NAME,
+    })
+
+    registry.provide('engine:nightly-config', {
+      get: buildNightlyConfig,
     })
 
     // Hot-reload on console config change

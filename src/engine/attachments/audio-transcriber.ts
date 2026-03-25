@@ -1,8 +1,6 @@
 // LUNA Engine — Audio Transcriber
 // Transcribes audio attachments to text via the LLM module's STT capability.
-// NOTE: The llm:chat hook payload type (LLMChatPayload) only declares text content,
-// but the actual LLM gateway supports multimodal content parts. We use a type assertion
-// to pass audio content until LLMChatPayload is formally extended.
+// Uses native multimodal ContentPart[] in LLMChatPayload for audio content.
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
@@ -26,17 +24,15 @@ export async function transcribeAudio(
     // Normalize MIME type (strip codec params for API compatibility)
     const cleanMime = mimeType.split(';')[0]!.trim()
 
-    // The LLM gateway supports multimodal content parts internally,
-    // even though the hook type only declares string content.
-    // We use a type assertion to pass the structured content.
-    const multimodalMessage = {
-      role: 'user' as const,
-      content: `[audio:${cleanMime}:base64]${base64Audio}[/audio]\nTranscribe el audio anterior. Devuelve SOLO el texto transcrito.`,
-    }
-
     const result = await registry.callHook('llm:chat', {
       task: 'stt',
-      messages: [multimodalMessage],
+      messages: [{
+        role: 'user' as const,
+        content: [
+          { type: 'audio' as const, data: base64Audio, mimeType: cleanMime },
+          { type: 'text' as const, text: 'Transcribe el audio anterior. Devuelve SOLO el texto transcrito.' },
+        ],
+      }],
       maxTokens: 4096,
       temperature: 0.1,
     })

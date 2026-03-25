@@ -139,12 +139,21 @@ export interface SentPayload {
   success: boolean
 }
 
+/** Multimodal content part for LLM messages (image, audio, text) */
+export interface LLMContentPart {
+  type: 'text' | 'image_url' | 'audio'
+  text?: string
+  /** Base64 data or URL */
+  data?: string
+  mimeType?: string
+}
+
 export interface LLMChatPayload {
   task: string
   provider?: string
   model?: string
   system?: string
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  messages: Array<{ role: 'user' | 'assistant'; content: string | LLMContentPart[] }>
   maxTokens?: number
   temperature?: number
   /** Tools for native function calling */
