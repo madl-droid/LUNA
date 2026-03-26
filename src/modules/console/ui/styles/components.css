@@ -1467,6 +1467,155 @@
   opacity: 1;
 }
 
+/* ── Contact base cards grid (4 per row desktop) ── */
+.cb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+/* Contact base card — uniform internal padding */
+.cb-card { padding: 24px; }
+.cb-card .ch-card-metrics {
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--outline-variant, rgba(0,0,0,0.06));
+}
+.ch-metrics-1 { grid-template-columns: 1fr; text-align: center; }
+
+/* Contact base config — same 4-col grid as cards, col1 spans 1, col2 spans 2–4 */
+.cb-config-layout {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.cb-config-layout > *:first-child { grid-column: 1 / 2; }
+.cb-config-layout > *:last-child  { grid-column: 2 / 5; }
+@media (max-width: 768px) {
+  .cb-config-layout { grid-template-columns: 1fr; }
+  .cb-config-layout > *:first-child,
+  .cb-config-layout > *:last-child { grid-column: 1; }
+}
+
+/* Deactivate modal */
+.cb-deact-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.cb-deact-overlay.open { display: flex; }
+.cb-deact-modal {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.cb-deact-step { display: none; }
+.cb-deact-step.active { display: block; }
+.cb-deact-modal h3 { font-size: 1.1rem; font-weight: 700; margin: 0 0 16px; color: var(--on-surface); }
+.cb-deact-modal p { font-size: 13px; color: var(--on-surface-variant); line-height: 1.5; margin: 0 0 16px; }
+
+/* Tip box: shown when no base selected for config */
+.cb-config-tip {
+  background: var(--surface-container-low);
+  border: 1.5px dashed var(--on-surface-dim);
+  border-radius: 0.75rem;
+  padding: 40px;
+  text-align: center;
+  color: var(--on-surface-dim);
+  margin-top: 20px;
+}
+.cb-config-tip svg { opacity: 0.4; }
+
+/* Config panel: hidden by default, shown on card click */
+.cb-config-panel { display: none; margin-top: 20px; }
+.cb-config-panel.active { display: block; }
+
+/* Active card highlight */
+.ch-card.cb-active { box-shadow: 0 0 0 2px var(--primary); }
+
+/* Compact field-divider inside config panel left column */
+.cb-config-layout .field-divider { padding: 1rem 0 4px; margin-top: 0; }
+
+/* Create base box — card style, no dashed border */
+.cb-create-box {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 28px 32px;
+  margin-top: 24px;
+  transition: box-shadow 0.2s ease;
+}
+.cb-create-box:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.cb-create-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cb-create-box-header > div:first-child { flex: 1; min-width: 0; }
+.cb-create-box-header > select {
+  flex-shrink: 0;
+  background: var(--surface-container-low);
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  padding: 8px 12px;
+  color: var(--on-surface);
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 240px;
+}
+@media (max-width: 768px) {
+  .cb-create-box-header { flex-direction: column; align-items: stretch; }
+  .cb-create-box { padding: 20px; }
+}
+
+/* Tags input (email domains) */
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--surface-container-low);
+  border-radius: 0.5rem;
+  min-height: 40px;
+  align-items: center;
+}
+.tags-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--on-surface);
+  flex: 1;
+  min-width: 120px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: rgba(255, 94, 14, 0.1);
+  border-radius: 1rem;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 500;
+}
+.tag-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--on-surface-dim);
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
 /* Toggle small variant — used in cards, filter bars, compact UI */
 .toggle.toggle-sm {
   width: 38px;
@@ -1892,6 +2041,15 @@
 
 /* Panel padding matching channel settings */
 .users-section .panel-body { padding: 16px 20px 20px; }
+
+/* Horizontal scroll wrapper for mobile */
+.users-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.users-table-scroll .users-table {
+  min-width: 640px;
+}
 
 .users-table {
   width: 100%;

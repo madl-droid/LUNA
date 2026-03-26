@@ -820,6 +820,37 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
+      if (localUrl === '/users/toggle-list') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const listType = body['listType']
+          const isEnabled = body['enabled'] === 'true'
+          const disableBehavior = body['disableBehavior'] as 'leads' | 'silence' | 'move' | undefined
+          const disableTarget = body['disableTarget'] as string | undefined
+          if (!listType) throw new Error('Missing listType')
+
+          const existing = await usersDb.getListConfig(listType)
+          if (existing) {
+            await usersDb.upsertListConfig(listType, existing.displayName, existing.permissions, {
+              isEnabled,
+              ...(disableBehavior ? { disableBehavior } : {}),
+              ...(disableTarget ? { disableTargetList: disableTarget } : {}),
+            })
+            await usersCache.invalidateAll()
+            logger.info({ listType, isEnabled }, 'Contact list toggled')
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to toggle contact list')
+        }
+        const redirect = body['_redirect'] || `/console/contacts?page=config&lang=${lang}`
+        res.writeHead(302, { Location: redirect })
+        res.end()
+        return true
+      }
+
       if (localUrl === '/users/delete-list') {
         try {
           const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
