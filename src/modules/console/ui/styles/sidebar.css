@@ -173,6 +173,21 @@
 .sidebar-status-dot.disconnected { background: #007aff; }
 .sidebar-status-dot.inactive { background: var(--on-surface-dim, #999); }
 
+/* Count badge for contact list submenu (left-aligned, where icon would be) */
+.sidebar-count {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: var(--surface-container-high, #e8e8ec);
+  color: var(--on-surface-dim, #6e6e73);
+  flex-shrink: 0;
+}
+
 /* ═══ Content area ═══ */
 .content-area {
   flex: 1;

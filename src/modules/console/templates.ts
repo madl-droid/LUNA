@@ -53,22 +53,20 @@ const FIXED_SECTIONS: FixedSection[] = [
   { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'channels', order: 1 },
   // Contacts — right below channels
   { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'channels', order: 2 },
-  // Agent
-  { id: 'pipeline', key: 'sec_pipeline_unified', icon: ICONS.pipeline, group: 'agent', order: 20 },
+  // Agent — unified page with sub-tabs: knowledge, memory, identity, advanced
+  { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'agent', order: 1 },
   { id: 'engine-metrics', key: 'sec_engine_metrics', icon: ICONS.metrics, group: 'agent', order: 25 },
   // Leads
   { id: 'lead-scoring', key: 'sec_lead_scoring', icon: ICONS.scoring, group: 'leads', order: 15 },
   // Modules
   { id: 'google-apps', key: 'sec_google_apps', icon: ICONS.google, group: 'modules', order: 15 },
   { id: 'modules', key: 'sec_modules', icon: ICONS.modules, group: 'modules', order: 99 },
-  // System
-  { id: 'llm', key: 'sec_llm_unified', icon: ICONS.brain, group: 'system', order: 1 },
-  { id: 'infra', key: 'sec_infra', icon: ICONS.server, group: 'system', order: 90 },
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
 // Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users'])
+// Include old section IDs + modules that are now inside the unified "agente" page
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 const ICON_OVERRIDES: Record<string, string> = {
@@ -138,6 +136,8 @@ export interface PageOptions {
   contactsSubpage?: string
   /** Available contact list types for sidebar submenu */
   contactLists?: Array<{ listType: string; displayName: string; count: number; isEnabled?: boolean }>
+  /** Active agente sub-page (knowledge, memory, identity, advanced) */
+  agenteSubpage?: string
 }
 
 // ═══════════════════════════════════════════
@@ -418,8 +418,8 @@ function renderSidebar(opts: PageOptions): string {
     if (!items || items.length === 0) continue
 
     const groupLabel = t(cat.key, opts.lang)
-    // Hide category title for channels group (only has the unified "Canales" tab)
-    const titleHtml = cat.id === 'channels' ? '' : `<div class="sidebar-group-title">${groupLabel}</div>`
+    // Hide category title for channels and agent groups
+    const titleHtml = (cat.id === 'channels' || cat.id === 'agent') ? '' : `<div class="sidebar-group-title">${groupLabel}</div>`
     nav += `<div class="sidebar-group">${titleHtml}`
 
     for (const item of items) {
@@ -430,20 +430,46 @@ function renderSidebar(opts: PageOptions): string {
         ${item.badge || ''}
       </a>`
 
-      // Contacts submenu: always show enabled bases (like channels show active channels)
-      if (item.id === 'contacts') {
+      // Contacts submenu: only show when section is active
+      if (item.id === 'contacts' && (isActive || opts.contactsSubpage)) {
         const lists = (opts.contactLists ?? []).filter(l => l.isEnabled)
         if (lists.length > 0) {
           nav += '<div class="sidebar-submenu">'
           for (const list of lists) {
             const subActive = opts.contactsSubpage === list.listType
             nav += `<a href="/console/contacts/${list.listType}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
+              <span class="sidebar-count">${list.count}</span>
               <span>${esc(list.displayName)}</span>
-              <span class="panel-badge badge-soon" style="margin-left:auto">${list.count}</span>
             </a>`
           }
           nav += '</div>'
         }
+      }
+
+      // Agente submenu: only show when section is active
+      if (item.id === 'agente' && (isActive || opts.agenteSubpage)) {
+        const agenteIcons = {
+          knowledge: svgIcon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'),
+          memory: svgIcon('<path d="M12 2a7 7 0 0 0-5.42 2.57A5.5 5.5 0 0 0 2 9.5a5.5 5.5 0 0 0 3.36 5.07A5 5 0 0 0 9 19h2v3h2v-3h2a5 5 0 0 0 3.64-4.43A5.5 5.5 0 0 0 22 9.5a5.5 5.5 0 0 0-4.58-5.43A7 7 0 0 0 12 2z"/><path d="M12 2v20"/><path d="M5 9.5c2.5 0 4.5.5 7 2"/><path d="M19 9.5c-2.5 0-4.5.5-7 2"/>'),
+          identity: svgIcon('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'),
+          advanced: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 14h3"/><path d="M1 9h3"/><path d="M1 14h3"/>'),
+        }
+        const agenteTabs = [
+          { id: 'knowledge', key: 'sec_agente_knowledge' },
+          { id: 'memory', key: 'sec_agente_memory' },
+          { id: 'identity', key: 'sec_agente_identity' },
+          { id: 'advanced', key: 'sec_agente_advanced' },
+        ]
+        nav += '<div class="sidebar-submenu">'
+        for (const tab of agenteTabs) {
+          const subActive = opts.agenteSubpage === tab.id
+          const tabIcon = agenteIcons[tab.id as keyof typeof agenteIcons] || ''
+          nav += `<a href="/console/agente/${tab.id}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
+            <span class="nav-icon-sm">${tabIcon}</span>
+            <span>${t(tab.key, opts.lang)}</span>
+          </a>`
+        }
+        nav += '</div>'
       }
 
       // Channel submenu: show active channels under "Canales" when it's active
@@ -453,12 +479,10 @@ function renderSidebar(opts: PageOptions): string {
           nav += '<div class="sidebar-submenu">'
           for (const ch of channels) {
             const chActive = opts.channelSettingsId === ch.id
-            const statusClass = ch.status === 'connected' ? 'connected' : ch.status === 'disconnected' ? 'disconnected' : 'inactive'
             const chIcon = ICON_OVERRIDES[ch.id] || ICONS.fallback
             nav += `<a href="/console/channels/${ch.id}?lang=${opts.lang}" class="sidebar-submenu-item ${chActive ? 'active' : ''}">
               <span class="nav-icon-sm">${chIcon}</span>
               <span>${ch.name}</span>
-              <span class="sidebar-status-dot ${statusClass}"></span>
             </a>`
           }
           // ACK Messages — last item in channels submenu

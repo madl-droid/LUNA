@@ -968,6 +968,30 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       if (section === 'contacts' && !contactsSubpage) {
         contactsSubpage = 'config'
       }
+      // Nested agente: /console/agente/{subpage} → render agente section with subpage
+      let agenteSubpage: string | null = null
+      const agenteMatch = section.match(/^agente\/(.+)$/)
+      if (agenteMatch?.[1]) {
+        agenteSubpage = agenteMatch[1]
+        section = 'agente'
+      }
+      // /console/agente without subpage → default to knowledge
+      if (section === 'agente' && !agenteSubpage) {
+        agenteSubpage = 'knowledge'
+      }
+
+      // Redirect old section IDs to unified agente page
+      const agenteRedirects: Record<string, string> = {
+        llm: 'advanced', pipeline: 'advanced', infra: 'advanced',
+        knowledge: 'knowledge', memory: 'memory', prompts: 'identity',
+      }
+      if (agenteRedirects[section]) {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/agente/${agenteRedirects[section]}?lang=${lang}` })
+        res.end()
+        return true
+      }
+
       // Redirect old /console/users to /console/contacts
       if (section === 'users') {
         const lang = detectLang(req)
@@ -1042,6 +1066,38 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             sectionData.contactsSubpage = contactsSubpage ?? undefined
           }
         } catch { /* module not available */ }
+      }
+
+      // Agente unified page: render sub-page content
+      if (section === 'agente' && agenteSubpage) {
+        sectionData.agenteSubpage = agenteSubpage
+        // Map sub-pages to their actual section renderers
+        if (agenteSubpage === 'advanced') {
+          // Combine LLM + Pipeline + Engine + Infra with dividers
+          const llmHtml = renderSection('llm', sectionData) || ''
+          const pipelineHtml = renderSection('pipeline', sectionData) || ''
+          const engineMod = data.moduleStates.find(m => m.name === 'engine')
+          const engineHtml = engineMod?.active && engineMod.console?.fields?.length
+            ? renderModulePanels([engineMod], data.config, lang, 'engine')
+            : ''
+          const infraHtml = renderSection('infra', sectionData) || ''
+          sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml
+        } else if (agenteSubpage === 'knowledge') {
+          const knowledgeMod = data.moduleStates.find(m => m.name === 'knowledge')
+          sectionData.agenteContent = knowledgeMod?.active && knowledgeMod.console?.fields?.length
+            ? renderModulePanels([knowledgeMod], data.config, lang, 'knowledge')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'memory') {
+          const memoryMod = data.moduleStates.find(m => m.name === 'memory')
+          sectionData.agenteContent = memoryMod?.active && memoryMod.console?.fields?.length
+            ? renderModulePanels([memoryMod], data.config, lang, 'memory')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'identity') {
+          const promptsMod = data.moduleStates.find(m => m.name === 'prompts')
+          sectionData.agenteContent = promptsMod?.active && promptsMod.console?.fields?.length
+            ? renderModulePanels([promptsMod], data.config, lang, 'prompts')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
+        }
       }
 
       // Channel settings pages: use the 2-column channel settings renderer
@@ -1143,6 +1199,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
+        agenteSubpage: agenteSubpage ?? undefined,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)

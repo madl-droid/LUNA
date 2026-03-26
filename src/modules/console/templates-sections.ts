@@ -17,6 +17,8 @@ export interface SectionData {
   scheduledTasksHtml?: string
   leadScoringHtml?: string
   contactsSubpage?: string
+  agenteSubpage?: string
+  agenteContent?: string
   usersData?: {
     configs: Array<{
       listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
@@ -792,17 +794,17 @@ export function renderChannelsSection(data: SectionData): string {
 
 /** Old section IDs that redirect to unified pages */
 export const SECTION_REDIRECTS: Record<string, string> = {
-  'apikeys': 'llm',
-  'models': 'llm',
-  'llm-limits': 'llm',
-  'llm-cb': 'llm',
-  'followup': 'pipeline',
-  'naturalidad': 'pipeline',
-  'db': 'infra',
+  'apikeys': 'agente/advanced',
+  'models': 'agente/advanced',
+  'llm-limits': 'agente/advanced',
+  'llm-cb': 'agente/advanced',
+  'followup': 'agente/advanced',
+  'naturalidad': 'agente/advanced',
+  'db': 'agente/advanced',
+  'redis': 'agente/advanced',
   // Old channel direct URLs → nested under channels
   'whatsapp': 'channels/whatsapp',
   'email': 'channels/gmail',
-  'redis': 'infra',
 }
 
 export function renderSection(section: string, data: SectionData): string | null {
@@ -817,6 +819,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
     case 'contacts': return renderUsersSection(data)
+    case 'agente': return data.agenteContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
     case 'modules': return renderModulesSection(data)
     case 'infra': return renderInfraUnifiedSection(data)
     case 'google-apps': return renderGoogleAppsSection(data)
