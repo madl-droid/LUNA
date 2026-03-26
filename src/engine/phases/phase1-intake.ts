@@ -174,6 +174,7 @@ export async function phase1Intake(
     normalizedText,
     messageType,
     attachmentMeta,
+    assignmentRules: null, // populated below for leads/unregistered
     attachmentContext: null, // populated by Phase 3 process_attachment steps
     responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
@@ -260,6 +261,7 @@ const DEFAULT_LEAD_PERMISSIONS: UserPermissions = {
   skills: ['respond', 'schedule'],
   subagents: false,
   canReceiveProactive: true,
+  knowledgeCategories: [],
 }
 
 /**

@@ -19,6 +19,7 @@ const EMPTY_PERMISSIONS: UserPermissions = {
   skills: [],
   subagents: false,
   allAccess: false,
+  knowledgeCategories: [],
 }
 
 /**
@@ -40,15 +41,17 @@ export async function getUserPermissions(userType: UserType): Promise<UserPermis
     return { ...EMPTY_PERMISSIONS }
   }
 
-  // Admin always allAccess regardless of stored config
-  if (userType === 'admin') {
-    return {
-      ...config.permissions,
-      allAccess: true,
-    }
+  const perms = {
+    ...config.permissions,
+    knowledgeCategories: config.knowledgeCategories ?? [],
   }
 
-  return config.permissions
+  // Admin always allAccess regardless of stored config
+  if (userType === 'admin') {
+    perms.allAccess = true
+  }
+
+  return perms
 }
 
 /**
