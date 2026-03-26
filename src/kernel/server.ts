@@ -9,6 +9,8 @@ import type { Registry } from './registry.js'
 import type { ApiRoute } from './types.js'
 import { getSessionToken, validateSession } from './setup/auth.js'
 import { createLoginHandler } from './setup/login.js'
+import { isSetupCompleted } from './setup/detect.js'
+import { createSetupHandler } from './setup/handler.js'
 
 const logger = pino({ name: 'kernel:server' })
 
@@ -27,6 +29,7 @@ export class Server {
   private registry: Registry
   private upgradeHandlers: Array<{ pathPrefix: string; handler: UpgradeHandler }> = []
   private upgradeAttached = false
+  private setupHandler: ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>) | null = null
 
   constructor(registry: Registry) {
     this.registry = registry
@@ -67,6 +70,18 @@ export class Server {
     this.httpServer = http.createServer(async (req, res) => {
       const url = req.url ?? '/'
       const method = req.method ?? 'GET'
+
+      // ─── Setup wizard (factory reset) ───
+      if (url.startsWith('/setup') && this.setupHandler) {
+        try {
+          await this.setupHandler(req, res)
+        } catch (err) {
+          logger.error({ err, url }, 'Setup handler error')
+          res.writeHead(500, { 'Content-Type': 'text/plain' })
+          res.end('Internal server error')
+        }
+        return
+      }
 
       // Health check — always available
       if (url === '/health' && method === 'GET') {
@@ -184,6 +199,27 @@ export class Server {
 
   getHttpServer(): http.Server | null {
     return this.httpServer
+  }
+
+  /** Activate the setup wizard handler (factory reset scenario). */
+  activateSetupWizard(): void {
+    if (this.setupHandler) return // already active
+    const db = this.registry.getDb()
+    const redis = this.registry.getRedis()
+    this.setupHandler = createSetupHandler(db, redis, () => {
+      // Setup completed — deactivate wizard, redirect will go to /console/login
+      this.setupHandler = null
+      logger.info('Setup wizard completed (factory reset) — wizard handler deactivated')
+    })
+    logger.info('Setup wizard activated (factory reset)')
+  }
+
+  /** Check if setup wizard should be active and activate it if needed. */
+  async checkSetupWizard(): Promise<void> {
+    const completed = await isSetupCompleted(this.registry.getDb())
+    if (!completed) {
+      this.activateSetupWizard()
+    }
   }
 
   private attachUpgradeHandlers(): void {

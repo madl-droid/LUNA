@@ -1060,13 +1060,17 @@
   var confirmCallback = null
   var confirmWord = ''
 
+  var confirmIsPassword = false
+
   function openConfirmModal(opts) {
     if (!confirmModal) return
+    confirmIsPassword = !!opts.passwordMode
     confirmWord = opts.word || 'BORRAR'
     confirmTitle.textContent = opts.title || ''
     confirmDesc.textContent = opts.desc || ''
     confirmInput.setAttribute('placeholder', opts.placeholder || '')
     confirmInput.value = ''
+    confirmInput.type = confirmIsPassword ? 'password' : 'text'
     confirmBtn.disabled = true
     confirmCallback = opts.onConfirm || null
     confirmModal.style.display = ''
@@ -1076,12 +1080,15 @@
   function closeConfirmModal() {
     if (confirmModal) confirmModal.style.display = 'none'
     confirmCallback = null
-    if (confirmInput) confirmInput.value = ''
+    if (confirmInput) { confirmInput.value = ''; confirmInput.type = 'text' }
+    confirmIsPassword = false
   }
 
   if (confirmInput) {
     confirmInput.addEventListener('input', function () {
-      confirmBtn.disabled = confirmInput.value.trim() !== confirmWord
+      confirmBtn.disabled = confirmIsPassword
+        ? confirmInput.value.length === 0
+        : confirmInput.value.trim() !== confirmWord
     })
     confirmInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !confirmBtn.disabled && confirmCallback) {
@@ -1139,10 +1146,42 @@
     dlang === 'es' ? 'Se borrarán mensajes, sesiones, contactos y memoria. Se conservan configuración y usuarios admin.' : 'Messages, sessions, contacts and memory will be deleted. Config and admin users are preserved.',
     dlang === 'es' ? 'Memoria limpiada' : 'Memory cleared')
 
-  debugDestructiveAction('btn-factory-reset', '/console/api/console/factory-reset',
-    dlang === 'es' ? '⚠️ Ajustes de fábrica' : '⚠️ Factory reset',
-    dlang === 'es' ? 'Se borrará TODA la configuración y memoria. Solo se conservan los usuarios admin. Esta acción NO se puede deshacer.' : 'ALL configuration and memory will be deleted. Only admin users are preserved. This action CANNOT be undone.',
-    dlang === 'es' ? 'Ajustes de fábrica aplicados' : 'Factory reset applied')
+  // Factory reset: password-protected, triggers wizard with prefilled values
+  ;(function () {
+    var btn = document.getElementById('btn-factory-reset')
+    if (!btn) return
+    btn.addEventListener('click', function () {
+      openConfirmModal({
+        title: dlang === 'es' ? '⚠️ Reset de fábrica' : '⚠️ Factory reset',
+        desc: dlang === 'es'
+          ? 'Se reiniciará el wizard de instalación con los valores actuales precargados. Ingresa tu contraseña de admin para confirmar.'
+          : 'The installation wizard will restart with current values preloaded. Enter your admin password to confirm.',
+        passwordMode: true,
+        placeholder: dlang === 'es' ? 'Contraseña de admin' : 'Admin password',
+        onConfirm: function () {
+          var pw = confirmInput.value
+          fetch('/console/api/console/factory-reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw })
+          })
+            .then(function (r) {
+              if (r.status === 403) { showToast(dlang === 'es' ? 'Contraseña incorrecta' : 'Invalid password', 'error'); return }
+              if (!r.ok) throw new Error('fail')
+              return r.json()
+            })
+            .then(function (data) {
+              if (!data) return
+              showToast(dlang === 'es' ? 'Redirigiendo al wizard...' : 'Redirecting to wizard...', 'success')
+              var setupCookie = 'luna_setup_token=' + data.prefillToken + '; path=/'
+              document.cookie = setupCookie
+              setTimeout(function () { window.location.href = '/setup' }, 500)
+            })
+            .catch(function () { showToast('Error', 'error') })
+        }
+      })
+    })
+  })()
 
   // === Language submenu (accordion in user dropdown) ===
   var langTrigger = document.getElementById('lang-submenu-trigger')
