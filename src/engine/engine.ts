@@ -58,6 +58,7 @@ export function initEngine(reg: Registry): void {
       channelName: payload.channelName as IncomingMessage['channelName'],
       channelMessageId: payload.channelMessageId,
       from: payload.from,
+      resolvedPhone: payload.resolvedPhone,
       timestamp: payload.timestamp,
       content: {
         type: payload.content.type as IncomingMessage['content']['type'],
