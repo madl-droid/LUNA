@@ -3,7 +3,7 @@
 Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2G) o criterios custom. Extraccion natural por LLM, scoring por codigo, UI personalizable en console.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, console (fields + apiRoutes), servicios, campaign init, webhook init
+- `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios, campaign init
 - `types.ts` — FrameworkType, FrameworkStage, QualifyingConfig, ScoreResult, AutoSignalDefinition, LeadSummary (con campaña)
 - `frameworks.ts` — presets CHAMP, SPIN, CHAMP+Gov con stages, criterios y disqualify reasons
 - `scoring-engine.ts` — motor de scoring: calcula puntos por stage, transiciones, merge de datos, getCurrentStage()
@@ -14,12 +14,11 @@ Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2
 - `campaign-types.ts` — tipos: CampaignRecord, CampaignTag, CampaignMatchResult, CampaignStatRow
 - `campaign-queries.ts` — CRUD campañas, tags, contact-campaign history, stats (entries+conversiones)
 - `campaign-matcher.ts` — fuse.js fuzzy matching con filtros de canal, ronda, y retry
-- `webhook-handler.ts` — webhook de registro de leads: auth, validacion, upsert contacto, atribución campaña, outbound
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true
 - depends: `['tools']`
-- configSchema: LEAD_SCORING_CONFIG_PATH, LEAD_WEBHOOK_ENABLED, LEAD_WEBHOOK_TOKEN, LEAD_WEBHOOK_PREFERRED_CHANNEL
+- configSchema: LEAD_SCORING_CONFIG_PATH (default: `instance/qualifying.json`)
 
 ## Servicios registrados
 - `lead-scoring:config` — instancia de ConfigStore
@@ -69,11 +68,6 @@ Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2
 - **Stats:**
 - `GET /campaign-stats` — entries + conversiones por campaña + "sin campaña"
 - `GET /contact-campaigns?contactId=X` — historial de campañas de un contacto
-- **Webhook:**
-- `POST /webhook` — registrar lead externo (auth: Bearer token, body: {email?, phone?, name?, campaign})
-- `GET /webhook-stats` — estadisticas del webhook (éxitos, errores, sin campaña)
-- `GET /webhook-log?limit=50&offset=0` — log de intentos del webhook
-- `POST /webhook-regenerate-token` — regenerar token de autorización
 
 ## Campañas — subsistema de tracking
 - 1 keyword por campaña (frase de matching, puede estar dentro de un párrafo)
@@ -88,26 +82,11 @@ Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2
 - Conversión atribuida a la ÚLTIMA campaña
 - Stats: entries (contactos únicos) + conversiones por campaña + "sin campaña"
 
-## Webhook de registro de leads
-- Endpoint externo: `POST /console/api/lead-scoring/webhook`
-- Auth: `Authorization: Bearer <token>` (token visible en config de la console)
-- Body: `{ email?, phone?, campaign, name? }` — campaign es keyword, visible_id o UUID
-- Validación: al menos email o phone; campaign obligatorio (si no match → registra sin campaña + warning)
-- Crea o encuentra contacto existente (unificación cross-channel por email/phone)
-- Marca metadata `source: "webhook-outbound"` automáticamente
-- Atribuye campaña si keyword válida, sino cuenta como "sin campaña"
-- Dispara `message:send` en el canal preferido (configurable: auto/whatsapp/email/google-chat)
-- Canal auto: prefiere WhatsApp si hay phone, luego email si hay email
-- Token auto-generado al iniciar módulo, regenerable desde console
-- Config en console.fields: toggle, token (secret), canal preferido
-- Log de intentos en tabla `webhook_lead_log`
-
 ## Tablas DB del subsistema de campañas
 - `campaigns` — tabla base (existente) + columnas nuevas: visible_id, match_max_rounds, allowed_channels, prompt_context, updated_at
 - `campaign_tags` — tags de plataforma y fuente (id, name, tag_type, color)
 - `campaign_tag_assignments` — join M:N (campaign_id, tag_id)
 - `contact_campaigns` — historial contact↔campaign (contact_id, campaign_id, session_id, channel, score, matched_at)
-- `webhook_lead_log` — log de registros via webhook (email, phone, campaign_keyword, contact_id, success, error)
 
 ## Integracion con pipeline
 - Phase 1: `detectCampaign()` llama `lead-scoring:match-campaign` (después de cargar sesión)

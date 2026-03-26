@@ -183,7 +183,4 @@ export interface LeadDetail extends LeadSummary {
 
 export interface LeadScoringConfig {
   LEAD_SCORING_CONFIG_PATH: string
-  LEAD_WEBHOOK_ENABLED: boolean
-  LEAD_WEBHOOK_TOKEN: string
-  LEAD_WEBHOOK_PREFERRED_CHANNEL: string
 }

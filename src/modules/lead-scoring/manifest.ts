@@ -11,7 +11,6 @@ import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
-import { boolEnv } from '../../kernel/config-helpers.js'
 import type { LeadScoringConfig, QualifyingConfig, QualificationStatus, FrameworkType } from './types.js'
 import { FRAMEWORK_PRESETS } from './frameworks.js'
 import { ConfigStore } from './config-store.js'
@@ -21,16 +20,6 @@ import { calculateScore, resolveTransition } from './scoring-engine.js'
 import { CampaignQueries } from './campaign-queries.js'
 import { CampaignMatcher } from './campaign-matcher.js'
 import type { CampaignMatchResult } from './campaign-types.js'
-import {
-  registerLead,
-  loadWebhookConfig,
-  ensureToken,
-  ensureWebhookTables,
-  extractBearerToken,
-  generateToken,
-  logWebhookAttempt,
-} from './webhook-handler.js'
-import type { WebhookRegisterBody } from './webhook-handler.js'
 
 const logger = pino({ name: 'lead-scoring' })
 
@@ -490,198 +479,6 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // ─── Webhook endpoints ───
-
-    // POST /console/api/lead-scoring/webhook
-    // External endpoint — auth via Bearer token, NOT console session
-    {
-      method: 'POST',
-      path: 'webhook',
-      handler: async (req, res) => {
-        const db = getQueries() && campaignQueries ? campaignQueries : null
-        if (!db) {
-          jsonResponse(res, 503, { error: 'Lead scoring not initialized' })
-          return
-        }
-        try {
-          const pool = getCampaignQueries() // validates init
-          void pool
-
-          // Load webhook config
-          const registryRef = manifest._registry
-          if (!registryRef) {
-            jsonResponse(res, 503, { error: 'Registry not available' })
-            return
-          }
-          const dbPool = registryRef.getDb()
-          const webhookConfig = await loadWebhookConfig(dbPool)
-
-          if (!webhookConfig.enabled) {
-            jsonResponse(res, 403, { error: 'Webhook deshabilitado' })
-            return
-          }
-
-          // Auth
-          const token = extractBearerToken(req.headers['authorization'])
-          if (!token || token !== webhookConfig.token) {
-            jsonResponse(res, 401, { error: 'Token de autorización inválido' })
-            return
-          }
-
-          // Parse body
-          const body = await parseBody<WebhookRegisterBody>(req)
-          if (!body.campaign) {
-            jsonResponse(res, 400, { error: 'Campo "campaign" es obligatorio (keyword o ID de campaña)' })
-            return
-          }
-          if (!body.email && !body.phone) {
-            jsonResponse(res, 400, { error: 'Se requiere al menos "email" o "phone"' })
-            return
-          }
-
-          const result = await registerLead(body, dbPool, registryRef, campaignQueries!)
-
-          // Log failed campaign lookup but still return success
-          if (result.warning) {
-            await logWebhookAttempt(dbPool, {
-              email: body.email,
-              phone: body.phone,
-              displayName: body.name,
-              campaignKeyword: body.campaign,
-              campaignId: null,
-              contactId: result.contactId,
-              channelUsed: result.channel,
-              success: true,
-              errorMessage: result.warning,
-            })
-          }
-
-          jsonResponse(res, 201, result)
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err)
-          logger.error({ err }, 'Webhook register failed')
-
-          // Log the error
-          try {
-            const registryRef = manifest._registry
-            if (registryRef) {
-              const dbPool = registryRef.getDb()
-              const body = { email: undefined, phone: undefined, name: undefined, campaign: '' }
-              await logWebhookAttempt(dbPool, {
-                campaignKeyword: body.campaign || undefined,
-                campaignId: null,
-                contactId: null,
-                channelUsed: null,
-                success: false,
-                errorMessage: errMsg,
-              })
-            }
-          } catch { /* logging failed, non-critical */ }
-
-          jsonResponse(res, 400, { error: errMsg })
-        }
-      },
-    },
-
-    // GET /console/api/lead-scoring/webhook-stats
-    {
-      method: 'GET',
-      path: 'webhook-stats',
-      handler: async (_req, res) => {
-        try {
-          const registryRef = manifest._registry
-          if (!registryRef) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-          const dbPool = registryRef.getDb()
-
-          const result = await dbPool.query(`
-            SELECT
-              COUNT(*) FILTER (WHERE success = true) AS total_success,
-              COUNT(*) FILTER (WHERE success = false) AS total_errors,
-              COUNT(*) FILTER (WHERE campaign_id IS NULL AND success = true) AS no_campaign,
-              COUNT(*) AS total,
-              MIN(created_at) AS first_at,
-              MAX(created_at) AS last_at
-            FROM webhook_lead_log
-          `)
-          const row = result.rows[0]
-          jsonResponse(res, 200, {
-            totalSuccess: parseInt(row?.total_success ?? '0', 10),
-            totalErrors: parseInt(row?.total_errors ?? '0', 10),
-            noCampaign: parseInt(row?.no_campaign ?? '0', 10),
-            total: parseInt(row?.total ?? '0', 10),
-            firstAt: row?.first_at?.toISOString() ?? null,
-            lastAt: row?.last_at?.toISOString() ?? null,
-          })
-        } catch (err) {
-          jsonResponse(res, 500, { error: String(err) })
-        }
-      },
-    },
-
-    // GET /console/api/lead-scoring/webhook-log?limit=50&offset=0
-    {
-      method: 'GET',
-      path: 'webhook-log',
-      handler: async (req, res) => {
-        try {
-          const registryRef = manifest._registry
-          if (!registryRef) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-          const dbPool = registryRef.getDb()
-          const q = parseQuery(req)
-          const limit = Math.min(parseInt(q.get('limit') ?? '50', 10), 200)
-          const offset = parseInt(q.get('offset') ?? '0', 10)
-
-          const result = await dbPool.query(
-            `SELECT id, email, phone, display_name, campaign_keyword, campaign_id,
-                    contact_id, channel_used, success, error_message, created_at
-             FROM webhook_lead_log
-             ORDER BY created_at DESC
-             LIMIT $1 OFFSET $2`,
-            [limit, offset],
-          )
-          const countResult = await dbPool.query(`SELECT COUNT(*)::int AS total FROM webhook_lead_log`)
-
-          jsonResponse(res, 200, {
-            entries: result.rows.map((r: Record<string, unknown>) => ({
-              id: r.id,
-              email: r.email,
-              phone: r.phone,
-              displayName: r.display_name,
-              campaignKeyword: r.campaign_keyword,
-              campaignId: r.campaign_id,
-              contactId: r.contact_id,
-              channelUsed: r.channel_used,
-              success: r.success,
-              errorMessage: r.error_message,
-              createdAt: (r.created_at as Date)?.toISOString() ?? '',
-            })),
-            total: countResult.rows[0]?.total ?? 0,
-          })
-        } catch (err) {
-          jsonResponse(res, 500, { error: String(err) })
-        }
-      },
-    },
-
-    // POST /console/api/lead-scoring/webhook-regenerate-token
-    {
-      method: 'POST',
-      path: 'webhook-regenerate-token',
-      handler: async (_req, res) => {
-        try {
-          const registryRef = manifest._registry
-          if (!registryRef) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-          const dbPool = registryRef.getDb()
-          const newToken = generateToken()
-          const configStoreMod = await import('../../kernel/config-store.js')
-          await configStoreMod.set(dbPool, 'LEAD_WEBHOOK_TOKEN', newToken, true)
-          jsonResponse(res, 200, { ok: true, token: newToken })
-        } catch (err) {
-          jsonResponse(res, 500, { error: String(err) })
-        }
-      },
-    },
-
     // ─── UI endpoint ───
 
     // GET /console/api/lead-scoring/ui
@@ -732,8 +529,7 @@ async function reloadCampaignMatcher(): Promise<void> {
 // Manifest
 // ═══════════════════════════════════════════
 
-const manifest: ModuleManifest & { _registry: Registry | null } = {
-  _registry: null,
+const manifest: ModuleManifest = {
   name: 'lead-scoring',
   version: '1.0.0',
   description: {
@@ -747,9 +543,6 @@ const manifest: ModuleManifest & { _registry: Registry | null } = {
 
   configSchema: z.object({
     LEAD_SCORING_CONFIG_PATH: z.string().default('instance/qualifying.json'),
-    LEAD_WEBHOOK_ENABLED: boolEnv(false),
-    LEAD_WEBHOOK_TOKEN: z.string().default(''),
-    LEAD_WEBHOOK_PREFERRED_CHANNEL: z.string().default('auto'),
   }),
 
   console: {
@@ -761,49 +554,10 @@ const manifest: ModuleManifest & { _registry: Registry | null } = {
     order: 15,
     group: 'leads',
     icon: '&#128202;',
-    fields: [
-      // ── Webhook de registro de leads ──
-      { key: '_div_webhook', type: 'divider', label: { es: 'Webhook de Registro de Leads', en: 'Lead Registration Webhook' } },
-      {
-        key: 'LEAD_WEBHOOK_ENABLED',
-        type: 'boolean',
-        label: { es: 'Webhook habilitado', en: 'Webhook enabled' },
-        description: {
-          es: 'Activa el endpoint para registrar leads desde sistemas externos.',
-          en: 'Enable the endpoint to register leads from external systems.',
-        },
-        icon: '&#128279;',
-      },
-      {
-        key: 'LEAD_WEBHOOK_TOKEN',
-        type: 'secret',
-        label: { es: 'Token de autorización', en: 'Authorization token' },
-        info: {
-          es: 'Token Bearer para autenticar llamadas al webhook. Se auto-genera al activar el módulo. Usa el botón de regenerar si necesitas uno nuevo.',
-          en: 'Bearer token to authenticate webhook calls. Auto-generated on module activation. Use the regenerate button if you need a new one.',
-        },
-      },
-      {
-        key: 'LEAD_WEBHOOK_PREFERRED_CHANNEL',
-        type: 'select',
-        label: { es: 'Canal preferido de contacto', en: 'Preferred contact channel' },
-        info: {
-          es: 'Canal por el que el agente contactará al lead. "Auto" elige según los datos disponibles y canales activos.',
-          en: 'Channel the agent will use to contact the lead. "Auto" chooses based on available data and active channels.',
-        },
-        options: [
-          { value: 'auto', label: 'Auto (según datos)' },
-          { value: 'whatsapp', label: 'WhatsApp' },
-          { value: 'email', label: 'Email (Gmail)' },
-          { value: 'google-chat', label: 'Google Chat' },
-        ],
-      },
-    ],
     apiRoutes: createApiRoutes(),
   },
 
   async init(registry: Registry) {
-    manifest._registry = registry
     const config = registry.getConfig<LeadScoringConfig>('lead-scoring')
     const db = registry.getDb()
 
@@ -817,10 +571,6 @@ const manifest: ModuleManifest & { _registry: Registry | null } = {
     await campaignQueries.ensureTables()
     campaignMatcher = new CampaignMatcher()
     await reloadCampaignMatcher()
-
-    // Initialize webhook subsystem
-    await ensureWebhookTables(db)
-    await ensureToken(db)
 
     // Register services
     registry.provide('lead-scoring:config', configStore)
@@ -885,7 +635,6 @@ const manifest: ModuleManifest & { _registry: Registry | null } = {
   },
 
   async stop() {
-    manifest._registry = null
     configStore = null
     leadQueries = null
     campaignQueries = null
