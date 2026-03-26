@@ -26,6 +26,8 @@ import { normalizeText, detectMessageType } from '../utils/normalizer.js'
 import { detectInputInjection } from '../utils/injection-detector.js'
 import { searchKnowledge } from '../utils/rag-local.js'
 import { classifyAttachments } from '../attachments/classifier.js'
+import { searchFreshdeskIndex } from '../../tools/freshdesk/freshdesk-rag.js'
+import type { FreshdeskMatch } from '../../tools/freshdesk/types.js'
 
 const logger = pino({ name: 'engine:phase1' })
 
@@ -79,6 +81,11 @@ export async function phase1Intake(
   // Knowledge v2: try knowledge:manager.getInjection() first, fallback to rag-local
   const knowledgeManagerSvc = registry.getOptional<{ getInjection(): Promise<KnowledgeInjection> }>('knowledge:manager')
 
+  // Freshdesk KB metadata search (fuse.js over cached index) — runs in parallel
+  const freshdeskPromise = normalizedText
+    ? searchFreshdeskIndex(redis, normalizedText, 5).catch((): FreshdeskMatch[] => [])
+    : Promise.resolve([] as FreshdeskMatch[])
+
   const [
     contactResult,
     knowledgeResult,
@@ -101,6 +108,7 @@ export async function phase1Intake(
   const knowledgeMatches = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
   let knowledgeInjection = knowledgeInjectionResult.status === 'fulfilled' ? knowledgeInjectionResult.value : null
   const sheetsData = sheetsCacheResult.status === 'fulfilled' ? sheetsCacheResult.value : null
+  const freshdeskMatches = await freshdeskPromise
 
   // Filter knowledge categories by user permissions (empty = all access)
   if (knowledgeInjection && userPermissions.knowledgeCategories.length > 0) {
@@ -192,6 +200,7 @@ export async function phase1Intake(
     campaign: detectedCampaign,
     knowledgeMatches,
     knowledgeInjection,
+    freshdeskMatches,
     history,
     contactMemory,
     pendingCommitments,
