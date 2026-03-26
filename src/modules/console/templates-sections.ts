@@ -961,7 +961,7 @@ function renderUsersSection(data: SectionData): string {
     // (selection bar moved to footer row with add button)
 
     if (users.length > 0) {
-      html += `<table class="users-table" id="tbl-${esc(lt)}"><thead><tr class="users-table-head">
+      html += `<div class="users-table-scroll"><table class="users-table" id="tbl-${esc(lt)}"><thead><tr class="users-table-head">
         <th><input type="checkbox" class="user-cb" id="cb-all-${esc(lt)}" title="${lang === 'es' ? 'Seleccionar todos' : 'Select all'}" onclick="userToggleAll('${esc(lt)}')"></th>
         <th>ID</th>
         <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
@@ -1001,7 +1001,7 @@ function renderUsersSection(data: SectionData): string {
 
         // (contacts editing moved to modal)
       }
-      html += `</tbody></table>`
+      html += `</tbody></table></div>`
     } else {
       html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
     }
@@ -1372,131 +1372,118 @@ function renderUsersSection(data: SectionData): string {
   const SYSTEM_TYPES = ['admin', 'lead', 'coworker', 'partners']
   const activeCount = configs.filter(c => c.isEnabled).length
 
-  // Section A: List Cards
-  html += `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
-    <span class="panel-title">${lang === 'es' ? 'Bases de contactos' : 'Contact lists'} <span class="panel-badge badge-soon">${configs.length}</span></span>
-    <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
+  // Section A: Base Cards Grid
+  const SVG_CONTACTS_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+  const SVG_EYE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
 
+  html += `<div class="cb-grid">`
   for (const cfg of configs) {
     const lt = cfg.listType
     const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
     const count = counts[lt] ?? 0
     const enabledOrig = cfg.isEnabled ? 'true' : 'false'
+    const isPartners = lt === 'partners'
+    const inactiveClass = !cfg.isEnabled ? ' ch-card-inactive' : ''
+    const typeLabel = isSys ? (lang === 'es' ? 'Sistema' : 'System') : (lang === 'es' ? 'Custom' : 'Custom')
+    const countLabel = lang === 'es' ? 'contactos' : 'contacts'
 
-    html += `<div class="chs-toggle-row" style="margin-bottom:12px">
-      <div style="flex:1">
-        <div style="font-weight:600;font-size:14px;color:var(--on-surface)">${esc(cfg.displayName)}
-          ${isSys ? `<span class="user-source-badge" style="margin-left:6px">${lang === 'es' ? 'Sistema' : 'System'}</span>` : ''}
-          <span class="panel-badge badge-soon" style="margin-left:6px">${count}</span>
+    html += `<div class="ch-card cb-card${inactiveClass}" data-base-id="${esc(lt)}" data-enabled="${cfg.isEnabled}" ${!isPartners ? `onclick="if(!event.target.closest('.toggle,.ch-btn-action,a'))toggleBaseConfigClick('${esc(lt)}')" style="cursor:pointer"` : ''}>
+      <div class="ch-card-top">
+        <div class="ch-card-icon" style="border-color:var(--primary);color:var(--primary);background:rgba(255,94,14,0.08)">
+          ${SVG_CONTACTS_ICON}
         </div>
-        ${cfg.description ? `<div style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">${esc(cfg.description)}</div>` : ''}
+        <div class="ch-card-title-area">
+          <div class="ch-card-name">${esc(cfg.displayName)}</div>
+          <div class="ch-card-type">${typeLabel}</div>
+        </div>
+        ${lt === 'admin' ? '' : `<label class="toggle toggle-sm" onclick="event.stopPropagation()">
+          <input type="checkbox" ${cfg.isEnabled ? 'checked' : ''} ${isPartners ? 'disabled' : ''}
+            data-list-toggle="${esc(lt)}" data-list-name="${esc(cfg.displayName)}"
+            onchange="toggleBaseList(this)">
+          <span class="toggle-slider"></span>
+        </label>`}
       </div>
-      <label class="toggle toggle-sm">
-        <input type="checkbox" class="perm-cb" ${cfg.isEnabled ? 'checked' : ''} data-hidden="list_enabled_${esc(lt)}">
-        <span class="toggle-slider"></span>
-      </label>
-      <input type="hidden" name="list_enabled_${esc(lt)}" value="${enabledOrig}" data-original="${enabledOrig}">
+      <div class="ch-card-metrics ch-metrics-1">
+        <div class="ch-metric" style="border:none">
+          <span class="ch-metric-label">${countLabel}</span>
+          <span class="ch-metric-value">${count}</span>
+        </div>
+      </div>
+      <div class="ch-card-footer">${isPartners
+        ? `<span class="panel-badge badge-soon">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>`
+        : `<button type="button" class="ch-btn-action ch-btn-gear" onclick="event.stopPropagation();toggleBaseConfigClick('${esc(lt)}')">${GEAR_SVG} ${lang === 'es' ? 'Configurar' : 'Configure'}</button>
+           <span class="ch-footer-spacer"></span>
+           <a href="/console/contacts/${esc(lt)}?lang=${lang}" class="ch-btn-action ch-btn-connect" onclick="event.stopPropagation()">${SVG_EYE} ${lang === 'es' ? 'Ver' : 'View'}</a>`
+      }</div>
     </div>`
   }
+  html += `</div>`
 
-  // Create custom list button
-  if (activeCount < 5) {
-    html += `<details class="user-add-form" style="margin-top:8px">
-      <summary class="act-btn act-btn-add">${SVG_PLUS} ${lang === 'es' ? 'Crear lista personalizada' : 'Create custom list'}</summary>
-      <form method="POST" action="/console/users/create-list" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
-        <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
-        <label class="wizard-label">${lang === 'es' ? 'Nombre de la lista' : 'List name'}</label>
-        <input type="text" class="wizard-input" name="listName" required placeholder="${lang === 'es' ? 'Ej: Proveedores' : 'E.g. Vendors'}">
-        <label class="wizard-label">${lang === 'es' ? 'Descripcion (80-200 caracteres)' : 'Description (80-200 chars)'}</label>
-        <textarea class="wizard-input" name="listDescription" required minlength="80" maxlength="200" rows="2" placeholder="${lang === 'es' ? 'Describe el proposito de esta lista...' : 'Describe this list purpose...'}"></textarea>
-        <div><button type="submit" class="act-btn act-btn-cta">${lang === 'es' ? 'Crear' : 'Create'}</button></div>
-      </form>
-    </details>`
+  // ── Tip box: shown when no base is selected for config ──
+  const SVG_CONFIG_TIP = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+
+  html += `<div class="cb-config-tip" id="cb-config-tip">
+    ${SVG_CONFIG_TIP}
+    <div style="margin-top:8px;font-size:0.95rem">${lang === 'es' ? 'Selecciona una base para configurar' : 'Select a base to configure'}</div>
+  </div>`
+
+  // ── System base explanations ──
+  const BASE_EXPLANATIONS: Record<string, Record<string, string>> = {
+    lead: {
+      es: 'Todos los contactos no registrados cuando la atencion al publico esta abierta. Se registran automaticamente como leads y se califican segun las reglas configuradas.',
+      en: 'All unregistered contacts when public attention is open. They are automatically registered as leads and scored according to configured rules.',
+    },
+    coworker: {
+      es: 'Empleados de la empresa. Se asignan por dominio de correo electronico o manualmente. Los contactos cuyo email coincida con los dominios configurados se asignan automaticamente a esta base.',
+      en: 'Company employees. Assigned by email domain or manually. Contacts whose email matches configured domains are automatically assigned to this base.',
+    },
   }
 
-  html += `</div></div>`
-
-  // Section B: Per-list config panels
+  // ── Per-base config panels (2-column layout, hidden by default) ──
+  // Layout: LEFT = info/rules (narrow, ~1 card), RIGHT = collapsible tabs (wide, ~3 cards)
   for (const cfg of configs) {
     const lt = cfg.listType
+    if (lt === 'partners') continue // Partners = "proximamente"
     const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
     const perms = cfg.permissions
     const isAllTools = perms.tools.includes('*')
 
-    html += `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${esc(cfg.displayName)}: ${lang === 'es' ? 'Acceso y permisos' : 'Access & permissions'}</span>
-      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
+    html += `<div class="cb-config-panel" id="cb-config-${esc(lt)}">
+      <div class="cb-config-layout">`
 
-    // B.1: Module Access (hierarchical: module → tools)
-    html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Acceso a modulos' : 'Module access'}</span></div>`
+    // ══ Column 1 (LEFT, narrow): name, description, assignment rules ══
+    html += `<div><div class="panel"><div class="panel-body">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--on-surface);margin-bottom:4px">${esc(cfg.displayName)}</div>
+      ${cfg.description ? `<div style="font-size:13px;color:var(--on-surface-variant);margin-bottom:12px">${esc(cfg.description)}</div>` : ''}`
 
-    for (const mod of activeModules) {
-      const modLabel = typeof mod.displayName === 'string' ? mod.displayName : (mod.displayName[lang] || mod.displayName['es'] || mod.name)
-      const modToolNames = mod.tools.map(t => t.name)
-      const allModToolsOn = isAllTools || modToolNames.every(tn => perms.tools.includes(tn))
-      const someModToolsOn = !allModToolsOn && modToolNames.some(tn => perms.tools.includes(tn))
-
-      // Module-level toggle
-      const modOrig = allModToolsOn ? 'on' : ''
-      html += `<div class="chs-toggle-row" style="margin-bottom:4px;padding:10px 14px">
-        <span style="font-size:13px;font-weight:600">${esc(modLabel)}</span>
-        <span class="ch-footer-spacer"></span>
-        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
-          ${allModToolsOn ? 'checked' : ''} ${someModToolsOn ? 'indeterminate' : ''}
-          data-hidden="mod_${esc(lt)}_${esc(mod.name)}"
-          onchange="toggleModuleTools('${esc(lt)}','${esc(mod.name)}',this.checked)">
-        <input type="hidden" name="mod_${esc(lt)}_${esc(mod.name)}" value="${modOrig}" data-original="${modOrig}">
-      </div>`
-
-      // Individual tools (indented)
-      html += `<div class="perm-grid" style="padding-left:28px;margin-bottom:8px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
-      for (const tool of mod.tools) {
-        const checked = isAllTools || perms.tools.includes(tool.name)
-        const origVal = checked ? 'on' : ''
-        html += `<label>
-          <input type="checkbox" class="perm-cb tool-cb-${esc(lt)}-${esc(mod.name)}" ${checked ? 'checked' : ''}
-            data-hidden="tool_${esc(lt)}_${esc(tool.name)}">
-          <input type="hidden" name="tool_${esc(lt)}_${esc(tool.name)}" value="${origVal}" data-original="${origVal}">
-          ${esc(tool.displayName || tool.name)}</label>`
-      }
-      html += `</div>`
+    // System-specific explanations
+    const explanation = BASE_EXPLANATIONS[lt]
+    if (explanation) {
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Reglas de asignacion' : 'Assignment rules'}</span></div>
+        <div style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;padding:12px 16px;background:var(--surface-container-low);border-radius:0.5rem;margin-bottom:12px">
+        ${esc(explanation[lang] || explanation['es']!)}</div>`
     }
 
-    // Subagents toggle
-    const subOrig = perms.subagents ? 'on' : ''
-    html += `<div class="chs-toggle-row" style="margin-top:8px;padding:10px 14px">
-      <span style="font-size:13px;font-weight:600">Subagents</span>
-      <span class="ch-footer-spacer"></span>
-      <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
-        ${perms.subagents ? 'checked' : ''} data-hidden="sub_${esc(lt)}">
-      <input type="hidden" name="sub_${esc(lt)}" value="${subOrig}" data-original="${subOrig}">
-    </div>`
-
-    // B.2: Knowledge Categories
-    if (kCats.length > 0) {
-      const allowedCats = cfg.knowledgeCategories ?? []
-      const allCats = allowedCats.length === 0 // empty = all
-      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Acceso a conocimiento' : 'Knowledge access'}</span></div>
-        <div class="perm-grid">`
-      for (const cat of kCats) {
-        const checked = allCats || allowedCats.includes(cat.id)
-        const origVal = checked ? 'on' : ''
-        html += `<label title="${esc(cat.description)}">
-          <input type="checkbox" class="perm-cb" ${checked ? 'checked' : ''} data-hidden="kcat_${esc(lt)}_${esc(cat.id)}">
-          <input type="hidden" name="kcat_${esc(lt)}_${esc(cat.id)}" value="${origVal}" data-original="${origVal}">
-          ${esc(cat.title)}</label>`
-      }
-      html += `</div>`
+    // Coworker: email domain tags input
+    if (lt === 'coworker') {
+      const domainsOrig = '' // TODO: read from cfg when domain field is added to schema
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Dominios de correo' : 'Email domains'}</span></div>
+        <div style="margin-bottom:12px">
+          <div class="tags-container" id="coworker-domains-tags">
+            <input type="text" class="tags-input" id="coworker-domain-input" placeholder="${lang === 'es' ? 'Ej: @miempresa.com + Enter' : 'E.g. @company.com + Enter'}" onkeydown="if(event.key==='Enter'){event.preventDefault();addDomainTag()}">
+          </div>
+          <input type="hidden" name="coworker_domains" value="${esc(domainsOrig)}" data-original="${esc(domainsOrig)}" id="coworker-domains-hidden">
+        </div>`
     }
 
-    // B.3: Assignment Rules (only for custom + partners — NOT admin/lead/coworker)
+    // Assignment rules (custom lists only — not system)
     if (!['admin', 'lead', 'coworker'].includes(lt)) {
       const aEnabled = cfg.assignmentEnabled
       const aPrompt = cfg.assignmentPrompt || ''
       const aOrig = aEnabled ? 'on' : ''
-      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Asignacion automatica' : 'Auto-assignment'}</span></div>
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Reglas de asignacion' : 'Assignment rules'}</span></div>
         <div class="chs-toggle-row" style="padding:10px 14px">
-          <span style="font-size:13px">${lang === 'es' ? 'Activar reglas de asignacion por LLM' : 'Enable LLM assignment rules'}</span>
+          <span style="font-size:13px">${lang === 'es' ? 'Asignacion automatica por LLM' : 'LLM auto-assignment'}</span>
           <span class="ch-footer-spacer"></span>
           <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
             ${aEnabled ? 'checked' : ''} data-hidden="assignment_enabled_${esc(lt)}"
@@ -1510,25 +1497,6 @@ function renderUsersSection(data: SectionData): string {
         </div>`
     }
 
-    // Disable behavior
-    const dBehavior = cfg.disableBehavior || 'leads'
-    const dTarget = cfg.disableTargetList || ''
-    html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Al desactivar esta lista' : 'When disabling this list'}</span></div>
-      <div class="field">
-        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
-        <select name="disable_${esc(lt)}_behavior" data-original="${esc(dBehavior)}" onchange="document.getElementById('disable-target-${esc(lt)}').style.display=this.value==='move'?'grid':'none'">
-          <option value="leads" ${dBehavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Tratar como leads' : 'Treat as leads'}</option>
-          <option value="silence" ${dBehavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Ignorar silenciosamente' : 'Ignore silently'}</option>
-          <option value="move" ${dBehavior === 'move' ? 'selected' : ''}>${lang === 'es' ? 'Mover a otra lista' : 'Move to another list'}</option>
-        </select>
-      </div>
-      <div class="field" id="disable-target-${esc(lt)}" style="display:${dBehavior === 'move' ? 'grid' : 'none'}">
-        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Lista destino' : 'Target list'}</span></div>
-        <select name="disable_${esc(lt)}_target" data-original="${esc(dTarget)}">
-          ${configs.filter(c => c.listType !== lt).map(c => `<option value="${esc(c.listType)}" ${dTarget === c.listType ? 'selected' : ''}>${esc(c.displayName)}</option>`).join('')}
-        </select>
-      </div>`
-
     // Delete button for custom lists
     if (!isSys) {
       html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(0,0,0,0.04)">
@@ -1540,38 +1508,316 @@ function renderUsersSection(data: SectionData): string {
       </div>`
     }
 
-    html += `</div></div>`
+    html += `</div></div></div>` // end left column
+
+    // ══ Column 2 (RIGHT, wide): collapsible tabs — Modules, Subagents, Knowledge ══
+    html += `<div>`
+
+    // Admin = read-only (all access, informational only)
+    const isAdmin = lt === 'admin'
+    const disabledAttr = isAdmin ? ' disabled' : ''
+
+    // Tab 1: Modules
+    html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${lang === 'es' ? 'Modulos' : 'Modules'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
+
+    for (const mod of activeModules) {
+      const modLabel = typeof mod.displayName === 'string' ? mod.displayName : (mod.displayName[lang] || mod.displayName['es'] || mod.name)
+      const modToolNames = mod.tools.map(t => t.name)
+      const allModToolsOn = isAdmin || isAllTools || modToolNames.every(tn => perms.tools.includes(tn))
+      const someModToolsOn = !allModToolsOn && modToolNames.some(tn => perms.tools.includes(tn))
+
+      const modOrig = allModToolsOn ? 'on' : ''
+      html += `<div class="chs-toggle-row" style="margin-bottom:4px;padding:10px 14px">
+        <span style="font-size:13px;font-weight:600">${esc(modLabel)}</span>
+        <span class="ch-footer-spacer"></span>
+        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+          ${allModToolsOn ? 'checked' : ''} ${someModToolsOn ? 'indeterminate' : ''}${disabledAttr}
+          data-hidden="mod_${esc(lt)}_${esc(mod.name)}"
+          onchange="toggleModuleTools('${esc(lt)}','${esc(mod.name)}',this.checked)">
+        <input type="hidden" name="mod_${esc(lt)}_${esc(mod.name)}" value="${modOrig}" data-original="${modOrig}">
+      </div>`
+
+      html += `<div class="perm-grid" style="padding-left:28px;margin-bottom:8px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
+      for (const tool of mod.tools) {
+        const checked = isAdmin || isAllTools || perms.tools.includes(tool.name)
+        const origVal = checked ? 'on' : ''
+        const toolDesc = tool.description || ''
+        const infoHtml = toolDesc ? `<span class="info-wrap"><span class="info-btn" tabindex="0">i</span><span class="info-tooltip">${esc(toolDesc)}</span></span>` : ''
+        html += `<label>
+          <input type="checkbox" class="perm-cb tool-cb-${esc(lt)}-${esc(mod.name)}" ${checked ? 'checked' : ''}${disabledAttr}
+            data-hidden="tool_${esc(lt)}_${esc(tool.name)}">
+          <input type="hidden" name="tool_${esc(lt)}_${esc(tool.name)}" value="${origVal}" data-original="${origVal}">
+          ${esc(tool.displayName || tool.name)}${infoHtml}</label>`
+      }
+      html += `</div>`
+    }
+    html += `</div></div>` // end Modules panel
+
+    // Tab 2: Subagents
+    const subOrig = perms.subagents ? 'on' : ''
+    html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${lang === 'es' ? 'Subagentes' : 'Subagents'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
+      <div class="chs-toggle-row" style="padding:10px 14px">
+        <span style="font-size:13px">${lang === 'es' ? 'Permitir subagentes' : 'Allow subagents'}</span>
+        <span class="ch-footer-spacer"></span>
+        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+          ${isAdmin || perms.subagents ? 'checked' : ''}${disabledAttr} data-hidden="sub_${esc(lt)}">
+        <input type="hidden" name="sub_${esc(lt)}" value="${subOrig}" data-original="${subOrig}">
+      </div>
+    </div></div>` // end Subagents panel
+
+    // Tab 3: Knowledge Categories (always show, even if empty)
+    const allowedCats = cfg.knowledgeCategories ?? []
+    const allCats = isAdmin || allowedCats.length === 0
+    html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${lang === 'es' ? 'Categorias de conocimiento' : 'Knowledge categories'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
+    if (kCats.length > 0) {
+      html += `<div class="perm-grid">`
+      for (const cat of kCats) {
+        const checked = allCats || allowedCats.includes(cat.id)
+        const origVal = checked ? 'on' : ''
+        html += `<label title="${esc(cat.description)}">
+          <input type="checkbox" class="perm-cb" ${checked ? 'checked' : ''}${disabledAttr} data-hidden="kcat_${esc(lt)}_${esc(cat.id)}">
+          <input type="hidden" name="kcat_${esc(lt)}_${esc(cat.id)}" value="${origVal}" data-original="${origVal}">
+          ${esc(cat.title)}</label>`
+      }
+      html += `</div>`
+    } else {
+      html += `<p class="panel-description" style="font-size:12px;color:var(--on-surface-dim)">${lang === 'es' ? 'No hay categorias de conocimiento configuradas. Activa el modulo de Knowledge para gestionar categorias.' : 'No knowledge categories configured. Activate the Knowledge module to manage categories.'}</p>`
+    }
+    html += `</div></div>` // end Knowledge panel
+
+    html += `</div>` // end right column
+    html += `</div></div>` // end cb-config-layout + cb-config-panel
   }
 
-  // Unregistered behavior (from lead config)
+  // ── Create base box + Unregistered contacts (global config) ──
+  html += `<div class="cb-create-box">
+    <div class="cb-create-box-header">
+      <div>
+        <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Organiza tus usuarios' : 'Organize your users'}</div>
+        <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Crea tus bases de contactos aqui para segmentar y organizar tu audiencia.' : 'Create your contact bases here to segment and organize your audience.'}</div>
+      </div>
+      <button type="button" class="act-btn act-btn-cta" onclick="toggleCreateBase()">${SVG_PLUS} ${lang === 'es' ? 'Crear base de contactos' : 'Create contact base'}</button>
+    </div>
+    <form id="cb-create-form" method="POST" action="/console/users/create-list" style="display:none;margin-top:20px;flex-direction:column;gap:12px">
+      <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
+      <label class="wizard-label">${lang === 'es' ? 'Nombre de la lista' : 'List name'}</label>
+      <input type="text" class="wizard-input" name="listName" required placeholder="${lang === 'es' ? 'Ej: Proveedores' : 'E.g. Vendors'}">
+      <label class="wizard-label">${lang === 'es' ? 'Descripcion (80-200 caracteres)' : 'Description (80-200 chars)'}</label>
+      <textarea class="wizard-input" name="listDescription" required minlength="80" maxlength="200" rows="2" placeholder="${lang === 'es' ? 'Describe el proposito de esta lista...' : 'Describe this list purpose...'}"></textarea>
+      <div class="chs-toggle-row" style="padding:10px 14px">
+        <span style="font-size:13px">${lang === 'es' ? 'Crear regla de asignacion?' : 'Create assignment rule?'}</span>
+        <span class="ch-footer-spacer"></span>
+        <label class="toggle toggle-sm">
+          <input type="checkbox" name="createAssignmentRule" disabled>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button type="submit" class="act-btn act-btn-cta" disabled>${lang === 'es' ? 'Crear' : 'Create'}</button>
+        <span class="panel-badge badge-soon">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>
+      </div>
+    </form>
+  </div>`
+
+  // ── Contactos no registrados (global config) ──
   const leadCfg = configs.find(c => c.listType === 'lead')
   if (leadCfg) {
     const behavior = leadCfg.unregisteredBehavior || 'silence'
-    html += `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</span>
-      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
-      <div class="field">
-        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
-        <select name="unregisteredBehavior" data-original="${esc(behavior)}">
+    html += `<div class="cb-create-box" style="margin-top:16px">
+      <div class="cb-create-box-header">
+        <div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</div>
+          <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Configura que sucede cuando un contacto desconocido escribe por primera vez.' : 'Configure what happens when an unknown contact writes for the first time.'}</div>
+        </div>
+        <select name="unregisteredBehavior" data-original="${esc(behavior)}" style="max-width:240px" onchange="document.getElementById('unregistered-msg-field').style.display=this.value==='generic_message'?'block':'none'">
           <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
-          <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje genérico' : 'Generic message'}</option>
+          <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje generico' : 'Generic message'}</option>
           <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
           <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
         </select>
       </div>
-      <div class="field" id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'grid' : 'none'}">
-        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Mensaje' : 'Message'}</span></div>
-        <textarea name="unregisteredMessage" data-original="${esc(leadCfg.unregisteredMessage || '')}" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
+      <div id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'block' : 'none'};margin-top:12px">
+        <label class="wizard-label">${lang === 'es' ? 'Mensaje' : 'Message'}</label>
+        <textarea class="wizard-input" name="unregisteredMessage" data-original="${esc(leadCfg.unregisteredMessage || '')}" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
       </div>
-      <script>
-      (function(){
-        var sel=document.querySelector('[name="unregisteredBehavior"]');
-        var msgField=document.getElementById('unregistered-msg-field');
-        if(sel&&msgField){sel.addEventListener('change',function(){msgField.style.display=sel.value==='generic_message'?'grid':'none'})}
-      })();
-      </script>
-    </div></div>`
+    </div>`
   }
+
+  // ── Deactivation modal (2-step confirmation) ──
+  const listOptsForModal = configs.filter(c => !['admin', 'partners'].includes(c.listType)).map(c =>
+    `<option value="${esc(c.listType)}">${esc(c.displayName)}</option>`
+  ).join('')
+
+  html += `<div class="cb-deact-overlay" id="cb-deact-overlay" onclick="if(event.target===this)closeDeactModal()">
+    <div class="cb-deact-modal">
+      <div class="cb-deact-step active" id="cb-deact-step1">
+        <h3>${lang === 'es' ? 'Desactivar base' : 'Deactivate base'}</h3>
+        <p id="cb-deact-desc">${lang === 'es' ? '¿Que deseas hacer con los contactos de esta base?' : 'What do you want to do with the contacts in this base?'}</p>
+        <div class="field" style="margin-bottom:16px">
+          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Accion' : 'Action'}</span></div>
+          <select id="cb-deact-action" required>
+            <option value="" disabled selected>${lang === 'es' ? 'Selecciona una opcion...' : 'Select an option...'}</option>
+            <option value="leads">${lang === 'es' ? 'Tratar como leads' : 'Treat as leads'}</option>
+            <option value="silence">${lang === 'es' ? 'Ignorar silenciosamente' : 'Ignore silently'}</option>
+            <option value="move">${lang === 'es' ? 'Mover a otra lista' : 'Move to another list'}</option>
+          </select>
+        </div>
+        <div class="field" id="cb-deact-target-wrap" style="display:none;margin-bottom:16px">
+          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Lista destino' : 'Target list'}</span></div>
+          <select id="cb-deact-target">${listOptsForModal}</select>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="act-btn act-btn-config" onclick="closeDeactModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
+          <button type="button" class="act-btn act-btn-remove" id="cb-deact-next" onclick="deactNextStep()">${lang === 'es' ? 'Continuar' : 'Continue'}</button>
+        </div>
+      </div>
+      <div class="cb-deact-step" id="cb-deact-step2">
+        <h3>${lang === 'es' ? 'Confirmar desactivacion' : 'Confirm deactivation'}</h3>
+        <p id="cb-deact-confirm-msg"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="act-btn act-btn-config" onclick="deactBackStep()">${lang === 'es' ? 'Atras' : 'Back'}</button>
+          <button type="button" class="act-btn act-btn-remove" onclick="confirmDeactivation()">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
+        </div>
+      </div>
+    </div>
+  </div>`
+
+  // ── Config page JavaScript ──
+  html += `<script>(function(){
+    var _deactLt='';
+    var _deactName='';
+    var lang=document.documentElement.lang||'es';
+
+    // Submit toggle form (instant apply, like channels)
+    function submitListToggle(lt,enabled,behavior,target){
+      var form=document.createElement('form');
+      form.method='POST';form.action='/console/users/toggle-list';form.style.display='none';
+      var fields={listType:lt,enabled:enabled?'true':'false',_redirect:'/console/contacts?page=config&lang='+lang};
+      if(behavior)fields.disableBehavior=behavior;
+      if(target)fields.disableTarget=target;
+      for(var k in fields){var inp=document.createElement('input');inp.type='hidden';inp.name=k;inp.value=fields[k];form.appendChild(inp)}
+      document.body.appendChild(form);form.submit();
+    }
+
+    // Toggle handler: activate = instant, deactivate = modal
+    window.toggleBaseList=function(cb){
+      var lt=cb.getAttribute('data-list-toggle');
+      var name=cb.getAttribute('data-list-name');
+      if(cb.checked){
+        // Activating — instant apply
+        submitListToggle(lt,true);
+      } else {
+        // Deactivating — revert and open modal
+        cb.checked=true;
+        openDeactModal(lt,name);
+      }
+    };
+
+    // Click on card: only open config if enabled
+    window.toggleBaseConfigClick=function(lt){
+      var card=document.querySelector('.ch-card[data-base-id="'+lt+'"]');
+      if(card&&card.getAttribute('data-enabled')!=='true')return;
+      openBaseConfig(lt);
+    };
+
+    window.openBaseConfig=function(lt){
+      var tip=document.getElementById('cb-config-tip');
+      if(tip)tip.style.display='none';
+      document.querySelectorAll('.cb-config-panel').forEach(function(p){p.classList.remove('active')});
+      var panel=document.getElementById('cb-config-'+lt);
+      if(panel){panel.classList.add('active');panel.scrollIntoView({behavior:'smooth',block:'start'})}
+      document.querySelectorAll('.ch-card[data-base-id]').forEach(function(c){c.classList.remove('cb-active')});
+      var card=document.querySelector('.ch-card[data-base-id="'+lt+'"]');
+      if(card)card.classList.add('cb-active');
+    };
+    window.toggleCreateBase=function(){
+      var form=document.getElementById('cb-create-form');
+      if(form)form.style.display=form.style.display==='flex'?'none':'flex';
+    };
+    window.addDomainTag=function(){
+      var inp=document.getElementById('coworker-domain-input');
+      if(!inp)return;
+      var val=inp.value.trim();
+      if(!val)return;
+      if(val.indexOf('@')!==0)val='@'+val;
+      var container=document.getElementById('coworker-domains-tags');
+      var tag=document.createElement('span');
+      tag.className='tag-chip';
+      tag.innerHTML=val+' <button type="button" onclick="this.parentElement.remove();updateDomainHidden()">&times;</button>';
+      container.insertBefore(tag,inp);
+      inp.value='';
+      updateDomainHidden();
+    };
+    window.updateDomainHidden=function(){
+      var chips=document.querySelectorAll('#coworker-domains-tags .tag-chip');
+      var vals=[];
+      chips.forEach(function(c){vals.push(c.textContent.replace('\\u00d7','').trim())});
+      var hidden=document.getElementById('coworker-domains-hidden');
+      if(hidden){hidden.value=vals.join(',');hidden.dispatchEvent(new Event('input',{bubbles:true}))}
+    };
+
+    // ── Deactivation modal ──
+    window.openDeactModal=function(lt,name){
+      _deactLt=lt;_deactName=name;
+      document.getElementById('cb-deact-action').selectedIndex=0;
+      document.getElementById('cb-deact-target-wrap').style.display='none';
+      document.getElementById('cb-deact-step1').classList.add('active');
+      document.getElementById('cb-deact-step2').classList.remove('active');
+      document.getElementById('cb-deact-overlay').classList.add('open');
+    };
+    window.closeDeactModal=function(){
+      document.getElementById('cb-deact-overlay').classList.remove('open');
+    };
+    document.getElementById('cb-deact-action').addEventListener('change',function(){
+      document.getElementById('cb-deact-target-wrap').style.display=this.value==='move'?'grid':'none';
+    });
+    window.deactNextStep=function(){
+      var action=document.getElementById('cb-deact-action').value;
+      if(!action){alert(lang==='es'?'Selecciona una opcion.':'Select an option.');return}
+      if(action==='move'&&!document.getElementById('cb-deact-target').value){alert(lang==='es'?'Selecciona una lista destino.':'Select a target list.');return}
+      var actionText={leads:lang==='es'?'tratar como leads':'treat as leads',silence:lang==='es'?'ignorar silenciosamente':'ignore silently',move:lang==='es'?'mover a otra lista':'move to another list'};
+      var msg=lang==='es'
+        ?'Estas a punto de desactivar la base "'+_deactName+'". Los contactos se van a '+actionText[action]+'. Esta accion se puede revertir reactivando la base.'
+        :'You are about to deactivate the base "'+_deactName+'". Contacts will be '+actionText[action]+'. This action can be reversed by reactivating the base.';
+      document.getElementById('cb-deact-confirm-msg').textContent=msg;
+      document.getElementById('cb-deact-step1').classList.remove('active');
+      document.getElementById('cb-deact-step2').classList.add('active');
+    };
+    window.deactBackStep=function(){
+      document.getElementById('cb-deact-step2').classList.remove('active');
+      document.getElementById('cb-deact-step1').classList.add('active');
+    };
+    window.confirmDeactivation=function(){
+      var action=document.getElementById('cb-deact-action').value;
+      var target=action==='move'?document.getElementById('cb-deact-target').value:'';
+      submitListToggle(_deactLt,false,action,target);
+    };
+
+    // ── Perm sync: checkbox → hidden field → dirty tracking ──
+    document.querySelectorAll('.cb-config-panel .perm-cb').forEach(function(cb){
+      cb.addEventListener('change',function(){
+        var hName=cb.getAttribute('data-hidden');
+        if(!hName)return;
+        var h=document.querySelector('input[name="'+hName+'"]');
+        if(h){h.value=cb.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
+      });
+    });
+
+    // ── Admin: force all checkboxes disabled (belt + suspenders) ──
+    document.querySelectorAll('#cb-config-admin input[type="checkbox"]').forEach(function(cb){
+      cb.disabled=true;
+      cb.checked=true;
+    });
+
+    if(typeof initCustomSelects==='function')initCustomSelects();
+  })()</script>`
+
   } // end isConfigPage
 
   return html + '</div>'

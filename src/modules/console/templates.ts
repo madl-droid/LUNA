@@ -430,8 +430,8 @@ function renderSidebar(opts: PageOptions): string {
         ${item.badge || ''}
       </a>`
 
-      // Contacts submenu: show list types + config under "Contactos"
-      if (item.id === 'contacts' && (isActive || opts.contactsSubpage)) {
+      // Contacts submenu: always show enabled bases (like channels show active channels)
+      if (item.id === 'contacts') {
         const lists = (opts.contactLists ?? []).filter(l => l.isEnabled)
         if (lists.length > 0) {
           nav += '<div class="sidebar-submenu">'
