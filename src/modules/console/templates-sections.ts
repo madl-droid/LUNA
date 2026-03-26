@@ -1111,9 +1111,11 @@ function renderUsersSection(data: SectionData): string {
         const userRole = (user.metadata as Record<string, unknown>)?.role as string ?? ''
         html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}" data-contacts="${esc(contactsJson)}" data-channels="${esc(channelList)}" data-source="${esc(user.source)}" data-role="${esc(userRole)}" data-search="${esc((user.displayName || '') + ' ' + senderIds)}">`
 
-        html += `<td><input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')"></td>
+        const isSuperAdmin = user.source === 'setup_wizard'
+        const superBadge = isSuperAdmin ? ` <span class="panel-badge badge-active" style="font-size:9px;padding:1px 6px">${lang === 'es' ? 'Super Admin' : 'Super Admin'}</span>` : ''
+        html += `<td>${isSuperAdmin ? '<input type="checkbox" disabled title="Super admin">' : `<input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')">`}</td>
           <td><code>${esc(user.id)}</code></td>
-          <td>${esc(user.displayName || '—')}</td>
+          <td>${esc(user.displayName || '—')}${superBadge}</td>
           ${isCoworker ? `<td>${userRole ? `<span class="user-source-badge">${esc(userRole)}</span>` : '—'}</td>` : ''}
           <td>${contactBadges}</td>
           <td><span class="user-source-badge">${esc(user.source)}</span></td>

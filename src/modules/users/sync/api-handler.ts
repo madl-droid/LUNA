@@ -126,6 +126,11 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
           const existing = await db.findUserById(body.id)
           if (!existing) return error(res, 'User not found', 404)
 
+          // Super admin (created by setup wizard) cannot be deactivated
+          if (existing.source === 'setup_wizard') {
+            return error(res, 'El administrador principal no se puede desactivar / Super admin cannot be deactivated', 403)
+          }
+
           const ok = await db.deactivateUser(body.id)
           if (ok) {
             for (const c of existing.contacts) await cache.invalidate(c.senderId)
