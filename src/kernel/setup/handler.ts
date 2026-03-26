@@ -9,7 +9,7 @@ import type { Redis } from 'ioredis'
 import pino from 'pino'
 
 import * as configStore from '../config-store.js'
-import { hashPassword, storeCredentials, createSession, sessionCookie, SESSION_COOKIE_NAME } from './auth.js'
+import { hashPassword, createSession, sessionCookie, SESSION_COOKIE_NAME } from './auth.js'
 import { st, detectSetupLang, type SetupLang } from './i18n.js'
 import {
   stepWelcome, stepAdmin, stepLLM, stepSystem, setupCompletePage,
@@ -357,94 +357,120 @@ async function finalizeSetup(ctx: WizardContext, state: SetupState, token: strin
 
   logger.info('Finalizing setup wizard...')
 
-  // 1. Create users + user_contacts tables (idempotent)
+  // 1. Create tables (DDL — outside transaction, idempotent)
+  const ddlClient = await pool.connect()
+  try {
+    await ddlClient.query(USERS_DDL)
+  } finally {
+    ddlClient.release()
+  }
+
+  // 2. All data operations in a single transaction (atomicity)
+  let userId = ''
   const client = await pool.connect()
   try {
-    await client.query(USERS_DDL)
+    await client.query('BEGIN')
+
+    // Clean up any orphaned data from a previous interrupted attempt
+    const { rows: orphaned } = await client.query<{ id: string }>(
+      `SELECT u.id FROM users u
+       JOIN user_contacts uc ON uc.user_id = u.id
+       WHERE uc.channel = 'email' AND LOWER(uc.sender_id) = LOWER($1)
+         AND u.source = 'setup_wizard'`,
+      [state.adminEmail],
+    )
+    for (const row of orphaned) {
+      await client.query(`DELETE FROM user_credentials WHERE user_id = $1`, [row.id])
+      await client.query(`DELETE FROM users WHERE id = $1`, [row.id]) // cascades to user_contacts
+    }
+
+    // Ensure admin list config
+    await client.query(
+      `INSERT INTO user_list_config (list_type, display_name, is_enabled, permissions, max_users)
+       VALUES ('admin', 'Administradores', true, $1, 5)
+       ON CONFLICT (list_type) DO NOTHING`,
+      [JSON.stringify({ tools: ['*'], skills: ['*'], subagents: true, allAccess: true })],
+    )
+
+    // Create admin user
+    userId = generateUserId()
+    await client.query(
+      `INSERT INTO users (id, display_name, list_type, metadata, source)
+       VALUES ($1, $2, 'admin', '{}', 'setup_wizard')`,
+      [userId, state.adminName],
+    )
+
+    // Add contacts (email + optional phone)
+    await client.query(
+      `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
+       VALUES ($1, 'email', $2, true)
+       ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1, is_primary = true`,
+      [userId, state.adminEmail.toLowerCase()],
+    )
+    if (state.adminPhone) {
+      await client.query(
+        `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
+         VALUES ($1, 'whatsapp', $2, false)
+         ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1`,
+        [userId, state.adminPhone],
+      )
+    }
+
+    // Store credentials (password hash)
+    const passwordHash = await hashPassword(state.adminPassword)
+    await client.query(
+      `INSERT INTO user_credentials (user_id, password_hash)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET password_hash = $2, updated_at = now()`,
+      [userId, passwordHash],
+    )
+
+    await client.query('COMMIT')
+    logger.info({ userId, email: state.adminEmail }, 'Admin user created in transaction')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
   } finally {
     client.release()
   }
 
-  // 2. Ensure admin list config exists
-  await pool.query(
-    `INSERT INTO user_list_config (list_type, display_name, is_enabled, permissions, max_users)
-     VALUES ('admin', 'Administradores', true, $1, 5)
-     ON CONFLICT (list_type) DO NOTHING`,
-    [JSON.stringify({ tools: ['*'], skills: ['*'], subagents: true, allAccess: true })],
-  )
-
-  // 3. Create admin user
-  const userId = generateUserId()
-  await pool.query(
-    `INSERT INTO users (id, display_name, list_type, metadata, source)
-     VALUES ($1, $2, 'admin', '{}', 'setup_wizard')`,
-    [userId, state.adminName],
-  )
-
-  // 4. Add contacts (email + optional phone)
-  await pool.query(
-    `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
-     VALUES ($1, 'email', $2, true)
-     ON CONFLICT (channel, sender_id) DO NOTHING`,
-    [userId, state.adminEmail.toLowerCase()],
-  )
-  if (state.adminPhone) {
-    await pool.query(
-      `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
-       VALUES ($1, 'whatsapp', $2, false)
-       ON CONFLICT (channel, sender_id) DO NOTHING`,
-      [userId, state.adminPhone],
-    )
-  }
-
-  // 5. Store credentials (password hash)
-  const passwordHash = await hashPassword(state.adminPassword)
-  await storeCredentials(pool, userId, passwordHash)
-
-  // 6. Build config entries
+  // 3. Persist config to config_store (has its own transaction internally)
   const procModels = state.processingProvider === 'anthropic' ? ANTHROPIC_MODELS : GOOGLE_MODELS
   const interModels = state.interactionProvider === 'anthropic' ? ANTHROPIC_MODELS : GOOGLE_MODELS
 
   const configEntries: Record<string, string> = {
-    // LLM API keys
     ...(state.anthropicApiKey ? { ANTHROPIC_API_KEY: state.anthropicApiKey } : {}),
     ...(state.googleApiKey ? { GOOGLE_AI_API_KEY: state.googleApiKey } : {}),
-    // Model assignments
     LLM_CLASSIFY_MODEL: procModels.classify,
     LLM_TOOLS_MODEL: procModels.tools,
     LLM_COMPRESS_MODEL: procModels.compress,
     LLM_RESPOND_MODEL: interModels.respond,
     LLM_COMPLEX_MODEL: interModels.complex,
     LLM_PROACTIVE_MODEL: interModels.proactive,
-    // Fallback models (opposite provider)
     ...(state.processingProvider === 'anthropic' && state.googleApiKey
       ? { LLM_FALLBACK_CLASSIFY_MODEL: GOOGLE_MODELS.classify }
       : {}),
     ...(state.interactionProvider === 'anthropic' && state.googleApiKey
       ? { LLM_FALLBACK_RESPOND_MODEL: GOOGLE_MODELS.respond, LLM_FALLBACK_COMPLEX_MODEL: GOOGLE_MODELS.complex }
       : {}),
-    // System settings
     LOG_LEVEL: state.logLevel,
     NODE_ENV: state.nodeEnv,
     ...(state.instanceName ? { INSTANCE_NAME: state.instanceName } : {}),
-    // Language
     CONSOLE_LANG: state.lang,
-    // Mark setup as complete
     SETUP_COMPLETED: 'true',
   }
 
-  // 7. Persist to config_store
   await configStore.setMultiple(pool, configEntries)
 
-  // 8. Create session for the admin (auto-login after setup)
+  // 4. Create session for the admin (auto-login after setup)
   const sessionToken = await createSession(redis, userId)
 
-  logger.info({ userId, email: state.adminEmail }, 'Setup wizard completed — admin created')
+  logger.info({ userId: 'admin', email: state.adminEmail }, 'Setup wizard completed')
 
-  // 9. Clean up ephemeral state
+  // 5. Clean up ephemeral state
   ctx.sessions.delete(token)
 
-  // 10. Signal completion — the temporary server will shut down
+  // 6. Signal completion — the temporary server will shut down
   // Small delay to let the response be sent
   setTimeout(() => ctx.onComplete(), 500)
 
