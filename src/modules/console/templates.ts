@@ -43,7 +43,7 @@ const ICONS = {
   brain: svgIcon('<path d="M9.5 2A5.5 5.5 0 0 0 5 7.5c0 1.58.7 3 1.81 4L12 21l5.19-9.5A5.48 5.48 0 0 0 19 7.5 5.5 5.5 0 0 0 13.5 2h-4z"/><path d="M12 2v19"/>'),
   server: svgIcon('<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>'),
   fallback: svgIcon('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'),
-  dashboard: svgIcon('<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>'),
+  dashboard: svgIcon('<circle cx="12" cy="14" r="9"/><path d="M12 14l3.5-5"/><path d="M6.8 18h10.4"/><path d="M12 5v1.5"/><path d="M5.1 8.5l1 1"/><path d="M18.9 8.5l-1 1"/>'),
 }
 
 const FIXED_SECTIONS: FixedSection[] = [

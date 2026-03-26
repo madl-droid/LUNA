@@ -47,8 +47,11 @@
   --glass-blur: blur(20px) saturate(180%);
 }
 
-a { color: var(--primary); }
-a:visited { color: var(--primary-hover); }
+/* Only fix visited-link purple inside content areas (wizards, panels, instructions) */
+.wizard-instructions a, .wizard-instructions a:visited,
+.panel-body a, .panel-body a:visited,
+.panel-info a, .panel-info a:visited { color: var(--primary); }
+.wizard-instructions a:visited, .panel-body a:visited, .panel-info a:visited { color: var(--primary-hover); }
 
 body {
   font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
