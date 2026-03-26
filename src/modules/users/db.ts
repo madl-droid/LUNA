@@ -267,12 +267,17 @@ export class UsersDb {
       for (let i = 0; i < input.contacts.length; i++) {
         const c = input.contacts[i]!
         if (!c.senderId.trim()) continue
+        // Normalize phone numbers to E.164 (+prefix) for WhatsApp channel
+        let normalizedSenderId = c.senderId.trim()
+        if (c.channel === 'whatsapp' && /^\d+$/.test(normalizedSenderId)) {
+          normalizedSenderId = `+${normalizedSenderId}`
+        }
         const result = await client.query(
           `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT (channel, sender_id) DO NOTHING
            RETURNING *`,
-          [userId, c.channel, c.senderId.trim(), i === 0],
+          [userId, c.channel, normalizedSenderId, i === 0],
         )
         if (result.rows[0]) {
           contacts.push(this.mapContactRow(result.rows[0]))
@@ -316,12 +321,17 @@ export class UsersDb {
   }
 
   async addContact(userId: string, channel: string, senderId: string): Promise<UserContact | null> {
+    // Normalize phone numbers to E.164 (+prefix) for WhatsApp channel
+    let normalized = senderId.trim()
+    if (channel === 'whatsapp' && /^\d+$/.test(normalized)) {
+      normalized = `+${normalized}`
+    }
     const result = await this.pool.query(
       `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
        VALUES ($1, $2, $3, false)
        ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = EXCLUDED.user_id
        RETURNING *`,
-      [userId, channel, senderId.trim()],
+      [userId, channel, normalized],
     )
     return result.rows[0] ? this.mapContactRow(result.rows[0]) : null
   }
