@@ -21,7 +21,20 @@ export class CampaignQueries {
   // ═══════════════════════════════════════════
 
   async ensureTables(): Promise<void> {
-    // Alter existing campaigns table with new columns
+    // Create campaigns table if it doesn't exist (base schema)
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS campaigns (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name            TEXT NOT NULL,
+        keyword         TEXT,
+        destination_number TEXT,
+        utm_data        JSONB DEFAULT '{}',
+        active          BOOLEAN DEFAULT true,
+        created_at      TIMESTAMPTZ DEFAULT now()
+      )
+    `)
+
+    // Extend campaigns table with scoring columns
     const alters = [
       `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS visible_id SERIAL`,
       `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_threshold REAL DEFAULT 0.95`,
@@ -32,9 +45,16 @@ export class CampaignQueries {
     ]
     for (const sql of alters) {
       await this.db.query(sql).catch(() => {
-        // Column may already exist or table may not exist — non-critical
+        // Column may already exist — non-critical
       })
     }
+
+    // Seed default "Sin campaña" (visible_id=0) if it doesn't exist
+    await this.db.query(`
+      INSERT INTO campaigns (id, name, keyword, active, visible_id)
+      VALUES ('00000000-0000-0000-0000-000000000000', 'Sin campaña', NULL, true, 0)
+      ON CONFLICT (id) DO NOTHING
+    `).catch(() => {})
 
     // Campaign tags table
     await this.db.query(`

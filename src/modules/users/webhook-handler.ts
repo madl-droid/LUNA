@@ -163,8 +163,9 @@ export async function registerLead(
   }
 
   // ── Find campaign by keyword ──
-  let campaignId: string | null = null
-  let campaignName: string | null = null
+  const NO_CAMPAIGN_ID = '00000000-0000-0000-0000-000000000000'
+  let campaignId: string = NO_CAMPAIGN_ID
+  let campaignName: string = 'Sin campaña'
   let warning: string | undefined
 
   if (body.campaign) {
@@ -173,8 +174,8 @@ export async function registerLead(
       campaignId = campaign.id
       campaignName = campaign.name
     } else {
-      warning = `Keyword de campaña "${body.campaign}" no encontrada. Lead registrado sin campaña.`
-      logger.warn({ keyword: body.campaign }, 'Campaign keyword not found')
+      warning = `Keyword de campaña "${body.campaign}" no encontrada. Lead asignado a "Sin campaña" (ID 0).`
+      logger.warn({ keyword: body.campaign }, 'Campaign keyword not found — assigned to Sin campaña')
     }
   }
 
