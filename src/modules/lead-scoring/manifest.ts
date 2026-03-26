@@ -11,7 +11,7 @@ import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
-import type { LeadScoringConfig, QualifyingConfig, QualificationStatus, FrameworkType } from './types.js'
+import type { LeadScoringConfig, QualifyingConfig, QualificationStatus, FrameworkType, WebhookRegisterBody, WebhookLogEntry } from './types.js'
 import { FRAMEWORK_PRESETS } from './frameworks.js'
 import { ConfigStore } from './config-store.js'
 import { LeadQueries } from './pg-queries.js'
@@ -20,6 +20,15 @@ import { calculateScore, resolveTransition } from './scoring-engine.js'
 import { CampaignQueries } from './campaign-queries.js'
 import { CampaignMatcher } from './campaign-matcher.js'
 import type { CampaignMatchResult } from './campaign-types.js'
+import {
+  registerLead,
+  loadWebhookConfig,
+  ensureToken,
+  ensureWebhookTables,
+  extractBearerToken,
+  generateToken,
+  logWebhookAttempt,
+} from './webhook-handler.js'
 
 const logger = pino({ name: 'lead-scoring' })
 
@@ -27,6 +36,7 @@ let configStore: ConfigStore | null = null
 let leadQueries: LeadQueries | null = null
 let campaignQueries: CampaignQueries | null = null
 let campaignMatcher: CampaignMatcher | null = null
+let _registry: Registry | null = null
 
 // ═══════════════════════════════════════════
 // API Routes
@@ -44,6 +54,10 @@ function createApiRoutes(): ApiRoute[] {
   const getCampaignQueries = (): CampaignQueries => {
     if (!campaignQueries) throw new Error('Campaign system not initialized')
     return campaignQueries
+  }
+  const getDb = () => {
+    if (!_registry) throw new Error('Lead scoring not initialized')
+    return _registry.getDb()
   }
 
   return [
@@ -479,6 +493,152 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // ─── Webhook endpoints ───
+
+    // POST /console/api/lead-scoring/webhook/register — External endpoint, auth via Bearer token
+    {
+      method: 'POST',
+      path: 'webhook/register',
+      handler: async (req, res) => {
+        try {
+          const db = getDb()
+          const webhookConfig = await loadWebhookConfig(db)
+
+          if (!webhookConfig.WEBHOOK_LEADS_ENABLED) {
+            jsonResponse(res, 403, { error: 'Webhook deshabilitado' })
+            return
+          }
+
+          const token = extractBearerToken(req.headers['authorization'])
+          if (!token || token !== webhookConfig.WEBHOOK_LEADS_TOKEN) {
+            jsonResponse(res, 401, { error: 'Token de autorización inválido' })
+            return
+          }
+
+          const body = await parseBody<WebhookRegisterBody>(req)
+          if (!body.campaign) {
+            jsonResponse(res, 400, { error: 'Campo "campaign" es obligatorio (keyword o ID de campaña)' })
+            return
+          }
+          if (!body.email && !body.phone) {
+            jsonResponse(res, 400, { error: 'Se requiere al menos "email" o "phone"' })
+            return
+          }
+
+          const result = await registerLead(body, db, _registry!, webhookConfig)
+          jsonResponse(res, 201, result)
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          logger.error({ err }, 'Webhook register failed')
+
+          try {
+            const db = getDb()
+            await logWebhookAttempt(db, {
+              campaignKeyword: undefined,
+              campaignId: null,
+              contactId: null,
+              channelUsed: null,
+              success: false,
+              errorMessage: errMsg,
+            })
+          } catch { /* logging non-critical */ }
+
+          jsonResponse(res, 400, { error: errMsg })
+        }
+      },
+    },
+
+    // GET /console/api/lead-scoring/webhook/stats
+    {
+      method: 'GET',
+      path: 'webhook/stats',
+      handler: async (_req, res) => {
+        try {
+          const db = getDb()
+          const result = await db.query(`
+            SELECT
+              COUNT(*) FILTER (WHERE success = true)::int AS total_success,
+              COUNT(*) FILTER (WHERE success = false)::int AS total_errors,
+              COUNT(*) FILTER (WHERE campaign_id IS NULL AND success = true)::int AS no_campaign,
+              COUNT(*)::int AS total,
+              MIN(created_at) AS first_at,
+              MAX(created_at) AS last_at
+            FROM webhook_lead_log
+          `)
+          const row = result.rows[0]
+          jsonResponse(res, 200, {
+            totalSuccess: row?.total_success ?? 0,
+            totalErrors: row?.total_errors ?? 0,
+            noCampaign: row?.no_campaign ?? 0,
+            total: row?.total ?? 0,
+            firstAt: row?.first_at?.toISOString() ?? null,
+            lastAt: row?.last_at?.toISOString() ?? null,
+          })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/lead-scoring/webhook/log?limit=50&offset=0
+    {
+      method: 'GET',
+      path: 'webhook/log',
+      handler: async (req, res) => {
+        try {
+          const db = getDb()
+          const q = parseQuery(req)
+          const limit = Math.min(parseInt(q.get('limit') ?? '50', 10), 200)
+          const offset = parseInt(q.get('offset') ?? '0', 10)
+
+          const result = await db.query(
+            `SELECT id, email, phone, display_name, campaign_keyword, campaign_id,
+                    contact_id, channel_used, success, error_message, created_at
+             FROM webhook_lead_log
+             ORDER BY created_at DESC
+             LIMIT $1 OFFSET $2`,
+            [limit, offset],
+          )
+          const countResult = await db.query(`SELECT COUNT(*)::int AS total FROM webhook_lead_log`)
+
+          const entries: WebhookLogEntry[] = result.rows.map((r: Record<string, unknown>) => ({
+            id: r.id as string,
+            email: r.email as string | null,
+            phone: r.phone as string | null,
+            displayName: r.display_name as string | null,
+            campaignKeyword: r.campaign_keyword as string | null,
+            campaignId: r.campaign_id as string | null,
+            contactId: r.contact_id as string | null,
+            channelUsed: r.channel_used as string | null,
+            success: r.success as boolean,
+            errorMessage: r.error_message as string | null,
+            createdAt: (r.created_at as Date)?.toISOString() ?? '',
+          }))
+
+          jsonResponse(res, 200, { entries, total: countResult.rows[0]?.total ?? 0 })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/lead-scoring/webhook/regenerate-token
+    {
+      method: 'POST',
+      path: 'webhook/regenerate-token',
+      handler: async (_req, res) => {
+        try {
+          const db = getDb()
+          const newToken = generateToken()
+          const configStoreModule = await import('../../kernel/config-store.js')
+          await configStoreModule.set(db, 'WEBHOOK_LEADS_TOKEN', newToken, true)
+          jsonResponse(res, 200, { ok: true, token: newToken })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // ─── UI endpoint ───
 
     // GET /console/api/lead-scoring/ui
@@ -554,10 +714,52 @@ const manifest: ModuleManifest = {
     order: 15,
     group: 'leads',
     icon: '&#128202;',
+    fields: [
+      {
+        key: '__divider_webhook',
+        type: 'divider',
+        label: { es: 'Webhook de Leads', en: 'Lead Webhook' },
+      },
+      {
+        key: 'WEBHOOK_LEADS_ENABLED',
+        type: 'boolean',
+        label: { es: 'Webhook habilitado', en: 'Webhook enabled' },
+        description: {
+          es: 'Activa o desactiva el endpoint de registro de leads externos. Endpoint: POST /console/api/lead-scoring/webhook/register',
+          en: 'Enable or disable the external lead registration endpoint. Endpoint: POST /console/api/lead-scoring/webhook/register',
+        },
+        icon: '&#128279;',
+      },
+      {
+        key: 'WEBHOOK_LEADS_TOKEN',
+        type: 'secret',
+        label: { es: 'Token de autorización', en: 'Authorization token' },
+        info: {
+          es: 'Token Bearer para autenticar llamadas al webhook. Se auto-genera al activar el módulo.',
+          en: 'Bearer token to authenticate webhook calls. Auto-generated on module activation.',
+        },
+      },
+      {
+        key: 'WEBHOOK_LEADS_PREFERRED_CHANNEL',
+        type: 'select',
+        label: { es: 'Canal preferido de contacto', en: 'Preferred contact channel' },
+        info: {
+          es: 'Canal por el que el agente contactará al lead. "Auto" elige según datos disponibles y canales activos.',
+          en: 'Channel the agent will use to contact the lead. "Auto" picks based on data and active channels.',
+        },
+        options: [
+          { value: 'auto', label: 'Auto' },
+          { value: 'whatsapp', label: 'WhatsApp' },
+          { value: 'email', label: 'Email (Gmail)' },
+          { value: 'google-chat', label: 'Google Chat' },
+        ],
+      },
+    ],
     apiRoutes: createApiRoutes(),
   },
 
   async init(registry: Registry) {
+    _registry = registry
     const config = registry.getConfig<LeadScoringConfig>('lead-scoring')
     const db = registry.getDb()
 
@@ -591,6 +793,10 @@ const manifest: ModuleManifest = {
     registry.provide('lead-scoring:renderSection', (lang: 'es' | 'en') => {
       return renderLeadScoringConsole(configStore!, lang)
     })
+
+    // Initialize webhook subsystem
+    await ensureWebhookTables(db)
+    await ensureToken(db)
 
     // Register extraction tool
     await registerExtractionTool(registry, configStore)
@@ -639,6 +845,7 @@ const manifest: ModuleManifest = {
     leadQueries = null
     campaignQueries = null
     campaignMatcher = null
+    _registry = null
     logger.info('Lead scoring module stopped')
   },
 }

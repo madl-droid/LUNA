@@ -1,12 +1,12 @@
-// LUNA — Module: webhook-leads — Handler
-// Lógica de registro de leads via webhook externo.
-// Crea contactos con contact_origin = 'outbound', vincula canales,
-// atribuye campaña (vía lead-scoring), dispara primer contacto.
+// LUNA — Module: lead-scoring — Webhook Handler
+// Registro de leads via webhook externo.
+// Crea/actualiza contactos con contact_origin = 'outbound', vincula canales,
+// atribuye campaña, verifica WhatsApp, dispara primer contacto.
 
 import crypto from 'node:crypto'
 import type { Pool } from 'pg'
 import type { Registry } from '../../kernel/registry.js'
-import * as configStore from '../../kernel/config-store.js'
+import * as cs from '../../kernel/config-store.js'
 import pino from 'pino'
 import type {
   WebhookLeadsConfig,
@@ -27,9 +27,9 @@ const CONFIG_KEYS = {
 } as const
 
 export async function loadWebhookConfig(db: Pool): Promise<WebhookLeadsConfig> {
-  const enabled = await configStore.get(db, CONFIG_KEYS.ENABLED)
-  const token = await configStore.get(db, CONFIG_KEYS.TOKEN)
-  const preferredChannel = await configStore.get(db, CONFIG_KEYS.PREFERRED_CHANNEL)
+  const enabled = await cs.get(db, CONFIG_KEYS.ENABLED)
+  const token = await cs.get(db, CONFIG_KEYS.TOKEN)
+  const preferredChannel = await cs.get(db, CONFIG_KEYS.PREFERRED_CHANNEL)
   return {
     WEBHOOK_LEADS_ENABLED: enabled === 'true',
     WEBHOOK_LEADS_TOKEN: token ?? '',
@@ -42,18 +42,17 @@ export function generateToken(): string {
 }
 
 export async function ensureToken(db: Pool): Promise<string> {
-  const existing = await configStore.get(db, CONFIG_KEYS.TOKEN)
+  const existing = await cs.get(db, CONFIG_KEYS.TOKEN)
   if (existing) return existing
 
   const token = generateToken()
-  await configStore.set(db, CONFIG_KEYS.TOKEN, token, true)
+  await cs.set(db, CONFIG_KEYS.TOKEN, token, true)
 
-  // Set defaults for other webhook keys if not present
-  const enabled = await configStore.get(db, CONFIG_KEYS.ENABLED)
-  if (enabled === null) await configStore.set(db, CONFIG_KEYS.ENABLED, 'false')
+  const enabled = await cs.get(db, CONFIG_KEYS.ENABLED)
+  if (enabled === null) await cs.set(db, CONFIG_KEYS.ENABLED, 'false')
 
-  const channel = await configStore.get(db, CONFIG_KEYS.PREFERRED_CHANNEL)
-  if (channel === null) await configStore.set(db, CONFIG_KEYS.PREFERRED_CHANNEL, 'auto')
+  const channel = await cs.get(db, CONFIG_KEYS.PREFERRED_CHANNEL)
+  if (channel === null) await cs.set(db, CONFIG_KEYS.PREFERRED_CHANNEL, 'auto')
 
   logger.info('Webhook token auto-generated')
   return token
@@ -96,6 +95,61 @@ export async function ensureWebhookTables(db: Pool): Promise<void> {
 }
 
 // ═══════════════════════════════════════════
+// Phone normalization (WhatsApp JID format)
+// ═══════════════════════════════════════════
+
+/**
+ * Normalize a phone number to E.164-ish format suitable for WhatsApp JID.
+ * Strips spaces, dashes, parentheses, dots.
+ * Ensures country code prefix (no leading +).
+ * Result: e.g. "573155524620" (ready for @s.whatsapp.net suffix)
+ */
+function normalizePhoneForWhatsApp(phone: string): string {
+  // Strip all non-digit characters except leading +
+  let cleaned = phone.replace(/[^\d+]/g, '')
+  // Remove leading +
+  if (cleaned.startsWith('+')) cleaned = cleaned.slice(1)
+  // Remove leading 00 (international prefix)
+  if (cleaned.startsWith('00')) cleaned = cleaned.slice(2)
+  return cleaned
+}
+
+/**
+ * Check if a phone number is registered on WhatsApp via the adapter.
+ * Returns { exists: true, jid } or { exists: false }.
+ */
+async function checkWhatsAppNumber(
+  registry: Registry,
+  phone: string,
+): Promise<{ exists: boolean; jid?: string }> {
+  type WaAdapter = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    socket?: any
+  }
+  const adapter = registry.getOptional<WaAdapter>('whatsapp:adapter')
+  if (!adapter?.socket) {
+    // WhatsApp not connected — assume exists to avoid losing leads
+    return { exists: true }
+  }
+
+  try {
+    const normalized = normalizePhoneForWhatsApp(phone)
+    const jid = `${normalized}@s.whatsapp.net`
+    // Baileys onWhatsApp returns array of { exists, jid }
+    const results = await adapter.socket.onWhatsApp(jid)
+    const result = results?.[0]
+    if (result?.exists) {
+      return { exists: true, jid: result.jid ?? jid }
+    }
+    return { exists: false }
+  } catch (err) {
+    logger.warn({ err, phone }, 'WhatsApp number check failed, assuming exists')
+    // On error, assume exists to avoid losing leads
+    return { exists: true }
+  }
+}
+
+// ═══════════════════════════════════════════
 // Core: register lead
 // ═══════════════════════════════════════════
 
@@ -110,7 +164,7 @@ export async function registerLead(
     throw new Error('Se requiere al menos email o phone')
   }
 
-  // ── Find campaign by keyword (via lead-scoring service) ──
+  // ── Find campaign by keyword ──
   let campaignId: string | null = null
   let campaignName: string | null = null
   let warning: string | undefined
@@ -126,33 +180,46 @@ export async function registerLead(
     }
   }
 
+  // ── Check WhatsApp number if phone provided ──
+  let phoneIsWhatsApp = true
+  let normalizedPhone: string | null = null
+  if (body.phone) {
+    normalizedPhone = normalizePhoneForWhatsApp(body.phone)
+    const waCheck = await checkWhatsAppNumber(registry, body.phone)
+    phoneIsWhatsApp = waCheck.exists
+    if (!phoneIsWhatsApp) {
+      logger.info({ phone: normalizedPhone }, 'Phone not on WhatsApp, will save as voice only')
+    }
+  }
+
   // ── Determine preferred channel ──
   const preferredChannel = resolvePreferredChannel(
     config.WEBHOOK_LEADS_PREFERRED_CHANNEL,
     body,
     registry,
+    phoneIsWhatsApp,
   )
 
-  const channelContactId = getChannelContactId(preferredChannel, body)
+  const channelContactId = getChannelContactId(preferredChannel, body, normalizedPhone)
   if (!channelContactId) {
     throw new Error(
       `No se puede contactar por ${preferredChannel}: falta ${preferredChannel === 'email' || preferredChannel === 'gmail' ? 'email' : 'phone'}`,
     )
   }
 
-  // ── Create or find contact ──
-  const contactId = await upsertContact(db, registry, body, channelContactId, preferredChannel)
+  // ── Create or update contact ──
+  const { contactId, isNew } = await upsertContact(db, registry, body, channelContactId, preferredChannel, normalizedPhone)
 
   // ── Link additional channels (cross-channel unification) ──
   if (body.email && preferredChannel !== 'email' && preferredChannel !== 'gmail') {
     await ensureContactChannel(db, contactId, 'email', body.email.trim().toLowerCase(), false)
   }
-  if (body.phone) {
-    const normalizedPhone = normalizePhone(body.phone)
-    if (preferredChannel !== 'whatsapp') {
+  if (normalizedPhone) {
+    // Only link whatsapp channel if number is on WhatsApp
+    if (phoneIsWhatsApp && preferredChannel !== 'whatsapp') {
       await ensureContactChannel(db, contactId, 'whatsapp', normalizedPhone, false)
     }
-    // Also link voice channel for call linking
+    // Always link voice channel
     await ensureContactChannel(db, contactId, 'voice', normalizedPhone, false)
   }
 
@@ -161,7 +228,7 @@ export async function registerLead(
     await recordCampaignMatch(registry, contactId, campaignId, preferredChannel)
   }
 
-  // ── Trigger outbound contact ──
+  // ── ALWAYS trigger outbound contact (new or existing) ──
   await triggerOutbound(registry, preferredChannel, channelContactId, body.name, campaignName)
 
   // ── Log success ──
@@ -176,7 +243,7 @@ export async function registerLead(
     success: true,
   })
 
-  logger.info({ contactId, channel: preferredChannel, campaignId }, 'Lead registered via webhook')
+  logger.info({ contactId, channel: preferredChannel, campaignId, isNew }, 'Lead registered via webhook')
 
   return {
     ok: true,
@@ -189,7 +256,7 @@ export async function registerLead(
 }
 
 // ═══════════════════════════════════════════
-// Campaign lookup (direct SQL — no direct import from lead-scoring)
+// Campaign lookup (direct SQL)
 // ═══════════════════════════════════════════
 
 async function findCampaignByKeyword(
@@ -263,6 +330,7 @@ function resolvePreferredChannel(
   preferred: string,
   body: WebhookRegisterBody,
   registry: Registry,
+  phoneIsWhatsApp: boolean,
 ): string {
   // Get active non-voice channels
   const activeChannels = registry.listModules()
@@ -270,11 +338,16 @@ function resolvePreferredChannel(
     .map(m => m.manifest.name)
 
   if (preferred !== 'auto' && activeChannels.includes(preferred)) {
-    return preferred
+    // If preferred is whatsapp but phone isn't on WhatsApp, skip
+    if (preferred === 'whatsapp' && !phoneIsWhatsApp) {
+      // Fall through to auto logic
+    } else {
+      return preferred
+    }
   }
 
-  // Auto: prefer whatsapp if phone provided, else email
-  if (body.phone && activeChannels.includes('whatsapp')) return 'whatsapp'
+  // Auto: prefer whatsapp if phone provided AND on WhatsApp, else email
+  if (body.phone && phoneIsWhatsApp && activeChannels.includes('whatsapp')) return 'whatsapp'
   if (body.email && activeChannels.includes('email')) return 'email'
   if (body.email && activeChannels.includes('gmail')) return 'gmail'
   if (body.phone && activeChannels.includes('google-chat')) return 'google-chat'
@@ -285,18 +358,18 @@ function resolvePreferredChannel(
   throw new Error('No hay canales activos disponibles para contactar al lead')
 }
 
-function getChannelContactId(channel: string, body: WebhookRegisterBody): string | null {
+function getChannelContactId(
+  channel: string,
+  body: WebhookRegisterBody,
+  normalizedPhone: string | null,
+): string | null {
   if ((channel === 'email' || channel === 'gmail') && body.email) {
     return body.email.trim().toLowerCase()
   }
-  if ((channel === 'whatsapp' || channel === 'google-chat') && body.phone) {
-    return normalizePhone(body.phone)
+  if ((channel === 'whatsapp' || channel === 'google-chat') && normalizedPhone) {
+    return normalizedPhone
   }
   return null
-}
-
-function normalizePhone(phone: string): string {
-  return phone.replace(/[\s\-()]/g, '')
 }
 
 // ═══════════════════════════════════════════
@@ -309,7 +382,8 @@ async function upsertContact(
   body: WebhookRegisterBody,
   channelContactId: string,
   channelName: string,
-): Promise<string> {
+  normalizedPhone: string | null,
+): Promise<{ contactId: string; isNew: boolean }> {
   // 1. Try by primary channel identifier
   const existing = await db.query<{ id: string }>(
     `SELECT c.id FROM contacts c
@@ -320,8 +394,8 @@ async function upsertContact(
   )
   if (existing.rows.length > 0) {
     const contactId = existing.rows[0]!.id
-    await updateContactIfNeeded(db, contactId, body.name)
-    return contactId
+    await updateContactData(db, contactId, body, normalizedPhone)
+    return { contactId, isNew: false }
   }
 
   // 2. Cross-channel lookup by email
@@ -336,14 +410,13 @@ async function upsertContact(
     if (byEmail.rows.length > 0) {
       const contactId = byEmail.rows[0]!.id
       await ensureContactChannel(db, contactId, channelName, channelContactId, false)
-      await updateContactIfNeeded(db, contactId, body.name)
-      return contactId
+      await updateContactData(db, contactId, body, normalizedPhone)
+      return { contactId, isNew: false }
     }
   }
 
   // 3. Cross-channel lookup by phone
-  if (body.phone) {
-    const normalizedPhone = normalizePhone(body.phone)
+  if (normalizedPhone) {
     const byPhone = await db.query<{ id: string }>(
       `SELECT c.id FROM contacts c
        JOIN contact_channels cc ON cc.contact_id = c.id
@@ -354,48 +427,70 @@ async function upsertContact(
     if (byPhone.rows.length > 0) {
       const contactId = byPhone.rows[0]!.id
       await ensureContactChannel(db, contactId, channelName, channelContactId, false)
-      await updateContactIfNeeded(db, contactId, body.name)
-      return contactId
+      await updateContactData(db, contactId, body, normalizedPhone)
+      return { contactId, isNew: false }
     }
   }
 
   // 4. Create new contact — contact_origin = 'outbound'
   const result = await db.query<{ id: string }>(
-    `INSERT INTO contacts (display_name, contact_type, qualification_status, qualification_score, contact_origin)
-     VALUES ($1, 'lead', 'new', 0, 'outbound')
+    `INSERT INTO contacts (display_name, contact_type, qualification_status, qualification_score, contact_origin, email, phone)
+     VALUES ($1, 'lead', 'new', 0, 'outbound', $2, $3)
      RETURNING id`,
-    [body.name?.trim() ?? null],
+    [
+      body.name?.trim() ?? null,
+      body.email?.trim().toLowerCase() ?? null,
+      normalizedPhone,
+    ],
   )
   const contactId = result.rows[0]!.id
 
   // Create primary channel
   await ensureContactChannel(db, contactId, channelName, channelContactId, true)
 
-  // Populate extra fields if available
-  if (body.email) {
-    await db.query(
-      `UPDATE contacts SET email = COALESCE(email, $1) WHERE id = $2`,
-      [body.email.trim().toLowerCase(), contactId],
-    )
-  }
-  if (body.phone) {
-    await db.query(
-      `UPDATE contacts SET phone = COALESCE(phone, $1) WHERE id = $2`,
-      [normalizePhone(body.phone), contactId],
-    )
-  }
-
   // Fire contact:new hook
   await registry.runHook('contact:new', { contactId, channel: channelName })
 
-  return contactId
+  return { contactId, isNew: true }
 }
 
-async function updateContactIfNeeded(db: Pool, contactId: string, name?: string): Promise<void> {
-  if (!name) return
+/**
+ * Update existing contact with all provided data.
+ * Overwrites name, email, phone if provided (not COALESCE — always update).
+ */
+async function updateContactData(
+  db: Pool,
+  contactId: string,
+  body: WebhookRegisterBody,
+  normalizedPhone: string | null,
+): Promise<void> {
+  const sets: string[] = []
+  const params: unknown[] = []
+  let idx = 1
+
+  if (body.name?.trim()) {
+    sets.push(`display_name = $${idx}`)
+    params.push(body.name.trim())
+    idx++
+  }
+  if (body.email?.trim()) {
+    sets.push(`email = $${idx}`)
+    params.push(body.email.trim().toLowerCase())
+    idx++
+  }
+  if (normalizedPhone) {
+    sets.push(`phone = $${idx}`)
+    params.push(normalizedPhone)
+    idx++
+  }
+
+  if (sets.length === 0) return
+
+  sets.push(`updated_at = NOW()`)
+  params.push(contactId)
   await db.query(
-    `UPDATE contacts SET display_name = COALESCE(display_name, $1), updated_at = NOW() WHERE id = $2`,
-    [name.trim(), contactId],
+    `UPDATE contacts SET ${sets.join(', ')} WHERE id = $${idx}`,
+    params,
   )
 }
 
