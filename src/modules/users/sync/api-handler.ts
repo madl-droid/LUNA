@@ -607,12 +607,12 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
           const { generateToken } = await import('../webhook-handler.js')
           const newToken = generateToken()
 
-          // Update coworker syncConfig with new token
-          const existing = await db.getListConfig('coworker')
-          if (!existing) return error(res, 'Coworker config not found', 404)
+          // Update lead syncConfig with new token
+          const existing = await db.getListConfig('lead')
+          if (!existing) return error(res, 'Lead config not found', 404)
 
           const syncCfg = { ...existing.syncConfig, webhookToken: newToken }
-          await db.upsertListConfig('coworker', existing.displayName, existing.permissions, {
+          await db.upsertListConfig('lead', existing.displayName, existing.permissions, {
             isEnabled: existing.isEnabled,
             syncConfig: syncCfg,
           })

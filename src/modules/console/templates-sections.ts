@@ -1880,42 +1880,6 @@ function renderUsersSection(data: SectionData): string {
           <input type="hidden" name="coworker_roles" value="${esc(rolesOrig)}" data-original="${esc(rolesOrig)}" id="coworker-roles-hidden">
         </div>`
 
-      // Coworker: webhook settings
-      const whEnabled = (cfg.syncConfig as Record<string, unknown>)?.webhookEnabled === true
-      const whToken = ((cfg.syncConfig as Record<string, unknown>)?.webhookToken as string) ?? ''
-      const whChannel = ((cfg.syncConfig as Record<string, unknown>)?.webhookPreferredChannel as string) || 'auto'
-      const whEnabledOrig = whEnabled ? 'on' : ''
-      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Webhook de registro' : 'Registration webhook'}</span></div>
-        <div style="margin-bottom:12px">
-          <div class="chs-toggle-row" style="padding:10px 0">
-            <span style="font-size:13px">${lang === 'es' ? 'Habilitar webhook' : 'Enable webhook'}</span>
-            <span class="ch-footer-spacer"></span>
-            <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
-              ${whEnabled ? 'checked' : ''} data-hidden="webhook_enabled_coworker"
-              onchange="document.querySelector('[name=webhook_enabled_coworker]').value=this.checked?'on':'';document.getElementById('webhook-settings-coworker').style.display=this.checked?'block':'none'">
-            <input type="hidden" name="webhook_enabled_coworker" value="${whEnabledOrig}" data-original="${whEnabledOrig}">
-          </div>
-          <div id="webhook-settings-coworker" style="display:${whEnabled ? 'block' : 'none'};padding:12px 0">
-            <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:10px;line-height:1.5">
-              ${lang === 'es'
-                ? 'Endpoint: <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">POST /console/api/users/webhook/register</code><br>Usa Bearer token en el header Authorization.'
-                : 'Endpoint: <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">POST /console/api/users/webhook/register</code><br>Use Bearer token in the Authorization header.'}
-            </div>
-            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Token de autorización' : 'Authorization token'}</label>
-            <div style="display:flex;gap:6px;margin-bottom:10px">
-              <input type="text" class="wizard-input" name="webhook_token_coworker" value="${esc(whToken)}" data-original="${esc(whToken)}" style="flex:1;font-family:monospace;font-size:12px" readonly>
-              <button type="button" class="wizard-btn" style="white-space:nowrap;font-size:12px;padding:6px 10px" onclick="(async()=>{const r=await fetch('/console/api/users/webhook/regenerate-token',{method:'POST'});const d=await r.json();if(d.token){document.querySelector('[name=webhook_token_coworker]').value=d.token;showToast('${lang === 'es' ? 'Token regenerado' : 'Token regenerated'}')}})()">${lang === 'es' ? 'Regenerar' : 'Regenerate'}</button>
-              <button type="button" class="wizard-btn" style="white-space:nowrap;font-size:12px;padding:6px 10px" onclick="navigator.clipboard.writeText(document.querySelector('[name=webhook_token_coworker]').value);showToast('Copied!')">${lang === 'es' ? 'Copiar' : 'Copy'}</button>
-            </div>
-            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Canal preferido de contacto' : 'Preferred contact channel'}</label>
-            <select class="wizard-input" name="webhook_channel_coworker" data-original="${esc(whChannel)}" style="margin-bottom:8px">
-              <option value="auto" ${whChannel === 'auto' ? 'selected' : ''}>Auto</option>
-              <option value="whatsapp" ${whChannel === 'whatsapp' ? 'selected' : ''}>WhatsApp</option>
-              <option value="email" ${whChannel === 'email' ? 'selected' : ''}>Email (Gmail)</option>
-              <option value="google-chat" ${whChannel === 'google-chat' ? 'selected' : ''}>Google Chat</option>
-            </select>
-          </div>
-        </div>`
     }
 
     // Assignment rules (custom lists only — not system)
@@ -2032,6 +1996,49 @@ function renderUsersSection(data: SectionData): string {
       html += `<p class="panel-description" style="font-size:12px;color:var(--on-surface-dim)">${lang === 'es' ? 'No hay categorias de conocimiento configuradas. Activa el modulo de Knowledge para gestionar categorias.' : 'No knowledge categories configured. Activate the Knowledge module to manage categories.'}</p>`
     }
     html += `</div></div>` // end Knowledge panel
+
+    // Tab 4: Webhook de registro (leads only — column 2)
+    if (lt === 'lead') {
+      const whEnabled = (cfg.syncConfig as Record<string, unknown>)?.webhookEnabled === true
+      const whToken = ((cfg.syncConfig as Record<string, unknown>)?.webhookToken as string) ?? ''
+      const whChannel = ((cfg.syncConfig as Record<string, unknown>)?.webhookPreferredChannel as string) || 'auto'
+      const whEnabledOrig = whEnabled ? 'on' : ''
+      html += `<div class="panel${whEnabled ? '' : ' collapsed'}"><div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${lang === 'es' ? 'Webhook de registro' : 'Registration webhook'}</span>
+        <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
+        <div class="panel-info">${lang === 'es'
+          ? 'Registra leads desde sistemas externos (CRM, ads, formularios) via HTTP POST.'
+          : 'Register leads from external systems (CRM, ads, forms) via HTTP POST.'}</div>
+        <div class="chs-toggle-row" style="padding:10px 0">
+          <span style="font-size:13px">${lang === 'es' ? 'Habilitar webhook' : 'Enable webhook'}</span>
+          <span class="ch-footer-spacer"></span>
+          <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+            ${whEnabled ? 'checked' : ''} data-hidden="webhook_enabled_lead"
+            onchange="document.querySelector('[name=webhook_enabled_lead]').value=this.checked?'on':'';document.getElementById('webhook-settings-lead').style.display=this.checked?'block':'none'">
+          <input type="hidden" name="webhook_enabled_lead" value="${whEnabledOrig}" data-original="${whEnabledOrig}">
+        </div>
+        <div id="webhook-settings-lead" style="display:${whEnabled ? 'block' : 'none'};padding:12px 0">
+          <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:10px;line-height:1.5">
+            ${lang === 'es'
+              ? 'Endpoint: <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">POST /console/api/users/webhook/register</code><br>Usa Bearer token en el header Authorization.'
+              : 'Endpoint: <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">POST /console/api/users/webhook/register</code><br>Use Bearer token in the Authorization header.'}
+          </div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Token de autorizacion' : 'Authorization token'}</label>
+          <div style="display:flex;gap:6px;margin-bottom:10px">
+            <input type="text" class="wizard-input" name="webhook_token_lead" value="${esc(whToken)}" data-original="${esc(whToken)}" style="flex:1;font-family:monospace;font-size:12px" readonly>
+            <button type="button" class="wizard-btn" style="white-space:nowrap;font-size:12px;padding:6px 10px" onclick="(async()=>{const r=await fetch('/console/api/users/webhook/regenerate-token',{method:'POST'});const d=await r.json();if(d.token){document.querySelector('[name=webhook_token_lead]').value=d.token;showToast('${lang === 'es' ? 'Token regenerado' : 'Token regenerated'}')}})()">${lang === 'es' ? 'Regenerar' : 'Regenerate'}</button>
+            <button type="button" class="wizard-btn" style="white-space:nowrap;font-size:12px;padding:6px 10px" onclick="navigator.clipboard.writeText(document.querySelector('[name=webhook_token_lead]').value);showToast('Copied!')">${lang === 'es' ? 'Copiar' : 'Copy'}</button>
+          </div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Canal preferido de contacto' : 'Preferred contact channel'}</label>
+          <select class="wizard-input" name="webhook_channel_lead" data-original="${esc(whChannel)}" style="margin-bottom:8px">
+            <option value="auto" ${whChannel === 'auto' ? 'selected' : ''}>Auto</option>
+            <option value="whatsapp" ${whChannel === 'whatsapp' ? 'selected' : ''}>WhatsApp</option>
+            <option value="email" ${whChannel === 'email' ? 'selected' : ''}>Email (Gmail)</option>
+            <option value="google-chat" ${whChannel === 'google-chat' ? 'selected' : ''}>Google Chat</option>
+          </select>
+        </div>
+      </div></div>`
+    }
 
     html += `</div>` // end right column
     html += `</div></div>` // end cb-config-layout + cb-config-panel

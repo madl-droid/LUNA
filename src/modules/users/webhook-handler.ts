@@ -41,7 +41,7 @@ export async function loadWebhookConfig(registry: Registry): Promise<WebhookLead
   const usersDb = registry.getOptional<UDb>('users:db')
   if (!usersDb) return { WEBHOOK_LEADS_ENABLED: false, WEBHOOK_LEADS_TOKEN: '', WEBHOOK_LEADS_PREFERRED_CHANNEL: 'auto' }
 
-  const cfg = await usersDb.getListConfig('coworker')
+  const cfg = await usersDb.getListConfig('lead')
   if (!cfg) return { WEBHOOK_LEADS_ENABLED: false, WEBHOOK_LEADS_TOKEN: '', WEBHOOK_LEADS_PREFERRED_CHANNEL: 'auto' }
 
   const sc = cfg.syncConfig
@@ -261,31 +261,36 @@ async function findCampaignByKeyword(
   db: Pool,
   keyword: string,
 ): Promise<{ id: string; name: string } | null> {
-  // 1. Exact keyword match (case-insensitive)
-  const byKeyword = await db.query<{ id: string; name: string }>(
-    `SELECT id, name FROM campaigns WHERE LOWER(keyword) = LOWER($1) AND active = true LIMIT 1`,
-    [keyword.trim()],
-  )
-  if (byKeyword.rows.length > 0) return byKeyword.rows[0]!
-
-  // 2. Try by visible_id (numeric)
-  const numericId = parseInt(keyword, 10)
-  if (!isNaN(numericId) && String(numericId) === keyword.trim()) {
-    const byVisibleId = await db.query<{ id: string; name: string }>(
-      `SELECT id, name FROM campaigns WHERE visible_id = $1 AND active = true LIMIT 1`,
-      [numericId],
-    )
-    if (byVisibleId.rows.length > 0) return byVisibleId.rows[0]!
-  }
-
-  // 3. Try by UUID
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  if (uuidRegex.test(keyword.trim())) {
-    const byUuid = await db.query<{ id: string; name: string }>(
-      `SELECT id, name FROM campaigns WHERE id = $1 AND active = true LIMIT 1`,
+  try {
+    // 1. Exact keyword match (case-insensitive)
+    const byKeyword = await db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM campaigns WHERE LOWER(keyword) = LOWER($1) AND active = true LIMIT 1`,
       [keyword.trim()],
     )
-    if (byUuid.rows.length > 0) return byUuid.rows[0]!
+    if (byKeyword.rows.length > 0) return byKeyword.rows[0]!
+
+    // 2. Try by visible_id (numeric)
+    const numericId = parseInt(keyword, 10)
+    if (!isNaN(numericId) && String(numericId) === keyword.trim()) {
+      const byVisibleId = await db.query<{ id: string; name: string }>(
+        `SELECT id, name FROM campaigns WHERE visible_id = $1 AND active = true LIMIT 1`,
+        [numericId],
+      )
+      if (byVisibleId.rows.length > 0) return byVisibleId.rows[0]!
+    }
+
+    // 3. Try by UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (uuidRegex.test(keyword.trim())) {
+      const byUuid = await db.query<{ id: string; name: string }>(
+        `SELECT id, name FROM campaigns WHERE id = $1 AND active = true LIMIT 1`,
+        [keyword.trim()],
+      )
+      if (byUuid.rows.length > 0) return byUuid.rows[0]!
+    }
+  } catch (err) {
+    // campaigns table may not exist if lead-scoring module is inactive
+    logger.warn({ err: (err as Error).message, keyword }, 'Campaign lookup failed (table may not exist)')
   }
 
   return null
@@ -382,128 +387,96 @@ async function upsertContact(
   channelName: string,
   normalizedPhone: string | null,
 ): Promise<{ contactId: string; isNew: boolean }> {
+  // Uses users + user_contacts tables (kernel schema)
+
   // 1. Try by primary channel identifier
-  const existing = await db.query<{ id: string }>(
-    `SELECT c.id FROM contacts c
-     JOIN contact_channels cc ON cc.contact_id = c.id
-     WHERE cc.channel_contact_id = $1 AND cc.channel_name = $2
+  const existing = await db.query<{ user_id: string }>(
+    `SELECT uc.user_id FROM user_contacts uc
+     JOIN users u ON u.id = uc.user_id
+     WHERE uc.sender_id = $1 AND uc.channel = $2
      LIMIT 1`,
-    [channelContactId, channelName],
+    [channelContactId, channelName === 'voice' ? 'whatsapp' : channelName],
   )
   if (existing.rows.length > 0) {
-    const contactId = existing.rows[0]!.id
-    await updateContactData(db, contactId, body, normalizedPhone)
+    const contactId = existing.rows[0]!.user_id
+    await updateContactData(db, contactId, body)
     return { contactId, isNew: false }
   }
 
   // 2. Cross-channel lookup by email
   if (body.email) {
-    const byEmail = await db.query<{ id: string }>(
-      `SELECT c.id FROM contacts c
-       JOIN contact_channels cc ON cc.contact_id = c.id
-       WHERE cc.channel_contact_id = $1 AND cc.channel_name IN ('email', 'gmail')
+    const byEmail = await db.query<{ user_id: string }>(
+      `SELECT uc.user_id FROM user_contacts uc
+       WHERE uc.sender_id = $1 AND uc.channel IN ('email', 'gmail')
        LIMIT 1`,
       [body.email.trim().toLowerCase()],
     )
     if (byEmail.rows.length > 0) {
-      const contactId = byEmail.rows[0]!.id
+      const contactId = byEmail.rows[0]!.user_id
       await ensureContactChannel(db, contactId, channelName, channelContactId, false)
-      await updateContactData(db, contactId, body, normalizedPhone)
+      await updateContactData(db, contactId, body)
       return { contactId, isNew: false }
     }
   }
 
   // 3. Cross-channel lookup by phone
   if (normalizedPhone) {
-    const byPhone = await db.query<{ id: string }>(
-      `SELECT c.id FROM contacts c
-       JOIN contact_channels cc ON cc.contact_id = c.id
-       WHERE cc.channel_contact_id = $1 AND cc.channel_name IN ('whatsapp', 'voice')
+    const byPhone = await db.query<{ user_id: string }>(
+      `SELECT uc.user_id FROM user_contacts uc
+       WHERE uc.sender_id = $1 AND uc.channel IN ('whatsapp', 'twilio-voice')
        LIMIT 1`,
       [normalizedPhone],
     )
     if (byPhone.rows.length > 0) {
-      const contactId = byPhone.rows[0]!.id
+      const contactId = byPhone.rows[0]!.user_id
       await ensureContactChannel(db, contactId, channelName, channelContactId, false)
-      await updateContactData(db, contactId, body, normalizedPhone)
+      await updateContactData(db, contactId, body)
       return { contactId, isNew: false }
     }
   }
 
-  // 4. Create new contact — contact_origin = 'outbound'
-  const result = await db.query<{ id: string }>(
-    `INSERT INTO contacts (display_name, contact_type, qualification_status, qualification_score, contact_origin, email, phone)
-     VALUES ($1, 'lead', 'new', 0, 'outbound', $2, $3)
-     RETURNING id`,
-    [
-      body.name?.trim() ?? null,
-      body.email?.trim().toLowerCase() ?? null,
-      normalizedPhone,
-    ],
+  // 4. Create new user as lead
+  const userId = `USR-${crypto.randomBytes(3).toString('hex').toUpperCase()}`
+  await db.query(
+    `INSERT INTO users (id, display_name, list_type, metadata, source)
+     VALUES ($1, $2, 'lead', '{"contact_origin":"outbound"}'::jsonb, 'webhook')`,
+    [userId, body.name?.trim() ?? null],
   )
-  const contactId = result.rows[0]!.id
 
-  // Create primary channel
-  await ensureContactChannel(db, contactId, channelName, channelContactId, true)
+  // Create primary channel contact
+  await ensureContactChannel(db, userId, channelName, channelContactId, true)
 
-  // Fire contact:new hook
-  await registry.runHook('contact:new', { contactId, channel: channelName })
-
-  return { contactId, isNew: true }
+  return { contactId: userId, isNew: true }
 }
 
 /**
- * Update existing contact with all provided data.
- * Overwrites name, email, phone if provided (not COALESCE — always update).
+ * Update existing user with provided name.
  */
 async function updateContactData(
   db: Pool,
-  contactId: string,
+  userId: string,
   body: WebhookRegisterBody,
-  normalizedPhone: string | null,
 ): Promise<void> {
-  const sets: string[] = []
-  const params: unknown[] = []
-  let idx = 1
-
-  if (body.name?.trim()) {
-    sets.push(`display_name = $${idx}`)
-    params.push(body.name.trim())
-    idx++
-  }
-  if (body.email?.trim()) {
-    sets.push(`email = $${idx}`)
-    params.push(body.email.trim().toLowerCase())
-    idx++
-  }
-  if (normalizedPhone) {
-    sets.push(`phone = $${idx}`)
-    params.push(normalizedPhone)
-    idx++
-  }
-
-  if (sets.length === 0) return
-
-  sets.push(`updated_at = NOW()`)
-  params.push(contactId)
+  if (!body.name?.trim()) return
   await db.query(
-    `UPDATE contacts SET ${sets.join(', ')} WHERE id = $${idx}`,
-    params,
+    `UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2`,
+    [body.name.trim(), userId],
   )
 }
 
 async function ensureContactChannel(
   db: Pool,
-  contactId: string,
+  userId: string,
   channelName: string,
   channelContactId: string,
   isPrimary: boolean,
 ): Promise<void> {
+  const channel = channelName === 'voice' ? 'twilio-voice' : (channelName === 'gmail' ? 'email' : channelName)
   await db.query(
-    `INSERT INTO contact_channels (contact_id, channel_name, channel_contact_id, is_primary)
+    `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (channel_name, channel_contact_id) DO NOTHING`,
-    [contactId, channelName, channelContactId, isPrimary],
+     ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1`,
+    [userId, channel, channelContactId, isPrimary],
   )
 }
 
