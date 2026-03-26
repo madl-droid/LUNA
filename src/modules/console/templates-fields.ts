@@ -28,11 +28,12 @@ export function numField(key: string, value: string, lang: Lang, labelKey?: stri
     <input type="text" inputmode="numeric" name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>`
 }
 
-export function boolField(key: string, value: string, lang: Lang, labelKey?: string): string {
+export function boolField(key: string, value: string, lang: Lang, labelKey?: string, infoKey?: string): string {
   const label = labelKey ? t(labelKey, lang) : key
+  const tip = infoKey ? infoBtnWithTip(key, t(infoKey, lang)) : ''
   const checked = value === 'true'
   return `<div class="toggle-field">
-    <span class="field-label">${label}</span>
+    <span class="field-label">${label}</span>${tip}
     <label class="toggle"><input type="checkbox" name="${key}" value="true" ${checked ? 'checked' : ''} data-original="${esc(value)}"><span class="toggle-slider"></span></label>
     <input type="hidden" name="${key}" value="${checked ? 'true' : 'false'}" data-original="${esc(value)}">
   </div>`
