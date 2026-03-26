@@ -6,7 +6,7 @@ import type { Registry } from '../../kernel/registry.js'
 import { boolEnv, numEnv, numEnvMin } from '../../kernel/config-helpers.js'
 import type { ScheduledTasksConfig } from './types.js'
 import * as store from './store.js'
-import { startScheduler, stopScheduler } from './scheduler.js'
+import { startScheduler, stopScheduler, addDelayedJob, removeJobById } from './scheduler.js'
 import { createApiRoutes } from './api-routes.js'
 import { renderTasksSection } from './templates.js'
 import { executeTask } from './executor.js'
@@ -103,6 +103,15 @@ const manifest: ModuleManifest = {
       } catch { /* tools module not available */ }
 
       return renderTasksSection(tasks, lang, userGroups, availableTools)
+    })
+
+    // Provide programmatic API for other modules (e.g. medilink follow-ups)
+    registry.provide('scheduled-tasks:api', {
+      createTask: (input: import('./types.js').CreateTaskInput) => store.createTask(db, input),
+      deleteTask: async (id: string) => { await store.deleteTask(db, id) },
+      getTask: (id: string) => store.getTask(db, id),
+      addDelayedJob,
+      removeJobById,
     })
 
     // Register event-based triggers

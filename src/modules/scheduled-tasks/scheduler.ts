@@ -144,6 +144,34 @@ export async function unscheduleTask(taskId: string): Promise<void> {
   }
 }
 
+/**
+ * Add a one-shot delayed job to the shared queue.
+ * Used by other modules (e.g. medilink follow-ups) to schedule
+ * future task execution without creating their own BullMQ queue.
+ */
+export async function addDelayedJob(taskId: string, taskName: string, delayMs: number): Promise<string | null> {
+  if (!queue) return null
+  const job = await queue.add(
+    taskName,
+    { taskId, taskName } as TaskJobPayload,
+    { delay: delayMs, jobId: `delayed:${taskId}`, attempts: 2, backoff: { type: 'exponential', delay: 60000 } },
+  )
+  return job.id ?? null
+}
+
+/**
+ * Remove a delayed or repeatable job by its jobId.
+ */
+export async function removeJobById(jobId: string): Promise<void> {
+  if (!queue) return
+  try {
+    const job = await queue.getJob(jobId)
+    if (job) await job.remove()
+  } catch (err) {
+    logger.warn({ err, jobId }, 'Failed to remove job')
+  }
+}
+
 export async function triggerNow(
   db: Pool,
   registry: Registry,

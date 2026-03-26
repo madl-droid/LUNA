@@ -39,6 +39,7 @@ src/
     scheduled-tasks/ — tareas programadas del agente (ver CLAUDE.md)
     tts/             — síntesis de voz: Google Cloud TTS (ver CLAUDE.md)
     freight/         — wrapper modular de tool de flete (ver CLAUDE.md)
+    medilink/        — integración Medilink/HealthAtom: pacientes, citas, follow-up (ver CLAUDE.md)
   tools/
     freight/         — tool de estimación de flete (ver src/tools/freight/CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
@@ -207,6 +208,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Cloud TTS, OGG_OPUS, PTT voice notes)
 - `src/modules/freight/CLAUDE.md` — wrapper modular de la tool de flete
 - `src/tools/freight/CLAUDE.md` — estimación de flete internacional (SeaRates + DHL Express)
+- `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 

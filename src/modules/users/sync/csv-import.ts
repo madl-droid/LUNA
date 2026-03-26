@@ -100,6 +100,7 @@ export async function importCsv(
   cache: UserCache,
   listType: string,
   csvContent: string,
+  source = 'csv_import',
 ): Promise<BulkImportResult> {
   const rows = parseCsv(csvContent)
 
@@ -138,7 +139,7 @@ export async function importCsv(
         displayName: row['display_name'] || undefined,
         contacts: [{ channel, senderId }],
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-        source: 'csv_import',
+        source,
       })
       result.created++
       await cache.invalidate(senderId)

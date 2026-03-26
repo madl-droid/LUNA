@@ -403,6 +403,10 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   const m = k.match(/^(?:mod|tool|sub|kcat|assignment_enabled|assignment_prompt|disable|list_enabled|perm)_([^_]+)/)
                   if (m) listsToUpdate.add(m[1]!)
                 }
+                // Coworker domains/roles fields → ensure coworker is in the update set
+                if (up['coworker_domains'] !== undefined || up['coworker_roles'] !== undefined) {
+                  listsToUpdate.add('coworker')
+                }
 
                 for (const lt of listsToUpdate) {
                   const existing = await usersDb.getListConfig(lt)
@@ -428,6 +432,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   // List enabled
                   const isEnabled = up[`list_enabled_${lt}`] === 'true' || up[`list_enabled_${lt}`] === 'on'
 
+                  // Merge coworker domains/roles into syncConfig
+                  const syncCfg = { ...existing.syncConfig }
+                  if (lt === 'coworker') {
+                    if (up['coworker_domains'] !== undefined) {
+                      syncCfg.domains = up['coworker_domains'] ? up['coworker_domains'].split(',').map((d: string) => d.trim()).filter(Boolean) : []
+                    }
+                    if (up['coworker_roles'] !== undefined) {
+                      syncCfg.roles = up['coworker_roles'] ? up['coworker_roles'].split(',').map((r: string) => r.trim()).filter(Boolean) : []
+                    }
+                  }
+
                   await usersDb.upsertListConfig(lt, existing.displayName, {
                     tools: tools.length > 0 ? tools : existing.permissions.tools,
                     skills: existing.permissions.skills,
@@ -443,6 +458,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                     unregisteredBehavior: lt === 'lead' && up['unregisteredBehavior'] ? up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' : existing.unregisteredBehavior,
                     unregisteredMessage: lt === 'lead' && up['unregisteredMessage'] !== undefined ? up['unregisteredMessage'] : existing.unregisteredMessage,
                     maxUsers: existing.maxUsers,
+                    syncConfig: syncCfg,
                   })
                 }
 
@@ -589,7 +605,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             }
           }
 
-          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts })
+          // Build metadata (role for coworkers)
+          const metadata: Record<string, unknown> = {}
+          const userRole = body['userRole']?.trim()
+          if (userRole && listType === 'coworker') metadata.role = userRole
+
+          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts, metadata: Object.keys(metadata).length > 0 ? metadata : undefined })
           // Invalidate cache for all new contacts
           for (const c of contacts) await usersCache.invalidate(c.senderId)
 
@@ -615,10 +636,18 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const userId = body['userId']
           if (!userId) throw new Error('Missing userId')
 
-          // Update name
+          // Build metadata update (role for coworkers)
+          const updateMeta: Record<string, unknown> = {}
+          const lt = body['listType'] || ''
+          if (lt === 'coworker' && body['userRole'] !== undefined) {
+            updateMeta.role = body['userRole']?.trim() || null
+          }
+
+          // Update name + metadata
           await usersDb.updateUser(userId, {
             displayName: body['displayName'] || undefined,
-            listType: body['listType'] || undefined,
+            listType: lt || undefined,
+            metadata: Object.keys(updateMeta).length > 0 ? updateMeta : undefined,
           })
 
           // Sync contacts: for each channel, update/add/remove
@@ -820,6 +849,37 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
+      if (localUrl === '/users/toggle-list') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const listType = body['listType']
+          const isEnabled = body['enabled'] === 'true'
+          const disableBehavior = body['disableBehavior'] as 'leads' | 'silence' | 'move' | undefined
+          const disableTarget = body['disableTarget'] as string | undefined
+          if (!listType) throw new Error('Missing listType')
+
+          const existing = await usersDb.getListConfig(listType)
+          if (existing) {
+            await usersDb.upsertListConfig(listType, existing.displayName, existing.permissions, {
+              isEnabled,
+              ...(disableBehavior ? { disableBehavior } : {}),
+              ...(disableTarget ? { disableTargetList: disableTarget } : {}),
+            })
+            await usersCache.invalidateAll()
+            logger.info({ listType, isEnabled }, 'Contact list toggled')
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to toggle contact list')
+        }
+        const redirect = body['_redirect'] || `/console/contacts?page=config&lang=${lang}`
+        res.writeHead(302, { Location: redirect })
+        res.end()
+        return true
+      }
+
       if (localUrl === '/users/delete-list') {
         try {
           const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
@@ -937,6 +997,30 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       if (section === 'contacts' && !contactsSubpage) {
         contactsSubpage = 'config'
       }
+      // Nested agente: /console/agente/{subpage} → render agente section with subpage
+      let agenteSubpage: string | null = null
+      const agenteMatch = section.match(/^agente\/(.+)$/)
+      if (agenteMatch?.[1]) {
+        agenteSubpage = agenteMatch[1]
+        section = 'agente'
+      }
+      // /console/agente without subpage → default to knowledge
+      if (section === 'agente' && !agenteSubpage) {
+        agenteSubpage = 'knowledge'
+      }
+
+      // Redirect old section IDs to unified agente page
+      const agenteRedirects: Record<string, string> = {
+        llm: 'advanced', pipeline: 'advanced', infra: 'advanced',
+        knowledge: 'knowledge', memory: 'memory', prompts: 'identity',
+      }
+      if (agenteRedirects[section]) {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/agente/${agenteRedirects[section]}?lang=${lang}` })
+        res.end()
+        return true
+      }
+
       // Redirect old /console/users to /console/contacts
       if (section === 'users') {
         const lang = detectLang(req)
@@ -1013,6 +1097,38 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* module not available */ }
       }
 
+      // Agente unified page: render sub-page content
+      if (section === 'agente' && agenteSubpage) {
+        sectionData.agenteSubpage = agenteSubpage
+        // Map sub-pages to their actual section renderers
+        if (agenteSubpage === 'advanced') {
+          // Combine LLM + Pipeline + Engine + Infra with dividers
+          const llmHtml = renderSection('llm', sectionData) || ''
+          const pipelineHtml = renderSection('pipeline', sectionData) || ''
+          const engineMod = data.moduleStates.find(m => m.name === 'engine')
+          const engineHtml = engineMod?.active && engineMod.console?.fields?.length
+            ? renderModulePanels([engineMod], data.config, lang, 'engine')
+            : ''
+          const infraHtml = renderSection('infra', sectionData) || ''
+          sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml
+        } else if (agenteSubpage === 'knowledge') {
+          const knowledgeMod = data.moduleStates.find(m => m.name === 'knowledge')
+          sectionData.agenteContent = knowledgeMod?.active && knowledgeMod.console?.fields?.length
+            ? renderModulePanels([knowledgeMod], data.config, lang, 'knowledge')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'memory') {
+          const memoryMod = data.moduleStates.find(m => m.name === 'memory')
+          sectionData.agenteContent = memoryMod?.active && memoryMod.console?.fields?.length
+            ? renderModulePanels([memoryMod], data.config, lang, 'memory')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'identity') {
+          const promptsMod = data.moduleStates.find(m => m.name === 'prompts')
+          sectionData.agenteContent = promptsMod?.active && promptsMod.console?.fields?.length
+            ? renderModulePanels([promptsMod], data.config, lang, 'prompts')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
+        }
+      }
+
       // Channel settings pages: use the 2-column channel settings renderer
       let content: string | null = null
       if (channelSettingsId === 'ack-messages') {
@@ -1064,12 +1180,34 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         ? data.moduleStates.find(m => m.name === channelSettingsId)?.console?.title?.[lang] ?? channelSettingsId
         : undefined
 
-      // Build contacts submenu data
-      const contactLists = sectionData.usersData?.configs?.map(c => ({
-        listType: c.listType,
-        displayName: c.displayName,
-        count: sectionData.usersData?.counts?.[c.listType] ?? 0,
-      })) ?? []
+      // Build contacts submenu data (always load for sidebar, even on non-contacts pages)
+      let contactLists: Array<{ listType: string; displayName: string; count: number; isEnabled?: boolean }> = []
+      if (sectionData.usersData) {
+        contactLists = sectionData.usersData.configs.map(c => ({
+          listType: c.listType,
+          displayName: c.displayName,
+          count: sectionData.usersData?.counts?.[c.listType] ?? 0,
+          isEnabled: c.isEnabled,
+        }))
+      } else {
+        // Fetch minimal list data for sidebar even when not on contacts page
+        try {
+          const dataFn = registry.getOptional<() => Promise<unknown>>('users:sectionData')
+          if (dataFn) {
+            const ud = await dataFn() as Record<string, unknown>
+            if (ud) {
+              const configs = (ud.configs ?? []) as Array<{ listType: string; displayName: string; isEnabled: boolean }>
+              const counts = (ud.counts ?? {}) as Record<string, number>
+              contactLists = configs.map(c => ({
+                listType: c.listType,
+                displayName: c.displayName,
+                count: counts[c.listType] ?? 0,
+                isEnabled: c.isEnabled,
+              }))
+            }
+          }
+        } catch { /* users module not available */ }
+      }
 
       const html = pageLayout({
         section: sidebarSection,
@@ -1085,8 +1223,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         dynamicModules: data.dynamicModules,
         channelModules,
         testMode: data.config.ENGINE_TEST_MODE === 'true',
+        debugCacheEnabled: data.config.DEBUG_CACHE_ENABLED !== 'false',
+        debugExtremeLog: data.config.DEBUG_EXTREME_LOG === 'true',
+        debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
+        agenteSubpage: agenteSubpage ?? undefined,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
@@ -1395,28 +1537,116 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/reset-db — testing only
+    // POST /console/api/console/clear-cache — flush Redis (test mode only)
     {
       method: 'POST',
-      path: 'reset-db',
+      path: 'clear-cache',
       handler: async (_req, res) => {
         try {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
-          if (!registry) {
-            jsonResponse(res, 500, { error: 'Registry not available' })
-            return
-          }
-
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const config = await (await import('./manifest-ref.js')).getRegistryRef()?.getOptional?.('config:store')
+          // Gate behind test mode
           const db = registry.getDb()
-          await db.query('TRUNCATE messages CASCADE')
-          await registry.getRedis().flushdb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
 
-          logger.info('Database and Redis flushed (testing reset)')
+          await registry.getRedis().flushdb()
+          logger.info('Redis cache flushed (debug panel)')
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
-          logger.error({ err }, 'Failed to reset databases')
-          jsonResponse(res, 500, { error: 'Failed to reset: ' + String(err) })
+          logger.error({ err }, 'Failed to clear cache')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/clear-memory — truncate all except config + users (test mode only)
+    {
+      method: 'POST',
+      path: 'clear-memory',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+
+          const tables = [
+            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
+            'pipeline_logs', 'daily_reports', 'ack_messages',
+            'contacts', 'contact_channels', 'agent_contacts', 'companies',
+            'attachment_extractions',
+            'tools', 'tool_access_rules', 'tool_executions',
+            'prompt_slots', 'campaigns',
+            'llm_usage', 'llm_daily_stats',
+            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
+            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
+            'scheduled_tasks', 'scheduled_task_executions',
+            'voice_calls', 'voice_call_transcripts',
+            'email_state', 'email_threads',
+            'google_chat_spaces',
+          ]
+          for (const t of tables) {
+            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+          }
+          await registry.getRedis().flushdb()
+          logger.info('All memory cleared (debug panel) — config_store, users preserved')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'Failed to clear memory')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/factory-reset — clear config + memory, keep admin users (test mode only)
+    {
+      method: 'POST',
+      path: 'factory-reset',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+
+          // Keep admin-related keys
+          await db.query(`DELETE FROM config_store WHERE key NOT IN ('CONSOLE_ADMIN_USER', 'CONSOLE_ADMIN_PASS', 'CONSOLE_ADMIN_HASH')`)
+
+          // Truncate all data tables (same as clear-memory + auth tables)
+          const tables = [
+            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
+            'pipeline_logs', 'daily_reports', 'ack_messages',
+            'contacts', 'contact_channels', 'agent_contacts', 'companies',
+            'attachment_extractions',
+            'tools', 'tool_access_rules', 'tool_executions',
+            'prompt_slots', 'campaigns',
+            'llm_usage', 'llm_daily_stats',
+            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
+            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
+            'scheduled_tasks', 'scheduled_task_executions',
+            'voice_calls', 'voice_call_transcripts',
+            'email_state', 'email_threads', 'email_oauth_tokens',
+            'google_oauth_tokens', 'google_chat_spaces',
+            'wa_auth_creds', 'wa_auth_keys',
+          ]
+          for (const t of tables) {
+            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+          }
+          await registry.getRedis().flushdb()
+          logger.info('Factory reset completed (debug panel) — admin users preserved')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'Failed to factory reset')
+          jsonResponse(res, 500, { error: String(err) })
         }
       },
     },

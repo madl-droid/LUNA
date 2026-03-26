@@ -21,7 +21,10 @@ export interface IncomingMessage {
   id: string
   channelName: ChannelName
   channelMessageId: string
+  /** Channel-specific sender ID (e.g. LID for WhatsApp, email for Gmail) */
   from: string
+  /** Phone number resolved from LID mapping (WhatsApp only). Used to auto-create voice channel. */
+  resolvedPhone?: string
   timestamp: Date
   content: MessageContent
   attachments?: AttachmentMeta[]

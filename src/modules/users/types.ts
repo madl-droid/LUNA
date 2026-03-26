@@ -4,6 +4,9 @@
 /** Tipos fijos del sistema. string permite custom lists. */
 export type UserType = 'admin' | 'coworker' | 'lead' | string
 
+/** Source values for contact origin tracking. */
+export type ContactSource = 'manual' | 'inbound' | 'outbound' | 'csv_import' | 'sheet_sync' | 'api'
+
 /** Comportamiento cuando el contacto no está en ninguna lista y lead está desactivado. */
 export type UnregisteredBehavior = 'silence' | 'generic_message' | 'register_only' | 'leads'
 
@@ -133,6 +136,10 @@ export interface SyncConfig {
   lastSyncAt?: string
   lastSyncStatus?: 'ok' | 'error'
   lastSyncError?: string
+  /** Email domains for auto-assignment (coworker only). E.g. ['@empresa.com'] */
+  domains?: string[]
+  /** Available roles for dropdown (coworker only). E.g. ['gerente', 'vendedor'] */
+  roles?: string[]
 }
 
 /** Payload para importación masiva. */
