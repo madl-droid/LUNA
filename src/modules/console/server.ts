@@ -1085,6 +1085,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         dynamicModules: data.dynamicModules,
         channelModules,
         testMode: data.config.ENGINE_TEST_MODE === 'true',
+        debugCacheEnabled: data.config.DEBUG_CACHE_ENABLED !== 'false',
+        debugExtremeLog: data.config.DEBUG_EXTREME_LOG === 'true',
+        debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
       })
@@ -1395,28 +1398,116 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/reset-db — testing only
+    // POST /console/api/console/clear-cache — flush Redis (test mode only)
     {
       method: 'POST',
-      path: 'reset-db',
+      path: 'clear-cache',
       handler: async (_req, res) => {
         try {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
-          if (!registry) {
-            jsonResponse(res, 500, { error: 'Registry not available' })
-            return
-          }
-
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const config = await (await import('./manifest-ref.js')).getRegistryRef()?.getOptional?.('config:store')
+          // Gate behind test mode
           const db = registry.getDb()
-          await db.query('TRUNCATE messages CASCADE')
-          await registry.getRedis().flushdb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
 
-          logger.info('Database and Redis flushed (testing reset)')
+          await registry.getRedis().flushdb()
+          logger.info('Redis cache flushed (debug panel)')
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
-          logger.error({ err }, 'Failed to reset databases')
-          jsonResponse(res, 500, { error: 'Failed to reset: ' + String(err) })
+          logger.error({ err }, 'Failed to clear cache')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/clear-memory — truncate all except config + users (test mode only)
+    {
+      method: 'POST',
+      path: 'clear-memory',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+
+          const tables = [
+            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
+            'pipeline_logs', 'daily_reports', 'ack_messages',
+            'contacts', 'contact_channels', 'agent_contacts', 'companies',
+            'attachment_extractions',
+            'tools', 'tool_access_rules', 'tool_executions',
+            'prompt_slots', 'campaigns',
+            'llm_usage', 'llm_daily_stats',
+            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
+            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
+            'scheduled_tasks', 'scheduled_task_executions',
+            'voice_calls', 'voice_call_transcripts',
+            'email_state', 'email_threads',
+            'google_chat_spaces',
+          ]
+          for (const t of tables) {
+            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+          }
+          await registry.getRedis().flushdb()
+          logger.info('All memory cleared (debug panel) — config_store, users preserved')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'Failed to clear memory')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/factory-reset — clear config + memory, keep admin users (test mode only)
+    {
+      method: 'POST',
+      path: 'factory-reset',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+
+          // Keep admin-related keys
+          await db.query(`DELETE FROM config_store WHERE key NOT IN ('CONSOLE_ADMIN_USER', 'CONSOLE_ADMIN_PASS', 'CONSOLE_ADMIN_HASH')`)
+
+          // Truncate all data tables (same as clear-memory + auth tables)
+          const tables = [
+            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
+            'pipeline_logs', 'daily_reports', 'ack_messages',
+            'contacts', 'contact_channels', 'agent_contacts', 'companies',
+            'attachment_extractions',
+            'tools', 'tool_access_rules', 'tool_executions',
+            'prompt_slots', 'campaigns',
+            'llm_usage', 'llm_daily_stats',
+            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
+            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
+            'scheduled_tasks', 'scheduled_task_executions',
+            'voice_calls', 'voice_call_transcripts',
+            'email_state', 'email_threads', 'email_oauth_tokens',
+            'google_oauth_tokens', 'google_chat_spaces',
+            'wa_auth_creds', 'wa_auth_keys',
+          ]
+          for (const t of tables) {
+            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+          }
+          await registry.getRedis().flushdb()
+          logger.info('Factory reset completed (debug panel) — admin users preserved')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'Failed to factory reset')
+          jsonResponse(res, 500, { error: String(err) })
         }
       },
     },

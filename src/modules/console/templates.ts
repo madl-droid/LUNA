@@ -128,6 +128,12 @@ export interface PageOptions {
   channelDisplayName?: string
   /** Whether ENGINE_TEST_MODE is currently active */
   testMode?: boolean
+  /** Debug panel: cache enabled */
+  debugCacheEnabled?: boolean
+  /** Debug panel: extreme logging */
+  debugExtremeLog?: boolean
+  /** Debug panel: admin-only responses */
+  debugAdminOnly?: boolean
   /** Active contacts sub-page (list type or 'config') */
   contactsSubpage?: string
   /** Available contact list types for sidebar submenu */
@@ -240,6 +246,43 @@ function renderHeader(opts: PageOptions): string {
       <button class="header-search-mobile" id="btn-search-mobile" onclick="openMobileSearch()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
+      ${opts.testMode ? `<!-- Debug panel (only in test mode) -->
+      <div class="header-dropdown-wrap">
+        <button class="header-icon-btn header-debug-btn" id="btn-debug" data-dropdown="debug-panel" title="Debug">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>
+        </button>
+        <div class="header-dropdown header-dropdown-debug" id="debug-panel">
+          <div class="dropdown-header">${t('dbg_title', opts.lang)}</div>
+          <div class="dropdown-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            <span>${t('dbg_cache', opts.lang)}</span>
+            <label class="toggle toggle-sm"><input type="checkbox" id="debug-cache-cb"${opts.debugCacheEnabled !== false ? ' checked' : ''}><span class="toggle-slider"></span></label>
+          </div>
+          <div class="dropdown-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/><line x1="10" y1="13" x2="10" y2="17"/><line x1="14" y1="13" x2="14" y2="17"/></svg>
+            <span>${t('dbg_extreme_log', opts.lang)}</span>
+            <label class="toggle toggle-sm"><input type="checkbox" id="debug-log-cb"${opts.debugExtremeLog ? ' checked' : ''}><span class="toggle-slider"></span></label>
+          </div>
+          <div class="dropdown-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>${t('dbg_admin_only', opts.lang)}</span>
+            <label class="toggle toggle-sm"><input type="checkbox" id="debug-admin-cb"${opts.debugAdminOnly !== false ? ' checked' : ''}><span class="toggle-slider"></span></label>
+          </div>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-item dropdown-item-danger" id="btn-clear-cache">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            ${t('dbg_clear_cache', opts.lang)}
+          </div>
+          <div class="dropdown-item dropdown-item-danger" id="btn-clear-memory">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            ${t('dbg_clear_memory', opts.lang)}
+          </div>
+          <div class="dropdown-item dropdown-item-danger" id="btn-factory-reset">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            ${t('dbg_factory_reset', opts.lang)}
+          </div>
+        </div>
+      </div>` : ''}
       <!-- Notifications -->
       <div class="header-dropdown-wrap">
         <button class="header-icon-btn" id="btn-notifications" data-dropdown="notif-panel">
@@ -275,12 +318,14 @@ function renderHeader(opts: PageOptions): string {
             <span>${i18n('testMode', opts.lang)}</span>
             <label class="toggle toggle-sm"><input type="checkbox" id="test-mode-cb"${opts.testMode ? ' checked' : ''}><span class="toggle-slider"></span></label>
           </div>
-          <div class="dropdown-item dropdown-item-danger" id="btn-resetdb-menu" style="display:${opts.testMode ? 'flex' : 'none'}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            ${i18n('resetDb', opts.lang)}
-          </div>
           <div class="dropdown-divider"></div>
-          <div class="dropdown-lang-section">
+          <!-- Language submenu -->
+          <div class="dropdown-item dropdown-submenu-trigger" id="lang-submenu-trigger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span>${LANG_LABELS[opts.lang]}</span>
+            <svg class="dropdown-submenu-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="dropdown-submenu" id="lang-submenu">
             ${langOptions}
           </div>
           <div class="dropdown-divider"></div>
@@ -291,7 +336,19 @@ function renderHeader(opts: PageOptions): string {
         </div>
       </div>
     </div>
-  </header>`
+  </header>
+  <!-- Type-to-confirm modal (reusable for all destructive actions) -->
+  <div class="confirm-modal-overlay" id="confirm-modal" style="display:none">
+    <div class="confirm-modal">
+      <div class="confirm-modal-title" id="confirm-modal-title"></div>
+      <div class="confirm-modal-desc" id="confirm-modal-desc"></div>
+      <input type="text" class="confirm-modal-input" id="confirm-modal-input" autocomplete="off" spellcheck="false">
+      <div class="confirm-modal-actions">
+        <button class="confirm-modal-cancel" id="confirm-modal-cancel">${t('dbg_confirm_cancel', opts.lang)}</button>
+        <button class="confirm-modal-btn" id="confirm-modal-btn" disabled>${t('dbg_confirm_btn', opts.lang)}</button>
+      </div>
+    </div>
+  </div>`
 }
 
 // ═══════════════════════════════════════════
