@@ -72,7 +72,7 @@ export async function resolveUserType(senderId: string, channel: string, fallbac
       try {
         const newUser = await _db.createUser({
           listType: 'lead',
-          displayName: null,
+          displayName: undefined,
           contacts: [{ channel, senderId }],
           source: 'inbound',
         })

@@ -187,7 +187,7 @@ async function processMessageInner(
         try {
           const usersDb = registry.getOptional<{ getListConfig(lt: string): Promise<{ unregisteredMessage: string | null } | null> }>('users:db')
           const leadCfg = usersDb ? await usersDb.getListConfig('lead') : null
-          const msg = leadCfg?.unregisteredMessage || (message.channelName === 'gmail'
+          const msg = leadCfg?.unregisteredMessage || (message.channelName === 'email'
             ? 'Thank you for your message. We will get back to you soon.'
             : 'Gracias por tu mensaje. Te contactaremos pronto.')
           await registry.runHook('message:send', {

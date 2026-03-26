@@ -272,7 +272,7 @@ export interface PipelineResult {
   responseText?: string
   deliveryResult?: DeliveryResult
   error?: string
-  skipped?: 'test_mode' | 'backpressure'
+  skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}`
   replanAttempts: number
   subagentIterationsUsed: number
 }
