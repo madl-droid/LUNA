@@ -84,7 +84,8 @@ export class SecurityService {
       }
 
       if (patients.length > 1) {
-        logger.info({ phone: ctx.contactPhone, count: patients.length }, 'Multiple patients with same phone — requires document verification')
+        // FIX: SEC-12.1 — No loguear teléfono completo (PII)
+        logger.info({ phoneLast4: ctx.contactPhone?.slice(-4), count: patients.length }, 'Multiple patients with same phone — requires document verification')
       }
     } catch (err) {
       logger.warn({ err, contactId: ctx.contactId }, 'Auto-link by phone failed')

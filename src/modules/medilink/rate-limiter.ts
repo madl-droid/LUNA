@@ -104,22 +104,19 @@ export class RateLimiter {
     return false
   }
 
+  // FIX: SEC-8.3 — Atomic check+increment via Lua script (TOCTOU fix)
   private async tryConsumeRedis(): Promise<boolean> {
     if (!this.redis) return this.tryConsumeLocal()
     try {
       const now = Date.now()
       const windowKey = `${REDIS_KEY}:${Math.floor(now / WINDOW_MS)}`
-      const count = await this.redis.incr(windowKey)
-      if (count === 1) {
-        await this.redis.pexpire(windowKey, WINDOW_MS + 1000)
+      const ttlSeconds = Math.ceil((WINDOW_MS + 1000) / 1000)
+      const { atomicRateCheck } = await import('../../kernel/redis-rate-limiter.js')
+      const allowed = await atomicRateCheck(this.redis, windowKey, this.maxPerMinute, ttlSeconds)
+      if (allowed) {
+        this.localCounter++
       }
-      if (count <= this.maxPerMinute) {
-        this.localCounter = count
-        return true
-      }
-      await this.redis.decr(windowKey)
-      this.localCounter = count - 1
-      return false
+      return allowed
     } catch (err) {
       logger.warn({ err }, 'Redis rate limit check failed, falling back to local')
       return this.tryConsumeLocal()

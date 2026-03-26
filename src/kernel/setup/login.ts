@@ -139,13 +139,27 @@ export function createLoginHandler(pool: Pool, redis: Redis): (req: http.Incomin
 
     // POST /console/login — authenticate
     if (urlPath === '/console/login' && method === 'POST') {
+      // FIX: K-4/K-8 — Rate limiting para prevenir brute force
+      const ip = req.socket.remoteAddress || 'unknown'
+      try {
+        const loginKey = `login_attempts:${ip}`
+        const attempts = await redis.incr(loginKey)
+        if (attempts === 1) await redis.expire(loginKey, 300) // 5 min window
+        if (attempts > 10) {
+          res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8' })
+          res.end(loginPage(lang, { type: 'error', message: st('login_error', lang) }))
+          return true
+        }
+      } catch { /* Redis error — allow login attempt */ }
+
       const form = await parseFormBody(req)
       const email = form['email']?.trim() ?? ''
       const password = form['password'] ?? ''
 
       const user = await findUserByEmail(pool, email)
       if (!user || user.listType !== 'admin') {
-        logger.warn({ email, listType: user?.listType }, 'Login failed — user not found or not admin')
+        // FIX: SEC-12.1 — No loguear email completo (PII)
+        logger.warn({ emailPrefix: email.slice(0, 3) + '***', listType: user?.listType }, 'Login failed — user not found or not admin')
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end(loginPage(lang, { type: 'error', message: st('login_error', lang) }))
         return true
@@ -153,7 +167,8 @@ export function createLoginHandler(pool: Pool, redis: Redis): (req: http.Incomin
 
       const storedHash = await getCredentials(pool, user.userId)
       if (!storedHash || !await verifyPassword(password, storedHash)) {
-        logger.warn({ email }, 'Login failed — invalid password')
+        // FIX: SEC-12.1 — No loguear email completo (PII)
+        logger.warn({ emailPrefix: email.slice(0, 3) + '***' }, 'Login failed — invalid password')
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end(loginPage(lang, { type: 'error', message: st('login_error', lang) }))
         return true
@@ -162,7 +177,8 @@ export function createLoginHandler(pool: Pool, redis: Redis): (req: http.Incomin
       // Success — create session and redirect to console
       const token = await createSession(redis, user.userId)
       await updateLastLogin(pool, user.userId)
-      logger.info({ userId: user.userId, email }, 'Login successful')
+      // FIX: SEC-12.1 — No loguear email completo (PII)
+      logger.info({ userId: user.userId }, 'Login successful')
 
       res.writeHead(302, {
         Location: '/console',

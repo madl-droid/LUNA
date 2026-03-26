@@ -50,7 +50,8 @@ function getEncryptionKey(): Buffer {
   return _encryptionKey
 }
 
-function encrypt(plaintext: string): string {
+// FIX: G-1 — Export encrypt/decrypt for OAuth token encryption in modules
+export function encrypt(plaintext: string): string {
   const key = getEncryptionKey()
   const iv = crypto.randomBytes(IV_LENGTH)
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv)
@@ -60,7 +61,7 @@ function encrypt(plaintext: string): string {
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`
 }
 
-function decrypt(ciphertext: string): string {
+export function decrypt(ciphertext: string): string {
   const key = getEncryptionKey()
   const parts = ciphertext.split(':')
   if (parts.length !== 3) throw new Error('Invalid encrypted value format')

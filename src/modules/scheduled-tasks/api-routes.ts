@@ -8,6 +8,33 @@ import type { CreateTaskInput, UpdateTaskInput, ScheduledTasksConfig } from './t
 import * as store from './store.js'
 import { scheduleTask, unscheduleTask, triggerNow } from './scheduler.js'
 
+// FIX: ST-3 — Validar cron expression antes de guardar/schedule
+function isValidCron(expression: string): boolean {
+  const parts = expression.trim().split(/\s+/)
+  if (parts.length < 5 || parts.length > 6) return false
+  const ranges: [number, number][] = [
+    [0, 59],  // minute
+    [0, 23],  // hour
+    [1, 31],  // day of month
+    [1, 12],  // month
+    [0, 7],   // day of week
+  ]
+  for (let i = 0; i < Math.min(parts.length, 5); i++) {
+    const part = parts[i]!
+    if (part === '*' || /^\*\/\d+$/.test(part)) continue
+    // Handle ranges (1-5) and lists (1,3,5)
+    const segments = part.split(',')
+    for (const seg of segments) {
+      const rangeParts = seg.split('-')
+      for (const rp of rangeParts) {
+        const num = parseInt(rp, 10)
+        if (isNaN(num) || num < ranges[i]![0] || num > ranges[i]![1]) return false
+      }
+    }
+  }
+  return true
+}
+
 export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledTasksConfig): ApiRoute[] {
   return [
     // GET /console/api/scheduled-tasks/list
@@ -104,6 +131,12 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
           // Default cron for non-cron triggers
           if (!input.cron) input.cron = '0 0 31 2 *' // never fires via cron
 
+          // FIX: ST-3 — Validar cron string antes de guardar
+          if (input.cron && !isValidCron(input.cron)) {
+            jsonResponse(res, 400, { error: 'Invalid cron expression' })
+            return
+          }
+
           const task = await store.createTask(db, input)
           if (task.enabled && task.trigger_type === 'cron') {
             await scheduleTask(task)
@@ -124,6 +157,11 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
           const body = await parseBody<UpdateTaskInput & { id: string }>(req)
           if (!body.id) {
             jsonResponse(res, 400, { error: 'id is required' })
+            return
+          }
+          // FIX: ST-3 — Validar cron string en updates también
+          if (body.cron && !isValidCron(body.cron)) {
+            jsonResponse(res, 400, { error: 'Invalid cron expression' })
             return
           }
           const task = await store.updateTask(db, body.id, body)
