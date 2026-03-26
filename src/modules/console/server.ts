@@ -1675,49 +1675,52 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/factory-reset — clear config + memory, keep admin users (test mode only)
+    // POST /console/api/console/factory-reset — verify admin password, prefill wizard, mark SETUP_COMPLETED=false
     {
       method: 'POST',
       path: 'factory-reset',
-      handler: async (_req, res) => {
+      handler: async (req, res) => {
         try {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
           const db = registry.getDb()
-          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
-          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+          const redis = registry.getRedis()
 
-          // Keep admin-related keys
-          await db.query(`DELETE FROM config_store WHERE key NOT IN ('CONSOLE_ADMIN_USER', 'CONSOLE_ADMIN_PASS', 'CONSOLE_ADMIN_HASH')`)
+          // Parse password from body
+          const body = await parseBody<{ password?: string }>(req)
+          const password = body?.password?.trim() ?? ''
+          if (!password) { jsonResponse(res, 400, { error: 'Password required' }); return }
 
-          // Truncate all data tables (same as clear-memory + auth tables)
-          const tables = [
-            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
-            'pipeline_logs', 'daily_reports', 'ack_messages',
-            'contacts', 'contact_channels', 'agent_contacts', 'companies',
-            'attachment_extractions',
-            'tools', 'tool_access_rules', 'tool_executions',
-            'prompt_slots', 'campaigns',
-            'llm_usage', 'llm_daily_stats',
-            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
-            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
-            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
-            'scheduled_tasks', 'scheduled_task_executions',
-            'voice_calls', 'voice_call_transcripts',
-            'email_state', 'email_threads', 'email_oauth_tokens',
-            'google_oauth_tokens', 'google_chat_spaces',
-            'wa_auth_creds', 'wa_auth_keys',
-          ]
-          for (const t of tables) {
-            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+          // Get current user from session
+          const { getSessionToken, validateSession, getCredentials, verifyPassword } = await import('../../kernel/setup/auth.js')
+          const token = getSessionToken(req.headers['cookie'])
+          const userId = token ? await validateSession(redis, token) : null
+          if (!userId) { jsonResponse(res, 401, { error: 'Unauthorized' }); return }
+
+          // Verify password
+          const storedHash = await getCredentials(db, userId)
+          if (!storedHash || !await verifyPassword(password, storedHash)) {
+            jsonResponse(res, 403, { error: 'Invalid password' })
+            return
           }
-          await registry.getRedis().flushdb()
-          logger.info('Factory reset completed (debug panel) — admin users preserved')
-          jsonResponse(res, 200, { ok: true })
+
+          // Save current config as prefill for wizard
+          const { saveFactoryResetPrefill } = await import('../../kernel/setup/handler.js')
+          const prefillToken = await saveFactoryResetPrefill(db, redis)
+
+          // Mark setup as not completed
+          await configStore.set(db, 'SETUP_COMPLETED', 'false')
+
+          // Activate the setup wizard on the running server
+          const server = registry.getOptional<import('../../kernel/server.js').Server>('kernel:server')
+          if (server) server.activateSetupWizard()
+
+          logger.info({ userId }, 'Factory reset initiated — wizard activated')
+          jsonResponse(res, 200, { ok: true, prefillToken })
         } catch (err) {
-          logger.error({ err }, 'Failed to factory reset')
-          jsonResponse(res, 500, { error: String(err) })
+          logger.error({ err }, 'Failed to initiate factory reset')
+          jsonResponse(res, 500, { error: 'Internal server error' })
         }
       },
     },
