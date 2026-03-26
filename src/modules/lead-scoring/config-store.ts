@@ -176,10 +176,10 @@ export class ConfigStore {
       throw new Error('thresholds.cold must be less than thresholds.qualified')
     }
 
-    // Validate weights sum
+    // Validate weights sum to 100
     const totalWeight = config.criteria.reduce((sum, c) => sum + c.weight, 0)
-    if (totalWeight !== 100 && config.criteria.length > 0) {
-      logger.warn({ totalWeight }, 'Criteria weights do not sum to 100 — scores will be normalized')
+    if (config.criteria.length > 0 && totalWeight !== 100) {
+      throw new Error(`Criteria weights must sum to 100 (current: ${totalWeight})`)
     }
 
     // Validate unique keys

@@ -32,6 +32,7 @@ const labels: Record<Lang, Record<string, string>> = {
     recalc_done: 'Recalculacion completada', recalc_error: 'Error al recalcular',
     threshold_cold: 'Frio (max)', threshold_qualified: 'Calificado (min)',
     weight_total: 'Total de pesos',
+    weight_error: 'Los pesos deben sumar 100 (actual: {n})',
     opt_recalc: 'Recalcular scores al cambiar config',
     opt_max_custom: 'Max criterios custom',
     opt_min_confidence: 'Confianza minima para extraccion',
@@ -101,6 +102,7 @@ const labels: Record<Lang, Record<string, string>> = {
     recalc_done: 'Recalculation complete', recalc_error: 'Recalculation failed',
     threshold_cold: 'Cold (max)', threshold_qualified: 'Qualified (min)',
     weight_total: 'Total weight',
+    weight_error: 'Weights must sum to 100 (current: {n})',
     opt_recalc: 'Recalculate scores on config change',
     opt_max_custom: 'Max custom criteria',
     opt_min_confidence: 'Minimum extraction confidence',
@@ -720,6 +722,14 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
 
   // ═══ Save / Recalc ═══
   window.lsSave = function() {
+    // Validate weights sum to 100 before saving
+    if (lsConfig.criteria && lsConfig.criteria.length > 0) {
+      var total = lsConfig.criteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
+      if (total !== 100) {
+        lsToast(L.weight_error.replace('{n}', total), 'error')
+        return
+      }
+    }
     fetch(API + '/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
