@@ -2332,3 +2332,54 @@
 }
 
 /* User modal uses .wizard-overlay + .wizard-modal styles */
+
+/* Import mode cards (step 0 of add user modal) */
+.import-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 12px;
+  border: 1.5px solid var(--outline-variant, rgba(0,0,0,0.08));
+  border-radius: 0.75rem;
+  background: var(--surface-container-low, #fafafa);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  color: var(--on-surface, #1d1d1f);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.3;
+}
+.import-mode-card:hover {
+  border-color: var(--primary, #FF5E0E);
+  background: var(--surface-container, #f0f0f2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.import-mode-card svg {
+  color: var(--on-surface-variant, #6e6e73);
+}
+.import-mode-card:hover svg {
+  color: var(--primary, #FF5E0E);
+}
+
+/* CSV/file drop zone */
+.import-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 16px;
+  border: 2px dashed var(--outline-variant, rgba(0,0,0,0.12));
+  border-radius: 0.75rem;
+  background: var(--surface-container-low, #fafafa);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  text-align: center;
+}
+.import-dropzone:hover,
+.import-dropzone.dragover {
+  border-color: var(--primary, #FF5E0E);
+  background: var(--surface-container, #f0f0f2);
+}
