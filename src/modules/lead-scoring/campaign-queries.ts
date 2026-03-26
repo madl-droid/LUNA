@@ -81,7 +81,7 @@ export class CampaignQueries {
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS contact_campaigns (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        contact_id UUID NOT NULL,
+        contact_id TEXT NOT NULL,
         campaign_id UUID NOT NULL REFERENCES campaigns(id),
         session_id UUID,
         channel_name TEXT,

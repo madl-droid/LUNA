@@ -79,7 +79,7 @@ export async function ensureWebhookTables(db: Pool): Promise<void> {
       display_name TEXT,
       campaign_keyword TEXT,
       campaign_id UUID,
-      contact_id UUID,
+      contact_id TEXT,
       channel_used TEXT,
       success BOOLEAN DEFAULT true,
       error_message TEXT,
