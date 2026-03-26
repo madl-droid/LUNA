@@ -100,8 +100,33 @@ export async function phase1Intake(
   const contact = contactResult.status === 'fulfilled' ? contactResult.value : null
   const campaign = campaignResult.status === 'fulfilled' ? campaignResult.value : null
   const knowledgeMatches = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
-  const knowledgeInjection = knowledgeInjectionResult.status === 'fulfilled' ? knowledgeInjectionResult.value : null
+  let knowledgeInjection = knowledgeInjectionResult.status === 'fulfilled' ? knowledgeInjectionResult.value : null
   const sheetsData = sheetsCacheResult.status === 'fulfilled' ? sheetsCacheResult.value : null
+
+  // Filter knowledge categories by user permissions (empty = all access)
+  if (knowledgeInjection && userPermissions.knowledgeCategories.length > 0) {
+    knowledgeInjection = {
+      ...knowledgeInjection,
+      categories: knowledgeInjection.categories.filter(
+        c => userPermissions.knowledgeCategories.includes(c.id),
+      ),
+    }
+  }
+
+  // Load assignment rules for leads/unregistered (so LLM can classify contacts)
+  let assignmentRules: Array<{ listType: string; listName: string; prompt: string }> | null = null
+  if (userType === 'lead' || userType.startsWith('_unregistered:')) {
+    try {
+      const usersDb = registry.getOptional<import('../../modules/users/db.js').UsersDb>('users:db')
+      if (usersDb) {
+        const allConfigs = await usersDb.getAllListConfigs()
+        const rules = allConfigs
+          .filter(c => c.assignmentEnabled && c.assignmentPrompt)
+          .map(c => ({ listType: c.listType, listName: c.displayName, prompt: c.assignmentPrompt }))
+        if (rules.length > 0) assignmentRules = rules
+      }
+    } catch { /* users module not available */ }
+  }
 
   if (contactResult.status === 'rejected') logger.warn({ err: contactResult.reason, traceId }, 'Contact lookup failed')
 
@@ -174,7 +199,7 @@ export async function phase1Intake(
     normalizedText,
     messageType,
     attachmentMeta,
-    assignmentRules: null, // populated below for leads/unregistered
+    assignmentRules,
     attachmentContext: null, // populated by Phase 3 process_attachment steps
     responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
