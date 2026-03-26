@@ -134,6 +134,20 @@ const manifest: ModuleManifest = {
       return { configs, usersByType, counts, channels, tools, activeModules, knowledgeCategories }
     })
 
+    // Initialize webhook tables + auto-generate token if missing
+    const { ensureWebhookTables, generateToken } = await import('./webhook-handler.js')
+    await ensureWebhookTables(registry.getDb())
+    try {
+      const coworkerCfg = await db.getListConfig('coworker')
+      if (coworkerCfg && !coworkerCfg.syncConfig.webhookToken) {
+        const syncCfg = { ...coworkerCfg.syncConfig, webhookToken: generateToken() }
+        await db.upsertListConfig('coworker', coworkerCfg.displayName, coworkerCfg.permissions, {
+          isEnabled: coworkerCfg.isEnabled,
+          syncConfig: syncCfg,
+        })
+      }
+    } catch { /* coworker list may not exist yet */ }
+
     // Mount API routes (for external/programmatic access only)
     const apiRoutes = createApiRoutes(registry, db, cache)
     if (manifest.console) {
