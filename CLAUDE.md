@@ -41,6 +41,7 @@ src/
     freight/         — wrapper modular de tool de flete (ver CLAUDE.md)
     medilink/        — integración Medilink/HealthAtom: pacientes, citas, follow-up (ver CLAUDE.md)
     freshdesk/       — integración Freshdesk Knowledge Base: búsqueda y sync de artículos (ver CLAUDE.md)
+    webhook-leads/   — webhook de registro externo de leads (ver CLAUDE.md)
   tools/
     freight/         — tool de estimación de flete (ver src/tools/freight/CLAUDE.md)
     freshdesk/       — tools de Freshdesk KB: búsqueda, artículos, sync (ver src/tools/freshdesk/CLAUDE.md)
@@ -214,6 +215,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks)
 - `src/modules/freshdesk/CLAUDE.md` — wrapper modular de tools Freshdesk KB
 - `src/tools/freshdesk/CLAUDE.md` — Freshdesk Knowledge Base (búsqueda, artículos, sync semanal)
+- `src/modules/webhook-leads/CLAUDE.md` — webhook de registro externo de leads (contactos, campañas, outbound)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 
