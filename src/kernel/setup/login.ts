@@ -9,7 +9,7 @@ import pino from 'pino'
 import {
   findUserByEmail, verifyPassword, getCredentials,
   createSession, destroySession, getSessionToken,
-  sessionCookie, clearSessionCookie,
+  sessionCookie, clearSessionCookie, updateLastLogin,
 } from './auth.js'
 import { st, detectSetupLang, type SetupLang } from './i18n.js'
 
@@ -139,8 +139,8 @@ export function createLoginHandler(pool: Pool, redis: Redis): (req: http.Incomin
       const password = form['password'] ?? ''
 
       const user = await findUserByEmail(pool, email)
-      if (!user) {
-        logger.warn({ email }, 'Login failed — user not found')
+      if (!user || user.listType !== 'admin') {
+        logger.warn({ email, listType: user?.listType }, 'Login failed — user not found or not admin')
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end(loginPage(lang, { type: 'error', message: st('login_error', lang) }))
         return true
@@ -156,7 +156,6 @@ export function createLoginHandler(pool: Pool, redis: Redis): (req: http.Incomin
 
       // Success — create session and redirect to console
       const token = await createSession(redis, user.userId)
-      const { updateLastLogin } = await import('./auth.js')
       await updateLastLogin(pool, user.userId)
       logger.info({ userId: user.userId, email }, 'Login successful')
 

@@ -290,6 +290,7 @@ export function stepSystem(lang: SetupLang, state: SetupState, errors?: Record<s
   const content = `
     <h2>${esc(st('system_title', lang))}</h2>
     <p class="step-desc">${esc(st('system_text', lang))}</p>
+    ${e['_global'] ? `<div class="global-error">${esc(e['_global'])}</div>` : ''}
     <form method="POST" action="/setup/step/4">
       <div class="field">
         <label>${esc(st('instance_name', lang))}</label>

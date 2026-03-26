@@ -9,7 +9,7 @@ import type { Redis } from 'ioredis'
 import pino from 'pino'
 
 import * as configStore from '../config-store.js'
-import { hashPassword, storeCredentials, createSession, sessionCookie } from './auth.js'
+import { hashPassword, storeCredentials, createSession, sessionCookie, SESSION_COOKIE_NAME } from './auth.js'
 import { st, detectSetupLang, type SetupLang } from './i18n.js'
 import {
   stepWelcome, stepAdmin, stepLLM, stepSystem, setupCompletePage,
@@ -158,21 +158,18 @@ interface WizardContext {
   onComplete: () => void
 }
 
-function getOrCreateState(req: http.IncomingMessage, ctx: WizardContext): { token: string; state: SetupState } {
+function getOrCreateState(req: http.IncomingMessage, ctx: WizardContext): { token: string; state: SetupState; isNew: boolean } {
   const cookies = req.headers['cookie'] ?? ''
   const match = cookies.match(new RegExp(`${SETUP_COOKIE}=([^;]+)`))
   const existing = match?.[1]
   if (existing && ctx.sessions.has(existing)) {
-    return { token: existing, state: ctx.sessions.get(existing)! }
+    return { token: existing, state: ctx.sessions.get(existing)!, isNew: false }
   }
-  const token = crypto.randomBytes(16).toString('hex')
+  // New session — use existing cookie token (for factory reset prefill) or generate new
+  const token = existing ?? crypto.randomBytes(16).toString('hex')
   const state = emptyState()
-
-  // Check for prefill data (factory reset)
-  const prefillKey = existing ? `setup_prefill:${existing}` : null
-  // Prefill is loaded async in the handler, this just creates the base state
   ctx.sessions.set(token, state)
-  return { token, state }
+  return { token, state, isNew: true }
 }
 
 function redirect(res: http.ServerResponse, location: string, token?: string): void {
@@ -226,10 +223,10 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
       return
     }
 
-    const { token, state } = getOrCreateState(req, ctx)
+    const { token, state, isNew } = getOrCreateState(req, ctx)
 
-    // Try loading prefill on first access
-    if (!state.adminName && !state.adminEmail) {
+    // Try loading prefill on first access (factory reset scenario)
+    if (isNew) {
       const prefill = await loadPrefill(redis, token)
       if (prefill) {
         Object.assign(state, prefill)
@@ -321,11 +318,22 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
         state.nodeEnv = form['node_env'] ?? 'production'
 
         try {
-          await finalizeSetup(ctx, state, token)
-          sendHtml(res, setupCompletePage(lang), token)
+          const authToken = await finalizeSetup(ctx, state, token)
+          // Send completion page with BOTH the setup cookie and the session cookie
+          const html = setupCompletePage(lang)
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Set-Cookie': [
+              `${SETUP_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax`,
+              sessionCookie(authToken),
+            ],
+          })
+          res.end(html)
+          return
         } catch (err) {
           logger.error({ err }, 'Setup finalization failed')
-          const errors = { _global: String(err) }
+          const errMsg = err instanceof Error ? err.message : 'Unknown error'
+          const errors = { _global: errMsg }
           sendHtml(res, stepSystem(lang, state, errors), token)
         }
         return
@@ -344,7 +352,7 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
 // Finalize: persist everything
 // ═══════════════════════════════════════════
 
-async function finalizeSetup(ctx: WizardContext, state: SetupState, token: string): Promise<void> {
+async function finalizeSetup(ctx: WizardContext, state: SetupState, token: string): Promise<string> {
   const { pool, redis } = ctx
 
   logger.info('Finalizing setup wizard...')
@@ -439,6 +447,8 @@ async function finalizeSetup(ctx: WizardContext, state: SetupState, token: strin
   // 10. Signal completion — the temporary server will shut down
   // Small delay to let the response be sent
   setTimeout(() => ctx.onComplete(), 500)
+
+  return sessionToken
 }
 
 // ═══════════════════════════════════════════

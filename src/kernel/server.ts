@@ -82,17 +82,46 @@ export class Server {
 
       // ─── Auth: login/logout routes (before auth check) ───
       if (url.startsWith('/console/login') || url.startsWith('/console/logout')) {
-        const handled = await loginHandler(req, res)
-        if (handled) return
+        try {
+          const handled = await loginHandler(req, res)
+          if (handled) return
+        } catch (err) {
+          logger.error({ err, url }, 'Login handler error')
+          res.writeHead(500, { 'Content-Type': 'text/plain' })
+          res.end('Internal server error')
+          return
+        }
       }
 
-      // ─── Auth: protect /console routes (except static assets) ───
-      if (url.startsWith('/console') && !url.startsWith('/console/static/')) {
-        const token = getSessionToken(req.headers['cookie'])
-        const userId = token ? await validateSession(this.registry.getRedis(), token) : null
-        if (!userId) {
-          res.writeHead(302, { Location: '/console/login?expired=1' })
-          res.end()
+      // ─── Auth: protect /console routes ───
+      // Exempt: static assets, login/logout, external webhooks, OAuth callbacks
+      const urlPath0 = url.split('?')[0]!
+      const isPublicConsoleRoute =
+        url.startsWith('/console/static/') ||
+        url.startsWith('/console/login') ||
+        url.startsWith('/console/logout') ||
+        /^\/console\/api\/[^/]+\/webhook/.test(urlPath0) ||
+        /^\/console\/api\/[^/]+\/oauth2callback/.test(urlPath0) ||
+        /^\/console\/api\/[^/]+\/auth-callback/.test(urlPath0)
+      if (url.startsWith('/console') && !isPublicConsoleRoute) {
+        try {
+          const token = getSessionToken(req.headers['cookie'])
+          const userId = token ? await validateSession(this.registry.getRedis(), token) : null
+          if (!userId) {
+            // API routes get 401 JSON, browser routes get redirect
+            if (url.startsWith('/console/api/')) {
+              res.writeHead(401, { 'Content-Type': 'application/json' })
+              res.end('{"error":"Unauthorized"}')
+            } else {
+              res.writeHead(302, { Location: '/console/login?expired=1' })
+              res.end()
+            }
+            return
+          }
+        } catch (err) {
+          logger.error({ err, url }, 'Session validation error')
+          res.writeHead(500, { 'Content-Type': 'text/plain' })
+          res.end('Internal server error')
           return
         }
       }
