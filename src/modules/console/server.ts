@@ -403,6 +403,10 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   const m = k.match(/^(?:mod|tool|sub|kcat|assignment_enabled|assignment_prompt|disable|list_enabled|perm)_([^_]+)/)
                   if (m) listsToUpdate.add(m[1]!)
                 }
+                // Coworker domains/roles fields → ensure coworker is in the update set
+                if (up['coworker_domains'] !== undefined || up['coworker_roles'] !== undefined) {
+                  listsToUpdate.add('coworker')
+                }
 
                 for (const lt of listsToUpdate) {
                   const existing = await usersDb.getListConfig(lt)
@@ -428,6 +432,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   // List enabled
                   const isEnabled = up[`list_enabled_${lt}`] === 'true' || up[`list_enabled_${lt}`] === 'on'
 
+                  // Merge coworker domains/roles into syncConfig
+                  const syncCfg = { ...existing.syncConfig }
+                  if (lt === 'coworker') {
+                    if (up['coworker_domains'] !== undefined) {
+                      syncCfg.domains = up['coworker_domains'] ? up['coworker_domains'].split(',').map((d: string) => d.trim()).filter(Boolean) : []
+                    }
+                    if (up['coworker_roles'] !== undefined) {
+                      syncCfg.roles = up['coworker_roles'] ? up['coworker_roles'].split(',').map((r: string) => r.trim()).filter(Boolean) : []
+                    }
+                  }
+
                   await usersDb.upsertListConfig(lt, existing.displayName, {
                     tools: tools.length > 0 ? tools : existing.permissions.tools,
                     skills: existing.permissions.skills,
@@ -443,6 +458,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                     unregisteredBehavior: lt === 'lead' && up['unregisteredBehavior'] ? up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' : existing.unregisteredBehavior,
                     unregisteredMessage: lt === 'lead' && up['unregisteredMessage'] !== undefined ? up['unregisteredMessage'] : existing.unregisteredMessage,
                     maxUsers: existing.maxUsers,
+                    syncConfig: syncCfg,
                   })
                 }
 
@@ -589,7 +605,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             }
           }
 
-          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts })
+          // Build metadata (role for coworkers)
+          const metadata: Record<string, unknown> = {}
+          const userRole = body['userRole']?.trim()
+          if (userRole && listType === 'coworker') metadata.role = userRole
+
+          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts, metadata: Object.keys(metadata).length > 0 ? metadata : undefined })
           // Invalidate cache for all new contacts
           for (const c of contacts) await usersCache.invalidate(c.senderId)
 
@@ -615,10 +636,18 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const userId = body['userId']
           if (!userId) throw new Error('Missing userId')
 
-          // Update name
+          // Build metadata update (role for coworkers)
+          const updateMeta: Record<string, unknown> = {}
+          const lt = body['listType'] || ''
+          if (lt === 'coworker' && body['userRole'] !== undefined) {
+            updateMeta.role = body['userRole']?.trim() || null
+          }
+
+          // Update name + metadata
           await usersDb.updateUser(userId, {
             displayName: body['displayName'] || undefined,
-            listType: body['listType'] || undefined,
+            listType: lt || undefined,
+            metadata: Object.keys(updateMeta).length > 0 ? updateMeta : undefined,
           })
 
           // Sync contacts: for each channel, update/add/remove
