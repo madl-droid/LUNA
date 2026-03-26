@@ -635,9 +635,17 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   }
 
   window.lsAddCri = function() {
-    var maxTotal = 4 + lsConfig.maxCustomCriteria
-    if (lsConfig.criteria.length >= maxTotal) { lsToast('Max ' + maxTotal + ' criteria', 'error'); return }
-    lsConfig.criteria.push({ key: 'custom_' + Date.now(), name: { es: 'Nuevo', en: 'New' }, type: 'text', weight: 0, required: false, neverAskDirectly: false })
+    // For custom framework, enforce max criteria limit; presets are unlimited
+    if (lsConfig.framework === 'custom') {
+      var maxTotal = 4 + lsConfig.maxCustomCriteria
+      if (lsConfig.criteria.length >= maxTotal) { lsToast('Max ' + maxTotal + ' criteria', 'error'); return }
+    }
+    var newCri = { key: 'custom_' + Date.now(), name: { es: 'Nuevo', en: 'New' }, type: 'text', weight: 0, required: false, neverAskDirectly: false }
+    // If framework has stages, assign to first stage by default
+    if (lsConfig.stages && lsConfig.stages.length > 0) {
+      newCri.stage = lsConfig.stages[0].key
+    }
+    lsConfig.criteria.push(newCri)
     location.reload()
   }
 

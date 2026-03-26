@@ -688,7 +688,7 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       key: 'platform',
       name: { es: 'Plataforma de compras', en: 'Procurement platform' },
       type: 'text',
-      weight: 2,
+      weight: 1,
       required: false,
       neverAskDirectly: false,
       stage: 'process_stage',

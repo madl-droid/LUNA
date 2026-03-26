@@ -10,6 +10,7 @@ import type {
   ScoreResult,
   CriterionScore,
   FrameworkStage,
+  StageScoreSummary,
 } from './types.js'
 
 const logger = pino({ name: 'lead-scoring:engine' })
@@ -131,19 +132,10 @@ export function calculateScore(
 /**
  * Calculate aggregate scores per framework stage.
  */
-export interface StageScore {
-  stageKey: string
-  totalPoints: number
-  maxPoints: number
-  filledCount: number
-  totalCount: number
-  percentage: number
-}
-
 function calculateStageScores(
   criteriaScores: CriterionScore[],
   stages: FrameworkStage[],
-): StageScore[] {
+): StageScoreSummary[] {
   if (stages.length === 0) return []
 
   return stages
