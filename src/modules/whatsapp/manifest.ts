@@ -517,6 +517,7 @@ const manifest: ModuleManifest = {
       await registry.runHook('message:incoming', {
         id: base.id, channelName: base.channelName,
         channelMessageId: base.channelMessageId, from: base.from,
+        resolvedPhone: base.resolvedPhone,
         timestamp: base.timestamp, content: base.content, raw: base.raw,
       })
       schedulePrecloseFollowup(base.from, config, registry)

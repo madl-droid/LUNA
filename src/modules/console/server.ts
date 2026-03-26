@@ -367,18 +367,105 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       if (localUrl === '/save') {
         const updates: Record<string, string> = {}
+        const userPermUpdates: Record<string, string> = {}
         for (const [k, v] of Object.entries(body)) {
-          if (!k.startsWith('_')) updates[k] = v
+          if (k.startsWith('_')) continue
+          // Route user/contact config fields to users module
+          if (k.startsWith('perm_') || k.startsWith('mod_') || k.startsWith('tool_') || k.startsWith('sub_') || k.startsWith('kcat_') || k.startsWith('assignment_') || k.startsWith('disable_') || k.startsWith('list_enabled_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
+            userPermUpdates[k] = v
+          } else {
+            updates[k] = v
+          }
         }
-        // Handle checkbox fields: unchecked checkboxes don't submit, hidden field has value
-        // Write to DB + .env
+
         try {
-          const envFile = findEnvFile()
-          writeEnvFile(envFile, updates)
-          await configStore.setMultiple(registry.getDb(), updates)
-          logger.info(`Config saved: ${Object.keys(updates).join(', ')}`)
-          // Fire config_saved hook so modules can react
-          await registry.runHook('console:config_saved', { keys: Object.keys(updates) })
+          // Standard config save (DB + .env)
+          if (Object.keys(updates).length > 0) {
+            const envFile = findEnvFile()
+            writeEnvFile(envFile, updates)
+            await configStore.setMultiple(registry.getDb(), updates)
+            logger.info(`Config saved: ${Object.keys(updates).join(', ')}`)
+            await registry.runHook('console:config_saved', { keys: Object.keys(updates) })
+          }
+
+          // Users permissions save (to user_list_config table)
+          if (Object.keys(userPermUpdates).length > 0) {
+            try {
+              const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+              const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+              if (usersDb && usersCache) {
+                // Collect per-list updates from form fields
+                const up = userPermUpdates
+                const listsToUpdate = new Set<string>()
+
+                // Identify all list types mentioned in the form
+                for (const k of Object.keys(up)) {
+                  const m = k.match(/^(?:mod|tool|sub|kcat|assignment_enabled|assignment_prompt|disable|list_enabled|perm)_([^_]+)/)
+                  if (m) listsToUpdate.add(m[1]!)
+                }
+
+                for (const lt of listsToUpdate) {
+                  const existing = await usersDb.getListConfig(lt)
+                  if (!existing) continue
+
+                  // Build tools array from tool_* fields
+                  const tools: string[] = []
+                  for (const [k, v] of Object.entries(up)) {
+                    const tm = k.match(new RegExp(`^tool_${lt}_(.+)$`))
+                    if (tm && v === 'on') tools.push(tm[1]!)
+                  }
+
+                  // Subagents
+                  const subagents = up[`sub_${lt}`] === 'on'
+
+                  // Knowledge categories
+                  const kCats: string[] = []
+                  for (const [k, v] of Object.entries(up)) {
+                    const km = k.match(new RegExp(`^kcat_${lt}_(.+)$`))
+                    if (km && v === 'on') kCats.push(km[1]!)
+                  }
+
+                  // List enabled
+                  const isEnabled = up[`list_enabled_${lt}`] === 'true' || up[`list_enabled_${lt}`] === 'on'
+
+                  await usersDb.upsertListConfig(lt, existing.displayName, {
+                    tools: tools.length > 0 ? tools : existing.permissions.tools,
+                    skills: existing.permissions.skills,
+                    subagents,
+                    allAccess: lt === 'admin',
+                  }, {
+                    isEnabled: up[`list_enabled_${lt}`] !== undefined ? isEnabled : existing.isEnabled,
+                    knowledgeCategories: kCats,
+                    assignmentEnabled: up[`assignment_enabled_${lt}`] === 'on',
+                    assignmentPrompt: up[`assignment_prompt_${lt}`] ?? existing.assignmentPrompt,
+                    disableBehavior: up[`disable_${lt}_behavior`] ?? existing.disableBehavior,
+                    disableTargetList: up[`disable_${lt}_target`] ?? existing.disableTargetList,
+                    unregisteredBehavior: lt === 'lead' && up['unregisteredBehavior'] ? up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' : existing.unregisteredBehavior,
+                    unregisteredMessage: lt === 'lead' && up['unregisteredMessage'] !== undefined ? up['unregisteredMessage'] : existing.unregisteredMessage,
+                    maxUsers: existing.maxUsers,
+                  })
+                }
+
+                // Handle unregistered behavior without per-list changes
+                if (up['unregisteredBehavior'] && listsToUpdate.size === 0) {
+                  const leadCfg = await usersDb.getListConfig('lead')
+                  if (leadCfg) {
+                    await usersDb.upsertListConfig('lead', leadCfg.displayName, leadCfg.permissions, {
+                      isEnabled: leadCfg.isEnabled,
+                      unregisteredBehavior: up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads',
+                      unregisteredMessage: up['unregisteredMessage'] ?? leadCfg.unregisteredMessage,
+                      maxUsers: leadCfg.maxUsers,
+                    })
+                  }
+                }
+
+                await usersCache.invalidateAll()
+                logger.info({ lists: [...listsToUpdate] }, 'Contact list config saved')
+              }
+            } catch (err) {
+              logger.error({ err }, 'Failed to save user permissions')
+            }
+          }
         } catch (err) {
           logger.error({ err }, 'Failed to save config')
           res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
@@ -452,6 +539,391 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         res.end()
         return true
       }
+
+      // User management routes — uses users:db and users:cache from registry
+
+      // Contact ID validation per channel
+      function validateContactId(channel: string, senderId: string): boolean {
+        if (!senderId) return false
+        switch (channel) {
+          case 'whatsapp':
+          case 'twilio-voice':
+            return /^\+[0-9]{7,15}$/.test(senderId)
+          case 'gmail':
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderId)
+          default:
+            return senderId.length > 0
+        }
+      }
+
+      if (localUrl === '/users/add') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const displayName = body['displayName'] || null
+          const listType = body['listType'] || 'lead'
+
+          // Collect dynamic contact fields: contact_channel_0, contact_senderid_0, etc.
+          const contacts: Array<{ channel: string; senderId: string }> = []
+          for (let i = 0; i < 10; i++) {
+            const ch = body[`contact_channel_${i}`]
+            const sid = body[`contact_senderid_${i}`]?.trim()
+            if (!ch || !sid) continue
+            if (!validateContactId(ch, sid)) {
+              logger.warn({ channel: ch, senderId: sid }, 'Invalid contact format on create, skipping')
+              continue
+            }
+            contacts.push({ channel: ch, senderId: sid })
+          }
+
+          if (contacts.length === 0) throw new Error('At least one contact is required')
+          if (!displayName?.trim()) throw new Error('Name is required')
+
+          // Check for duplicate contacts
+          for (const c of contacts) {
+            const existing = await usersDb.resolveByContact(c.senderId, c.channel)
+            if (existing) {
+              throw new Error(`Contact ${c.senderId} (${c.channel}) already belongs to user ${existing.userId}`)
+            }
+          }
+
+          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts })
+          // Invalidate cache for all new contacts
+          for (const c of contacts) await usersCache.invalidate(c.senderId)
+
+          logger.info({ userId: user.id, listType, contacts: contacts.length }, 'User created from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to create user')
+          const errMsg = encodeURIComponent((err as Error).message)
+          res.writeHead(302, { Location: `/console/contacts/${body['listType'] || 'admin'}?flash=error&error=${errMsg}&lang=${lang}` })
+          res.end()
+          return true
+        }
+        res.writeHead(302, { Location: `/console/contacts/${body['listType'] || 'admin'}?flash=user_added&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/update') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          if (!userId) throw new Error('Missing userId')
+
+          // Update name
+          await usersDb.updateUser(userId, {
+            displayName: body['displayName'] || undefined,
+            listType: body['listType'] || undefined,
+          })
+
+          // Sync contacts: for each channel, update/add/remove
+          const user = await usersDb.findUserById(userId)
+          if (user) {
+            for (let i = 0; i < 10; i++) {
+              const ch = body[`contact_channel_${i}`]
+              const sid = body[`contact_senderid_${i}`]?.trim()
+              if (!ch) continue
+
+              // Server-side validation
+              if (sid && !validateContactId(ch, sid)) {
+                logger.warn({ channel: ch, senderId: sid }, 'Invalid contact format, skipping')
+                continue
+              }
+
+              const existing = user.contacts.find(c => c.channel === ch)
+              if (sid && !existing) {
+                // New contact for this channel
+                await usersDb.addContact(userId, ch, sid)
+                await usersCache.invalidate(sid)
+              } else if (sid && existing && existing.senderId !== sid) {
+                // Changed value — update in place
+                await usersCache.invalidate(existing.senderId)
+                await usersDb.updateContact(existing.id, sid)
+                await usersCache.invalidate(sid)
+              } else if (!sid && existing) {
+                // Cleared — remove (only if not last)
+                try {
+                  const removed = await usersDb.removeContact(existing.id)
+                  if (removed) await usersCache.invalidate(removed.senderId)
+                } catch { /* can't remove last contact */ }
+              }
+            }
+          }
+
+          const contacts = await usersDb.getContactsForUser(userId)
+          for (const c of contacts) await usersCache.invalidate(c.senderId)
+
+          logger.info({ userId }, 'User updated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to update user')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=user_updated&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/deactivate') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          if (!userId) throw new Error('Missing userId')
+
+          const user = await usersDb.findUserById(userId)
+          if (user) {
+            await usersDb.deactivateUser(userId)
+            for (const c of user.contacts) await usersCache.invalidate(c.senderId)
+          }
+
+          logger.info({ userId }, 'User deactivated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to deactivate user')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=user_deactivated&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/reactivate') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          if (!userId) throw new Error('Missing userId')
+
+          await usersDb.updateUser(userId, {})  // triggers updated_at
+          // Reactivate by setting is_active = true
+          await registry.getDb().query(`UPDATE users SET is_active = true, updated_at = NOW() WHERE id = $1`, [userId])
+          const contacts = await usersDb.getContactsForUser(userId)
+          for (const c of contacts) await usersCache.invalidate(c.senderId)
+
+          logger.info({ userId }, 'User reactivated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to reactivate user')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=user_reactivated&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/add-contact') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const userId = body['userId']
+          const channel = body['channel']
+          const senderId = body['senderId']
+          if (!userId || !channel || !senderId) throw new Error('Missing fields')
+
+          await usersDb.addContact(userId, channel, senderId)
+          await usersCache.invalidate(senderId)
+
+          logger.info({ userId, channel, senderId }, 'Contact added from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to add contact')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=contact_added&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/remove-contact') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const contactId = body['contactId']
+          if (!contactId) throw new Error('Missing contactId')
+
+          const removed = await usersDb.removeContact(contactId)
+          if (removed) await usersCache.invalidate(removed.senderId)
+
+          logger.info({ contactId }, 'Contact removed from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to remove contact')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=contact_removed&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/merge') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const keepId = body['keepId']
+          const mergeId = body['mergeId']
+          if (!keepId || !mergeId) throw new Error('Missing keepId or mergeId')
+
+          // Get all contacts before merge for cache invalidation
+          const keepContacts = await usersDb.getContactsForUser(keepId)
+          const mergeContacts = await usersDb.getContactsForUser(mergeId)
+
+          await usersDb.mergeUsers(keepId, mergeId)
+
+          for (const c of [...keepContacts, ...mergeContacts]) await usersCache.invalidate(c.senderId)
+
+          logger.info({ keepId, mergeId }, 'Users merged from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to merge users')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=users_merged&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/create-list') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          if (!usersDb) throw new Error('Users module not available')
+
+          const listName = body['listName']?.trim()
+          const listDescription = body['listDescription']?.trim()
+          if (!listName) throw new Error('List name is required')
+          if (!listDescription || listDescription.length < 80 || listDescription.length > 200) {
+            throw new Error('Description must be 80-200 characters')
+          }
+
+          // Check max 5 active
+          const configs = await usersDb.getAllListConfigs()
+          if (configs.filter(c => c.isEnabled).length >= 5) throw new Error('Maximum 5 active lists')
+
+          // Generate list type from name (kebab-case)
+          const listType = listName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+          if (configs.find(c => c.listType === listType)) throw new Error('A list with this name already exists')
+
+          await usersDb.upsertListConfig(listType, listName, { tools: [], skills: [], subagents: false, allAccess: false }, {
+            isEnabled: true,
+            description: listDescription,
+          })
+
+          logger.info({ listType, listName }, 'Custom contact list created')
+        } catch (err) {
+          logger.error({ err }, 'Failed to create custom list')
+        }
+        res.writeHead(302, { Location: `/console/contacts?lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/toggle-list') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const listType = body['listType']
+          const isEnabled = body['enabled'] === 'true'
+          const disableBehavior = body['disableBehavior'] as 'leads' | 'silence' | 'move' | undefined
+          const disableTarget = body['disableTarget'] as string | undefined
+          if (!listType) throw new Error('Missing listType')
+
+          const existing = await usersDb.getListConfig(listType)
+          if (existing) {
+            await usersDb.upsertListConfig(listType, existing.displayName, existing.permissions, {
+              isEnabled,
+              ...(disableBehavior ? { disableBehavior } : {}),
+              ...(disableTarget ? { disableTargetList: disableTarget } : {}),
+            })
+            await usersCache.invalidateAll()
+            logger.info({ listType, isEnabled }, 'Contact list toggled')
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to toggle contact list')
+        }
+        const redirect = body['_redirect'] || `/console/contacts?page=config&lang=${lang}`
+        res.writeHead(302, { Location: redirect })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/delete-list') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const listType = body['listType']
+          if (!listType) throw new Error('Missing listType')
+
+          await usersDb.deleteListConfig(listType)
+          await usersCache.invalidateAll()
+
+          logger.info({ listType }, 'Custom contact list deleted')
+        } catch (err) {
+          logger.error({ err }, 'Failed to delete custom list')
+        }
+        res.writeHead(302, { Location: `/console/contacts?lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/config') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const listType = body['listType']
+          if (!listType) throw new Error('Missing listType')
+
+          const config = await usersDb.getListConfig(listType)
+          const displayName = body['displayName'] || config?.displayName || listType
+
+          // Parse tools from form: perm_tool_xxx = 'on' checkboxes
+          const tools: string[] = []
+          const skills: string[] = []
+          for (const [key, value] of Object.entries(body)) {
+            if (key.startsWith('perm_tool_') && value === 'on') {
+              tools.push(key.replace('perm_tool_', ''))
+            }
+            if (key.startsWith('perm_skill_') && value === 'on') {
+              skills.push(key.replace('perm_skill_', ''))
+            }
+          }
+
+          // Check for "all" wildcard
+          if (body['perm_tools_all'] === 'on') tools.splice(0, tools.length, '*')
+          if (body['perm_skills_all'] === 'on') skills.splice(0, skills.length, '*')
+
+          const permissions = {
+            tools,
+            skills,
+            subagents: body['perm_subagents'] === 'on',
+            allAccess: listType === 'admin',
+          }
+
+          await usersDb.upsertListConfig(listType, displayName, permissions, {
+            isEnabled: body['isEnabled'] !== 'false',
+            unregisteredBehavior: (body['unregisteredBehavior'] || 'silence') as any,
+            unregisteredMessage: body['unregisteredMessage'] || null,
+            maxUsers: body['maxUsers'] ? parseInt(body['maxUsers'], 10) : config?.maxUsers ?? null,
+          })
+
+          await usersCache.invalidateAll()
+
+          logger.info({ listType }, 'User list config updated from console')
+        } catch (err) {
+          logger.error({ err }, 'Failed to update user list config')
+        }
+        res.writeHead(302, { Location: `/console/users?flash=config_saved&lang=${lang}` })
+        res.end()
+        return true
+      }
     }
 
     // 4. GET pages — SSR
@@ -483,6 +955,25 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           'ack-messages': 'ack-messages',
         }
         section = channelSectionMap[channelSettingsId] ?? channelSettingsId
+      }
+
+      // Nested contacts: /console/contacts/{subpage} → render contacts section with subpage
+      let contactsSubpage: string | null = null
+      const contactsMatch = section.match(/^contacts\/(.+)$/)
+      if (contactsMatch?.[1]) {
+        contactsSubpage = contactsMatch[1]
+        section = 'contacts'
+      }
+      // /console/contacts without subpage → show config page
+      if (section === 'contacts' && !contactsSubpage) {
+        contactsSubpage = 'config'
+      }
+      // Redirect old /console/users to /console/contacts
+      if (section === 'users') {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/contacts/admin?lang=${lang}` })
+        res.end()
+        return true
       }
 
       // Redirect old section IDs to unified pages (skip if already a nested channel route)
@@ -542,6 +1033,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* module not available */ }
       }
 
+      // Contacts: fetch data from users module service
+      if (section === 'contacts') {
+        try {
+          const dataFn = registry.getOptional<() => Promise<unknown>>('users:sectionData')
+          if (dataFn) {
+            sectionData.usersData = await dataFn() as typeof sectionData.usersData
+            sectionData.contactsSubpage = contactsSubpage ?? undefined
+          }
+        } catch { /* module not available */ }
+      }
+
       // Channel settings pages: use the 2-column channel settings renderer
       let content: string | null = null
       if (channelSettingsId === 'ack-messages') {
@@ -593,6 +1095,35 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         ? data.moduleStates.find(m => m.name === channelSettingsId)?.console?.title?.[lang] ?? channelSettingsId
         : undefined
 
+      // Build contacts submenu data (always load for sidebar, even on non-contacts pages)
+      let contactLists: Array<{ listType: string; displayName: string; count: number; isEnabled?: boolean }> = []
+      if (sectionData.usersData) {
+        contactLists = sectionData.usersData.configs.map(c => ({
+          listType: c.listType,
+          displayName: c.displayName,
+          count: sectionData.usersData?.counts?.[c.listType] ?? 0,
+          isEnabled: c.isEnabled,
+        }))
+      } else {
+        // Fetch minimal list data for sidebar even when not on contacts page
+        try {
+          const dataFn = registry.getOptional<() => Promise<unknown>>('users:sectionData')
+          if (dataFn) {
+            const ud = await dataFn() as Record<string, unknown>
+            if (ud) {
+              const configs = (ud.configs ?? []) as Array<{ listType: string; displayName: string; isEnabled: boolean }>
+              const counts = (ud.counts ?? {}) as Record<string, number>
+              contactLists = configs.map(c => ({
+                listType: c.listType,
+                displayName: c.displayName,
+                count: counts[c.listType] ?? 0,
+                isEnabled: c.isEnabled,
+              }))
+            }
+          }
+        } catch { /* users module not available */ }
+      }
+
       const html = pageLayout({
         section: sidebarSection,
         content,
@@ -606,6 +1137,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         googleAppsConnected: data.googleAppsConnected,
         dynamicModules: data.dynamicModules,
         channelModules,
+        testMode: data.config.ENGINE_TEST_MODE === 'true',
+        debugCacheEnabled: data.config.DEBUG_CACHE_ENABLED !== 'false',
+        debugExtremeLog: data.config.DEBUG_EXTREME_LOG === 'true',
+        debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
+        contactsSubpage: contactsSubpage ?? undefined,
+        contactLists,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
@@ -914,28 +1451,116 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/reset-db — testing only
+    // POST /console/api/console/clear-cache — flush Redis (test mode only)
     {
       method: 'POST',
-      path: 'reset-db',
+      path: 'clear-cache',
       handler: async (_req, res) => {
         try {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
-          if (!registry) {
-            jsonResponse(res, 500, { error: 'Registry not available' })
-            return
-          }
-
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const config = await (await import('./manifest-ref.js')).getRegistryRef()?.getOptional?.('config:store')
+          // Gate behind test mode
           const db = registry.getDb()
-          await db.query('TRUNCATE messages CASCADE')
-          await registry.getRedis().flushdb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
 
-          logger.info('Database and Redis flushed (testing reset)')
+          await registry.getRedis().flushdb()
+          logger.info('Redis cache flushed (debug panel)')
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
-          logger.error({ err }, 'Failed to reset databases')
-          jsonResponse(res, 500, { error: 'Failed to reset: ' + String(err) })
+          logger.error({ err }, 'Failed to clear cache')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/clear-memory — truncate all except config + users (test mode only)
+    {
+      method: 'POST',
+      path: 'clear-memory',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+
+          const tables = [
+            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
+            'pipeline_logs', 'daily_reports', 'ack_messages',
+            'contacts', 'contact_channels', 'agent_contacts', 'companies',
+            'attachment_extractions',
+            'tools', 'tool_access_rules', 'tool_executions',
+            'prompt_slots', 'campaigns',
+            'llm_usage', 'llm_daily_stats',
+            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
+            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
+            'scheduled_tasks', 'scheduled_task_executions',
+            'voice_calls', 'voice_call_transcripts',
+            'email_state', 'email_threads',
+            'google_chat_spaces',
+          ]
+          for (const t of tables) {
+            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+          }
+          await registry.getRedis().flushdb()
+          logger.info('All memory cleared (debug panel) — config_store, users preserved')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'Failed to clear memory')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/factory-reset — clear config + memory, keep admin users (test mode only)
+    {
+      method: 'POST',
+      path: 'factory-reset',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+
+          // Keep admin-related keys
+          await db.query(`DELETE FROM config_store WHERE key NOT IN ('CONSOLE_ADMIN_USER', 'CONSOLE_ADMIN_PASS', 'CONSOLE_ADMIN_HASH')`)
+
+          // Truncate all data tables (same as clear-memory + auth tables)
+          const tables = [
+            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
+            'pipeline_logs', 'daily_reports', 'ack_messages',
+            'contacts', 'contact_channels', 'agent_contacts', 'companies',
+            'attachment_extractions',
+            'tools', 'tool_access_rules', 'tool_executions',
+            'prompt_slots', 'campaigns',
+            'llm_usage', 'llm_daily_stats',
+            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
+            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
+            'scheduled_tasks', 'scheduled_task_executions',
+            'voice_calls', 'voice_call_transcripts',
+            'email_state', 'email_threads', 'email_oauth_tokens',
+            'google_oauth_tokens', 'google_chat_spaces',
+            'wa_auth_creds', 'wa_auth_keys',
+          ]
+          for (const t of tables) {
+            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+          }
+          await registry.getRedis().flushdb()
+          logger.info('Factory reset completed (debug panel) — admin users preserved')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'Failed to factory reset')
+          jsonResponse(res, 500, { error: String(err) })
         }
       },
     },

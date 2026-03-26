@@ -51,6 +51,8 @@ const ICONS = {
 const FIXED_SECTIONS: FixedSection[] = [
   // Channels — solo la pestaña unificada; los canales individuales se gestionan desde ahí
   { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'channels', order: 1 },
+  // Contacts — right below channels
+  { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'channels', order: 2 },
   // Agent
   { id: 'pipeline', key: 'sec_pipeline_unified', icon: ICONS.pipeline, group: 'agent', order: 20 },
   { id: 'engine-metrics', key: 'sec_engine_metrics', icon: ICONS.metrics, group: 'agent', order: 25 },
@@ -66,7 +68,7 @@ const FIXED_SECTIONS: FixedSection[] = [
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
 // Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email'])
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 const ICON_OVERRIDES: Record<string, string> = {
@@ -124,6 +126,18 @@ export interface PageOptions {
   channelModules?: SidebarChannelInfo[]
   /** Channel display name from manifest (for channel settings pages) */
   channelDisplayName?: string
+  /** Whether ENGINE_TEST_MODE is currently active */
+  testMode?: boolean
+  /** Debug panel: cache enabled */
+  debugCacheEnabled?: boolean
+  /** Debug panel: extreme logging */
+  debugExtremeLog?: boolean
+  /** Debug panel: admin-only responses */
+  debugAdminOnly?: boolean
+  /** Active contacts sub-page (list type or 'config') */
+  contactsSubpage?: string
+  /** Available contact list types for sidebar submenu */
+  contactLists?: Array<{ listType: string; displayName: string; count: number; isEnabled?: boolean }>
 }
 
 // ═══════════════════════════════════════════
@@ -232,6 +246,43 @@ function renderHeader(opts: PageOptions): string {
       <button class="header-search-mobile" id="btn-search-mobile" onclick="openMobileSearch()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
+      ${opts.testMode ? `<!-- Debug panel (only in test mode) -->
+      <div class="header-dropdown-wrap">
+        <button class="header-icon-btn header-debug-btn" id="btn-debug" data-dropdown="debug-panel" title="Debug">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>
+        </button>
+        <div class="header-dropdown header-dropdown-debug" id="debug-panel">
+          <div class="dropdown-header">${t('dbg_title', opts.lang)}</div>
+          <div class="dropdown-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            <span>${t('dbg_cache', opts.lang)}</span>
+            <label class="toggle toggle-sm"><input type="checkbox" id="debug-cache-cb"${opts.debugCacheEnabled !== false ? ' checked' : ''}><span class="toggle-slider"></span></label>
+          </div>
+          <div class="dropdown-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/><line x1="10" y1="13" x2="10" y2="17"/><line x1="14" y1="13" x2="14" y2="17"/></svg>
+            <span>${t('dbg_extreme_log', opts.lang)}</span>
+            <label class="toggle toggle-sm"><input type="checkbox" id="debug-log-cb"${opts.debugExtremeLog ? ' checked' : ''}><span class="toggle-slider"></span></label>
+          </div>
+          <div class="dropdown-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>${t('dbg_admin_only', opts.lang)}</span>
+            <label class="toggle toggle-sm"><input type="checkbox" id="debug-admin-cb"${opts.debugAdminOnly !== false ? ' checked' : ''}><span class="toggle-slider"></span></label>
+          </div>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-item dropdown-item-danger" id="btn-clear-cache">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            ${t('dbg_clear_cache', opts.lang)}
+          </div>
+          <div class="dropdown-item dropdown-item-danger" id="btn-clear-memory">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            ${t('dbg_clear_memory', opts.lang)}
+          </div>
+          <div class="dropdown-item dropdown-item-danger" id="btn-factory-reset">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            ${t('dbg_factory_reset', opts.lang)}
+          </div>
+        </div>
+      </div>` : ''}
       <!-- Notifications -->
       <div class="header-dropdown-wrap">
         <button class="header-icon-btn" id="btn-notifications" data-dropdown="notif-panel">
@@ -265,14 +316,16 @@ function renderHeader(opts: PageOptions): string {
           <div class="dropdown-item" id="test-mode-toggle">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
             <span>${i18n('testMode', opts.lang)}</span>
-            <label class="toggle toggle-sm"><input type="checkbox" id="test-mode-cb"><span class="toggle-slider"></span></label>
-          </div>
-          <div class="dropdown-item dropdown-item-danger" id="btn-resetdb-menu" style="display:none">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            ${i18n('resetDb', opts.lang)}
+            <label class="toggle toggle-sm"><input type="checkbox" id="test-mode-cb"${opts.testMode ? ' checked' : ''}><span class="toggle-slider"></span></label>
           </div>
           <div class="dropdown-divider"></div>
-          <div class="dropdown-lang-section">
+          <!-- Language submenu -->
+          <div class="dropdown-item dropdown-submenu-trigger" id="lang-submenu-trigger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span>${LANG_LABELS[opts.lang]}</span>
+            <svg class="dropdown-submenu-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="dropdown-submenu" id="lang-submenu">
             ${langOptions}
           </div>
           <div class="dropdown-divider"></div>
@@ -283,7 +336,19 @@ function renderHeader(opts: PageOptions): string {
         </div>
       </div>
     </div>
-  </header>`
+  </header>
+  <!-- Type-to-confirm modal (reusable for all destructive actions) -->
+  <div class="confirm-modal-overlay" id="confirm-modal" style="display:none">
+    <div class="confirm-modal">
+      <div class="confirm-modal-title" id="confirm-modal-title"></div>
+      <div class="confirm-modal-desc" id="confirm-modal-desc"></div>
+      <input type="text" class="confirm-modal-input" id="confirm-modal-input" autocomplete="off" spellcheck="false">
+      <div class="confirm-modal-actions">
+        <button class="confirm-modal-cancel" id="confirm-modal-cancel">${t('dbg_confirm_cancel', opts.lang)}</button>
+        <button class="confirm-modal-btn" id="confirm-modal-btn" disabled>${t('dbg_confirm_btn', opts.lang)}</button>
+      </div>
+    </div>
+  </div>`
 }
 
 // ═══════════════════════════════════════════
@@ -365,6 +430,22 @@ function renderSidebar(opts: PageOptions): string {
         ${item.badge || ''}
       </a>`
 
+      // Contacts submenu: always show enabled bases (like channels show active channels)
+      if (item.id === 'contacts') {
+        const lists = (opts.contactLists ?? []).filter(l => l.isEnabled)
+        if (lists.length > 0) {
+          nav += '<div class="sidebar-submenu">'
+          for (const list of lists) {
+            const subActive = opts.contactsSubpage === list.listType
+            nav += `<a href="/console/contacts/${list.listType}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
+              <span>${esc(list.displayName)}</span>
+              <span class="panel-badge badge-soon" style="margin-left:auto">${list.count}</span>
+            </a>`
+          }
+          nav += '</div>'
+        }
+      }
+
       // Channel submenu: show active channels under "Canales" when it's active
       if (item.id === 'channels' && (isActive || opts.channelSettingsId)) {
         const channels = opts.channelModules ?? []
@@ -431,6 +512,27 @@ function renderSectionHeader(opts: PageOptions): string {
       <a href="/console/channels?lang=${opts.lang}">${channelsLbl}</a>${sep}
       <span>${esc(chName)}</span>
     </div>`
+  } else if (opts.contactsSubpage && opts.contactsSubpage !== 'config') {
+    // 3rd level: Consola > Contactos > ListName
+    const contactsLbl = t('sec_contacts', opts.lang)
+    const listInfo = opts.contactLists?.find(l => l.listType === opts.contactsSubpage)
+    const listName = listInfo?.displayName ?? opts.contactsSubpage
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/contacts?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console/contacts?lang=${opts.lang}">${contactsLbl}</a>${sep}
+      <span>${esc(listName)}</span>
+    </div>`
+    // Return early with list-specific header
+    const listDesc: Record<string, Record<string, string>> = {
+      admin: { es: 'Usuarios con acceso total al sistema. Solo los admins reciben respuesta cuando el modo de pruebas esta activo. Maximo 5 por instancia.', en: 'Users with full system access. Only admins receive responses when test mode is active. Maximum 5 per instance.' },
+      lead: { es: 'Contactos capturados automaticamente por el agente. Esta tabla es gestionada por el sistema — los leads se registran y califican de forma automatica.', en: 'Contacts captured automatically by the agent. This table is managed by the system — leads are registered and scored automatically.' },
+      coworker: { es: 'Colaboradores del equipo con acceso limitado a herramientas. Configura los permisos desde la pestaña de configuracion.', en: 'Team collaborators with limited tool access. Configure permissions from the configuration tab.' },
+    }
+    const desc = listDesc[opts.contactsSubpage]?.[opts.lang] || listDesc[opts.contactsSubpage]?.['es'] || ''
+    return `${breadcrumb}<div class="section-header">
+      <div class="section-title">${esc(listName)}</div>
+      ${desc ? `<div class="section-desc">${desc}</div>` : ''}
+    </div>`
   } else if (opts.section === 'channels') {
     // 2nd level: Consola > Canales
     breadcrumb = `<div class="ch-breadcrumb">
@@ -445,6 +547,22 @@ function renderSectionHeader(opts: PageOptions): string {
     const chName = opts.channelDisplayName ?? opts.channelSettingsId
     return `${breadcrumb}<div class="section-header">
       <div class="section-title">${configLabel} ${esc(chName)}</div>
+    </div>`
+  }
+
+  // Build breadcrumb for non-channel sections too
+  if (!breadcrumb && opts.section !== 'channels') {
+    let sectionLabel = opts.section
+    const fixed = FIXED_SECTIONS.find(s => s.id === opts.section)
+    if (fixed) {
+      sectionLabel = t(fixed.key, opts.lang)
+    } else {
+      const dynMod = (opts.dynamicModules ?? []).find(m => m.name === opts.section)
+      if (dynMod) sectionLabel = dynMod.title[opts.lang] || dynMod.title.es || opts.section
+    }
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <span>${esc(sectionLabel)}</span>
     </div>`
   }
 
@@ -464,16 +582,15 @@ function renderSectionHeader(opts: PageOptions): string {
   const dynMod = (opts.dynamicModules ?? []).find(m => m.name === opts.section)
   if (dynMod) {
     const title = dynMod.title[opts.lang] || dynMod.title.es || opts.section
-    // Try i18n info key, fall back to nothing
     const infoKey = 'sec_' + opts.section.replace(/-/g, '_') + '_info'
     const info = t(infoKey, opts.lang)
-    return `<div class="section-header">
+    return `${breadcrumb}<div class="section-header">
       <div class="section-title">${esc(title)}</div>
       ${info && info !== infoKey ? `<div class="section-desc">${info}</div>` : ''}
     </div>`
   }
 
-  return `<div class="section-header"><div class="section-title">${esc(opts.section)}</div></div>`
+  return `${breadcrumb}<div class="section-header"><div class="section-title">${esc(opts.section)}</div></div>`
 }
 
 // ═══════════════════════════════════════════

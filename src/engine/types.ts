@@ -20,6 +20,8 @@ export interface UserPermissions {
   skills: string[]
   subagents: boolean
   canReceiveProactive: boolean
+  /** Knowledge category IDs this user type can access. Empty = all. */
+  knowledgeCategories: string[]
 }
 
 // ═══════════════════════════════════════════
@@ -74,9 +76,12 @@ export interface SessionInfo {
 
 export interface CampaignInfo {
   id: string
+  visibleId: number | null
   name: string
   keyword: string | null
   utm: Record<string, string> | null
+  promptContext: string | null
+  matchScore: number | null
 }
 
 export interface KnowledgeMatch {
@@ -129,8 +134,11 @@ export interface ContextBundle {
   // RAG — legacy fallback matches
   knowledgeMatches: KnowledgeMatch[]
 
-  // Knowledge v2 — structured injection for evaluator
+  // Knowledge v2 — structured injection for evaluator (filtered by user's allowed categories)
   knowledgeInjection: KnowledgeInjection | null
+
+  // LLM assignment rules for auto-classifying contacts into lists
+  assignmentRules: Array<{ listType: string; listName: string; prompt: string }> | null
 
   // History
   history: HistoryMessage[]

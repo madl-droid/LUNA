@@ -134,10 +134,9 @@ export async function importCsv(
 
     try {
       await db.createUser({
-        senderId,
-        channel,
         listType,
         displayName: row['display_name'] || undefined,
+        contacts: [{ channel, senderId }],
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         source: 'csv_import',
       })
@@ -172,10 +171,9 @@ export async function importArray(
 
     try {
       await db.createUser({
-        senderId: user.senderId,
-        channel: user.channel,
         listType,
         displayName: user.displayName,
+        contacts: [{ channel: user.channel, senderId: user.senderId }],
         metadata: user.metadata,
         source: 'api',
       })

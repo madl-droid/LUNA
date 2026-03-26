@@ -184,10 +184,10 @@
 .content-area.content-fade-out { opacity: 0; }
 .content-area .panel { margin-bottom: 16px; }
 
-.section-header { margin-bottom: 20px; }
+.section-header { margin-bottom: 24px; }
 
 .section-title {
-  font-size: 1.5rem;
+  font-size: 1.65rem;
   font-weight: 700;
   color: var(--on-surface);
   letter-spacing: -0.02em;
@@ -196,8 +196,13 @@
 .section-desc {
   font-size: 0.875rem;
   color: var(--on-surface-variant);
-  margin-top: 4px;
-  line-height: 1.5;
+  margin-top: 6px;
+  line-height: 1.55;
+  /* Target 2 lines: clamp between ~80 and ~200 chars visually */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ═══ Overlay (mobile) ═══ */

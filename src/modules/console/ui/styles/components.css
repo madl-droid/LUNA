@@ -126,14 +126,21 @@
 }
 
 /* ═══ Info button & tooltip ═══ */
+.info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
 .info-btn {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: none;
   background: var(--surface-container-high);
   color: var(--on-surface-dim);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
   display: inline-flex;
@@ -142,21 +149,50 @@
   flex-shrink: 0;
   font-family: serif;
   font-style: italic;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  line-height: 1;
 }
 
 .info-btn:hover { background: var(--surface-container-highest); color: var(--primary); }
 
 .info-tooltip {
-  display: none;
-  font-size: 13px;
-  color: var(--on-surface-variant);
-  padding: 6px 0 4px;
-  grid-column: 1 / -1;
-  line-height: 1.5;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: var(--on-surface);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 400;
+  font-style: normal;
+  padding: 6px 12px;
+  border-radius: 0.4rem;
+  white-space: normal;
+  width: max-content;
+  max-width: 260px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 50;
 }
 
-.info-tooltip.visible { display: block; }
+.info-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  border: 5px solid transparent;
+  border-top-color: var(--on-surface);
+}
+
+.info-btn:hover + .info-tooltip,
+.info-tooltip:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Legacy click-toggle support (remove once fully migrated) */
+.info-tooltip.visible { opacity: 1; pointer-events: auto; }
 
 /* ═══ Toggle switch (iOS style) ═══ */
 .toggle {
@@ -1364,8 +1400,9 @@
   flex: 1;
 }
 
-/* Uniform action buttons — same height & style */
-.ch-btn-action {
+/* ═══ Unified action buttons — shared across channels & users ═══ */
+/* Base: same height, pill shape, icon+text */
+.act-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1379,35 +1416,47 @@
   transition: all 0.15s ease;
   white-space: nowrap;
   line-height: 1.4;
+  font-family: inherit;
 }
 
-.ch-btn-gear {
-  background: var(--surface-container-high);
-  color: var(--on-surface-variant);
-}
+.act-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
-.ch-btn-gear:hover {
-  background: var(--surface-container-highest);
-  color: var(--on-surface);
-}
-
-.ch-btn-connect {
+/* Add / Connect — green tint */
+.act-btn-add {
   background: rgba(52, 199, 89, 0.12);
   color: #1a8f3a;
 }
+.act-btn-add:hover { background: rgba(52, 199, 89, 0.22); }
 
-.ch-btn-connect:hover {
-  background: rgba(52, 199, 89, 0.22);
-}
-
-.ch-btn-disconnect {
+/* Remove / Disconnect / Deactivate — red tint */
+.act-btn-remove {
   background: rgba(230, 33, 17, 0.08);
   color: var(--error);
 }
+.act-btn-remove:hover { background: rgba(230, 33, 17, 0.16); }
 
-.ch-btn-disconnect:hover {
-  background: rgba(230, 33, 17, 0.16);
+/* Configure / Settings — neutral tint */
+.act-btn-config {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
 }
+.act-btn-config:hover { background: var(--surface-container-highest); color: var(--on-surface); }
+
+/* CTA / Primary — orange solid */
+.act-btn-cta {
+  background: var(--primary);
+  color: #fff;
+}
+.act-btn-cta:hover { background: var(--primary-hover); }
+
+/* Legacy aliases for channels (keep backward compat) */
+.ch-btn-action { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 7px 16px; border-radius: 1.5rem; border: none; cursor: pointer; text-decoration: none; transition: all 0.15s ease; white-space: nowrap; line-height: 1.4; }
+.ch-btn-gear { background: var(--surface-container-high); color: var(--on-surface-variant); }
+.ch-btn-gear:hover { background: var(--surface-container-highest); color: var(--on-surface); }
+.ch-btn-connect { background: rgba(52, 199, 89, 0.12); color: #1a8f3a; }
+.ch-btn-connect:hover { background: rgba(52, 199, 89, 0.22); }
+.ch-btn-disconnect { background: rgba(230, 33, 17, 0.08); color: var(--error); }
+.ch-btn-disconnect:hover { background: rgba(230, 33, 17, 0.16); }
 
 /* Inactive card */
 .ch-card-inactive {
@@ -1416,6 +1465,155 @@
 
 .ch-card-inactive:hover {
   opacity: 1;
+}
+
+/* ── Contact base cards grid (4 per row desktop) ── */
+.cb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+/* Contact base card — uniform internal padding */
+.cb-card { padding: 24px; }
+.cb-card .ch-card-metrics {
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--outline-variant, rgba(0,0,0,0.06));
+}
+.ch-metrics-1 { grid-template-columns: 1fr; text-align: center; }
+
+/* Contact base config — same 4-col grid as cards, col1 spans 1, col2 spans 2–4 */
+.cb-config-layout {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.cb-config-layout > *:first-child { grid-column: 1 / 2; }
+.cb-config-layout > *:last-child  { grid-column: 2 / 5; }
+@media (max-width: 768px) {
+  .cb-config-layout { grid-template-columns: 1fr; }
+  .cb-config-layout > *:first-child,
+  .cb-config-layout > *:last-child { grid-column: 1; }
+}
+
+/* Deactivate modal */
+.cb-deact-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.cb-deact-overlay.open { display: flex; }
+.cb-deact-modal {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.cb-deact-step { display: none; }
+.cb-deact-step.active { display: block; }
+.cb-deact-modal h3 { font-size: 1.1rem; font-weight: 700; margin: 0 0 16px; color: var(--on-surface); }
+.cb-deact-modal p { font-size: 13px; color: var(--on-surface-variant); line-height: 1.5; margin: 0 0 16px; }
+
+/* Tip box: shown when no base selected for config */
+.cb-config-tip {
+  background: var(--surface-container-low);
+  border: 1.5px dashed var(--on-surface-dim);
+  border-radius: 0.75rem;
+  padding: 40px;
+  text-align: center;
+  color: var(--on-surface-dim);
+  margin-top: 20px;
+}
+.cb-config-tip svg { opacity: 0.4; }
+
+/* Config panel: hidden by default, shown on card click */
+.cb-config-panel { display: none; margin-top: 20px; }
+.cb-config-panel.active { display: block; }
+
+/* Active card highlight */
+.ch-card.cb-active { box-shadow: 0 0 0 2px var(--primary); }
+
+/* Compact field-divider inside config panel left column */
+.cb-config-layout .field-divider { padding: 1rem 0 4px; margin-top: 0; }
+
+/* Create base box — card style, no dashed border */
+.cb-create-box {
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 28px 32px;
+  margin-top: 24px;
+  transition: box-shadow 0.2s ease;
+}
+.cb-create-box:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.cb-create-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cb-create-box-header > div:first-child { flex: 1; min-width: 0; }
+.cb-create-box-header > select {
+  flex-shrink: 0;
+  background: var(--surface-container-low);
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  padding: 8px 12px;
+  color: var(--on-surface);
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 240px;
+}
+@media (max-width: 768px) {
+  .cb-create-box-header { flex-direction: column; align-items: stretch; }
+  .cb-create-box { padding: 20px; }
+}
+
+/* Tags input (email domains) */
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--surface-container-low);
+  border-radius: 0.5rem;
+  min-height: 40px;
+  align-items: center;
+}
+.tags-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--on-surface);
+  flex: 1;
+  min-width: 120px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: rgba(255, 94, 14, 0.1);
+  border-radius: 1rem;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 500;
+}
+.tag-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--on-surface-dim);
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
 }
 
 /* Toggle small variant — used in cards, filter bars, compact UI */
@@ -1838,3 +2036,299 @@
   font-weight: 600;
   color: var(--on-surface);
 }
+
+/* ═══ Users section ═══ */
+
+/* Panel padding matching channel settings */
+.users-section .panel-body { padding: 16px 20px 20px; }
+
+/* Horizontal scroll wrapper for mobile */
+.users-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.users-table-scroll .users-table {
+  min-width: 640px;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 1rem;
+}
+
+.users-table-head {
+  background: var(--on-surface);
+}
+
+.users-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fff;
+  padding: 10px 12px;
+}
+
+.users-table thead tr:first-child th:first-child { border-radius: 0.5rem 0 0 0; width: 36px; text-align: center; }
+.users-table thead tr:first-child th:last-child { border-radius: 0 0.5rem 0 0; }
+
+.users-table td {
+  padding: 10px 12px;
+  color: var(--on-surface);
+  vertical-align: middle;
+}
+
+.users-table tr + tr td { border-top: 1px solid rgba(0,0,0,0.04); }
+.users-table tr[data-user-id] { cursor: default; transition: background 0.1s; }
+.users-table tr[data-user-id]:hover { background: var(--surface-container-low); }
+.users-table tr[data-user-id] .user-cb,
+.users-table tr[data-user-id] .act-btn,
+.users-table tr[data-user-id] button { cursor: pointer; }
+.users-table tr[data-user-active="false"] { opacity: 0.5; }
+.users-table tr[data-user-active="false"]:hover { opacity: 0.75; }
+
+.users-table code {
+  font-size: 11px;
+  color: var(--on-surface-dim);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.users-table .user-cb { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; vertical-align: middle; }
+
+/* Contact badges — same internal padding as channel cards */
+.user-contact-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 0.5rem;
+  background: var(--surface-container-low);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+}
+
+.user-contact-badge svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+/* Contacts detail row (hidden by default, expanded on click) */
+.user-contacts-detail {
+  padding: 10px 12px;
+  background: var(--surface-container-low);
+  border-radius: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.user-contacts-detail .user-contact-badge {
+  background: var(--surface-container-lowest);
+  padding: 5px 12px;
+}
+
+/* Status indicators */
+.user-status-active {
+  font-size: 11px;
+  color: var(--on-surface-dim);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.user-status-inactive {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--error);
+}
+
+.user-source-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 0.5rem;
+  background: var(--surface-container-high);
+  color: var(--on-surface-dim);
+}
+
+/* Selection action bar — always in flow, buttons hidden until visible */
+.user-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  visibility: hidden;
+}
+
+.user-selection-bar.visible { visibility: visible; }
+
+/* Add-user form inside details */
+.user-add-form { margin-top: 0.75rem; }
+
+.user-add-form summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.user-add-form summary::-webkit-details-marker { display: none; }
+
+.user-add-form .field { margin: 0; }
+
+/* Permissions grid */
+.perm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 2px 12px;
+  padding: 4px 0;
+}
+
+.perm-grid-category {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-surface-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 8px;
+  padding-bottom: 2px;
+}
+
+.perm-grid label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  padding: 3px 0;
+}
+
+.perm-grid label:hover { color: var(--on-surface); }
+
+.perm-grid input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
+.user-add-contact-row {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.user-add-contact-row select,
+.user-add-contact-row input[type="text"] {
+  font-size: 12px;
+  padding: 5px 10px;
+  background: var(--surface-container-lowest);
+  border: none;
+  border-radius: 0.5rem;
+  color: var(--on-surface);
+}
+
+.user-add-contact-row button {
+  font-size: 12px;
+  padding: 5px 12px;
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.user-add-contact-row button:hover { background: var(--surface-container-highest); }
+
+/* Inline validation error under wizard inputs */
+.wizard-field-error {
+  font-size: 0.75rem;
+  color: #dc2626;
+  margin-top: 4px;
+  display: none;
+}
+
+.wizard-input.invalid {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
+.wizard-input.invalid + .wizard-field-error { display: block; }
+
+/* Users filter bar search — styled to match filter dropdowns */
+.user-filter-search {
+  margin-left: auto;
+  position: relative;
+}
+
+.user-filter-search input {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px 8px 32px;
+  background: var(--surface-container-lowest, #fff);
+  border: none;
+  border-radius: 0.5rem;
+  color: var(--on-surface);
+  width: 220px;
+  box-shadow: 0 0 0 1px var(--surface-container-high, #ddd);
+  transition: box-shadow 0.15s ease;
+  font-family: inherit;
+}
+
+.user-filter-search input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 94, 14, 0.2);
+}
+
+.user-filter-search input::placeholder {
+  color: var(--on-surface-dim);
+  font-weight: 400;
+}
+
+.user-filter-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--on-surface-dim);
+  pointer-events: none;
+}
+
+/* Multi-select channel filter options */
+.uf-ch-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.uf-ch-option:hover { color: var(--primary); }
+
+.uf-ch-option input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--primary);
+}
+
+/* Pagination bar — outside panel */
+.user-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px;
+}
+
+.user-pager-info {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* User modal uses .wizard-overlay + .wizard-modal styles */

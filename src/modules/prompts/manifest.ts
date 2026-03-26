@@ -1,6 +1,6 @@
 // LUNA — Module: prompts
 // Gestión centralizada de prompts del agente. Editables desde console, con cache en memoria.
-// Campaign matching via fuse.js. Evaluador generado on-demand por LLM.
+// Evaluador generado on-demand por LLM. Campaign management moved to lead-scoring module.
 
 import pino from 'pino'
 import { z } from 'zod'
@@ -8,8 +8,7 @@ import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import type { PromptSlot } from './types.js'
-import { ensureTable, ensureCampaignColumns } from './pg-queries.js'
-import * as campaignQueries from './pg-queries.js'
+import { ensureTable } from './pg-queries.js'
 import { PromptsServiceImpl } from './prompts-service.js'
 
 const logger = pino({ name: 'prompts' })
@@ -65,67 +64,8 @@ const apiRoutes: ApiRoute[] = [
       jsonResponse(res, 200, { ok: true, content })
     },
   },
-  // ─── Campaigns ────────────────────────────
-  {
-    method: 'GET',
-    path: 'campaigns',
-    handler: async (_req, res) => {
-      if (!service) { jsonResponse(res, 503, { error: 'Service not ready' }); return }
-      const campaigns = await campaignQueries.listAllCampaigns(service.db)
-      jsonResponse(res, 200, { campaigns })
-    },
-  },
-  {
-    method: 'PUT',
-    path: 'campaign',
-    handler: async (req, res) => {
-      if (!service) { jsonResponse(res, 503, { error: 'Service not ready' }); return }
-      const body = await parseBody(req)
-      const id = body.id as string | undefined
-      if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
-      await campaignQueries.updateCampaign(
-        service.db,
-        id,
-        (body.match_phrases ?? body.matchPhrases ?? []) as string[],
-        (body.match_threshold ?? body.matchThreshold ?? 0.95) as number,
-        (body.prompt_context ?? body.promptContext ?? '') as string,
-      )
-      await service.reloadCampaigns()
-      jsonResponse(res, 200, { ok: true })
-    },
-  },
-  {
-    method: 'POST',
-    path: 'campaign',
-    handler: async (req, res) => {
-      if (!service) { jsonResponse(res, 503, { error: 'Service not ready' }); return }
-      const body = await parseBody(req)
-      const name = body.name as string | undefined
-      if (!name) { jsonResponse(res, 400, { error: 'Missing name' }); return }
-      const id = await campaignQueries.createCampaign(
-        service.db,
-        name,
-        (body.match_phrases ?? body.matchPhrases ?? []) as string[],
-        (body.match_threshold ?? body.matchThreshold ?? 0.95) as number,
-        (body.prompt_context ?? body.promptContext ?? '') as string,
-      )
-      await service.reloadCampaigns()
-      jsonResponse(res, 200, { ok: true, id })
-    },
-  },
-  {
-    method: 'DELETE',
-    path: 'campaign',
-    handler: async (req, res) => {
-      if (!service) { jsonResponse(res, 503, { error: 'Service not ready' }); return }
-      const params = parseQuery(req)
-      const id = params.get('id')
-      if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
-      await campaignQueries.deleteCampaign(service.db, id)
-      await service.reloadCampaigns()
-      jsonResponse(res, 200, { ok: true })
-    },
-  },
+  // Campaign management moved to lead-scoring module
+  // See: /console/api/lead-scoring/campaigns
 ]
 
 const manifest: ModuleManifest = {
@@ -233,7 +173,6 @@ const manifest: ModuleManifest = {
 
     // Ensure tables
     await ensureTable(db)
-    await ensureCampaignColumns(db)
 
     // Create service
     service = new PromptsServiceImpl(db, registry)

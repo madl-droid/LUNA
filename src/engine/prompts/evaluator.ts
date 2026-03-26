@@ -154,6 +154,14 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
     parts.push(`[Si necesitas buscar conocimiento, indica search_query y opcionalmente search_hint (título de categoría para priorizar)]`)
   }
 
+  // Assignment rules — injected for leads/unregistered so LLM can classify contacts
+  if (ctx.assignmentRules && ctx.assignmentRules.length > 0) {
+    parts.push(`[Reglas de clasificación de contactos — si identificas que este contacto pertenece a una lista, indica assign_to_list en tu respuesta:]`)
+    for (const rule of ctx.assignmentRules) {
+      parts.push(`- Lista "${rule.listName}" (${rule.listType}): ${rule.prompt}`)
+    }
+  }
+
   // Knowledge matches (legacy fallback)
   if (!ctx.knowledgeInjection && ctx.knowledgeMatches.length > 0) {
     parts.push(`[Información relevante encontrada:]`)

@@ -93,7 +93,48 @@ const manifest: ModuleManifest = {
     registry.provide('users:permissions', (await import('./permissions.js')).getUserPermissions)
     registry.provide('users:invalidate', (await import('./resolver.js')).invalidateUserCache)
 
-    // Mount API routes
+    // Expose data provider for console section renderer
+    registry.provide('users:sectionData', async () => {
+      const configs = await db!.getAllListConfigs()
+      const usersByType: Record<string, import('./types.js').UserWithContacts[]> = {}
+      const counts: Record<string, number> = {}
+      for (const c of configs) {
+        usersByType[c.listType] = await db!.listByType(c.listType, false)
+        counts[c.listType] = usersByType[c.listType]!.length
+      }
+      // Active channels for contact type dropdowns
+      const channels = registry.listModules()
+        .filter(m => m.manifest.type === 'channel' && m.active)
+        .map(m => ({ id: m.manifest.name, label: m.manifest.console?.title ?? { es: m.manifest.name, en: m.manifest.name } }))
+      // Available tools for permissions grid
+      const toolsRegistry = registry.getOptional<{
+        getCatalog(): Array<{ name: string; description: string; category?: string }>
+        getToolsByModule(mod: string): Array<{ name: string; displayName: string; description: string; category: string; enabled: boolean }>
+      }>('tools:registry')
+      const tools = toolsRegistry ? toolsRegistry.getCatalog() : []
+
+      // Active modules with their tools (for hierarchical module→tools UI)
+      const activeModules = registry.listModules()
+        .filter(m => m.active)
+        .map(m => ({
+          name: m.manifest.name,
+          displayName: m.manifest.console?.title ?? { es: m.manifest.name, en: m.manifest.name },
+          type: m.manifest.type,
+          tools: toolsRegistry ? toolsRegistry.getToolsByModule(m.manifest.name) : [],
+        }))
+        .filter(m => m.tools.length > 0) // Only modules that registered tools
+
+      // Knowledge categories (if knowledge module active)
+      let knowledgeCategories: Array<{ id: string; title: string; description: string }> = []
+      try {
+        const km = registry.getOptional<{ pgStore: { listCategories(): Promise<Array<{ id: string; title: string; description: string }>> } }>('knowledge:manager')
+        if (km) knowledgeCategories = await km.pgStore.listCategories()
+      } catch { /* knowledge module not available */ }
+
+      return { configs, usersByType, counts, channels, tools, activeModules, knowledgeCategories }
+    })
+
+    // Mount API routes (for external/programmatic access only)
     const apiRoutes = createApiRoutes(registry, db, cache)
     if (manifest.console) {
       manifest.console.apiRoutes = apiRoutes

@@ -16,6 +16,22 @@ export interface SectionData {
   moduleStates?: ModuleInfo[]
   scheduledTasksHtml?: string
   leadScoringHtml?: string
+  contactsSubpage?: string
+  usersData?: {
+    configs: Array<{
+      listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
+      permissions: { tools: string[]; skills: string[]; subagents: boolean; allAccess: boolean }
+      knowledgeCategories: string[]; assignmentEnabled: boolean; assignmentPrompt: string
+      disableBehavior: string; disableTargetList: string | null
+      unregisteredBehavior: string; unregisteredMessage: string | null; maxUsers: number | null
+    }>
+    usersByType: Record<string, Array<{ id: string; displayName: string | null; listType: string; isActive: boolean; source: string; contacts: Array<{ id: string; channel: string; senderId: string; isPrimary: boolean }> }>>
+    counts: Record<string, number>
+    channels: Array<{ id: string; label: { es: string; en: string } | string }>
+    tools: Array<{ name: string; description: string; category?: string }>
+    activeModules: Array<{ name: string; displayName: { es: string; en: string } | string; type: string; tools: Array<{ name: string; displayName: string; description: string; enabled: boolean }> }>
+    knowledgeCategories: Array<{ id: string; title: string; description: string }>
+  }
 }
 
 const GOOGLE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" class="google-icon" xmlns="http://www.w3.org/2000/svg">
@@ -800,10 +816,1009 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'engine-metrics': return renderEngineMetricsSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
+    case 'contacts': return renderUsersSection(data)
     case 'modules': return renderModulesSection(data)
     case 'infra': return renderInfraUnifiedSection(data)
     case 'google-apps': return renderGoogleAppsSection(data)
     case 'email': return renderEmailSection(data)
     default: return null
   }
+}
+
+// ═══════════════════════════════════════════
+// Users & Permissions section
+// ═══════════════════════════════════════════
+
+// SVG icons for channels (monochrome, stroke-based, inherit currentColor)
+const CH_SVG: Record<string, string> = {
+  whatsapp: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  gmail: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>',
+  'google-chat': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>',
+  'twilio-voice': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+}
+
+const CH_PLACEHOLDER: Record<string, string> = {
+  whatsapp: '+521234567890', gmail: 'user@example.com', 'google-chat': 'spaces/XXX/members/YYY', 'twilio-voice': '+15550123',
+}
+
+// Validation patterns per channel (HTML5 pattern attribute)
+const CH_PATTERN: Record<string, string> = {
+  whatsapp: '\\+[0-9]{7,15}',
+  gmail: '[^@\\s]+@[^@\\s]+\\.[^@\\s]+',
+  'twilio-voice': '\\+[0-9]{7,15}',
+}
+
+const CH_PATTERN_TITLE: Record<string, Record<string, string>> = {
+  whatsapp: { es: 'Numero con codigo de pais: +521234567890', en: 'Phone with country code: +521234567890' },
+  gmail: { es: 'Email valido: user@example.com', en: 'Valid email: user@example.com' },
+  'twilio-voice': { es: 'Numero E.164: +15550123', en: 'E.164 number: +15550123' },
+}
+
+// SVG icons for action buttons
+const SVG_PLUS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>'
+const SVG_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+const SVG_DEACTIVATE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
+const SVG_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+
+function renderUsersSection(data: SectionData): string {
+  const lang = data.lang
+  const ud = data.usersData
+  if (!ud) return `<div class="panel"><div class="panel-body">${lang === 'es' ? 'Módulo de usuarios no disponible.' : 'Users module not available.'}</div></div>`
+
+  const { configs, usersByType, counts, channels, tools } = ud
+
+  // Test mode warning
+  const testMode = data.config.ENGINE_TEST_MODE === 'true'
+  const adminCount = counts['admin'] ?? 0
+  let warning = ''
+  if (testMode && adminCount === 0) {
+    warning = `<div class="flash flash-error">${lang === 'es'
+      ? 'Modo de pruebas activo pero no hay admins configurados — nadie recibirá respuesta.'
+      : 'Test mode active but no admins configured — nobody will receive responses.'}</div>`
+  }
+
+  const subpage = data.contactsSubpage || configs[0]?.listType || 'admin'
+  const isConfigPage = subpage === 'config'
+
+  // Channel filter options
+  const chFilterOpts = channels.map(ch => {
+    const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+    return `<option value="${esc(ch.id)}">${esc(lbl)}</option>`
+  }).join('')
+
+  const svgSearch = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>'
+
+  let html = `<div class="users-section">${warning}`
+
+  if (!isConfigPage) {
+    // Channel multi-select checkboxes
+    const chCheckboxes = channels.map(ch => {
+      const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+      return `<label class="uf-ch-option"><input type="checkbox" value="${esc(ch.id)}" checked onchange="userFilterApply()"> ${esc(lbl)}</label>`
+    }).join('')
+
+    // Filter bar
+    html += `<div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Nombre' : 'Name'}</span>
+        <select class="ch-filter-select js-custom-select" id="uf-sort" onchange="userFilterApply()">
+          <option value="asc">A → Z</option>
+          <option value="desc">Z → A</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Canal' : 'Channel'}</span>
+        <div class="custom-select" id="uf-channel-wrap">
+          <button type="button" class="custom-select-btn" onclick="event.stopPropagation();this.parentElement.classList.toggle('open')">${lang === 'es' ? 'Todos' : 'All'} <svg class="custom-select-arrow" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="custom-select-panel" style="padding:8px 12px;min-width:160px" onclick="event.stopPropagation()">
+            ${chCheckboxes}
+          </div>
+        </div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Fuente' : 'Source'}</span>
+        <select class="ch-filter-select js-custom-select" id="uf-source" onchange="userFilterApply()">
+          <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+          <option value="manual">Manual</option>
+          <option value="agent">${lang === 'es' ? 'Automatico' : 'Automatic'}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">${lang === 'es' ? 'Ultima interaccion' : 'Last interaction'}</span>
+        <select class="ch-filter-select js-custom-select" id="uf-activity" onchange="userFilterApply()">
+          <option value="all">${lang === 'es' ? 'Todos' : 'All'}</option>
+          <option value="1h">1h</option><option value="12h">12h</option><option value="24h">24h</option>
+          <option value="7d">7d</option><option value="30d">30d</option><option value="90d">90d</option>
+        </select>
+      </div>
+      <div class="user-filter-search">
+        ${svgSearch}
+        <input type="text" id="uf-search" placeholder="${lang === 'es' ? 'Buscar contacto' : 'Search contact'}" oninput="userFilterApply()">
+      </div>
+    </div>`
+  }
+
+  const canEdit = (lt: string) => lt !== 'lead'
+  const canDelete = (lt: string) => lt !== 'admin' && lt !== 'lead'
+
+  // ── Show only the active subpage ──
+  if (isConfigPage) {
+    // Config page: permissions + unregistered behavior
+    // (rendered below after the list panels block)
+  } else {
+    const cfg = configs.find(c => c.listType === subpage)
+    if (!cfg) {
+      html += `<div class="panel"><div class="panel-body">${lang === 'es' ? 'Lista no encontrada.' : 'List not found.'}</div></div>`
+      return html + '</div>'
+    }
+    const users = usersByType[cfg.listType] ?? []
+    const isLead = cfg.listType === 'lead'
+    const lt = cfg.listType
+
+    // Single panel for this list type
+    html += `<div class="panel"><div class="panel-body">`
+
+    // (selection bar moved to footer row with add button)
+
+    if (users.length > 0) {
+      html += `<div class="users-table-scroll"><table class="users-table" id="tbl-${esc(lt)}"><thead><tr class="users-table-head">
+        <th><input type="checkbox" class="user-cb" id="cb-all-${esc(lt)}" title="${lang === 'es' ? 'Seleccionar todos' : 'Select all'}" onclick="userToggleAll('${esc(lt)}')"></th>
+        <th>ID</th>
+        <th>${lang === 'es' ? 'Nombre' : 'Name'}</th>
+        <th>${lang === 'es' ? 'Datos de contacto' : 'Contact info'}</th>
+        <th>${lang === 'es' ? 'Fuente' : 'Source'}</th>
+        <th>${lang === 'es' ? 'Estado' : 'Status'}</th>
+      </tr></thead><tbody>`
+
+      for (const user of users) {
+        const contactBadges = user.contacts.map(c =>
+          `<span class="user-contact-badge">${CH_SVG[c.channel] || ''} ${esc(c.senderId.length > 22 ? c.senderId.slice(0, 20) + '…' : c.senderId)}</span>`
+        ).join(' ')
+
+        // Status: inactive → red label; active → last interaction time (placeholder for now)
+        const statusHtml = user.isActive
+          ? `<span class="user-status-active">—</span>`
+          : `<span class="user-status-inactive">${lang === 'es' ? 'Desactivado' : 'Deactivated'}</span>
+             <form method="POST" action="/console/users/reactivate" style="display:inline;margin-left:4px">
+               <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+               <input type="hidden" name="userId" value="${esc(user.id)}">
+               <button type="submit" class="act-btn act-btn-add" style="font-size:10px;padding:3px 8px">${lang === 'es' ? 'Reactivar' : 'Reactivate'}</button>
+             </form>`
+
+        // Data attributes for edit modal + filtering
+        const contactsJson = JSON.stringify(Object.fromEntries(user.contacts.map(c => [c.channel, c.senderId])))
+        const channelList = user.contacts.map(c => c.channel).join(',')
+        const senderIds = user.contacts.map(c => c.senderId).join(' ')
+        html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}" data-contacts="${esc(contactsJson)}" data-channels="${esc(channelList)}" data-source="${esc(user.source)}" data-search="${esc((user.displayName || '') + ' ' + senderIds)}">`
+
+        html += `<td><input type="checkbox" class="user-cb" data-list="${esc(lt)}" value="${esc(user.id)}" onclick="event.stopPropagation();userSelChanged('${esc(lt)}')"></td>
+          <td><code>${esc(user.id)}</code></td>
+          <td>${esc(user.displayName || '—')}</td>
+          <td>${contactBadges}</td>
+          <td><span class="user-source-badge">${esc(user.source)}</span></td>
+          <td>${statusHtml}</td>
+        </tr>`
+
+        // (contacts editing moved to modal)
+      }
+      html += `</tbody></table></div>`
+    } else {
+      html += `<p class="panel-description">${lang === 'es' ? 'Sin usuarios en esta lista.' : 'No users in this list.'}</p>`
+    }
+
+    // Footer row: add (left) + selection actions (right) — same template for all list types
+    html += `<div class="ch-card-footer">`
+    if (canEdit(lt)) {
+      html += `<button type="button" class="act-btn act-btn-add" onclick="openAddUserModal('${esc(lt)}', '${lang}')">${SVG_PLUS} ${lang === 'es' ? 'Agregar usuario' : 'Add user'}</button>`
+    }
+    html += `<span class="ch-footer-spacer"></span>
+      <div class="user-selection-bar" id="sel-bar-${esc(lt)}">
+        ${canEdit(lt) ? `<button type="button" class="act-btn act-btn-config" onclick="userEditSelected('${esc(lt)}')">${SVG_EDIT} ${lang === 'es' ? 'Editar' : 'Edit'}</button>` : ''}
+        <button type="button" class="act-btn act-btn-remove" onclick="userDeactivateSelected('${esc(lt)}')">${SVG_DEACTIVATE} ${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>`
+    if (canDelete(lt)) {
+      html += `<button type="button" class="act-btn act-btn-remove" onclick="userDeleteSelected('${esc(lt)}')">${SVG_DELETE} ${lang === 'es' ? 'Eliminar' : 'Delete'}</button>`
+    }
+    html += `</div></div>`
+
+    html += `</div></div>
+    <div class="user-pager" id="pager-${esc(subpage)}">
+      <span class="user-pager-info" id="pager-info-${esc(subpage)}"></span>
+      <span class="ch-footer-spacer"></span>
+      <div class="filter-group">
+        <select class="ch-filter-select js-custom-select" id="uf-perpage" onchange="userFilterApply()">
+          <option value="10" selected>10</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="500">500</option>
+        </select>
+      </div>
+      <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(subpage)}',-1)">&lsaquo; ${lang === 'es' ? 'Anterior' : 'Previous'}</button>
+      <button type="button" class="act-btn act-btn-config" onclick="userPage('${esc(subpage)}',1)">${lang === 'es' ? 'Siguiente' : 'Next'} &rsaquo;</button>
+    </div>`
+  } // end of list type subpage
+
+  // Build list type options for move-list dropdown
+  const listTypeOpts = configs.map(c =>
+    `<option value="${esc(c.listType)}">${esc(c.displayName)}</option>`
+  ).join('')
+
+  // Validation messages per channel
+  const chValidMsg: Record<string, Record<string, string>> = {
+    whatsapp: { es: 'Formato: +codigo pais seguido de numero (ej: +521234567890)', en: 'Format: +country code followed by number (e.g. +521234567890)' },
+    gmail: { es: 'Formato: email valido (ej: user@example.com)', en: 'Format: valid email (e.g. user@example.com)' },
+    'twilio-voice': { es: 'Formato E.164: +codigo pais seguido de numero (ej: +15550123)', en: 'E.164 format: +country code followed by number (e.g. +15550123)' },
+  }
+
+  // User modal (wizard style — used for both add and edit)
+  html += `<div class="wizard-overlay" id="user-modal" style="display:none" onclick="if(event.target===this)closeUserModal()">
+    <div class="wizard-modal">
+      <button class="wizard-close" onclick="closeUserModal()">&times;</button>
+      <div class="wizard-steps">
+        <div class="wizard-title" id="user-modal-title">${lang === 'es' ? 'Editar usuario' : 'Edit user'}</div>
+        <div class="wizard-error" id="user-modal-error" style="display:none"></div>
+        <form method="POST" id="user-modal-form" action="/console/users/update" onsubmit="return validateUserModal()">
+          <input type="hidden" name="_section" value="users"><input type="hidden" name="_lang" value="${lang}">
+          <input type="hidden" name="userId" id="user-modal-userId">
+          <input type="hidden" name="listType" id="user-modal-listType">
+
+          <label class="wizard-label">${lang === 'es' ? 'Nombre' : 'Name'}</label>
+          <input type="text" class="wizard-input" name="displayName" id="user-modal-name" placeholder="${lang === 'es' ? 'Nombre del usuario' : 'User name'}">
+
+          <label class="wizard-label" id="user-modal-list-label" style="display:none">${lang === 'es' ? 'Mover a lista' : 'Move to list'}</label>
+          <select class="wizard-input" name="listType" id="user-modal-listSelect" style="display:none" onchange="userModalListChange(this)">
+            ${listTypeOpts}
+          </select>`
+
+  for (let i = 0; i < channels.length; i++) {
+    const ch = channels[i]!
+    const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
+    const errMsg = chValidMsg[ch.id] ? esc(chValidMsg[ch.id]![lang] || chValidMsg[ch.id]!['es'] || '') : ''
+    html += `<label class="wizard-label">${CH_SVG[ch.id] || ''} ${esc(lbl)}</label>
+        <input type="hidden" name="contact_channel_${i}" value="${esc(ch.id)}">
+        <input type="text" class="wizard-input" name="contact_senderid_${i}" id="user-modal-ch-${esc(ch.id)}" placeholder="${esc(CH_PLACEHOLDER[ch.id] || 'ID')}" data-channel="${esc(ch.id)}">
+        <div class="wizard-field-error" id="user-modal-err-${esc(ch.id)}">${errMsg}</div>`
+  }
+
+  html += `<div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:24px">
+          <button type="button" class="act-btn act-btn-config" onclick="closeUserModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
+          <button type="submit" class="act-btn act-btn-cta" id="user-modal-submit">${lang === 'es' ? 'Guardar' : 'Save'}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>`
+
+  // Users JS
+  html += `<script>(function(){
+    var modal=document.getElementById('user-modal');
+    var form=document.getElementById('user-modal-form');
+    var errorBox=document.getElementById('user-modal-error');
+    var listLabel=document.getElementById('user-modal-list-label');
+    var listSelect=document.getElementById('user-modal-listSelect');
+    var lang=document.documentElement.lang||'es';
+
+    // ── Validation patterns ──
+    var patterns={whatsapp:/^\\+[0-9]{7,15}$/,'twilio-voice':/^\\+[0-9]{7,15}$/,gmail:/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/};
+
+    window.validateUserModal=function(){
+      var valid=true;
+      var errors=[];
+      errorBox.style.display='none';
+      form.querySelectorAll('.wizard-input').forEach(function(inp){inp.classList.remove('invalid')});
+      form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
+
+      // Name required
+      var nameInp=document.getElementById('user-modal-name');
+      if(!nameInp.value.trim()){
+        nameInp.classList.add('invalid');
+        errors.push(lang==='es'?'El nombre es obligatorio.':'Name is required.');
+        valid=false;
+      }
+
+      // At least 1 contact on create
+      var isCreate=form.action.indexOf('/users/add')!==-1;
+      var hasContact=false;
+
+      form.querySelectorAll('[data-channel]').forEach(function(inp){
+        var ch=inp.getAttribute('data-channel');
+        var val=inp.value.trim();
+        if(!val)return;
+        hasContact=true;
+        var pat=patterns[ch];
+        if(pat&&!pat.test(val)){
+          inp.classList.add('invalid');
+          var errEl=document.getElementById('user-modal-err-'+ch);
+          if(errEl)errEl.style.display='block';
+          valid=false;
+        }
+      });
+
+      if(isCreate&&!hasContact){
+        errors.push(lang==='es'?'Agrega al menos un dato de contacto.':'Add at least one contact.');
+        valid=false;
+      }
+
+      if(!valid){
+        errorBox.textContent=errors.length>0?errors.join(' '):(lang==='es'?'Corrige los campos marcados en rojo.':'Fix the fields marked in red.');
+        errorBox.style.display='block';
+      }
+      return valid;
+    };
+
+    // ── Clear errors on input ──
+    form.addEventListener('input',function(e){
+      var inp=e.target;
+      if(inp.classList.contains('invalid')){
+        inp.classList.remove('invalid');
+        var ch=inp.getAttribute('data-channel');
+        if(ch){var err=document.getElementById('user-modal-err-'+ch);if(err)err.style.display='none'}
+      }
+    });
+
+    // ── Modal open: add ──
+    window.openAddUserModal=function(lt){
+      document.getElementById('user-modal-title').textContent=lang==='es'?'Agregar usuario':'Add user';
+      document.getElementById('user-modal-submit').textContent=lang==='es'?'Crear':'Create';
+      form.action='/console/users/add';
+      document.getElementById('user-modal-userId').value='';
+      document.getElementById('user-modal-listType').value=lt;
+      document.getElementById('user-modal-name').value='';
+      form.querySelectorAll('[data-channel]').forEach(function(inp){inp.value='';inp.classList.remove('invalid')});
+      form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
+      errorBox.style.display='none';
+      listLabel.style.display='none';listSelect.style.display='none';
+      modal.style.display='flex';
+    };
+
+    // ── Modal open: edit ──
+    window.userEditSelected=function(lt){
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      if(cbs.length!==1){alert(lang==='es'?'Selecciona exactamente 1 usuario.':'Select exactly 1 user.');return}
+      var tr=cbs[0].closest('tr');
+      var uid=tr.getAttribute('data-user-id');
+      var name=tr.getAttribute('data-user-name')||'';
+      var contacts={};try{contacts=JSON.parse(tr.getAttribute('data-contacts')||'{}')}catch(e){}
+      document.getElementById('user-modal-title').textContent=lang==='es'?'Editar usuario':'Edit user';
+      document.getElementById('user-modal-submit').textContent=lang==='es'?'Guardar':'Save';
+      form.action='/console/users/update';
+      document.getElementById('user-modal-userId').value=uid;
+      document.getElementById('user-modal-listType').value=lt;
+      document.getElementById('user-modal-name').value=name;
+      form.querySelectorAll('[data-channel]').forEach(function(inp){
+        var chId=inp.getAttribute('data-channel');
+        inp.value=contacts[chId]||'';
+        inp.classList.remove('invalid');
+      });
+      form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
+      errorBox.style.display='none';
+      // Show list change dropdown
+      listLabel.style.display='block';listSelect.style.display='block';
+      listSelect.value=lt;
+      modal.style.display='flex';
+    };
+
+    // ── List change confirm ──
+    var _origList='';
+    window.userModalListChange=function(sel){
+      if(!_origList)_origList=sel.getAttribute('data-orig')||sel.value;
+      if(sel.value!==_origList){
+        var msg=lang==='es'?'¿Mover este usuario a la lista "'+sel.options[sel.selectedIndex].text+'"?':'Move this user to the "'+sel.options[sel.selectedIndex].text+'" list?';
+        if(!confirm(msg)){sel.value=_origList}
+      }
+    };
+
+    window.closeUserModal=function(){modal.style.display='none';_origList=''};
+
+    // ── Checkbox selection ──
+    window.userSelChanged=function(lt){
+      var bar=document.getElementById('sel-bar-'+lt);
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      if(bar){
+        bar.classList.toggle('visible',cbs.length>0);
+        // Hide edit button when multiple selected (edit = single only)
+        var editBtn=bar.querySelector('[onclick*="userEditSelected"]');
+        if(editBtn)editBtn.style.display=cbs.length===1?'':'none';
+      }
+    };
+
+    // ── Deactivate/delete ──
+    window.userDeactivateSelected=function(lt){
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      if(!cbs.length)return;
+      if(!confirm(lang==='es'?'¿Desactivar '+cbs.length+' usuario(s)?':'Deactivate '+cbs.length+' user(s)?'))return;
+      cbs.forEach(function(cb){
+        var f=document.createElement('form');f.method='POST';f.action='/console/users/deactivate';
+        f.innerHTML='<input name="_section" value="users"><input name="_lang" value="'+lang+'"><input name="userId" value="'+cb.value+'">';
+        document.body.appendChild(f);f.submit();
+      });
+    };
+    window.userDeleteSelected=function(lt){
+      var cbs=document.querySelectorAll('.user-cb[data-list="'+lt+'"]:checked');
+      var allInactive=true;
+      cbs.forEach(function(cb){var tr=cb.closest('tr');if(tr&&tr.getAttribute('data-user-active')==='true')allInactive=false});
+      if(!allInactive){alert(lang==='es'?'Solo se pueden eliminar usuarios desactivados.':'Can only delete deactivated users.');return}
+      if(!confirm(lang==='es'?'¿Eliminar permanentemente?':'Delete permanently?'))return;
+      alert(lang==='es'?'Eliminacion permanente aun no implementada.':'Permanent deletion not yet implemented.');
+    };
+
+    // ── Select all ──
+    window.userToggleAll=function(lt){
+      var cbAll=document.getElementById('cb-all-'+lt);
+      var checked=cbAll?cbAll.checked:false;
+      document.querySelectorAll('.user-cb[data-list="'+lt+'"]').forEach(function(cb){
+        if(cb.closest('tr').style.display!=='none')cb.checked=checked;
+      });
+      userSelChanged(lt);
+    };
+
+    // ── Pagination state ──
+    var _page={};
+    window.userPage=function(lt,dir){
+      if(!_page[lt])_page[lt]=0;
+      _page[lt]=Math.max(0,_page[lt]+dir);
+      userFilterApply();
+    };
+
+    // ── Filtering + pagination ──
+    window.userFilterApply=function(){
+      var sortEl=document.getElementById('uf-sort');
+      var sourceEl=document.getElementById('uf-source');
+      var activityEl=document.getElementById('uf-activity');
+      var perpageEl=document.getElementById('uf-perpage');
+      var sort=sortEl?sortEl.value:'asc';
+      var source=sourceEl?sourceEl.value:'all';
+      var activity=activityEl?activityEl.value:'all';
+      var perpage=perpageEl?parseInt(perpageEl.value,10):50;
+      // Multi-select channels
+      var channelCbs=document.querySelectorAll('.uf-ch-option input[type="checkbox"]');
+      var selectedChannels=[];
+      channelCbs.forEach(function(cb){if(cb.checked)selectedChannels.push(cb.value)});
+      var allChannels=channelCbs.length===selectedChannels.length;
+      // Update channel button label
+      var chBtn=document.querySelector('#uf-channel-wrap .custom-select-btn');
+      if(chBtn){
+        var arrow=' <svg class="custom-select-arrow" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        chBtn.innerHTML=(allChannels?(lang==='es'?'Todos':'All'):selectedChannels.length+' '+(lang==='es'?'canales':'channels'))+arrow;
+      }
+      var search=(document.getElementById('uf-search')||{}).value||'';
+      search=search.toLowerCase();
+
+      // Collect all rows, filter, then paginate
+      var tables=document.querySelectorAll('.users-table');
+      tables.forEach(function(tbl){
+        var lt=tbl.id.replace('tbl-','');
+        var rows=Array.prototype.slice.call(tbl.querySelectorAll('tbody tr[data-user-id]'));
+
+        // Filter
+        var visible=rows.filter(function(tr){
+          if(!allChannels){
+            var chs=(tr.getAttribute('data-channels')||'').split(',');
+            var hasMatch=false;
+            for(var ci=0;ci<selectedChannels.length;ci++){if(chs.indexOf(selectedChannels[ci])!==-1){hasMatch=true;break}}
+            if(!hasMatch)return false;
+          }
+          if(source!=='all'){
+            var s=tr.getAttribute('data-source')||'';
+            if(source==='manual'&&s!=='manual')return false;
+            if(source==='agent'&&s==='manual')return false;
+          }
+          if(activity!=='all'){
+            // Time-based filters: show only active users (timestamps not available yet)
+            if(tr.getAttribute('data-user-active')!=='true')return false;
+          }
+          if(search){
+            var h=(tr.getAttribute('data-search')||'').toLowerCase();
+            if(h.indexOf(search)===-1)return false;
+          }
+          return true;
+        });
+
+        // Sort by name
+        visible.sort(function(a,b){
+          var na=(a.getAttribute('data-user-name')||'').toLowerCase();
+          var nb=(b.getAttribute('data-user-name')||'').toLowerCase();
+          return sort==='desc'?nb.localeCompare(na):na.localeCompare(nb);
+        });
+
+        // Paginate
+        if(!_page[lt])_page[lt]=0;
+        var totalPages=Math.max(1,Math.ceil(visible.length/perpage));
+        if(_page[lt]>=totalPages)_page[lt]=totalPages-1;
+        var start=_page[lt]*perpage;
+        var end=start+perpage;
+
+        // Reorder DOM to match sort, then hide/show for pagination
+        var tbody=tbl.querySelector('tbody');
+        if(tbody){
+          visible.forEach(function(tr){tbody.appendChild(tr)});
+          // Also append filtered-out rows at end (hidden)
+          rows.forEach(function(tr){if(visible.indexOf(tr)===-1)tbody.appendChild(tr)});
+        }
+        rows.forEach(function(tr){tr.style.display='none'});
+        for(var i=start;i<Math.min(end,visible.length);i++){visible[i].style.display=''}
+
+        // Update pager info
+        var info=document.getElementById('pager-info-'+lt);
+        if(info)info.textContent=(start+1)+'-'+Math.min(end,visible.length)+' / '+visible.length;
+      });
+    };
+    // Initial filter
+    setTimeout(userFilterApply,100);
+
+    // ── Module toggle: select/deselect all tools in a module ──
+    window.toggleModuleTools=function(lt,mod,checked){
+      document.querySelectorAll('.tool-cb-'+lt+'-'+mod).forEach(function(cb){
+        cb.checked=checked;
+        var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
+        if(h){h.value=checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
+      });
+    };
+
+    // ── Perm sync (all checkboxes with data-hidden) ──
+    document.querySelectorAll('.perm-cb').forEach(function(cb){
+      cb.addEventListener('change',function(){
+        var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
+        if(h){h.value=cb.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
+      })
+    });
+
+    // Re-init custom selects for filter bar (loaded after initial init)
+    if(typeof initCustomSelects==='function')initCustomSelects();
+  })()</script>`
+
+  // ── Config page ──
+  if (isConfigPage) {
+  const { activeModules = [], knowledgeCategories: kCats = [] } = ud
+  const SYSTEM_TYPES = ['admin', 'lead', 'coworker', 'partners']
+  const activeCount = configs.filter(c => c.isEnabled).length
+
+  // Section A: Base Cards Grid
+  const SVG_CONTACTS_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+  const SVG_EYE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+
+  html += `<div class="cb-grid">`
+  for (const cfg of configs) {
+    const lt = cfg.listType
+    const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
+    const count = counts[lt] ?? 0
+    const enabledOrig = cfg.isEnabled ? 'true' : 'false'
+    const isPartners = lt === 'partners'
+    const inactiveClass = !cfg.isEnabled ? ' ch-card-inactive' : ''
+    const typeLabel = isSys ? (lang === 'es' ? 'Sistema' : 'System') : (lang === 'es' ? 'Custom' : 'Custom')
+    const countLabel = lang === 'es' ? 'contactos' : 'contacts'
+
+    html += `<div class="ch-card cb-card${inactiveClass}" data-base-id="${esc(lt)}" data-enabled="${cfg.isEnabled}" ${!isPartners ? `onclick="if(!event.target.closest('.toggle,.ch-btn-action,a'))toggleBaseConfigClick('${esc(lt)}')" style="cursor:pointer"` : ''}>
+      <div class="ch-card-top">
+        <div class="ch-card-icon" style="border-color:var(--primary);color:var(--primary);background:rgba(255,94,14,0.08)">
+          ${SVG_CONTACTS_ICON}
+        </div>
+        <div class="ch-card-title-area">
+          <div class="ch-card-name">${esc(cfg.displayName)}</div>
+          <div class="ch-card-type">${typeLabel}</div>
+        </div>
+        ${lt === 'admin' ? '' : `<label class="toggle toggle-sm" onclick="event.stopPropagation()">
+          <input type="checkbox" ${cfg.isEnabled ? 'checked' : ''} ${isPartners ? 'disabled' : ''}
+            data-list-toggle="${esc(lt)}" data-list-name="${esc(cfg.displayName)}"
+            onchange="toggleBaseList(this)">
+          <span class="toggle-slider"></span>
+        </label>`}
+      </div>
+      <div class="ch-card-metrics ch-metrics-1">
+        <div class="ch-metric" style="border:none">
+          <span class="ch-metric-label">${countLabel}</span>
+          <span class="ch-metric-value">${count}</span>
+        </div>
+      </div>
+      <div class="ch-card-footer">${isPartners
+        ? `<span class="panel-badge badge-soon">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>`
+        : `<button type="button" class="ch-btn-action ch-btn-gear" onclick="event.stopPropagation();toggleBaseConfigClick('${esc(lt)}')">${GEAR_SVG} ${lang === 'es' ? 'Configurar' : 'Configure'}</button>
+           <span class="ch-footer-spacer"></span>
+           <a href="/console/contacts/${esc(lt)}?lang=${lang}" class="ch-btn-action ch-btn-connect" onclick="event.stopPropagation()">${SVG_EYE} ${lang === 'es' ? 'Ver' : 'View'}</a>`
+      }</div>
+    </div>`
+  }
+  html += `</div>`
+
+  // ── Tip box: shown when no base is selected for config ──
+  const SVG_CONFIG_TIP = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+
+  html += `<div class="cb-config-tip" id="cb-config-tip">
+    ${SVG_CONFIG_TIP}
+    <div style="margin-top:8px;font-size:0.95rem">${lang === 'es' ? 'Selecciona una base para configurar' : 'Select a base to configure'}</div>
+  </div>`
+
+  // ── System base explanations ──
+  const BASE_EXPLANATIONS: Record<string, Record<string, string>> = {
+    lead: {
+      es: 'Todos los contactos no registrados cuando la atencion al publico esta abierta. Se registran automaticamente como leads y se califican segun las reglas configuradas.',
+      en: 'All unregistered contacts when public attention is open. They are automatically registered as leads and scored according to configured rules.',
+    },
+    coworker: {
+      es: 'Empleados de la empresa. Se asignan por dominio de correo electronico o manualmente. Los contactos cuyo email coincida con los dominios configurados se asignan automaticamente a esta base.',
+      en: 'Company employees. Assigned by email domain or manually. Contacts whose email matches configured domains are automatically assigned to this base.',
+    },
+  }
+
+  // ── Per-base config panels (2-column layout, hidden by default) ──
+  // Layout: LEFT = info/rules (narrow, ~1 card), RIGHT = collapsible tabs (wide, ~3 cards)
+  for (const cfg of configs) {
+    const lt = cfg.listType
+    if (lt === 'partners') continue // Partners = "proximamente"
+    const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
+    const perms = cfg.permissions
+    const isAllTools = perms.tools.includes('*')
+
+    html += `<div class="cb-config-panel" id="cb-config-${esc(lt)}">
+      <div class="cb-config-layout">`
+
+    // ══ Column 1 (LEFT, narrow): name, description, assignment rules ══
+    html += `<div><div class="panel"><div class="panel-body">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--on-surface);margin-bottom:4px">${esc(cfg.displayName)}</div>
+      ${cfg.description ? `<div style="font-size:13px;color:var(--on-surface-variant);margin-bottom:12px">${esc(cfg.description)}</div>` : ''}`
+
+    // System-specific explanations
+    const explanation = BASE_EXPLANATIONS[lt]
+    if (explanation) {
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Reglas de asignacion' : 'Assignment rules'}</span></div>
+        <div style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;padding:12px 16px;background:var(--surface-container-low);border-radius:0.5rem;margin-bottom:12px">
+        ${esc(explanation[lang] || explanation['es']!)}</div>`
+    }
+
+    // Coworker: email domain tags input
+    if (lt === 'coworker') {
+      const domainsOrig = '' // TODO: read from cfg when domain field is added to schema
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Dominios de correo' : 'Email domains'}</span></div>
+        <div style="margin-bottom:12px">
+          <div class="tags-container" id="coworker-domains-tags">
+            <input type="text" class="tags-input" id="coworker-domain-input" placeholder="${lang === 'es' ? 'Ej: @miempresa.com + Enter' : 'E.g. @company.com + Enter'}" onkeydown="if(event.key==='Enter'){event.preventDefault();addDomainTag()}">
+          </div>
+          <input type="hidden" name="coworker_domains" value="${esc(domainsOrig)}" data-original="${esc(domainsOrig)}" id="coworker-domains-hidden">
+        </div>`
+    }
+
+    // Assignment rules (custom lists only — not system)
+    if (!['admin', 'lead', 'coworker'].includes(lt)) {
+      const aEnabled = cfg.assignmentEnabled
+      const aPrompt = cfg.assignmentPrompt || ''
+      const aOrig = aEnabled ? 'on' : ''
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Reglas de asignacion' : 'Assignment rules'}</span></div>
+        <div class="chs-toggle-row" style="padding:10px 14px">
+          <span style="font-size:13px">${lang === 'es' ? 'Asignacion automatica por LLM' : 'LLM auto-assignment'}</span>
+          <span class="ch-footer-spacer"></span>
+          <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+            ${aEnabled ? 'checked' : ''} data-hidden="assignment_enabled_${esc(lt)}"
+            onchange="document.getElementById('assignment-prompt-${esc(lt)}').style.display=this.checked?'block':'none'">
+          <input type="hidden" name="assignment_enabled_${esc(lt)}" value="${aOrig}" data-original="${aOrig}">
+        </div>
+        <div id="assignment-prompt-${esc(lt)}" style="display:${aEnabled ? 'block' : 'none'};margin-top:8px">
+          <label class="wizard-label">${lang === 'es' ? 'Instrucciones para el modelo' : 'Instructions for the model'}</label>
+          <textarea class="wizard-input" name="assignment_prompt_${esc(lt)}" rows="3" data-original="${esc(aPrompt)}"
+            placeholder="${lang === 'es' ? 'Ej: Si el contacto menciona que es proveedor o viene referido por un partner, asignalo a esta lista.' : 'E.g. If the contact mentions they are a vendor or referred by a partner, assign them to this list.'}">${esc(aPrompt)}</textarea>
+        </div>`
+    }
+
+    // Delete button for custom lists
+    if (!isSys) {
+      html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(0,0,0,0.04)">
+        <form method="POST" action="/console/users/delete-list" style="display:inline" onclick="return confirm('${lang === 'es' ? '¿Eliminar esta lista? Los contactos se moveran.' : 'Delete this list? Contacts will be moved.'}')">
+          <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
+          <input type="hidden" name="listType" value="${esc(lt)}">
+          <button type="submit" class="act-btn act-btn-remove">${SVG_DELETE} ${lang === 'es' ? 'Eliminar lista' : 'Delete list'}</button>
+        </form>
+      </div>`
+    }
+
+    html += `</div></div></div>` // end left column
+
+    // ══ Column 2 (RIGHT, wide): collapsible tabs — Modules, Subagents, Knowledge ══
+    html += `<div>`
+
+    // Admin = read-only (all access, informational only)
+    const isAdmin = lt === 'admin'
+    const disabledAttr = isAdmin ? ' disabled' : ''
+
+    // Tab 1: Modules
+    html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${lang === 'es' ? 'Modulos' : 'Modules'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
+
+    for (const mod of activeModules) {
+      const modLabel = typeof mod.displayName === 'string' ? mod.displayName : (mod.displayName[lang] || mod.displayName['es'] || mod.name)
+      const modToolNames = mod.tools.map(t => t.name)
+      const allModToolsOn = isAdmin || isAllTools || modToolNames.every(tn => perms.tools.includes(tn))
+      const someModToolsOn = !allModToolsOn && modToolNames.some(tn => perms.tools.includes(tn))
+
+      const modOrig = allModToolsOn ? 'on' : ''
+      html += `<div class="chs-toggle-row" style="margin-bottom:4px;padding:10px 14px">
+        <span style="font-size:13px;font-weight:600">${esc(modLabel)}</span>
+        <span class="ch-footer-spacer"></span>
+        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+          ${allModToolsOn ? 'checked' : ''} ${someModToolsOn ? 'indeterminate' : ''}${disabledAttr}
+          data-hidden="mod_${esc(lt)}_${esc(mod.name)}"
+          onchange="toggleModuleTools('${esc(lt)}','${esc(mod.name)}',this.checked)">
+        <input type="hidden" name="mod_${esc(lt)}_${esc(mod.name)}" value="${modOrig}" data-original="${modOrig}">
+      </div>`
+
+      html += `<div class="perm-grid" style="padding-left:28px;margin-bottom:8px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
+      for (const tool of mod.tools) {
+        const checked = isAdmin || isAllTools || perms.tools.includes(tool.name)
+        const origVal = checked ? 'on' : ''
+        const toolDesc = tool.description || ''
+        const infoHtml = toolDesc ? `<span class="info-wrap"><span class="info-btn" tabindex="0">i</span><span class="info-tooltip">${esc(toolDesc)}</span></span>` : ''
+        html += `<label>
+          <input type="checkbox" class="perm-cb tool-cb-${esc(lt)}-${esc(mod.name)}" ${checked ? 'checked' : ''}${disabledAttr}
+            data-hidden="tool_${esc(lt)}_${esc(tool.name)}">
+          <input type="hidden" name="tool_${esc(lt)}_${esc(tool.name)}" value="${origVal}" data-original="${origVal}">
+          ${esc(tool.displayName || tool.name)}${infoHtml}</label>`
+      }
+      html += `</div>`
+    }
+    html += `</div></div>` // end Modules panel
+
+    // Tab 2: Subagents
+    const subOrig = perms.subagents ? 'on' : ''
+    html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${lang === 'es' ? 'Subagentes' : 'Subagents'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
+      <div class="chs-toggle-row" style="padding:10px 14px">
+        <span style="font-size:13px">${lang === 'es' ? 'Permitir subagentes' : 'Allow subagents'}</span>
+        <span class="ch-footer-spacer"></span>
+        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+          ${isAdmin || perms.subagents ? 'checked' : ''}${disabledAttr} data-hidden="sub_${esc(lt)}">
+        <input type="hidden" name="sub_${esc(lt)}" value="${subOrig}" data-original="${subOrig}">
+      </div>
+    </div></div>` // end Subagents panel
+
+    // Tab 3: Knowledge Categories (always show, even if empty)
+    const allowedCats = cfg.knowledgeCategories ?? []
+    const allCats = isAdmin || allowedCats.length === 0
+    html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${lang === 'es' ? 'Categorias de conocimiento' : 'Knowledge categories'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
+    if (kCats.length > 0) {
+      html += `<div class="perm-grid">`
+      for (const cat of kCats) {
+        const checked = allCats || allowedCats.includes(cat.id)
+        const origVal = checked ? 'on' : ''
+        html += `<label title="${esc(cat.description)}">
+          <input type="checkbox" class="perm-cb" ${checked ? 'checked' : ''}${disabledAttr} data-hidden="kcat_${esc(lt)}_${esc(cat.id)}">
+          <input type="hidden" name="kcat_${esc(lt)}_${esc(cat.id)}" value="${origVal}" data-original="${origVal}">
+          ${esc(cat.title)}</label>`
+      }
+      html += `</div>`
+    } else {
+      html += `<p class="panel-description" style="font-size:12px;color:var(--on-surface-dim)">${lang === 'es' ? 'No hay categorias de conocimiento configuradas. Activa el modulo de Knowledge para gestionar categorias.' : 'No knowledge categories configured. Activate the Knowledge module to manage categories.'}</p>`
+    }
+    html += `</div></div>` // end Knowledge panel
+
+    html += `</div>` // end right column
+    html += `</div></div>` // end cb-config-layout + cb-config-panel
+  }
+
+  // ── Create base box + Unregistered contacts (global config) ──
+  html += `<div class="cb-create-box">
+    <div class="cb-create-box-header">
+      <div>
+        <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Organiza tus usuarios' : 'Organize your users'}</div>
+        <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Crea tus bases de contactos aqui para segmentar y organizar tu audiencia.' : 'Create your contact bases here to segment and organize your audience.'}</div>
+      </div>
+      <button type="button" class="act-btn act-btn-cta" onclick="toggleCreateBase()">${SVG_PLUS} ${lang === 'es' ? 'Crear base de contactos' : 'Create contact base'}</button>
+    </div>
+    <form id="cb-create-form" method="POST" action="/console/users/create-list" style="display:none;margin-top:20px;flex-direction:column;gap:12px">
+      <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
+      <label class="wizard-label">${lang === 'es' ? 'Nombre de la lista' : 'List name'}</label>
+      <input type="text" class="wizard-input" name="listName" required placeholder="${lang === 'es' ? 'Ej: Proveedores' : 'E.g. Vendors'}">
+      <label class="wizard-label">${lang === 'es' ? 'Descripcion (80-200 caracteres)' : 'Description (80-200 chars)'}</label>
+      <textarea class="wizard-input" name="listDescription" required minlength="80" maxlength="200" rows="2" placeholder="${lang === 'es' ? 'Describe el proposito de esta lista...' : 'Describe this list purpose...'}"></textarea>
+      <div class="chs-toggle-row" style="padding:10px 14px">
+        <span style="font-size:13px">${lang === 'es' ? 'Crear regla de asignacion?' : 'Create assignment rule?'}</span>
+        <span class="ch-footer-spacer"></span>
+        <label class="toggle toggle-sm">
+          <input type="checkbox" name="createAssignmentRule" disabled>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button type="submit" class="act-btn act-btn-cta" disabled>${lang === 'es' ? 'Crear' : 'Create'}</button>
+        <span class="panel-badge badge-soon">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>
+      </div>
+    </form>
+  </div>`
+
+  // ── Contactos no registrados (global config) ──
+  const leadCfg = configs.find(c => c.listType === 'lead')
+  if (leadCfg) {
+    const behavior = leadCfg.unregisteredBehavior || 'silence'
+    html += `<div class="cb-create-box" style="margin-top:16px">
+      <div class="cb-create-box-header">
+        <div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</div>
+          <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Configura que sucede cuando un contacto desconocido escribe por primera vez.' : 'Configure what happens when an unknown contact writes for the first time.'}</div>
+        </div>
+        <select name="unregisteredBehavior" data-original="${esc(behavior)}" style="max-width:240px" onchange="document.getElementById('unregistered-msg-field').style.display=this.value==='generic_message'?'block':'none'">
+          <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
+          <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje generico' : 'Generic message'}</option>
+          <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
+          <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
+        </select>
+      </div>
+      <div id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'block' : 'none'};margin-top:12px">
+        <label class="wizard-label">${lang === 'es' ? 'Mensaje' : 'Message'}</label>
+        <textarea class="wizard-input" name="unregisteredMessage" data-original="${esc(leadCfg.unregisteredMessage || '')}" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
+      </div>
+    </div>`
+  }
+
+  // ── Deactivation modal (2-step confirmation) ──
+  const listOptsForModal = configs.filter(c => !['admin', 'partners'].includes(c.listType)).map(c =>
+    `<option value="${esc(c.listType)}">${esc(c.displayName)}</option>`
+  ).join('')
+
+  html += `<div class="cb-deact-overlay" id="cb-deact-overlay" onclick="if(event.target===this)closeDeactModal()">
+    <div class="cb-deact-modal">
+      <div class="cb-deact-step active" id="cb-deact-step1">
+        <h3>${lang === 'es' ? 'Desactivar base' : 'Deactivate base'}</h3>
+        <p id="cb-deact-desc">${lang === 'es' ? '¿Que deseas hacer con los contactos de esta base?' : 'What do you want to do with the contacts in this base?'}</p>
+        <div class="field" style="margin-bottom:16px">
+          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Accion' : 'Action'}</span></div>
+          <select id="cb-deact-action" required>
+            <option value="" disabled selected>${lang === 'es' ? 'Selecciona una opcion...' : 'Select an option...'}</option>
+            <option value="leads">${lang === 'es' ? 'Tratar como leads' : 'Treat as leads'}</option>
+            <option value="silence">${lang === 'es' ? 'Ignorar silenciosamente' : 'Ignore silently'}</option>
+            <option value="move">${lang === 'es' ? 'Mover a otra lista' : 'Move to another list'}</option>
+          </select>
+        </div>
+        <div class="field" id="cb-deact-target-wrap" style="display:none;margin-bottom:16px">
+          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Lista destino' : 'Target list'}</span></div>
+          <select id="cb-deact-target">${listOptsForModal}</select>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="act-btn act-btn-config" onclick="closeDeactModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
+          <button type="button" class="act-btn act-btn-remove" id="cb-deact-next" onclick="deactNextStep()">${lang === 'es' ? 'Continuar' : 'Continue'}</button>
+        </div>
+      </div>
+      <div class="cb-deact-step" id="cb-deact-step2">
+        <h3>${lang === 'es' ? 'Confirmar desactivacion' : 'Confirm deactivation'}</h3>
+        <p id="cb-deact-confirm-msg"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="act-btn act-btn-config" onclick="deactBackStep()">${lang === 'es' ? 'Atras' : 'Back'}</button>
+          <button type="button" class="act-btn act-btn-remove" onclick="confirmDeactivation()">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
+        </div>
+      </div>
+    </div>
+  </div>`
+
+  // ── Config page JavaScript ──
+  html += `<script>(function(){
+    var _deactLt='';
+    var _deactName='';
+    var lang=document.documentElement.lang||'es';
+
+    // Submit toggle form (instant apply, like channels)
+    function submitListToggle(lt,enabled,behavior,target){
+      var form=document.createElement('form');
+      form.method='POST';form.action='/console/users/toggle-list';form.style.display='none';
+      var fields={listType:lt,enabled:enabled?'true':'false',_redirect:'/console/contacts?page=config&lang='+lang};
+      if(behavior)fields.disableBehavior=behavior;
+      if(target)fields.disableTarget=target;
+      for(var k in fields){var inp=document.createElement('input');inp.type='hidden';inp.name=k;inp.value=fields[k];form.appendChild(inp)}
+      document.body.appendChild(form);form.submit();
+    }
+
+    // Toggle handler: activate = instant, deactivate = modal
+    window.toggleBaseList=function(cb){
+      var lt=cb.getAttribute('data-list-toggle');
+      var name=cb.getAttribute('data-list-name');
+      if(cb.checked){
+        // Activating — instant apply
+        submitListToggle(lt,true);
+      } else {
+        // Deactivating — revert and open modal
+        cb.checked=true;
+        openDeactModal(lt,name);
+      }
+    };
+
+    // Click on card: only open config if enabled
+    window.toggleBaseConfigClick=function(lt){
+      var card=document.querySelector('.ch-card[data-base-id="'+lt+'"]');
+      if(card&&card.getAttribute('data-enabled')!=='true')return;
+      openBaseConfig(lt);
+    };
+
+    window.openBaseConfig=function(lt){
+      var tip=document.getElementById('cb-config-tip');
+      if(tip)tip.style.display='none';
+      document.querySelectorAll('.cb-config-panel').forEach(function(p){p.classList.remove('active')});
+      var panel=document.getElementById('cb-config-'+lt);
+      if(panel){panel.classList.add('active');panel.scrollIntoView({behavior:'smooth',block:'start'})}
+      document.querySelectorAll('.ch-card[data-base-id]').forEach(function(c){c.classList.remove('cb-active')});
+      var card=document.querySelector('.ch-card[data-base-id="'+lt+'"]');
+      if(card)card.classList.add('cb-active');
+    };
+    window.toggleCreateBase=function(){
+      var form=document.getElementById('cb-create-form');
+      if(form)form.style.display=form.style.display==='flex'?'none':'flex';
+    };
+    window.addDomainTag=function(){
+      var inp=document.getElementById('coworker-domain-input');
+      if(!inp)return;
+      var val=inp.value.trim();
+      if(!val)return;
+      if(val.indexOf('@')!==0)val='@'+val;
+      var container=document.getElementById('coworker-domains-tags');
+      var tag=document.createElement('span');
+      tag.className='tag-chip';
+      tag.innerHTML=val+' <button type="button" onclick="this.parentElement.remove();updateDomainHidden()">&times;</button>';
+      container.insertBefore(tag,inp);
+      inp.value='';
+      updateDomainHidden();
+    };
+    window.updateDomainHidden=function(){
+      var chips=document.querySelectorAll('#coworker-domains-tags .tag-chip');
+      var vals=[];
+      chips.forEach(function(c){vals.push(c.textContent.replace('\\u00d7','').trim())});
+      var hidden=document.getElementById('coworker-domains-hidden');
+      if(hidden){hidden.value=vals.join(',');hidden.dispatchEvent(new Event('input',{bubbles:true}))}
+    };
+
+    // ── Deactivation modal ──
+    window.openDeactModal=function(lt,name){
+      _deactLt=lt;_deactName=name;
+      document.getElementById('cb-deact-action').selectedIndex=0;
+      document.getElementById('cb-deact-target-wrap').style.display='none';
+      document.getElementById('cb-deact-step1').classList.add('active');
+      document.getElementById('cb-deact-step2').classList.remove('active');
+      document.getElementById('cb-deact-overlay').classList.add('open');
+    };
+    window.closeDeactModal=function(){
+      document.getElementById('cb-deact-overlay').classList.remove('open');
+    };
+    document.getElementById('cb-deact-action').addEventListener('change',function(){
+      document.getElementById('cb-deact-target-wrap').style.display=this.value==='move'?'grid':'none';
+    });
+    window.deactNextStep=function(){
+      var action=document.getElementById('cb-deact-action').value;
+      if(!action){alert(lang==='es'?'Selecciona una opcion.':'Select an option.');return}
+      if(action==='move'&&!document.getElementById('cb-deact-target').value){alert(lang==='es'?'Selecciona una lista destino.':'Select a target list.');return}
+      var actionText={leads:lang==='es'?'tratar como leads':'treat as leads',silence:lang==='es'?'ignorar silenciosamente':'ignore silently',move:lang==='es'?'mover a otra lista':'move to another list'};
+      var msg=lang==='es'
+        ?'Estas a punto de desactivar la base "'+_deactName+'". Los contactos se van a '+actionText[action]+'. Esta accion se puede revertir reactivando la base.'
+        :'You are about to deactivate the base "'+_deactName+'". Contacts will be '+actionText[action]+'. This action can be reversed by reactivating the base.';
+      document.getElementById('cb-deact-confirm-msg').textContent=msg;
+      document.getElementById('cb-deact-step1').classList.remove('active');
+      document.getElementById('cb-deact-step2').classList.add('active');
+    };
+    window.deactBackStep=function(){
+      document.getElementById('cb-deact-step2').classList.remove('active');
+      document.getElementById('cb-deact-step1').classList.add('active');
+    };
+    window.confirmDeactivation=function(){
+      var action=document.getElementById('cb-deact-action').value;
+      var target=action==='move'?document.getElementById('cb-deact-target').value:'';
+      submitListToggle(_deactLt,false,action,target);
+    };
+
+    // ── Perm sync: checkbox → hidden field → dirty tracking ──
+    document.querySelectorAll('.cb-config-panel .perm-cb').forEach(function(cb){
+      cb.addEventListener('change',function(){
+        var hName=cb.getAttribute('data-hidden');
+        if(!hName)return;
+        var h=document.querySelector('input[name="'+hName+'"]');
+        if(h){h.value=cb.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
+      });
+    });
+
+    // ── Admin: force all checkboxes disabled (belt + suspenders) ──
+    document.querySelectorAll('#cb-config-admin input[type="checkbox"]').forEach(function(cb){
+      cb.disabled=true;
+      cb.checked=true;
+    });
+
+    if(typeof initCustomSelects==='function')initCustomSelects();
+  })()</script>`
+
+  } // end isConfigPage
+
+  return html + '</div>'
 }
