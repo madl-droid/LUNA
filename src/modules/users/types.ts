@@ -140,6 +140,12 @@ export interface SyncConfig {
   domains?: string[]
   /** Available roles for dropdown (coworker only). E.g. ['gerente', 'vendedor'] */
   roles?: string[]
+  /** Webhook: endpoint habilitado para registro externo de contactos */
+  webhookEnabled?: boolean
+  /** Webhook: token Bearer de autorización */
+  webhookToken?: string
+  /** Webhook: canal preferido de contacto ('auto' | 'whatsapp' | 'email' | 'google-chat') */
+  webhookPreferredChannel?: string
 }
 
 /** Payload para importación masiva. */

@@ -371,7 +371,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         for (const [k, v] of Object.entries(body)) {
           if (k.startsWith('_')) continue
           // Route user/contact config fields to users module
-          if (k.startsWith('perm_') || k.startsWith('mod_') || k.startsWith('tool_') || k.startsWith('sub_') || k.startsWith('kcat_') || k.startsWith('assignment_') || k.startsWith('disable_') || k.startsWith('list_enabled_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
+          if (k.startsWith('perm_') || k.startsWith('mod_') || k.startsWith('tool_') || k.startsWith('sub_') || k.startsWith('kcat_') || k.startsWith('assignment_') || k.startsWith('disable_') || k.startsWith('list_enabled_') || k.startsWith('webhook_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
             userPermUpdates[k] = v
           } else {
             updates[k] = v
@@ -403,8 +403,10 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   const m = k.match(/^(?:mod|tool|sub|kcat|assignment_enabled|assignment_prompt|disable|list_enabled|perm)_([^_]+)/)
                   if (m) listsToUpdate.add(m[1]!)
                 }
-                // Coworker domains/roles fields → ensure coworker is in the update set
-                if (up['coworker_domains'] !== undefined || up['coworker_roles'] !== undefined) {
+                // Coworker domains/roles/webhook fields → ensure coworker is in the update set
+                if (up['coworker_domains'] !== undefined || up['coworker_roles'] !== undefined
+                  || up['webhook_enabled_coworker'] !== undefined || up['webhook_token_coworker'] !== undefined
+                  || up['webhook_channel_coworker'] !== undefined) {
                   listsToUpdate.add('coworker')
                 }
 
@@ -440,6 +442,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                     }
                     if (up['coworker_roles'] !== undefined) {
                       syncCfg.roles = up['coworker_roles'] ? up['coworker_roles'].split(',').map((r: string) => r.trim()).filter(Boolean) : []
+                    }
+                    // Webhook settings
+                    if (up['webhook_enabled_coworker'] !== undefined) {
+                      syncCfg.webhookEnabled = up['webhook_enabled_coworker'] === 'on'
+                    }
+                    if (up['webhook_token_coworker'] !== undefined && up['webhook_token_coworker']) {
+                      syncCfg.webhookToken = up['webhook_token_coworker']
+                    }
+                    if (up['webhook_channel_coworker'] !== undefined) {
+                      syncCfg.webhookPreferredChannel = up['webhook_channel_coworker']
                     }
                   }
 
