@@ -55,10 +55,12 @@ export async function phase1Intake(
   const messageType = detectMessageType(message.content)
 
   // 2. Resolve user type via users:resolve service (FIRST — before anything else)
+  // For WhatsApp LID: passes resolvedPhone as fallback so manually-saved contacts match
   const { userType, userPermissions } = await resolveUser(
     message.from,
     message.channelName,
     registry,
+    message.resolvedPhone,
   )
 
   // 3. Detect possible prompt injection
@@ -84,7 +86,7 @@ export async function phase1Intake(
     knowledgeInjectionResult,
     sheetsCacheResult,
   ] = await Promise.allSettled([
-    findContact(db, message.from, message.channelName),
+    findContact(db, message.from, message.channelName, message.resolvedPhone),
     detectCampaign(db, message, normalizedText),
     // Fallback RAG — only if knowledge module not active
     !knowledgeManagerSvc && normalizedText
@@ -298,9 +300,10 @@ async function resolveUser(
   senderId: string,
   channel: string,
   registry: Registry,
+  fallbackSenderId?: string,
 ): Promise<{ userType: UserType; userPermissions: UserPermissions }> {
   // Try the real users module resolver
-  const resolveFn = registry.getOptional<(senderId: string, channel: string) => Promise<{ userType: string; listName?: string }>>(
+  const resolveFn = registry.getOptional<(senderId: string, channel: string, fallbackSenderId?: string) => Promise<{ userType: string; listName?: string }>>(
     'users:resolve',
   )
   const permsFn = registry.getOptional<(userType: string) => Promise<UserPermissions>>(
@@ -309,7 +312,7 @@ async function resolveUser(
 
   if (resolveFn) {
     try {
-      const resolution = await resolveFn(senderId, channel)
+      const resolution = await resolveFn(senderId, channel, fallbackSenderId)
       const userType = resolution.userType as UserType
       const permissions = permsFn
         ? await permsFn(userType)
@@ -326,29 +329,62 @@ async function resolveUser(
   return { userType: 'lead', userPermissions: DEFAULT_LEAD_PERMISSIONS }
 }
 
+/**
+ * Find a contact by channel identifier.
+ * Supports fallback for WhatsApp LID migration:
+ * - First tries the primary identifier (LID for WA)
+ * - If not found and fallbackId provided (phone), tries that
+ * - When found by fallback, auto-migrates channel_contact_id to LID
+ * - Auto-creates a voice channel entry with the phone number for call linking
+ */
 async function findContact(
   db: Pool,
   channelContactId: string,
   channel: string,
+  fallbackContactId?: string,
 ): Promise<ContactInfo | null> {
-  try {
-    const result = await db.query(
-      `SELECT c.id, c.display_name, c.contact_type, c.qualification_status,
+  const contactQuery = `SELECT c.id, c.display_name, c.contact_type, c.qualification_status,
               c.qualification_score, c.qualification_data, c.created_at,
-              cc.channel_contact_id, cc.channel_name
+              cc.channel_contact_id, cc.channel_name, cc.id AS cc_id
        FROM contacts c
        JOIN contact_channels cc ON cc.contact_id = c.id
        WHERE cc.channel_contact_id = $1 AND cc.channel_name = $2
-       LIMIT 1`,
-      [channelContactId, channel],
-    )
+       LIMIT 1`
+
+  try {
+    let result = await db.query(contactQuery, [channelContactId, channel])
+
+    // Fallback: try phone number (manually-created contacts use phone, not LID)
+    if (result.rows.length === 0 && fallbackContactId) {
+      result = await db.query(contactQuery, [fallbackContactId, channel])
+
+      if (result.rows.length > 0) {
+        const row = result.rows[0]!
+        // Auto-migrate: update channel_contact_id from phone to LID
+        try {
+          await db.query(
+            `UPDATE contact_channels SET channel_contact_id = $1 WHERE id = $2`,
+            [channelContactId, row.cc_id],
+          )
+          logger.info({ contactId: row.id, oldId: fallbackContactId, newId: channelContactId, channel }, 'Auto-migrated contact_channels (phone → LID)')
+        } catch (err) {
+          logger.warn({ err, contactId: row.id }, 'Failed to auto-migrate contact_channels')
+        }
+
+        // Auto-create voice channel with the phone number (for call linking)
+        await ensureVoiceChannel(db, row.id, fallbackContactId)
+      }
+    } else if (result.rows.length > 0 && fallbackContactId) {
+      // Contact found by LID — still ensure voice channel exists
+      await ensureVoiceChannel(db, result.rows[0]!.id, fallbackContactId)
+    }
 
     if (result.rows.length === 0) return null
 
     const row = result.rows[0]!
     return {
       id: row.id,
-      channelContactId: row.channel_contact_id,
+      channelContactId: channelContactId, // always return the LID (current identifier)
       channel: row.channel_name,
       displayName: row.display_name,
       contactType: row.contact_type,
@@ -360,6 +396,24 @@ async function findContact(
   } catch (err) {
     logger.warn({ err, channelContactId, channel }, 'Failed to find contact')
     return null
+  }
+}
+
+/**
+ * Ensure a voice channel entry exists for a contact.
+ * Creates one with the phone number if missing, so incoming calls
+ * are automatically linked to the same contact as WhatsApp messages.
+ */
+async function ensureVoiceChannel(db: Pool, contactId: string, phoneNumber: string): Promise<void> {
+  try {
+    await db.query(
+      `INSERT INTO contact_channels (contact_id, channel_name, channel_contact_id, channel_type, channel_identifier, is_primary)
+       VALUES ($1, 'voice', $2, 'voice', $2, false)
+       ON CONFLICT (channel_name, channel_contact_id) DO NOTHING`,
+      [contactId, phoneNumber],
+    )
+  } catch (err) {
+    logger.debug({ err, contactId, phoneNumber }, 'ensureVoiceChannel failed (may already exist)')
   }
 }
 

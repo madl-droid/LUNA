@@ -24,10 +24,12 @@ export function initResolver(registry: Registry, cache: UserCache, db: UsersDb):
  *
  * 1. Check Redis cache (fast path, <1ms)
  * 2. Query DB: user_contacts JOIN users (admin → coworker → custom, first match)
+ *    - For WhatsApp LID: tries LID first, then falls back to phone number
+ *    - Auto-migrates sender_id from phone to LID on first match
  * 3. If no match: lead (if enabled) or unregistered behavior
  * 4. Cache result in Redis with configured TTL
  */
-export async function resolveUserType(senderId: string, channel: string): Promise<UserResolution> {
+export async function resolveUserType(senderId: string, channel: string, fallbackSenderId?: string): Promise<UserResolution> {
   if (!_cache || !_db || !_registry) {
     throw new Error('Users module not initialized')
   }
@@ -45,8 +47,8 @@ export async function resolveUserType(senderId: string, channel: string): Promis
     }
   }
 
-  // 2. DB lookup via user_contacts → users
-  const dbResult = await _db.resolveByContact(senderId, channel)
+  // 2. DB lookup via user_contacts → users (with phone fallback for LID migration)
+  const dbResult = await _db.resolveByContact(senderId, channel, fallbackSenderId)
 
   let resolution: UserResolution
 

@@ -67,6 +67,8 @@ export interface IncomingMessage {
   channelName: string
   channelMessageId: string
   from: string
+  /** Phone number resolved from LID mapping. Used to auto-create voice channel. */
+  resolvedPhone?: string
   timestamp: Date
   content: { type: string; text?: string; mediaUrl?: string; caption?: string }
   attachments?: Array<{
@@ -92,6 +94,8 @@ export class BaileysAdapter {
   private _lastDisconnectReason: string | null = null
   private _connectedNumber: string | null = null
   private _autoReconnect = true
+  /** Maps contact identifiers to their JID suffix (@lid or @s.whatsapp.net) for outbound routing */
+  private jidTypeMap = new Map<string, '@s.whatsapp.net' | '@lid'>()
   private config: WhatsAppConfig
   private pool: Pool
   private instanceId: string
@@ -213,7 +217,7 @@ export class BaileysAdapter {
         if (msg.key.fromMe) continue
         if (!msg.message) continue
 
-        const normalized = this.normalizeMessage(msg)
+        const normalized = await this.normalizeMessage(msg)
         if (!normalized) continue
 
         for (const handler of this.messageHandlers) {
@@ -295,7 +299,7 @@ export class BaileysAdapter {
     }
 
     try {
-      const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`
+      const jid = to.includes('@') ? to : `${to}${this.jidTypeMap.get(to) ?? '@s.whatsapp.net'}`
 
       // Build quoted context if present
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -347,7 +351,7 @@ export class BaileysAdapter {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private normalizeMessage(msg: any): IncomingMessage | null {
+  private async normalizeMessage(msg: any): Promise<IncomingMessage | null> {
     const remoteJid: string = msg.key.remoteJid ?? ''
     if (!remoteJid) return null
 
@@ -355,9 +359,10 @@ export class BaileysAdapter {
     if (remoteJid === 'status@broadcast') return null
 
     const isGroup = remoteJid.endsWith('@g.us')
-    const from = isGroup
-      ? (msg.key.participant ?? '').replace('@s.whatsapp.net', '')
-      : remoteJid.replace('@s.whatsapp.net', '')
+
+    // Resolve sender JID — handles both LID and phone formats
+    const senderJid = isGroup ? (msg.key.participant ?? '') : remoteJid
+    const { from, resolvedPhone } = await this.resolveJid(senderJid)
     if (!from) return null
 
     const text = msg.message?.conversation
@@ -382,6 +387,7 @@ export class BaileysAdapter {
       channelName: 'whatsapp',
       channelMessageId: msg.key.id ?? '',
       from,
+      resolvedPhone: resolvedPhone ?? undefined,
       timestamp: new Date((msg.messageTimestamp as number) * 1000),
       content: {
         type: msg.message?.imageMessage ? 'image'
@@ -393,6 +399,41 @@ export class BaileysAdapter {
       attachments: attachments.length > 0 ? attachments : undefined,
       raw: msg,
     }
+  }
+
+  /**
+   * Resolve a WhatsApp JID to a from identifier + optional phone number.
+   * - Phone JIDs (`573155524620@s.whatsapp.net`): from=phone, no resolvedPhone
+   * - LID JIDs (`125151119208@lid`): from=LID, resolvedPhone=phone (via Baileys mapping)
+   */
+  private async resolveJid(jid: string): Promise<{ from: string; resolvedPhone: string | null }> {
+    if (jid.endsWith('@lid')) {
+      const lidNumber = jid.replace(/:.*@/, '@').replace('@lid', '')
+      this.jidTypeMap.set(lidNumber, '@lid')
+
+      // Try to resolve LID → phone via Baileys signal repository
+      let phone: string | null = null
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const repo = (this.socket as any)?.signalRepository
+        if (repo?.lidMapping) {
+          const pn = await repo.lidMapping.getPNForLID(jid)
+          if (pn) {
+            phone = pn.replace(/:.*@/, '@').replace('@s.whatsapp.net', '')
+            logger.info({ lid: lidNumber, phone }, 'LID resolved to phone number')
+          }
+        }
+      } catch (err) {
+        logger.debug({ err, lid: lidNumber }, 'LID resolution failed (mapping may not be available yet)')
+      }
+
+      return { from: lidNumber, resolvedPhone: phone }
+    }
+
+    // Standard phone JID
+    const phone = jid.replace(/:.*@/, '@').replace('@s.whatsapp.net', '')
+    this.jidTypeMap.set(phone, '@s.whatsapp.net')
+    return { from: phone, resolvedPhone: null }
   }
 
   /**
