@@ -7,6 +7,8 @@ import pino from 'pino'
 import { kernelConfig } from './config.js'
 import type { Registry } from './registry.js'
 import type { ApiRoute } from './types.js'
+import { getSessionToken, validateSession } from './setup/auth.js'
+import { createLoginHandler } from './setup/login.js'
 
 const logger = pino({ name: 'kernel:server' })
 
@@ -60,6 +62,8 @@ export class Server {
   }
 
   async start(): Promise<void> {
+    const loginHandler = createLoginHandler(this.registry.getDb(), this.registry.getRedis())
+
     this.httpServer = http.createServer(async (req, res) => {
       const url = req.url ?? '/'
       const method = req.method ?? 'GET'
@@ -74,6 +78,23 @@ export class Server {
             .map(m => m.manifest.name),
         }))
         return
+      }
+
+      // ─── Auth: login/logout routes (before auth check) ───
+      if (url.startsWith('/console/login') || url.startsWith('/console/logout')) {
+        const handled = await loginHandler(req, res)
+        if (handled) return
+      }
+
+      // ─── Auth: protect /console routes (except static assets) ───
+      if (url.startsWith('/console') && !url.startsWith('/console/static/')) {
+        const token = getSessionToken(req.headers['cookie'])
+        const userId = token ? await validateSession(this.registry.getRedis(), token) : null
+        if (!userId) {
+          res.writeHead(302, { Location: '/console/login?expired=1' })
+          res.end()
+          return
+        }
       }
 
       // Try matched module routes (strip query params for matching)
