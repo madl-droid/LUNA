@@ -11,16 +11,22 @@ import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
-import type { LeadScoringConfig, QualifyingConfig, QualificationStatus } from './types.js'
+import type { LeadScoringConfig, QualifyingConfig, QualificationStatus, FrameworkType } from './types.js'
+import { FRAMEWORK_PRESETS } from './frameworks.js'
 import { ConfigStore } from './config-store.js'
 import { LeadQueries } from './pg-queries.js'
 import { registerExtractionTool } from './extract-tool.js'
 import { calculateScore, resolveTransition } from './scoring-engine.js'
+import { CampaignQueries } from './campaign-queries.js'
+import { CampaignMatcher } from './campaign-matcher.js'
+import type { CampaignMatchResult } from './campaign-types.js'
 
 const logger = pino({ name: 'lead-scoring' })
 
 let configStore: ConfigStore | null = null
 let leadQueries: LeadQueries | null = null
+let campaignQueries: CampaignQueries | null = null
+let campaignMatcher: CampaignMatcher | null = null
 
 // ═══════════════════════════════════════════
 // API Routes
@@ -34,6 +40,10 @@ function createApiRoutes(): ApiRoute[] {
   const getQueries = (): LeadQueries => {
     if (!leadQueries) throw new Error('Lead scoring not initialized')
     return leadQueries
+  }
+  const getCampaignQueries = (): CampaignQueries => {
+    if (!campaignQueries) throw new Error('Campaign system not initialized')
+    return campaignQueries
   }
 
   return [
@@ -92,6 +102,46 @@ function createApiRoutes(): ApiRoute[] {
 
           const count = await queries.batchUpdateScores(updates)
           jsonResponse(res, 200, { ok: true, recalculated: count })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/lead-scoring/apply-framework
+    {
+      method: 'POST',
+      path: 'apply-framework',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ framework: FrameworkType }>(req)
+          if (!body.framework) {
+            jsonResponse(res, 400, { error: 'Missing framework' })
+            return
+          }
+          const store = getConfigStore()
+          store.applyFramework(body.framework)
+          jsonResponse(res, 200, { ok: true, framework: body.framework })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/lead-scoring/frameworks
+    {
+      method: 'GET',
+      path: 'frameworks',
+      handler: async (_req, res) => {
+        try {
+          const presets = Object.values(FRAMEWORK_PRESETS).map(p => ({
+            type: p.type,
+            name: p.name,
+            description: p.description,
+            stageCount: p.stages.length,
+            criteriaCount: p.criteria.length,
+          }))
+          jsonResponse(res, 200, { presets })
         } catch (err) {
           jsonResponse(res, 500, { error: String(err) })
         }
@@ -229,6 +279,206 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // ─── Campaign endpoints ───
+
+    // GET /console/api/lead-scoring/campaigns
+    {
+      method: 'GET',
+      path: 'campaigns',
+      handler: async (_req, res) => {
+        try {
+          const campaigns = await getCampaignQueries().listAllCampaigns()
+          jsonResponse(res, 200, { campaigns })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/lead-scoring/campaign?id=X
+    {
+      method: 'GET',
+      path: 'campaign',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const id = q.get('id')
+          if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
+          const campaign = await getCampaignQueries().getCampaignById(id)
+          if (!campaign) { jsonResponse(res, 404, { error: 'Campaign not found' }); return }
+          jsonResponse(res, 200, { campaign })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/lead-scoring/campaign
+    {
+      method: 'POST',
+      path: 'campaign',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{
+            name: string; keyword: string; matchThreshold?: number
+            matchMaxRounds?: number; allowedChannels?: string[]
+            promptContext?: string; utmData?: Record<string, string>; tagIds?: string[]
+          }>(req)
+          if (!body.name || !body.keyword) {
+            jsonResponse(res, 400, { error: 'Missing name or keyword' }); return
+          }
+          const campaign = await getCampaignQueries().createCampaign(body)
+          await reloadCampaignMatcher()
+          jsonResponse(res, 201, { campaign })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/lead-scoring/campaign
+    {
+      method: 'PUT',
+      path: 'campaign',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{
+            id: string; name?: string; keyword?: string; matchThreshold?: number
+            matchMaxRounds?: number; allowedChannels?: string[]
+            promptContext?: string; active?: boolean
+            utmData?: Record<string, string>; tagIds?: string[]
+          }>(req)
+          if (!body.id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
+          const campaign = await getCampaignQueries().updateCampaign(body.id, body)
+          if (!campaign) { jsonResponse(res, 404, { error: 'Campaign not found' }); return }
+          await reloadCampaignMatcher()
+          jsonResponse(res, 200, { campaign })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // DELETE /console/api/lead-scoring/campaign?id=X
+    {
+      method: 'DELETE',
+      path: 'campaign',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const id = q.get('id')
+          if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
+          await getCampaignQueries().deleteCampaign(id)
+          await reloadCampaignMatcher()
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // ─── Tag endpoints ───
+
+    // GET /console/api/lead-scoring/tags?type=platform|source
+    {
+      method: 'GET',
+      path: 'tags',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const type = q.get('type') as 'platform' | 'source' | undefined
+          const tags = await getCampaignQueries().listTags(type || undefined)
+          jsonResponse(res, 200, { tags })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/lead-scoring/tag
+    {
+      method: 'POST',
+      path: 'tag',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ name: string; tagType: 'platform' | 'source'; color?: string }>(req)
+          if (!body.name || !body.tagType) {
+            jsonResponse(res, 400, { error: 'Missing name or tagType' }); return
+          }
+          const tag = await getCampaignQueries().createTag(body.name, body.tagType, body.color ?? '#93c5fd')
+          jsonResponse(res, 201, { tag })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/lead-scoring/tag
+    {
+      method: 'PUT',
+      path: 'tag',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string; name?: string; color?: string }>(req)
+          if (!body.id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
+          await getCampaignQueries().updateTag(body.id, body)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // DELETE /console/api/lead-scoring/tag?id=X
+    {
+      method: 'DELETE',
+      path: 'tag',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const id = q.get('id')
+          if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
+          await getCampaignQueries().deleteTag(id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // ─── Campaign stats ───
+
+    // GET /console/api/lead-scoring/campaign-stats
+    {
+      method: 'GET',
+      path: 'campaign-stats',
+      handler: async (_req, res) => {
+        try {
+          const stats = await getCampaignQueries().getCampaignStats()
+          jsonResponse(res, 200, { stats })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/lead-scoring/contact-campaigns?contactId=X
+    {
+      method: 'GET',
+      path: 'contact-campaigns',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const contactId = q.get('contactId')
+          if (!contactId) { jsonResponse(res, 400, { error: 'Missing contactId' }); return }
+          const entries = await getCampaignQueries().getContactCampaigns(contactId)
+          jsonResponse(res, 200, { entries })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // ─── UI endpoint ───
 
     // GET /console/api/lead-scoring/ui
@@ -262,6 +512,20 @@ function createApiRoutes(): ApiRoute[] {
 }
 
 // ═══════════════════════════════════════════
+// Campaign matcher reload helper
+// ═══════════════════════════════════════════
+
+async function reloadCampaignMatcher(): Promise<void> {
+  if (!campaignQueries || !campaignMatcher) return
+  try {
+    const active = await campaignQueries.listActiveCampaigns()
+    campaignMatcher.load(active)
+  } catch (err) {
+    logger.error({ err }, 'Failed to reload campaign matcher')
+  }
+}
+
+// ═══════════════════════════════════════════
 // Manifest
 // ═══════════════════════════════════════════
 
@@ -269,8 +533,8 @@ const manifest: ModuleManifest = {
   name: 'lead-scoring',
   version: '1.0.0',
   description: {
-    es: 'Sistema de calificación de leads con BANT y criterios personalizables',
-    en: 'Lead scoring system with BANT and customizable criteria',
+    es: 'Sistema de calificación de leads con frameworks (CHAMP, SPIN, CHAMP+Gov) y criterios personalizables',
+    en: 'Lead scoring system with frameworks (CHAMP, SPIN, CHAMP+Gov) and customizable criteria',
   },
   type: 'feature',
   removable: true,
@@ -302,9 +566,26 @@ const manifest: ModuleManifest = {
     configStore = new ConfigStore(configPath)
     leadQueries = new LeadQueries(db)
 
+    // Initialize campaign subsystem
+    campaignQueries = new CampaignQueries(db)
+    await campaignQueries.ensureTables()
+    campaignMatcher = new CampaignMatcher()
+    await reloadCampaignMatcher()
+
     // Register services
     registry.provide('lead-scoring:config', configStore)
     registry.provide('lead-scoring:queries', leadQueries)
+    registry.provide('lead-scoring:campaign-queries', campaignQueries)
+
+    // Campaign match service — called from engine Phase 1
+    registry.provide('lead-scoring:match-campaign',
+      (text: string, channelName: string, channelType: string, roundNumber: number): CampaignMatchResult | null => {
+        return campaignMatcher?.match(text, channelName, channelType, roundNumber) ?? null
+      },
+    )
+
+    // Campaign reload service
+    registry.provide('lead-scoring:reload-campaigns', reloadCampaignMatcher)
 
     // Provide renderSection service for inline console embedding (SSR)
     registry.provide('lead-scoring:renderSection', (lang: 'es' | 'en') => {
@@ -319,6 +600,9 @@ const manifest: ModuleManifest = {
       const store = configStore!
       const oldConfig = store.getConfig()
       const newConfig = store.reload()
+
+      // Reload campaign matcher (in case campaigns were modified externally)
+      await reloadCampaignMatcher()
 
       // Recalculate if enabled and thresholds/criteria changed
       if (newConfig.recalculateOnConfigChange) {
@@ -353,6 +637,8 @@ const manifest: ModuleManifest = {
   async stop() {
     configStore = null
     leadQueries = null
+    campaignQueries = null
+    campaignMatcher = null
     logger.info('Lead scoring module stopped')
   },
 }

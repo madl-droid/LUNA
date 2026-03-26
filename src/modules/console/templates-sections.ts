@@ -29,6 +29,7 @@ export interface SectionData {
       syncConfig?: Record<string, unknown>
     }>
     usersByType: Record<string, Array<{ id: string; displayName: string | null; listType: string; isActive: boolean; source: string; contacts: Array<{ id: string; channel: string; senderId: string; isPrimary: boolean }>; metadata?: Record<string, unknown> }>>
+
     counts: Record<string, number>
     channels: Array<{ id: string; label: { es: string; en: string } | string }>
     tools: Array<{ name: string; description: string; category?: string }>

@@ -2,7 +2,7 @@
 // Renders lead-scoring config + leads view inline in the console.
 
 import type { ConfigStore } from './config-store.js'
-import type { QualifyingConfig, QualifiedAction } from './types.js'
+import type { QualifyingConfig, QualifiedAction, FrameworkType } from './types.js'
 
 type Lang = 'es' | 'en'
 
@@ -32,6 +32,7 @@ const labels: Record<Lang, Record<string, string>> = {
     recalc_done: 'Recalculacion completada', recalc_error: 'Error al recalcular',
     threshold_cold: 'Frio (max)', threshold_qualified: 'Calificado (min)',
     weight_total: 'Total de pesos',
+    weight_error: 'Los pesos deben sumar 100 (actual: {n})',
     opt_recalc: 'Recalcular scores al cambiar config',
     opt_max_custom: 'Max criterios custom',
     opt_min_confidence: 'Confianza minima para extraccion',
@@ -54,6 +55,27 @@ const labels: Record<Lang, Record<string, string>> = {
     confirm_delete_dq: 'Eliminar este motivo?',
     th_name_col: 'Nombre', th_channel: 'Canal', th_score: 'Score',
     th_status: 'Estado', th_msgs: 'Msgs', th_last: 'Ultima actividad',
+    // Framework labels
+    sec_framework: 'Framework de Calificacion',
+    sec_framework_info: 'Selecciona un framework predefinido o usa uno personalizado. Al cambiar de framework se reemplazan criterios y motivos de descalificacion.',
+    fw_custom: 'Personalizado',
+    fw_champ: 'CHAMP (B2B)',
+    fw_spin: 'SPIN Selling (B2C)',
+    fw_champ_gov: 'CHAMP + Gov (B2G)',
+    fw_current: 'Framework activo',
+    fw_apply: 'Aplicar framework',
+    fw_confirm: 'Esto reemplazara los criterios actuales con los del framework seleccionado. Continuar?',
+    fw_applied: 'Framework aplicado',
+    fw_apply_error: 'Error al aplicar framework',
+    // Stage labels
+    stage_label: 'Etapa',
+    no_stage: 'Sin etapa',
+    stage_progress: 'Progreso por etapa',
+    // Auto signals
+    sec_auto_signals: 'Senales Automaticas',
+    sec_auto_signals_info: 'Senales calculadas automaticamente por codigo (no por LLM). Peso 0 = desactivada.',
+    signal_enabled: 'Activa',
+    signal_weight: 'Peso',
   },
   en: {
     title: 'Lead Scoring',
@@ -80,6 +102,7 @@ const labels: Record<Lang, Record<string, string>> = {
     recalc_done: 'Recalculation complete', recalc_error: 'Recalculation failed',
     threshold_cold: 'Cold (max)', threshold_qualified: 'Qualified (min)',
     weight_total: 'Total weight',
+    weight_error: 'Weights must sum to 100 (current: {n})',
     opt_recalc: 'Recalculate scores on config change',
     opt_max_custom: 'Max custom criteria',
     opt_min_confidence: 'Minimum extraction confidence',
@@ -102,6 +125,27 @@ const labels: Record<Lang, Record<string, string>> = {
     confirm_delete_dq: 'Delete this reason?',
     th_name_col: 'Name', th_channel: 'Channel', th_score: 'Score',
     th_status: 'Status', th_msgs: 'Msgs', th_last: 'Last activity',
+    // Framework labels
+    sec_framework: 'Qualification Framework',
+    sec_framework_info: 'Select a predefined framework or use a custom one. Changing the framework replaces criteria and disqualification reasons.',
+    fw_custom: 'Custom',
+    fw_champ: 'CHAMP (B2B)',
+    fw_spin: 'SPIN Selling (B2C)',
+    fw_champ_gov: 'CHAMP + Gov (B2G)',
+    fw_current: 'Active framework',
+    fw_apply: 'Apply framework',
+    fw_confirm: 'This will replace current criteria with the selected framework defaults. Continue?',
+    fw_applied: 'Framework applied',
+    fw_apply_error: 'Failed to apply framework',
+    // Stage labels
+    stage_label: 'Stage',
+    no_stage: 'No stage',
+    stage_progress: 'Stage progress',
+    // Auto signals
+    sec_auto_signals: 'Auto Signals',
+    sec_auto_signals_info: 'Signals computed automatically by code (not LLM). Weight 0 = disabled.',
+    signal_enabled: 'Enabled',
+    signal_weight: 'Weight',
   },
 }
 
@@ -145,10 +189,12 @@ export function renderLeadScoringConsole(store: ConfigStore, lang: Lang): string
 
     <!-- CONFIG TAB -->
     <div id="ls-content-config">
+      ${renderFrameworkPanel(config, lang)}
       ${renderCriteriaPanel(config, lang)}
       ${renderThresholdsPanel(config, lang)}
       ${renderActionsPanel(config, lang)}
       ${renderDisqualifyPanel(config, lang)}
+      ${renderAutoSignalsPanel(config, lang)}
       ${renderOptionsPanel(config, lang)}
 
       <!-- Save / Recalc buttons -->
@@ -245,11 +291,54 @@ function renderStyles(): string {
 // Config panels (SSR)
 // ═══════════════════════════════════════════
 
-function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
-  const totalWeight = config.criteria.reduce((s, c) => s + c.weight, 0)
-  const weightColor = totalWeight === 100 ? 'var(--success,#4ade80)' : 'var(--warning,#fbbf24)'
+const FRAMEWORK_OPTIONS: Array<{ value: FrameworkType; labelKey: string; desc: Record<Lang, string> }> = [
+  { value: 'custom', labelKey: 'fw_custom', desc: { es: 'Criterios manuales sin framework predefinido', en: 'Manual criteria without predefined framework' } },
+  { value: 'champ', labelKey: 'fw_champ', desc: { es: 'B2B: Desafios, Autoridad, Presupuesto, Priorizacion', en: 'B2B: Challenges, Authority, Money, Prioritization' } },
+  { value: 'spin', labelKey: 'fw_spin', desc: { es: 'B2C: Situacion, Problema, Implicacion, Cierre', en: 'B2C: Situation, Problem, Implication, Need-payoff' } },
+  { value: 'champ_gov', labelKey: 'fw_champ_gov', desc: { es: 'B2G: CHAMP + Etapa del proceso + Encaje normativo', en: 'B2G: CHAMP + Process Stage + Compliance Fit' } },
+]
 
-  const rows = config.criteria.map((cr, i) => `
+function renderFrameworkPanel(config: QualifyingConfig, lang: Lang): string {
+  const currentFw = config.framework || 'custom'
+
+  const options = FRAMEWORK_OPTIONS.map(fw => {
+    const selected = fw.value === currentFw
+    const borderColor = selected ? 'var(--accent,#38bdf8)' : 'var(--border)'
+    const bg = selected ? 'rgba(56,189,248,0.08)' : 'transparent'
+    return `<label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:2px solid ${borderColor};border-radius:8px;cursor:pointer;background:${bg};transition:all 0.15s"
+        onmouseover="this.style.borderColor='var(--accent,#38bdf8)'" onmouseout="this.style.borderColor='${selected ? 'var(--accent,#38bdf8)' : 'var(--border)'}'"
+        onclick="document.getElementById('ls-fw-select').value='${fw.value}'">
+        <input type="radio" name="ls-framework" value="${fw.value}" ${selected ? 'checked' : ''} style="margin-top:2px"
+          onchange="document.getElementById('ls-fw-select').value='${fw.value}'">
+        <div>
+          <div style="font-weight:600;font-size:13px">${l(fw.labelKey, lang)}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${fw.desc[lang]}</div>
+        </div>
+      </label>`
+  }).join('')
+
+  return `
+    <div class="panel">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${l('sec_framework', lang)}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">
+        <div class="panel-info">${l('sec_framework_info', lang)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0">
+          ${options}
+        </div>
+        <input type="hidden" id="ls-fw-select" value="${currentFw}">
+        <div style="display:flex;gap:8px;align-items:center;padding:8px 0">
+          <button type="button" class="wa-btn wa-btn-connect" onclick="lsApplyFramework()" style="font-size:13px;padding:6px 14px">${l('fw_apply', lang)}</button>
+          <span style="font-size:12px;color:var(--text-tertiary)">${l('fw_current', lang)}: <strong>${l('fw_' + currentFw, lang)}</strong></span>
+        </div>
+      </div>
+    </div>`
+}
+
+function renderCriterionRow(cr: QualifyingConfig['criteria'][number], i: number): string {
+  return `
     <tr data-ls-cri="${i}">
       <td><input value="${esc(cr.key)}" data-field="key" style="width:80px" onchange="lsUpdateCri(${i},'key',this.value)"></td>
       <td><input value="${esc(cr.name.es)}" data-field="name_es" onchange="lsUpdateCri(${i},'name_es',this.value)"></td>
@@ -268,24 +357,76 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
       <td style="text-align:center"><input type="checkbox" ${cr.neverAskDirectly ? 'checked' : ''}
         onchange="lsUpdateCri(${i},'neverAskDirectly',this.checked)"></td>
       <td><button type="button" class="wa-btn" onclick="lsRemoveCri(${i})" style="color:var(--error);font-size:12px;padding:2px 8px">X</button></td>
-    </tr>`).join('')
+    </tr>`
+}
+
+function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
+  const totalWeight = config.criteria.reduce((s, c) => s + c.weight, 0)
+  const weightColor = totalWeight === 100 ? 'var(--success,#4ade80)' : 'var(--warning,#fbbf24)'
+  const hasStages = config.stages && config.stages.length > 0
+
+  const theadCols = `
+    <th>${l('th_key', lang)}</th><th>${l('th_name_es', lang)}</th><th>${l('th_name_en', lang)}</th>
+    <th>${l('th_type', lang)}</th><th>${l('th_options', lang)}</th><th>${l('th_weight', lang)}</th>
+    <th>${l('th_required', lang)}</th><th>${l('th_never_ask', lang)}</th><th></th>`
+
+  let bodyHtml: string
+
+  if (hasStages) {
+    // Group criteria by stage with stage headers
+    const sortedStages = [...config.stages].sort((a, b) => a.order - b.order)
+    const stageBlocks = sortedStages.map(stage => {
+      const stageCriteria = config.criteria
+        .map((cr, i) => ({ cr, i }))
+        .filter(({ cr }) => cr.stage === stage.key)
+
+      if (stageCriteria.length === 0) return ''
+
+      const stageWeight = stageCriteria.reduce((s, { cr }) => s + cr.weight, 0)
+      const stageHeader = `
+        <tr class="ls-stage-header">
+          <td colspan="9" style="background:rgba(56,189,248,0.06);padding:8px;font-weight:600;font-size:12px;border-bottom:2px solid var(--accent,#38bdf8)">
+            ${esc(stage.name[lang] || stage.name.es)}
+            <span style="font-weight:400;color:var(--text-tertiary);margin-left:8px">${esc(stage.description[lang] || stage.description.es)}</span>
+            <span style="float:right;font-weight:400;color:var(--text-tertiary)">${stageWeight}pts</span>
+          </td>
+        </tr>`
+
+      const rows = stageCriteria.map(({ cr, i }) => renderCriterionRow(cr, i)).join('')
+      return stageHeader + rows
+    }).join('')
+
+    // Also render criteria without stage (orphans)
+    const orphans = config.criteria
+      .map((cr, i) => ({ cr, i }))
+      .filter(({ cr }) => !cr.stage)
+    const orphanRows = orphans.length > 0
+      ? `<tr class="ls-stage-header"><td colspan="9" style="background:rgba(148,163,184,0.06);padding:8px;font-weight:600;font-size:12px;border-bottom:2px solid var(--border)">${l('no_stage', lang)}</td></tr>` +
+        orphans.map(({ cr, i }) => renderCriterionRow(cr, i)).join('')
+      : ''
+
+    bodyHtml = stageBlocks + orphanRows
+  } else {
+    // Flat list (custom framework)
+    bodyHtml = config.criteria.map((cr, i) => renderCriterionRow(cr, i)).join('')
+  }
+
+  const infoText = hasStages
+    ? l('sec_criteria_info', lang) + ` <strong>(${l('fw_' + (config.framework || 'custom'), lang)})</strong>`
+    : l('sec_criteria_info', lang)
 
   return `
     <div class="panel">
       <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${l('sec_criteria', lang)}</span>
+        <span class="panel-title">${l('sec_criteria', lang)} (${config.criteria.length})</span>
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body">
-        <div class="panel-info">${l('sec_criteria_info', lang)}</div>
+        <div class="panel-info">${infoText}</div>
         <div style="overflow-x:auto">
           <table class="ls-table" id="ls-criteria-table">
-            <thead><tr>
-              <th>${l('th_key', lang)}</th><th>${l('th_name_es', lang)}</th><th>${l('th_name_en', lang)}</th>
-              <th>${l('th_type', lang)}</th><th>${l('th_options', lang)}</th><th>${l('th_weight', lang)}</th>
-              <th>${l('th_required', lang)}</th><th>${l('th_never_ask', lang)}</th><th></th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
+            <thead><tr>${theadCols}</tr></thead>
+            <tbody>${bodyHtml}</tbody>
           </table>
         </div>
         <div class="ls-weight-total" style="color:${weightColor}" id="ls-weight-total">${l('weight_total', lang)}: ${totalWeight}/100</div>
@@ -392,6 +533,43 @@ function renderDisqualifyPanel(config: QualifyingConfig, lang: Lang): string {
     </div>`
 }
 
+function renderAutoSignalsPanel(config: QualifyingConfig, lang: Lang): string {
+  const signals = config.autoSignals || []
+  if (signals.length === 0) return ''
+
+  const rows = signals.map((sig, i) => `
+    <tr>
+      <td style="font-weight:500;font-size:13px">${esc(sig.name[lang] || sig.name.es)}</td>
+      <td style="font-size:11px;color:var(--text-tertiary)">${esc(sig.description[lang] || sig.description.es)}</td>
+      <td style="text-align:center"><input type="checkbox" ${sig.enabled ? 'checked' : ''}
+        onchange="lsUpdateSignal(${i},'enabled',this.checked)"></td>
+      <td><input type="number" class="ls-w-input" value="${sig.weight}" min="0" max="100"
+        onchange="lsUpdateSignal(${i},'weight',parseInt(this.value)||0)"></td>
+    </tr>`).join('')
+
+  return `
+    <div class="panel">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${l('sec_auto_signals', lang)}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">
+        <div class="panel-info">${l('sec_auto_signals_info', lang)}</div>
+        <div style="overflow-x:auto">
+          <table class="ls-table">
+            <thead><tr>
+              <th style="width:120px">${l('th_name_col', lang)}</th>
+              <th>Info</th>
+              <th style="width:60px">${l('signal_enabled', lang)}</th>
+              <th style="width:60px">${l('signal_weight', lang)}</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`
+}
+
 function renderOptionsPanel(config: QualifyingConfig, lang: Lang): string {
   return `
     <div class="panel">
@@ -459,9 +637,17 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   }
 
   window.lsAddCri = function() {
-    var maxTotal = 4 + lsConfig.maxCustomCriteria
-    if (lsConfig.criteria.length >= maxTotal) { lsToast('Max ' + maxTotal + ' criteria', 'error'); return }
-    lsConfig.criteria.push({ key: 'custom_' + Date.now(), name: { es: 'Nuevo', en: 'New' }, type: 'text', weight: 0, required: false, neverAskDirectly: false })
+    // For custom framework, enforce max criteria limit; presets are unlimited
+    if (lsConfig.framework === 'custom') {
+      var maxTotal = 4 + lsConfig.maxCustomCriteria
+      if (lsConfig.criteria.length >= maxTotal) { lsToast('Max ' + maxTotal + ' criteria', 'error'); return }
+    }
+    var newCri = { key: 'custom_' + Date.now(), name: { es: 'Nuevo', en: 'New' }, type: 'text', weight: 0, required: false, neverAskDirectly: false }
+    // If framework has stages, assign to first stage by default
+    if (lsConfig.stages && lsConfig.stages.length > 0) {
+      newCri.stage = lsConfig.stages[0].key
+    }
+    lsConfig.criteria.push(newCri)
     location.reload()
   }
 
@@ -512,8 +698,38 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     }
   }
 
+  // ═══ Framework ═══
+  window.lsApplyFramework = function() {
+    var fw = document.getElementById('ls-fw-select').value
+    if (!confirm(L.fw_confirm)) return
+    fetch(API + '/apply-framework', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ framework: fw })
+    }).then(function(r){return r.json()}).then(function(d) {
+      if (d.ok) { lsToast(L.fw_applied, 'success'); location.reload() }
+      else lsToast(d.error || L.fw_apply_error, 'error')
+    }).catch(function(){ lsToast(L.fw_apply_error, 'error') })
+  }
+
+  // ═══ Auto Signals ═══
+  window.lsUpdateSignal = function(i, field, value) {
+    var sig = lsConfig.autoSignals && lsConfig.autoSignals[i]
+    if (!sig) return
+    if (field === 'enabled') sig.enabled = value
+    else if (field === 'weight') sig.weight = value
+  }
+
   // ═══ Save / Recalc ═══
   window.lsSave = function() {
+    // Validate weights sum to 100 before saving
+    if (lsConfig.criteria && lsConfig.criteria.length > 0) {
+      var total = lsConfig.criteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
+      if (total !== 100) {
+        lsToast(L.weight_error.replace('{n}', total), 'error')
+        return
+      }
+    }
     fetch(API + '/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -605,15 +821,41 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
 
       var criteriaHtml = ''
       if (lsConfig.criteria) {
-        criteriaHtml = lsConfig.criteria.map(function(cr) {
-          var val = ld.qualificationData[cr.key]
-          var filled = val !== undefined && val !== null && val !== ''
-          return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-light);font-size:13px">' +
-            '<span style="color:var(--text-tertiary);width:100px;flex-shrink:0">' + lsEsc(cr.name.${lang === 'en' ? 'en' : 'es'} || cr.name.es) + '</span>' +
-            '<span style="flex:1;color:' + (filled ? 'var(--text-primary)' : 'var(--text-tertiary)') + '">' + (filled ? lsEsc(String(val)) : '-') + '</span>' +
-            '<span style="color:var(--text-tertiary);font-size:11px;width:50px;text-align:right">' + cr.weight + 'pts</span>' +
-          '</div>'
-        }).join('')
+        var hasStages = lsConfig.stages && lsConfig.stages.length > 0
+        if (hasStages) {
+          // Group by stage
+          var sortedStages = lsConfig.stages.slice().sort(function(a,b){return a.order - b.order})
+          criteriaHtml = sortedStages.map(function(stage) {
+            var stageCriteria = lsConfig.criteria.filter(function(cr){return cr.stage === stage.key})
+            if (stageCriteria.length === 0) return ''
+            var filledInStage = stageCriteria.filter(function(cr){
+              var v = ld.qualificationData[cr.key]; return v !== undefined && v !== null && v !== ''
+            }).length
+            var stageHdr = '<div style="font-weight:600;font-size:12px;margin-top:8px;padding:4px 0;border-bottom:2px solid var(--accent,#38bdf8);display:flex;justify-content:space-between">' +
+              '<span>' + lsEsc(stage.name.${lang === 'en' ? 'en' : 'es'} || stage.name.es) + '</span>' +
+              '<span style="font-weight:400;color:var(--text-tertiary);font-size:11px">' + filledInStage + '/' + stageCriteria.length + '</span></div>'
+            var rows = stageCriteria.map(function(cr) {
+              var val = ld.qualificationData[cr.key]
+              var filled = val !== undefined && val !== null && val !== ''
+              return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 8px;border-bottom:1px solid var(--border-light);font-size:13px">' +
+                '<span style="color:var(--text-tertiary);width:100px;flex-shrink:0">' + lsEsc(cr.name.${lang === 'en' ? 'en' : 'es'} || cr.name.es) + '</span>' +
+                '<span style="flex:1;color:' + (filled ? 'var(--text-primary)' : 'var(--text-tertiary)') + '">' + (filled ? lsEsc(String(val)) : '-') + '</span>' +
+                '<span style="color:var(--text-tertiary);font-size:11px;width:50px;text-align:right">' + cr.weight + 'pts</span>' +
+              '</div>'
+            }).join('')
+            return stageHdr + rows
+          }).join('')
+        } else {
+          criteriaHtml = lsConfig.criteria.map(function(cr) {
+            var val = ld.qualificationData[cr.key]
+            var filled = val !== undefined && val !== null && val !== ''
+            return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-light);font-size:13px">' +
+              '<span style="color:var(--text-tertiary);width:100px;flex-shrink:0">' + lsEsc(cr.name.${lang === 'en' ? 'en' : 'es'} || cr.name.es) + '</span>' +
+              '<span style="flex:1;color:' + (filled ? 'var(--text-primary)' : 'var(--text-tertiary)') + '">' + (filled ? lsEsc(String(val)) : '-') + '</span>' +
+              '<span style="color:var(--text-tertiary);font-size:11px;width:50px;text-align:right">' + cr.weight + 'pts</span>' +
+            '</div>'
+          }).join('')
+        }
       }
 
       var msgsHtml = ''

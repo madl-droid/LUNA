@@ -1,14 +1,18 @@
 // LUNA — Module: lead-scoring — Config Store
 // Lee/escribe instance/qualifying.json. Hot-reload via Apply.
+// Supports framework presets (CHAMP, SPIN, CHAMP+Gov) and custom config.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import pino from 'pino'
-import type { QualifyingConfig } from './types.js'
+import type { QualifyingConfig, FrameworkType } from './types.js'
+import { FRAMEWORK_PRESETS, DEFAULT_AUTO_SIGNALS } from './frameworks.js'
 
 const logger = pino({ name: 'lead-scoring:config' })
 
 const DEFAULT_CONFIG: QualifyingConfig = {
+  framework: 'custom',
+  stages: [],
   criteria: [
     {
       key: 'budget',
@@ -59,6 +63,7 @@ const DEFAULT_CONFIG: QualifyingConfig = {
     { key: 'spam', name: { es: 'Spam', en: 'Spam' }, targetStatus: 'blocked' },
     { key: 'out_of_zone', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
   ],
+  autoSignals: DEFAULT_AUTO_SIGNALS,
   maxCustomCriteria: 6,
   recalculateOnConfigChange: true,
   minConfidence: 0.3,
@@ -94,6 +99,36 @@ export class ConfigStore {
     logger.info('Qualifying config saved to disk')
   }
 
+  /**
+   * Apply a framework preset. Replaces stages, criteria, and disqualifyReasons
+   * with the preset's defaults. Preserves thresholds, actions, and options.
+   */
+  applyFramework(frameworkType: FrameworkType): QualifyingConfig {
+    if (frameworkType === 'custom') {
+      // Switch to custom — keep current criteria but clear framework marker
+      const updated = { ...this.config, framework: 'custom' as FrameworkType, stages: [] }
+      this.save(updated)
+      return updated
+    }
+
+    const preset = FRAMEWORK_PRESETS[frameworkType]
+    if (!preset) {
+      throw new Error(`Unknown framework: ${frameworkType}`)
+    }
+
+    const updated: QualifyingConfig = {
+      ...this.config,
+      framework: frameworkType,
+      stages: preset.stages,
+      criteria: preset.criteria,
+      disqualifyReasons: preset.disqualifyReasons,
+    }
+
+    this.save(updated)
+    logger.info({ framework: frameworkType }, 'Framework preset applied')
+    return updated
+  }
+
   private loadFromDisk(): QualifyingConfig {
     if (!fs.existsSync(this.filePath)) {
       logger.info({ path: this.filePath }, 'No qualifying.json found, using defaults')
@@ -111,6 +146,9 @@ export class ConfigStore {
       const parsed = JSON.parse(raw) as QualifyingConfig
       // Apply defaults for new fields added after initial deploy
       if (parsed.minConfidence === undefined) parsed.minConfidence = 0.3
+      if (parsed.framework === undefined) parsed.framework = 'custom'
+      if (parsed.stages === undefined) parsed.stages = []
+      if (parsed.autoSignals === undefined) parsed.autoSignals = DEFAULT_AUTO_SIGNALS
       this.validate(parsed)
       return parsed
     } catch (err) {
@@ -123,8 +161,10 @@ export class ConfigStore {
     if (!Array.isArray(config.criteria)) {
       throw new Error('criteria must be an array')
     }
-    if (config.criteria.length > 10) {
-      throw new Error('Maximum 10 criteria allowed (4 BANT + 6 custom)')
+    // Framework presets can have more than 10 criteria (B2G has ~24)
+    // Only enforce max for custom frameworks
+    if (config.framework === 'custom' && config.criteria.length > 10) {
+      throw new Error('Maximum 10 criteria allowed for custom framework (4 base + 6 custom)')
     }
     if (!config.thresholds || typeof config.thresholds.cold !== 'number') {
       throw new Error('thresholds.cold must be a number')
@@ -136,10 +176,10 @@ export class ConfigStore {
       throw new Error('thresholds.cold must be less than thresholds.qualified')
     }
 
-    // Validate weights sum
+    // Validate weights sum to 100
     const totalWeight = config.criteria.reduce((sum, c) => sum + c.weight, 0)
-    if (totalWeight !== 100 && config.criteria.length > 0) {
-      logger.warn({ totalWeight }, 'Criteria weights do not sum to 100 — scores will be normalized')
+    if (config.criteria.length > 0 && totalWeight !== 100) {
+      throw new Error(`Criteria weights must sum to 100 (current: ${totalWeight})`)
     }
 
     // Validate unique keys
@@ -153,6 +193,16 @@ export class ConfigStore {
     for (const c of config.criteria) {
       if (c.type === 'enum' && (!c.options || c.options.length === 0)) {
         throw new Error(`Enum criterion "${c.key}" must have options`)
+      }
+    }
+
+    // Validate stages if framework is not custom
+    if (config.framework !== 'custom' && config.stages) {
+      const stageKeys = new Set(config.stages.map(s => s.key))
+      for (const c of config.criteria) {
+        if (c.stage && !stageKeys.has(c.stage)) {
+          throw new Error(`Criterion "${c.key}" references unknown stage "${c.stage}"`)
+        }
       }
     }
   }

@@ -281,6 +281,42 @@
 
     /* Actions row */
     .actions-row { display: flex; gap: 0.5rem; padding: 0.75rem 0; flex-wrap: wrap; }
+
+    /* Campaign tag badges */
+    .tag-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 10px;
+      font-size: 0.65rem; font-weight: 600; color: #1e293b;
+    }
+    .tag-badge .tag-actions { display: inline-flex; gap: 2px; margin-left: 2px; }
+    .tag-badge .tag-action-btn {
+      background: none; border: none; cursor: pointer; font-size: 0.6rem;
+      color: #475569; padding: 0; line-height: 1;
+    }
+    .tag-badge .tag-action-btn:hover { color: #1e293b; }
+
+    .campaign-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 0.65rem; font-weight: 600;
+      background: rgba(56,189,248,0.15); color: #38bdf8;
+    }
+
+    /* Color picker swatches */
+    .color-swatch {
+      width: 20px; height: 20px; border-radius: 4px; border: 2px solid transparent;
+      cursor: pointer; display: inline-block;
+    }
+    .color-swatch:hover { border-color: #94a3b8; }
+    .color-swatch.selected { border-color: #38bdf8; }
+
+    /* Tag select checkbox style */
+    .tag-select-item {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 10px; font-size: 0.65rem; font-weight: 600;
+      cursor: pointer; color: #1e293b; opacity: 0.5;
+    }
+    .tag-select-item.selected { opacity: 1; }
+    .tag-select-item input { display: none; }
   </style>
 </head>
 <body>
@@ -296,6 +332,7 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('config')" id="tab-config">Configuracion</button>
       <button class="tab" onclick="switchTab('leads')" id="tab-leads">Leads</button>
+      <button class="tab" onclick="switchTab('campaigns')" id="tab-campaigns">Campanas</button>
     </div>
 
     <!-- ═══ CONFIG TAB ═══ -->
@@ -391,6 +428,7 @@
                 <th data-t="th_channel">Canal</th>
                 <th data-t="th_score">Score</th>
                 <th data-t="th_status">Estado</th>
+                <th data-t="th_campaign">Campana</th>
                 <th data-t="th_msgs">Msgs</th>
                 <th data-t="th_last">Ultima actividad</th>
                 <th></th>
@@ -399,6 +437,136 @@
             <tbody id="leads-tbody"></tbody>
           </table>
           <div class="pagination" id="pagination"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ CAMPAIGNS TAB ═══ -->
+    <div class="tab-content" id="content-campaigns">
+
+      <!-- Campaign Stats -->
+      <div class="panel" id="campaign-stats-panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_campaign_stats">Estadisticas por Campana</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <table class="criteria-table" id="campaign-stats-table">
+            <thead><tr>
+              <th data-t="th_camp_id">#</th>
+              <th data-t="th_camp_name">Nombre</th>
+              <th data-t="th_camp_entries">Entradas</th>
+              <th data-t="th_camp_conversions">Conversiones</th>
+            </tr></thead>
+            <tbody id="campaign-stats-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Campaigns CRUD -->
+      <div class="panel" id="campaigns-crud-panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_campaigns">Campanas</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <div style="overflow-x:auto">
+            <table class="criteria-table" id="campaigns-table">
+              <thead><tr>
+                <th>#</th>
+                <th data-t="th_camp_nombre">Nombre</th>
+                <th>Keyword</th>
+                <th data-t="th_camp_contexto">Contexto</th>
+                <th>Threshold</th>
+                <th data-t="th_camp_rounds">Max Rounds</th>
+                <th data-t="th_camp_channels">Canales</th>
+                <th>Tags</th>
+                <th data-t="th_camp_active">Activa</th>
+                <th data-t="th_camp_actions">Acciones</th>
+              </tr></thead>
+              <tbody id="campaigns-tbody"></tbody>
+            </table>
+          </div>
+          <div class="actions-row">
+            <button class="btn btn-primary btn-small" onclick="openCampaignForm()" id="btn-add-campaign">+ Agregar campana</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Campaign Form (hidden by default) -->
+      <div class="panel" id="campaign-form-panel" style="display:none">
+        <div class="panel-header">
+          <span class="panel-title" id="campaign-form-title" data-t="sec_campaign_new">Nueva Campana</span>
+          <button class="btn btn-ghost btn-small" onclick="closeCampaignForm()">&#10005;</button>
+        </div>
+        <div class="panel-body">
+          <div class="field">
+            <span class="field-label" data-t="lbl_camp_name">Nombre</span>
+            <input type="text" id="camp-name" placeholder="Mi Campana">
+          </div>
+          <div class="field">
+            <span class="field-label">Keyword</span>
+            <input type="text" id="camp-keyword" placeholder="frase de matching">
+          </div>
+          <div class="field">
+            <span class="field-label" data-t="lbl_camp_context">Contexto del prompt</span>
+            <input type="text" id="camp-prompt-context" maxlength="200" placeholder="contexto para el agente">
+          </div>
+          <div class="field">
+            <span class="field-label">Match Threshold</span>
+            <input type="number" id="camp-threshold" value="0.95" min="0" max="1" step="0.01">
+          </div>
+          <div class="field">
+            <span class="field-label">Match Max Rounds</span>
+            <input type="number" id="camp-max-rounds" value="1" min="1" max="3">
+          </div>
+          <div class="field">
+            <span class="field-label" data-t="lbl_camp_channels">Canales permitidos</span>
+            <div id="camp-channels-checkboxes" style="display:flex;gap:0.75rem;flex-wrap:wrap"></div>
+          </div>
+          <div class="field">
+            <span class="field-label" data-t="lbl_camp_ptags">Tags plataforma</span>
+            <div id="camp-platform-tags" style="display:flex;gap:0.5rem;flex-wrap:wrap"></div>
+          </div>
+          <div class="field">
+            <span class="field-label" data-t="lbl_camp_stags">Tags fuente</span>
+            <div id="camp-source-tags" style="display:flex;gap:0.5rem;flex-wrap:wrap"></div>
+          </div>
+          <div class="actions-row">
+            <button class="btn btn-primary" onclick="saveCampaign()" id="btn-save-campaign">Guardar</button>
+            <button class="btn btn-ghost" onclick="closeCampaignForm()">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tags Management -->
+      <div class="panel" id="tags-panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" data-t="sec_tags">Tags</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <!-- Platform tags -->
+          <h4 style="font-size:0.8rem;color:#94a3b8;margin:0.5rem 0" data-t="sec_tags_platform">Plataforma</h4>
+          <div id="platform-tags-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
+
+          <!-- Source tags -->
+          <h4 style="font-size:0.8rem;color:#94a3b8;margin:0.5rem 0" data-t="sec_tags_source">Fuente</h4>
+          <div id="source-tags-list" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
+
+          <!-- Create tag form -->
+          <div style="border-top:1px solid #334155;padding-top:0.75rem;margin-top:0.5rem">
+            <h4 style="font-size:0.8rem;color:#94a3b8;margin-bottom:0.5rem" data-t="sec_tags_create">Crear tag</h4>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+              <input type="text" id="tag-name" placeholder="nombre" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:0.4rem 0.65rem;color:#e2e8f0;font-size:0.8rem;width:120px">
+              <select id="tag-type" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:0.4rem 0.65rem;color:#e2e8f0;font-size:0.8rem">
+                <option value="platform">Plataforma</option>
+                <option value="source">Fuente</option>
+              </select>
+              <div id="tag-color-picker" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+              <button class="btn btn-primary btn-small" onclick="createTag()">+</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -422,7 +590,7 @@
 // ═══════════════════════════════════════════
 const i18n = {
   es: {
-    tab_config: 'Configuracion', tab_leads: 'Leads',
+    tab_config: 'Configuracion', tab_leads: 'Leads', tab_campaigns: 'Campanas',
     sec_criteria: 'Criterios de Calificacion',
     sec_criteria_info: 'Define los criterios que LUNA usa para calificar leads. BANT (Budget, Authority, Need, Timeline) viene por defecto. Puedes agregar hasta 6 criterios custom.',
     sec_thresholds: 'Umbrales de Puntuacion',
@@ -466,9 +634,26 @@ const i18n = {
     status_cold: 'Frio', status_blocked: 'Bloqueado',
     confirm_delete: 'Eliminar este criterio?',
     confirm_delete_dq: 'Eliminar este motivo?',
+    th_campaign: 'Campana',
+    sec_campaign_stats: 'Estadisticas por Campana',
+    th_camp_id: '#', th_camp_name: 'Nombre', th_camp_entries: 'Entradas', th_camp_conversions: 'Conversiones',
+    sec_campaigns: 'Campanas', sec_campaign_new: 'Nueva Campana', sec_campaign_edit: 'Editar Campana',
+    th_camp_nombre: 'Nombre', th_camp_contexto: 'Contexto', th_camp_rounds: 'Max Rounds',
+    th_camp_channels: 'Canales', th_camp_active: 'Activa', th_camp_actions: 'Acciones',
+    lbl_camp_name: 'Nombre', lbl_camp_context: 'Contexto del prompt',
+    lbl_camp_channels: 'Canales permitidos',
+    lbl_camp_ptags: 'Tags plataforma', lbl_camp_stags: 'Tags fuente',
+    sec_tags: 'Tags', sec_tags_platform: 'Plataforma', sec_tags_source: 'Fuente',
+    sec_tags_create: 'Crear tag',
+    no_campaign: 'Sin campana',
+    confirm_delete_campaign: 'Eliminar esta campana?',
+    confirm_delete_tag: 'Eliminar este tag?',
+    campaign_saved: 'Campana guardada', campaign_deleted: 'Campana eliminada',
+    tag_saved: 'Tag guardado', tag_deleted: 'Tag eliminado',
+    btn_add_campaign: '+ Agregar campana',
   },
   en: {
-    tab_config: 'Configuration', tab_leads: 'Leads',
+    tab_config: 'Configuration', tab_leads: 'Leads', tab_campaigns: 'Campaigns',
     sec_criteria: 'Qualification Criteria',
     sec_criteria_info: 'Define the criteria LUNA uses to qualify leads. BANT (Budget, Authority, Need, Timeline) comes by default. You can add up to 6 custom criteria.',
     sec_thresholds: 'Score Thresholds',
@@ -512,6 +697,23 @@ const i18n = {
     status_cold: 'Cold', status_blocked: 'Blocked',
     confirm_delete: 'Delete this criterion?',
     confirm_delete_dq: 'Delete this reason?',
+    th_campaign: 'Campaign',
+    sec_campaign_stats: 'Campaign Stats',
+    th_camp_id: '#', th_camp_name: 'Name', th_camp_entries: 'Entries', th_camp_conversions: 'Conversions',
+    sec_campaigns: 'Campaigns', sec_campaign_new: 'New Campaign', sec_campaign_edit: 'Edit Campaign',
+    th_camp_nombre: 'Name', th_camp_contexto: 'Context', th_camp_rounds: 'Max Rounds',
+    th_camp_channels: 'Channels', th_camp_active: 'Active', th_camp_actions: 'Actions',
+    lbl_camp_name: 'Name', lbl_camp_context: 'Prompt context',
+    lbl_camp_channels: 'Allowed channels',
+    lbl_camp_ptags: 'Platform tags', lbl_camp_stags: 'Source tags',
+    sec_tags: 'Tags', sec_tags_platform: 'Platform', sec_tags_source: 'Source',
+    sec_tags_create: 'Create tag',
+    no_campaign: 'No campaign',
+    confirm_delete_campaign: 'Delete this campaign?',
+    confirm_delete_tag: 'Delete this tag?',
+    campaign_saved: 'Campaign saved', campaign_deleted: 'Campaign deleted',
+    tag_saved: 'Tag saved', tag_deleted: 'Tag deleted',
+    btn_add_campaign: '+ Add campaign',
   }
 }
 
@@ -579,6 +781,7 @@ function switchTab(tab) {
   document.getElementById('content-' + tab).classList.add('active')
   document.getElementById('save-bar').style.display = tab === 'config' ? 'flex' : 'none'
   if (tab === 'leads') { loadStats(); loadLeads() }
+  if (tab === 'campaigns') { loadCampaignStats(); loadCampaigns(); loadTags('platform'); loadTags('source') }
 }
 
 // ═══════════════════════════════════════════
@@ -587,6 +790,7 @@ function switchTab(tab) {
 function renderAll() {
   document.getElementById('tab-config').textContent = t('tab_config')
   document.getElementById('tab-leads').textContent = t('tab_leads')
+  document.getElementById('tab-campaigns').textContent = t('tab_campaigns')
   document.getElementById('back-btn').textContent = t('back')
   document.getElementById('btn-discard').textContent = t('discard')
   document.getElementById('btn-save').textContent = t('save')
@@ -594,6 +798,7 @@ function renderAll() {
   document.getElementById('btn-add-criterion').textContent = t('add_criterion')
   document.getElementById('btn-add-dq').textContent = t('add_dq')
   document.getElementById('lead-search').placeholder = t('search')
+  document.getElementById('btn-add-campaign').textContent = t('btn_add_campaign')
 
   // Update i18n text nodes
   document.querySelectorAll('[data-t]').forEach(el => {
@@ -913,14 +1118,14 @@ async function loadLeads() {
     renderLeads()
   } catch {
     document.getElementById('leads-tbody').innerHTML =
-      `<tr><td colspan="7" style="text-align:center;color:#64748b;padding:2rem">${t('no_leads')}</td></tr>`
+      `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:2rem">${t('no_leads')}</td></tr>`
   }
 }
 
 function renderLeads() {
   const tbody = document.getElementById('leads-tbody')
   if (!leadsData.leads || leadsData.leads.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#64748b;padding:2rem">${t('no_leads')}</td></tr>`
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:2rem">${t('no_leads')}</td></tr>`
     document.getElementById('pagination').innerHTML = ''
     return
   }
@@ -928,6 +1133,9 @@ function renderLeads() {
   tbody.innerHTML = leadsData.leads.map(l => {
     const scoreClass = l.qualificationScore <= 30 ? 'score-low' : l.qualificationScore >= 70 ? 'score-high' : 'score-mid'
     const ago = l.lastActivityAt ? timeAgo(l.lastActivityAt) : '-'
+    const campBadge = l.latestCampaignName
+      ? `<span class="campaign-badge">#${l.latestCampaignVisibleId || ''} ${esc(l.latestCampaignName)}</span>`
+      : '-'
     return `<tr onclick="openDetail('${l.contactId}')">
       <td>${esc(l.displayName || l.channelContactId || '-')}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${esc(l.channel)} ${esc(l.channelContactId ? l.channelContactId.slice(-4) : '')}</td>
@@ -936,6 +1144,7 @@ function renderLeads() {
         <span style="font-size:0.75rem">${l.qualificationScore}</span>
       </td>
       <td><span class="status-badge status-${l.qualificationStatus}">${t('status_'+l.qualificationStatus)}</span></td>
+      <td>${campBadge}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${l.messageCount}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${ago}</td>
       <td><button class="btn btn-ghost btn-small" onclick="event.stopPropagation();openDetail('${l.contactId}')">${t('detail')}</button></td>
@@ -1091,11 +1300,296 @@ function showToast(msg, type) {
   setTimeout(() => el.remove(), 3500)
 }
 
+// ═══════════════════════════════════════════
+// Campaigns Tab
+// ═══════════════════════════════════════════
+const TAG_COLORS = ['#fecaca','#fed7aa','#fef08a','#bbf7d0','#a5f3fc','#93c5fd','#c4b5fd','#f9a8d4','#e5e7eb','#d9f99d']
+let campaignsList = []
+let campaignStats = []
+let platformTags = []
+let sourceTags = []
+let editingCampaignId = null
+let selectedTagColor = TAG_COLORS[0]
+const ALL_CHANNELS = ['whatsapp','gmail','google-chat','twilio-voice']
+
+// --- Campaign Stats ---
+async function loadCampaignStats() {
+  try {
+    const res = await fetch(API + '/campaign-stats')
+    const data = await res.json()
+    campaignStats = data.stats || []
+    renderCampaignStats()
+  } catch {}
+}
+
+function renderCampaignStats() {
+  const tbody = document.getElementById('campaign-stats-tbody')
+  if (!campaignStats.length) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#64748b;padding:1rem">${t('no_campaign')}</td></tr>`
+    return
+  }
+  tbody.innerHTML = campaignStats.map(s => {
+    const idLabel = s.campaignId ? '#' + s.visibleId : '-'
+    const name = s.campaignId ? esc(s.name) : t('no_campaign')
+    return `<tr>
+      <td>${idLabel}</td>
+      <td>${name}</td>
+      <td>${s.entries || 0}</td>
+      <td>${s.conversions || 0}</td>
+    </tr>`
+  }).join('')
+}
+
+// --- Campaigns CRUD ---
+async function loadCampaigns() {
+  try {
+    const res = await fetch(API + '/campaigns')
+    const data = await res.json()
+    campaignsList = data.campaigns || []
+    renderCampaigns()
+  } catch {}
+}
+
+function renderCampaigns() {
+  const tbody = document.getElementById('campaigns-tbody')
+  if (!campaignsList.length) {
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#64748b;padding:1rem">${t('no_campaign')}</td></tr>`
+    return
+  }
+  tbody.innerHTML = campaignsList.map(c => {
+    const channels = (c.allowedChannels || []).join(', ') || '-'
+    const pTags = (c.platformTags || []).map(tg =>
+      `<span class="tag-badge" style="background:${esc(tg.color || '#e5e7eb')}">${esc(tg.name)}</span>`
+    ).join(' ')
+    const sTags = (c.sourceTags || []).map(tg =>
+      `<span class="tag-badge" style="background:${esc(tg.color || '#e5e7eb')}">${esc(tg.name)}</span>`
+    ).join(' ')
+    const tags = (pTags + ' ' + sTags).trim() || '-'
+    return `<tr>
+      <td>#${c.visibleId}</td>
+      <td>${esc(c.name)}</td>
+      <td style="font-size:0.75rem">${esc(c.keyword || '-')}</td>
+      <td style="font-size:0.75rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.promptContext || '')}">${esc(c.promptContext || '-')}</td>
+      <td>${c.matchThreshold}</td>
+      <td>${c.matchMaxRounds}</td>
+      <td style="font-size:0.7rem">${esc(channels)}</td>
+      <td>${tags}</td>
+      <td style="text-align:center">
+        <label class="toggle"><input type="checkbox" ${c.active?'checked':''} onchange="toggleCampaignActive(${c.id},this.checked)"><span class="toggle-slider"></span></label>
+      </td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-small" onclick="editCampaign(${c.id})">&#9998;</button>
+        <button class="btn btn-danger btn-small" onclick="deleteCampaign(${c.id})">X</button>
+      </td>
+    </tr>`
+  }).join('')
+}
+
+function openCampaignForm(campaign) {
+  editingCampaignId = campaign ? campaign.id : null
+  document.getElementById('campaign-form-title').textContent = campaign ? t('sec_campaign_edit') : t('sec_campaign_new')
+  document.getElementById('camp-name').value = campaign ? campaign.name : ''
+  document.getElementById('camp-keyword').value = campaign ? campaign.keyword || '' : ''
+  document.getElementById('camp-prompt-context').value = campaign ? campaign.promptContext || '' : ''
+  document.getElementById('camp-threshold').value = campaign ? campaign.matchThreshold : 0.95
+  document.getElementById('camp-max-rounds').value = campaign ? campaign.matchMaxRounds : 1
+
+  // Channels checkboxes
+  const chDiv = document.getElementById('camp-channels-checkboxes')
+  const allowed = campaign ? (campaign.allowedChannels || []) : []
+  chDiv.innerHTML = ALL_CHANNELS.map(ch => {
+    const checked = allowed.includes(ch) ? 'checked' : ''
+    return `<label style="display:flex;align-items:center;gap:4px;font-size:0.8rem;color:#e2e8f0;cursor:pointer">
+      <input type="checkbox" value="${ch}" ${checked} class="camp-channel-cb"> ${ch}
+    </label>`
+  }).join('')
+
+  // Platform tags multi-select
+  renderTagSelect('camp-platform-tags', platformTags, campaign ? (campaign.platformTags || []).map(tg => tg.id) : [])
+  // Source tags multi-select
+  renderTagSelect('camp-source-tags', sourceTags, campaign ? (campaign.sourceTags || []).map(tg => tg.id) : [])
+
+  document.getElementById('campaign-form-panel').style.display = ''
+}
+
+function closeCampaignForm() {
+  document.getElementById('campaign-form-panel').style.display = 'none'
+  editingCampaignId = null
+}
+
+function renderTagSelect(containerId, tags, selectedIds) {
+  const container = document.getElementById(containerId)
+  if (!tags.length) { container.innerHTML = '<span style="font-size:0.75rem;color:#64748b">-</span>'; return }
+  container.innerHTML = tags.map(tg => {
+    const sel = selectedIds.includes(tg.id) ? 'selected' : ''
+    return `<span class="tag-select-item ${sel}" style="background:${esc(tg.color || '#e5e7eb')}"
+      onclick="this.classList.toggle('selected')">
+      <input type="checkbox" value="${tg.id}" ${sel ? 'checked' : ''}>${esc(tg.name)}
+    </span>`
+  }).join('')
+}
+
+function getSelectedTagIds(containerId) {
+  return Array.from(document.querySelectorAll('#' + containerId + ' .tag-select-item.selected'))
+    .map(el => parseInt(el.querySelector('input').value, 10))
+}
+
+async function saveCampaign() {
+  const body = {
+    name: document.getElementById('camp-name').value.trim(),
+    keyword: document.getElementById('camp-keyword').value.trim(),
+    promptContext: document.getElementById('camp-prompt-context').value.trim() || document.getElementById('camp-keyword').value.trim(),
+    matchThreshold: parseFloat(document.getElementById('camp-threshold').value) || 0.95,
+    matchMaxRounds: parseInt(document.getElementById('camp-max-rounds').value, 10) || 1,
+    allowedChannels: Array.from(document.querySelectorAll('.camp-channel-cb:checked')).map(cb => cb.value),
+    platformTagIds: getSelectedTagIds('camp-platform-tags'),
+    sourceTagIds: getSelectedTagIds('camp-source-tags'),
+  }
+  if (!body.name) return
+
+  try {
+    const method = editingCampaignId ? 'PUT' : 'POST'
+    if (editingCampaignId) body.id = editingCampaignId
+    const res = await fetch(API + '/campaign', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      closeCampaignForm()
+      loadCampaigns()
+      loadCampaignStats()
+      showToast(t('campaign_saved'), 'success')
+    } else {
+      showToast(data.error || 'Error', 'error')
+    }
+  } catch { showToast('Error', 'error') }
+}
+
+function editCampaign(id) {
+  const c = campaignsList.find(c => c.id === id)
+  if (c) openCampaignForm(c)
+}
+
+async function deleteCampaign(id) {
+  if (!confirm(t('confirm_delete_campaign'))) return
+  try {
+    const res = await fetch(API + '/campaign?id=' + id, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.ok) {
+      loadCampaigns()
+      loadCampaignStats()
+      showToast(t('campaign_deleted'), 'success')
+    }
+  } catch { showToast('Error', 'error') }
+}
+
+async function toggleCampaignActive(id, active) {
+  const c = campaignsList.find(c => c.id === id)
+  if (!c) return
+  try {
+    await fetch(API + '/campaign', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name: c.name, keyword: c.keyword, active }),
+    })
+    loadCampaigns()
+  } catch {}
+}
+
+// --- Tags CRUD ---
+async function loadTags(type) {
+  try {
+    const res = await fetch(API + '/tags?type=' + type)
+    const data = await res.json()
+    if (type === 'platform') platformTags = data.tags || []
+    else sourceTags = data.tags || []
+    renderTagsList(type)
+  } catch {}
+}
+
+function renderTagsList(type) {
+  const tags = type === 'platform' ? platformTags : sourceTags
+  const container = document.getElementById(type + '-tags-list')
+  if (!tags.length) { container.innerHTML = '<span style="font-size:0.75rem;color:#64748b">-</span>'; return }
+  container.innerHTML = tags.map(tg =>
+    `<span class="tag-badge" style="background:${esc(tg.color || '#e5e7eb')}">
+      ${esc(tg.name)}
+      <span class="tag-actions">
+        <button class="tag-action-btn" onclick="editTag(${tg.id},'${type}')" title="edit">&#9998;</button>
+        <button class="tag-action-btn" onclick="deleteTag(${tg.id},'${type}')" title="delete">&#10005;</button>
+      </span>
+    </span>`
+  ).join('')
+}
+
+function initColorPicker() {
+  const container = document.getElementById('tag-color-picker')
+  container.innerHTML = TAG_COLORS.map((c, i) =>
+    `<span class="color-swatch ${i===0?'selected':''}" style="background:${c}" onclick="selectTagColor('${c}',this)"></span>`
+  ).join('')
+}
+
+function selectTagColor(color, el) {
+  selectedTagColor = color
+  document.querySelectorAll('#tag-color-picker .color-swatch').forEach(s => s.classList.remove('selected'))
+  el.classList.add('selected')
+}
+
+async function createTag() {
+  const name = document.getElementById('tag-name').value.trim()
+  const type = document.getElementById('tag-type').value
+  if (!name) return
+  try {
+    const res = await fetch(API + '/tag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, type, color: selectedTagColor }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      document.getElementById('tag-name').value = ''
+      loadTags(type)
+      showToast(t('tag_saved'), 'success')
+    }
+  } catch { showToast('Error', 'error') }
+}
+
+async function editTag(id, type) {
+  const tags = type === 'platform' ? platformTags : sourceTags
+  const tg = tags.find(t => t.id === id)
+  if (!tg) return
+  const newName = prompt('Nombre:', tg.name)
+  if (newName === null) return
+  // Pick new color
+  const newColor = prompt('Color (hex):', tg.color) || tg.color
+  try {
+    const res = await fetch(API + '/tag', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name: newName.trim() || tg.name, color: newColor }),
+    })
+    const data = await res.json()
+    if (data.ok) { loadTags(type); showToast(t('tag_saved'), 'success') }
+  } catch { showToast('Error', 'error') }
+}
+
+async function deleteTag(id, type) {
+  if (!confirm(t('confirm_delete_tag'))) return
+  try {
+    const res = await fetch(API + '/tag?id=' + id, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.ok) { loadTags(type); showToast(t('tag_deleted'), 'success') }
+  } catch { showToast('Error', 'error') }
+}
+
 // Keyboard
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeModal()
 })
 
+initColorPicker()
 init()
 </script>
 </body>

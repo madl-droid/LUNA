@@ -1,5 +1,6 @@
 // LUNA — Module: lead-scoring — Scoring Engine
 // Motor de scoring por código. El LLM extrae, el código decide.
+// Supports framework stages and auto signals.
 
 import pino from 'pino'
 import type {
@@ -8,6 +9,8 @@ import type {
   QualificationStatus,
   ScoreResult,
   CriterionScore,
+  FrameworkStage,
+  StageScoreSummary,
 } from './types.js'
 
 const logger = pino({ name: 'lead-scoring:engine' })
@@ -43,6 +46,7 @@ export function calculateScore(
     return {
       totalScore: 0,
       criteriaScores: [],
+      stageScores: [],
       filledCount: 0,
       totalCount: 0,
       missingRequired: [],
@@ -71,6 +75,7 @@ export function calculateScore(
       value,
       points: Math.round(points * 100) / 100,
       maxPoints: Math.round(normalizedWeight * 100) / 100,
+      stage: criterion.stage,
     })
 
     totalScore += points
@@ -82,6 +87,9 @@ export function calculateScore(
 
   totalScore = Math.round(Math.min(100, Math.max(0, totalScore)))
 
+  // Calculate stage scores
+  const stageScores = calculateStageScores(criteriaScores, config.stages ?? [])
+
   // Check for disqualification in data
   const disqualifyKey = qualificationData['_disqualified'] as string | undefined
   if (disqualifyKey) {
@@ -89,6 +97,7 @@ export function calculateScore(
     return {
       totalScore,
       criteriaScores,
+      stageScores,
       filledCount: criteriaScores.filter(c => c.filled).length,
       totalCount: criteria.length,
       missingRequired,
@@ -111,12 +120,65 @@ export function calculateScore(
   return {
     totalScore,
     criteriaScores,
+    stageScores,
     filledCount: criteriaScores.filter(c => c.filled).length,
     totalCount: criteria.length,
     missingRequired,
     suggestedStatus,
     disqualified: false,
   }
+}
+
+/**
+ * Calculate aggregate scores per framework stage.
+ */
+function calculateStageScores(
+  criteriaScores: CriterionScore[],
+  stages: FrameworkStage[],
+): StageScoreSummary[] {
+  if (stages.length === 0) return []
+
+  return stages
+    .sort((a, b) => a.order - b.order)
+    .map(stage => {
+      const stageCriteria = criteriaScores.filter(c => c.stage === stage.key)
+      const totalPoints = stageCriteria.reduce((sum, c) => sum + c.points, 0)
+      const maxPoints = stageCriteria.reduce((sum, c) => sum + c.maxPoints, 0)
+      const filledCount = stageCriteria.filter(c => c.filled).length
+      return {
+        stageKey: stage.key,
+        totalPoints: Math.round(totalPoints * 100) / 100,
+        maxPoints: Math.round(maxPoints * 100) / 100,
+        filledCount,
+        totalCount: stageCriteria.length,
+        percentage: maxPoints > 0 ? Math.round((totalPoints / maxPoints) * 100) : 0,
+      }
+    })
+}
+
+/**
+ * Determine which stage the agent should focus on extracting data from.
+ * Returns the first stage that has unfilled criteria.
+ */
+export function getCurrentStage(
+  qualificationData: Record<string, unknown>,
+  config: QualifyingConfig,
+): FrameworkStage | null {
+  if (!config.stages || config.stages.length === 0) return null
+
+  const sortedStages = [...config.stages].sort((a, b) => a.order - b.order)
+
+  for (const stage of sortedStages) {
+    const stageCriteria = config.criteria.filter(c => c.stage === stage.key)
+    const hasUnfilled = stageCriteria.some(c => {
+      const value = qualificationData[c.key]
+      return !isFilled(value, c)
+    })
+    if (hasUnfilled) return stage
+  }
+
+  // All stages complete
+  return null
 }
 
 /**

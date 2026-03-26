@@ -16,6 +16,7 @@ export class LeadQueries {
   async listLeads(opts: {
     status?: QualificationStatus
     search?: string
+    campaignId?: string
     limit?: number
     offset?: number
     sortBy?: 'score' | 'updated' | 'created'
@@ -24,6 +25,7 @@ export class LeadQueries {
     const {
       status,
       search,
+      campaignId,
       limit = 50,
       offset = 0,
       sortBy = 'updated',
@@ -43,6 +45,11 @@ export class LeadQueries {
       conditions.push(`(c.display_name ILIKE $${paramIdx} OR cc.channel_contact_id ILIKE $${paramIdx})`)
       params.push(`%${search}%`)
       paramIdx++
+    }
+
+    if (campaignId) {
+      conditions.push(`EXISTS (SELECT 1 FROM contact_campaigns xcc WHERE xcc.contact_id = c.id AND xcc.campaign_id = $${paramIdx++})`)
+      params.push(campaignId)
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -66,7 +73,7 @@ export class LeadQueries {
     const countResult = await this.db.query(countQuery, params)
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10)
 
-    // Fetch leads
+    // Fetch leads with latest campaign
     const dataQuery = `
       SELECT
         c.id AS contact_id,
@@ -88,9 +95,20 @@ export class LeadQueries {
           SELECT COALESCE(SUM(s.message_count), 0)
           FROM sessions s
           WHERE s.contact_id = c.id
-        ) AS message_count
+        ) AS message_count,
+        lc.campaign_id AS latest_campaign_id,
+        lc.campaign_name AS latest_campaign_name,
+        lc.campaign_visible_id AS latest_campaign_visible_id
       FROM contacts c
       LEFT JOIN contact_channels cc ON cc.contact_id = c.id AND cc.is_primary = true
+      LEFT JOIN LATERAL (
+        SELECT xcc.campaign_id, xc.name AS campaign_name, xc.visible_id AS campaign_visible_id
+        FROM contact_campaigns xcc
+        JOIN campaigns xc ON xc.id = xcc.campaign_id
+        WHERE xcc.contact_id = c.id
+        ORDER BY xcc.matched_at DESC
+        LIMIT 1
+      ) lc ON true
       ${whereClause}
       ORDER BY ${sortCol} ${dir}
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
@@ -115,6 +133,11 @@ export class LeadQueries {
       updatedAt: r.updated_at?.toISOString() ?? '',
       lastActivityAt: r.last_activity_at?.toISOString() ?? null,
       messageCount: parseInt(r.message_count, 10),
+      latestCampaignId: r.latest_campaign_id ?? null,
+      latestCampaignName: r.latest_campaign_name ?? null,
+      latestCampaignVisibleId: r.latest_campaign_visible_id != null
+        ? parseInt(r.latest_campaign_visible_id, 10)
+        : null,
     }))
 
     return { leads, total }
@@ -172,8 +195,19 @@ export class LeadQueries {
       [contactId],
     )
 
+    // Latest campaign
+    const latestCampaignResult = await this.db.query(
+      `SELECT cc.campaign_id, c.name, c.visible_id
+       FROM contact_campaigns cc
+       JOIN campaigns c ON c.id = cc.campaign_id
+       WHERE cc.contact_id = $1
+       ORDER BY cc.matched_at DESC LIMIT 1`,
+      [contactId],
+    ).catch(() => ({ rows: [] }))
+
     const primaryChannel = channelsResult.rows.find((ch: { is_primary: boolean }) => ch.is_primary)
     const sessionRow = sessionResult.rows[0]
+    const lcRow = latestCampaignResult.rows[0] as { campaign_id: string; name: string; visible_id: number } | undefined
 
     return {
       contactId: r.contact_id,
@@ -190,6 +224,9 @@ export class LeadQueries {
       updatedAt: r.updated_at?.toISOString() ?? '',
       lastActivityAt: sessionRow?.last_activity_at?.toISOString() ?? null,
       messageCount: parseInt(sessionRow?.message_count ?? '0', 10),
+      latestCampaignId: lcRow?.campaign_id ?? null,
+      latestCampaignName: lcRow?.name ?? null,
+      latestCampaignVisibleId: lcRow?.visible_id ?? null,
       channels: channelsResult.rows.map((ch: { channel_name: string; channel_contact_id: string; is_primary: boolean }) => ({
         channel: ch.channel_name,
         channelContactId: ch.channel_contact_id,

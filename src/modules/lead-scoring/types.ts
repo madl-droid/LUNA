@@ -2,6 +2,43 @@
 // Interfaces del sistema de calificación de leads.
 
 // ═══════════════════════════════════════════
+// Framework types
+// ═══════════════════════════════════════════
+
+/** Available qualification frameworks */
+export type FrameworkType = 'champ' | 'spin' | 'champ_gov' | 'custom'
+
+/** A stage groups related criteria within a framework */
+export interface FrameworkStage {
+  key: string                              // unique id: 'challenges', 'authority', etc.
+  name: { es: string; en: string }         // display name
+  description: { es: string; en: string }  // what the agent should explore in this stage
+  order: number                            // sequence in the framework
+}
+
+/** A complete framework preset */
+export interface FrameworkPreset {
+  type: FrameworkType
+  name: { es: string; en: string }
+  description: { es: string; en: string }
+  stages: FrameworkStage[]
+  criteria: QualifyingCriterion[]
+  disqualifyReasons: DisqualifyReason[]
+}
+
+// ═══════════════════════════════════════════
+// Auto Signals — computed by code, not LLM
+// ═══════════════════════════════════════════
+
+export interface AutoSignalDefinition {
+  key: string                              // 'engagement', 'geo_fit', 'channel_source', etc.
+  name: { es: string; en: string }
+  description: { es: string; en: string }
+  weight: number                           // 0-100 contribution to score
+  enabled: boolean
+}
+
+// ═══════════════════════════════════════════
 // Qualifying config — instance/qualifying.json
 // ═══════════════════════════════════════════
 
@@ -13,6 +50,7 @@ export interface QualifyingCriterion {
   weight: number                           // 0-100 contribution to score
   required: boolean                        // must be filled to qualify
   neverAskDirectly: boolean                // agent should never ask this directly
+  stage?: string                           // framework stage this criterion belongs to
 }
 
 export interface DisqualifyReason {
@@ -30,11 +68,17 @@ export interface QualifyingThresholds {
 export type QualifiedAction = 'scheduled' | 'transferred_to_sales' | 'sold' | 'purchase_complete'
 
 export interface QualifyingConfig {
+  /** Active framework type. 'custom' = no preset, fully manual config */
+  framework: FrameworkType
+  /** Stages defined by the framework (or custom stages) */
+  stages: FrameworkStage[]
   criteria: QualifyingCriterion[]
   thresholds: QualifyingThresholds
   qualifiedActions: QualifiedAction[]
   defaultQualifiedAction: QualifiedAction
   disqualifyReasons: DisqualifyReason[]
+  /** Auto signals: engagement, geo fit, channel source, etc. */
+  autoSignals: AutoSignalDefinition[]
   maxCustomCriteria: number
   recalculateOnConfigChange: boolean
   /** Minimum confidence (0-1) to accept an LLM extraction. Default: 0.3 */
@@ -67,11 +111,22 @@ export interface CriterionScore {
   value: unknown
   points: number         // weighted points earned
   maxPoints: number      // max possible for this criterion
+  stage?: string         // framework stage this criterion belongs to
+}
+
+export interface StageScoreSummary {
+  stageKey: string
+  totalPoints: number
+  maxPoints: number
+  filledCount: number
+  totalCount: number
+  percentage: number     // 0-100
 }
 
 export interface ScoreResult {
   totalScore: number     // 0-100
   criteriaScores: CriterionScore[]
+  stageScores: StageScoreSummary[]
   filledCount: number
   totalCount: number
   missingRequired: string[]
@@ -107,6 +162,9 @@ export interface LeadSummary {
   updatedAt: string
   lastActivityAt: string | null
   messageCount: number
+  latestCampaignId: string | null
+  latestCampaignName: string | null
+  latestCampaignVisibleId: number | null
 }
 
 export interface LeadDetail extends LeadSummary {

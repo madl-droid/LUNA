@@ -1,7 +1,7 @@
 // LUNA — Module: prompts — PostgreSQL queries
 
 import type { Pool } from 'pg'
-import type { PromptRecord, PromptSlot, CampaignRecord } from './types.js'
+import type { PromptRecord, PromptSlot } from './types.js'
 
 // ─── prompt_slots table ─────────────────────
 
@@ -89,88 +89,5 @@ export async function getBySlot(pool: Pool, slot: PromptSlot): Promise<PromptRec
   }))
 }
 
-// ─── campaigns table (alter existing) ───────
-
-export async function ensureCampaignColumns(pool: Pool): Promise<void> {
-  await pool.query(`
-    ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_phrases JSONB DEFAULT '[]'
-  `).catch(() => {
-    // Table may not exist yet — non-critical
-  })
-  await pool.query(`
-    ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_threshold REAL DEFAULT 0.95
-  `).catch(() => {})
-  await pool.query(`
-    ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS prompt_context TEXT DEFAULT ''
-  `).catch(() => {})
-}
-
-export async function listCampaigns(pool: Pool): Promise<CampaignRecord[]> {
-  try {
-    const result = await pool.query(
-      `SELECT id, name, match_phrases, match_threshold, prompt_context
-       FROM campaigns WHERE active = true ORDER BY name`,
-    )
-    return result.rows.map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      name: row.name as string,
-      matchPhrases: Array.isArray(row.match_phrases) ? row.match_phrases as string[] : [],
-      matchThreshold: (row.match_threshold as number) ?? 0.95,
-      promptContext: (row.prompt_context as string) ?? '',
-    }))
-  } catch {
-    // campaigns table may not exist
-    return []
-  }
-}
-
-export async function listAllCampaigns(pool: Pool): Promise<CampaignRecord[]> {
-  try {
-    const result = await pool.query(
-      `SELECT id, name, match_phrases, match_threshold, prompt_context
-       FROM campaigns ORDER BY name`,
-    )
-    return result.rows.map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      name: row.name as string,
-      matchPhrases: Array.isArray(row.match_phrases) ? row.match_phrases as string[] : [],
-      matchThreshold: (row.match_threshold as number) ?? 0.95,
-      promptContext: (row.prompt_context as string) ?? '',
-    }))
-  } catch {
-    return []
-  }
-}
-
-export async function updateCampaign(
-  pool: Pool,
-  id: string,
-  matchPhrases: string[],
-  matchThreshold: number,
-  promptContext: string,
-): Promise<void> {
-  await pool.query(
-    `UPDATE campaigns SET match_phrases = $2, match_threshold = $3, prompt_context = $4
-     WHERE id = $1`,
-    [id, JSON.stringify(matchPhrases), matchThreshold, promptContext],
-  )
-}
-
-export async function createCampaign(
-  pool: Pool,
-  name: string,
-  matchPhrases: string[],
-  matchThreshold: number,
-  promptContext: string,
-): Promise<string> {
-  const result = await pool.query(
-    `INSERT INTO campaigns (name, match_phrases, match_threshold, prompt_context, active)
-     VALUES ($1, $2, $3, $4, true) RETURNING id`,
-    [name, JSON.stringify(matchPhrases), matchThreshold, promptContext],
-  )
-  return result.rows[0]!.id
-}
-
-export async function deleteCampaign(pool: Pool, id: string): Promise<void> {
-  await pool.query(`DELETE FROM campaigns WHERE id = $1`, [id])
-}
+// Campaign management has been moved to the lead-scoring module.
+// See: src/modules/lead-scoring/campaign-queries.ts

@@ -9,11 +9,9 @@ import type {
   PromptSlot,
   PromptRecord,
   CompositorPrompts,
-  CampaignMatchResult,
   PromptsService,
 } from './types.js'
 import * as queries from './pg-queries.js'
-import { CampaignMatcher } from './campaign-matcher.js'
 
 const logger = pino({ name: 'prompts:service' })
 
@@ -45,7 +43,6 @@ const DEFAULT_RELATIONSHIP: Record<string, string> = {
 
 export class PromptsServiceImpl implements PromptsService {
   private cache = new Map<string, string>()
-  private campaignMatcher = new CampaignMatcher()
   // Exposed for manifest API routes (avoids casting hacks)
   readonly db: Pool
 
@@ -101,9 +98,6 @@ export class PromptsServiceImpl implements PromptsService {
     for (const record of all) {
       this.cache.set(`${record.slot}:${record.variant}`, record.content)
     }
-
-    // Load campaign index
-    await this.reloadCampaigns()
 
     logger.info({ promptCount: all.length }, 'Prompts cache loaded')
   }
@@ -208,10 +202,6 @@ Genera el resumen comprimido ahora. Solo el resumen, sin preámbulo.`
     return queries.listAll(this.db)
   }
 
-  matchCampaign(text: string): CampaignMatchResult | null {
-    return this.campaignMatcher.match(text)
-  }
-
   invalidateCache(): void {
     this.cache.clear()
     // Reload asynchronously
@@ -222,12 +212,6 @@ Genera el resumen comprimido ahora. Solo el resumen, sin preámbulo.`
     }).catch(err => {
       logger.error({ err }, 'Failed to reload cache after invalidation')
     })
-  }
-
-  async reloadCampaigns(): Promise<void> {
-    const campaigns = await queries.listCampaigns(this.db)
-    this.campaignMatcher.load(campaigns)
-    logger.info({ campaigns: campaigns.length }, 'Campaign matcher reloaded')
   }
 
   // ─── Seed ─────────────────────────────────

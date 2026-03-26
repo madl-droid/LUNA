@@ -1,13 +1,12 @@
 # Prompts — Gestión centralizada de prompts del agente
 
-Prompts editables desde console, almacenados en DB, con cache en memoria. Campaign matching via fuse.js.
+Prompts editables desde console, almacenados en DB, con cache en memoria. Evaluador generado on-demand por LLM.
 
 ## Archivos
 - `manifest.ts` — lifecycle, console fields (textarea), API routes, sync con config_store
 - `types.ts` — PromptSlot, PromptRecord, CompositorPrompts, PromptsService
-- `pg-queries.ts` — CRUD para prompt_slots + ALTER campaigns (match_phrases, threshold, prompt_context)
+- `pg-queries.ts` — CRUD para prompt_slots
 - `prompts-service.ts` — PromptsServiceImpl con cache Map, seed desde archivos/defaults, generación evaluador
-- `campaign-matcher.ts` — CampaignMatcher con fuse.js fuzzy matching por frases
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true
@@ -19,18 +18,17 @@ Prompts editables desde console, almacenados en DB, con cache en memoria. Campai
 - Slots: identity, job, guardrails, relationship, evaluator
 - Variants: 'default' para la mayoría; relationship tiene 'lead', 'admin', 'coworker', 'unknown'
 
-## Tabla DB: campaigns (columnas agregadas)
-- `match_phrases` JSONB, `match_threshold` REAL, `prompt_context` TEXT
-
 ## Servicio expuesto
 - `prompts:service` — PromptsService interface
 
 ## API Routes (bajo /console/api/prompts/)
-- GET/PUT slots, POST generate-evaluator, CRUD campaigns
+- GET/PUT slots, POST generate-evaluator
+
+## Nota: Campañas migradas
+- Campaign management se movió al módulo `lead-scoring` (ver `src/modules/lead-scoring/CLAUDE.md`)
+- `campaign-matcher.ts` eliminado de este módulo
 
 ## Trampas
 - `db` es `readonly` público en PromptsServiceImpl — API routes lo acceden directamente
-- Campaign match usa score invertido: fuse.js 0=perfecto → matchScore = 1 - score
 - `invalidateCache()` recarga async — breve momento sin cache
-- Si tabla campaigns no existe, queries fallan silenciosamente
 - **Helpers HTTP**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js`. NO redefinir localmente.

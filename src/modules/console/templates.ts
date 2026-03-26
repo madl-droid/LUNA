@@ -55,6 +55,7 @@ const FIXED_SECTIONS: FixedSection[] = [
   { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'channels', order: 2 },
   // Agent — unified page with sub-tabs: knowledge, memory, identity, advanced
   { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'agent', order: 1 },
+  { id: 'pipeline', key: 'sec_pipeline_unified', icon: ICONS.pipeline, group: 'agent', order: 20 },
   { id: 'engine-metrics', key: 'sec_engine_metrics', icon: ICONS.metrics, group: 'agent', order: 25 },
   // Leads
   { id: 'lead-scoring', key: 'sec_lead_scoring', icon: ICONS.scoring, group: 'leads', order: 15 },

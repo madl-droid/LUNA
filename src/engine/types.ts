@@ -76,9 +76,12 @@ export interface SessionInfo {
 
 export interface CampaignInfo {
   id: string
+  visibleId: number | null
   name: string
   keyword: string | null
   utm: Record<string, string> | null
+  promptContext: string | null
+  matchScore: number | null
 }
 
 export interface KnowledgeMatch {
