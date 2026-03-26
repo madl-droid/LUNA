@@ -11,7 +11,8 @@ import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
-import type { LeadScoringConfig, QualifyingConfig, QualificationStatus } from './types.js'
+import type { LeadScoringConfig, QualifyingConfig, QualificationStatus, FrameworkType } from './types.js'
+import { FRAMEWORK_PRESETS } from './frameworks.js'
 import { ConfigStore } from './config-store.js'
 import { LeadQueries } from './pg-queries.js'
 import { registerExtractionTool } from './extract-tool.js'
@@ -92,6 +93,46 @@ function createApiRoutes(): ApiRoute[] {
 
           const count = await queries.batchUpdateScores(updates)
           jsonResponse(res, 200, { ok: true, recalculated: count })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/lead-scoring/apply-framework
+    {
+      method: 'POST',
+      path: 'apply-framework',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ framework: FrameworkType }>(req)
+          if (!body.framework) {
+            jsonResponse(res, 400, { error: 'Missing framework' })
+            return
+          }
+          const store = getConfigStore()
+          store.applyFramework(body.framework)
+          jsonResponse(res, 200, { ok: true, framework: body.framework })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/lead-scoring/frameworks
+    {
+      method: 'GET',
+      path: 'frameworks',
+      handler: async (_req, res) => {
+        try {
+          const presets = Object.values(FRAMEWORK_PRESETS).map(p => ({
+            type: p.type,
+            name: p.name,
+            description: p.description,
+            stageCount: p.stages.length,
+            criteriaCount: p.criteria.length,
+          }))
+          jsonResponse(res, 200, { presets })
         } catch (err) {
           jsonResponse(res, 500, { error: String(err) })
         }
@@ -269,8 +310,8 @@ const manifest: ModuleManifest = {
   name: 'lead-scoring',
   version: '1.0.0',
   description: {
-    es: 'Sistema de calificación de leads con BANT y criterios personalizables',
-    en: 'Lead scoring system with BANT and customizable criteria',
+    es: 'Sistema de calificación de leads con frameworks (CHAMP, SPIN, CHAMP+Gov) y criterios personalizables',
+    en: 'Lead scoring system with frameworks (CHAMP, SPIN, CHAMP+Gov) and customizable criteria',
   },
   type: 'feature',
   removable: true,

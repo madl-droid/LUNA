@@ -1,51 +1,119 @@
 // LUNA — Module: lead-scoring — Extract Qualification Tool
 // Tool que se registra en tools:registry para extraer datos de calificación
 // de la conversación. Se activa en Phase 2 cuando el evaluador detecta info relevante.
+// Framework-aware: adapts extraction prompt to active framework and current stage.
 
 import type { Registry } from '../../kernel/registry.js'
 import type { ToolRegistration, ToolExecutionContext } from '../tools/types.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
-import type { QualifyingConfig, ExtractionResult } from './types.js'
+import type { QualifyingConfig, ExtractionResult, FrameworkStage } from './types.js'
 import type { ConfigStore } from './config-store.js'
-import { calculateScore, mergeQualificationData, resolveTransition } from './scoring-engine.js'
+import { calculateScore, mergeQualificationData, resolveTransition, getCurrentStage } from './scoring-engine.js'
 import type { QualificationStatus } from './types.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'lead-scoring:extract-tool' })
 
+// ═══════════════════════════════════════════
+// Framework-specific extraction context
+// ═══════════════════════════════════════════
+
+const FRAMEWORK_CONTEXT: Record<string, { es: string; en: string }> = {
+  champ: {
+    es: 'Estás calificando un lead B2B usando el framework CHAMP (Challenges, Authority, Money, Prioritization).',
+    en: 'You are qualifying a B2B lead using the CHAMP framework (Challenges, Authority, Money, Prioritization).',
+  },
+  spin: {
+    es: 'Estás calificando un lead B2C usando SPIN Selling (Situación, Problema, Implicación, Cierre). La conversación avanza naturalmente por las etapas.',
+    en: 'You are qualifying a B2C lead using SPIN Selling (Situation, Problem, Implication, Need-payoff). The conversation progresses naturally through stages.',
+  },
+  champ_gov: {
+    es: 'Estás calificando un lead B2G (gobierno) usando CHAMP + Gov. Incluye etapas de proceso de compra pública y encaje normativo.',
+    en: 'You are qualifying a B2G (government) lead using CHAMP + Gov. Includes procurement process stages and compliance fit.',
+  },
+  custom: {
+    es: 'Estás calificando un lead usando criterios personalizados.',
+    en: 'You are qualifying a lead using custom criteria.',
+  },
+}
+
 /**
  * Builds the system prompt for the extraction LLM call.
- * Includes current criteria and what's already known.
+ * Framework-aware: includes stage context and focuses on relevant criteria.
  */
 function buildExtractionPrompt(
   config: QualifyingConfig,
   existingData: Record<string, unknown>,
+  currentStage: FrameworkStage | null,
 ): string {
-  const criteriaList = config.criteria.map(c => {
-    const filled = existingData[c.key] !== undefined && existingData[c.key] !== null
-    let desc = `- ${c.key} (${c.type}): ${c.name.es}`
-    if (c.type === 'enum' && c.options) {
-      desc += ` [opciones: ${c.options.join(', ')}]`
-    }
-    if (filled) {
-      desc += ` [ALREADY KNOWN: ${JSON.stringify(existingData[c.key])}]`
-    }
-    if (c.neverAskDirectly) {
-      desc += ' [NEVER ASK DIRECTLY]'
-    }
-    return desc
-  }).join('\n')
+  const frameworkCtx = FRAMEWORK_CONTEXT[config.framework] ?? FRAMEWORK_CONTEXT['custom']!
+
+  // Group criteria by stage for better prompt structure
+  let criteriaSection: string
+
+  if (config.stages && config.stages.length > 0) {
+    const sortedStages = [...config.stages].sort((a, b) => a.order - b.order)
+    const stageBlocks = sortedStages.map(stage => {
+      const stageCriteria = config.criteria.filter(c => c.stage === stage.key)
+      if (stageCriteria.length === 0) return ''
+
+      const isCurrent = currentStage?.key === stage.key
+      const header = `\n## ${stage.name.en} (${stage.key})${isCurrent ? ' ← CURRENT FOCUS' : ''}`
+      const desc = `${stage.description.en}`
+
+      const fields = stageCriteria.map(c => {
+        const filled = existingData[c.key] !== undefined && existingData[c.key] !== null
+        let line = `  - ${c.key} (${c.type}): ${c.name.en}`
+        if (c.type === 'enum' && c.options) {
+          line += ` [options: ${c.options.join(', ')}]`
+        }
+        if (filled) {
+          line += ` [ALREADY KNOWN: ${JSON.stringify(existingData[c.key])}]`
+        }
+        if (c.neverAskDirectly) {
+          line += ' [NEVER ASK DIRECTLY]'
+        }
+        return line
+      }).join('\n')
+
+      return `${header}\n${desc}\n${fields}`
+    }).filter(Boolean)
+
+    criteriaSection = stageBlocks.join('\n')
+  } else {
+    // Flat criteria (custom framework, no stages)
+    criteriaSection = config.criteria.map(c => {
+      const filled = existingData[c.key] !== undefined && existingData[c.key] !== null
+      let desc = `- ${c.key} (${c.type}): ${c.name.es}`
+      if (c.type === 'enum' && c.options) {
+        desc += ` [opciones: ${c.options.join(', ')}]`
+      }
+      if (filled) {
+        desc += ` [ALREADY KNOWN: ${JSON.stringify(existingData[c.key])}]`
+      }
+      if (c.neverAskDirectly) {
+        desc += ' [NEVER ASK DIRECTLY]'
+      }
+      return desc
+    }).join('\n')
+  }
 
   const disqualifyList = config.disqualifyReasons.map(d =>
-    `- ${d.key}: ${d.name.es}`
+    `- ${d.key}: ${d.name.en}`
   ).join('\n')
 
+  const stageInstruction = currentStage
+    ? `\nCURRENT STAGE FOCUS: "${currentStage.name.en}" — ${currentStage.description.en}\nPrioritize extracting fields from this stage, but also capture any info for other stages if clearly present.`
+    : ''
+
   return `You are an extraction assistant for lead qualification.
+${frameworkCtx.en}
 Your ONLY job is to extract structured data from the conversation message.
 DO NOT generate responses — only extract data.
+${stageInstruction}
 
 CRITERIA TO EXTRACT:
-${criteriaList}
+${criteriaSection}
 
 DISQUALIFICATION REASONS (set disqualifyDetected if any detected):
 ${disqualifyList}
@@ -59,6 +127,7 @@ RULES:
 6. Include a confidence score (0.0-1.0) for each extracted field.
 7. If a disqualification signal is detected, set disqualifyDetected to the reason key.
 8. Only include fields you actually found data for — do not include null fields.
+9. Extract data from ANY stage if present, not just the current focus stage.
 
 Respond ONLY with valid JSON matching this schema:
 {
@@ -141,8 +210,11 @@ async function handleExtraction(
   const existingData = (row.qualification_data as Record<string, unknown>) ?? {}
   const currentStatus = (row.qualification_status as QualificationStatus) ?? 'new'
 
+  // Determine current stage for focused extraction
+  const currentStage = getCurrentStage(existingData, config)
+
   // Build prompt and call LLM
-  const systemPrompt = buildExtractionPrompt(config, existingData)
+  const systemPrompt = buildExtractionPrompt(config, existingData, currentStage)
 
   try {
     const llmResult = await registry.callHook('llm:chat', {
@@ -228,6 +300,9 @@ async function handleExtraction(
         fields: Object.keys(extraction.extracted),
         score: scoreResult.totalScore,
         status: newStatus ?? currentStatus,
+        framework: config.framework,
+        currentStage: currentStage?.key ?? null,
+        stageScores: scoreResult.stageScores,
         disqualified: scoreResult.disqualified,
         disqualifyReason: scoreResult.disqualifyReason,
       },
