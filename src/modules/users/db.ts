@@ -453,22 +453,57 @@ export class UsersDb {
     return users[0] ?? null
   }
 
-  /** Resolution query: find which user a sender belongs to. */
-  async resolveByContact(senderId: string, channel: string): Promise<{ userId: string; listType: string; listName: string } | null> {
-    const result = await this.pool.query<{ user_id: string; list_type: string; list_name: string }>(
-      `SELECT u.id AS user_id, u.list_type, COALESCE(ulc.display_name, u.list_type) AS list_name
+  /**
+   * Resolution query: find which user a sender belongs to.
+   * Supports fallback: if senderId (LID) doesn't match, tries fallbackSenderId (phone).
+   * When found by fallback, auto-migrates sender_id to the new value (LID replaces phone).
+   */
+  async resolveByContact(
+    senderId: string,
+    channel: string,
+    fallbackSenderId?: string,
+  ): Promise<{ userId: string; listType: string; listName: string } | null> {
+    const query = `SELECT u.id AS user_id, u.list_type, COALESCE(ulc.display_name, u.list_type) AS list_name,
+                          uc.id AS contact_id
        FROM user_contacts uc
        JOIN users u ON uc.user_id = u.id
        LEFT JOIN user_list_config ulc ON u.list_type = ulc.list_type
        WHERE uc.sender_id = $1 AND uc.channel = $2 AND u.is_active = true
        ORDER BY CASE u.list_type WHEN 'admin' THEN 0 WHEN 'coworker' THEN 1 ELSE 2 END
-       LIMIT 1`,
-      [senderId, channel],
+       LIMIT 1`
+
+    const result = await this.pool.query<{ user_id: string; list_type: string; list_name: string; contact_id: string }>(
+      query, [senderId, channel],
     )
 
-    if (result.rows.length === 0) return null
-    const row = result.rows[0]!
-    return { userId: row.user_id, listType: row.list_type, listName: row.list_name }
+    if (result.rows.length > 0) {
+      const row = result.rows[0]!
+      return { userId: row.user_id, listType: row.list_type, listName: row.list_name }
+    }
+
+    // Fallback: try phone number (manually-saved contacts use phone, not LID)
+    if (fallbackSenderId) {
+      const fallbackResult = await this.pool.query<{ user_id: string; list_type: string; list_name: string; contact_id: string }>(
+        query, [fallbackSenderId, channel],
+      )
+
+      if (fallbackResult.rows.length > 0) {
+        const row = fallbackResult.rows[0]!
+        // Auto-migrate: update sender_id from phone to LID so next lookup is direct
+        try {
+          await this.pool.query(
+            `UPDATE user_contacts SET sender_id = $1 WHERE id = $2`,
+            [senderId, row.contact_id],
+          )
+          logger.info({ userId: row.user_id, oldSenderId: fallbackSenderId, newSenderId: senderId, channel }, 'Auto-migrated user_contacts sender_id (phone → LID)')
+        } catch (err) {
+          logger.warn({ err, userId: row.user_id }, 'Failed to auto-migrate sender_id')
+        }
+        return { userId: row.user_id, listType: row.list_type, listName: row.list_name }
+      }
+    }
+
+    return null
   }
 
   /** Get all contacts for a user (used for cache invalidation). */

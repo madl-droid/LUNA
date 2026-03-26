@@ -282,10 +282,15 @@ async function loadContact(db: Pool, phoneNumber: string): Promise<ContactInfo |
   // Normalize phone number: strip non-digit chars for matching
   const normalized = phoneNumber.replace(/\D/g, '')
 
+  // Look up contact via voice channel entry in contact_channels.
+  // Voice channels are auto-created from WhatsApp LID resolution,
+  // linking phone calls to the same contact as WA messages.
   const result = await db.query<{ id: string; display_name: string | null; qualification_status: string | null }>(
-    `SELECT ac.id, ac.display_name, ac.qualification_status
-     FROM agent_contacts ac
-     WHERE ac.phone = $1 OR ac.phone = $2
+    `SELECT c.id, c.display_name, c.qualification_status
+     FROM contacts c
+     JOIN contact_channels cc ON cc.contact_id = c.id
+     WHERE cc.channel_name = 'voice'
+       AND (cc.channel_contact_id = $1 OR cc.channel_contact_id = $2)
      LIMIT 1`,
     [phoneNumber, normalized],
   )

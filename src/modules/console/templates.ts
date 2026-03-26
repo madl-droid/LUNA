@@ -131,7 +131,7 @@ export interface PageOptions {
   /** Active contacts sub-page (list type or 'config') */
   contactsSubpage?: string
   /** Available contact list types for sidebar submenu */
-  contactLists?: Array<{ listType: string; displayName: string; count: number }>
+  contactLists?: Array<{ listType: string; displayName: string; count: number; isEnabled?: boolean }>
 }
 
 // ═══════════════════════════════════════════
@@ -375,7 +375,7 @@ function renderSidebar(opts: PageOptions): string {
 
       // Contacts submenu: show list types + config under "Contactos"
       if (item.id === 'contacts' && (isActive || opts.contactsSubpage)) {
-        const lists = opts.contactLists ?? []
+        const lists = (opts.contactLists ?? []).filter(l => l.isEnabled)
         if (lists.length > 0) {
           nav += '<div class="sidebar-submenu">'
           for (const list of lists) {
