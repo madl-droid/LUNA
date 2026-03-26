@@ -283,6 +283,7 @@ async function buildProactiveContext(
     campaign: null,
     knowledgeMatches: [],
     knowledgeInjection: null,
+    freshdeskMatches: [],
     history,
     contactMemory,
     pendingCommitments,

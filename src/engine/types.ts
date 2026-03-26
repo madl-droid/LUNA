@@ -137,6 +137,9 @@ export interface ContextBundle {
   // Knowledge v2 — structured injection for evaluator (filtered by user's allowed categories)
   knowledgeInjection: KnowledgeInjection | null
 
+  // Freshdesk KB — article metadata matches from cached index (Phase 1 fuse.js)
+  freshdeskMatches: import('../tools/freshdesk/types.js').FreshdeskMatch[]
+
   // LLM assignment rules for auto-classifying contacts into lists
   assignmentRules: Array<{ listType: string; listName: string; prompt: string }> | null
 

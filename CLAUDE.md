@@ -40,8 +40,10 @@ src/
     tts/             — síntesis de voz: Google Cloud TTS (ver CLAUDE.md)
     freight/         — wrapper modular de tool de flete (ver CLAUDE.md)
     medilink/        — integración Medilink/HealthAtom: pacientes, citas, follow-up (ver CLAUDE.md)
+    freshdesk/       — integración Freshdesk Knowledge Base: búsqueda y sync de artículos (ver CLAUDE.md)
   tools/
     freight/         — tool de estimación de flete (ver src/tools/freight/CLAUDE.md)
+    freshdesk/       — tools de Freshdesk KB: búsqueda, artículos, sync (ver src/tools/freshdesk/CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
     attachments/     — subsistema de adjuntos del engine (types, processor, url-extractor, injection-validator, audio-transcriber, tools)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
@@ -209,6 +211,8 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/freight/CLAUDE.md` — wrapper modular de la tool de flete
 - `src/tools/freight/CLAUDE.md` — estimación de flete internacional (SeaRates + DHL Express)
 - `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks)
+- `src/modules/freshdesk/CLAUDE.md` — wrapper modular de tools Freshdesk KB
+- `src/tools/freshdesk/CLAUDE.md` — Freshdesk Knowledge Base (búsqueda, artículos, sync semanal)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 

@@ -170,6 +170,17 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
     }
   }
 
+  // Freshdesk KB matches (article metadata from cached index)
+  if (ctx.freshdeskMatches && ctx.freshdeskMatches.length > 0) {
+    parts.push(`[Artículos de soporte técnico relevantes (Freshdesk KB):]`)
+    for (const m of ctx.freshdeskMatches.slice(0, 5)) {
+      const tags = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : ''
+      parts.push(`- "${m.title}" (${m.category}, id:${m.article_id})${tags}`)
+    }
+    parts.push(`[Para obtener el contenido completo de un artículo, incluye { type: "api_call", tool: "freshdesk_get_article", params: { article_id: N } } en el plan]`)
+    parts.push(`[Para buscar más artículos por keyword, incluye { type: "api_call", tool: "freshdesk_search", params: { term: "keyword" } } en el plan]`)
+  }
+
   // History (last 3-5 messages for context)
   if (ctx.history.length > 0) {
     parts.push(`[Historial reciente:]`)
