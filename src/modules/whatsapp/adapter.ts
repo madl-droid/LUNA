@@ -419,7 +419,8 @@ export class BaileysAdapter {
         if (repo?.lidMapping) {
           const pn = await repo.lidMapping.getPNForLID(jid)
           if (pn) {
-            phone = pn.replace(/:.*@/, '@').replace('@s.whatsapp.net', '')
+            const raw = pn.replace(/:.*@/, '@').replace('@s.whatsapp.net', '')
+            phone = raw.startsWith('+') ? raw : `+${raw}`
             logger.info({ lid: lidNumber, phone }, 'LID resolved to phone number')
           }
         }
