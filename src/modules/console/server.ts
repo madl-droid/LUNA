@@ -960,10 +960,10 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       // Strip query string for path matching
       const pathOnly = localUrl.split('?')[0]!
 
-      // Redirect root to /console/channels
+      // Redirect root to /console/dashboard
       if (pathOnly === '/' || pathOnly === '') {
         const lang = detectLang(req)
-        res.writeHead(302, { Location: `/console/channels?lang=${lang}` })
+        res.writeHead(302, { Location: `/console/dashboard?lang=${lang}` })
         res.end()
         return true
       }

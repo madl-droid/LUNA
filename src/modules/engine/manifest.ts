@@ -145,6 +145,10 @@ const manifest: ModuleManifest = {
           es: 'Mensaje que se envia cuando la cola esta llena y no se puede procesar el mensaje.',
           en: 'Message sent when the queue is full and the message cannot be processed.',
         },
+        info: {
+          es: 'Este mensaje se muestra al usuario cuando el motor esta sobrecargado y no puede procesar mas solicitudes. Personalizalo para que sea claro y amigable.',
+          en: 'This message is shown to users when the engine is overloaded and cannot process more requests. Customize it to be clear and friendly.',
+        },
       },
 
       // ── Phase 4 ──

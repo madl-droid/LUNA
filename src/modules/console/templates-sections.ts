@@ -137,12 +137,12 @@ export function renderLlmUnifiedSection(data: SectionData): string {
     </div>
     <div class="panel-body">
       <div class="panel-info">${t('sec_llm_limits_info', data.lang)}</div>
-      ${numField('LLM_MAX_INPUT_TOKENS', cv(data, 'LLM_MAX_INPUT_TOKENS'), data.lang, 'f_LLM_MAX_INPUT_TOKENS')}
-      ${numField('LLM_MAX_OUTPUT_TOKENS', cv(data, 'LLM_MAX_OUTPUT_TOKENS'), data.lang, 'f_LLM_MAX_OUTPUT_TOKENS')}
+      ${numField('LLM_MAX_INPUT_TOKENS', cv(data, 'LLM_MAX_INPUT_TOKENS'), data.lang, 'f_LLM_MAX_INPUT_TOKENS', 'i_LLM_MAX_INPUT_TOKENS')}
+      ${numField('LLM_MAX_OUTPUT_TOKENS', cv(data, 'LLM_MAX_OUTPUT_TOKENS'), data.lang, 'f_LLM_MAX_OUTPUT_TOKENS', 'i_LLM_MAX_OUTPUT_TOKENS')}
       ${numField('LLM_TEMPERATURE_CLASSIFY', cv(data, 'LLM_TEMPERATURE_CLASSIFY'), data.lang, 'f_LLM_TEMPERATURE_CLASSIFY', 'i_TEMPERATURE_CLASSIFY')}
       ${numField('LLM_TEMPERATURE_RESPOND', cv(data, 'LLM_TEMPERATURE_RESPOND'), data.lang, 'f_LLM_TEMPERATURE_RESPOND', 'i_TEMPERATURE_RESPOND')}
       ${numField('LLM_TEMPERATURE_COMPLEX', cv(data, 'LLM_TEMPERATURE_COMPLEX'), data.lang, 'f_LLM_TEMPERATURE_COMPLEX', 'i_TEMPERATURE_COMPLEX')}
-      ${numField('LLM_REQUEST_TIMEOUT_MS', cv(data, 'LLM_REQUEST_TIMEOUT_MS'), data.lang, 'f_LLM_REQUEST_TIMEOUT_MS')}
+      ${numField('LLM_REQUEST_TIMEOUT_MS', cv(data, 'LLM_REQUEST_TIMEOUT_MS'), data.lang, 'f_LLM_REQUEST_TIMEOUT_MS', 'i_LLM_REQUEST_TIMEOUT_MS')}
     </div>
   </div>`
 
@@ -278,7 +278,7 @@ export function renderPipelineUnifiedSection(data: SectionData): string {
     </div>
     <div class="panel-body">
       <div class="panel-info">${t('sec_followup_info', data.lang)}</div>
-      ${boolField('FOLLOWUP_ENABLED', cv(data, 'FOLLOWUP_ENABLED') || 'false', data.lang, 'f_FOLLOWUP_ENABLED')}
+      ${boolField('FOLLOWUP_ENABLED', cv(data, 'FOLLOWUP_ENABLED') || 'false', data.lang, 'f_FOLLOWUP_ENABLED', 'i_FOLLOWUP_ENABLED')}
       ${numField('FOLLOWUP_DELAY_MINUTES', cv(data, 'FOLLOWUP_DELAY_MINUTES'), data.lang, 'f_FOLLOWUP_DELAY_MINUTES', 'i_FOLLOWUP_DELAY')}
       ${numField('FOLLOWUP_MAX_ATTEMPTS', cv(data, 'FOLLOWUP_MAX_ATTEMPTS'), data.lang, 'f_FOLLOWUP_MAX_ATTEMPTS', 'i_FOLLOWUP_MAX')}
       ${numField('FOLLOWUP_COLD_AFTER_ATTEMPTS', cv(data, 'FOLLOWUP_COLD_AFTER_ATTEMPTS'), data.lang, 'f_FOLLOWUP_COLD_AFTER_ATTEMPTS', 'i_FOLLOWUP_COLD')}
@@ -811,8 +811,115 @@ export const SECTION_REDIRECTS: Record<string, string> = {
   'email': 'channels/gmail',
 }
 
+// ═══════════════════════════════════════════
+// Dashboard section — overview with mock charts
+// ═══════════════════════════════════════════
+
+function renderDashboardSection(data: SectionData): string {
+  const lang = data.lang
+  const isEs = lang === 'es'
+
+  // Mock data for charts
+  const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
+  const daysEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const dayLabels = isEs ? days : daysEn
+  const convData = [12, 18, 15, 22, 28, 8, 5]
+  const msgData = [45, 62, 58, 71, 85, 32, 18]
+  const costData = [1.2, 1.8, 1.5, 2.1, 2.6, 0.9, 0.5]
+
+  const maxMsg = Math.max(...msgData)
+  const maxConv = Math.max(...convData)
+  const maxCost = Math.max(...costData)
+
+  // Bar chart helper (SVG)
+  function barChart(values: number[], max: number, color: string, labels: string[], prefix = '', suffix = ''): string {
+    const w = 100 / values.length
+    const barW = w * 0.6
+    const gap = w * 0.2
+    let bars = ''
+    let lbls = ''
+    for (let i = 0; i < values.length; i++) {
+      const h = max > 0 ? (values[i]! / max) * 80 : 0
+      const x = i * w + gap
+      const y = 90 - h
+      bars += `<rect x="${x}%" y="${y}%" width="${barW}%" height="${h}%" rx="3" fill="${color}" opacity="0.85"/>`
+      bars += `<text x="${x + barW / 2}%" y="${y - 2}%" text-anchor="middle" font-size="10" fill="var(--on-surface-dim)">${prefix}${values[i]}${suffix}</text>`
+      lbls += `<text x="${x + barW / 2}%" y="99%" text-anchor="middle" font-size="9" fill="var(--on-surface-dim)">${labels[i]}</text>`
+    }
+    return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:200px">${bars}${lbls}</svg>`
+  }
+
+  // KPI cards
+  const totalMsg = msgData.reduce((a, b) => a + b, 0)
+  const totalConv = convData.reduce((a, b) => a + b, 0)
+  const totalCost = costData.reduce((a, b) => a + b, 0)
+  const convRate = totalMsg > 0 ? ((totalConv / totalMsg) * 100).toFixed(1) : '0'
+
+  const activeModules = (data.moduleStates ?? []).filter(m => m.active).length
+  const totalModules = (data.moduleStates ?? []).length
+
+  return `<div class="dash-kpis">
+  <div class="dash-kpi">
+    <div class="dash-kpi-value">${totalMsg}</div>
+    <div class="dash-kpi-label">${isEs ? 'Mensajes (7d)' : 'Messages (7d)'}</div>
+  </div>
+  <div class="dash-kpi">
+    <div class="dash-kpi-value">${totalConv}</div>
+    <div class="dash-kpi-label">${isEs ? 'Conversiones (7d)' : 'Conversions (7d)'}</div>
+  </div>
+  <div class="dash-kpi">
+    <div class="dash-kpi-value">${convRate}%</div>
+    <div class="dash-kpi-label">${isEs ? 'Tasa de conversion' : 'Conversion rate'}</div>
+  </div>
+  <div class="dash-kpi">
+    <div class="dash-kpi-value">$${totalCost.toFixed(2)}</div>
+    <div class="dash-kpi-label">${isEs ? 'Gasto LLM (7d)' : 'LLM spend (7d)'}</div>
+  </div>
+  <div class="dash-kpi">
+    <div class="dash-kpi-value">${activeModules}/${totalModules}</div>
+    <div class="dash-kpi-label">${isEs ? 'Modulos activos' : 'Active modules'}</div>
+  </div>
+</div>
+
+<div class="dash-charts">
+  <div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${isEs ? 'Mensajes por dia' : 'Messages per day'}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${isEs ? 'Volumen de mensajes entrantes procesados por el agente en los ultimos 7 dias.' : 'Volume of incoming messages processed by the agent in the last 7 days.'}</div>
+      ${barChart(msgData, maxMsg, 'var(--primary)', dayLabels)}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${isEs ? 'Conversiones por dia' : 'Conversions per day'}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${isEs ? 'Leads que completaron una accion objetivo (agendar cita, solicitar cotizacion, etc.).' : 'Leads that completed a target action (book appointment, request quote, etc.).'}</div>
+      ${barChart(convData, maxConv, 'var(--success)', dayLabels)}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${isEs ? 'Gasto LLM por dia' : 'LLM spend per day'}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${isEs ? 'Costo estimado de las llamadas a proveedores de IA (Anthropic + Google).' : 'Estimated cost of AI provider calls (Anthropic + Google).'}</div>
+      ${barChart(costData, maxCost, 'var(--info)', dayLabels, '$')}
+    </div>
+  </div>
+</div>`
+}
+
 export function renderSection(section: string, data: SectionData): string | null {
   switch (section) {
+    case 'dashboard': return renderDashboardSection(data)
     case 'channels': return renderChannelsSection(data)
     case 'whatsapp': return renderWhatsappSection(data)
     // Unified LLM page (replaces apikeys, models, llm-limits, llm-cb)
@@ -1083,7 +1190,7 @@ function renderUsersSection(data: SectionData): string {
               <span>${lang === 'es' ? 'Importar CSV' : 'Import CSV'}</span>
             </button>
             <button type="button" class="import-mode-card" onclick="showImportStep('drive')">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 19.5h20L12 2z"/><path d="M17 19.5L22 10H12"/><path d="M7 19.5L2 10h10"/></svg>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
               <span>Google Sheets</span>
             </button>
           </div>

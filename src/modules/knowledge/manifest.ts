@@ -752,6 +752,7 @@ const manifest: ModuleManifest = {
         key: 'KNOWLEDGE_MAX_FILE_SIZE_MB',
         type: 'number',
         label: { es: 'Tamaño máximo de archivo (MB)', en: 'Max file size (MB)' },
+        info: { es: 'Tamaño máximo permitido para documentos subidos', en: 'Max allowed size for uploaded documents' },
       },
       {
         key: 'KNOWLEDGE_MAX_CORE_DOCS',
@@ -763,6 +764,7 @@ const manifest: ModuleManifest = {
         key: 'KNOWLEDGE_CACHE_TTL_MIN',
         type: 'number',
         label: { es: 'TTL cache Redis (minutos)', en: 'Redis cache TTL (minutes)' },
+        info: { es: 'Duración del caché para resultados de búsqueda', en: 'Cache duration for knowledge search results' },
       },
       {
         key: 'KNOWLEDGE_AUTO_DOWNGRADE_DAYS',
@@ -777,6 +779,7 @@ const manifest: ModuleManifest = {
         key: 'KNOWLEDGE_FAQ_SOURCE',
         type: 'select',
         label: { es: 'Fuente de FAQs', en: 'FAQ source' },
+        info: { es: 'Origen de datos para FAQs (manual, archivo o URL)', en: 'Data source for FAQs (manual, file path, or URL)' },
         options: [
           { value: 'manual', label: 'Manual (crear desde console)' },
           { value: 'sheets', label: 'Google Sheets (sync)' },
@@ -787,6 +790,7 @@ const manifest: ModuleManifest = {
         key: 'KNOWLEDGE_SYNC_ENABLED',
         type: 'boolean',
         label: { es: 'Sincronización habilitada', en: 'Sync enabled' },
+        info: { es: 'Habilita/deshabilita sync automático con fuentes externas', en: 'Enable/disable automatic sync with external sources' },
       },
       {
         key: 'KNOWLEDGE_EMBEDDING_ENABLED',

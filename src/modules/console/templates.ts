@@ -15,7 +15,6 @@ interface SidebarCategory {
 const CATEGORIES: SidebarCategory[] = [
   { id: 'channels', key: 'cat_channels' },
   { id: 'agent', key: 'cat_agent' },
-  { id: 'modules', key: 'cat_modules' },
   { id: 'system', key: 'cat_system' },
 ]
 
@@ -44,19 +43,21 @@ const ICONS = {
   brain: svgIcon('<path d="M9.5 2A5.5 5.5 0 0 0 5 7.5c0 1.58.7 3 1.81 4L12 21l5.19-9.5A5.48 5.48 0 0 0 19 7.5 5.5 5.5 0 0 0 13.5 2h-4z"/><path d="M12 2v19"/>'),
   server: svgIcon('<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>'),
   fallback: svgIcon('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'),
+  dashboard: svgIcon('<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>'),
 }
 
 const FIXED_SECTIONS: FixedSection[] = [
+  // Dashboard — overview with charts
+  { id: 'dashboard', key: 'sec_dashboard', icon: ICONS.dashboard, group: 'channels', order: 0 },
   // Channels — solo la pestaña unificada; los canales individuales se gestionan desde ahí
   { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'channels', order: 1 },
   // Contacts — right below channels
   { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'channels', order: 2 },
   // Agent — unified page with sub-tabs: knowledge, memory, identity, advanced
   { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'agent', order: 1 },
-  { id: 'pipeline', key: 'sec_pipeline_unified', icon: ICONS.pipeline, group: 'agent', order: 20 },
   // Herramientas — unified page with sub-tabs: tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps
   { id: 'herramientas', key: 'sec_herramientas', icon: svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), group: 'agent', order: 25 },
-  { id: 'modules', key: 'sec_modules', icon: ICONS.modules, group: 'modules', order: 99 },
+  { id: 'modules', key: 'sec_modules', icon: ICONS.modules, group: 'agent', order: 30 },
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
@@ -599,6 +600,30 @@ function renderSectionHeader(opts: PageOptions): string {
     const chName = opts.channelDisplayName ?? opts.channelSettingsId
     return `${breadcrumb}<div class="section-header">
       <div class="section-title">${configLabel} ${esc(chName)}</div>
+    </div>`
+  }
+
+  // Agente sub-tabs: 3rd level breadcrumb (Consola > Agente > SubTab)
+  if (!breadcrumb && opts.section === 'agente' && opts.agenteSubpage) {
+    const agenteLbl = t('sec_agente', opts.lang)
+    const subKey = `sec_agente_${opts.agenteSubpage}` as Parameters<typeof t>[0]
+    const subLbl = t(subKey, opts.lang)
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console/agente?lang=${opts.lang}">${agenteLbl}</a>${sep}
+      <span>${esc(subLbl)}</span>
+    </div>`
+  }
+
+  // Herramientas sub-tabs: 3rd level breadcrumb (Consola > Herramientas > SubTab)
+  if (!breadcrumb && opts.section === 'herramientas' && opts.herramientasSubpage) {
+    const herramientasLbl = t('sec_herramientas', opts.lang)
+    const subKey = `sec_herramientas_${opts.herramientasSubpage.replace(/-/g, '_')}` as Parameters<typeof t>[0]
+    const subLbl = t(subKey, opts.lang)
+    breadcrumb = `<div class="ch-breadcrumb">
+      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console/herramientas?lang=${opts.lang}">${herramientasLbl}</a>${sep}
+      <span>${esc(subLbl)}</span>
     </div>`
   }
 

@@ -2383,3 +2383,37 @@
   border-color: var(--primary, #FF5E0E);
   background: var(--surface-container, #f0f0f2);
 }
+
+/* ═══ Dashboard — KPI cards + chart grid ═══ */
+.dash-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.dash-kpi {
+  background: var(--surface-container-lowest, #fff);
+  border-radius: 0.75rem;
+  padding: 20px 16px;
+  text-align: center;
+}
+.dash-kpi-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--on-surface, #2d2d2d);
+  line-height: 1.2;
+}
+.dash-kpi-label {
+  font-size: 0.78rem;
+  color: var(--on-surface-dim, #86868b);
+  margin-top: 4px;
+}
+.dash-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+@media (max-width: 768px) {
+  .dash-kpis { grid-template-columns: repeat(2, 1fr); }
+  .dash-charts { grid-template-columns: 1fr; }
+}

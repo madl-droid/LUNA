@@ -331,30 +331,30 @@ const manifest: ModuleManifest = {
 
       // ── Defaults ──
       { key: '_div_defaults', type: 'divider', label: { es: 'Valores por defecto', en: 'Defaults' } },
-      { key: 'MEDILINK_DEFAULT_BRANCH_ID', type: 'text', label: { es: 'Sucursal por defecto (ID)', en: 'Default branch (ID)' }, width: 'half' },
-      { key: 'MEDILINK_DEFAULT_DURATION_MIN', type: 'number', label: { es: 'Duración cita (min)', en: 'Appointment duration (min)' }, min: 5, step: 5, unit: 'min', width: 'half' },
-      { key: 'MEDILINK_DEFAULT_STATUS_ID', type: 'text', label: { es: 'Estado para nuevas citas (ID)', en: 'Status for new appointments (ID)' } },
+      { key: 'MEDILINK_DEFAULT_BRANCH_ID', type: 'text', label: { es: 'Sucursal por defecto (ID)', en: 'Default branch (ID)' }, info: { es: 'ID de la sucursal/sede que se usa por defecto al agendar citas', en: 'Default branch/location ID used when scheduling appointments' }, width: 'half' },
+      { key: 'MEDILINK_DEFAULT_DURATION_MIN', type: 'number', label: { es: 'Duración cita (min)', en: 'Appointment duration (min)' }, info: { es: 'Duración por defecto de las citas en minutos', en: 'Default appointment duration in minutes' }, min: 5, step: 5, unit: 'min', width: 'half' },
+      { key: 'MEDILINK_DEFAULT_STATUS_ID', type: 'text', label: { es: 'Estado para nuevas citas (ID)', en: 'Status for new appointments (ID)' }, info: { es: 'ID del estado que se asigna a las citas recién creadas', en: 'Status ID assigned to newly created appointments' } },
 
       // ── Rate Limiting ──
       { key: '_div_rate', type: 'divider', label: { es: 'Rate Limiting', en: 'Rate Limiting' } },
-      { key: 'MEDILINK_RATE_LIMIT_RPM', type: 'number', label: { es: 'Requests por minuto', en: 'Requests per minute' }, min: 1, max: 100, unit: 'req/min', width: 'half' },
-      { key: 'MEDILINK_API_TIMEOUT_MS', type: 'number', label: { es: 'Timeout', en: 'Timeout' }, min: 1000, max: 60000, unit: 'ms', width: 'half' },
+      { key: 'MEDILINK_RATE_LIMIT_RPM', type: 'number', label: { es: 'Requests por minuto', en: 'Requests per minute' }, info: { es: 'Límite de llamadas a la API por minuto (rate limiting)', en: 'Max API calls per minute (rate limiting)' }, min: 1, max: 100, unit: 'req/min', width: 'half' },
+      { key: 'MEDILINK_API_TIMEOUT_MS', type: 'number', label: { es: 'Timeout', en: 'Timeout' }, info: { es: 'Tiempo máximo de espera para cada llamada a la API', en: 'Max wait time for each API call' }, min: 1000, max: 60000, unit: 'ms', width: 'half' },
 
       // ── Cache / Reference data ──
       { key: '_div_cache', type: 'divider', label: { es: 'Datos de referencia', en: 'Reference data' } },
-      { key: 'MEDILINK_REFERENCE_REFRESH_DAYS', type: 'number', label: { es: 'Refresh automático (días)', en: 'Auto refresh (days)' }, min: 1, max: 90, unit: 'días' },
+      { key: 'MEDILINK_REFERENCE_REFRESH_DAYS', type: 'number', label: { es: 'Refresh automático (días)', en: 'Auto refresh (days)' }, info: { es: 'Cada cuántos días se recargan profesionales, tratamientos y sucursales', en: 'How often to reload professionals, treatments and branches' }, min: 1, max: 90, unit: 'días' },
       { key: 'MEDILINK_AVAILABILITY_CACHE_TTL_MS', type: 'number', label: { es: 'Cache disponibilidad (ms)', en: 'Availability cache (ms)' }, min: 60000, unit: 'ms', info: { es: 'TTL del cache de disponibilidad. Se invalida automáticamente por webhook.', en: 'Availability cache TTL. Automatically invalidated by webhook.' } },
 
       // ── Follow-up ──
       { key: '_div_followup', type: 'divider', label: { es: 'Seguimiento de citas', en: 'Appointment follow-up' } },
-      { key: 'MEDILINK_FOLLOWUP_ENABLED', type: 'boolean', label: { es: 'Habilitado', en: 'Enabled' } },
-      { key: 'MEDILINK_FOLLOWUP_TOUCH1_DAYS_BEFORE', type: 'number', label: { es: 'Touch 1: días antes (llamada)', en: 'Touch 1: days before (call)' }, min: 1, max: 30, unit: 'días', width: 'half' },
-      { key: 'MEDILINK_FOLLOWUP_FALLBACK_A_HOURS', type: 'number', label: { es: 'Fallback A: horas después de llamada', en: 'Fallback A: hours after call' }, min: 1, max: 24, unit: 'h', width: 'half' },
-      { key: 'MEDILINK_FOLLOWUP_FALLBACK_B_DAYS_BEFORE', type: 'number', label: { es: 'Fallback B: días antes (2da llamada)', en: 'Fallback B: days before (2nd call)' }, min: 1, max: 30, unit: 'días', width: 'half' },
-      { key: 'MEDILINK_FOLLOWUP_TOUCH3_HOURS_BEFORE', type: 'number', label: { es: 'Touch 3: horas antes (instrucciones)', en: 'Touch 3: hours before (prep)' }, min: 1, max: 72, unit: 'h', width: 'half' },
-      { key: 'MEDILINK_FOLLOWUP_TOUCH4_HOURS_BEFORE', type: 'number', label: { es: 'Touch 4: horas antes (recordatorio)', en: 'Touch 4: hours before (reminder)' }, min: 1, max: 24, unit: 'h', width: 'half' },
-      { key: 'MEDILINK_FOLLOWUP_NOSHOW_HOURS_AFTER', type: 'number', label: { es: 'No-show: horas después', en: 'No-show: hours after' }, min: 1, max: 24, unit: 'h', width: 'half' },
-      { key: 'MEDILINK_FOLLOWUP_REACTIVATION_DAYS', type: 'number', label: { es: 'Reactivación: días después', en: 'Reactivation: days after' }, min: 1, max: 90, unit: 'días' },
+      { key: 'MEDILINK_FOLLOWUP_ENABLED', type: 'boolean', label: { es: 'Habilitado', en: 'Enabled' }, info: { es: 'Activa la secuencia automática de seguimiento de citas', en: 'Enable automatic appointment follow-up sequence' } },
+      { key: 'MEDILINK_FOLLOWUP_TOUCH1_DAYS_BEFORE', type: 'number', label: { es: 'Touch 1: días antes (llamada)', en: 'Touch 1: days before (call)' }, info: { es: 'Días antes de la cita para el primer recordatorio por llamada', en: 'Days before appointment for first reminder call' }, min: 1, max: 30, unit: 'días', width: 'half' },
+      { key: 'MEDILINK_FOLLOWUP_FALLBACK_A_HOURS', type: 'number', label: { es: 'Fallback A: horas después de llamada', en: 'Fallback A: hours after call' }, info: { es: 'Horas después de la llamada para enviar WhatsApp si no contestó', en: 'Hours after call to send WhatsApp if no answer' }, min: 1, max: 24, unit: 'h', width: 'half' },
+      { key: 'MEDILINK_FOLLOWUP_FALLBACK_B_DAYS_BEFORE', type: 'number', label: { es: 'Fallback B: días antes (2da llamada)', en: 'Fallback B: days before (2nd call)' }, info: { es: 'Días antes de la cita para segundo intento de llamada', en: 'Days before appointment for second call attempt' }, min: 1, max: 30, unit: 'días', width: 'half' },
+      { key: 'MEDILINK_FOLLOWUP_TOUCH3_HOURS_BEFORE', type: 'number', label: { es: 'Touch 3: horas antes (instrucciones)', en: 'Touch 3: hours before (prep)' }, info: { es: 'Horas antes de la cita para enviar instrucciones preparatorias', en: 'Hours before appointment to send prep instructions' }, min: 1, max: 72, unit: 'h', width: 'half' },
+      { key: 'MEDILINK_FOLLOWUP_TOUCH4_HOURS_BEFORE', type: 'number', label: { es: 'Touch 4: horas antes (recordatorio)', en: 'Touch 4: hours before (reminder)' }, info: { es: 'Horas antes de la cita para el recordatorio final', en: 'Hours before appointment for final reminder' }, min: 1, max: 24, unit: 'h', width: 'half' },
+      { key: 'MEDILINK_FOLLOWUP_NOSHOW_HOURS_AFTER', type: 'number', label: { es: 'No-show: horas después', en: 'No-show: hours after' }, info: { es: 'Horas después de la cita para enviar mensaje de no-show', en: 'Hours after appointment to send no-show message' }, min: 1, max: 24, unit: 'h', width: 'half' },
+      { key: 'MEDILINK_FOLLOWUP_REACTIVATION_DAYS', type: 'number', label: { es: 'Reactivación: días después', en: 'Reactivation: days after' }, info: { es: 'Días después del no-show para intentar reagendar la cita', en: 'Days after no-show to attempt rescheduling' }, min: 1, max: 90, unit: 'días' },
 
       // ── Security ──
       { key: '_div_security', type: 'divider', label: { es: 'Seguridad', en: 'Security' } },
