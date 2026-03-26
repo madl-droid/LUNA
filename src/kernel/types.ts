@@ -71,6 +71,8 @@ export interface IncomingHookPayload {
   channelName: string
   channelMessageId: string
   from: string
+  /** Phone number resolved from LID mapping (WhatsApp only) */
+  resolvedPhone?: string
   timestamp: Date
   content: { type: string; text?: string; mediaUrl?: string; caption?: string }
   attachments?: Array<{

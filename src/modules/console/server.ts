@@ -1064,12 +1064,34 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         ? data.moduleStates.find(m => m.name === channelSettingsId)?.console?.title?.[lang] ?? channelSettingsId
         : undefined
 
-      // Build contacts submenu data
-      const contactLists = sectionData.usersData?.configs?.map(c => ({
-        listType: c.listType,
-        displayName: c.displayName,
-        count: sectionData.usersData?.counts?.[c.listType] ?? 0,
-      })) ?? []
+      // Build contacts submenu data (always load for sidebar, even on non-contacts pages)
+      let contactLists: Array<{ listType: string; displayName: string; count: number; isEnabled?: boolean }> = []
+      if (sectionData.usersData) {
+        contactLists = sectionData.usersData.configs.map(c => ({
+          listType: c.listType,
+          displayName: c.displayName,
+          count: sectionData.usersData?.counts?.[c.listType] ?? 0,
+          isEnabled: c.isEnabled,
+        }))
+      } else {
+        // Fetch minimal list data for sidebar even when not on contacts page
+        try {
+          const dataFn = registry.getOptional<() => Promise<unknown>>('users:sectionData')
+          if (dataFn) {
+            const ud = await dataFn() as Record<string, unknown>
+            if (ud) {
+              const configs = (ud.configs ?? []) as Array<{ listType: string; displayName: string; isEnabled: boolean }>
+              const counts = (ud.counts ?? {}) as Record<string, number>
+              contactLists = configs.map(c => ({
+                listType: c.listType,
+                displayName: c.displayName,
+                count: counts[c.listType] ?? 0,
+                isEnabled: c.isEnabled,
+              }))
+            }
+          }
+        } catch { /* users module not available */ }
+      }
 
       const html = pageLayout({
         section: sidebarSection,
