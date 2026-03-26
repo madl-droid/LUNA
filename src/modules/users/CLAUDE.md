@@ -3,16 +3,17 @@
 Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede hacer el agente con él.
 
 ## Archivos
-- `types.ts` — UserType, UserResolution, UserPermissions, UserListEntry, UserListConfig
+- `types.ts` — UserType, UserResolution, UserPermissions, UserListEntry, UserListConfig, SyncConfig (webhook fields)
 - `index.ts` — exports públicos (resolveUserType, getUserPermissions, invalidateUserCache)
-- `manifest.ts` — ModuleManifest, configSchema, init/stop, console fields
+- `manifest.ts` — ModuleManifest, configSchema, init/stop, console fields, webhook table init
+- `webhook-handler.ts` — registro de contactos via webhook: auth, upsert contacto, normalización phone, verificación WhatsApp, outbound
 - `resolver.ts` — resolveUserType() con cache Redis → DB lookup → lead fallback
 - `permissions.ts` — getUserPermissions(), ensureAdminHasAccess()
 - `cache.ts` — UserCache: get/set/invalidate en Redis (key: user_type:{senderId}:{channel})
 - `db.ts` — UsersDb: DDL, CRUD, resolución SQL, config de listas
 - `sync/sheet-sync.ts` — Skeleton para Google Sheets (requiere módulo Google OAuth)
 - `sync/csv-import.ts` — Parser CSV manual + import masivo
-- `sync/api-handler.ts` — API routes CRUD bajo /console/api/users/
+- `sync/api-handler.ts` — API routes CRUD + webhook endpoints bajo /console/api/users/
 
 ## Manifest
 - **type:** core-module
@@ -40,6 +41,11 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 - `POST trigger-sync` — disparar sync desde Google Sheet
 - `POST config-list` — get/get-all/upsert config de listas
 - `POST resolve` — test de resolución (debug)
+- **Webhook (coworker):**
+- `POST webhook/register` — registrar contacto (auth: Bearer token, body: {email?, phone?, name?, campaign})
+- `GET webhook/stats` — estadísticas (éxitos, errores, sin campaña)
+- `GET webhook/log?limit=50&offset=0` — log de intentos paginado
+- `POST webhook/regenerate-token` — regenerar token
 
 ## Algoritmo de resolución
 1. Cache Redis (TTL configurable, default 12h)
@@ -58,3 +64,14 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 - Sheet sync solo funciona si hay módulo Google OAuth activo
 - Al cambiar permisos de una lista, llamar cache.invalidateAll()
 - **Helpers HTTP y config**: `sync/api-handler.ts` usa `jsonResponse`, `parseBody` de `kernel/http-helpers.js`. configSchema usa `numEnv`, `boolEnv` de `kernel/config-helpers.js`. NO redefinir localmente.
+
+## Webhook — registro externo de contactos (coworker)
+- Endpoint: `POST /console/api/users/webhook/register` (auth: Bearer token)
+- Config almacenada en `syncConfig` de la lista coworker (webhookEnabled, webhookToken, webhookPreferredChannel)
+- Settings visibles en `/console/contacts` → config de coworker
+- Acepta: email, phone, name, campaign (keyword, visible_id, o UUID)
+- Normaliza phone a formato E.164 (sin +) para WhatsApp JID
+- Verifica si phone está en WhatsApp via Baileys `onWhatsApp()`. Si no → guarda como voice only
+- Crea contacto con `contact_origin = 'outbound'` o actualiza datos del existente
+- SIEMPRE dispara `message:send` al canal preferido (nuevo o existente)
+- Tabla log: `webhook_lead_log`

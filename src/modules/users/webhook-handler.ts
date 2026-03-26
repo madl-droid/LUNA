@@ -1,61 +1,59 @@
-// LUNA — Module: lead-scoring — Webhook Handler
-// Registro de leads via webhook externo.
+// LUNA — Module: users — Webhook Handler
+// Registro de contactos (coworker) via webhook externo.
 // Crea/actualiza contactos con contact_origin = 'outbound', vincula canales,
 // atribuye campaña, verifica WhatsApp, dispara primer contacto.
 
 import crypto from 'node:crypto'
 import type { Pool } from 'pg'
 import type { Registry } from '../../kernel/registry.js'
-import * as cs from '../../kernel/config-store.js'
 import pino from 'pino'
-import type {
-  WebhookLeadsConfig,
-  WebhookRegisterBody,
-  WebhookRegisterResult,
-} from './types.js'
+
+export interface WebhookLeadsConfig {
+  WEBHOOK_LEADS_ENABLED: boolean
+  WEBHOOK_LEADS_TOKEN: string
+  WEBHOOK_LEADS_PREFERRED_CHANNEL: string
+}
+
+export interface WebhookRegisterBody {
+  email?: string
+  phone?: string
+  name?: string
+  campaign: string
+}
+
+export interface WebhookRegisterResult {
+  ok: boolean
+  contactId: string
+  channel: string
+  campaignId?: string
+  campaignName?: string
+  warning?: string
+}
 
 const logger = pino({ name: 'webhook-leads' })
 
 // ═══════════════════════════════════════════
-// Config helpers
+// Config helpers — reads from coworker syncConfig
 // ═══════════════════════════════════════════
 
-const CONFIG_KEYS = {
-  ENABLED: 'WEBHOOK_LEADS_ENABLED',
-  TOKEN: 'WEBHOOK_LEADS_TOKEN',
-  PREFERRED_CHANNEL: 'WEBHOOK_LEADS_PREFERRED_CHANNEL',
-} as const
+export async function loadWebhookConfig(registry: Registry): Promise<WebhookLeadsConfig> {
+  type UDb = { getListConfig(lt: string): Promise<{ syncConfig: Record<string, unknown> } | null> }
+  const usersDb = registry.getOptional<UDb>('users:db')
+  if (!usersDb) return { WEBHOOK_LEADS_ENABLED: false, WEBHOOK_LEADS_TOKEN: '', WEBHOOK_LEADS_PREFERRED_CHANNEL: 'auto' }
 
-export async function loadWebhookConfig(db: Pool): Promise<WebhookLeadsConfig> {
-  const enabled = await cs.get(db, CONFIG_KEYS.ENABLED)
-  const token = await cs.get(db, CONFIG_KEYS.TOKEN)
-  const preferredChannel = await cs.get(db, CONFIG_KEYS.PREFERRED_CHANNEL)
+  const cfg = await usersDb.getListConfig('coworker')
+  if (!cfg) return { WEBHOOK_LEADS_ENABLED: false, WEBHOOK_LEADS_TOKEN: '', WEBHOOK_LEADS_PREFERRED_CHANNEL: 'auto' }
+
+  const sc = cfg.syncConfig
   return {
-    WEBHOOK_LEADS_ENABLED: enabled === 'true',
-    WEBHOOK_LEADS_TOKEN: token ?? '',
-    WEBHOOK_LEADS_PREFERRED_CHANNEL: preferredChannel || 'auto',
+    WEBHOOK_LEADS_ENABLED: sc.webhookEnabled === true,
+    WEBHOOK_LEADS_TOKEN: (sc.webhookToken as string) ?? '',
+    WEBHOOK_LEADS_PREFERRED_CHANNEL: (sc.webhookPreferredChannel as string) || 'auto',
   }
 }
 
 export function generateToken(): string {
   return crypto.randomBytes(32).toString('hex')
-}
-
-export async function ensureToken(db: Pool): Promise<string> {
-  const existing = await cs.get(db, CONFIG_KEYS.TOKEN)
-  if (existing) return existing
-
-  const token = generateToken()
-  await cs.set(db, CONFIG_KEYS.TOKEN, token, true)
-
-  const enabled = await cs.get(db, CONFIG_KEYS.ENABLED)
-  if (enabled === null) await cs.set(db, CONFIG_KEYS.ENABLED, 'false')
-
-  const channel = await cs.get(db, CONFIG_KEYS.PREFERRED_CHANNEL)
-  if (channel === null) await cs.set(db, CONFIG_KEYS.PREFERRED_CHANNEL, 'auto')
-
-  logger.info('Webhook token auto-generated')
-  return token
 }
 
 // ═══════════════════════════════════════════

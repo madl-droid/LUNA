@@ -492,5 +492,137 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
         }
       },
     },
+
+    // ─── Webhook endpoints (coworker lead registration) ───
+
+    // POST /console/api/users/webhook/register — External endpoint, auth via Bearer token
+    {
+      method: 'POST',
+      path: 'webhook/register',
+      handler: async (req, res) => {
+        try {
+          const { loadWebhookConfig, extractBearerToken, registerLead, logWebhookAttempt } = await import('../webhook-handler.js')
+          const webhookConfig = await loadWebhookConfig(registry)
+
+          if (!webhookConfig.WEBHOOK_LEADS_ENABLED) {
+            return error(res, 'Webhook deshabilitado', 403)
+          }
+
+          const token = extractBearerToken(req.headers['authorization'])
+          if (!token || token !== webhookConfig.WEBHOOK_LEADS_TOKEN) {
+            return error(res, 'Token de autorización inválido', 401)
+          }
+
+          const body = await parseBody<{
+            email?: string; phone?: string; name?: string; campaign: string
+          }>(req)
+          if (!body.campaign) {
+            return error(res, 'Campo "campaign" es obligatorio (keyword o ID de campaña)')
+          }
+          if (!body.email && !body.phone) {
+            return error(res, 'Se requiere al menos "email" o "phone"')
+          }
+
+          const pool = registry.getDb()
+          const result = await registerLead(body, pool, registry, webhookConfig)
+          json(res, result, 201)
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          logger.error({ err }, 'Webhook register failed')
+          try {
+            const { logWebhookAttempt } = await import('../webhook-handler.js')
+            await logWebhookAttempt(registry.getDb(), {
+              campaignKeyword: undefined, campaignId: null, contactId: null,
+              channelUsed: null, success: false, errorMessage: errMsg,
+            })
+          } catch { /* non-critical */ }
+          error(res, errMsg)
+        }
+      },
+    },
+
+    // GET /console/api/users/webhook/stats
+    {
+      method: 'GET',
+      path: 'webhook/stats',
+      handler: async (_req, res) => {
+        try {
+          const pool = registry.getDb()
+          const result = await pool.query(`
+            SELECT
+              COUNT(*) FILTER (WHERE success = true)::int AS total_success,
+              COUNT(*) FILTER (WHERE success = false)::int AS total_errors,
+              COUNT(*) FILTER (WHERE campaign_id IS NULL AND success = true)::int AS no_campaign,
+              COUNT(*)::int AS total,
+              MIN(created_at) AS first_at,
+              MAX(created_at) AS last_at
+            FROM webhook_lead_log
+          `)
+          const row = result.rows[0]
+          json(res, {
+            totalSuccess: row?.total_success ?? 0,
+            totalErrors: row?.total_errors ?? 0,
+            noCampaign: row?.no_campaign ?? 0,
+            total: row?.total ?? 0,
+            firstAt: row?.first_at?.toISOString() ?? null,
+            lastAt: row?.last_at?.toISOString() ?? null,
+          })
+        } catch (err) {
+          error(res, String(err), 500)
+        }
+      },
+    },
+
+    // GET /console/api/users/webhook/log?limit=50&offset=0
+    {
+      method: 'GET',
+      path: 'webhook/log',
+      handler: async (req, res) => {
+        try {
+          const pool = registry.getDb()
+          const q = new URL(req.url!, `http://${req.headers['host'] ?? 'localhost'}`).searchParams
+          const limit = Math.min(parseInt(q.get('limit') ?? '50', 10), 200)
+          const offset = parseInt(q.get('offset') ?? '0', 10)
+
+          const result = await pool.query(
+            `SELECT id, email, phone, display_name, campaign_keyword, campaign_id,
+                    contact_id, channel_used, success, error_message, created_at
+             FROM webhook_lead_log ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+            [limit, offset],
+          )
+          const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM webhook_lead_log`)
+          json(res, { entries: result.rows, total: countResult.rows[0]?.total ?? 0 })
+        } catch (err) {
+          error(res, String(err), 500)
+        }
+      },
+    },
+
+    // POST /console/api/users/webhook/regenerate-token
+    {
+      method: 'POST',
+      path: 'webhook/regenerate-token',
+      handler: async (_req, res) => {
+        try {
+          const { generateToken } = await import('../webhook-handler.js')
+          const newToken = generateToken()
+
+          // Update coworker syncConfig with new token
+          const existing = await db.getListConfig('coworker')
+          if (!existing) return error(res, 'Coworker config not found', 404)
+
+          const syncCfg = { ...existing.syncConfig, webhookToken: newToken }
+          await db.upsertListConfig('coworker', existing.displayName, existing.permissions, {
+            isEnabled: existing.isEnabled,
+            syncConfig: syncCfg,
+          })
+          await cache.invalidateAll()
+
+          json(res, { ok: true, token: newToken })
+        } catch (err) {
+          error(res, String(err), 500)
+        }
+      },
+    },
   ]
 }

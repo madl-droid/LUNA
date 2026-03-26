@@ -134,6 +134,10 @@ const manifest: ModuleManifest = {
       return { configs, usersByType, counts, channels, tools, activeModules, knowledgeCategories }
     })
 
+    // Initialize webhook tables
+    const { ensureWebhookTables } = await import('./webhook-handler.js')
+    await ensureWebhookTables(registry.getDb())
+
     // Mount API routes (for external/programmatic access only)
     const apiRoutes = createApiRoutes(registry, db, cache)
     if (manifest.console) {

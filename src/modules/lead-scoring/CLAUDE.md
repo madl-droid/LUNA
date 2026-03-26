@@ -3,9 +3,8 @@
 Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2G) o criterios custom. Extraccion natural por LLM, scoring por codigo, UI personalizable en console.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, console (apiRoutes + fields webhook), servicios, campaign init, webhook init
-- `webhook-handler.ts` — registro de leads via webhook: auth, upsert contacto, normalización phone, verificación WhatsApp, outbound
-- `types.ts` — FrameworkType, FrameworkStage, QualifyingConfig, ScoreResult, AutoSignalDefinition, LeadSummary, WebhookLeadsConfig, WebhookRegisterBody
+- `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios, campaign init
+- `types.ts` — FrameworkType, FrameworkStage, QualifyingConfig, ScoreResult, AutoSignalDefinition, LeadSummary (con campaña)
 - `frameworks.ts` — presets CHAMP, SPIN, CHAMP+Gov con stages, criterios y disqualify reasons
 - `scoring-engine.ts` — motor de scoring: calcula puntos por stage, transiciones, merge de datos, getCurrentStage()
 - `config-store.ts` — lee/escribe instance/qualifying.json, hot-reload, applyFramework(), validacion
@@ -69,11 +68,6 @@ Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2
 - **Stats:**
 - `GET /campaign-stats` — entries + conversiones por campaña + "sin campaña"
 - `GET /contact-campaigns?contactId=X` — historial de campañas de un contacto
-- **Webhook (registro externo de leads):**
-- `POST /webhook/register` — registrar lead (auth: Bearer token, body: {email?, phone?, name?, campaign})
-- `GET /webhook/stats` — estadísticas del webhook (éxitos, errores, sin campaña)
-- `GET /webhook/log?limit=50&offset=0` — log de intentos paginado
-- `POST /webhook/regenerate-token` — regenerar token de autorización
 
 ## Campañas — subsistema de tracking
 - 1 keyword por campaña (frase de matching, puede estar dentro de un párrafo)
@@ -87,20 +81,6 @@ Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2
 - contact_campaigns: historial de todas las campañas de un contacto
 - Conversión atribuida a la ÚLTIMA campaña
 - Stats: entries (contactos únicos) + conversiones por campaña + "sin campaña"
-
-## Console fields (settings tab)
-- `WEBHOOK_LEADS_ENABLED` (boolean) — toggle on/off del webhook
-- `WEBHOOK_LEADS_TOKEN` (secret) — token Bearer auto-generado (AES-256-GCM)
-- `WEBHOOK_LEADS_PREFERRED_CHANNEL` (select) — auto/whatsapp/email/google-chat
-
-## Webhook — registro externo de leads
-- Endpoint: `POST /console/api/lead-scoring/webhook/register` (auth: Bearer token)
-- Acepta: email, phone, name, campaign (keyword, visible_id, o UUID)
-- Normaliza phone a formato E.164 (sin +) para WhatsApp JID
-- Verifica si phone está en WhatsApp via Baileys `onWhatsApp()`. Si no → guarda como voice only
-- Crea contacto con `contact_origin = 'outbound'` o actualiza datos del existente
-- SIEMPRE dispara `message:send` al canal preferido (nuevo o existente)
-- Tabla log: `webhook_lead_log`
 
 ## Tablas DB del subsistema de campañas
 - `campaigns` — tabla base (existente) + columnas nuevas: visible_id, match_max_rounds, allowed_channels, prompt_context, updated_at
