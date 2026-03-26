@@ -493,12 +493,13 @@ async function triggerOutbound(
   campaignName: string | null,
 ): Promise<void> {
   const displayName = name?.trim()
+  const hasCampaign = campaignName && campaignName !== 'Sin campaña'
   let greeting: string
-  if (displayName && campaignName) {
+  if (displayName && hasCampaign) {
     greeting = `Hola ${displayName}, te contactamos respecto a ${campaignName}. ¿En qué podemos ayudarte?`
   } else if (displayName) {
     greeting = `Hola ${displayName}, ¿en qué podemos ayudarte?`
-  } else if (campaignName) {
+  } else if (hasCampaign) {
     greeting = `Hola, te contactamos respecto a ${campaignName}. ¿En qué podemos ayudarte?`
   } else {
     greeting = 'Hola, ¿en qué podemos ayudarte?'
