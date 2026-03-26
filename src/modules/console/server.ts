@@ -370,8 +370,8 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         const userPermUpdates: Record<string, string> = {}
         for (const [k, v] of Object.entries(body)) {
           if (k.startsWith('_')) continue
-          // Route perm_* and unregisteredBehavior fields to users module
-          if (k.startsWith('perm_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
+          // Route user/contact config fields to users module
+          if (k.startsWith('perm_') || k.startsWith('mod_') || k.startsWith('tool_') || k.startsWith('sub_') || k.startsWith('kcat_') || k.startsWith('assignment_') || k.startsWith('disable_') || k.startsWith('list_enabled_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
             userPermUpdates[k] = v
           } else {
             updates[k] = v
@@ -394,62 +394,73 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
               const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
               const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
               if (usersDb && usersCache) {
-                // Group perm fields by list type: perm_{listType}_tool_{name}, perm_{listType}_subagents, etc.
-                const listUpdates = new Map<string, { tools: string[]; skills: string[]; subagents: boolean }>()
+                // Collect per-list updates from form fields
+                const up = userPermUpdates
+                const listsToUpdate = new Set<string>()
 
-                for (const [k, v] of Object.entries(userPermUpdates)) {
-                  const toolMatch = k.match(/^perm_(.+)_tool_(.+)$/)
-                  if (toolMatch) {
-                    const lt = toolMatch[1]!
-                    if (!listUpdates.has(lt)) listUpdates.set(lt, { tools: [], skills: [], subagents: false })
-                    if (v === 'on') listUpdates.get(lt)!.tools.push(toolMatch[2]!)
-                    continue
-                  }
-                  const allToolsMatch = k.match(/^perm_(.+)_tools_all$/)
-                  if (allToolsMatch && v === 'on') {
-                    const lt = allToolsMatch[1]!
-                    if (!listUpdates.has(lt)) listUpdates.set(lt, { tools: [], skills: [], subagents: false })
-                    listUpdates.get(lt)!.tools = ['*']
-                    continue
-                  }
-                  const subMatch = k.match(/^perm_(.+)_subagents$/)
-                  if (subMatch) {
-                    const lt = subMatch[1]!
-                    if (!listUpdates.has(lt)) listUpdates.set(lt, { tools: [], skills: [], subagents: false })
-                    listUpdates.get(lt)!.subagents = v === 'on'
-                    continue
-                  }
+                // Identify all list types mentioned in the form
+                for (const k of Object.keys(up)) {
+                  const m = k.match(/^(?:mod|tool|sub|kcat|assignment_enabled|assignment_prompt|disable|list_enabled|perm)_([^_]+)/)
+                  if (m) listsToUpdate.add(m[1]!)
                 }
 
-                for (const [lt, perms] of listUpdates) {
+                for (const lt of listsToUpdate) {
                   const existing = await usersDb.getListConfig(lt)
-                  if (existing) {
-                    await usersDb.upsertListConfig(lt, existing.displayName, {
-                      ...perms, allAccess: lt === 'admin',
-                    }, {
-                      isEnabled: existing.isEnabled,
-                      unregisteredBehavior: userPermUpdates['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' ?? existing.unregisteredBehavior,
-                      unregisteredMessage: userPermUpdates['unregisteredMessage'] ?? existing.unregisteredMessage,
-                      maxUsers: existing.maxUsers,
-                    })
+                  if (!existing) continue
+
+                  // Build tools array from tool_* fields
+                  const tools: string[] = []
+                  for (const [k, v] of Object.entries(up)) {
+                    const tm = k.match(new RegExp(`^tool_${lt}_(.+)$`))
+                    if (tm && v === 'on') tools.push(tm[1]!)
                   }
+
+                  // Subagents
+                  const subagents = up[`sub_${lt}`] === 'on'
+
+                  // Knowledge categories
+                  const kCats: string[] = []
+                  for (const [k, v] of Object.entries(up)) {
+                    const km = k.match(new RegExp(`^kcat_${lt}_(.+)$`))
+                    if (km && v === 'on') kCats.push(km[1]!)
+                  }
+
+                  // List enabled
+                  const isEnabled = up[`list_enabled_${lt}`] === 'true' || up[`list_enabled_${lt}`] === 'on'
+
+                  await usersDb.upsertListConfig(lt, existing.displayName, {
+                    tools: tools.length > 0 ? tools : existing.permissions.tools,
+                    skills: existing.permissions.skills,
+                    subagents,
+                    allAccess: lt === 'admin',
+                  }, {
+                    isEnabled: up[`list_enabled_${lt}`] !== undefined ? isEnabled : existing.isEnabled,
+                    knowledgeCategories: kCats,
+                    assignmentEnabled: up[`assignment_enabled_${lt}`] === 'on',
+                    assignmentPrompt: up[`assignment_prompt_${lt}`] ?? existing.assignmentPrompt,
+                    disableBehavior: up[`disable_${lt}_behavior`] ?? existing.disableBehavior,
+                    disableTargetList: up[`disable_${lt}_target`] ?? existing.disableTargetList,
+                    unregisteredBehavior: lt === 'lead' && up['unregisteredBehavior'] ? up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' : existing.unregisteredBehavior,
+                    unregisteredMessage: lt === 'lead' && up['unregisteredMessage'] !== undefined ? up['unregisteredMessage'] : existing.unregisteredMessage,
+                    maxUsers: existing.maxUsers,
+                  })
                 }
 
-                // Handle unregistered behavior without permission changes
-                if (userPermUpdates['unregisteredBehavior'] && listUpdates.size === 0) {
+                // Handle unregistered behavior without per-list changes
+                if (up['unregisteredBehavior'] && listsToUpdate.size === 0) {
                   const leadCfg = await usersDb.getListConfig('lead')
                   if (leadCfg) {
                     await usersDb.upsertListConfig('lead', leadCfg.displayName, leadCfg.permissions, {
                       isEnabled: leadCfg.isEnabled,
-                      unregisteredBehavior: userPermUpdates['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads',
-                      unregisteredMessage: userPermUpdates['unregisteredMessage'] ?? leadCfg.unregisteredMessage,
+                      unregisteredBehavior: up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads',
+                      unregisteredMessage: up['unregisteredMessage'] ?? leadCfg.unregisteredMessage,
                       maxUsers: leadCfg.maxUsers,
                     })
                   }
                 }
 
                 await usersCache.invalidateAll()
-                logger.info({ lists: [...listUpdates.keys()] }, 'User permissions saved')
+                logger.info({ lists: [...listsToUpdate] }, 'Contact list config saved')
               }
             } catch (err) {
               logger.error({ err }, 'Failed to save user permissions')
@@ -771,6 +782,61 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           logger.error({ err }, 'Failed to merge users')
         }
         res.writeHead(302, { Location: `/console/users?flash=users_merged&lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/create-list') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          if (!usersDb) throw new Error('Users module not available')
+
+          const listName = body['listName']?.trim()
+          const listDescription = body['listDescription']?.trim()
+          if (!listName) throw new Error('List name is required')
+          if (!listDescription || listDescription.length < 80 || listDescription.length > 200) {
+            throw new Error('Description must be 80-200 characters')
+          }
+
+          // Check max 5 active
+          const configs = await usersDb.getAllListConfigs()
+          if (configs.filter(c => c.isEnabled).length >= 5) throw new Error('Maximum 5 active lists')
+
+          // Generate list type from name (kebab-case)
+          const listType = listName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+          if (configs.find(c => c.listType === listType)) throw new Error('A list with this name already exists')
+
+          await usersDb.upsertListConfig(listType, listName, { tools: [], skills: [], subagents: false, allAccess: false }, {
+            isEnabled: true,
+            description: listDescription,
+          })
+
+          logger.info({ listType, listName }, 'Custom contact list created')
+        } catch (err) {
+          logger.error({ err }, 'Failed to create custom list')
+        }
+        res.writeHead(302, { Location: `/console/contacts?lang=${lang}` })
+        res.end()
+        return true
+      }
+
+      if (localUrl === '/users/delete-list') {
+        try {
+          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+          if (!usersDb || !usersCache) throw new Error('Users module not available')
+
+          const listType = body['listType']
+          if (!listType) throw new Error('Missing listType')
+
+          await usersDb.deleteListConfig(listType)
+          await usersCache.invalidateAll()
+
+          logger.info({ listType }, 'Custom contact list deleted')
+        } catch (err) {
+          logger.error({ err }, 'Failed to delete custom list')
+        }
+        res.writeHead(302, { Location: `/console/contacts?lang=${lang}` })
         res.end()
         return true
       }

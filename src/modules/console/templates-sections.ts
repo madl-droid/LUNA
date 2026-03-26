@@ -18,11 +18,19 @@ export interface SectionData {
   leadScoringHtml?: string
   contactsSubpage?: string
   usersData?: {
-    configs: Array<{ listType: string; displayName: string; isEnabled: boolean; permissions: { tools: string[]; skills: string[]; subagents: boolean; allAccess: boolean }; unregisteredBehavior: string; unregisteredMessage: string | null; maxUsers: number | null }>
+    configs: Array<{
+      listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
+      permissions: { tools: string[]; skills: string[]; subagents: boolean; allAccess: boolean }
+      knowledgeCategories: string[]; assignmentEnabled: boolean; assignmentPrompt: string
+      disableBehavior: string; disableTargetList: string | null
+      unregisteredBehavior: string; unregisteredMessage: string | null; maxUsers: number | null
+    }>
     usersByType: Record<string, Array<{ id: string; displayName: string | null; listType: string; isActive: boolean; source: string; contacts: Array<{ id: string; channel: string; senderId: string; isPrimary: boolean }> }>>
     counts: Record<string, number>
     channels: Array<{ id: string; label: { es: string; en: string } | string }>
     tools: Array<{ name: string; description: string; category?: string }>
+    activeModules: Array<{ name: string; displayName: { es: string; en: string } | string; type: string; tools: Array<{ name: string; displayName: string; description: string; enabled: boolean }> }>
+    knowledgeCategories: Array<{ id: string; title: string; description: string }>
   }
 }
 
@@ -1337,7 +1345,16 @@ function renderUsersSection(data: SectionData): string {
     // Initial filter
     setTimeout(userFilterApply,100);
 
-    // ── Perm sync ──
+    // ── Module toggle: select/deselect all tools in a module ──
+    window.toggleModuleTools=function(lt,mod,checked){
+      document.querySelectorAll('.tool-cb-'+lt+'-'+mod).forEach(function(cb){
+        cb.checked=checked;
+        var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
+        if(h){h.value=checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}
+      });
+    };
+
+    // ── Perm sync (all checkboxes with data-hidden) ──
     document.querySelectorAll('.perm-cb').forEach(function(cb){
       cb.addEventListener('change',function(){
         var h=document.querySelector('input[name="'+cb.getAttribute('data-hidden')+'"]');
@@ -1349,86 +1366,211 @@ function renderUsersSection(data: SectionData): string {
     if(typeof initCustomSelects==='function')initCustomSelects();
   })()</script>`
 
-  // ── Config page: permissions + unregistered behavior ──
+  // ── Config page ──
   if (isConfigPage) {
+  const { activeModules = [], knowledgeCategories: kCats = [] } = ud
+  const SYSTEM_TYPES = ['admin', 'lead', 'coworker', 'partners']
+  const activeCount = configs.filter(c => c.isEnabled).length
+
+  // Section A: List Cards
+  html += `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
+    <span class="panel-title">${lang === 'es' ? 'Bases de contactos' : 'Contact lists'} <span class="panel-badge badge-soon">${configs.length}</span></span>
+    <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
+
   for (const cfg of configs) {
-    if (cfg.listType === 'lead') continue
     const lt = cfg.listType
+    const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
+    const count = counts[lt] ?? 0
+    const enabledOrig = cfg.isEnabled ? 'true' : 'false'
+
+    html += `<div class="chs-toggle-row" style="margin-bottom:12px">
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:14px;color:var(--on-surface)">${esc(cfg.displayName)}
+          ${isSys ? `<span class="user-source-badge" style="margin-left:6px">${lang === 'es' ? 'Sistema' : 'System'}</span>` : ''}
+          <span class="panel-badge badge-soon" style="margin-left:6px">${count}</span>
+        </div>
+        ${cfg.description ? `<div style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">${esc(cfg.description)}</div>` : ''}
+      </div>
+      <label class="toggle toggle-sm">
+        <input type="checkbox" class="perm-cb" ${cfg.isEnabled ? 'checked' : ''} data-hidden="list_enabled_${esc(lt)}">
+        <span class="toggle-slider"></span>
+      </label>
+      <input type="hidden" name="list_enabled_${esc(lt)}" value="${enabledOrig}" data-original="${enabledOrig}">
+    </div>`
+  }
+
+  // Create custom list button
+  if (activeCount < 5) {
+    html += `<details class="user-add-form" style="margin-top:8px">
+      <summary class="act-btn act-btn-add">${SVG_PLUS} ${lang === 'es' ? 'Crear lista personalizada' : 'Create custom list'}</summary>
+      <form method="POST" action="/console/users/create-list" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+        <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
+        <label class="wizard-label">${lang === 'es' ? 'Nombre de la lista' : 'List name'}</label>
+        <input type="text" class="wizard-input" name="listName" required placeholder="${lang === 'es' ? 'Ej: Proveedores' : 'E.g. Vendors'}">
+        <label class="wizard-label">${lang === 'es' ? 'Descripcion (80-200 caracteres)' : 'Description (80-200 chars)'}</label>
+        <textarea class="wizard-input" name="listDescription" required minlength="80" maxlength="200" rows="2" placeholder="${lang === 'es' ? 'Describe el proposito de esta lista...' : 'Describe this list purpose...'}"></textarea>
+        <div><button type="submit" class="act-btn act-btn-cta">${lang === 'es' ? 'Crear' : 'Create'}</button></div>
+      </form>
+    </details>`
+  }
+
+  html += `</div></div>`
+
+  // Section B: Per-list config panels
+  for (const cfg of configs) {
+    const lt = cfg.listType
+    const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
     const perms = cfg.permissions
     const isAllTools = perms.tools.includes('*')
 
-    html += `<div class="panel">
-      <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${lang === 'es' ? 'Permisos' : 'Permissions'}: ${esc(cfg.displayName)}</span>
-        <span class="panel-chevron">&#9660;</span>
-      </div>
-      <div class="panel-body">`
+    html += `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${esc(cfg.displayName)}: ${lang === 'es' ? 'Acceso y permisos' : 'Access & permissions'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">`
 
-    // Tools — tracked by save bar via hidden inputs
-    html += `<div class="field-divider"><span class="field-divider-label">Tools</span></div>
-      <div class="perm-grid">`
+    // B.1: Module Access (hierarchical: module → tools)
+    html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Acceso a modulos' : 'Module access'}</span></div>`
 
-    const toolsByCategory = new Map<string, typeof tools>()
-    for (const tool of tools) {
-      const cat = tool.category || 'other'
-      if (!toolsByCategory.has(cat)) toolsByCategory.set(cat, [])
-      toolsByCategory.get(cat)!.push(tool)
-    }
-    for (const [cat, catTools] of toolsByCategory) {
-      html += `<div class="perm-grid-category">${esc(cat)}</div>`
-      for (const tool of catTools) {
+    for (const mod of activeModules) {
+      const modLabel = typeof mod.displayName === 'string' ? mod.displayName : (mod.displayName[lang] || mod.displayName['es'] || mod.name)
+      const modToolNames = mod.tools.map(t => t.name)
+      const allModToolsOn = isAllTools || modToolNames.every(tn => perms.tools.includes(tn))
+      const someModToolsOn = !allModToolsOn && modToolNames.some(tn => perms.tools.includes(tn))
+
+      // Module-level toggle
+      const modOrig = allModToolsOn ? 'on' : ''
+      html += `<div class="chs-toggle-row" style="margin-bottom:4px;padding:10px 14px">
+        <span style="font-size:13px;font-weight:600">${esc(modLabel)}</span>
+        <span class="ch-footer-spacer"></span>
+        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+          ${allModToolsOn ? 'checked' : ''} ${someModToolsOn ? 'indeterminate' : ''}
+          data-hidden="mod_${esc(lt)}_${esc(mod.name)}"
+          onchange="toggleModuleTools('${esc(lt)}','${esc(mod.name)}',this.checked)">
+        <input type="hidden" name="mod_${esc(lt)}_${esc(mod.name)}" value="${modOrig}" data-original="${modOrig}">
+      </div>`
+
+      // Individual tools (indented)
+      html += `<div class="perm-grid" style="padding-left:28px;margin-bottom:8px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
+      for (const tool of mod.tools) {
         const checked = isAllTools || perms.tools.includes(tool.name)
         const origVal = checked ? 'on' : ''
-        // Hidden input tracked by save bar; checkbox syncs it
         html += `<label>
-          <input type="checkbox" class="perm-cb" ${checked ? 'checked' : ''} data-hidden="perm_${esc(lt)}_tool_${esc(tool.name)}">
-          <input type="hidden" name="perm_${esc(lt)}_tool_${esc(tool.name)}" value="${origVal}" data-original="${origVal}">
-          ${esc(tool.name)}</label>`
+          <input type="checkbox" class="perm-cb tool-cb-${esc(lt)}-${esc(mod.name)}" ${checked ? 'checked' : ''}
+            data-hidden="tool_${esc(lt)}_${esc(tool.name)}">
+          <input type="hidden" name="tool_${esc(lt)}_${esc(tool.name)}" value="${origVal}" data-original="${origVal}">
+          ${esc(tool.displayName || tool.name)}</label>`
       }
+      html += `</div>`
     }
-    html += `</div>`
 
-    // Subagents
+    // Subagents toggle
     const subOrig = perms.subagents ? 'on' : ''
-    html += `<div class="field" style="margin-top:1rem;display:flex;align-items:center;gap:8px">
-        <span class="field-label">Subagents</span>
-        <input type="checkbox" class="perm-cb" ${perms.subagents ? 'checked' : ''} data-hidden="perm_${esc(lt)}_subagents">
-        <input type="hidden" name="perm_${esc(lt)}_subagents" value="${subOrig}" data-original="${subOrig}">
+    html += `<div class="chs-toggle-row" style="margin-top:8px;padding:10px 14px">
+      <span style="font-size:13px;font-weight:600">Subagents</span>
+      <span class="ch-footer-spacer"></span>
+      <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+        ${perms.subagents ? 'checked' : ''} data-hidden="sub_${esc(lt)}">
+      <input type="hidden" name="sub_${esc(lt)}" value="${subOrig}" data-original="${subOrig}">
+    </div>`
+
+    // B.2: Knowledge Categories
+    if (kCats.length > 0) {
+      const allowedCats = cfg.knowledgeCategories ?? []
+      const allCats = allowedCats.length === 0 // empty = all
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Acceso a conocimiento' : 'Knowledge access'}</span></div>
+        <div class="perm-grid">`
+      for (const cat of kCats) {
+        const checked = allCats || allowedCats.includes(cat.id)
+        const origVal = checked ? 'on' : ''
+        html += `<label title="${esc(cat.description)}">
+          <input type="checkbox" class="perm-cb" ${checked ? 'checked' : ''} data-hidden="kcat_${esc(lt)}_${esc(cat.id)}">
+          <input type="hidden" name="kcat_${esc(lt)}_${esc(cat.id)}" value="${origVal}" data-original="${origVal}">
+          ${esc(cat.title)}</label>`
+      }
+      html += `</div>`
+    }
+
+    // B.3: Assignment Rules (only for custom + partners — NOT admin/lead/coworker)
+    if (!['admin', 'lead', 'coworker'].includes(lt)) {
+      const aEnabled = cfg.assignmentEnabled
+      const aPrompt = cfg.assignmentPrompt || ''
+      const aOrig = aEnabled ? 'on' : ''
+      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Asignacion automatica' : 'Auto-assignment'}</span></div>
+        <div class="chs-toggle-row" style="padding:10px 14px">
+          <span style="font-size:13px">${lang === 'es' ? 'Activar reglas de asignacion por LLM' : 'Enable LLM assignment rules'}</span>
+          <span class="ch-footer-spacer"></span>
+          <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+            ${aEnabled ? 'checked' : ''} data-hidden="assignment_enabled_${esc(lt)}"
+            onchange="document.getElementById('assignment-prompt-${esc(lt)}').style.display=this.checked?'block':'none'">
+          <input type="hidden" name="assignment_enabled_${esc(lt)}" value="${aOrig}" data-original="${aOrig}">
+        </div>
+        <div id="assignment-prompt-${esc(lt)}" style="display:${aEnabled ? 'block' : 'none'};margin-top:8px">
+          <label class="wizard-label">${lang === 'es' ? 'Instrucciones para el modelo' : 'Instructions for the model'}</label>
+          <textarea class="wizard-input" name="assignment_prompt_${esc(lt)}" rows="3" data-original="${esc(aPrompt)}"
+            placeholder="${lang === 'es' ? 'Ej: Si el contacto menciona que es proveedor o viene referido por un partner, asignalo a esta lista.' : 'E.g. If the contact mentions they are a vendor or referred by a partner, assign them to this list.'}">${esc(aPrompt)}</textarea>
+        </div>`
+    }
+
+    // Disable behavior
+    const dBehavior = cfg.disableBehavior || 'leads'
+    const dTarget = cfg.disableTargetList || ''
+    html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Al desactivar esta lista' : 'When disabling this list'}</span></div>
+      <div class="field">
+        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
+        <select name="disable_${esc(lt)}_behavior" data-original="${esc(dBehavior)}" onchange="document.getElementById('disable-target-${esc(lt)}').style.display=this.value==='move'?'grid':'none'">
+          <option value="leads" ${dBehavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Tratar como leads' : 'Treat as leads'}</option>
+          <option value="silence" ${dBehavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Ignorar silenciosamente' : 'Ignore silently'}</option>
+          <option value="move" ${dBehavior === 'move' ? 'selected' : ''}>${lang === 'es' ? 'Mover a otra lista' : 'Move to another list'}</option>
+        </select>
       </div>
-      </div></div>`
+      <div class="field" id="disable-target-${esc(lt)}" style="display:${dBehavior === 'move' ? 'grid' : 'none'}">
+        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Lista destino' : 'Target list'}</span></div>
+        <select name="disable_${esc(lt)}_target" data-original="${esc(dTarget)}">
+          ${configs.filter(c => c.listType !== lt).map(c => `<option value="${esc(c.listType)}" ${dTarget === c.listType ? 'selected' : ''}>${esc(c.displayName)}</option>`).join('')}
+        </select>
+      </div>`
+
+    // Delete button for custom lists
+    if (!isSys) {
+      html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(0,0,0,0.04)">
+        <form method="POST" action="/console/users/delete-list" style="display:inline" onclick="return confirm('${lang === 'es' ? '¿Eliminar esta lista? Los contactos se moveran.' : 'Delete this list? Contacts will be moved.'}')">
+          <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
+          <input type="hidden" name="listType" value="${esc(lt)}">
+          <button type="submit" class="act-btn act-btn-remove">${SVG_DELETE} ${lang === 'es' ? 'Eliminar lista' : 'Delete list'}</button>
+        </form>
+      </div>`
+    }
+
+    html += `</div></div>`
   }
 
-  // ── Unregistered behavior (from lead config) — integrated with save bar ──
+  // Unregistered behavior (from lead config)
   const leadCfg = configs.find(c => c.listType === 'lead')
   if (leadCfg) {
     const behavior = leadCfg.unregisteredBehavior || 'silence'
-    html += `<div class="panel">
-      <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</span>
-        <span class="panel-chevron">&#9660;</span>
+    html += `<div class="panel"><div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</span>
+      <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
+      <div class="field">
+        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
+        <select name="unregisteredBehavior" data-original="${esc(behavior)}">
+          <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
+          <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje genérico' : 'Generic message'}</option>
+          <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
+          <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
+        </select>
       </div>
-      <div class="panel-body">
-        <div class="field">
-          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Comportamiento' : 'Behavior'}</span></div>
-          <select name="unregisteredBehavior" data-original="${esc(behavior)}">
-            <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
-            <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje genérico' : 'Generic message'}</option>
-            <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
-            <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
-          </select>
-        </div>
-        <div class="field" id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'grid' : 'none'}">
-          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Mensaje' : 'Message'}</span></div>
-          <textarea name="unregisteredMessage" data-original="${esc(leadCfg.unregisteredMessage || '')}" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
-        </div>
-        <script>
-        (function(){
-          var sel=document.querySelector('[name="unregisteredBehavior"]');
-          var msgField=document.getElementById('unregistered-msg-field');
-          if(sel&&msgField){sel.addEventListener('change',function(){msgField.style.display=sel.value==='generic_message'?'grid':'none'})}
-        })();
-        </script>
-      </div></div>`
+      <div class="field" id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'grid' : 'none'}">
+        <div class="field-left"><span class="field-label">${lang === 'es' ? 'Mensaje' : 'Message'}</span></div>
+        <textarea name="unregisteredMessage" data-original="${esc(leadCfg.unregisteredMessage || '')}" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
+      </div>
+      <script>
+      (function(){
+        var sel=document.querySelector('[name="unregisteredBehavior"]');
+        var msgField=document.getElementById('unregistered-msg-field');
+        if(sel&&msgField){sel.addEventListener('change',function(){msgField.style.display=sel.value==='generic_message'?'grid':'none'})}
+      })();
+      </script>
+    </div></div>`
   }
   } // end isConfigPage
 
