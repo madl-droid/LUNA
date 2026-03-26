@@ -20,30 +20,35 @@ const logger = pino({ name: 'kernel:login' })
 // ═══════════════════════════════════════════
 
 const LOGIN_CSS = `
-  :root { --primary: #6C5CE7; --primary-hover: #5A4BD1; --bg: #F8F9FA; --card: #FFFFFF;
-    --text: #2D3436; --text-muted: #636E72; --border: #DFE6E9; --error: #D63031;
-    --radius: 12px; }
+  :root { --primary: #FF5E0E; --primary-hover: #e85400; --primary-light: rgba(255,94,14,0.08);
+    --bg: #f5f5f7; --card: #ffffff; --text: #2d2d2d; --text-muted: #6e6e73; --text-dim: #86868b;
+    --border: rgba(0,0,0,0.06); --error: #E62111; --success: #34c759; --radius: 0.75rem; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+  body { font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg); color: var(--text); min-height: 100vh;
-    display: flex; align-items: center; justify-content: center; padding: 20px; }
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    -webkit-font-smoothing: antialiased; font-size: 0.875rem; line-height: 1.5; }
+  a { color: var(--primary); } a:visited { color: var(--primary-hover); }
   .login-card { background: var(--card); border-radius: var(--radius); box-shadow: 0 4px 24px rgba(0,0,0,0.08);
     max-width: 400px; width: 100%; padding: 40px; }
   .login-logo { text-align: center; margin-bottom: 24px; }
-  .login-logo h1 { font-size: 28px; color: var(--primary); letter-spacing: 2px; }
-  .login-logo p { color: var(--text-muted); font-size: 13px; }
-  h2 { font-size: 20px; margin-bottom: 20px; text-align: center; }
+  .login-logo h1 { font-size: 28px; color: var(--primary); letter-spacing: 2px; font-weight: 700; }
+  .login-logo p { color: var(--text-dim); font-size: 13px; }
+  h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 20px; text-align: center; }
   .field { margin-bottom: 16px; }
-  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-  .field input { width: 100%; padding: 10px 12px; border: 1px solid var(--border);
-    border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s; }
-  .field input:focus { border-color: var(--primary); }
-  .btn { width: 100%; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 600;
-    cursor: pointer; border: none; background: var(--primary); color: white; margin-top: 8px; }
-  .btn:hover { background: var(--primary-hover); }
-  .flash { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
-  .flash-error { background: #FFF3F3; border: 1px solid var(--error); color: var(--error); }
-  .flash-success { background: #F0FFF4; border: 1px solid #00B894; color: #00B894; }
+  .field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; }
+  .field input { width: 100%; padding: 10px 12px; border: 1.5px solid #e0e0e2;
+    border-radius: 0.5rem; font-size: 0.85rem; outline: none; transition: border-color 0.15s ease;
+    font-family: inherit; }
+  .field input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+  .btn { width: 100%; padding: 10px 24px; border-radius: 1.5rem; font-size: 0.85rem; font-weight: 500;
+    cursor: pointer; border: none; background: var(--primary); color: white; margin-top: 8px;
+    transition: all 0.15s ease; font-family: inherit; }
+  .btn:hover { opacity: 0.9; box-shadow: 0 2px 8px rgba(255,94,14,0.3); }
+  .flash { padding: 10px 14px; border-radius: 0.5rem; font-size: 0.8rem; margin-bottom: 16px; }
+  .flash-error { background: rgba(230,33,17,0.06); border: 1px solid var(--error); color: var(--error); }
+  .flash-success { background: rgba(52,199,89,0.06); border: 1px solid var(--success); color: var(--success); }
 `
 
 function esc(s: string): string {
