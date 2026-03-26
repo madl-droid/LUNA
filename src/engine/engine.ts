@@ -176,6 +176,43 @@ async function processMessageInner(
       }
     }
 
+    // ═══ UNREGISTERED CONTACT GATE ═══
+    // When lead list is disabled, resolver returns _unregistered:{behavior}
+    if (ctx.userType.startsWith('_unregistered:')) {
+      const behavior = ctx.userType.split(':')[1] || 'silence'
+      logger.info({ traceId, behavior, from: message.from }, 'Unregistered contact — applying behavior')
+
+      if (behavior === 'generic_message') {
+        // Send configured message without LLM, then stop
+        try {
+          const usersDb = registry.getOptional<{ getListConfig(lt: string): Promise<{ unregisteredMessage: string | null } | null> }>('users:db')
+          const leadCfg = usersDb ? await usersDb.getListConfig('lead') : null
+          const msg = leadCfg?.unregisteredMessage || (message.channelName === 'gmail'
+            ? 'Thank you for your message. We will get back to you soon.'
+            : 'Gracias por tu mensaje. Te contactaremos pronto.')
+          await registry.runHook('message:send', {
+            channel: message.channelName,
+            to: message.from,
+            content: { type: 'text', text: msg },
+            correlationId: traceId,
+          })
+        } catch (err) {
+          logger.warn({ err, traceId }, 'Failed to send generic message to unregistered contact')
+        }
+      }
+      // silence, register_only → no response. generic_message → already sent above.
+      // All behaviors skip the pipeline (no LLM cost).
+      return {
+        traceId,
+        success: true,
+        skipped: `unregistered:${behavior}`,
+        phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
+        phase4DurationMs: 0, phase5DurationMs: 0,
+        totalDurationMs: Date.now() - totalStart,
+        replanAttempts: 0, subagentIterationsUsed: 0,
+      }
+    }
+
     // ═══ PHASE 2: Evaluate Situation ═══
     const p2Start = Date.now()
     let evaluation = await phase2Evaluate(ctx, engineConfig)
