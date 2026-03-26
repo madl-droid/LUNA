@@ -1,0 +1,54 @@
+{
+  "enabled": true,
+  "buffer_percentage": 0.15,
+  "disclaimer_es": "Este es un estimado aproximado. El precio final se confirma al cerrar la orden y puede variar según condiciones del envío.",
+  "disclaimer_en": "This is an approximate estimate. Final price is confirmed when closing the order and may vary based on shipping conditions.",
+  "default_ready_days": 3,
+  "max_packages": 20,
+  "carriers": {
+    "searates": {
+      "enabled": true,
+      "container_thresholds": {
+        "st20_max_cbm": 15,
+        "st40_max_cbm": 30
+      }
+    },
+    "dhl_express": {
+      "enabled": true,
+      "max_weight_per_piece_kg": 70,
+      "account_number": "FROM_ENV"
+    }
+  },
+  "known_origins": {
+    "san_diego": {
+      "city": "San Diego",
+      "country_code": "US",
+      "postal_code": "92101",
+      "coordinates": { "lat": 32.7157, "lng": -117.1611 }
+    },
+    "shenzhen": {
+      "city": "Shenzhen",
+      "country_code": "CN",
+      "postal_code": "518000",
+      "coordinates": { "lat": 22.5431, "lng": 114.0579 }
+    },
+    "ningbo": {
+      "city": "Ningbo",
+      "country_code": "CN",
+      "postal_code": "315000",
+      "coordinates": { "lat": 29.8683, "lng": 121.5440 }
+    },
+    "shanghai": {
+      "city": "Shanghai",
+      "country_code": "CN",
+      "postal_code": "200000",
+      "coordinates": { "lat": 31.2304, "lng": 121.4737 }
+    },
+    "bogota": {
+      "city": "Bogota",
+      "country_code": "CO",
+      "postal_code": "110111",
+      "coordinates": { "lat": 4.7110, "lng": -74.0721 }
+    }
+  }
+}

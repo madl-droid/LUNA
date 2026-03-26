@@ -119,7 +119,7 @@ export async function syncListFromSheet(
   const range = syncConfig.sheetTab ? `${syncConfig.sheetTab}!A1:Z10000` : 'Sheet1!A1:Z10000'
 
   const data = await sheetsService.readRange(spreadsheetId, range)
-  const rows: SheetRow[] = _parseSheetRows(data.values)
+  const rows: SheetRow[] = parseSheetRows(data.values)
 
   // Deactivate existing sheet_sync entries for this list
   await db.deactivateBySource(listType, 'sheet_sync')
@@ -153,7 +153,7 @@ export async function syncListFromSheet(
  * Supports: https://docs.google.com/spreadsheets/d/{ID}/edit
  * Also accepts a bare ID (no URL).
  */
-function extractSheetId(sheetUrl: string): string {
+export function extractSheetId(sheetUrl: string): string {
   const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
   return match ? match[1]! : sheetUrl // fallback: treat as bare ID
 }
@@ -162,7 +162,7 @@ function extractSheetId(sheetUrl: string): string {
  * Parse raw sheet values into typed rows.
  * Expected header: sender_id, channel, display_name, [extra columns as metadata]
  */
-function _parseSheetRows(values: string[][]): SheetRow[] {
+export function parseSheetRows(values: string[][]): SheetRow[] {
   if (!values || values.length < 2) return []
 
   const headerRow = values[0]!

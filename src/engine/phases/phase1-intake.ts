@@ -86,6 +86,7 @@ export async function phase1Intake(
     sheetsCacheResult,
   ] = await Promise.allSettled([
     findContact(db, message.from, message.channelName, message.resolvedPhone),
+    detectCampaign(db, message, normalizedText),
     // Fallback RAG — only if knowledge module not active
     !knowledgeManagerSvc && normalizedText
       ? searchKnowledge(normalizedText, config.knowledgeDir, 3)

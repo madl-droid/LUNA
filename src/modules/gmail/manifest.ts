@@ -287,7 +287,65 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
     })
   }
 
+  // Auto-create coworker if sender domain matches configured domains
+  try {
+    await autoCreateCoworkerFromDomain(msg.from, msg.fromName)
+  } catch (err) {
+    logger.warn({ err, from: msg.from }, 'Auto-create coworker from domain failed')
+  }
+
+  // Try to extract contact data from email signature (LLM-based, max 3 attempts)
+  try {
+    const { tryExtractSignature } = await import('./signature-parser.js')
+    await tryExtractSignature(_registry, msg.from, textContent)
+  } catch (err) {
+    logger.warn({ err, from: msg.from }, 'Signature extraction failed')
+  }
+
   logger.info({ messageId: msg.id, from: msg.from, subject: msg.subject }, 'Email processed')
+}
+
+/**
+ * If sender's email domain matches a configured coworker domain,
+ * auto-create the contact as a coworker with source 'inbound'.
+ */
+async function autoCreateCoworkerFromDomain(email: string, fromName: string): Promise<void> {
+  if (!_registry) return
+
+  const usersDb = _registry.getOptional<import('../users/db.js').UsersDb>('users:db')
+  const usersCache = _registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
+  if (!usersDb || !usersCache) return
+
+  // Extract domain from email
+  const atIdx = email.indexOf('@')
+  if (atIdx === -1) return
+  const domain = email.slice(atIdx).toLowerCase() // e.g. '@empresa.com'
+
+  // Get coworker config
+  const coworkerCfg = await usersDb.getListConfig('coworker')
+  if (!coworkerCfg?.isEnabled) return
+
+  const configuredDomains: string[] = (coworkerCfg.syncConfig as Record<string, unknown>)?.domains as string[] ?? []
+  if (configuredDomains.length === 0) return
+
+  // Check if domain matches
+  const normalizedDomains = configuredDomains.map(d => d.toLowerCase().startsWith('@') ? d.toLowerCase() : `@${d.toLowerCase()}`)
+  if (!normalizedDomains.includes(domain)) return
+
+  // Check if contact already exists
+  const existing = await usersDb.resolveByContact(email, 'gmail')
+  if (existing) return // already registered
+
+  // Create coworker
+  await usersDb.createUser({
+    listType: 'coworker',
+    displayName: fromName || undefined,
+    contacts: [{ channel: 'gmail', senderId: email }],
+    source: 'inbound',
+  })
+  await usersCache.invalidate(email)
+
+  logger.info({ email, fromName }, 'Auto-created coworker from email domain match')
 }
 
 function stripHtml(html: string): string {

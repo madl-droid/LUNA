@@ -403,6 +403,10 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   const m = k.match(/^(?:mod|tool|sub|kcat|assignment_enabled|assignment_prompt|disable|list_enabled|perm)_([^_]+)/)
                   if (m) listsToUpdate.add(m[1]!)
                 }
+                // Coworker domains/roles fields → ensure coworker is in the update set
+                if (up['coworker_domains'] !== undefined || up['coworker_roles'] !== undefined) {
+                  listsToUpdate.add('coworker')
+                }
 
                 for (const lt of listsToUpdate) {
                   const existing = await usersDb.getListConfig(lt)
@@ -428,6 +432,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   // List enabled
                   const isEnabled = up[`list_enabled_${lt}`] === 'true' || up[`list_enabled_${lt}`] === 'on'
 
+                  // Merge coworker domains/roles into syncConfig
+                  const syncCfg = { ...existing.syncConfig }
+                  if (lt === 'coworker') {
+                    if (up['coworker_domains'] !== undefined) {
+                      syncCfg.domains = up['coworker_domains'] ? up['coworker_domains'].split(',').map((d: string) => d.trim()).filter(Boolean) : []
+                    }
+                    if (up['coworker_roles'] !== undefined) {
+                      syncCfg.roles = up['coworker_roles'] ? up['coworker_roles'].split(',').map((r: string) => r.trim()).filter(Boolean) : []
+                    }
+                  }
+
                   await usersDb.upsertListConfig(lt, existing.displayName, {
                     tools: tools.length > 0 ? tools : existing.permissions.tools,
                     skills: existing.permissions.skills,
@@ -443,6 +458,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                     unregisteredBehavior: lt === 'lead' && up['unregisteredBehavior'] ? up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' : existing.unregisteredBehavior,
                     unregisteredMessage: lt === 'lead' && up['unregisteredMessage'] !== undefined ? up['unregisteredMessage'] : existing.unregisteredMessage,
                     maxUsers: existing.maxUsers,
+                    syncConfig: syncCfg,
                   })
                 }
 
@@ -589,7 +605,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             }
           }
 
-          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts })
+          // Build metadata (role for coworkers)
+          const metadata: Record<string, unknown> = {}
+          const userRole = body['userRole']?.trim()
+          if (userRole && listType === 'coworker') metadata.role = userRole
+
+          const user = await usersDb.createUser({ displayName: displayName || undefined, listType, contacts, metadata: Object.keys(metadata).length > 0 ? metadata : undefined })
           // Invalidate cache for all new contacts
           for (const c of contacts) await usersCache.invalidate(c.senderId)
 
@@ -615,10 +636,18 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const userId = body['userId']
           if (!userId) throw new Error('Missing userId')
 
-          // Update name
+          // Build metadata update (role for coworkers)
+          const updateMeta: Record<string, unknown> = {}
+          const lt = body['listType'] || ''
+          if (lt === 'coworker' && body['userRole'] !== undefined) {
+            updateMeta.role = body['userRole']?.trim() || null
+          }
+
+          // Update name + metadata
           await usersDb.updateUser(userId, {
             displayName: body['displayName'] || undefined,
-            listType: body['listType'] || undefined,
+            listType: lt || undefined,
+            metadata: Object.keys(updateMeta).length > 0 ? updateMeta : undefined,
           })
 
           // Sync contacts: for each channel, update/add/remove
@@ -968,6 +997,30 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       if (section === 'contacts' && !contactsSubpage) {
         contactsSubpage = 'config'
       }
+      // Nested agente: /console/agente/{subpage} → render agente section with subpage
+      let agenteSubpage: string | null = null
+      const agenteMatch = section.match(/^agente\/(.+)$/)
+      if (agenteMatch?.[1]) {
+        agenteSubpage = agenteMatch[1]
+        section = 'agente'
+      }
+      // /console/agente without subpage → default to knowledge
+      if (section === 'agente' && !agenteSubpage) {
+        agenteSubpage = 'knowledge'
+      }
+
+      // Redirect old section IDs to unified agente page
+      const agenteRedirects: Record<string, string> = {
+        llm: 'advanced', pipeline: 'advanced', infra: 'advanced',
+        knowledge: 'knowledge', memory: 'memory', prompts: 'identity',
+      }
+      if (agenteRedirects[section]) {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/agente/${agenteRedirects[section]}?lang=${lang}` })
+        res.end()
+        return true
+      }
+
       // Redirect old /console/users to /console/contacts
       if (section === 'users') {
         const lang = detectLang(req)
@@ -1042,6 +1095,38 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             sectionData.contactsSubpage = contactsSubpage ?? undefined
           }
         } catch { /* module not available */ }
+      }
+
+      // Agente unified page: render sub-page content
+      if (section === 'agente' && agenteSubpage) {
+        sectionData.agenteSubpage = agenteSubpage
+        // Map sub-pages to their actual section renderers
+        if (agenteSubpage === 'advanced') {
+          // Combine LLM + Pipeline + Engine + Infra with dividers
+          const llmHtml = renderSection('llm', sectionData) || ''
+          const pipelineHtml = renderSection('pipeline', sectionData) || ''
+          const engineMod = data.moduleStates.find(m => m.name === 'engine')
+          const engineHtml = engineMod?.active && engineMod.console?.fields?.length
+            ? renderModulePanels([engineMod], data.config, lang, 'engine')
+            : ''
+          const infraHtml = renderSection('infra', sectionData) || ''
+          sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml
+        } else if (agenteSubpage === 'knowledge') {
+          const knowledgeMod = data.moduleStates.find(m => m.name === 'knowledge')
+          sectionData.agenteContent = knowledgeMod?.active && knowledgeMod.console?.fields?.length
+            ? renderModulePanels([knowledgeMod], data.config, lang, 'knowledge')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'memory') {
+          const memoryMod = data.moduleStates.find(m => m.name === 'memory')
+          sectionData.agenteContent = memoryMod?.active && memoryMod.console?.fields?.length
+            ? renderModulePanels([memoryMod], data.config, lang, 'memory')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'identity') {
+          const promptsMod = data.moduleStates.find(m => m.name === 'prompts')
+          sectionData.agenteContent = promptsMod?.active && promptsMod.console?.fields?.length
+            ? renderModulePanels([promptsMod], data.config, lang, 'prompts')
+            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
+        }
       }
 
       // Channel settings pages: use the 2-column channel settings renderer
@@ -1143,6 +1228,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
+        agenteSubpage: agenteSubpage ?? undefined,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)
