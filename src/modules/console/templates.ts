@@ -716,7 +716,8 @@ function renderFlash(flash: string, lang: Lang): string {
     toggled: t('activated', lang),
     error: t('errorSave', lang),
   }
-  const msg = messages[flash] || flash
+  // FIX: SEC-3.1 — XSS en flash param: escapar fallback para evitar inyección HTML
+  const msg = messages[flash] || esc(flash)
   const type = flash === 'error' ? 'error' : 'success'
   return `<div class="toast ${type}" data-flash>${msg}</div>`
 }

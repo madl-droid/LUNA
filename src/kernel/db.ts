@@ -44,6 +44,11 @@ export async function createPool(): Promise<Pool> {
     connectionTimeoutMillis: kernelConfig.db.connectionTimeoutMs,
   })
 
+  // FIX: K-1 — Error handler para conexiones idle del pool
+  pool.on('error', (err) => {
+    logger.error({ err }, 'Unexpected PostgreSQL pool error')
+  })
+
   // Run kernel migrations
   const client = await pool.connect()
   try {

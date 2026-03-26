@@ -217,7 +217,7 @@ const apiRoutes: ApiRoute[] = [
     method: 'POST',
     path: 'webhook/incoming',
     handler: async (req, res) => {
-      if (!callManager || !_registry) {
+      if (!callManager || !_registry || !twilioAdapter) {
         res.writeHead(503, { 'Content-Type': 'text/xml' })
         res.end('<?xml version="1.0" encoding="UTF-8"?><Response><Say>Service unavailable</Say><Hangup/></Response>')
         return
@@ -225,6 +225,20 @@ const apiRoutes: ApiRoute[] = [
 
       const rawBody = await readBody(req)
       const params = TwilioAdapter.parseWebhookBody(rawBody)
+
+      // FIX: TV-1 — Validar firma Twilio antes de procesar
+      if (twilioAdapter.isConfigured()) {
+        const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || 'https'
+        const host = req.headers['host'] ?? 'localhost'
+        const webhookUrl = `${proto}://${host}${req.url?.split('?')[0] ?? ''}`
+        const signature = req.headers['x-twilio-signature'] as string ?? ''
+        if (!twilioAdapter.validateSignature(webhookUrl, params, signature)) {
+          res.writeHead(403, { 'Content-Type': 'text/xml' })
+          res.end('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>')
+          return
+        }
+      }
+
       const callSid = params['CallSid'] ?? ''
       const from = params['From'] ?? ''
       const to = params['To'] ?? ''

@@ -44,6 +44,16 @@ async function runSetupWizard(db: import('pg').Pool, redis: import('ioredis').Re
   })
 }
 
+// FIX: K-3 — Handlers globales para errores no capturados
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'Uncaught exception — shutting down')
+  process.exit(1)
+})
+process.on('unhandledRejection', (reason) => {
+  logger.fatal({ reason }, 'Unhandled rejection — shutting down')
+  process.exit(1)
+})
+
 async function main(): Promise<void> {
   logger.info({ env: kernelConfig.nodeEnv }, 'LUNA starting...')
 

@@ -39,6 +39,9 @@ export class LLMGateway {
   private retryMax = 2
   private retryBackoffMs = 1000
   private registry: Registry | null = null
+  // FIX: LLM-1 — Rate limits desde config (antes hardcodeados a 0)
+  private rpmLimits = new Map<LLMProviderName, number>()
+  private tpmLimits = new Map<LLMProviderName, number>()
 
   // Model cache (from model-scanner or listModels)
   private modelCache = new Map<LLMProviderName, ModelInfo[]>()
@@ -82,6 +85,12 @@ export class LLMGateway {
     // Create router
     this.router = new TaskRouter(this.adapters, this.breakers, this.apiKeys)
     this.router.loadFromConfig(config)
+
+    // FIX: LLM-1 — Cargar rate limits desde config
+    this.rpmLimits.set('anthropic', config.LLM_RPM_ANTHROPIC)
+    this.rpmLimits.set('google', config.LLM_RPM_GOOGLE)
+    this.tpmLimits.set('anthropic', config.LLM_TPM_ANTHROPIC)
+    this.tpmLimits.set('google', config.LLM_TPM_GOOGLE)
 
     // Create usage tracker
     this.tracker = new UsageTracker(db, redis, DEFAULT_COST_TABLE, {
@@ -479,12 +488,13 @@ export class LLMGateway {
   }
 
   private getRpmLimit(provider: LLMProviderName): number {
-    // These come from config, stored in the tracker
-    return 0 // Default: no limit (tracked but not enforced by default)
+    // FIX: LLM-1 — Leer de config en vez de retornar 0
+    return this.rpmLimits.get(provider) ?? 0
   }
 
   private getTpmLimit(provider: LLMProviderName): number {
-    return 0
+    // FIX: LLM-1 — Leer de config en vez de retornar 0
+    return this.tpmLimits.get(provider) ?? 0
   }
 }
 

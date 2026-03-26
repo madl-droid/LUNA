@@ -68,6 +68,13 @@ export class Server {
     const loginHandler = createLoginHandler(this.registry.getDb(), this.registry.getRedis())
 
     this.httpServer = http.createServer(async (req, res) => {
+      // FIX: K-5 — Security headers en todas las respuestas
+      res.setHeader('X-Content-Type-Options', 'nosniff')
+      res.setHeader('X-Frame-Options', 'DENY')
+      res.setHeader('X-XSS-Protection', '0')
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;")
+
       const url = req.url ?? '/'
       const method = req.method ?? 'GET'
 
@@ -174,6 +181,11 @@ export class Server {
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end('{"error":"Not found"}')
     })
+
+    // FIX: K-6 — Timeouts para prevenir Slowloris
+    this.httpServer.requestTimeout = 30_000
+    this.httpServer.headersTimeout = 15_000
+    this.httpServer.keepAliveTimeout = 5_000
 
     // Attach WebSocket upgrade handlers
     this.attachUpgradeHandlers()
