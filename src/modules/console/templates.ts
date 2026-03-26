@@ -15,8 +15,6 @@ interface SidebarCategory {
 const CATEGORIES: SidebarCategory[] = [
   { id: 'channels', key: 'cat_channels' },
   { id: 'agent', key: 'cat_agent' },
-  { id: 'leads', key: 'cat_leads' },
-  { id: 'data', key: 'cat_data' },
   { id: 'modules', key: 'cat_modules' },
   { id: 'system', key: 'cat_system' },
 ]
@@ -56,18 +54,15 @@ const FIXED_SECTIONS: FixedSection[] = [
   // Agent — unified page with sub-tabs: knowledge, memory, identity, advanced
   { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'agent', order: 1 },
   { id: 'pipeline', key: 'sec_pipeline_unified', icon: ICONS.pipeline, group: 'agent', order: 20 },
-  { id: 'engine-metrics', key: 'sec_engine_metrics', icon: ICONS.metrics, group: 'agent', order: 25 },
-  // Leads
-  { id: 'lead-scoring', key: 'sec_lead_scoring', icon: ICONS.scoring, group: 'leads', order: 15 },
-  // Modules
-  { id: 'google-apps', key: 'sec_google_apps', icon: ICONS.google, group: 'modules', order: 15 },
+  // Herramientas — unified page with sub-tabs: tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps
+  { id: 'herramientas', key: 'sec_herramientas', icon: svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), group: 'agent', order: 25 },
   { id: 'modules', key: 'sec_modules', icon: ICONS.modules, group: 'modules', order: 99 },
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
 // Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
 // Include old section IDs + modules that are now inside the unified "agente" page
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine'])
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 const ICON_OVERRIDES: Record<string, string> = {
@@ -139,6 +134,8 @@ export interface PageOptions {
   contactLists?: Array<{ listType: string; displayName: string; count: number; isEnabled?: boolean }>
   /** Active agente sub-page (knowledge, memory, identity, advanced) */
   agenteSubpage?: string
+  /** Active herramientas sub-page (tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps) */
+  herramientasSubpage?: string
 }
 
 // ═══════════════════════════════════════════
@@ -466,6 +463,36 @@ function renderSidebar(opts: PageOptions): string {
           const subActive = opts.agenteSubpage === tab.id
           const tabIcon = agenteIcons[tab.id as keyof typeof agenteIcons] || ''
           nav += `<a href="/console/agente/${tab.id}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
+            <span class="nav-icon-sm">${tabIcon}</span>
+            <span>${t(tab.key, opts.lang)}</span>
+          </a>`
+        }
+        nav += '</div>'
+      }
+
+      // Herramientas submenu: only show when section is active
+      if (item.id === 'herramientas' && (isActive || opts.herramientasSubpage)) {
+        const herramientasIcons: Record<string, string> = {
+          'tools': svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'),
+          'lead-scoring': ICONS.scoring,
+          'freight': svgIcon('<rect x="1" y="6" width="22" height="12" rx="2"/><path d="M1 10h22"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>'),
+          'medilink': svgIcon('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),
+          'scheduled-tasks': svgIcon('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'),
+          'google-apps': ICONS.google,
+        }
+        const herramientasTabs = [
+          { id: 'tools', key: 'sec_herramientas_tools' },
+          { id: 'lead-scoring', key: 'sec_herramientas_lead_scoring' },
+          { id: 'freight', key: 'sec_herramientas_freight' },
+          { id: 'medilink', key: 'sec_herramientas_medilink' },
+          { id: 'scheduled-tasks', key: 'sec_herramientas_scheduled_tasks' },
+          { id: 'google-apps', key: 'sec_herramientas_google_apps' },
+        ]
+        nav += '<div class="sidebar-submenu">'
+        for (const tab of herramientasTabs) {
+          const subActive = opts.herramientasSubpage === tab.id
+          const tabIcon = herramientasIcons[tab.id] || ICONS.fallback
+          nav += `<a href="/console/herramientas/${tab.id}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
             <span class="nav-icon-sm">${tabIcon}</span>
             <span>${t(tab.key, opts.lang)}</span>
           </a>`

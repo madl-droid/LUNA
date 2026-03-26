@@ -1021,6 +1021,30 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
+      // Nested herramientas: /console/herramientas/{subpage}
+      let herramientasSubpage: string | null = null
+      const herramientasMatch = section.match(/^herramientas\/(.+)$/)
+      if (herramientasMatch?.[1]) {
+        herramientasSubpage = herramientasMatch[1]
+        section = 'herramientas'
+      }
+      // /console/herramientas without subpage → default to tools
+      if (section === 'herramientas' && !herramientasSubpage) {
+        herramientasSubpage = 'tools'
+      }
+
+      // Redirect old section IDs to unified herramientas page
+      const herramientasRedirects: Record<string, string> = {
+        'tools': 'tools', 'lead-scoring': 'lead-scoring', 'freight': 'freight',
+        'medilink': 'medilink', 'scheduled-tasks': 'scheduled-tasks', 'google-apps': 'google-apps',
+      }
+      if (herramientasRedirects[section]) {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/herramientas/${herramientasRedirects[section]}?lang=${lang}` })
+        res.end()
+        return true
+      }
+
       // Redirect old /console/users to /console/contacts
       if (section === 'users') {
         const lang = detectLang(req)
@@ -1129,6 +1153,52 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         }
       }
 
+      // Herramientas unified page: render sub-page content
+      if (section === 'herramientas' && herramientasSubpage) {
+        sectionData.herramientasSubpage = herramientasSubpage
+        const notAvailable = (name: string) => `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? `Modulo de ${name} no disponible.` : `${name} module not available.`}</p></div></div>`
+
+        if (herramientasSubpage === 'tools') {
+          const toolsMod = data.moduleStates.find(m => m.name === 'tools')
+          sectionData.herramientasContent = toolsMod?.active && toolsMod.console?.fields?.length
+            ? renderModulePanels([toolsMod], data.config, lang, 'tools')
+            : notAvailable('herramientas')
+        } else if (herramientasSubpage === 'lead-scoring') {
+          // Use lead-scoring's custom renderer if available
+          try {
+            const renderFn = registry.getOptional<(lang: string) => string>('lead-scoring:renderSection')
+            if (renderFn) {
+              sectionData.herramientasContent = renderFn(lang)
+            }
+          } catch { /* ignore */ }
+          if (!sectionData.herramientasContent) {
+            sectionData.herramientasContent = notAvailable('calificacion')
+          }
+        } else if (herramientasSubpage === 'freight') {
+          const freightMod = data.moduleStates.find(m => m.name === 'freight')
+          sectionData.herramientasContent = freightMod?.active && freightMod.console?.fields?.length
+            ? renderModulePanels([freightMod], data.config, lang, 'freight')
+            : notAvailable('flete')
+        } else if (herramientasSubpage === 'medilink') {
+          const medilinkMod = data.moduleStates.find(m => m.name === 'medilink')
+          sectionData.herramientasContent = medilinkMod?.active && medilinkMod.console?.fields?.length
+            ? renderModulePanels([medilinkMod], data.config, lang, 'medilink')
+            : notAvailable('medilink')
+        } else if (herramientasSubpage === 'scheduled-tasks') {
+          try {
+            const renderFn = registry.getOptional<(lang: string) => Promise<string>>('scheduled-tasks:renderSection')
+            if (renderFn) {
+              sectionData.herramientasContent = await renderFn(lang)
+            }
+          } catch { /* ignore */ }
+          if (!sectionData.herramientasContent) {
+            sectionData.herramientasContent = notAvailable('tareas programadas')
+          }
+        } else if (herramientasSubpage === 'google-apps') {
+          sectionData.herramientasContent = renderSection('google-apps', sectionData) || notAvailable('Google API')
+        }
+      }
+
       // Channel settings pages: use the 2-column channel settings renderer
       let content: string | null = null
       if (channelSettingsId === 'ack-messages') {
@@ -1229,6 +1299,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
         agenteSubpage: agenteSubpage ?? undefined,
+        herramientasSubpage: herramientasSubpage ?? undefined,
       })
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(html)

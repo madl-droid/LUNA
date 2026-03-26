@@ -19,6 +19,8 @@ export interface SectionData {
   contactsSubpage?: string
   agenteSubpage?: string
   agenteContent?: string
+  herramientasSubpage?: string
+  herramientasContent?: string
   usersData?: {
     configs: Array<{
       listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
@@ -822,6 +824,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
     case 'contacts': return renderUsersSection(data)
     case 'agente': return data.agenteContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
+    case 'herramientas': return data.herramientasContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
     case 'modules': return renderModulesSection(data)
     case 'infra': return renderInfraUnifiedSection(data)
     case 'google-apps': return renderGoogleAppsSection(data)
