@@ -8,7 +8,6 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { ToolRegistry } from '../../modules/tools/tool-registry.js'
-import { getEnv } from '../../kernel/config.js'
 import { SeaRatesAdapter } from './adapters/searates-adapter.js'
 import { DhlExpressAdapter } from './adapters/dhl-express-adapter.js'
 import { FreightRouter } from './freight-router.js'
@@ -51,23 +50,52 @@ const inputSchema = z.object({
   ready_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })
 
-// ─── Config loader ────────────────────────────
+// ─── Module config → secrets adapter ──────────
 
-function loadFreightConfig(): FreightConfig {
-  const configPath = resolve(process.cwd(), 'instance/tools/freight.json')
-  try {
-    const raw = readFileSync(configPath, 'utf-8')
-    return JSON.parse(raw) as FreightConfig
-  } catch (err) {
-    logger.warn({ configPath, error: String(err) }, 'Could not load freight config, using defaults')
-    return getDefaultConfig()
+interface FreightModuleConfig {
+  FREIGHT_ENABLED: boolean
+  FREIGHT_BUFFER_PERCENTAGE: number
+  SEARATES_API_KEY: string
+  SEARATES_PLATFORM_ID: string
+  DHL_EXPRESS_USERNAME: string
+  DHL_EXPRESS_PASSWORD: string
+  DHL_EXPRESS_ACCOUNT_NUMBER: string
+  DHL_EXPRESS_TEST_MODE: boolean
+}
+
+function moduleConfigToSecrets(moduleConfig: FreightModuleConfig): FreightSecrets {
+  return {
+    searatesApiKey: moduleConfig.SEARATES_API_KEY || undefined,
+    searatesPlatformId: moduleConfig.SEARATES_PLATFORM_ID || undefined,
+    dhlExpressUsername: moduleConfig.DHL_EXPRESS_USERNAME || undefined,
+    dhlExpressPassword: moduleConfig.DHL_EXPRESS_PASSWORD || undefined,
+    dhlExpressAccountNumber: moduleConfig.DHL_EXPRESS_ACCOUNT_NUMBER || undefined,
+    dhlExpressTestMode: moduleConfig.DHL_EXPRESS_TEST_MODE,
   }
 }
 
-function getDefaultConfig(): FreightConfig {
+// ─── Config loader ────────────────────────────
+
+function loadFreightConfig(bufferOverride?: number): FreightConfig {
+  const configPath = resolve(process.cwd(), 'instance/tools/freight.json')
+  try {
+    const raw = readFileSync(configPath, 'utf-8')
+    const config = JSON.parse(raw) as FreightConfig
+    // Allow module configSchema to override buffer
+    if (bufferOverride !== undefined) {
+      config.buffer_percentage = bufferOverride
+    }
+    return config
+  } catch (err) {
+    logger.warn({ configPath, error: String(err) }, 'Could not load freight config, using defaults')
+    return getDefaultConfig(bufferOverride)
+  }
+}
+
+function getDefaultConfig(bufferOverride?: number): FreightConfig {
   return {
     enabled: true,
-    buffer_percentage: 0.15,
+    buffer_percentage: bufferOverride ?? 0.15,
     disclaimer_es: 'Este es un estimado aproximado. El precio final se confirma al cerrar la orden y puede variar según condiciones del envío.',
     disclaimer_en: 'This is an approximate estimate. Final price is confirmed when closing the order and may vary based on shipping conditions.',
     default_ready_days: 3,
@@ -88,17 +116,6 @@ function getDefaultConfig(): FreightConfig {
       shenzhen: { city: 'Shenzhen', country_code: 'CN', postal_code: '518000', coordinates: { lat: 22.5431, lng: 114.0579 } },
       bogota: { city: 'Bogota', country_code: 'CO', postal_code: '110111', coordinates: { lat: 4.7110, lng: -74.0721 } },
     },
-  }
-}
-
-function loadSecrets(): FreightSecrets {
-  return {
-    searatesApiKey: getEnv('SEARATES_API_KEY'),
-    searatesPlatformId: getEnv('SEARATES_PLATFORM_ID'),
-    dhlExpressUsername: getEnv('DHL_EXPRESS_USERNAME'),
-    dhlExpressPassword: getEnv('DHL_EXPRESS_PASSWORD'),
-    dhlExpressAccountNumber: getEnv('DHL_EXPRESS_ACCOUNT_NUMBER'),
-    dhlExpressTestMode: getEnv('DHL_EXPRESS_TEST_MODE') !== 'false',
   }
 }
 
@@ -237,20 +254,24 @@ async function handleEstimateFreight(
 
 // ─── Registration ─────────────────────────────
 
-export async function registerFreightTool(registry: Registry): Promise<void> {
+/**
+ * Registra la tool estimate-freight con tools:registry.
+ * Llamada desde el módulo wrapper src/modules/freight/manifest.ts.
+ * @param registry - Kernel registry
+ * @param moduleConfig - Config parseada del configSchema del módulo freight
+ */
+export async function registerFreightTool(
+  registry: Registry,
+  moduleConfig: FreightModuleConfig,
+): Promise<void> {
   const toolRegistry = registry.getOptional<ToolRegistry>('tools:registry')
   if (!toolRegistry) {
     logger.warn('Tools module not available — skipping freight tool registration')
     return
   }
 
-  const config = loadFreightConfig()
-  if (!config.enabled) {
-    logger.info('Freight tool disabled in config')
-    return
-  }
-
-  const secrets = loadSecrets()
+  const config = loadFreightConfig(moduleConfig.FREIGHT_BUFFER_PERCENTAGE)
+  const secrets = moduleConfigToSecrets(moduleConfig)
 
   await toolRegistry.registerTool({
     definition: {
@@ -308,4 +329,4 @@ export async function registerFreightTool(registry: Registry): Promise<void> {
 }
 
 // Exported for testing
-export { handleEstimateFreight, loadFreightConfig, loadSecrets, inputSchema }
+export { handleEstimateFreight, loadFreightConfig, inputSchema }

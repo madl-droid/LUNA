@@ -38,6 +38,7 @@ src/
     knowledge/       — base de conocimiento: docs, FAQs, sync, búsqueda (ver CLAUDE.md)
     scheduled-tasks/ — tareas programadas del agente (ver CLAUDE.md)
     tts/             — síntesis de voz: Google Cloud TTS (ver CLAUDE.md)
+    freight/         — wrapper modular de tool de flete (ver CLAUDE.md)
   tools/
     freight/         — tool de estimación de flete (ver src/tools/freight/CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
@@ -204,6 +205,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/scheduled-tasks/CLAUDE.md` — tareas programadas (cron, BullMQ, ejecucion LLM)
 - `src/engine/attachments/` — subsistema de adjuntos del engine (reemplaza módulo standalone src/modules/attachments/)
 - `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Cloud TTS, OGG_OPUS, PTT voice notes)
+- `src/modules/freight/CLAUDE.md` — wrapper modular de la tool de flete
 - `src/tools/freight/CLAUDE.md` — estimación de flete internacional (SeaRates + DHL Express)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `deploy/CLAUDE.md` — infraestructura y despliegue
