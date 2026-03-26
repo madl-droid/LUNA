@@ -81,13 +81,11 @@ export async function phase1Intake(
 
   const [
     contactResult,
-    campaignResult,
     knowledgeResult,
     knowledgeInjectionResult,
     sheetsCacheResult,
   ] = await Promise.allSettled([
     findContact(db, message.from, message.channelName, message.resolvedPhone),
-    detectCampaign(db, message, normalizedText),
     // Fallback RAG — only if knowledge module not active
     !knowledgeManagerSvc && normalizedText
       ? searchKnowledge(normalizedText, config.knowledgeDir, 3)
@@ -100,7 +98,6 @@ export async function phase1Intake(
   ])
 
   const contact = contactResult.status === 'fulfilled' ? contactResult.value : null
-  const campaign = campaignResult.status === 'fulfilled' ? campaignResult.value : null
   const knowledgeMatches = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
   let knowledgeInjection = knowledgeInjectionResult.status === 'fulfilled' ? knowledgeInjectionResult.value : null
   const sheetsData = sheetsCacheResult.status === 'fulfilled' ? sheetsCacheResult.value : null
@@ -142,6 +139,9 @@ export async function phase1Intake(
     agentId,
     sessionWindowMs,
   )
+
+  // 11b. Detect campaign (needs session for round number)
+  const detectedCampaign = detectCampaign(registry, normalizedText, message.channelName, session.messageCount)
 
   // 12-15. Load memory context in parallel
   const [
@@ -189,7 +189,7 @@ export async function phase1Intake(
     contact,
     session,
     isNewContact: !contact,
-    campaign,
+    campaign: detectedCampaign,
     knowledgeMatches,
     knowledgeInjection,
     history,
@@ -485,12 +485,42 @@ async function loadOrCreateSession(
   }
 }
 
-async function detectCampaign(
-  _db: Pool,
-  _message: IncomingMessage,
-  _normalizedText: string,
-): Promise<CampaignInfo | null> {
-  return null
+/**
+ * Detect campaign via lead-scoring:match-campaign service.
+ * Matches keyword against text with channel/round filtering.
+ */
+function detectCampaign(
+  registry: Registry,
+  normalizedText: string,
+  channelName: string,
+  sessionMessageCount: number,
+): CampaignInfo | null {
+  type MatchFn = (text: string, channelName: string, channelType: string, roundNumber: number) => {
+    campaignId: string; visibleId: number; name: string; keyword: string; promptContext: string; score: number
+  } | null
+
+  const matchFn = registry.getOptional<MatchFn>('lead-scoring:match-campaign')
+  if (!matchFn) return null
+
+  // Get channel type from channel-config service
+  const channelSvc = registry.getOptional<{ get(): { channelType: string } }>(`channel-config:${channelName}`)
+  const channelType = channelSvc?.get()?.channelType ?? 'instant'
+
+  // Round number: session.messageCount is the count BEFORE this message, so +1
+  const roundNumber = sessionMessageCount + 1
+
+  const result = matchFn(normalizedText, channelName, channelType, roundNumber)
+  if (!result) return null
+
+  return {
+    id: result.campaignId,
+    visibleId: result.visibleId,
+    name: result.name,
+    keyword: result.keyword,
+    utm: null,
+    promptContext: result.promptContext,
+    matchScore: result.score,
+  }
 }
 
 async function loadSheetsCache(redis: Redis): Promise<Record<string, unknown> | null> {

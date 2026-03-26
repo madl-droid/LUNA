@@ -132,6 +132,21 @@ export async function phase5Validate(
     updateSession(ctx, db),
   ])
 
+  // 5b. Record campaign match (fire-and-forget)
+  if (ctx.campaign && ctx.contactId) {
+    type CQ = { recordMatch(contactId: string, campaignId: string, sessionId: string | null, channel: string | null, score: number | null): Promise<void> }
+    const cq = registry.getOptional<CQ>('lead-scoring:campaign-queries')
+    if (cq) {
+      cq.recordMatch(
+        ctx.contactId,
+        ctx.campaign.id,
+        ctx.session.id,
+        ctx.message.channelName,
+        ctx.campaign.matchScore ?? null,
+      ).catch(err => logger.warn({ err, traceId: ctx.traceId }, 'Failed to record campaign match'))
+    }
+  }
+
   // 6. Proactive guard signals
   if (deliveryResult.sent && ctx.contactId) {
     if (evaluation.intent === 'farewell') {

@@ -18,20 +18,6 @@ export interface CompositorPrompts {
   relationship: string   // resolved for the specific userType
 }
 
-export interface CampaignRecord {
-  id: string
-  name: string
-  matchPhrases: string[]
-  matchThreshold: number
-  promptContext: string
-}
-
-export interface CampaignMatchResult {
-  campaignId: string
-  name: string
-  promptContext: string
-}
-
 export interface PromptsService {
   getPrompt(slot: PromptSlot, variant?: string): Promise<string>
   getCompositorPrompts(userType: string): Promise<CompositorPrompts>
@@ -39,7 +25,6 @@ export interface PromptsService {
   generateEvaluator(): Promise<string>
   upsert(slot: PromptSlot, variant: string, content: string): Promise<void>
   listAll(): Promise<PromptRecord[]>
-  matchCampaign(text: string): CampaignMatchResult | null
   invalidateCache(): void
   /** Agent first name. Single source of truth for all channels. Default: 'Luna'. */
   getAgentName(): string

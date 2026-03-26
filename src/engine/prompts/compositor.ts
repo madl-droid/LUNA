@@ -132,9 +132,12 @@ y guiarlos hacia una decisión de compra o agendamiento.`)
     systemParts.push(`\n--- FORMATO ---\n${channelLimit}`)
   }
 
-  // Campaign context (from prompts:service fuzzy match or ctx.campaign)
+  // Campaign context (from lead-scoring:match-campaign via Phase 1)
   if (ctx.campaign) {
-    systemParts.push(`\n--- CAMPAÑA ACTIVA ---\nCampaña: ${ctx.campaign.name}
+    const ctxLine = ctx.campaign.promptContext
+      ? `\nContexto: ${ctx.campaign.promptContext}`
+      : ''
+    systemParts.push(`\n--- CAMPAÑA ACTIVA ---\nCampaña: ${ctx.campaign.name}${ctxLine}
 Adapta tu respuesta al contexto de esta campaña.`)
   }
 

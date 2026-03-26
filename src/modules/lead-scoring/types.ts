@@ -162,6 +162,9 @@ export interface LeadSummary {
   updatedAt: string
   lastActivityAt: string | null
   messageCount: number
+  latestCampaignId: string | null
+  latestCampaignName: string | null
+  latestCampaignVisibleId: number | null
 }
 
 export interface LeadDetail extends LeadSummary {
