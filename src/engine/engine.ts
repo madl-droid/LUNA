@@ -160,8 +160,10 @@ async function processMessageInner(
     }, 'Phase 1 done')
 
     // ═══ TEST MODE GATE ═══
-    if (engineConfig.testMode && ctx.userType !== 'admin') {
-      logger.info({ traceId, userType: ctx.userType, from: message.from }, 'Test mode — ignoring non-admin')
+    // Check DEBUG_ADMIN_ONLY from config_store (runtime, not just env)
+    const adminOnly = await isAdminOnlyActive(registry)
+    if (adminOnly && ctx.userType !== 'admin') {
+      logger.info({ traceId, userType: ctx.userType, from: message.from }, 'Admin-only mode — ignoring non-admin')
       return {
         traceId,
         success: true,
@@ -472,4 +474,29 @@ async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promi
     correlationId: ctx.traceId,
   })
   logger.info({ traceId: ctx.traceId, to: ctx.message.from, text }, 'Aviso de proceso enviado')
+}
+
+/**
+ * Check if admin-only mode is active.
+ * Reads DEBUG_ADMIN_ONLY from config_store (runtime check).
+ * Falls back to ENGINE_TEST_MODE if DEBUG_ADMIN_ONLY is not set.
+ */
+async function isAdminOnlyActive(registry: Registry): Promise<boolean> {
+  try {
+    const db = registry.getDb()
+    const result = await db.query(
+      `SELECT key, value FROM config_store WHERE key IN ('DEBUG_ADMIN_ONLY', 'ENGINE_TEST_MODE')`,
+    )
+    const configs: Record<string, string> = {}
+    for (const row of result.rows) configs[row.key as string] = row.value as string
+
+    // If DEBUG_ADMIN_ONLY is explicitly set, use it
+    if (configs['DEBUG_ADMIN_ONLY'] !== undefined) {
+      return configs['DEBUG_ADMIN_ONLY'] === 'true'
+    }
+    // Fallback: use ENGINE_TEST_MODE (legacy behavior)
+    return configs['ENGINE_TEST_MODE'] === 'true'
+  } catch {
+    return engineConfig.testMode
+  }
 }

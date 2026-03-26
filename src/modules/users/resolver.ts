@@ -34,16 +34,19 @@ export async function resolveUserType(senderId: string, channel: string, fallbac
     throw new Error('Users module not initialized')
   }
 
-  // 1. Cache hit?
-  const cached = await _cache.get(senderId, channel)
-  if (cached) {
-    logger.debug({ senderId, channel, userType: cached.userType }, 'User resolved from cache')
-    return {
-      userType: cached.userType,
-      listName: cached.listName,
-      userId: cached.userId,
-      contactId: senderId,
-      fromCache: true,
+  // 1. Cache hit? (skip if DEBUG_CACHE_ENABLED=false)
+  const cacheEnabled = await isCacheEnabled()
+  if (cacheEnabled) {
+    const cached = await _cache.get(senderId, channel)
+    if (cached) {
+      logger.debug({ senderId, channel, userType: cached.userType }, 'User resolved from cache')
+      return {
+        userType: cached.userType,
+        listName: cached.listName,
+        userId: cached.userId,
+        contactId: senderId,
+        fromCache: true,
+      }
     }
   }
 
@@ -84,12 +87,14 @@ export async function resolveUserType(senderId: string, channel: string, fallbac
     }
   }
 
-  // 3. Cache the result
-  await _cache.set(senderId, channel, {
-    userType: resolution.userType,
-    listName: resolution.listName,
-    userId: resolution.userId,
-  })
+  // 3. Cache the result (skip if cache disabled)
+  if (cacheEnabled) {
+    await _cache.set(senderId, channel, {
+      userType: resolution.userType,
+      listName: resolution.listName,
+      userId: resolution.userId,
+    })
+  }
 
   // 4. Fire hook
   try {
@@ -125,5 +130,17 @@ export async function invalidateUserCacheForUser(userId: string): Promise<void> 
   const contacts = await _db.getContactsForUser(userId)
   for (const c of contacts) {
     await _cache.invalidate(c.senderId)
+  }
+}
+
+/** Check if debug cache is enabled (default true). Reads from config_store via registry DB. */
+async function isCacheEnabled(): Promise<boolean> {
+  if (!_registry) return true
+  try {
+    const db = _registry.getDb()
+    const result = await db.query(`SELECT value FROM config_store WHERE key = 'DEBUG_CACHE_ENABLED'`)
+    return result.rows[0]?.value !== 'false'
+  } catch {
+    return true
   }
 }

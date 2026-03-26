@@ -972,16 +972,16 @@
   }
 
   // === Test mode toggle (in user dropdown) — persists ENGINE_TEST_MODE ===
+  // When deactivated: resets DEBUG_CACHE_ENABLED=true, DEBUG_ADMIN_ONLY=false, DEBUG_EXTREME_LOG=false
   var testModeCb = document.getElementById('test-mode-cb')
-  var resetDbMenu = document.getElementById('btn-resetdb-menu')
 
   if (testModeCb) {
     testModeCb.addEventListener('change', function () {
       var lang = document.documentElement.lang || 'es'
       if (testModeCb.checked) {
         var msg = lang === 'es'
-          ? '¿Activar modo de pruebas? Solo los admins recibirán respuesta y se habilitarán acciones destructivas.'
-          : 'Enable test mode? Only admins will receive responses and destructive actions will be enabled.'
+          ? '¿Activar modo de pruebas? Se habilitarán acciones destructivas y el panel de debug.'
+          : 'Enable test mode? Destructive actions and debug panel will be enabled.'
         if (!confirm(msg)) {
           testModeCb.checked = false
           return
@@ -993,6 +993,12 @@
       body.append('_section', section)
       body.append('_lang', lang)
       body.append('ENGINE_TEST_MODE', val)
+      // When deactivating: reset all debug flags
+      if (!testModeCb.checked) {
+        body.append('DEBUG_CACHE_ENABLED', 'true')
+        body.append('DEBUG_ADMIN_ONLY', 'false')
+        body.append('DEBUG_EXTREME_LOG', 'false')
+      }
 
       fetch('/console/apply', { method: 'POST', body: body, headers: { 'X-Instant-Toggle': '1' } })
         .then(function (r) {
@@ -1001,6 +1007,8 @@
               ? (lang === 'es' ? 'Modo de pruebas activado' : 'Test mode enabled')
               : (lang === 'es' ? 'Modo de pruebas desactivado' : 'Test mode disabled'),
               testModeCb.checked ? 'warning' : 'success')
+            // Reload page so debug icon appears/disappears
+            setTimeout(function () { location.reload() }, 600)
           } else {
             throw new Error('save failed')
           }
@@ -1009,13 +1017,141 @@
           testModeCb.checked = !testModeCb.checked
           showToast('Error', 'error')
         })
-      if (resetDbMenu) resetDbMenu.style.display = testModeCb.checked ? 'flex' : 'none'
     })
   }
 
-  if (resetDbMenu) {
-    resetDbMenu.addEventListener('click', function () {
-      window.resetDb()
+  // === Debug panel toggles ===
+  function debugToggle(cbId, configKey, toastOn, toastOff) {
+    var cb = document.getElementById(cbId)
+    if (!cb) return
+    cb.addEventListener('change', function () {
+      var val = cb.checked ? 'true' : 'false'
+      var section = (document.querySelector('input[name="_section"]') || {}).value || 'engine'
+      var lang = document.documentElement.lang || 'es'
+      var body = new URLSearchParams()
+      body.append('_section', section)
+      body.append('_lang', lang)
+      body.append(configKey, val)
+
+      fetch('/console/apply', { method: 'POST', body: body, headers: { 'X-Instant-Toggle': '1' } })
+        .then(function (r) {
+          if (r.ok || r.redirected) {
+            showToast(cb.checked ? toastOn : toastOff, 'success')
+          } else { throw new Error('fail') }
+        })
+        .catch(function () {
+          cb.checked = !cb.checked
+          showToast('Error', 'error')
+        })
+    })
+  }
+
+  debugToggle('debug-cache-cb', 'DEBUG_CACHE_ENABLED', 'Cache ON', 'Cache OFF')
+  debugToggle('debug-log-cb', 'DEBUG_EXTREME_LOG', 'Extreme log ON', 'Extreme log OFF')
+  debugToggle('debug-admin-cb', 'DEBUG_ADMIN_ONLY', 'Admin only ON', 'Admin only OFF')
+
+  // === Type-to-confirm modal system ===
+  var confirmModal = document.getElementById('confirm-modal')
+  var confirmTitle = document.getElementById('confirm-modal-title')
+  var confirmDesc = document.getElementById('confirm-modal-desc')
+  var confirmInput = document.getElementById('confirm-modal-input')
+  var confirmBtn = document.getElementById('confirm-modal-btn')
+  var confirmCancel = document.getElementById('confirm-modal-cancel')
+  var confirmCallback = null
+  var confirmWord = ''
+
+  function openConfirmModal(opts) {
+    if (!confirmModal) return
+    confirmWord = opts.word || 'BORRAR'
+    confirmTitle.textContent = opts.title || ''
+    confirmDesc.textContent = opts.desc || ''
+    confirmInput.setAttribute('placeholder', opts.placeholder || '')
+    confirmInput.value = ''
+    confirmBtn.disabled = true
+    confirmCallback = opts.onConfirm || null
+    confirmModal.style.display = ''
+    setTimeout(function () { confirmInput.focus() }, 100)
+  }
+
+  function closeConfirmModal() {
+    if (confirmModal) confirmModal.style.display = 'none'
+    confirmCallback = null
+    if (confirmInput) confirmInput.value = ''
+  }
+
+  if (confirmInput) {
+    confirmInput.addEventListener('input', function () {
+      confirmBtn.disabled = confirmInput.value.trim() !== confirmWord
+    })
+    confirmInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !confirmBtn.disabled && confirmCallback) {
+        confirmCallback()
+        closeConfirmModal()
+      }
+    })
+  }
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', function () {
+      if (confirmCallback) confirmCallback()
+      closeConfirmModal()
+    })
+  }
+  if (confirmCancel) confirmCancel.addEventListener('click', closeConfirmModal)
+  if (confirmModal) {
+    confirmModal.addEventListener('click', function (e) {
+      if (e.target === confirmModal) closeConfirmModal()
+    })
+  }
+
+  // === Debug destructive actions ===
+  var dlang = document.documentElement.lang || 'es'
+  var cword = dlang === 'es' ? 'BORRAR' : 'DELETE'
+  var cplaceholder = dlang === 'es' ? 'Escribe BORRAR para confirmar' : 'Type DELETE to confirm'
+
+  function debugDestructiveAction(btnId, endpoint, title, desc, successMsg) {
+    var btn = document.getElementById(btnId)
+    if (!btn) return
+    btn.addEventListener('click', function () {
+      openConfirmModal({
+        title: title,
+        desc: desc,
+        word: cword,
+        placeholder: cplaceholder,
+        onConfirm: function () {
+          fetch(endpoint, { method: 'POST' })
+            .then(function (r) {
+              if (r.ok) { showToast(successMsg, 'success') }
+              else { throw new Error('fail') }
+            })
+            .catch(function () { showToast('Error', 'error') })
+        }
+      })
+    })
+  }
+
+  debugDestructiveAction('btn-clear-cache', '/console/api/console/clear-cache',
+    dlang === 'es' ? '¿Limpiar todo el cache?' : 'Clear all cache?',
+    dlang === 'es' ? 'Se borrará todo el cache de Redis (resolución de usuarios, contextos, sesiones).' : 'All Redis cache will be cleared (user resolution, contexts, sessions).',
+    dlang === 'es' ? 'Cache limpiado' : 'Cache cleared')
+
+  debugDestructiveAction('btn-clear-memory', '/console/api/console/clear-memory',
+    dlang === 'es' ? '¿Limpiar toda la memoria?' : 'Clear all memory?',
+    dlang === 'es' ? 'Se borrarán mensajes, sesiones, contactos y memoria. Se conservan configuración y usuarios admin.' : 'Messages, sessions, contacts and memory will be deleted. Config and admin users are preserved.',
+    dlang === 'es' ? 'Memoria limpiada' : 'Memory cleared')
+
+  debugDestructiveAction('btn-factory-reset', '/console/api/console/factory-reset',
+    dlang === 'es' ? '⚠️ Ajustes de fábrica' : '⚠️ Factory reset',
+    dlang === 'es' ? 'Se borrará TODA la configuración y memoria. Solo se conservan los usuarios admin. Esta acción NO se puede deshacer.' : 'ALL configuration and memory will be deleted. Only admin users are preserved. This action CANNOT be undone.',
+    dlang === 'es' ? 'Ajustes de fábrica aplicados' : 'Factory reset applied')
+
+  // === Language submenu (accordion in user dropdown) ===
+  var langTrigger = document.getElementById('lang-submenu-trigger')
+  var langPanel = document.getElementById('lang-submenu')
+  if (langTrigger && langPanel) {
+    langTrigger.addEventListener('click', function (e) {
+      e.stopPropagation()
+      langPanel.classList.toggle('open')
+      langTrigger.classList.toggle('open')
     })
   }
 
