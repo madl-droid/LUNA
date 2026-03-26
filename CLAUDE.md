@@ -190,6 +190,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 ### Módulos documentados
 - `src/modules/CLAUDE.md` — **reglas de creación de módulos** (se carga automáticamente al trabajar en cualquier módulo)
 - `src/kernel/CLAUDE.md` — core del sistema modular
+- `src/kernel/setup/CLAUDE.md` — wizard de instalacion + auth (login/logout, sessions, factory reset)
 - `src/modules/whatsapp/CLAUDE.md` — canal WhatsApp (Baileys)
 - `src/modules/memory/CLAUDE.md` — memoria Redis+PG
 - `src/modules/console/CLAUDE.md` — panel de control web

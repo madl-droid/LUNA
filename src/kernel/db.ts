@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS config_store (
   is_secret   BOOLEAN DEFAULT false,
   updated_at  TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS user_credentials (
+  user_id       VARCHAR(20) PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  last_login    TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
+);
 `
 
 export async function createPool(): Promise<Pool> {

@@ -1,21 +1,60 @@
 // LUNA — Leads Unified Nurturing Agent
-// Entry point: kernel boots, loads modules, starts server.
+// Entry point: kernel boots, checks setup, loads modules, starts server.
 
+import * as http from 'node:http'
 import { createPool } from './kernel/db.js'
 import { createRedis } from './kernel/redis.js'
 import { Registry } from './kernel/registry.js'
 import { loadModules } from './kernel/loader.js'
 import { Server } from './kernel/server.js'
 import { kernelConfig } from './kernel/config.js'
+import { isSetupCompleted } from './kernel/setup/detect.js'
+import { createSetupHandler } from './kernel/setup/handler.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'luna' })
+
+/** Run the setup wizard on a temporary HTTP server. Blocks until setup completes. */
+async function runSetupWizard(db: import('pg').Pool, redis: import('ioredis').Redis): Promise<void> {
+  logger.info('Setup not completed — starting installation wizard...')
+
+  return new Promise<void>((resolve) => {
+    const handler = createSetupHandler(db, redis, () => {
+      // On setup complete, close temp server and continue boot
+      tempServer.close(() => {
+        logger.info('Setup wizard completed, continuing boot sequence...')
+        resolve()
+      })
+    })
+
+    const tempServer = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse) => {
+      try {
+        await handler(req, res)
+      } catch (err) {
+        logger.error({ err, url: req.url }, 'Setup handler error')
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end('Internal server error')
+      }
+    })
+
+    const port = kernelConfig.port
+    tempServer.listen(port, () => {
+      logger.info({ port }, 'Setup wizard available at http://localhost:%d/setup', port)
+    })
+  })
+}
 
 async function main(): Promise<void> {
   logger.info({ env: kernelConfig.nodeEnv }, 'LUNA starting...')
 
   const db = await createPool()
   const redis = await createRedis()
+
+  // Check if setup wizard is needed (fresh install)
+  if (!await isSetupCompleted(db)) {
+    await runSetupWizard(db, redis)
+  }
+
   const registry = new Registry(db, redis)
 
   // Load and activate modules from src/modules/
