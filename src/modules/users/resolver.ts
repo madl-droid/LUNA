@@ -68,11 +68,30 @@ export async function resolveUserType(senderId: string, channel: string, fallbac
     const leadConfig = await _db.getListConfig('lead')
 
     if (leadConfig?.isEnabled) {
-      resolution = {
-        userType: 'lead',
-        listName: leadConfig.displayName,
-        contactId: senderId,
-        fromCache: false,
+      // Auto-register inbound contact as lead in DB
+      try {
+        const newUser = await _db.createUser({
+          listType: 'lead',
+          displayName: null,
+          contacts: [{ channel, senderId }],
+          source: 'inbound',
+        })
+        logger.info({ userId: newUser.id, senderId, channel }, 'Auto-registered inbound lead')
+        resolution = {
+          userType: 'lead',
+          listName: leadConfig.displayName,
+          userId: newUser.id,
+          contactId: senderId,
+          fromCache: false,
+        }
+      } catch (err) {
+        logger.warn({ err: (err as Error).message, senderId, channel }, 'Failed to auto-register lead, resolving without user ID')
+        resolution = {
+          userType: 'lead',
+          listName: leadConfig.displayName,
+          contactId: senderId,
+          fromCache: false,
+        }
       }
     } else {
       const behavior: UnregisteredBehavior = leadConfig?.unregisteredBehavior ?? 'silence'
