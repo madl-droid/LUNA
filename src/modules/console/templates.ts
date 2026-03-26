@@ -423,7 +423,8 @@ function renderSidebar(opts: PageOptions): string {
 
     for (const item of items) {
       const isActive = opts.section === item.id
-      nav += `<a href="/console/${item.id}?lang=${opts.lang}" class="sidebar-item ${isActive ? 'active' : ''}">
+      const itemHref = item.id === 'dashboard' ? `/console?lang=${opts.lang}` : `/console/${item.id}?lang=${opts.lang}`
+      nav += `<a href="${itemHref}" class="sidebar-item ${isActive ? 'active' : ''}">
         <span class="nav-icon">${item.icon}</span>
         <span>${item.label}</span>
         ${item.badge || ''}
@@ -561,7 +562,7 @@ function renderSectionHeader(opts: PageOptions): string {
     // 3rd level: Consola > Canales > ChannelName (from manifest)
     const chName = opts.channelDisplayName ?? opts.channelSettingsId
     breadcrumb = `<div class="ch-breadcrumb">
-      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <a href="/console/channels?lang=${opts.lang}">${channelsLbl}</a>${sep}
       <span>${esc(chName)}</span>
     </div>`
@@ -571,7 +572,7 @@ function renderSectionHeader(opts: PageOptions): string {
     const listInfo = opts.contactLists?.find(l => l.listType === opts.contactsSubpage)
     const listName = listInfo?.displayName ?? opts.contactsSubpage
     breadcrumb = `<div class="ch-breadcrumb">
-      <a href="/console/contacts?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <a href="/console/contacts?lang=${opts.lang}">${contactsLbl}</a>${sep}
       <span>${esc(listName)}</span>
     </div>`
@@ -589,7 +590,7 @@ function renderSectionHeader(opts: PageOptions): string {
   } else if (opts.section === 'channels') {
     // 2nd level: Consola > Canales
     breadcrumb = `<div class="ch-breadcrumb">
-      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <span>${channelsLbl}</span>
     </div>`
   }
@@ -609,7 +610,7 @@ function renderSectionHeader(opts: PageOptions): string {
     const subKey = `sec_agente_${opts.agenteSubpage}` as Parameters<typeof t>[0]
     const subLbl = t(subKey, opts.lang)
     breadcrumb = `<div class="ch-breadcrumb">
-      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <a href="/console/agente?lang=${opts.lang}">${agenteLbl}</a>${sep}
       <span>${esc(subLbl)}</span>
     </div>`
@@ -621,7 +622,7 @@ function renderSectionHeader(opts: PageOptions): string {
     const subKey = `sec_herramientas_${opts.herramientasSubpage.replace(/-/g, '_')}` as Parameters<typeof t>[0]
     const subLbl = t(subKey, opts.lang)
     breadcrumb = `<div class="ch-breadcrumb">
-      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <a href="/console/herramientas?lang=${opts.lang}">${herramientasLbl}</a>${sep}
       <span>${esc(subLbl)}</span>
     </div>`
@@ -638,7 +639,7 @@ function renderSectionHeader(opts: PageOptions): string {
       if (dynMod) sectionLabel = dynMod.title[opts.lang] || dynMod.title.es || opts.section
     }
     breadcrumb = `<div class="ch-breadcrumb">
-      <a href="/console/channels?lang=${opts.lang}">${consoleLbl}</a>${sep}
+      <a href="/console?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <span>${esc(sectionLabel)}</span>
     </div>`
   }
