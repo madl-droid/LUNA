@@ -22,6 +22,7 @@ export interface UserPermissions {
   skills: string[]
   subagents: boolean
   allAccess: boolean
+  knowledgeCategories?: string[]
 }
 
 // ═══════════════════════════════════════════
@@ -95,15 +96,28 @@ export interface UserListInput {
 }
 
 // ═══════════════════════════════════════════
-// List config (unchanged)
+// List config
 // ═══════════════════════════════════════════
+
+/** System list types — fixed names, cannot be deleted. */
+export const SYSTEM_LIST_TYPES = ['admin', 'lead', 'coworker', 'partners'] as const
+
+/** Behavior when a list is disabled. */
+export type DisableBehavior = 'leads' | 'silence' | 'move'
 
 /** Config de una lista (tabla user_list_config). */
 export interface UserListConfig {
   listType: string
   displayName: string
+  description: string
   isEnabled: boolean
+  isSystem: boolean
   permissions: UserPermissions
+  knowledgeCategories: string[]
+  assignmentEnabled: boolean
+  assignmentPrompt: string
+  disableBehavior: DisableBehavior
+  disableTargetList: string | null
   syncConfig: SyncConfig
   unregisteredBehavior: UnregisteredBehavior
   unregisteredMessage: string | null

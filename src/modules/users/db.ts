@@ -107,6 +107,17 @@ export class UsersDb {
         await this.migrateFromUserLists(client)
       }
 
+      // Add new columns to user_list_config (idempotent)
+      await client.query(`
+        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT false;
+        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS knowledge_categories TEXT[] DEFAULT '{}';
+        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS assignment_enabled BOOLEAN DEFAULT false;
+        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS assignment_prompt TEXT DEFAULT '';
+        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS disable_behavior VARCHAR(50) DEFAULT 'leads';
+        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS disable_target_list VARCHAR(50);
+      `)
+
       logger.info('User tables ensured')
     } finally {
       client.release()
@@ -193,21 +204,25 @@ export class UsersDb {
     }
   }
 
-  /** Seed default configs for admin and lead if they don't exist. */
+  /** Seed default configs for system lists if they don't exist. */
   async seedDefaults(): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO user_list_config (list_type, display_name, is_enabled, permissions, max_users)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (list_type) DO NOTHING`,
-      ['admin', 'Administradores', true, JSON.stringify(DEFAULT_ADMIN_PERMISSIONS), 5],
-    )
+    const DEFAULT_COWORKER_PERMISSIONS: UserPermissions = { tools: [], skills: [], subagents: false, allAccess: false }
 
-    await this.pool.query(
-      `INSERT INTO user_list_config (list_type, display_name, is_enabled, permissions, unregistered_behavior)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (list_type) DO NOTHING`,
-      ['lead', 'Leads', true, JSON.stringify(DEFAULT_LEAD_PERMISSIONS), 'silence'],
-    )
+    const systemLists: Array<{ type: string; name: string; perms: UserPermissions; maxUsers?: number; behavior?: string }> = [
+      { type: 'admin', name: 'Administradores', perms: DEFAULT_ADMIN_PERMISSIONS, maxUsers: 5 },
+      { type: 'lead', name: 'Leads', perms: DEFAULT_LEAD_PERMISSIONS, behavior: 'silence' },
+      { type: 'coworker', name: 'Coworkers', perms: DEFAULT_COWORKER_PERMISSIONS },
+      { type: 'partners', name: 'Partners', perms: DEFAULT_COWORKER_PERMISSIONS },
+    ]
+
+    for (const list of systemLists) {
+      await this.pool.query(
+        `INSERT INTO user_list_config (list_type, display_name, is_enabled, is_system, permissions, max_users, unregistered_behavior)
+         VALUES ($1, $2, $3, true, $4, $5, $6)
+         ON CONFLICT (list_type) DO UPDATE SET is_system = true`,
+        [list.type, list.name, list.type === 'admin', JSON.stringify(list.perms), list.maxUsers ?? null, list.behavior ?? 'silence'],
+      )
+    }
 
     logger.info('Default user list configs seeded')
   }
@@ -514,35 +529,53 @@ export class UsersDb {
     permissions: UserPermissions,
     opts?: {
       isEnabled?: boolean
+      description?: string
       syncConfig?: SyncConfig
       unregisteredBehavior?: UnregisteredBehavior
       unregisteredMessage?: string | null
       maxUsers?: number | null
+      knowledgeCategories?: string[]
+      assignmentEnabled?: boolean
+      assignmentPrompt?: string
+      disableBehavior?: string
+      disableTargetList?: string | null
     },
   ): Promise<UserListConfig> {
     const result = await this.pool.query(
-      `INSERT INTO user_list_config (list_type, display_name, is_enabled, permissions, sync_config, unregistered_behavior, unregistered_message, max_users)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO user_list_config (list_type, display_name, description, is_enabled, permissions, sync_config, unregistered_behavior, unregistered_message, max_users, knowledge_categories, assignment_enabled, assignment_prompt, disable_behavior, disable_target_list)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        ON CONFLICT (list_type)
        DO UPDATE SET
          display_name = EXCLUDED.display_name,
+         description = EXCLUDED.description,
          is_enabled = EXCLUDED.is_enabled,
          permissions = EXCLUDED.permissions,
          sync_config = EXCLUDED.sync_config,
          unregistered_behavior = EXCLUDED.unregistered_behavior,
          unregistered_message = EXCLUDED.unregistered_message,
          max_users = EXCLUDED.max_users,
+         knowledge_categories = EXCLUDED.knowledge_categories,
+         assignment_enabled = EXCLUDED.assignment_enabled,
+         assignment_prompt = EXCLUDED.assignment_prompt,
+         disable_behavior = EXCLUDED.disable_behavior,
+         disable_target_list = EXCLUDED.disable_target_list,
          updated_at = NOW()
        RETURNING *`,
       [
         listType,
         displayName,
+        opts?.description ?? '',
         opts?.isEnabled ?? true,
         JSON.stringify(permissions),
         JSON.stringify(opts?.syncConfig ?? {}),
         opts?.unregisteredBehavior ?? 'silence',
         opts?.unregisteredMessage ?? null,
         opts?.maxUsers ?? null,
+        opts?.knowledgeCategories ?? [],
+        opts?.assignmentEnabled ?? false,
+        opts?.assignmentPrompt ?? '',
+        opts?.disableBehavior ?? 'leads',
+        opts?.disableTargetList ?? null,
       ],
     )
 
@@ -607,13 +640,31 @@ export class UsersDb {
     return {
       listType: row.list_type,
       displayName: row.display_name,
+      description: row.description ?? '',
       isEnabled: row.is_enabled,
+      isSystem: row.is_system ?? false,
       permissions: row.permissions as UserPermissions,
+      knowledgeCategories: row.knowledge_categories ?? [],
+      assignmentEnabled: row.assignment_enabled ?? false,
+      assignmentPrompt: row.assignment_prompt ?? '',
+      disableBehavior: (row.disable_behavior ?? 'leads') as import('./types.js').DisableBehavior,
+      disableTargetList: row.disable_target_list ?? null,
       syncConfig: (row.sync_config ?? {}) as SyncConfig,
       unregisteredBehavior: row.unregistered_behavior as UnregisteredBehavior,
       unregisteredMessage: row.unregistered_message,
       maxUsers: row.max_users,
       updatedAt: new Date(row.updated_at),
     }
+  }
+
+  /** Delete a custom list config. Moves users to target list first. */
+  async deleteListConfig(listType: string, moveToList = 'lead'): Promise<void> {
+    // Move all users to target list
+    await this.pool.query(
+      `UPDATE users SET list_type = $1, updated_at = NOW() WHERE list_type = $2`,
+      [moveToList, listType],
+    )
+    // Delete config
+    await this.pool.query(`DELETE FROM user_list_config WHERE list_type = $1 AND is_system = false`, [listType])
   }
 }
