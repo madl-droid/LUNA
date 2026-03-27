@@ -11,7 +11,7 @@ import { FRAMEWORK_PRESETS, DEFAULT_AUTO_SIGNALS } from './frameworks.js'
 const logger = pino({ name: 'lead-scoring:config' })
 
 const DEFAULT_CONFIG: QualifyingConfig = {
-  framework: 'custom',
+  framework: 'spin',
   stages: [],
   criteria: [
     {
@@ -55,16 +55,11 @@ const DEFAULT_CONFIG: QualifyingConfig = {
     qualifying: 31,
     qualified: 70,
   },
-  qualifiedActions: ['scheduled', 'transferred_to_sales', 'sold', 'purchase_complete'],
+  qualifiedActions: ['scheduled', 'escalate_human'],
   defaultQualifiedAction: 'scheduled',
-  disqualifyReasons: [
-    { key: 'no_budget', name: { es: 'Sin presupuesto', en: 'No budget' }, targetStatus: 'not_interested' },
-    { key: 'not_interested', name: { es: 'No interesado', en: 'Not interested' }, targetStatus: 'not_interested' },
-    { key: 'spam', name: { es: 'Spam', en: 'Spam' }, targetStatus: 'blocked' },
-    { key: 'out_of_zone', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
-  ],
+  disqualifyReasons: [],
   autoSignals: DEFAULT_AUTO_SIGNALS,
-  maxCustomCriteria: 6,
+  maxCustomCriteria: 5,
   recalculateOnConfigChange: true,
   minConfidence: 0.3,
 }

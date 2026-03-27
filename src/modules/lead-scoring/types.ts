@@ -65,7 +65,7 @@ export interface QualifyingThresholds {
   qualified: number                        // score >= qualified → qualified
 }
 
-export type QualifiedAction = 'scheduled' | 'transferred_to_sales' | 'sold' | 'purchase_complete'
+export type QualifiedAction = 'scheduled' | 'payment_link' | 'escalate_human'
 
 export interface QualifyingConfig {
   /** Active framework type. 'custom' = no preset, fully manual config */
@@ -77,12 +77,28 @@ export interface QualifyingConfig {
   qualifiedActions: QualifiedAction[]
   defaultQualifiedAction: QualifiedAction
   disqualifyReasons: DisqualifyReason[]
-  /** Auto signals: engagement, geo fit, channel source, etc. */
+  /** Auto signals: response speed, question count, has campaign */
   autoSignals: AutoSignalDefinition[]
   maxCustomCriteria: number
+  /** Always true — system always recalculates on config change */
   recalculateOnConfigChange: boolean
   /** Minimum confidence (0-1) to accept an LLM extraction. Default: 0.3 */
   minConfidence: number
+}
+
+// ═══════════════════════════════════════════
+// Stats with channel breakdown
+// ═══════════════════════════════════════════
+
+export interface MetricChannelBreakdown {
+  channel: string
+  count: number
+}
+
+export interface StatusMetric {
+  status: string
+  total: number
+  channels: MetricChannelBreakdown[]
 }
 
 // ═══════════════════════════════════════════

@@ -164,6 +164,25 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // GET /console/api/lead-scoring/stats-detailed?period=7d&channels=whatsapp,gmail&qualification=qualifying
+    {
+      method: 'GET',
+      path: 'stats-detailed',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const period = (q.get('period') as 'today' | '7d' | '30d' | '90d' | 'all') ?? 'all'
+          const channelsRaw = q.get('channels')
+          const channels = channelsRaw ? channelsRaw.split(',').filter(Boolean) : undefined
+          const qualification = (q.get('qualification') as QualificationStatus) ?? undefined
+          const metrics = await getQueries().getStatsDetailed({ period, channels, qualification })
+          jsonResponse(res, 200, { metrics })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // ─── Lead endpoints ───
 
     // GET /console/api/lead-scoring/leads?status=X&search=Y&limit=50&offset=0&sort=score&dir=desc
@@ -584,10 +603,10 @@ const manifest: ModuleManifest = {
   }),
 
   console: {
-    title: { es: 'Calificación de Leads', en: 'Lead Scoring' },
+    title: { es: 'Calificación', en: 'Qualification' },
     info: {
-      es: 'Configura criterios de calificación, umbrales, y visualiza leads del sistema.',
-      en: 'Configure qualification criteria, thresholds, and view system leads.',
+      es: 'Configura frameworks de calificación, métricas, comportamiento del agente y señales automáticas.',
+      en: 'Configure qualification frameworks, metrics, agent behavior and automatic signals.',
     },
     order: 15,
     group: 'leads',
@@ -642,8 +661,8 @@ const manifest: ModuleManifest = {
       // Reload campaign matcher (in case campaigns were modified externally)
       await reloadCampaignMatcher()
 
-      // Recalculate if enabled and thresholds/criteria changed
-      if (newConfig.recalculateOnConfigChange) {
+      // Always recalculate if thresholds/criteria changed
+      {
         const criteriaChanged = JSON.stringify(oldConfig.criteria) !== JSON.stringify(newConfig.criteria)
         const thresholdsChanged = JSON.stringify(oldConfig.thresholds) !== JSON.stringify(newConfig.thresholds)
 
