@@ -1160,10 +1160,14 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const infraHtml = renderSection('infra', sectionData) || ''
           sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml
         } else if (agenteSubpage === 'knowledge') {
-          const knowledgeMod = data.moduleStates.find(m => m.name === 'knowledge')
-          sectionData.agenteContent = knowledgeMod?.active && knowledgeMod.console?.fields?.length
-            ? renderModulePanels([knowledgeMod], data.config, lang, 'knowledge')
-            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
+          // Load knowledge items HTML via module service
+          try {
+            const renderFn = registry.getOptional<(lang: string) => Promise<string>>('knowledge:renderSection')
+            if (renderFn) {
+              sectionData.knowledgeItemsHtml = await renderFn(lang)
+            }
+          } catch { /* module not available */ }
+          sectionData.agenteContent = renderSection('knowledge', sectionData) ?? `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'memory') {
           const memoryMod = data.moduleStates.find(m => m.name === 'memory')
           sectionData.agenteContent = memoryMod?.active && memoryMod.console?.fields?.length

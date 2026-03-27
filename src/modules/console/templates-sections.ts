@@ -531,11 +531,6 @@ export function renderScheduledTasksSection(data: SectionData): string {
 
 export function renderKnowledgeItemsSection(data: SectionData): string {
   if (data.knowledgeItemsHtml) return data.knowledgeItemsHtml
-  // Fallback: generic module panels
-  const knowledgeMod = data.moduleStates?.find(m => m.name === 'knowledge')
-  if (knowledgeMod?.active && knowledgeMod.console?.fields?.length) {
-    return renderModulePanels([knowledgeMod], data.config, data.lang, 'knowledge')
-  }
   return `<div class="panel"><div class="panel-body panel-body-flat panel-body-empty">
     <p>${data.lang === 'es' ? 'Módulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p>
   </div></div>`
