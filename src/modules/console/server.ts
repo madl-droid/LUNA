@@ -1211,9 +1211,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           }
         } else if (herramientasSubpage === 'freight') {
           const freightMod = data.moduleStates.find(m => m.name === 'freight')
-          sectionData.herramientasContent = freightMod?.active && freightMod.console?.fields?.length
-            ? renderModulePanels([freightMod], data.config, lang, 'freight')
-            : notAvailable('flete')
+          if (freightMod?.active) {
+            try {
+              const renderFn = registry.getOptional<(lang: string) => string>('freight:renderSection')
+              if (renderFn) {
+                sectionData.herramientasContent = renderFn(lang)
+              }
+            } catch { /* ignore */ }
+          }
+          if (!sectionData.herramientasContent) {
+            sectionData.herramientasContent = notAvailable('flete')
+          }
         } else if (herramientasSubpage === 'medilink') {
           const medilinkMod = data.moduleStates.find(m => m.name === 'medilink')
           sectionData.herramientasContent = medilinkMod?.active && medilinkMod.console?.fields?.length

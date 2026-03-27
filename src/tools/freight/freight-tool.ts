@@ -54,13 +54,21 @@ const inputSchema = z.object({
 
 interface FreightModuleConfig {
   FREIGHT_ENABLED: boolean
-  FREIGHT_BUFFER_PERCENTAGE: number
   SEARATES_API_KEY: string
   SEARATES_PLATFORM_ID: string
+  SEARATES_BUFFER_PERCENTAGE: number
   DHL_EXPRESS_USERNAME: string
   DHL_EXPRESS_PASSWORD: string
   DHL_EXPRESS_ACCOUNT_NUMBER: string
   DHL_EXPRESS_TEST_MODE: boolean
+  DHL_EXPRESS_BUFFER_PERCENTAGE: number
+  FREIGHT_PARTS_SHEET_URL: string
+}
+
+/** Per-carrier buffer percentages */
+interface CarrierBuffers {
+  searates: number
+  dhl_express: number
 }
 
 function moduleConfigToSecrets(moduleConfig: FreightModuleConfig): FreightSecrets {
@@ -76,26 +84,21 @@ function moduleConfigToSecrets(moduleConfig: FreightModuleConfig): FreightSecret
 
 // ─── Config loader ────────────────────────────
 
-function loadFreightConfig(bufferOverride?: number): FreightConfig {
+function loadFreightConfig(): FreightConfig {
   const configPath = resolve(process.cwd(), 'instance/tools/freight.json')
   try {
     const raw = readFileSync(configPath, 'utf-8')
-    const config = JSON.parse(raw) as FreightConfig
-    // Allow module configSchema to override buffer
-    if (bufferOverride !== undefined) {
-      config.buffer_percentage = bufferOverride
-    }
-    return config
+    return JSON.parse(raw) as FreightConfig
   } catch (err) {
     logger.warn({ configPath, error: String(err) }, 'Could not load freight config, using defaults')
-    return getDefaultConfig(bufferOverride)
+    return getDefaultConfig()
   }
 }
 
-function getDefaultConfig(bufferOverride?: number): FreightConfig {
+function getDefaultConfig(): FreightConfig {
   return {
     enabled: true,
-    buffer_percentage: bufferOverride ?? 0.15,
+    buffer_percentage: 0.15,
     disclaimer_es: 'Este es un estimado aproximado. El precio final se confirma al cerrar la orden y puede variar según condiciones del envío.',
     disclaimer_en: 'This is an approximate estimate. Final price is confirmed when closing the order and may vary based on shipping conditions.',
     default_ready_days: 3,
@@ -125,6 +128,7 @@ async function handleEstimateFreight(
   input: Record<string, unknown>,
   config: FreightConfig,
   secrets: FreightSecrets,
+  carrierBuffers: CarrierBuffers,
 ): Promise<FreightEstimateResult> {
   // 1. Validate input
   const parsed = inputSchema.safeParse(input)
@@ -215,8 +219,9 @@ async function handleEstimateFreight(
     if (result.status === 'fulfilled') {
       const { carrierId, estimates } = result.value
       for (const est of estimates) {
-        // Apply buffer
-        const bufferedPrice = est.price_usd * (1 + config.buffer_percentage)
+        // Apply per-carrier buffer: price / (1 - buffer)
+        const buffer = carrierBuffers[carrierId] ?? config.buffer_percentage
+        const bufferedPrice = buffer < 1 ? est.price_usd / (1 - buffer) : est.price_usd
         allEstimates.push({
           carrier: carrierId,
           service_name: est.service_name,
@@ -270,14 +275,18 @@ export async function registerFreightTool(
     return
   }
 
-  const config = loadFreightConfig(moduleConfig.FREIGHT_BUFFER_PERCENTAGE)
+  const config = loadFreightConfig()
   const secrets = moduleConfigToSecrets(moduleConfig)
+  const carrierBuffers: CarrierBuffers = {
+    searates: moduleConfig.SEARATES_BUFFER_PERCENTAGE,
+    dhl_express: moduleConfig.DHL_EXPRESS_BUFFER_PERCENTAGE,
+  }
 
   await toolRegistry.registerTool({
     definition: {
       name: 'estimate-freight',
-      displayName: 'Estimar flete internacional',
-      description: 'Estima costo de flete internacional dado un origen, destino y carga. Retorna precios estimados y tiempos de tránsito de carriers disponibles. NO decide el origen - usar check_inventory primero si es necesario.',
+      displayName: 'Cotizar envío internacional',
+      description: 'Cotiza envío internacional dado un origen, destino y carga. Retorna precios estimados y tiempos de tránsito de carriers disponibles. NO decide el origen - usar check_inventory primero si es necesario.',
       category: 'logistics',
       sourceModule: 'freight',
       parameters: {
@@ -310,7 +319,7 @@ export async function registerFreightTool(
       },
     },
     handler: async (input) => {
-      const result = await handleEstimateFreight(input, config, secrets)
+      const result = await handleEstimateFreight(input, config, secrets, carrierBuffers)
       return {
         success: result.success,
         data: result,
