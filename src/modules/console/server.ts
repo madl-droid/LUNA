@@ -2325,6 +2325,8 @@ export function createApiRoutes(): ApiRoute[] {
             return
           }
           // Get TTS API key from config store
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
           const config = await configStore.getAll(registry.getDb())
           const apiKey = config['TTS_GOOGLE_API_KEY']
           if (!apiKey) {
