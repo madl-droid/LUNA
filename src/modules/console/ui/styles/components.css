@@ -2421,6 +2421,75 @@
 /* ═══════════════════════════════════════════
    Database Viewer (Debug)
    ═══════════════════════════════════════════ */
+
+/* Password gate */
+.db-auth-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 200px);
+}
+.db-auth-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-container-lowest);
+  border-radius: 0.75rem;
+  padding: 40px 48px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: var(--shadow-float);
+}
+.db-auth-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--on-surface);
+  margin: 4px 0 0;
+}
+.db-auth-desc {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  text-align: center;
+  margin: 0;
+  line-height: 1.5;
+}
+.db-auth-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 0.375rem;
+  background: var(--surface-container-low);
+  color: var(--on-surface);
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+.db-auth-input:focus {
+  border-color: var(--primary);
+}
+.db-auth-error {
+  font-size: 12px;
+  color: var(--error, #e53e3e);
+  text-align: center;
+}
+.db-auth-btn {
+  width: 100%;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 0.375rem;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.db-auth-btn:hover { opacity: 0.9; }
+.db-auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Viewer */
 .db-viewer {
   display: flex;
   gap: 0;

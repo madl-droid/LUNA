@@ -934,7 +934,19 @@ function renderDashboardSection(data: SectionData): string {
 // ═══════════════════════════════════════════
 export function renderDatabaseViewer(data: SectionData): string {
   const lang = data.lang
-  return `<div class="db-viewer" id="db-viewer-container" data-lang="${lang}">
+  return `<!-- Password gate -->
+<div class="db-auth-gate" id="db-auth-gate">
+  <div class="db-auth-card">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--on-surface-dim)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+    <h3 class="db-auth-title">${t('dbg_db_title', lang)}</h3>
+    <p class="db-auth-desc">${t('dbg_db_password_desc', lang)}</p>
+    <input type="password" class="db-auth-input" id="db-auth-password" placeholder="${lang === 'es' ? 'Contraseña de admin' : 'Admin password'}" autocomplete="off">
+    <div class="db-auth-error" id="db-auth-error" style="display:none"></div>
+    <button class="db-auth-btn" id="db-auth-submit">${lang === 'es' ? 'Acceder' : 'Access'}</button>
+  </div>
+</div>
+<!-- Viewer (hidden until auth) -->
+<div class="db-viewer" id="db-viewer-container" data-lang="${lang}" style="display:none">
   <div class="db-viewer-sidebar">
     <div class="db-viewer-sidebar-header">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>

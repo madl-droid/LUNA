@@ -1756,55 +1756,77 @@
 ;(function () {
   var dlang = document.documentElement.lang || 'es'
 
-  // Button in debug dropdown → open password modal
+  // Button in debug dropdown → navigate directly to db viewer page (page handles auth)
   var btnDbViewer = document.getElementById('btn-db-viewer')
   if (btnDbViewer) {
     btnDbViewer.addEventListener('click', function () {
-      openConfirmModal({
-        title: dlang === 'es' ? 'Visor de base de datos' : 'Database viewer',
-        desc: dlang === 'es'
-          ? 'Ingresa tu contraseña de admin para acceder al visor de base de datos.'
-          : 'Enter your admin password to access the database viewer.',
-        passwordMode: true,
-        placeholder: dlang === 'es' ? 'Contraseña de admin' : 'Admin password',
-        onConfirm: function () {
-          var pw = document.getElementById('confirm-modal-input').value
-          fetch('/console/api/console/db-viewer-auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: pw })
-          })
-            .then(function (r) {
-              if (r.status === 403) {
-                showToast(dlang === 'es' ? 'Contraseña incorrecta' : 'Invalid password', 'error')
-                return
-              }
-              if (!r.ok) throw new Error('fail')
-              return r.json()
-            })
-            .then(function (data) {
-              if (!data || !data.ok) return
-              window.location.href = '/console/debug/database'
-            })
-            .catch(function () { showToast('Error', 'error') })
-        }
-      })
+      window.location.href = '/console/debug/database'
     })
   }
 
-  // Database viewer page logic
+  // Database viewer page logic — password gate on page load
+  var dbAuthGate = document.getElementById('db-auth-gate')
   var dbContainer = document.getElementById('db-viewer-container')
-  if (!dbContainer) return
+  if (!dbAuthGate || !dbContainer) return
 
+  var authPassword = document.getElementById('db-auth-password')
+  var authSubmit = document.getElementById('db-auth-submit')
+  var authError = document.getElementById('db-auth-error')
+
+  function doAuth() {
+    var pw = authPassword.value.trim()
+    if (!pw) return
+    authSubmit.disabled = true
+    authError.style.display = 'none'
+
+    fetch('/console/api/console/db-viewer-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    })
+      .then(function (r) {
+        if (r.status === 403) {
+          authError.textContent = dlang === 'es' ? 'Contraseña incorrecta' : 'Invalid password'
+          authError.style.display = ''
+          authSubmit.disabled = false
+          authPassword.value = ''
+          authPassword.focus()
+          return
+        }
+        if (!r.ok) throw new Error('fail')
+        return r.json()
+      })
+      .then(function (data) {
+        if (!data || !data.ok) return
+        // Auth success — hide gate, show viewer, load tables
+        dbAuthGate.style.display = 'none'
+        dbContainer.style.display = ''
+        loadTables()
+      })
+      .catch(function () {
+        authError.textContent = 'Error'
+        authError.style.display = ''
+        authSubmit.disabled = false
+      })
+  }
+
+  authSubmit.addEventListener('click', doAuth)
+  authPassword.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') doAuth()
+  })
+  // Auto-focus password field
+  setTimeout(function () { authPassword.focus() }, 100)
+
+  // === Viewer logic (runs after auth) ===
   var tableList = document.getElementById('db-table-list')
   var gridHead = document.getElementById('db-grid-head')
   var gridBody = document.getElementById('db-grid-body')
   var gridScroll = document.getElementById('db-grid-scroll')
   var emptyState = document.getElementById('db-empty-state')
   var toolbar = document.getElementById('db-toolbar')
-  var tableName = document.getElementById('db-current-table')
+  var tableNameEl = document.getElementById('db-current-table')
   var tableMeta = document.getElementById('db-current-meta')
-  var pagination = document.getElementById('db-pagination')
+  var paginationEl = document.getElementById('db-pagination')
   var pageInfo = document.getElementById('db-pagination-info')
   var pageNum = document.getElementById('db-page-num')
   var btnPrev = document.getElementById('db-prev')
@@ -1816,36 +1838,36 @@
   var currentLimit = 50
   var currentTotal = 0
 
-  // Load table list
-  fetch('/console/api/console/db-tables')
-    .then(function (r) { return r.json() })
-    .then(function (data) {
-      if (!data.tables || data.tables.length === 0) {
-        tableList.innerHTML = '<div class="db-empty-item">' + (dlang === 'es' ? 'Sin tablas' : 'No tables') + '</div>'
-        return
-      }
-      tableList.innerHTML = ''
-      data.tables.forEach(function (t) {
-        var item = document.createElement('div')
-        item.className = 'db-table-item'
-        item.setAttribute('data-table', t.name)
-        item.innerHTML = '<span class="db-table-item-name">' + escHtml(t.name) + '</span>' +
-          '<span class="db-table-item-count">' + (t.rowCount >= 0 ? t.rowCount : '?') + '</span>'
-        item.addEventListener('click', function () {
-          // Select
-          var prev = tableList.querySelector('.db-table-item.active')
-          if (prev) prev.classList.remove('active')
-          item.classList.add('active')
-          currentTable = t.name
-          currentPage = 1
-          loadTableData()
+  function loadTables() {
+    fetch('/console/api/console/db-tables')
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (!data.tables || data.tables.length === 0) {
+          tableList.innerHTML = '<div class="db-empty-item">' + (dlang === 'es' ? 'Sin tablas' : 'No tables') + '</div>'
+          return
+        }
+        tableList.innerHTML = ''
+        data.tables.forEach(function (t) {
+          var item = document.createElement('div')
+          item.className = 'db-table-item'
+          item.setAttribute('data-table', t.name)
+          item.innerHTML = '<span class="db-table-item-name">' + escHtml(t.name) + '</span>' +
+            '<span class="db-table-item-count">' + (t.rowCount >= 0 ? t.rowCount : '?') + '</span>'
+          item.addEventListener('click', function () {
+            var prev = tableList.querySelector('.db-table-item.active')
+            if (prev) prev.classList.remove('active')
+            item.classList.add('active')
+            currentTable = t.name
+            currentPage = 1
+            loadTableData()
+          })
+          tableList.appendChild(item)
         })
-        tableList.appendChild(item)
       })
-    })
-    .catch(function () {
-      tableList.innerHTML = '<div class="db-empty-item">Error</div>'
-    })
+      .catch(function () {
+        tableList.innerHTML = '<div class="db-empty-item">Error</div>'
+      })
+  }
 
   function loadTableData() {
     if (!currentTable) return
@@ -1854,7 +1876,7 @@
     emptyState.style.display = 'none'
     gridScroll.style.display = ''
     toolbar.style.display = ''
-    pagination.style.display = ''
+    paginationEl.style.display = ''
 
     fetch('/console/api/console/db-table-data?table=' + encodeURIComponent(currentTable) +
       '&page=' + currentPage + '&limit=' + currentLimit)
@@ -1864,7 +1886,7 @@
       })
       .then(function (data) {
         currentTotal = data.total
-        tableName.textContent = currentTable
+        tableNameEl.textContent = currentTable
         tableMeta.textContent = data.total + ' ' + (dlang === 'es' ? 'filas' : 'rows') +
           ' · ' + data.columns.length + ' ' + (dlang === 'es' ? 'columnas' : 'columns')
 
