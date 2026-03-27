@@ -5,28 +5,79 @@
 import { z } from 'zod'
 import { Queue, Worker, type Job } from 'bullmq'
 import pino from 'pino'
-import type { ModuleManifest } from '../../kernel/types.js'
+import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { boolEnv, numEnvMin } from '../../kernel/config-helpers.js'
+import { numEnvMin } from '../../kernel/config-helpers.js'
+import { jsonResponse } from '../../kernel/http-helpers.js'
 import { registerFreshdeskGetArticleTool } from '../../tools/freshdesk/freshdesk-get-article.js'
 import { registerFreshdeskSearchTool } from '../../tools/freshdesk/freshdesk-search.js'
-import { runFreshdeskSync, isSyncStale } from '../../tools/freshdesk/freshdesk-sync.js'
+import { runFreshdeskSync, loadFreshdeskIndex, isSyncStale } from '../../tools/freshdesk/freshdesk-sync.js'
 import { invalidateFreshdeskIndex } from '../../tools/freshdesk/freshdesk-rag.js'
 import type { FreshdeskModuleConfig } from '../../tools/freshdesk/types.js'
+import { renderFreshdeskSection } from './console-section.js'
 
 const logger = pino({ name: 'module:freshdesk' })
 
 const QUEUE_NAME = 'luna:freshdesk-sync'
+const SYNC_CRON = '0 1 * * 0' // Sundays 1 AM — system-level, not user-configurable
 
 let syncQueue: Queue | null = null
 let syncWorker: Worker | null = null
+
+function createApiRoutes(registry: Registry, config: FreshdeskModuleConfig): ApiRoute[] {
+  return [
+    {
+      method: 'GET',
+      path: 'articles',
+      handler: async (_req, res) => {
+        const redis = registry.getRedis()
+        const index = await loadFreshdeskIndex(redis)
+        const syncAt = await redis.get('freshdesk:sync_at')
+        jsonResponse(res, 200, {
+          articles: index.map(a => ({ article_id: a.article_id, title: a.title, category_name: a.category_name, folder_name: a.folder_name })),
+          total: index.length,
+          lastSyncAt: syncAt,
+        })
+      },
+    },
+    {
+      method: 'GET',
+      path: 'cached-articles',
+      handler: async (_req, res) => {
+        const redis = registry.getRedis()
+        const keys = await redis.keys('freshdesk:article:*')
+        const ttlSeconds = config.FRESHDESK_CACHE_TTL_HOURS * 3600
+
+        const items: Array<{ article_id: number; title: string; cached_at: string; ttl_remaining_s: number }> = []
+        for (const key of keys) {
+          const ttl = await redis.ttl(key)
+          if (ttl <= 0) continue
+          const raw = await redis.get(key)
+          if (!raw) continue
+          try {
+            const article = JSON.parse(raw) as { article_id: number; title: string; cached_at: string }
+            items.push({
+              article_id: article.article_id,
+              title: article.title,
+              cached_at: article.cached_at,
+              ttl_remaining_s: ttl,
+            })
+          } catch { /* skip corrupted */ }
+        }
+
+        items.sort((a, b) => b.ttl_remaining_s - a.ttl_remaining_s)
+        jsonResponse(res, 200, { articles: items, total: items.length, ttlConfigured: ttlSeconds })
+      },
+    },
+  ]
+}
 
 const manifest: ModuleManifest = {
   name: 'freshdesk',
   version: '1.0.0',
   description: {
-    es: 'Integración con Freshdesk Knowledge Base (búsqueda y sync de artículos)',
-    en: 'Freshdesk Knowledge Base integration (article search and sync)',
+    es: 'Conecta con la base de conocimiento de Freshdesk para responder consultas de soporte',
+    en: 'Connects to Freshdesk knowledge base to answer support queries',
   },
   type: 'feature',
   removable: true,
@@ -36,17 +87,15 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     FRESHDESK_DOMAIN: z.string().default(''),
     FRESHDESK_API_KEY: z.string().default(''),
-    FRESHDESK_SYNC_ENABLED: boolEnv(false),
-    FRESHDESK_SYNC_CRON: z.string().default('0 1 * * 0'),
     FRESHDESK_CACHE_TTL_HOURS: numEnvMin(1, 24),
     FRESHDESK_CATEGORIES: z.string().default(''),
   }),
 
   console: {
-    title: { es: 'Freshdesk', en: 'Freshdesk' },
+    title: { es: 'Freshdesk Knowledge Base', en: 'Freshdesk Knowledge Base' },
     info: {
-      es: 'Integración con la Knowledge Base de Freshdesk. Sincroniza artículos y permite búsqueda desde el agente.',
-      en: 'Freshdesk Knowledge Base integration. Syncs articles and enables search from the agent.',
+      es: 'Conecta la base de conocimiento de Freshdesk para que el agente pueda buscar y consultar artículos de soporte.',
+      en: 'Connects the Freshdesk knowledge base so the agent can search and query support articles.',
     },
     order: 36,
     group: 'agent',
@@ -61,6 +110,7 @@ const manifest: ModuleManifest = {
           en: 'Your Freshdesk domain (e.g., mycompany.freshdesk.com). Without https://.',
         },
         placeholder: 'miempresa.freshdesk.com',
+        width: 'half',
       },
       {
         key: 'FRESHDESK_API_KEY',
@@ -71,38 +121,6 @@ const manifest: ModuleManifest = {
           en: 'Freshdesk API Key. Found under Profile > API Key in Freshdesk.',
         },
         placeholder: 'xxxxxxxxxx',
-      },
-      { key: '_div_sync', type: 'divider', label: { es: 'Sincronización', en: 'Sync' } },
-      {
-        key: 'FRESHDESK_SYNC_ENABLED',
-        type: 'boolean',
-        label: { es: 'Habilitar sync automático', en: 'Enable automatic sync' },
-        description: {
-          es: 'Sincroniza automáticamente los artículos de la Knowledge Base según el cron configurado.',
-          en: 'Automatically syncs Knowledge Base articles according to the configured cron schedule.',
-        },
-      },
-      {
-        key: 'FRESHDESK_SYNC_CRON',
-        type: 'text',
-        label: { es: 'Cron de sincronización', en: 'Sync cron' },
-        description: {
-          es: 'Expresión cron para el sync (default: domingos 1AM). Formato: min hora día mes díaSemana.',
-          en: 'Cron expression for sync (default: Sundays 1AM). Format: min hour day month weekday.',
-        },
-        placeholder: '0 1 * * 0',
-        width: 'half',
-      },
-      {
-        key: 'FRESHDESK_CACHE_TTL_HOURS',
-        type: 'number',
-        label: { es: 'TTL cache artículos (horas)', en: 'Article cache TTL (hours)' },
-        description: {
-          es: 'Tiempo que un artículo completo permanece cacheado en Redis después de consultarse.',
-          en: 'How long a full article stays cached in Redis after being fetched.',
-        },
-        min: 1,
-        max: 168,
         width: 'half',
       },
       {
@@ -114,9 +132,28 @@ const manifest: ModuleManifest = {
           en: 'Freshdesk category IDs, comma-separated. Empty = all categories.',
         },
         placeholder: '123,456,789',
+        width: 'half',
+      },
+      {
+        key: 'FRESHDESK_CACHE_TTL_HOURS',
+        type: 'select',
+        label: { es: 'Cache de artículos completos', en: 'Full article cache' },
+        description: {
+          es: 'Tiempo que un artículo completo permanece cacheado después de consultarse.',
+          en: 'How long a full article stays cached after being fetched.',
+        },
+        options: [
+          { value: '1', label: { es: '1 hora', en: '1 hour' } },
+          { value: '6', label: { es: '6 horas', en: '6 hours' } },
+          { value: '12', label: { es: '12 horas', en: '12 hours' } },
+          { value: '24', label: { es: '24 horas', en: '24 hours' } },
+          { value: '48', label: { es: '48 horas', en: '48 hours' } },
+          { value: '72', label: { es: '72 horas', en: '72 hours' } },
+        ],
+        width: 'half',
       },
     ],
-    apiRoutes: [],
+    apiRoutes: [], // populated at init time
   },
 
   async init(registry: Registry) {
@@ -139,10 +176,8 @@ const manifest: ModuleManifest = {
       logger.warn('Freshdesk cache is stale or empty — consider running a manual sync')
     }
 
-    // Set up sync job if enabled
-    if (config.FRESHDESK_SYNC_ENABLED) {
-      await startSyncScheduler(redis, config)
-    }
+    // Always start sync scheduler (system-level, not user-configurable)
+    await startSyncScheduler(redis, config)
 
     // Expose sync trigger as a service (for admin endpoints or manual trigger)
     registry.provide('freshdesk:sync', {
@@ -153,10 +188,20 @@ const manifest: ModuleManifest = {
       },
     })
 
+    // Mount API routes
+    const apiRoutes = createApiRoutes(registry, config)
+    if (manifest.console) {
+      manifest.console.apiRoutes = apiRoutes
+    }
+
+    // Register custom console section renderer
+    registry.provide('freshdesk:renderSection', (lang: string) => {
+      return renderFreshdeskSection(lang as 'es' | 'en')
+    })
+
     logger.info({
       domain: config.FRESHDESK_DOMAIN,
-      syncEnabled: config.FRESHDESK_SYNC_ENABLED,
-      syncCron: config.FRESHDESK_SYNC_CRON,
+      syncCron: SYNC_CRON,
       cacheTtlHours: config.FRESHDESK_CACHE_TTL_HOURS,
     }, 'Freshdesk module initialized')
   },
@@ -209,11 +254,11 @@ async function startSyncScheduler(redis: import('ioredis').Redis, config: Freshd
 
   // Schedule repeatable cron job
   await syncQueue.add('freshdesk-sync', {}, {
-    repeat: { pattern: config.FRESHDESK_SYNC_CRON },
+    repeat: { pattern: SYNC_CRON },
     jobId: 'repeat:freshdesk-sync',
   })
 
-  logger.info({ cron: config.FRESHDESK_SYNC_CRON }, 'Freshdesk sync scheduler started')
+  logger.info({ cron: SYNC_CRON }, 'Freshdesk sync scheduler started')
 }
 
 export default manifest
