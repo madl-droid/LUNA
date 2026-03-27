@@ -559,6 +559,100 @@ export function renderInfraUnifiedSection(data: SectionData): string {
   return h
 }
 
+// ═══════════════════════════════════════════
+// Agent Advanced — curated settings transferred from modules page
+// ═══════════════════════════════════════════
+
+export function renderAdvancedAgentSection(data: SectionData): string {
+  let h = ''
+
+  // Panel 1: API Keys
+  const apiTitle = data.lang === 'es' ? 'API Keys' : 'API Keys'
+  const apiInfo = data.lang === 'es'
+    ? 'Claves de acceso a proveedores LLM. Los overrides permiten usar keys distintas por capacidad.'
+    : 'LLM provider access keys. Overrides allow different keys per capability.'
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${apiTitle}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${apiInfo}</div>
+      ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang, 'f_ANTHROPIC_API_KEY', 'i_ANTHROPIC_API_KEY')}
+      ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang, 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY')}
+      ${secretField('LLM_VISION_API_KEY', cv(data, 'LLM_VISION_API_KEY'), data.lang,
+        data.lang === 'es' ? 'API Key Vision (override)' : 'Vision API Key (override)',
+        data.lang === 'es' ? 'Usar API key diferente para tareas de vision' : 'Use different API key for vision tasks')}
+      ${secretField('LLM_STT_API_KEY', cv(data, 'LLM_STT_API_KEY'), data.lang,
+        data.lang === 'es' ? 'API Key STT (override)' : 'STT API Key (override)',
+        data.lang === 'es' ? 'Usar API key diferente para Speech-to-Text' : 'Use different API key for Speech-to-Text')}
+      ${secretField('KNOWLEDGE_GOOGLE_AI_API_KEY', cv(data, 'KNOWLEDGE_GOOGLE_AI_API_KEY'), data.lang,
+        data.lang === 'es' ? 'API Key Embeddings (override)' : 'Embeddings API Key (override)',
+        data.lang === 'es' ? 'API key de Google AI para embeddings de conocimiento' : 'Google AI API key for knowledge embeddings')}
+    </div>
+  </div>`
+
+  // Panel 2: Funciones avanzadas
+  const featTitle = data.lang === 'es' ? 'Funciones avanzadas' : 'Advanced features'
+  const featInfo = data.lang === 'es'
+    ? 'Extraccion de URLs, scoring nocturno de leads, compresion de sesiones y reporte diario.'
+    : 'URL extraction, nightly lead scoring, session compression and daily report.'
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${featTitle}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${featInfo}</div>
+      ${boolField('ATTACHMENT_URL_ENABLED', cv(data, 'ATTACHMENT_URL_ENABLED') || 'true', data.lang,
+        data.lang === 'es' ? 'Extraer contenido de URLs' : 'Extract URL content',
+        data.lang === 'es' ? 'Detectar y extraer contenido de URLs en mensajes' : 'Detect and extract content from URLs in messages')}
+      ${boolField('NIGHTLY_SCORING_ENABLED', cv(data, 'NIGHTLY_SCORING_ENABLED') || 'true', data.lang,
+        data.lang === 'es' ? 'Scoring de leads frios' : 'Cold lead scoring',
+        data.lang === 'es' ? 'Re-evalua leads frios con LLM para decidir si vale la pena reactivarlos' : 'Re-evaluate cold leads with LLM to decide if reactivation is worthwhile')}
+      ${numField('NIGHTLY_SCORING_THRESHOLD', cv(data, 'NIGHTLY_SCORING_THRESHOLD'), data.lang,
+        data.lang === 'es' ? 'Threshold de reactivacion' : 'Reactivation threshold',
+        data.lang === 'es' ? 'Score minimo (0-100) para reactivar un lead frio' : 'Minimum score (0-100) to reactivate a cold lead')}
+      ${boolField('NIGHTLY_COMPRESSION_ENABLED', cv(data, 'NIGHTLY_COMPRESSION_ENABLED') || 'true', data.lang,
+        data.lang === 'es' ? 'Compresion de sesiones' : 'Session compression',
+        data.lang === 'es' ? 'Comprime sesiones con muchos mensajes a un resumen usando LLM' : 'Compress sessions with many messages into a summary using LLM')}
+      <div class="field-divider"><span>${data.lang === 'es' ? 'Reporte diario' : 'Daily report'}</span></div>
+      ${boolField('NIGHTLY_REPORT_ENABLED', cv(data, 'NIGHTLY_REPORT_ENABLED') || 'true', data.lang,
+        data.lang === 'es' ? 'Reporte diario' : 'Daily report',
+        data.lang === 'es' ? 'Genera metricas del dia y las sincroniza a Google Sheets' : 'Generate daily metrics and sync them to Google Sheets')}
+      ${textField('NIGHTLY_REPORT_SHEET_ID', cv(data, 'NIGHTLY_REPORT_SHEET_ID'), data.lang,
+        'Spreadsheet ID',
+        data.lang === 'es' ? 'ID del spreadsheet de Google donde sincronizar reportes' : 'Google spreadsheet ID for report sync')}
+      ${textField('NIGHTLY_REPORT_SHEET_NAME', cv(data, 'NIGHTLY_REPORT_SHEET_NAME'), data.lang,
+        data.lang === 'es' ? 'Nombre de hoja' : 'Sheet name',
+        data.lang === 'es' ? 'Nombre de la hoja dentro del spreadsheet' : 'Sheet tab name within the spreadsheet')}
+    </div>
+  </div>`
+
+  // Panel 3: Limites
+  const limTitle = data.lang === 'es' ? 'Limites' : 'Limits'
+  const limInfo = data.lang === 'es'
+    ? 'Circuit breaker y mantenimiento automatico de conocimiento.'
+    : 'Circuit breaker and automatic knowledge maintenance.'
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${limTitle}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${limInfo}</div>
+      ${numField('LLM_CB_FAILURE_THRESHOLD', cv(data, 'LLM_CB_FAILURE_THRESHOLD') || '5', data.lang,
+        data.lang === 'es' ? 'Fallos para circuit breaker' : 'Failures for circuit breaker',
+        data.lang === 'es' ? 'Cantidad de fallos en la ventana para marcar provider como DOWN (default: 5)' : 'Number of failures in window to mark provider as DOWN (default: 5)')}
+      ${numField('KNOWLEDGE_AUTO_DOWNGRADE_DAYS', cv(data, 'KNOWLEDGE_AUTO_DOWNGRADE_DAYS') || '60', data.lang,
+        data.lang === 'es' ? 'Auto-downgrade (dias)' : 'Auto-downgrade (days)',
+        data.lang === 'es' ? 'Documentos core sin consultas en este periodo pierden el flag core automaticamente (default: 60)' : 'Core docs without hits in this period lose core flag automatically (default: 60)')}
+    </div>
+  </div>`
+
+  return h
+}
+
 export function renderEngineMetricsSection(data: SectionData): string {
   const lang = data.lang
 

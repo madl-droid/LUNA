@@ -12,7 +12,7 @@ import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
 import { pageLayout, type DynamicSidebarModule, type SidebarChannelInfo } from './templates.js'
-import { renderSection, SECTION_REDIRECTS } from './templates-sections.js'
+import { renderSection, renderAdvancedAgentSection, SECTION_REDIRECTS } from './templates-sections.js'
 import type { SectionData } from './templates-sections.js'
 import type { ModuleInfo } from './templates-modules.js'
 import { renderChannelSettingsPage } from './templates-channel-settings.js'
@@ -1164,32 +1164,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         sectionData.agenteSubpage = agenteSubpage
         // Map sub-pages to their actual section renderers
         if (agenteSubpage === 'advanced') {
-          // Combine LLM + Pipeline + Engine + Infra + Memory advanced with dividers
-          const llmHtml = renderSection('llm', sectionData) || ''
-          const pipelineHtml = renderSection('pipeline', sectionData) || ''
-          const engineMod = data.moduleStates.find(m => m.name === 'engine')
-          const engineHtml = engineMod?.active && engineMod.console?.fields?.length
-            ? renderModulePanels([engineMod], data.config, lang, 'engine')
-            : ''
-          const infraHtml = renderSection('infra', sectionData) || ''
-          // Memory advanced fields (compression, crons, advanced retention)
-          const memoryAdvancedKeys = new Set([
-            '_div_compression', 'MEMORY_COMPRESSION_THRESHOLD', 'MEMORY_COMPRESSION_KEEP_RECENT',
-            'MEMORY_COMPRESSION_MODEL', 'MEMORY_EMBEDDING_MODEL', 'MEMORY_MAX_CONTACT_MEMORY_WORDS',
-            'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', 'MEMORY_PURGE_MERGED_SUMMARIES',
-            'MEMORY_RECOMPRESSION_INTERVAL_DAYS',
-            '_div_crons', 'MEMORY_BATCH_COMPRESS_CRON', 'MEMORY_BATCH_EMBEDDINGS_CRON',
-            'MEMORY_BATCH_MERGE_CRON', 'MEMORY_BATCH_RECOMPRESS_CRON',
-            'MEMORY_BATCH_MEDIA_PURGE_CRON', 'MEMORY_BATCH_LOGS_PURGE_CRON',
-            'MEMORY_BATCH_ARCHIVE_PURGE_CRON',
-          ])
-          const memoryMod = data.moduleStates.find(m => m.name === 'memory')
-          let memoryAdvHtml = ''
-          if (memoryMod?.active && memoryMod.console?.fields?.length) {
-            const advMod = { ...memoryMod, console: { ...memoryMod.console, fields: memoryMod.console.fields.filter((f: { key: string }) => memoryAdvancedKeys.has(f.key)) } }
-            memoryAdvHtml = renderModulePanels([advMod], data.config, lang, 'memory')
-          }
-          sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml + memoryAdvHtml
+          sectionData.agenteContent = renderAdvancedAgentSection(sectionData)
         } else if (agenteSubpage === 'knowledge') {
           // Load knowledge items HTML via module service
           try {
