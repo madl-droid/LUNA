@@ -2126,29 +2126,19 @@ function renderUsersSection(data: SectionData): string {
   }
 
   // ── Deactivation modal (2-step confirmation) ──
-  const listOptsForModal = configs.filter(c => !['admin', 'partners'].includes(c.listType)).map(c =>
-    `<option value="${esc(c.listType)}">${esc(c.displayName)}</option>`
-  ).join('')
-
   html += `<div class="cb-deact-overlay" id="cb-deact-overlay" onclick="if(event.target===this)closeDeactModal()">
     <div class="cb-deact-modal">
       <div class="cb-deact-step active" id="cb-deact-step1">
         <h3>${lang === 'es' ? 'Desactivar base' : 'Deactivate base'}</h3>
         <p id="cb-deact-desc">${lang === 'es' ? '¿Que deseas hacer con los contactos de esta base?' : 'What do you want to do with the contacts in this base?'}</p>
-        <div class="field" style="margin-bottom:16px">
-          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Accion' : 'Action'}</span></div>
-          <select id="cb-deact-action" required>
-            <option value="" disabled selected>${lang === 'es' ? 'Selecciona una opcion...' : 'Select an option...'}</option>
-            <option value="leads">${lang === 'es' ? 'Tratar como leads' : 'Treat as leads'}</option>
-            <option value="silence">${lang === 'es' ? 'Ignorar silenciosamente' : 'Ignore silently'}</option>
-            <option value="move">${lang === 'es' ? 'Mover a otra lista' : 'Move to another list'}</option>
-          </select>
-        </div>
-        <div class="field" id="cb-deact-target-wrap" style="display:none;margin-bottom:16px">
-          <div class="field-left"><span class="field-label">${lang === 'es' ? 'Lista destino' : 'Target list'}</span></div>
-          <select id="cb-deact-target">${listOptsForModal}</select>
-        </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${lang === 'es' ? 'Accion' : 'Action'}</label>
+        <select class="wizard-input js-custom-select" id="cb-deact-action" required style="margin-bottom:12px">
+          <option value="" disabled selected>${lang === 'es' ? 'Selecciona una opcion...' : 'Select an option...'}</option>
+          <option value="silence">${lang === 'es' ? 'Silencio — solo registrar, sin respuesta' : 'Silence — register only, no response'}</option>
+          <option value="leads">${lang === 'es' ? 'Mover a Leads' : 'Move to Leads'}</option>
+          <option value="unregistered">${lang === 'es' ? 'Contacto no registrado — tratar como nuevo' : 'Unregistered — treat as new contact'}</option>
+        </select>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
           <button type="button" class="act-btn act-btn-config" onclick="closeDeactModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
           <button type="button" class="act-btn act-btn-remove" id="cb-deact-next" onclick="deactNextStep()">${lang === 'es' ? 'Continuar' : 'Continue'}</button>
         </div>
@@ -2347,25 +2337,21 @@ function renderUsersSection(data: SectionData): string {
     window.openDeactModal=function(lt,name){
       _deactLt=lt;_deactName=name;
       document.getElementById('cb-deact-action').selectedIndex=0;
-      document.getElementById('cb-deact-target-wrap').style.display='none';
       document.getElementById('cb-deact-step1').classList.add('active');
       document.getElementById('cb-deact-step2').classList.remove('active');
       document.getElementById('cb-deact-overlay').classList.add('open');
+      if(typeof initCustomSelects==='function')initCustomSelects();
     };
     window.closeDeactModal=function(){
       document.getElementById('cb-deact-overlay').classList.remove('open');
     };
-    document.getElementById('cb-deact-action').addEventListener('change',function(){
-      document.getElementById('cb-deact-target-wrap').style.display=this.value==='move'?'grid':'none';
-    });
     window.deactNextStep=function(){
       var action=document.getElementById('cb-deact-action').value;
       if(!action){alert(lang==='es'?'Selecciona una opcion.':'Select an option.');return}
-      if(action==='move'&&!document.getElementById('cb-deact-target').value){alert(lang==='es'?'Selecciona una lista destino.':'Select a target list.');return}
-      var actionText={leads:lang==='es'?'tratar como leads':'treat as leads',silence:lang==='es'?'ignorar silenciosamente':'ignore silently',move:lang==='es'?'mover a otra lista':'move to another list'};
+      var actionText={silence:lang==='es'?'registrar sin respuesta':'register without response',leads:lang==='es'?'mover a Leads':'move to Leads',unregistered:lang==='es'?'tratar como contacto nuevo en la proxima interaccion':'treat as new contact on next interaction'};
       var msg=lang==='es'
-        ?'Estas a punto de desactivar la base "'+_deactName+'". Los contactos se van a '+actionText[action]+'. Esta accion se puede revertir reactivando la base.'
-        :'You are about to deactivate the base "'+_deactName+'". Contacts will be '+actionText[action]+'. This action can be reversed by reactivating the base.';
+        ?'Estas a punto de desactivar la base "'+_deactName+'". Accion: '+actionText[action]+'. Esta accion se puede revertir reactivando la base.'
+        :'You are about to deactivate the base "'+_deactName+'". Action: '+actionText[action]+'. This action can be reversed by reactivating the base.';
       document.getElementById('cb-deact-confirm-msg').textContent=msg;
       document.getElementById('cb-deact-step1').classList.remove('active');
       document.getElementById('cb-deact-step2').classList.add('active');
@@ -2376,8 +2362,7 @@ function renderUsersSection(data: SectionData): string {
     };
     window.confirmDeactivation=function(){
       var action=document.getElementById('cb-deact-action').value;
-      var target=action==='move'?document.getElementById('cb-deact-target').value:'';
-      submitListToggle(_deactLt,false,action,target);
+      submitListToggle(_deactLt,false,action,'');
     };
 
     // ── Perm sync: checkbox → hidden field → dirty tracking ──
