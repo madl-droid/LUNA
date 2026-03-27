@@ -76,10 +76,10 @@ export class PromptsServiceImpl implements PromptsService {
     return cfg.AGENT_LANGUAGE || 'es'
   }
 
-  /** Agent accent / locale (BCP-47). */
+  /** Agent accent / locale (BCP-47). Empty string = neutral/no accent. */
   getAccent(): string {
     const cfg = this.registry.getConfig<{ AGENT_ACCENT: string }>('prompts')
-    return cfg.AGENT_ACCENT || 'es-MX'
+    return cfg.AGENT_ACCENT || ''
   }
 
   /**
@@ -130,7 +130,14 @@ export class PromptsServiceImpl implements PromptsService {
       relationship = await this.getPrompt('relationship', 'default')
     }
 
-    return { identity, job, guardrails, relationship }
+    // Inject accent prompt if configured
+    const cfg = this.registry.getConfig<{ AGENT_ACCENT: string; AGENT_ACCENT_PROMPT: string }>('prompts')
+    let finalIdentity = identity
+    if (cfg.AGENT_ACCENT && cfg.AGENT_ACCENT_PROMPT) {
+      finalIdentity = identity + '\n\n--- ACENTO ---\n' + cfg.AGENT_ACCENT_PROMPT
+    }
+
+    return { identity: finalIdentity, job, guardrails, relationship }
   }
 
   async getEvaluatorGenerated(): Promise<string> {

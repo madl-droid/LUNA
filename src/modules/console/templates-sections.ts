@@ -921,6 +921,80 @@ function renderIdentitySection(data: SectionData): string {
     { key: 'PROMPT_GUARDRAILS', label: isEs ? 'Reglas' : 'Rules', title: 'RULES PROMPT' },
   ]
 
+  // Language → accent mapping (BCP-47 code → country label)
+  // Each language maps to countries where it's an official language
+  const ACCENT_MAP: Record<string, Array<{ code: string; country: string }>> = {
+    es: [
+      { code: 'es-AR', country: 'Argentina' },
+      { code: 'es-BO', country: 'Bolivia' },
+      { code: 'es-CL', country: 'Chile' },
+      { code: 'es-CO', country: 'Colombia' },
+      { code: 'es-CR', country: 'Costa Rica' },
+      { code: 'es-CU', country: 'Cuba' },
+      { code: 'es-DO', country: isEs ? 'Republica Dominicana' : 'Dominican Republic' },
+      { code: 'es-EC', country: 'Ecuador' },
+      { code: 'es-SV', country: 'El Salvador' },
+      { code: 'es-GQ', country: isEs ? 'Guinea Ecuatorial' : 'Equatorial Guinea' },
+      { code: 'es-GT', country: 'Guatemala' },
+      { code: 'es-HN', country: 'Honduras' },
+      { code: 'es-MX', country: isEs ? 'Mexico' : 'Mexico' },
+      { code: 'es-NI', country: 'Nicaragua' },
+      { code: 'es-PA', country: isEs ? 'Panama' : 'Panama' },
+      { code: 'es-PY', country: 'Paraguay' },
+      { code: 'es-PE', country: isEs ? 'Peru' : 'Peru' },
+      { code: 'es-PR', country: 'Puerto Rico' },
+      { code: 'es-ES', country: isEs ? 'Espana' : 'Spain' },
+      { code: 'es-UY', country: 'Uruguay' },
+      { code: 'es-VE', country: 'Venezuela' },
+    ],
+    en: [
+      { code: 'en-AU', country: 'Australia' },
+      { code: 'en-CA', country: isEs ? 'Canada' : 'Canada' },
+      { code: 'en-GH', country: 'Ghana' },
+      { code: 'en-IN', country: 'India' },
+      { code: 'en-IE', country: isEs ? 'Irlanda' : 'Ireland' },
+      { code: 'en-JM', country: 'Jamaica' },
+      { code: 'en-KE', country: 'Kenya' },
+      { code: 'en-NZ', country: isEs ? 'Nueva Zelanda' : 'New Zealand' },
+      { code: 'en-NG', country: 'Nigeria' },
+      { code: 'en-PH', country: isEs ? 'Filipinas' : 'Philippines' },
+      { code: 'en-SG', country: isEs ? 'Singapur' : 'Singapore' },
+      { code: 'en-ZA', country: isEs ? 'Sudafrica' : 'South Africa' },
+      { code: 'en-GB', country: isEs ? 'Reino Unido' : 'United Kingdom' },
+      { code: 'en-US', country: isEs ? 'Estados Unidos' : 'United States' },
+    ],
+    pt: [
+      { code: 'pt-AO', country: 'Angola' },
+      { code: 'pt-BR', country: isEs ? 'Brasil' : 'Brazil' },
+      { code: 'pt-CV', country: isEs ? 'Cabo Verde' : 'Cape Verde' },
+      { code: 'pt-MZ', country: isEs ? 'Mozambique' : 'Mozambique' },
+      { code: 'pt-PT', country: 'Portugal' },
+    ],
+    fr: [
+      { code: 'fr-BE', country: isEs ? 'Belgica' : 'Belgium' },
+      { code: 'fr-CM', country: isEs ? 'Camerun' : 'Cameroon' },
+      { code: 'fr-CA', country: isEs ? 'Canada (Quebec)' : 'Canada (Quebec)' },
+      { code: 'fr-CD', country: isEs ? 'Congo (RDC)' : 'Congo (DRC)' },
+      { code: 'fr-CI', country: isEs ? 'Costa de Marfil' : 'Ivory Coast' },
+      { code: 'fr-FR', country: isEs ? 'Francia' : 'France' },
+      { code: 'fr-HT', country: isEs ? 'Haiti' : 'Haiti' },
+      { code: 'fr-SN', country: 'Senegal' },
+      { code: 'fr-CH', country: isEs ? 'Suiza' : 'Switzerland' },
+    ],
+    de: [
+      { code: 'de-AT', country: 'Austria' },
+      { code: 'de-DE', country: isEs ? 'Alemania' : 'Germany' },
+      { code: 'de-LI', country: 'Liechtenstein' },
+      { code: 'de-LU', country: isEs ? 'Luxemburgo' : 'Luxembourg' },
+      { code: 'de-CH', country: isEs ? 'Suiza' : 'Switzerland' },
+    ],
+    it: [
+      { code: 'it-IT', country: isEs ? 'Italia' : 'Italy' },
+      { code: 'it-CH', country: isEs ? 'Suiza' : 'Switzerland' },
+      { code: 'it-SM', country: 'San Marino' },
+    ],
+  }
+
   // Language options
   const langOptions = [
     { value: 'es', label: 'Español' }, { value: 'en', label: 'English' },
@@ -968,6 +1042,14 @@ function renderIdentitySection(data: SectionData): string {
     `<option value="${o.value}" ${o.value === agentLang ? 'selected' : ''}>${esc(o.label)}</option>`
   ).join('')
 
+  // Build accent options for current language
+  const currentAccents = ACCENT_MAP[agentLang] || []
+  const noAccent = isEs ? 'Sin acento (neutro)' : 'No accent (neutral)'
+  const accentOptionsHtml = `<option value="">${esc(noAccent)}</option>` +
+    currentAccents.map(a =>
+      `<option value="${esc(a.code)}" ${a.code === agentAccent ? 'selected' : ''}>${esc(a.country)} (${esc(a.code)})</option>`
+    ).join('')
+
   const identityHtml = `<div class="panel">
     <div class="panel-header" style="cursor:default">
       <span class="panel-title">${isEs ? 'Identidad del agente' : 'Agent identity'}</span>
@@ -980,13 +1062,47 @@ function renderIdentitySection(data: SectionData): string {
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Cargo' : 'Title'} *</span></div>
         <input type="text" name="AGENT_TITLE" value="${esc(cfg['AGENT_TITLE'] || '')}" data-original="${esc(cfg['AGENT_TITLE'] || '')}" required></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Idioma principal' : 'Main language'} *</span></div>
-        <select name="AGENT_LANGUAGE" data-original="${esc(agentLang)}">${langSelectHtml}</select></div>
+        <select name="AGENT_LANGUAGE" data-original="${esc(agentLang)}" id="agent-language-select">${langSelectHtml}</select></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Pais' : 'Country'}</span></div>
         <input type="text" name="AGENT_COUNTRY" value="${esc(cfg['AGENT_COUNTRY'] || '')}" data-original="${esc(cfg['AGENT_COUNTRY'] || '')}"></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Acento' : 'Accent'}</span></div>
-        <input type="text" name="AGENT_ACCENT" value="${esc(agentAccent)}" data-original="${esc(agentAccent)}" onchange="if(this.value && this.value !== this.getAttribute('data-original')){if(!confirm('${isEs ? 'Si configuras un acento, el agente puede tener dificultades al responder en otros idiomas. ¿Deseas continuar?' : 'Setting an accent may cause issues when responding in other languages. Continue?'}')){this.value=this.getAttribute('data-original')}}"></div>
+        <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select">${accentOptionsHtml}</select></div>
     </div>
-  </div>`
+  </div>
+  <script type="application/json" id="accent-map-data">${JSON.stringify(ACCENT_MAP)}</script>
+  <script>
+  (function() {
+    var langSel = document.getElementById('agent-language-select');
+    var accentSel = document.getElementById('agent-accent-select');
+    var accentMap = JSON.parse(document.getElementById('accent-map-data').textContent);
+    var isEs = ${isEs ? 'true' : 'false'};
+    var accentWarningMsg = ${JSON.stringify(isEs
+      ? 'Si configuras un acento, el agente puede tener dificultades al responder en otros idiomas. ¿Deseas continuar?'
+      : 'Setting an accent may cause issues when responding in other languages. Continue?')};
+
+    if (!langSel || !accentSel) return;
+
+    langSel.addEventListener('change', function() {
+      var selectedLang = langSel.value;
+      var accents = accentMap[selectedLang] || [];
+      var noAccentLabel = isEs ? 'Sin acento (neutro)' : 'No accent (neutral)';
+      var html = '<option value="">' + noAccentLabel + '</option>';
+      accents.forEach(function(a) {
+        html += '<option value="' + a.code + '">' + a.country + ' (' + a.code + ')</option>';
+      });
+      accentSel.innerHTML = html;
+      accentSel.value = '';
+    });
+
+    accentSel.addEventListener('change', function() {
+      if (accentSel.value && accentSel.value !== accentSel.getAttribute('data-original')) {
+        if (!confirm(accentWarningMsg)) {
+          accentSel.value = accentSel.getAttribute('data-original') || '';
+        }
+      }
+    });
+  })();
+  </script>`
 
   return `<div style="display:grid;grid-template-columns:3fr 2fr;gap:24px;align-items:start">
     <div>${promptsHtml}</div>

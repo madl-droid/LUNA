@@ -86,6 +86,9 @@ const manifest: ModuleManifest = {
     AGENT_LANGUAGE: z.string().default('es'),
     AGENT_COUNTRY: z.string().default(''),
     AGENT_ACCENT: z.string().default(''),
+    // Generated accent prompt — injected into context when accent is set
+    // Content will be built by a future accent prompt generator
+    AGENT_ACCENT_PROMPT: z.string().default(''),
   }),
 
   console: {
