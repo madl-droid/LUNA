@@ -19,7 +19,7 @@ import { SyncManager } from './sync-manager.js'
 import { FAQManager } from './faq-manager.js'
 import { ApiConnectorManager } from './api-connector.js'
 import { WebSourceManager } from './web-source-manager.js'
-import { KnowledgeItemManager } from './item-manager.js'
+import { KnowledgeItemManager, extractGoogleId } from './item-manager.js'
 import { renderKnowledgeSection } from './console-section.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 
@@ -868,6 +868,43 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // POST /console/api/knowledge/items/verify-url — check Google resource accessibility
+    {
+      method: 'POST',
+      path: 'items/verify-url',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ sourceUrl: string }>(req)
+          if (!body.sourceUrl) {
+            jsonResponse(res, 400, { error: 'URL requerida', accessible: false })
+            return
+          }
+          const extracted = extractGoogleId(body.sourceUrl)
+          if (!extracted) {
+            jsonResponse(res, 400, { error: 'URL no valida. Debe ser Google Sheets, Docs o Drive.', accessible: false })
+            return
+          }
+          // Try to access the resource
+          const googleApps = registry.getOptional<{ sheets: { getSpreadsheet: (id: string) => Promise<unknown> }; docs: { getDocument: (id: string) => Promise<unknown> }; drive: { listFiles: (opts: { folderId: string; pageSize: number }) => Promise<unknown> } }>('google-apps:api')
+          if (!googleApps) {
+            // Can't verify without Google Apps, allow creation with warning
+            jsonResponse(res, 200, { accessible: true, warning: 'Google Apps no conectado. No se pudo verificar acceso.' })
+            return
+          }
+          try {
+            if (extracted.type === 'sheets') await googleApps.sheets.getSpreadsheet(extracted.id)
+            else if (extracted.type === 'docs') await googleApps.docs.getDocument(extracted.id)
+            else await googleApps.drive.listFiles({ folderId: extracted.id, pageSize: 1 })
+            jsonResponse(res, 200, { accessible: true })
+          } catch {
+            jsonResponse(res, 200, { accessible: false, error: 'No se puede acceder al recurso. Verifica permisos y URL.' })
+          }
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err), accessible: false })
+        }
+      },
+    },
+
     // ─── Search & Stats ───
 
     // GET /console/api/knowledge/search?q=&hint=&limit=5
@@ -951,7 +988,9 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     KNOWLEDGE_DIR: z.string().default('instance/knowledge'),
     KNOWLEDGE_FAQ_SHEET_URL: z.string().default(''),
+    KNOWLEDGE_FAQ_DESCRIPTION: z.string().default(''),
     KNOWLEDGE_PRODUCTS_SHEET_URL: z.string().default(''),
+    KNOWLEDGE_PRODUCTS_DESCRIPTION: z.string().default(''),
     KNOWLEDGE_MAX_FILE_SIZE_MB: numEnvMin(1, 50),
     KNOWLEDGE_CORE_MAX_CHUNKS: numEnvMin(1, 200),
     KNOWLEDGE_CACHE_TTL_MIN: numEnvMin(1, 30),
@@ -1088,10 +1127,12 @@ const manifest: ModuleManifest = {
     registry.provide('knowledge:renderSection', async (lang: 'es' | 'en') => {
       const items = await itemManager!.list()
       const categories = await pgStore!.listCategories()
-      const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string }>('knowledge')
+      const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_FAQ_DESCRIPTION: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string; KNOWLEDGE_PRODUCTS_DESCRIPTION: string }>('knowledge')
       return renderKnowledgeSection(items, categories, lang, {
         faqSheetUrl: cfg?.KNOWLEDGE_FAQ_SHEET_URL ?? '',
+        faqDescription: cfg?.KNOWLEDGE_FAQ_DESCRIPTION ?? '',
         productsSheetUrl: cfg?.KNOWLEDGE_PRODUCTS_SHEET_URL ?? '',
+        productsDescription: cfg?.KNOWLEDGE_PRODUCTS_DESCRIPTION ?? '',
       })
     })
 

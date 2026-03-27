@@ -11,7 +11,7 @@ function esc(s: string): string {
 
 const t = (key: string, lang: Lang): string => {
   const map: Record<string, { es: string; en: string }> = {
-    title: { es: 'Base de Conocimiento', en: 'Knowledge Base' },
+    title: { es: 'Conocimiento adicional', en: 'Additional knowledge' },
     add_btn: { es: 'Agregar Conocimiento', en: 'Add Knowledge' },
     no_items: { es: 'No hay items de conocimiento. Agrega uno para comenzar.', en: 'No knowledge items. Add one to get started.' },
     item_title: { es: 'Título', en: 'Title' },
@@ -53,34 +53,47 @@ export function renderKnowledgeSection(
   items: KnowledgeItem[],
   categories: KnowledgeCategory[],
   lang: Lang,
-  config?: { faqSheetUrl?: string; productsSheetUrl?: string },
+  config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string },
 ): string {
   let html = ''
 
-  // ── Fixed knowledge bases (FAQ + Productos y servicios) ──
+  // ── Core knowledge (FAQ + Productos y servicios) ──
   const faqUrl = config?.faqSheetUrl ?? ''
+  const faqDesc = config?.faqDescription ?? ''
   const productsUrl = config?.productsSheetUrl ?? ''
-  html += `<div class="panel" style="margin-bottom:20px"><div class="panel-body">
-    <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${lang === 'es' ? 'Bases fijas' : 'Fixed bases'}</div>
+  const productsDesc = config?.productsDescription ?? ''
+  const descPlaceholder = lang === 'es'
+    ? 'Describe el contenido de esta fuente. Esta descripcion se usa como contexto para el agente.'
+    : 'Describe this source content. This description is used as context for the agent.'
+  html += `<div class="panel" style="margin:0 0 24px 0;padding:0"><div class="panel-body" style="padding:20px">
+    <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${lang === 'es' ? 'Conocimiento principal' : 'Core knowledge'}</div>
     <div style="display:flex;flex-direction:column;gap:14px">
       <div>
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">FAQ — Google Sheet</label>
         <input type="text" class="wizard-input" name="KNOWLEDGE_FAQ_SHEET_URL" value="${esc(faqUrl)}" data-original="${esc(faqUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..." style="font-size:13px">
+        <textarea class="wizard-input" name="KNOWLEDGE_FAQ_DESCRIPTION" data-original="${esc(faqDesc)}" placeholder="${descPlaceholder}" rows="2" style="font-size:13px;margin-top:6px;resize:vertical">${esc(faqDesc)}</textarea>
       </div>
       <div>
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Productos y servicios' : 'Products & services'} — Google Sheet</label>
         <input type="text" class="wizard-input" name="KNOWLEDGE_PRODUCTS_SHEET_URL" value="${esc(productsUrl)}" data-original="${esc(productsUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..." style="font-size:13px">
+        <textarea class="wizard-input" name="KNOWLEDGE_PRODUCTS_DESCRIPTION" data-original="${esc(productsDesc)}" placeholder="${descPlaceholder}" rows="2" style="font-size:13px;margin-top:6px;resize:vertical">${esc(productsDesc)}</textarea>
       </div>
     </div>
   </div></div>`
 
-  // ── Header with Add button ──
+  // ── Header with Add + Edit Categories buttons ──
   html += `<div class="ki-header">
     <h2 class="ki-title">${t('title', lang)}</h2>
-    <button type="button" class="btn btn-primary ki-add-btn" onclick="kiOpenAddModal()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      ${t('add_btn', lang)}
-    </button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button type="button" class="act-btn" onclick="kiOpenCategoriesModal()" style="font-size:13px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        ${lang === 'es' ? 'Categorias' : 'Categories'}
+      </button>
+      <button type="button" class="act-btn act-btn-cta" onclick="kiOpenAddModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        ${t('add_btn', lang)}
+      </button>
+    </div>
   </div>`
 
   // ── Items list ──
@@ -96,6 +109,9 @@ export function renderKnowledgeSection(
 
   // ── Add/Edit Modal ──
   html += renderAddModal(categories, lang)
+
+  // ── Categories Edit Modal ──
+  html += renderCategoriesModal(categories, lang)
 
   // ── Client-side JS ──
   html += renderClientScript(lang)
@@ -133,6 +149,11 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
     <input type="checkbox" ${item.isCore ? 'checked' : ''} onchange="kiToggleCore('${esc(item.id)}', this.checked)" />
     <span class="ki-core-text">${t('core', lang)}</span>
   </label>`
+
+  // Edit button
+  html += `<button type="button" class="act-btn" onclick="kiOpenEditModal('${esc(item.id)}', ${JSON.stringify(esc(item.title)).replace(/'/g, '\\\'')}, ${JSON.stringify(esc(item.description)).replace(/'/g, '\\\'')}, '${esc(item.categoryId ?? '')}', ${JSON.stringify(esc(item.sourceUrl)).replace(/'/g, '\\\'')})" style="font-size:11px;padding:4px 10px">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+  </button>`
 
   // Active toggle
   html += `<label class="ki-toggle-label">
@@ -216,10 +237,6 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 }
 
 function renderAddModal(categories: KnowledgeCategory[], lang: Lang): string {
-  const catOptions = categories.map(c =>
-    `<option value="${esc(c.id)}">${esc(c.title)}</option>`
-  ).join('')
-
   return `<div id="ki-modal" class="ki-modal-overlay" style="display:none">
     <div class="ki-modal">
       <div class="ki-modal-header">
@@ -229,28 +246,57 @@ function renderAddModal(categories: KnowledgeCategory[], lang: Lang): string {
       <form id="ki-form" onsubmit="kiSubmitForm(event)">
         <div class="ki-field">
           <label>${t('item_title', lang)} *</label>
-          <input type="text" id="ki-f-title" required maxlength="120" />
+          <input type="text" id="ki-f-title" required maxlength="120" onfocus="kiClearError('title')" />
+          <div class="ki-field-error" id="ki-err-title"></div>
         </div>
         <div class="ki-field">
-          <label>${t('item_desc', lang)}</label>
-          <textarea id="ki-f-desc" rows="2" maxlength="200"></textarea>
+          <label>${t('item_desc', lang)} *</label>
+          <textarea id="ki-f-desc" rows="2" required minlength="20" maxlength="200" onfocus="kiClearError('desc')"
+            placeholder="${lang === 'es' ? 'Min. 20 caracteres. Describe el contenido para que el agente lo use como contexto.' : 'Min. 20 chars. Describe the content so the agent can use it as context.'}"></textarea>
+          <div class="ki-field-error" id="ki-err-desc"></div>
         </div>
         <div class="ki-field">
           <label>${t('item_category', lang)}</label>
-          <select id="ki-f-category">
-            <option value="">—</option>
-            ${catOptions}
-          </select>
+          <div class="ki-tags-picker" id="ki-f-category-tags">
+            ${categories.map(c => `<span class="ki-tag-option" data-cat-id="${esc(c.id)}" onclick="kiToggleCatTag(this)">${esc(c.title)}</span>`).join('')}
+          </div>
+          <input type="hidden" id="ki-f-category" />
         </div>
         <div class="ki-field">
           <label>${t('item_url', lang)} *</label>
-          <input type="url" id="ki-f-url" required placeholder="https://docs.google.com/spreadsheets/d/..." />
+          <input type="url" id="ki-f-url" required placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiClearError('url')" />
+          <div class="ki-field-error" id="ki-err-url"></div>
         </div>
         <div class="ki-modal-footer">
           <button type="button" class="btn btn-outline" onclick="kiCloseModal()">${t('cancel', lang)}</button>
           <button type="submit" class="btn btn-primary">${t('save', lang)}</button>
         </div>
       </form>
+    </div>
+  </div>`
+}
+
+function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): string {
+  const isEs = lang === 'es'
+  const rows = categories.map(c => `<div class="ki-cat-row" data-cat-id="${esc(c.id)}">
+    <input type="text" class="ki-cat-name-input" value="${esc(c.title)}" maxlength="60" />
+    <button type="button" class="act-btn act-btn-danger" onclick="kiDeleteCategory('${esc(c.id)}', this)" style="font-size:11px;padding:4px 10px">${isEs ? 'Eliminar' : 'Delete'}</button>
+    <button type="button" class="act-btn" onclick="kiRenameCategory('${esc(c.id)}', this)" style="font-size:11px;padding:4px 10px">${isEs ? 'Guardar' : 'Save'}</button>
+  </div>`).join('')
+
+  return `<div id="ki-cat-modal" class="ki-modal-overlay" style="display:none">
+    <div class="ki-modal">
+      <div class="ki-modal-header">
+        <h3>${isEs ? 'Editar categorias' : 'Edit categories'}</h3>
+        <button type="button" class="ki-modal-close" onclick="kiCloseCategoriesModal()">&times;</button>
+      </div>
+      <div style="padding:20px">
+        <div id="ki-cat-list">${rows || `<p style="color:var(--on-surface-dim);font-size:13px">${isEs ? 'No hay categorias.' : 'No categories.'}</p>`}</div>
+        <div style="margin-top:16px;display:flex;gap:8px">
+          <input type="text" id="ki-cat-new-name" placeholder="${isEs ? 'Nueva categoria...' : 'New category...'}" maxlength="60" style="flex:1;padding:8px 12px;border:1px solid var(--border, #e5e7eb);border-radius:8px;font-size:14px;background:var(--surface);color:var(--on-surface)" />
+          <button type="button" class="act-btn act-btn-cta" onclick="kiAddCategory()" style="font-size:13px">${isEs ? 'Agregar' : 'Add'}</button>
+        </div>
+      </div>
     </div>
   </div>`
 }
@@ -272,12 +318,58 @@ function renderClientScript(lang: Lang): string {
     return fetch(API + (path || ''), opts).then(function(r) { return r.json() })
   }
 
+  function showError(field, msg) {
+    var el = document.getElementById('ki-err-' + field)
+    if (el) { el.textContent = msg; el.style.display = 'block' }
+  }
+
+  window.kiClearError = function(field) {
+    var el = document.getElementById('ki-err-' + field)
+    if (el) { el.textContent = ''; el.style.display = 'none' }
+  }
+
+  function clearAllErrors() {
+    ['title', 'desc', 'url'].forEach(function(f) { kiClearError(f) })
+  }
+
+  var editingItemId = null
+
   window.kiOpenAddModal = function() {
+    editingItemId = null
     document.getElementById('ki-modal').style.display = ''
     document.getElementById('ki-f-title').value = ''
     document.getElementById('ki-f-desc').value = ''
     document.getElementById('ki-f-category').value = ''
-    document.getElementById('ki-f-url').value = ''
+    var urlInput = document.getElementById('ki-f-url')
+    urlInput.value = ''
+    urlInput.disabled = false
+    // Reset tags
+    var tags = document.querySelectorAll('.ki-tag-option')
+    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected')
+    clearAllErrors()
+    var h3 = document.querySelector('#ki-modal .ki-modal-header h3')
+    if (h3) h3.textContent = '${lang === 'es' ? 'Agregar Conocimiento' : 'Add Knowledge'}'
+    setTimeout(function() { document.getElementById('ki-f-title').focus() }, 100)
+  }
+
+  window.kiOpenEditModal = function(id, title, desc, catId, url) {
+    editingItemId = id
+    document.getElementById('ki-modal').style.display = ''
+    document.getElementById('ki-f-title').value = title
+    document.getElementById('ki-f-desc').value = desc
+    var urlInput = document.getElementById('ki-f-url')
+    urlInput.value = url
+    urlInput.disabled = true
+    document.getElementById('ki-f-category').value = catId || ''
+    // Set tag selection
+    var tags = document.querySelectorAll('.ki-tag-option')
+    for (var i = 0; i < tags.length; i++) {
+      if (tags[i].getAttribute('data-cat-id') === catId) tags[i].classList.add('ki-tag-selected')
+      else tags[i].classList.remove('ki-tag-selected')
+    }
+    clearAllErrors()
+    var h3 = document.querySelector('#ki-modal .ki-modal-header h3')
+    if (h3) h3.textContent = '${lang === 'es' ? 'Editar Conocimiento' : 'Edit Knowledge'}'
     setTimeout(function() { document.getElementById('ki-f-title').focus() }, 100)
   }
 
@@ -287,20 +379,60 @@ function renderClientScript(lang: Lang): string {
 
   window.kiSubmitForm = function(e) {
     e.preventDefault()
+    clearAllErrors()
     var title = document.getElementById('ki-f-title').value.trim()
     var desc = document.getElementById('ki-f-desc').value.trim()
     var cat = document.getElementById('ki-f-category').value
     var url = document.getElementById('ki-f-url').value.trim()
-    if (!title || !url) return
+    var hasErr = false
+    if (!title) { showError('title', '${lang === 'es' ? 'El titulo es requerido' : 'Title is required'}'); hasErr = true }
+    if (!desc || desc.length < 20) { showError('desc', '${lang === 'es' ? 'La descripcion es requerida (min. 20 caracteres)' : 'Description is required (min. 20 characters)'}'); hasErr = true }
+    if (!url) { showError('url', '${lang === 'es' ? 'La URL es requerida' : 'URL is required'}'); hasErr = true }
+    if (hasErr) return
 
-    api('', 'POST', { title: title, description: desc, categoryId: cat || undefined, sourceUrl: url })
+    var submitBtn = document.querySelector('#ki-form .btn-primary')
+
+    // Edit mode: skip URL verification, just update
+    if (editingItemId) {
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '${lang === 'es' ? 'Guardando...' : 'Saving...'}' }
+      api('', 'PUT', { id: editingItemId, title: title, description: desc, categoryId: cat || undefined })
+        .then(function(r) {
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
+          if (r.error) { showError('title', r.error); return }
+          toast('${lang === 'es' ? 'Conocimiento actualizado' : 'Knowledge updated'}')
+          window.kiCloseModal()
+          location.reload()
+        })
+        .catch(function(err) {
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
+          toast(String(err), 'error')
+        })
+      return
+    }
+
+    // Add mode: verify URL accessibility first
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '${lang === 'es' ? 'Verificando...' : 'Verifying...'}' }
+    api('/verify-url', 'POST', { sourceUrl: url })
+      .then(function(v) {
+        if (v.accessible === false) {
+          showError('url', v.error || '${lang === 'es' ? 'No se puede acceder al recurso' : 'Cannot access the resource'}')
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
+          return
+        }
+        return api('', 'POST', { title: title, description: desc, categoryId: cat || undefined, sourceUrl: url })
+      })
       .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
+        if (!r) return
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
+        if (r.error) { showError('url', r.error); return }
         toast('${lang === 'es' ? 'Conocimiento agregado' : 'Knowledge added'}')
         window.kiCloseModal()
         location.reload()
       })
-      .catch(function(err) { toast(String(err), 'error') })
+      .catch(function(err) {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
+        toast(String(err), 'error')
+      })
   }
 
   window.kiToggleActive = function(id, active) {
@@ -381,6 +513,69 @@ function renderClientScript(lang: Lang): string {
   document.getElementById('ki-modal').addEventListener('click', function(e) {
     if (e.target === this) window.kiCloseModal()
   })
+  var catModal = document.getElementById('ki-cat-modal')
+  if (catModal) catModal.addEventListener('click', function(e) {
+    if (e.target === this) window.kiCloseCategoriesModal()
+  })
+
+  // ── Tag picker (single select) ──
+  window.kiToggleCatTag = function(el) {
+    var tags = el.parentNode.querySelectorAll('.ki-tag-option')
+    var wasSelected = el.classList.contains('ki-tag-selected')
+    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected')
+    if (!wasSelected) el.classList.add('ki-tag-selected')
+    document.getElementById('ki-f-category').value = wasSelected ? '' : el.getAttribute('data-cat-id')
+  }
+
+  // ── Categories CRUD ──
+  var CAT_API = '/console/api/knowledge/categories'
+
+  window.kiOpenCategoriesModal = function() {
+    document.getElementById('ki-cat-modal').style.display = ''
+  }
+  window.kiCloseCategoriesModal = function() {
+    document.getElementById('ki-cat-modal').style.display = 'none'
+  }
+
+  window.kiAddCategory = function() {
+    var inp = document.getElementById('ki-cat-new-name')
+    var name = inp.value.trim()
+    if (!name) return
+    fetch(CAT_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: name }) })
+      .then(function(r) { return r.json() })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return }
+        toast('${lang === 'es' ? 'Categoria agregada' : 'Category added'}')
+        location.reload()
+      })
+      .catch(function(err) { toast(String(err), 'error') })
+  }
+
+  window.kiRenameCategory = function(id, btn) {
+    var row = btn.closest('.ki-cat-row')
+    var name = row.querySelector('.ki-cat-name-input').value.trim()
+    if (!name) return
+    fetch(CAT_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, title: name }) })
+      .then(function(r) { return r.json() })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return }
+        toast('${lang === 'es' ? 'Categoria actualizada' : 'Category updated'}')
+        row.style.background = 'var(--success-container)'; setTimeout(function() { row.style.background = '' }, 600)
+      })
+      .catch(function(err) { toast(String(err), 'error') })
+  }
+
+  window.kiDeleteCategory = function(id, btn) {
+    if (!confirm('${lang === 'es' ? '¿Eliminar esta categoria?' : 'Delete this category?'}')) return
+    fetch(CAT_API + '/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) })
+      .then(function(r) { return r.json() })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return }
+        toast('${lang === 'es' ? 'Categoria eliminada' : 'Category deleted'}')
+        location.reload()
+      })
+      .catch(function(err) { toast(String(err), 'error') })
+  }
 })()</script>`
 }
 
@@ -444,6 +639,13 @@ function renderStyles(): string {
 .ki-field { margin-bottom:14px; }
 .ki-field label { display:block; font-size:13px; font-weight:500; margin-bottom:4px; color:var(--on-surface); }
 .ki-field input, .ki-field textarea, .ki-field select { width:100%; border:1px solid var(--border, #e5e7eb); border-radius:8px; padding:8px 12px; font-size:14px; background:var(--surface, #fff); color:var(--on-surface); box-sizing:border-box; }
+.ki-field-error { display:none; color:var(--error, #dc2626); font-size:12px; margin-top:4px; }
+.ki-tags-picker { display:flex; flex-wrap:wrap; gap:6px; padding:8px 0; }
+.ki-tag-option { display:inline-block; padding:4px 12px; border-radius:16px; font-size:12px; cursor:pointer; border:1px solid var(--border, #e5e7eb); background:var(--surface, #fff); color:var(--on-surface-dim); transition:all .15s; }
+.ki-tag-option:hover { border-color:var(--primary, #4f46e5); color:var(--primary, #4f46e5); }
+.ki-tag-option.ki-tag-selected { background:var(--primary, #4f46e5); color:#fff; border-color:var(--primary, #4f46e5); }
+.ki-cat-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border, #e5e7eb); }
+.ki-cat-name-input { flex:1; padding:6px 10px; border:1px solid var(--border, #e5e7eb); border-radius:6px; font-size:14px; background:var(--surface); color:var(--on-surface); }
 .ki-field textarea { resize:vertical; }
 .ki-modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-top:8px; }
 </style>`

@@ -128,6 +128,16 @@ const manifest: ModuleManifest = {
         width: 'half',
       },
       {
+        key: 'AGENT_TITLE',
+        type: 'text',
+        label: { es: 'Cargo', en: 'Title' },
+        info: {
+          es: 'Cargo o rol del agente. Usado en presentaciones y firmas formales.',
+          en: 'Agent title or role. Used in introductions and formal signatures.',
+        },
+        width: 'half',
+      },
+      {
         key: 'AGENT_LANGUAGE',
         type: 'select',
         label: { es: 'Idioma', en: 'Language' },
@@ -143,6 +153,16 @@ const manifest: ModuleManifest = {
           { value: 'de', label: 'Deutsch / German' },
           { value: 'it', label: 'Italiano / Italian' },
         ],
+        width: 'half',
+      },
+      {
+        key: 'AGENT_COUNTRY',
+        type: 'text',
+        label: { es: 'Pais', en: 'Country' },
+        info: {
+          es: 'Pais donde opera el agente. Afecta contexto regional y referencias culturales.',
+          en: 'Country where the agent operates. Affects regional context and cultural references.',
+        },
         width: 'half',
       },
       {
