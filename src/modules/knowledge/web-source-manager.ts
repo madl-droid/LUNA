@@ -22,7 +22,7 @@ const SKIP_RECENCY_MS = 7 * 24 * 60 * 60 * 1000  // 1 week
 export class WebSourceManager {
   constructor(
     private pgStore: KnowledgePgStore,
-    private redis: Redis,
+    _redis: Redis,
     private registry: Registry,
   ) {}
 
@@ -90,6 +90,15 @@ export class WebSourceManager {
     }
 
     logger.info({ id, url: webSource.url }, 'Caching web source')
+
+    // FIX: K-SSRF2 — Validar URL antes de fetch para prevenir SSRF
+    const { assertNotPrivateUrl } = await import('../../kernel/ssrf-guard.js')
+    try {
+      assertNotPrivateUrl(webSource.url)
+    } catch (err) {
+      logger.error({ id, url: webSource.url, err }, 'SSRF blocked: web source URL targets private address')
+      return
+    }
 
     // Fetch content with timeout
     let response: Response

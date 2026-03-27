@@ -6,7 +6,6 @@ import pino from 'pino'
 import type {
   CampaignRecord,
   CampaignTag,
-  CampaignMatchResult,
   ContactCampaignEntry,
   CampaignStatRow,
 } from './campaign-types.js'

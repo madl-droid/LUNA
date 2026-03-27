@@ -3,7 +3,13 @@
 
 import type { ExtractedContent, ExtractedSection } from '../types.js'
 
+// FIX: K-DOS2 — Límite de tamaño para prevenir OOM en PDF parsing
+const MAX_PDF_SIZE = 50 * 1024 * 1024 // 50MB
+
 export async function extractPDF(input: Buffer, fileName: string): Promise<ExtractedContent> {
+  if (input.length > MAX_PDF_SIZE) {
+    throw new Error(`PDF too large: ${(input.length / 1024 / 1024).toFixed(1)}MB exceeds ${MAX_PDF_SIZE / 1024 / 1024}MB limit`)
+  }
   const { PDFParse } = await import('pdf-parse')
 
   const parser = new PDFParse({ data: new Uint8Array(input) })

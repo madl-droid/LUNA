@@ -15,7 +15,6 @@ import type {
   KnowledgeConfig,
   KnowledgeDocument,
   KnowledgeSearchResult,
-  KnowledgeSearchOptions,
   KnowledgeInjection,
   KnowledgeStats,
   UpgradeSuggestion,

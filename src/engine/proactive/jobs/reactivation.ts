@@ -18,6 +18,8 @@ export async function runReactivation(ctx: ProactiveJobContext): Promise<void> {
   const daysInactive = config.reactivation.days_inactive
   const maxAttempts = config.reactivation.max_attempts
   const maxPerRun = config.reactivation.max_per_run
+  // FIX: E-30 — Use agent slug from config instead of hardcoded 'luna'
+  const agentSlug = ctx.engineConfig.agentSlug
 
   try {
     // Find cold leads that haven't been reactivated too many times
@@ -30,13 +32,13 @@ export async function runReactivation(ctx: ProactiveJobContext): Promise<void> {
        FROM agent_contacts ac
        JOIN contacts c ON c.id = ac.contact_id
        JOIN contact_channels cc ON cc.contact_id = ac.contact_id AND cc.is_primary = true
-       WHERE ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
+       WHERE ac.agent_id = (SELECT id FROM agents WHERE slug = $4 LIMIT 1)
          AND ac.lead_status = 'cold'
          AND ac.updated_at < now() - interval '1 day' * $1
          AND COALESCE((ac.agent_data->>'reactivation_attempts')::int, 0) < $2
        ORDER BY ac.updated_at DESC
        LIMIT $3`,
-      [daysInactive, maxAttempts, maxPerRun],
+      [daysInactive, maxAttempts, maxPerRun, agentSlug],
     )
 
     let processed = 0
@@ -66,8 +68,8 @@ export async function runReactivation(ctx: ProactiveJobContext): Promise<void> {
                '{reactivation_attempts}',
                to_jsonb(COALESCE((agent_data->>'reactivation_attempts')::int, 0) + 1)
              )
-             WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)`,
-            [row.contact_id],
+             WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
+            [row.contact_id, agentSlug],
           )
           processed++
         }

@@ -10,7 +10,6 @@ import { LLMGateway } from './llm-gateway.js'
 import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget } from './types.js'
 
 let _gateway: LLMGateway | null = null
-let _registry: Registry | null = null
 
 const manifest: ModuleManifest = {
   name: 'llm',
@@ -252,7 +251,6 @@ const manifest: ModuleManifest = {
   },
 
   async init(registry: Registry) {
-    _registry = registry
     const db = registry.getDb()
     const redis = registry.getRedis()
     const config = registry.getConfig<LLMModuleConfig>('llm')
@@ -306,7 +304,6 @@ const manifest: ModuleManifest = {
       _gateway.stop()
       _gateway = null
     }
-    _registry = null
   },
 }
 

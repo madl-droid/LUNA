@@ -7,7 +7,7 @@ import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeManager } from './knowledge-manager.js'
-import type { KnowledgeSyncSource, SyncFrequency } from './types.js'
+import type { KnowledgeSyncSource } from './types.js'
 import { SYNC_FREQUENCY_MS, type KnowledgeConfig } from './types.js'
 import { isSupportedMimeType, GOOGLE_NATIVE_TYPES, resolveMimeType } from './extractors/index.js'
 import { isSlidesAvailable, extractSlides } from './extractors/slides.js'
@@ -23,7 +23,7 @@ export class SyncManager {
     private knowledgeManager: KnowledgeManager,
     private config: KnowledgeConfig,
     private registry: Registry,
-    private redis: Redis,
+    _redis: Redis,
   ) {}
 
   /**

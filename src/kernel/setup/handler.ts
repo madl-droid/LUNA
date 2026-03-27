@@ -9,7 +9,7 @@ import type { Redis } from 'ioredis'
 import pino from 'pino'
 
 import * as configStore from '../config-store.js'
-import { hashPassword, createSession, sessionCookie, SESSION_COOKIE_NAME } from './auth.js'
+import { hashPassword, createSession, sessionCookie } from './auth.js'
 import { st, detectSetupLang, type SetupLang } from './i18n.js'
 import {
   stepWelcome, stepAdmin, stepLLM, stepSystem, setupCompletePage,

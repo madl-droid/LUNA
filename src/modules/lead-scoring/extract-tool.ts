@@ -245,40 +245,61 @@ async function handleExtraction(
       return { success: true, data: { extracted: false, reason: 'no_relevant_info' } }
     }
 
-    // Merge new data with existing (respecting minConfidence threshold)
-    const mergedData = mergeQualificationData(
-      existingData,
-      extraction.extracted,
-      extraction.confidence ?? {},
-      config.minConfidence ?? 0.3,
-    )
+    // FIX: LS-1 — Re-read under FOR UPDATE to prevent lost writes from concurrent extractions
+    const client = await db.connect()
+    let mergedData: Record<string, unknown>
+    let scoreResult: ReturnType<typeof calculateScore>
+    let newStatus: QualificationStatus | null
+    try {
+      await client.query('BEGIN')
+      const freshRow = await client.query(
+        'SELECT qualification_data, qualification_status FROM contacts WHERE id = $1 FOR UPDATE',
+        [contactId],
+      )
+      const freshData = (freshRow.rows[0]?.qualification_data as Record<string, unknown>) ?? {}
+      const freshStatus = (freshRow.rows[0]?.qualification_status as QualificationStatus) ?? currentStatus
 
-    // Handle disqualification
-    if (extraction.disqualifyDetected) {
-      mergedData['_disqualified'] = extraction.disqualifyDetected
+      // Merge new data with fresh existing (respecting minConfidence threshold)
+      mergedData = mergeQualificationData(
+        freshData,
+        extraction.extracted,
+        extraction.confidence ?? {},
+        config.minConfidence ?? 0.3,
+      )
+
+      // Handle disqualification
+      if (extraction.disqualifyDetected) {
+        mergedData['_disqualified'] = extraction.disqualifyDetected
+      }
+
+      // Calculate new score
+      scoreResult = calculateScore(mergedData, config)
+
+      // Resolve status transition
+      newStatus = resolveTransition(freshStatus, scoreResult.suggestedStatus)
+
+      // Update database
+      await client.query(
+        `UPDATE contacts
+         SET qualification_data = $1,
+             qualification_score = $2,
+             qualification_status = COALESCE($3, qualification_status),
+             updated_at = NOW()
+         WHERE id = $4`,
+        [
+          JSON.stringify(mergedData),
+          scoreResult.totalScore,
+          newStatus,
+          contactId,
+        ],
+      )
+      await client.query('COMMIT')
+    } catch (txErr) {
+      await client.query('ROLLBACK')
+      throw txErr
+    } finally {
+      client.release()
     }
-
-    // Calculate new score
-    const scoreResult = calculateScore(mergedData, config)
-
-    // Resolve status transition
-    const newStatus = resolveTransition(currentStatus, scoreResult.suggestedStatus)
-
-    // Update database
-    await db.query(
-      `UPDATE contacts
-       SET qualification_data = $1,
-           qualification_score = $2,
-           qualification_status = COALESCE($3, qualification_status),
-           updated_at = NOW()
-       WHERE id = $4`,
-      [
-        JSON.stringify(mergedData),
-        scoreResult.totalScore,
-        newStatus,
-        contactId,
-      ],
-    )
 
     // Fire status changed hook if transition happened
     if (newStatus) {

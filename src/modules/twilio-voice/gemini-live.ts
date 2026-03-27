@@ -10,7 +10,6 @@ import type {
   GeminiAudioInput,
   GeminiServerContent,
   GeminiToolResponse,
-  GeminiToolDeclaration,
 } from './types.js'
 
 const logger = pino({ name: 'twilio-voice:gemini-live' })

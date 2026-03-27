@@ -3,23 +3,27 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import pino from 'pino'
-import type { SheetRange, SheetProperties } from './types.js'
-
-const logger = pino({ name: 'google-apps:sheets' })
+import type { SheetRange, SheetProperties, GoogleApiConfig } from './types.js'
+import { googleApiCall } from './api-wrapper.js'
 
 export class SheetsService {
   private sheets
+  // FIX: GA-3 — API timeout/retry config
+  private apiConfig: { timeoutMs: number; maxRetries: number }
 
-  constructor(private auth: OAuth2Client) {
+  constructor(auth: OAuth2Client, config?: GoogleApiConfig) {
     this.sheets = google.sheets({ version: 'v4', auth })
+    this.apiConfig = {
+      timeoutMs: config?.GOOGLE_API_TIMEOUT_MS ?? 30000,
+      maxRetries: config?.GOOGLE_API_RETRY_MAX ?? 2,
+    }
   }
 
   async getSpreadsheet(spreadsheetId: string): Promise<SheetProperties> {
-    const res = await this.sheets.spreadsheets.get({
+    const res = await googleApiCall(() => this.sheets.spreadsheets.get({
       spreadsheetId,
       fields: 'spreadsheetId, properties.title, sheets.properties',
-    })
+    }), this.apiConfig, 'sheets.spreadsheets.get')
 
     return {
       spreadsheetId: res.data.spreadsheetId ?? spreadsheetId,
@@ -34,10 +38,10 @@ export class SheetsService {
   }
 
   async readRange(spreadsheetId: string, range: string): Promise<SheetRange> {
-    const res = await this.sheets.spreadsheets.values.get({
+    const res = await googleApiCall(() => this.sheets.spreadsheets.values.get({
       spreadsheetId,
       range,
-    })
+    }), this.apiConfig, 'sheets.values.get')
 
     return {
       spreadsheetId,
@@ -71,13 +75,13 @@ export class SheetsService {
     values: string[][],
     inputOption: 'RAW' | 'USER_ENTERED' = 'USER_ENTERED',
   ): Promise<{ updatedCells: number; updatedRows: number }> {
-    const res = await this.sheets.spreadsheets.values.append({
+    const res = await googleApiCall(() => this.sheets.spreadsheets.values.append({
       spreadsheetId,
       range,
       valueInputOption: inputOption,
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values },
-    })
+    }), this.apiConfig, 'sheets.values.append')
 
     return {
       updatedCells: res.data.updates?.updatedCells ?? 0,

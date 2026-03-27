@@ -3,7 +3,6 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import pino from 'pino'
 import type {
   DriveFile,
   DriveListOptions,
@@ -11,18 +10,23 @@ import type {
   DrivePermission,
   GoogleApiConfig,
 } from './types.js'
+import { googleApiCall } from './api-wrapper.js'
 import { Readable } from 'node:stream'
-
-const logger = pino({ name: 'google-apps:drive' })
 
 export class DriveService {
   private drive
+  // FIX: GA-3 — API timeout/retry config
+  private apiConfig: { timeoutMs: number; maxRetries: number }
 
   constructor(
-    private auth: OAuth2Client,
-    private config: GoogleApiConfig,
+    auth: OAuth2Client,
+    config: GoogleApiConfig,
   ) {
     this.drive = google.drive({ version: 'v3', auth })
+    this.apiConfig = {
+      timeoutMs: config.GOOGLE_API_TIMEOUT_MS ?? 30000,
+      maxRetries: config.GOOGLE_API_RETRY_MAX ?? 2,
+    }
   }
 
   async listFiles(options: DriveListOptions = {}): Promise<DriveListResult> {
@@ -218,10 +222,10 @@ export class DriveService {
   }
 
   async downloadFile(fileId: string): Promise<Buffer> {
-    const res = await this.drive.files.get(
+    const res = await googleApiCall(() => this.drive.files.get(
       { fileId, alt: 'media' },
       { responseType: 'arraybuffer' },
-    )
+    ), this.apiConfig, 'drive.files.download')
     return Buffer.from(res.data as ArrayBuffer)
   }
 

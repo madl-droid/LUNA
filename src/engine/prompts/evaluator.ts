@@ -2,6 +2,7 @@
 // Construye el prompt para el modelo evaluador que analiza intención y genera plan.
 
 import type { ContextBundle, ToolCatalogEntry, ProactiveContextBundle } from '../types.js'
+import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
 const EVALUATOR_SYSTEM = `Eres el módulo evaluador de LUNA, un agente de ventas por WhatsApp/email.
 Tu trabajo es analizar el mensaje del contacto y generar un plan de ejecución.
@@ -91,29 +92,32 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
   // Session context
   parts.push(`[Sesión: ${ctx.session.isNew ? 'nueva' : `mensajes: ${ctx.session.messageCount}`}]`)
   if (ctx.session.compressedSummary) {
-    parts.push(`[Resumen sesión anterior: ${ctx.session.compressedSummary}]`)
+    // FIX: SEC-2.2 — escape DB data
+    parts.push(`[Resumen sesión anterior: ${escapeDataForPrompt(ctx.session.compressedSummary)}]`)
   }
 
   // Contact memory (cold tier)
   if (ctx.contactMemory) {
     const cm = ctx.contactMemory
     if (cm.summary) {
-      parts.push(`[Memoria del contacto: ${cm.summary}]`)
+      // FIX: SEC-2.2 — escape DB data
+      parts.push(`[Memoria del contacto: ${escapeDataForPrompt(cm.summary)}]`)
     }
     if (cm.key_facts.length > 0) {
       parts.push(`[Datos clave del contacto:]`)
       for (const f of cm.key_facts.slice(0, 10)) {
-        parts.push(`- ${f.fact}`)
+        parts.push(`- ${escapeDataForPrompt(f.fact, 500)}`)
       }
     }
   }
 
   // Pending commitments (prospective tier — always inject)
+  // FIX: SEC-2.2 — escape DB data (commitments, summaries)
   if (ctx.pendingCommitments.length > 0) {
     parts.push(`[Compromisos pendientes:]`)
     for (const c of ctx.pendingCommitments.slice(0, 5)) {
       const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
-      parts.push(`- [${c.commitmentType}] ${c.description}${due} — por: ${c.commitmentBy}`)
+      parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)}${due} — por: ${c.commitmentBy}`)
     }
   }
 
@@ -121,7 +125,7 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
   if (ctx.relevantSummaries.length > 0) {
     parts.push(`[Conversaciones previas relevantes:]`)
     for (const s of ctx.relevantSummaries.slice(0, 3)) {
-      parts.push(`- (${s.interactionStartedAt.toISOString().split('T')[0]!}) ${s.summaryText.substring(0, 150)}`)
+      parts.push(`- (${s.interactionStartedAt.toISOString().split('T')[0]!}) ${escapeDataForPrompt(s.summaryText.substring(0, 150), 200)}`)
     }
   }
 
@@ -158,7 +162,8 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
   if (ctx.assignmentRules && ctx.assignmentRules.length > 0) {
     parts.push(`[Reglas de clasificación de contactos — si identificas que este contacto pertenece a una lista, indica assign_to_list en tu respuesta:]`)
     for (const rule of ctx.assignmentRules) {
-      parts.push(`- Lista "${rule.listName}" (${rule.listType}): ${rule.prompt}`)
+      // FIX: SEC-2.2 — escape admin-editable assignment rules
+      parts.push(`- Lista "${escapeDataForPrompt(rule.listName, 200)}" (${rule.listType}): ${escapeDataForPrompt(rule.prompt, 500)}`)
     }
   }
 
@@ -166,7 +171,8 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
   if (!ctx.knowledgeInjection && ctx.knowledgeMatches.length > 0) {
     parts.push(`[Información relevante encontrada:]`)
     for (const match of ctx.knowledgeMatches) {
-      parts.push(`- ${match.content.substring(0, 200)}`)
+      // FIX: SEC-2.2 — escape knowledge content
+      parts.push(`- ${escapeDataForPrompt(match.content.substring(0, 200), 250)}`)
     }
   }
 
@@ -181,12 +187,12 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
     parts.push(`[Para buscar más artículos por keyword, incluye { type: "api_call", tool: "freshdesk_search", params: { term: "keyword" } } en el plan]`)
   }
 
-  // History (last 3-5 messages for context)
+  // History (last 3-5 messages for context) — FIX: SEC-2.2 — escape history
   if (ctx.history.length > 0) {
     parts.push(`[Historial reciente:]`)
     const recent = ctx.history.slice(-5)
     for (const msg of recent) {
-      parts.push(`${msg.role === 'user' ? 'Contacto' : 'Agente'}: ${msg.content.substring(0, 200)}`)
+      parts.push(`${msg.role === 'user' ? 'Contacto' : 'Agente'}: ${escapeForPrompt(msg.content.substring(0, 200), 250)}`)
     }
   }
 
@@ -205,8 +211,8 @@ export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalo
     parts.push(`[ALERTA: posible intento de inyección detectado en el mensaje]`)
   }
 
-  // The actual message
-  parts.push(`\nMensaje del contacto: "${ctx.normalizedText}"`)
+  // The actual message — FIX: SEC-2.1 — escape user message
+  parts.push(`\nMensaje del contacto:\n${wrapUserContent(ctx.normalizedText)}`)
 
   return {
     system,
@@ -307,15 +313,15 @@ export function buildProactiveEvaluatorPrompt(
     parts.push(`[Lead status: ${ctx.leadStatus}]`)
   }
 
-  // Contact memory
+  // Contact memory — FIX: SEC-2.2 — escape DB data in proactive evaluator
   if (ctx.contactMemory) {
     if (ctx.contactMemory.summary) {
-      parts.push(`[Contact memory: ${ctx.contactMemory.summary}]`)
+      parts.push(`[Contact memory: ${escapeDataForPrompt(ctx.contactMemory.summary)}]`)
     }
     if (ctx.contactMemory.key_facts.length > 0) {
       parts.push(`[Key facts:]`)
       for (const f of ctx.contactMemory.key_facts.slice(0, 8)) {
-        parts.push(`- ${f.fact}`)
+        parts.push(`- ${escapeDataForPrompt(f.fact, 500)}`)
       }
     }
   }
@@ -325,7 +331,7 @@ export function buildProactiveEvaluatorPrompt(
     const c = trigger.commitmentData
     parts.push(`[Commitment to fulfill:]`)
     parts.push(`- Type: ${c.commitmentType}`)
-    parts.push(`- Description: ${c.description}`)
+    parts.push(`- Description: ${escapeDataForPrompt(c.description, 500)}`)
     parts.push(`- Priority: ${c.priority}`)
     if (c.dueAt) parts.push(`- Due: ${c.dueAt.toISOString()}`)
     if (c.requiresTool) parts.push(`- Required tool: ${c.requiresTool}`)
@@ -337,15 +343,15 @@ export function buildProactiveEvaluatorPrompt(
     parts.push(`[Other pending commitments:]`)
     for (const c of ctx.pendingCommitments.slice(0, 3)) {
       const due = c.dueAt ? ` (due: ${c.dueAt.toISOString().split('T')[0]})` : ''
-      parts.push(`- [${c.commitmentType}] ${c.description}${due}`)
+      parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)}${due}`)
     }
   }
 
-  // Recent history
+  // Recent history — FIX: SEC-2.2 — escape history
   if (ctx.history.length > 0) {
     parts.push(`[Recent conversation:]`)
     for (const msg of ctx.history.slice(-5)) {
-      parts.push(`${msg.role === 'user' ? 'Contact' : 'Agent'}: ${msg.content.substring(0, 200)}`)
+      parts.push(`${msg.role === 'user' ? 'Contact' : 'Agent'}: ${escapeForPrompt(msg.content.substring(0, 200), 250)}`)
     }
   }
 

@@ -12,11 +12,17 @@ const logger = pino({ name: 'knowledge:extractor:image' })
  * Extract text description from an image using LLM vision.
  * Falls back gracefully if llm:gateway is not available.
  */
+// FIX: K-DOS1 — Límite de tamaño para prevenir OOM en base64 conversion
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
+
 export async function extractImage(
   input: Buffer,
   fileName: string,
   registry: Registry,
 ): Promise<ExtractedContent> {
+  if (input.length > MAX_IMAGE_SIZE) {
+    throw new Error(`Image too large: ${(input.length / 1024 / 1024).toFixed(1)}MB exceeds ${MAX_IMAGE_SIZE / 1024 / 1024}MB limit`)
+  }
   const mimeType = getMimeType(fileName)
   const base64 = input.toString('base64')
 

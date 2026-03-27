@@ -3,10 +3,7 @@
 // Default limits are conservative (below Gmail's actual API caps).
 // Can be overridden via config (EMAIL_RATE_LIMIT_PER_HOUR, EMAIL_RATE_LIMIT_PER_DAY).
 
-import pino from 'pino'
 import type { Redis } from 'ioredis'
-
-const logger = pino({ name: 'email:rate-limiter' })
 
 const DEFAULT_LIMITS = {
   workspace: { perHour: 80, perDay: 1500 },
@@ -26,7 +23,7 @@ export class EmailRateLimiter {
   private limits: { perHour: number; perDay: number }
 
   constructor(
-    private accountType: 'workspace' | 'free',
+    accountType: 'workspace' | 'free',
     private redis: Redis,
     customLimits?: { perHour?: number; perDay?: number },
   ) {
@@ -37,25 +34,22 @@ export class EmailRateLimiter {
     }
   }
 
+  // FIX: SEC-8.1 — Atomic check+increment via Lua script (TOCTOU fix)
   async canSend(): Promise<boolean> {
-    const [hourly, daily] = await Promise.all([
-      this.getHourlyCount(),
-      this.getDailyCount(),
-    ])
-    return hourly < this.limits.perHour && daily < this.limits.perDay
-  }
-
-  async recordSend(): Promise<void> {
     const now = new Date()
     const hourKey = `email:rate:hour:${this.formatHour(now)}`
     const dayKey = `email:rate:day:${this.formatDay(now)}`
+    const { atomicDualRateCheck } = await import('../../kernel/redis-rate-limiter.js')
+    return atomicDualRateCheck(
+      this.redis,
+      hourKey, this.limits.perHour, 3600,
+      dayKey, this.limits.perDay, 86400,
+    )
+  }
 
-    const pipeline = this.redis.pipeline()
-    pipeline.incr(hourKey)
-    pipeline.expire(hourKey, 3600)
-    pipeline.incr(dayKey)
-    pipeline.expire(dayKey, 86400)
-    await pipeline.exec()
+  /** @deprecated Use canSend() which now atomically increments. Kept for backward compat. */
+  async recordSend(): Promise<void> {
+    // No-op: canSend() now atomically increments counters via Lua script
   }
 
   async getUsage(): Promise<RateLimitUsage> {
@@ -74,7 +68,7 @@ export class EmailRateLimiter {
   }
 
   updateAccountType(type: 'workspace' | 'free', customLimits?: { perHour?: number; perDay?: number }): void {
-    this.accountType = type
+    void type // stored implicitly via DEFAULT_LIMITS lookup
     const defaults = DEFAULT_LIMITS[type] ?? DEFAULT_LIMITS.workspace
     this.limits = {
       perHour: customLimits?.perHour ?? defaults.perHour,

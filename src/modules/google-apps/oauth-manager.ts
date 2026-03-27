@@ -265,20 +265,25 @@ export class OAuthManager {
 
   // ─── DB persistence ────────────────────────
 
+  // FIX: G-1 — Cifrar tokens OAuth antes de guardar en DB
   private async saveTokenToDb(token: TokenInfo): Promise<void> {
     try {
+      const { encrypt } = await import('../../kernel/config-store.js')
+      const encAccess = encrypt(token.accessToken)
+      const encRefresh = encrypt(token.refreshToken)
       await this.db.query(`
         INSERT INTO google_oauth_tokens (id, access_token, refresh_token, expires_at, scopes, email)
         VALUES ('primary', $1, $2, $3, $4, $5)
         ON CONFLICT (id) DO UPDATE SET
           access_token = $1, refresh_token = $2, expires_at = $3, scopes = $4, email = $5,
           updated_at = now()
-      `, [token.accessToken, token.refreshToken, token.expiresAt, JSON.stringify(token.scopes), token.email])
+      `, [encAccess, encRefresh, token.expiresAt, JSON.stringify(token.scopes), token.email])
     } catch (err) {
       logger.error({ err }, 'Failed to save token to DB')
     }
   }
 
+  // FIX: G-1 — Descifrar tokens OAuth al leer de DB (soporta legacy sin cifrar)
   private async loadTokenFromDb(): Promise<TokenInfo | null> {
     try {
       const result = await this.db.query(
@@ -286,9 +291,22 @@ export class OAuthManager {
       )
       const row = result.rows[0]
       if (!row) return null
+
+      let accessToken = row.access_token as string
+      let refreshToken = row.refresh_token as string
+
+      // Try decrypting — if fails, assume plaintext (migration from unencrypted)
+      try {
+        const { decrypt } = await import('../../kernel/config-store.js')
+        if (accessToken.includes(':')) accessToken = decrypt(accessToken)
+        if (refreshToken.includes(':')) refreshToken = decrypt(refreshToken)
+      } catch {
+        // Legacy plaintext tokens — will be re-encrypted on next save
+      }
+
       return {
-        accessToken: row.access_token,
-        refreshToken: row.refresh_token,
+        accessToken,
+        refreshToken,
         expiresAt: new Date(row.expires_at),
         scopes: Array.isArray(row.scopes) ? row.scopes : JSON.parse(row.scopes ?? '[]'),
         email: row.email,

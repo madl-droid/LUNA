@@ -348,7 +348,7 @@ const manifest: ModuleManifest = {
     }
 
     if (enabledSet.has('sheets')) {
-      services.sheets = new SheetsService(authClient)
+      services.sheets = new SheetsService(authClient, config)
       registry.provide('google:sheets', services.sheets)
       logger.info('Sheets service enabled')
     }
@@ -366,7 +366,7 @@ const manifest: ModuleManifest = {
     }
 
     if (enabledSet.has('calendar')) {
-      services.calendar = new CalendarService(authClient)
+      services.calendar = new CalendarService(authClient, config)
       registry.provide('google:calendar', services.calendar)
       logger.info('Calendar service enabled')
     }

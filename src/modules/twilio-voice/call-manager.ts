@@ -98,7 +98,7 @@ export class CallManager {
     to: string,
     twimlUrl: string,
     statusCallbackUrl: string | undefined,
-    mediaStreamUrl: string,
+    _mediaStreamUrl: string,
   ): Promise<{ callSid: string; callId: string }> {
     if (!this.config.VOICE_ENABLED) {
       throw new Error('Voice calls are disabled')

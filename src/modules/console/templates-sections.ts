@@ -956,19 +956,6 @@ const CH_PLACEHOLDER: Record<string, string> = {
   whatsapp: '+521234567890', gmail: 'user@example.com', 'google-chat': 'spaces/XXX/members/YYY', 'twilio-voice': '+15550123',
 }
 
-// Validation patterns per channel (HTML5 pattern attribute)
-const CH_PATTERN: Record<string, string> = {
-  whatsapp: '\\+[0-9]{7,15}',
-  gmail: '[^@\\s]+@[^@\\s]+\\.[^@\\s]+',
-  'twilio-voice': '\\+[0-9]{7,15}',
-}
-
-const CH_PATTERN_TITLE: Record<string, Record<string, string>> = {
-  whatsapp: { es: 'Numero con codigo de pais: +521234567890', en: 'Phone with country code: +521234567890' },
-  gmail: { es: 'Email valido: user@example.com', en: 'Valid email: user@example.com' },
-  'twilio-voice': { es: 'Numero E.164: +15550123', en: 'E.164 number: +15550123' },
-}
-
 // SVG icons for action buttons
 const SVG_PLUS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>'
 const SVG_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
@@ -980,7 +967,7 @@ function renderUsersSection(data: SectionData): string {
   const ud = data.usersData
   if (!ud) return `<div class="panel"><div class="panel-body">${lang === 'es' ? 'Módulo de usuarios no disponible.' : 'Users module not available.'}</div></div>`
 
-  const { configs, usersByType, counts, channels, tools } = ud
+  const { configs, usersByType, counts, channels } = ud
 
   // Test mode warning
   const testMode = data.config.ENGINE_TEST_MODE === 'true'
@@ -996,11 +983,6 @@ function renderUsersSection(data: SectionData): string {
   const isConfigPage = subpage === 'config'
 
   // Channel filter options
-  const chFilterOpts = channels.map(ch => {
-    const lbl = typeof ch.label === 'string' ? ch.label : (ch.label[lang] || ch.label['es'] || ch.id)
-    return `<option value="${esc(ch.id)}">${esc(lbl)}</option>`
-  }).join('')
-
   const svgSearch = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>'
 
   let html = `<div class="users-section">${warning}`
@@ -1069,7 +1051,6 @@ function renderUsersSection(data: SectionData): string {
       return html + '</div>'
     }
     const users = usersByType[cfg.listType] ?? []
-    const isLead = cfg.listType === 'lead'
     const lt = cfg.listType
 
     // Single panel for this list type
@@ -1758,8 +1739,6 @@ function renderUsersSection(data: SectionData): string {
   if (isConfigPage) {
   const { activeModules = [], knowledgeCategories: kCats = [] } = ud
   const SYSTEM_TYPES = ['admin', 'lead', 'coworker', 'partners']
-  const activeCount = configs.filter(c => c.isEnabled).length
-
   // Section A: Base Cards Grid
   const SVG_CONTACTS_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
   const SVG_EYE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
@@ -1769,7 +1748,6 @@ function renderUsersSection(data: SectionData): string {
     const lt = cfg.listType
     const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
     const count = counts[lt] ?? 0
-    const enabledOrig = cfg.isEnabled ? 'true' : 'false'
     const isPartners = lt === 'partners'
     const inactiveClass = !cfg.isEnabled ? ' ch-card-inactive' : ''
     const typeLabel = isSys ? (lang === 'es' ? 'Sistema' : 'System') : (lang === 'es' ? 'Custom' : 'Custom')

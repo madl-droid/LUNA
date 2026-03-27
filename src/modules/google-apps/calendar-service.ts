@@ -11,15 +11,23 @@ import type {
   CalendarEventListOptions,
   CalendarEventCreateOptions,
   CalendarEventUpdateOptions,
+  GoogleApiConfig,
 } from './types.js'
+import { googleApiCall } from './api-wrapper.js'
 
 const logger = pino({ name: 'google-apps:calendar' })
 
 export class CalendarService {
   private calendar
+  // FIX: GA-3 — API timeout/retry config
+  private apiConfig: { timeoutMs: number; maxRetries: number }
 
-  constructor(private auth: OAuth2Client) {
+  constructor(auth: OAuth2Client, config?: GoogleApiConfig) {
     this.calendar = google.calendar({ version: 'v3', auth })
+    this.apiConfig = {
+      timeoutMs: config?.GOOGLE_API_TIMEOUT_MS ?? 30000,
+      maxRetries: config?.GOOGLE_API_RETRY_MAX ?? 2,
+    }
   }
 
   // ─── Calendarios ───────────────────────────
@@ -48,7 +56,7 @@ export class CalendarService {
   }> {
     const calendarId = options.calendarId ?? 'primary'
 
-    const res = await this.calendar.events.list({
+    const res = await googleApiCall(() => this.calendar.events.list({
       calendarId,
       timeMin: options.timeMin,
       timeMax: options.timeMax,
@@ -57,7 +65,7 @@ export class CalendarService {
       singleEvents: options.singleEvents ?? true,
       orderBy: options.orderBy ?? 'startTime',
       pageToken: options.pageToken,
-    })
+    }), this.apiConfig, 'calendar.events.list')
 
     const events: CalendarEvent[] = (res.data.items ?? []).map((e) => this.mapEvent(e))
 
@@ -78,7 +86,7 @@ export class CalendarService {
   async createEvent(options: CalendarEventCreateOptions): Promise<CalendarEvent> {
     const calendarId = options.calendarId ?? 'primary'
 
-    const res = await this.calendar.events.insert({
+    const res = await googleApiCall(() => this.calendar.events.insert({
       calendarId,
       sendUpdates: options.sendUpdates ?? 'all',
       requestBody: {
@@ -94,7 +102,7 @@ export class CalendarService {
         })),
         reminders: options.reminders,
       },
-    })
+    }), this.apiConfig, 'calendar.events.insert')
 
     logger.info({ eventId: res.data.id, summary: options.summary }, 'Calendar event created')
     return this.mapEvent(res.data)

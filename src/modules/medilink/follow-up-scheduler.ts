@@ -401,14 +401,17 @@ REGLAS:
       const phone = contactId.replace(/@.*$/, '')
       await redis.set(`medilink:followup:voice-context:${phone}`, JSON.stringify(callContext), 'EX', 600)
 
-      const server = this.registry.getOptional<{ address: () => { port: number } }>('kernel:server')
-      const port = server?.address()?.port ?? 3000
-      const baseUrl = `https://localhost:${port}`
+      // FIX: ML-1 — Use configured public URL instead of localhost
+      const publicUrl = this.config.MEDILINK_PUBLIC_URL
+      if (!publicUrl) {
+        throw new Error('MEDILINK_PUBLIC_URL not configured — cannot initiate voice calls')
+      }
+      const wsUrl = publicUrl.replace(/^https?:\/\//, 'wss://')
       await callManager.initiateOutboundCall(
         phone,
-        `${baseUrl}/console/api/twilio-voice/webhook/outbound-twiml`,
-        `${baseUrl}/console/api/twilio-voice/webhook/status`,
-        `wss://localhost:${port}/twilio/media-stream`,
+        `${publicUrl}/console/api/twilio-voice/webhook/outbound-twiml`,
+        `${publicUrl}/console/api/twilio-voice/webhook/status`,
+        `${wsUrl}/twilio/media-stream`,
       )
       logger.info({ phone }, 'Voice call initiated')
     } catch (err) {

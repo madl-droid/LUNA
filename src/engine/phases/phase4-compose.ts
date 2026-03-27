@@ -156,6 +156,12 @@ async function callWithRetries(
         temperature: config.temperatureRespond,
       })
 
+      // FIX: E-14 — Reject empty LLM responses so retry/fallback takes over
+      if (!result.text || result.text.trim() === '') {
+        logger.warn({ traceId, provider, model, attempt }, 'LLM returned empty response — treating as failure')
+        lastError = new Error('Empty LLM response')
+        continue
+      }
       logger.info({ traceId, provider: result.provider, model: result.model, attempt }, 'Phase 4 LLM succeeded')
       return result.text
     } catch (err) {

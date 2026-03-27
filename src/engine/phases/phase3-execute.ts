@@ -15,7 +15,7 @@ import type {
   EngineConfig,
 } from '../types.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
-import { executeTool, getDefinition } from '../mocks/tool-registry.js'
+import { executeTool as mockExecuteTool, getDefinition as mockGetDefinition } from '../mocks/tool-registry.js'
 import { runSubagent } from '../subagent/subagent.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { StepSemaphore } from '../concurrency/step-semaphore.js'
@@ -23,6 +23,50 @@ import { processAttachments, buildFallbackMessages } from '../attachments/proces
 import type { AttachmentEngineConfig, ChannelAttachmentConfig } from '../attachments/types.js'
 
 const logger = pino({ name: 'engine:phase3' })
+
+// FIX: E-10 — Use real tool registry when available, fail explicitly in production
+interface RealToolRegistry {
+  executeTool(name: string, input: Record<string, unknown>, context: unknown): Promise<{ success: boolean; data?: unknown; error?: string }>
+  getEnabledToolDefinitions(contactType?: string): Array<{ name: string; description: string; parameters: Record<string, unknown> }>
+}
+
+function getToolRegistry(registry: Registry): RealToolRegistry | null {
+  return registry.getOptional<RealToolRegistry>('tools:registry')
+}
+
+async function executeTool(
+  toolName: string,
+  params: Record<string, unknown>,
+  registry: Registry,
+  ctx?: { contactId?: string; agentId?: string; traceId?: string },
+): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  const real = getToolRegistry(registry)
+  if (real) {
+    return real.executeTool(toolName, params, ctx ?? {})
+  }
+  // No real registry available
+  if (process.env.NODE_ENV === 'production') {
+    logger.error({ toolName }, 'Tool execution requested but tools module is not active (production)')
+    return { success: false, error: `Tool "${toolName}" unavailable: tools module not active` }
+  }
+  logger.warn({ toolName }, 'Using MOCK tool registry — responses will contain fake data')
+  return mockExecuteTool(toolName, params)
+}
+
+function getDefinition(
+  toolName: string,
+  registry: Registry,
+): { name: string; description: string; parameters: Record<string, unknown> } | null {
+  const real = getToolRegistry(registry)
+  if (real) {
+    const defs = real.getEnabledToolDefinitions()
+    return defs.find(d => d.name === toolName) ?? null
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return null
+  }
+  return mockGetDefinition(toolName)
+}
 
 /**
  * Execute Phase 3: Run the execution plan from Phase 2.
@@ -155,13 +199,13 @@ async function executeStep(
   try {
     switch (step.type) {
       case 'api_call':
-        return await executeApiCall(step, index, startMs, config)
+        return await executeApiCall(step, index, startMs, config, registry, { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId })
 
       case 'workflow':
-        return await executeWorkflow(step, index, startMs)
+        return await executeWorkflow(step, index, startMs, registry)
 
       case 'subagent':
-        return await executeSubagent(step, index, ctx, config, startMs)
+        return await executeSubagent(step, index, ctx, config, startMs, registry)
 
       case 'memory_lookup':
         return await executeMemoryLookup(step, index, db, ctx, registry, startMs)
@@ -208,18 +252,20 @@ async function executeApiCall(
   index: number,
   startMs: number,
   _config: EngineConfig,
+  registry: Registry,
+  ctx?: { contactId?: string; agentId?: string; traceId?: string },
 ): Promise<StepResult> {
   if (!step.tool) {
     return { stepIndex: index, type: 'api_call', success: false, error: 'No tool specified', durationMs: Date.now() - startMs }
   }
 
   // First attempt
-  let result = await executeTool(step.tool, step.params ?? {})
+  let result = await executeTool(step.tool, step.params ?? {}, registry, ctx)
 
   // Retry once on failure
   if (!result.success) {
     logger.warn({ tool: step.tool, error: result.error }, 'Tool failed, retrying once')
-    result = await executeTool(step.tool, step.params ?? {})
+    result = await executeTool(step.tool, step.params ?? {}, registry, ctx)
   }
 
   return {
@@ -239,9 +285,10 @@ async function executeWorkflow(
   step: ExecutionStep,
   index: number,
   startMs: number,
+  registry: Registry,
 ): Promise<StepResult> {
   if (step.tool) {
-    const result = await executeTool(step.tool, step.params ?? {})
+    const result = await executeTool(step.tool, step.params ?? {}, registry)
     return {
       stepIndex: index,
       type: 'workflow',
@@ -270,13 +317,14 @@ async function executeSubagent(
   ctx: ContextBundle,
   config: EngineConfig,
   startMs: number,
+  registry: Registry,
 ): Promise<StepResult> {
   const toolNames = ctx.userPermissions.tools.includes('*')
     ? (step.params?.tools as string[] ?? [])
     : ctx.userPermissions.tools
 
   const toolDefs = toolNames
-    .map(name => getDefinition(name))
+    .map(name => getDefinition(name, registry))
     .filter((d): d is NonNullable<typeof d> => d !== null)
 
   const result = await runSubagent(ctx, step, toolDefs, config)
@@ -409,7 +457,7 @@ async function executeWebSearch(
  * Now runs as a Phase 3 step so it can be planned by the evaluator.
  */
 async function executeProcessAttachment(
-  step: ExecutionStep,
+  _step: ExecutionStep,
   index: number,
   ctx: ContextBundle,
   db: Pool,

@@ -116,8 +116,26 @@ const manifest: ModuleManifest = {
 
     // Register event-based triggers
     if (config.SCHEDULED_TASKS_ENABLED) {
+      // FIX: ST-1 — Guard de recursión para prevenir loops infinitos en event-triggered tasks
+      const MAX_TASK_DEPTH = 3
+      const DEPTH_TTL = 60 // seconds
+
       for (const eventName of SUPPORTED_EVENTS) {
-        registry.addHook('scheduled-tasks', eventName, async (payload, correlationId) => {
+        registry.addHook('scheduled-tasks', eventName, async (payload, _correlationId) => {
+          // Extract identifier from payload to track recursion depth
+          const p = payload as Record<string, unknown>
+          const entityId = (p['contactId'] ?? p['name'] ?? p['id'] ?? 'global') as string
+          const depthKey = `task_depth:${eventName}:${entityId}`
+
+          try {
+            const depth = parseInt(await redis.get(depthKey) || '0', 10)
+            if (depth >= MAX_TASK_DEPTH) {
+              logger.warn({ eventName, entityId, depth }, 'Task recursion limit reached, skipping')
+              return
+            }
+            await redis.set(depthKey, String(depth + 1), 'EX', DEPTH_TTL)
+          } catch { /* Redis error — allow execution */ }
+
           const tasks = await store.getTasksByEvent(db, eventName)
           for (const task of tasks) {
             try {
@@ -126,6 +144,8 @@ const manifest: ModuleManifest = {
               logger.error({ taskId: task.id, event: eventName, err }, 'Event-triggered task failed')
             }
           }
+
+          try { await redis.decr(depthKey) } catch { /* best effort */ }
         }, 100) // low priority so other handlers run first
       }
 

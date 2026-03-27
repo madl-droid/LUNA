@@ -11,7 +11,6 @@ import type { Pool } from 'pg'
 import type {
   GoogleChatConfig,
   GoogleChatState,
-  GoogleChatStatus,
   ChatEvent,
   SendResult,
   ServiceAccountKeyInfo,
@@ -293,9 +292,10 @@ export class GoogleChatAdapter {
   // ─── Webhook verification ────────────────────────
 
   verifyWebhookToken(authHeader: string | undefined): boolean {
-    // If no webhook token configured, skip verification (dev mode)
+    // FIX: SEC-4.2 — Rechazar si no hay token configurado (antes aceptaba todo)
     if (!this.config.GOOGLE_CHAT_WEBHOOK_TOKEN) {
-      return true
+      logger.warn('Google Chat webhook rejected: no verification token configured')
+      return false
     }
 
     if (!authHeader) return false

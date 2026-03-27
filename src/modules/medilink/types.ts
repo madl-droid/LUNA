@@ -26,6 +26,8 @@ export interface MedilinkConfig {
   MEDILINK_REQUIRE_DOCUMENT_FOR_DEBTS: boolean
   MEDILINK_AUTO_LINK_SINGLE_MATCH: boolean
   MEDILINK_HEALTH_CHECK_INTERVAL_MS: number
+  // FIX: ML-1 — Public URL for voice call webhooks
+  MEDILINK_PUBLIC_URL: string
 }
 
 // ─── API response envelope ───────────────

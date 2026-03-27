@@ -32,10 +32,9 @@ const DEFAULTS: NightlyConfig = {
   reportSheetName: 'Daily Report',
 }
 
-/** Get agent ID — consistent with other proactive jobs (project-wide default) */
-const DEFAULT_AGENT_ID = 'luna'
-function getAgentId(_ctx: ProactiveJobContext): string {
-  return DEFAULT_AGENT_ID
+// FIX: E-30 — Use agent slug from config instead of hardcoded 'luna'
+function getAgentId(ctx: ProactiveJobContext): string {
+  return ctx.engineConfig.agentSlug
 }
 
 /** Get batch LLM model/provider from engine config (proactive task routing) */

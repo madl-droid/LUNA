@@ -7,7 +7,6 @@ dotenv.config()
 
 import { z } from 'zod'
 
-const boolStr = z.string().transform(v => v === 'true').pipe(z.boolean())
 const intStr = z.string().transform(Number).pipe(z.number().int())
 
 const kernelSchema = z.object({

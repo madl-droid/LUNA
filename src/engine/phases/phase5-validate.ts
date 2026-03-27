@@ -236,7 +236,7 @@ async function checkRateLimit(
   redis: Redis,
   to: string,
   channel: string,
-  config: EngineConfig,
+  _config: EngineConfig,
   registry: Registry,
 ): Promise<boolean> {
   const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
@@ -269,23 +269,17 @@ async function checkRateLimit(
     const hourKey = `rate:${channel}:${to}:hour`
     const dayKey = `rate:${channel}:${to}:day`
 
-    const [hourCount, dayCount] = await Promise.all([
-      redis.get(hourKey),
-      redis.get(dayKey),
-    ])
-
-    if (hourCount && parseInt(hourCount) >= limitHour) {
-      logger.warn({ to, channel, hourCount, limitHour }, 'Hourly rate limit reached')
+    // FIX: SEC-8.2 — Atomic check+increment via Lua script (TOCTOU fix)
+    const { atomicDualRateCheck } = await import('../../kernel/redis-rate-limiter.js')
+    const allowed = await atomicDualRateCheck(
+      redis,
+      hourKey, limitHour, 3600,
+      dayKey, limitDay, 86400,
+    )
+    if (!allowed) {
+      logger.warn({ to, channel, limitHour, limitDay }, 'Rate limit reached')
       return false
     }
-    if (limitDay > 0 && dayCount && parseInt(dayCount) >= limitDay) return false
-
-    const pipeline = redis.pipeline()
-    pipeline.incr(hourKey)
-    pipeline.expire(hourKey, 3600)
-    pipeline.incr(dayKey)
-    pipeline.expire(dayKey, 86400)
-    await pipeline.exec()
 
     return true
   } catch (err) {

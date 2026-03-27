@@ -104,7 +104,11 @@ export class WebhookHandler {
 
   private verifySignature(body: string, signing: string): boolean {
     const privateKey = this.config.MEDILINK_WEBHOOK_PRIVATE_KEY
-    if (!privateKey) return true // No key configured = skip verification
+    // FIX: SEC-4.1 — Rechazar si no hay key configurada (antes aceptaba todo)
+    if (!privateKey) {
+      logger.warn('Medilink webhook rejected: no private key configured')
+      return false
+    }
 
     try {
       const expected = crypto

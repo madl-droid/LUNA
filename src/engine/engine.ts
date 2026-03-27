@@ -52,7 +52,7 @@ export function initEngine(reg: Registry): void {
   }
 
   // Register hook listener for incoming messages
-  registry.addHook('engine', 'message:incoming', async (payload, correlationId) => {
+  registry.addHook('engine', 'message:incoming', async (payload, _correlationId) => {
     const message: IncomingMessage = {
       id: payload.id,
       channelName: payload.channelName as IncomingMessage['channelName'],
@@ -126,9 +126,16 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
 
   try {
     // ═══ CONCURRENCY LAYER 2: Per-Contact Serialization ═══
-    return await contactLock.withLock(message.from, () =>
-      processMessageInner(message, db, redis, totalStart),
-    )
+    return await contactLock.withLock(message.from, () => {
+      // FIX: E-1 — Pipeline global timeout to prevent zombie pipelines
+      const timeoutMs = engineConfig.pipelineTimeoutMs
+      return Promise.race([
+        processMessageInner(message, db, redis, totalStart),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Pipeline timeout after ${timeoutMs}ms`)), timeoutMs),
+        ),
+      ])
+    })
   } finally {
     pipelineSemaphore.release()
   }

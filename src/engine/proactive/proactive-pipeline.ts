@@ -211,13 +211,14 @@ export async function processProactive(
 async function buildProactiveContext(
   candidate: ProactiveCandidate,
   db: Pool,
-  redis: Redis,
+  _redis: Redis,
   registry: Registry,
   config: EngineConfig,
   traceId: string,
 ): Promise<ProactiveContextBundle> {
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
-  const agentId = 'luna'
+  // FIX: E-30 — Use agent slug from config instead of hardcoded 'luna'
+  const agentId = config.agentSlug
 
   // Load contact info
   const contactResult = await db.query(
@@ -231,7 +232,11 @@ async function buildProactiveContext(
     [candidate.contactId, candidate.channel],
   )
 
-  const contactRow = contactResult.rows[0]!
+  // FIX: E-29 — Guard against deleted contact (no non-null assertion)
+  const contactRow = contactResult.rows[0]
+  if (!contactRow) {
+    throw new Error(`Contact ${candidate.contactId} not found (may have been deleted)`)
+  }
   const contact = contactRow ? {
     id: contactRow.id,
     channelContactId: contactRow.channel_contact_id,

@@ -73,6 +73,10 @@ export class ApiConnectorManager {
     const url = new URL(connector.baseUrl)
     url.searchParams.set('q', query)
 
+    // FIX: K-SSRF1 — Validar URL antes de fetch para prevenir SSRF
+    const { assertNotPrivateUrl } = await import('../../kernel/ssrf-guard.js')
+    assertNotPrivateUrl(url.toString())
+
     const headers: Record<string, string> = {}
     buildAuthHeaders(connector.authType, connector.authConfig, headers)
 

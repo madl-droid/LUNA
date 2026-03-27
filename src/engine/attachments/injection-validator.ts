@@ -2,6 +2,7 @@
 // Validates external content (documents, URLs) before injecting into pipeline context.
 // Extends the base injection-detector patterns with document-specific checks.
 
+import { randomUUID } from 'crypto'
 import { detectInputInjection } from '../utils/injection-detector.js'
 import type { InjectionValidationResult } from './types.js'
 
@@ -61,9 +62,23 @@ export function validateInjection(
 }
 
 /**
- * Wrap external content with explicit trust boundary markers.
+ * Create unpredictable trust boundary markers.
+ * FIX: SEC-2.4 — UUID-based boundaries prevent falsification within document content.
+ */
+export function createTrustBoundary(): { start: string; end: string; id: string } {
+  const id = randomUUID().slice(0, 8) // Suficiente para unicidad por sesión
+  return {
+    start: `<!-- EXTERNAL_CONTENT_${id}_START -->`,
+    end: `<!-- EXTERNAL_CONTENT_${id}_END -->`,
+    id,
+  }
+}
+
+/**
+ * Wrap external content with unpredictable trust boundary markers.
  * These markers signal to the LLM that the content is user-provided, not system instructions.
  */
 function wrapWithTrustBoundary(content: string, sourceType: string, sourceName: string): string {
-  return `[CONTENIDO EXTERNO — tipo: ${sourceType}, fuente: ${sourceName}]\n${content}\n[FIN CONTENIDO EXTERNO]`
+  const boundary = createTrustBoundary()
+  return `${boundary.start}\n[tipo: ${sourceType}, fuente: ${sourceName}]\n${content}\n${boundary.end}`
 }

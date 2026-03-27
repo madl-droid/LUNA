@@ -1631,7 +1631,6 @@ export function createApiRoutes(): ApiRoute[] {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
-          const config = await (await import('./manifest-ref.js')).getRegistryRef()?.getOptional?.('config:store')
           // Gate behind test mode
           const db = registry.getDb()
           const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
@@ -1754,12 +1753,17 @@ export function createApiRoutes(): ApiRoute[] {
 
           const query = parseQuery(req)
           const period = query.get('period') || '24h'
+          // FIX: SEC-1.1 — Whitelist period values
           const intervalMap: Record<string, string> = {
             '24h': '24 hours',
             '7d': '7 days',
             '30d': '30 days',
           }
-          const interval = intervalMap[period] ?? '24 hours'
+          const interval = intervalMap[period]
+          if (!interval) {
+            jsonResponse(res, 400, { error: 'Invalid period' })
+            return
+          }
 
           const db = registry.getDb()
 
@@ -1958,22 +1962,26 @@ export function createApiRoutes(): ApiRoute[] {
 
           const db = registry.getDb()
 
-          // Build WHERE clause for time filtering
-          const truncMap: Record<string, string> = {
-            'today': 'day', 'this_week': 'week', 'this_month': 'month',
-            'this_quarter': 'quarter', 'this_half': 'quarter', 'this_year': 'year',
+          // FIX: SEC-1.1 — Whitelist period values to prevent SQL injection
+          const VALID_WHERE_TIME: Record<string, string> = {
+            'today':        "created_at >= date_trunc('day', now())",
+            'this_week':    "created_at >= date_trunc('week', now())",
+            'this_month':   "created_at >= date_trunc('month', now())",
+            'this_quarter': "created_at >= date_trunc('quarter', now())",
+            'this_half':    "created_at >= date_trunc('month', now()) - interval '5 months'",
+            'this_year':    "created_at >= date_trunc('year', now())",
+            '1h':           "created_at > now() - interval '1 hour'",
+            '24h':          "created_at > now() - interval '24 hours'",
+            '7d':           "created_at > now() - interval '7 days'",
+            '30d':          "created_at > now() - interval '30 days'",
+            '90d':          "created_at > now() - interval '90 days'",
+            '180d':         "created_at > now() - interval '180 days'",
+            '365d':         "created_at > now() - interval '365 days'",
           }
-          const intervalMap: Record<string, string> = {
-            '1h': '1 hour', '24h': '24 hours', '7d': '7 days', '30d': '30 days',
-            '90d': '90 days', '180d': '180 days', '365d': '365 days',
-          }
-          let whereTime: string
-          if (truncMap[period]) {
-            const unit = period === 'this_half' ? `date_trunc('month', now()) - interval '5 months'` : `date_trunc('${truncMap[period]}', now())`
-            whereTime = `created_at >= ${unit}`
-          } else {
-            const interval = intervalMap[period] ?? '30 days'
-            whereTime = `created_at > now() - '${interval}'::interval`
+          const whereTime = VALID_WHERE_TIME[period]
+          if (!whereTime) {
+            jsonResponse(res, 400, { error: 'Invalid period' })
+            return
           }
 
           // Standardized 4 metrics for ALL channel types: active, inbound, outbound, avg_duration_s

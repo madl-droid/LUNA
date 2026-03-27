@@ -12,7 +12,15 @@ import { isSetupCompleted } from './kernel/setup/detect.js'
 import { createSetupHandler } from './kernel/setup/handler.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'luna' })
+// FIX: SEC-12.1 — PII redaction en logs
+const logger = pino({
+  name: 'luna',
+  redact: {
+    paths: ['email', 'phone', 'contactPhone', 'document', 'patientId',
+            '*.email', '*.phone', '*.contactPhone', '*.document'],
+    censor: '[REDACTED]',
+  },
+})
 
 /** Run the setup wizard on a temporary HTTP server. Blocks until setup completes. */
 async function runSetupWizard(db: import('pg').Pool, redis: import('ioredis').Redis): Promise<void> {
@@ -43,6 +51,16 @@ async function runSetupWizard(db: import('pg').Pool, redis: import('ioredis').Re
     })
   })
 }
+
+// FIX: K-3 — Handlers globales para errores no capturados
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'Uncaught exception — shutting down')
+  process.exit(1)
+})
+process.on('unhandledRejection', (reason) => {
+  logger.fatal({ reason }, 'Unhandled rejection — shutting down')
+  process.exit(1)
+})
 
 async function main(): Promise<void> {
   logger.info({ env: kernelConfig.nodeEnv }, 'LUNA starting...')

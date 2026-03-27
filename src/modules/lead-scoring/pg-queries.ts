@@ -345,32 +345,19 @@ export class LeadQueries {
   /**
    * Manually set disqualification on a contact.
    */
+  // FIX: SEC-8.4 — Atomic update sin read-modify-write via jsonb_set
   async disqualifyLead(
     contactId: string,
     reasonKey: string,
     targetStatus: QualificationStatus,
   ): Promise<void> {
-    // Load existing data
-    const result = await this.db.query(
-      'SELECT qualification_data FROM contacts WHERE id = $1',
-      [contactId],
-    )
-    if (result.rows.length === 0) return
-
-    const row = result.rows[0]!
-    const data = (typeof row.qualification_data === 'string'
-      ? JSON.parse(row.qualification_data)
-      : row.qualification_data ?? {}) as Record<string, unknown>
-
-    data['_disqualified'] = reasonKey
-
     await this.db.query(
       `UPDATE contacts
-       SET qualification_data = $1,
+       SET qualification_data = COALESCE(qualification_data, '{}'::jsonb) || $1::jsonb,
            qualification_status = $2,
            updated_at = NOW()
        WHERE id = $3`,
-      [JSON.stringify(data), targetStatus, contactId],
+      [JSON.stringify({ _disqualified: reasonKey }), targetStatus, contactId],
     )
   }
 }

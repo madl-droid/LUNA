@@ -5,10 +5,20 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /** Lee el body de un request como string UTF-8 */
-export function readBody(req: IncomingMessage): Promise<string> {
+// FIX: SEC-9.1 — Limitar tamaño de body para prevenir OOM
+export function readBody(req: IncomingMessage, maxBytes = 10 * 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
+    let totalSize = 0
+    req.on('data', (chunk: Buffer) => {
+      totalSize += chunk.length
+      if (totalSize > maxBytes) {
+        req.destroy()
+        reject(new Error(`Body exceeds limit of ${maxBytes} bytes`))
+        return
+      }
+      chunks.push(chunk)
+    })
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
     req.on('error', reject)
   })

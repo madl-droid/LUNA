@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, readBody, parseQuery } from '../../kernel/http-helpers.js'
-import { numEnv, numEnvMin, boolEnv, floatEnv, floatEnvMin } from '../../kernel/config-helpers.js'
+import { numEnv, numEnvMin, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
 import type { Server } from '../../kernel/server.js'
 import type { TwilioVoiceConfig, InitiateCallRequest, VoicePreviewRequest } from './types.js'
 import { GEMINI_VOICES } from './types.js'
@@ -86,7 +86,6 @@ const apiRoutes: ApiRoute[] = [
 
       try {
         // Build the URLs for Twilio webhooks
-        const config = _registry.getConfig<TwilioVoiceConfig>('twilio-voice')
         const host = req.headers['host'] ?? 'localhost'
         const protocol = req.headers['x-forwarded-proto'] ?? 'https'
         const baseUrl = `${protocol}://${host}`
@@ -217,7 +216,7 @@ const apiRoutes: ApiRoute[] = [
     method: 'POST',
     path: 'webhook/incoming',
     handler: async (req, res) => {
-      if (!callManager || !_registry) {
+      if (!callManager || !_registry || !twilioAdapter) {
         res.writeHead(503, { 'Content-Type': 'text/xml' })
         res.end('<?xml version="1.0" encoding="UTF-8"?><Response><Say>Service unavailable</Say><Hangup/></Response>')
         return
@@ -225,6 +224,20 @@ const apiRoutes: ApiRoute[] = [
 
       const rawBody = await readBody(req)
       const params = TwilioAdapter.parseWebhookBody(rawBody)
+
+      // FIX: TV-1 — Validar firma Twilio antes de procesar
+      if (twilioAdapter.isConfigured()) {
+        const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || 'https'
+        const host = req.headers['host'] ?? 'localhost'
+        const webhookUrl = `${proto}://${host}${req.url?.split('?')[0] ?? ''}`
+        const signature = req.headers['x-twilio-signature'] as string ?? ''
+        if (!twilioAdapter.validateSignature(webhookUrl, params, signature)) {
+          res.writeHead(403, { 'Content-Type': 'text/xml' })
+          res.end('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>')
+          return
+        }
+      }
+
       const callSid = params['CallSid'] ?? ''
       const from = params['From'] ?? ''
       const to = params['To'] ?? ''
@@ -253,10 +266,7 @@ const apiRoutes: ApiRoute[] = [
       const host = req.headers['host'] ?? 'localhost'
       const mediaStreamUrl = `wss://${host}/twilio/media-stream`
 
-      const rawBody = await readBody(req)
-      const params = TwilioAdapter.parseWebhookBody(rawBody)
-      const callSid = params['CallSid'] ?? ''
-
+      await readBody(req)
       const twiml = twilioAdapter.generateOutboundTwiML(mediaStreamUrl, {
         callId: '', // will be resolved from callSid mapping
         direction: 'outbound',
