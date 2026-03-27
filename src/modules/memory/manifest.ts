@@ -14,8 +14,8 @@ const manifest: ModuleManifest = {
   name: 'memory',
   version: '3.0.0',
   description: {
-    es: 'Sistema de memoria: Redis (buffer) + PostgreSQL (persistencia) — 3 niveles: caliente/tibio/frío',
-    en: 'Memory system: Redis (buffer) + PostgreSQL (persistence) — 3 tiers: hot/warm/cold',
+    es: 'Memoria conversacional del agente con almacenamiento persistente.',
+    en: 'Agent conversational memory with persistent storage.',
   },
   type: 'core-module',
   removable: false,
@@ -57,8 +57,8 @@ const manifest: ModuleManifest = {
   console: {
     title: { es: 'Memoria del agente', en: 'Agent memory' },
     info: {
-      es: 'Configura como el agente recuerda conversaciones: buffer de mensajes, compresion de sesiones y retencion de datos.',
-      en: 'Configure how the agent remembers conversations: message buffer, session compression and data retention.',
+      es: 'Configura como el agente recuerda conversaciones y por cuanto tiempo conserva la informacion.',
+      en: 'Configure how the agent remembers conversations and how long it retains information.',
     },
     order: 40,
     group: 'data',

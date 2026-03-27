@@ -1164,7 +1164,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         sectionData.agenteSubpage = agenteSubpage
         // Map sub-pages to their actual section renderers
         if (agenteSubpage === 'advanced') {
-          // Combine LLM + Pipeline + Engine + Infra with dividers
+          // Combine LLM + Pipeline + Engine + Infra + Memory advanced with dividers
           const llmHtml = renderSection('llm', sectionData) || ''
           const pipelineHtml = renderSection('pipeline', sectionData) || ''
           const engineMod = data.moduleStates.find(m => m.name === 'engine')
@@ -1172,7 +1172,24 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             ? renderModulePanels([engineMod], data.config, lang, 'engine')
             : ''
           const infraHtml = renderSection('infra', sectionData) || ''
-          sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml
+          // Memory advanced fields (compression, crons, advanced retention)
+          const memoryAdvancedKeys = new Set([
+            '_div_compression', 'MEMORY_COMPRESSION_THRESHOLD', 'MEMORY_COMPRESSION_KEEP_RECENT',
+            'MEMORY_COMPRESSION_MODEL', 'MEMORY_EMBEDDING_MODEL', 'MEMORY_MAX_CONTACT_MEMORY_WORDS',
+            'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', 'MEMORY_PURGE_MERGED_SUMMARIES',
+            'MEMORY_RECOMPRESSION_INTERVAL_DAYS',
+            '_div_crons', 'MEMORY_BATCH_COMPRESS_CRON', 'MEMORY_BATCH_EMBEDDINGS_CRON',
+            'MEMORY_BATCH_MERGE_CRON', 'MEMORY_BATCH_RECOMPRESS_CRON',
+            'MEMORY_BATCH_MEDIA_PURGE_CRON', 'MEMORY_BATCH_LOGS_PURGE_CRON',
+            'MEMORY_BATCH_ARCHIVE_PURGE_CRON',
+          ])
+          const memoryMod = data.moduleStates.find(m => m.name === 'memory')
+          let memoryAdvHtml = ''
+          if (memoryMod?.active && memoryMod.console?.fields?.length) {
+            const advMod = { ...memoryMod, console: { ...memoryMod.console, fields: memoryMod.console.fields.filter((f: { key: string }) => memoryAdvancedKeys.has(f.key)) } }
+            memoryAdvHtml = renderModulePanels([advMod], data.config, lang, 'memory')
+          }
+          sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml + memoryAdvHtml
         } else if (agenteSubpage === 'knowledge') {
           // Load knowledge items HTML via module service
           try {
@@ -1183,10 +1200,20 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           } catch { /* module not available */ }
           sectionData.agenteContent = renderSection('knowledge', sectionData) ?? `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'memory') {
+          // Only show basic memory fields (active conversations + basic retention)
+          const memoryBasicKeys = new Set([
+            '_div_sessions', 'MEMORY_BUFFER_MESSAGE_COUNT', 'MEMORY_SESSION_MAX_TTL_HOURS',
+            'MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN',
+            '_div_retention', 'MEMORY_SUMMARY_RETENTION_DAYS', 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS',
+            'MEMORY_ARCHIVE_RETENTION_YEARS', 'MEMORY_MEDIA_IMAGE_RETENTION_YEARS',
+          ])
           const memoryMod = data.moduleStates.find(m => m.name === 'memory')
-          sectionData.agenteContent = memoryMod?.active && memoryMod.console?.fields?.length
-            ? renderModulePanels([memoryMod], data.config, lang, 'memory')
-            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
+          if (memoryMod?.active && memoryMod.console?.fields?.length) {
+            const basicMod = { ...memoryMod, console: { ...memoryMod.console, fields: memoryMod.console.fields.filter((f: { key: string }) => memoryBasicKeys.has(f.key)) } }
+            sectionData.agenteContent = renderModulePanels([basicMod], data.config, lang, 'memory')
+          } else {
+            sectionData.agenteContent = `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
+          }
         } else if (agenteSubpage === 'identity') {
           sectionData.agenteContent = renderSection('identity', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
@@ -1360,10 +1387,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
  */
 function renderAckMessagesPage(lang: string): string {
   const isEs = lang === 'es'
-  const title = isEs ? 'Mensajes ACK' : 'ACK Messages'
   const desc = isEs
-    ? 'Mensajes de reconocimiento que se envían mientras el agente procesa una respuesta. Se usan como respaldo cuando el LLM ACK no está disponible.'
-    : 'Acknowledgment messages sent while the agent processes a response. Used as fallback when LLM ACK is unavailable.'
+    ? 'Mensajes automaticos que se envian mientras el agente procesa una respuesta.'
+    : 'Automatic messages sent while the agent processes a response.'
   const channelLabel = isEs ? 'Canal' : 'Channel'
   const textLabel = isEs ? 'Mensaje' : 'Message'
   const activeLabel = isEs ? 'Activo' : 'Active'
@@ -1376,12 +1402,7 @@ function renderAckMessagesPage(lang: string): string {
 
   return `
     <div class="chs-desc">${desc}</div>
-    <div class="panel">
-      <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${title}</span>
-        <span class="panel-chevron">&#9660;</span>
-      </div>
-      <div class="panel-body">
+    <div class="panel"><div class="panel-body">
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
           <label style="font-size:13px;color:var(--on-surface-dim)">${filterLabel}:</label>
           <select id="ack-channel-filter" class="js-custom-select" style="min-width:150px" onchange="ackLoadMessages()">
@@ -1390,19 +1411,21 @@ function renderAckMessagesPage(lang: string): string {
             <option value="email">Email</option>
             <option value="google-chat">Google Chat</option>
           </select>
-          <button class="ch-btn-action ch-btn-connect" onclick="ackAddRow()" style="margin-left:auto">${addLabel}</button>
+          <button class="act-btn act-btn-cta" onclick="ackAddRow()" style="margin-left:auto">${addLabel}</button>
         </div>
-        <table class="ack-table" style="width:100%;border-collapse:collapse">
-          <thead>
-            <tr style="text-align:left;border-bottom:1px solid var(--outline)">
-              <th style="padding:8px;width:130px">${channelLabel}</th>
-              <th style="padding:8px">${textLabel}</th>
-              <th style="padding:8px;width:70px;text-align:center">${activeLabel}</th>
-              <th style="padding:8px;width:80px"></th>
+        <div class="users-table-scroll">
+        <table class="users-table">
+          <thead class="users-table-head">
+            <tr>
+              <th style="width:130px">${channelLabel}</th>
+              <th>${textLabel}</th>
+              <th style="width:70px;text-align:center">${activeLabel}</th>
+              <th style="width:80px"></th>
             </tr>
           </thead>
           <tbody id="ack-tbody"></tbody>
         </table>
+        </div>
         <div id="ack-empty" style="display:none;text-align:center;padding:24px;color:var(--on-surface-dim)">${emptyLabel}</div>
       </div>
     </div>
@@ -1425,18 +1448,18 @@ function renderAckMessagesPage(lang: string): string {
           }
           empty.style.display = 'none';
           tbody.innerHTML = d.messages.map(function(m){
-            return '<tr data-id="'+m.id+'" style="border-bottom:1px solid var(--outline-variant)">'
-              +'<td style="padding:8px"><select class="ack-ch js-custom-select" style="width:120px">'
+            return '<tr data-id="'+m.id+'">'
+              +'<td><select class="ack-ch js-custom-select" style="width:120px">'
               +'<option value=""'+(m.channel===''?' selected':'')+'>'+allCh+'</option>'
               +'<option value="whatsapp"'+(m.channel==='whatsapp'?' selected':'')+'>WhatsApp</option>'
               +'<option value="email"'+(m.channel==='email'?' selected':'')+'>Email</option>'
               +'<option value="google-chat"'+(m.channel==='google-chat'?' selected':'')+'>Google Chat</option>'
               +'</select></td>'
-              +'<td style="padding:8px"><input type="text" class="ack-text" value="'+m.text.replace(/"/g,'&quot;')+'" style="width:100%;padding:6px 8px;border:1px solid var(--outline);border-radius:6px;background:var(--surface);color:var(--on-surface)"></td>'
-              +'<td style="padding:8px;text-align:center"><label class="toggle toggle-sm"><input type="checkbox" class="ack-active"'+(m.active?' checked':'')+' onchange="ackSave(this)"><span class="toggle-slider"></span></label></td>'
-              +'<td style="padding:8px;display:flex;gap:4px">'
-              +'<button class="ch-btn-action" onclick="ackSave(this)" style="font-size:12px;padding:4px 10px">'+saveL+'</button>'
-              +'<button class="ch-btn-action ch-btn-disconnect" onclick="ackDelete(this)" style="font-size:12px;padding:4px 10px">'+delL+'</button>'
+              +'<td><input type="text" class="ack-text" value="'+m.text.replace(/"/g,'&quot;')+'" style="width:100%;padding:6px 8px;border:1px solid var(--outline);border-radius:6px;background:var(--surface);color:var(--on-surface)"></td>'
+              +'<td style="text-align:center"><label class="toggle toggle-sm"><input type="checkbox" class="ack-active"'+(m.active?' checked':'')+' onchange="ackSave(this)"><span class="toggle-slider"></span></label></td>'
+              +'<td style="display:flex;gap:4px">'
+              +'<button class="act-btn" onclick="ackSave(this)" style="font-size:12px;padding:4px 10px">'+saveL+'</button>'
+              +'<button class="act-btn act-btn-danger" onclick="ackDelete(this)" style="font-size:12px;padding:4px 10px">'+delL+'</button>'
               +'</td></tr>';
           }).join('');
         }).catch(function(){});
