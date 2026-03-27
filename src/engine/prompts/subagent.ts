@@ -3,6 +3,7 @@
 // NO incluye identity.md ni guardrails.md (esos van en fase 4).
 
 import type { ContextBundle, ExecutionStep, ToolDefinition } from '../types.js'
+import { escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
 const SUBAGENT_SYSTEM = `Eres un agente de ejecución. Tu trabajo es completar una tarea específica usando las herramientas disponibles.
 
@@ -31,10 +32,11 @@ export function buildSubagentPrompt(
   // Build user message with task context
   const parts: string[] = []
 
-  parts.push(`Tarea: ${step.description ?? 'Ejecutar paso del plan'}`)
+  // FIX: SEC-2.3 — escape LLM-generated step descriptions (second-order injection)
+  parts.push(`Tarea: ${escapeDataForPrompt(step.description ?? 'Ejecutar paso del plan', 500)}`)
 
   if (step.params && Object.keys(step.params).length > 0) {
-    parts.push(`Parámetros: ${JSON.stringify(step.params)}`)
+    parts.push(`Parámetros: ${escapeDataForPrompt(JSON.stringify(step.params), 1000)}`)
   }
 
   // Minimal context (no identity/guardrails)
@@ -45,7 +47,8 @@ export function buildSubagentPrompt(
     parts.push(`- Contacto: ${ctx.contact.displayName ?? ctx.contact.channelContactId}`)
   }
 
-  parts.push(`\nMensaje original del contacto: "${ctx.normalizedText}"`)
+  // FIX: SEC-2.3 — escape user message
+  parts.push(`\nMensaje original del contacto:\n${wrapUserContent(ctx.normalizedText)}`)
 
   // Convert tool definitions to LLM format
   const tools = toolDefs.map(t => ({
