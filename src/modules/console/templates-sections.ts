@@ -2048,7 +2048,7 @@ function renderUsersSection(data: SectionData): string {
           </div>
           <input type="hidden" name="webhook_token_lead" value="${esc(whToken)}" data-original="${esc(whToken)}">
           <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${lang === 'es' ? 'Canal preferido de contacto' : 'Preferred contact channel'}</label>
-          <select class="wizard-input" name="webhook_channel_lead" data-original="${esc(whChannel)}" style="margin-bottom:14px">
+          <select class="wizard-input js-custom-select" name="webhook_channel_lead" data-original="${esc(whChannel)}" style="margin-bottom:14px">
             <option value="auto" ${whChannel === 'auto' ? 'selected' : ''}>Auto</option>
             <option value="whatsapp" ${whChannel === 'whatsapp' ? 'selected' : ''}>WhatsApp</option>
             <option value="email" ${whChannel === 'email' ? 'selected' : ''}>Email (Gmail)</option>
@@ -2105,7 +2105,7 @@ function renderUsersSection(data: SectionData): string {
           <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</div>
           <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Configura que sucede cuando un contacto desconocido escribe por primera vez.' : 'Configure what happens when an unknown contact writes for the first time.'}</div>
         </div>
-        <select class="wizard-input" name="unregisteredBehavior" data-original="${esc(behavior)}" style="max-width:280px;width:280px" onchange="onUnregBehaviorChange(this.value)">
+        <select class="wizard-input js-custom-select" name="unregisteredBehavior" data-original="${esc(behavior)}" style="max-width:280px;width:280px" onchange="onUnregBehaviorChange(this.value)">
           <option value="ignore" ${behavior === 'ignore' ? 'selected' : ''}>${lang === 'es' ? 'Ignorar — Luna no se activa' : 'Ignore — Luna does not activate'}</option>
           <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — registra pero no responde' : 'Silence — registers but does not respond'}</option>
           <option value="message" ${behavior === 'message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje — registra y envia mensaje automatico' : 'Message — registers and sends auto-message'}</option>

@@ -128,6 +128,8 @@ const manifest: ModuleManifest = {
     WHATSAPP_ATT_TEXT: boolEnv(true),
     WHATSAPP_ATT_MAX_SIZE_MB: numEnvMin(1, 25),
     WHATSAPP_ATT_MAX_PER_MSG: numEnvMin(1, 5),
+    // Missed messages: process 'append' messages within this window (minutes). 0 = disabled.
+    WHATSAPP_MISSED_MSG_WINDOW_MIN: numEnv(15),
   }),
 
   console: {
@@ -264,6 +266,20 @@ const manifest: ModuleManifest = {
         max: 120,
         unit: 's',
         width: 'half',
+      },
+      {
+        key: 'WHATSAPP_MISSED_MSG_WINDOW_MIN',
+        type: 'select',
+        label: { es: 'Mensajes perdidos (ventana)', en: 'Missed messages (window)' },
+        info: { es: 'Procesa mensajes que llegaron durante reinicios o desconexiones si tienen menos de esta antigüedad. 0 = desactivado.', en: 'Process messages that arrived during restarts or disconnections if newer than this window. 0 = disabled.' },
+        width: 'half',
+        options: [
+          { value: '0', label: 'Off' },
+          { value: '5', label: '5 min' },
+          { value: '15', label: '15 min' },
+          { value: '30', label: '30 min' },
+          { value: '60', label: '60 min' },
+        ],
       },
       {
         key: 'WHATSAPP_SESSION_TIMEOUT_HOURS',
@@ -617,6 +633,7 @@ interface WhatsAppFullConfig {
   WHATSAPP_ATT_TEXT: boolean
   WHATSAPP_ATT_MAX_SIZE_MB: number
   WHATSAPP_ATT_MAX_PER_MSG: number
+  WHATSAPP_MISSED_MSG_WINDOW_MIN: number
 }
 
 /**

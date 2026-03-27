@@ -32,6 +32,8 @@ export interface WhatsAppConfig {
   WHATSAPP_PRIVACY_PROFILE_PIC: string
   WHATSAPP_PRIVACY_STATUS: string
   WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
+  /** Max age in minutes for 'append' messages to be processed (missed during downtime). 0 = disabled. */
+  WHATSAPP_MISSED_MSG_WINDOW_MIN: number
 }
 
 export interface AdapterCallbacks {
@@ -213,11 +215,26 @@ export class BaileysAdapter {
     })
 
     this.socket.ev.on('messages.upsert', async (upsert: BaileysEventMap['messages.upsert']) => {
-      if (upsert.type !== 'notify') return
+      // 'notify' = real-time messages, 'append' = history/missed messages (during downtime)
+      const missedWindowMin = this.config.WHATSAPP_MISSED_MSG_WINDOW_MIN ?? 15
+      const isNotify = upsert.type === 'notify'
+      const isAppend = upsert.type === 'append' && missedWindowMin > 0
+
+      if (!isNotify && !isAppend) return
+
+      const nowSec = Math.floor(Date.now() / 1000)
+      const cutoffSec = nowSec - (missedWindowMin * 60)
 
       for (const msg of upsert.messages) {
         if (msg.key.fromMe) continue
         if (!msg.message) continue
+
+        // For append messages: only process if recent (within window)
+        if (isAppend) {
+          const msgTimestamp = typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : Number(msg.messageTimestamp)
+          if (msgTimestamp < cutoffSec) continue
+          logger.info({ from: msg.key.remoteJid, age: nowSec - msgTimestamp, type: 'append' }, 'Processing missed message')
+        }
 
         const normalized = await this.normalizeMessage(msg)
         if (!normalized) continue
