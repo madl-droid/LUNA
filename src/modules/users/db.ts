@@ -209,7 +209,7 @@ export class UsersDb {
 
     const systemLists: Array<{ type: string; name: string; perms: UserPermissions; maxUsers?: number; behavior?: string }> = [
       { type: 'admin', name: 'Administradores', perms: DEFAULT_ADMIN_PERMISSIONS, maxUsers: 5 },
-      { type: 'lead', name: 'Leads', perms: DEFAULT_LEAD_PERMISSIONS, behavior: 'silence' },
+      { type: 'lead', name: 'Leads', perms: DEFAULT_LEAD_PERMISSIONS, behavior: 'attend' },
       { type: 'coworker', name: 'Coworkers', perms: DEFAULT_COWORKER_PERMISSIONS },
       { type: 'partners', name: 'Partners', perms: DEFAULT_COWORKER_PERMISSIONS },
     ]
@@ -363,6 +363,14 @@ export class UsersDb {
 
     await this.pool.query(`DELETE FROM user_contacts WHERE id = $1`, [contactId])
     return { senderId: existing.rows[0]!.sender_id, channel: existing.rows[0]!.channel }
+  }
+
+  /** Update display_name only if currently NULL (fire-and-forget for auto-populating from channel profile). */
+  async updateDisplayNameIfEmpty(userId: string, displayName: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2 AND display_name IS NULL`,
+      [displayName, userId],
+    )
   }
 
   async updateUser(id: string, updates: { displayName?: string; metadata?: Record<string, unknown>; listType?: string }): Promise<User | null> {

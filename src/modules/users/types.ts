@@ -7,8 +7,14 @@ export type UserType = 'admin' | 'coworker' | 'lead' | string
 /** Source values for contact origin tracking. */
 export type ContactSource = 'manual' | 'inbound' | 'outbound' | 'csv_import' | 'sheet_sync' | 'api'
 
-/** Comportamiento cuando el contacto no está en ninguna lista y lead está desactivado. */
-export type UnregisteredBehavior = 'silence' | 'generic_message' | 'register_only' | 'leads'
+/**
+ * Comportamiento cuando un contacto desconocido escribe por primera vez.
+ * - ignore: Luna no hace nada, no se activa, silencio total
+ * - silence: Se registra en leads (source='engine') pero no se responde
+ * - message: Se registra en leads (source='engine') y se envía un mensaje automático (sin LLM)
+ * - attend: Se registra en leads (source='inbound') y se atiende (pipeline completo)
+ */
+export type UnregisteredBehavior = 'ignore' | 'silence' | 'message' | 'attend'
 
 /** Resultado de resolver el tipo de un contacto. */
 export interface UserResolution {

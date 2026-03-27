@@ -59,6 +59,7 @@ export function initEngine(reg: Registry): void {
       channelMessageId: payload.channelMessageId,
       from: payload.from,
       resolvedPhone: payload.resolvedPhone,
+      senderName: payload.senderName,
       timestamp: payload.timestamp,
       content: {
         type: payload.content.type as IncomingMessage['content']['type'],
@@ -184,19 +185,21 @@ async function processMessageInner(
     }
 
     // ═══ UNREGISTERED CONTACT GATE ═══
-    // When lead list is disabled, resolver returns _unregistered:{behavior}
+    // Resolver returns _unregistered:{behavior} based on lead config:
+    // - ignore: Luna doesn't activate (no registration, no response)
+    // - silence: Lead was registered by resolver (source='engine'), no response
+    // - message: Lead was registered, send a static auto-message (no LLM)
+    // - 'attend' never reaches here — resolver returns 'lead' for attend
     if (ctx.userType.startsWith('_unregistered:')) {
-      const behavior = ctx.userType.split(':')[1] || 'silence'
-      logger.info({ traceId, behavior, from: message.from }, 'Unregistered contact — applying behavior')
+      const behavior = ctx.userType.split(':')[1] || 'ignore'
+      logger.info({ traceId, behavior, from: message.from }, 'Unregistered contact — skipping pipeline')
 
-      if (behavior === 'generic_message') {
-        // Send configured message without LLM, then stop
+      if (behavior === 'message') {
+        // Send configured static message (no LLM call)
         try {
           const usersDb = registry.getOptional<{ getListConfig(lt: string): Promise<{ unregisteredMessage: string | null } | null> }>('users:db')
           const leadCfg = usersDb ? await usersDb.getListConfig('lead') : null
-          const msg = leadCfg?.unregisteredMessage || (message.channelName === 'email'
-            ? 'Thank you for your message. We will get back to you soon.'
-            : 'Gracias por tu mensaje. Te contactaremos pronto.')
+          const msg = leadCfg?.unregisteredMessage || 'Gracias por tu mensaje. Te contactaremos pronto.'
           await registry.runHook('message:send', {
             channel: message.channelName,
             to: message.from,
@@ -204,11 +207,11 @@ async function processMessageInner(
             correlationId: traceId,
           })
         } catch (err) {
-          logger.warn({ err, traceId }, 'Failed to send generic message to unregistered contact')
+          logger.warn({ err, traceId }, 'Failed to send auto-message to unregistered contact')
         }
       }
-      // silence, register_only → no response. generic_message → already sent above.
-      // All behaviors skip the pipeline (no LLM cost).
+
+      // All _unregistered behaviors skip the pipeline (no LLM cost).
       return {
         traceId,
         success: true,

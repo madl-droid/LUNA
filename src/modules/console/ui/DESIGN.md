@@ -22,16 +22,16 @@ Apple Human Interface Guidelines adapted for web+mobile. Clean, airy, editorial.
 ### Surface Hierarchy (Tonal Foundation)
 | Token | Value | Usage |
 |-------|-------|-------|
-| `--surface` | `#f5f5f7` | Page background |
-| `--surface-container-lowest` | `#ffffff` | Cards, sidebar, header, elevated panels |
-| `--surface-container-low` | `#f0f0f2` | Input fills, nested areas, search bar |
-| `--surface-container-high` | `#eaeaec` | Hover states, secondary buttons, avatar bg |
-| `--surface-container-highest` | `#e0e0e2` | Strong contrast areas |
+| `--surface` | `#e2e2e6` | Page background |
+| `--surface-container-lowest` | `#fafafc` | Cards, sidebar, header, elevated panels |
+| `--surface-container-low` | `#f0f0f4` | Input fills, nested areas, search bar |
+| `--surface-container-high` | `#d4d4da` | Hover states, secondary buttons, avatar bg |
+| `--surface-container-highest` | `#e0e0e4` | Strong contrast areas |
 
 ### Text
 | Token | Value | Usage |
 |-------|-------|-------|
-| `--on-surface` | `#2d2d2d` | Primary text, headings, save bar bg, dark table headers |
+| `--on-surface` | `#1A1A1A` | Primary text, headings, save bar bg, dark table headers |
 | `--on-surface-variant` | `#6e6e73` | Secondary text, labels, descriptions |
 | `--on-surface-dim` | `#86868b` | Placeholders, captions, muted icons, filter labels |
 
@@ -314,7 +314,7 @@ The console NEVER uses internal API endpoints for config/CRUD operations. The sa
 - Standardize section headers: breadcrumb + title (1.65rem) + description (2 lines clamped)
 
 ### Don't
-- Use `#000000` — use `--on-surface` (#2d2d2d)
+- Use `#000000` — use `--on-surface` (#1A1A1A)
 - Use colored emoji icons in sidebar or navigation
 - Use 1px solid borders for sectioning
 - Use aggressive drop shadows

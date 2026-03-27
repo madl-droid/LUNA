@@ -57,9 +57,9 @@
 }
 
 .wa-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.wa-btn-connect { background: var(--success); color: #ffffff; }
+.wa-btn-connect { background: var(--success); color: #fafafa; }
 .wa-btn-connect:hover:not(:disabled) { filter: brightness(0.9); }
-.wa-btn-disconnect { background: var(--error); color: #ffffff; }
+.wa-btn-disconnect { background: var(--error); color: #fafafa; }
 .wa-btn-disconnect:hover:not(:disabled) { filter: brightness(0.9); }
 
 .wa-qr-box {

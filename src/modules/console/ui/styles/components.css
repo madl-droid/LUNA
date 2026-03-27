@@ -904,6 +904,32 @@
   border-color: var(--primary, #FF5E0E);
 }
 
+/* Select styling — consistent with wizard-input */
+select.wizard-input {
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+select.wizard-input:hover {
+  border-color: var(--on-surface-dim, #999);
+}
+select.wizard-input option {
+  background: var(--surface-container-lowest, #fafafc);
+  color: var(--on-surface, #1A1A1A);
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+select.wizard-input option:checked {
+  background: var(--primary-light, rgba(255, 94, 14, 0.08));
+}
+
 .wizard-hint {
   font-size: 0.75rem;
   color: var(--on-surface-variant, #888);
@@ -982,7 +1008,7 @@
 .wa-qr-container {
   display: inline-block;
   padding: 16px;
-  background: #ffffff;
+  background: #fafafa;
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
@@ -2400,7 +2426,7 @@
 .dash-kpi-value {
   font-size: 1.75rem;
   font-weight: 700;
-  color: var(--on-surface, #2d2d2d);
+  color: var(--on-surface, #1A1A1A);
   line-height: 1.2;
 }
 .dash-kpi-label {

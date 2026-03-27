@@ -472,7 +472,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                     assignmentPrompt: up[`assignment_prompt_${lt}`] ?? existing.assignmentPrompt,
                     disableBehavior: up[`disable_${lt}_behavior`] ?? existing.disableBehavior,
                     disableTargetList: up[`disable_${lt}_target`] ?? existing.disableTargetList,
-                    unregisteredBehavior: lt === 'lead' && up['unregisteredBehavior'] ? up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads' : existing.unregisteredBehavior,
+                    unregisteredBehavior: lt === 'lead' && up['unregisteredBehavior'] ? up['unregisteredBehavior'] as 'ignore' | 'silence' | 'message' | 'attend' : existing.unregisteredBehavior,
                     unregisteredMessage: lt === 'lead' && up['unregisteredMessage'] !== undefined ? up['unregisteredMessage'] : existing.unregisteredMessage,
                     maxUsers: existing.maxUsers,
                     syncConfig: syncCfg,
@@ -485,7 +485,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                   if (leadCfg) {
                     await usersDb.upsertListConfig('lead', leadCfg.displayName, leadCfg.permissions, {
                       isEnabled: leadCfg.isEnabled,
-                      unregisteredBehavior: up['unregisteredBehavior'] as 'silence' | 'generic_message' | 'register_only' | 'leads',
+                      unregisteredBehavior: up['unregisteredBehavior'] as 'ignore' | 'silence' | 'message' | 'attend',
                       unregisteredMessage: up['unregisteredMessage'] ?? leadCfg.unregisteredMessage,
                       maxUsers: leadCfg.maxUsers,
                     })

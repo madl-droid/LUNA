@@ -33,7 +33,7 @@ Full spec in `DESIGN.md`. Key principles:
 - **Primary:** `#FF5E0E` (Fox orange) — CTAs, active states
 - **Secondary:** `#FFB800` (gold) — brand icon gradient
 - **Tertiary:** `#E62111` (crimson) — errors, destructive
-- **Neutral:** `#F5F5F7` — base surface
+- **Neutral:** `#E1E1E1` — base surface
 
 ### Core Rules
 - **No borders for sectioning** — use tonal background shifts only

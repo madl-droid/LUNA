@@ -58,11 +58,13 @@ export async function phase1Intake(
 
   // 2. Resolve user type via users:resolve service (FIRST — before anything else)
   // For WhatsApp LID: passes resolvedPhone as fallback so manually-saved contacts match
+  // senderName: channel profile name (e.g. WhatsApp pushName) for auto-registration
   const { userType, userPermissions } = await resolveUser(
     message.from,
     message.channelName,
     registry,
     message.resolvedPhone,
+    message.senderName,
   )
 
   // 3. Detect possible prompt injection
@@ -310,9 +312,10 @@ async function resolveUser(
   channel: string,
   registry: Registry,
   fallbackSenderId?: string,
+  senderName?: string,
 ): Promise<{ userType: UserType; userPermissions: UserPermissions }> {
   // Try the real users module resolver
-  const resolveFn = registry.getOptional<(senderId: string, channel: string, fallbackSenderId?: string) => Promise<{ userType: string; listName?: string }>>(
+  const resolveFn = registry.getOptional<(senderId: string, channel: string, fallbackSenderId?: string, senderName?: string) => Promise<{ userType: string; listName?: string }>>(
     'users:resolve',
   )
   const permsFn = registry.getOptional<(userType: string) => Promise<UserPermissions>>(
@@ -321,7 +324,7 @@ async function resolveUser(
 
   if (resolveFn) {
     try {
-      const resolution = await resolveFn(senderId, channel, fallbackSenderId)
+      const resolution = await resolveFn(senderId, channel, fallbackSenderId, senderName)
       const userType = resolution.userType as UserType
       const permissions = permsFn
         ? await permsFn(userType)

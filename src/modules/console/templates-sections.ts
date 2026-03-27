@@ -1756,8 +1756,16 @@ function renderUsersSection(data: SectionData): string {
   const SVG_CONTACTS_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
   const SVG_EYE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
 
+  // Sort cards: admin first, then active alphabetically, then inactive alphabetically
+  const sortedConfigs = [...configs].sort((a, b) => {
+    if (a.listType === 'admin') return -1
+    if (b.listType === 'admin') return 1
+    if (a.isEnabled !== b.isEnabled) return a.isEnabled ? -1 : 1
+    return a.displayName.localeCompare(b.displayName)
+  })
+
   html += `<div class="cb-grid">`
-  for (const cfg of configs) {
+  for (const cfg of sortedConfigs) {
     const lt = cfg.listType
     const isSys = cfg.isSystem || SYSTEM_TYPES.includes(lt)
     const count = counts[lt] ?? 0
@@ -1857,20 +1865,23 @@ function renderUsersSection(data: SectionData): string {
           <input type="hidden" name="coworker_domains" value="${esc(domainsOrig)}" data-original="${esc(domainsOrig)}" id="coworker-domains-hidden">
         </div>`
 
-      // Coworker: roles tags input
-      const roles: string[] = (cfg.syncConfig as Record<string, unknown>)?.roles as string[] ?? []
-      const rolesOrig = roles.join(',')
-      const roleChips = roles.map(r => `<span class="tag-chip">${esc(r)} <button type="button" onclick="removeRoleTag(this)">×</button></span>`).join('')
-      html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Roles disponibles' : 'Available roles'}</span></div>
-        <div style="margin-bottom:12px">
-          <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:6px">${lang === 'es' ? 'Define los roles disponibles para asignar a coworkers. Se usan para escalamientos y human-in-the-loop.' : 'Define available roles to assign to coworkers. Used for escalations and human-in-the-loop.'}</div>
-          <div class="tags-container" id="coworker-roles-tags">
-            ${roleChips}
-            <input type="text" class="tags-input" id="coworker-role-input" placeholder="${lang === 'es' ? 'Ej: Gerente + Enter' : 'E.g. Manager + Enter'}" onkeydown="if(event.key==='Enter'){event.preventDefault();addRoleTag()}">
-          </div>
-          <input type="hidden" name="coworker_roles" value="${esc(rolesOrig)}" data-original="${esc(rolesOrig)}" id="coworker-roles-hidden">
-        </div>`
+    }
 
+    // Lead: webhook toggle in column 1
+    if (lt === 'lead') {
+      const whEnabledCol1 = (cfg.syncConfig as Record<string, unknown>)?.webhookEnabled === true
+      const whEnabledOrigCol1 = whEnabledCol1 ? 'on' : ''
+      html += `<div class="field-divider"><span class="field-divider-label">Webhook</span></div>
+        <div class="chs-toggle-row" style="padding:10px 14px">
+          <span style="font-size:13px">${lang === 'es' ? 'Recibir leads desde webhook' : 'Receive leads from webhook'}</span>
+          <span class="ch-footer-spacer"></span>
+          <label class="toggle toggle-sm" onclick="event.stopPropagation()">
+            <input type="checkbox" ${whEnabledCol1 ? 'checked' : ''} data-hidden="webhook_enabled_lead"
+              onchange="document.querySelector('[name=webhook_enabled_lead]').value=this.checked?'on':'';var p=document.getElementById('webhook-panel-lead');if(p){if(this.checked){p.style.display='';p.classList.remove('collapsed')}else{p.style.display='none'}}">
+            <span class="toggle-slider"></span>
+          </label>
+          <input type="hidden" name="webhook_enabled_lead" value="${whEnabledOrigCol1}" data-original="${whEnabledOrigCol1}">
+        </div>`
     }
 
     // Assignment rules (custom lists only — not system)
@@ -1988,45 +1999,81 @@ function renderUsersSection(data: SectionData): string {
     }
     html += `</div></div>` // end Knowledge panel
 
-    // Tab 4: Webhook de registro (leads only — column 2)
+    // Tab 4: Roles (coworker only — column 2)
+    if (lt === 'coworker') {
+      const roles: string[] = (cfg.syncConfig as Record<string, unknown>)?.roles as string[] ?? []
+      const rolesOrig = roles.join(',')
+      const roleList = roles.length > 0
+        ? roles.map(r => `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--outline-variant,#eee)">
+            <span style="flex:1;font-size:13px">${esc(r)}</span>
+          </div>`).join('')
+        : `<div style="font-size:13px;color:var(--on-surface-dim);padding:12px 0">${lang === 'es' ? 'No hay etiquetas definidas.' : 'No labels defined.'}</div>`
+      html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${lang === 'es' ? 'Etiquetas / Roles' : 'Labels / Roles'}</span>
+        <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
+        <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:12px">${lang === 'es' ? 'Define etiquetas para clasificar coworkers. Se usan para escalamientos y human-in-the-loop.' : 'Define labels to classify coworkers. Used for escalations and human-in-the-loop.'}</div>
+        <div id="coworker-roles-list">${roleList}</div>
+        <input type="hidden" name="coworker_roles" value="${esc(rolesOrig)}" data-original="${esc(rolesOrig)}" id="coworker-roles-hidden">
+        <button type="button" class="ch-btn-action ch-btn-gear" style="margin-top:12px" onclick="openRolesModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          ${lang === 'es' ? 'Editar etiquetas' : 'Edit labels'}
+        </button>
+      </div></div>`
+    }
+
+    // Tab 5: Webhook de registro (leads only — column 2, hidden when webhook disabled)
     if (lt === 'lead') {
       const whEnabled = (cfg.syncConfig as Record<string, unknown>)?.webhookEnabled === true
       const whToken = ((cfg.syncConfig as Record<string, unknown>)?.webhookToken as string) ?? ''
       const whChannel = ((cfg.syncConfig as Record<string, unknown>)?.webhookPreferredChannel as string) || 'auto'
-      const whEnabledOrig = whEnabled ? 'on' : ''
-      html += `<div class="panel${whEnabled ? '' : ' collapsed'}"><div class="panel-header" onclick="togglePanel(this)">
+      const SVG_COPY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+      const SVG_REFRESH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>'
+      html += `<div id="webhook-panel-lead" class="panel" style="${whEnabled ? '' : 'display:none'}"><div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${lang === 'es' ? 'Webhook de registro' : 'Registration webhook'}</span>
         <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
-        <div class="panel-info">${lang === 'es'
+        <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:12px;line-height:1.6">${lang === 'es'
           ? 'Registra leads desde sistemas externos (CRM, ads, formularios) via HTTP POST.'
           : 'Register leads from external systems (CRM, ads, forms) via HTTP POST.'}</div>
-        <div class="chs-toggle-row" style="padding:10px 0">
-          <span style="font-size:13px">${lang === 'es' ? 'Habilitar webhook' : 'Enable webhook'}</span>
-          <span class="ch-footer-spacer"></span>
-          <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
-            ${whEnabled ? 'checked' : ''} data-hidden="webhook_enabled_lead"
-            onchange="document.querySelector('[name=webhook_enabled_lead]').value=this.checked?'on':'';document.getElementById('webhook-settings-lead').style.display=this.checked?'block':'none'">
-          <input type="hidden" name="webhook_enabled_lead" value="${whEnabledOrig}" data-original="${whEnabledOrig}">
-        </div>
-        <div id="webhook-settings-lead" style="display:${whEnabled ? 'block' : 'none'};padding:12px 0">
-          <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:10px;line-height:1.5">
-            ${lang === 'es'
-              ? 'Endpoint: <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">POST /console/api/users/webhook/register</code><br>Usa Bearer token en el header Authorization.'
-              : 'Endpoint: <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">POST /console/api/users/webhook/register</code><br>Use Bearer token in the Authorization header.'}
+        <div id="webhook-settings-lead">
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Endpoint <span style="font-weight:400;color:var(--on-surface-variant)">(POST)</span></label>
+          <div class="wizard-uri-box" style="margin-bottom:14px">
+            <code class="wizard-uri" id="webhook-endpoint-display">{BASE_URL}/console/api/leads/webhook/register</code>
+            <button type="button" class="wizard-copy-icon" onclick="copyWizardUri(this)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
           </div>
-          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Token de autorizacion' : 'Authorization token'}</label>
-          <div style="display:flex;gap:6px;margin-bottom:10px">
-            <input type="text" class="wizard-input" name="webhook_token_lead" value="${esc(whToken)}" data-original="${esc(whToken)}" style="flex:1;font-family:monospace;font-size:12px" readonly>
-            <button type="button" class="wizard-btn" style="white-space:nowrap;font-size:12px;padding:6px 10px" onclick="(async()=>{const r=await fetch('/console/api/users/webhook/regenerate-token',{method:'POST'});const d=await r.json();if(d.token){document.querySelector('[name=webhook_token_lead]').value=d.token;showToast('${lang === 'es' ? 'Token regenerado' : 'Token regenerated'}')}})()">${lang === 'es' ? 'Regenerar' : 'Regenerate'}</button>
-            <button type="button" class="wizard-btn" style="white-space:nowrap;font-size:12px;padding:6px 10px" onclick="navigator.clipboard.writeText(document.querySelector('[name=webhook_token_lead]').value);showToast('Copied!')">${lang === 'es' ? 'Copiar' : 'Copy'}</button>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${lang === 'es' ? 'Token de autorizacion' : 'Authorization token'}</label>
+          <div class="wizard-uri-box" style="margin-bottom:14px">
+            <code class="wizard-uri" id="webhook-token-display" style="font-size:12px">${esc(whToken)}</code>
+            <button type="button" class="wizard-copy-icon" onclick="copyWizardUri(this)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
+            <button type="button" class="wizard-copy-icon" style="border-left:1px solid var(--outline-variant,#ddd)" onclick="regenerateWebhookToken()" title="${lang === 'es' ? 'Regenerar' : 'Regenerate'}">${SVG_REFRESH}</button>
           </div>
-          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Canal preferido de contacto' : 'Preferred contact channel'}</label>
-          <select class="wizard-input" name="webhook_channel_lead" data-original="${esc(whChannel)}" style="margin-bottom:8px">
+          <input type="hidden" name="webhook_token_lead" value="${esc(whToken)}" data-original="${esc(whToken)}">
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${lang === 'es' ? 'Canal preferido de contacto' : 'Preferred contact channel'}</label>
+          <select class="wizard-input" name="webhook_channel_lead" data-original="${esc(whChannel)}" style="margin-bottom:14px">
             <option value="auto" ${whChannel === 'auto' ? 'selected' : ''}>Auto</option>
             <option value="whatsapp" ${whChannel === 'whatsapp' ? 'selected' : ''}>WhatsApp</option>
             <option value="email" ${whChannel === 'email' ? 'selected' : ''}>Email (Gmail)</option>
             <option value="google-chat" ${whChannel === 'google-chat' ? 'selected' : ''}>Google Chat</option>
           </select>
+          <div class="field-divider" style="margin:8px 0"><span class="field-divider-label">${lang === 'es' ? 'Instrucciones de uso' : 'Usage instructions'}</span></div>
+          <div style="font-size:12px;color:var(--on-surface-variant);line-height:1.7">
+            <p style="margin:0 0 8px"><strong>Headers:</strong> <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">Authorization: Bearer {token}</code></p>
+            <p style="margin:0 0 4px"><strong>Body (JSON):</strong></p>
+            <div style="position:relative">
+              <pre id="webhook-json-example" style="background:var(--surface-container-low);padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin:0 0 8px">{
+  "phone": "573001234567",
+  "email": "contacto@ejemplo.com",
+  "name": "Nombre del contacto",
+  "campaign": "keyword-o-id"
+}</pre>
+              <button type="button" class="wizard-copy-icon" style="position:absolute;top:4px;right:4px;border:none;border-radius:4px;width:28px;height:28px;background:var(--surface-container-high,#ddd)" onclick="navigator.clipboard.writeText(document.getElementById('webhook-json-example').textContent);this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),1500)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
+            </div>
+            <p style="margin:0 0 4px"><strong>${lang === 'es' ? 'Parametros' : 'Parameters'}:</strong></p>
+            <ul style="margin:0 0 8px;padding-left:16px">
+              <li><code>phone</code> ${lang === 'es' ? 'o' : 'or'} <code>email</code> — ${lang === 'es' ? 'al menos uno requerido' : 'at least one required'}</li>
+              <li><code>name</code> — ${lang === 'es' ? 'nombre del contacto (opcional)' : 'contact name (optional)'}</li>
+              <li><code>campaign</code> — ${lang === 'es' ? 'keyword o ID de la campaña (opcional). Consulta el ID en' : 'campaign keyword or ID (optional). Check the ID in'} <a href="/console/lead-scoring?lang=${lang}" style="color:var(--primary)">${lang === 'es' ? 'Campañas' : 'Campaigns'}</a></li>
+            </ul>
+          </div>
         </div>
       </div></div>`
     }
@@ -2042,49 +2089,38 @@ function renderUsersSection(data: SectionData): string {
         <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Organiza tus usuarios' : 'Organize your users'}</div>
         <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Crea tus bases de contactos aqui para segmentar y organizar tu audiencia.' : 'Create your contact bases here to segment and organize your audience.'}</div>
       </div>
-      <button type="button" class="act-btn act-btn-cta" onclick="toggleCreateBase()">${SVG_PLUS} ${lang === 'es' ? 'Crear base de contactos' : 'Create contact base'}</button>
+      <span class="panel-badge badge-soon" style="font-size:0.8rem;padding:6px 14px">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>
     </div>
-    <form id="cb-create-form" method="POST" action="/console/users/create-list" style="display:none;margin-top:20px;flex-direction:column;gap:12px">
-      <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
-      <label class="wizard-label">${lang === 'es' ? 'Nombre de la lista' : 'List name'}</label>
-      <input type="text" class="wizard-input" name="listName" required placeholder="${lang === 'es' ? 'Ej: Proveedores' : 'E.g. Vendors'}">
-      <label class="wizard-label">${lang === 'es' ? 'Descripcion (80-200 caracteres)' : 'Description (80-200 chars)'}</label>
-      <textarea class="wizard-input" name="listDescription" required minlength="80" maxlength="200" rows="2" placeholder="${lang === 'es' ? 'Describe el proposito de esta lista...' : 'Describe this list purpose...'}"></textarea>
-      <div class="chs-toggle-row" style="padding:10px 14px">
-        <span style="font-size:13px">${lang === 'es' ? 'Crear regla de asignacion?' : 'Create assignment rule?'}</span>
-        <span class="ch-footer-spacer"></span>
-        <label class="toggle toggle-sm">
-          <input type="checkbox" name="createAssignmentRule" disabled>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px">
-        <button type="submit" class="act-btn act-btn-cta" disabled>${lang === 'es' ? 'Crear' : 'Create'}</button>
-        <span class="panel-badge badge-soon">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>
-      </div>
-    </form>
   </div>`
 
   // ── Contactos no registrados (global config) ──
   const leadCfg = configs.find(c => c.listType === 'lead')
   if (leadCfg) {
-    const behavior = leadCfg.unregisteredBehavior || 'silence'
+    const behavior = leadCfg.unregisteredBehavior || 'ignore'
+    const savedMsg = leadCfg.unregisteredMessage || ''
+    const hasSavedMsg = behavior === 'message' && savedMsg.length > 0
     html += `<div class="cb-create-box" style="margin-top:16px">
       <div class="cb-create-box-header">
         <div>
           <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</div>
           <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Configura que sucede cuando un contacto desconocido escribe por primera vez.' : 'Configure what happens when an unknown contact writes for the first time.'}</div>
         </div>
-        <select name="unregisteredBehavior" data-original="${esc(behavior)}" style="max-width:240px" onchange="document.getElementById('unregistered-msg-field').style.display=this.value==='generic_message'?'block':'none'">
-          <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — sin respuesta' : 'Silence — no response'}</option>
-          <option value="generic_message" ${behavior === 'generic_message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje generico' : 'Generic message'}</option>
-          <option value="register_only" ${behavior === 'register_only' ? 'selected' : ''}>${lang === 'es' ? 'Registrar sin responder' : 'Register without responding'}</option>
-          <option value="leads" ${behavior === 'leads' ? 'selected' : ''}>${lang === 'es' ? 'Leads — activar tabla de leads' : 'Leads — enable leads table'}</option>
+        <select class="wizard-input" name="unregisteredBehavior" data-original="${esc(behavior)}" style="max-width:280px;width:280px" onchange="onUnregBehaviorChange(this.value)">
+          <option value="ignore" ${behavior === 'ignore' ? 'selected' : ''}>${lang === 'es' ? 'Ignorar — Luna no se activa' : 'Ignore — Luna does not activate'}</option>
+          <option value="silence" ${behavior === 'silence' ? 'selected' : ''}>${lang === 'es' ? 'Silencio — registra pero no responde' : 'Silence — registers but does not respond'}</option>
+          <option value="message" ${behavior === 'message' ? 'selected' : ''}>${lang === 'es' ? 'Mensaje — registra y envia mensaje automatico' : 'Message — registers and sends auto-message'}</option>
+          <option value="attend" ${behavior === 'attend' ? 'selected' : ''}>${lang === 'es' ? 'Atender — registra y responde' : 'Attend — registers and responds'}</option>
         </select>
       </div>
-      <div id="unregistered-msg-field" style="display:${behavior === 'generic_message' ? 'block' : 'none'};margin-top:12px">
-        <label class="wizard-label">${lang === 'es' ? 'Mensaje' : 'Message'}</label>
-        <textarea class="wizard-input" name="unregisteredMessage" data-original="${esc(leadCfg.unregisteredMessage || '')}" rows="2">${esc(leadCfg.unregisteredMessage || '')}</textarea>
+      <div id="unregistered-msg-field" style="display:${behavior === 'message' ? 'block' : 'none'};margin-top:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <label class="wizard-label" style="margin:0">${lang === 'es' ? 'Mensaje automatico' : 'Auto-message'}</label>
+          <button type="button" id="unregistered-msg-edit-btn" class="ch-btn-action ch-btn-gear" style="font-size:12px;padding:4px 10px;display:${hasSavedMsg ? 'inline-flex' : 'none'}" onclick="enableUnregMsgEdit()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            ${lang === 'es' ? 'Editar' : 'Edit'}
+          </button>
+        </div>
+        <textarea class="wizard-input" id="unregistered-msg-textarea" name="unregisteredMessage" data-original="${esc(savedMsg)}" rows="2" ${hasSavedMsg ? 'readonly style="background:var(--surface-container-low);cursor:default"' : ''} placeholder="${lang === 'es' ? 'Gracias por tu mensaje. Te contactaremos pronto.' : 'Thank you for your message. We will get back to you soon.'}">${esc(savedMsg)}</textarea>
       </div>
     </div>`
   }
@@ -2176,10 +2212,7 @@ function renderUsersSection(data: SectionData): string {
       var card=document.querySelector('.ch-card[data-base-id="'+lt+'"]');
       if(card)card.classList.add('cb-active');
     };
-    window.toggleCreateBase=function(){
-      var form=document.getElementById('cb-create-form');
-      if(form)form.style.display=form.style.display==='flex'?'none':'flex';
-    };
+    // toggleCreateBase removed — button replaced by "Proximamente" badge
     window.addDomainTag=function(){
       var inp=document.getElementById('coworker-domain-input');
       if(!inp)return;
@@ -2189,7 +2222,7 @@ function renderUsersSection(data: SectionData): string {
       var container=document.getElementById('coworker-domains-tags');
       var tag=document.createElement('span');
       tag.className='tag-chip';
-      tag.innerHTML=val+' <button type="button" onclick="this.parentElement.remove();updateDomainHidden()">&times;</button>';
+      tag.innerHTML=val+' <button type="button" onclick="this.parentElement.remove();updateDomainHidden()">&times;<'+'/button>';
       container.insertBefore(tag,inp);
       inp.value='';
       updateDomainHidden();
@@ -2205,30 +2238,110 @@ function renderUsersSection(data: SectionData): string {
       btn.parentElement.remove();updateDomainHidden();
     };
 
-    // ── Role tags (coworker) ──
-    window.addRoleTag=function(){
-      var inp=document.getElementById('coworker-role-input');
-      if(!inp)return;
-      var val=inp.value.trim();
-      if(!val)return;
-      var container=document.getElementById('coworker-roles-tags');
-      var tag=document.createElement('span');
-      tag.className='tag-chip';
-      tag.innerHTML=val+' <button type="button" onclick="removeRoleTag(this)">&times;</button>';
-      container.insertBefore(tag,inp);
-      inp.value='';
-      updateRoleHidden();
+    // ── Unregistered behavior change ──
+    window.onUnregBehaviorChange=function(val){
+      var msgField=document.getElementById('unregistered-msg-field');
+      if(msgField)msgField.style.display=val==='message'?'block':'none';
+      if(val==='message'){
+        var ta=document.getElementById('unregistered-msg-textarea');
+        if(ta&&!ta.value.trim()){ta.removeAttribute('readonly');ta.style.background='';ta.style.cursor='';
+          var btn=document.getElementById('unregistered-msg-edit-btn');if(btn)btn.style.display='none'}
+      }
     };
-    window.removeRoleTag=function(btn){
-      btn.parentElement.remove();updateRoleHidden();
+    window.enableUnregMsgEdit=function(){
+      var ta=document.getElementById('unregistered-msg-textarea');
+      if(ta){ta.removeAttribute('readonly');ta.style.background='';ta.style.cursor='';ta.focus()}
+      var btn=document.getElementById('unregistered-msg-edit-btn');
+      if(btn)btn.style.display='none';
     };
-    window.updateRoleHidden=function(){
-      var chips=document.querySelectorAll('#coworker-roles-tags .tag-chip');
-      var vals=[];
-      chips.forEach(function(c){vals.push(c.textContent.replace('\\u00d7','').replace('\u00d7','').trim())});
+
+    // ── Roles modal (coworker) ──
+    // NOTE: All closing tags in innerHTML strings MUST use '<'+'/' to avoid breaking the HTML parser
+    var CL='<'+'/'; // closing tag helper — avoids </ which breaks inline script
+    window.openRolesModal=function(){
       var hidden=document.getElementById('coworker-roles-hidden');
-      if(hidden){hidden.value=vals.join(',');hidden.dispatchEvent(new Event('input',{bubbles:true}))}
+      var roles=(hidden&&hidden.value)?hidden.value.split(',').filter(Boolean):[];
+      var overlay=document.getElementById('roles-modal-overlay');
+      if(!overlay){
+        overlay=document.createElement('div');overlay.id='roles-modal-overlay';
+        overlay.className='cb-deact-overlay open';
+        overlay.onclick=function(e){if(e.target===overlay)closeRolesModal()};
+        overlay.innerHTML='<div class="cb-deact-modal" style="max-width:420px"><h3>'+(lang==='es'?'Editar etiquetas':'Edit labels')+CL+'h3>'
+          +'<div id="roles-modal-list" style="margin:12px 0;max-height:300px;overflow-y:auto">'+CL+'div>'
+          +'<div style="display:flex;gap:6px;margin:12px 0"><input type="text" class="wizard-input" id="roles-modal-input" placeholder="'+(lang==='es'?'Nueva etiqueta + Enter':'New label + Enter')+'" onkeydown="if(event.keyCode===13){event.preventDefault();addRoleFromModal()}" style="flex:1"><button type="button" class="wizard-btn wizard-btn-primary" onclick="addRoleFromModal()" style="padding:8px 16px">'+(lang==='es'?'Agregar':'Add')+CL+'button>'+CL+'div>'
+          +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button type="button" class="act-btn act-btn-config" onclick="closeRolesModal()">'+(lang==='es'?'Cerrar':'Close')+CL+'button>'+CL+'div>'
+          +CL+'div>';
+        document.body.appendChild(overlay);
+      } else {overlay.classList.add('open')}
+      renderRolesModalList(roles);
     };
+    function renderRolesModalList(roles){
+      var list=document.getElementById('roles-modal-list');
+      if(!list)return;
+      if(roles.length===0){list.innerHTML='<div style="color:var(--on-surface-dim);font-size:13px;padding:12px 0">'+(lang==='es'?'No hay etiquetas':'No labels')+CL+'div>';return}
+      list.innerHTML=roles.map(function(r,i){
+        return '<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--outline-variant,#eee)">'
+          +'<input type="text" class="wizard-input" value="'+r.replace(/"/g,'&quot;')+'" data-role-idx="'+i+'" style="flex:1;font-size:13px;padding:6px 10px" onchange="renameRole('+i+',this.value)">'
+          +'<button type="button" style="background:none;border:none;cursor:pointer;color:var(--error,#d32f2f);padding:4px 8px;font-size:16px" onclick="deleteRole('+i+')" title="'+(lang==='es'?'Eliminar':'Delete')+'">&times;'+CL+'button>'
+          +CL+'div>'
+      }).join('');
+    }
+    function getCurrentRoles(){
+      var hidden=document.getElementById('coworker-roles-hidden');
+      return (hidden&&hidden.value)?hidden.value.split(',').filter(Boolean):[];
+    }
+    function saveRolesToHidden(roles){
+      var hidden=document.getElementById('coworker-roles-hidden');
+      if(hidden){hidden.value=roles.join(',');hidden.dispatchEvent(new Event('input',{bubbles:true}))}
+      var listEl=document.getElementById('coworker-roles-list');
+      if(listEl){
+        listEl.innerHTML=roles.length>0?roles.map(function(r){
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--outline-variant,#eee)"><span style="flex:1;font-size:13px">'+r.split('<').join('&lt;')+CL+'span>'+CL+'div>'
+        }).join(''):'<div style="font-size:13px;color:var(--on-surface-dim);padding:12px 0">'+(lang==='es'?'No hay etiquetas definidas.':'No labels defined.')+CL+'div>';
+      }
+    }
+    window.addRoleFromModal=function(){
+      var inp=document.getElementById('roles-modal-input');
+      if(!inp)return;var val=inp.value.trim();if(!val)return;
+      var roles=getCurrentRoles();roles.push(val);
+      saveRolesToHidden(roles);renderRolesModalList(roles);inp.value='';inp.focus();
+    };
+    window.renameRole=function(idx,newName){
+      var roles=getCurrentRoles();
+      if(idx>=0&&idx<roles.length&&newName.trim()){roles[idx]=newName.trim();saveRolesToHidden(roles)}
+    };
+    window.deleteRole=function(idx){
+      var roles=getCurrentRoles();
+      if(idx>=0&&idx<roles.length){roles.splice(idx,1);saveRolesToHidden(roles);renderRolesModalList(roles)}
+    };
+    window.closeRolesModal=function(){
+      var overlay=document.getElementById('roles-modal-overlay');
+      if(overlay)overlay.classList.remove('open');
+    };
+
+    // ── Webhook helpers ──
+    window.regenerateWebhookToken=function(){
+      fetch('/console/api/users/webhook/regenerate-token',{method:'POST'}).then(function(r){return r.json()}).then(function(d){
+        if(d.token){
+          var display=document.getElementById('webhook-token-display');
+          if(display)display.textContent=d.token;
+          var hidden=document.querySelector('[name=webhook_token_lead]');
+          if(hidden){hidden.value=d.token;hidden.dispatchEvent(new Event('input',{bubbles:true}))}
+          showToast(lang==='es'?'Token regenerado':'Token regenerated');
+        }
+      });
+    };
+    // copyWizardUri fallback (if console-minimal.js hasn't loaded yet)
+    if(!window.copyWizardUri){
+      window.copyWizardUri=function(btn){
+        var box=btn.closest('.wizard-uri-box');
+        var code=box?box.querySelector('.wizard-uri'):null;
+        if(!code)return;
+        navigator.clipboard.writeText(code.textContent).then(function(){
+          btn.classList.add('copied');setTimeout(function(){btn.classList.remove('copied')},1500);
+        });
+      };
+    }
 
     // ── Deactivation modal ──
     window.openDeactModal=function(lt,name){
@@ -2281,6 +2394,13 @@ function renderUsersSection(data: SectionData): string {
     document.querySelectorAll('#cb-config-admin input[type="checkbox"]').forEach(function(cb){
       cb.disabled=true;
       cb.checked=true;
+    });
+
+    // Replace {BASE_URL} placeholders in wizard-uri elements
+    document.querySelectorAll('.wizard-uri').forEach(function(el){
+      if(el.textContent.indexOf('{BASE_URL}')!==-1){
+        el.textContent=el.textContent.replace(/\{BASE_URL\}/g,location.origin);
+      }
     });
 
     if(typeof initCustomSelects==='function')initCustomSelects();

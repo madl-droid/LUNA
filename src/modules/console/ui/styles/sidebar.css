@@ -67,14 +67,14 @@
 
 /* Active: filled orange pill */
 .sidebar-item.active {
-  color: #ffffff;
+  color: #fafafa;
   background: var(--primary);
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(255, 94, 14, 0.25);
 }
 
 .sidebar-item.active .nav-icon {
-  color: #ffffff;
+  color: #fafafa;
 }
 
 /* SVG icons inherit color */
@@ -107,7 +107,7 @@
 
 .sidebar-item.active .nav-badge {
   background: rgba(255,255,255,0.25);
-  color: #ffffff;
+  color: #fafafa;
 }
 
 /* ═══ Channel submenu ═══ */

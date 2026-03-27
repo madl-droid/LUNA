@@ -69,6 +69,8 @@ export interface IncomingMessage {
   from: string
   /** Phone number resolved from LID mapping. Used to auto-create voice channel. */
   resolvedPhone?: string
+  /** WhatsApp profile name (pushName) */
+  senderName?: string
   timestamp: Date
   content: { type: string; text?: string; mediaUrl?: string; caption?: string }
   attachments?: Array<{
@@ -382,12 +384,16 @@ export class BaileysAdapter {
     // Build attachments array for media messages
     const attachments = this.extractAttachments(msg)
 
+    // Extract WhatsApp profile name (pushName) for contact registration
+    const senderName: string | undefined = msg.pushName || undefined
+
     return {
       id: uuidv4(),
       channelName: 'whatsapp',
       channelMessageId: msg.key.id ?? '',
       from,
       resolvedPhone: resolvedPhone ?? undefined,
+      senderName,
       timestamp: new Date((msg.messageTimestamp as number) * 1000),
       content: {
         type: msg.message?.imageMessage ? 'image'

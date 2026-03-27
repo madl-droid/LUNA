@@ -26,10 +26,13 @@ export function initResolver(registry: Registry, cache: UserCache, db: UsersDb):
  * 2. Query DB: user_contacts JOIN users (admin → coworker → custom, first match)
  *    - For WhatsApp LID: tries LID first, then falls back to phone number
  *    - Auto-migrates sender_id from phone to LID on first match
- * 3. If no match: lead (if enabled) or unregistered behavior
+ * 3. If no match: check lead config unregisteredBehavior:
+ *    - ignore: return _unregistered:ignore (no registration, no response)
+ *    - silence: auto-register as lead (source='engine'), return _unregistered:silence (no response)
+ *    - attend: auto-register as lead (source='inbound'), return 'lead' (full pipeline)
  * 4. Cache result in Redis with configured TTL
  */
-export async function resolveUserType(senderId: string, channel: string, fallbackSenderId?: string): Promise<UserResolution> {
+export async function resolveUserType(senderId: string, channel: string, fallbackSenderId?: string, senderName?: string): Promise<UserResolution> {
   if (!_cache || !_db || !_registry) {
     throw new Error('Users module not initialized')
   }
@@ -63,46 +66,65 @@ export async function resolveUserType(senderId: string, channel: string, fallbac
       contactId: senderId,
       fromCache: false,
     }
-  } else {
-    // Not in any user — check lead config
-    const leadConfig = await _db.getListConfig('lead')
 
-    if (leadConfig?.isEnabled) {
-      // Auto-register inbound contact as lead in DB
-      try {
-        const newUser = await _db.createUser({
-          listType: 'lead',
-          displayName: undefined,
-          contacts: [{ channel, senderId }],
-          source: 'inbound',
-        })
-        logger.info({ userId: newUser.id, senderId, channel }, 'Auto-registered inbound lead')
-        resolution = {
-          userType: 'lead',
-          listName: leadConfig.displayName,
-          userId: newUser.id,
-          contactId: senderId,
-          fromCache: false,
-        }
-      } catch (err) {
-        logger.warn({ err: (err as Error).message, senderId, channel }, 'Failed to auto-register lead, resolving without user ID')
-        resolution = {
-          userType: 'lead',
-          listName: leadConfig.displayName,
-          contactId: senderId,
-          fromCache: false,
-        }
-      }
-    } else {
-      const behavior: UnregisteredBehavior = leadConfig?.unregisteredBehavior ?? 'silence'
+    // Update displayName from channel profile if user has none (e.g. WhatsApp pushName)
+    if (senderName && dbResult.userId) {
+      _db.updateDisplayNameIfEmpty(dbResult.userId, senderName).catch(err =>
+        logger.debug({ err, userId: dbResult.userId }, 'Failed to update displayName from senderName'),
+      )
+    }
+  } else {
+    // Not in any user — check lead config for unregisteredBehavior
+    const leadConfig = await _db.getListConfig('lead')
+    // Map legacy values to new behavior
+    const rawBehavior = leadConfig?.unregisteredBehavior ?? 'ignore'
+    const behavior: UnregisteredBehavior = mapLegacyBehavior(rawBehavior)
+
+    if (behavior === 'ignore') {
+      // Do nothing — Luna doesn't activate
       resolution = {
-        userType: `_unregistered:${behavior}`,
+        userType: '_unregistered:ignore',
         listName: '_unregistered',
         contactId: senderId,
         fromCache: false,
       }
+      logger.debug({ senderId, channel, behavior }, 'Unregistered contact — ignoring')
+    } else {
+      // silence, message, attend — all auto-register the contact as lead
+      const source = behavior === 'attend' ? 'inbound' : 'engine'
+      try {
+        const newUser = await _db.createUser({
+          listType: 'lead',
+          displayName: senderName || undefined,
+          contacts: [{ channel, senderId }],
+          source,
+        })
+        logger.info({ userId: newUser.id, senderId, channel, behavior, source, senderName }, 'Auto-registered lead')
 
-      logger.debug({ senderId, channel, behavior }, 'Unregistered contact')
+        if (behavior === 'attend') {
+          resolution = {
+            userType: 'lead',
+            listName: leadConfig?.displayName ?? 'Leads',
+            userId: newUser.id,
+            contactId: senderId,
+            fromCache: false,
+          }
+        } else {
+          // silence or message — registered, no full pipeline
+          resolution = {
+            userType: `_unregistered:${behavior}`,
+            listName: '_unregistered',
+            userId: newUser.id,
+            contactId: senderId,
+            fromCache: false,
+          }
+        }
+      } catch (err) {
+        logger.warn({ err: (err as Error).message, senderId, channel, behavior }, 'Failed to auto-register lead')
+        resolution = behavior === 'attend'
+          ? { userType: 'lead', listName: leadConfig?.displayName ?? 'Leads', contactId: senderId, fromCache: false }
+          : { userType: `_unregistered:${behavior}`, listName: '_unregistered', contactId: senderId, fromCache: false }
+      }
     }
   }
 
@@ -149,6 +171,25 @@ export async function invalidateUserCacheForUser(userId: string): Promise<void> 
   const contacts = await _db.getContactsForUser(userId)
   for (const c of contacts) {
     await _cache.invalidate(c.senderId)
+  }
+}
+
+/**
+ * Map legacy unregisteredBehavior values to the new 3-option model.
+ * Old: silence | generic_message | register_only | leads
+ * New: ignore | silence | attend
+ */
+function mapLegacyBehavior(raw: string): UnregisteredBehavior {
+  switch (raw) {
+    case 'ignore': return 'ignore'
+    case 'silence': return 'silence'
+    case 'message': return 'message'
+    case 'attend': return 'attend'
+    // Legacy mappings
+    case 'leads': return 'attend'
+    case 'register_only': return 'silence'
+    case 'generic_message': return 'message'
+    default: return 'ignore'
   }
 }
 

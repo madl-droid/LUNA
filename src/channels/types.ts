@@ -25,6 +25,8 @@ export interface IncomingMessage {
   from: string
   /** Phone number resolved from LID mapping (WhatsApp only). Used to auto-create voice channel. */
   resolvedPhone?: string
+  /** Display name from the channel (e.g. WhatsApp pushName). Used for auto-registration. */
+  senderName?: string
   timestamp: Date
   content: MessageContent
   attachments?: AttachmentMeta[]

@@ -487,13 +487,13 @@ main { flex: 1; min-height: 0; }
 
 .btn-save {
   background: var(--primary);
-  color: #ffffff;
+  color: #fafafa;
 }
 .btn-save:hover { background: var(--primary-hover); }
 
 .btn-apply {
   background: var(--success);
-  color: #ffffff;
+  color: #fafafa;
 }
 .btn-apply:hover { background: #2a9f4a; }
 
