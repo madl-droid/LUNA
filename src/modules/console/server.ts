@@ -1236,6 +1236,14 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           }
         } else if (herramientasSubpage === 'google-apps') {
           sectionData.herramientasContent = renderSection('google-apps', sectionData) || notAvailable('Google API')
+        } else if (herramientasSubpage) {
+          // Dynamic: any active agent-group module renders as module panel
+          const dynMod = data.moduleStates.find(m => m.name === herramientasSubpage)
+          if (dynMod) {
+            sectionData.herramientasContent = renderModulePanels([dynMod], data.config, lang, herramientasSubpage)
+          } else {
+            sectionData.herramientasContent = notAvailable(herramientasSubpage)
+          }
         }
       }
 

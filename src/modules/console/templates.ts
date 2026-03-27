@@ -391,11 +391,15 @@ function renderSidebar(opts: PageOptions): string {
   }
 
   // 2. Add dynamic modules (only if not already a fixed section)
-  //    Skip channel modules — they are managed from the unified Canales tab
+  //    Skip channel modules — managed from Canales tab
+  //    Skip agent-group modules that aren't fixed — they go into Herramientas submenu
+  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps'])
   for (const mod of dynModules) {
     if (FIXED_IDS.has(mod.name)) continue
     if (!mod.active) continue
     if (mod.group === 'channels') continue
+    // Agent-group modules that are not fixed sidebar items → Herramientas subtab (not sidebar item)
+    if (mod.group === 'agent' && !HERRAMIENTAS_FIXED.has(mod.name)) continue
     const group = mod.group
     if (!categoryItems[group]) {
       // Unknown group — add as new category (key = group name as fallback)
@@ -487,7 +491,8 @@ function renderSidebar(opts: PageOptions): string {
           'scheduled-tasks': svgIcon('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'),
           'google-apps': ICONS.google,
         }
-        const herramientasTabs = [
+        // Fixed herramientas tabs
+        const herramientasTabs: Array<{ id: string; key: string; label?: string }> = [
           { id: 'tools', key: 'sec_herramientas_tools' },
           { id: 'lead-scoring', key: 'sec_herramientas_lead_scoring' },
           { id: 'freight', key: 'sec_herramientas_freight' },
@@ -495,13 +500,21 @@ function renderSidebar(opts: PageOptions): string {
           { id: 'scheduled-tasks', key: 'sec_herramientas_scheduled_tasks' },
           { id: 'google-apps', key: 'sec_herramientas_google_apps' },
         ]
+        // Dynamic: add active agent-group modules not in fixed list
+        for (const mod of dynModules) {
+          if (!mod.active || mod.group !== 'agent') continue
+          if (HERRAMIENTAS_FIXED.has(mod.name)) continue
+          if (herramientasTabs.some(t => t.id === mod.name)) continue
+          herramientasTabs.push({ id: mod.name, key: '', label: mod.title[opts.lang] || mod.title.es || mod.name })
+          herramientasIcons[mod.name] = ICON_OVERRIDES[mod.name] || ICONS.fallback
+        }
         nav += '<div class="sidebar-submenu">'
         for (const tab of herramientasTabs) {
           const subActive = opts.herramientasSubpage === tab.id
           const tabIcon = herramientasIcons[tab.id] || ICONS.fallback
           nav += `<a href="/console/herramientas/${tab.id}?lang=${opts.lang}" class="sidebar-submenu-item ${subActive ? 'active' : ''}">
             <span class="nav-icon-sm">${tabIcon}</span>
-            <span>${t(tab.key, opts.lang)}</span>
+            <span>${tab.label || t(tab.key, opts.lang)}</span>
           </a>`
         }
         nav += '</div>'
