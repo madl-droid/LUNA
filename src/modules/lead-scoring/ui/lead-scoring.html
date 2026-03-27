@@ -735,15 +735,11 @@ function switchTab(tab) {
 // ═══════════════════════════════════════════
 function renderAll() {
   document.getElementById('tab-config').textContent = t('tab_config')
-  document.getElementById('tab-leads').textContent = t('tab_leads')
   document.getElementById('tab-campaigns').textContent = t('tab_campaigns')
   document.getElementById('back-btn').textContent = t('back')
   document.getElementById('btn-discard').textContent = t('discard')
   document.getElementById('btn-save').textContent = t('save')
-  document.getElementById('btn-recalc').textContent = t('recalc')
   document.getElementById('btn-add-criterion').textContent = t('add_criterion')
-  document.getElementById('btn-add-dq').textContent = t('add_dq')
-  document.getElementById('lead-search').placeholder = t('search')
   document.getElementById('btn-add-campaign').textContent = t('btn_add_campaign')
 
   // Update i18n text nodes
@@ -755,20 +751,8 @@ function renderAll() {
     renderCriteria()
     renderThresholds()
     renderActions()
-    renderDisqualify()
     renderOptions()
   }
-
-  // Status filter options
-  const sf = document.getElementById('lead-status-filter')
-  sf.innerHTML = `<option value="">${t('all_status')}</option>` +
-    ALL_STATUSES.map(s => `<option value="${s}">${t('status_'+s)}</option>`).join('')
-
-  // Sort options
-  const so = document.getElementById('lead-sort')
-  so.innerHTML = `<option value="updated">${t('sort_updated')}</option>
-    <option value="score">${t('sort_score')}</option>
-    <option value="created">${t('sort_created')}</option>`
 
   updateSaveBtn()
 }
