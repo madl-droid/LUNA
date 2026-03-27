@@ -25,6 +25,20 @@ const CATEGORY_BOOST = 0.2
 // Query embedding cache TTL
 const QUERY_CACHE_TTL_S = 600 // 10 min
 
+// FIX: KN-3 — Search timeouts to prevent blocking on slow queries
+const VECTOR_SEARCH_TIMEOUT_MS = 5000
+const FTS_SEARCH_TIMEOUT_MS = 3000
+const FAQ_SEARCH_TIMEOUT_MS = 2000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ])
+}
+
 export class KnowledgeSearchEngine {
   constructor(
     private pgStore: KnowledgePgStore,
@@ -51,14 +65,22 @@ export class KnowledgeSearchEngine {
       queryEmbedding = await this.getCachedQueryEmbedding(query)
     }
 
-    // Run searches in parallel
-    const [vectorResults, ftsResults, faqResults] = await Promise.all([
+    // FIX: KN-3 — Run searches in parallel with individual timeouts
+    const [vectorSettled, ftsSettled, faqSettled] = await Promise.allSettled([
       queryEmbedding
-        ? this.pgStore.searchChunksVector(queryEmbedding, limit * 2)
+        ? withTimeout(this.pgStore.searchChunksVector(queryEmbedding, limit * 2), VECTOR_SEARCH_TIMEOUT_MS, 'vector search')
         : Promise.resolve([]),
-      this.pgStore.searchChunksFTS(query, limit * 2),
-      this.pgStore.searchFaqsFTS(query, limit),
+      withTimeout(this.pgStore.searchChunksFTS(query, limit * 2), FTS_SEARCH_TIMEOUT_MS, 'FTS search'),
+      withTimeout(this.pgStore.searchFaqsFTS(query, limit), FAQ_SEARCH_TIMEOUT_MS, 'FAQ search'),
     ])
+
+    const vectorResults = vectorSettled.status === 'fulfilled' ? vectorSettled.value : []
+    const ftsResults = ftsSettled.status === 'fulfilled' ? ftsSettled.value : []
+    const faqResults = faqSettled.status === 'fulfilled' ? faqSettled.value : []
+
+    if (vectorSettled.status === 'rejected') logger.warn({ err: vectorSettled.reason }, 'Vector search failed/timed out')
+    if (ftsSettled.status === 'rejected') logger.warn({ err: ftsSettled.reason }, 'FTS search failed/timed out')
+    if (faqSettled.status === 'rejected') logger.warn({ err: faqSettled.reason }, 'FAQ search failed/timed out')
 
     // Choose weights based on availability
     const useVector = queryEmbedding !== null && vectorResults.length > 0

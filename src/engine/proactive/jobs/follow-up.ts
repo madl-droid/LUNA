@@ -17,6 +17,8 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
 
   const inactivityHours = config.follow_up.inactivity_hours
   const maxAttempts = config.follow_up.max_attempts
+  // FIX: E-30 — Use agent slug from config instead of hardcoded 'luna'
+  const agentSlug = ctx.engineConfig.agentSlug
 
   try {
     // Find leads needing follow-up:
@@ -30,14 +32,14 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
        FROM agent_contacts ac
        JOIN contacts c ON c.id = ac.contact_id
        JOIN contact_channels cc ON cc.contact_id = ac.contact_id AND cc.is_primary = true
-       WHERE ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
+       WHERE ac.agent_id = (SELECT id FROM agents WHERE slug = $3 LIMIT 1)
          AND ac.lead_status IN ('new', 'qualifying')
          AND ac.follow_up_count < $1
          AND ac.updated_at < now() - interval '1 hour' * $2
          AND ac.updated_at > now() - interval '7 days'
        ORDER BY ac.updated_at ASC
        LIMIT 20`,
-      [maxAttempts, inactivityHours],
+      [maxAttempts, inactivityHours, agentSlug],
     )
 
     let processed = 0
@@ -61,8 +63,8 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
           await ctx.db.query(
             `UPDATE agent_contacts
              SET follow_up_count = follow_up_count + 1, last_follow_up_at = now()
-             WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)`,
-            [row.contact_id],
+             WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
+            [row.contact_id, agentSlug],
           )
           processed++
 
@@ -87,9 +89,9 @@ async function transitionToCold(ctx: ProactiveJobContext, contactId: string): Pr
   try {
     await ctx.db.query(
       `UPDATE agent_contacts SET lead_status = 'cold'
-       WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
+       WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)
          AND lead_status IN ('new', 'qualifying')`,
-      [contactId],
+      [contactId, ctx.engineConfig.agentSlug],
     )
     logger.info({ contactId, traceId: ctx.traceId }, 'Lead transitioned to cold after max follow-ups')
   } catch (err) {

@@ -27,6 +27,9 @@ const logger = pino({ name: 'knowledge:pg' })
 export class KnowledgePgStore {
   constructor(private db: Pool) {}
 
+  /** Expose pool for transactional use (e.g., FAQ import) */
+  getPool(): Pool { return this.db }
+
   // ─── Migrations ────────────────────────────
 
   async runMigrations(): Promise<void> {
@@ -670,8 +673,9 @@ export class KnowledgePgStore {
     await this.db.query(`DELETE FROM knowledge_faqs WHERE id = $1`, [id])
   }
 
-  async deleteAllFAQs(): Promise<void> {
-    await this.db.query(`DELETE FROM knowledge_faqs`)
+  // FIX: KN-2 — Accept optional client for transactional use
+  async deleteAllFAQs(client?: import('pg').PoolClient): Promise<void> {
+    await (client ?? this.db).query(`DELETE FROM knowledge_faqs`)
   }
 
   async listFAQs(opts: {
@@ -729,13 +733,14 @@ export class KnowledgePgStore {
     )
   }
 
+  // FIX: KN-2 — Accept optional client for transactional use
   async bulkInsertFAQs(faqs: Array<{
     question: string
     answer: string
     variants: string[]
     category: string | null
     source: FAQSourceType
-  }>): Promise<number> {
+  }>, client?: import('pg').PoolClient): Promise<number> {
     if (faqs.length === 0) return 0
 
     const values: string[] = []
@@ -747,7 +752,7 @@ export class KnowledgePgStore {
       params.push(faq.question, faq.answer, faq.variants, faq.category, faq.source)
     }
 
-    await this.db.query(
+    await (client ?? this.db).query(
       `INSERT INTO knowledge_faqs (question, answer, variants, category, source)
        VALUES ${values.join(', ')}`,
       params,

@@ -89,10 +89,6 @@ export class FAQManager {
       throw new Error('No valid FAQ rows found in file. Expected columns: question, answer')
     }
 
-    // Delete all existing FAQs
-    await this.pgStore.deleteAllFAQs()
-
-    // Bulk insert
     const faqs = rows.map(row => ({
       question: row.question,
       answer: row.answer,
@@ -101,11 +97,25 @@ export class FAQManager {
       source: 'file' as FAQSourceType,
     }))
 
-    const count = await this.pgStore.bulkInsertFAQs(faqs)
+    // FIX: KN-2 — Wrap delete+insert in transaction to prevent data loss on failure
+    const client = await this.pgStore.getPool().connect()
+    try {
+      await client.query('BEGIN')
+      await this.pgStore.deleteAllFAQs(client)
+      await this.pgStore.bulkInsertFAQs(faqs, client)
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      logger.error({ err }, 'FAQ import failed — rolled back')
+      throw err
+    } finally {
+      client.release()
+    }
+
     this.invalidateSearch()
 
-    logger.info({ count }, 'FAQs imported from file')
-    return count
+    logger.info({ count: faqs.length }, 'FAQs imported from file')
+    return faqs.length
   }
 
   // ─── Sheets sync ───────────────────────────
@@ -172,9 +182,22 @@ export class FAQManager {
       })
     }
 
-    // Delete all existing and bulk insert
-    await this.pgStore.deleteAllFAQs()
-    const count = await this.pgStore.bulkInsertFAQs(faqs)
+    // FIX: KN-2 — Wrap delete+insert in transaction to prevent data loss on failure
+    const client = await this.pgStore.getPool().connect()
+    let count: number
+    try {
+      await client.query('BEGIN')
+      await this.pgStore.deleteAllFAQs(client)
+      count = await this.pgStore.bulkInsertFAQs(faqs, client)
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      logger.error({ err }, 'FAQ sheets sync failed — rolled back')
+      throw err
+    } finally {
+      client.release()
+    }
+
     this.invalidateSearch()
 
     logger.info({ count, spreadsheetId }, 'FAQs synced from Sheets')

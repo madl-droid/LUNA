@@ -671,6 +671,39 @@ export async function registerMedilinkTools(
         // Cancel old follow-ups
         const cancelledJobIds = await pgStore.cancelFollowUpsForAppointment(ctx.db, String(existing.id))
 
+        // FIX: ML-4 — Schedule new follow-ups for the rescheduled appointment
+        const followupScheduler = registry.getOptional<{
+          scheduleSequence(params: {
+            appointmentId: string
+            contactId: string
+            agentId: string
+            appointment: {
+              fecha: string
+              hora_inicio: string
+              nombre_paciente: string
+              nombre_profesional: string
+              nombre_tratamiento: string
+              nombre_sucursal: string
+            }
+          }): Promise<void>
+        }>('medilink:followup')
+
+        if (followupScheduler) {
+          await followupScheduler.scheduleSequence({
+            appointmentId: String(updated.id),
+            contactId: ctx.contactId,
+            agentId,
+            appointment: {
+              fecha: updated.fecha,
+              hora_inicio: updated.hora_inicio,
+              nombre_paciente: updated.nombre_paciente,
+              nombre_profesional: updated.nombre_profesional,
+              nombre_tratamiento: updated.nombre_tratamiento,
+              nombre_sucursal: updated.nombre_sucursal,
+            },
+          }).catch(err => logger.warn({ err, appointmentId: updated.id }, 'Failed to schedule follow-ups for rescheduled appointment'))
+        }
+
         // Invalidate availability cache
         await cache.invalidateAvailability()
 
@@ -682,6 +715,7 @@ export async function registerMedilinkTools(
             oldDate: existing.fecha, oldTime: existing.hora_inicio,
             newDate: input.new_date, newTime: input.new_time,
             cancelledFollowUps: cancelledJobIds.length,
+            newFollowUpsScheduled: !!followupScheduler,
           },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',

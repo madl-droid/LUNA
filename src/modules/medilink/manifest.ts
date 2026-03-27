@@ -310,6 +310,8 @@ const manifest: ModuleManifest = {
     MEDILINK_REQUIRE_DOCUMENT_FOR_DEBTS: boolEnv(true),
     MEDILINK_AUTO_LINK_SINGLE_MATCH: boolEnv(true),
     MEDILINK_HEALTH_CHECK_INTERVAL_MS: numEnv(21600000),
+    // FIX: ML-1 — Public URL for voice call webhooks (no localhost)
+    MEDILINK_PUBLIC_URL: z.string().default(''),
   }),
 
   console: {

@@ -564,4 +564,10 @@ export interface EngineConfig {
 
   // Phase 4 retries per provider
   composeRetriesPerProvider: number
+
+  // FIX: E-1 — Pipeline global timeout
+  pipelineTimeoutMs: number
+
+  // FIX: E-30 — Agent slug (no hardcoding 'luna')
+  agentSlug: string
 }
