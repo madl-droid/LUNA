@@ -1271,6 +1271,18 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           }
         } else if (herramientasSubpage === 'google-apps') {
           sectionData.herramientasContent = renderSection('google-apps', sectionData) || notAvailable('Google API')
+        } else if (herramientasSubpage === 'freshdesk') {
+          const freshdeskMod = data.moduleStates.find(m => m.name === 'freshdesk')
+          if (freshdeskMod?.active && freshdeskMod.console?.fields?.length) {
+            let html = renderModulePanels([freshdeskMod], data.config, lang, 'freshdesk')
+            try {
+              const renderFn = registry.getOptional<(lang: string) => string>('freshdesk:renderSection')
+              if (renderFn) html += renderFn(lang)
+            } catch { /* module not available */ }
+            sectionData.herramientasContent = html
+          } else {
+            sectionData.herramientasContent = notAvailable('Freshdesk')
+          }
         } else if (herramientasSubpage) {
           // Dynamic: any active agent-group module renders as module panel
           const dynMod = data.moduleStates.find(m => m.name === herramientasSubpage)

@@ -103,8 +103,6 @@ export interface FreshdeskSearchToolResult {
 export interface FreshdeskModuleConfig {
   FRESHDESK_DOMAIN: string
   FRESHDESK_API_KEY: string
-  FRESHDESK_SYNC_ENABLED: boolean
-  FRESHDESK_SYNC_CRON: string
   FRESHDESK_CACHE_TTL_HOURS: number
   FRESHDESK_CATEGORIES: string
 }

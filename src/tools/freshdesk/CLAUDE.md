@@ -12,8 +12,8 @@ Tools `freshdesk_get_article` y `freshdesk_search`: acceso a la Knowledge Base d
 
 ## Config
 - Credenciales via env: FRESHDESK_DOMAIN, FRESHDESK_API_KEY
-- Sync: FRESHDESK_SYNC_ENABLED, FRESHDESK_SYNC_CRON (default: domingos 1AM)
-- Cache: FRESHDESK_CACHE_TTL_HOURS (default: 24)
+- Sync: siempre habilitado, cron hardcodeado (domingos 1AM) — no configurable por UI
+- Cache: FRESHDESK_CACHE_TTL_HOURS (default: 24, dropdown en consola: 1/6/12/24/48/72h)
 - Filtro: FRESHDESK_CATEGORIES (IDs comma-separated, vacío = todas)
 
 ## Redis keys
