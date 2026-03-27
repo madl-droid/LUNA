@@ -3,7 +3,7 @@
 
 import type { Pool } from 'pg'
 import pino from 'pino'
-import type { LeadSummary, LeadDetail, QualificationStatus } from './types.js'
+import type { LeadSummary, LeadDetail, QualificationStatus, StatusMetric } from './types.js'
 
 const logger = pino({ name: 'lead-scoring:db' })
 
@@ -340,6 +340,87 @@ export class LeadQueries {
       stats['total'] = (stats['total'] ?? 0) + count
     }
     return stats
+  }
+
+  /**
+   * Get detailed stats with channel breakdown and optional filters.
+   * Returns metrics for: attended, cold, qualifying, qualified, converted.
+   */
+  async getStatsDetailed(opts: {
+    period?: 'today' | '7d' | '30d' | '90d' | 'all'
+    channels?: string[]
+    qualification?: QualificationStatus
+  } = {}): Promise<StatusMetric[]> {
+    const { period = 'all', channels, qualification } = opts
+
+    const conditions: string[] = ["c.contact_type = 'lead'"]
+    const params: unknown[] = []
+    let paramIdx = 1
+
+    // Period filter
+    if (period !== 'all') {
+      const intervalMap: Record<string, string> = {
+        today: '1 day',
+        '7d': '7 days',
+        '30d': '30 days',
+        '90d': '90 days',
+      }
+      const interval = intervalMap[period]
+      if (interval) {
+        conditions.push(`c.updated_at >= NOW() - INTERVAL '${interval}'`)
+      }
+    }
+
+    // Channel filter
+    if (channels && channels.length > 0) {
+      conditions.push(`cc.channel IN (${channels.map(() => `$${paramIdx++}`).join(',')})`)
+      params.push(...channels)
+    }
+
+    // Qualification status filter
+    if (qualification) {
+      conditions.push(`c.qualification_status = $${paramIdx++}`)
+      params.push(qualification)
+    }
+
+    const targetStatuses = ['attended', 'cold', 'qualifying', 'qualified', 'converted']
+
+    const result = await this.db.query(
+      `SELECT c.qualification_status AS status, cc.channel, COUNT(DISTINCT c.id) AS count
+       FROM contacts c
+       LEFT JOIN contact_channels cc ON cc.contact_id = c.id AND cc.is_primary = true
+       WHERE ${conditions.join(' AND ')}
+         AND c.qualification_status = ANY($${paramIdx})
+       GROUP BY c.qualification_status, cc.channel
+       ORDER BY c.qualification_status, cc.channel`,
+      [...params, targetStatuses],
+    )
+
+    // Group by status
+    const statusMap = new Map<string, { total: number; channels: Map<string, number> }>()
+    for (const s of targetStatuses) {
+      statusMap.set(s, { total: 0, channels: new Map() })
+    }
+
+    for (const row of result.rows) {
+      const entry = statusMap.get(row.status)
+      if (!entry) continue
+      const count = parseInt(row.count, 10)
+      entry.total += count
+      const ch = row.channel ?? 'unknown'
+      entry.channels.set(ch, (entry.channels.get(ch) ?? 0) + count)
+    }
+
+    const metrics: StatusMetric[] = []
+    for (const [status, data] of statusMap) {
+      metrics.push({
+        status,
+        total: data.total,
+        channels: Array.from(data.channels.entries()).map(([channel, count]) => ({ channel, count })),
+      })
+    }
+
+    return metrics
   }
 
   /**

@@ -746,53 +746,33 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
 
 export const DEFAULT_AUTO_SIGNALS: AutoSignalDefinition[] = [
   {
-    key: 'engagement',
-    name: { es: 'Engagement', en: 'Engagement' },
+    key: 'response_speed',
+    name: { es: 'Velocidad de respuesta', en: 'Response speed' },
     description: {
-      es: 'Velocidad de respuesta + cantidad de preguntas + longitud de mensajes',
-      en: 'Response speed + question count + message length',
+      es: 'Debajo del rango promedio = bueno, dentro = ok, por encima = malo. Rango calculado por etapa.',
+      en: 'Below average range = good, within = ok, above = bad. Range calculated per stage.',
     },
-    weight: 0,
+    weight: 5,
     enabled: false,
   },
   {
-    key: 'geo_fit',
-    name: { es: 'Fit geográfico', en: 'Geographic fit' },
+    key: 'question_count',
+    name: { es: 'Cantidad de preguntas', en: 'Question count' },
     description: {
-      es: 'Ubicación vs zonas de cobertura',
-      en: 'Location vs coverage zones',
+      es: '0-2 preguntas = bajo, 2-4 = medio, más de 4 = bueno.',
+      en: '0-2 questions = low, 2-4 = medium, more than 4 = good.',
     },
-    weight: 0,
+    weight: 3,
     enabled: false,
   },
   {
-    key: 'channel_source',
-    name: { es: 'Canal de origen', en: 'Channel source' },
+    key: 'has_campaign',
+    name: { es: '¿Tiene campaña?', en: 'Has campaign?' },
     description: {
-      es: 'Orgánico, campaña, referido, cold outbound',
-      en: 'Organic, campaign, referral, cold outbound',
+      es: 'Sí = 2 puntos, No = 0 puntos.',
+      en: 'Yes = 2 points, No = 0 points.',
     },
-    weight: 0,
-    enabled: false,
-  },
-  {
-    key: 'prior_history',
-    name: { es: 'Historial previo', en: 'Prior history' },
-    description: {
-      es: '¿Ha interactuado antes? ¿Fue lead/cliente?',
-      en: 'Has interacted before? Was a lead/client?',
-    },
-    weight: 0,
-    enabled: false,
-  },
-  {
-    key: 'contact_timing',
-    name: { es: 'Horario de contacto', en: 'Contact timing' },
-    description: {
-      es: '¿Escribe en horario laboral o fuera?',
-      en: 'Business hours or outside?',
-    },
-    weight: 0,
+    weight: 2,
     enabled: false,
   },
 ]
