@@ -4,6 +4,7 @@
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../../modules/prompts/types.js'
 import type { AckGenerationContext } from './types.js'
 import { pickDefaultAck, ACTION_DESCRIPTIONS } from './ack-defaults.js'
 
@@ -33,16 +34,23 @@ export async function generateAck(
         : ctx.tone === 'casual' ? 'casual y amigable'
         : 'neutro y amable'
 
-      const system = [
-        'Eres un asistente. El usuario envió un mensaje y estás procesando la respuesta.',
-        'Genera un aviso breve (máximo 15 palabras) indicando que estás trabajando en su solicitud.',
-        'Reglas:',
-        '- NO reveles qué estás haciendo internamente (no mencionar APIs, búsquedas, bases de datos)',
-        `- Usa un tono ${toneDesc} y natural`,
-        '- Si tienes el nombre del contacto, úsalo naturalmente (no forzado)',
-        '- NO uses signos de exclamación excesivos',
-        '- Responde SOLO con el mensaje de aviso, nada más',
-      ].join('\n')
+      let system = ''
+      const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+      if (promptsSvc) {
+        system = await promptsSvc.getSystemPrompt('ack-system', { toneDescription: toneDesc })
+      }
+      if (!system) {
+        system = [
+          'Eres un asistente. El usuario envió un mensaje y estás procesando la respuesta.',
+          'Genera un aviso breve (máximo 15 palabras) indicando que estás trabajando en su solicitud.',
+          'Reglas:',
+          '- NO reveles qué estás haciendo internamente (no mencionar APIs, búsquedas, bases de datos)',
+          `- Usa un tono ${toneDesc} y natural`,
+          '- Si tienes el nombre del contacto, úsalo naturalmente (no forzado)',
+          '- NO uses signos de exclamación excesivos',
+          '- Responde SOLO con el mensaje de aviso, nada más',
+        ].join('\n')
+      }
 
       const userMessage = [
         ctx.contactName ? `Nombre: ${ctx.contactName}` : '',
