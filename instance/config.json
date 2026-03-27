@@ -76,5 +76,13 @@
     "enabledChannels": [
       "whatsapp"
     ]
+  },
+  "business": {
+    "name": "",
+    "type": "",
+    "products": [],
+    "serviceArea": "",
+    "workingHours": "",
+    "customInstructions": ""
   }
 }

@@ -4,6 +4,7 @@
 
 import pino from 'pino'
 import { z } from 'zod'
+import { boolEnv, numEnv } from '../../kernel/config-helpers.js'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
@@ -89,6 +90,10 @@ const manifest: ModuleManifest = {
     // Generated accent prompt — injected into context when accent is set
     // Content will be built by a future accent prompt generator
     AGENT_ACCENT_PROMPT: z.string().default(''),
+    // Prompts system config
+    TTS_ENABLED: boolEnv(false),
+    PROMPTS_MAX_SYSTEM_PROMPT_TOKENS: numEnv(4000),
+    PROMPTS_MAX_COMPRESSION_SUMMARY_TOKENS: numEnv(1000),
   }),
 
   console: {
