@@ -555,6 +555,25 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
+      if (localUrl === '/reset-contacts') {
+        try {
+          const db = registry.getDb()
+          await db.query('TRUNCATE users CASCADE')
+          await db.query('TRUNCATE user_contacts CASCADE')
+          await db.query('TRUNCATE user_lists CASCADE')
+          // Invalidate user cache in Redis
+          const redis = registry.getRedis()
+          const keys = await redis.keys('user_type:*')
+          if (keys.length > 0) await redis.del(...keys)
+          logger.info('Contact bases cleared (users, user_contacts, user_lists)')
+        } catch (err) {
+          logger.error({ err }, 'Failed to clear contact bases')
+        }
+        res.writeHead(302, { Location: `/console/${section}?flash=reset&lang=${lang}` })
+        res.end()
+        return true
+      }
+
       if (localUrl === '/modules/toggle') {
         const modName = body['module']
         // Support both param styles: active=true/false (modules page) and action=activate/deactivate (herramientas page)

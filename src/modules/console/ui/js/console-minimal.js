@@ -487,6 +487,22 @@
     resetForm.submit()
   }
 
+  // === Reset Contacts ===
+  window.resetContacts = function () {
+    var lang = document.documentElement.lang || 'es'
+    var msg = lang === 'es'
+      ? 'ADVERTENCIA: Esto eliminara TODAS las bases de contactos, usuarios y permisos. ¿Continuar?'
+      : 'WARNING: This will delete ALL contact bases, users and permissions. Continue?'
+    if (!confirm(msg)) return
+    var section = form ? (form.querySelector('[name="_section"]') || {}).value || '' : ''
+    var resetForm = document.createElement('form')
+    resetForm.method = 'POST'
+    resetForm.action = '/console/reset-contacts'
+    resetForm.innerHTML = '<input type="hidden" name="_section" value="' + section + '"><input type="hidden" name="_lang" value="' + lang + '">'
+    document.body.appendChild(resetForm)
+    resetForm.submit()
+  }
+
   // === Google OAuth Wizard ===
   // 4-step wizard: account type → project setup → credentials creation → credential input
 

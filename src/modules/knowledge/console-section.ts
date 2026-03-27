@@ -237,8 +237,8 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 }
 
 function renderAddModal(categories: KnowledgeCategory[], lang: Lang): string {
-  return `<div id="ki-modal" class="ki-modal-overlay" style="display:none">
-    <div class="ki-modal">
+  return `<div id="ki-modal" class="ki-modal-overlay wizard-overlay" style="display:none">
+    <div class="ki-modal wizard-modal">
       <div class="ki-modal-header">
         <h3>${t('add_btn', lang)}</h3>
         <button type="button" class="ki-modal-close" onclick="kiCloseModal()">&times;</button>
@@ -268,8 +268,8 @@ function renderAddModal(categories: KnowledgeCategory[], lang: Lang): string {
           <div class="ki-field-error" id="ki-err-url"></div>
         </div>
         <div class="ki-modal-footer">
-          <button type="button" class="btn btn-outline" onclick="kiCloseModal()">${t('cancel', lang)}</button>
-          <button type="submit" class="btn btn-primary">${t('save', lang)}</button>
+          <button type="button" class="act-btn act-btn-config" onclick="kiCloseModal()">${t('cancel', lang)}</button>
+          <button type="submit" class="act-btn act-btn-cta">${t('save', lang)}</button>
         </div>
       </form>
     </div>
@@ -284,8 +284,8 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
     <button type="button" class="act-btn" onclick="kiRenameCategory('${esc(c.id)}', this)" style="font-size:11px;padding:4px 10px">${isEs ? 'Guardar' : 'Save'}</button>
   </div>`).join('')
 
-  return `<div id="ki-cat-modal" class="ki-modal-overlay" style="display:none">
-    <div class="ki-modal">
+  return `<div id="ki-cat-modal" class="ki-modal-overlay wizard-overlay" style="display:none">
+    <div class="ki-modal wizard-modal">
       <div class="ki-modal-header">
         <h3>${isEs ? 'Editar categorias' : 'Edit categories'}</h3>
         <button type="button" class="ki-modal-close" onclick="kiCloseCategoriesModal()">&times;</button>
@@ -390,7 +390,7 @@ function renderClientScript(lang: Lang): string {
     if (!url) { showError('url', '${lang === 'es' ? 'La URL es requerida' : 'URL is required'}'); hasErr = true }
     if (hasErr) return
 
-    var submitBtn = document.querySelector('#ki-form .btn-primary')
+    var submitBtn = document.querySelector('#ki-form .act-btn-cta')
 
     // Edit mode: skip URL verification, just update
     if (editingItemId) {
