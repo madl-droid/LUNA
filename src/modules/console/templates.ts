@@ -66,7 +66,7 @@ const FIXED_SECTIONS: FixedSection[] = [
 const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
-const ICON_OVERRIDES: Record<string, string> = {
+export const ICON_OVERRIDES: Record<string, string> = {
   'tools': svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'),
   'prompts': svgIcon('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
   'memory': svgIcon('<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>'),
@@ -82,6 +82,10 @@ const ICON_OVERRIDES: Record<string, string> = {
   'google-apps': ICONS.google,
   'lead-scoring': ICONS.scoring,
   'engine-metrics': ICONS.metrics,
+  'freight': svgIcon('<rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>'),
+  'medilink': svgIcon('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+  'freshdesk': svgIcon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8"/><path d="M8 11h6"/>'),
+  'tts': svgIcon('<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'),
 }
 
 // ═══════════════════════════════════════════
