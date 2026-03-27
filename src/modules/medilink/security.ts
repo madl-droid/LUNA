@@ -6,7 +6,7 @@ import pino from 'pino'
 import type { Pool } from 'pg'
 import type { MedilinkApiClient } from './api-client.js'
 import type {
-  MedilinkConfig, MedilinkPatient, VerificationLevel, SecurityContext,
+  MedilinkConfig, VerificationLevel, SecurityContext,
   MedilinkAppointment, MedilinkEvolution,
 } from './types.js'
 import * as pgStore from './pg-store.js'

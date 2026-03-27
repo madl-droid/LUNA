@@ -17,7 +17,7 @@ import { registerMedilinkTools } from './tools.js'
 import { FollowUpScheduler } from './follow-up-scheduler.js'
 import { runMigrations } from './pg-store.js'
 import * as pgStore from './pg-store.js'
-import type { MedilinkConfig, MedilinkAppointment } from './types.js'
+import type { MedilinkConfig } from './types.js'
 
 const logger = pino({ name: 'medilink' })
 

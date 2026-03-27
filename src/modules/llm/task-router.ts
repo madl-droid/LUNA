@@ -7,7 +7,6 @@ import type {
   LLMProviderName,
   LLMTask,
   TaskRoute,
-  RouteTarget,
   ProviderAdapter,
   LLMModuleConfig,
 } from './types.js'

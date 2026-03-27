@@ -141,7 +141,7 @@ async function guardOutreachDedup(
 async function guardCooldown(
   candidate: ProactiveCandidate,
   redis: Redis,
-  config: ProactiveConfig,
+  _config: ProactiveConfig,
 ): Promise<GuardResult> {
   const cooldownKey = `proactive:cooldown:${candidate.contactId}`
   const cooldownUntil = await redis.get(cooldownKey)

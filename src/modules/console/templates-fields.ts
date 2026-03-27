@@ -117,7 +117,7 @@ export function dividerField(label: string): string {
   return `<div class="field-divider"><span class="field-divider-label">${esc(label)}</span></div>`
 }
 
-export function readonlyField(key: string, value: string, label: string): string {
+export function readonlyField(_key: string, value: string, label: string): string {
   return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span></div>
     <span class="field-readonly">${esc(value)}</span></div>`
 }

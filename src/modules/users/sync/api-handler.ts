@@ -501,7 +501,7 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
       path: 'webhook/register',
       handler: async (req, res) => {
         try {
-          const { loadWebhookConfig, extractBearerToken, registerLead, logWebhookAttempt } = await import('../webhook-handler.js')
+          const { loadWebhookConfig, extractBearerToken, registerLead } = await import('../webhook-handler.js')
           const webhookConfig = await loadWebhookConfig(registry)
 
           if (!webhookConfig.WEBHOOK_LEADS_ENABLED) {

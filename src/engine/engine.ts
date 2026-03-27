@@ -52,7 +52,7 @@ export function initEngine(reg: Registry): void {
   }
 
   // Register hook listener for incoming messages
-  registry.addHook('engine', 'message:incoming', async (payload, correlationId) => {
+  registry.addHook('engine', 'message:incoming', async (payload, _correlationId) => {
     const message: IncomingMessage = {
       id: payload.id,
       channelName: payload.channelName as IncomingMessage['channelName'],

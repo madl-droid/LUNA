@@ -1631,7 +1631,6 @@ export function createApiRoutes(): ApiRoute[] {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
-          const config = await (await import('./manifest-ref.js')).getRegistryRef()?.getOptional?.('config:store')
           // Gate behind test mode
           const db = registry.getDb()
           const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)

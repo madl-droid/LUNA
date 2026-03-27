@@ -28,7 +28,7 @@ export class GmailAdapter {
   private labelCache: Map<string, string> = new Map()
 
   constructor(
-    private auth: OAuth2Client,
+    auth: OAuth2Client,
     private config: EmailConfig,
   ) {
     this.gmail = google.gmail({ version: 'v1', auth })

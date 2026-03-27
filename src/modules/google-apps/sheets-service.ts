@@ -3,18 +3,15 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import pino from 'pino'
 import type { SheetRange, SheetProperties, GoogleApiConfig } from './types.js'
 import { googleApiCall } from './api-wrapper.js'
-
-const logger = pino({ name: 'google-apps:sheets' })
 
 export class SheetsService {
   private sheets
   // FIX: GA-3 — API timeout/retry config
   private apiConfig: { timeoutMs: number; maxRetries: number }
 
-  constructor(private auth: OAuth2Client, config?: GoogleApiConfig) {
+  constructor(auth: OAuth2Client, config?: GoogleApiConfig) {
     this.sheets = google.sheets({ version: 'v4', auth })
     this.apiConfig = {
       timeoutMs: config?.GOOGLE_API_TIMEOUT_MS ?? 30000,

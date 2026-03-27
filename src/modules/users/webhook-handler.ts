@@ -382,7 +382,7 @@ function getChannelContactId(
 
 async function upsertContact(
   db: Pool,
-  registry: Registry,
+  _registry: Registry,
   body: WebhookRegisterBody,
   channelContactId: string,
   channelName: string,

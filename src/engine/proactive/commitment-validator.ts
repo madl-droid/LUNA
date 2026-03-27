@@ -55,7 +55,7 @@ export function validateCommitment(
 function buildKnownCommitment(
   input: CommitmentInput,
   typeConfig: CommitmentTypeConfig,
-  config: ProactiveConfig,
+  _config: ProactiveConfig,
   createdVia: 'tool' | 'auto_detect',
 ): ValidationResult {
   const now = new Date()

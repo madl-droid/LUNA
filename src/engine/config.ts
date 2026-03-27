@@ -32,14 +32,6 @@ function envBool(key: string, fallback: boolean): boolean {
  * Read up to `max` numbered env vars (KEY_1, KEY_2, KEY_3).
  * Returns array of non-empty messages, or fallback if none found.
  */
-function envMessages(prefix: string, max: number, fallback: string[]): string[] {
-  const msgs: string[] = []
-  for (let i = 1; i <= max; i++) {
-    const v = getEnv(`${prefix}_${i}`)
-    if (v) msgs.push(v)
-  }
-  return msgs.length > 0 ? msgs : fallback
-}
 
 function envProvider(key: string, fallback: LLMProvider): LLMProvider {
   const v = getEnv(key) as LLMProvider | undefined

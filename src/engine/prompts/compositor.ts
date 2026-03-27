@@ -3,13 +3,10 @@
 
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import pino from 'pino'
 import type { ContextBundle, EvaluatorOutput, ExecutionOutput } from '../types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
-import { escapeForPrompt, escapeDataForPrompt, escapeHistory, wrapUserContent } from '../utils/prompt-escape.js'
-
-const logger = pino({ name: 'engine:prompts:compositor' })
+import { escapeDataForPrompt, escapeHistory, wrapUserContent } from '../utils/prompt-escape.js'
 
 // Default channel format instructions (overridable via config_store)
 const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {

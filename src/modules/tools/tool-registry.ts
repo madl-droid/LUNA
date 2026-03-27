@@ -37,8 +37,8 @@ export class ToolRegistry {
     private pgStore: PgStore,
     private executor: ToolExecutor,
     private config: ToolsConfig,
-    private db: Pool,
-    private redis: Redis,
+    _db: Pool,
+    _redis: Redis,
     private registry: Registry,
   ) {}
 

@@ -67,7 +67,6 @@ export class ToolExecutor {
     }
 
     const durationMs = Date.now() - start
-    const isTimeout = lastError?.includes('Tool execution timed out')
 
     logger.error({ toolName, durationMs, retries, error: lastError }, 'Tool execution exhausted retries')
 

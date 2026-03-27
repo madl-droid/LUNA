@@ -236,7 +236,7 @@ async function checkRateLimit(
   redis: Redis,
   to: string,
   channel: string,
-  config: EngineConfig,
+  _config: EngineConfig,
   registry: Registry,
 ): Promise<boolean> {
   const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)

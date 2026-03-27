@@ -172,7 +172,7 @@ export async function registerMedilinkTools(
             agenda_online: p.agenda_online,
           })),
         }
-      } catch (err) {
+      } catch {
         return { success: false, error: 'Error al listar profesionales' }
       }
     },
@@ -276,7 +276,7 @@ export async function registerMedilinkTools(
         })
 
         // Auto-verify since they provided document
-        const verResult = await security.verifyByDocument(secCtx, input.document_number as string)
+        await security.verifyByDocument(secCtx, input.document_number as string)
 
         return {
           success: true,

@@ -5,7 +5,6 @@ import type { Pool } from 'pg'
 import pino from 'pino'
 import type {
   KnowledgeDocument,
-  KnowledgeChunk,
   KnowledgeFAQ,
   KnowledgeSyncSource,
   KnowledgeCategory,
@@ -598,7 +597,7 @@ export class KnowledgePgStore {
     )
   }
 
-  async getAllChunksByCategory(category: KnowledgeCategory): Promise<Array<{
+  async getAllChunksByCategory(_category: KnowledgeCategory): Promise<Array<{
     content: string
     source: string
     documentId: string

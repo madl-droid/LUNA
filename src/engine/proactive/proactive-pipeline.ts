@@ -211,7 +211,7 @@ export async function processProactive(
 async function buildProactiveContext(
   candidate: ProactiveCandidate,
   db: Pool,
-  redis: Redis,
+  _redis: Redis,
   registry: Registry,
   config: EngineConfig,
   traceId: string,

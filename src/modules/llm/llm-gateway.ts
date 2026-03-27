@@ -287,7 +287,7 @@ export class LLMGateway {
 
     // Fire hook to notify console
     if (this.registry) {
-      for (const [provider, models] of this.modelCache) {
+      for (const [provider] of this.modelCache) {
         await this.registry.callHook('llm:models_available', { provider })
       }
     }
@@ -354,7 +354,7 @@ export class LLMGateway {
     request: LLMRequest,
     target: ResolvedRoute,
     task: LLMTask,
-    overallStart: number,
+    _overallStart: number,
   ): Promise<LLMResponse | null> {
     const adapter = this.adapters.get(target.provider)
     if (!adapter) return null

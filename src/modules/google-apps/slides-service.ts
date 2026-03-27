@@ -3,15 +3,12 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import pino from 'pino'
 import type { SlideInfo } from './types.js'
-
-const logger = pino({ name: 'google-apps:slides' })
 
 export class SlidesService {
   private slides
 
-  constructor(private auth: OAuth2Client) {
+  constructor(auth: OAuth2Client) {
     this.slides = google.slides({ version: 'v1', auth })
   }
 

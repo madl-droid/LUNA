@@ -1,7 +1,7 @@
 // templates-channel-settings.ts — 2-column channel settings page renderer
 // Renders: status banner + collapsible config sections (left) | connection + budget + tips + activity (right)
 
-import { t, type Lang } from './templates-i18n.js'
+import type { Lang } from './templates-i18n.js'
 import { esc, renderConsoleField } from './templates-fields.js'
 import type { ModuleInfo } from './templates-modules.js'
 import type { SectionData } from './templates-sections.js'
@@ -109,7 +109,7 @@ export function renderChannelSettingsPage(channel: ModuleInfo, data: SectionData
 
 // ── Status bar (icon with card-style colors + status + connect/disconnect + info) ──
 
-function renderStatusBar(channel: ModuleInfo, data: SectionData, channelName: string): string {
+function renderStatusBar(channel: ModuleInfo, data: SectionData, _channelName: string): string {
   const lang = data.lang
   const channelId = channel.name
   const icon = CHANNEL_ICONS[channelId] ?? ''
@@ -154,7 +154,6 @@ function renderStatusBar(channel: ModuleInfo, data: SectionData, channelName: st
   const btnLabel = connected
     ? (lang === 'es' ? 'Desconectar' : 'Disconnect')
     : (lang === 'es' ? 'Conectar' : 'Connect')
-  const btnClass = connected ? 'chs-bar-btn-disconnect' : 'chs-bar-btn-connect'
   const btnAction = connected
     ? `channelDisconnect('${esc(channelId)}', '${lang}')`
     : `channelConnect('${esc(channelId)}', '${lang}')`
@@ -282,7 +281,7 @@ function renderSingleField(f: ConsoleField, val: string, lang: Lang): string {
 
 // ── Period filter (affects budget + activity) ──
 
-function renderPeriodFilter(channelId: string, lang: Lang): string {
+function renderPeriodFilter(_channelId: string, lang: Lang): string {
   const label = lang === 'es' ? 'Periodo' : 'Period'
   const periods: Array<[string, string]> = lang === 'es'
     ? [['today', 'Hoy'], ['24h', '24 horas'], ['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['180d', '180 dias']]

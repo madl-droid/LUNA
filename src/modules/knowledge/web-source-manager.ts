@@ -22,7 +22,7 @@ const SKIP_RECENCY_MS = 7 * 24 * 60 * 60 * 1000  // 1 week
 export class WebSourceManager {
   constructor(
     private pgStore: KnowledgePgStore,
-    private redis: Redis,
+    _redis: Redis,
     private registry: Registry,
   ) {}
 

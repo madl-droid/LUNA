@@ -12,7 +12,6 @@ import type {
   LLMResponse,
   UsageRecord,
   UsageSummary,
-  DEFAULT_COST_TABLE,
 } from './types.js'
 
 const logger = pino({ name: 'llm:usage' })

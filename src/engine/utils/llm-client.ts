@@ -114,7 +114,7 @@ export async function callLLMWithFallback(
   // Fallback: direct SDK calls with manual fallback
   try {
     return await callLLM(options)
-  } catch (primaryErr) {
+  } catch {
     logger.warn(
       { primary: options.provider, fallback: fallbackProvider, task: options.task },
       'Falling back to secondary provider',

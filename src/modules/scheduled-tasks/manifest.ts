@@ -121,7 +121,7 @@ const manifest: ModuleManifest = {
       const DEPTH_TTL = 60 // seconds
 
       for (const eventName of SUPPORTED_EVENTS) {
-        registry.addHook('scheduled-tasks', eventName, async (payload, correlationId) => {
+        registry.addHook('scheduled-tasks', eventName, async (payload, _correlationId) => {
           // Extract identifier from payload to track recursion depth
           const p = payload as Record<string, unknown>
           const entityId = (p['contactId'] ?? p['name'] ?? p['id'] ?? 'global') as string

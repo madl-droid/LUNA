@@ -11,7 +11,6 @@ import type {
   ShippingType,
   FreightConfig,
   FreightSecrets,
-  KnownOrigin,
 } from '../types.js'
 
 const logger = pino({ name: 'freight:searates' })

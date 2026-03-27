@@ -11,7 +11,6 @@ import type { Pool } from 'pg'
 import type {
   GoogleChatConfig,
   GoogleChatState,
-  GoogleChatStatus,
   ChatEvent,
   SendResult,
   ServiceAccountKeyInfo,

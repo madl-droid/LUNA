@@ -22,7 +22,7 @@ export class CalendarService {
   // FIX: GA-3 — API timeout/retry config
   private apiConfig: { timeoutMs: number; maxRetries: number }
 
-  constructor(private auth: OAuth2Client, config?: GoogleApiConfig) {
+  constructor(auth: OAuth2Client, config?: GoogleApiConfig) {
     this.calendar = google.calendar({ version: 'v3', auth })
     this.apiConfig = {
       timeoutMs: config?.GOOGLE_API_TIMEOUT_MS ?? 30000,

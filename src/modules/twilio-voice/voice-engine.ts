@@ -142,11 +142,11 @@ export async function generateCallSummary(
  */
 export async function persistToMemory(
   registry: Registry,
-  db: Pool,
+  _db: Pool,
   contactId: string,
   agentId: string,
   transcript: TranscriptEntry[],
-  summary: string | null,
+  _summary: string | null,
 ): Promise<void> {
   if (transcript.length === 0) return
 

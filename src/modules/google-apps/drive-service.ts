@@ -3,7 +3,6 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import pino from 'pino'
 import type {
   DriveFile,
   DriveListOptions,
@@ -14,16 +13,14 @@ import type {
 import { googleApiCall } from './api-wrapper.js'
 import { Readable } from 'node:stream'
 
-const logger = pino({ name: 'google-apps:drive' })
-
 export class DriveService {
   private drive
   // FIX: GA-3 — API timeout/retry config
   private apiConfig: { timeoutMs: number; maxRetries: number }
 
   constructor(
-    private auth: OAuth2Client,
-    private config: GoogleApiConfig,
+    auth: OAuth2Client,
+    config: GoogleApiConfig,
   ) {
     this.drive = google.drive({ version: 'v3', auth })
     this.apiConfig = {

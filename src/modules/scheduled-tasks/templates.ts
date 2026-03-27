@@ -137,7 +137,7 @@ function triggerLabel(task: ScheduledTask, lang: Lang): string {
   return `<code style="background:var(--bg-secondary);padding:1px 6px;border-radius:4px;font-size:11px">${esc(task.cron)}</code>`
 }
 
-function recipientLabel(task: ScheduledTask, lang: Lang): string {
+function recipientLabel(task: ScheduledTask, _lang: Lang): string {
   const r = task.recipient
   if (!r || r.type === 'none') return ''
   if (r.type === 'group') return `<span style="margin-left:8px">&#128101; ${esc(r.group ?? '')}</span>`
@@ -190,8 +190,6 @@ export function renderTasksSection(
   const groupOptionsHtml = userGroups.map(g => `<option value="${esc(g.listType)}">${esc(g.displayName || g.listType)}</option>`).join('')
 
   // Build tool options
-  const toolOptionsHtml = availableTools.map(t => `<option value="${esc(t.name)}">${esc(t.displayName || t.name)}</option>`).join('')
-
   const fieldStyle = 'margin-bottom:10px'
   const labelStyle = 'font-size:13px;font-weight:500;display:block;margin-bottom:4px'
   const inputStyle = 'width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px'

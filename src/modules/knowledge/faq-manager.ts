@@ -7,7 +7,7 @@ import type { Registry } from '../../kernel/registry.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeSearchEngine } from './search-engine.js'
 import type { KnowledgeCache } from './cache.js'
-import type { KnowledgeFAQ, FAQSourceType, FAQImportRow, KnowledgeConfig } from './types.js'
+import type { KnowledgeFAQ, FAQSourceType, KnowledgeConfig } from './types.js'
 import { parseFAQsFromXlsx } from './extractors/xlsx.js'
 
 const logger = pino({ name: 'knowledge:faq' })

@@ -150,7 +150,6 @@ export class UsersDb {
     const senderMap = new Map<string, { row: Record<string, unknown>; channels: Set<string> }>()
 
     for (const row of oldRows.rows) {
-      const key = `${row.sender_id}__${row.list_type}`
       const existing = senderMap.get(row.sender_id as string)
       if (!existing) {
         senderMap.set(row.sender_id as string, {

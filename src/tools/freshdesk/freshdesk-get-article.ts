@@ -76,7 +76,7 @@ async function getArticle(
   client: FreshdeskClient,
   articleId: number,
   ttlSeconds: number,
-  config: FreshdeskModuleConfig,
+  _config: FreshdeskModuleConfig,
 ): Promise<FreshdeskGetArticleResult> {
   const cacheKey = `${REDIS_PREFIX}${articleId}`
 

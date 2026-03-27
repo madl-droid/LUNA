@@ -457,7 +457,7 @@ async function executeWebSearch(
  * Now runs as a Phase 3 step so it can be planned by the evaluator.
  */
 async function executeProcessAttachment(
-  step: ExecutionStep,
+  _step: ExecutionStep,
   index: number,
   ctx: ContextBundle,
   db: Pool,

@@ -36,8 +36,6 @@ export async function loadModules(registry: Registry): Promise<void> {
 
   // 4. Register all discovered modules
   for (const manifest of discovered) {
-    const dbRow = dbState.get(manifest.name)
-    const active = dbRow?.active ?? false
     registry.register(manifest, false) // register as inactive, we activate below
   }
 

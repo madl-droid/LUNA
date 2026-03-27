@@ -3,15 +3,12 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import pino from 'pino'
 import type { DocInfo } from './types.js'
-
-const logger = pino({ name: 'google-apps:docs' })
 
 export class DocsService {
   private docs
 
-  constructor(private auth: OAuth2Client) {
+  constructor(auth: OAuth2Client) {
     this.docs = google.docs({ version: 'v1', auth })
   }
 

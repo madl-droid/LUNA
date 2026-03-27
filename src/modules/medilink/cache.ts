@@ -151,7 +151,6 @@ export class MedilinkCache {
   /** Process raw agenda response into clean availability slots */
   private processAgendaResponse(raw: MedilinkAgendaRaw, branchId: number): AvailabilitySlot[] {
     const slots: AvailabilitySlot[] = []
-    const activeProfessionals = new Set(this.getActiveProfessionals().map((p) => p.id))
     const branch = (this.refData?.branches ?? []).find((b) => b.id === branchId)
 
     for (const [date, hours] of Object.entries(raw)) {
