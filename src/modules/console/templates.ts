@@ -495,18 +495,24 @@ function renderSidebar(opts: PageOptions): string {
           'scheduled-tasks': svgIcon('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'),
           'google-apps': ICONS.google,
         }
-        // Fixed herramientas tabs
-        const herramientasTabs: Array<{ id: string; key: string; label?: string }> = [
+        // Modules that belong to the "Agente" page, not herramientas
+        const AGENTE_PAGE_MODULES = new Set(['prompts', 'engine', 'tools', 'memory', 'knowledge'])
+        // Build active module lookup from dynModules
+        const activeModules = new Set(dynModules.filter(m => m.active).map(m => m.name))
+        // Fixed herramientas tabs — only show if module is active
+        const allFixedTabs = [
           { id: 'lead-scoring', key: 'sec_herramientas_lead_scoring' },
           { id: 'freight', key: 'sec_herramientas_freight' },
           { id: 'medilink', key: 'sec_herramientas_medilink' },
           { id: 'scheduled-tasks', key: 'sec_herramientas_scheduled_tasks' },
           { id: 'google-apps', key: 'sec_herramientas_google_apps' },
         ]
-        // Dynamic: add active agent-group modules not in fixed list
+        const herramientasTabs: Array<{ id: string; key: string; label?: string }> = allFixedTabs.filter(tab => activeModules.has(tab.id))
+        // Dynamic: add active agent-group modules not in fixed list or agente page
         for (const mod of dynModules) {
           if (!mod.active || mod.group !== 'agent') continue
           if (HERRAMIENTAS_FIXED.has(mod.name)) continue
+          if (AGENTE_PAGE_MODULES.has(mod.name)) continue
           if (herramientasTabs.some(t => t.id === mod.name)) continue
           herramientasTabs.push({ id: mod.name, key: '', label: mod.title[opts.lang] || mod.title.es || mod.name })
           herramientasIcons[mod.name] = ICON_OVERRIDES[mod.name] || ICONS.fallback

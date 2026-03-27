@@ -557,7 +557,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       if (localUrl === '/modules/toggle') {
         const modName = body['module']
-        const active = body['active']
+        // Support both param styles: active=true/false (modules page) and action=activate/deactivate (herramientas page)
+        const action = body['action']
+        const active = action ? (action === 'activate' ? 'true' : 'false') : body['active']
         try {
           if (modName) {
             if (active === 'true') await registry.activate(modName)

@@ -1033,45 +1033,6 @@ function renderIdentitySection(data: SectionData): string {
     </div>`
   }
 
-  // Assembled prompt preview (read-only)
-  const previewIdentity = cfg['PROMPT_IDENTITY'] || ''
-  const previewJob = cfg['PROMPT_JOB'] || ''
-  const previewGuardrails = cfg['PROMPT_GUARDRAILS'] || ''
-  const previewAccent = cfg['AGENT_ACCENT_PROMPT'] || ''
-  const previewParts: string[] = []
-  if (previewIdentity) previewParts.push(previewIdentity)
-  if (previewAccent) previewParts.push('--- ACENTO ---\n' + previewAccent)
-  if (previewJob) previewParts.push('--- TRABAJO ---\n' + previewJob)
-  if (previewGuardrails) previewParts.push('--- REGLAS ---\n' + previewGuardrails)
-  const assembledPreview = previewParts.join('\n\n')
-  const previewLines = (assembledPreview || ' ').split('\n')
-  const previewLineNums = previewLines.map((_: string, i: number) => `<span class="code-editor-line-num">${i + 1}</span>`).join('')
-
-  promptsHtml += `<div class="panel collapsed" style="margin-bottom:8px;border:1px dashed var(--outline-variant)">
-    <div class="panel-header" onclick="togglePanel(this)" style="background:var(--surface-container-low)">
-      <span class="panel-title" style="display:flex;align-items:center;gap:6px">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        ${isEs ? 'Prompt final ensamblado (solo lectura)' : 'Final assembled prompt (read-only)'}
-      </span>
-      <span class="panel-chevron">&#9660;</span>
-    </div>
-    <div class="panel-body" style="padding:0">
-      <div class="code-editor" style="border:none;border-radius:0">
-        <div class="code-editor-header">
-          <div class="code-editor-header-left">
-            <svg class="code-editor-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-            <span>SYSTEM PROMPT</span>
-          </div>
-          <span style="color:var(--on-surface-variant);font-size:11px">${previewLines.length} ${isEs ? 'lineas' : 'lines'}</span>
-        </div>
-        <div class="code-editor-body" style="min-height:120px;max-height:400px">
-          <div class="code-editor-lines">${previewLineNums}</div>
-          <textarea class="code-editor-textarea" style="min-height:120px;opacity:0.85" readonly>${esc(assembledPreview)}</textarea>
-        </div>
-      </div>
-    </div>
-  </div>`
-
   // Build identity column (right)
   const agentName = cfg['AGENT_NAME'] || 'Luna'
   const agentLastName = cfg['AGENT_LAST_NAME'] || ''
