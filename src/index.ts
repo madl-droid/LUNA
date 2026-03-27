@@ -10,6 +10,7 @@ import { Server } from './kernel/server.js'
 import { kernelConfig } from './kernel/config.js'
 import { isSetupCompleted } from './kernel/setup/detect.js'
 import { createSetupHandler } from './kernel/setup/handler.js'
+import { ensureInstanceDirs } from './kernel/bootstrap.js'
 import pino from 'pino'
 
 // FIX: SEC-12.1 — PII redaction en logs
@@ -64,6 +65,9 @@ process.on('unhandledRejection', (reason) => {
 
 async function main(): Promise<void> {
   logger.info({ env: kernelConfig.nodeEnv }, 'LUNA starting...')
+
+  // Ensure instance/ directories exist (fresh containers)
+  await ensureInstanceDirs()
 
   const db = await createPool()
   const redis = await createRedis()

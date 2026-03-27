@@ -3,6 +3,7 @@
 import { Pool } from 'pg'
 import pino from 'pino'
 import { kernelConfig } from './config.js'
+import { runMigrations } from './migrator.js'
 
 const logger = pino({ name: 'kernel:db' })
 
@@ -57,6 +58,9 @@ export async function createPool(): Promise<Pool> {
   } finally {
     client.release()
   }
+
+  // Run domain migrations (contacts, sessions, agents, etc.)
+  await runMigrations(pool)
 
   return pool
 }

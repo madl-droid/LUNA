@@ -50,7 +50,7 @@ export class MemoryManager {
   }
 
   async initialize(): Promise<void> {
-    await this.pg.ensureTable()
+    // Tables are created by kernel migrator (src/migrations/*.sql) — no ensureTable needed
     logger.info('Memory manager initialized (Redis + PostgreSQL)')
   }
 

@@ -19,7 +19,7 @@ COPY src/modules/lead-scoring/ui/ ./dist/modules/lead-scoring/ui/
 
 COPY .env.example ./.env.example
 COPY .env.schema ./.env.schema
-COPY instance/config.json ./instance/config.json
-COPY instance/config.schema.json ./instance/config.schema.json
+COPY src/migrations/ ./dist/migrations/
+COPY instance/ ./instance/
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

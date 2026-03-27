@@ -22,45 +22,8 @@ const logger = pino({ name: 'memory:pg-store' })
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbRow = Record<string, any>
 
-// ═══════════════════════════════════════════
-// Table creation (for backwards compat with existing ensureTable call)
-// ═══════════════════════════════════════════
-
-const CREATE_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS messages (
-  id UUID PRIMARY KEY,
-  session_id TEXT NOT NULL,
-  agent_id TEXT DEFAULT '',
-  role TEXT NOT NULL DEFAULT 'user',
-  content_text TEXT NOT NULL DEFAULT '',
-  content_type TEXT NOT NULL DEFAULT 'text',
-  media_path TEXT,
-  media_mime TEXT,
-  media_analysis TEXT,
-  intent TEXT,
-  emotion TEXT,
-  tokens_used INTEGER,
-  latency_ms INTEGER,
-  model_used TEXT,
-  token_count INTEGER,
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
-`
-
 export class PgStore {
   constructor(private pool: Pool) {}
-
-  async ensureTable(): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query(CREATE_TABLE_SQL)
-      logger.info('PostgreSQL messages table ensured')
-    } finally {
-      client.release()
-    }
-  }
 
   // ═══════════════════════════════════════════
   // Messages — Hot tier (dual-write old + new columns)
