@@ -929,6 +929,61 @@ function renderDashboardSection(data: SectionData): string {
 </div>`
 }
 
+// ═══════════════════════════════════════════
+// Database Viewer (debug mode only)
+// ═══════════════════════════════════════════
+export function renderDatabaseViewer(data: SectionData): string {
+  const lang = data.lang
+  return `<div class="db-viewer" id="db-viewer-container" data-lang="${lang}">
+  <div class="db-viewer-sidebar">
+    <div class="db-viewer-sidebar-header">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+      <span>${t('dbg_db_tables', lang)}</span>
+    </div>
+    <div class="db-table-list" id="db-table-list">
+      <div class="db-loading">${t('dbg_db_loading', lang)}</div>
+    </div>
+  </div>
+  <div class="db-viewer-main">
+    <div class="db-viewer-toolbar" id="db-toolbar" style="display:none">
+      <div class="db-toolbar-left">
+        <span class="db-table-name" id="db-current-table"></span>
+        <span class="db-table-meta" id="db-current-meta"></span>
+      </div>
+      <div class="db-toolbar-right">
+        <label>${t('dbg_db_per_page', lang)}:
+          <select id="db-per-page" class="db-select">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="db-grid-wrap" id="db-grid-wrap">
+      <div class="db-empty-state" id="db-empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--on-surface-dim)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        <p>${t('dbg_db_select_table', lang)}</p>
+      </div>
+      <div class="db-grid-scroll" id="db-grid-scroll" style="display:none">
+        <table class="db-grid" id="db-grid">
+          <thead id="db-grid-head"></thead>
+          <tbody id="db-grid-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="db-pagination" id="db-pagination" style="display:none">
+      <div class="db-pagination-info" id="db-pagination-info"></div>
+      <div class="db-pagination-controls">
+        <button class="db-page-btn" id="db-prev" disabled>&#8249; ${t('dbg_db_page', lang)}</button>
+        <span id="db-page-num">1</span>
+        <button class="db-page-btn" id="db-next">${t('dbg_db_page', lang)} &#8250;</button>
+      </div>
+    </div>
+  </div>
+</div>`
+}
+
 export function renderSection(section: string, data: SectionData): string | null {
   switch (section) {
     case 'dashboard': return renderDashboardSection(data)
@@ -949,6 +1004,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'infra': return renderInfraUnifiedSection(data)
     case 'google-apps': return renderGoogleAppsSection(data)
     case 'email': return renderEmailSection(data)
+    case 'debug-database': return renderDatabaseViewer(data)
     default: return null
   }
 }
