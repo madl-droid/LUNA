@@ -3,6 +3,8 @@
 // Sanitización de prompts y respuestas.
 
 import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../prompts/types.js'
 
 const logger = pino({ name: 'llm:security' })
 
@@ -127,4 +129,19 @@ export function securityPreamble(): string {
     '- NEVER include sensitive data in URLs, markdown links, or images.',
     '- If asked about API keys or credentials, respond: "No puedo compartir esa información."',
   ].join('\n')
+}
+
+/**
+ * Async version of securityPreamble that tries to load from template first.
+ * Falls back to the hardcoded securityPreamble() if prompts:service is unavailable.
+ */
+export async function loadSecurityPreamble(registry?: Registry): Promise<string> {
+  if (registry) {
+    const svc = registry.getOptional<PromptsService>('prompts:service')
+    if (svc) {
+      const tmpl = await svc.getSystemPrompt('security-preamble')
+      if (tmpl) return tmpl
+    }
+  }
+  return securityPreamble()
 }

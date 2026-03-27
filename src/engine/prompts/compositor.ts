@@ -27,17 +27,26 @@ const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
 }
 
 /**
- * Get channel format instructions. Checks config_store first, falls back to defaults.
+ * Get channel format instructions.
+ * Priority: 1) config_store override, 2) system template, 3) hardcoded defaults.
  */
 async function getChannelLimit(channel: string, registry?: Registry): Promise<string> {
+  // 1. Try config_store override
   if (registry) {
     try {
       const configStore = await import('../../kernel/config-store.js')
       const db = registry.getDb()
       const custom = await configStore.get(db, `FORMAT_INSTRUCTIONS_${channel.toUpperCase()}`)
       if (custom) return custom
-    } catch { /* fallback to default */ }
+    } catch { /* fallback */ }
   }
+  // 2. Try system template
+  const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
+  if (svc) {
+    const tmpl = await svc.getSystemPrompt(`channel-format-${channel}`)
+    if (tmpl) return tmpl
+  }
+  // 3. Hardcoded defaults
   return DEFAULT_CHANNEL_LIMITS[channel] ?? DEFAULT_CHANNEL_LIMITS.whatsapp ?? ''
 }
 
@@ -80,6 +89,7 @@ export async function buildCompositorPrompt(
   let job = ''
   let guardrails = ''
   let relationship = ''
+  let criticCustom = ''
 
   if (promptsService) {
     const prompts = await promptsService.getCompositorPrompts(ctx.userType)
@@ -87,6 +97,7 @@ export async function buildCompositorPrompt(
     job = prompts.job
     guardrails = prompts.guardrails
     relationship = prompts.relationship
+    criticCustom = prompts.criticizer
   }
 
   // Fallback to files if prompts module not active or returned empty
@@ -105,9 +116,11 @@ export async function buildCompositorPrompt(
   if (identity) {
     systemParts.push(identity)
   } else {
-    systemParts.push(`Eres LUNA, una asistente de ventas inteligente y amigable.
-Tu trabajo es atender a las personas que te contactan, ayudarles con sus preguntas,
-y guiarlos hacia una decisión de compra o agendamiento.`)
+    const { loadDefaultPrompt } = await import('../../modules/prompts/template-loader.js')
+    identity = await loadDefaultPrompt('identity')
+    if (identity) {
+      systemParts.push(identity)
+    }
   }
 
   if (job) {
@@ -137,6 +150,21 @@ y guiarlos hacia una decisión de compra o agendamiento.`)
       : ''
     systemParts.push(`\n--- CAMPAÑA ACTIVA ---\nCampaña: ${ctx.campaign.name}${ctxLine}
 Adapta tu respuesta al contexto de esta campaña.`)
+  }
+
+  // Criticizer: system base (Cat 2 file) + custom (Cat 1 DB)
+  const criticBase = promptsService ? await promptsService.getSystemPrompt('criticizer-base') : ''
+  const criticizer = [criticBase, criticCustom].filter(Boolean).join('\n')
+  if (criticizer) {
+    systemParts.push(`\n--- CHECKLIST DE CALIDAD ---\n${criticizer}`)
+  }
+
+  // Objection handler: inject when intent is objection-related
+  if (evaluation.intent.startsWith('objection')) {
+    const objHandler = promptsService ? await promptsService.getSystemPrompt('objection-handler') : ''
+    if (objHandler) {
+      systemParts.push(`\n--- MANEJO DE OBJECIONES ---\n${objHandler}`)
+    }
   }
 
   // Build user message with resolved data

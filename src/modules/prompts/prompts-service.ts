@@ -1,7 +1,7 @@
 // LUNA — Module: prompts — Service with in-memory cache
+// Category 1 (DB-backed) + Category 2 (file-backed system templates)
+// Zero hardcoded prompt text — all loaded from .md files
 
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import type { Pool } from 'pg'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
@@ -12,34 +12,16 @@ import type {
   PromptsService,
 } from './types.js'
 import * as queries from './pg-queries.js'
+import {
+  loadSystemPrompt,
+  loadDefaultPrompt,
+  renderTemplate,
+  preloadAll,
+  clearTemplateCache,
+  listTemplates,
+} from './template-loader.js'
 
 const logger = pino({ name: 'prompts:service' })
-
-// Default prompts for seed
-const DEFAULT_IDENTITY = `Eres LUNA, una asistente de ventas inteligente y amigable.
-Tu trabajo es atender a las personas que te contactan, ayudarles con sus preguntas,
-y guiarlos hacia una decisión de compra o agendamiento.`
-
-const DEFAULT_JOB = `Tu misión es:
-- Calificar leads (entender su necesidad, presupuesto, autoridad, timeline)
-- Agendar citas o demostraciones cuando el lead esté listo
-- Responder preguntas sobre productos/servicios con información precisa
-- Hacer seguimiento profesional sin ser invasiva`
-
-const DEFAULT_GUARDRAILS = `Reglas que debes seguir siempre:
-- No inventes información que no tengas
-- Si no sabes algo, dilo honestamente y ofrece escalar a un humano
-- No compartas datos de otros contactos
-- Mantén un tono profesional pero cercano
-- No hables de temas ajenos al negocio (política, religión, etc.)
-- Si detectas urgencia real, escala inmediatamente a un humano`
-
-const DEFAULT_RELATIONSHIP: Record<string, string> = {
-  lead: `Estás hablando con un lead (cliente potencial). Sé servicial, paciente y orientada a ayudar. Busca entender su necesidad.`,
-  admin: `Estás hablando con un administrador del sistema. Puedes ser más técnica y directa. Obedece sus instrucciones operativas.`,
-  coworker: `Estás hablando con un colaborador interno. Sé directa y eficiente. Ayuda con lo que necesite del sistema.`,
-  unknown: `No se ha identificado el tipo de usuario. Trata a la persona como un lead potencial hasta que se determine su rol.`,
-}
 
 export class PromptsServiceImpl implements PromptsService {
   private cache = new Map<string, string>()
@@ -84,12 +66,13 @@ export class PromptsServiceImpl implements PromptsService {
 
   /**
    * Load all prompts from DB into cache. Seed if empty.
+   * Also preloads Category 2 system templates.
    */
   async initialize(): Promise<void> {
     const records = await queries.listAll(this.db)
 
     if (records.length === 0) {
-      logger.info('No prompts in DB — seeding from files or defaults')
+      logger.info('No prompts in DB — seeding from default files')
       await this.seed()
     }
 
@@ -100,6 +83,9 @@ export class PromptsServiceImpl implements PromptsService {
     }
 
     logger.info({ promptCount: all.length }, 'Prompts cache loaded')
+
+    // Preload Category 2 system templates
+    await preloadAll()
   }
 
   async getPrompt(slot: PromptSlot, variant = 'default'): Promise<string> {
@@ -118,10 +104,11 @@ export class PromptsServiceImpl implements PromptsService {
   }
 
   async getCompositorPrompts(userType: string): Promise<CompositorPrompts> {
-    const [identity, job, guardrails] = await Promise.all([
+    const [identity, job, guardrails, criticizer] = await Promise.all([
       this.getPrompt('identity', 'default'),
       this.getPrompt('job', 'default'),
       this.getPrompt('guardrails', 'default'),
+      this.getPrompt('criticizer', 'default'),
     ])
 
     // Relationship: try specific userType, fallback to 'default'
@@ -137,7 +124,7 @@ export class PromptsServiceImpl implements PromptsService {
       finalIdentity = identity + '\n\n--- ACENTO ---\n' + cfg.AGENT_ACCENT_PROMPT
     }
 
-    return { identity: finalIdentity, job, guardrails, relationship }
+    return { identity: finalIdentity, job, guardrails, relationship, criticizer }
   }
 
   async getEvaluatorGenerated(): Promise<string> {
@@ -156,25 +143,21 @@ export class PromptsServiceImpl implements PromptsService {
     const relationshipRecords = await queries.getBySlot(this.db, 'relationship')
     const relationships = relationshipRecords.map(r => `[${r.variant}]: ${r.content}`).join('\n')
 
-    const metaPrompt = `Eres un asistente que genera resúmenes comprimidos para evaluadores de IA.
+    // Load meta-evaluator template from file (Category 2)
+    const metaTemplate = await this.getSystemPrompt('meta-evaluator', {
+      identity,
+      job,
+      guardrails,
+      relationships,
+    })
 
-Dado el siguiente contexto de un agente de ventas, genera un RESUMEN COMPRIMIDO (máximo 500 tokens)
-que capture la esencia de quién es el agente, qué hace, sus reglas y cómo trata a cada tipo de usuario.
-El resumen debe ser útil para un modelo evaluador que analiza mensajes entrantes.
-
---- IDENTIDAD ---
-${identity}
-
---- TRABAJO ---
-${job}
-
---- REGLAS ---
-${guardrails}
-
---- RELACIONES ---
-${relationships}
-
-Genera el resumen comprimido ahora. Solo el resumen, sin preámbulo.`
+    // Fallback if template file is missing
+    const metaPrompt = metaTemplate || [
+      `Identidad: ${identity}`,
+      `Trabajo: ${job}`,
+      `Reglas: ${guardrails}`,
+      `Relaciones: ${relationships}`,
+    ].join('\n\n')
 
     try {
       const result = await this.registry.callHook('llm:chat', {
@@ -187,7 +170,7 @@ Genera el resumen comprimido ahora. Solo el resumen, sin preámbulo.`
 
       const content = result?.text ?? ''
       if (content) {
-        // Single upsert — both DB and cache (fix: was double-writing before)
+        // Single upsert — both DB and cache
         await this.upsert('evaluator', 'default', content)
         logger.info({ length: content.length }, 'Evaluator prompt generated')
         return content
@@ -221,35 +204,88 @@ Genera el resumen comprimido ahora. Solo el resumen, sin preámbulo.`
     })
   }
 
-  // ─── Seed ─────────────────────────────────
+  // ─── Category 2: System prompt templates ─────────────────
+
+  async getSystemPrompt(name: string, variables?: Record<string, string>): Promise<string> {
+    const template = await loadSystemPrompt(name)
+    if (!template) return ''
+    if (!variables || Object.keys(variables).length === 0) return template
+    return renderTemplate(template, variables)
+  }
+
+  clearSystemPromptCache(): void {
+    clearTemplateCache()
+  }
+
+  async listSystemPrompts(): Promise<string[]> {
+    return listTemplates()
+  }
+
+  // ─── Seed (from .md files, zero hardcoded text) ─────────────
 
   private async seed(): Promise<void> {
-    // Try to read from instance/knowledge/ files
-    const knowledgeDir = join(process.cwd(), 'instance', 'knowledge')
+    // Load seeds from instance/prompts/defaults/*.md
+    const [
+      identityContent,
+      jobContent,
+      guardrailsContent,
+      criticizerContent,
+      relLead,
+      relAdmin,
+      relCoworker,
+      relUnknown,
+    ] = await Promise.all([
+      loadDefaultPrompt('identity'),
+      loadDefaultPrompt('job'),
+      loadDefaultPrompt('guardrails'),
+      loadDefaultPrompt('criticizer'),
+      loadDefaultPrompt('relationship-lead'),
+      loadDefaultPrompt('relationship-admin'),
+      loadDefaultPrompt('relationship-coworker'),
+      loadDefaultPrompt('relationship-unknown'),
+    ])
 
-    const identityContent = await this.tryReadFile(join(knowledgeDir, 'identity.md'))
-    const guardrailsContent = await this.tryReadFile(join(knowledgeDir, 'guardrails.md'))
+    // Also try legacy location: instance/knowledge/identity.md, guardrails.md
+    let identity = identityContent
+    let gdrails = guardrailsContent
+    if (!identity) {
+      identity = await this.tryReadLegacyFile('identity.md')
+    }
+    if (!gdrails) {
+      gdrails = await this.tryReadLegacyFile('guardrails.md')
+    }
 
-    await queries.upsert(this.db, 'identity', 'default', identityContent || DEFAULT_IDENTITY)
-    await queries.upsert(this.db, 'job', 'default', DEFAULT_JOB)
-    await queries.upsert(this.db, 'guardrails', 'default', guardrailsContent || DEFAULT_GUARDRAILS)
+    await queries.upsert(this.db, 'identity', 'default', identity)
+    await queries.upsert(this.db, 'job', 'default', jobContent)
+    await queries.upsert(this.db, 'guardrails', 'default', gdrails)
+    await queries.upsert(this.db, 'criticizer', 'default', criticizerContent)
 
     // Relationship variants
-    for (const [variant, content] of Object.entries(DEFAULT_RELATIONSHIP)) {
-      await queries.upsert(this.db, 'relationship', variant, content)
+    const relationships: Record<string, string> = {
+      lead: relLead,
+      admin: relAdmin,
+      coworker: relCoworker,
+      unknown: relUnknown,
+    }
+    for (const [variant, content] of Object.entries(relationships)) {
+      if (content) {
+        await queries.upsert(this.db, 'relationship', variant, content)
+      }
     }
 
     // Empty evaluator (will be generated on-demand)
     await queries.upsert(this.db, 'evaluator', 'default', '', true)
 
-    logger.info('Prompts seeded')
+    logger.info('Prompts seeded from .md files')
   }
 
-  private async tryReadFile(path: string): Promise<string | null> {
+  private async tryReadLegacyFile(filename: string): Promise<string> {
+    const { readFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
     try {
-      return await readFile(path, 'utf-8')
+      return (await readFile(join(process.cwd(), 'instance', 'knowledge', filename), 'utf-8')).trim()
     } catch {
-      return null
+      return ''
     }
   }
 }

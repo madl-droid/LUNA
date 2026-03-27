@@ -2,9 +2,12 @@
 // Construye el prompt para el modelo evaluador que analiza intención y genera plan.
 
 import type { ContextBundle, ToolCatalogEntry, ProactiveContextBundle } from '../types.js'
+import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../../modules/prompts/types.js'
 import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
-const EVALUATOR_SYSTEM = `Eres el módulo evaluador de LUNA, un agente de ventas por WhatsApp/email.
+// Fallback used when prompts:service not available
+const EVALUATOR_SYSTEM_FALLBACK = `Eres el módulo evaluador de LUNA, un agente de ventas por WhatsApp/email.
 Tu trabajo es analizar el mensaje del contacto y generar un plan de ejecución.
 
 RESPONDE EXCLUSIVAMENTE en JSON válido. Sin texto adicional, sin markdown, sin backticks.
@@ -48,15 +51,17 @@ const TOOL_CATALOG_COMPACT_HEADER = `\nTools disponibles (catálogo resumido —
 /**
  * Build the evaluator prompt for Phase 2.
  */
-export function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalogEntry[]): {
+export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalogEntry[], registry?: Registry): Promise<{
   system: string
   userMessage: string
-} {
+}> {
   // Filter catalog by user permissions
   const allowedTools = filterToolsByPermissions(toolCatalog, ctx)
 
-  // Build system with tool catalog
-  let system = EVALUATOR_SYSTEM
+  // Build system with tool catalog — try template, fallback to hardcoded
+  const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
+  let system = svc ? await svc.getSystemPrompt('evaluator-system') : ''
+  if (!system) system = EVALUATOR_SYSTEM_FALLBACK
 
   if (allowedTools.length > 15) {
     // Compact catalog: name + 1-line description only
@@ -238,7 +243,8 @@ function filterToolsByPermissions(
 // Proactive evaluator prompt
 // ═══════════════════════════════════════════
 
-const PROACTIVE_EVALUATOR_SYSTEM = `You are the proactive evaluator of LUNA, an AI sales agent for WhatsApp/email.
+// Fallback used when prompts:service not available
+const PROACTIVE_EVALUATOR_SYSTEM_FALLBACK = `You are the proactive evaluator of LUNA, an AI sales agent for WhatsApp/email.
 You are deciding whether to proactively reach out to a contact and what to do.
 
 RESPOND EXCLUSIVELY in valid JSON. No additional text, no markdown, no backticks.
@@ -278,11 +284,15 @@ Rules:
 /**
  * Build proactive evaluator prompt for Phase 2 in proactive mode.
  */
-export function buildProactiveEvaluatorPrompt(
+export async function buildProactiveEvaluatorPrompt(
   ctx: ProactiveContextBundle,
   toolCatalog: ToolCatalogEntry[],
-): { system: string; userMessage: string } {
-  let system = PROACTIVE_EVALUATOR_SYSTEM
+  registry?: Registry,
+): Promise<{ system: string; userMessage: string }> {
+  // Try template, fallback to hardcoded
+  const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
+  let system = svc ? await svc.getSystemPrompt('proactive-evaluator-system') : ''
+  if (!system) system = PROACTIVE_EVALUATOR_SYSTEM_FALLBACK
 
   // Add available tools
   if (toolCatalog.length > 0) {

@@ -4,6 +4,7 @@
 // Framework-aware: adapts extraction prompt to active framework and current stage.
 
 import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../prompts/types.js'
 import type { ToolRegistration, ToolExecutionContext } from '../tools/types.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 import type { QualifyingConfig, ExtractionResult, FrameworkStage } from './types.js'
@@ -40,12 +41,14 @@ const FRAMEWORK_CONTEXT: Record<string, { es: string; en: string }> = {
 /**
  * Builds the system prompt for the extraction LLM call.
  * Framework-aware: includes stage context and focuses on relevant criteria.
+ * Tries to load from template first, falls back to hardcoded prompt.
  */
-function buildExtractionPrompt(
+async function buildExtractionPrompt(
   config: QualifyingConfig,
   existingData: Record<string, unknown>,
   currentStage: FrameworkStage | null,
-): string {
+  registry?: Registry,
+): Promise<string> {
   const frameworkCtx = FRAMEWORK_CONTEXT[config.framework] ?? FRAMEWORK_CONTEXT['custom']!
 
   // Group criteria by stage for better prompt structure
@@ -106,6 +109,21 @@ function buildExtractionPrompt(
     ? `\nCURRENT STAGE FOCUS: "${currentStage.name.en}" — ${currentStage.description.en}\nPrioritize extracting fields from this stage, but also capture any info for other stages if clearly present.`
     : ''
 
+  // Try to load from template first
+  if (registry) {
+    const svc = registry.getOptional<PromptsService>('prompts:service')
+    if (svc) {
+      const tmpl = await svc.getSystemPrompt('lead-scoring-extraction', {
+        frameworkContext: frameworkCtx.en,
+        stageInstruction,
+        criteriaSection,
+        disqualifyList,
+      })
+      if (tmpl) return tmpl
+    }
+  }
+
+  // Fallback to hardcoded prompt
   return `You are an extraction assistant for lead qualification.
 ${frameworkCtx.en}
 Your ONLY job is to extract structured data from the conversation message.
@@ -214,7 +232,7 @@ async function handleExtraction(
   const currentStage = getCurrentStage(existingData, config)
 
   // Build prompt and call LLM
-  const systemPrompt = buildExtractionPrompt(config, existingData, currentStage)
+  const systemPrompt = await buildExtractionPrompt(config, existingData, currentStage, registry)
 
   try {
     const llmResult = await registry.callHook('llm:chat', {

@@ -67,6 +67,31 @@ const apiRoutes: ApiRoute[] = [
   },
   // Campaign management moved to lead-scoring module
   // See: /console/api/lead-scoring/campaigns
+
+  // ─── Category 2: System prompt templates (read-only) ─────
+  {
+    method: 'GET',
+    path: 'system-prompts',
+    handler: async (_req, res) => {
+      if (!service) { jsonResponse(res, 503, { error: 'Service not ready' }); return }
+      const names = await service.listSystemPrompts()
+      const templates: Array<{ name: string; content: string }> = []
+      for (const name of names) {
+        const content = await service.getSystemPrompt(name)
+        templates.push({ name, content })
+      }
+      jsonResponse(res, 200, { templates })
+    },
+  },
+  {
+    method: 'POST',
+    path: 'reload-system',
+    handler: async (_req, res) => {
+      if (!service) { jsonResponse(res, 503, { error: 'Service not ready' }); return }
+      service.clearSystemPromptCache()
+      jsonResponse(res, 200, { ok: true, message: 'System prompt template cache cleared' })
+    },
+  },
 ]
 
 const manifest: ModuleManifest = {
@@ -174,6 +199,25 @@ const manifest: ModuleManifest = {
         label: { es: 'Reglas / Guardrails', en: 'Rules / Guardrails' },
         info: { es: 'Reglas y límites que el agente nunca debe violar.', en: 'Rules and limits the agent must never violate.' },
       },
+      { key: '_divider_criticizer', type: 'divider', label: { es: 'Checklist de calidad', en: 'Quality checklist' } },
+      {
+        key: '_info_criticizer_base',
+        type: 'readonly',
+        label: { es: 'Base del sistema (no editable)', en: 'System base (not editable)' },
+        info: {
+          es: 'Estas reglas son fijas y garantizan la eficiencia del sistema. Se cargan de instance/prompts/system/criticizer-base.md.',
+          en: 'These rules are fixed and guarantee system efficiency. Loaded from instance/prompts/system/criticizer-base.md.',
+        },
+      },
+      {
+        key: 'PROMPT_CRITICIZER',
+        type: 'textarea',
+        label: { es: 'Checklist personalizable', en: 'Customizable checklist' },
+        info: {
+          es: 'Puntos adicionales de auto-revisión antes de enviar. Personaliza el estilo y metodología del agente.',
+          en: 'Additional self-review points before sending. Customize the agent style and methodology.',
+        },
+      },
     ],
     apiRoutes,
   },
@@ -211,6 +255,7 @@ const manifest: ModuleManifest = {
       if (service) {
         await syncFromConsole(registry)
         service.invalidateCache()
+        service.clearSystemPromptCache()
       }
     })
 
@@ -234,6 +279,7 @@ async function syncConsoleFields(registry: Registry): Promise<void> {
     'PROMPT_IDENTITY': 'identity',
     'PROMPT_JOB': 'job',
     'PROMPT_GUARDRAILS': 'guardrails',
+    'PROMPT_CRITICIZER': 'criticizer',
   }
 
   for (const [configKey, slot] of Object.entries(slotToKey)) {
@@ -256,6 +302,7 @@ async function syncFromConsole(registry: Registry): Promise<void> {
     'PROMPT_IDENTITY': 'identity',
     'PROMPT_JOB': 'job',
     'PROMPT_GUARDRAILS': 'guardrails',
+    'PROMPT_CRITICIZER': 'criticizer',
   }
 
   for (const [configKey, slot] of Object.entries(slotToKey)) {

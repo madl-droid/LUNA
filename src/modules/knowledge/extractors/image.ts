@@ -3,6 +3,7 @@
 // Requiere llm:gateway activo. Costoso — solo bajo demanda.
 
 import type { Registry } from '../../../kernel/registry.js'
+import type { PromptsService } from '../../prompts/types.js'
 import type { ExtractedContent } from '../types.js'
 import pino from 'pino'
 
@@ -26,10 +27,20 @@ export async function extractImage(
   const mimeType = getMimeType(fileName)
   const base64 = input.toString('base64')
 
+  // Load system prompt from template, fallback to hardcoded
+  const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+  let systemPrompt = ''
+  if (promptsSvc) {
+    systemPrompt = await promptsSvc.getSystemPrompt('image-extraction')
+  }
+  if (!systemPrompt) {
+    systemPrompt = 'Eres un asistente que describe imágenes de forma detallada y estructurada para una base de conocimiento. Describe todo el contenido visible: texto, diagramas, tablas, gráficos. Si hay texto, transcríbelo exactamente. Responde en español.'
+  }
+
   // Try to use LLM gateway for vision
   const result = await registry.callHook('llm:chat', {
     task: 'knowledge-image-extract',
-    system: 'Eres un asistente que describe imágenes de forma detallada y estructurada para una base de conocimiento. Describe todo el contenido visible: texto, diagramas, tablas, gráficos. Si hay texto, transcríbelo exactamente. Responde en español.',
+    system: systemPrompt,
     messages: [{
       role: 'user' as const,
       content: [

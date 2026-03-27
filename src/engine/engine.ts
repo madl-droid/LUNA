@@ -225,7 +225,7 @@ async function processMessageInner(
 
     // ═══ PHASE 2: Evaluate Situation ═══
     const p2Start = Date.now()
-    let evaluation = await phase2Evaluate(ctx, engineConfig)
+    let evaluation = await phase2Evaluate(ctx, engineConfig, undefined, registry)
     let phase2DurationMs = Date.now() - p2Start
 
     logger.info({
@@ -306,7 +306,7 @@ async function processMessageInner(
       }, 'Replanning — re-evaluating after failed steps')
 
       const replanP2Start = Date.now()
-      evaluation = await phase2Evaluate(ctx, engineConfig, replanCtx)
+      evaluation = await phase2Evaluate(ctx, engineConfig, replanCtx, registry)
       phase2DurationMs += Date.now() - replanP2Start
 
       execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)

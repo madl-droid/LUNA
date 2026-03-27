@@ -3,6 +3,7 @@
 // NO recibe identity.md ni guardrails.md (esos van en fase 4).
 
 import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
 import type {
   ContextBundle,
   ExecutionStep,
@@ -26,6 +27,7 @@ export async function runSubagent(
   step: ExecutionStep,
   toolDefs: ToolDefinition[],
   config: EngineConfig,
+  registry?: Registry,
 ): Promise<SubagentResult> {
   const startMs = Date.now()
 
@@ -45,7 +47,7 @@ export async function runSubagent(
   }, 'Subagent starting')
 
   // Build initial prompt
-  const { system, userMessage, tools } = buildSubagentPrompt(ctx, step, toolDefs)
+  const { system, userMessage, tools } = await buildSubagentPrompt(ctx, step, toolDefs, registry)
 
   let iterations = 0
   let tokensUsed = 0
