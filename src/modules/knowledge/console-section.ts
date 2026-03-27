@@ -53,8 +53,26 @@ export function renderKnowledgeSection(
   items: KnowledgeItem[],
   categories: KnowledgeCategory[],
   lang: Lang,
+  config?: { faqSheetUrl?: string; productsSheetUrl?: string },
 ): string {
   let html = ''
+
+  // ── Fixed knowledge bases (FAQ + Productos y servicios) ──
+  const faqUrl = config?.faqSheetUrl ?? ''
+  const productsUrl = config?.productsSheetUrl ?? ''
+  html += `<div class="panel" style="margin-bottom:20px"><div class="panel-body">
+    <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${lang === 'es' ? 'Bases fijas' : 'Fixed bases'}</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">FAQ — Google Sheet</label>
+        <input type="text" class="wizard-input" name="KNOWLEDGE_FAQ_SHEET_URL" value="${esc(faqUrl)}" data-original="${esc(faqUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..." style="font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Productos y servicios' : 'Products & services'} — Google Sheet</label>
+        <input type="text" class="wizard-input" name="KNOWLEDGE_PRODUCTS_SHEET_URL" value="${esc(productsUrl)}" data-original="${esc(productsUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..." style="font-size:13px">
+      </div>
+    </div>
+  </div></div>`
 
   // ── Header with Add button ──
   html += `<div class="ki-header">

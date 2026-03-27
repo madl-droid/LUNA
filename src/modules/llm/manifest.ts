@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
-import { numEnvMin, floatEnvMin } from '../../kernel/config-helpers.js'
+import { numEnvMin, floatEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { LLMGateway } from './llm-gateway.js'
 import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget } from './types.js'
 
@@ -32,6 +32,10 @@ const manifest: ModuleManifest = {
     LLM_VISION_API_KEY: z.string().default(''),
     LLM_STT_API_KEY: z.string().default(''),
     LLM_IMAGE_GEN_API_KEY: z.string().default(''),
+
+    // Knowledge embeddings API key override
+    KNOWLEDGE_EMBEDDING_API_SEPARATE: boolEnv(false),
+    KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(''),
 
     // Circuit breaker
     LLM_CB_FAILURE_THRESHOLD: numEnvMin(1, 5),
@@ -90,6 +94,10 @@ const manifest: ModuleManifest = {
       { key: 'LLM_STT_API_KEY', type: 'secret', label: { es: 'API Key STT (override)', en: 'STT API Key (override)' },
         info: { es: 'Usar API key diferente para Speech-to-Text', en: 'Use different API key for Speech-to-Text' } },
       { key: 'LLM_IMAGE_GEN_API_KEY', type: 'secret', label: { es: 'API Key Image Gen (override)', en: 'Image Gen API Key (override)' } },
+      { key: 'KNOWLEDGE_EMBEDDING_API_SEPARATE', type: 'boolean', label: { es: 'API Key de embeddings diferente', en: 'Separate embedding API Key' },
+        info: { es: 'Si se activa, usa una API key diferente para embeddings de conocimiento. Si no, usa la misma de Google AI.', en: 'If enabled, use a separate API key for knowledge embeddings. Otherwise uses the Google AI key.' } },
+      { key: 'KNOWLEDGE_GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Embeddings (override)', en: 'Embeddings API Key (override)' },
+        info: { es: 'API key de Google AI para embeddings de conocimiento (text-embedding-004)', en: 'Google AI API key for knowledge embeddings (text-embedding-004)' } },
 
       // Circuit breaker
       { key: 'LLM_CB_FAILURE_THRESHOLD', type: 'number', label: { es: 'Fallos para circuit breaker', en: 'Failures for circuit breaker' },

@@ -950,16 +950,18 @@ const manifest: ModuleManifest = {
 
   configSchema: z.object({
     KNOWLEDGE_DIR: z.string().default('instance/knowledge'),
-    KNOWLEDGE_MAX_FILE_SIZE_MB: numEnvMin(1, 25),
-    KNOWLEDGE_CORE_MAX_CHUNKS: numEnvMin(1, 100),
+    KNOWLEDGE_FAQ_SHEET_URL: z.string().default(''),
+    KNOWLEDGE_PRODUCTS_SHEET_URL: z.string().default(''),
+    KNOWLEDGE_MAX_FILE_SIZE_MB: numEnvMin(1, 50),
+    KNOWLEDGE_CORE_MAX_CHUNKS: numEnvMin(1, 200),
     KNOWLEDGE_CACHE_TTL_MIN: numEnvMin(1, 30),
-    KNOWLEDGE_AUTO_DOWNGRADE_DAYS: numEnvMin(1, 30),
+    KNOWLEDGE_AUTO_DOWNGRADE_DAYS: numEnvMin(1, 60),
     KNOWLEDGE_FAQ_SOURCE: z.string().default('manual'),
     KNOWLEDGE_SYNC_ENABLED: boolEnv(true),
     KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(''),
     KNOWLEDGE_EMBEDDING_ENABLED: boolEnv(true),
-    KNOWLEDGE_VECTORIZE_CONCURRENCY: numEnvMin(1, 1),
-    KNOWLEDGE_MAX_WEB_SOURCES: numEnvMin(1, 3),
+    KNOWLEDGE_VECTORIZE_CONCURRENCY: numEnvMin(1, 2),
+    KNOWLEDGE_MAX_WEB_SOURCES: numEnvMin(1, 5),
     KNOWLEDGE_MAX_API_CONNECTORS: numEnvMin(1, 10),
     KNOWLEDGE_MAX_CATEGORIES: numEnvMin(1, 25),
     KNOWLEDGE_MAX_CORE_DOCS: numEnvMin(1, 3),
@@ -975,70 +977,50 @@ const manifest: ModuleManifest = {
     group: 'data',
     icon: '&#128218;',
     fields: [
+      // ── Fixed knowledge bases ──
+      { key: '_divider_bases', type: 'divider', label: { es: 'Bases de conocimiento', en: 'Knowledge bases' } },
       {
-        key: 'KNOWLEDGE_DIR',
+        key: 'KNOWLEDGE_FAQ_SHEET_URL',
         type: 'text',
-        label: { es: 'Directorio de conocimiento', en: 'Knowledge directory' },
-        info: { es: 'Ruta relativa donde se guardan los archivos', en: 'Relative path for stored files' },
+        label: { es: 'FAQ — Google Sheet', en: 'FAQ — Google Sheet' },
+        info: { es: 'URL del Google Sheet con preguntas frecuentes. Luna sincronizara automaticamente.', en: 'Google Sheet URL with FAQs. Luna will sync automatically.' },
+        placeholder: 'https://docs.google.com/spreadsheets/d/...',
       },
+      {
+        key: 'KNOWLEDGE_PRODUCTS_SHEET_URL',
+        type: 'text',
+        label: { es: 'Productos y servicios — Google Sheet', en: 'Products & services — Google Sheet' },
+        info: { es: 'URL del Google Sheet con informacion de productos y servicios.', en: 'Google Sheet URL with products and services information.' },
+        placeholder: 'https://docs.google.com/spreadsheets/d/...',
+      },
+      // ── Advanced settings ──
+      { key: '_divider_advanced', type: 'divider', label: { es: 'Avanzado', en: 'Advanced' } },
       {
         key: 'KNOWLEDGE_MAX_FILE_SIZE_MB',
         type: 'number',
-        label: { es: 'Tamaño máximo de archivo (MB)', en: 'Max file size (MB)' },
-        info: { es: 'Tamaño máximo permitido para documentos subidos', en: 'Max allowed size for uploaded documents' },
+        label: { es: 'Tamaño maximo de archivo (MB)', en: 'Max file size (MB)' },
+        info: { es: 'Tamaño maximo permitido para documentos subidos', en: 'Max allowed size for uploaded documents' },
+        width: 'half',
       },
       {
         key: 'KNOWLEDGE_MAX_CORE_DOCS',
         type: 'number',
-        label: { es: 'Máx. documentos core', en: 'Max core documents' },
-        info: { es: 'Máximo de documentos marcados como core (inyectados siempre)', en: 'Max documents marked as core (always injected)' },
-      },
-      {
-        key: 'KNOWLEDGE_CACHE_TTL_MIN',
-        type: 'number',
-        label: { es: 'TTL cache Redis (minutos)', en: 'Redis cache TTL (minutes)' },
-        info: { es: 'Duración del caché para resultados de búsqueda', en: 'Cache duration for knowledge search results' },
+        label: { es: 'Max. documentos core', en: 'Max core documents' },
+        info: { es: 'Maximo de documentos marcados como core (inyectados siempre en cada conversacion)', en: 'Max documents marked as core (always injected in every conversation)' },
+        width: 'half',
       },
       {
         key: 'KNOWLEDGE_AUTO_DOWNGRADE_DAYS',
         type: 'number',
-        label: { es: 'Auto-downgrade: días sin uso', en: 'Auto-downgrade: days without use' },
-        info: {
-          es: 'Docs core sin hits en este período pierden el flag core automáticamente',
-          en: 'Core docs without hits in this period lose core flag automatically',
-        },
-      },
-      {
-        key: 'KNOWLEDGE_FAQ_SOURCE',
-        type: 'select',
-        label: { es: 'Fuente de FAQs', en: 'FAQ source' },
-        info: { es: 'Origen de datos para FAQs (manual, archivo o URL)', en: 'Data source for FAQs (manual, file path, or URL)' },
-        options: [
-          { value: 'manual', label: 'Manual (crear desde console)' },
-          { value: 'sheets', label: 'Google Sheets (sync)' },
-          { value: 'file', label: 'Archivo (Excel/CSV upload)' },
-        ],
+        label: { es: 'Auto-downgrade (dias)', en: 'Auto-downgrade (days)' },
+        info: { es: 'Documentos core sin consultas en este periodo pierden el flag core automaticamente', en: 'Core docs without hits in this period lose core flag automatically' },
+        width: 'half',
       },
       {
         key: 'KNOWLEDGE_SYNC_ENABLED',
         type: 'boolean',
-        label: { es: 'Sincronización habilitada', en: 'Sync enabled' },
-        info: { es: 'Habilita/deshabilita sync automático con fuentes externas', en: 'Enable/disable automatic sync with external sources' },
-      },
-      {
-        key: 'KNOWLEDGE_EMBEDDING_ENABLED',
-        type: 'boolean',
-        label: { es: 'Embeddings habilitados', en: 'Embeddings enabled' },
-        info: {
-          es: 'Habilita búsqueda semántica via Google text-embedding-004',
-          en: 'Enable semantic search via Google text-embedding-004',
-        },
-      },
-      {
-        key: 'KNOWLEDGE_GOOGLE_AI_API_KEY',
-        type: 'text',
-        label: { es: 'Google AI API Key', en: 'Google AI API Key' },
-        info: { es: 'Para embeddings (text-embedding-004)', en: 'For embeddings (text-embedding-004)' },
+        label: { es: 'Sincronizacion automatica', en: 'Auto sync' },
+        info: { es: 'Sincroniza fuentes externas (Drive, URLs) automaticamente', en: 'Auto-sync external sources (Drive, URLs)' },
       },
     ],
     apiRoutes: createApiRoutes(),
@@ -1106,7 +1088,11 @@ const manifest: ModuleManifest = {
     registry.provide('knowledge:renderSection', async (lang: 'es' | 'en') => {
       const items = await itemManager!.list()
       const categories = await pgStore!.listCategories()
-      return renderKnowledgeSection(items, categories, lang)
+      const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string }>('knowledge')
+      return renderKnowledgeSection(items, categories, lang, {
+        faqSheetUrl: cfg?.KNOWLEDGE_FAQ_SHEET_URL ?? '',
+        productsSheetUrl: cfg?.KNOWLEDGE_PRODUCTS_SHEET_URL ?? '',
+      })
     })
 
     // Start sync sources
