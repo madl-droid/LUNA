@@ -1190,6 +1190,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } else if (agenteSubpage === 'identity') {
           sectionData.agenteContent = renderSection('identity', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'voice') {
+          sectionData.agenteContent = renderSection('voice-tts', sectionData) ??
+            `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo TTS no disponible.' : 'TTS module not available.'}</p></div></div>`
         }
       }
 
@@ -2281,6 +2284,67 @@ export function createApiRoutes(): ApiRoute[] {
           jsonResponse(res, 200, { items })
         } catch (err) {
           logger.error({ err }, 'search-index failed')
+          jsonResponse(res, 500, { error: 'Internal server error' })
+        }
+      },
+    },
+
+    // POST /console/api/console/tts-preview — generate TTS preview audio
+    {
+      method: 'POST',
+      path: 'tts-preview',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{
+            voiceName: string
+            languageCode: string
+            speakingRate: number
+            pitch: number
+            text: string
+          }>(req)
+          if (!body?.voiceName || !body?.text) {
+            jsonResponse(res, 400, { error: 'voiceName and text required' })
+            return
+          }
+          // Get TTS API key from config store
+          const config = await configStore.getAll()
+          const apiKey = config['TTS_GOOGLE_API_KEY']
+          if (!apiKey) {
+            jsonResponse(res, 400, { error: 'TTS API key not configured' })
+            return
+          }
+          const ttsResponse = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              input: { text: body.text.substring(0, 500) },
+              voice: {
+                languageCode: body.languageCode || 'es-US',
+                name: body.voiceName,
+              },
+              audioConfig: {
+                audioEncoding: 'MP3',
+                speakingRate: body.speakingRate || 1.0,
+                pitch: body.pitch || 0.0,
+                sampleRateHertz: 24000,
+              },
+            }),
+          })
+          if (!ttsResponse.ok) {
+            const errText = await ttsResponse.text()
+            logger.error({ status: ttsResponse.status, body: errText }, 'TTS preview API error')
+            jsonResponse(res, 502, { error: 'Google TTS API error' })
+            return
+          }
+          const data = await ttsResponse.json() as { audioContent: string }
+          const audioBuffer = Buffer.from(data.audioContent, 'base64')
+          res.writeHead(200, {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': String(audioBuffer.length),
+          })
+          res.end(audioBuffer)
+        } catch (err) {
+          logger.error({ err }, 'TTS preview failed')
           jsonResponse(res, 500, { error: 'Internal server error' })
         }
       },

@@ -6,25 +6,29 @@ type Lang = 'es' | 'en'
 
 const labels: Record<Lang, Record<string, string>> = {
   es: {
-    title: 'Tareas Programadas',
-    desc: 'Crea tareas que el agente ejecuta automaticamente. Configura horarios, destinatarios y acciones.',
+    title: 'Tareas Automaticas',
+    desc: 'Configura tareas que el agente ejecuta automaticamente. Define cuando se activan, a quien van dirigidas y que acciones realizar.',
     newTask: 'Nueva tarea',
-    name: 'Nombre',
+    name: 'Nombre de la tarea',
+    namePlaceholder: 'Ej: Seguimiento semanal, Reporte diario',
     prompt: 'Instruccion para el agente',
-    triggerType: 'Activacion',
-    triggerCron: 'Horario (cron)',
-    triggerEvent: 'Evento del sistema',
+    promptPlaceholder: 'Describe que debe hacer el agente cuando se ejecute esta tarea...',
+    triggerType: 'Tipo de activacion',
+    triggerCron: 'Programada (horario)',
+    triggerEvent: 'Por evento',
     triggerManual: 'Solo manual',
-    cron: 'Expresion cron',
-    cronHelp: 'Ej: */30 * * * * (cada 30 min), 0 9 * * 1-5 (L-V 9am), 0 0 * * * (medianoche)',
-    event: 'Evento',
-    eventHelp: 'Se ejecuta cada vez que ocurre el evento seleccionado',
+    cron: 'Horario (cron)',
+    cronHelp: 'Ej: */30 * * * * (cada 30 min) · 0 9 * * 1-5 (L-V 9am) · 0 0 * * * (medianoche)',
+    event: 'Evento del sistema',
+    eventHelp: 'La tarea se ejecuta cada vez que ocurre este evento',
     recipient: 'Destinatario',
-    recipientNone: 'Sin destinatario',
+    recipientNone: 'Sin destinatario (solo ejecutar)',
     recipientGroup: 'Grupo completo',
     recipientUser: 'Usuario especifico',
     group: 'Grupo',
+    selectGroup: 'Selecciona un grupo...',
     user: 'Usuario',
+    selectUser: 'Selecciona un usuario...',
     actions: 'Acciones adicionales',
     actionAdd: 'Agregar accion',
     actionTool: 'Ejecutar herramienta',
@@ -36,47 +40,57 @@ const labels: Record<Lang, Record<string, string>> = {
     actionHookName: 'Nombre del hook',
     actionRemove: 'Quitar',
     actionPlaceholder: 'Usa {{result}} para insertar el resultado del agente',
-    enabled: 'Activa',
-    save: 'Guardar',
+    enabled: 'Tarea activa',
+    save: 'Guardar tarea',
     cancel: 'Cancelar',
-    run: 'Ejecutar ahora',
+    run: 'Ejecutar',
     edit: 'Editar',
     delete: 'Eliminar',
-    deleteConfirm: 'Eliminar esta tarea?',
-    noTasks: 'No hay tareas programadas. Crea una para que el agente la ejecute automaticamente.',
+    deleteConfirm: 'Eliminar esta tarea? Esta accion no se puede deshacer.',
+    noTasks: 'No hay tareas configuradas. Crea una nueva tarea para que el agente la ejecute automaticamente.',
     lastRun: 'Ultima ejecucion',
-    never: 'Nunca',
-    success: 'OK',
+    never: 'Nunca ejecutada',
+    success: 'Exitosa',
     error: 'Error',
-    result: 'Resultado',
+    result: 'Resultado de ejecucion',
     close: 'Cerrar',
     allUsers: 'Todos',
-    eventContactNew: 'Nuevo contacto',
+    eventContactNew: 'Nuevo contacto registrado',
     eventContactStatus: 'Cambio de estado de contacto',
-    eventMessageIncoming: 'Mensaje entrante',
+    eventMessageIncoming: 'Mensaje entrante recibido',
     eventModuleActivated: 'Modulo activado',
     eventModuleDeactivated: 'Modulo desactivado',
+    taskCount: 'tareas',
+    activeCount: 'activas',
+    sectionTrigger: 'Activacion',
+    sectionRecipient: 'Destinatario',
+    sectionActions: 'Acciones',
+    noGroups: 'No hay grupos de usuarios configurados',
   },
   en: {
-    title: 'Scheduled Tasks',
-    desc: 'Create tasks the agent runs automatically. Configure schedules, recipients, and actions.',
+    title: 'Automated Tasks',
+    desc: 'Configure tasks the agent runs automatically. Define when they trigger, who they target, and what actions to perform.',
     newTask: 'New task',
-    name: 'Name',
+    name: 'Task name',
+    namePlaceholder: 'E.g.: Weekly follow-up, Daily report',
     prompt: 'Instruction for the agent',
-    triggerType: 'Trigger',
-    triggerCron: 'Schedule (cron)',
-    triggerEvent: 'System event',
+    promptPlaceholder: 'Describe what the agent should do when this task runs...',
+    triggerType: 'Trigger type',
+    triggerCron: 'Scheduled (cron)',
+    triggerEvent: 'Event-based',
     triggerManual: 'Manual only',
-    cron: 'Cron expression',
-    cronHelp: 'E.g.: */30 * * * * (every 30 min), 0 9 * * 1-5 (Mon-Fri 9am), 0 0 * * * (midnight)',
-    event: 'Event',
-    eventHelp: 'Runs every time the selected event occurs',
+    cron: 'Schedule (cron)',
+    cronHelp: 'E.g.: */30 * * * * (every 30 min) · 0 9 * * 1-5 (Mon-Fri 9am) · 0 0 * * * (midnight)',
+    event: 'System event',
+    eventHelp: 'The task runs every time this event occurs',
     recipient: 'Recipient',
-    recipientNone: 'No recipient',
+    recipientNone: 'No recipient (execute only)',
     recipientGroup: 'Entire group',
     recipientUser: 'Specific user',
     group: 'Group',
+    selectGroup: 'Select a group...',
     user: 'User',
+    selectUser: 'Select a user...',
     actions: 'Additional actions',
     actionAdd: 'Add action',
     actionTool: 'Run tool',
@@ -88,26 +102,32 @@ const labels: Record<Lang, Record<string, string>> = {
     actionHookName: 'Hook name',
     actionRemove: 'Remove',
     actionPlaceholder: 'Use {{result}} to insert the agent\'s result',
-    enabled: 'Active',
-    save: 'Save',
+    enabled: 'Task active',
+    save: 'Save task',
     cancel: 'Cancel',
-    run: 'Run now',
+    run: 'Run',
     edit: 'Edit',
     delete: 'Delete',
-    deleteConfirm: 'Delete this task?',
-    noTasks: 'No scheduled tasks. Create one for the agent to execute automatically.',
+    deleteConfirm: 'Delete this task? This cannot be undone.',
+    noTasks: 'No tasks configured. Create a new task for the agent to execute automatically.',
     lastRun: 'Last run',
-    never: 'Never',
-    success: 'OK',
+    never: 'Never run',
+    success: 'Success',
     error: 'Error',
-    result: 'Result',
+    result: 'Execution result',
     close: 'Close',
     allUsers: 'All',
-    eventContactNew: 'New contact',
+    eventContactNew: 'New contact registered',
     eventContactStatus: 'Contact status change',
-    eventMessageIncoming: 'Incoming message',
+    eventMessageIncoming: 'Incoming message received',
     eventModuleActivated: 'Module activated',
     eventModuleDeactivated: 'Module deactivated',
+    taskCount: 'tasks',
+    activeCount: 'active',
+    sectionTrigger: 'Trigger',
+    sectionRecipient: 'Recipient',
+    sectionActions: 'Actions',
+    noGroups: 'No user groups configured',
   },
 }
 
@@ -125,24 +145,16 @@ function statusBadge(task: ScheduledTask, lang: Lang): string {
   return `<span class="panel-badge" style="background:rgba(255,59,48,0.12);color:var(--error)">${l('error', lang)}</span>`
 }
 
-function formatDate(iso: string | null): string {
+function formatDate(iso: string | null, lang: Lang): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
+  return d.toLocaleString(lang === 'es' ? 'es-CL' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-function triggerLabel(task: ScheduledTask, lang: Lang): string {
-  if (task.trigger_type === 'event') return `&#9889; ${task.trigger_event ?? ''}`
-  if (task.trigger_type === 'manual') return `&#9998; ${l('triggerManual', lang)}`
-  return `<code style="background:var(--bg-secondary);padding:1px 6px;border-radius:4px;font-size:11px">${esc(task.cron)}</code>`
-}
-
-function recipientLabel(task: ScheduledTask, _lang: Lang): string {
-  const r = task.recipient
-  if (!r || r.type === 'none') return ''
-  if (r.type === 'group') return `<span style="margin-left:8px">&#128101; ${esc(r.group ?? '')}</span>`
-  if (r.type === 'user') return `<span style="margin-left:8px">&#128100; ${esc(r.group ?? '')}/${esc(r.userId ?? '')}</span>`
-  return ''
+function triggerBadge(task: ScheduledTask, lang: Lang): string {
+  if (task.trigger_type === 'event') return `<span class="panel-badge" style="background:rgba(255,149,0,0.12);color:#ff9500">&#9889; ${esc(task.trigger_event ?? '')}</span>`
+  if (task.trigger_type === 'manual') return `<span class="panel-badge" style="background:rgba(88,86,214,0.1);color:#5856d6">${l('triggerManual', lang)}</span>`
+  return `<span class="panel-badge" style="background:rgba(0,122,255,0.1);color:#007aff"><code style="font-size:11px">${esc(task.cron)}</code></span>`
 }
 
 export function renderTasksSection(
@@ -151,32 +163,44 @@ export function renderTasksSection(
   userGroups: UserGroupInfo[] = [],
   availableTools: Array<{ name: string; displayName: string }> = [],
 ): string {
-  const taskRows = tasks.length === 0
-    ? `<div style="padding:24px;text-align:center;color:var(--text-tertiary);font-size:14px">${l('noTasks', lang)}</div>`
+  const activeTasks = tasks.filter(t => t.enabled).length
+
+  // --- Task cards ---
+  const taskCards = tasks.length === 0
+    ? `<div style="padding:40px 20px;text-align:center">
+        <div style="font-size:32px;margin-bottom:8px">&#128197;</div>
+        <div style="color:var(--text-tertiary);font-size:14px">${l('noTasks', lang)}</div>
+      </div>`
     : tasks.map(t => `
-      <div class="task-row" data-task-id="${esc(t.id)}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border-light)">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span style="font-weight:600;font-size:14px">${esc(t.name)}</span>
-            ${statusBadge(t, lang)}
-            ${!t.enabled ? '<span class="panel-badge badge-soon">OFF</span>' : ''}
-            ${t.actions.length > 0 ? `<span class="panel-badge" style="background:rgba(88,86,214,0.1);color:#5856d6;font-size:10px">${t.actions.length} action${t.actions.length > 1 ? 's' : ''}</span>` : ''}
+      <div class="st-task-card" data-task-id="${esc(t.id)}" style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:10px;padding:14px 16px;transition:border-color 0.15s ease${!t.enabled ? ';opacity:0.55' : ''}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+              <span style="font-weight:600;font-size:14px">${esc(t.name)}</span>
+              ${statusBadge(t, lang)}
+              ${!t.enabled ? '<span class="panel-badge badge-soon">OFF</span>' : ''}
+            </div>
+            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              ${triggerBadge(t, lang)}
+              ${t.recipient?.type === 'group' ? `<span style="color:var(--text-secondary)">&#128101; ${esc(t.recipient.group ?? '')}</span>` : ''}
+              ${t.recipient?.type === 'user' ? `<span style="color:var(--text-secondary)">&#128100; ${esc(t.recipient.userId ?? '')}</span>` : ''}
+              ${t.actions.length > 0 ? `<span class="panel-badge" style="background:rgba(88,86,214,0.1);color:#5856d6;font-size:10px">${t.actions.length} action${t.actions.length > 1 ? 's' : ''}</span>` : ''}
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:450px" title="${esc(t.prompt)}">${esc(t.prompt)}</div>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${l('lastRun', lang)}: ${formatDate(t.last_run_at, lang)}</div>
           </div>
-          <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-            ${triggerLabel(t, lang)}
-            ${recipientLabel(t, lang)}
-            <span style="margin-left:8px">${l('lastRun', lang)}: ${formatDate(t.last_run_at)}</span>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button type="button" class="wa-btn" onclick="stRunTask('${esc(t.id)}')" title="${l('run', lang)}"
+              style="font-size:12px;padding:5px 10px;border-radius:6px">&#9654;</button>
+            <button type="button" class="wa-btn" onclick="stEditTask('${esc(t.id)}')"
+              style="font-size:12px;padding:5px 10px;border-radius:6px">${l('edit', lang)}</button>
+            <button type="button" class="wa-btn" onclick="stDeleteTask('${esc(t.id)}')"
+              style="font-size:12px;padding:5px 10px;border-radius:6px;color:var(--error)">${l('delete', lang)}</button>
           </div>
-          <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px" title="${esc(t.prompt)}">${esc(t.prompt)}</div>
-        </div>
-        <div style="display:flex;gap:6px;margin-left:12px;flex-shrink:0">
-          <button type="button" class="wa-btn" onclick="stRunTask('${esc(t.id)}')" style="font-size:12px;padding:4px 10px" title="${l('run', lang)}">&#9654;</button>
-          <button type="button" class="wa-btn" onclick="stEditTask('${esc(t.id)}')" style="font-size:12px;padding:4px 10px">${l('edit', lang)}</button>
-          <button type="button" class="wa-btn" onclick="stDeleteTask('${esc(t.id)}')" style="font-size:12px;padding:4px 10px;color:var(--error)">${l('delete', lang)}</button>
         </div>
       </div>`).join('')
 
-  // Build event options
+  // --- Event options ---
   const eventOptions = [
     { value: 'contact:new', label: l('eventContactNew', lang) },
     { value: 'contact:status_changed', label: l('eventContactStatus', lang) },
@@ -186,128 +210,126 @@ export function renderTasksSection(
   ]
   const eventOptionsHtml = eventOptions.map(e => `<option value="${esc(e.value)}">${esc(e.label)}</option>`).join('')
 
-  // Build group options
-  const groupOptionsHtml = userGroups.map(g => `<option value="${esc(g.listType)}">${esc(g.displayName || g.listType)}</option>`).join('')
+  // --- Group options ---
+  const activeGroups = userGroups.filter(g => g.isEnabled)
+  const groupOptionsHtml = activeGroups.length > 0
+    ? `<option value="" disabled selected>${l('selectGroup', lang)}</option>` + activeGroups.map(g => `<option value="${esc(g.listType)}">${esc(g.displayName || g.listType)} (${g.users.length})</option>`).join('')
+    : `<option value="" disabled>${l('noGroups', lang)}</option>`
 
-  // Build tool options
-  const fieldStyle = 'margin-bottom:10px'
-  const labelStyle = 'font-size:13px;font-weight:500;display:block;margin-bottom:4px'
-  const inputStyle = 'width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px'
-  const selectStyle = `${inputStyle};background:var(--bg-primary)`
+  const hasUsersInGroups = activeGroups.some(g => g.users.length > 0)
 
   return `
-    <div class="panel">
-      <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${l('title', lang)}</span>
-        <span class="panel-chevron">&#9660;</span>
+    <!-- Header with counter and new task button -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;color:var(--text-tertiary)">${tasks.length} ${l('taskCount', lang)} · ${activeTasks} ${l('activeCount', lang)}</span>
       </div>
-      <div class="panel-body">
-        <div class="panel-info">${l('desc', lang)}</div>
+      <button type="button" class="wa-btn wa-btn-connect" onclick="stShowForm()" style="font-size:13px;padding:7px 16px;border-radius:8px">+ ${l('newTask', lang)}</button>
+    </div>
 
-        <div style="padding:8px 0">
-          <button type="button" class="wa-btn wa-btn-connect" onclick="stShowForm()" style="font-size:13px;padding:6px 14px">+ ${l('newTask', lang)}</button>
-        </div>
-
-        <!-- Create/Edit form -->
-        <div id="st-form" style="display:none;padding:16px;background:var(--bg-secondary);border-radius:8px;margin:8px 0">
+    <!-- Create/Edit form -->
+    <div id="st-form" style="display:none;margin-bottom:16px">
+      <div class="panel">
+        <div class="panel-body" style="padding:20px">
           <input type="hidden" id="st-edit-id" value="">
 
-          <!-- Name -->
-          <div class="field" style="${fieldStyle}">
-            <label style="${labelStyle}">${l('name', lang)}</label>
-            <input type="text" id="st-name" style="${inputStyle}" placeholder="${l('name', lang)}">
+          <!-- Row 1: Name + Enabled toggle -->
+          <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:16px">
+            <div style="flex:1">
+              <label style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);display:block;margin-bottom:4px">${l('name', lang)}</label>
+              <input type="text" id="st-name" placeholder="${l('namePlaceholder', lang)}"
+                style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding-top:20px">
+              <label class="toggle"><input type="checkbox" id="st-enabled" checked><span class="toggle-slider"></span></label>
+              <span style="font-size:12px;font-weight:500;color:var(--text-secondary)">${l('enabled', lang)}</span>
+            </div>
           </div>
 
           <!-- Prompt -->
-          <div class="field" style="${fieldStyle}">
-            <label style="${labelStyle}">${l('prompt', lang)}</label>
-            <textarea id="st-prompt" rows="3" style="${inputStyle};resize:vertical" placeholder="${l('prompt', lang)}"></textarea>
+          <div style="margin-bottom:16px">
+            <label style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);display:block;margin-bottom:4px">${l('prompt', lang)}</label>
+            <textarea id="st-prompt" rows="3" placeholder="${l('promptPlaceholder', lang)}"
+              style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;resize:vertical;font-family:inherit"></textarea>
           </div>
 
-          <!-- Trigger type -->
-          <div class="field" style="${fieldStyle}">
-            <label style="${labelStyle}">${l('triggerType', lang)}</label>
-            <select id="st-trigger-type" style="${selectStyle}" onchange="stTriggerChanged()">
-              <option value="cron">${l('triggerCron', lang)}</option>
-              <option value="event">${l('triggerEvent', lang)}</option>
-              <option value="manual">${l('triggerManual', lang)}</option>
-            </select>
+          <!-- 3-column grid: Trigger | Recipient | Actions -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+
+            <!-- Trigger -->
+            <div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">${l('sectionTrigger', lang)}</div>
+              <select id="st-trigger-type" onchange="stTriggerChanged()"
+                style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary);margin-bottom:8px">
+                <option value="cron">${l('triggerCron', lang)}</option>
+                <option value="event">${l('triggerEvent', lang)}</option>
+                <option value="manual">${l('triggerManual', lang)}</option>
+              </select>
+              <div id="st-cron-row">
+                <input type="text" id="st-cron" placeholder="*/30 * * * *"
+                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;background:var(--bg-primary)">
+                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${l('cronHelp', lang)}</div>
+              </div>
+              <div id="st-event-row" style="display:none">
+                <select id="st-trigger-event"
+                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary)">
+                  ${eventOptionsHtml}
+                </select>
+                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${l('eventHelp', lang)}</div>
+              </div>
+            </div>
+
+            <!-- Recipient -->
+            <div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">${l('sectionRecipient', lang)}</div>
+              <select id="st-recipient-type" onchange="stRecipientChanged()"
+                style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary);margin-bottom:8px">
+                <option value="none">${l('recipientNone', lang)}</option>
+                <option value="group">${l('recipientGroup', lang)}</option>
+                ${hasUsersInGroups ? `<option value="user">${l('recipientUser', lang)}</option>` : ''}
+              </select>
+              <div id="st-group-row" style="display:none">
+                <select id="st-recipient-group" onchange="stGroupChanged()"
+                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary);margin-bottom:8px">
+                  ${groupOptionsHtml}
+                </select>
+              </div>
+              <div id="st-user-row" style="display:none">
+                <select id="st-recipient-user"
+                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary)">
+                </select>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">${l('sectionActions', lang)}</div>
+              <div id="st-actions-list" style="margin-bottom:6px"></div>
+              <button type="button" class="wa-btn" onclick="stAddAction()" style="font-size:11px;padding:4px 10px;border-radius:6px">+ ${l('actionAdd', lang)}</button>
+              <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${l('actionPlaceholder', lang)}</div>
+            </div>
           </div>
 
-          <!-- Cron (shown when trigger=cron) -->
-          <div id="st-cron-row" class="field" style="${fieldStyle}">
-            <label style="${labelStyle}">${l('cron', lang)}</label>
-            <input type="text" id="st-cron" style="${inputStyle};font-family:monospace" placeholder="*/30 * * * *">
-            <span style="font-size:11px;color:var(--text-tertiary)">${l('cronHelp', lang)}</span>
-          </div>
-
-          <!-- Event (shown when trigger=event) -->
-          <div id="st-event-row" class="field" style="${fieldStyle};display:none">
-            <label style="${labelStyle}">${l('event', lang)}</label>
-            <select id="st-trigger-event" style="${selectStyle}">
-              ${eventOptionsHtml}
-            </select>
-            <span style="font-size:11px;color:var(--text-tertiary)">${l('eventHelp', lang)}</span>
-          </div>
-
-          <!-- Recipient -->
-          <div class="field" style="${fieldStyle}">
-            <label style="${labelStyle}">${l('recipient', lang)}</label>
-            <select id="st-recipient-type" style="${selectStyle}" onchange="stRecipientChanged()">
-              <option value="none">${l('recipientNone', lang)}</option>
-              <option value="group">${l('recipientGroup', lang)}</option>
-              ${userGroups.some(g => g.users.length > 0) ? `<option value="user">${l('recipientUser', lang)}</option>` : ''}
-            </select>
-          </div>
-
-          <!-- Group selector (shown when recipient=group or user) -->
-          <div id="st-group-row" class="field" style="${fieldStyle};display:none">
-            <label style="${labelStyle}">${l('group', lang)}</label>
-            <select id="st-recipient-group" style="${selectStyle}" onchange="stGroupChanged()">
-              ${groupOptionsHtml}
-            </select>
-          </div>
-
-          <!-- User selector (shown when recipient=user) -->
-          <div id="st-user-row" class="field" style="${fieldStyle};display:none">
-            <label style="${labelStyle}">${l('user', lang)}</label>
-            <select id="st-recipient-user" style="${selectStyle}">
-            </select>
-          </div>
-
-          <!-- Actions -->
-          <div class="field" style="${fieldStyle}">
-            <label style="${labelStyle}">${l('actions', lang)}</label>
-            <div id="st-actions-list"></div>
-            <button type="button" class="wa-btn" onclick="stAddAction()" style="font-size:12px;padding:4px 10px;margin-top:4px">+ ${l('actionAdd', lang)}</button>
-            <span style="font-size:11px;color:var(--text-tertiary);margin-left:8px">${l('actionPlaceholder', lang)}</span>
-          </div>
-
-          <!-- Enabled -->
-          <div class="field" style="${fieldStyle};display:flex;align-items:center;gap:8px">
-            <input type="checkbox" id="st-enabled" checked>
-            <label for="st-enabled" style="font-size:13px;font-weight:500">${l('enabled', lang)}</label>
-          </div>
-
-          <div style="display:flex;gap:8px">
-            <button type="button" class="wa-btn wa-btn-connect" onclick="stSaveTask()" style="font-size:13px;padding:6px 14px">${l('save', lang)}</button>
-            <button type="button" class="wa-btn" onclick="stHideForm()" style="font-size:13px;padding:6px 14px">${l('cancel', lang)}</button>
+          <!-- Form buttons -->
+          <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border-light)">
+            <button type="button" class="wa-btn" onclick="stHideForm()" style="font-size:13px;padding:7px 16px;border-radius:8px">${l('cancel', lang)}</button>
+            <button type="button" class="wa-btn wa-btn-connect" onclick="stSaveTask()" style="font-size:13px;padding:7px 16px;border-radius:8px">${l('save', lang)}</button>
           </div>
         </div>
-
-        <!-- Task list -->
-        <div id="st-task-list">${taskRows}</div>
       </div>
     </div>
 
+    <!-- Task list -->
+    <div id="st-task-list" style="display:flex;flex-direction:column;gap:8px">${taskCards}</div>
+
     <!-- Result modal -->
     <div id="st-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--bg-primary);border-radius:12px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto">
+      <div style="background:var(--bg-primary);border-radius:12px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <span style="font-weight:600">${l('result', lang)}</span>
-          <button type="button" onclick="stCloseModal()" style="background:none;border:none;font-size:18px;cursor:pointer">&times;</button>
+          <span style="font-weight:600;font-size:15px">${l('result', lang)}</span>
+          <button type="button" onclick="stCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);padding:4px 8px">&times;</button>
         </div>
-        <pre id="st-modal-content" style="white-space:pre-wrap;font-size:13px;background:var(--bg-secondary);padding:12px;border-radius:8px"></pre>
+        <pre id="st-modal-content" style="white-space:pre-wrap;font-size:13px;background:var(--bg-secondary);padding:14px;border-radius:8px;max-height:60vh;overflow-y:auto"></pre>
       </div>
     </div>
 
@@ -323,7 +345,7 @@ function renderScript(
 (function() {
   const API = '/console/api/scheduled-tasks'
   const L = ${JSON.stringify(labels[lang])}
-  const USER_GROUPS = ${JSON.stringify(userGroups)}
+  const USER_GROUPS = ${JSON.stringify(userGroups.filter(g => g.isEnabled))}
   const TOOLS = ${JSON.stringify(availableTools)}
 
   let actionCounter = 0
@@ -352,9 +374,15 @@ function renderScript(
       for (const u of grp.users) {
         const opt = document.createElement('option')
         opt.value = u.id
-        opt.textContent = u.displayName || u.senderId
+        opt.textContent = (u.displayName || u.senderId) + ' (' + u.channel + ')'
         userSelect.appendChild(opt)
       }
+    } else {
+      var opt = document.createElement('option')
+      opt.value = ''
+      opt.disabled = true
+      opt.textContent = L.selectUser
+      userSelect.appendChild(opt)
     }
   }
 
@@ -364,33 +392,33 @@ function renderScript(
     const idx = actionCounter++
     const div = document.createElement('div')
     div.id = 'st-action-' + idx
-    div.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;padding:8px;background:var(--bg-primary);border-radius:6px;border:1px solid var(--border-light)'
+    div.style.cssText = 'display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;padding:8px;background:var(--bg-primary);border-radius:6px;border:1px solid var(--border-light)'
 
     const type = action ? action.type : 'tool'
-    const toolOpts = TOOLS.map(t => '<option value="' + t.name + '"' + (action && action.toolName === t.name ? ' selected' : '') + '>' + t.name + '</option>').join('')
+    const toolOpts = TOOLS.map(t => '<option value="' + t.name + '"' + (action && action.toolName === t.name ? ' selected' : '') + '>' + (t.displayName || t.name) + '</option>').join('')
 
     div.innerHTML = '<div style="flex:1">' +
-      '<select data-field="type" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;margin-bottom:4px" onchange="stActionTypeChanged(' + idx + ')">' +
+      '<select data-field="type" style="padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;margin-bottom:4px;width:100%;background:var(--bg-primary)" onchange="stActionTypeChanged(' + idx + ')">' +
         '<option value="tool"' + (type === 'tool' ? ' selected' : '') + '>' + L.actionTool + '</option>' +
         '<option value="message"' + (type === 'message' ? ' selected' : '') + '>' + L.actionMessage + '</option>' +
         '<option value="hook"' + (type === 'hook' ? ' selected' : '') + '>' + L.actionHook + '</option>' +
       '</select>' +
       '<div data-panel="tool" style="' + (type === 'tool' ? '' : 'display:none') + '">' +
-        '<select data-field="toolName" style="width:100%;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">' + toolOpts + '</select>' +
+        '<select data-field="toolName" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--bg-primary)">' + toolOpts + '</select>' +
       '</div>' +
       '<div data-panel="message" style="' + (type === 'message' ? '' : 'display:none') + '">' +
-        '<input data-field="messageText" type="text" style="width:100%;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;margin-bottom:4px" placeholder="' + L.actionMsgText + '" value="' + (action && action.messageText ? action.messageText.replace(/"/g, '&quot;') : '') + '">' +
-        '<select data-field="messageChannel" style="width:100%;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">' +
+        '<input data-field="messageText" type="text" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;margin-bottom:4px" placeholder="' + L.actionMsgText + '" value="' + (action && action.messageText ? action.messageText.replace(/"/g, '&quot;') : '') + '">' +
+        '<select data-field="messageChannel" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--bg-primary)">' +
           '<option value="whatsapp">WhatsApp</option>' +
           '<option value="email"' + (action && action.messageChannel === 'email' ? ' selected' : '') + '>Email</option>' +
           '<option value="google-chat"' + (action && action.messageChannel === 'google-chat' ? ' selected' : '') + '>Google Chat</option>' +
         '</select>' +
       '</div>' +
       '<div data-panel="hook" style="' + (type === 'hook' ? '' : 'display:none') + '">' +
-        '<input data-field="hookName" type="text" style="width:100%;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" placeholder="hook:name" value="' + (action && action.hookName ? action.hookName : '') + '">' +
+        '<input data-field="hookName" type="text" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px" placeholder="hook:name" value="' + (action && action.hookName ? action.hookName : '') + '">' +
       '</div>' +
     '</div>' +
-    '<button type="button" onclick="stRemoveAction(' + idx + ')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:14px;padding:2px 6px">&times;</button>'
+    '<button type="button" onclick="stRemoveAction(' + idx + ')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:16px;padding:2px 4px;line-height:1">&times;</button>'
 
     list.appendChild(div)
   }
@@ -443,6 +471,7 @@ function renderScript(
     actionCounter = 0
     stTriggerChanged()
     stRecipientChanged()
+    document.getElementById('st-form').scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   window.stHideForm = function() {
@@ -474,7 +503,7 @@ function renderScript(
       stGroupChanged()
     }
     if (r.userId) {
-      document.getElementById('st-recipient-user').value = r.userId
+      setTimeout(function() { document.getElementById('st-recipient-user').value = r.userId }, 50)
     }
 
     // Actions
@@ -483,6 +512,8 @@ function renderScript(
     if (task.actions && task.actions.length > 0) {
       for (var a of task.actions) stAddAction(a)
     }
+
+    document.getElementById('st-form').scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   window.stSaveTask = async function() {
@@ -491,10 +522,10 @@ function renderScript(
     const recipientType = document.getElementById('st-recipient-type').value
 
     const body = {
-      name: document.getElementById('st-name').value,
-      prompt: document.getElementById('st-prompt').value,
+      name: document.getElementById('st-name').value.trim(),
+      prompt: document.getElementById('st-prompt').value.trim(),
       trigger_type: triggerType,
-      cron: triggerType === 'cron' ? document.getElementById('st-cron').value : '',
+      cron: triggerType === 'cron' ? document.getElementById('st-cron').value.trim() : '',
       trigger_event: triggerType === 'event' ? document.getElementById('st-trigger-event').value : null,
       enabled: document.getElementById('st-enabled').checked,
       recipient: { type: recipientType },
@@ -508,8 +539,14 @@ function renderScript(
       body.recipient.userId = document.getElementById('st-recipient-user').value
     }
 
-    if (!body.name || !body.prompt) return alert('Name and prompt required')
-    if (triggerType === 'cron' && !body.cron) return alert('Cron expression required')
+    if (!body.name || !body.prompt) {
+      alert(${JSON.stringify(lang === 'es' ? 'Nombre e instruccion son obligatorios' : 'Name and instruction are required')})
+      return
+    }
+    if (triggerType === 'cron' && !body.cron) {
+      alert(${JSON.stringify(lang === 'es' ? 'La expresion cron es obligatoria para tareas programadas' : 'Cron expression is required for scheduled tasks')})
+      return
+    }
 
     if (editId) {
       body.id = editId

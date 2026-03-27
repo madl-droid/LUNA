@@ -465,12 +465,14 @@ function renderSidebar(opts: PageOptions): string {
           knowledge: svgIcon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'),
           memory: svgIcon('<path d="M12 2a7 7 0 0 0-5.42 2.57A5.5 5.5 0 0 0 2 9.5a5.5 5.5 0 0 0 3.36 5.07A5 5 0 0 0 9 19h2v3h2v-3h2a5 5 0 0 0 3.64-4.43A5.5 5.5 0 0 0 22 9.5a5.5 5.5 0 0 0-4.58-5.43A7 7 0 0 0 12 2z"/><path d="M12 2v20"/><path d="M5 9.5c2.5 0 4.5.5 7 2"/><path d="M19 9.5c-2.5 0-4.5.5-7 2"/>'),
           identity: svgIcon('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'),
+          voice: svgIcon('<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'),
           advanced: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 14h3"/><path d="M1 9h3"/><path d="M1 14h3"/>'),
         }
         const agenteTabs = [
           { id: 'knowledge', key: 'sec_agente_knowledge' },
           { id: 'memory', key: 'sec_agente_memory' },
           { id: 'identity', key: 'sec_agente_identity' },
+          { id: 'voice', key: 'sec_agente_voice' },
           { id: 'advanced', key: 'sec_agente_advanced' },
         ]
         nav += '<div class="sidebar-submenu">'
@@ -496,7 +498,7 @@ function renderSidebar(opts: PageOptions): string {
           'google-apps': ICONS.google,
         }
         // Modules that belong to the "Agente" page, not herramientas
-        const AGENTE_PAGE_MODULES = new Set(['prompts', 'engine', 'tools', 'memory', 'knowledge'])
+        const AGENTE_PAGE_MODULES = new Set(['prompts', 'engine', 'tools', 'memory', 'knowledge', 'tts'])
         // Build active module lookup from dynModules
         const activeModules = new Set(dynModules.filter(m => m.active).map(m => m.name))
         // Fixed herramientas tabs — only show if module is active
@@ -517,6 +519,12 @@ function renderSidebar(opts: PageOptions): string {
           herramientasTabs.push({ id: mod.name, key: '', label: mod.title[opts.lang] || mod.title.es || mod.name })
           herramientasIcons[mod.name] = ICON_OVERRIDES[mod.name] || ICONS.fallback
         }
+        // Sort alphabetically by displayed label
+        herramientasTabs.sort((a, b) => {
+          const la = (a.label || t(a.key, opts.lang)).toLowerCase()
+          const lb = (b.label || t(b.key, opts.lang)).toLowerCase()
+          return la.localeCompare(lb)
+        })
         nav += '<div class="sidebar-submenu">'
         for (const tab of herramientasTabs) {
           const subActive = opts.herramientasSubpage === tab.id

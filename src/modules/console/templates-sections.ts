@@ -364,47 +364,159 @@ export function renderEmailSection(data: SectionData): string {
 export function renderGoogleAppsSection(data: SectionData): string {
   const ga = data.googleAppsAuth ?? { connected: false, email: null }
   const moduleActive = data.moduleStates?.some(m => m.name === 'google-apps' && m.active) ?? false
+  const isEs = data.lang === 'es'
 
   if (!moduleActive) {
-    const msg = data.lang === 'es'
-      ? 'El modulo Google Apps no esta activado. Activalo desde la seccion <a href="/console/modules">Modulos</a> para poder conectar.'
-      : 'The Google Apps module is not active. Activate it from the <a href="/console/modules">Modules</a> section to connect.'
+    const msg = isEs
+      ? 'El modulo Google Workspace no esta activado. Activalo desde la seccion <a href="/console/modules">Modulos</a> para poder conectar.'
+      : 'The Google Workspace module is not active. Activate it from the <a href="/console/modules">Modules</a> section to connect.'
     return `<div class="panel"><div class="panel-body panel-body-flat">
       <div class="panel-info module-inactive-notice">${msg}</div>
     </div></div>`
   }
 
-  const statusLabel = ga.connected
-    ? `<span class="status-dot connected"></span><span class="status-label connected">${t('googleAppsConnected', data.lang)}</span>${ga.email ? ` — <span class="status-email">${esc(ga.email)}</span>` : ''}`
-    : `<span class="status-dot disconnected"></span><span class="status-label disconnected">${t('googleAppsNotConnected', data.lang)}</span>`
+  // Enabled services from config
+  const enabledStr = (data.config['GOOGLE_ENABLED_SERVICES'] || 'drive,sheets,docs,slides,calendar').toLowerCase()
+  const enabledSet = new Set(enabledStr.split(',').map(s => s.trim()).filter(Boolean))
 
+  // Status box — channel-style
+  const statusColor = ga.connected ? 'var(--success)' : 'var(--on-surface-dim)'
+  const statusText = ga.connected ? t('googleAppsConnected', data.lang) : t('googleAppsNotConnected', data.lang)
   const googleSvg = GOOGLE_SVG
 
-  const serviceList = ['Drive', 'Sheets', 'Docs', 'Slides', 'Calendar']
-
-  return `<div class="panel">
-    <div class="panel-body panel-body-flat">
-      <div class="panel-info">${t('googleAppsAuthInfo', data.lang)}</div>
-      <div class="status-row">
-        <div class="status-label">${statusLabel}</div>
-        <button type="button" class="btn-secondary" onclick="refreshGoogleAppsStatus()">${t('googleRefreshStatus', data.lang)}</button>
+  const statusBox = `<div class="panel" style="margin-bottom:20px">
+    <div class="panel-body panel-body-flat" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:10px;border:2px solid ${statusColor};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          ${googleSvg}
+        </div>
+        <div>
+          <div style="font-weight:600;font-size:14px">${statusText}</div>
+          ${ga.email ? `<div style="font-size:12px;color:var(--text-tertiary)">${esc(ga.email)}</div>` : ''}
+        </div>
       </div>
-      <div class="status-actions">
-        ${!ga.connected ? `
-        <button type="button" class="wa-btn wa-btn-connect" onclick="googleAppsConnect()">
-          ${googleSvg} ${t('googleAppsConnectBtn', data.lang)}
-        </button>` : `
-        <button type="button" class="btn-danger" onclick="googleAppsDisconnect()">
-          ${t('googleAppsDisconnectBtn', data.lang)}
-        </button>`}
-      </div>
-      <div class="services-list">
-        <span class="services-label">${t('googleAppsServicesTitle', data.lang)}: </span>
-        ${serviceList.map(s => `<span class="panel-badge badge-active">${s}</span>`).join(' ')}
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button type="button" class="btn-secondary" onclick="refreshGoogleAppsStatus()" style="font-size:12px;padding:6px 12px">${t('googleRefreshStatus', data.lang)}</button>
+        ${!ga.connected
+          ? `<button type="button" class="wa-btn wa-btn-connect" onclick="googleAppsConnect()" style="font-size:12px;padding:6px 12px">${t('googleAppsConnectBtn', data.lang)}</button>`
+          : `<button type="button" class="btn-danger" onclick="googleAppsDisconnect()" style="font-size:12px;padding:6px 12px">${t('googleAppsDisconnectBtn', data.lang)}</button>`
+        }
       </div>
     </div>
-  </div>
-  ${renderModulePanels(data.moduleStates ?? [], data.config, data.lang, 'google-apps')}`
+  </div>`
+
+  // Service cards — 3 per row with toggle + expandable permissions
+  const services = [
+    { id: 'drive', name: 'Google Drive', icon: '&#128193;',
+      perms: ['view', 'share', 'create', 'edit', 'delete'] },
+    { id: 'sheets', name: 'Google Sheets', icon: '&#128202;',
+      perms: ['view', 'share', 'create', 'edit', 'delete'] },
+    { id: 'docs', name: 'Google Docs', icon: '&#128196;',
+      perms: ['view', 'share', 'create', 'edit', 'delete'] },
+    { id: 'slides', name: 'Google Slides', icon: '&#128253;',
+      perms: ['view', 'share', 'create', 'edit', 'delete'] },
+    { id: 'calendar', name: 'Google Calendar', icon: '&#128197;',
+      perms: ['view', 'create', 'edit', 'delete'] },
+  ]
+
+  const permLabels: Record<string, Record<string, string>> = {
+    view:   { es: 'Ver', en: 'View' },
+    share:  { es: 'Compartir', en: 'Share' },
+    create: { es: 'Crear', en: 'Create' },
+    edit:   { es: 'Editar', en: 'Edit' },
+    delete: { es: 'Eliminar', en: 'Delete' },
+  }
+
+  const serviceCards = services.map(svc => {
+    const isActive = enabledSet.has(svc.id)
+    // Read per-service permissions from config (e.g. GOOGLE_PERMS_DRIVE = "view,share,create,edit")
+    const permsKey = `GOOGLE_PERMS_${svc.id.toUpperCase()}`
+    const permsStr = data.config[permsKey] || (svc.perms.filter(p => p !== 'delete').join(','))
+    const activePerms = new Set(permsStr.split(',').map(p => p.trim()).filter(Boolean))
+
+    const permToggles = svc.perms.map(p => {
+      const checked = activePerms.has(p)
+      const isDelete = p === 'delete'
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer${isDelete ? ';color:var(--error)' : ''}">
+        <input type="checkbox" class="gws-perm" data-service="${svc.id}" data-perm="${p}" ${checked ? 'checked' : ''} onchange="gwsPermChanged()"
+          style="width:14px;height:14px;accent-color:${isDelete ? 'var(--error)' : 'var(--primary)'}">
+        ${permLabels[p]?.[data.lang] || p}
+      </label>`
+    }).join('')
+
+    return `<div class="gws-card" data-service="${svc.id}" style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s ease;position:relative${!isActive ? ';opacity:0.6' : ''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px" onclick="gwsToggleCard('${svc.id}')">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:20px">${svc.icon}</span>
+          <span style="font-weight:600;font-size:13px">${svc.name}</span>
+        </div>
+        <label class="toggle" style="flex-shrink:0" onclick="event.stopPropagation()">
+          <input type="checkbox" class="gws-toggle" data-service="${svc.id}" ${isActive ? 'checked' : ''} onchange="gwsServiceToggled(this)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="gws-card-body" data-card-body="${svc.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+        <div style="font-size:11px;font-weight:500;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:6px">${isEs ? 'Permisos del agente' : 'Agent permissions'}</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${permToggles}
+        </div>
+      </div>
+    </div>`
+  }).join('')
+
+  const servicesGrid = `<div style="margin-bottom:12px">
+    <div style="font-size:13px;font-weight:500;color:var(--on-surface-variant);margin-bottom:10px">${t('googleAppsServicesTitle', data.lang)}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      ${serviceCards}
+    </div>
+  </div>`
+
+  // Script for card interactions
+  const script = `<script>
+(function(){
+  window.gwsToggleCard = function(serviceId) {
+    var body = document.querySelector('[data-card-body="' + serviceId + '"]');
+    if (!body) return;
+    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+  };
+
+  window.gwsServiceToggled = function(checkbox) {
+    var serviceId = checkbox.dataset.service;
+    var card = checkbox.closest('.gws-card');
+    if (card) card.style.opacity = checkbox.checked ? '1' : '0.6';
+    gwsSaveServices();
+  };
+
+  window.gwsPermChanged = function() { gwsSaveServices(); };
+
+  function gwsSaveServices() {
+    var toggles = document.querySelectorAll('.gws-toggle');
+    var enabled = [];
+    toggles.forEach(function(t) { if (t.checked) enabled.push(t.dataset.service); });
+
+    // Build per-service perms
+    var permsData = {};
+    var services = ['drive','sheets','docs','slides','calendar'];
+    services.forEach(function(svc) {
+      var checks = document.querySelectorAll('.gws-perm[data-service="' + svc + '"]');
+      var activePerms = [];
+      checks.forEach(function(c) { if (c.checked) activePerms.push(c.dataset.perm); });
+      permsData['GOOGLE_PERMS_' + svc.toUpperCase()] = activePerms.join(',');
+    });
+
+    var body = Object.assign({ GOOGLE_ENABLED_SERVICES: enabled.join(',') }, permsData);
+    fetch('/console/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function() {
+      if (window.showToast) window.showToast('${isEs ? 'Guardado' : 'Saved'}', 'success');
+    });
+  }
+})();
+</script>`
+
+  return `${statusBox}${servicesGrid}${script}`
 }
 
 // ═══════════════════════════════════════════
@@ -1112,6 +1224,296 @@ function renderIdentitySection(data: SectionData): string {
 }
 
 // ═══════════════════════════════════════════
+// Voice (TTS) section — agent voice settings
+// ═══════════════════════════════════════════
+
+function renderVoiceTTSSection(data: SectionData): string {
+  const isEs = data.lang === 'es'
+  const cfg = data.config
+
+  const ttsActive = data.moduleStates?.some(m => m.name === 'tts' && m.active) ?? false
+
+  if (!ttsActive) {
+    const msg = isEs
+      ? 'El modulo de voz (TTS) no esta activado. Activalo desde <a href="/console/modules">Modulos</a>.'
+      : 'The voice (TTS) module is not active. Activate it from <a href="/console/modules">Modules</a>.'
+    return `<div class="panel"><div class="panel-body panel-body-flat">
+      <div class="panel-info module-inactive-notice">${msg}</div>
+    </div></div>`
+  }
+
+  const hasApiKey = !!(cfg['TTS_GOOGLE_API_KEY'])
+
+  // --- Frequency controls ---
+  // Audio-to-audio frequency (default 80%)
+  const audioToAudioFreq = cfg['TTS_AUDIO_TO_AUDIO_FREQ'] || '80'
+  // Text-to-audio frequency (default 10%)
+  const textToAudioFreq = cfg['TTS_TEXT_TO_AUDIO_FREQ'] || '10'
+
+  const freqOptions = Array.from({ length: 11 }, (_, i) => i * 10)
+  const audioFreqSelect = freqOptions.map(v =>
+    `<option value="${v}" ${String(v) === audioToAudioFreq ? 'selected' : ''}>${v}%</option>`
+  ).join('')
+  const textFreqSelect = freqOptions.map(v =>
+    `<option value="${v}" ${String(v) === textToAudioFreq ? 'selected' : ''}>${v}%</option>`
+  ).join('')
+
+  // --- Max duration ---
+  const maxDurationVal = cfg['TTS_MAX_DURATION'] || '2'
+  const durationOptions = [
+    { value: '1', chars: 1400, label: isEs ? 'Alrededor de 1 min' : 'Around 1 min' },
+    { value: '2', chars: 2800, label: isEs ? 'Alrededor de 2 min' : 'Around 2 min' },
+    { value: '3', chars: 4200, label: isEs ? 'Alrededor de 3 min' : 'Around 3 min' },
+    { value: '5', chars: 7000, label: isEs ? 'Alrededor de 5 min' : 'Around 5 min' },
+  ]
+  const durationSelect = durationOptions.map(d =>
+    `<option value="${d.value}" ${d.value === maxDurationVal ? 'selected' : ''}>${d.label}</option>`
+  ).join('')
+
+  // --- Speaking rate (Google Cloud TTS: 0.25 to 4.0) ---
+  const speakingRate = cfg['TTS_SPEAKING_RATE'] || '1.0'
+
+  // --- Pitch ---
+  // Not available in the context but we keep existing config
+  // Google Cloud TTS pitch for non-Vertex: -20.0 to 20.0
+
+  // --- Voice selection ---
+  // Google Cloud TTS voices (most common Studio & Standard voices)
+  const voices = [
+    // Spanish
+    { value: 'es-US-Studio-B', label: 'Español (US) - Studio B (Male)' },
+    { value: 'es-US-Studio-F', label: 'Español (US) - Studio F (Female)' },
+    { value: 'es-US-Standard-A', label: 'Español (US) - Standard A (Male)' },
+    { value: 'es-US-Standard-B', label: 'Español (US) - Standard B (Male)' },
+    { value: 'es-US-Standard-C', label: 'Español (US) - Standard C (Female)' },
+    { value: 'es-US-Neural2-A', label: 'Español (US) - Neural2 A (Male)' },
+    { value: 'es-US-Neural2-B', label: 'Español (US) - Neural2 B (Male)' },
+    { value: 'es-US-Neural2-C', label: 'Español (US) - Neural2 C (Female)' },
+    { value: 'es-US-News-D', label: 'Español (US) - News D (Male)' },
+    { value: 'es-US-News-E', label: 'Español (US) - News E (Female)' },
+    { value: 'es-US-Wavenet-B', label: 'Español (US) - Wavenet B (Male)' },
+    { value: 'es-US-Wavenet-C', label: 'Español (US) - Wavenet C (Female)' },
+    { value: 'es-ES-Standard-A', label: 'Español (ES) - Standard A (Male)' },
+    { value: 'es-ES-Standard-B', label: 'Español (ES) - Standard B (Female)' },
+    { value: 'es-ES-Neural2-A', label: 'Español (ES) - Neural2 A (Male)' },
+    { value: 'es-ES-Neural2-B', label: 'Español (ES) - Neural2 B (Female)' },
+    { value: 'es-ES-Wavenet-B', label: 'Español (ES) - Wavenet B (Male)' },
+    { value: 'es-ES-Wavenet-C', label: 'Español (ES) - Wavenet C (Female)' },
+    // English
+    { value: 'en-US-Studio-M', label: 'English (US) - Studio M (Male)' },
+    { value: 'en-US-Studio-O', label: 'English (US) - Studio O (Female)' },
+    { value: 'en-US-Studio-Q', label: 'English (US) - Studio Q (Male)' },
+    { value: 'en-US-Neural2-A', label: 'English (US) - Neural2 A (Male)' },
+    { value: 'en-US-Neural2-C', label: 'English (US) - Neural2 C (Female)' },
+    { value: 'en-US-Neural2-D', label: 'English (US) - Neural2 D (Male)' },
+    { value: 'en-US-Neural2-F', label: 'English (US) - Neural2 F (Female)' },
+    { value: 'en-US-Wavenet-D', label: 'English (US) - Wavenet D (Male)' },
+    { value: 'en-US-Wavenet-F', label: 'English (US) - Wavenet F (Female)' },
+    { value: 'en-GB-Studio-B', label: 'English (GB) - Studio B (Male)' },
+    { value: 'en-GB-Studio-C', label: 'English (GB) - Studio C (Female)' },
+    { value: 'en-GB-Neural2-A', label: 'English (GB) - Neural2 A (Female)' },
+    { value: 'en-GB-Neural2-B', label: 'English (GB) - Neural2 B (Male)' },
+    // Portuguese
+    { value: 'pt-BR-Standard-A', label: 'Português (BR) - Standard A (Female)' },
+    { value: 'pt-BR-Standard-B', label: 'Português (BR) - Standard B (Male)' },
+    { value: 'pt-BR-Neural2-A', label: 'Português (BR) - Neural2 A (Female)' },
+    { value: 'pt-BR-Neural2-B', label: 'Português (BR) - Neural2 B (Male)' },
+    { value: 'pt-BR-Wavenet-A', label: 'Português (BR) - Wavenet A (Female)' },
+    { value: 'pt-BR-Wavenet-B', label: 'Português (BR) - Wavenet B (Male)' },
+    // French
+    { value: 'fr-FR-Standard-A', label: 'Français (FR) - Standard A (Female)' },
+    { value: 'fr-FR-Standard-B', label: 'Français (FR) - Standard B (Male)' },
+    { value: 'fr-FR-Neural2-A', label: 'Français (FR) - Neural2 A (Female)' },
+    { value: 'fr-FR-Neural2-B', label: 'Français (FR) - Neural2 B (Male)' },
+    { value: 'fr-FR-Wavenet-A', label: 'Français (FR) - Wavenet A (Female)' },
+    // German
+    { value: 'de-DE-Standard-A', label: 'Deutsch (DE) - Standard A (Female)' },
+    { value: 'de-DE-Standard-B', label: 'Deutsch (DE) - Standard B (Male)' },
+    { value: 'de-DE-Neural2-B', label: 'Deutsch (DE) - Neural2 B (Male)' },
+    { value: 'de-DE-Neural2-C', label: 'Deutsch (DE) - Neural2 C (Female)' },
+    { value: 'de-DE-Wavenet-A', label: 'Deutsch (DE) - Wavenet A (Female)' },
+    // Italian
+    { value: 'it-IT-Standard-A', label: 'Italiano (IT) - Standard A (Female)' },
+    { value: 'it-IT-Standard-C', label: 'Italiano (IT) - Standard C (Male)' },
+    { value: 'it-IT-Neural2-A', label: 'Italiano (IT) - Neural2 A (Female)' },
+    { value: 'it-IT-Neural2-C', label: 'Italiano (IT) - Neural2 C (Male)' },
+    { value: 'it-IT-Wavenet-A', label: 'Italiano (IT) - Wavenet A (Female)' },
+  ]
+
+  const currentVoice = cfg['TTS_VOICE_NAME'] || 'es-US-Studio-B'
+  const voiceOptions = voices.map(v =>
+    `<option value="${esc(v.value)}" ${v.value === currentVoice ? 'selected' : ''}>${esc(v.label)}</option>`
+  ).join('')
+  // Allow custom voice via typing
+  const hasCustom = !voices.some(v => v.value === currentVoice)
+  const customOption = hasCustom ? `<option value="${esc(currentVoice)}" selected>${esc(currentVoice)} (custom)</option>` : ''
+
+  // --- API Key status ---
+  const apiKeyStatus = hasApiKey
+    ? `<span class="panel-badge badge-active">${isEs ? 'API Key configurada' : 'API Key configured'}</span>`
+    : `<span class="panel-badge" style="background:rgba(255,59,48,0.12);color:var(--error)">${isEs ? 'API Key no configurada' : 'API Key not configured'}</span>`
+
+  const fieldStyle = 'margin-bottom:14px'
+  const labelStyle = 'font-size:13px;font-weight:500;display:block;margin-bottom:4px;color:var(--text-secondary)'
+  const selectStyle = 'width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary)'
+
+  // Slider helper
+  const rangeField = (id: string, label: string, info: string, min: number, max: number, step: number, value: string, unit: string) => `
+    <div style="${fieldStyle}">
+      <label style="${labelStyle}">${label}</label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="range" id="tts-${id}" name="${id}" min="${min}" max="${max}" step="${step}" value="${esc(value)}"
+          data-original="${esc(value)}"
+          oninput="document.getElementById('tts-${id}-val').textContent=this.value+'${unit}'"
+          style="flex:1;accent-color:var(--primary)">
+        <span id="tts-${id}-val" style="font-size:13px;font-weight:600;min-width:40px;text-align:right">${esc(value)}${unit}</span>
+      </div>
+      <span style="font-size:11px;color:var(--text-tertiary)">${info}</span>
+    </div>`
+
+  // Column 1: Behavior
+  const behaviorCol = `<div>
+    <div class="panel">
+      <div class="panel-header" style="cursor:default">
+        <span class="panel-title">${isEs ? 'Comportamiento de voz' : 'Voice behavior'}</span>
+        ${apiKeyStatus}
+      </div>
+      <div class="panel-body">
+        <div style="${fieldStyle}">
+          <label style="${labelStyle}">${isEs ? 'Responder audio con audio' : 'Reply audio with audio'}</label>
+          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(audioToAudioFreq)}" style="${selectStyle}">
+            ${audioFreqSelect}
+          </select>
+          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'Frecuencia con la que el agente responde notas de voz con audio' : 'How often the agent replies to voice notes with audio'}</span>
+        </div>
+
+        <div style="${fieldStyle}">
+          <label style="${labelStyle}">${isEs ? 'Responder texto con audio' : 'Reply text with audio'}</label>
+          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(textToAudioFreq)}" style="${selectStyle}">
+            ${textFreqSelect}
+          </select>
+          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'Frecuencia con la que el agente responde mensajes de texto con audio' : 'How often the agent replies to text messages with audio'}</span>
+        </div>
+
+        <div style="${fieldStyle}">
+          <label style="${labelStyle}">${isEs ? 'Duracion maxima de audios' : 'Max audio duration'}</label>
+          <select name="TTS_MAX_DURATION" data-original="${esc(maxDurationVal)}" style="${selectStyle}" id="tts-max-duration">
+            ${durationSelect}
+          </select>
+          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'El agente ajustara la longitud de sus respuestas para no exceder este limite' : 'The agent will adjust response length to stay within this limit'}</span>
+        </div>
+
+        <div style="${fieldStyle}">
+          <label style="${labelStyle}">${isEs ? 'Canales habilitados' : 'Enabled channels'}</label>
+          <input type="text" name="TTS_ENABLED_CHANNELS" value="${esc(cfg['TTS_ENABLED_CHANNELS'] || 'whatsapp')}"
+            data-original="${esc(cfg['TTS_ENABLED_CHANNELS'] || 'whatsapp')}"
+            style="${selectStyle}" placeholder="whatsapp, google-chat">
+          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'Separados por coma' : 'Comma-separated'}</span>
+        </div>
+      </div>
+    </div>
+  </div>`
+
+  // Column 2: Voice config + preview
+  const voiceCol = `<div>
+    <div class="panel">
+      <div class="panel-header" style="cursor:default">
+        <span class="panel-title">${isEs ? 'Configuracion de voz' : 'Voice configuration'}</span>
+      </div>
+      <div class="panel-body">
+        <div style="${fieldStyle}">
+          <label style="${labelStyle}">${isEs ? 'Voz' : 'Voice'}</label>
+          <select name="TTS_VOICE_NAME" data-original="${esc(currentVoice)}" style="${selectStyle}" id="tts-voice-select">
+            ${customOption}${voiceOptions}
+          </select>
+        </div>
+
+        <div style="${fieldStyle}">
+          <label style="${labelStyle}">API Key</label>
+          <div style="position:relative">
+            <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
+              data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
+              style="${selectStyle};padding-right:36px" placeholder="AIza...">
+            <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
+              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-tertiary)">&#128065;</button>
+          </div>
+        </div>
+
+        ${rangeField('TTS_SPEAKING_RATE', isEs ? 'Velocidad' : 'Speed', isEs ? '0.25 (lento) a 4.0 (rapido). Default: 1.0' : '0.25 (slow) to 4.0 (fast). Default: 1.0', 0.25, 4.0, 0.25, speakingRate, 'x')}
+
+        ${rangeField('TTS_PITCH', isEs ? 'Tono' : 'Pitch', isEs ? '-20.0 (grave) a 20.0 (agudo). Default: 0.0' : '-20.0 (low) to 20.0 (high). Default: 0.0', -20.0, 20.0, 0.5, cfg['TTS_PITCH'] || '0.0', '')}
+
+        <!-- Preview button -->
+        <div style="margin-top:8px;padding-top:12px;border-top:1px solid var(--border-light)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <button type="button" id="tts-preview-btn" class="wa-btn wa-btn-connect" onclick="ttsPreview()"
+              style="font-size:12px;padding:6px 14px" ${!hasApiKey ? 'disabled' : ''}>
+              &#9654; ${isEs ? 'Previsualizar voz' : 'Preview voice'}
+            </button>
+            <span id="tts-preview-status" style="font-size:12px;color:var(--text-tertiary)"></span>
+          </div>
+          <audio id="tts-preview-audio" style="width:100%;display:none" controls></audio>
+        </div>
+      </div>
+    </div>
+  </div>`
+
+  // Preview script
+  const script = `<script>
+(function(){
+  window.ttsPreview = async function() {
+    var btn = document.getElementById('tts-preview-btn');
+    var status = document.getElementById('tts-preview-status');
+    var audio = document.getElementById('tts-preview-audio');
+    var voiceSel = document.getElementById('tts-voice-select');
+    var rateInput = document.getElementById('tts-TTS_SPEAKING_RATE');
+    var pitchInput = document.getElementById('tts-TTS_PITCH');
+
+    btn.disabled = true;
+    status.textContent = '${isEs ? 'Generando...' : 'Generating...'}';
+    audio.style.display = 'none';
+
+    var voiceName = voiceSel.value;
+    var langCode = voiceName.substring(0, voiceName.lastIndexOf('-', voiceName.lastIndexOf('-') - 1));
+
+    try {
+      var res = await fetch('/console/api/console/tts-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voiceName: voiceName,
+          languageCode: langCode,
+          speakingRate: parseFloat(rateInput.value) || 1.0,
+          pitch: parseFloat(pitchInput.value) || 0.0,
+          text: ${JSON.stringify(isEs
+            ? 'Hola, soy tu agente de inteligencia artificial. Asi es como suena mi voz con esta configuracion.'
+            : 'Hello, I am your AI agent. This is how my voice sounds with this configuration.')}
+        })
+      });
+      if (!res.ok) throw new Error('API error ' + res.status);
+      var blob = await res.blob();
+      var url = URL.createObjectURL(blob);
+      audio.src = url;
+      audio.style.display = 'block';
+      audio.play();
+      status.textContent = '';
+    } catch(e) {
+      status.textContent = '${isEs ? 'Error al generar preview' : 'Preview generation error'}: ' + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+})();
+</script>`
+
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+    ${behaviorCol}
+    ${voiceCol}
+  </div>
+  ${script}`
+}
+
+// ═══════════════════════════════════════════
 // Dashboard section — SaaS executive overview
 // ═══════════════════════════════════════════
 
@@ -1408,6 +1810,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'contacts': return renderUsersSection(data)
     case 'agente': return data.agenteContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
     case 'identity': return renderIdentitySection(data)
+    case 'voice-tts': return renderVoiceTTSSection(data)
     case 'tools-cards': return renderToolsCardsSection(data)
     case 'herramientas': return data.herramientasContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
     case 'modules': return renderModulesSection(data)
