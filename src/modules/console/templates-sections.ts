@@ -15,6 +15,7 @@ export interface SectionData {
   googleChatConnected?: boolean
   moduleStates?: ModuleInfo[]
   scheduledTasksHtml?: string
+  knowledgeItemsHtml?: string
   leadScoringHtml?: string
   contactsSubpage?: string
   agenteSubpage?: string
@@ -525,6 +526,22 @@ export function renderScheduledTasksSection(data: SectionData): string {
 }
 
 // ═══════════════════════════════════════════
+// Knowledge items — custom section
+// ═══════════════════════════════════════════
+
+export function renderKnowledgeItemsSection(data: SectionData): string {
+  if (data.knowledgeItemsHtml) return data.knowledgeItemsHtml
+  // Fallback: generic module panels
+  const knowledgeMod = data.moduleStates?.find(m => m.name === 'knowledge')
+  if (knowledgeMod?.active && knowledgeMod.console?.fields?.length) {
+    return renderModulePanels([knowledgeMod], data.config, data.lang, 'knowledge')
+  }
+  return `<div class="panel"><div class="panel-body panel-body-flat panel-body-empty">
+    <p>${data.lang === 'es' ? 'Módulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p>
+  </div></div>`
+}
+
+// ═══════════════════════════════════════════
 // Channels overview — card grid
 // ═══════════════════════════════════════════
 
@@ -929,6 +946,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'engine-metrics': return renderEngineMetricsSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
+    case 'knowledge': return renderKnowledgeItemsSection(data)
     case 'contacts': return renderUsersSection(data)
     case 'agente': return data.agenteContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
     case 'herramientas': return data.herramientasContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`

@@ -19,6 +19,8 @@ import { SyncManager } from './sync-manager.js'
 import { FAQManager } from './faq-manager.js'
 import { ApiConnectorManager } from './api-connector.js'
 import { WebSourceManager } from './web-source-manager.js'
+import { KnowledgeItemManager } from './item-manager.js'
+import { renderKnowledgeSection } from './console-section.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 
 const logger = pino({ name: 'knowledge' })
@@ -29,6 +31,7 @@ let syncManager: SyncManager | null = null
 let faqManager: FAQManager | null = null
 let apiConnectorManager: ApiConnectorManager | null = null
 let webSourceManager: WebSourceManager | null = null
+let itemManager: KnowledgeItemManager | null = null
 let vectorizeWorker: VectorizeWorker | null = null
 let downgradeTimer: ReturnType<typeof setInterval> | null = null
 
@@ -59,6 +62,10 @@ function getApiConnectorManager(): ApiConnectorManager {
 function getWebSourceManager(): WebSourceManager {
   if (!webSourceManager) throw new Error('Knowledge module not initialized')
   return webSourceManager
+}
+function getItemManager(): KnowledgeItemManager {
+  if (!itemManager) throw new Error('Knowledge module not initialized')
+  return itemManager
 }
 
 // ═══════════════════════════════════════════
@@ -635,6 +642,232 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // ─── Knowledge Items ───
+
+    // GET /console/api/knowledge/items
+    {
+      method: 'GET',
+      path: 'items',
+      handler: async (_req, res) => {
+        try {
+          const items = await getItemManager().list()
+          const categories = await getPgStore().listCategories()
+          jsonResponse(res, 200, { items, categories })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/knowledge/items
+    {
+      method: 'POST',
+      path: 'items',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{
+            title: string; description: string
+            categoryId?: string; sourceUrl: string
+          }>(req)
+          if (!body.title || !body.sourceUrl) {
+            jsonResponse(res, 400, { error: 'Faltan title o sourceUrl' })
+            return
+          }
+          const item = await getItemManager().create({
+            title: body.title,
+            description: body.description ?? '',
+            categoryId: body.categoryId ?? null,
+            sourceUrl: body.sourceUrl,
+          })
+          jsonResponse(res, 201, { item })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items
+    {
+      method: 'PUT',
+      path: 'items',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{
+            id: string; title?: string; description?: string; categoryId?: string | null
+          }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Falta id' })
+            return
+          }
+          await getItemManager().update(body.id, body)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items/active
+    {
+      method: 'PUT',
+      path: 'items/active',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string; active: boolean }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Falta id' })
+            return
+          }
+          await getItemManager().toggleActive(body.id, body.active)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items/core
+    {
+      method: 'PUT',
+      path: 'items/core',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string; isCore: boolean }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Falta id' })
+            return
+          }
+          await getItemManager().toggleCore(body.id, body.isCore)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/knowledge/items/delete
+    {
+      method: 'POST',
+      path: 'items/delete',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Falta id' })
+            return
+          }
+          await getItemManager().remove(body.id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/knowledge/items/scan-tabs
+    {
+      method: 'POST',
+      path: 'items/scan-tabs',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Falta id' })
+            return
+          }
+          const tabs = await getItemManager().scanTabs(body.id)
+          jsonResponse(res, 200, { tabs })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/knowledge/items/scan-columns
+    {
+      method: 'POST',
+      path: 'items/scan-columns',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ tabId: string }>(req)
+          if (!body.tabId) {
+            jsonResponse(res, 400, { error: 'Falta tabId' })
+            return
+          }
+          await getItemManager().scanColumns(body.tabId)
+          const item = await getPgStore().getPool().query<{ item_id: string }>(
+            `SELECT item_id FROM knowledge_item_tabs WHERE id = $1`, [body.tabId],
+          )
+          const itemId = item.rows[0]?.item_id
+          if (itemId) {
+            const refreshed = await getItemManager().get(itemId)
+            jsonResponse(res, 200, { item: refreshed })
+          } else {
+            jsonResponse(res, 200, { ok: true })
+          }
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items/tab-description
+    {
+      method: 'PUT',
+      path: 'items/tab-description',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ tabId: string; description: string }>(req)
+          if (!body.tabId) {
+            jsonResponse(res, 400, { error: 'Falta tabId' })
+            return
+          }
+          await getPgStore().updateTabDescription(body.tabId, body.description ?? '')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items/column-description
+    {
+      method: 'PUT',
+      path: 'items/column-description',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ columnId: string; description: string }>(req)
+          if (!body.columnId) {
+            jsonResponse(res, 400, { error: 'Falta columnId' })
+            return
+          }
+          await getPgStore().updateColumnDescription(body.columnId, body.description ?? '')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/knowledge/items/load-content
+    {
+      method: 'POST',
+      path: 'items/load-content',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Falta id' })
+            return
+          }
+          const result = await getItemManager().loadContent(body.id)
+          jsonResponse(res, 200, result)
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
     // ─── Search & Stats ───
 
     // GET /console/api/knowledge/search?q=&hint=&limit=5
@@ -860,8 +1093,21 @@ const manifest: ModuleManifest = {
     // Initialize web source manager
     webSourceManager = new WebSourceManager(pgStore, redis, registry)
 
+    // Initialize item manager
+    itemManager = new KnowledgeItemManager(pgStore, cache, config, registry, knowledgeManager)
+    if (vectorizeWorker) {
+      itemManager.setVectorizeWorker(vectorizeWorker)
+    }
+
     // Register service
     registry.provide('knowledge:manager', knowledgeManager)
+
+    // Register console section renderer
+    registry.provide('knowledge:renderSection', async (lang: 'es' | 'en') => {
+      const items = await itemManager!.list()
+      const categories = await pgStore!.listCategories()
+      return renderKnowledgeSection(items, categories, lang)
+    })
 
     // Start sync sources
     syncManager.startAll().catch(err => {
@@ -957,6 +1203,7 @@ const manifest: ModuleManifest = {
     faqManager = null
     apiConnectorManager = null
     webSourceManager = null
+    itemManager = null
     logger.info('Knowledge module stopped')
   },
 }

@@ -16,6 +16,8 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 - `api-connector.ts` — CRUD API connectors read-only (max 10). queryApi() con auth (bearer/api_key/basic/none).
 - `web-source-manager.ts` — CRUD web sources (max 3). Smart cache: skip si <5% cambio y <1 semana.
 - `extractors/` — registry de extractores por MIME type (md, pdf, docx, xlsx, image, slides)
+- `item-manager.ts` — CRUD knowledge items (Google Sheets/Docs/Drive), escaneo de tabs/columnas, carga de contenido
+- `console-section.ts` — renderizado SSR del panel de knowledge items en la consola
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true
@@ -24,6 +26,16 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 
 ## Servicios registrados
 - `knowledge:manager` — instancia de KnowledgeManager
+- `knowledge:renderSection` — renderizado SSR del panel de items
+
+## Knowledge Items (v3)
+- Items de conocimiento basados en Google Sheets/Docs/Drive
+- Cada item: título, descripción, categoría, URL de Google, sourceId extraído
+- Escaneo de tabs (sheets=tabs, docs=documento, drive=archivos en carpeta)
+- Escaneo de columnas (headers de cada tab en Sheets)
+- Carga de contenido → documentos + chunks + embeddings
+- Toggle active/inactive, checkbox core, delete (solo si inactive)
+- DB: knowledge_items, knowledge_item_tabs, knowledge_item_columns
 
 ## Tool registrada
 - `search_knowledge` — busca en conocimiento con category_hint para boosting (Phase 3)
@@ -47,6 +59,9 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 - Sync: GET /sync-sources, POST /sync-sources, PUT /sync-sources, POST /sync-sources/delete, POST /sync-sources/sync-now
 - Search: GET /search?q=&hint=&limit=
 - Stats: GET /stats, GET /suggestions, POST /rebuild-index
+- Items: GET /items, POST /items, PUT /items, PUT /items/active, PUT /items/core, POST /items/delete
+- Items scan: POST /items/scan-tabs, POST /items/scan-columns
+- Items content: POST /items/load-content, PUT /items/tab-description, PUT /items/column-description
 
 ## Trampas
 - pgvector requiere CREATE EXTENSION vector (ya instalado en prod por módulo memory)

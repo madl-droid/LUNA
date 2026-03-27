@@ -1114,6 +1114,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* module not available */ }
       }
 
+      // Knowledge: render via module service
+      if (section === 'knowledge') {
+        try {
+          const renderFn = registry.getOptional<(lang: string) => Promise<string>>('knowledge:renderSection')
+          if (renderFn) {
+            sectionData.knowledgeItemsHtml = await renderFn(lang)
+          }
+        } catch { /* module not available */ }
+      }
+
       // Lead scoring: render inline via module service
       if (section === 'lead-scoring') {
         try {

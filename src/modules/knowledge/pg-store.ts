@@ -10,6 +10,10 @@ import type {
   KnowledgeCategory,
   KnowledgeApiConnector,
   KnowledgeWebSource,
+  KnowledgeItem,
+  KnowledgeItemTab,
+  KnowledgeItemColumn,
+  KnowledgeSourceType,
   SyncFrequency,
   FAQSourceType,
   DocumentSourceType,
@@ -158,6 +162,46 @@ export class KnowledgePgStore {
         refresh_frequency   text NOT NULL DEFAULT '24h',
         chunk_count         int NOT NULL DEFAULT 0,
         created_at          timestamptz NOT NULL DEFAULT now()
+      )
+    `)
+
+    // ─── Knowledge Items v3 tables ───
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_items (
+        id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        title             text NOT NULL,
+        description       text NOT NULL DEFAULT '',
+        category_id       uuid REFERENCES knowledge_categories(id) ON DELETE SET NULL,
+        source_type       text NOT NULL,
+        source_url        text NOT NULL,
+        source_id         text NOT NULL,
+        is_core           boolean NOT NULL DEFAULT false,
+        active            boolean NOT NULL DEFAULT true,
+        content_loaded    boolean NOT NULL DEFAULT false,
+        embedding_status  text NOT NULL DEFAULT 'pending',
+        chunk_count       int NOT NULL DEFAULT 0,
+        created_at        timestamptz NOT NULL DEFAULT now(),
+        updated_at        timestamptz NOT NULL DEFAULT now()
+      )
+    `)
+
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_item_tabs (
+        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        item_id     uuid NOT NULL REFERENCES knowledge_items(id) ON DELETE CASCADE,
+        tab_name    text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        position    int NOT NULL DEFAULT 0
+      )
+    `)
+
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_item_columns (
+        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        tab_id      uuid NOT NULL REFERENCES knowledge_item_tabs(id) ON DELETE CASCADE,
+        column_name text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        position    int NOT NULL DEFAULT 0
       )
     `)
 
@@ -1038,6 +1082,171 @@ export class KnowledgePgStore {
 
   // ─── Suggestions ───────────────────────────
 
+  // ─── Knowledge Items CRUD ─────────────────
+
+  async insertItem(data: {
+    title: string
+    description: string
+    categoryId: string | null
+    sourceType: KnowledgeSourceType
+    sourceUrl: string
+    sourceId: string
+  }): Promise<string> {
+    const res = await this.db.query<{ id: string }>(
+      `INSERT INTO knowledge_items (title, description, category_id, source_type, source_url, source_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [data.title, data.description, data.categoryId, data.sourceType, data.sourceUrl, data.sourceId],
+    )
+    return res.rows[0]!.id
+  }
+
+  async getItem(id: string): Promise<KnowledgeItem | null> {
+    const res = await this.db.query<ItemRow>(
+      `SELECT * FROM knowledge_items WHERE id = $1`, [id],
+    )
+    const row = res.rows[0]
+    if (!row) return null
+    const item = mapItemRow(row)
+    item.tabs = await this.getItemTabs(id)
+    return item
+  }
+
+  async listItems(): Promise<KnowledgeItem[]> {
+    const res = await this.db.query<ItemRow>(
+      `SELECT * FROM knowledge_items ORDER BY created_at DESC`,
+    )
+    const items = res.rows.map(mapItemRow)
+    for (const item of items) {
+      item.tabs = await this.getItemTabs(item.id)
+    }
+    return items
+  }
+
+  async updateItem(id: string, updates: {
+    title?: string
+    description?: string
+    categoryId?: string | null
+    isCore?: boolean
+    active?: boolean
+    contentLoaded?: boolean
+    embeddingStatus?: EmbeddingStatus
+    chunkCount?: number
+  }): Promise<void> {
+    const sets: string[] = []
+    const params: unknown[] = []
+    let idx = 1
+
+    if (updates.title !== undefined) { sets.push(`title = $${idx++}`); params.push(updates.title) }
+    if (updates.description !== undefined) { sets.push(`description = $${idx++}`); params.push(updates.description) }
+    if (updates.categoryId !== undefined) { sets.push(`category_id = $${idx++}`); params.push(updates.categoryId) }
+    if (updates.isCore !== undefined) { sets.push(`is_core = $${idx++}`); params.push(updates.isCore) }
+    if (updates.active !== undefined) { sets.push(`active = $${idx++}`); params.push(updates.active) }
+    if (updates.contentLoaded !== undefined) { sets.push(`content_loaded = $${idx++}`); params.push(updates.contentLoaded) }
+    if (updates.embeddingStatus !== undefined) { sets.push(`embedding_status = $${idx++}`); params.push(updates.embeddingStatus) }
+    if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
+
+    if (sets.length === 0) return
+    sets.push(`updated_at = now()`)
+    params.push(id)
+
+    await this.db.query(
+      `UPDATE knowledge_items SET ${sets.join(', ')} WHERE id = $${idx}`,
+      params,
+    )
+  }
+
+  async deleteItem(id: string): Promise<void> {
+    await this.db.query(`DELETE FROM knowledge_items WHERE id = $1`, [id])
+  }
+
+  async countCoreItems(): Promise<number> {
+    const res = await this.db.query<{ count: string }>(
+      `SELECT count(*) as count FROM knowledge_items WHERE is_core = true`,
+    )
+    return parseInt(res.rows[0]!.count, 10)
+  }
+
+  async getCoreItems(): Promise<KnowledgeItem[]> {
+    const res = await this.db.query<ItemRow>(
+      `SELECT * FROM knowledge_items WHERE is_core = true AND active = true ORDER BY title`,
+    )
+    return res.rows.map(mapItemRow)
+  }
+
+  // ─── Item Tabs CRUD ─────────────────────
+
+  async getItemTabs(itemId: string): Promise<KnowledgeItemTab[]> {
+    const res = await this.db.query<ItemTabRow>(
+      `SELECT * FROM knowledge_item_tabs WHERE item_id = $1 ORDER BY position`, [itemId],
+    )
+    const tabs = res.rows.map(mapItemTabRow)
+    for (const tab of tabs) {
+      tab.columns = await this.getTabColumns(tab.id)
+    }
+    return tabs
+  }
+
+  async replaceItemTabs(itemId: string, tabs: Array<{ tabName: string; description: string; position: number }>): Promise<string[]> {
+    await this.db.query(`DELETE FROM knowledge_item_tabs WHERE item_id = $1`, [itemId])
+    const ids: string[] = []
+    for (const tab of tabs) {
+      const res = await this.db.query<{ id: string }>(
+        `INSERT INTO knowledge_item_tabs (item_id, tab_name, description, position)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [itemId, tab.tabName, tab.description, tab.position],
+      )
+      ids.push(res.rows[0]!.id)
+    }
+    return ids
+  }
+
+  async updateTabDescription(tabId: string, description: string): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_item_tabs SET description = $1 WHERE id = $2`,
+      [description, tabId],
+    )
+  }
+
+  // ─── Item Columns CRUD ──────────────────
+
+  async getTabColumns(tabId: string): Promise<KnowledgeItemColumn[]> {
+    const res = await this.db.query<ItemColumnRow>(
+      `SELECT * FROM knowledge_item_columns WHERE tab_id = $1 ORDER BY position`, [tabId],
+    )
+    return res.rows.map(mapItemColumnRow)
+  }
+
+  async replaceTabColumns(tabId: string, columns: Array<{ columnName: string; description: string; position: number }>): Promise<void> {
+    await this.db.query(`DELETE FROM knowledge_item_columns WHERE tab_id = $1`, [tabId])
+    for (const col of columns) {
+      await this.db.query(
+        `INSERT INTO knowledge_item_columns (tab_id, column_name, description, position)
+         VALUES ($1, $2, $3, $4)`,
+        [tabId, col.columnName, col.description, col.position],
+      )
+    }
+  }
+
+  async updateColumnDescription(columnId: string, description: string): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_item_columns SET description = $1 WHERE id = $2`,
+      [description, columnId],
+    )
+  }
+
+  // ─── Item Chunks (linked via source_ref to knowledge_documents) ──
+
+  async deleteItemChunks(itemId: string): Promise<void> {
+    await this.db.query(
+      `DELETE FROM knowledge_chunks WHERE document_id IN (
+        SELECT id FROM knowledge_documents WHERE source_ref = $1
+      )`, [itemId],
+    )
+    await this.db.query(
+      `DELETE FROM knowledge_documents WHERE source_ref = $1`, [itemId],
+    )
+  }
+
   async getUpgradeSuggestions(minHits: number): Promise<UpgradeSuggestion[]> {
     const res = await this.db.query<{
       id: string; title: string; is_core: boolean; hit_count: number
@@ -1228,5 +1437,79 @@ function mapWebSourceRow(r: WebSourceRow): KnowledgeWebSource {
     refreshFrequency: r.refresh_frequency as SyncFrequency,
     chunkCount: r.chunk_count,
     createdAt: r.created_at,
+  }
+}
+
+// ─── Knowledge Items row mappers ────────────
+
+interface ItemRow {
+  id: string
+  title: string
+  description: string
+  category_id: string | null
+  source_type: string
+  source_url: string
+  source_id: string
+  is_core: boolean
+  active: boolean
+  content_loaded: boolean
+  embedding_status: string
+  chunk_count: number
+  created_at: Date
+  updated_at: Date
+}
+
+function mapItemRow(r: ItemRow): KnowledgeItem {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    categoryId: r.category_id,
+    sourceType: r.source_type as KnowledgeSourceType,
+    sourceUrl: r.source_url,
+    sourceId: r.source_id,
+    isCore: r.is_core,
+    active: r.active,
+    contentLoaded: r.content_loaded,
+    embeddingStatus: r.embedding_status as EmbeddingStatus,
+    chunkCount: r.chunk_count,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+interface ItemTabRow {
+  id: string
+  item_id: string
+  tab_name: string
+  description: string
+  position: number
+}
+
+function mapItemTabRow(r: ItemTabRow): KnowledgeItemTab {
+  return {
+    id: r.id,
+    itemId: r.item_id,
+    tabName: r.tab_name,
+    description: r.description,
+    position: r.position,
+  }
+}
+
+interface ItemColumnRow {
+  id: string
+  tab_id: string
+  column_name: string
+  description: string
+  position: number
+}
+
+function mapItemColumnRow(r: ItemColumnRow): KnowledgeItemColumn {
+  return {
+    id: r.id,
+    tabId: r.tab_id,
+    columnName: r.column_name,
+    description: r.description,
+    position: r.position,
   }
 }
