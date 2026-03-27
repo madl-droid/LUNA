@@ -285,6 +285,10 @@ function renderHeader(opts: PageOptions): string {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             ${t('dbg_clear_memory', opts.lang)}
           </div>
+          <div class="dropdown-item dropdown-item-danger" onclick="resetContacts()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>
+            ${opts.lang === 'es' ? 'Limpiar contactos' : 'Clear contacts'}
+          </div>
           <div class="dropdown-item dropdown-item-danger" id="btn-factory-reset">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             ${t('dbg_factory_reset', opts.lang)}
@@ -397,7 +401,7 @@ function renderSidebar(opts: PageOptions): string {
   // 2. Add dynamic modules (only if not already a fixed section)
   //    Skip channel modules — managed from Canales tab
   //    Skip agent-group modules that aren't fixed — they go into Herramientas submenu
-  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps'])
+  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'freshdesk'])
   for (const mod of dynModules) {
     if (FIXED_IDS.has(mod.name)) continue
     if (!mod.active) continue
@@ -496,6 +500,7 @@ function renderSidebar(opts: PageOptions): string {
           'medilink': svgIcon('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),
           'scheduled-tasks': svgIcon('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'),
           'google-apps': ICONS.google,
+          'freshdesk': svgIcon('<path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/>'),
         }
         // Modules that belong to the "Agente" page, not herramientas
         const AGENTE_PAGE_MODULES = new Set(['prompts', 'engine', 'tools', 'memory', 'knowledge', 'tts'])
@@ -508,6 +513,7 @@ function renderSidebar(opts: PageOptions): string {
           { id: 'medilink', key: 'sec_herramientas_medilink' },
           { id: 'scheduled-tasks', key: 'sec_herramientas_scheduled_tasks' },
           { id: 'google-apps', key: 'sec_herramientas_google_apps' },
+          { id: 'freshdesk', key: 'sec_herramientas_freshdesk' },
         ]
         const herramientasTabs: Array<{ id: string; key: string; label?: string }> = allFixedTabs.filter(tab => activeModules.has(tab.id))
         // Dynamic: add active agent-group modules not in fixed list or agente page
@@ -676,6 +682,28 @@ function renderSectionHeader(opts: PageOptions): string {
     breadcrumb = `<div class="ch-breadcrumb">
       <a href="/console?lang=${opts.lang}">${consoleLbl}</a>${sep}
       <span>${esc(sectionLabel)}</span>
+    </div>`
+  }
+
+  // Subpage-specific header: use subpage title + description if available
+  if (opts.section === 'agente' && opts.agenteSubpage) {
+    const subKey = `sec_agente_${opts.agenteSubpage}` as Parameters<typeof t>[0]
+    const subTitle = t(subKey, opts.lang)
+    const subDescKey = `sec_agente_${opts.agenteSubpage}_info` as Parameters<typeof t>[0]
+    const subDesc = t(subDescKey, opts.lang)
+    return `${breadcrumb}<div class="section-header">
+      <div class="section-title">${esc(subTitle)}</div>
+      ${subDesc && subDesc !== subDescKey ? `<div class="section-desc">${subDesc}</div>` : ''}
+    </div>`
+  }
+  if (opts.section === 'herramientas' && opts.herramientasSubpage) {
+    const subKey = `sec_herramientas_${opts.herramientasSubpage.replace(/-/g, '_')}` as Parameters<typeof t>[0]
+    const subTitle = t(subKey, opts.lang)
+    const subDescKey = `sec_herramientas_${opts.herramientasSubpage.replace(/-/g, '_')}_info` as Parameters<typeof t>[0]
+    const subDesc = t(subDescKey, opts.lang)
+    return `${breadcrumb}<div class="section-header">
+      <div class="section-title">${esc(subTitle)}</div>
+      ${subDesc && subDesc !== subDescKey ? `<div class="section-desc">${subDesc}</div>` : ''}
     </div>`
   }
 

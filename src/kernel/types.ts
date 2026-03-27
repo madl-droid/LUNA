@@ -331,8 +331,8 @@ export interface ConsoleField {
   rows?: number
 
   // ── Layout hints for channel settings pages ──
-  /** Field width: 'half' = 50% (side-by-side pairs), 'full' = 100% (default) */
-  width?: 'half' | 'full'
+  /** Field width: 'half' = 50% (side-by-side pairs), 'third' = 33% (3 per row), 'full' = 100% (default) */
+  width?: 'half' | 'third' | 'full'
   /** Icon HTML for boolean toggle rows (SVG string) */
   icon?: string
   /** Description below label for boolean toggle rows (bilingüe) */
@@ -345,6 +345,8 @@ export interface ConsoleField {
   grid?: string
   /** Field type hint for custom rendering (e.g. 'volume' for volume selector) */
   fieldType?: string
+  /** Conditional visibility: show field only when another field has a specific value */
+  visibleWhen?: { key: string; value: string }
 }
 
 export interface ApiRoute {

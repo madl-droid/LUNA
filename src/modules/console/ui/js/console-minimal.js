@@ -247,6 +247,69 @@
     })
   }
 
+  // === instantApply for channel settings toggles ===
+  // Called by onchange="instantApply(this)" on channel settings boolean fields
+  window.instantApply = function (el) {
+    // Find the hidden input that carries the value for form submission
+    var row = el.closest('.chs-toggle-row') || el.closest('.toggle')
+    var hidden = row ? row.querySelector('input[type="hidden"][name="' + el.name + '"]') : el.nextElementSibling
+    if (!hidden && row) hidden = row.querySelector('input[type="hidden"]')
+
+    // If there are dirty non-toggle fields, warn
+    if (isDirty()) {
+      var lang = document.documentElement.lang || 'es'
+      var msg = lang === 'es'
+        ? 'Hay cambios sin guardar que se pueden perder. ¿Continuar?'
+        : 'There are unsaved changes that may be lost. Continue?'
+      if (!confirm(msg)) {
+        el.checked = !el.checked
+        return
+      }
+    }
+
+    // Update hidden value
+    if (hidden) hidden.value = el.checked ? 'true' : 'false'
+
+    // Save + apply immediately via fetch
+    var section = document.querySelector('input[name="_section"]')
+    var lang2 = document.querySelector('input[name="_lang"]')
+    var body = new URLSearchParams()
+    body.append('_section', section ? section.value : '')
+    body.append('_lang', lang2 ? lang2.value : 'es')
+    body.append(el.name, el.checked ? 'true' : 'false')
+
+    // Toggle visibility of dependent fields
+    updateVisibleWhen(el.name, el.checked ? 'true' : 'false')
+
+    fetch('/console/apply', { method: 'POST', body: body, headers: { 'X-Instant-Toggle': '1' } })
+      .then(function (r) {
+        if (r.ok || r.redirected) {
+          showToast(el.checked ? 'Activado' : 'Desactivado', 'success')
+          el.setAttribute('data-original', el.checked ? 'true' : 'false')
+          if (hidden) hidden.setAttribute('data-original', el.checked ? 'true' : 'false')
+        } else {
+          showToast('Error', 'error')
+          el.checked = !el.checked
+          if (hidden) hidden.value = el.checked ? 'true' : 'false'
+          updateVisibleWhen(el.name, el.checked ? 'true' : 'false')
+        }
+      })
+      .catch(function () {
+        showToast('Error', 'error')
+        el.checked = !el.checked
+        if (hidden) hidden.value = el.checked ? 'true' : 'false'
+        updateVisibleWhen(el.name, el.checked ? 'true' : 'false')
+      })
+  }
+
+  // Toggle visibility of fields depending on another field's value
+  function updateVisibleWhen(key, value) {
+    document.querySelectorAll('[data-visible-when-key="' + key + '"]').forEach(function (el) {
+      var expected = el.getAttribute('data-visible-when-value')
+      el.style.display = (value === expected) ? '' : 'none'
+    })
+  }
+
   // === Toggle instant apply ===
   // Toggles (.toggle-field checkboxes) apply immediately via fetch, bypassing save flow
   document.addEventListener('change', function (e) {
@@ -419,6 +482,22 @@
     var resetForm = document.createElement('form')
     resetForm.method = 'POST'
     resetForm.action = '/console/reset-db'
+    resetForm.innerHTML = '<input type="hidden" name="_section" value="' + section + '"><input type="hidden" name="_lang" value="' + lang + '">'
+    document.body.appendChild(resetForm)
+    resetForm.submit()
+  }
+
+  // === Reset Contacts ===
+  window.resetContacts = function () {
+    var lang = document.documentElement.lang || 'es'
+    var msg = lang === 'es'
+      ? 'ADVERTENCIA: Esto eliminara TODAS las bases de contactos, usuarios y permisos. ¿Continuar?'
+      : 'WARNING: This will delete ALL contact bases, users and permissions. Continue?'
+    if (!confirm(msg)) return
+    var section = form ? (form.querySelector('[name="_section"]') || {}).value || '' : ''
+    var resetForm = document.createElement('form')
+    resetForm.method = 'POST'
+    resetForm.action = '/console/reset-contacts'
     resetForm.innerHTML = '<input type="hidden" name="_section" value="' + section + '"><input type="hidden" name="_lang" value="' + lang + '">'
     document.body.appendChild(resetForm)
     resetForm.submit()
