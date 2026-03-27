@@ -1059,6 +1059,11 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
+      // Debug database viewer: /console/debug/database
+      if (section === 'debug/database') {
+        section = 'debug-database'
+      }
+
       // Redirect old /console/users to /console/contacts
       if (section === 'users') {
         const lang = detectLang(req)
@@ -1090,6 +1095,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       // Fetch data server-side
       const data = await fetchSectionData(registry, section)
+
+      // Debug database viewer: test mode gate
+      if (section === 'debug-database' && data.config.ENGINE_TEST_MODE !== 'true') {
+        res.writeHead(302, { Location: `/console?lang=${lang}` })
+        res.end()
+        return true
+      }
 
       // Render section
       const sectionData: SectionData = {
@@ -2035,6 +2047,183 @@ export function createApiRoutes(): ApiRoute[] {
           logger.warn({ err, channel: parseQuery(req).get('channel') }, 'Channel metrics query failed (tables may not exist)')
           const fallbackType = parseQuery(req).get('type') || 'instant'
           jsonResponse(res, 200, { channel: '', period: '30d', type: fallbackType, active: 0, inbound: 0, outbound: 0, avg_duration_s: 0 })
+        }
+      },
+    },
+
+    // POST /console/api/console/db-viewer-auth — verify admin password for database viewer access
+    {
+      method: 'POST',
+      path: 'db-viewer-auth',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const redis = registry.getRedis()
+
+          // Test mode gate
+          const testMode = await configStore.get(db, 'ENGINE_TEST_MODE')
+          if (testMode !== 'true') { jsonResponse(res, 403, { error: 'Debug mode not active' }); return }
+
+          // Parse password
+          const body = await parseBody<{ password?: string }>(req)
+          const password = body?.password?.trim() ?? ''
+          if (!password) { jsonResponse(res, 400, { error: 'Password required' }); return }
+
+          // Get current user from session
+          const { getSessionToken, validateSession, getCredentials, verifyPassword } = await import('../../kernel/setup/auth.js')
+          const token = getSessionToken(req.headers['cookie'])
+          const userId = token ? await validateSession(redis, token) : null
+          if (!userId) { jsonResponse(res, 401, { error: 'Unauthorized' }); return }
+
+          // Verify password
+          const storedHash = await getCredentials(db, userId)
+          if (!storedHash || !await verifyPassword(password, storedHash)) {
+            jsonResponse(res, 403, { error: 'Invalid password' })
+            return
+          }
+
+          // Set db-viewer access flag in Redis (30 min TTL)
+          await redis.set(`db-viewer:${userId}`, '1', 'EX', 1800)
+
+          logger.info({ userId }, 'Database viewer access granted')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'db-viewer-auth failed')
+          jsonResponse(res, 500, { error: 'Internal server error' })
+        }
+      },
+    },
+
+    // GET /console/api/console/db-tables — list all public tables with row counts
+    {
+      method: 'GET',
+      path: 'db-tables',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const redis = registry.getRedis()
+
+          // Test mode gate
+          const testMode = await configStore.get(db, 'ENGINE_TEST_MODE')
+          if (testMode !== 'true') { jsonResponse(res, 403, { error: 'Debug mode not active' }); return }
+
+          // Session + db-viewer auth gate
+          const { getSessionToken, validateSession } = await import('../../kernel/setup/auth.js')
+          const token = getSessionToken(req.headers['cookie'])
+          const userId = token ? await validateSession(redis, token) : null
+          if (!userId) { jsonResponse(res, 401, { error: 'Unauthorized' }); return }
+          const dbAccess = await redis.get(`db-viewer:${userId}`)
+          if (!dbAccess) { jsonResponse(res, 403, { error: 'Database viewer auth required' }); return }
+
+          // List tables
+          const tablesRes = await db.query(
+            `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
+          )
+          const tables: Array<{ name: string; rowCount: number }> = []
+          for (const row of tablesRes.rows) {
+            const tableName = row.table_name as string
+            // Validate table name: only alphanumeric + underscore
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) continue
+            try {
+              const countRes = await db.query(`SELECT COUNT(*)::int AS cnt FROM "${tableName}"`)
+              tables.push({ name: tableName, rowCount: countRes.rows[0]?.cnt ?? 0 })
+            } catch {
+              tables.push({ name: tableName, rowCount: -1 })
+            }
+          }
+
+          jsonResponse(res, 200, { tables })
+        } catch (err) {
+          logger.error({ err }, 'db-tables failed')
+          jsonResponse(res, 500, { error: 'Internal server error' })
+        }
+      },
+    },
+
+    // GET /console/api/console/db-table-data?table=X&page=1&limit=50 — get table rows with pagination
+    {
+      method: 'GET',
+      path: 'db-table-data',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const db = registry.getDb()
+          const redis = registry.getRedis()
+
+          // Test mode gate
+          const testMode = await configStore.get(db, 'ENGINE_TEST_MODE')
+          if (testMode !== 'true') { jsonResponse(res, 403, { error: 'Debug mode not active' }); return }
+
+          // Session + db-viewer auth gate
+          const { getSessionToken, validateSession } = await import('../../kernel/setup/auth.js')
+          const token = getSessionToken(req.headers['cookie'])
+          const userId = token ? await validateSession(redis, token) : null
+          if (!userId) { jsonResponse(res, 401, { error: 'Unauthorized' }); return }
+          const dbAccess = await redis.get(`db-viewer:${userId}`)
+          if (!dbAccess) { jsonResponse(res, 403, { error: 'Database viewer auth required' }); return }
+
+          // Parse query params
+          const query = parseQuery(req)
+          const tableName = query.get('table') ?? ''
+          const page = Math.max(1, parseInt(query.get('page') ?? '1', 10) || 1)
+          const limit = Math.min(100, Math.max(1, parseInt(query.get('limit') ?? '50', 10) || 50))
+          const offset = (page - 1) * limit
+
+          // Validate table exists in information_schema (prevents SQL injection)
+          const tableCheck = await db.query(
+            `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`,
+            [tableName]
+          )
+          if (tableCheck.rowCount === 0) {
+            jsonResponse(res, 404, { error: 'Table not found' })
+            return
+          }
+
+          // Get columns
+          const colsRes = await db.query(
+            `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`,
+            [tableName]
+          )
+          const columns = colsRes.rows.map((r: Record<string, unknown>) => ({ name: r.column_name as string, type: r.data_type as string }))
+
+          // Get total count
+          const countRes = await db.query(`SELECT COUNT(*)::int AS cnt FROM "${tableName}"`)
+          const total = countRes.rows[0]?.cnt ?? 0
+
+          // Get rows with pagination
+          const dataRes = await db.query(`SELECT * FROM "${tableName}" ORDER BY 1 LIMIT $1 OFFSET $2`, [limit, offset])
+
+          // Process rows: truncate long values
+          const rows = dataRes.rows.map((row: Record<string, unknown>) => {
+            const processed: Record<string, unknown> = {}
+            for (const col of columns) {
+              let val = row[col.name]
+              if (val === null || val === undefined) {
+                processed[col.name] = null
+              } else if (typeof val === 'object') {
+                const json = JSON.stringify(val)
+                processed[col.name] = json.length > 200 ? json.slice(0, 200) + '…' : json
+              } else if (typeof val === 'string' && val.length > 200) {
+                processed[col.name] = val.slice(0, 200) + '…'
+              } else {
+                processed[col.name] = val
+              }
+            }
+            return processed
+          })
+
+          jsonResponse(res, 200, { columns, rows, total, page, limit })
+        } catch (err) {
+          logger.error({ err }, 'db-table-data failed')
+          jsonResponse(res, 500, { error: 'Internal server error' })
         }
       },
     },

@@ -980,8 +980,8 @@
       var lang = document.documentElement.lang || 'es'
       if (testModeCb.checked) {
         var msg = lang === 'es'
-          ? '¿Activar modo de pruebas? Se habilitarán acciones destructivas y el panel de debug.'
-          : 'Enable test mode? Destructive actions and debug panel will be enabled.'
+          ? '¿Activar debugging? Se habilitarán acciones destructivas y el panel de debug.'
+          : 'Enable debugging? Destructive actions and debug panel will be enabled.'
         if (!confirm(msg)) {
           testModeCb.checked = false
           return
@@ -1004,8 +1004,8 @@
         .then(function (r) {
           if (r.ok || r.redirected) {
             showToast(testModeCb.checked
-              ? (lang === 'es' ? 'Modo de pruebas activado' : 'Test mode enabled')
-              : (lang === 'es' ? 'Modo de pruebas desactivado' : 'Test mode disabled'),
+              ? (lang === 'es' ? 'Debugging activado' : 'Debugging enabled')
+              : (lang === 'es' ? 'Debugging desactivado' : 'Debugging disabled'),
               testModeCb.checked ? 'warning' : 'success')
             // Reload page so debug icon appears/disappears
             setTimeout(function () { location.reload() }, 600)
@@ -1750,4 +1750,206 @@
   }
   if (statusFilter) statusFilter.addEventListener('change', applyChannelFilters)
   if (typeFilter) typeFilter.addEventListener('change', applyChannelFilters)
+})()
+
+// === Database Viewer — password gate + spreadsheet UI ===
+;(function () {
+  var dlang = document.documentElement.lang || 'es'
+
+  // Button in debug dropdown → navigate directly to db viewer page (page handles auth)
+  var btnDbViewer = document.getElementById('btn-db-viewer')
+  if (btnDbViewer) {
+    btnDbViewer.addEventListener('click', function () {
+      window.location.href = '/console/debug/database'
+    })
+  }
+
+  // Database viewer page logic — password gate on page load
+  var dbAuthGate = document.getElementById('db-auth-gate')
+  var dbContainer = document.getElementById('db-viewer-container')
+  if (!dbAuthGate || !dbContainer) return
+
+  var authPassword = document.getElementById('db-auth-password')
+  var authSubmit = document.getElementById('db-auth-submit')
+  var authError = document.getElementById('db-auth-error')
+
+  function doAuth() {
+    var pw = authPassword.value.trim()
+    if (!pw) return
+    authSubmit.disabled = true
+    authError.style.display = 'none'
+
+    fetch('/console/api/console/db-viewer-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    })
+      .then(function (r) {
+        if (r.status === 403) {
+          authError.textContent = dlang === 'es' ? 'Contraseña incorrecta' : 'Invalid password'
+          authError.style.display = ''
+          authSubmit.disabled = false
+          authPassword.value = ''
+          authPassword.focus()
+          return
+        }
+        if (!r.ok) throw new Error('fail')
+        return r.json()
+      })
+      .then(function (data) {
+        if (!data || !data.ok) return
+        // Auth success — hide gate, show viewer, load tables
+        dbAuthGate.style.display = 'none'
+        dbContainer.style.display = ''
+        loadTables()
+      })
+      .catch(function () {
+        authError.textContent = 'Error'
+        authError.style.display = ''
+        authSubmit.disabled = false
+      })
+  }
+
+  authSubmit.addEventListener('click', doAuth)
+  authPassword.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') doAuth()
+  })
+  // Auto-focus password field
+  setTimeout(function () { authPassword.focus() }, 100)
+
+  // === Viewer logic (runs after auth) ===
+  var tableList = document.getElementById('db-table-list')
+  var gridHead = document.getElementById('db-grid-head')
+  var gridBody = document.getElementById('db-grid-body')
+  var gridScroll = document.getElementById('db-grid-scroll')
+  var emptyState = document.getElementById('db-empty-state')
+  var toolbar = document.getElementById('db-toolbar')
+  var tableNameEl = document.getElementById('db-current-table')
+  var tableMeta = document.getElementById('db-current-meta')
+  var paginationEl = document.getElementById('db-pagination')
+  var pageInfo = document.getElementById('db-pagination-info')
+  var pageNum = document.getElementById('db-page-num')
+  var btnPrev = document.getElementById('db-prev')
+  var btnNext = document.getElementById('db-next')
+  var perPageSel = document.getElementById('db-per-page')
+
+  var currentTable = ''
+  var currentPage = 1
+  var currentLimit = 50
+  var currentTotal = 0
+
+  function loadTables() {
+    fetch('/console/api/console/db-tables')
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (!data.tables || data.tables.length === 0) {
+          tableList.innerHTML = '<div class="db-empty-item">' + (dlang === 'es' ? 'Sin tablas' : 'No tables') + '</div>'
+          return
+        }
+        tableList.innerHTML = ''
+        data.tables.forEach(function (t) {
+          var item = document.createElement('div')
+          item.className = 'db-table-item'
+          item.setAttribute('data-table', t.name)
+          item.innerHTML = '<span class="db-table-item-name">' + escHtml(t.name) + '</span>' +
+            '<span class="db-table-item-count">' + (t.rowCount >= 0 ? t.rowCount : '?') + '</span>'
+          item.addEventListener('click', function () {
+            var prev = tableList.querySelector('.db-table-item.active')
+            if (prev) prev.classList.remove('active')
+            item.classList.add('active')
+            currentTable = t.name
+            currentPage = 1
+            loadTableData()
+          })
+          tableList.appendChild(item)
+        })
+      })
+      .catch(function () {
+        tableList.innerHTML = '<div class="db-empty-item">Error</div>'
+      })
+  }
+
+  function loadTableData() {
+    if (!currentTable) return
+    gridBody.innerHTML = '<tr><td colspan="100" style="text-align:center;padding:2rem;color:var(--on-surface-dim)">' +
+      (dlang === 'es' ? 'Cargando...' : 'Loading...') + '</td></tr>'
+    emptyState.style.display = 'none'
+    gridScroll.style.display = ''
+    toolbar.style.display = ''
+    paginationEl.style.display = ''
+
+    fetch('/console/api/console/db-table-data?table=' + encodeURIComponent(currentTable) +
+      '&page=' + currentPage + '&limit=' + currentLimit)
+      .then(function (r) {
+        if (!r.ok) throw new Error('fail')
+        return r.json()
+      })
+      .then(function (data) {
+        currentTotal = data.total
+        tableNameEl.textContent = currentTable
+        tableMeta.textContent = data.total + ' ' + (dlang === 'es' ? 'filas' : 'rows') +
+          ' · ' + data.columns.length + ' ' + (dlang === 'es' ? 'columnas' : 'columns')
+
+        // Header
+        gridHead.innerHTML = '<tr class="db-grid-head-row">' +
+          '<th class="db-grid-th db-row-num">#</th>' +
+          data.columns.map(function (c) {
+            return '<th class="db-grid-th" title="' + escHtml(c.type) + '">' + escHtml(c.name) +
+              '<span class="db-col-type">' + escHtml(c.type) + '</span></th>'
+          }).join('') + '</tr>'
+
+        // Body
+        if (data.rows.length === 0) {
+          gridBody.innerHTML = '<tr><td colspan="' + (data.columns.length + 1) +
+            '" style="text-align:center;padding:2rem;color:var(--on-surface-dim)">' +
+            (dlang === 'es' ? 'Sin datos' : 'No data') + '</td></tr>'
+        } else {
+          var startRow = (currentPage - 1) * currentLimit
+          gridBody.innerHTML = data.rows.map(function (row, idx) {
+            return '<tr class="db-grid-row">' +
+              '<td class="db-grid-td db-row-num">' + (startRow + idx + 1) + '</td>' +
+              data.columns.map(function (c) {
+                var val = row[c.name]
+                if (val === null || val === undefined) {
+                  return '<td class="db-grid-td db-cell-null">NULL</td>'
+                }
+                var str = String(val)
+                var isJson = (typeof val === 'string' && (val.charAt(0) === '{' || val.charAt(0) === '['))
+                var cls = 'db-grid-td' + (isJson ? ' db-cell-json' : '')
+                return '<td class="' + cls + '" title="' + escHtml(str) + '">' + escHtml(str) + '</td>'
+              }).join('') + '</tr>'
+          }).join('')
+        }
+
+        // Pagination
+        var totalPages = Math.max(1, Math.ceil(currentTotal / currentLimit))
+        var from = data.rows.length > 0 ? ((currentPage - 1) * currentLimit + 1) : 0
+        var to = from + data.rows.length - (data.rows.length > 0 ? 1 : 0)
+        pageInfo.textContent = from + '-' + to + ' / ' + currentTotal
+        pageNum.textContent = currentPage + ' / ' + totalPages
+        btnPrev.disabled = currentPage <= 1
+        btnNext.disabled = currentPage >= totalPages
+      })
+      .catch(function () {
+        gridBody.innerHTML = '<tr><td colspan="100" style="text-align:center;padding:2rem;color:var(--error)">Error</td></tr>'
+      })
+  }
+
+  if (btnPrev) btnPrev.addEventListener('click', function () {
+    if (currentPage > 1) { currentPage--; loadTableData() }
+  })
+  if (btnNext) btnNext.addEventListener('click', function () {
+    var totalPages = Math.max(1, Math.ceil(currentTotal / currentLimit))
+    if (currentPage < totalPages) { currentPage++; loadTableData() }
+  })
+  if (perPageSel) perPageSel.addEventListener('change', function () {
+    currentLimit = parseInt(perPageSel.value, 10) || 50
+    currentPage = 1
+    loadTableData()
+  })
+
+  function escHtml(s) {
+    if (!s) return ''
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
 })()
