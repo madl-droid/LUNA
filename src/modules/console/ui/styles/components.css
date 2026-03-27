@@ -1832,7 +1832,28 @@ select.wizard-input option:checked {
   margin-bottom: 20px;
 }
 
+/* Third-width field groups (3 columns) */
+.chs-field-row-3 {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
 .chs-field-row .chs-field { margin-bottom: 0; }
+
+/* Compact toggle for grid layouts */
+.chs-toggle-compact {
+  padding: 12px 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.chs-toggle-compact .chs-toggle-title { font-size: 12px; }
+.chs-toggle-compact .chs-toggle-desc { font-size: 11px; }
+.chs-toggle-compact .toggle { align-self: flex-end; }
+
+@media (max-width: 768px) {
+  .chs-field-row-3 { grid-template-columns: 1fr; }
+}
 
 /* ── Toggle rows (boolean fields) ── */
 .chs-toggle-row {

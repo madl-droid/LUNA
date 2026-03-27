@@ -734,7 +734,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch (err) {
           logger.error({ err }, 'Failed to deactivate user')
         }
-        res.writeHead(302, { Location: `/console/users?flash=user_deactivated&lang=${lang}` })
+        const redirect = body['_redirect'] || `/console/users?flash=user_deactivated&lang=${lang}`
+        const sep = redirect.includes('?') ? '&' : '?'
+        res.writeHead(302, { Location: `${redirect}${sep}flash=user_deactivated` })
         res.end()
         return true
       }

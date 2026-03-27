@@ -2571,7 +2571,7 @@ function renderUsersSection(data: SectionData): string {
       if(!confirm(lang==='es'?'¿Desactivar '+cbs.length+' usuario(s)?':'Deactivate '+cbs.length+' user(s)?'))return;
       cbs.forEach(function(cb){
         var f=document.createElement('form');f.method='POST';f.action='/console/users/deactivate';
-        f.innerHTML='<input name="_section" value="users"><input name="_lang" value="'+lang+'"><input name="userId" value="'+cb.value+'">';
+        f.innerHTML='<input name="_section" value="users"><input name="_lang" value="'+lang+'"><input name="userId" value="'+cb.value+'"><input name="_redirect" value="'+location.pathname+location.search+'">';
         document.body.appendChild(f);f.submit();
       });
     };
@@ -3219,6 +3219,9 @@ function renderUsersSection(data: SectionData): string {
         if(ta&&!ta.value.trim()){ta.removeAttribute('readonly');ta.style.background='';ta.style.cursor='';
           var btn=document.getElementById('unregistered-msg-edit-btn');if(btn)btn.style.display='none'}
       }
+      // Trigger dirty tracking — the hidden select has data-original
+      var sel=document.querySelector('select[name="unregisteredBehavior"]');
+      if(sel)sel.dispatchEvent(new Event('input',{bubbles:true}));
     };
     window.enableUnregMsgEdit=function(){
       var ta=document.getElementById('unregistered-msg-textarea');

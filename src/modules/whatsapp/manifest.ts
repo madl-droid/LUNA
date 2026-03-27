@@ -184,11 +184,9 @@ const manifest: ModuleManifest = {
       // Pre-close message
       { key: 'WHATSAPP_PRECLOSE_MESSAGE', type: 'text', label: { es: 'Mensaje pre-cierre', en: 'Pre-close message' }, info: { es: 'Texto del recordatorio antes de cerrar la sesion', en: 'Reminder text before closing session' }, tab: 'behavior' },
       // ACK config
-      { key: '_divider_ack', type: 'divider', label: { es: 'Mensajes de espera (ACK)', en: 'Wait messages (ACK)' }, tab: 'behavior' },
       { key: 'WHATSAPP_AVISO_MESSAGE', type: 'text', label: { es: 'Mensaje de espera', en: 'Wait message' }, info: { es: 'Texto que se envia mientras se procesa la respuesta', en: 'Text sent while processing the response' }, tab: 'behavior' },
       { key: 'WHATSAPP_AVISO_STYLE', type: 'select', label: { es: 'Estilo de ACK', en: 'ACK style' }, options: [{ value: 'formal', label: 'Formal' }, { value: 'casual', label: 'Casual' }, { value: 'express', label: 'Express' }, { value: 'dynamic', label: 'Dynamic' }], tab: 'behavior', width: 'half' },
       // Rate limits
-      { key: '_divider_rate', type: 'divider', label: { es: 'Limites de envio', en: 'Rate limits' }, tab: 'behavior' },
       { key: 'WHATSAPP_RATE_LIMIT_HOUR', type: 'number', label: { es: 'Max mensajes por hora', en: 'Max messages per hour' }, min: 1, max: 100, width: 'half', tab: 'behavior' },
       { key: 'WHATSAPP_RATE_LIMIT_DAY', type: 'number', label: { es: 'Max mensajes por dia', en: 'Max messages per day' }, min: 1, max: 1000, width: 'half', tab: 'behavior' },
       { key: 'WHATSAPP_ANTISPAM_MAX', type: 'number', label: { es: 'Anti-spam: max mensajes', en: 'Anti-spam: max messages' }, min: 0, max: 20, width: 'half', tab: 'behavior' },
@@ -197,7 +195,7 @@ const manifest: ModuleManifest = {
       // ═══ TAB: Formato de respuesta ═══
       { key: '_tab_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' }, tab: 'format' },
       { key: 'WHATSAPP_FORMAT_ADVANCED', type: 'boolean', label: { es: 'Prompting avanzado', en: 'Advanced prompting' }, info: { es: 'Activa el editor de texto para personalizar el prompt de formato manualmente', en: 'Enable text editor to manually customize the format prompt' }, tab: 'format' },
-      { key: 'FORMAT_INSTRUCTIONS_WHATSAPP', type: 'textarea', label: { es: 'Instrucciones de formato', en: 'Format instructions' }, rows: 12, tab: 'format' },
+      { key: 'FORMAT_INSTRUCTIONS_WHATSAPP', type: 'textarea', label: { es: 'Instrucciones de formato', en: 'Format instructions' }, rows: 12, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'true' } },
       { key: 'WHATSAPP_FORMAT_TONE', type: 'select', label: { es: 'Tono', en: 'Tone' }, tab: 'format', options: [{ value: 'formal', label: 'Formal' }, { value: 'informal', label: 'Informal' }, { value: 'amigable', label: { es: 'Amigable', en: 'Friendly' } }, { value: 'directo', label: { es: 'Directo', en: 'Direct' } }, { value: 'conversador', label: { es: 'Conversador', en: 'Conversational' } }, { value: 'ninguno', label: { es: 'Ninguno (el modelo decide)', en: 'None (model decides)' } }] },
       { key: 'WHATSAPP_FORMAT_MAX_SENTENCES', type: 'number', label: { es: 'Max oraciones por parrafo', en: 'Max sentences per paragraph' }, min: 1, max: 10, width: 'half', tab: 'format' },
       { key: 'WHATSAPP_FORMAT_MAX_PARAGRAPHS', type: 'number', label: { es: 'Max parrafos por respuesta', en: 'Max paragraphs per response' }, min: 1, max: 10, width: 'half', tab: 'format' },
@@ -214,13 +212,13 @@ const manifest: ModuleManifest = {
 
       // ═══ TAB: Adjuntos ═══
       { key: '_tab_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' }, tab: 'attachments' },
-      { key: 'WHATSAPP_ATT_IMAGES', type: 'boolean', label: { es: 'Procesar imagenes', en: 'Process images' }, description: { es: 'JPEG, PNG, WebP, GIF', en: 'JPEG, PNG, WebP, GIF' }, icon: '&#128247;', tab: 'attachments', width: 'half' },
-      { key: 'WHATSAPP_ATT_DOCUMENTS', type: 'boolean', label: { es: 'Procesar documentos', en: 'Process documents' }, description: { es: 'PDF, Word, otros', en: 'PDF, Word, others' }, icon: '&#128196;', tab: 'attachments', width: 'half' },
-      { key: 'WHATSAPP_ATT_AUDIO', type: 'boolean', label: { es: 'Procesar audio', en: 'Process audio' }, description: { es: 'Notas de voz y audios', en: 'Voice notes and audio' }, icon: '&#127908;', tab: 'attachments', width: 'half' },
-      { key: 'WHATSAPP_ATT_VIDEO', type: 'boolean', label: { es: 'Procesar videos', en: 'Process videos' }, description: { es: 'Videos recibidos por WhatsApp', en: 'Videos received via WhatsApp' }, icon: '&#127909;', tab: 'attachments', width: 'half' },
-      { key: 'WHATSAPP_ATT_SPREADSHEETS', type: 'boolean', label: { es: 'Procesar hojas de calculo', en: 'Process spreadsheets' }, description: { es: 'Excel y CSV', en: 'Excel and CSV' }, icon: '&#128202;', tab: 'attachments', width: 'half' },
-      { key: 'WHATSAPP_ATT_TEXT', type: 'boolean', label: { es: 'Procesar archivos de texto', en: 'Process text files' }, description: { es: '.txt, .md, .json', en: '.txt, .md, .json' }, icon: '&#128221;', tab: 'attachments', width: 'half' },
-      { key: '_divider_att_limits', type: 'divider', label: { es: 'Limites', en: 'Limits' }, tab: 'attachments' },
+      { key: 'WHATSAPP_ATT_IMAGES', type: 'boolean', label: { es: 'Procesar imagenes', en: 'Process images' }, description: { es: 'JPEG, PNG, WebP, GIF', en: 'JPEG, PNG, WebP, GIF' }, icon: '&#128247;', tab: 'attachments', width: 'third' },
+      { key: 'WHATSAPP_ATT_DOCUMENTS', type: 'boolean', label: { es: 'Procesar documentos', en: 'Process documents' }, description: { es: 'PDF, Word, otros', en: 'PDF, Word, others' }, icon: '&#128196;', tab: 'attachments', width: 'third' },
+      { key: 'WHATSAPP_ATT_AUDIO', type: 'boolean', label: { es: 'Procesar audio', en: 'Process audio' }, description: { es: 'Notas de voz y audios', en: 'Voice notes and audio' }, icon: '&#127908;', tab: 'attachments', width: 'third' },
+      { key: 'WHATSAPP_ATT_VIDEO', type: 'boolean', label: { es: 'Procesar videos', en: 'Process videos' }, description: { es: 'Videos recibidos por WhatsApp', en: 'Videos received via WhatsApp' }, icon: '&#127909;', tab: 'attachments', width: 'third' },
+      { key: 'WHATSAPP_ATT_SPREADSHEETS', type: 'boolean', label: { es: 'Procesar hojas de calculo', en: 'Process spreadsheets' }, description: { es: 'Excel y CSV', en: 'Excel and CSV' }, icon: '&#128202;', tab: 'attachments', width: 'third' },
+      { key: 'WHATSAPP_ATT_TEXT', type: 'boolean', label: { es: 'Procesar archivos de texto', en: 'Process text files' }, description: { es: '.txt, .md, .json', en: '.txt, .md, .json' }, icon: '&#128221;', tab: 'attachments', width: 'third' },
+      // Attachment limits
       { key: 'WHATSAPP_ATT_MAX_SIZE_MB', type: 'number', label: { es: 'Tamano max (MB)', en: 'Max size (MB)' }, info: { es: 'Tamano maximo de archivo a procesar', en: 'Maximum file size to process' }, min: 1, max: 50, unit: 'MB', width: 'half', tab: 'attachments' },
       { key: 'WHATSAPP_ATT_MAX_PER_MSG', type: 'number', label: { es: 'Max adjuntos por mensaje', en: 'Max attachments per message' }, info: { es: 'Maximo de adjuntos a procesar por mensaje o batch', en: 'Max attachments to process per message or batch' }, min: 1, max: 15, width: 'half', tab: 'attachments' },
     ],
