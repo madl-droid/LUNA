@@ -148,6 +148,9 @@ function parseEvaluatorResponse(text: string, ctx: ContextBundle): EvaluatorOutp
       executionPlan: parseExecutionPlan(parsed.execution_plan),
       toolsNeeded: Array.isArray(parsed.tools_needed) ? parsed.tools_needed : [],
       needsAcknowledgment: parsed.needs_acknowledgment ?? false,
+      subIntent: parsed.sub_intent ?? undefined,
+      objectionType: parsed.objection_type ?? undefined,
+      objectionStep: typeof parsed.objection_step === 'number' ? parsed.objection_step : undefined,
       rawResponse: text,
     }
 

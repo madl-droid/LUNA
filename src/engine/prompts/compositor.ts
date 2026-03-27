@@ -143,6 +143,14 @@ export async function buildCompositorPrompt(
     systemParts.push(`\n--- FORMATO ---\n${channelLimit}`)
   }
 
+  // TTS voice tags: inject when response will be converted to audio
+  if (ctx.responseFormat === 'audio' && promptsService) {
+    const voiceTags = await promptsService.getSystemPrompt('tts-voice-tags')
+    if (voiceTags) {
+      systemParts.push(`\n--- VOZ Y ENTONACIÓN ---\n${voiceTags}`)
+    }
+  }
+
   // Campaign context (from lead-scoring:match-campaign via Phase 1)
   if (ctx.campaign) {
     const ctxLine = ctx.campaign.promptContext
@@ -159,8 +167,8 @@ Adapta tu respuesta al contexto de esta campaña.`)
     systemParts.push(`\n--- CHECKLIST DE CALIDAD ---\n${criticizer}`)
   }
 
-  // Objection handler: inject when intent is objection-related
-  if (evaluation.intent.startsWith('objection')) {
+  // Bryan Tracy objection handler: inject when intent is objection-related
+  if (evaluation.intent === 'objection' || evaluation.intent.startsWith('objection_')) {
     const objHandler = promptsService ? await promptsService.getSystemPrompt('objection-handler') : ''
     if (objHandler) {
       systemParts.push(`\n--- MANEJO DE OBJECIONES ---\n${objHandler}`)
@@ -171,8 +179,26 @@ Adapta tu respuesta al contexto de esta campaña.`)
   const userParts: string[] = []
 
   // Evaluation context
-  userParts.push(`[Intención detectada: ${evaluation.intent}]`)
+  userParts.push(`[Intención detectada: ${evaluation.intent}${evaluation.subIntent ? ` (${evaluation.subIntent})` : ''}]`)
   userParts.push(`[Emoción: ${evaluation.emotion}]`)
+
+  // Bryan Tracy objection routing
+  if (evaluation.objectionType) {
+    const stepNames: Record<number, string> = {
+      1: 'ESCUCHAR — reconoce la objeción completa antes de responder',
+      2: 'PAUSAR — breve reconocimiento sin contraargumentar',
+      3: 'CLARIFICAR — profundiza con preguntas antes de responder',
+      4: 'EMPATIZAR — normaliza con prueba social',
+      5: 'RESPONDER — reencuadra con valor, historia o prueba',
+      6: 'CONFIRMAR — verifica si la objeción se resolvió',
+    }
+    const stepDesc = evaluation.objectionStep ? stepNames[evaluation.objectionStep] ?? '' : ''
+    userParts.push(`[OBJECIÓN DETECTADA: tipo=${evaluation.objectionType}]`)
+    if (stepDesc) {
+      userParts.push(`[PASO BRYAN TRACY RECOMENDADO: ${evaluation.objectionStep} — ${stepDesc}]`)
+    }
+    userParts.push(`[Usa el script de "${evaluation.objectionType}" del framework de objeciones. Aplica el paso indicado.]`)
+  }
 
   if (!evaluation.onScope) {
     userParts.push(`[FUERA DE SCOPE: redirige suavemente al tema del negocio]`)
