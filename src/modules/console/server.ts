@@ -12,7 +12,7 @@ import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
 import { pageLayout, type DynamicSidebarModule, type SidebarChannelInfo } from './templates.js'
-import { renderSection, SECTION_REDIRECTS } from './templates-sections.js'
+import { renderSection, renderAdvancedAgentSection, SECTION_REDIRECTS } from './templates-sections.js'
 import type { SectionData } from './templates-sections.js'
 import type { ModuleInfo } from './templates-modules.js'
 import { renderChannelSettingsPage } from './templates-channel-settings.js'
@@ -1162,15 +1162,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         sectionData.agenteSubpage = agenteSubpage
         // Map sub-pages to their actual section renderers
         if (agenteSubpage === 'advanced') {
-          // Combine LLM + Pipeline + Engine + Infra with dividers
-          const llmHtml = renderSection('llm', sectionData) || ''
-          const pipelineHtml = renderSection('pipeline', sectionData) || ''
-          const engineMod = data.moduleStates.find(m => m.name === 'engine')
-          const engineHtml = engineMod?.active && engineMod.console?.fields?.length
-            ? renderModulePanels([engineMod], data.config, lang, 'engine')
-            : ''
-          const infraHtml = renderSection('infra', sectionData) || ''
-          sectionData.agenteContent = llmHtml + pipelineHtml + engineHtml + infraHtml
+          sectionData.agenteContent = renderAdvancedAgentSection(sectionData)
         } else if (agenteSubpage === 'knowledge') {
           // Load knowledge items HTML via module service
           try {
