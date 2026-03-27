@@ -1953,3 +1953,159 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
 })()
+
+// ═══════════════════════════════════════════
+// Volume Selector — live value display
+// ═══════════════════════════════════════════
+;(function () {
+  document.querySelectorAll('.volume-selector-input').forEach(function (input) {
+    var displayId = input.getAttribute('data-vol-display')
+    var unit = input.getAttribute('data-vol-unit') || ''
+    var display = displayId ? document.getElementById(displayId) : null
+    if (!display) return
+    function updateDisplay() {
+      display.textContent = unit ? input.value + ' ' + unit : input.value
+    }
+    input.addEventListener('input', updateDisplay)
+  })
+})()
+
+// ═══════════════════════════════════════════
+// Code Editor — line numbers + cursor position
+// ═══════════════════════════════════════════
+;(function () {
+  document.querySelectorAll('.code-editor-textarea').forEach(function (ta) {
+    var key = ta.getAttribute('data-ce-key')
+    var linesEl = document.querySelector('[data-ce-lines="' + key + '"]')
+    var posEl = document.querySelector('[data-ce-pos="' + key + '"]')
+
+    function updateLines() {
+      if (!linesEl) return
+      var count = (ta.value || '').split('\n').length
+      var nums = ''
+      for (var i = 1; i <= count; i++) nums += '<span class="code-editor-line-num">' + i + '</span>'
+      linesEl.innerHTML = nums
+    }
+
+    function updatePos() {
+      if (!posEl) return
+      var val = ta.value.substring(0, ta.selectionStart)
+      var lines = val.split('\n')
+      var ln = lines.length
+      var col = (lines[lines.length - 1] || '').length + 1
+      posEl.textContent = 'LN ' + ln + ', COL ' + col
+    }
+
+    ta.addEventListener('input', function () { updateLines(); updatePos() })
+    ta.addEventListener('click', updatePos)
+    ta.addEventListener('keyup', updatePos)
+
+    // Sync scroll between lines and textarea
+    ta.addEventListener('scroll', function () {
+      if (linesEl) linesEl.style.transform = 'translateY(-' + ta.scrollTop + 'px)'
+    })
+  })
+})()
+
+// ═══════════════════════════════════════════
+// Channel Settings Tabs
+// ═══════════════════════════════════════════
+;(function () {
+  document.querySelectorAll('.chs-tabs').forEach(function (tabBar) {
+    var tabs = tabBar.querySelectorAll('.chs-tab')
+    var parent = tabBar.parentElement
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var target = tab.getAttribute('data-tab')
+        tabs.forEach(function (t) { t.classList.remove('active') })
+        tab.classList.add('active')
+        if (parent) {
+          parent.querySelectorAll('.chs-tab-content').forEach(function (c) {
+            c.classList.toggle('active', c.getAttribute('data-tab-content') === target)
+          })
+        }
+      })
+    })
+  })
+})()
+
+// ═══════════════════════════════════════════
+// Header Search — functional search across params/tabs/settings
+// ═══════════════════════════════════════════
+;(function () {
+  var searchInput = document.getElementById('header-search')
+  var searchWrap = searchInput ? searchInput.closest('.header-search') : null
+  if (!searchInput || !searchWrap) return
+
+  var resultsEl = document.createElement('div')
+  resultsEl.className = 'search-results'
+  searchWrap.appendChild(resultsEl)
+
+  var debounceTimer = null
+  var searchCache = null
+
+  function fetchSearchIndex() {
+    if (searchCache) return Promise.resolve(searchCache)
+    return fetch('/console/api/console/search-index')
+      .then(function (r) { return r.json() })
+      .then(function (data) { searchCache = data; return data })
+      .catch(function () { return { items: [] } })
+  }
+
+  function doSearch(query) {
+    if (!query || query.length < 2) { resultsEl.classList.remove('open'); return }
+    fetchSearchIndex().then(function (data) {
+      var q = query.toLowerCase()
+      var matches = (data.items || []).filter(function (item) {
+        return (item.label || '').toLowerCase().includes(q) ||
+               (item.key || '').toLowerCase().includes(q) ||
+               (item.section || '').toLowerCase().includes(q)
+      })
+      if (matches.length === 0) {
+        resultsEl.innerHTML = '<div class="search-results-empty">Sin resultados</div>'
+        resultsEl.classList.add('open')
+        return
+      }
+      // Group by section
+      var groups = {}
+      matches.slice(0, 20).forEach(function (m) {
+        var sec = m.section || 'General'
+        if (!groups[sec]) groups[sec] = []
+        groups[sec].push(m)
+      })
+      var html = ''
+      Object.keys(groups).forEach(function (sec) {
+        html += '<div class="search-results-group"><div class="search-results-group-label">' + escHtmlSearch(sec) + '</div>'
+        groups[sec].forEach(function (item) {
+          html += '<a class="search-results-item" href="' + escHtmlSearch(item.url || '#') + '">'
+          html += '<span class="search-results-item-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>'
+          html += '<span class="search-results-item-text"><span class="search-results-item-label">' + escHtmlSearch(item.label) + '</span></span>'
+          html += '</a>'
+        })
+        html += '</div>'
+      })
+      resultsEl.innerHTML = html
+      resultsEl.classList.add('open')
+    })
+  }
+
+  searchInput.addEventListener('input', function () {
+    clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(function () { doSearch(searchInput.value.trim()) }, 300)
+  })
+
+  // Close on outside click
+  document.addEventListener('click', function (e) {
+    if (!searchWrap.contains(e.target)) resultsEl.classList.remove('open')
+  })
+
+  // Close on Escape
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { resultsEl.classList.remove('open'); searchInput.blur() }
+  })
+
+  function escHtmlSearch(s) {
+    if (!s) return ''
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
+})()

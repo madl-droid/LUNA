@@ -23,15 +23,13 @@ export interface BaileysState {
 }
 
 export interface WhatsAppConfig {
-  WHATSAPP_RECONNECT_INTERVAL_MS: number
-  WHATSAPP_MAX_RECONNECT_ATTEMPTS: number
   WHATSAPP_MARK_ONLINE: boolean
   WHATSAPP_REJECT_CALLS: boolean
-  WHATSAPP_REJECT_CALL_MESSAGE: string
-  WHATSAPP_PRIVACY_LAST_SEEN: string
+  WHATSAPP_PRIVACY_LAST_SEEN: boolean
   WHATSAPP_PRIVACY_PROFILE_PIC: string
   WHATSAPP_PRIVACY_STATUS: string
   WHATSAPP_PRIVACY_READ_RECEIPTS: boolean
+  WHATSAPP_MISSED_MSG_ENABLED: boolean
   /** Max age in minutes for 'append' messages to be processed (missed during downtime). 0 = disabled. */
   WHATSAPP_MISSED_MSG_WINDOW_MIN: number
 }
@@ -93,6 +91,8 @@ export class BaileysAdapter {
   private messageHandlers: MessageHandler[] = []
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  /** Fixed reconnection schedule: attempt index → delay in ms */
+  private static readonly RECONNECT_SCHEDULE_MS = [30_000, 60_000, 300_000, 600_000, 1_800_000, 1_800_000, 3_600_000, 3_600_000, 7_200_000, 10_800_000]
   private _status: BaileysStatus = 'disconnected'
   private _qr: string | null = null
   private _lastDisconnectReason: string | null = null
@@ -179,10 +179,12 @@ export class BaileysAdapter {
 
         const shouldReconnect = this._autoReconnect && reason !== DisconnectReason.loggedOut
 
-        if (shouldReconnect && this.reconnectAttempts < this.config.WHATSAPP_MAX_RECONNECT_ATTEMPTS) {
+        const maxAttempts = BaileysAdapter.RECONNECT_SCHEDULE_MS.length
+        if (shouldReconnect && this.reconnectAttempts < maxAttempts) {
+          const delay = BaileysAdapter.RECONNECT_SCHEDULE_MS[this.reconnectAttempts]!
           this.reconnectAttempts++
-          logger.warn({ attempt: this.reconnectAttempts, reason }, 'WhatsApp disconnected, reconnecting...')
-          this.reconnectTimer = setTimeout(() => this.initialize(), this.config.WHATSAPP_RECONNECT_INTERVAL_MS)
+          logger.warn({ attempt: this.reconnectAttempts, delayMs: delay, reason }, 'WhatsApp disconnected, reconnecting...')
+          this.reconnectTimer = setTimeout(() => this.initialize(), delay)
         } else {
           logger.error({ reason }, 'WhatsApp disconnected permanently')
         }
@@ -216,9 +218,10 @@ export class BaileysAdapter {
 
     this.socket.ev.on('messages.upsert', async (upsert: BaileysEventMap['messages.upsert']) => {
       // 'notify' = real-time messages, 'append' = history/missed messages (during downtime)
+      const missedEnabled = this.config.WHATSAPP_MISSED_MSG_ENABLED ?? true
       const missedWindowMin = this.config.WHATSAPP_MISSED_MSG_WINDOW_MIN ?? 15
       const isNotify = upsert.type === 'notify'
-      const isAppend = upsert.type === 'append' && missedWindowMin > 0
+      const isAppend = upsert.type === 'append' && missedEnabled && missedWindowMin > 0
 
       if (!isNotify && !isAppend) return
 
@@ -249,7 +252,7 @@ export class BaileysAdapter {
       }
     })
 
-    // Call rejection: auto-reject incoming calls if configured
+    // Call rejection: silently reject incoming calls
     if (this.config.WHATSAPP_REJECT_CALLS) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       this.socket.ev.on('call', async (calls: any[]) => {
@@ -257,11 +260,7 @@ export class BaileysAdapter {
           if (call.status === 'offer') {
             try {
               await this.socket!.rejectCall(call.id, call.from)
-              logger.info({ from: call.from, callId: call.id }, 'Call rejected')
-              if (this.config.WHATSAPP_REJECT_CALL_MESSAGE) {
-                const jid = call.from.includes('@') ? call.from : `${call.from}@s.whatsapp.net`
-                await this.socket!.sendMessage(jid, { text: this.config.WHATSAPP_REJECT_CALL_MESSAGE })
-              }
+              logger.info({ from: call.from, callId: call.id }, 'Call rejected silently')
             } catch (err) {
               logger.warn({ err, from: call.from }, 'Failed to reject call')
             }
@@ -552,8 +551,9 @@ export class BaileysAdapter {
     if (!this.socket) return
     const settings: Record<string, string> = {}
 
-    if (this.config.WHATSAPP_PRIVACY_LAST_SEEN) {
-      settings.lastSeen = this.config.WHATSAPP_PRIVACY_LAST_SEEN
+    // PRIVACY_LAST_SEEN is now a boolean: true = show, false = hide
+    if (!this.config.WHATSAPP_PRIVACY_LAST_SEEN) {
+      settings.lastSeen = 'none'
     }
     if (this.config.WHATSAPP_PRIVACY_PROFILE_PIC) {
       settings.profilePicture = this.config.WHATSAPP_PRIVACY_PROFILE_PIC

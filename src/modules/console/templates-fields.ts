@@ -166,6 +166,52 @@ function directField(key: string, value: string, label: string, inputType: strin
     <input type="${type}"${inputMode} name="${key}" value="${esc(value)}" data-original="${esc(value)}"></div>`
 }
 
+/** Volume selector — range input with min/max labels and current value */
+export function volumeField(key: string, value: string, label: string, opts: {
+  min: number; max: number; step: number; unit?: string;
+  minLabel?: string; maxLabel?: string;
+  info?: { es: string; en: string }; lang?: Lang;
+}): string {
+  const numVal = Number(value) || opts.min
+  const tip = opts.info && opts.lang ? infoBtnWithTip(key, esc(opts.info[opts.lang] || opts.info['es'] || '')) : ''
+  const displayVal = opts.unit ? `${numVal} ${opts.unit}` : String(numVal)
+  const minLabel = opts.minLabel || String(opts.min)
+  const maxLabel = opts.maxLabel || String(opts.max)
+  return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
+    <div class="volume-selector">
+      <span class="volume-selector-label vol-min">${esc(minLabel)}</span>
+      <div class="volume-selector-track">
+        <input type="range" class="volume-selector-input" name="${esc(key)}" value="${numVal}" min="${opts.min}" max="${opts.max}" step="${opts.step}" data-original="${esc(value)}" data-vol-display="${esc(key)}-display" data-vol-unit="${esc(opts.unit || '')}">
+      </div>
+      <span class="volume-selector-label vol-max">${esc(maxLabel)}</span>
+      <span class="volume-selector-value" id="${esc(key)}-display">${esc(displayVal)}</span>
+    </div>
+  </div>`
+}
+
+/** Code editor — monospace textarea with line numbers and header bar */
+export function codeEditorField(key: string, value: string, title: string, opts?: {
+  readonly?: boolean; placeholder?: string;
+}): string {
+  const lines = (value || '').split('\n')
+  const lineNums = lines.map((_, i) => `<span class="code-editor-line-num">${i + 1}</span>`).join('')
+  const readonly = opts?.readonly ? ' disabled' : ''
+  const placeholder = opts?.placeholder ? ` placeholder="${esc(opts.placeholder)}"` : ''
+  return `<div class="code-editor">
+    <div class="code-editor-header">
+      <div class="code-editor-header-left">
+        <svg class="code-editor-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <span>${esc(title)}</span>
+      </div>
+      <span class="code-editor-pos" data-ce-pos="${esc(key)}">LN 1, COL 1</span>
+    </div>
+    <div class="code-editor-body">
+      <div class="code-editor-lines" data-ce-lines="${esc(key)}">${lineNums}</div>
+      <textarea class="code-editor-textarea" name="${esc(key)}" data-original="${esc(value)}" data-ce-key="${esc(key)}"${readonly}${placeholder}>${esc(value)}</textarea>
+    </div>
+  </div>`
+}
+
 export function renderConsoleField(field: ConsoleField, value: string, lang: Lang): string {
   const label = field.label ? (field.label[lang] || field.label['es'] || field.key) : field.key
   const info = field.info ?? field.description

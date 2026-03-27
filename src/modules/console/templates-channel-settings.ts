@@ -95,7 +95,7 @@ export function renderChannelSettingsPage(channel: ModuleInfo, data: SectionData
     <div class="chs-layout">
       <div class="chs-main">
         ${renderStatusBar(channel, data, channelName)}
-        ${renderConfigSections(channelId, fields, config, lang)}
+        ${renderConfigSections(channelId, fields, config, lang, (channel.console as Record<string, unknown>)?.tabs as Array<{ id: string; label: { es: string; en: string } }> | undefined)}
       </div>
       <div class="chs-sidebar">
         ${renderPeriodFilter(channelId, lang)}
@@ -172,9 +172,15 @@ function renderStatusBar(channel: ModuleInfo, data: SectionData, _channelName: s
   </div>`
 }
 
-// ── Config sections (collapsible panels) ──
+// ── Config sections (tabs or collapsible panels) ──
 
-function renderConfigSections(_channelId: string, fields: ConsoleField[], config: Record<string, string>, lang: Lang): string {
+function renderConfigSections(channelId: string, fields: ConsoleField[], config: Record<string, string>, lang: Lang, tabs?: Array<{ id: string; label: { es: string; en: string } }>): string {
+  // If channel defines tabs, render tab-based layout
+  if (tabs && tabs.length > 0) {
+    return renderTabSections(channelId, fields, config, lang, tabs)
+  }
+
+  // Fallback: collapsible panels (original behavior)
   const sections: Array<{ title: string; fields: ConsoleField[] }> = []
   let current: { title: string; fields: ConsoleField[] } = { title: '', fields: [] }
 
@@ -188,7 +194,6 @@ function renderConfigSections(_channelId: string, fields: ConsoleField[], config
   }
   if (current.fields.length > 0 || current.title) sections.push(current)
 
-  // If first section has no title, give it a default
   if (sections.length > 0 && !sections[0]!.title) {
     sections[0]!.title = lang === 'es' ? 'General' : 'General'
   }
@@ -196,7 +201,7 @@ function renderConfigSections(_channelId: string, fields: ConsoleField[], config
   let html = ''
   for (let idx = 0; idx < sections.length; idx++) {
     const sec = sections[idx]!
-    const collapsed = idx > 0 ? ' collapsed' : '' // first section open, rest collapsed
+    const collapsed = idx > 0 ? ' collapsed' : ''
     html += `<div class="panel${collapsed}">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${esc(sec.title)}</span>
@@ -208,6 +213,50 @@ function renderConfigSections(_channelId: string, fields: ConsoleField[], config
     </div>`
   }
   return html
+}
+
+function renderTabSections(_channelId: string, fields: ConsoleField[], config: Record<string, string>, lang: Lang, tabs: Array<{ id: string; label: { es: string; en: string } }>): string {
+  // Build tab bar
+  let tabBar = '<div class="chs-tabs">'
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]!
+    const active = i === 0 ? ' active' : ''
+    tabBar += `<button class="chs-tab${active}" data-tab="${esc(tab.id)}">${esc(tab.label[lang] || tab.label.es)}</button>`
+  }
+  tabBar += '</div>'
+
+  // Build tab content areas
+  let content = ''
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i]!
+    const active = i === 0 ? ' active' : ''
+    const tabFields = fields.filter((f) => (f as unknown as Record<string, unknown>).tab === tab.id)
+
+    // Group by dividers within the tab
+    const sections: Array<{ title: string; fields: ConsoleField[] }> = []
+    let current: { title: string; fields: ConsoleField[] } = { title: '', fields: [] }
+    for (const f of tabFields) {
+      if (f.type === 'divider') {
+        if (current.fields.length > 0 || current.title) sections.push(current)
+        current = { title: f.label[lang] ?? f.label.es ?? '', fields: [] }
+      } else {
+        current.fields.push(f)
+      }
+    }
+    if (current.fields.length > 0 || current.title) sections.push(current)
+
+    let tabHtml = ''
+    for (const sec of sections) {
+      if (sec.title) {
+        tabHtml += `<div class="field-divider"><span class="field-divider-label">${esc(sec.title)}</span></div>`
+      }
+      tabHtml += renderFieldGroup(sec.fields, config, lang)
+    }
+
+    content += `<div class="chs-tab-content${active}" data-tab-content="${esc(tab.id)}">${tabHtml}</div>`
+  }
+
+  return tabBar + content
 }
 
 function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>, lang: Lang): string {

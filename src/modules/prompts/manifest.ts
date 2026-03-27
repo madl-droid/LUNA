@@ -82,8 +82,10 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     AGENT_NAME: z.string().default('Luna'),
     AGENT_LAST_NAME: z.string().default(''),
+    AGENT_TITLE: z.string().default(''),
     AGENT_LANGUAGE: z.string().default('es'),
-    AGENT_ACCENT: z.string().default('es-MX'),
+    AGENT_COUNTRY: z.string().default(''),
+    AGENT_ACCENT: z.string().default(''),
   }),
 
   console: {

@@ -508,6 +508,44 @@ function createApiRoutes(): ApiRoute[] {
         }
       },
     },
+
+    // POST /console/api/lead-scoring/contact-ignored — mark engine leads for outbound contact
+    {
+      method: 'POST',
+      path: 'contact-ignored',
+      handler: async (_req, res) => {
+        try {
+          // Use listLeads to find engine-source leads, then update via raw query
+          const result = await getQueries().listLeads({ status: 'new', limit: 500, offset: 0, sortBy: 'created', sortDir: 'asc' })
+          const engineLeads = result.leads.filter((l) => (l as unknown as Record<string, unknown>).source === 'engine')
+
+          if (engineLeads.length === 0) {
+            jsonResponse(res, 200, { ok: true, count: 0 })
+            return
+          }
+
+          // Update source to 'outbound' for these leads
+          const ids = engineLeads.map((l) => (l as unknown as Record<string, unknown>).id as string)
+          const queries = getQueries()
+          let count = 0
+          for (const id of ids) {
+            try {
+              await (queries as unknown as { db: import('pg').Pool }).db.query(
+                `UPDATE agent_contacts SET source = 'outbound', updated_at = NOW() WHERE id = $1`,
+                [id]
+              )
+              count++
+            } catch {
+              // continue
+            }
+          }
+
+          jsonResponse(res, 200, { ok: true, count })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
   ]
 }
 

@@ -968,10 +968,10 @@ const manifest: ModuleManifest = {
   }),
 
   console: {
-    title: { es: 'Base de Conocimiento', en: 'Knowledge Base' },
+    title: { es: 'Conocimiento', en: 'Knowledge' },
     info: {
-      es: 'Gestiona documentos, categorías, FAQs, API connectors y web sources.',
-      en: 'Manage documents, categories, FAQs, API connectors, and web sources.',
+      es: 'Administra las fuentes de informacion del agente: documentos principales, hojas de calculo, FAQs y fuentes externas.',
+      en: 'Manage agent information sources: core documents, spreadsheets, FAQs and external sources.',
     },
     order: 12,
     group: 'data',

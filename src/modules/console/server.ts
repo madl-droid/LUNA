@@ -1186,10 +1186,8 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             ? renderModulePanels([memoryMod], data.config, lang, 'memory')
             : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'identity') {
-          const promptsMod = data.moduleStates.find(m => m.name === 'prompts')
-          sectionData.agenteContent = promptsMod?.active && promptsMod.console?.fields?.length
-            ? renderModulePanels([promptsMod], data.config, lang, 'prompts')
-            : `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
+          sectionData.agenteContent = renderSection('identity', sectionData) ??
+            `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
         }
       }
 
@@ -1199,10 +1197,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         const notAvailable = (name: string) => `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? `Modulo de ${name} no disponible.` : `${name} module not available.`}</p></div></div>`
 
         if (herramientasSubpage === 'tools') {
-          const toolsMod = data.moduleStates.find(m => m.name === 'tools')
-          sectionData.herramientasContent = toolsMod?.active && toolsMod.console?.fields?.length
-            ? renderModulePanels([toolsMod], data.config, lang, 'tools')
-            : notAvailable('herramientas')
+          sectionData.herramientasContent = renderSection('tools-cards', sectionData) ?? notAvailable('herramientas')
         } else if (herramientasSubpage === 'lead-scoring') {
           // Use lead-scoring's custom renderer if available
           try {
@@ -2231,6 +2226,59 @@ export function createApiRoutes(): ApiRoute[] {
           jsonResponse(res, 200, { columns, rows, total, page, limit })
         } catch (err) {
           logger.error({ err }, 'db-table-data failed')
+          jsonResponse(res, 500, { error: 'Internal server error' })
+        }
+      },
+    },
+
+    // GET /console/api/console/search-index — search index for header search bar
+    {
+      method: 'GET',
+      path: 'search-index',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          const lang = (parseQuery(req).get('lang') || 'es') as 'es' | 'en'
+          const items: Array<{ key: string; label: string; section: string; url: string }> = []
+
+          // Collect from all module console fields
+          if (registry) {
+            for (const lm of registry.listModules()) {
+              const manifest = lm.manifest
+              if (!manifest?.console?.fields) continue
+              const sectionTitle = manifest.console.title?.[lang] || manifest.console.title?.['es'] || manifest.name
+              const group = (manifest.console as unknown as Record<string, unknown>).group as string || ''
+              let url = `/console/${manifest.name}`
+              if (group === 'channels') url = `/console/channels/${manifest.name}`
+              for (const field of manifest.console.fields) {
+                if (field.type === 'divider') continue
+                const label = field.label?.[lang] || field.label?.['es'] || field.key
+                items.push({ key: field.key, label, section: sectionTitle, url: `${url}#${field.key}` })
+              }
+            }
+          }
+
+          // Add fixed sidebar sections
+          const sections = [
+            { label: 'Dashboard', section: 'Dashboard', url: '/console/dashboard' },
+            { label: 'Canales', section: 'Navegación', url: '/console/channels' },
+            { label: 'Contactos', section: 'Navegación', url: '/console/contacts' },
+            { label: 'Conocimiento', section: 'Agente', url: '/console/agente/knowledge' },
+            { label: 'Memoria', section: 'Agente', url: '/console/agente/memory' },
+            { label: 'Identidad', section: 'Agente', url: '/console/agente/identity' },
+            { label: 'Avanzado', section: 'Agente', url: '/console/agente/advanced' },
+            { label: 'Herramientas', section: 'Herramientas', url: '/console/herramientas' },
+            { label: 'LLM', section: 'Sistema', url: '/console/llm' },
+            { label: 'Módulos', section: 'Sistema', url: '/console/modules' },
+          ]
+          for (const s of sections) {
+            items.push({ key: '', label: s.label, section: s.section, url: s.url })
+          }
+
+          jsonResponse(res, 200, { items })
+        } catch (err) {
+          logger.error({ err }, 'search-index failed')
           jsonResponse(res, 500, { error: 'Internal server error' })
         }
       },

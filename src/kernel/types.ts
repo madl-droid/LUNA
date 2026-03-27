@@ -316,7 +316,7 @@ export interface ConsoleField {
   type: ConsoleFieldType
   label: { es: string; en: string }
   info?: { es: string; en: string }
-  options?: Array<{ value: string; label: string }>
+  options?: Array<{ value: string; label: string | { es: string; en: string } }>
   /** Number constraints */
   min?: number
   max?: number
@@ -337,6 +337,14 @@ export interface ConsoleField {
   icon?: string
   /** Description below label for boolean toggle rows (bilingüe) */
   description?: { es: string; en: string }
+
+  // ── Tab support for channel settings pages ──
+  /** Tab ID this field belongs to (for tab-based channel settings) */
+  tab?: string
+  /** Grid group ID (e.g. 'switches' for switch grid layout) */
+  grid?: string
+  /** Field type hint for custom rendering (e.g. 'volume' for volume selector) */
+  fieldType?: string
 }
 
 export interface ApiRoute {
@@ -366,6 +374,9 @@ export interface ModuleConsoleDef {
 
   /** Campos del formulario. Se renderizan automáticamente. */
   fields?: ConsoleField[]
+
+  /** Tabs for channel settings pages (optional, renders tab bar + tab content areas) */
+  tabs?: Array<{ id: string; label: { es: string; en: string } }>
 
   /** Endpoints API custom bajo /console/api/{moduleName}/ */
   apiRoutes?: ApiRoute[]

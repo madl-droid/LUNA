@@ -277,7 +277,7 @@ const manifest: ModuleManifest = {
   }),
 
   console: {
-    title: { es: 'Google API', en: 'Google API' },
+    title: { es: 'Google Workspace', en: 'Google Workspace' },
     info: {
       es: 'Conexión OAuth2 a Google. Habilita Drive, Sheets, Docs, Slides y Calendar. Cada servicio se activa/desactiva individualmente.',
       en: 'OAuth2 connection to Google. Enables Drive, Sheets, Docs, Slides and Calendar. Each service can be toggled individually.',

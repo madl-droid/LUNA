@@ -824,106 +824,385 @@ export const SECTION_REDIRECTS: Record<string, string> = {
 }
 
 // ═══════════════════════════════════════════
-// Dashboard section — overview with mock charts
+// Tools Cards section — card grid with global params
+// ═══════════════════════════════════════════
+
+function renderToolsCardsSection(data: SectionData): string {
+  const lang = data.lang
+  const isEs = lang === 'es'
+  const cfg = data.config
+
+  // Collect tool modules from herramientas group
+  const toolModules = (data.moduleStates ?? [])
+    .filter(m => (m.console as unknown as Record<string, unknown>)?.group === 'agent' || m.type === 'feature')
+    .filter(m => m.name !== 'tools' && m.name !== 'prompts' && m.name !== 'engine')
+    .sort((a, b) => {
+      // Active first, then alphabetical
+      if (a.active !== b.active) return a.active ? -1 : 1
+      const nameA = a.console?.title?.[lang] || a.name
+      const nameB = b.console?.title?.[lang] || b.name
+      return nameA.localeCompare(nameB)
+    })
+
+  let cardsHtml = '<div class="tool-cards">'
+  for (const mod of toolModules) {
+    const title = mod.console?.title?.[lang] || mod.console?.title?.['es'] || mod.name
+    const desc = mod.console?.info?.[lang] || mod.console?.info?.['es'] || ''
+    const icon = (mod.console as unknown as Record<string, unknown>)?.icon as string || '&#9881;'
+    const active = mod.active
+    const disabledClass = active ? '' : ' disabled'
+
+    cardsHtml += `<div class="tool-card${disabledClass}">
+      <div class="tool-card-header">
+        <div class="tool-card-icon">${icon}</div>
+        <span class="tool-card-title">${esc(title)}</span>
+      </div>
+      <div class="tool-card-desc">${esc(desc)}</div>
+      <div class="tool-card-footer">
+        <label class="toggle toggle-sm" onclick="event.stopPropagation()">
+          <input type="checkbox" ${active ? 'checked' : ''} onchange="toggleToolModule('${esc(mod.name)}', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+        <a class="act-btn act-btn-config" href="/console/herramientas/${esc(mod.name)}?lang=${lang}">${isEs ? 'Configurar' : 'Configure'}</a>
+      </div>
+    </div>`
+  }
+  cardsHtml += '</div>'
+
+  // Global tool params
+  const backoff = cfg['TOOLS_RETRY_BACKOFF_MS'] || '1000'
+  const timeout = cfg['TOOLS_EXECUTION_TIMEOUT_MS'] || '30000'
+  const maxPerTurn = cfg['PIPELINE_MAX_TOOL_CALLS_PER_TURN'] || '5'
+
+  const globalParams = `<div class="panel" style="margin-top:8px">
+    <div class="panel-body" style="padding:20px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+        <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
+          <span class="field-label">${isEs ? 'Backoff reintentos (ms)' : 'Retry backoff (ms)'}</span>
+          <input type="text" inputmode="numeric" name="TOOLS_RETRY_BACKOFF_MS" value="${esc(backoff)}" data-original="${esc(backoff)}">
+        </div>
+        <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
+          <span class="field-label">${isEs ? 'Timeout ejecucion (ms)' : 'Execution timeout (ms)'}</span>
+          <input type="text" inputmode="numeric" name="TOOLS_EXECUTION_TIMEOUT_MS" value="${esc(timeout)}" data-original="${esc(timeout)}">
+        </div>
+        <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
+          <span class="field-label">${isEs ? 'Max herramientas por turno' : 'Max tools per turn'}</span>
+          <input type="text" inputmode="numeric" name="PIPELINE_MAX_TOOL_CALLS_PER_TURN" value="${esc(maxPerTurn)}" data-original="${esc(maxPerTurn)}">
+        </div>
+      </div>
+    </div>
+  </div>`
+
+  return cardsHtml + globalParams + `
+  <script>
+  function toggleToolModule(name, enabled) {
+    fetch('/console/modules/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'module=' + encodeURIComponent(name) + '&action=' + (enabled ? 'activate' : 'deactivate') + '&_redirect=/console/herramientas'
+    }).then(function() { location.reload() }).catch(function() { alert('Error') })
+  }
+  </script>`
+}
+
+// ═══════════════════════════════════════════
+// Identity section — 2-column layout (prompts + identity fields)
+// ═══════════════════════════════════════════
+
+function renderIdentitySection(data: SectionData): string {
+  const lang = data.lang
+  const isEs = lang === 'es'
+  const cfg = data.config
+
+  // Prompt fields
+  const prompts = [
+    { key: 'PROMPT_IDENTITY', label: isEs ? 'Identidad' : 'Identity', title: 'IDENTITY PROMPT' },
+    { key: 'PROMPT_JOB', label: isEs ? 'Descripcion del trabajo' : 'Job description', title: 'JOB DESCRIPTION PROMPT' },
+    { key: 'PROMPT_GUARDRAILS', label: isEs ? 'Reglas' : 'Rules', title: 'RULES PROMPT' },
+  ]
+
+  // Language options
+  const langOptions = [
+    { value: 'es', label: 'Español' }, { value: 'en', label: 'English' },
+    { value: 'pt', label: 'Português' }, { value: 'fr', label: 'Français' },
+    { value: 'de', label: 'Deutsch' }, { value: 'it', label: 'Italiano' },
+  ]
+
+  // Build prompts column (left)
+  let promptsHtml = `<div style="margin-bottom:12px;font-size:13px;color:var(--on-surface-variant);font-weight:500">${isEs ? 'Haz clic en una pestana para ver y editar el prompt' : 'Click a tab to view and edit the prompt'}</div>`
+
+  for (const p of prompts) {
+    const value = cfg[p.key] || ''
+    const lines = (value || ' ').split('\n')
+    const lineNums = lines.map((_: string, i: number) => `<span class="code-editor-line-num">${i + 1}</span>`).join('')
+    promptsHtml += `<div class="panel collapsed" style="margin-bottom:8px">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${esc(p.label)}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <div class="code-editor" style="border:none;border-radius:0">
+          <div class="code-editor-header">
+            <div class="code-editor-header-left">
+              <svg class="code-editor-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>${esc(p.title)}</span>
+            </div>
+            <span class="code-editor-pos" data-ce-pos="${esc(p.key)}">LN 1, COL 1</span>
+          </div>
+          <div class="code-editor-body" style="min-height:160px;max-height:350px">
+            <div class="code-editor-lines" data-ce-lines="${esc(p.key)}">${lineNums}</div>
+            <textarea class="code-editor-textarea" name="${esc(p.key)}" data-original="${esc(value)}" data-ce-key="${esc(p.key)}" style="min-height:160px">${esc(value)}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>`
+  }
+
+  // Build identity column (right)
+  const agentName = cfg['AGENT_NAME'] || 'Luna'
+  const agentLastName = cfg['AGENT_LAST_NAME'] || ''
+  const agentLang = cfg['AGENT_LANGUAGE'] || 'es'
+  const agentAccent = cfg['AGENT_ACCENT'] || ''
+
+  const langSelectHtml = langOptions.map(o =>
+    `<option value="${o.value}" ${o.value === agentLang ? 'selected' : ''}>${esc(o.label)}</option>`
+  ).join('')
+
+  const identityHtml = `<div class="panel">
+    <div class="panel-header" style="cursor:default">
+      <span class="panel-title">${isEs ? 'Identidad del agente' : 'Agent identity'}</span>
+    </div>
+    <div class="panel-body">
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Nombre' : 'Name'} *</span></div>
+        <input type="text" name="AGENT_NAME" value="${esc(agentName)}" data-original="${esc(agentName)}" required></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Apellido' : 'Last name'} *</span></div>
+        <input type="text" name="AGENT_LAST_NAME" value="${esc(agentLastName)}" data-original="${esc(agentLastName)}" required></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Cargo' : 'Title'} *</span></div>
+        <input type="text" name="AGENT_TITLE" value="${esc(cfg['AGENT_TITLE'] || '')}" data-original="${esc(cfg['AGENT_TITLE'] || '')}" required></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Idioma principal' : 'Main language'} *</span></div>
+        <select name="AGENT_LANGUAGE" data-original="${esc(agentLang)}">${langSelectHtml}</select></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Pais' : 'Country'}</span></div>
+        <input type="text" name="AGENT_COUNTRY" value="${esc(cfg['AGENT_COUNTRY'] || '')}" data-original="${esc(cfg['AGENT_COUNTRY'] || '')}"></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Acento' : 'Accent'}</span></div>
+        <input type="text" name="AGENT_ACCENT" value="${esc(agentAccent)}" data-original="${esc(agentAccent)}" onchange="if(this.value && this.value !== this.getAttribute('data-original')){if(!confirm('${isEs ? 'Si configuras un acento, el agente puede tener dificultades al responder en otros idiomas. ¿Deseas continuar?' : 'Setting an accent may cause issues when responding in other languages. Continue?'}')){this.value=this.getAttribute('data-original')}}"></div>
+    </div>
+  </div>`
+
+  return `<div style="display:grid;grid-template-columns:3fr 2fr;gap:24px;align-items:start">
+    <div>${promptsHtml}</div>
+    <div>${identityHtml}</div>
+  </div>`
+}
+
+// ═══════════════════════════════════════════
+// Dashboard section — SaaS executive overview
 // ═══════════════════════════════════════════
 
 function renderDashboardSection(data: SectionData): string {
   const lang = data.lang
   const isEs = lang === 'es'
 
-  // Mock data for charts
-  const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
-  const daysEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  const dayLabels = isEs ? days : daysEn
-  const convData = [12, 18, 15, 22, 28, 8, 5]
-  const msgData = [45, 62, 58, 71, 85, 32, 18]
-  const costData = [1.2, 1.8, 1.5, 2.1, 2.6, 0.9, 0.5]
+  // Data from server (with fallbacks for mock display)
+  const dashData = (data as unknown as Record<string, unknown>).dashboardData as Record<string, unknown> | undefined
+  const totalContacts = Number(dashData?.totalContacts ?? 240)
+  const contactsChange = Number(dashData?.contactsChange ?? 12.4)
+  const activeSessions = Number(dashData?.activeSessions ?? 42)
+  const llmCost = Number(dashData?.llmCost ?? 1250)
+  const costChange = Number(dashData?.costChange ?? -5)
+  const avgRating = Number(dashData?.avgRating ?? 4.8)
 
-  const maxMsg = Math.max(...msgData)
-  const maxConv = Math.max(...convData)
-  const maxCost = Math.max(...costData)
+  // Channel breakdown data
+  const channels = (dashData?.channels as Array<{ name: string; contacts: number; sessions: number }>) || [
+    { name: 'WhatsApp', contacts: 820, sessions: 420 },
+    { name: 'Gmail', contacts: 520, sessions: 370 },
+    { name: 'Google Chat', contacts: 280, sessions: 140 },
+    { name: 'Twilio Calls', contacts: 130, sessions: 80 },
+  ]
+  const maxChannelTotal = Math.max(...channels.map(c => c.contacts + c.sessions), 1)
 
-  // Bar chart helper (SVG)
-  function barChart(values: number[], max: number, color: string, labels: string[], prefix = '', suffix = ''): string {
-    const w = 100 / values.length
-    const barW = w * 0.6
-    const gap = w * 0.2
-    let bars = ''
-    let lbls = ''
-    for (let i = 0; i < values.length; i++) {
-      const h = max > 0 ? (values[i]! / max) * 80 : 0
-      const x = i * w + gap
-      const y = 90 - h
-      bars += `<rect x="${x}%" y="${y}%" width="${barW}%" height="${h}%" rx="3" fill="${color}" opacity="0.85"/>`
-      bars += `<text x="${x + barW / 2}%" y="${y - 2}%" text-anchor="middle" font-size="10" fill="var(--on-surface-dim)">${prefix}${values[i]}${suffix}</text>`
-      lbls += `<text x="${x + barW / 2}%" y="99%" text-anchor="middle" font-size="9" fill="var(--on-surface-dim)">${labels[i]}</text>`
+  // Contact sources
+  const sources = (dashData?.sources as Array<{ name: string; pct: number; color: string }>) || [
+    { name: isEs ? 'Organico' : 'Organic', pct: 40, color: 'var(--primary)' },
+    { name: 'Referrals', pct: 25, color: '#FFB800' },
+    { name: 'Ads', pct: 20, color: 'var(--info)' },
+    { name: 'Social', pct: 15, color: 'var(--surface-container-high)' },
+  ]
+  const totalSourceContacts = Number(dashData?.totalSourceContacts ?? 2800)
+
+  // LLM token usage
+  const models = (dashData?.models as Array<{ name: string; desc: string; tokens: string; pct: number }>) || [
+    { name: 'Claude Sonnet', desc: 'Primary', tokens: '1.2M', pct: 85 },
+    { name: 'Claude Haiku', desc: 'Compression', tokens: '840k', pct: 60 },
+    { name: 'Gemini Flash', desc: 'Fallback', tokens: '320k', pct: 23 },
+  ]
+
+  // Quality per channel
+  const quality = (dashData?.quality as Array<{ channel: string; score: number; status: string; stars: number }>) || [
+    { channel: 'WHATSAPP', score: 4.9, status: isEs ? 'Optimo' : 'Optimal', stars: 5 },
+    { channel: 'GMAIL', score: 4.2, status: isEs ? 'Estable' : 'Stable', stars: 4 },
+    { channel: 'GOOGLE CHAT', score: 4.7, status: isEs ? 'Excelente' : 'Excellent', stars: 5 },
+    { channel: 'TWILIO CALLS', score: 3.8, status: isEs ? 'Atención' : 'Warning', stars: 4 },
+  ]
+
+  // Stars helper
+  function stars(count: number, max = 5): string {
+    let html = ''
+    for (let i = 0; i < max; i++) {
+      html += `<span class="dash-kpi-star${i < count ? '' : ' empty'}">&#9733;</span>`
     }
-    return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:200px">${bars}${lbls}</svg>`
+    return html
   }
 
-  // KPI cards
-  const totalMsg = msgData.reduce((a, b) => a + b, 0)
-  const totalConv = convData.reduce((a, b) => a + b, 0)
-  const totalCost = costData.reduce((a, b) => a + b, 0)
-  const convRate = totalMsg > 0 ? ((totalConv / totalMsg) * 100).toFixed(1) : '0'
+  // Quality status class
+  function qualityClass(status: string): string {
+    const s = status.toLowerCase()
+    if (s.includes('optim') || s.includes('excelen') || s.includes('excellent')) return 'optimal'
+    if (s.includes('estab') || s.includes('stable')) return 'stable'
+    return 'warning'
+  }
 
-  const activeModules = (data.moduleStates ?? []).filter(m => m.active).length
-  const totalModules = (data.moduleStates ?? []).length
+  // SVG donut chart
+  function renderDonut(): string {
+    let cumulative = 0
+    const r = 70
+    const cx = 90
+    const cy = 90
+    const circumference = 2 * Math.PI * r
+    let segments = ''
+    for (const src of sources) {
+      const dashLen = (src.pct / 100) * circumference
+      const dashOff = circumference - dashLen
+      const rotation = (cumulative / 100) * 360 - 90
+      segments += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${src.color}" stroke-width="24"
+        stroke-dasharray="${dashLen} ${dashOff}" transform="rotate(${rotation} ${cx} ${cy})" />`
+      cumulative += src.pct
+    }
+    return `<svg viewBox="0 0 180 180" width="180" height="180">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface-container-low)" stroke-width="24"/>
+      ${segments}
+    </svg>`
+  }
 
-  return `<div class="dash-kpis">
+  // Format large numbers
+  function fmtNum(n: number): string {
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
+    return String(n)
+  }
+
+  const changeBadge = (val: number, label?: string) => {
+    if (label) return `<span class="dash-kpi-badge ${label}">${label === 'live' ? 'Live' : label === 'top' ? 'Top Rated' : ''}</span>`
+    const cls = val >= 0 ? 'up' : 'down'
+    const sign = val >= 0 ? '+' : ''
+    return `<span class="dash-kpi-badge ${cls}">${sign}${val}%</span>`
+  }
+
+  return `<!-- KPI Cards -->
+<div class="dash-kpis">
   <div class="dash-kpi">
-    <div class="dash-kpi-value">${totalMsg}</div>
-    <div class="dash-kpi-label">${isEs ? 'Mensajes (7d)' : 'Messages (7d)'}</div>
+    <div class="dash-kpi-icon blue"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">${isEs ? 'Nuevos contactos' : 'New Contacts'}</div>
+      <div class="dash-kpi-value">+${totalContacts} ${changeBadge(contactsChange)}</div>
+    </div>
   </div>
   <div class="dash-kpi">
-    <div class="dash-kpi-value">${totalConv}</div>
-    <div class="dash-kpi-label">${isEs ? 'Conversiones (7d)' : 'Conversions (7d)'}</div>
+    <div class="dash-kpi-icon orange"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">${isEs ? 'Sesiones activas' : 'Active Sessions'}</div>
+      <div class="dash-kpi-value">${activeSessions} ${changeBadge(0, 'live')}</div>
+    </div>
   </div>
   <div class="dash-kpi">
-    <div class="dash-kpi-value">${convRate}%</div>
-    <div class="dash-kpi-label">${isEs ? 'Tasa de conversion' : 'Conversion rate'}</div>
+    <div class="dash-kpi-icon pink"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">${isEs ? 'Costo estimado' : 'Estimated Cost'}</div>
+      <div class="dash-kpi-value">$${llmCost.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${changeBadge(costChange)}</div>
+    </div>
   </div>
   <div class="dash-kpi">
-    <div class="dash-kpi-value">$${totalCost.toFixed(2)}</div>
-    <div class="dash-kpi-label">${isEs ? 'Gasto LLM (7d)' : 'LLM spend (7d)'}</div>
-  </div>
-  <div class="dash-kpi">
-    <div class="dash-kpi-value">${activeModules}/${totalModules}</div>
-    <div class="dash-kpi-label">${isEs ? 'Modulos activos' : 'Active modules'}</div>
+    <div class="dash-kpi-icon green"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">${isEs ? 'Calificacion promedio' : 'Avg. Quality Rating'}</div>
+      <div class="dash-kpi-value">${avgRating} <span class="dash-kpi-stars">${stars(Math.round(avgRating))}</span> ${changeBadge(0, 'top')}</div>
+    </div>
   </div>
 </div>
 
-<div class="dash-charts">
-  <div class="panel">
-    <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${isEs ? 'Mensajes por dia' : 'Messages per day'}</span>
-      <span class="panel-chevron">&#9660;</span>
+<!-- Row 2: Channel Breakdown + Contact Sources -->
+<div class="dash-row">
+  <div class="dash-card">
+    <div class="dash-card-header">
+      <span class="dash-card-title">${isEs ? 'Desglose por canal' : 'Channel Breakdown'}</span>
     </div>
-    <div class="panel-body">
-      <div class="panel-info">${isEs ? 'Volumen de mensajes entrantes procesados por el agente en los ultimos 7 dias.' : 'Volume of incoming messages processed by the agent in the last 7 days.'}</div>
-      ${barChart(msgData, maxMsg, 'var(--primary)', dayLabels)}
-    </div>
+    <div class="dash-card-subtitle">${isEs ? 'Contactos vs Sesiones por canal' : 'Contacts vs Sessions per channel'}</div>
+    ${channels.map(ch => {
+      const contactW = Math.round((ch.contacts / maxChannelTotal) * 100)
+      const sessionW = Math.round((ch.sessions / maxChannelTotal) * 100)
+      return `<div class="dash-hbar">
+        <div class="dash-hbar-label">${esc(ch.name)} <span>${(ch.contacts + ch.sessions).toLocaleString()}</span></div>
+        <div class="dash-hbar-track">
+          <div class="dash-hbar-fill primary" style="width:${contactW}%"></div>
+          <div class="dash-hbar-fill secondary" style="width:${sessionW}%"></div>
+        </div>
+      </div>`
+    }).join('')}
   </div>
 
-  <div class="panel">
-    <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${isEs ? 'Conversiones por dia' : 'Conversions per day'}</span>
-      <span class="panel-chevron">&#9660;</span>
+  <div class="dash-card">
+    <div class="dash-card-header">
+      <span class="dash-card-title">${isEs ? 'Fuentes de contacto' : 'Contact Sources'}</span>
     </div>
-    <div class="panel-body">
-      <div class="panel-info">${isEs ? 'Leads que completaron una accion objetivo (agendar cita, solicitar cotizacion, etc.).' : 'Leads that completed a target action (book appointment, request quote, etc.).'}</div>
-      ${barChart(convData, maxConv, 'var(--success)', dayLabels)}
+    <div class="dash-card-subtitle">${isEs ? 'Distribución de trafico' : 'Traffic distribution'}</div>
+    <div class="dash-donut-wrap">
+      <div class="dash-donut">
+        ${renderDonut()}
+        <div class="dash-donut-center">
+          <div class="dash-donut-total">${fmtNum(totalSourceContacts)}</div>
+          <div class="dash-donut-label">TOTAL</div>
+        </div>
+      </div>
+      <div class="dash-donut-legend">
+        ${sources.map(s => `<span class="dash-donut-legend-item"><span class="dash-donut-legend-dot" style="background:${s.color}"></span>${esc(s.name)} (${s.pct}%)</span>`).join('')}
+      </div>
     </div>
   </div>
+</div>
 
-  <div class="panel">
-    <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${isEs ? 'Gasto LLM por dia' : 'LLM spend per day'}</span>
-      <span class="panel-chevron">&#9660;</span>
+<!-- Row 3: LLM Token Performance + Channel Quality -->
+<div class="dash-row">
+  <div class="dash-card">
+    <div class="dash-card-header">
+      <span class="dash-card-title">${isEs ? 'Rendimiento de tokens LLM' : 'LLM Token Performance'}</span>
+      <a class="dash-card-link" href="/console/llm?lang=${lang}">${isEs ? 'Ver detalle' : 'Full Report'}</a>
     </div>
-    <div class="panel-body">
-      <div class="panel-info">${isEs ? 'Costo estimado de las llamadas a proveedores de IA (Anthropic + Google).' : 'Estimated cost of AI provider calls (Anthropic + Google).'}</div>
-      ${barChart(costData, maxCost, 'var(--info)', dayLabels, '$')}
+    <div class="dash-card-subtitle">${isEs ? 'Eficiencia por modelo' : 'Efficiency per model'}</div>
+    ${models.map(m => `<div class="dash-token-row">
+      <div class="dash-token-icon" style="background:var(--primary-light);color:var(--primary)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <div class="dash-token-info">
+        <div class="dash-token-name">${esc(m.name)}</div>
+        <div class="dash-token-desc">${esc(m.desc)}</div>
+      </div>
+      <div class="dash-token-bar">
+        <div class="dash-token-bar-label">${esc(m.tokens)} tokens</div>
+        <div class="dash-token-bar-track"><div class="dash-token-bar-fill" style="width:${m.pct}%"></div></div>
+      </div>
+    </div>`).join('')}
+  </div>
+
+  <div class="dash-card">
+    <div class="dash-card-header">
+      <span class="dash-card-title">${isEs ? 'Calidad por canal' : 'Channel Quality Rating'}</span>
+    </div>
+    <div class="dash-card-subtitle">${isEs ? 'Satisfaccion del cliente por canal' : 'Customer satisfaction per node'}</div>
+    <div class="dash-quality-grid">
+      ${quality.map(q => `<div class="dash-quality-card">
+        <div class="dash-quality-channel">${esc(q.channel)}</div>
+        <span class="dash-quality-score">${q.score}</span>
+        <span class="dash-quality-status ${qualityClass(q.status)}">${esc(q.status)}</span>
+        <div class="dash-quality-stars">${stars(q.stars)}</div>
+      </div>`).join('')}
     </div>
   </div>
 </div>`
@@ -1011,6 +1290,8 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'knowledge': return renderKnowledgeItemsSection(data)
     case 'contacts': return renderUsersSection(data)
     case 'agente': return data.agenteContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
+    case 'identity': return renderIdentitySection(data)
+    case 'tools-cards': return renderToolsCardsSection(data)
     case 'herramientas': return data.herramientasContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`
     case 'modules': return renderModulesSection(data)
     case 'infra': return renderInfraUnifiedSection(data)
@@ -1949,7 +2230,26 @@ function renderUsersSection(data: SectionData): string {
             <span class="toggle-slider"></span>
           </label>
           <input type="hidden" name="webhook_enabled_lead" value="${whEnabledOrigCol1}" data-original="${whEnabledOrigCol1}">
-        </div>`
+        </div>
+        <div style="padding:10px 14px;margin-top:4px">
+          <button class="act-btn act-btn-cta" onclick="contactIgnored('${lang}')" style="width:100%">
+            ${lang === 'es' ? 'Contactar ignorados' : 'Contact ignored leads'}
+          </button>
+        </div>
+        <script>
+        function contactIgnored(lang) {
+          if (!confirm(lang === 'es' ? '¿Iniciar contacto proactivo con leads ignorados (fuente: engine)? Se actualizará su fuente a outbound.' : 'Start proactive contact with ignored leads (source: engine)? Their source will be updated to outbound.')) return;
+          fetch('/console/api/lead-scoring/contact-ignored', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+            .then(function(r) { return r.json() })
+            .then(function(d) {
+              var msg = lang === 'es'
+                ? (d.count || 0) + ' contactos programados para contacto'
+                : (d.count || 0) + ' contacts scheduled for outreach';
+              window.lunaNotifications ? window.lunaNotifications.add({ title: 'OK', text: msg, type: 'success' }) : alert(msg);
+            })
+            .catch(function() { alert('Error'); });
+        }
+        </script>`
     }
 
     // Assignment rules (custom lists only — not system)
