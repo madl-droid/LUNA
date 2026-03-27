@@ -25,6 +25,7 @@ import type { ToolRegistry } from '../tools/tool-registry.js'
 
 const logger = pino({ name: 'knowledge' })
 
+let _registry: Registry | null = null
 let pgStore: KnowledgePgStore | null = null
 let knowledgeManager: KnowledgeManager | null = null
 let syncManager: SyncManager | null = null
@@ -885,7 +886,7 @@ function createApiRoutes(): ApiRoute[] {
             return
           }
           // Try to access the resource
-          const googleApps = registry.getOptional<{ sheets: { getSpreadsheet: (id: string) => Promise<unknown> }; docs: { getDocument: (id: string) => Promise<unknown> }; drive: { listFiles: (opts: { folderId: string; pageSize: number }) => Promise<unknown> } }>('google-apps:api')
+          const googleApps = _registry?.getOptional<{ sheets: { getSpreadsheet: (id: string) => Promise<unknown> }; docs: { getDocument: (id: string) => Promise<unknown> }; drive: { listFiles: (opts: { folderId: string; pageSize: number }) => Promise<unknown> } }>('google-apps:api')
           if (!googleApps) {
             // Can't verify without Google Apps, allow creation with warning
             jsonResponse(res, 200, { accessible: true, warning: 'Google Apps no conectado. No se pudo verificar acceso.' })
@@ -1066,6 +1067,7 @@ const manifest: ModuleManifest = {
   },
 
   async init(registry: Registry) {
+    _registry = registry
     const config = registry.getConfig<KnowledgeConfig>('knowledge')
     const db = registry.getDb()
     const redis = registry.getRedis()

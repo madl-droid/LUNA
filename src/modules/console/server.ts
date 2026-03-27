@@ -2325,7 +2325,7 @@ export function createApiRoutes(): ApiRoute[] {
             return
           }
           // Get TTS API key from config store
-          const config = await configStore.getAll()
+          const config = await configStore.getAll(registry.getDb())
           const apiKey = config['TTS_GOOGLE_API_KEY']
           if (!apiKey) {
             jsonResponse(res, 400, { error: 'TTS API key not configured' })
