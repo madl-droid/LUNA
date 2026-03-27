@@ -42,8 +42,8 @@ const manifest: ModuleManifest = {
   }),
 
   console: {
-    title: { es: 'Tareas Programadas', en: 'Scheduled Tasks' },
-    info: { es: 'Tareas que el agente ejecuta automaticamente', en: 'Tasks the agent runs automatically' },
+    title: { es: 'Tareas Automaticas', en: 'Automated Tasks' },
+    info: { es: 'Configura tareas que el agente ejecuta automaticamente.', en: 'Configure tasks the agent runs automatically.' },
     order: 45,
     group: 'agent',
     icon: '&#128197;',

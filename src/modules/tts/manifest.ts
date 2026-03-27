@@ -33,6 +33,9 @@ const manifest: ModuleManifest = {
     TTS_MAX_CHARS: numEnv(4000),
     TTS_ENABLED_CHANNELS: z.string().default('whatsapp'),
     TTS_AUTO_FOR_AUDIO_INPUT: boolEnv(true),
+    TTS_AUDIO_TO_AUDIO_FREQ: numEnv(80),
+    TTS_TEXT_TO_AUDIO_FREQ: numEnv(10),
+    TTS_MAX_DURATION: z.string().default('2'),
   }),
 
   console: {
