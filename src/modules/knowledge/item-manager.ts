@@ -1,0 +1,419 @@
+// LUNA — Module: knowledge — Knowledge Item Manager
+// Gestiona items de conocimiento basados en Google Sheets, Docs y Drive.
+// Escaneo de tabs/columnas, carga de contenido, y generación de embeddings.
+
+import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
+import type { KnowledgePgStore } from './pg-store.js'
+import type { KnowledgeCache } from './cache.js'
+import type { KnowledgeManager } from './knowledge-manager.js'
+import type { VectorizeWorker } from './vectorize-worker.js'
+import type {
+  KnowledgeItem,
+  KnowledgeItemTab,
+  KnowledgeSourceType,
+  KnowledgeConfig,
+} from './types.js'
+
+const logger = pino({ name: 'knowledge:items' })
+
+// Google resource ID extractors
+const SHEETS_REGEX = /\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/
+const DOCS_REGEX = /\/document\/d\/([a-zA-Z0-9_-]+)/
+const DRIVE_FOLDER_REGEX = /\/folders\/([a-zA-Z0-9_-]+)/
+const DRIVE_FILE_REGEX = /\/file\/d\/([a-zA-Z0-9_-]+)/
+
+export function extractGoogleId(url: string): { id: string; type: KnowledgeSourceType } | null {
+  let m = SHEETS_REGEX.exec(url)
+  if (m?.[1]) return { id: m[1], type: 'sheets' }
+
+  m = DOCS_REGEX.exec(url)
+  if (m?.[1]) return { id: m[1], type: 'docs' }
+
+  m = DRIVE_FOLDER_REGEX.exec(url)
+  if (m?.[1]) return { id: m[1], type: 'drive' }
+
+  m = DRIVE_FILE_REGEX.exec(url)
+  if (m?.[1]) return { id: m[1], type: 'drive' }
+
+  return null
+}
+
+// Service type interfaces (from google-apps module via registry)
+interface SheetsService {
+  getSpreadsheet(spreadsheetId: string): Promise<{
+    spreadsheetId: string
+    title: string
+    sheets: Array<{ sheetId: number; title: string; rowCount: number; columnCount: number }>
+  }>
+  readRange(spreadsheetId: string, range: string): Promise<{ values: string[][] }>
+}
+
+interface DocsService {
+  getDocument(documentId: string): Promise<{ documentId: string; title: string; body: string }>
+}
+
+interface DriveService {
+  listFiles(options: { folderId?: string; pageSize?: number }): Promise<{
+    files: Array<{ id: string; name: string; mimeType: string }>
+  }>
+}
+
+export class KnowledgeItemManager {
+  private vectorizeWorker: VectorizeWorker | null = null
+
+  constructor(
+    private pgStore: KnowledgePgStore,
+    private cache: KnowledgeCache,
+    private config: KnowledgeConfig,
+    private registry: Registry,
+    private knowledgeManager: KnowledgeManager,
+  ) {}
+
+  setVectorizeWorker(worker: VectorizeWorker): void {
+    this.vectorizeWorker = worker
+  }
+
+  // ─── CRUD ───────────────────────────────────
+
+  async create(data: {
+    title: string
+    description: string
+    categoryId: string | null
+    sourceUrl: string
+  }): Promise<KnowledgeItem> {
+    const extracted = extractGoogleId(data.sourceUrl)
+    if (!extracted) throw new Error('URL no válida. Debe ser una URL de Google Sheets, Docs o Drive.')
+
+    const id = await this.pgStore.insertItem({
+      title: data.title,
+      description: data.description,
+      categoryId: data.categoryId,
+      sourceType: extracted.type,
+      sourceUrl: data.sourceUrl,
+      sourceId: extracted.id,
+    })
+
+    logger.info({ id, title: data.title, sourceType: extracted.type }, 'Knowledge item created')
+    return (await this.pgStore.getItem(id))!
+  }
+
+  async list(): Promise<KnowledgeItem[]> {
+    return this.pgStore.listItems()
+  }
+
+  async get(id: string): Promise<KnowledgeItem | null> {
+    return this.pgStore.getItem(id)
+  }
+
+  async update(id: string, updates: {
+    title?: string
+    description?: string
+    categoryId?: string | null
+  }): Promise<void> {
+    await this.pgStore.updateItem(id, updates)
+  }
+
+  async toggleActive(id: string, active: boolean): Promise<void> {
+    await this.pgStore.updateItem(id, { active })
+    const item = await this.pgStore.getItem(id)
+    if (item?.isCore) await this.cache.invalidate()
+    logger.info({ id, active }, 'Item active toggled')
+  }
+
+  async toggleCore(id: string, isCore: boolean): Promise<void> {
+    if (isCore) {
+      const coreCount = await this.pgStore.countCoreItems()
+      const coreDocCount = await this.pgStore.getCoreDocumentCount()
+      const totalCore = coreCount + coreDocCount
+      if (totalCore >= this.config.KNOWLEDGE_MAX_CORE_DOCS) {
+        throw new Error(`Límite de core alcanzado (max ${this.config.KNOWLEDGE_MAX_CORE_DOCS})`)
+      }
+    }
+    await this.pgStore.updateItem(id, { isCore })
+    await this.cache.invalidate()
+    logger.info({ id, isCore }, 'Item core toggled')
+  }
+
+  async remove(id: string): Promise<void> {
+    const item = await this.pgStore.getItem(id)
+    if (!item) throw new Error('Item no encontrado')
+    if (item.active) throw new Error('Debe desactivar el item antes de eliminarlo')
+
+    // Clean up associated chunks/documents
+    await this.pgStore.deleteItemChunks(id)
+    await this.pgStore.deleteItem(id)
+
+    if (item.isCore) await this.cache.invalidate()
+    logger.info({ id, title: item.title }, 'Item removed')
+  }
+
+  // ─── Scan Tabs ──────────────────────────────
+
+  async scanTabs(id: string): Promise<KnowledgeItemTab[]> {
+    const item = await this.pgStore.getItem(id)
+    if (!item) throw new Error('Item no encontrado')
+
+    let tabNames: string[] = []
+
+    if (item.sourceType === 'sheets') {
+      const sheets = this.registry.getOptional<SheetsService>('google:sheets')
+      if (!sheets) throw new Error('Servicio Google Sheets no disponible')
+
+      const info = await sheets.getSpreadsheet(item.sourceId)
+      tabNames = info.sheets.map(s => s.title)
+    } else if (item.sourceType === 'docs') {
+      // Google Docs: single document = single "tab" (the document itself)
+      const docs = this.registry.getOptional<DocsService>('google:docs')
+      if (!docs) throw new Error('Servicio Google Docs no disponible')
+
+      const doc = await docs.getDocument(item.sourceId)
+      tabNames = [doc.title || 'Documento']
+    } else if (item.sourceType === 'drive') {
+      // Drive folder: each file is a "tab"
+      const drive = this.registry.getOptional<DriveService>('google:drive')
+      if (!drive) throw new Error('Servicio Google Drive no disponible')
+
+      const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 50 })
+      tabNames = result.files.map(f => f.name)
+    }
+
+    // Preserve existing descriptions where tab names match
+    const existingTabs = item.tabs ?? []
+    const existingByName = new Map(existingTabs.map(t => [t.tabName, t]))
+
+    const newTabs = tabNames.map((name, i) => ({
+      tabName: name,
+      description: existingByName.get(name)?.description ?? '',
+      position: i,
+    }))
+
+    await this.pgStore.replaceItemTabs(id, newTabs)
+
+    logger.info({ id, tabCount: newTabs.length }, 'Tabs scanned')
+    return (await this.pgStore.getItemTabs(id))
+  }
+
+  // ─── Scan Columns ───────────────────────────
+
+  async scanColumns(tabId: string): Promise<void> {
+    // Get tab info
+    const tabRows = await this.pgStore.getTabColumns(tabId)
+    // We need the item to know the source
+    const tabRes = await this.pgStore.getPool().query<{ item_id: string; tab_name: string }>(
+      `SELECT item_id, tab_name FROM knowledge_item_tabs WHERE id = $1`, [tabId],
+    )
+    const tabRow = tabRes.rows[0]
+    if (!tabRow) throw new Error('Tab no encontrado')
+
+    const item = await this.pgStore.getItem(tabRow.item_id)
+    if (!item) throw new Error('Item no encontrado')
+
+    let columnNames: string[] = []
+
+    if (item.sourceType === 'sheets') {
+      const sheets = this.registry.getOptional<SheetsService>('google:sheets')
+      if (!sheets) throw new Error('Servicio Google Sheets no disponible')
+
+      // Read first row to get column headers
+      const range = `'${tabRow.tab_name}'!1:1`
+      const data = await sheets.readRange(item.sourceId, range)
+      if (data.values?.[0]) {
+        columnNames = data.values[0].filter(v => v.trim() !== '')
+      }
+    } else if (item.sourceType === 'docs') {
+      // Docs don't have columns in the traditional sense
+      columnNames = ['Contenido']
+    } else if (item.sourceType === 'drive') {
+      // For drive files, we can't scan columns without opening each file
+      columnNames = ['Archivo']
+    }
+
+    // Preserve existing descriptions
+    const existingByName = new Map((tabRows ?? []).map(c => [c.columnName, c]))
+
+    const newCols = columnNames.map((name, i) => ({
+      columnName: name,
+      description: existingByName.get(name)?.description ?? '',
+      position: i,
+    }))
+
+    await this.pgStore.replaceTabColumns(tabId, newCols)
+    logger.info({ tabId, columnCount: newCols.length }, 'Columns scanned')
+  }
+
+  // ─── Load Content & Embed ───────────────────
+
+  async loadContent(id: string): Promise<{ chunks: number }> {
+    const item = await this.pgStore.getItem(id)
+    if (!item) throw new Error('Item no encontrado')
+
+    // Clean previous chunks
+    await this.pgStore.deleteItemChunks(id)
+
+    let totalChunks = 0
+
+    if (item.sourceType === 'sheets') {
+      totalChunks = await this.loadSheetsContent(item)
+    } else if (item.sourceType === 'docs') {
+      totalChunks = await this.loadDocsContent(item)
+    } else if (item.sourceType === 'drive') {
+      totalChunks = await this.loadDriveContent(item)
+    }
+
+    await this.pgStore.updateItem(id, {
+      contentLoaded: true,
+      embeddingStatus: 'pending',
+      chunkCount: totalChunks,
+    })
+
+    // Trigger vectorization
+    if (this.vectorizeWorker) {
+      // Get all documents created for this item and enqueue each
+      const docs = await this.pgStore.getPool().query<{ id: string }>(
+        `SELECT id FROM knowledge_documents WHERE source_ref = $1`, [id],
+      )
+      for (const doc of docs.rows) {
+        this.vectorizeWorker.enqueueDocument(doc.id).catch(err => {
+          logger.warn({ err, docId: doc.id }, 'Failed to enqueue vectorization')
+        })
+      }
+    }
+
+    logger.info({ id, title: item.title, chunks: totalChunks }, 'Content loaded')
+    return { chunks: totalChunks }
+  }
+
+  // ─── Private content loaders ────────────────
+
+  private async loadSheetsContent(item: KnowledgeItem): Promise<number> {
+    const sheets = this.registry.getOptional<SheetsService>('google:sheets')
+    if (!sheets) throw new Error('Servicio Google Sheets no disponible')
+
+    const tabs = item.tabs ?? await this.pgStore.getItemTabs(item.id)
+    let totalChunks = 0
+
+    for (const tab of tabs) {
+      const range = `'${tab.tabName}'!A:ZZ`
+      const data = await sheets.readRange(item.sourceId, range)
+
+      if (!data.values || data.values.length < 2) continue
+
+      const headers = data.values[0]!
+      const rows = data.values.slice(1)
+
+      // Build text content from rows
+      const textParts: string[] = []
+      for (const row of rows) {
+        const parts: string[] = []
+        for (let i = 0; i < headers.length; i++) {
+          const header = headers[i]?.trim()
+          const value = row[i]?.trim()
+          if (header && value) {
+            parts.push(`${header}: ${value}`)
+          }
+        }
+        if (parts.length > 0) textParts.push(parts.join(' | '))
+      }
+
+      if (textParts.length === 0) continue
+
+      // Create a document for this tab
+      const content = textParts.join('\n')
+      const buffer = Buffer.from(content, 'utf-8')
+      const docTitle = `${item.title} — ${tab.tabName}`
+
+      const doc = await this.knowledgeManager.addDocument(buffer, `${docTitle}.txt`, {
+        sourceType: 'drive',
+        sourceRef: item.id,
+        description: tab.description || `Tab ${tab.tabName} de ${item.title}`,
+        categoryIds: item.categoryId ? [item.categoryId] : [],
+      })
+
+      totalChunks += doc.chunkCount
+    }
+
+    return totalChunks
+  }
+
+  private async loadDocsContent(item: KnowledgeItem): Promise<number> {
+    const docs = this.registry.getOptional<DocsService>('google:docs')
+    if (!docs) throw new Error('Servicio Google Docs no disponible')
+
+    const doc = await docs.getDocument(item.sourceId)
+    if (!doc.body.trim()) return 0
+
+    const buffer = Buffer.from(doc.body, 'utf-8')
+    const result = await this.knowledgeManager.addDocument(buffer, `${doc.title}.txt`, {
+      sourceType: 'drive',
+      sourceRef: item.id,
+      description: item.description || doc.title,
+      categoryIds: item.categoryId ? [item.categoryId] : [],
+    })
+
+    return result.chunkCount
+  }
+
+  private async loadDriveContent(item: KnowledgeItem): Promise<number> {
+    const drive = this.registry.getOptional<DriveService>('google:drive')
+    if (!drive) throw new Error('Servicio Google Drive no disponible')
+
+    const sheetsService = this.registry.getOptional<SheetsService>('google:sheets')
+    const docsService = this.registry.getOptional<DocsService>('google:docs')
+
+    const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 50 })
+    let totalChunks = 0
+
+    for (const file of result.files) {
+      if (file.mimeType === 'application/vnd.google-apps.spreadsheet' && sheetsService) {
+        // Google Sheet — read all tabs
+        const info = await sheetsService.getSpreadsheet(file.id)
+        for (const sheet of info.sheets) {
+          const range = `'${sheet.title}'!A:ZZ`
+          const data = await sheetsService.readRange(file.id, range)
+
+          if (!data.values || data.values.length < 2) continue
+
+          const headers = data.values[0]!
+          const rows = data.values.slice(1)
+          const textParts: string[] = []
+          for (const row of rows) {
+            const parts: string[] = []
+            for (let i = 0; i < headers.length; i++) {
+              const header = headers[i]?.trim()
+              const value = row[i]?.trim()
+              if (header && value) parts.push(`${header}: ${value}`)
+            }
+            if (parts.length > 0) textParts.push(parts.join(' | '))
+          }
+
+          if (textParts.length === 0) continue
+
+          const content = textParts.join('\n')
+          const buffer = Buffer.from(content, 'utf-8')
+          const doc = await this.knowledgeManager.addDocument(buffer, `${file.name} — ${sheet.title}.txt`, {
+            sourceType: 'drive',
+            sourceRef: item.id,
+            description: `${file.name} — ${sheet.title}`,
+            categoryIds: item.categoryId ? [item.categoryId] : [],
+          })
+          totalChunks += doc.chunkCount
+        }
+      } else if (file.mimeType === 'application/vnd.google-apps.document' && docsService) {
+        // Google Doc
+        const doc = await docsService.getDocument(file.id)
+        if (!doc.body.trim()) continue
+        const buffer = Buffer.from(doc.body, 'utf-8')
+        const result = await this.knowledgeManager.addDocument(buffer, `${doc.title}.txt`, {
+          sourceType: 'drive',
+          sourceRef: item.id,
+          description: doc.title,
+          categoryIds: item.categoryId ? [item.categoryId] : [],
+        })
+        totalChunks += result.chunkCount
+      }
+    }
+
+    return totalChunks
+  }
+}

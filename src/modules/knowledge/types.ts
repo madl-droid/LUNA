@@ -278,3 +278,44 @@ export interface UpgradeSuggestion {
   hitCount: number
   reason: string
 }
+
+// ═══════════════════════════════════════════
+// Knowledge Items (v3 — Google Sheets/Docs/Drive sources)
+// ═══════════════════════════════════════════
+
+export type KnowledgeSourceType = 'sheets' | 'docs' | 'drive'
+
+export interface KnowledgeItem {
+  id: string
+  title: string
+  description: string
+  categoryId: string | null
+  sourceType: KnowledgeSourceType
+  sourceUrl: string
+  sourceId: string              // extracted Google resource ID
+  isCore: boolean
+  active: boolean
+  contentLoaded: boolean
+  embeddingStatus: EmbeddingStatus
+  chunkCount: number
+  createdAt: Date
+  updatedAt: Date
+  tabs?: KnowledgeItemTab[]
+}
+
+export interface KnowledgeItemTab {
+  id: string
+  itemId: string
+  tabName: string
+  description: string
+  position: number
+  columns?: KnowledgeItemColumn[]
+}
+
+export interface KnowledgeItemColumn {
+  id: string
+  tabId: string
+  columnName: string
+  description: string
+  position: number
+}
