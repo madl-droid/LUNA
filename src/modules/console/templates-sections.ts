@@ -1028,7 +1028,7 @@ function renderToolsCardsSection(data: SectionData): string {
 
   // Collect tool modules from herramientas group
   // Exclude: core agent modules (tools, prompts, engine, memory, knowledge) and TTS (feature, not a tool)
-  const TOOLS_PAGE_EXCLUDE = new Set(['tools', 'prompts', 'engine', 'memory', 'knowledge', 'tts'])
+  const TOOLS_PAGE_EXCLUDE = new Set(['tools', 'prompts', 'engine', 'memory', 'tts'])
   const toolModules = (data.moduleStates ?? [])
     .filter(m => !TOOLS_PAGE_EXCLUDE.has(m.name))
     .filter(m => (m.console as unknown as Record<string, unknown>)?.group === 'agent' || (m.console as unknown as Record<string, unknown>)?.group === 'modules' || m.type === 'feature')

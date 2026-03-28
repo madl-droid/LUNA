@@ -7,7 +7,12 @@ import type { Registry } from '../../kernel/registry.js'
 import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig, ProactiveContextBundle, ReplanContext } from '../types.js'
 import { buildEvaluatorPrompt, buildProactiveEvaluatorPrompt } from '../prompts/evaluator.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
-import { getCatalog } from '../mocks/tool-registry.js'
+import type { ToolCatalogEntry } from '../types.js'
+
+// Interface for reading tool catalog from tools:registry service
+interface ToolRegistryReader {
+  getCatalog(contactType?: string): ToolCatalogEntry[]
+}
 
 const logger = pino({ name: 'engine:phase2' })
 
@@ -55,8 +60,9 @@ export async function phase2Evaluate(
 
   logger.info({ traceId: ctx.traceId, intent: 'evaluating', proactive, replanAttempt: replanContext?.attempt }, 'Phase 2 start')
 
-  // Build prompt (different for proactive vs reactive)
-  const toolCatalog = getCatalog()
+  // Build prompt — use real tool catalog from tools:registry when available
+  const toolsRegistry = registry?.getOptional<ToolRegistryReader>('tools:registry')
+  const toolCatalog = toolsRegistry?.getCatalog() ?? []
   let { system, userMessage } = proactive
     ? await buildProactiveEvaluatorPrompt(ctx, toolCatalog, registry)
     : await buildEvaluatorPrompt(ctx, toolCatalog, registry)

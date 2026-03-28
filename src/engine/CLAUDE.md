@@ -78,8 +78,7 @@ utils/
   message-formatter.ts  — formato per-canal (WA bubbles ≤300 chars, HTML email, etc.)
   rag-local.ts          — RAG local con fuse.js sobre archivos en instance/knowledge/
 
-mocks/
-  tool-registry.ts    — TODO: reemplazar por tools:registry del módulo tools
+  (mocks/ eliminado — Phase 2, Phase 3 y subagent usan tools:registry del módulo tools)
 ```
 
 ## Concurrencia (4 capas)
@@ -137,7 +136,7 @@ Configurable desde consola y .env. Persiste al reinicio.
 - memory:manager es opcional — fallback a SQL directo
 - Attachment processing en Phase 3, no Phase 1 (Phase 1 solo metadata)
 - Proactive config se cachea en Phase 5 (no relee archivo en cada mensaje)
-- tool-registry.ts sigue siendo mock — pendiente conectar tools:registry
+- tools:registry del módulo tools se usa en Phase 2 (catálogo), Phase 3 (ejecución) y subagent (ejecución). Si tools module no está activo, el catálogo estará vacío y la ejecución falla explícitamente.
 - Contact lock in-memory auto-expira con session TTL
 - Redis contact lock (proactive) es independiente del ContactLock in-memory (reactivo)
 - ACK service es opcional — si falla, el pipeline continúa sin enviar ACK
