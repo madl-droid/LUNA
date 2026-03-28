@@ -46,7 +46,7 @@
 .panel.collapsed .panel-body { display: none; }
 
 .panel-body {
-  padding: 0 20px 20px;
+  padding: var(--panel-padding);
 }
 
 .panel-body-flat { border-top: none; }
@@ -511,7 +511,7 @@
 .module-toggle-form { margin: 0; }
 
 .module-panel-body {
-  padding: 8px 16px 14px;
+  padding: var(--panel-padding);
   background: var(--surface-container-lowest);
 }
 
@@ -1858,7 +1858,7 @@ select.wizard-input option:checked {
 }
 
 .chs-main .panel-body {
-  padding-top: 16px;
+  padding: var(--panel-padding);
 }
 
 /* Override default field styles inside chs for cleaner look */
@@ -2165,8 +2165,8 @@ select.wizard-input option:checked {
 
 /* ═══ Users section ═══ */
 
-/* Panel padding matching channel settings */
-.users-section .panel-body { padding: 16px 20px 20px; }
+/* Panel padding matching standard */
+.users-section .panel-body { padding: var(--panel-padding); }
 
 /* Horizontal scroll wrapper for mobile */
 .users-table-scroll {
@@ -2857,16 +2857,17 @@ select.wizard-input option:checked {
   display: flex;
   align-items: center;
 }
+/* volume-selector-input — inherits same Apple slider style as .range-primary */
 .volume-selector-input {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 5px;
-  border-radius: 2.5px;
-  background: linear-gradient(to right, var(--surface-container-high), var(--surface-container-high));
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-container-high);
   outline: none;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: background 0.15s ease;
 }
 .volume-selector-input:focus {
   background: var(--surface-container-highest);
@@ -2874,34 +2875,35 @@ select.wizard-input option:checked {
 .volume-selector-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--surface-container-lowest, #fff);
+  background: #fff;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 2px var(--primary);
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border: none;
 }
 .volume-selector-input::-webkit-slider-thumb:hover {
-  transform: scale(1.12);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15), 0 0 0 2px var(--primary);
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
 .volume-selector-input::-webkit-slider-thumb:active {
   transform: scale(0.95);
 }
 .volume-selector-input::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--surface-container-lowest, #fff);
+  background: #fff;
   cursor: pointer;
-  border: 2px solid var(--primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  border: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
 .volume-selector-input::-moz-range-track {
   background: var(--surface-container-high);
-  height: 5px;
-  border-radius: 2.5px;
+  height: 4px;
+  border-radius: 2px;
   border: none;
 }
 .volume-selector-value {
@@ -4095,8 +4097,55 @@ select.wizard-input option:checked {
   border-radius: 0;
 }
 
-/* Range input with accent */
+/* ═══ Range input — Apple-style slider ═══ */
+/* Shared by: TTS rate/pitch, volume selector, any range input.
+ * White thumb with subtle shadow, thin rounded track, no borders. */
 .range-primary {
+  -webkit-appearance: none;
+  appearance: none;
   flex: 1;
-  accent-color: var(--primary);
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-container-high);
+  outline: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.range-primary:focus {
+  background: var(--surface-container-highest);
+}
+.range-primary::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border: none;
+}
+.range-primary::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2), 0 0 0 0.5px rgba(0,0,0,0.04);
+}
+.range-primary::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+}
+.range-primary::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.04);
+}
+.range-primary::-moz-range-track {
+  background: var(--surface-container-high);
+  height: 4px;
+  border-radius: 2px;
+  border: none;
 }

@@ -64,8 +64,9 @@
   --radius-pill: 1.5rem;  /* 24px — buttons, tags, pills */
 
   /* Component spacing — inter-element gaps */
-  --field-gap: 2.75rem;       /* vertical gap between consecutive fields */
+  --field-gap: 1.25rem;        /* vertical gap between consecutive fields (20px) */
   --panel-gap: var(--space-md); /* gap between panels */
+  --panel-padding: 16px 20px 20px; /* standard panel-body padding */
   --section-gap: var(--space-lg); /* gap between sections */
 
   /* Aliases for modules that used non-standard names */

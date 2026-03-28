@@ -111,8 +111,9 @@ All components use centralized tokens from `base.css :root`. **Never hardcode px
 | `--radius-md` | 0.75rem (12px) | Cards, modals, elevated panels, icon squircles |
 | `--radius-lg` | 1rem (16px) | Large containers |
 | `--radius-pill` | 1.5rem (24px) | Buttons, tags, pills |
-| `--field-gap` | 2.75rem | Vertical gap between consecutive fields |
+| `--field-gap` | 1.25rem (20px) | Vertical gap between consecutive fields |
 | `--panel-gap` | 16px | Gap between panels |
+| `--panel-padding` | 16px 20px 20px | Standard panel-body padding — ALL panels |
 | `--section-gap` | 24px | Gap between sections |
 
 ### Button Hierarchy (4 variants)
@@ -169,7 +170,8 @@ background: var(--surface-container-low); color: var(--on-surface-dim);
 - `surface-container-lowest` bg, radius `var(--radius-sm)`
 - No border, no static shadow
 - `--shadow-subtle` on hover only
-- **Panel body padding:** `0 20px 20px` (standardized with channel settings)
+- **Panel body padding:** `var(--panel-padding)` = `16px 20px 20px` — ALL panels, no exceptions
+- **REGLA: Todos los paneles usan el mismo padding.** No override con inline styles.
 - **Panel gap:** `var(--panel-gap)` between consecutive panels
 
 ### Input Fields
@@ -200,11 +202,19 @@ background: var(--surface-container-low); color: var(--on-surface-dim);
 - Fields use `info` or `description` property in manifest — both work via `infoBtnWithTip()`
 
 ### Dropdowns (Custom Select)
+- **REGLA: TODOS los `<select>` deben tener `class="js-custom-select"`** — NUNCA usar selects nativos
 - Any `<select class="js-custom-select">` auto-converts to styled dropdown
 - `surface-container-lowest` bg, `--shadow-float`, radius 0.5rem
 - Animate in with opacity + translateY
 - Close on outside click or Escape key
 - `initCustomSelects()` exposed globally — call after dynamic content load
+
+### Slider (Range Input)
+- **Todas las instancias de `<input type="range">` deben usar `class="range-primary"`**
+- Track: 4px height, `--surface-container-high` bg, rounded
+- Thumb: 20px white circle, subtle shadow (`0 1px 4px rgba(0,0,0,0.18)`), **no border ring**
+- Hover: thumb scales up 1.1x
+- Estilo Apple: minimalista, sin bordes de color en el thumb
 
 ### Toasts
 - Fixed top-right, `max-width: calc(100vw - 24px)`
