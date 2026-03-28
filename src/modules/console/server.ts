@@ -1058,6 +1058,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       if (section === 'agente' && !agenteSubpage) {
         agenteSubpage = 'knowledge'
       }
+      // Voice tab removed — redirect to identity (TTS settings are in identity page)
+      if (section === 'agente' && agenteSubpage === 'voice') {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/agente/identity?lang=${lang}` })
+        res.end()
+        return true
+      }
 
       // Redirect old section IDs to unified agente page
       const agenteRedirects: Record<string, string> = {
@@ -1087,6 +1094,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       const herramientasRedirects: Record<string, string> = {
         'tools': 'tools', 'lead-scoring': 'lead-scoring', 'freight': 'freight',
         'medilink': 'medilink', 'scheduled-tasks': 'scheduled-tasks', 'google-apps': 'google-apps',
+        'freshdesk': 'freshdesk',
       }
       if (herramientasRedirects[section]) {
         const lang = detectLang(req)
@@ -1226,9 +1234,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } else if (agenteSubpage === 'identity') {
           sectionData.agenteContent = renderSection('identity', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
-        } else if (agenteSubpage === 'voice') {
-          sectionData.agenteContent = renderSection('voice-tts', sectionData) ??
-            `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo TTS no disponible.' : 'TTS module not available.'}</p></div></div>`
         }
       }
 

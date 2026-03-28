@@ -33,7 +33,7 @@
   --outline-variant: rgba(0, 0, 0, 0.06);
 
   /* Shadows — subtle */
-  --shadow-subtle: 0 1px 4px rgba(0, 0, 0, 0.05);
+  --shadow-subtle: 0 1px 6px rgba(0, 0, 0, 0.08);
   --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.08);
 
   /* Semantic */

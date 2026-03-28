@@ -57,13 +57,12 @@ const FIXED_SECTIONS: FixedSection[] = [
   { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'agent', order: 1 },
   // Herramientas — unified page with sub-tabs: tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps
   { id: 'herramientas', key: 'sec_herramientas', icon: svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), group: 'agent', order: 25 },
-  { id: 'modules', key: 'sec_modules', icon: ICONS.modules, group: 'agent', order: 30 },
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
 // Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
 // Include old section IDs + modules that are now inside the unified "agente" page
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics'])
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics', 'freshdesk', 'modules', 'tts'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 export const ICON_OVERRIDES: Record<string, string> = {
@@ -401,7 +400,7 @@ function renderSidebar(opts: PageOptions): string {
   // 2. Add dynamic modules (only if not already a fixed section)
   //    Skip channel modules — managed from Canales tab
   //    Skip agent-group modules that aren't fixed — they go into Herramientas submenu
-  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps'])
+  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'freshdesk'])
   for (const mod of dynModules) {
     if (FIXED_IDS.has(mod.name)) continue
     if (!mod.active) continue
@@ -476,7 +475,6 @@ function renderSidebar(opts: PageOptions): string {
           { id: 'knowledge', key: 'sec_agente_knowledge' },
           { id: 'memory', key: 'sec_agente_memory' },
           { id: 'identity', key: 'sec_agente_identity' },
-          { id: 'voice', key: 'sec_agente_voice' },
           { id: 'advanced', key: 'sec_agente_advanced' },
         ]
         nav += '<div class="sidebar-submenu">'
