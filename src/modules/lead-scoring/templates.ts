@@ -54,6 +54,7 @@ const labels: Record<Lang, Record<string, string>> = {
     type_list: 'Lista',
     type_boolean: 'Si/No',
     weight_total: 'Total de pesos',
+    add_criterion: 'Agregar criterio',
     // Behavior tab
     tab_behavior: 'Comportamiento',
     tab_signals: 'Senales automaticas',
@@ -130,6 +131,7 @@ const labels: Record<Lang, Record<string, string>> = {
     type_list: 'List',
     type_boolean: 'Yes/No',
     weight_total: 'Total weight',
+    add_criterion: 'Add criterion',
     tab_behavior: 'Behavior',
     tab_signals: 'Auto signals',
     sec_post_action: 'Post-qualification action',
@@ -518,6 +520,11 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
         <tbody>${bodyHtml}</tbody>
       </table>
     </div>
+    <div style="padding:8px 12px;text-align:right">
+      <button type="button" class="act-btn" onclick="lsAddCri()" style="font-size:12px">
+        + ${l('add_criterion', lang)}
+      </button>
+    </div>
     <div class="ls-weight-total" style="color:${weightColor}" id="ls-weight-total">${l('weight_total', lang)}: ${totalWeight}/100</div>`
 }
 
@@ -742,8 +749,9 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   // Check multi-framework note
   function checkMultiNote() {
     var note = document.getElementById('ls-fw-multi-note')
-    // We show note if > 2 frameworks would be relevant (hardcoded: always show if all 3 defined)
-    if (note) note.style.display = 'block'
+    if (!note) return
+    var fwCards = document.querySelectorAll('.ls-fw-card')
+    note.style.display = fwCards.length > 1 ? 'block' : 'none'
   }
   checkMultiNote()
 
@@ -779,6 +787,23 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     cr.required = false
     cr.neverAskDirectly = false
     location.reload()
+  }
+
+  window.lsAddCri = function() {
+    // Find current stage (from active framework view)
+    var activeCard = document.querySelector('.ls-fw-card.active')
+    var stage = activeCard ? activeCard.getAttribute('data-fw') : ''
+    // Check max 5 per stage
+    var stageCount = lsConfig.criteria.filter(function(c) { return c.stage === stage }).length
+    if (stageCount >= 5) {
+      if (window.showToast) showToast('Maximo 5 criterios por etapa', 'error')
+      return
+    }
+    lsConfig.criteria.push({
+      key: '', name: { es: '', en: '' }, type: 'text', weight: 0,
+      required: false, neverAskDirectly: false, stage: stage
+    })
+    lsSaveConfig()
   }
 
   function updateWeightTotal() {

@@ -710,7 +710,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
               } else if (sid && existing && existing.senderId !== sid) {
                 // Changed value — update in place
                 await usersCache.invalidate(existing.senderId)
-                await usersDb.updateContact(existing.id, sid)
+                await usersDb.updateContact(existing.id, sid, ch)
                 await usersCache.invalidate(sid)
               } else if (!sid && existing) {
                 // Cleared — remove (only if not last)

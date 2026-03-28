@@ -453,8 +453,9 @@ export class BaileysAdapter {
       return { from: lidNumber, resolvedPhone: phone }
     }
 
-    // Standard phone JID
-    const phone = jid.replace(/:.*@/, '@').replace('@s.whatsapp.net', '')
+    // Standard phone JID — add + prefix for E.164 consistency with user_contacts
+    const raw = jid.replace(/:.*@/, '@').replace('@s.whatsapp.net', '')
+    const phone = raw.startsWith('+') ? raw : `+${raw}`
     this.jidTypeMap.set(phone, '@s.whatsapp.net')
     return { from: phone, resolvedPhone: null }
   }

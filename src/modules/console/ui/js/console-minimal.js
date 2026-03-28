@@ -172,9 +172,9 @@
     var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i]
-      // Skip toggles — they apply instantly
-      if (el.type === 'checkbox' && el.closest('.toggle-field')) continue
-      if (el.type === 'hidden' && el.closest('.toggle-field')) continue
+      // Skip toggles — they apply instantly (both module toggles and channel settings toggles)
+      if (el.type === 'checkbox' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
+      if (el.type === 'hidden' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
       var current = el.value
       if (current !== el.getAttribute('data-original')) return true
     }
@@ -187,8 +187,8 @@
     var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i]
-      if (el.type === 'checkbox' && el.closest('.toggle-field')) continue
-      if (el.type === 'hidden' && el.closest('.toggle-field')) continue
+      if (el.type === 'checkbox' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
+      if (el.type === 'hidden' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
       var current = el.value
       el.classList.toggle('modified', current !== el.getAttribute('data-original'))
     }
@@ -198,13 +198,13 @@
   // Track non-toggle input/change
   document.addEventListener('input', function (e) {
     var el = e.target
-    if (el.closest && el.closest('.toggle-field')) return // skip toggles
+    if (el.closest && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) return
     if (el.hasAttribute && el.hasAttribute('data-original')) checkDirty()
   })
 
   document.addEventListener('change', function (e) {
     var el = e.target
-    if (el.closest && el.closest('.toggle-field')) return // skip toggles
+    if (el.closest && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) return
     checkDirty()
   })
 
@@ -222,7 +222,7 @@
       var allInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
       for (var i = 0; i < allInputs.length; i++) {
         var inp = allInputs[i]
-        if (inp.closest('.toggle-field')) continue
+        if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) continue
         if (saveForm.contains(inp)) continue
         body.append(inp.name, inp.value)
       }
@@ -233,7 +233,7 @@
             showToast(document.documentElement.lang === 'es' ? 'Guardado' : 'Saved', 'success')
             // Update data-original so fields are no longer dirty
             allInputs.forEach(function (inp) {
-              if (inp.closest('.toggle-field')) return
+              if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) return
               inp.setAttribute('data-original', inp.value)
               inp.classList.remove('modified')
             })

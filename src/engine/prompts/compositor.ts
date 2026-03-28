@@ -31,13 +31,22 @@ const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
  * Priority: 1) config_store override, 2) system template, 3) hardcoded defaults.
  */
 async function getChannelLimit(channel: string, registry?: Registry): Promise<string> {
-  // 1. Try config_store override
   if (registry) {
     try {
       const configStore = await import('../../kernel/config-store.js')
       const db = registry.getDb()
-      const custom = await configStore.get(db, `FORMAT_INSTRUCTIONS_${channel.toUpperCase()}`)
-      if (custom) return custom
+      // Check if advanced prompting is ON
+      const advancedKey = `${channel.toUpperCase()}_FORMAT_ADVANCED`
+      const isAdvanced = await configStore.get(db, advancedKey)
+      if (isAdvanced === 'true') {
+        // 1a. Advanced mode: use custom override directly
+        const custom = await configStore.get(db, `FORMAT_INSTRUCTIONS_${channel.toUpperCase()}`)
+        if (custom) return custom
+      } else {
+        // 1b. Form mode: build prompt from form fields
+        const built = await buildFormatFromForm(channel, db)
+        if (built) return built
+      }
     } catch { /* fallback */ }
   }
   // 2. Try system template
@@ -48,6 +57,65 @@ async function getChannelLimit(channel: string, registry?: Registry): Promise<st
   }
   // 3. Hardcoded defaults
   return DEFAULT_CHANNEL_LIMITS[channel] ?? DEFAULT_CHANNEL_LIMITS.whatsapp ?? ''
+}
+
+/** Build format prompt dynamically from form fields stored in config_store */
+async function buildFormatFromForm(channel: string, db: import('pg').Pool): Promise<string | null> {
+  const configStore = await import('../../kernel/config-store.js')
+  const prefix = channel.toUpperCase()
+  const all = await configStore.getAll(db)
+  const tone = all[`${prefix}_FORMAT_TONE`] || 'ninguno'
+  const maxSentences = all[`${prefix}_FORMAT_MAX_SENTENCES`] || '2'
+  const maxParagraphs = all[`${prefix}_FORMAT_MAX_PARAGRAPHS`] || '2'
+  const emojiLevel = all[`${prefix}_FORMAT_EMOJI_LEVEL`] || 'bajo'
+  const typosEnabled = all[`${prefix}_FORMAT_TYPOS_ENABLED`] === 'true'
+  const typosIntensity = all[`${prefix}_FORMAT_TYPOS_INTENSITY`] || '0'
+  const typosTypes = all[`${prefix}_FORMAT_TYPOS_TYPES`] || ''
+  const openingSigns = all[`${prefix}_FORMAT_OPENING_SIGNS`] || 'nunca'
+  const audioEnabled = all[`${prefix}_FORMAT_AUDIO_ENABLED`] === 'true'
+  const voiceStyles = all[`${prefix}_FORMAT_VOICE_STYLES`] === 'true'
+  const ex1 = all[`${prefix}_FORMAT_EXAMPLE_1`] || ''
+  const ex2 = all[`${prefix}_FORMAT_EXAMPLE_2`] || ''
+  const ex3 = all[`${prefix}_FORMAT_EXAMPLE_3`] || ''
+
+  const lines: string[] = [`FORMATO ${channel.toUpperCase()}:`]
+
+  // Tone
+  if (tone !== 'ninguno') lines.push(`- Tono: ${tone}`)
+
+  // Structure
+  lines.push(`- Maximo ${maxSentences} oraciones por parrafo`)
+  lines.push(`- Maximo ${maxParagraphs} parrafos por respuesta`)
+
+  // Emoji
+  const emojiMap: Record<string, string> = { nunca: 'No uses emojis', bajo: 'Usa emojis con moderacion (1-2 por mensaje)', moderado: 'Usa emojis moderadamente', alto: 'Usa emojis libremente' }
+  lines.push(`- ${emojiMap[emojiLevel] || emojiMap.bajo}`)
+
+  // Opening signs
+  if (openingSigns === 'inicio') lines.push('- Usa signos de apertura al inicio de preguntas y exclamaciones (¿ ¡)')
+  else if (openingSigns === 'ambos') lines.push('- Usa signos de apertura y cierre en preguntas y exclamaciones (¿...? ¡...!)')
+  else lines.push('- No uses signos de apertura (¿ ¡), solo cierra con ? y !')
+
+  // Typos
+  if (typosEnabled) {
+    lines.push(`- Introduce errores de escritura sutiles para sonar mas natural (intensidad: ${typosIntensity})`)
+    if (typosTypes) lines.push(`  Tipos: ${typosTypes}`)
+  }
+
+  // Audio
+  if (audioEnabled) {
+    lines.push('- Puedes responder con notas de voz cuando sea apropiado')
+    if (voiceStyles) lines.push('- Varia el estilo de voz segun el contexto (energetico, calmado, empatico)')
+  }
+
+  // Examples
+  const examples = [ex1, ex2, ex3].filter(Boolean)
+  if (examples.length > 0) {
+    lines.push('- Ejemplos del estilo esperado:')
+    examples.forEach((ex, i) => lines.push(`  ${i + 1}. "${ex}"`))
+  }
+
+  return lines.join('\n')
 }
 
 // Cache for knowledge files

@@ -336,10 +336,14 @@ export class UsersDb {
   }
 
   /** Update the sender_id of an existing contact (e.g. phone number changed). */
-  async updateContact(contactId: string, newSenderId: string): Promise<UserContact | null> {
+  async updateContact(contactId: string, newSenderId: string, channel?: string): Promise<UserContact | null> {
+    let normalizedSenderId = newSenderId.trim()
+    if (channel === 'whatsapp' && /^\d[\d\s-]+$/.test(normalizedSenderId)) {
+      normalizedSenderId = `+${normalizedSenderId.replace(/[\s-]/g, '')}`
+    }
     const result = await this.pool.query(
       `UPDATE user_contacts SET sender_id = $1 WHERE id = $2 RETURNING *`,
-      [newSenderId.trim(), contactId],
+      [normalizedSenderId, contactId],
     )
     return result.rows[0] ? this.mapContactRow(result.rows[0]) : null
   }
