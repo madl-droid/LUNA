@@ -16,6 +16,18 @@ const logger = pino({ name: 'prompts' })
 
 let service: PromptsServiceImpl | null = null
 
+/** Maps config key -> { slot, variant } for bidirectional sync between console and prompt_slots DB */
+const PROMPT_SYNC_MAP: Array<{ configKey: string; slot: PromptSlot; variant: string }> = [
+  { configKey: 'PROMPT_IDENTITY', slot: 'identity', variant: 'default' },
+  { configKey: 'PROMPT_JOB', slot: 'job', variant: 'default' },
+  { configKey: 'PROMPT_GUARDRAILS', slot: 'guardrails', variant: 'default' },
+  { configKey: 'PROMPT_CRITICIZER', slot: 'criticizer', variant: 'default' },
+  { configKey: 'PROMPT_RELATIONSHIP_LEAD', slot: 'relationship', variant: 'lead' },
+  { configKey: 'PROMPT_RELATIONSHIP_ADMIN', slot: 'relationship', variant: 'admin' },
+  { configKey: 'PROMPT_RELATIONSHIP_COWORKER', slot: 'relationship', variant: 'coworker' },
+  { configKey: 'PROMPT_RELATIONSHIP_UNKNOWN', slot: 'relationship', variant: 'unknown' },
+]
+
 const apiRoutes: ApiRoute[] = [
   // ─── Prompt slots ─────────────────────────
   {
@@ -53,6 +65,15 @@ const apiRoutes: ApiRoute[] = [
         jsonResponse(res, 400, { error: 'Missing slot or content' }); return
       }
       await service.upsert(slot, variant, content)
+      // Sync to config_store so console UI reflects the change immediately
+      try {
+        const configStore = await import('../../kernel/config-store.js')
+        const match = PROMPT_SYNC_MAP.find(m => m.slot === slot && m.variant === variant)
+        if (match) {
+          const db = service.db
+          await configStore.set(db, match.configKey, content, false)
+        }
+      } catch { /* best-effort sync */ }
       jsonResponse(res, 200, { ok: true })
     },
   },
@@ -238,6 +259,43 @@ const manifest: ModuleManifest = {
           en: 'Additional self-review points before sending. Customize the agent style and methodology.',
         },
       },
+      { key: '_divider_relationships', type: 'divider', label: { es: 'Relaciones por tipo de usuario', en: 'Relationships by user type' } },
+      {
+        key: 'PROMPT_RELATIONSHIP_LEAD',
+        type: 'textarea',
+        label: { es: 'Relacion con leads', en: 'Relationship with leads' },
+        info: {
+          es: 'Como debe tratar el agente a los leads (clientes potenciales). Define tono, nivel de formalidad y objetivos.',
+          en: 'How the agent should treat leads (potential customers). Define tone, formality level and objectives.',
+        },
+      },
+      {
+        key: 'PROMPT_RELATIONSHIP_ADMIN',
+        type: 'textarea',
+        label: { es: 'Relacion con admins', en: 'Relationship with admins' },
+        info: {
+          es: 'Como debe tratar el agente a los administradores del sistema. Puede ser mas tecnico y directo.',
+          en: 'How the agent should treat system administrators. Can be more technical and direct.',
+        },
+      },
+      {
+        key: 'PROMPT_RELATIONSHIP_COWORKER',
+        type: 'textarea',
+        label: { es: 'Relacion con coworkers', en: 'Relationship with coworkers' },
+        info: {
+          es: 'Como debe tratar el agente a los companeros de trabajo. Tono colaborativo e informal.',
+          en: 'How the agent should treat coworkers. Collaborative and informal tone.',
+        },
+      },
+      {
+        key: 'PROMPT_RELATIONSHIP_UNKNOWN',
+        type: 'textarea',
+        label: { es: 'Relacion con desconocidos', en: 'Relationship with unknowns' },
+        info: {
+          es: 'Como debe tratar el agente a contactos no identificados. Cauteloso pero amable.',
+          en: 'How the agent should treat unidentified contacts. Cautious but friendly.',
+        },
+      },
     ],
     apiRoutes,
   },
@@ -295,15 +353,8 @@ async function syncConsoleFields(registry: Registry): Promise<void> {
   const configStore = await import('../../kernel/config-store.js')
   const db = registry.getDb()
 
-  const slotToKey: Record<string, PromptSlot> = {
-    'PROMPT_IDENTITY': 'identity',
-    'PROMPT_JOB': 'job',
-    'PROMPT_GUARDRAILS': 'guardrails',
-    'PROMPT_CRITICIZER': 'criticizer',
-  }
-
-  for (const [configKey, slot] of Object.entries(slotToKey)) {
-    const content = await service.getPrompt(slot, 'default')
+  for (const { configKey, slot, variant } of PROMPT_SYNC_MAP) {
+    const content = await service.getPrompt(slot, variant)
     if (content) {
       await configStore.set(db, configKey, content, false).catch(() => {})
     }
@@ -318,17 +369,10 @@ async function syncFromConsole(registry: Registry): Promise<void> {
   const configStore = await import('../../kernel/config-store.js')
   const db = registry.getDb()
 
-  const slotToKey: Record<string, PromptSlot> = {
-    'PROMPT_IDENTITY': 'identity',
-    'PROMPT_JOB': 'job',
-    'PROMPT_GUARDRAILS': 'guardrails',
-    'PROMPT_CRITICIZER': 'criticizer',
-  }
-
-  for (const [configKey, slot] of Object.entries(slotToKey)) {
+  for (const { configKey, slot, variant } of PROMPT_SYNC_MAP) {
     const value = await configStore.get(db, configKey).catch(() => null)
     if (value !== null && value !== undefined) {
-      await service.upsert(slot, 'default', value)
+      await service.upsert(slot, variant, value)
     }
   }
 }
