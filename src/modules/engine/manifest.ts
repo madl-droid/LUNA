@@ -13,6 +13,7 @@ import { registerWebExploreTool } from '../../engine/attachments/tools/web-explo
 import type { AttachmentEngineConfig } from '../../engine/attachments/types.js'
 import { SYSTEM_HARD_LIMITS } from '../../engine/attachments/types.js'
 import { jsonResponse } from '../../kernel/http-helpers.js'
+import { kernelConfig } from '../../kernel/config.js'
 
 /** Config type for engine module params */
 interface EngineModuleConfig {
@@ -455,12 +456,10 @@ const manifest: ModuleManifest = {
       try {
         const result = await db.query(`SELECT value FROM config_store WHERE key = 'DEBUG_EXTREME_LOG'`)
         const extremeLog = result.rows[0]?.value === 'true'
-        const targetLevel = extremeLog ? 'trace' : (process.env['LOG_LEVEL'] || 'info')
+        const targetLevel = extremeLog ? 'trace' : (kernelConfig.logLevel ?? 'info')
         const pino = (await import('pino')).default
         // Update the root logger level — affects new log statements
         pino({ level: targetLevel })
-        // Also set env for any new loggers created after this point
-        process.env['PINO_LEVEL'] = targetLevel
       } catch { /* non-critical */ }
     })
   },
