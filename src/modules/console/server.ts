@@ -165,6 +165,8 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
         title: m.manifest.console.title,
         info: m.manifest.console.info,
         fields: m.manifest.console.fields,
+        group: m.manifest.console.group,
+        icon: m.manifest.console.icon,
       } : null,
       connectionWizard: m.manifest.console?.connectionWizard ? {
         title: m.manifest.console.connectionWizard.title,
