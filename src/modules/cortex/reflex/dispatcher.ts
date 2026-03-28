@@ -7,7 +7,7 @@ import pino from 'pino'
 
 const logger = pino({ name: 'cortex:dispatcher' })
 
-interface AdminContact {
+export interface AdminContact {
   senderId: string
   channel: string
   displayName: string | null
@@ -109,9 +109,9 @@ function formatResolutionMessage(alert: Alert): string {
   return `✅ RESUELTO — ${alert.rule}\nDuración: ${duration}s\nResuelto: ${new Date().toISOString()}`
 }
 
-// ─── Channel senders ───────────────────
+// ─── Channel senders (exported for reuse by Pulse dispatch-bridge) ───
 
-async function sendViaChannel(
+export async function sendViaChannel(
   channel: DispatchChannel,
   message: string,
   admins: AdminContact[],
@@ -137,7 +137,7 @@ async function sendViaChannel(
   }
 }
 
-async function sendTelegram(message: string, config: CortexConfig): Promise<void> {
+export async function sendTelegram(message: string, config: CortexConfig): Promise<void> {
   const token = config.CORTEX_TELEGRAM_BOT_TOKEN
   const chatId = config.CORTEX_TELEGRAM_CHAT_ID
   if (!token || !chatId) {
@@ -163,7 +163,7 @@ async function sendTelegram(message: string, config: CortexConfig): Promise<void
   }
 }
 
-async function sendWhatsApp(message: string, admins: AdminContact[], registry: Registry): Promise<void> {
+export async function sendWhatsApp(message: string, admins: AdminContact[], registry: Registry): Promise<void> {
   const waAdmins = admins.filter(a => a.channel === 'whatsapp')
   for (const admin of waAdmins) {
     await registry.runHook('message:send', {
@@ -174,7 +174,7 @@ async function sendWhatsApp(message: string, admins: AdminContact[], registry: R
   }
 }
 
-async function sendEmail(message: string, admins: AdminContact[], registry: Registry): Promise<void> {
+export async function sendEmail(message: string, admins: AdminContact[], registry: Registry): Promise<void> {
   const emailAdmins = admins.filter(a => a.channel === 'email')
   for (const admin of emailAdmins) {
     await registry.runHook('message:send', {
@@ -211,7 +211,7 @@ function isInSilenceWindow(config: CortexConfig): boolean {
   return currentMinutes >= startMinutes || currentMinutes < endMinutes
 }
 
-async function resolveAdmins(registry: Registry): Promise<AdminContact[]> {
+export async function resolveAdmins(registry: Registry): Promise<AdminContact[]> {
   try {
     const usersDb = registry.getOptional<{
       listUsers(listType: string, activeOnly?: boolean): Promise<Array<{
