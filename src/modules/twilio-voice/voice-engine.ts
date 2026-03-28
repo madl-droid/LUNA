@@ -285,10 +285,12 @@ async function loadContact(db: Pool, phoneNumber: string): Promise<ContactInfo |
   // Look up contact via voice channel entry in contact_channels.
   // Voice channels are auto-created from WhatsApp LID resolution,
   // linking phone calls to the same contact as WA messages.
-  const result = await db.query<{ id: string; display_name: string | null; qualification_status: string | null }>(
-    `SELECT c.id, c.display_name, c.qualification_status
+  const result = await db.query<{ id: string; display_name: string | null; lead_status: string | null }>(
+    `SELECT c.id, c.display_name, ac.lead_status
      FROM contacts c
      JOIN contact_channels cc ON cc.contact_id = c.id
+     LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
+       AND ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
      WHERE cc.channel_type = 'voice'
        AND (cc.channel_identifier = $1 OR cc.channel_identifier = $2)
      LIMIT 1`,
@@ -301,7 +303,7 @@ async function loadContact(db: Pool, phoneNumber: string): Promise<ContactInfo |
   return {
     contactId: row.id,
     displayName: row.display_name,
-    status: row.qualification_status,
+    status: row.lead_status,
   }
 }
 

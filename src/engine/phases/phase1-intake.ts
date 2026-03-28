@@ -355,11 +355,16 @@ async function findContact(
   channel: string,
   fallbackContactId?: string,
 ): Promise<ContactInfo | null> {
-  const contactQuery = `SELECT c.id, c.display_name, c.contact_type, c.qualification_status,
-              c.qualification_score, c.qualification_data, c.created_at,
+  const contactQuery = `SELECT c.id, c.display_name, c.contact_type,
+              ac.lead_status AS qualification_status,
+              COALESCE(ac.qualification_score, 0) AS qualification_score,
+              COALESCE(ac.qualification_data, '{}') AS qualification_data,
+              c.created_at,
               cc.channel_identifier, cc.channel_type, cc.id AS cc_id
        FROM contacts c
        JOIN contact_channels cc ON cc.contact_id = c.id
+       LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
+         AND ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
        WHERE cc.channel_identifier = $1 AND cc.channel_type = $2
        LIMIT 1`
 

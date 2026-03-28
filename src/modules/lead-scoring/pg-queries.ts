@@ -1,5 +1,6 @@
 // LUNA — Module: lead-scoring — PostgreSQL Queries
 // Queries para leads: listar, detalle, actualizar score/status, recalcular batch.
+// Qualification data lives in agent_contacts (per-agent), not contacts.
 
 import type { Pool } from 'pg'
 import pino from 'pino'
@@ -8,7 +9,16 @@ import type { LeadSummary, LeadDetail, QualificationStatus, StatusMetric } from 
 const logger = pino({ name: 'lead-scoring:db' })
 
 export class LeadQueries {
-  constructor(private db: Pool) {}
+  private agentId: string
+
+  constructor(private db: Pool, agentId: string = 'luna') {
+    this.agentId = agentId
+  }
+
+  /** Subquery to resolve agent UUID from slug */
+  private get agentSubquery(): string {
+    return `(SELECT id FROM agents WHERE slug = '${this.agentId}' LIMIT 1)`
+  }
 
   /**
    * List leads with optional filters and pagination.
@@ -37,12 +47,12 @@ export class LeadQueries {
     let paramIdx = 1
 
     if (status) {
-      conditions.push(`c.qualification_status = $${paramIdx++}`)
+      conditions.push(`ac.lead_status = $${paramIdx++}`)
       params.push(status)
     }
 
     if (search) {
-      conditions.push(`(c.display_name ILIKE $${paramIdx} OR cc.channel_identifier ILIKE $${paramIdx})`)
+      conditions.push(`(c.display_name ILIKE $${paramIdx} OR ch.channel_identifier ILIKE $${paramIdx})`)
       params.push(`%${search}%`)
       paramIdx++
     }
@@ -56,18 +66,19 @@ export class LeadQueries {
 
     // Sort mapping
     const sortMap: Record<string, string> = {
-      score: 'c.qualification_score',
-      updated: 'c.updated_at',
+      score: 'ac.qualification_score',
+      updated: 'ac.updated_at',
       created: 'c.created_at',
     }
-    const sortCol = sortMap[sortBy] ?? 'c.updated_at'
+    const sortCol = sortMap[sortBy] ?? 'ac.updated_at'
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC'
 
     // Count total
     const countQuery = `
       SELECT COUNT(DISTINCT c.id) AS total
       FROM contacts c
-      LEFT JOIN contact_channels cc ON cc.contact_id = c.id AND cc.is_primary = true
+      JOIN agent_contacts ac ON ac.contact_id = c.id AND ac.agent_id = ${this.agentSubquery}
+      LEFT JOIN contact_channels ch ON ch.contact_id = c.id AND ch.is_primary = true
       ${whereClause}
     `
     const countResult = await this.db.query(countQuery, params)
@@ -78,21 +89,22 @@ export class LeadQueries {
       SELECT
         c.id AS contact_id,
         c.display_name,
-        COALESCE(cc.channel_identifier, '') AS channel_identifier,
-        COALESCE(cc.channel_type, '') AS channel,
+        COALESCE(ch.channel_identifier, '') AS channel_identifier,
+        COALESCE(ch.channel_type, '') AS channel,
         c.contact_type,
-        c.qualification_status,
-        COALESCE(c.qualification_score, 0) AS qualification_score,
-        COALESCE(c.qualification_data, '{}') AS qualification_data,
+        ac.lead_status AS qualification_status,
+        COALESCE(ac.qualification_score, 0) AS qualification_score,
+        COALESCE(ac.qualification_data, '{}') AS qualification_data,
         c.created_at,
-        c.updated_at,
+        ac.updated_at,
         sa.last_activity_at,
         COALESCE(sa.message_count, 0) AS message_count,
         lc.campaign_id AS latest_campaign_id,
         lc.campaign_name AS latest_campaign_name,
         lc.campaign_visible_id AS latest_campaign_visible_id
       FROM contacts c
-      LEFT JOIN contact_channels cc ON cc.contact_id = c.id AND cc.is_primary = true
+      JOIN agent_contacts ac ON ac.contact_id = c.id AND ac.agent_id = ${this.agentSubquery}
+      LEFT JOIN contact_channels ch ON ch.contact_id = c.id AND ch.is_primary = true
       LEFT JOIN (
         SELECT contact_id,
                MAX(last_activity_at) AS last_activity_at,
@@ -146,7 +158,7 @@ export class LeadQueries {
    * Get full lead detail including channels and recent messages.
    */
   async getLeadDetail(contactId: string): Promise<LeadDetail | null> {
-    // Query 1: Contact + session aggregates + latest campaign (3-in-1)
+    // Query 1: Contact + agent_contacts + session aggregates + latest campaign
     // Query 2: Channels
     // Query 3: Recent messages
     const [contactResult, channelsResult, messagesResult] = await Promise.all([
@@ -155,17 +167,18 @@ export class LeadQueries {
           c.id AS contact_id,
           c.display_name,
           c.contact_type,
-          c.qualification_status,
-          COALESCE(c.qualification_score, 0) AS qualification_score,
-          COALESCE(c.qualification_data, '{}') AS qualification_data,
+          ac.lead_status AS qualification_status,
+          COALESCE(ac.qualification_score, 0) AS qualification_score,
+          COALESCE(ac.qualification_data, '{}') AS qualification_data,
           c.created_at,
-          c.updated_at,
+          ac.updated_at,
           sa.last_activity_at,
           COALESCE(sa.message_count, 0) AS message_count,
           lc.campaign_id AS latest_campaign_id,
           lc.campaign_name AS latest_campaign_name,
           lc.campaign_visible_id AS latest_campaign_visible_id
         FROM contacts c
+        LEFT JOIN agent_contacts ac ON ac.contact_id = c.id AND ac.agent_id = ${this.agentSubquery}
         LEFT JOIN (
           SELECT contact_id,
                  MAX(last_activity_at) AS last_activity_at,
@@ -215,11 +228,11 @@ export class LeadQueries {
       channelContactId: primaryChannel?.channel_identifier ?? '',
       channel: primaryChannel?.channel_type ?? '',
       contactType: r.contact_type,
-      qualificationStatus: r.qualification_status,
-      qualificationScore: parseInt(r.qualification_score, 10),
+      qualificationStatus: r.qualification_status ?? 'new',
+      qualificationScore: parseInt(r.qualification_score ?? '0', 10),
       qualificationData: typeof r.qualification_data === 'string'
         ? JSON.parse(r.qualification_data)
-        : r.qualification_data,
+        : (r.qualification_data ?? {}),
       createdAt: r.created_at?.toISOString() ?? '',
       updatedAt: r.updated_at?.toISOString() ?? '',
       lastActivityAt: r.last_activity_at?.toISOString() ?? null,
@@ -242,7 +255,7 @@ export class LeadQueries {
   }
 
   /**
-   * Update qualification data and score for a contact.
+   * Update qualification data and score for a contact (writes to agent_contacts).
    */
   async updateQualification(
     contactId: string,
@@ -250,14 +263,22 @@ export class LeadQueries {
     score: number,
     status?: QualificationStatus,
   ): Promise<void> {
+    const setClauses = ['qualification_data = $1', 'qualification_score = $2']
+    const params: unknown[] = [JSON.stringify(data), score]
+    let idx = 3
+
+    if (status !== undefined) {
+      setClauses.push(`lead_status = $${idx++}`)
+      params.push(status)
+    }
+
+    params.push(this.agentId, contactId)
     await this.db.query(
-      `UPDATE contacts
-       SET qualification_data = $1,
-           qualification_score = $2,
-           qualification_status = COALESCE($3, qualification_status),
-           updated_at = NOW()
-       WHERE id = $4`,
-      [JSON.stringify(data), score, status ?? null, contactId],
+      `UPDATE agent_contacts
+       SET ${setClauses.join(', ')}, updated_at = NOW()
+       WHERE agent_id = (SELECT id FROM agents WHERE slug = $${idx} LIMIT 1)
+         AND contact_id = $${idx + 1}`,
+      params,
     )
   }
 
@@ -270,12 +291,14 @@ export class LeadQueries {
     qualificationStatus: QualificationStatus
   }>> {
     const result = await this.db.query(
-      `SELECT id AS contact_id,
-              COALESCE(qualification_data, '{}') AS qualification_data,
-              qualification_status
-       FROM contacts
-       WHERE contact_type = 'lead'
-         AND qualification_status NOT IN ('blocked', 'converted')`,
+      `SELECT ac.contact_id,
+              COALESCE(ac.qualification_data, '{}') AS qualification_data,
+              ac.lead_status AS qualification_status
+       FROM agent_contacts ac
+       JOIN contacts c ON c.id = ac.contact_id
+       WHERE c.contact_type = 'lead'
+         AND ac.agent_id = ${this.agentSubquery}
+         AND ac.lead_status NOT IN ('blocked', 'converted')`,
     )
 
     return result.rows.map((r: { contact_id: string; qualification_data: unknown; qualification_status: string }) => ({
@@ -294,17 +317,17 @@ export class LeadQueries {
     updates: Array<{ contactId: string; score: number; status: QualificationStatus | null }>,
   ): Promise<number> {
     let updated = 0
-    // Use a transaction for batch updates
     const client = await this.db.connect()
     try {
       await client.query('BEGIN')
       for (const u of updates) {
         await client.query(
-          `UPDATE contacts
+          `UPDATE agent_contacts
            SET qualification_score = $1,
-               qualification_status = COALESCE($2, qualification_status),
+               lead_status = COALESCE($2, lead_status),
                updated_at = NOW()
-           WHERE id = $3`,
+           WHERE agent_id = ${this.agentSubquery}
+             AND contact_id = $3`,
           [u.score, u.status, u.contactId],
         )
         updated++
@@ -327,16 +350,18 @@ export class LeadQueries {
    */
   async getStats(): Promise<Record<string, number>> {
     const result = await this.db.query(
-      `SELECT qualification_status, COUNT(*) AS count
-       FROM contacts
-       WHERE contact_type = 'lead'
-       GROUP BY qualification_status`,
+      `SELECT ac.lead_status, COUNT(*) AS count
+       FROM agent_contacts ac
+       JOIN contacts c ON c.id = ac.contact_id
+       WHERE c.contact_type = 'lead'
+         AND ac.agent_id = ${this.agentSubquery}
+       GROUP BY ac.lead_status`,
     )
 
     const stats: Record<string, number> = { total: 0 }
     for (const row of result.rows) {
       const count = parseInt(row.count, 10)
-      stats[row.qualification_status ?? 'new'] = count
+      stats[row.lead_status ?? 'new'] = count
       stats['total'] = (stats['total'] ?? 0) + count
     }
     return stats
@@ -344,7 +369,6 @@ export class LeadQueries {
 
   /**
    * Get detailed stats with channel breakdown and optional filters.
-   * Returns metrics for: attended, cold, qualifying, qualified, converted.
    */
   async getStatsDetailed(opts: {
     period?: 'today' | '7d' | '30d' | '90d' | 'all'
@@ -353,11 +377,13 @@ export class LeadQueries {
   } = {}): Promise<StatusMetric[]> {
     const { period = 'all', channels, qualification } = opts
 
-    const conditions: string[] = ["c.contact_type = 'lead'"]
+    const conditions: string[] = [
+      "c.contact_type = 'lead'",
+      `ac.agent_id = ${this.agentSubquery}`,
+    ]
     const params: unknown[] = []
     let paramIdx = 1
 
-    // Period filter
     if (period !== 'all') {
       const intervalMap: Record<string, string> = {
         today: '1 day',
@@ -367,36 +393,34 @@ export class LeadQueries {
       }
       const interval = intervalMap[period]
       if (interval) {
-        conditions.push(`c.updated_at >= NOW() - INTERVAL '${interval}'`)
+        conditions.push(`ac.updated_at >= NOW() - INTERVAL '${interval}'`)
       }
     }
 
-    // Channel filter
     if (channels && channels.length > 0) {
-      conditions.push(`cc.channel IN (${channels.map(() => `$${paramIdx++}`).join(',')})`)
+      conditions.push(`ch.channel_type IN (${channels.map(() => `$${paramIdx++}`).join(',')})`)
       params.push(...channels)
     }
 
-    // Qualification status filter
     if (qualification) {
-      conditions.push(`c.qualification_status = $${paramIdx++}`)
+      conditions.push(`ac.lead_status = $${paramIdx++}`)
       params.push(qualification)
     }
 
     const targetStatuses = ['attended', 'cold', 'qualifying', 'qualified', 'converted']
 
     const result = await this.db.query(
-      `SELECT c.qualification_status AS status, cc.channel, COUNT(DISTINCT c.id) AS count
+      `SELECT ac.lead_status AS status, ch.channel_type AS channel, COUNT(DISTINCT c.id) AS count
        FROM contacts c
-       LEFT JOIN contact_channels cc ON cc.contact_id = c.id AND cc.is_primary = true
+       JOIN agent_contacts ac ON ac.contact_id = c.id
+       LEFT JOIN contact_channels ch ON ch.contact_id = c.id AND ch.is_primary = true
        WHERE ${conditions.join(' AND ')}
-         AND c.qualification_status = ANY($${paramIdx})
-       GROUP BY c.qualification_status, cc.channel
-       ORDER BY c.qualification_status, cc.channel`,
+         AND ac.lead_status = ANY($${paramIdx})
+       GROUP BY ac.lead_status, ch.channel_type
+       ORDER BY ac.lead_status, ch.channel_type`,
       [...params, targetStatuses],
     )
 
-    // Group by status
     const statusMap = new Map<string, { total: number; channels: Map<string, number> }>()
     for (const s of targetStatuses) {
       statusMap.set(s, { total: 0, channels: new Map() })
@@ -426,18 +450,18 @@ export class LeadQueries {
   /**
    * Manually set disqualification on a contact.
    */
-  // FIX: SEC-8.4 — Atomic update sin read-modify-write via jsonb_set
   async disqualifyLead(
     contactId: string,
     reasonKey: string,
     targetStatus: QualificationStatus,
   ): Promise<void> {
     await this.db.query(
-      `UPDATE contacts
+      `UPDATE agent_contacts
        SET qualification_data = COALESCE(qualification_data, '{}'::jsonb) || $1::jsonb,
-           qualification_status = $2,
+           lead_status = $2,
            updated_at = NOW()
-       WHERE id = $3`,
+       WHERE agent_id = ${this.agentSubquery}
+         AND contact_id = $3`,
       [JSON.stringify({ _disqualified: reasonKey }), targetStatus, contactId],
     )
   }

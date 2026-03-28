@@ -196,19 +196,23 @@ async function handleExtraction(
   const config = configStore.getConfig()
   const db = ctx.db
 
-  // Load existing qualification data
+  // Load existing qualification data from agent_contacts
+  const agentSlug = ctx.agentId ?? 'luna'
   const contactRow = await db.query(
-    'SELECT qualification_data, qualification_status, qualification_score FROM contacts WHERE id = $1',
-    [contactId],
+    `SELECT ac.qualification_data, ac.lead_status, ac.qualification_score
+     FROM agent_contacts ac
+     WHERE ac.contact_id = $1
+       AND ac.agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
+    [contactId, agentSlug],
   )
 
   if (contactRow.rows.length === 0) {
-    return { success: false, error: 'Contact not found' }
+    return { success: false, error: 'Agent-contact relationship not found' }
   }
 
   const row = contactRow.rows[0]!
   const existingData = (row.qualification_data as Record<string, unknown>) ?? {}
-  const currentStatus = (row.qualification_status as QualificationStatus) ?? 'new'
+  const currentStatus = (row.lead_status as QualificationStatus) ?? 'new'
 
   // Determine current stage for focused extraction
   const currentStage = getCurrentStage(existingData, config)
@@ -253,11 +257,13 @@ async function handleExtraction(
     try {
       await client.query('BEGIN')
       const freshRow = await client.query(
-        'SELECT qualification_data, qualification_status FROM contacts WHERE id = $1 FOR UPDATE',
-        [contactId],
+        `SELECT qualification_data, lead_status FROM agent_contacts
+         WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)
+         FOR UPDATE`,
+        [contactId, agentSlug],
       )
       const freshData = (freshRow.rows[0]?.qualification_data as Record<string, unknown>) ?? {}
-      const freshStatus = (freshRow.rows[0]?.qualification_status as QualificationStatus) ?? currentStatus
+      const freshStatus = (freshRow.rows[0]?.lead_status as QualificationStatus) ?? currentStatus
 
       // Merge new data with fresh existing (respecting minConfidence threshold)
       mergedData = mergeQualificationData(
@@ -278,19 +284,21 @@ async function handleExtraction(
       // Resolve status transition
       newStatus = resolveTransition(freshStatus, scoreResult.suggestedStatus)
 
-      // Update database
+      // Update database (agent_contacts)
       await client.query(
-        `UPDATE contacts
+        `UPDATE agent_contacts
          SET qualification_data = $1,
              qualification_score = $2,
-             qualification_status = COALESCE($3, qualification_status),
+             lead_status = COALESCE($3, lead_status),
              updated_at = NOW()
-         WHERE id = $4`,
+         WHERE contact_id = $4
+           AND agent_id = (SELECT id FROM agents WHERE slug = $5 LIMIT 1)`,
         [
           JSON.stringify(mergedData),
           scoreResult.totalScore,
           newStatus,
           contactId,
+          agentSlug,
         ],
       )
       await client.query('COMMIT')

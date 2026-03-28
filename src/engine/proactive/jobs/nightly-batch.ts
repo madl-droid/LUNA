@@ -94,14 +94,17 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
   logger.info({ traceId: ctx.traceId, batchSize: config.scoringBatchSize }, 'Scoring cold leads')
 
   try {
+    const agentSlug = getAgentId(ctx)
     const result = await ctx.db.query(
-      `SELECT c.id, c.display_name, c.qualification_data, c.qualification_score
+      `SELECT c.id, c.display_name, ac.qualification_data, ac.qualification_score
        FROM contacts c
+       JOIN agent_contacts ac ON ac.contact_id = c.id
+         AND ac.agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)
        WHERE c.contact_type = 'lead'
-         AND c.qualification_status = 'cold'
-       ORDER BY c.updated_at DESC
+         AND ac.lead_status = 'cold'
+       ORDER BY ac.updated_at DESC
        LIMIT $1`,
-      [config.scoringBatchSize],
+      [config.scoringBatchSize, agentSlug],
     )
 
     if (result.rows.length === 0) {
@@ -158,15 +161,17 @@ Evalúa este lead frío. Responde SOLO con JSON:
         scored++
 
         await ctx.db.query(
-          `UPDATE contacts SET qualification_score = $1, updated_at = NOW() WHERE id = $2`,
-          [newScore, row.id],
+          `UPDATE agent_contacts SET qualification_score = $1, updated_at = NOW()
+           WHERE contact_id = $2 AND agent_id = (SELECT id FROM agents WHERE slug = $3 LIMIT 1)`,
+          [newScore, row.id, agentSlug],
         )
 
         if (newScore >= config.scoringThreshold && parsed.recommend_reactivation) {
           await ctx.db.query(
-            `UPDATE contacts SET qualification_status = 'qualifying', updated_at = NOW()
-             WHERE id = $1 AND qualification_status = 'cold'`,
-            [row.id],
+            `UPDATE agent_contacts SET lead_status = 'qualifying', updated_at = NOW()
+             WHERE contact_id = $1 AND lead_status = 'cold'
+               AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
+            [row.id, agentSlug],
           )
           await ctx.registry.runHook('contact:status_changed', {
             contactId: row.id,
@@ -327,9 +332,11 @@ async function generateDailyReport(ctx: ProactiveJobContext): Promise<void> {
          FROM messages WHERE created_at::date = $1::date`, [dateStr],
       ).catch(() => ({ rows: [{ total: 0, incoming: 0, outgoing: 0 }] })),
       ctx.db.query(
-        `SELECT COUNT(*) FILTER (WHERE created_at::date = $1::date)::int AS new_leads,
-                COUNT(*) FILTER (WHERE qualification_status = 'qualified' AND updated_at::date = $1::date)::int AS qualified
-         FROM contacts WHERE contact_type = 'lead'`, [dateStr],
+        `SELECT COUNT(*) FILTER (WHERE c.created_at::date = $1::date)::int AS new_leads,
+                COUNT(*) FILTER (WHERE ac.lead_status = 'qualified' AND ac.updated_at::date = $1::date)::int AS qualified
+         FROM contacts c
+         LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
+         WHERE c.contact_type = 'lead'`, [dateStr],
       ).catch(() => ({ rows: [{ new_leads: 0, qualified: 0 }] })),
       ctx.db.query(
         `SELECT COUNT(*) FILTER (WHERE started_at::date = $1::date)::int AS opened,

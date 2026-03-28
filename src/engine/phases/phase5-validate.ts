@@ -555,8 +555,10 @@ async function updateLeadQualification(
         await memoryManager.updateLeadStatus(ctx.agentId, ctx.contactId, 'qualifying')
       } else {
         await db.query(
-          `UPDATE contacts SET qualification_status = 'qualifying', updated_at = NOW() WHERE id = $1 AND qualification_status = 'new'`,
-          [ctx.contactId],
+          `UPDATE agent_contacts SET lead_status = 'qualifying', updated_at = NOW()
+           WHERE contact_id = $1 AND lead_status = 'new'
+             AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
+          [ctx.contactId, ctx.agentId],
         )
       }
       await registry.runHook('contact:status_changed', {

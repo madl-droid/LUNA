@@ -402,8 +402,9 @@ export class CampaignQueries {
       )
       SELECT lc.campaign_id, COUNT(*) AS conversions
       FROM last_campaign lc
-      JOIN contacts co ON co.id = lc.contact_id
-      WHERE co.qualification_status = 'converted'
+      JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
+        AND ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
+      WHERE ac.lead_status = 'converted'
       GROUP BY lc.campaign_id
     `)
 
@@ -425,9 +426,12 @@ export class CampaignQueries {
       SELECT
         (SELECT COUNT(*) FROM contacts WHERE contact_type = 'lead'
           AND id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS entries,
-        (SELECT COUNT(*) FROM contacts WHERE contact_type = 'lead'
-          AND qualification_status = 'converted'
-          AND id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS conversions
+        (SELECT COUNT(*) FROM contacts c2
+          JOIN agent_contacts ac2 ON ac2.contact_id = c2.id
+            AND ac2.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
+          WHERE c2.contact_type = 'lead'
+            AND ac2.lead_status = 'converted'
+            AND c2.id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS conversions
     `)
     const nc = noCampaignResult.rows[0]
     if (nc) {

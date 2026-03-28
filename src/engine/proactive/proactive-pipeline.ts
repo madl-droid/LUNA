@@ -222,14 +222,19 @@ async function buildProactiveContext(
 
   // Load contact info
   const contactResult = await db.query(
-    `SELECT c.id, c.display_name, c.contact_type, c.qualification_status,
-            c.qualification_score, c.qualification_data, c.created_at,
+    `SELECT c.id, c.display_name, c.contact_type,
+            ac.lead_status AS qualification_status,
+            COALESCE(ac.qualification_score, 0) AS qualification_score,
+            COALESCE(ac.qualification_data, '{}') AS qualification_data,
+            c.created_at,
             cc.channel_identifier, cc.channel_type
      FROM contacts c
      JOIN contact_channels cc ON cc.contact_id = c.id
+     LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
+       AND ac.agent_id = (SELECT id FROM agents WHERE slug = $3 LIMIT 1)
      WHERE c.id = $1 AND cc.channel_type = $2
      LIMIT 1`,
-    [candidate.contactId, candidate.channel],
+    [candidate.contactId, candidate.channel, agentId],
   )
 
   // FIX: E-29 — Guard against deleted contact (no non-null assertion)
