@@ -73,12 +73,17 @@ const manifest: ModuleManifest = {
     LLM_ROUTE_TOOLS: z.string().default(''),
     LLM_ROUTE_PROACTIVE: z.string().default(''),
 
-    // Task routing — downgrade targets (JSON: {"provider":"...","model":"..."})
-    LLM_ROUTE_CLASSIFY_DOWNGRADE: z.string().default(''),
-    LLM_ROUTE_RESPOND_DOWNGRADE: z.string().default(''),
-    LLM_ROUTE_COMPLEX_DOWNGRADE: z.string().default(''),
-    LLM_ROUTE_TOOLS_DOWNGRADE: z.string().default(''),
-    LLM_ROUTE_PROACTIVE_DOWNGRADE: z.string().default(''),
+    // Task routing — downgrade targets (provider + model per task)
+    LLM_CLASSIFY_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_CLASSIFY_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_RESPOND_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_RESPOND_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_COMPLEX_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_COMPLEX_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_TOOLS_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_TOOLS_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_PROACTIVE_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_PROACTIVE_DOWNGRADE_MODEL: z.string().default(''),
 
     // Fallback chain order (comma-separated)
     LLM_FALLBACK_CHAIN: z.string().default('anthropic,google'),

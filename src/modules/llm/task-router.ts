@@ -189,30 +189,27 @@ export class TaskRouter {
       }
     }
 
-    // Parse per-task downgrade targets from JSON env vars
+    // Parse per-task downgrade targets (separate provider/model keys)
     const cfg = config as unknown as Record<string, string | undefined>
-    const downgradeMap: Record<string, string | undefined> = {
-      classify: cfg.LLM_ROUTE_CLASSIFY_DOWNGRADE,
-      respond: cfg.LLM_ROUTE_RESPOND_DOWNGRADE,
-      complex: cfg.LLM_ROUTE_COMPLEX_DOWNGRADE,
-      tools: cfg.LLM_ROUTE_TOOLS_DOWNGRADE,
-      proactive: cfg.LLM_ROUTE_PROACTIVE_DOWNGRADE,
-    }
+    const downgradeTasks: Array<{ task: LLMTask; providerKey: string; modelKey: string }> = [
+      { task: 'classify', providerKey: 'LLM_CLASSIFY_DOWNGRADE_PROVIDER', modelKey: 'LLM_CLASSIFY_DOWNGRADE_MODEL' },
+      { task: 'respond', providerKey: 'LLM_RESPOND_DOWNGRADE_PROVIDER', modelKey: 'LLM_RESPOND_DOWNGRADE_MODEL' },
+      { task: 'complex', providerKey: 'LLM_COMPLEX_DOWNGRADE_PROVIDER', modelKey: 'LLM_COMPLEX_DOWNGRADE_MODEL' },
+      { task: 'tools', providerKey: 'LLM_TOOLS_DOWNGRADE_PROVIDER', modelKey: 'LLM_TOOLS_DOWNGRADE_MODEL' },
+      { task: 'proactive', providerKey: 'LLM_PROACTIVE_DOWNGRADE_PROVIDER', modelKey: 'LLM_PROACTIVE_DOWNGRADE_MODEL' },
+    ]
 
-    for (const [task, json] of Object.entries(downgradeMap)) {
-      if (!json) continue
-      try {
-        const parsed = JSON.parse(json) as { provider: string; model: string; temperature?: number }
-        const existing = this.routes.get(task as LLMTask)
+    for (const { task, providerKey, modelKey } of downgradeTasks) {
+      const dgProvider = cfg[providerKey]
+      const dgModel = cfg[modelKey]
+      if (dgProvider && dgModel) {
+        const existing = this.routes.get(task)
         if (existing) {
           existing.primary.downgrade = {
-            provider: parsed.provider as LLMProviderName,
-            model: parsed.model,
-            temperature: parsed.temperature,
+            provider: dgProvider as LLMProviderName,
+            model: dgModel,
           }
         }
-      } catch (err) {
-        logger.warn({ task, err }, 'Failed to parse downgrade config, skipping')
       }
     }
   }
