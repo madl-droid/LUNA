@@ -154,7 +154,7 @@ const apiRoutes: ApiRoute[] = [
     },
   },
 
-  // Voice preview (TTS)
+  // Voice preview (TTS) — delegates to llm:tts hook
   {
     method: 'POST',
     path: 'voice-preview',
@@ -168,41 +168,19 @@ const apiRoutes: ApiRoute[] = [
       }
 
       try {
-        const config = _registry.getConfig<TwilioVoiceConfig>('twilio-voice')
-        const apiKey = config.VOICE_GOOGLE_API_KEY || getGoogleApiKey()
+        // Map Gemini voice name to Wavenet voice for TTS preview
+        const wavenetVoice = `es-US-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`
 
-        if (!apiKey) {
-          jsonResponse(res, 400, { error: 'No Google API key configured' })
-          return
-        }
+        const result = await _registry.callHook('llm:tts', {
+          text: body.text,
+          voice: wavenetVoice,
+          languageCode: 'es-US',
+          audioEncoding: 'MP3',
+        })
 
-        // Use Gemini TTS endpoint for preview
-        const ttsResponse = await fetch(
-          `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              input: { text: body.text },
-              voice: {
-                languageCode: getEffectiveLanguage(config, _registry!),
-                name: `${getEffectiveLanguage(config, _registry!)}-Wavenet-${body.voice === 'Kore' || body.voice === 'Aoede' ? 'A' : 'B'}`,
-              },
-              audioConfig: { audioEncoding: 'MP3' },
-            }),
-          },
-        )
-
-        if (!ttsResponse.ok) {
-          const errText = await ttsResponse.text()
-          jsonResponse(res, 500, { error: `TTS failed: ${errText}` })
-          return
-        }
-
-        const ttsData = await ttsResponse.json() as { audioContent: string }
         jsonResponse(res, 200, {
-          audioBase64: ttsData.audioContent,
-          mimeType: 'audio/mp3',
+          audioBase64: result.audioBase64,
+          mimeType: result.mimeType,
           voice: body.voice,
         })
       } catch (err) {

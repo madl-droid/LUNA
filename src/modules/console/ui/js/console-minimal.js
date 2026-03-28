@@ -449,7 +449,7 @@
   // === Model scanner ===
   window.triggerScan = function () {
     showToast('Scanning...', 'success')
-    fetch('/console/api/model-scanner/scan', { method: 'POST' })
+    fetch('/console/api/llm/scanner/scan', { method: 'POST' })
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.ok) {
@@ -462,7 +462,7 @@
             }).join('')
           }
           // Refresh models data for dropdowns
-          fetch('/console/api/model-scanner/models')
+          fetch('/console/api/llm/scanner/models')
             .then(function (r) { return r.json() })
             .then(function (d) { if (d.models) modelsData = d.models })
             .catch(function () {})
