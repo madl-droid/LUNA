@@ -33,6 +33,14 @@ export interface CortexConfig {
   CORTEX_PULSE_LLM_ESCALATION_MODEL: string
   CORTEX_PULSE_LLM_ESCALATION_THRESHOLD: number
   CORTEX_PULSE_LOGS_MAX_UNIQUE: number
+  // Trace config
+  CORTEX_TRACE_ENABLED: boolean
+  CORTEX_TRACE_MODEL: string
+  CORTEX_TRACE_ANALYSIS_MODEL: string
+  CORTEX_TRACE_MAX_CONCURRENT: number
+  CORTEX_TRACE_MAX_TOKENS_PHASE2: number
+  CORTEX_TRACE_MAX_TOKENS_PHASE4: number
+  CORTEX_TRACE_MAX_TOKENS_ANALYSIS: number
 }
 
 // ═══════════════════════════════════════════

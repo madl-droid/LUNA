@@ -1,6 +1,6 @@
 # Cortex — Sistema nervioso de LUNA
 
-Módulo con dos features: **Reflex** (alertas tiempo real, 0 LLM) y **Pulse** (análisis inteligente, usa LLM).
+Módulo con tres features: **Reflex** (alertas tiempo real, 0 LLM), **Pulse** (análisis inteligente, usa LLM), y **Trace** (simulación y testing del pipeline).
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console, API routes, render section
@@ -20,16 +20,26 @@ Módulo con dos features: **Reflex** (alertas tiempo real, 0 LLM) y **Pulse** (a
 - `pulse/store.ts` — tabla pulse_reports (PostgreSQL JSONB), CRUD
 - `pulse/scheduler.ts` — scheduling batch/sync + triggers inmediatos
 - `pulse/dispatch-bridge.ts` — bridge a canales de Reflex para envío de notificaciones
+- `trace/types.ts` — tipos del subsistema de simulación
+- `trace/store.ts` — 3 tablas: scenarios, runs, results (PostgreSQL CRUD)
+- `trace/context-builder.ts` — construye ContextBundle desde DB real (read-only) o sintético
+- `trace/tool-sandbox.ts` — clasificación read/write de tools + ejecución híbrida
+- `trace/simulator.ts` — ejecuta 1 simulación: Shadow Phase 2+3+4
+- `trace/analyst.ts` — LLM Analyst: analiza cada simulación individual
+- `trace/synthesizer.ts` — LLM Synthesizer: análisis agregado de N simulaciones
+- `trace/runner.ts` — orquestador con semáforo de concurrencia
+- `trace/render.ts` — sección HTML para console
 
 ## Manifest
 - **type**: `feature`
 - **depends**: `[]` (sin dependencias duras, monitorea lo que exista)
-- **configSchema**: `CORTEX_REFLEX_*` (Reflex) + `CORTEX_PULSE_*` (Pulse)
+- **configSchema**: `CORTEX_REFLEX_*` + `CORTEX_PULSE_*` + `CORTEX_TRACE_*`
 
 ## Servicios expuestos
 - `cortex:health` — `{ check(), getActiveAlerts(), getAlertHistory(limit?), getMetrics() }`
 - `cortex:renderSection` — `(lang) => Promise<string>` dashboard HTML para console
 - `cortex:pulse` — `{ getScheduler(), onAlertChange(rule, severity, state, flapCount) }`
+- `cortex:trace` — `{ isRunActive(), launchRun(req) }`
 
 ## API routes (bajo /console/api/cortex/)
 - `GET health` — health check completo
@@ -39,6 +49,18 @@ Módulo con dos features: **Reflex** (alertas tiempo real, 0 LLM) y **Pulse** (a
 - `GET pulse/reports` — lista reportes Pulse (?limit, ?offset)
 - `GET pulse/reports/:id` — reporte individual
 - `GET pulse/status` — estado del scheduler Pulse
+- `GET trace/scenarios` — listar escenarios
+- `POST trace/scenarios` — crear escenario
+- `GET trace/scenarios/:id` — detalle escenario
+- `PUT trace/scenarios/:id` — actualizar escenario
+- `DELETE trace/scenarios/:id` — eliminar escenario
+- `POST trace/run` — lanzar simulación
+- `GET trace/runs` — listar runs
+- `GET trace/runs/:id` — detalle run + progress + synthesis
+- `POST trace/runs/:id/cancel` — cancelar run
+- `DELETE trace/runs/:id` — eliminar run
+- `GET trace/runs/:id/results` — resultados individuales
+- `GET trace/runs/:id/results/:resultId` — resultado individual
 
 ## Pulse — Análisis inteligente
 - **Dependencia**: lee datos que Reflex acumula. Si Reflex no corre, Pulse no tiene datos.
@@ -49,6 +71,14 @@ Módulo con dos features: **Reflex** (alertas tiempo real, 0 LLM) y **Pulse** (a
 - **Persistencia**: tabla `pulse_reports` con JSONB. Sin TTL — historial permanente.
 - **Entrega**: mismos canales que Reflex (Telegram, WhatsApp, email).
 
+## Trace — Simulación y testing
+- **Shadow Pipeline**: NO usa processMessage(). Importa buildEvaluatorPrompt + buildCompositorPrompt directamente.
+- **Tool sandbox**: tools read se ejecutan real (datos fieles), tools write son dry-run (seguras).
+- **Prompt overrides**: per-request via Proxy de registry (NUNCA toca prompt_slots global).
+- **Analyst + Synthesizer**: LLM con thinking analiza cada simulación y genera reporte agregado.
+- **3 tablas**: trace_scenarios, trace_runs, trace_results (migration 010).
+- **Concurrencia**: semáforo simple (configurable CORTEX_TRACE_MAX_CONCURRENT, default 3).
+
 ## Trampas
 - Evaluador Reflex es setInterval, NO BullMQ. Si Redis muere, sigue vivo.
 - Sensores NO bloquean pipeline (prioridad 1, fire-and-forget).
@@ -57,3 +87,7 @@ Módulo con dos features: **Reflex** (alertas tiempo real, 0 LLM) y **Pulse** (a
 - Pulse NO envía reportes vacíos al LLM — usa `isQuietPeriod()`.
 - `dispatch-bridge.ts` NO aplica silence window — reportes Pulse siempre se entregan.
 - API routes se populan en init() mutando manifest.console.apiRoutes.
+- Trace simulator NUNCA llama processMessage() — usa prompt builders directamente.
+- Tool sandbox clasifica por regex de nombre: search_*/get_* = execute, send_*/create_* = dry-run.
+- Prompt overrides son per-request (Proxy), NUNCA modifican prompt_slots en DB.
+- Si Trace está disabled, sus tablas NO se crean y las API routes retornan 400.

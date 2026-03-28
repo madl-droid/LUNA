@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { boolEnv, numEnv, numEnvMin } from '../../kernel/config-helpers.js'
-import { jsonResponse, parseQuery } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import type { CortexConfig } from './types.js'
 import { RingBuffer } from './reflex/ring-buffer.js'
 import { createCounters } from './reflex/counters.js'
@@ -16,6 +16,11 @@ import { checkHealth } from './reflex/health.js'
 import { getMetricsSummary, writeHealthSnapshot } from './reflex/metrics-store.js'
 import { PulseScheduler } from './pulse/scheduler.js'
 import { ensurePulseTable, listReports, getReportById } from './pulse/store.js'
+import { ensureTraceTables, listScenarios, getScenario, createScenario, updateScenario, deleteScenario, listRuns, getRun, deleteRun, getResults, getResultById } from './trace/store.js'
+import { launchRun, cancelRun, isRunActive } from './trace/runner.js'
+import { renderTraceSection } from './trace/render.js'
+import type { TraceConfig, RunRequest, ScenarioConfig } from './trace/types.js'
+import { VALID_SIM_COUNTS } from './trace/types.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'cortex' })
@@ -66,6 +71,15 @@ const manifest: ModuleManifest = {
     CORTEX_PULSE_LLM_ESCALATION_MODEL: z.string().default('sonnet'),
     CORTEX_PULSE_LLM_ESCALATION_THRESHOLD: numEnvMin(1, 5),
     CORTEX_PULSE_LOGS_MAX_UNIQUE: numEnvMin(10, 500),
+
+    // ─── Trace config ───
+    CORTEX_TRACE_ENABLED: boolEnv(false),
+    CORTEX_TRACE_MODEL: z.string().default('sonnet'),
+    CORTEX_TRACE_ANALYSIS_MODEL: z.string().default('opus'),
+    CORTEX_TRACE_MAX_CONCURRENT: numEnvMin(1, 3),
+    CORTEX_TRACE_MAX_TOKENS_PHASE2: numEnvMin(128, 512),
+    CORTEX_TRACE_MAX_TOKENS_PHASE4: numEnvMin(256, 1024),
+    CORTEX_TRACE_MAX_TOKENS_ANALYSIS: numEnvMin(512, 4096),
   }),
 
   console: {
@@ -199,6 +213,32 @@ const manifest: ModuleManifest = {
         label: { es: 'Modelo LLM por defecto', en: 'Default LLM model' },
         info: { es: 'haiku para la mayoría. sonnet para análisis complejos.', en: 'haiku for most. sonnet for complex analysis.' },
       },
+      { key: 'divider-trace', type: 'divider', label: { es: 'Trace — Simulador de Pipeline', en: 'Trace — Pipeline Simulator' } },
+      {
+        key: 'CORTEX_TRACE_ENABLED',
+        type: 'boolean',
+        label: { es: 'Trace activo', en: 'Trace enabled' },
+        info: { es: 'Activa el sistema de simulación y pruebas del pipeline', en: 'Enable pipeline simulation and testing system' },
+      },
+      {
+        key: 'CORTEX_TRACE_MODEL',
+        type: 'text',
+        label: { es: 'Modelo simulación', en: 'Simulation model' },
+        info: { es: 'Modelo LLM para Phase 2+4 en simulaciones', en: 'LLM model for Phase 2+4 in simulations' },
+      },
+      {
+        key: 'CORTEX_TRACE_ANALYSIS_MODEL',
+        type: 'text',
+        label: { es: 'Modelo análisis', en: 'Analysis model' },
+        info: { es: 'Modelo LLM para Analyst+Synthesizer (opus recomendado)', en: 'LLM model for Analyst+Synthesizer (opus recommended)' },
+      },
+      {
+        key: 'CORTEX_TRACE_MAX_CONCURRENT',
+        type: 'number',
+        label: { es: 'Concurrencia máx.', en: 'Max concurrency' },
+        info: { es: 'Máximo de simulaciones simultáneas', en: 'Max simultaneous simulations' },
+        min: 1,
+      },
     ],
     apiRoutes: [], // populated in init()
   },
@@ -239,7 +279,12 @@ const manifest: ModuleManifest = {
       const alerts = evaluator ? await evaluator.alerts.getActiveAlerts() : []
       const history = evaluator ? await evaluator.alerts.getAlertHistory(10) : []
       const metrics = await getMetricsSummary(redis)
-      return renderCortexSection(health, alerts, history, metrics, lang)
+      let html = renderCortexSection(health, alerts, history, metrics, lang)
+      // Append Trace section
+      try {
+        html += await renderTraceSection(db, lang, config.CORTEX_TRACE_ENABLED)
+      } catch { /* best effort */ }
+      return html
     })
 
     // Write health snapshot to Redis periodically (for dashboard/Pulse)
@@ -267,6 +312,28 @@ const manifest: ModuleManifest = {
       })
 
       logger.info('Cortex Pulse initialized')
+    }
+
+    // ─── Trace initialization ───
+    const traceConfig: TraceConfig = {
+      CORTEX_TRACE_ENABLED: config.CORTEX_TRACE_ENABLED,
+      CORTEX_TRACE_MODEL: config.CORTEX_TRACE_MODEL,
+      CORTEX_TRACE_ANALYSIS_MODEL: config.CORTEX_TRACE_ANALYSIS_MODEL,
+      CORTEX_TRACE_MAX_CONCURRENT: config.CORTEX_TRACE_MAX_CONCURRENT,
+      CORTEX_TRACE_MAX_TOKENS_PHASE2: config.CORTEX_TRACE_MAX_TOKENS_PHASE2,
+      CORTEX_TRACE_MAX_TOKENS_PHASE4: config.CORTEX_TRACE_MAX_TOKENS_PHASE4,
+      CORTEX_TRACE_MAX_TOKENS_ANALYSIS: config.CORTEX_TRACE_MAX_TOKENS_ANALYSIS,
+    }
+
+    if (config.CORTEX_TRACE_ENABLED) {
+      await ensureTraceTables(db)
+
+      registry.provide('cortex:trace', {
+        isRunActive: () => isRunActive(),
+        launchRun: (req: RunRequest) => launchRun(db, registry, req, traceConfig),
+      })
+
+      logger.info('Cortex Trace initialized')
     }
 
     // Set up API routes
@@ -341,6 +408,160 @@ const manifest: ModuleManifest = {
               mode: config.CORTEX_PULSE_MODE,
               schedulerRunning: pulseScheduler !== null,
             })
+          },
+        },
+        // ─── Trace API routes ───
+        {
+          method: 'GET',
+          path: 'trace/scenarios',
+          handler: async (req, res) => {
+            const query = parseQuery(req)
+            const limit = Math.min(parseInt(query.get('limit') ?? '20', 10), 100)
+            const offset = parseInt(query.get('offset') ?? '0', 10)
+            const scenarios = await listScenarios(db, limit, offset)
+            jsonResponse(res, 200, { scenarios })
+          },
+        },
+        {
+          method: 'POST',
+          path: 'trace/scenarios',
+          handler: async (req, res) => {
+            if (!config.CORTEX_TRACE_ENABLED) {
+              jsonResponse(res, 400, { error: 'Trace is disabled' })
+              return
+            }
+            const body = await parseBody<{ name: string; description?: string; config: ScenarioConfig }>(req)
+            if (!body.name || !body.config?.messages?.length) {
+              jsonResponse(res, 400, { error: 'name and config.messages are required' })
+              return
+            }
+            const scenario = await createScenario(db, body.name, body.description ?? null, body.config)
+            jsonResponse(res, 201, scenario)
+          },
+        },
+        {
+          method: 'GET',
+          path: 'trace/scenarios/:id',
+          handler: async (req, res) => {
+            const id = extractId(req, 'scenarios')
+            const scenario = await getScenario(db, id)
+            if (!scenario) { jsonResponse(res, 404, { error: 'Scenario not found' }); return }
+            jsonResponse(res, 200, scenario)
+          },
+        },
+        {
+          method: 'PUT',
+          path: 'trace/scenarios/:id',
+          handler: async (req, res) => {
+            const id = extractId(req, 'scenarios')
+            const body = await parseBody<{ name: string; description?: string; config: ScenarioConfig }>(req)
+            await updateScenario(db, id, body.name, body.description ?? null, body.config)
+            jsonResponse(res, 200, { ok: true })
+          },
+        },
+        {
+          method: 'DELETE',
+          path: 'trace/scenarios/:id',
+          handler: async (req, res) => {
+            const id = extractId(req, 'scenarios')
+            await deleteScenario(db, id)
+            jsonResponse(res, 200, { ok: true })
+          },
+        },
+        {
+          method: 'POST',
+          path: 'trace/run',
+          handler: async (req, res) => {
+            if (!config.CORTEX_TRACE_ENABLED) {
+              jsonResponse(res, 400, { error: 'Trace is disabled' })
+              return
+            }
+            const body = await parseBody<RunRequest>(req)
+            if (!body.scenarioId || !body.adminContext) {
+              jsonResponse(res, 400, { error: 'scenarioId and adminContext are required' })
+              return
+            }
+            if (body.simCount && !VALID_SIM_COUNTS.includes(body.simCount)) {
+              jsonResponse(res, 400, { error: `simCount must be one of: ${VALID_SIM_COUNTS.join(', ')}` })
+              return
+            }
+            try {
+              const run = await launchRun(db, registry, {
+                scenarioId: body.scenarioId,
+                variantName: body.variantName,
+                simCount: body.simCount ?? 1,
+                adminContext: body.adminContext,
+                modelOverride: body.modelOverride,
+                analysisModel: body.analysisModel,
+              }, traceConfig)
+              jsonResponse(res, 201, run)
+            } catch (err) {
+              jsonResponse(res, 400, { error: err instanceof Error ? err.message : 'Failed to launch run' })
+            }
+          },
+        },
+        {
+          method: 'GET',
+          path: 'trace/runs',
+          handler: async (req, res) => {
+            const query = parseQuery(req)
+            const limit = Math.min(parseInt(query.get('limit') ?? '20', 10), 100)
+            const offset = parseInt(query.get('offset') ?? '0', 10)
+            const scenarioId = query.get('scenario_id') ?? undefined
+            const status = query.get('status') as import('./trace/types.js').RunStatus | undefined
+            const runs = await listRuns(db, { scenarioId, status }, limit, offset)
+            jsonResponse(res, 200, { runs })
+          },
+        },
+        {
+          method: 'GET',
+          path: 'trace/runs/:id',
+          handler: async (req, res) => {
+            const id = extractId(req, 'runs')
+            const run = await getRun(db, id)
+            if (!run) { jsonResponse(res, 404, { error: 'Run not found' }); return }
+            jsonResponse(res, 200, run)
+          },
+        },
+        {
+          method: 'POST',
+          path: 'trace/runs/:id/cancel',
+          handler: async (req, res) => {
+            const id = extractId(req, 'runs')
+            const cancelled = cancelRun(id)
+            jsonResponse(res, 200, { cancelled })
+          },
+        },
+        {
+          method: 'DELETE',
+          path: 'trace/runs/:id',
+          handler: async (req, res) => {
+            const id = extractId(req, 'runs')
+            await deleteRun(db, id)
+            jsonResponse(res, 200, { ok: true })
+          },
+        },
+        {
+          method: 'GET',
+          path: 'trace/runs/:id/results',
+          handler: async (req, res) => {
+            const id = extractId(req, 'runs')
+            const query = parseQuery(req)
+            const simIndex = query.get('sim_index') ? parseInt(query.get('sim_index')!, 10) : undefined
+            const results = await getResults(db, id, simIndex)
+            jsonResponse(res, 200, { results })
+          },
+        },
+        {
+          method: 'GET',
+          path: 'trace/runs/:id/results/:resultId',
+          handler: async (req, res) => {
+            const url = new URL(req.url ?? '', 'http://localhost')
+            const segments = url.pathname.split('/')
+            const resultId = segments[segments.length - 1] ?? ''
+            const result = await getResultById(db, resultId)
+            if (!result) { jsonResponse(res, 404, { error: 'Result not found' }); return }
+            jsonResponse(res, 200, result)
           },
         },
       ]
@@ -458,4 +679,13 @@ function renderCortexSection(
 
   html += `</div>`
   return html
+}
+
+/** Extract path param after a known segment (e.g. 'scenarios', 'runs') */
+function extractId(req: import('node:http').IncomingMessage, segment: string): string {
+  const url = new URL(req.url ?? '', 'http://localhost')
+  const parts = url.pathname.split('/')
+  const idx = parts.findIndex((p: string) => p === segment)
+  if (idx === -1 || idx + 1 >= parts.length) return ''
+  return parts[idx + 1]!
 }
