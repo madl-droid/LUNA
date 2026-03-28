@@ -385,21 +385,21 @@ export function renderGoogleAppsSection(data: SectionData): string {
   const googleSvg = GOOGLE_SVG
 
   const statusBox = `<div class="panel" style="margin-bottom:20px">
-    <div class="panel-body panel-body-flat" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:40px;height:40px;border-radius:10px;border:2px solid ${statusColor};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+    <div class="panel-body panel-body-flat ts-gws-status-body">
+      <div class="ts-gws-status-left">
+        <div class="ts-gws-status-icon" style="border:2px solid ${statusColor}">
           ${googleSvg}
         </div>
         <div>
-          <div style="font-weight:600;font-size:14px">${statusText}</div>
-          ${ga.email ? `<div style="font-size:12px;color:var(--text-tertiary)">${esc(ga.email)}</div>` : ''}
+          <div class="ts-gws-status-name">${statusText}</div>
+          ${ga.email ? `<div class="ts-gws-status-email">${esc(ga.email)}</div>` : ''}
         </div>
       </div>
-      <div style="display:flex;gap:8px;flex-shrink:0">
-        <button type="button" class="btn-secondary" onclick="refreshGoogleAppsStatus()" style="font-size:12px;padding:6px 12px">${t('googleRefreshStatus', data.lang)}</button>
+      <div class="ts-gws-status-actions">
+        <button type="button" class="btn-secondary ts-gws-btn-sm" onclick="refreshGoogleAppsStatus()">${t('googleRefreshStatus', data.lang)}</button>
         ${!ga.connected
-          ? `<button type="button" class="wa-btn wa-btn-connect" onclick="googleAppsConnect()" style="font-size:12px;padding:6px 12px">${t('googleAppsConnectBtn', data.lang)}</button>`
-          : `<button type="button" class="btn-danger" onclick="googleAppsDisconnect()" style="font-size:12px;padding:6px 12px">${t('googleAppsDisconnectBtn', data.lang)}</button>`
+          ? `<button type="button" class="wa-btn wa-btn-connect ts-gws-btn-sm" onclick="googleAppsConnect()">${t('googleAppsConnectBtn', data.lang)}</button>`
+          : `<button type="button" class="btn-danger ts-gws-btn-sm" onclick="googleAppsDisconnect()">${t('googleAppsDisconnectBtn', data.lang)}</button>`
         }
       </div>
     </div>
@@ -437,36 +437,35 @@ export function renderGoogleAppsSection(data: SectionData): string {
     const permToggles = svc.perms.map(p => {
       const checked = activePerms.has(p)
       const isDelete = p === 'delete'
-      return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer${isDelete ? ';color:var(--error)' : ''}">
-        <input type="checkbox" class="gws-perm" data-service="${svc.id}" data-perm="${p}" ${checked ? 'checked' : ''} onchange="gwsPermChanged()"
-          style="width:14px;height:14px;accent-color:${isDelete ? 'var(--error)' : 'var(--primary)'}">
+      return `<label class="ts-gws-perm-label${isDelete ? ' ts-gws-perm-label-delete' : ''}">
+        <input type="checkbox" class="gws-perm ts-gws-perm-checkbox${isDelete ? ' ts-gws-perm-checkbox-delete' : ''}" data-service="${svc.id}" data-perm="${p}" ${checked ? 'checked' : ''} onchange="gwsPermChanged()">
         ${permLabels[p]?.[data.lang] || p}
       </label>`
     }).join('')
 
-    return `<div class="gws-card" data-service="${svc.id}" style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:10px;padding:14px;cursor:pointer;transition:all 0.15s ease;position:relative${!isActive ? ';opacity:0.6' : ''}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px" onclick="gwsToggleCard('${svc.id}')">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:20px">${svc.icon}</span>
-          <span style="font-weight:600;font-size:13px">${svc.name}</span>
+    return `<div class="gws-card ts-gws-card${!isActive ? ' ts-gws-card-inactive' : ''}" data-service="${svc.id}">
+      <div class="ts-gws-card-header" onclick="gwsToggleCard('${svc.id}')">
+        <div class="ts-gws-card-name-wrap">
+          <span class="ts-gws-card-icon">${svc.icon}</span>
+          <span class="ts-gws-card-name">${svc.name}</span>
         </div>
         <label class="toggle" style="flex-shrink:0" onclick="event.stopPropagation()">
           <input type="checkbox" class="gws-toggle" data-service="${svc.id}" ${isActive ? 'checked' : ''} onchange="gwsServiceToggled(this)">
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <div class="gws-card-body" data-card-body="${svc.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
-        <div style="font-size:11px;font-weight:500;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:6px">${isEs ? 'Permisos del agente' : 'Agent permissions'}</div>
-        <div style="display:flex;flex-direction:column;gap:4px">
+      <div class="gws-card-body ts-gws-card-body" data-card-body="${svc.id}">
+        <div class="ts-gws-perms-title">${isEs ? 'Permisos del agente' : 'Agent permissions'}</div>
+        <div class="ts-gws-perms-list">
           ${permToggles}
         </div>
       </div>
     </div>`
   }).join('')
 
-  const servicesGrid = `<div style="margin-bottom:12px">
-    <div style="font-size:13px;font-weight:500;color:var(--on-surface-variant);margin-bottom:10px">${t('googleAppsServicesTitle', data.lang)}</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+  const servicesGrid = `<div class="ts-gws-services-wrap">
+    <div class="ts-gws-services-title">${t('googleAppsServicesTitle', data.lang)}</div>
+    <div class="ts-gws-services-grid">
       ${serviceCards}
     </div>
   </div>`
@@ -1085,18 +1084,18 @@ function renderToolsCardsSection(data: SectionData): string {
   const timeout = cfg['TOOLS_EXECUTION_TIMEOUT_S'] || '30'
   const maxPerTurn = cfg['PIPELINE_MAX_TOOL_CALLS_PER_TURN'] || '5'
 
-  const globalParams = `<div class="panel" style="margin-top:8px">
-    <div class="panel-body" style="padding:20px">
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
-        <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
+  const globalParams = `<div class="panel ts-tools-global-panel">
+    <div class="panel-body ts-tools-global-body">
+      <div class="ts-tools-global-grid">
+        <div class="field ts-tools-global-field">
           <span class="field-label">${isEs ? 'Espera entre intentos (s)' : 'Wait between retries (s)'}</span>
           <input type="number" inputmode="numeric" name="TOOLS_RETRY_BACKOFF_S" value="${esc(backoff)}" data-original="${esc(backoff)}" min="1" max="30">
         </div>
-        <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
+        <div class="field ts-tools-global-field">
           <span class="field-label">${isEs ? 'Tiempo max. ejecucion (s)' : 'Max execution time (s)'}</span>
           <input type="number" inputmode="numeric" name="TOOLS_EXECUTION_TIMEOUT_S" value="${esc(timeout)}" data-original="${esc(timeout)}" min="5" max="120">
         </div>
-        <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
+        <div class="field ts-tools-global-field">
           <span class="field-label">${isEs ? 'Max herramientas por turno' : 'Max tools per turn'}</span>
           <input type="number" inputmode="numeric" name="PIPELINE_MAX_TOOL_CALLS_PER_TURN" value="${esc(maxPerTurn)}" data-original="${esc(maxPerTurn)}" min="1" max="20">
         </div>
@@ -1221,7 +1220,7 @@ function renderIdentitySection(data: SectionData): string {
   }
 
   // Build prompts column (left)
-  let promptsHtml = `<div style="margin-bottom:12px;font-size:13px;color:var(--on-surface-variant);font-weight:500">${isEs ? 'Haz clic en una pestana para ver y editar el prompt' : 'Click a tab to view and edit the prompt'}</div>`
+  let promptsHtml = `<div class="ts-prompts-hint">${isEs ? 'Haz clic en una pestana para ver y editar el prompt' : 'Click a tab to view and edit the prompt'}</div>`
 
   for (const p of prompts) {
     const value = cfg[p.key] || ''
@@ -1231,7 +1230,7 @@ function renderIdentitySection(data: SectionData): string {
     promptsHtml += `<div class="panel collapsed" style="margin-bottom:8px" data-slot="${esc(slot)}">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${esc(p.label)}</span>
-        <button type="button" class="act-btn prompt-edit-btn" onclick="event.stopPropagation();promptEdit(this)" style="margin-left:auto;margin-right:8px;font-size:11px;padding:3px 10px">${isEs ? 'Editar' : 'Edit'}</button>
+        <button type="button" class="act-btn prompt-edit-btn ts-prompt-edit-btn" onclick="event.stopPropagation();promptEdit(this)">${isEs ? 'Editar' : 'Edit'}</button>
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body" style="padding:0">
@@ -1241,9 +1240,9 @@ function renderIdentitySection(data: SectionData): string {
               <svg class="code-editor-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
               <span>${esc(p.title)}</span>
             </div>
-            <div class="prompt-save-cancel" style="display:none;gap:6px;align-items:center">
-              <button type="button" class="act-btn act-btn-cta prompt-save-btn" onclick="promptSave(this)" style="font-size:11px;padding:3px 10px">${isEs ? 'Guardar' : 'Save'}</button>
-              <button type="button" class="act-btn prompt-cancel-btn" onclick="promptCancel(this)" style="font-size:11px;padding:3px 10px">${isEs ? 'Cancelar' : 'Cancel'}</button>
+            <div class="prompt-save-cancel ts-prompt-save-cancel">
+              <button type="button" class="act-btn act-btn-cta prompt-save-btn ts-prompt-btn-sm" onclick="promptSave(this)">${isEs ? 'Guardar' : 'Save'}</button>
+              <button type="button" class="act-btn prompt-cancel-btn ts-prompt-btn-sm" onclick="promptCancel(this)">${isEs ? 'Cancelar' : 'Cancel'}</button>
             </div>
             <span class="code-editor-pos" data-ce-pos="${esc(p.key)}">LN 1, COL 1</span>
           </div>
@@ -1275,7 +1274,7 @@ function renderIdentitySection(data: SectionData): string {
     ).join('')
 
   const identityHtml = `<div class="panel">
-    <div class="panel-header" style="cursor:default">
+    <div class="panel-header ts-panel-header-static">
       <span class="panel-title">${isEs ? 'Identidad del agente' : 'Agent identity'}</span>
     </div>
     <div class="panel-body">
@@ -1399,11 +1398,7 @@ function renderIdentitySection(data: SectionData): string {
 
     const ttsApiStatus = ttsHasApiKey
       ? `<span class="panel-badge badge-active">${isEs ? 'API Key OK' : 'API Key OK'}</span>`
-      : `<span class="panel-badge" style="background:rgba(255,59,48,0.12);color:var(--error)">${isEs ? 'Sin API Key' : 'No API Key'}</span>`
-
-    const cfs = 'margin-bottom:10px'
-    const cls = 'font-size:12px;font-weight:500;display:block;margin-bottom:3px;color:var(--text-secondary)'
-    const css = 'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-primary)'
+      : `<span class="panel-badge" class="ts-badge-error">${isEs ? 'Sin API Key' : 'No API Key'}</span>`
 
     voicePanelHtml = `<div class="panel collapsed" style="margin-top:12px">
       <div class="panel-header" onclick="togglePanel(this)">
@@ -1411,55 +1406,55 @@ function renderIdentitySection(data: SectionData): string {
         ${ttsApiStatus}
         <span class="panel-chevron">&#9660;</span>
       </div>
-      <div class="panel-body" style="padding:12px 16px">
-        <div style="${cfs}">
-          <label style="${cls}">${isEs ? 'Audio → Audio' : 'Audio → Audio'}</label>
-          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(ttsAudioFreq)}" style="${css}">${ttsAudioFreqSel}</select>
+      <div class="panel-body ts-tts-body-compact">
+        <div class="ts-tts-field-compact">
+          <label class="ts-tts-label-compact">${isEs ? 'Audio → Audio' : 'Audio → Audio'}</label>
+          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(ttsAudioFreq)}" class="ts-tts-select-compact">${ttsAudioFreqSel}</select>
         </div>
-        <div style="${cfs}">
-          <label style="${cls}">${isEs ? 'Texto → Audio' : 'Text → Audio'}</label>
-          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(ttsTextFreq)}" style="${css}">${ttsTextFreqSel}</select>
+        <div class="ts-tts-field-compact">
+          <label class="ts-tts-label-compact">${isEs ? 'Texto → Audio' : 'Text → Audio'}</label>
+          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(ttsTextFreq)}" class="ts-tts-select-compact">${ttsTextFreqSel}</select>
         </div>
-        <div style="${cfs}">
-          <label style="${cls}">${isEs ? 'Duracion max' : 'Max duration'}</label>
-          <select name="TTS_MAX_DURATION" data-original="${esc(ttsMaxDur)}" style="${css}">${ttsDurSel}</select>
+        <div class="ts-tts-field-compact">
+          <label class="ts-tts-label-compact">${isEs ? 'Duracion max' : 'Max duration'}</label>
+          <select name="TTS_MAX_DURATION" data-original="${esc(ttsMaxDur)}" class="ts-tts-select-compact">${ttsDurSel}</select>
         </div>
-        <div style="${cfs}">
-          <label style="${cls}">${isEs ? 'Voz' : 'Voice'}</label>
-          <select name="TTS_VOICE_NAME" data-original="${esc(ttsVoice)}" style="${css}" id="id-tts-voice-select">${ttsCustomOpt}${ttsVoiceOpts}</select>
+        <div class="ts-tts-field-compact">
+          <label class="ts-tts-label-compact">${isEs ? 'Voz' : 'Voice'}</label>
+          <select name="TTS_VOICE_NAME" data-original="${esc(ttsVoice)}" class="ts-tts-select-compact" id="id-tts-voice-select">${ttsCustomOpt}${ttsVoiceOpts}</select>
         </div>
-        <div style="${cfs}">
-          <label style="${cls}">${isEs ? 'Velocidad' : 'Speed'}</label>
-          <div style="display:flex;align-items:center;gap:8px">
+        <div class="ts-tts-field-compact">
+          <label class="ts-tts-label-compact">${isEs ? 'Velocidad' : 'Speed'}</label>
+          <div class="ts-tts-range-wrap-compact">
             <input type="range" id="id-tts-rate" name="TTS_SPEAKING_RATE" min="0.25" max="4.0" step="0.25" value="${esc(ttsSpeakRate)}"
               data-original="${esc(ttsSpeakRate)}" oninput="document.getElementById('id-tts-rate-val').textContent=this.value+'x'" style="flex:1;accent-color:var(--primary)">
-            <span id="id-tts-rate-val" style="font-size:12px;font-weight:600;min-width:32px;text-align:right">${esc(ttsSpeakRate)}x</span>
+            <span id="id-tts-rate-val" class="ts-tts-range-value-compact">${esc(ttsSpeakRate)}x</span>
           </div>
         </div>
-        <div style="${cfs}">
-          <label style="${cls}">${isEs ? 'Tono' : 'Pitch'}</label>
-          <div style="display:flex;align-items:center;gap:8px">
+        <div class="ts-tts-field-compact">
+          <label class="ts-tts-label-compact">${isEs ? 'Tono' : 'Pitch'}</label>
+          <div class="ts-tts-range-wrap-compact">
             <input type="range" id="id-tts-pitch" name="TTS_PITCH" min="-20.0" max="20.0" step="0.5" value="${esc(ttsPitch)}"
               data-original="${esc(ttsPitch)}" oninput="document.getElementById('id-tts-pitch-val').textContent=this.value" style="flex:1;accent-color:var(--primary)">
-            <span id="id-tts-pitch-val" style="font-size:12px;font-weight:600;min-width:32px;text-align:right">${esc(ttsPitch)}</span>
+            <span id="id-tts-pitch-val" class="ts-tts-range-value-compact">${esc(ttsPitch)}</span>
           </div>
         </div>
-        <div style="${cfs}">
-          <label style="${cls}">API Key</label>
-          <div style="position:relative">
+        <div class="ts-tts-field-compact">
+          <label class="ts-tts-label-compact">API Key</label>
+          <div class="ts-tts-password-wrap">
             <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
               data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              style="${css};padding-right:30px" placeholder="AIza...">
+              class="ts-tts-select-compact" style="padding-right:30px" placeholder="AIza...">
             <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
-              style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:12px;color:var(--text-tertiary)">&#128065;</button>
+              class="ts-tts-toggle-vis-compact">&#128065;</button>
           </div>
         </div>
-        <div style="margin-top:6px;padding-top:8px;border-top:1px solid var(--border-light)">
-          <button type="button" id="id-tts-preview-btn" class="wa-btn wa-btn-connect" onclick="idTtsPreview()"
-            style="font-size:11px;padding:4px 12px" ${!ttsHasApiKey ? 'disabled' : ''}>
+        <div class="ts-tts-preview-area-compact">
+          <button type="button" id="id-tts-preview-btn" class="wa-btn wa-btn-connect ts-prompt-btn-sm" onclick="idTtsPreview()"
+            style="padding:4px 12px" ${!ttsHasApiKey ? 'disabled' : ''}>
             &#9654; ${isEs ? 'Previsualizar' : 'Preview'}
           </button>
-          <span id="id-tts-preview-status" style="font-size:11px;color:var(--text-tertiary);margin-left:6px"></span>
+          <span id="id-tts-preview-status" class="ts-tts-preview-status-compact"></span>
           <audio id="id-tts-preview-audio" style="width:100%;display:none;margin-top:6px" controls></audio>
         </div>
       </div>
@@ -1590,7 +1585,7 @@ function renderIdentitySection(data: SectionData): string {
 })();
 </script>` : ''
 
-  return `<div style="display:grid;grid-template-columns:3fr 2fr;gap:24px;align-items:start">
+  return `<div class="ts-identity-layout">
     <div>${promptsHtml}</div>
     <div>${identityHtml}${voicePanelHtml}</div>
   </div>
@@ -1726,64 +1721,60 @@ function renderVoiceTTSSection(data: SectionData): string {
   // --- API Key status ---
   const apiKeyStatus = hasApiKey
     ? `<span class="panel-badge badge-active">${isEs ? 'API Key configurada' : 'API Key configured'}</span>`
-    : `<span class="panel-badge" style="background:rgba(255,59,48,0.12);color:var(--error)">${isEs ? 'API Key no configurada' : 'API Key not configured'}</span>`
-
-  const fieldStyle = 'margin-bottom:14px'
-  const labelStyle = 'font-size:13px;font-weight:500;display:block;margin-bottom:4px;color:var(--text-secondary)'
-  const selectStyle = 'width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary)'
+    : `<span class="panel-badge" class="ts-badge-error">${isEs ? 'API Key no configurada' : 'API Key not configured'}</span>`
 
   // Slider helper
   const rangeField = (id: string, label: string, info: string, min: number, max: number, step: number, value: string, unit: string) => `
-    <div style="${fieldStyle}">
-      <label style="${labelStyle}">${label}</label>
-      <div style="display:flex;align-items:center;gap:10px">
+    <div class="ts-tts-field">
+      <label class="ts-tts-label">${label}</label>
+      <div class="ts-tts-range-wrap">
         <input type="range" id="tts-${id}" name="${id}" min="${min}" max="${max}" step="${step}" value="${esc(value)}"
           data-original="${esc(value)}"
           oninput="document.getElementById('tts-${id}-val').textContent=this.value+'${unit}'"
           style="flex:1;accent-color:var(--primary)">
-        <span id="tts-${id}-val" style="font-size:13px;font-weight:600;min-width:40px;text-align:right">${esc(value)}${unit}</span>
+        <span id="tts-${id}-val" class="ts-tts-range-value">${esc(value)}${unit}</span>
       </div>
-      <span style="font-size:11px;color:var(--text-tertiary)">${info}</span>
+      <span class="ts-tts-hint">${info}</span>
     </div>`
 
   // Column 1: Behavior
   const behaviorCol = `<div>
     <div class="panel">
-      <div class="panel-header" style="cursor:default">
+      <div class="panel-header ts-panel-header-static">
         <span class="panel-title">${isEs ? 'Comportamiento de voz' : 'Voice behavior'}</span>
         ${apiKeyStatus}
       </div>
       <div class="panel-body">
-        <div style="${fieldStyle}">
-          <label style="${labelStyle}">${isEs ? 'Responder audio con audio' : 'Reply audio with audio'}</label>
-          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(audioToAudioFreq)}" style="${selectStyle}">
+        <div class="ts-tts-field">
+          <label class="ts-tts-label">${isEs ? 'Responder audio con audio' : 'Reply audio with audio'}</label>
+          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(audioToAudioFreq)}" class="ts-tts-select">
             ${audioFreqSelect}
           </select>
-          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'Frecuencia con la que el agente responde notas de voz con audio' : 'How often the agent replies to voice notes with audio'}</span>
+          <span class="ts-tts-hint">${isEs ? 'Frecuencia con la que el agente responde notas de voz con audio' : 'How often the agent replies to voice notes with audio'}</span>
         </div>
 
-        <div style="${fieldStyle}">
-          <label style="${labelStyle}">${isEs ? 'Responder texto con audio' : 'Reply text with audio'}</label>
-          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(textToAudioFreq)}" style="${selectStyle}">
+        <div class="ts-tts-field">
+          <label class="ts-tts-label">${isEs ? 'Responder texto con audio' : 'Reply text with audio'}</label>
+          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(textToAudioFreq)}" class="ts-tts-select">
             ${textFreqSelect}
           </select>
-          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'Frecuencia con la que el agente responde mensajes de texto con audio' : 'How often the agent replies to text messages with audio'}</span>
+          <span class="ts-tts-hint">${isEs ? 'Frecuencia con la que el agente responde mensajes de texto con audio' : 'How often the agent replies to text messages with audio'}</span>
         </div>
 
-        <div style="${fieldStyle}">
-          <label style="${labelStyle}">${isEs ? 'Duracion maxima de audios' : 'Max audio duration'}</label>
-          <select name="TTS_MAX_DURATION" data-original="${esc(maxDurationVal)}" style="${selectStyle}" id="tts-max-duration">
+        <div class="ts-tts-field">
+          <label class="ts-tts-label">${isEs ? 'Duracion maxima de audios' : 'Max audio duration'}</label>
+          <select name="TTS_MAX_DURATION" data-original="${esc(maxDurationVal)}" class="ts-tts-select" id="tts-max-duration">
             ${durationSelect}
           </select>
-          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'El agente ajustara la longitud de sus respuestas para no exceder este limite' : 'The agent will adjust response length to stay within this limit'}</span>
+          <span class="ts-tts-hint">${isEs ? 'El agente ajustara la longitud de sus respuestas para no exceder este limite' : 'The agent will adjust response length to stay within this limit'}</span>
         </div>
 
-        <div style="${fieldStyle}">
-          <label style="${labelStyle}">${isEs ? 'Canales habilitados' : 'Enabled channels'}</label>
+        <div class="ts-tts-field">
+          <label class="ts-tts-label">${isEs ? 'Canales habilitados' : 'Enabled channels'}</label>
           <input type="text" name="TTS_ENABLED_CHANNELS" value="${esc(cfg['TTS_ENABLED_CHANNELS'] || 'whatsapp')}"
             data-original="${esc(cfg['TTS_ENABLED_CHANNELS'] || 'whatsapp')}"
-            style="${selectStyle}" placeholder="whatsapp, google-chat">
-          <span style="font-size:11px;color:var(--text-tertiary)">${isEs ? 'Separados por coma' : 'Comma-separated'}</span>
+            class="ts-tts-select" placeholder="whatsapp, google-chat">
+          <span class="ts-tts-hint">${isEs ? 'Separados por coma' : 'Comma-separated'}</span>
         </div>
       </div>
     </div>
@@ -1792,25 +1783,25 @@ function renderVoiceTTSSection(data: SectionData): string {
   // Column 2: Voice config + preview
   const voiceCol = `<div>
     <div class="panel">
-      <div class="panel-header" style="cursor:default">
+      <div class="panel-header ts-panel-header-static">
         <span class="panel-title">${isEs ? 'Configuracion de voz' : 'Voice configuration'}</span>
       </div>
       <div class="panel-body">
-        <div style="${fieldStyle}">
-          <label style="${labelStyle}">${isEs ? 'Voz' : 'Voice'}</label>
-          <select name="TTS_VOICE_NAME" data-original="${esc(currentVoice)}" style="${selectStyle}" id="tts-voice-select">
+        <div class="ts-tts-field">
+          <label class="ts-tts-label">${isEs ? 'Voz' : 'Voice'}</label>
+          <select name="TTS_VOICE_NAME" data-original="${esc(currentVoice)}" class="ts-tts-select" id="tts-voice-select">
             ${customOption}${voiceOptions}
           </select>
         </div>
 
-        <div style="${fieldStyle}">
-          <label style="${labelStyle}">API Key</label>
-          <div style="position:relative">
+        <div class="ts-tts-field">
+          <label class="ts-tts-label">API Key</label>
+          <div class="ts-tts-password-wrap">
             <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
               data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              style="${selectStyle};padding-right:36px" placeholder="AIza...">
+              class="ts-tts-select" style="padding-right:36px" placeholder="AIza...">
             <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
-              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-tertiary)">&#128065;</button>
+              class="ts-tts-toggle-vis">&#128065;</button>
           </div>
         </div>
 
@@ -1819,13 +1810,13 @@ function renderVoiceTTSSection(data: SectionData): string {
         ${rangeField('TTS_PITCH', isEs ? 'Tono' : 'Pitch', isEs ? '-20.0 (grave) a 20.0 (agudo). Default: 0.0' : '-20.0 (low) to 20.0 (high). Default: 0.0', -20.0, 20.0, 0.5, cfg['TTS_PITCH'] || '0.0', '')}
 
         <!-- Preview button -->
-        <div style="margin-top:8px;padding-top:12px;border-top:1px solid var(--border-light)">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <button type="button" id="tts-preview-btn" class="wa-btn wa-btn-connect" onclick="ttsPreview()"
-              style="font-size:12px;padding:6px 14px" ${!hasApiKey ? 'disabled' : ''}>
+        <div class="ts-tts-preview-area">
+          <div class="ts-tts-preview-row">
+            <button type="button" id="tts-preview-btn" class="wa-btn wa-btn-connect ts-gws-btn-sm" onclick="ttsPreview()"
+              style="padding:6px 14px" ${!hasApiKey ? 'disabled' : ''}>
               &#9654; ${isEs ? 'Previsualizar voz' : 'Preview voice'}
             </button>
-            <span id="tts-preview-status" style="font-size:12px;color:var(--text-tertiary)"></span>
+            <span id="tts-preview-status" class="ts-tts-preview-status"></span>
           </div>
           <audio id="tts-preview-audio" style="width:100%;display:none" controls></audio>
         </div>
@@ -1881,7 +1872,7 @@ function renderVoiceTTSSection(data: SectionData): string {
 })();
 </script>`
 
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+  return `<div class="ts-voice-layout">
     ${behaviorCol}
     ${voiceCol}
   </div>
@@ -2071,7 +2062,7 @@ function renderDashboardSection(data: SectionData): string {
     </div>
     <div class="dash-card-subtitle">${isEs ? 'Eficiencia por modelo' : 'Efficiency per model'}</div>
     ${models.map(m => `<div class="dash-token-row">
-      <div class="dash-token-icon" style="background:var(--primary-light);color:var(--primary)">
+      <div class="dash-token-icon ts-dash-token-icon">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
       </div>
       <div class="dash-token-info">
@@ -2420,7 +2411,7 @@ function renderUsersSection(data: SectionData): string {
 
         <!-- Step 0: Mode selector (only for add, not edit) -->
         <div id="import-step-0">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:16px 0">
+          <div class="ts-import-modes-grid">
             <button type="button" class="import-mode-card" onclick="showImportStep('manual')">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>
               <span>${lang === 'es' ? 'Agregar manual' : 'Add manually'}</span>
@@ -2468,7 +2459,7 @@ function renderUsersSection(data: SectionData): string {
         <div class="wizard-field-error" id="user-modal-err-${esc(ch.id)}">${errMsg}</div>`
   }
 
-  html += `<div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:24px">
+  html += `<div class="wizard-actions">
             <button type="button" class="act-btn act-btn-config" id="manual-back-btn" onclick="showImportStep('select')" style="display:none">${lang === 'es' ? 'Atras' : 'Back'}</button>
             <button type="button" class="act-btn act-btn-config" onclick="closeUserModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
             <button type="submit" class="act-btn act-btn-cta" id="user-modal-submit">${lang === 'es' ? 'Guardar' : 'Save'}</button>
@@ -2482,16 +2473,16 @@ function renderUsersSection(data: SectionData): string {
           ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')"
           ondrop="event.preventDefault();this.classList.remove('dragover');handleCsvFile(event.dataTransfer.files[0])">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--on-surface-dim)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <div style="margin-top:8px;font-size:14px;color:var(--on-surface-variant)">${lang === 'es' ? 'Arrastra un archivo CSV o haz clic para seleccionar' : 'Drag a CSV file or click to select'}</div>
-          <div style="font-size:11px;color:var(--on-surface-dim);margin-top:4px">${lang === 'es' ? 'Columnas requeridas: sender_id, channel. Opcionales: display_name, [metadata]' : 'Required columns: sender_id, channel. Optional: display_name, [metadata]'}</div>
+          <div class="ts-import-dropzone-title">${lang === 'es' ? 'Arrastra un archivo CSV o haz clic para seleccionar' : 'Drag a CSV file or click to select'}</div>
+          <div class="ts-import-hint">${lang === 'es' ? 'Columnas requeridas: sender_id, channel. Opcionales: display_name, [metadata]' : 'Required columns: sender_id, channel. Optional: display_name, [metadata]'}</div>
           <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="handleCsvFile(this.files[0])">
         </div>
         <div id="csv-preview" style="display:none;margin-top:12px">
-          <div style="font-size:13px;font-weight:600;margin-bottom:6px" id="csv-preview-label"></div>
+          <div class="ts-import-preview-label" id="csv-preview-label"></div>
           <div style="overflow-x:auto;max-height:200px"><table class="users-table" id="csv-preview-table"></table></div>
         </div>
-        <div id="csv-result" style="display:none;margin-top:12px;padding:12px;border-radius:8px;background:var(--surface-container-low)"></div>
-        <div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <div id="csv-result" class="ts-import-result"></div>
+        <div class="wizard-actions">
           <button type="button" class="act-btn act-btn-config" onclick="showImportStep('select')">${lang === 'es' ? 'Atras' : 'Back'}</button>
           <button type="button" class="act-btn act-btn-cta" id="csv-import-btn" style="display:none" onclick="submitCsvImport()">${lang === 'es' ? 'Importar' : 'Import'}</button>
         </div>
@@ -2501,14 +2492,14 @@ function renderUsersSection(data: SectionData): string {
       <div id="import-step-drive" style="display:none">
         <label class="wizard-label">Google Sheets URL</label>
         <input type="text" class="wizard-input" id="drive-sheet-url" placeholder="https://docs.google.com/spreadsheets/d/...">
-        <div style="font-size:11px;color:var(--on-surface-dim);margin-top:4px;margin-bottom:12px" id="drive-hint">${lang === 'es' ? 'Pega la URL de una Google Sheet. Debe estar compartida publicamente o con enlace.' : 'Paste a Google Sheet URL. Must be shared publicly or via link.'}</div>
+        <div class="ts-import-hint" style="margin-bottom:12px" id="drive-hint">${lang === 'es' ? 'Pega la URL de una Google Sheet. Debe estar compartida publicamente o con enlace.' : 'Paste a Google Sheet URL. Must be shared publicly or via link.'}</div>
         <button type="button" class="act-btn act-btn-config" onclick="previewDriveSheet()" id="drive-preview-btn">${lang === 'es' ? 'Previsualizar' : 'Preview'}</button>
         <div id="drive-preview" style="display:none;margin-top:12px">
-          <div style="font-size:13px;font-weight:600;margin-bottom:6px" id="drive-preview-label"></div>
+          <div class="ts-import-preview-label" id="drive-preview-label"></div>
           <div style="overflow-x:auto;max-height:200px"><table class="users-table" id="drive-preview-table"></table></div>
         </div>
-        <div id="drive-result" style="display:none;margin-top:12px;padding:12px;border-radius:8px;background:var(--surface-container-low)"></div>
-        <div class="wizard-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <div id="drive-result" class="ts-import-result"></div>
+        <div class="wizard-actions">
           <button type="button" class="act-btn act-btn-config" onclick="showImportStep('select')">${lang === 'es' ? 'Atras' : 'Back'}</button>
           <button type="button" class="act-btn act-btn-cta" id="drive-import-btn" style="display:none" onclick="submitDriveImport()">${lang === 'es' ? 'Importar' : 'Import'}</button>
         </div>
@@ -2670,7 +2661,7 @@ function renderUsersSection(data: SectionData): string {
         if(data.ok){
           var r=data.result;
           var errTxt=r.errors&&r.errors.length>0?' | '+(lang==='es'?'Errores':'Errors')+': '+r.errors.length:'';
-          res.innerHTML='<div style="color:var(--success,green);font-weight:600">'+(lang==='es'?'Importacion completada':'Import completed')+'</div><div style="font-size:13px;margin-top:4px">'+(lang==='es'?'Creados':'Created')+': '+r.created+' / '+r.total+errTxt+'</div>';
+          res.innerHTML='<div class="ts-import-success">'+(lang==='es'?'Importacion completada':'Import completed')+'</div><div class="ts-import-detail">'+(lang==='es'?'Creados':'Created')+': '+r.created+' / '+r.total+errTxt+'</div>';
           res.style.display='block';
           document.getElementById('csv-import-btn').style.display='none';
           setTimeout(function(){location.reload()},2000);
@@ -2733,7 +2724,7 @@ function renderUsersSection(data: SectionData): string {
         if(data.ok){
           var r=data.result;
           var errTxt=r.errors&&r.errors.length>0?' | '+(lang==='es'?'Errores':'Errors')+': '+r.errors.length:'';
-          res.innerHTML='<div style="color:var(--success,green);font-weight:600">'+(lang==='es'?'Importacion completada':'Import completed')+'</div><div style="font-size:13px;margin-top:4px">'+(lang==='es'?'Creados':'Created')+': '+r.created+' / '+r.total+errTxt+'</div>';
+          res.innerHTML='<div class="ts-import-success">'+(lang==='es'?'Importacion completada':'Import completed')+'</div><div class="ts-import-detail">'+(lang==='es'?'Creados':'Created')+': '+r.created+' / '+r.total+errTxt+'</div>';
           res.style.display='block';
           document.getElementById('drive-import-btn').style.display='none';
           setTimeout(function(){location.reload()},2000);
@@ -3020,7 +3011,7 @@ function renderUsersSection(data: SectionData): string {
 
     html += `<div class="ch-card cb-card${inactiveClass}" data-base-id="${esc(lt)}" data-enabled="${cfg.isEnabled}" ${!isPartners ? `onclick="if(!event.target.closest('.toggle,.ch-btn-action,a'))toggleBaseConfigClick('${esc(lt)}')" style="cursor:pointer"` : ''}>
       <div class="ch-card-top">
-        <div class="ch-card-icon" style="border-color:var(--primary);color:var(--primary);background:rgba(255,94,14,0.08)">
+        <div class="ch-card-icon ts-cb-icon-primary">
           ${SVG_CONTACTS_ICON}
         </div>
         <div class="ch-card-title-area">
@@ -3035,7 +3026,7 @@ function renderUsersSection(data: SectionData): string {
         </label>`}
       </div>
       <div class="ch-card-metrics ch-metrics-1">
-        <div class="ch-metric" style="border:none">
+        <div class="ch-metric ts-metric-no-border">
           <span class="ch-metric-label">${countLabel}</span>
           <span class="ch-metric-value">${count}</span>
         </div>
@@ -3055,7 +3046,7 @@ function renderUsersSection(data: SectionData): string {
 
   html += `<div class="cb-config-tip" id="cb-config-tip">
     ${SVG_CONFIG_TIP}
-    <div style="margin-top:8px;font-size:0.95rem">${lang === 'es' ? 'Selecciona una base para configurar' : 'Select a base to configure'}</div>
+    <div class="ts-create-box-desc" style="margin-top:8px;font-size:0.95rem">${lang === 'es' ? 'Selecciona una base para configurar' : 'Select a base to configure'}</div>
   </div>`
 
   // ── System base explanations ──
@@ -3084,14 +3075,14 @@ function renderUsersSection(data: SectionData): string {
 
     // ══ Column 1 (LEFT, narrow): name, description, assignment rules ══
     html += `<div><div class="panel"><div class="panel-body">
-      <div style="font-size:1.1rem;font-weight:700;color:var(--on-surface);margin-bottom:4px">${esc(cfg.displayName)}</div>
-      ${cfg.description ? `<div style="font-size:13px;color:var(--on-surface-variant);margin-bottom:12px">${esc(cfg.description)}</div>` : ''}`
+      <div class="ts-config-title">${esc(cfg.displayName)}</div>
+      ${cfg.description ? `<div class="ts-config-desc">${esc(cfg.description)}</div>` : ''}`
 
     // System-specific explanations
     const explanation = BASE_EXPLANATIONS[lt]
     if (explanation) {
       html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Reglas de asignacion' : 'Assignment rules'}</span></div>
-        <div style="font-size:13px;color:var(--on-surface-variant);line-height:1.6;padding:12px 16px;background:var(--surface-container-low);border-radius:0.5rem;margin-bottom:12px">
+        <div class="ts-config-explanation">
         ${esc(explanation[lang] || explanation['es']!)}</div>`
     }
 
@@ -3156,7 +3147,7 @@ function renderUsersSection(data: SectionData): string {
         <div class="chs-toggle-row" style="padding:10px 14px">
           <span style="font-size:13px">${lang === 'es' ? 'Asignacion automatica por LLM' : 'LLM auto-assignment'}</span>
           <span class="ch-footer-spacer"></span>
-          <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+          <input type="checkbox" class="perm-cb" class="ts-perm-cb"
             ${aEnabled ? 'checked' : ''} data-hidden="assignment_enabled_${esc(lt)}"
             onchange="document.getElementById('assignment-prompt-${esc(lt)}').style.display=this.checked?'block':'none'">
           <input type="hidden" name="assignment_enabled_${esc(lt)}" value="${aOrig}" data-original="${aOrig}">
@@ -3170,7 +3161,7 @@ function renderUsersSection(data: SectionData): string {
 
     // Delete button for custom lists
     if (!isSys) {
-      html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(0,0,0,0.04)">
+      html += `<div class="ts-config-delete-area">
         <form method="POST" action="/console/users/delete-list" style="display:inline" onclick="return confirm('${lang === 'es' ? '¿Eliminar esta lista? Los contactos se moveran.' : 'Delete this list? Contacts will be moved.'}')">
           <input type="hidden" name="_section" value="contacts"><input type="hidden" name="_lang" value="${lang}">
           <input type="hidden" name="listType" value="${esc(lt)}">
@@ -3203,7 +3194,7 @@ function renderUsersSection(data: SectionData): string {
       html += `<div class="chs-toggle-row" style="margin-bottom:4px;padding:10px 14px">
         <span style="font-size:13px;font-weight:600">${esc(modLabel)}</span>
         <span class="ch-footer-spacer"></span>
-        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+        <input type="checkbox" class="perm-cb" class="ts-perm-cb"
           ${allModToolsOn ? 'checked' : ''} ${someModToolsOn ? 'indeterminate' : ''}${disabledAttr}
           data-hidden="mod_${esc(lt)}_${esc(mod.name)}"
           onchange="toggleModuleTools('${esc(lt)}','${esc(mod.name)}',this.checked)">
@@ -3234,7 +3225,7 @@ function renderUsersSection(data: SectionData): string {
       <div class="chs-toggle-row" style="padding:10px 14px">
         <span style="font-size:13px">${lang === 'es' ? 'Permitir subagentes' : 'Allow subagents'}</span>
         <span class="ch-footer-spacer"></span>
-        <input type="checkbox" class="perm-cb" style="accent-color:var(--primary);width:15px;height:15px"
+        <input type="checkbox" class="perm-cb" class="ts-perm-cb"
           ${isAdmin || perms.subagents ? 'checked' : ''}${disabledAttr} data-hidden="sub_${esc(lt)}">
         <input type="hidden" name="sub_${esc(lt)}" value="${subOrig}" data-original="${subOrig}">
       </div>
@@ -3258,7 +3249,7 @@ function renderUsersSection(data: SectionData): string {
       }
       html += `</div>`
     } else {
-      html += `<p class="panel-description" style="font-size:12px;color:var(--on-surface-dim)">${lang === 'es' ? 'No hay categorias de conocimiento configuradas. Activa el modulo de Knowledge para gestionar categorias.' : 'No knowledge categories configured. Activate the Knowledge module to manage categories.'}</p>`
+      html += `<p class="panel-description ts-config-muted">${lang === 'es' ? 'No hay categorias de conocimiento configuradas. Activa el modulo de Knowledge para gestionar categorias.' : 'No knowledge categories configured. Activate the Knowledge module to manage categories.'}</p>`
     }
     html += `</div></div>` // end Knowledge panel
 
@@ -3267,14 +3258,14 @@ function renderUsersSection(data: SectionData): string {
       const roles: string[] = (cfg.syncConfig as Record<string, unknown>)?.roles as string[] ?? []
       const rolesOrig = roles.join(',')
       const roleList = roles.length > 0
-        ? roles.map(r => `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--outline-variant,#eee)">
-            <span style="flex:1;font-size:13px">${esc(r)}</span>
+        ? roles.map(r => `<div class="ts-role-row">
+            <span class="ts-role-name">${esc(r)}</span>
           </div>`).join('')
-        : `<div style="font-size:13px;color:var(--on-surface-dim);padding:12px 0">${lang === 'es' ? 'No hay etiquetas definidas.' : 'No labels defined.'}</div>`
+        : `<div class="ts-roles-empty">${lang === 'es' ? 'No hay etiquetas definidas.' : 'No labels defined.'}</div>`
       html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${lang === 'es' ? 'Etiquetas / Roles' : 'Labels / Roles'}</span>
         <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
-        <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:12px">${lang === 'es' ? 'Define etiquetas para clasificar coworkers. Se usan para escalamientos y human-in-the-loop.' : 'Define labels to classify coworkers. Used for escalations and human-in-the-loop.'}</div>
+        <div class="ts-roles-desc">${lang === 'es' ? 'Define etiquetas para clasificar coworkers. Se usan para escalamientos y human-in-the-loop.' : 'Define labels to classify coworkers. Used for escalations and human-in-the-loop.'}</div>
         <div id="coworker-roles-list">${roleList}</div>
         <input type="hidden" name="coworker_roles" value="${esc(rolesOrig)}" data-original="${esc(rolesOrig)}" id="coworker-roles-hidden">
         <button type="button" class="ch-btn-action ch-btn-gear" style="margin-top:12px" onclick="openRolesModal()">
@@ -3294,23 +3285,23 @@ function renderUsersSection(data: SectionData): string {
       html += `<div id="webhook-panel-lead" class="panel" style="${whEnabled ? '' : 'display:none'}"><div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${lang === 'es' ? 'Webhook de registro' : 'Registration webhook'}</span>
         <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
-        <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:12px;line-height:1.6">${lang === 'es'
+        <div class="ts-webhook-desc">${lang === 'es'
           ? 'Registra leads desde sistemas externos (CRM, ads, formularios) via HTTP POST.'
           : 'Register leads from external systems (CRM, ads, forms) via HTTP POST.'}</div>
         <div id="webhook-settings-lead">
-          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Endpoint <span style="font-weight:400;color:var(--on-surface-variant)">(POST)</span></label>
+          <label class="ts-webhook-label">Endpoint <span class="ts-webhook-label-sub">(POST)</span></label>
           <div class="wizard-uri-box" style="margin-bottom:14px">
             <code class="wizard-uri" id="webhook-endpoint-display">{BASE_URL}/console/api/leads/webhook/register</code>
             <button type="button" class="wizard-copy-icon" onclick="copyWizardUri(this)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
           </div>
-          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${lang === 'es' ? 'Token de autorizacion' : 'Authorization token'}</label>
+          <label class="ts-webhook-label">${lang === 'es' ? 'Token de autorizacion' : 'Authorization token'}</label>
           <div class="wizard-uri-box" style="margin-bottom:14px">
             <code class="wizard-uri" id="webhook-token-display" style="font-size:12px">${esc(whToken)}</code>
             <button type="button" class="wizard-copy-icon" onclick="copyWizardUri(this)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
-            <button type="button" class="wizard-copy-icon" style="border-left:1px solid var(--outline-variant,#ddd)" onclick="regenerateWebhookToken()" title="${lang === 'es' ? 'Regenerar' : 'Regenerate'}">${SVG_REFRESH}</button>
+            <button type="button" class="wizard-copy-icon" onclick="regenerateWebhookToken()" title="${lang === 'es' ? 'Regenerar' : 'Regenerate'}">${SVG_REFRESH}</button>
           </div>
           <input type="hidden" name="webhook_token_lead" value="${esc(whToken)}" data-original="${esc(whToken)}">
-          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${lang === 'es' ? 'Canal preferido de contacto' : 'Preferred contact channel'}</label>
+          <label class="ts-webhook-label">${lang === 'es' ? 'Canal preferido de contacto' : 'Preferred contact channel'}</label>
           <select class="wizard-input js-custom-select" name="webhook_channel_lead" data-original="${esc(whChannel)}" style="margin-bottom:14px">
             <option value="auto" ${whChannel === 'auto' ? 'selected' : ''}>Auto</option>
             <option value="whatsapp" ${whChannel === 'whatsapp' ? 'selected' : ''}>WhatsApp</option>
@@ -3318,17 +3309,17 @@ function renderUsersSection(data: SectionData): string {
             <option value="google-chat" ${whChannel === 'google-chat' ? 'selected' : ''}>Google Chat</option>
           </select>
           <div class="field-divider" style="margin:8px 0"><span class="field-divider-label">${lang === 'es' ? 'Instrucciones de uso' : 'Usage instructions'}</span></div>
-          <div style="font-size:12px;color:var(--on-surface-variant);line-height:1.7">
-            <p style="margin:0 0 8px"><strong>Headers:</strong> <code style="background:var(--surface-container-low);padding:2px 6px;border-radius:4px">Authorization: Bearer {token}</code></p>
+          <div class="ts-webhook-instructions">
+            <p style="margin:0 0 8px"><strong>Headers:</strong> <code class="ts-webhook-code">Authorization: Bearer {token}</code></p>
             <p style="margin:0 0 4px"><strong>Body (JSON):</strong></p>
             <div style="position:relative">
-              <pre id="webhook-json-example" style="background:var(--surface-container-low);padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin:0 0 8px">{
+              <pre id="webhook-json-example" class="ts-webhook-pre">{
   "phone": "573001234567",
   "email": "contacto@ejemplo.com",
   "name": "Nombre del contacto",
   "campaign": "keyword-o-id"
 }</pre>
-              <button type="button" class="wizard-copy-icon" style="position:absolute;top:4px;right:4px;border:none;border-radius:4px;width:28px;height:28px;background:var(--surface-container-high,#ddd)" onclick="navigator.clipboard.writeText(document.getElementById('webhook-json-example').textContent);this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),1500)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
+              <button type="button" class="wizard-copy-icon ts-webhook-copy-abs" onclick="navigator.clipboard.writeText(document.getElementById('webhook-json-example').textContent);this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),1500)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
             </div>
             <p style="margin:0 0 4px"><strong>${lang === 'es' ? 'Parametros' : 'Parameters'}:</strong></p>
             <ul style="margin:0 0 8px;padding-left:16px">
@@ -3349,8 +3340,8 @@ function renderUsersSection(data: SectionData): string {
   html += `<div class="cb-create-box">
     <div class="cb-create-box-header">
       <div>
-        <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Organiza tus usuarios' : 'Organize your users'}</div>
-        <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Crea tus bases de contactos aqui para segmentar y organizar tu audiencia.' : 'Create your contact bases here to segment and organize your audience.'}</div>
+        <div class="ts-create-box-title">${lang === 'es' ? 'Organiza tus usuarios' : 'Organize your users'}</div>
+        <div class="ts-create-box-desc">${lang === 'es' ? 'Crea tus bases de contactos aqui para segmentar y organizar tu audiencia.' : 'Create your contact bases here to segment and organize your audience.'}</div>
       </div>
       <span class="panel-badge badge-soon" style="font-size:0.8rem;padding:6px 14px">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>
     </div>
@@ -3365,8 +3356,8 @@ function renderUsersSection(data: SectionData): string {
     html += `<div class="cb-create-box" style="margin-top:16px">
       <div class="cb-create-box-header">
         <div>
-          <div style="font-size:1.05rem;font-weight:700;color:var(--on-surface)">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</div>
-          <div style="font-size:0.82rem;color:var(--on-surface-variant);margin-top:4px">${lang === 'es' ? 'Configura que sucede cuando un contacto desconocido escribe por primera vez.' : 'Configure what happens when an unknown contact writes for the first time.'}</div>
+          <div class="ts-create-box-title">${lang === 'es' ? 'Contactos no registrados' : 'Unregistered contacts'}</div>
+          <div class="ts-create-box-desc">${lang === 'es' ? 'Configura que sucede cuando un contacto desconocido escribe por primera vez.' : 'Configure what happens when an unknown contact writes for the first time.'}</div>
         </div>
         <select class="wizard-input js-custom-select" name="unregisteredBehavior" data-original="${esc(behavior)}" style="max-width:280px;width:280px" onchange="onUnregBehaviorChange(this.value)">
           <option value="ignore" ${behavior === 'ignore' ? 'selected' : ''}>${lang === 'es' ? 'Ignorar — Luna no se activa' : 'Ignore — Luna does not activate'}</option>
@@ -3376,9 +3367,9 @@ function renderUsersSection(data: SectionData): string {
         </select>
       </div>
       <div id="unregistered-msg-field" style="display:${behavior === 'message' ? 'block' : 'none'};margin-top:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div class="ts-unreg-msg-header">
           <label class="wizard-label" style="margin:0">${lang === 'es' ? 'Mensaje automatico' : 'Auto-message'}</label>
-          <button type="button" id="unregistered-msg-edit-btn" class="ch-btn-action ch-btn-gear" style="font-size:12px;padding:4px 10px;display:${hasSavedMsg ? 'inline-flex' : 'none'}" onclick="enableUnregMsgEdit()">
+          <button type="button" id="unregistered-msg-edit-btn" class="ch-btn-action ch-btn-gear ts-gws-btn-sm" style="padding:4px 10px;display:${hasSavedMsg ? 'inline-flex' : 'none'}" onclick="enableUnregMsgEdit()">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             ${lang === 'es' ? 'Editar' : 'Edit'}
           </button>
@@ -3394,14 +3385,14 @@ function renderUsersSection(data: SectionData): string {
       <div class="cb-deact-step active" id="cb-deact-step1">
         <h3>${lang === 'es' ? 'Desactivar base' : 'Deactivate base'}</h3>
         <p id="cb-deact-desc">${lang === 'es' ? '¿Que deseas hacer con los contactos de esta base?' : 'What do you want to do with the contacts in this base?'}</p>
-        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${lang === 'es' ? 'Accion' : 'Action'}</label>
+        <label class="ts-webhook-label">${lang === 'es' ? 'Accion' : 'Action'}</label>
         <select class="wizard-input js-custom-select" id="cb-deact-action" required style="margin-bottom:12px">
           <option value="" disabled selected>${lang === 'es' ? 'Selecciona una opcion...' : 'Select an option...'}</option>
           <option value="silence">${lang === 'es' ? 'Silencio — solo registrar, sin respuesta' : 'Silence — register only, no response'}</option>
           <option value="leads">${lang === 'es' ? 'Mover a Leads' : 'Move to Leads'}</option>
           <option value="unregistered">${lang === 'es' ? 'Contacto no registrado — tratar como nuevo' : 'Unregistered — treat as new contact'}</option>
         </select>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <div class="ts-modal-actions">
           <button type="button" class="act-btn act-btn-config" onclick="closeDeactModal()">${lang === 'es' ? 'Cancelar' : 'Cancel'}</button>
           <button type="button" class="act-btn act-btn-remove" id="cb-deact-next" onclick="deactNextStep()">${lang === 'es' ? 'Continuar' : 'Continue'}</button>
         </div>
@@ -3409,7 +3400,7 @@ function renderUsersSection(data: SectionData): string {
       <div class="cb-deact-step" id="cb-deact-step2">
         <h3>${lang === 'es' ? 'Confirmar desactivacion' : 'Confirm deactivation'}</h3>
         <p id="cb-deact-confirm-msg"></p>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
+        <div class="ts-modal-actions-compact">
           <button type="button" class="act-btn act-btn-config" onclick="deactBackStep()">${lang === 'es' ? 'Atras' : 'Back'}</button>
           <button type="button" class="act-btn act-btn-remove" onclick="confirmDeactivation()">${lang === 'es' ? 'Desactivar' : 'Deactivate'}</button>
         </div>
@@ -3523,9 +3514,9 @@ function renderUsersSection(data: SectionData): string {
         overlay.className='cb-deact-overlay open';
         overlay.onclick=function(e){if(e.target===overlay)closeRolesModal()};
         overlay.innerHTML='<div class="cb-deact-modal" style="max-width:420px"><h3>'+(lang==='es'?'Editar etiquetas':'Edit labels')+CL+'h3>'
-          +'<div id="roles-modal-list" style="margin:12px 0;max-height:300px;overflow-y:auto">'+CL+'div>'
+          +'<div id="roles-modal-list" class="ts-roles-modal-list">'+CL+'div>'
           +'<div style="display:flex;gap:6px;margin:12px 0"><input type="text" class="wizard-input" id="roles-modal-input" placeholder="'+(lang==='es'?'Nueva etiqueta + Enter':'New label + Enter')+'" onkeydown="if(event.keyCode===13){event.preventDefault();addRoleFromModal()}" style="flex:1"><button type="button" class="wizard-btn wizard-btn-primary" onclick="addRoleFromModal()" style="padding:8px 16px">'+(lang==='es'?'Agregar':'Add')+CL+'button>'+CL+'div>'
-          +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button type="button" class="act-btn act-btn-config" onclick="closeRolesModal()">'+(lang==='es'?'Cerrar':'Close')+CL+'button>'+CL+'div>'
+          +'<div class="ts-modal-actions"><button type="button" class="act-btn act-btn-config" onclick="closeRolesModal()">'+(lang==='es'?'Cerrar':'Close')+CL+'button>'+CL+'div>'
           +CL+'div>';
         document.body.appendChild(overlay);
       } else {overlay.classList.add('open')}
@@ -3534,11 +3525,11 @@ function renderUsersSection(data: SectionData): string {
     function renderRolesModalList(roles){
       var list=document.getElementById('roles-modal-list');
       if(!list)return;
-      if(roles.length===0){list.innerHTML='<div style="color:var(--on-surface-dim);font-size:13px;padding:12px 0">'+(lang==='es'?'No hay etiquetas':'No labels')+CL+'div>';return}
+      if(roles.length===0){list.innerHTML='<div class="ts-roles-empty">'+(lang==='es'?'No hay etiquetas':'No labels')+CL+'div>';return}
       list.innerHTML=roles.map(function(r,i){
-        return '<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--outline-variant,#eee)">'
+        return '<div class="ts-role-row-edit">'
           +'<input type="text" class="wizard-input" value="'+r.replace(/"/g,'&quot;')+'" data-role-idx="'+i+'" style="flex:1;font-size:13px;padding:6px 10px" onchange="renameRole('+i+',this.value)">'
-          +'<button type="button" style="background:none;border:none;cursor:pointer;color:var(--error,#d32f2f);padding:4px 8px;font-size:16px" onclick="deleteRole('+i+')" title="'+(lang==='es'?'Eliminar':'Delete')+'">&times;'+CL+'button>'
+          +'<button type="button" class="ts-role-delete-btn" onclick="deleteRole('+i+')" title="'+(lang==='es'?'Eliminar':'Delete')+'">&times;'+CL+'button>'
           +CL+'div>'
       }).join('');
     }
@@ -3552,8 +3543,8 @@ function renderUsersSection(data: SectionData): string {
       var listEl=document.getElementById('coworker-roles-list');
       if(listEl){
         listEl.innerHTML=roles.length>0?roles.map(function(r){
-          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--outline-variant,#eee)"><span style="flex:1;font-size:13px">'+r.split('<').join('&lt;')+CL+'span>'+CL+'div>'
-        }).join(''):'<div style="font-size:13px;color:var(--on-surface-dim);padding:12px 0">'+(lang==='es'?'No hay etiquetas definidas.':'No labels defined.')+CL+'div>';
+          return '<div class="ts-role-row"><span class="ts-role-name">'+r.split('<').join('&lt;')+CL+'span>'+CL+'div>'
+        }).join(''):'<div class="ts-roles-empty">'+(lang==='es'?'No hay etiquetas definidas.':'No labels defined.')+CL+'div>';
       }
     }
     window.addRoleFromModal=function(){

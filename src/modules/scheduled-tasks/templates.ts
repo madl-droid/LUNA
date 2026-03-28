@@ -139,10 +139,91 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+function renderStyles(): string {
+  return `<style>
+/* Scheduled Tasks — scoped styles */
+.st-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px }
+.st-header-left { display:flex; align-items:center; gap:10px }
+.st-counter { font-size:13px; color:var(--on-surface-dim) }
+.st-btn-new { font-size:13px; padding:7px 16px; border-radius:0.5rem }
+
+.st-form-wrap { display:none; margin-bottom:16px }
+.st-form-body { padding:20px }
+
+.st-row-name { display:flex; align-items:flex-start; gap:16px; margin-bottom:16px }
+.st-row-name-field { flex:1 }
+.st-row-toggle { display:flex; align-items:center; gap:8px; padding-top:20px }
+.st-label { font-size:12px; font-weight:600; text-transform:uppercase; color:var(--on-surface-dim); display:block; margin-bottom:4px }
+.st-toggle-label { font-size:12px; font-weight:500; color:var(--on-surface-variant) }
+
+.st-input { width:100%; padding:9px 12px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px }
+.st-textarea { width:100%; padding:9px 12px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; resize:vertical; font-family:inherit }
+
+.st-field-group { margin-bottom:16px }
+
+.st-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px }
+.st-section { background:var(--surface-container-low); border-radius:0.5rem; padding:14px }
+.st-section-title { font-size:11px; font-weight:600; text-transform:uppercase; color:var(--on-surface-dim); margin-bottom:8px }
+.st-select { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; background:var(--surface-container-lowest); margin-bottom:8px }
+.st-select-no-mb { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; background:var(--surface-container-lowest) }
+.st-input-sm { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; font-family:monospace; background:var(--surface-container-lowest) }
+.st-help { font-size:10px; color:var(--on-surface-dim); margin-top:4px }
+
+.st-actions-list { margin-bottom:6px }
+.st-btn-add-action { font-size:11px; padding:4px 10px; border-radius:6px }
+
+.st-form-footer { display:flex; gap:8px; justify-content:flex-end; padding-top:12px; border-top:1px solid var(--outline-variant) }
+.st-btn-form { font-size:13px; padding:7px 16px; border-radius:0.5rem }
+
+.st-task-list { display:flex; flex-direction:column; gap:8px }
+
+.st-task-card { background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:0.5rem; padding:14px 16px; transition:border-color 0.15s ease }
+.st-task-card-disabled { opacity:0.55 }
+.st-card-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px }
+.st-card-body { flex:1; min-width:0 }
+.st-card-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px }
+.st-card-name { font-weight:600; font-size:14px }
+.st-card-meta { font-size:12px; color:var(--on-surface-dim); margin-bottom:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap }
+.st-card-prompt { font-size:12px; color:var(--on-surface-variant); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:450px }
+.st-card-lastrun { font-size:11px; color:var(--on-surface-dim); margin-top:4px }
+.st-card-actions { display:flex; gap:4px; flex-shrink:0 }
+.st-btn-card { font-size:12px; padding:5px 10px; border-radius:6px }
+.st-btn-delete { font-size:12px; padding:5px 10px; border-radius:6px; color:var(--error) }
+
+.st-recipient-inline { color:var(--on-surface-variant) }
+
+.st-badge-error { background:rgba(230,33,17,0.08); color:var(--error) }
+.st-badge-event { background:rgba(255,149,0,0.12); color:var(--warning) }
+.st-badge-manual { background:rgba(88,86,214,0.1); color:#5856d6 }
+.st-badge-cron { background:rgba(0,122,255,0.1); color:var(--info) }
+.st-badge-cron code { font-size:11px }
+.st-badge-actions { background:rgba(88,86,214,0.1); color:#5856d6; font-size:10px }
+
+.st-empty { padding:40px 20px; text-align:center }
+.st-empty-icon { font-size:32px; margin-bottom:8px }
+.st-empty-text { color:var(--on-surface-dim); font-size:14px }
+
+.st-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center }
+.st-modal-box { background:var(--surface-container-lowest); border-radius:0.75rem; padding:20px; max-width:600px; width:90%; max-height:80vh; overflow-y:auto; box-shadow:var(--shadow-float) }
+.st-modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
+.st-modal-title { font-weight:600; font-size:15px }
+.st-modal-close { background:none; border:none; font-size:20px; cursor:pointer; color:var(--on-surface-dim); padding:4px 8px }
+.st-modal-content { white-space:pre-wrap; font-size:13px; background:var(--surface-container-low); padding:14px; border-radius:0.5rem; max-height:60vh; overflow-y:auto }
+
+/* Action row (injected via JS) */
+.st-action-row { display:flex; gap:6px; align-items:flex-start; margin-bottom:6px; padding:8px; background:var(--surface-container-lowest); border-radius:6px; border:1px solid var(--outline-variant) }
+.st-action-body { flex:1 }
+.st-action-select { padding:5px 8px; border:1px solid var(--outline-variant); border-radius:5px; font-size:11px; margin-bottom:4px; width:100%; background:var(--surface-container-lowest) }
+.st-action-field { width:100%; padding:5px 8px; border:1px solid var(--outline-variant); border-radius:5px; font-size:11px; background:var(--surface-container-lowest) }
+.st-action-field-mb { width:100%; padding:5px 8px; border:1px solid var(--outline-variant); border-radius:5px; font-size:11px; margin-bottom:4px }
+.st-action-remove { background:none; border:none; color:var(--error); cursor:pointer; font-size:16px; padding:2px 4px; line-height:1 }
+</style>`
+}
+
 function statusBadge(task: ScheduledTask, lang: Lang): string {
   if (!task.last_status) return `<span class="panel-badge badge-soon">${l('never', lang)}</span>`
   if (task.last_status === 'success') return `<span class="panel-badge badge-active">${l('success', lang)}</span>`
-  return `<span class="panel-badge" style="background:rgba(255,59,48,0.12);color:var(--error)">${l('error', lang)}</span>`
+  return `<span class="panel-badge st-badge-error">${l('error', lang)}</span>`
 }
 
 function formatDate(iso: string | null, lang: Lang): string {
@@ -152,9 +233,9 @@ function formatDate(iso: string | null, lang: Lang): string {
 }
 
 function triggerBadge(task: ScheduledTask, lang: Lang): string {
-  if (task.trigger_type === 'event') return `<span class="panel-badge" style="background:rgba(255,149,0,0.12);color:#ff9500">&#9889; ${esc(task.trigger_event ?? '')}</span>`
-  if (task.trigger_type === 'manual') return `<span class="panel-badge" style="background:rgba(88,86,214,0.1);color:#5856d6">${l('triggerManual', lang)}</span>`
-  return `<span class="panel-badge" style="background:rgba(0,122,255,0.1);color:#007aff"><code style="font-size:11px">${esc(task.cron)}</code></span>`
+  if (task.trigger_type === 'event') return `<span class="panel-badge st-badge-event">&#9889; ${esc(task.trigger_event ?? '')}</span>`
+  if (task.trigger_type === 'manual') return `<span class="panel-badge st-badge-manual">${l('triggerManual', lang)}</span>`
+  return `<span class="panel-badge st-badge-cron"><code>${esc(task.cron)}</code></span>`
 }
 
 export function renderTasksSection(
@@ -167,35 +248,32 @@ export function renderTasksSection(
 
   // --- Task cards ---
   const taskCards = tasks.length === 0
-    ? `<div style="padding:40px 20px;text-align:center">
-        <div style="font-size:32px;margin-bottom:8px">&#128197;</div>
-        <div style="color:var(--text-tertiary);font-size:14px">${l('noTasks', lang)}</div>
+    ? `<div class="st-empty">
+        <div class="st-empty-icon">&#128197;</div>
+        <div class="st-empty-text">${l('noTasks', lang)}</div>
       </div>`
     : tasks.map(t => `
-      <div class="st-task-card" data-task-id="${esc(t.id)}" style="background:var(--bg-primary);border:1px solid var(--border-light);border-radius:10px;padding:14px 16px;transition:border-color 0.15s ease${!t.enabled ? ';opacity:0.55' : ''}">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-              <span style="font-weight:600;font-size:14px">${esc(t.name)}</span>
+      <div class="st-task-card${!t.enabled ? ' st-task-card-disabled' : ''}" data-task-id="${esc(t.id)}">
+        <div class="st-card-row">
+          <div class="st-card-body">
+            <div class="st-card-title-row">
+              <span class="st-card-name">${esc(t.name)}</span>
               ${statusBadge(t, lang)}
               ${!t.enabled ? '<span class="panel-badge badge-soon">OFF</span>' : ''}
             </div>
-            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <div class="st-card-meta">
               ${triggerBadge(t, lang)}
-              ${t.recipient?.type === 'group' ? `<span style="color:var(--text-secondary)">&#128101; ${esc(t.recipient.group ?? '')}</span>` : ''}
-              ${t.recipient?.type === 'user' ? `<span style="color:var(--text-secondary)">&#128100; ${esc(t.recipient.userId ?? '')}</span>` : ''}
-              ${t.actions.length > 0 ? `<span class="panel-badge" style="background:rgba(88,86,214,0.1);color:#5856d6;font-size:10px">${t.actions.length} action${t.actions.length > 1 ? 's' : ''}</span>` : ''}
+              ${t.recipient?.type === 'group' ? `<span class="st-recipient-inline">&#128101; ${esc(t.recipient.group ?? '')}</span>` : ''}
+              ${t.recipient?.type === 'user' ? `<span class="st-recipient-inline">&#128100; ${esc(t.recipient.userId ?? '')}</span>` : ''}
+              ${t.actions.length > 0 ? `<span class="panel-badge st-badge-actions">${t.actions.length} action${t.actions.length > 1 ? 's' : ''}</span>` : ''}
             </div>
-            <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:450px" title="${esc(t.prompt)}">${esc(t.prompt)}</div>
-            <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${l('lastRun', lang)}: ${formatDate(t.last_run_at, lang)}</div>
+            <div class="st-card-prompt" title="${esc(t.prompt)}">${esc(t.prompt)}</div>
+            <div class="st-card-lastrun">${l('lastRun', lang)}: ${formatDate(t.last_run_at, lang)}</div>
           </div>
-          <div style="display:flex;gap:4px;flex-shrink:0">
-            <button type="button" class="wa-btn" onclick="stRunTask('${esc(t.id)}')" title="${l('run', lang)}"
-              style="font-size:12px;padding:5px 10px;border-radius:6px">&#9654;</button>
-            <button type="button" class="wa-btn" onclick="stEditTask('${esc(t.id)}')"
-              style="font-size:12px;padding:5px 10px;border-radius:6px">${l('edit', lang)}</button>
-            <button type="button" class="wa-btn" onclick="stDeleteTask('${esc(t.id)}')"
-              style="font-size:12px;padding:5px 10px;border-radius:6px;color:var(--error)">${l('delete', lang)}</button>
+          <div class="st-card-actions">
+            <button type="button" class="wa-btn st-btn-card" onclick="stRunTask('${esc(t.id)}')" title="${l('run', lang)}">&#9654;</button>
+            <button type="button" class="wa-btn st-btn-card" onclick="stEditTask('${esc(t.id)}')">${l('edit', lang)}</button>
+            <button type="button" class="wa-btn st-btn-delete" onclick="stDeleteTask('${esc(t.id)}')">${l('delete', lang)}</button>
           </div>
         </div>
       </div>`).join('')
@@ -219,117 +297,111 @@ export function renderTasksSection(
   const hasUsersInGroups = activeGroups.some(g => g.users.length > 0)
 
   return `
+    ${renderStyles()}
+
     <!-- Header with counter and new task button -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:13px;color:var(--text-tertiary)">${tasks.length} ${l('taskCount', lang)} · ${activeTasks} ${l('activeCount', lang)}</span>
+    <div class="st-header">
+      <div class="st-header-left">
+        <span class="st-counter">${tasks.length} ${l('taskCount', lang)} · ${activeTasks} ${l('activeCount', lang)}</span>
       </div>
-      <button type="button" class="wa-btn wa-btn-connect" onclick="stShowForm()" style="font-size:13px;padding:7px 16px;border-radius:8px">+ ${l('newTask', lang)}</button>
+      <button type="button" class="wa-btn wa-btn-connect st-btn-new" onclick="stShowForm()">+ ${l('newTask', lang)}</button>
     </div>
 
     <!-- Create/Edit form -->
-    <div id="st-form" style="display:none;margin-bottom:16px">
+    <div id="st-form" class="st-form-wrap">
       <div class="panel">
-        <div class="panel-body" style="padding:20px">
+        <div class="panel-body st-form-body">
           <input type="hidden" id="st-edit-id" value="">
 
           <!-- Row 1: Name + Enabled toggle -->
-          <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:16px">
-            <div style="flex:1">
-              <label style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);display:block;margin-bottom:4px">${l('name', lang)}</label>
-              <input type="text" id="st-name" placeholder="${l('namePlaceholder', lang)}"
-                style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+          <div class="st-row-name">
+            <div class="st-row-name-field">
+              <label class="st-label">${l('name', lang)}</label>
+              <input type="text" id="st-name" placeholder="${l('namePlaceholder', lang)}" class="st-input">
             </div>
-            <div style="display:flex;align-items:center;gap:8px;padding-top:20px">
+            <div class="st-row-toggle">
               <label class="toggle"><input type="checkbox" id="st-enabled" checked><span class="toggle-slider"></span></label>
-              <span style="font-size:12px;font-weight:500;color:var(--text-secondary)">${l('enabled', lang)}</span>
+              <span class="st-toggle-label">${l('enabled', lang)}</span>
             </div>
           </div>
 
           <!-- Prompt -->
-          <div style="margin-bottom:16px">
-            <label style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);display:block;margin-bottom:4px">${l('prompt', lang)}</label>
-            <textarea id="st-prompt" rows="3" placeholder="${l('promptPlaceholder', lang)}"
-              style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;resize:vertical;font-family:inherit"></textarea>
+          <div class="st-field-group">
+            <label class="st-label">${l('prompt', lang)}</label>
+            <textarea id="st-prompt" rows="3" placeholder="${l('promptPlaceholder', lang)}" class="st-textarea"></textarea>
           </div>
 
           <!-- 3-column grid: Trigger | Recipient | Actions -->
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="st-grid">
 
             <!-- Trigger -->
-            <div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
-              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">${l('sectionTrigger', lang)}</div>
-              <select id="st-trigger-type" onchange="stTriggerChanged()"
-                style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary);margin-bottom:8px">
+            <div class="st-section">
+              <div class="st-section-title">${l('sectionTrigger', lang)}</div>
+              <select id="st-trigger-type" onchange="stTriggerChanged()" class="st-select">
                 <option value="cron">${l('triggerCron', lang)}</option>
                 <option value="event">${l('triggerEvent', lang)}</option>
                 <option value="manual">${l('triggerManual', lang)}</option>
               </select>
               <div id="st-cron-row">
-                <input type="text" id="st-cron" placeholder="*/30 * * * *"
-                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;background:var(--bg-primary)">
-                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${l('cronHelp', lang)}</div>
+                <input type="text" id="st-cron" placeholder="*/30 * * * *" class="st-input-sm">
+                <div class="st-help">${l('cronHelp', lang)}</div>
               </div>
               <div id="st-event-row" style="display:none">
-                <select id="st-trigger-event"
-                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary)">
+                <select id="st-trigger-event" class="st-select-no-mb">
                   ${eventOptionsHtml}
                 </select>
-                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${l('eventHelp', lang)}</div>
+                <div class="st-help">${l('eventHelp', lang)}</div>
               </div>
             </div>
 
             <!-- Recipient -->
-            <div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
-              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">${l('sectionRecipient', lang)}</div>
-              <select id="st-recipient-type" onchange="stRecipientChanged()"
-                style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary);margin-bottom:8px">
+            <div class="st-section">
+              <div class="st-section-title">${l('sectionRecipient', lang)}</div>
+              <select id="st-recipient-type" onchange="stRecipientChanged()" class="st-select">
                 <option value="none">${l('recipientNone', lang)}</option>
                 <option value="group">${l('recipientGroup', lang)}</option>
                 ${hasUsersInGroups ? `<option value="user">${l('recipientUser', lang)}</option>` : ''}
               </select>
               <div id="st-group-row" style="display:none">
-                <select id="st-recipient-group" onchange="stGroupChanged()"
-                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary);margin-bottom:8px">
+                <select id="st-recipient-group" onchange="stGroupChanged()" class="st-select">
                   ${groupOptionsHtml}
                 </select>
               </div>
               <div id="st-user-row" style="display:none">
-                <select id="st-recipient-user"
-                  style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-primary)">
+                <select id="st-recipient-user" class="st-select-no-mb">
                 </select>
               </div>
             </div>
 
             <!-- Actions -->
-            <div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
-              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">${l('sectionActions', lang)}</div>
-              <div id="st-actions-list" style="margin-bottom:6px"></div>
-              <button type="button" class="wa-btn" onclick="stAddAction()" style="font-size:11px;padding:4px 10px;border-radius:6px">+ ${l('actionAdd', lang)}</button>
-              <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${l('actionPlaceholder', lang)}</div>
+            <div class="st-section">
+              <div class="st-section-title">${l('sectionActions', lang)}</div>
+              <div id="st-actions-list" class="st-actions-list"></div>
+              <button type="button" class="wa-btn st-btn-add-action" onclick="stAddAction()">+ ${l('actionAdd', lang)}</button>
+              <div class="st-help">${l('actionPlaceholder', lang)}</div>
             </div>
           </div>
 
           <!-- Form buttons -->
-          <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--border-light)">
-            <button type="button" class="wa-btn" onclick="stHideForm()" style="font-size:13px;padding:7px 16px;border-radius:8px">${l('cancel', lang)}</button>
-            <button type="button" class="wa-btn wa-btn-connect" onclick="stSaveTask()" style="font-size:13px;padding:7px 16px;border-radius:8px">${l('save', lang)}</button>
+          <div class="st-form-footer">
+            <button type="button" class="wa-btn st-btn-form" onclick="stHideForm()">${l('cancel', lang)}</button>
+            <button type="button" class="wa-btn wa-btn-connect st-btn-form" onclick="stSaveTask()">${l('save', lang)}</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Task list -->
-    <div id="st-task-list" style="display:flex;flex-direction:column;gap:8px">${taskCards}</div>
+    <div id="st-task-list" class="st-task-list">${taskCards}</div>
 
     <!-- Result modal -->
-    <div id="st-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--bg-primary);border-radius:12px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <span style="font-weight:600;font-size:15px">${l('result', lang)}</span>
-          <button type="button" onclick="stCloseModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);padding:4px 8px">&times;</button>
+    <div id="st-modal" class="st-modal-overlay">
+      <div class="st-modal-box">
+        <div class="st-modal-header">
+          <span class="st-modal-title">${l('result', lang)}</span>
+          <button type="button" onclick="stCloseModal()" class="st-modal-close">&times;</button>
         </div>
-        <pre id="st-modal-content" style="white-space:pre-wrap;font-size:13px;background:var(--bg-secondary);padding:14px;border-radius:8px;max-height:60vh;overflow-y:auto"></pre>
+        <pre id="st-modal-content" class="st-modal-content"></pre>
       </div>
     </div>
 
@@ -392,33 +464,33 @@ function renderScript(
     const idx = actionCounter++
     const div = document.createElement('div')
     div.id = 'st-action-' + idx
-    div.style.cssText = 'display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;padding:8px;background:var(--bg-primary);border-radius:6px;border:1px solid var(--border-light)'
+    div.className = 'st-action-row'
 
     const type = action ? action.type : 'tool'
     const toolOpts = TOOLS.map(t => '<option value="' + t.name + '"' + (action && action.toolName === t.name ? ' selected' : '') + '>' + (t.displayName || t.name) + '</option>').join('')
 
-    div.innerHTML = '<div style="flex:1">' +
-      '<select data-field="type" style="padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;margin-bottom:4px;width:100%;background:var(--bg-primary)" onchange="stActionTypeChanged(' + idx + ')">' +
+    div.innerHTML = '<div class="st-action-body">' +
+      '<select data-field="type" class="st-action-select" onchange="stActionTypeChanged(' + idx + ')">' +
         '<option value="tool"' + (type === 'tool' ? ' selected' : '') + '>' + L.actionTool + '</option>' +
         '<option value="message"' + (type === 'message' ? ' selected' : '') + '>' + L.actionMessage + '</option>' +
         '<option value="hook"' + (type === 'hook' ? ' selected' : '') + '>' + L.actionHook + '</option>' +
       '</select>' +
       '<div data-panel="tool" style="' + (type === 'tool' ? '' : 'display:none') + '">' +
-        '<select data-field="toolName" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--bg-primary)">' + toolOpts + '</select>' +
+        '<select data-field="toolName" class="st-action-field">' + toolOpts + '</select>' +
       '</div>' +
       '<div data-panel="message" style="' + (type === 'message' ? '' : 'display:none') + '">' +
-        '<input data-field="messageText" type="text" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;margin-bottom:4px" placeholder="' + L.actionMsgText + '" value="' + (action && action.messageText ? action.messageText.replace(/"/g, '&quot;') : '') + '">' +
-        '<select data-field="messageChannel" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--bg-primary)">' +
+        '<input data-field="messageText" type="text" class="st-action-field-mb" placeholder="' + L.actionMsgText + '" value="' + (action && action.messageText ? action.messageText.replace(/"/g, '&quot;') : '') + '">' +
+        '<select data-field="messageChannel" class="st-action-field">' +
           '<option value="whatsapp">WhatsApp</option>' +
           '<option value="email"' + (action && action.messageChannel === 'email' ? ' selected' : '') + '>Email</option>' +
           '<option value="google-chat"' + (action && action.messageChannel === 'google-chat' ? ' selected' : '') + '>Google Chat</option>' +
         '</select>' +
       '</div>' +
       '<div data-panel="hook" style="' + (type === 'hook' ? '' : 'display:none') + '">' +
-        '<input data-field="hookName" type="text" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px" placeholder="hook:name" value="' + (action && action.hookName ? action.hookName : '') + '">' +
+        '<input data-field="hookName" type="text" class="st-action-field" placeholder="hook:name" value="' + (action && action.hookName ? action.hookName : '') + '">' +
       '</div>' +
     '</div>' +
-    '<button type="button" onclick="stRemoveAction(' + idx + ')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:16px;padding:2px 4px;line-height:1">&times;</button>'
+    '<button type="button" onclick="stRemoveAction(' + idx + ')" class="st-action-remove">&times;</button>'
 
     list.appendChild(div)
   }

@@ -226,106 +226,107 @@ function renderStyles(): string {
   return `<style>
     /* ── Filters ── */
     .ls-filters { display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:10px 14px;
-      border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary,rgba(30,41,59,0.3)) }
+      border:1px solid var(--outline-variant);border-radius:0.5rem;background:var(--surface-container-low) }
     .ls-filter-group { display:flex;align-items:center;gap:6px }
-    .ls-filter-label { font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;font-weight:600 }
-    .ls-filter-select { padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;
-      background:var(--bg-primary);color:var(--text-primary) }
+    .ls-filter-label { font-size:11px;color:var(--on-surface-dim);text-transform:uppercase;letter-spacing:0.05em;font-weight:600 }
+    .ls-filter-select { padding:5px 10px;border:1px solid var(--outline-variant);border-radius:0.5rem;font-size:12px;
+      background:var(--surface-container-lowest);color:var(--on-surface) }
 
     /* ── Channel multi-select dropdown ── */
     .ls-ch-dropdown { position:relative }
-    .ls-ch-btn { padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;
-      background:var(--bg-primary);color:var(--text-primary);display:flex;align-items:center;gap:4px }
-    .ls-ch-panel { display:none;position:absolute;top:100%;left:0;margin-top:4px;background:var(--bg-primary);
-      border:1px solid var(--border);border-radius:8px;padding:8px 12px;z-index:100;min-width:160px;
-      box-shadow:0 4px 12px rgba(0,0,0,0.3) }
+    .ls-ch-btn { padding:5px 10px;border:1px solid var(--outline-variant);border-radius:0.5rem;font-size:12px;cursor:pointer;
+      background:var(--surface-container-lowest);color:var(--on-surface);display:flex;align-items:center;gap:4px }
+    .ls-ch-panel { display:none;position:absolute;top:100%;left:0;margin-top:4px;background:var(--surface-container-lowest);
+      border:1px solid var(--outline-variant);border-radius:0.5rem;padding:8px 12px;z-index:100;min-width:160px;
+      box-shadow:var(--shadow-float) }
     .ls-ch-dropdown.open .ls-ch-panel { display:block }
     .ls-ch-option { display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;cursor:pointer }
     .ls-ch-option input { margin:0 }
 
     /* ── Metric bars ── */
     .ls-metric-row { display:flex;align-items:center;gap:10px;margin-bottom:8px }
-    .ls-metric-label { width:150px;font-size:12px;color:var(--text-secondary);flex-shrink:0 }
-    .ls-metric-bar { flex:1;height:22px;background:var(--border);border-radius:4px;overflow:hidden;display:flex }
+    .ls-metric-label { width:150px;font-size:12px;color:var(--on-surface-variant);flex-shrink:0 }
+    .ls-metric-bar { flex:1;height:22px;background:var(--outline-variant);border-radius:0.5rem;overflow:hidden;display:flex }
     .ls-metric-seg { height:100%;min-width:1px;transition:width 0.3s }
     .ls-metric-val { width:40px;text-align:right;font-size:13px;font-weight:600;flex-shrink:0 }
 
     /* ── Framework cards ── */
     .ls-fw-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px }
-    .ls-fw-card { border:2px solid var(--border);border-radius:10px;padding:14px;transition:all 0.2s;
-      background:var(--bg-primary);cursor:default }
-    .ls-fw-card.active { border-color:var(--accent,#38bdf8);box-shadow:0 0 12px rgba(56,189,248,0.15) }
+    .ls-fw-card { border:2px solid var(--outline-variant);border-radius:0.5rem;padding:14px;transition:all 0.2s;
+      background:var(--surface-container-lowest);cursor:default }
+    .ls-fw-card.active { border-color:var(--primary);box-shadow:0 0 12px var(--primary-medium) }
     .ls-fw-card-title { font-weight:700;font-size:14px;margin-bottom:2px }
-    .ls-fw-card-type { font-size:11px;font-weight:600;color:var(--accent,#38bdf8);text-transform:uppercase;letter-spacing:0.05em }
-    .ls-fw-card-desc { font-size:11px;color:var(--text-tertiary);margin:6px 0 10px }
+    .ls-fw-card-type { font-size:11px;font-weight:600;color:var(--primary);text-transform:uppercase;letter-spacing:0.05em }
+    .ls-fw-card-desc { font-size:11px;color:var(--on-surface-dim);margin:6px 0 10px }
     .ls-fw-card-actions { display:flex;gap:6px;align-items:center }
     .ls-fw-toggle { position:relative;width:36px;height:20px;border-radius:10px;cursor:pointer;
-      background:var(--border);transition:background 0.2s;border:none;padding:0 }
-    .ls-fw-toggle.on { background:var(--accent,#38bdf8) }
+      background:var(--outline-variant);transition:background 0.2s;border:none;padding:0 }
+    .ls-fw-toggle.on { background:var(--success) }
     .ls-fw-toggle::after { content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;
       border-radius:50%;background:#fff;transition:transform 0.2s }
     .ls-fw-toggle.on::after { transform:translateX(16px) }
-    .ls-fw-note { font-size:11px;color:var(--warning,#fbbf24);padding:8px 12px;border:1px solid rgba(251,191,36,0.3);
-      border-radius:6px;background:rgba(251,191,36,0.06);margin-bottom:12px;display:none }
+    .ls-fw-note { font-size:11px;color:var(--warning);padding:8px 12px;border:1px solid var(--outline-variant);
+      border-radius:0.5rem;background:var(--surface-container-low);margin-bottom:12px;display:none }
 
     /* ── Criteria table ── */
     .ls-table { width:100%;border-collapse:collapse;font-size:12px }
-    .ls-table th { text-align:left;padding:8px 10px;color:var(--text-tertiary);font-size:10px;
-      text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid var(--border);font-weight:600 }
-    .ls-table td { padding:6px 10px;border-bottom:1px solid var(--border-light,rgba(148,163,184,0.1));vertical-align:middle }
-    .ls-table tr:hover td { background:rgba(56,189,248,0.03) }
-    .ls-table input, .ls-table select { padding:5px 8px;border:1px solid var(--border);border-radius:5px;
-      font-size:12px;width:100%;background:var(--bg-primary);color:var(--text-primary) }
+    .ls-table th { text-align:left;padding:8px 10px;color:var(--on-surface-dim);font-size:10px;
+      text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid var(--outline-variant);font-weight:600 }
+    .ls-table td { padding:6px 10px;border-bottom:1px solid var(--outline-variant);vertical-align:middle }
+    .ls-table tr:hover td { background:var(--primary-light) }
+    .ls-table input, .ls-table select { padding:5px 8px;border:1px solid var(--outline-variant);border-radius:0.5rem;
+      font-size:12px;width:100%;background:var(--surface-container-lowest);color:var(--on-surface) }
+    .ls-table input:focus, .ls-table select:focus { outline:none;box-shadow:0 0 0 3px var(--primary-focus) }
     .ls-table .ls-w-input { width:55px;text-align:center }
-    .ls-stage-header td { background:rgba(56,189,248,0.06);padding:8px 10px;font-weight:600;font-size:12px;
-      border-bottom:2px solid var(--accent,#38bdf8) }
+    .ls-stage-header td { background:var(--primary-light);padding:8px 10px;font-weight:600;font-size:12px;
+      border-bottom:2px solid var(--primary) }
     .ls-weight-total { font-size:11px;padding:6px 8px }
-    .ls-clear-btn { background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;
-      color:var(--text-tertiary);font-size:11px;padding:2px 8px;transition:color 0.15s }
-    .ls-clear-btn:hover { color:var(--text-primary);border-color:var(--text-tertiary) }
+    .ls-clear-btn { background:none;border:1px solid var(--outline-variant);border-radius:4px;cursor:pointer;
+      color:var(--on-surface-dim);font-size:11px;padding:2px 8px;transition:color 0.15s }
+    .ls-clear-btn:hover { color:var(--on-surface);border-color:var(--on-surface-dim) }
 
     /* ── Settings tabs ── */
-    .ls-settings-tabs { display:flex;gap:0;margin-bottom:0;border-bottom:2px solid var(--border);margin-top:16px }
-    .ls-stab { padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text-tertiary);
+    .ls-settings-tabs { display:flex;gap:0;margin-bottom:0;border-bottom:2px solid var(--outline-variant);margin-top:16px }
+    .ls-stab { padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;color:var(--on-surface-dim);
       border:none;border-bottom:2px solid transparent;margin-bottom:-2px;background:none }
-    .ls-stab:hover { color:var(--text-primary) }
-    .ls-stab-active { color:var(--accent,#38bdf8);border-bottom-color:var(--accent,#38bdf8) }
+    .ls-stab:hover { color:var(--on-surface) }
+    .ls-stab-active { color:var(--primary);border-bottom-color:var(--primary) }
 
     /* ── Behavior / signals panels ── */
-    .ls-setting-row { display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border-light,rgba(148,163,184,0.1)) }
+    .ls-setting-row { display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--outline-variant) }
     .ls-setting-left { flex:1 }
     .ls-setting-label { font-size:13px;font-weight:500 }
-    .ls-setting-info { font-size:11px;color:var(--text-tertiary);margin-top:2px }
+    .ls-setting-info { font-size:11px;color:var(--on-surface-dim);margin-top:2px }
     .ls-info-icon { display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;
-      border-radius:50%;border:1px solid var(--text-tertiary);font-size:10px;color:var(--text-tertiary);
+      border-radius:50%;border:1px solid var(--on-surface-dim);font-size:10px;color:var(--on-surface-dim);
       cursor:help;margin-left:4px;flex-shrink:0;font-style:italic;font-weight:600;font-family:serif }
 
     /* ── Volume slider (like WhatsApp module) ── */
     .ls-volume { display:flex;align-items:center;gap:10px;width:260px }
-    .ls-vol-label { font-size:11px;font-weight:500;color:var(--text-tertiary);min-width:32px;text-align:center }
+    .ls-vol-label { font-size:11px;font-weight:500;color:var(--on-surface-dim);min-width:32px;text-align:center }
     .ls-vol-track { flex:1;position:relative;display:flex;align-items:center }
     .ls-vol-input { -webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;
-      background:var(--border);outline:none;cursor:pointer }
+      background:var(--outline-variant);outline:none;cursor:pointer }
     .ls-vol-input::-webkit-slider-thumb { -webkit-appearance:none;appearance:none;width:18px;height:18px;
-      border-radius:50%;background:var(--accent,#38bdf8);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.15);
+      border-radius:50%;background:var(--primary);cursor:pointer;box-shadow:var(--shadow-subtle);
       transition:transform 0.15s }
     .ls-vol-input::-webkit-slider-thumb:hover { transform:scale(1.15) }
-    .ls-vol-input::-moz-range-thumb { width:18px;height:18px;border-radius:50%;background:var(--accent,#38bdf8);
-      cursor:pointer;border:none;box-shadow:0 1px 4px rgba(0,0,0,0.15) }
+    .ls-vol-input::-moz-range-thumb { width:18px;height:18px;border-radius:50%;background:var(--primary);
+      cursor:pointer;border:none;box-shadow:var(--shadow-subtle) }
     .ls-vol-value { font-size:13px;font-weight:600;font-family:'SF Mono','Fira Code',monospace;
-      color:var(--accent,#38bdf8);min-width:48px;text-align:center;background:rgba(56,189,248,0.1);
+      color:var(--primary);min-width:48px;text-align:center;background:var(--primary-light);
       padding:3px 8px;border-radius:0.4rem }
 
     /* ── Signal toggle ── */
     .ls-sig-toggle { position:relative;width:40px;height:22px;border-radius:11px;cursor:pointer;
-      background:var(--border);transition:background 0.2s;border:none;padding:0;flex-shrink:0 }
-    .ls-sig-toggle.on { background:var(--accent,#38bdf8) }
+      background:var(--outline-variant);transition:background 0.2s;border:none;padding:0;flex-shrink:0 }
+    .ls-sig-toggle.on { background:var(--success) }
     .ls-sig-toggle::after { content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;
       border-radius:50%;background:#fff;transition:transform 0.2s }
     .ls-sig-toggle.on::after { transform:translateX(18px) }
 
     /* ── Disabled dropdown option ── */
-    .ls-dropdown-disabled { color:var(--text-tertiary);pointer-events:none;opacity:0.6 }
+    .ls-dropdown-disabled { color:var(--on-surface-dim);pointer-events:none;opacity:0.6 }
 
     @media (max-width:768px) {
       .ls-fw-grid { grid-template-columns:1fr }
@@ -469,7 +470,7 @@ function renderCriterionRow(cr: QualifyingConfig['criteria'][number], i: number,
 
 function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
   const totalWeight = config.criteria.reduce((s, c) => s + c.weight, 0)
-  const weightColor = totalWeight === 100 ? 'var(--success,#4ade80)' : 'var(--warning,#fbbf24)'
+  const weightColor = totalWeight === 100 ? 'var(--success)' : 'var(--warning)'
   const hasStages = config.stages && config.stages.length > 0
 
   const theadCols = `
@@ -493,8 +494,8 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
         <tr class="ls-stage-header">
           <td colspan="8">
             ${esc(stage.name[lang] || stage.name.es)}
-            <span style="font-weight:400;color:var(--text-tertiary);margin-left:8px">${esc(stage.description[lang] || stage.description.es)}</span>
-            <span style="float:right;font-weight:400;color:var(--text-tertiary)">${stageWeight}pts &middot; ${stageCriteria.length}/5</span>
+            <span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">${esc(stage.description[lang] || stage.description.es)}</span>
+            <span style="float:right;font-weight:400;color:var(--on-surface-dim)">${stageWeight}pts &middot; ${stageCriteria.length}/5</span>
           </td>
         </tr>`
 
@@ -544,7 +545,7 @@ function renderBehaviorTab(config: QualifyingConfig, lang: Lang): string {
           <span class="ls-info-icon" title="${l('sec_post_action_info', lang)}">i</span>
           <div class="ls-setting-info">${l('sec_post_action_info', lang)}</div>
         </div>
-        <select id="ls-post-action" onchange="lsConfig.defaultQualifiedAction=this.value" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;min-width:160px">
+        <select id="ls-post-action" onchange="lsConfig.defaultQualifiedAction=this.value" style="padding:6px 10px;border:1px solid var(--outline-variant);border-radius:6px;font-size:13px;min-width:160px">
           <option value="scheduled" ${currentAction === 'scheduled' ? 'selected' : ''}>${l('act_scheduled', lang)}</option>
           <option value="payment_link" disabled class="ls-dropdown-disabled">${l('act_payment_link', lang)} — ${l('act_payment_link_soon', lang)}</option>
           <option value="escalate_human" ${currentAction === 'escalate_human' ? 'selected' : ''}>${l('act_escalate_human', lang)}</option>
@@ -578,7 +579,7 @@ function renderBehaviorTab(config: QualifyingConfig, lang: Lang): string {
           <div class="ls-setting-info">${l('sec_cold_threshold_info', lang)}</div>
         </div>
         <input type="number" id="ls-threshold-cold" value="${config.thresholds.cold}" min="0" max="80"
-          style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px"
+          style="width:80px;padding:6px 10px;border:1px solid var(--outline-variant);border-radius:6px;font-size:13px"
           onchange="lsConfig.thresholds.cold=parseInt(this.value)||0">
       </div>
 
@@ -590,7 +591,7 @@ function renderBehaviorTab(config: QualifyingConfig, lang: Lang): string {
           <div class="ls-setting-info">${l('sec_qualified_threshold_info', lang)}</div>
         </div>
         <input type="number" id="ls-threshold-qualified" value="${config.thresholds.qualified}" min="50" max="100"
-          style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px"
+          style="width:80px;padding:6px 10px;border:1px solid var(--outline-variant);border-radius:6px;font-size:13px"
           onchange="lsConfig.thresholds.qualified=parseInt(this.value)||50">
       </div>
     </div>`
@@ -811,7 +812,7 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     var el = document.getElementById('ls-weight-total')
     if (el) {
       el.textContent = L.weight_total + ': ' + total + '/100'
-      el.style.color = total === 100 ? 'var(--success,#4ade80)' : 'var(--warning,#fbbf24)'
+      el.style.color = total === 100 ? 'var(--success)' : 'var(--warning)'
     }
   }
 
