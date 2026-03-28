@@ -379,8 +379,11 @@ The console NEVER uses internal API endpoints for config/CRUD operations. The sa
 - Use `.icon-squircle` containers for icon display (never bare icons in cards/KPIs)
 - Use SVG flags for language selection (not emoji — they don't render in all environments)
 - Use `act-btn` system for all action buttons (4 variants: primary/secondary/success/destructive)
+- Use `.kv-row` + `.kv-row-value` for ALL key-value metric displays (budgets, activity, status)
+- Use `.edit-grid` + `.edit-grid-field` for inline-edit form grids (TTS, tools params, etc.)
 - Use `wizard-overlay` + `wizard-modal` for all modals (not custom modal CSS)
-- Use `js-custom-select` for all dropdowns (not native `<select>` styling)
+- Use `js-custom-select` for ALL dropdowns (never native `<select>` styling)
+- Use `range-primary` for ALL sliders (never native browser range styling)
 - Use `data-original` for dirty tracking on config fields
 - Show validation errors inline under the field (red border + message), not browser tooltips
 - Standardize section headers: breadcrumb + title (1.65rem) + description (2 lines clamped)

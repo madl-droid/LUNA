@@ -3199,7 +3199,7 @@ function renderUsersSection(data: SectionData): string {
         <input type="hidden" name="mod_${esc(lt)}_${esc(mod.name)}" value="${modOrig}" data-original="${modOrig}">
       </div>`
 
-      html += `<div class="perm-grid" style="padding-left:28px;margin-bottom:8px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
+      html += `<div class="perm-grid u-mb-sm" style="padding-left:28px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
       for (const tool of mod.tools) {
         const checked = isAdmin || isAllTools || perms.tools.includes(tool.name)
         const origVal = checked ? 'on' : ''

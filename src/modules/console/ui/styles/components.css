@@ -3634,19 +3634,20 @@ select.wizard-input option:checked {
   color: var(--error);
 }
 
+/* TTS fields — standardized to design system spacing */
 .ts-tts-field {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-md);
 }
 
 .ts-tts-field-compact {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-sm);
 }
 
 .ts-tts-label {
   font-size: 13px;
   font-weight: 500;
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-xs);
   color: var(--on-surface-variant);
 }
 
@@ -3654,14 +3655,14 @@ select.wizard-input option:checked {
   font-size: 12px;
   font-weight: 500;
   display: block;
-  margin-bottom: 3px;
+  margin-bottom: var(--space-xs);
   color: var(--on-surface-variant);
 }
 
 .ts-tts-select {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--outline-variant);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   font-size: 13px;
   background: var(--surface-container-lowest);
@@ -3670,10 +3671,10 @@ select.wizard-input option:checked {
 .ts-tts-select-compact {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid var(--outline-variant);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  background: var(--surface-container-lowest);
+  background: var(--surface-container-low);
 }
 
 .ts-tts-hint {
@@ -4070,6 +4071,54 @@ select.wizard-input option:checked {
   .db-grid-td {
     max-width: 200px;
   }
+}
+
+/* ═══ Key-value row — unified label+value display ═══ */
+/* Used for: metrics, budget rows, activity rows, status displays.
+ * All key-value rows MUST use this base class for consistent spacing. */
+.kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 0.85rem;
+  color: var(--on-surface-variant);
+}
+
+.kv-row + .kv-row {
+  border-top: 1px solid var(--outline-variant);
+}
+
+.kv-row-value {
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* ═══ Editable grid — unified spacing for form grids ═══ */
+/* Used for: TTS config, tools global params, permissions, etc.
+ * Ensures consistent gap/padding across all inline edit areas. */
+.edit-grid {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.edit-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.edit-grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+.edit-grid-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.edit-grid-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+
+@media (max-width: 768px) {
+  .edit-grid-2, .edit-grid-3 { grid-template-columns: 1fr; }
 }
 
 /* ═══ Utility classes — replace common inline styles ═══ */
