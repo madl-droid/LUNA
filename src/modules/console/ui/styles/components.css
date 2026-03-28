@@ -74,7 +74,7 @@
 }
 
 .badge-active { background: rgba(52,199,89,0.12); color: #1a8f3a; }
-.badge-soon { background: rgba(168,57,0,0.1); color: var(--primary); }
+.badge-soon { background: var(--primary-light); color: var(--primary); }
 
 /* ═══ Fields — spacing instead of dividers ═══ */
 .field {
@@ -118,7 +118,7 @@
 .field input:focus, .field select:focus {
   outline: none;
   background: var(--surface-container-lowest);
-  box-shadow: 0 0 0 3px rgba(168,57,0,0.12);
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 
 .field select { cursor: pointer; }
@@ -269,7 +269,7 @@
 
 .model-row select:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(168,57,0,0.12);
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 
 /* ═══ Toast notifications — ambient shadow ═══ */
@@ -534,7 +534,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: rgba(168,57,0,0.08);
+  background: var(--primary-light);
   color: var(--primary);
   font-size: 12px;
   font-weight: 500;
@@ -568,7 +568,7 @@
 
 .field-tag-input:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(168,57,0,0.12);
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 
 /* ═══ Duration field ═══ */
@@ -592,7 +592,7 @@
 
 .field-duration input:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(168,57,0,0.12);
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 
 .field-duration input.modified {
@@ -652,7 +652,7 @@
   cursor: pointer;
   color: var(--on-surface-variant, #666);
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 0.5rem;
   z-index: 1;
 }
 
@@ -1477,8 +1477,8 @@ select.wizard-input option:checked {
 }
 .act-btn-cta:hover { background: var(--primary-hover); }
 
-/* Legacy aliases for channels (keep backward compat) */
-.ch-btn-action { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 7px 16px; border-radius: 1.5rem; border: none; cursor: pointer; text-decoration: none; transition: all 0.15s ease; white-space: nowrap; line-height: 1.4; }
+/* Legacy aliases — map to act-btn system */
+.ch-btn-action { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 7px 16px; border-radius: 1.5rem; border: none; cursor: pointer; text-decoration: none; transition: all 0.15s ease; white-space: nowrap; line-height: 1.4; font-family: inherit; }
 .ch-btn-gear { background: var(--surface-container-high); color: var(--on-surface-variant); }
 .ch-btn-gear:hover { background: var(--surface-container-highest); color: var(--on-surface); }
 .ch-btn-connect { background: rgba(52, 199, 89, 0.12); color: #1a8f3a; }
@@ -2511,7 +2511,7 @@ select.wizard-input option:checked {
   padding: 10px 14px;
   font-size: 14px;
   border: 1px solid rgba(0,0,0,0.1);
-  border-radius: 0.375rem;
+  border-radius: 0.5rem;
   background: var(--surface-container-low);
   color: var(--on-surface);
   outline: none;
@@ -2532,7 +2532,7 @@ select.wizard-input option:checked {
   font-size: 14px;
   font-weight: 600;
   border: none;
-  border-radius: 0.375rem;
+  border-radius: 0.5rem;
   background: var(--primary);
   color: #fff;
   cursor: pointer;
@@ -2664,7 +2664,7 @@ select.wizard-input option:checked {
   font-size: 12px;
   padding: 3px 8px;
   border: 1px solid rgba(0,0,0,0.1);
-  border-radius: 4px;
+  border-radius: 0.5rem;
   background: var(--surface-container-low);
   color: var(--on-surface);
   cursor: pointer;
@@ -2777,7 +2777,7 @@ select.wizard-input option:checked {
 .db-page-btn {
   padding: 4px 10px;
   border: 1px solid rgba(0,0,0,0.1);
-  border-radius: 4px;
+  border-radius: 0.5rem;
   background: var(--surface-container-low);
   color: var(--on-surface);
   cursor: pointer;
@@ -3382,6 +3382,608 @@ select.wizard-input option:checked {
   margin-top: auto;
 }
 
+/* ═══ Template-sections extracted styles ═══ */
+
+/* -- Google Apps status box -- */
+.ts-gws-status-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ts-gws-status-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ts-gws-status-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ts-gws-status-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ts-gws-status-email {
+  font-size: 12px;
+  color: var(--on-surface-dim);
+}
+
+.ts-gws-status-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ts-gws-btn-sm {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+/* -- Google Apps service cards -- */
+.ts-gws-perm-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.ts-gws-perm-label-delete {
+  color: var(--error);
+}
+
+.ts-gws-perm-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--primary);
+}
+
+.ts-gws-perm-checkbox-delete {
+  accent-color: var(--error);
+}
+
+.ts-gws-card {
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.ts-gws-card-inactive {
+  opacity: 0.6;
+}
+
+.ts-gws-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.ts-gws-card-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ts-gws-card-icon {
+  font-size: 20px;
+}
+
+.ts-gws-card-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.ts-gws-card-body {
+  display: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.ts-gws-perms-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--on-surface-dim);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.ts-gws-perms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* -- Google Apps services grid -- */
+.ts-gws-services-wrap {
+  margin-bottom: 12px;
+}
+
+.ts-gws-services-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  margin-bottom: 10px;
+}
+
+.ts-gws-services-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+/* -- Tools global params -- */
+.ts-tools-global-panel {
+  margin-top: 8px;
+}
+
+.ts-tools-global-body {
+  padding: 20px;
+}
+
+.ts-tools-global-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.ts-tools-global-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+}
+
+/* -- Identity section -- */
+.ts-identity-layout {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.ts-prompts-hint {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  font-weight: 500;
+}
+
+.ts-prompt-edit-btn {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+.ts-prompt-save-cancel {
+  display: none;
+  gap: 6px;
+  align-items: center;
+}
+
+.ts-prompt-btn-sm {
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+/* -- TTS / Voice section -- */
+.ts-badge-error {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--error);
+}
+
+.ts-tts-field {
+  margin-bottom: 14px;
+}
+
+.ts-tts-field-compact {
+  margin-bottom: 10px;
+}
+
+.ts-tts-label {
+  font-size: 13px;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 4px;
+  color: var(--on-surface-variant);
+}
+
+.ts-tts-label-compact {
+  font-size: 12px;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 3px;
+  color: var(--on-surface-variant);
+}
+
+.ts-tts-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--surface-container-lowest);
+}
+
+.ts-tts-select-compact {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--surface-container-lowest);
+}
+
+.ts-tts-hint {
+  font-size: 11px;
+  color: var(--on-surface-dim);
+}
+
+.ts-tts-range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ts-tts-range-wrap-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ts-tts-range-value {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+
+.ts-tts-range-value-compact {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 32px;
+  text-align: right;
+}
+
+.ts-tts-password-wrap {
+  position: relative;
+}
+
+.ts-tts-toggle-vis {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--on-surface-dim);
+}
+
+.ts-tts-toggle-vis-compact {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--on-surface-dim);
+}
+
+.ts-tts-preview-area {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.ts-tts-preview-area-compact {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.ts-tts-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ts-tts-preview-status {
+  font-size: 12px;
+  color: var(--on-surface-dim);
+}
+
+.ts-tts-preview-status-compact {
+  font-size: 11px;
+  color: var(--on-surface-dim);
+  margin-left: 6px;
+}
+
+.ts-tts-body-compact {
+  padding: 12px 16px;
+}
+
+/* -- Voice TTS 2-column layout -- */
+.ts-voice-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+/* -- Panel header non-interactive -- */
+.ts-panel-header-static {
+  cursor: default;
+}
+
+/* -- Contact config panel -- */
+.ts-config-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  margin-bottom: 4px;
+}
+
+.ts-config-desc {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  margin-bottom: 12px;
+}
+
+.ts-config-explanation {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  line-height: 1.6;
+  padding: 12px 16px;
+  background: var(--surface-container-low);
+  border-radius: 0.5rem;
+  margin-bottom: 12px;
+}
+
+.ts-config-delete-area {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+/* -- Contact base card icon (primary accent) -- */
+.ts-cb-icon-primary {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(255, 94, 14, 0.08);
+}
+
+/* -- Contact base metric no border -- */
+.ts-metric-no-border {
+  border: none;
+}
+
+/* -- Import mode grid -- */
+.ts-import-modes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+/* -- Import preview label -- */
+.ts-import-preview-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+/* -- Import result box -- */
+.ts-import-result {
+  display: none;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 0.5rem;
+  background: var(--surface-container-low);
+}
+
+/* -- Import hint -- */
+.ts-import-hint {
+  font-size: 11px;
+  color: var(--on-surface-dim);
+  margin-top: 4px;
+}
+
+.ts-import-dropzone-title {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--on-surface-variant);
+}
+
+/* -- Webhook section -- */
+.ts-webhook-desc {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.ts-webhook-label {
+  font-size: 12px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.ts-webhook-label-sub {
+  font-weight: 400;
+  color: var(--on-surface-variant);
+}
+
+.ts-webhook-instructions {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  line-height: 1.7;
+}
+
+.ts-webhook-code {
+  background: var(--surface-container-low);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ts-webhook-pre {
+  background: var(--surface-container-low);
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+
+.ts-webhook-copy-abs {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  border: none;
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  background: var(--surface-container-high);
+}
+
+/* -- Create base box titles -- */
+.ts-create-box-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.ts-create-box-desc {
+  font-size: 0.82rem;
+  color: var(--on-surface-variant);
+  margin-top: 4px;
+}
+
+/* -- Roles list items -- */
+.ts-role-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.ts-role-row-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.ts-role-name {
+  flex: 1;
+  font-size: 13px;
+}
+
+.ts-roles-empty {
+  font-size: 13px;
+  color: var(--on-surface-dim);
+  padding: 12px 0;
+}
+
+.ts-roles-desc {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  margin-bottom: 12px;
+}
+
+.ts-role-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--error);
+  padding: 4px 8px;
+  font-size: 16px;
+}
+
+/* -- Deact/modal flex actions -- */
+.ts-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.ts-modal-actions-compact {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* -- Checkbox accent (perm-cb) -- */
+.ts-perm-cb {
+  accent-color: var(--primary);
+  width: 15px;
+  height: 15px;
+}
+
+/* -- Config panel description (no-categories, etc) -- */
+.ts-config-muted {
+  font-size: 12px;
+  color: var(--on-surface-dim);
+}
+
+/* -- Unregistered contacts message area -- */
+.ts-unreg-msg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+/* -- Dashboard token icon -- */
+.ts-dash-token-icon {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* -- Roles modal list -- */
+.ts-roles-modal-list {
+  margin: 12px 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* -- Import success/error messages (JS-generated) -- */
+.ts-import-success {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.ts-import-detail {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
 /* ═══ Responsive for new components ═══ */
 @media (max-width: 768px) {
   .dash-kpis { grid-template-columns: repeat(2, 1fr); }
@@ -3392,6 +3994,11 @@ select.wizard-input option:checked {
   .tool-cards { grid-template-columns: 1fr; }
   .chs-tabs { overflow-x: auto; }
   .dash-quality-grid { grid-template-columns: 1fr; }
+  .ts-identity-layout { grid-template-columns: 1fr; }
+  .ts-voice-layout { grid-template-columns: 1fr; }
+  .ts-gws-services-grid { grid-template-columns: 1fr; }
+  .ts-tools-global-grid { grid-template-columns: 1fr; }
+  .ts-import-modes-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {

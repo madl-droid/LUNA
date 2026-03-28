@@ -143,10 +143,10 @@ export function renderFreshdeskSection(lang: Lang): string {
 
 <style>
 .fd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.fd-table th { text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--on-surface-variant); padding: 8px 10px; border-bottom: 1px solid var(--outline-variant); }
+.fd-table th { text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--on-surface-variant); padding: 8px 10px; border-bottom: 1px solid var(--outline-variant); }
 .fd-table td { padding: 7px 10px; border-bottom: 1px solid var(--surface-container-high); color: var(--on-surface); }
 .fd-table tr:last-child td { border-bottom: none; }
-.fd-table tr:hover td { background: var(--surface-container); }
+.fd-table tr:hover td { background: var(--surface-container-low); }
 .fd-table td:first-child { font-weight: 500; max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>`
 }

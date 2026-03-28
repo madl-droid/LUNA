@@ -312,6 +312,12 @@ The console NEVER uses internal API endpoints for config/CRUD operations. The sa
 - Use `data-original` for dirty tracking on config fields
 - Show validation errors inline under the field (red border + message), not browser tooltips
 - Standardize section headers: breadcrumb + title (1.65rem) + description (2 lines clamped)
+- **Use ONLY CSS variables from `base.css`** — never hardcode hex colors or rgba values in modules
+- **Use `var(--primary-focus)` for ALL focus rings** — `box-shadow: 0 0 0 3px var(--primary-focus)`
+- **Use existing CSS classes from `components.css`** before creating new ones — check panels, fields, toggles, badges, buttons, tables, filters, wizards
+- **Prefix module-scoped classes** with a short prefix (`ls-`, `ki-`, `st-`, `ts-`, `freight-`, `fd-`) to avoid collisions
+- **Use `var(--success)` (#34c759) for active toggle state** — all toggles must look identical
+- **Use `.toggle` / `.toggle-sm` classes** for switch components — never create custom toggle CSS
 
 ### Don't
 - Use `#000000` — use `--on-surface` (#1A1A1A)
@@ -324,3 +330,8 @@ The console NEVER uses internal API endpoints for config/CRUD operations. The sa
 - Create custom button styles — use `act-btn-*` variants
 - Create custom modal CSS — use wizard classes
 - Use browser-native form validation tooltips — use `wizard-field-error` inline messages
+- **Use inline `style="..."` for presentational CSS** — extract to CSS classes. Only `display:none` JS toggles and dynamic values (`width:${pct}%`) may remain inline
+- **Define custom CSS variables** (`--my-color`, `--bg-primary`, `--accent`) — use ONLY the variables defined in `base.css :root`
+- **Use non-standard colors for accent/focus** — the primary accent is ALWAYS Fox Orange `var(--primary)`, focus ring is ALWAYS `var(--primary-focus)`, active toggle is ALWAYS `var(--success)`
+- **Use `border-radius` values other than `0.5rem`** (containers), `0.75rem` (elevated cards/modals), `1.5rem` (pill buttons) — no `4px`, `6px`, `8px`, `10px`
+- **Create custom toggle, tab, or dropdown components** — reuse `.toggle`, `.chs-tab`, `.custom-select` from `components.css`

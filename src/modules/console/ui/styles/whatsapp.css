@@ -106,7 +106,7 @@
 .wa-phones input:focus {
   outline: none;
   background: var(--surface-container-lowest);
-  box-shadow: 0 0 0 3px rgba(168,57,0,0.12);
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 
 .wa-phones input.modified {

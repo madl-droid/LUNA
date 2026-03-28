@@ -46,7 +46,7 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
   display: flex;
   flex-direction: column;
   gap: 16px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-subtle);
 }
 .freight-api-card:hover { box-shadow: var(--shadow-subtle, 0 2px 8px rgba(0,0,0,0.1)); }
 .freight-card-header {
@@ -59,8 +59,8 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
   border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-size: 20px;
-  background: rgba(0,122,255,0.08);
-  border: 2px solid #007aff;
+  background: var(--primary-focus);
+  border: 2px solid var(--info);
   flex-shrink: 0;
 }
 .freight-card-title {
@@ -95,7 +95,7 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
 .freight-field input[type="number"] {
   padding: 8px 12px;
   border: 1px solid var(--outline-variant);
-  border-radius: 6px;
+  border-radius: 0.5rem;
   font-size: 13px;
   background: var(--surface-container-low);
   color: var(--on-surface);
@@ -105,7 +105,7 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
 .freight-field input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(0,122,255,0.15);
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 .freight-field-row {
   display: grid;
@@ -136,7 +136,7 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
   background: var(--surface-container-lowest);
   border-radius: 0.75rem;
   padding: 24px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-subtle);
 }
 .freight-sheet-header {
   display: flex;
@@ -161,7 +161,7 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
 .freight-sheet-input {
   padding: 10px 14px;
   border: 1px solid var(--outline-variant);
-  border-radius: 6px;
+  border-radius: 0.5rem;
   font-size: 13px;
   background: var(--surface-container-low);
   color: var(--on-surface);
@@ -171,7 +171,7 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
 .freight-sheet-input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(0,122,255,0.15);
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 .freight-sheet-columns {
   display: grid;
@@ -180,7 +180,7 @@ export function renderFreightSection(lang: Lang, config: FreightConsoleConfig): 
   margin-top: 14px;
   padding: 14px;
   background: var(--surface-container-low);
-  border-radius: 8px;
+  border-radius: 0.5rem;
 }
 @media (max-width: 640px) {
   .freight-sheet-columns { grid-template-columns: 1fr; }

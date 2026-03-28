@@ -45,6 +45,21 @@
   /* Glass */
   --glass-bg: rgba(255, 255, 255, 0.75);
   --glass-blur: blur(20px) saturate(180%);
+
+  /* Focus ring (unified) */
+  --primary-focus: rgba(255, 94, 14, 0.12);
+
+  /* Aliases for modules that used non-standard names */
+  --bg-primary: var(--surface-container-lowest);
+  --bg-secondary: var(--surface-container-low);
+  --border: var(--outline-variant);
+  --border-light: var(--outline-variant);
+  --text-primary: var(--on-surface);
+  --text-secondary: var(--on-surface-variant);
+  --text-tertiary: var(--on-surface-dim);
+  --accent: var(--primary);
+  --surface-alt: var(--surface-container-low);
+  --surface-container: var(--surface-container-high);
 }
 
 /* Only fix visited-link purple inside content areas (wizards, panels, instructions) */
