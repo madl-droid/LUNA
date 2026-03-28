@@ -42,7 +42,8 @@
 
 ## Trampas
 - **NO cambiar fire-and-forget de pipeline_logs/messages a await** — bloquearía pipeline
-- `content` column en messages cambió de JSONB a TEXT (`content_text`). Durante dual-write ambas se escriben.
+- Las tablas fundacionales (messages, agents, contacts, etc.) las crea el migrador del kernel (`src/migrations/*.sql`), NO este módulo. `ensureTable()` fue eliminado.
+- `content` column en messages cambió de JSONB a TEXT (`content_text`). Código migrado a columnas nuevas (sin dual-write).
 - `qualification_*` migró de contacts a agent_contacts. Lead-scoring usa agentId.
 - El FTS trigger mapea `summary_language` al diccionario PG automáticamente.
 - pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration.

@@ -11,7 +11,9 @@ Sistema de carga dinámica de módulos con hooks tipados, inyección de dependen
 - `registry.ts` — bus central: hooks, DI (provide/get), config por módulo, lifecycle de módulos
 - `loader.ts` — descubre `src/modules/*/manifest.ts`, sync con tabla kernel_modules, topological sort por depends, activa en orden
 - `server.ts` — servidor HTTP nativo. `mountModuleRoutes(name, routes)` y `unmountModuleRoutes(name)` para hot-mount/unmount de rutas en `/console/api/{moduleName}/{path}`. Endpoint `/health`.
-- `db.ts` — pool PostgreSQL + ejecución de migraciones kernel (kernel_modules + config_store)
+- `db.ts` — pool PostgreSQL + ejecución de migraciones kernel (kernel_modules + config_store) + llama a migrator
+- `migrator.ts` — auto-migrador SQL: lee `src/migrations/*.sql`, trackea en tabla `schema_migrations`, ejecuta pendientes en transacción
+- `bootstrap.ts` — asegura directorios de `instance/` al arrancar (knowledge/media, fallbacks, wa-auth, tools)
 - `redis.ts` — conexión Redis con lazyConnect
 - `migrations/001_modules.sql` — tabla kernel_modules (name, active, activated_at, meta)
 

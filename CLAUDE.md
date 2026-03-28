@@ -46,6 +46,7 @@ src/
     freshdesk/       — tools de Freshdesk KB: búsqueda, artículos, sync (ver src/tools/freshdesk/CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
     attachments/     — subsistema de adjuntos del engine (types, processor, url-extractor, injection-validator, audio-transcriber, tools)
+  migrations/        — SQL migrations numeradas (auto-ejecutadas por kernel/migrator.ts)
   index.ts           — entry point: crea kernel, carga módulos, inicia server
 deploy/              — docker-compose + deploy (ver deploy/CLAUDE.md)
 instance/            — config operacional (config.json) + knowledge/media/
@@ -159,6 +160,42 @@ docker run --rm -v /docker/luna-repo:/app -w /app node:22-alpine npx tsc --noEmi
 ```
 
 Si hay errores, corregirlos ANTES de pushear. No hay excepción a esta regla.
+
+## Sistema de migraciones SQL
+
+Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.) se crean automáticamente al arrancar mediante un auto-migrador.
+
+### Cómo funciona
+1. `src/kernel/migrator.ts` corre en `createPool()`, después de las kernel tables, antes del setup wizard
+2. Tabla `schema_migrations` trackea qué migraciones ya se aplicaron
+3. Lee archivos `.sql` numerados de `src/migrations/` en orden
+4. Cada migración corre en transacción; si falla, rollback y abort
+
+### Archivos de migración (`src/migrations/`)
+```
+001_engine-tables.sql        — contacts, contact_channels, sessions, messages, campaigns
+002_memory-v3-phase0.sql     — pgvector, agents, companies, system_state, pipeline_logs
+003_memory-v3-phase1.sql     — ALTER columns, agent_contacts, session_summaries, commitments, archives
+004_memory-v3-phase3.sql     — DROP old columns (cleanup)
+005_proactive-v1.sql         — extend commitments, proactive_outreach_log
+006_ack-messages-v1.sql      — ack_messages + seeds
+007_rename-oficina.sql       — rename oficina→console
+008_replan-metrics.sql       — add replan columns to pipeline_logs
+009_db-cleanup.sql           — drop unused tables, add indexes, final column cleanup
+```
+
+### Cómo agregar una nueva migración
+1. Crear archivo `src/migrations/{NNN}_{nombre}.sql` con el siguiente número secuencial
+2. Usar `IF NOT EXISTS` / `IF EXISTS` para idempotencia
+3. El migrador lo detecta y aplica automáticamente en el siguiente arranque
+
+### Bootstrap de instance/
+`src/kernel/bootstrap.ts` crea directorios faltantes de `instance/` al arrancar (knowledge/media, fallbacks, wa-auth, tools). El Dockerfile copia `instance/` como template base.
+
+### Notas
+- Los módulos siguen creando sus tablas propias en `init()` (prompts, llm_usage, google_oauth_tokens, etc.)
+- Las migraciones fundacionales (contacts, messages, agents) ahora las maneja el migrador, NO los módulos
+- `docs/migrations/` se mantiene como referencia histórica; la versión canónica está en `src/migrations/`
 
 ## Deploy
 Ramas: `main` (prod), `pruebas` (staging), `claude` (dev). Push auto-deploys via GitHub Actions + Docker + Traefik.
