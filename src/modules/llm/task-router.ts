@@ -18,65 +18,99 @@ const logger = pino({ name: 'llm:router' })
 // ═══════════════════════════════════════════
 
 const DEFAULT_ROUTES: TaskRoute[] = [
+  // Phase 2 evaluate: Sonnet → Haiku → Flash
   {
     task: 'classify',
-    primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
+    primary: {
+      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.1,
+      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
+    },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
     ],
   },
+  // Phase 4 compose: Flash → Flash-Lite → Haiku
   {
     task: 'respond',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7 },
+    primary: {
+      provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7,
+      downgrade: { provider: 'google', model: 'gemini-2.5-flash-lite', temperature: 0.7 },
+    },
     fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
+      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.7 },
     ],
   },
+  // Complex / subagent heavy: Opus → Sonnet → Pro
   {
     task: 'complex',
-    primary: { provider: 'anthropic', model: 'claude-opus-4-5-20251101', temperature: 0.5 },
+    primary: {
+      provider: 'anthropic', model: 'claude-opus-4-5-20251101', temperature: 0.5,
+      downgrade: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.5 },
+    },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-pro', temperature: 0.5 },
     ],
   },
+  // Tools / subagent: Sonnet → Haiku → Flash
   {
     task: 'tools',
-    primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
+    primary: {
+      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.1,
+      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
+    },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
     ],
   },
+  // Proactive: Sonnet → Haiku → Flash
   {
     task: 'proactive',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7 },
+    primary: {
+      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7,
+      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.7 },
+    },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
     ],
   },
+  // Vision / multimedia: Flash → Flash-Lite → Sonnet
   {
     task: 'vision',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-pro' },
-    ],
-  },
-  {
-    task: 'web_search',
-    primary: { provider: 'google', model: 'gemini-2.5-flash' },
+    primary: {
+      provider: 'google', model: 'gemini-2.5-flash',
+      downgrade: { provider: 'google', model: 'gemini-2.5-flash-lite' },
+    },
     fallbacks: [
       { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     ],
   },
+  // Web search: Flash+grounding → Pro → Sonnet
+  {
+    task: 'web_search',
+    primary: {
+      provider: 'google', model: 'gemini-2.5-flash',
+      downgrade: { provider: 'google', model: 'gemini-2.5-pro' },
+    },
+    fallbacks: [
+      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
+    ],
+  },
+  // Compress: Haiku → Flash (lightweight)
   {
     task: 'compress',
-    primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.2 },
+    primary: {
+      provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.2,
+    },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.2 },
     ],
   },
+  // ACK: Haiku → Flash (ultra-lightweight, 30 tokens)
   {
     task: 'ack',
-    primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.8, maxTokens: 30 },
+    primary: {
+      provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.8, maxTokens: 30,
+    },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.8, maxTokens: 30 },
     ],
@@ -87,6 +121,8 @@ const DEFAULT_ROUTES: TaskRoute[] = [
 // Route resolution
 // ═══════════════════════════════════════════
 
+export type FallbackLevel = 'primary' | 'downgrade' | 'cross-api'
+
 export interface ResolvedRoute {
   provider: LLMProviderName
   model: string
@@ -95,6 +131,8 @@ export interface ResolvedRoute {
   maxTokens?: number
   isFallback: boolean
   fallbackIndex: number
+  /** Which level in the 3-tier fallback chain */
+  fallbackLevel: FallbackLevel
 }
 
 export class TaskRouter {
@@ -143,10 +181,37 @@ export class TaskRouter {
             model: parsed.model,
             temperature: parsed.temperature,
             apiKeyEnv: parsed.apiKeyEnv,
+            downgrade: existing.primary.downgrade, // preserve downgrade if already set
           }
         }
       } catch (err) {
         logger.warn({ task, err }, 'Failed to parse route config, using default')
+      }
+    }
+
+    // Parse per-task downgrade targets from JSON env vars
+    const downgradeMap: Record<string, string | undefined> = {
+      classify: (config as Record<string, unknown>).LLM_ROUTE_CLASSIFY_DOWNGRADE as string | undefined,
+      respond: (config as Record<string, unknown>).LLM_ROUTE_RESPOND_DOWNGRADE as string | undefined,
+      complex: (config as Record<string, unknown>).LLM_ROUTE_COMPLEX_DOWNGRADE as string | undefined,
+      tools: (config as Record<string, unknown>).LLM_ROUTE_TOOLS_DOWNGRADE as string | undefined,
+      proactive: (config as Record<string, unknown>).LLM_ROUTE_PROACTIVE_DOWNGRADE as string | undefined,
+    }
+
+    for (const [task, json] of Object.entries(downgradeMap)) {
+      if (!json) continue
+      try {
+        const parsed = JSON.parse(json) as { provider: string; model: string; temperature?: number }
+        const existing = this.routes.get(task as LLMTask)
+        if (existing) {
+          existing.primary.downgrade = {
+            provider: parsed.provider as LLMProviderName,
+            model: parsed.model,
+            temperature: parsed.temperature,
+          }
+        }
+      } catch (err) {
+        logger.warn({ task, err }, 'Failed to parse downgrade config, skipping')
       }
     }
   }
@@ -197,6 +262,7 @@ export class TaskRouter {
           apiKey: key,
           isFallback: false,
           fallbackIndex: -1,
+          fallbackLevel: 'primary',
         })
       }
     }
@@ -213,10 +279,29 @@ export class TaskRouter {
           maxTokens: route.primary.maxTokens,
           isFallback: false,
           fallbackIndex: -1,
+          fallbackLevel: 'primary',
         })
       }
 
-      // Fallback targets
+      // Downgrade target (same provider, lesser model)
+      if (route.primary.downgrade) {
+        const dg = route.primary.downgrade
+        const dgKey = this.resolveApiKey(dg.provider, dg.apiKeyEnv)
+        if (dgKey && this.isAvailable(dg.provider)) {
+          results.push({
+            provider: dg.provider,
+            model: dg.model,
+            apiKey: dgKey,
+            temperature: dg.temperature ?? route.primary.temperature,
+            maxTokens: dg.maxTokens ?? route.primary.maxTokens,
+            isFallback: true,
+            fallbackIndex: -1,
+            fallbackLevel: 'downgrade',
+          })
+        }
+      }
+
+      // Cross-API fallback targets
       for (let i = 0; i < route.fallbacks.length; i++) {
         const fb = route.fallbacks[i]!
         const fbKey = this.resolveApiKey(fb.provider, fb.apiKeyEnv)
@@ -229,6 +314,7 @@ export class TaskRouter {
             maxTokens: fb.maxTokens,
             isFallback: true,
             fallbackIndex: i,
+            fallbackLevel: 'cross-api',
           })
         }
       }
@@ -245,6 +331,7 @@ export class TaskRouter {
             apiKey: key,
             isFallback: true,
             fallbackIndex: 99,
+            fallbackLevel: 'cross-api',
           })
           break
         }

@@ -16,6 +16,8 @@ import type {
   LLMMessage,
 } from './types.js'
 
+type GooglePart = { text: string } | { inlineData: { data: string; mimeType: string } }
+
 const logger = pino({ name: 'llm:providers' })
 
 // ═══════════════════════════════════════════
@@ -79,45 +81,74 @@ export class AnthropicAdapter implements ProviderAdapter {
       })
     }
 
-    const params: Anthropic.MessageCreateParams = {
+    const params: Record<string, unknown> = {
       model: request.model ?? 'claude-sonnet-4-5-20250929',
       max_tokens: request.maxTokens ?? 2048,
       temperature: request.temperature ?? 0.7,
       messages,
     }
 
-    // System prompt
+    // System prompt — with prompt caching (cache_control on the last text block)
     const systemParts: string[] = []
     if (request.system) systemParts.push(request.system)
-    // Also collect system messages from the array
     for (const m of request.messages) {
       if (m.role === 'system') {
         systemParts.push(textContent(m.content))
       }
     }
     if (systemParts.length > 0) {
-      params.system = systemParts.join('\n\n')
+      const systemText = systemParts.join('\n\n')
+      // Use array format with cache_control for prompt caching (ephemeral = 5 min TTL, auto-renews)
+      params.system = [
+        { type: 'text', text: systemText, cache_control: { type: 'ephemeral' } },
+      ]
+    }
+
+    // Extended thinking (incompatible with temperature — remove it)
+    if (request.thinking) {
+      params.thinking = {
+        type: request.thinking.type === 'adaptive' ? 'adaptive' : 'enabled',
+        budget_tokens: request.thinking.budgetTokens ?? 4096,
+      }
+      delete params.temperature // Anthropic: thinking and temperature are incompatible
     }
 
     // Tools
+    const tools: unknown[] = []
     if (request.tools?.length) {
-      params.tools = request.tools.map(t => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema as Anthropic.Tool['input_schema'],
-      }))
+      for (const t of request.tools) {
+        tools.push({
+          name: t.name,
+          description: t.description,
+          input_schema: t.inputSchema,
+        })
+      }
+    }
+    // Code execution tool (built-in Anthropic sandbox)
+    if (request.codeExecution) {
+      tools.push({ type: 'code_execution' })
+    }
+    if (tools.length > 0) {
+      params.tools = tools
+    }
+
+    // JSON mode — prefill trick: add assistant message starting with '{'
+    if (request.jsonMode && !request.tools?.length) {
+      messages.push({ role: 'assistant', content: '{' })
     }
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
     try {
-      const response = await client.messages.create(params, {
-        signal: controller.signal,
-      })
+      const response = await client.messages.create(
+        params as Anthropic.MessageCreateParams,
+        { signal: controller.signal },
+      )
 
       let text = ''
       const toolCalls: LLMToolCall[] = []
+      const codeResults: Array<{ code: string; output: string; error?: string }> = []
 
       for (const block of response.content) {
         if (block.type === 'text') {
@@ -125,7 +156,26 @@ export class AnthropicAdapter implements ProviderAdapter {
         } else if (block.type === 'tool_use') {
           toolCalls.push({ name: block.name, input: block.input as Record<string, unknown> })
         }
+        // Code execution results (type: 'code_execution_result' — Anthropic built-in)
+        if ((block as Record<string, unknown>).type === 'code_execution_result') {
+          const ceBlock = block as Record<string, unknown>
+          codeResults.push({
+            code: String((ceBlock as Record<string, unknown>).code ?? ''),
+            output: String((ceBlock as Record<string, unknown>).output ?? ''),
+            error: (ceBlock as Record<string, unknown>).error ? String((ceBlock as Record<string, unknown>).error) : undefined,
+          })
+        }
       }
+
+      // JSON mode — prepend '{' since we used prefill
+      if (request.jsonMode && !request.tools?.length) {
+        text = '{' + text
+      }
+
+      // Extract cache metrics from usage
+      const usage = response.usage as Record<string, unknown>
+      const cacheReadTokens = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : undefined
+      const cacheCreationTokens = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : undefined
 
       return {
         text,
@@ -137,6 +187,9 @@ export class AnthropicAdapter implements ProviderAdapter {
         durationMs: Date.now() - start,
         fromFallback: false,
         attempt: 0,
+        cacheReadTokens: cacheReadTokens as number | undefined,
+        cacheCreationTokens: cacheCreationTokens as number | undefined,
+        codeResults: codeResults.length > 0 ? codeResults : undefined,
       }
     } finally {
       clearTimeout(timer)
@@ -221,14 +274,57 @@ export class GoogleAdapter implements ProviderAdapter {
     const start = Date.now()
     const model = request.model ?? 'gemini-2.5-flash'
 
-    const genModel = client.getGenerativeModel({
+    // Build generation config
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: request.maxTokens ?? 2048,
+      temperature: request.temperature ?? 0.7,
+    }
+
+    // JSON mode (Gemini: responseMimeType + optional responseSchema)
+    if (request.jsonMode) {
+      generationConfig.responseMimeType = 'application/json'
+      if (request.jsonSchema) {
+        generationConfig.responseSchema = request.jsonSchema
+      }
+    }
+
+    // Extended thinking (Gemini 3+: thinkingConfig)
+    if (request.thinking) {
+      generationConfig.thinkingConfig = {
+        thinkingBudget: request.thinking.budgetTokens ?? 4096,
+      }
+    }
+
+    // Build tools array for Gemini
+    const geminiTools: unknown[] = []
+    if (request.tools?.length) {
+      geminiTools.push({
+        functionDeclarations: request.tools.map(t => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.inputSchema,
+        })),
+      })
+    }
+    // Google Search grounding (built-in Gemini tool)
+    if (request.googleSearchGrounding) {
+      geminiTools.push({ googleSearch: {} })
+    }
+    // Code execution (built-in Gemini tool)
+    if (request.codeExecution) {
+      geminiTools.push({ codeExecution: {} })
+    }
+
+    const modelConfig: Record<string, unknown> = {
       model,
-      generationConfig: {
-        maxOutputTokens: request.maxTokens ?? 2048,
-        temperature: request.temperature ?? 0.7,
-      },
+      generationConfig,
       systemInstruction: request.system || undefined,
-    })
+    }
+    if (geminiTools.length > 0) {
+      modelConfig.tools = geminiTools
+    }
+
+    const genModel = client.getGenerativeModel(modelConfig as Parameters<typeof client.getGenerativeModel>[0])
 
     // Build conversation: system messages go to systemInstruction, rest to history
     const nonSystemMessages = request.messages.filter(m => m.role !== 'system')
@@ -249,8 +345,9 @@ export class GoogleAdapter implements ProviderAdapter {
       const result = await chat.sendMessage(lastParts)
       const response = result.response
 
-      // Extract tool calls if any
+      // Extract tool calls and code execution results
       const toolCalls: LLMToolCall[] = []
+      const codeResults: Array<{ code: string; output: string; error?: string }> = []
       const candidate = response.candidates?.[0]
       if (candidate?.content?.parts) {
         for (const part of candidate.content.parts) {
@@ -260,8 +357,48 @@ export class GoogleAdapter implements ProviderAdapter {
               input: (part.functionCall.args ?? {}) as Record<string, unknown>,
             })
           }
+          // Code execution results
+          const p = part as Record<string, unknown>
+          if ('executableCode' in p && p.executableCode) {
+            const ec = p.executableCode as Record<string, unknown>
+            codeResults.push({
+              code: String(ec.code ?? ''),
+              output: '',
+            })
+          }
+          if ('codeExecutionResult' in p && p.codeExecutionResult) {
+            const cer = p.codeExecutionResult as Record<string, unknown>
+            const last = codeResults[codeResults.length - 1]
+            if (last) {
+              last.output = String(cer.output ?? '')
+              if (cer.outcome === 'ERROR') last.error = String(cer.output ?? 'execution error')
+            }
+          }
         }
       }
+
+      // Extract grounding metadata if available
+      let groundingMetadata: LLMResponse['groundingMetadata']
+      const gm = (candidate as Record<string, unknown> | undefined)?.groundingMetadata as Record<string, unknown> | undefined
+      if (gm) {
+        groundingMetadata = {
+          searchQueries: Array.isArray(gm.searchEntryPoint) ? undefined : undefined,
+          sources: Array.isArray(gm.groundingChunks)
+            ? (gm.groundingChunks as Array<Record<string, unknown>>)
+                .filter(c => c.web)
+                .map(c => {
+                  const web = c.web as Record<string, unknown>
+                  return { uri: String(web.uri ?? ''), title: String(web.title ?? '') }
+                })
+            : undefined,
+        }
+      }
+
+      // Extract cache metrics if available
+      const usageMeta = response.usageMetadata as Record<string, unknown> | undefined
+      const cacheReadTokens = typeof usageMeta?.cachedContentTokenCount === 'number'
+        ? usageMeta.cachedContentTokenCount
+        : undefined
 
       return {
         text: response.text(),
@@ -273,6 +410,9 @@ export class GoogleAdapter implements ProviderAdapter {
         durationMs: Date.now() - start,
         fromFallback: false,
         attempt: 0,
+        cacheReadTokens,
+        groundingMetadata,
+        codeResults: codeResults.length > 0 ? codeResults : undefined,
       }
     } finally {
       clearTimeout(timer)
