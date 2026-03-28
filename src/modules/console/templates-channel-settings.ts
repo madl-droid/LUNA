@@ -259,6 +259,16 @@ function renderTabSections(_channelId: string, fields: ConsoleField[], config: R
   return tabBar + content
 }
 
+function visibleWhenAttrs(f: ConsoleField, config: Record<string, string>): { attrs: string; hidden: boolean } {
+  if (!f.visibleWhen) return { attrs: '', hidden: false }
+  const depVal = config[f.visibleWhen.key] ?? ''
+  const hidden = depVal !== f.visibleWhen.value
+  return {
+    attrs: ` data-visible-when-key="${esc(f.visibleWhen.key)}" data-visible-when-value="${esc(f.visibleWhen.value)}"`,
+    hidden,
+  }
+}
+
 function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>, lang: Lang): string {
   let html = ''
   let i = 0
@@ -266,6 +276,42 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
   while (i < fields.length) {
     const f = fields[i]!
     const val = config[f.key] ?? ''
+    const vw = visibleWhenAttrs(f, config)
+
+    // Boolean fields with width: 'third' — group into 3-column grid rows
+    if (f.type === 'boolean' && f.width === 'third') {
+      // Collect consecutive 'third' boolean fields
+      const thirdFields: ConsoleField[] = [f]
+      while (i + thirdFields.length < fields.length) {
+        const next = fields[i + thirdFields.length]!
+        if (next.type === 'boolean' && next.width === 'third') thirdFields.push(next)
+        else break
+      }
+      html += '<div class="chs-field-row chs-field-row-3">'
+      for (const tf of thirdFields) {
+        const tv = config[tf.key] ?? ''
+        const twv = visibleWhenAttrs(tf, config)
+        const iconHtml = tf.icon ?? ''
+        const descText = tf.description?.[lang] ?? tf.info?.[lang] ?? ''
+        const label = tf.label[lang] ?? tf.label.es ?? tf.key
+        const checked = tv === 'true' || tv === '1'
+        html += `<div class="chs-toggle-row chs-toggle-compact"${twv.attrs}${twv.hidden ? ' style="display:none"' : ''}>
+          ${iconHtml ? `<div class="chs-toggle-icon">${iconHtml}</div>` : ''}
+          <div class="chs-toggle-text">
+            <div class="chs-toggle-title">${esc(label)}</div>
+            ${descText ? `<div class="chs-toggle-desc">${esc(descText)}</div>` : ''}
+          </div>
+          <input type="hidden" name="${tf.key}" value="false">
+          <label class="toggle toggle-sm">
+            <input type="checkbox" name="${tf.key}" value="true" ${checked ? 'checked' : ''} data-original="${checked ? 'true' : 'false'}" onchange="instantApply(this)">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>`
+      }
+      html += '</div>'
+      i += thirdFields.length
+      continue
+    }
 
     // Boolean fields: render as toggle rows
     if (f.type === 'boolean') {
@@ -273,15 +319,15 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
       const descText = f.description?.[lang] ?? f.info?.[lang] ?? ''
       const label = f.label[lang] ?? f.label.es ?? f.key
       const checked = val === 'true' || val === '1'
-      html += `<div class="chs-toggle-row">
+      html += `<div class="chs-toggle-row"${vw.attrs}${vw.hidden ? ' style="display:none"' : ''}>
         ${iconHtml ? `<div class="chs-toggle-icon">${iconHtml}</div>` : ''}
         <div class="chs-toggle-text">
           <div class="chs-toggle-title">${esc(label)}</div>
           ${descText ? `<div class="chs-toggle-desc">${esc(descText)}</div>` : ''}
         </div>
+        <input type="hidden" name="${f.key}" value="false">
         <label class="toggle toggle-sm">
           <input type="checkbox" name="${f.key}" value="true" ${checked ? 'checked' : ''} data-original="${checked ? 'true' : 'false'}" onchange="instantApply(this)">
-          <input type="hidden" name="${f.key}" value="false">
           <span class="toggle-slider"></span>
         </label>
       </div>`
@@ -292,7 +338,7 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
     // Readonly fields: render as status line
     if (f.type === 'readonly') {
       const label = f.label[lang] ?? f.label.es ?? f.key
-      html += `<div class="chs-field chs-field-readonly">
+      html += `<div class="chs-field chs-field-readonly"${vw.attrs}${vw.hidden ? ' style="display:none"' : ''}>
         <div class="chs-field-label">${esc(label)}</div>
         <div class="chs-field-value">${esc(val) || '<span style="color:var(--on-surface-dim)">—</span>'}</div>
       </div>`
@@ -304,24 +350,27 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
     if (f.width === 'half' && i + 1 < fields.length && fields[i + 1]!.width === 'half') {
       const f2 = fields[i + 1]!
       const val2 = config[f2.key] ?? ''
-      html += '<div class="chs-field-row">'
-      html += renderSingleField(f, val, lang)
-      html += renderSingleField(f2, val2, lang)
+      const vw2 = visibleWhenAttrs(f2, config)
+      const rowHidden = vw.hidden && vw2.hidden
+      html += `<div class="chs-field-row"${rowHidden ? ' style="display:none"' : ''}>`
+      html += renderSingleField(f, val, lang, vw)
+      html += renderSingleField(f2, val2, lang, vw2)
       html += '</div>'
       i += 2
       continue
     }
 
     // Full-width field (default)
-    html += renderSingleField(f, val, lang)
+    html += renderSingleField(f, val, lang, vw)
     i++
   }
 
   return html
 }
 
-function renderSingleField(f: ConsoleField, val: string, lang: Lang): string {
-  return `<div class="chs-field">
+function renderSingleField(f: ConsoleField, val: string, lang: Lang, vw?: { attrs: string; hidden: boolean }): string {
+  const va = vw ?? { attrs: '', hidden: false }
+  return `<div class="chs-field"${va.attrs}${va.hidden ? ' style="display:none"' : ''}>
     ${renderConsoleField(f, val, lang)}
   </div>`
 }

@@ -4,6 +4,7 @@
 
 import pino from 'pino'
 import type { ProactiveJobContext } from '../../types.js'
+import type { PromptsService } from '../../../modules/prompts/types.js'
 import type { MemoryManager } from '../../../modules/memory/memory-manager.js'
 
 const logger = pino({ name: 'engine:job:nightly-batch' })
@@ -133,12 +134,18 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
           ? summaries.rows.map((s: Record<string, string>) => s.summary_text).join('\n---\n')
           : '(sin historial)'
 
-        const llmResult = await ctx.registry.callHook('llm:chat', {
-          task: 'classify',
-          system: 'Eres un analista de leads. Evalúa si un lead frío vale la pena reactivar.',
-          messages: [{
-            role: 'user' as const,
-            content: `Lead: ${row.display_name ?? 'Sin nombre'}
+        const displayName = row.display_name ?? 'Sin nombre'
+        const promptsSvc = ctx.registry.getOptional<PromptsService>('prompts:service')
+        let coldLeadUserContent = ''
+        if (promptsSvc) {
+          coldLeadUserContent = await promptsSvc.getSystemPrompt('cold-lead-scoring', {
+            displayName,
+            qualificationData: dataStr,
+            historyStr,
+          })
+        }
+        if (!coldLeadUserContent) {
+          coldLeadUserContent = `Lead: ${displayName}
 Datos de calificación:
 ${dataStr}
 
@@ -146,7 +153,15 @@ Historial de conversaciones:
 ${historyStr}
 
 Evalúa este lead frío. Responde SOLO con JSON:
-{ "score": 0-100, "reason": "breve explicación", "recommend_reactivation": true/false }`,
+{ "score": 0-100, "reason": "breve explicación", "recommend_reactivation": true/false }`
+        }
+
+        const llmResult = await ctx.registry.callHook('llm:chat', {
+          task: 'classify',
+          system: 'Eres un analista de leads. Evalúa si un lead frío vale la pena reactivar.',
+          messages: [{
+            role: 'user' as const,
+            content: coldLeadUserContent,
           }],
           maxTokens: 200,
           temperature: 0.2,
@@ -232,14 +247,15 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
           .join('\n')
 
         const batchLlm = getBatchModel(ctx)
-        const llmResult = await ctx.registry.callHook('llm:chat', {
-          task: 'compress',
-          provider: batchLlm.provider,
-          model: batchLlm.model,
-          system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente. Extrae la información clave.',
-          messages: [{
-            role: 'user' as const,
-            content: `Resume esta conversación en menos de 500 palabras. Mantén:
+        const compressPromptsSvc = ctx.registry.getOptional<PromptsService>('prompts:service')
+        let compressUserContent = ''
+        if (compressPromptsSvc) {
+          compressUserContent = await compressPromptsSvc.getSystemPrompt('session-compression', {
+            conversationText: conversationText.slice(0, 15000),
+          })
+        }
+        if (!compressUserContent) {
+          compressUserContent = `Resume esta conversación en menos de 500 palabras. Mantén:
 - Datos BANT extraídos (presupuesto, autoridad, necesidad, timing)
 - Compromisos hechos por el agente
 - Preferencias del contacto
@@ -250,7 +266,17 @@ Responde SOLO con JSON:
 { "summary": "resumen de la conversación", "keyFacts": [{"fact": "dato clave", "confidence": 0.9}], "structuredData": {} }
 
 Conversación:
-${conversationText.slice(0, 15000)}`,
+${conversationText.slice(0, 15000)}`
+        }
+
+        const llmResult = await ctx.registry.callHook('llm:chat', {
+          task: 'compress',
+          provider: batchLlm.provider,
+          model: batchLlm.model,
+          system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente. Extrae la información clave.',
+          messages: [{
+            role: 'user' as const,
+            content: compressUserContent,
           }],
           maxTokens: 1500,
           temperature: 0.3,
@@ -361,6 +387,32 @@ async function generateDailyReport(ctx: ProactiveJobContext): Promise<void> {
     let narrative: string | null = null
     try {
       const reportLlm = getBatchModel(ctx)
+      const reportPromptsSvc = ctx.registry.getOptional<PromptsService>('prompts:service')
+      let reportUserContent = ''
+      if (reportPromptsSvc) {
+        reportUserContent = await reportPromptsSvc.getSystemPrompt('daily-report', {
+          dateStr,
+          messagesTotal: String(metrics.messages.total),
+          messagesIncoming: String(metrics.messages.incoming),
+          messagesOutgoing: String(metrics.messages.outgoing),
+          newLeads: String(metrics.leads.new_leads),
+          qualifiedLeads: String(metrics.leads.qualified),
+          sessionsOpened: String(metrics.sessions.opened),
+          sessionsActive: String(metrics.sessions.active),
+          totalPipelines: String(metrics.pipeline.total_pipelines),
+          avgPipelineMs: String(metrics.pipeline.avg_pipeline_ms),
+        })
+      }
+      if (!reportUserContent) {
+        reportUserContent = `Genera un resumen narrativo breve (3-5 líneas) de estas métricas del día ${dateStr}:
+- Mensajes: ${metrics.messages.total} total (${metrics.messages.incoming} entrantes, ${metrics.messages.outgoing} salientes)
+- Leads nuevos: ${metrics.leads.new_leads}, Calificados: ${metrics.leads.qualified}
+- Sesiones abiertas: ${metrics.sessions.opened}, Activas: ${metrics.sessions.active}
+- Pipeline: ${metrics.pipeline.total_pipelines} ejecuciones, ${metrics.pipeline.avg_pipeline_ms}ms promedio
+
+Escribe el resumen en español, enfocándote en tendencias y datos relevantes.`
+      }
+
       const llmResult = await ctx.registry.callHook('llm:chat', {
         task: 'custom',
         provider: reportLlm.provider,
@@ -368,13 +420,7 @@ async function generateDailyReport(ctx: ProactiveJobContext): Promise<void> {
         system: 'Genera reportes diarios concisos de operación de un agente de atención al cliente.',
         messages: [{
           role: 'user' as const,
-          content: `Genera un resumen narrativo breve (3-5 líneas) de estas métricas del día ${dateStr}:
-- Mensajes: ${metrics.messages.total} total (${metrics.messages.incoming} entrantes, ${metrics.messages.outgoing} salientes)
-- Leads nuevos: ${metrics.leads.new_leads}, Calificados: ${metrics.leads.qualified}
-- Sesiones abiertas: ${metrics.sessions.opened}, Activas: ${metrics.sessions.active}
-- Pipeline: ${metrics.pipeline.total_pipelines} ejecuciones, ${metrics.pipeline.avg_pipeline_ms}ms promedio
-
-Escribe el resumen en español, enfocándote en tendencias y datos relevantes.`,
+          content: reportUserContent,
         }],
         maxTokens: 300,
         temperature: 0.5,

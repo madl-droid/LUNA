@@ -237,41 +237,41 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 }
 
 function renderAddModal(categories: KnowledgeCategory[], lang: Lang): string {
-  return `<div id="ki-modal" class="ki-modal-overlay" style="display:none">
-    <div class="ki-modal">
-      <div class="ki-modal-header">
-        <h3>${t('add_btn', lang)}</h3>
-        <button type="button" class="ki-modal-close" onclick="kiCloseModal()">&times;</button>
-      </div>
-      <form id="ki-form" onsubmit="kiSubmitForm(event)">
-        <div class="ki-field">
-          <label>${t('item_title', lang)} *</label>
-          <input type="text" id="ki-f-title" required maxlength="120" onfocus="kiClearError('title')" />
-          <div class="ki-field-error" id="ki-err-title"></div>
-        </div>
-        <div class="ki-field">
-          <label>${t('item_desc', lang)} *</label>
-          <textarea id="ki-f-desc" rows="2" required minlength="20" maxlength="200" onfocus="kiClearError('desc')"
-            placeholder="${lang === 'es' ? 'Min. 20 caracteres. Describe el contenido para que el agente lo use como contexto.' : 'Min. 20 chars. Describe the content so the agent can use it as context.'}"></textarea>
-          <div class="ki-field-error" id="ki-err-desc"></div>
-        </div>
-        <div class="ki-field">
-          <label>${t('item_category', lang)}</label>
-          <div class="ki-tags-picker" id="ki-f-category-tags">
-            ${categories.map(c => `<span class="ki-tag-option" data-cat-id="${esc(c.id)}" onclick="kiToggleCatTag(this)">${esc(c.title)}</span>`).join('')}
+  return `<div id="ki-modal" class="wizard-overlay" style="display:none">
+    <div class="wizard-modal" style="position:relative">
+      <button type="button" class="wizard-close" onclick="kiCloseModal()">&times;</button>
+      <div class="wizard-steps">
+        <div class="wizard-title">${t('add_btn', lang)}</div>
+        <form id="ki-form" onsubmit="kiSubmitForm(event)">
+          <div class="wizard-form">
+            <label class="wizard-label">${t('item_title', lang)} *</label>
+            <input type="text" id="ki-f-title" class="wizard-input" required maxlength="120" onfocus="kiClearError('title')" />
+            <div class="wizard-field-error" id="ki-err-title"></div>
           </div>
-          <input type="hidden" id="ki-f-category" />
-        </div>
-        <div class="ki-field">
-          <label>${t('item_url', lang)} *</label>
-          <input type="url" id="ki-f-url" required placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiClearError('url')" />
-          <div class="ki-field-error" id="ki-err-url"></div>
-        </div>
-        <div class="ki-modal-footer">
-          <button type="button" class="btn btn-outline" onclick="kiCloseModal()">${t('cancel', lang)}</button>
-          <button type="submit" class="btn btn-primary">${t('save', lang)}</button>
-        </div>
-      </form>
+          <div class="wizard-form">
+            <label class="wizard-label">${t('item_desc', lang)} *</label>
+            <textarea id="ki-f-desc" class="wizard-input" rows="2" required minlength="20" maxlength="200" onfocus="kiClearError('desc')" style="resize:vertical"
+              placeholder="${lang === 'es' ? 'Min. 20 caracteres. Describe el contenido para que el agente lo use como contexto.' : 'Min. 20 chars. Describe the content so the agent can use it as context.'}"></textarea>
+            <div class="wizard-field-error" id="ki-err-desc"></div>
+          </div>
+          <div class="wizard-form">
+            <label class="wizard-label">${t('item_category', lang)}</label>
+            <div class="ki-tags-picker" id="ki-f-category-tags">
+              ${categories.map(c => `<span class="ki-tag-option" data-cat-id="${esc(c.id)}" onclick="kiToggleCatTag(this)">${esc(c.title)}</span>`).join('')}
+            </div>
+            <input type="hidden" id="ki-f-category" />
+          </div>
+          <div class="wizard-form">
+            <label class="wizard-label">${t('item_url', lang)} *</label>
+            <input type="url" id="ki-f-url" class="wizard-input" required placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiClearError('url')" />
+            <div class="wizard-field-error" id="ki-err-url"></div>
+          </div>
+          <div class="wizard-actions">
+            <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiCloseModal()">${t('cancel', lang)}</button>
+            <button type="submit" class="wizard-btn wizard-btn-primary">${t('save', lang)}</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>`
 }
@@ -284,17 +284,15 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
     <button type="button" class="act-btn" onclick="kiRenameCategory('${esc(c.id)}', this)" style="font-size:11px;padding:4px 10px">${isEs ? 'Guardar' : 'Save'}</button>
   </div>`).join('')
 
-  return `<div id="ki-cat-modal" class="ki-modal-overlay" style="display:none">
-    <div class="ki-modal">
-      <div class="ki-modal-header">
-        <h3>${isEs ? 'Editar categorias' : 'Edit categories'}</h3>
-        <button type="button" class="ki-modal-close" onclick="kiCloseCategoriesModal()">&times;</button>
-      </div>
-      <div style="padding:20px">
+  return `<div id="ki-cat-modal" class="wizard-overlay" style="display:none">
+    <div class="wizard-modal" style="position:relative">
+      <button type="button" class="wizard-close" onclick="kiCloseCategoriesModal()">&times;</button>
+      <div class="wizard-steps">
+        <div class="wizard-title">${isEs ? 'Editar categorias' : 'Edit categories'}</div>
         <div id="ki-cat-list">${rows || `<p style="color:var(--on-surface-dim);font-size:13px">${isEs ? 'No hay categorias.' : 'No categories.'}</p>`}</div>
         <div style="margin-top:16px;display:flex;gap:8px">
-          <input type="text" id="ki-cat-new-name" placeholder="${isEs ? 'Nueva categoria...' : 'New category...'}" maxlength="60" style="flex:1;padding:8px 12px;border:1px solid var(--border, #e5e7eb);border-radius:8px;font-size:14px;background:var(--surface);color:var(--on-surface)" />
-          <button type="button" class="act-btn act-btn-cta" onclick="kiAddCategory()" style="font-size:13px">${isEs ? 'Agregar' : 'Add'}</button>
+          <input type="text" id="ki-cat-new-name" class="wizard-input" placeholder="${isEs ? 'Nueva categoria...' : 'New category...'}" maxlength="60" />
+          <button type="button" class="wizard-btn wizard-btn-primary" onclick="kiAddCategory()" style="font-size:13px">${isEs ? 'Agregar' : 'Add'}</button>
         </div>
       </div>
     </div>
@@ -320,12 +318,16 @@ function renderClientScript(lang: Lang): string {
 
   function showError(field, msg) {
     var el = document.getElementById('ki-err-' + field)
+    var input = document.getElementById('ki-f-' + field)
     if (el) { el.textContent = msg; el.style.display = 'block' }
+    if (input) input.classList.add('invalid')
   }
 
   window.kiClearError = function(field) {
     var el = document.getElementById('ki-err-' + field)
+    var input = document.getElementById('ki-f-' + field)
     if (el) { el.textContent = ''; el.style.display = 'none' }
+    if (input) input.classList.remove('invalid')
   }
 
   function clearAllErrors() {
@@ -390,7 +392,7 @@ function renderClientScript(lang: Lang): string {
     if (!url) { showError('url', '${lang === 'es' ? 'La URL es requerida' : 'URL is required'}'); hasErr = true }
     if (hasErr) return
 
-    var submitBtn = document.querySelector('#ki-form .btn-primary')
+    var submitBtn = document.querySelector('#ki-form .act-btn-cta')
 
     // Edit mode: skip URL verification, just update
     if (editingItemId) {
@@ -629,24 +631,12 @@ function renderStyles(): string {
 .ki-load-status { font-size:12px; }
 .ki-delete-btn { font-size:11px; }
 
-/* Modal */
-.ki-modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999; }
-.ki-modal { background:var(--surface, #fff); border-radius:12px; width:480px; max-width:90vw; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
-.ki-modal-header { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border, #e5e7eb); }
-.ki-modal-header h3 { margin:0; font-size:16px; font-weight:600; color:var(--on-surface); }
-.ki-modal-close { background:none; border:none; font-size:24px; cursor:pointer; color:var(--on-surface-dim); padding:0; line-height:1; }
-#ki-form { padding:20px; }
-.ki-field { margin-bottom:14px; }
-.ki-field label { display:block; font-size:13px; font-weight:500; margin-bottom:4px; color:var(--on-surface); }
-.ki-field input, .ki-field textarea, .ki-field select { width:100%; border:1px solid var(--border, #e5e7eb); border-radius:8px; padding:8px 12px; font-size:14px; background:var(--surface, #fff); color:var(--on-surface); box-sizing:border-box; }
-.ki-field-error { display:none; color:var(--error, #dc2626); font-size:12px; margin-top:4px; }
+/* Modal — uses wizard-overlay + wizard-modal from components.css */
 .ki-tags-picker { display:flex; flex-wrap:wrap; gap:6px; padding:8px 0; }
-.ki-tag-option { display:inline-block; padding:4px 12px; border-radius:16px; font-size:12px; cursor:pointer; border:1px solid var(--border, #e5e7eb); background:var(--surface, #fff); color:var(--on-surface-dim); transition:all .15s; }
-.ki-tag-option:hover { border-color:var(--primary, #4f46e5); color:var(--primary, #4f46e5); }
-.ki-tag-option.ki-tag-selected { background:var(--primary, #4f46e5); color:#fff; border-color:var(--primary, #4f46e5); }
-.ki-cat-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border, #e5e7eb); }
-.ki-cat-name-input { flex:1; padding:6px 10px; border:1px solid var(--border, #e5e7eb); border-radius:6px; font-size:14px; background:var(--surface); color:var(--on-surface); }
-.ki-field textarea { resize:vertical; }
-.ki-modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-top:8px; }
+.ki-tag-option { display:inline-block; padding:4px 12px; border-radius:16px; font-size:12px; cursor:pointer; border:1px solid var(--outline-variant, #e5e7eb); background:var(--surface-container-lowest, #fff); color:var(--on-surface-dim); transition:all .15s; }
+.ki-tag-option:hover { border-color:var(--primary, #FF5E0E); color:var(--primary, #FF5E0E); }
+.ki-tag-option.ki-tag-selected { background:var(--primary, #FF5E0E); color:#fff; border-color:var(--primary, #FF5E0E); }
+.ki-cat-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--outline-variant, #e5e7eb); }
+.ki-cat-name-input { flex:1; padding:6px 10px; border:1px solid var(--outline-variant, #e5e7eb); border-radius:6px; font-size:14px; background:var(--surface-container-lowest); color:var(--on-surface); }
 </style>`
 }

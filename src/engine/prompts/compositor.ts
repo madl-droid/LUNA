@@ -27,18 +27,95 @@ const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
 }
 
 /**
- * Get channel format instructions. Checks config_store first, falls back to defaults.
+ * Get channel format instructions.
+ * Priority: 1) config_store override, 2) system template, 3) hardcoded defaults.
  */
 async function getChannelLimit(channel: string, registry?: Registry): Promise<string> {
   if (registry) {
     try {
       const configStore = await import('../../kernel/config-store.js')
       const db = registry.getDb()
-      const custom = await configStore.get(db, `FORMAT_INSTRUCTIONS_${channel.toUpperCase()}`)
-      if (custom) return custom
-    } catch { /* fallback to default */ }
+      // Check if advanced prompting is ON
+      const advancedKey = `${channel.toUpperCase()}_FORMAT_ADVANCED`
+      const isAdvanced = await configStore.get(db, advancedKey)
+      if (isAdvanced === 'true') {
+        // 1a. Advanced mode: use custom override directly
+        const custom = await configStore.get(db, `FORMAT_INSTRUCTIONS_${channel.toUpperCase()}`)
+        if (custom) return custom
+      } else {
+        // 1b. Form mode: build prompt from form fields
+        const built = await buildFormatFromForm(channel, db)
+        if (built) return built
+      }
+    } catch { /* fallback */ }
   }
+  // 2. Try system template
+  const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
+  if (svc) {
+    const tmpl = await svc.getSystemPrompt(`channel-format-${channel}`)
+    if (tmpl) return tmpl
+  }
+  // 3. Hardcoded defaults
   return DEFAULT_CHANNEL_LIMITS[channel] ?? DEFAULT_CHANNEL_LIMITS.whatsapp ?? ''
+}
+
+/** Build format prompt dynamically from form fields stored in config_store */
+async function buildFormatFromForm(channel: string, db: import('pg').Pool): Promise<string | null> {
+  const configStore = await import('../../kernel/config-store.js')
+  const prefix = channel.toUpperCase()
+  const all = await configStore.getAll(db)
+  const tone = all[`${prefix}_FORMAT_TONE`] || 'ninguno'
+  const maxSentences = all[`${prefix}_FORMAT_MAX_SENTENCES`] || '2'
+  const maxParagraphs = all[`${prefix}_FORMAT_MAX_PARAGRAPHS`] || '2'
+  const emojiLevel = all[`${prefix}_FORMAT_EMOJI_LEVEL`] || 'bajo'
+  const typosEnabled = all[`${prefix}_FORMAT_TYPOS_ENABLED`] === 'true'
+  const typosIntensity = all[`${prefix}_FORMAT_TYPOS_INTENSITY`] || '0'
+  const typosTypes = all[`${prefix}_FORMAT_TYPOS_TYPES`] || ''
+  const openingSigns = all[`${prefix}_FORMAT_OPENING_SIGNS`] || 'nunca'
+  const audioEnabled = all[`${prefix}_FORMAT_AUDIO_ENABLED`] === 'true'
+  const voiceStyles = all[`${prefix}_FORMAT_VOICE_STYLES`] === 'true'
+  const ex1 = all[`${prefix}_FORMAT_EXAMPLE_1`] || ''
+  const ex2 = all[`${prefix}_FORMAT_EXAMPLE_2`] || ''
+  const ex3 = all[`${prefix}_FORMAT_EXAMPLE_3`] || ''
+
+  const lines: string[] = [`FORMATO ${channel.toUpperCase()}:`]
+
+  // Tone
+  if (tone !== 'ninguno') lines.push(`- Tono: ${tone}`)
+
+  // Structure
+  lines.push(`- Maximo ${maxSentences} oraciones por parrafo`)
+  lines.push(`- Maximo ${maxParagraphs} parrafos por respuesta`)
+
+  // Emoji
+  const emojiMap: Record<string, string> = { nunca: 'No uses emojis', bajo: 'Usa emojis con moderacion (1-2 por mensaje)', moderado: 'Usa emojis moderadamente', alto: 'Usa emojis libremente' }
+  lines.push(`- ${emojiMap[emojiLevel] || emojiMap.bajo}`)
+
+  // Opening signs
+  if (openingSigns === 'inicio') lines.push('- Usa signos de apertura al inicio de preguntas y exclamaciones (¿ ¡)')
+  else if (openingSigns === 'ambos') lines.push('- Usa signos de apertura y cierre en preguntas y exclamaciones (¿...? ¡...!)')
+  else lines.push('- No uses signos de apertura (¿ ¡), solo cierra con ? y !')
+
+  // Typos
+  if (typosEnabled) {
+    lines.push(`- Introduce errores de escritura sutiles para sonar mas natural (intensidad: ${typosIntensity})`)
+    if (typosTypes) lines.push(`  Tipos: ${typosTypes}`)
+  }
+
+  // Audio
+  if (audioEnabled) {
+    lines.push('- Puedes responder con notas de voz cuando sea apropiado')
+    if (voiceStyles) lines.push('- Varia el estilo de voz segun el contexto (energetico, calmado, empatico)')
+  }
+
+  // Examples
+  const examples = [ex1, ex2, ex3].filter(Boolean)
+  if (examples.length > 0) {
+    lines.push('- Ejemplos del estilo esperado:')
+    examples.forEach((ex, i) => lines.push(`  ${i + 1}. "${ex}"`))
+  }
+
+  return lines.join('\n')
 }
 
 // Cache for knowledge files
@@ -80,6 +157,7 @@ export async function buildCompositorPrompt(
   let job = ''
   let guardrails = ''
   let relationship = ''
+  let criticCustom = ''
 
   if (promptsService) {
     const prompts = await promptsService.getCompositorPrompts(ctx.userType)
@@ -87,6 +165,7 @@ export async function buildCompositorPrompt(
     job = prompts.job
     guardrails = prompts.guardrails
     relationship = prompts.relationship
+    criticCustom = prompts.criticizer
   }
 
   // Fallback to files if prompts module not active or returned empty
@@ -105,9 +184,11 @@ export async function buildCompositorPrompt(
   if (identity) {
     systemParts.push(identity)
   } else {
-    systemParts.push(`Eres LUNA, una asistente de ventas inteligente y amigable.
-Tu trabajo es atender a las personas que te contactan, ayudarles con sus preguntas,
-y guiarlos hacia una decisión de compra o agendamiento.`)
+    const { loadDefaultPrompt } = await import('../../modules/prompts/template-loader.js')
+    identity = await loadDefaultPrompt('identity')
+    if (identity) {
+      systemParts.push(identity)
+    }
   }
 
   if (job) {
@@ -130,6 +211,14 @@ y guiarlos hacia una decisión de compra o agendamiento.`)
     systemParts.push(`\n--- FORMATO ---\n${channelLimit}`)
   }
 
+  // TTS voice tags: inject when response will be converted to audio
+  if (ctx.responseFormat === 'audio' && promptsService) {
+    const voiceTags = await promptsService.getSystemPrompt('tts-voice-tags')
+    if (voiceTags) {
+      systemParts.push(`\n--- VOZ Y ENTONACIÓN ---\n${voiceTags}`)
+    }
+  }
+
   // Campaign context (from lead-scoring:match-campaign via Phase 1)
   if (ctx.campaign) {
     const ctxLine = ctx.campaign.promptContext
@@ -139,12 +228,45 @@ y guiarlos hacia una decisión de compra o agendamiento.`)
 Adapta tu respuesta al contexto de esta campaña.`)
   }
 
+  // Criticizer: system base (Cat 2 file) + custom (Cat 1 DB)
+  const criticBase = promptsService ? await promptsService.getSystemPrompt('criticizer-base') : ''
+  const criticizer = [criticBase, criticCustom].filter(Boolean).join('\n')
+  if (criticizer) {
+    systemParts.push(`\n--- CHECKLIST DE CALIDAD ---\n${criticizer}`)
+  }
+
+  // Bryan Tracy objection handler: inject when intent is objection-related
+  if (evaluation.intent === 'objection' || evaluation.intent.startsWith('objection_')) {
+    const objHandler = promptsService ? await promptsService.getSystemPrompt('objection-handler') : ''
+    if (objHandler) {
+      systemParts.push(`\n--- MANEJO DE OBJECIONES ---\n${objHandler}`)
+    }
+  }
+
   // Build user message with resolved data
   const userParts: string[] = []
 
   // Evaluation context
-  userParts.push(`[Intención detectada: ${evaluation.intent}]`)
+  userParts.push(`[Intención detectada: ${evaluation.intent}${evaluation.subIntent ? ` (${evaluation.subIntent})` : ''}]`)
   userParts.push(`[Emoción: ${evaluation.emotion}]`)
+
+  // Bryan Tracy objection routing
+  if (evaluation.objectionType) {
+    const stepNames: Record<number, string> = {
+      1: 'ESCUCHAR — reconoce la objeción completa antes de responder',
+      2: 'PAUSAR — breve reconocimiento sin contraargumentar',
+      3: 'CLARIFICAR — profundiza con preguntas antes de responder',
+      4: 'EMPATIZAR — normaliza con prueba social',
+      5: 'RESPONDER — reencuadra con valor, historia o prueba',
+      6: 'CONFIRMAR — verifica si la objeción se resolvió',
+    }
+    const stepDesc = evaluation.objectionStep ? stepNames[evaluation.objectionStep] ?? '' : ''
+    userParts.push(`[OBJECIÓN DETECTADA: tipo=${evaluation.objectionType}]`)
+    if (stepDesc) {
+      userParts.push(`[PASO BRYAN TRACY RECOMENDADO: ${evaluation.objectionStep} — ${stepDesc}]`)
+    }
+    userParts.push(`[Usa el script de "${evaluation.objectionType}" del framework de objeciones. Aplica el paso indicado.]`)
+  }
 
   if (!evaluation.onScope) {
     userParts.push(`[FUERA DE SCOPE: redirige suavemente al tema del negocio]`)

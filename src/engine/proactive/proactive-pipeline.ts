@@ -81,7 +81,7 @@ export async function processProactive(
 
     // ═══ PHASE 2: Evaluate (may return NO_ACTION) ═══
     const p2Start = Date.now()
-    const evaluation = await phase2Evaluate(ctx, engineConfig)
+    const evaluation = await phase2Evaluate(ctx, engineConfig, undefined, registry)
     const phase2DurationMs = Date.now() - p2Start
 
     if (evaluation.intent === 'no_action') {

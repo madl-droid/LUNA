@@ -5,6 +5,7 @@
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { Pool } from 'pg'
+import type { PromptsService } from '../prompts/types.js'
 import type {
   TwilioVoiceConfig,
   PreloadedContext,
@@ -63,7 +64,7 @@ export async function preloadContext(
     ? config.VOICE_GREETING_INBOUND
     : config.VOICE_GREETING_OUTBOUND
 
-  const systemInstruction = buildSystemInstruction(
+  const systemInstruction = await buildSystemInstruction(
     prompts,
     contact,
     contactMemory,
@@ -72,6 +73,7 @@ export async function preloadContext(
     greeting,
     direction,
     config,
+    registry,
   )
 
   // Add end-call tool to the declarations
@@ -189,7 +191,7 @@ export async function persistToMemory(
 // Internal helpers
 // ═══════════════════════════════════════════
 
-function buildSystemInstruction(
+async function buildSystemInstruction(
   prompts: AgentPrompts | null,
   contact: ContactInfo | null,
   contactMemory: string | null,
@@ -198,7 +200,8 @@ function buildSystemInstruction(
   greeting: string,
   direction: CallDirection,
   config: TwilioVoiceConfig,
-): string {
+  registry?: Registry,
+): Promise<string> {
   const parts: string[] = []
 
   // Agent identity and job
@@ -209,34 +212,23 @@ function buildSystemInstruction(
     if (prompts.relationship) parts.push(prompts.relationship)
   }
 
-  // Voice-specific instructions
-  parts.push(`
-## Instrucciones de llamada de voz
-
-Est\u00e1s en una llamada telef\u00f3nica en VIVO. Tu respuesta es audio hablado en tiempo real.
-
-### Comportamiento natural:
-- Habla de forma natural y conversacional, como en una llamada telef\u00f3nica real
-- Usa pausas naturales, muletillas y confirmaciones ("ajá", "entiendo", "claro")
-- NO uses formato escrito (listas, markdown, URLs). Todo debe ser hablado
-- S\u00e9 concisa: las respuestas largas son cansadoras por tel\u00e9fono
-
-### Saludo inicial:
-Esta es una llamada ${direction === 'inbound' ? 'ENTRANTE (el cliente te llama a ti)' : 'SALIENTE (t\u00fa llamas al cliente)'}.
-Tu primer mensaje al conectar debe ser: "${greeting}"
-${direction === 'outbound' ? 'Espera confirmaci\u00f3n de que es buen momento antes de continuar.' : ''}
-
-### Cuando necesites procesar algo:
-Si necesitas usar una herramienta o toma tiempo, di algo natural como "${config.VOICE_FILLER_MESSAGE}" antes de ejecutar la herramienta.
-
-### Silencio del caller:
-Si recibes un mensaje del sistema indicando que el caller est\u00e1 en silencio, pregunta amablemente: "${config.VOICE_SILENCE_MESSAGE}"
-
-### Finalizar la llamada:
-- NUNCA cuelgues abruptamente
-- Cuando detectes que la conversaci\u00f3n termina naturalmente (despedidas, "eso es todo"), confirma: "\u00bfHay algo m\u00e1s en lo que pueda ayudarte?"
-- Si confirman que terminaron, desp\u00eddete c\u00e1lidamente y usa la herramienta end_call
-- Espera a que el caller se despida primero si es posible`)
+  // Voice-specific instructions — load from template (Category 2)
+  const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
+  const callDirectionText = direction === 'inbound' ? 'ENTRANTE (el cliente te llama a ti)' : 'SALIENTE (t\u00fa llamas al cliente)'
+  const outboundInstr = direction === 'outbound' ? 'Espera confirmaci\u00f3n de que es buen momento antes de continuar.' : ''
+  let voiceInstr = svc
+    ? await svc.getSystemPrompt('voice-system-instruction', {
+        callDirection: callDirectionText,
+        greeting,
+        outboundInstruction: outboundInstr,
+        fillerMessage: config.VOICE_FILLER_MESSAGE,
+        silenceMessage: config.VOICE_SILENCE_MESSAGE,
+      })
+    : ''
+  if (!voiceInstr) {
+    voiceInstr = `## Instrucciones de llamada de voz\n\nEst\u00e1s en una llamada telef\u00f3nica en VIVO.\nSaludo: "${greeting}"\nFiller: "${config.VOICE_FILLER_MESSAGE}"\nSilencio: "${config.VOICE_SILENCE_MESSAGE}"`
+  }
+  parts.push(voiceInstr)
 
   // Contact context
   if (contact || contactMemory || pendingCommitments.length > 0) {

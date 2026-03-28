@@ -150,6 +150,16 @@ import type { StoredMessage } from '../memory/types.js'
 - NO usar import sin extensión .js en paths relativos — ESM lo requiere
 - NO acceder arrays por índice sin `!` o `?.` — `noUncheckedIndexedAccess` está activo en tsconfig. `arr[0]` es `T | undefined`. Usar `arr[0]!` cuando hay guard previo (`if (arr.length > 0)`) o `arr[0]?.prop` cuando no hay guard.
 
+## REGLA OBLIGATORIA: Compilar antes de push
+
+**SIEMPRE compilar TypeScript antes de hacer push.** Los errores de TS rompen el build de GitHub Actions y bloquean el deploy.
+
+```bash
+docker run --rm -v /docker/luna-repo:/app -w /app node:22-alpine npx tsc --noEmit
+```
+
+Si hay errores, corregirlos ANTES de pushear. No hay excepción a esta regla.
+
 ## Deploy
 Ramas: `main` (prod), `pruebas` (staging), `claude` (dev). Push auto-deploys via GitHub Actions + Docker + Traefik.
 Detalle completo en `deploy/CLAUDE.md`.

@@ -268,8 +268,8 @@ export class UsersDb {
         if (!c.senderId.trim()) continue
         // Normalize phone numbers to E.164 (+prefix) for WhatsApp channel
         let normalizedSenderId = c.senderId.trim()
-        if (c.channel === 'whatsapp' && /^\d+$/.test(normalizedSenderId)) {
-          normalizedSenderId = `+${normalizedSenderId}`
+        if (c.channel === 'whatsapp' && /^\d[\d\s-]+$/.test(normalizedSenderId)) {
+          normalizedSenderId = `+${normalizedSenderId.replace(/[\s-]/g, '')}`
         }
         const result = await client.query(
           `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
@@ -322,8 +322,8 @@ export class UsersDb {
   async addContact(userId: string, channel: string, senderId: string): Promise<UserContact | null> {
     // Normalize phone numbers to E.164 (+prefix) for WhatsApp channel
     let normalized = senderId.trim()
-    if (channel === 'whatsapp' && /^\d+$/.test(normalized)) {
-      normalized = `+${normalized}`
+    if (channel === 'whatsapp' && /^\d[\d\s-]+$/.test(normalized)) {
+      normalized = `+${normalized.replace(/[\s-]/g, '')}`
     }
     const result = await this.pool.query(
       `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
@@ -336,10 +336,14 @@ export class UsersDb {
   }
 
   /** Update the sender_id of an existing contact (e.g. phone number changed). */
-  async updateContact(contactId: string, newSenderId: string): Promise<UserContact | null> {
+  async updateContact(contactId: string, newSenderId: string, channel?: string): Promise<UserContact | null> {
+    let normalizedSenderId = newSenderId.trim()
+    if (channel === 'whatsapp' && /^\d[\d\s-]+$/.test(normalizedSenderId)) {
+      normalizedSenderId = `+${normalizedSenderId.replace(/[\s-]/g, '')}`
+    }
     const result = await this.pool.query(
       `UPDATE user_contacts SET sender_id = $1 WHERE id = $2 RETURNING *`,
-      [newSenderId.trim(), contactId],
+      [normalizedSenderId, contactId],
     )
     return result.rows[0] ? this.mapContactRow(result.rows[0]) : null
   }

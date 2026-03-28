@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
-import { numEnv } from '../../kernel/config-helpers.js'
+import { numEnv, numEnvMin } from '../../kernel/config-helpers.js'
 import type { ToolsConfig } from './types.js'
 import { PgStore } from './pg-store.js'
 import { ToolExecutor } from './tool-executor.js'
@@ -158,8 +158,8 @@ const manifest: ModuleManifest = {
   depends: [],
 
   configSchema: z.object({
-    TOOLS_RETRY_BACKOFF_MS: numEnv(1000),
-    TOOLS_EXECUTION_TIMEOUT_MS: numEnv(30000),
+    TOOLS_RETRY_BACKOFF_S: numEnvMin(1, 1),
+    TOOLS_EXECUTION_TIMEOUT_S: numEnvMin(5, 30),
     PIPELINE_MAX_TOOL_CALLS_PER_TURN: numEnv(5),
   }),
 
@@ -171,16 +171,18 @@ const manifest: ModuleManifest = {
     icon: '&#128295;',
     fields: [
       {
-        key: 'TOOLS_RETRY_BACKOFF_MS',
+        key: 'TOOLS_RETRY_BACKOFF_S',
         type: 'number',
-        label: { es: 'Backoff entre reintentos (ms)', en: 'Retry backoff (ms)' },
-        info: { es: 'Tiempo de espera base entre reintentos de una herramienta fallida (crece exponencialmente).', en: 'Base wait time between retries of a failed tool (grows exponentially).' },
+        label: { es: 'Espera entre intentos', en: 'Wait between retries' },
+        info: { es: 'Tiempo base de espera entre reintentos (crece exponencialmente)', en: 'Base wait time between retries (grows exponentially)' },
+        min: 1, max: 30, unit: 's', width: 'half',
       },
       {
-        key: 'TOOLS_EXECUTION_TIMEOUT_MS',
+        key: 'TOOLS_EXECUTION_TIMEOUT_S',
         type: 'number',
-        label: { es: 'Timeout de ejecución (ms)', en: 'Execution timeout (ms)' },
-        info: { es: 'Tiempo máximo para ejecutar una herramienta antes de cancelarla.', en: 'Maximum time to execute a tool before cancelling it.' },
+        label: { es: 'Tiempo maximo de ejecucion', en: 'Max execution time' },
+        info: { es: 'Tiempo maximo para ejecutar una herramienta antes de cancelarla', en: 'Maximum time to execute a tool before cancelling it' },
+        min: 5, max: 120, unit: 's', width: 'half',
       },
       {
         key: 'PIPELINE_MAX_TOOL_CALLS_PER_TURN',

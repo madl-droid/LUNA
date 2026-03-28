@@ -1,6 +1,6 @@
 // LUNA — Module: prompts — Types
 
-export type PromptSlot = 'identity' | 'job' | 'guardrails' | 'relationship' | 'evaluator'
+export type PromptSlot = 'identity' | 'job' | 'guardrails' | 'relationship' | 'evaluator' | 'criticizer'
 
 export interface PromptRecord {
   id: string
@@ -16,6 +16,7 @@ export interface CompositorPrompts {
   job: string
   guardrails: string
   relationship: string   // resolved for the specific userType
+  criticizer: string     // editable part of the quality checklist
 }
 
 export interface PromptsService {
@@ -36,4 +37,10 @@ export interface PromptsService {
   getLanguage(): string
   /** Agent accent / locale (BCP-47, e.g. 'es-MX', 'en-US'). Default: 'es-MX'. */
   getAccent(): string
+  /** Load a system prompt template (Category 2) and render with variables. */
+  getSystemPrompt(name: string, variables?: Record<string, string>): Promise<string>
+  /** Clear file-based template cache (for hot-reload). */
+  clearSystemPromptCache(): void
+  /** List available system prompt template names. */
+  listSystemPrompts(): Promise<string[]>
 }

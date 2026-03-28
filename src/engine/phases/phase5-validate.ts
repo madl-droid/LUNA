@@ -132,7 +132,22 @@ export async function phase5Validate(
     updateSession(ctx, db),
   ])
 
-  // 5b. Record campaign match (fire-and-forget)
+  // 5b. Record objection data in contact memory (fire-and-forget)
+  if (evaluation.objectionType && ctx.contactId && memoryManager) {
+    const stepLabel = evaluation.objectionStep ? ` (paso ${evaluation.objectionStep})` : ''
+    memoryManager.applyFactCorrection(
+      ctx.agentId ?? 'default',
+      ctx.contactId,
+      {
+        oldFact: `Objeción activa: ${evaluation.objectionType}`,
+        newFact: `Objeción activa: ${evaluation.objectionType}${stepLabel} — ${new Date().toISOString().split('T')[0]!}`,
+        source: 'objection-tracker',
+        confidence: 0.9,
+      },
+    ).catch(err => logger.warn({ err, traceId: ctx.traceId }, 'Failed to record objection data'))
+  }
+
+  // 5c. Record campaign match (fire-and-forget)
   if (ctx.campaign && ctx.contactId) {
     type CQ = { recordMatch(contactId: string, campaignId: string, sessionId: string | null, channel: string | null, score: number | null): Promise<void> }
     const cq = registry.getOptional<CQ>('lead-scoring:campaign-queries')

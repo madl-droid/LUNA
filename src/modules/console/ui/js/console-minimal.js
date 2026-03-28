@@ -172,9 +172,9 @@
     var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i]
-      // Skip toggles — they apply instantly
-      if (el.type === 'checkbox' && el.closest('.toggle-field')) continue
-      if (el.type === 'hidden' && el.closest('.toggle-field')) continue
+      // Skip toggles — they apply instantly (both module toggles and channel settings toggles)
+      if (el.type === 'checkbox' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
+      if (el.type === 'hidden' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
       var current = el.value
       if (current !== el.getAttribute('data-original')) return true
     }
@@ -187,8 +187,8 @@
     var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i]
-      if (el.type === 'checkbox' && el.closest('.toggle-field')) continue
-      if (el.type === 'hidden' && el.closest('.toggle-field')) continue
+      if (el.type === 'checkbox' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
+      if (el.type === 'hidden' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
       var current = el.value
       el.classList.toggle('modified', current !== el.getAttribute('data-original'))
     }
@@ -198,13 +198,13 @@
   // Track non-toggle input/change
   document.addEventListener('input', function (e) {
     var el = e.target
-    if (el.closest && el.closest('.toggle-field')) return // skip toggles
+    if (el.closest && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) return
     if (el.hasAttribute && el.hasAttribute('data-original')) checkDirty()
   })
 
   document.addEventListener('change', function (e) {
     var el = e.target
-    if (el.closest && el.closest('.toggle-field')) return // skip toggles
+    if (el.closest && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) return
     checkDirty()
   })
 
@@ -222,7 +222,7 @@
       var allInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
       for (var i = 0; i < allInputs.length; i++) {
         var inp = allInputs[i]
-        if (inp.closest('.toggle-field')) continue
+        if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) continue
         if (saveForm.contains(inp)) continue
         body.append(inp.name, inp.value)
       }
@@ -233,7 +233,7 @@
             showToast(document.documentElement.lang === 'es' ? 'Guardado' : 'Saved', 'success')
             // Update data-original so fields are no longer dirty
             allInputs.forEach(function (inp) {
-              if (inp.closest('.toggle-field')) return
+              if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) return
               inp.setAttribute('data-original', inp.value)
               inp.classList.remove('modified')
             })
@@ -244,6 +244,69 @@
           }
         })
         .catch(function () { showToast('Error', 'error') })
+    })
+  }
+
+  // === instantApply for channel settings toggles ===
+  // Called by onchange="instantApply(this)" on channel settings boolean fields
+  window.instantApply = function (el) {
+    // Find the hidden input that carries the value for form submission
+    var row = el.closest('.chs-toggle-row') || el.closest('.toggle')
+    var hidden = row ? row.querySelector('input[type="hidden"][name="' + el.name + '"]') : el.nextElementSibling
+    if (!hidden && row) hidden = row.querySelector('input[type="hidden"]')
+
+    // If there are dirty non-toggle fields, warn
+    if (isDirty()) {
+      var lang = document.documentElement.lang || 'es'
+      var msg = lang === 'es'
+        ? 'Hay cambios sin guardar que se pueden perder. ¿Continuar?'
+        : 'There are unsaved changes that may be lost. Continue?'
+      if (!confirm(msg)) {
+        el.checked = !el.checked
+        return
+      }
+    }
+
+    // Update hidden value
+    if (hidden) hidden.value = el.checked ? 'true' : 'false'
+
+    // Save + apply immediately via fetch
+    var section = document.querySelector('input[name="_section"]')
+    var lang2 = document.querySelector('input[name="_lang"]')
+    var body = new URLSearchParams()
+    body.append('_section', section ? section.value : '')
+    body.append('_lang', lang2 ? lang2.value : 'es')
+    body.append(el.name, el.checked ? 'true' : 'false')
+
+    // Toggle visibility of dependent fields
+    updateVisibleWhen(el.name, el.checked ? 'true' : 'false')
+
+    fetch('/console/apply', { method: 'POST', body: body, headers: { 'X-Instant-Toggle': '1' } })
+      .then(function (r) {
+        if (r.ok || r.redirected) {
+          showToast(el.checked ? 'Activado' : 'Desactivado', 'success')
+          el.setAttribute('data-original', el.checked ? 'true' : 'false')
+          if (hidden) hidden.setAttribute('data-original', el.checked ? 'true' : 'false')
+        } else {
+          showToast('Error', 'error')
+          el.checked = !el.checked
+          if (hidden) hidden.value = el.checked ? 'true' : 'false'
+          updateVisibleWhen(el.name, el.checked ? 'true' : 'false')
+        }
+      })
+      .catch(function () {
+        showToast('Error', 'error')
+        el.checked = !el.checked
+        if (hidden) hidden.value = el.checked ? 'true' : 'false'
+        updateVisibleWhen(el.name, el.checked ? 'true' : 'false')
+      })
+  }
+
+  // Toggle visibility of fields depending on another field's value
+  function updateVisibleWhen(key, value) {
+    document.querySelectorAll('[data-visible-when-key="' + key + '"]').forEach(function (el) {
+      var expected = el.getAttribute('data-visible-when-value')
+      el.style.display = (value === expected) ? '' : 'none'
     })
   }
 
@@ -386,7 +449,7 @@
   // === Model scanner ===
   window.triggerScan = function () {
     showToast('Scanning...', 'success')
-    fetch('/console/api/model-scanner/scan', { method: 'POST' })
+    fetch('/console/api/llm/scanner/scan', { method: 'POST' })
       .then(function (r) { return r.json() })
       .then(function (data) {
         if (data.ok) {
@@ -399,7 +462,7 @@
             }).join('')
           }
           // Refresh models data for dropdowns
-          fetch('/console/api/model-scanner/models')
+          fetch('/console/api/llm/scanner/models')
             .then(function (r) { return r.json() })
             .then(function (d) { if (d.models) modelsData = d.models })
             .catch(function () {})
@@ -419,6 +482,22 @@
     var resetForm = document.createElement('form')
     resetForm.method = 'POST'
     resetForm.action = '/console/reset-db'
+    resetForm.innerHTML = '<input type="hidden" name="_section" value="' + section + '"><input type="hidden" name="_lang" value="' + lang + '">'
+    document.body.appendChild(resetForm)
+    resetForm.submit()
+  }
+
+  // === Reset Contacts ===
+  window.resetContacts = function () {
+    var lang = document.documentElement.lang || 'es'
+    var msg = lang === 'es'
+      ? 'ADVERTENCIA: Esto eliminara TODAS las bases de contactos, usuarios y permisos. ¿Continuar?'
+      : 'WARNING: This will delete ALL contact bases, users and permissions. Continue?'
+    if (!confirm(msg)) return
+    var section = form ? (form.querySelector('[name="_section"]') || {}).value || '' : ''
+    var resetForm = document.createElement('form')
+    resetForm.method = 'POST'
+    resetForm.action = '/console/reset-contacts'
     resetForm.innerHTML = '<input type="hidden" name="_section" value="' + section + '"><input type="hidden" name="_lang" value="' + lang + '">'
     document.body.appendChild(resetForm)
     resetForm.submit()

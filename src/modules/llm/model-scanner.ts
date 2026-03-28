@@ -1,40 +1,15 @@
-// LUNA — Model scanner logic
+// LUNA — LLM Model Scanner
 // Escanea APIs de providers, detecta modelos deprecados, auto-reemplaza.
+// Integrado como servicio interno del módulo LLM.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import { getEnv } from '../../kernel/config.js'
+import type { ScannedModel, ScanResult, ModelReplacement } from './types.js'
 
-const logger = pino({ name: 'model-scanner' })
-
-// ═══════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════
-
-export interface ScannedModel {
-  id: string
-  displayName: string
-  provider: 'anthropic' | 'google'
-  family: string
-  createdAt: string
-}
-
-export interface ScanResult {
-  anthropic: ScannedModel[]
-  google: ScannedModel[]
-  lastScanAt: string
-  replacements: Replacement[]
-  errors?: Array<{ provider: string; message: string }>
-}
-
-interface Replacement {
-  configKey: string
-  oldModel: string
-  newModel: string
-  reason: string
-}
+const logger = pino({ name: 'llm:model-scanner' })
 
 // ═══════════════════════════════════════════
 // Family detection
@@ -149,7 +124,7 @@ function updateInstanceConfigModels(anthropicModels: ScannedModel[], googleModel
 // .env update
 // ═══════════════════════════════════════════
 
-function updateEnvFile(replacements: Replacement[]): void {
+function updateEnvFile(replacements: ModelReplacement[]): void {
   if (replacements.length === 0) return
 
   const envPath = path.resolve('.env')
@@ -191,7 +166,7 @@ const MODEL_CONFIG_KEYS = [
 export async function scanModels(registry: Registry): Promise<ScanResult> {
   logger.info('Starting model scan...')
 
-  const config = registry.getConfig<{ ANTHROPIC_API_KEY: string; GOOGLE_AI_API_KEY: string }>('model-scanner')
+  const config = registry.getConfig<{ ANTHROPIC_API_KEY: string; GOOGLE_AI_API_KEY: string }>('llm')
   const anthropicKey = config.ANTHROPIC_API_KEY
   const googleKey = config.GOOGLE_AI_API_KEY
   const errors: Array<{ provider: string; message: string }> = []
@@ -214,13 +189,12 @@ export async function scanModels(registry: Registry): Promise<ScanResult> {
 
   // Check for deprecated models and auto-replace
   const allAvailableIds = new Set([...anthropicModels, ...googleModels].map(m => m.id))
-  const replacements: Replacement[] = []
+  const replacements: ModelReplacement[] = []
 
   for (const key of MODEL_CONFIG_KEYS) {
     const currentModel = getEnv(key)
     if (!currentModel) continue
 
-    // Determine which provider's models to check against
     const providerKey = key.includes('FALLBACK') ? `LLM_FALLBACK_${key.split('_').pop()}_PROVIDER` : key.replace('_MODEL', '_PROVIDER')
     const provider = getEnv(providerKey) ?? 'anthropic'
     const providerModels = provider === 'google' ? googleModels : anthropicModels

@@ -327,7 +327,7 @@ async function executeSubagent(
     .map(name => getDefinition(name, registry))
     .filter((d): d is NonNullable<typeof d> => d !== null)
 
-  const result = await runSubagent(ctx, step, toolDefs, config)
+  const result = await runSubagent(ctx, step, toolDefs, config, registry)
 
   return {
     stepIndex: index,

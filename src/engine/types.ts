@@ -203,6 +203,12 @@ export interface EvaluatorOutput {
   needsAcknowledgment: boolean
   searchQuery?: string      // v2: query for search_knowledge tool
   searchHint?: string       // v2: category title hint for boosting
+  /** Sub-intent for granular classification (e.g. objection_price, objection_timing) */
+  subIntent?: string
+  /** Objection type when intent=objection (price, timing, competitor, need, authority, generic) */
+  objectionType?: string
+  /** Bryan Tracy step suggestion (1=listen, 2=pause, 3=clarify, 4=empathize, 5=respond, 6=confirm) */
+  objectionStep?: number
   rawResponse?: string
 }
 

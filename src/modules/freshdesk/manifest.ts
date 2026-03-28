@@ -137,7 +137,7 @@ const manifest: ModuleManifest = {
       {
         key: 'FRESHDESK_CACHE_TTL_HOURS',
         type: 'select',
-        label: { es: 'Cache de artículos completos', en: 'Full article cache' },
+        label: { es: 'Cache de articulos completos', en: 'Complete article cache' },
         description: {
           es: 'Tiempo que un artículo completo permanece cacheado después de consultarse.',
           en: 'How long a full article stays cached after being fetched.',

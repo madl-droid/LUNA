@@ -1028,6 +1028,8 @@ export const SECTION_REDIRECTS: Record<string, string> = {
   // Old channel direct URLs → nested under channels
   'whatsapp': 'channels/whatsapp',
   'email': 'channels/gmail',
+  // TTS page → identity (TTS is a feature, not a tool)
+  'tts': 'agente/identity',
 }
 
 // ═══════════════════════════════════════════
@@ -1040,9 +1042,11 @@ function renderToolsCardsSection(data: SectionData): string {
   const cfg = data.config
 
   // Collect tool modules from herramientas group
+  // Exclude: core agent modules (tools, prompts, engine, memory, knowledge) and TTS (feature, not a tool)
+  const TOOLS_PAGE_EXCLUDE = new Set(['tools', 'prompts', 'engine', 'memory', 'knowledge', 'tts'])
   const toolModules = (data.moduleStates ?? [])
-    .filter(m => (m.console as unknown as Record<string, unknown>)?.group === 'agent' || m.type === 'feature')
-    .filter(m => m.name !== 'tools' && m.name !== 'prompts' && m.name !== 'engine')
+    .filter(m => !TOOLS_PAGE_EXCLUDE.has(m.name))
+    .filter(m => (m.console as unknown as Record<string, unknown>)?.group === 'agent' || (m.console as unknown as Record<string, unknown>)?.group === 'modules' || m.type === 'feature')
     .sort((a, b) => {
       // Active first, then alphabetical
       if (a.active !== b.active) return a.active ? -1 : 1
@@ -1077,24 +1081,24 @@ function renderToolsCardsSection(data: SectionData): string {
   cardsHtml += '</div>'
 
   // Global tool params
-  const backoff = cfg['TOOLS_RETRY_BACKOFF_MS'] || '1000'
-  const timeout = cfg['TOOLS_EXECUTION_TIMEOUT_MS'] || '30000'
+  const backoff = cfg['TOOLS_RETRY_BACKOFF_S'] || '1'
+  const timeout = cfg['TOOLS_EXECUTION_TIMEOUT_S'] || '30'
   const maxPerTurn = cfg['PIPELINE_MAX_TOOL_CALLS_PER_TURN'] || '5'
 
   const globalParams = `<div class="panel" style="margin-top:8px">
     <div class="panel-body" style="padding:20px">
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
         <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
-          <span class="field-label">${isEs ? 'Backoff reintentos (ms)' : 'Retry backoff (ms)'}</span>
-          <input type="text" inputmode="numeric" name="TOOLS_RETRY_BACKOFF_MS" value="${esc(backoff)}" data-original="${esc(backoff)}">
+          <span class="field-label">${isEs ? 'Espera entre intentos (s)' : 'Wait between retries (s)'}</span>
+          <input type="number" inputmode="numeric" name="TOOLS_RETRY_BACKOFF_S" value="${esc(backoff)}" data-original="${esc(backoff)}" min="1" max="30">
         </div>
         <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
-          <span class="field-label">${isEs ? 'Timeout ejecucion (ms)' : 'Execution timeout (ms)'}</span>
-          <input type="text" inputmode="numeric" name="TOOLS_EXECUTION_TIMEOUT_MS" value="${esc(timeout)}" data-original="${esc(timeout)}">
+          <span class="field-label">${isEs ? 'Tiempo max. ejecucion (s)' : 'Max execution time (s)'}</span>
+          <input type="number" inputmode="numeric" name="TOOLS_EXECUTION_TIMEOUT_S" value="${esc(timeout)}" data-original="${esc(timeout)}" min="5" max="120">
         </div>
         <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
           <span class="field-label">${isEs ? 'Max herramientas por turno' : 'Max tools per turn'}</span>
-          <input type="text" inputmode="numeric" name="PIPELINE_MAX_TOOL_CALLS_PER_TURN" value="${esc(maxPerTurn)}" data-original="${esc(maxPerTurn)}">
+          <input type="number" inputmode="numeric" name="PIPELINE_MAX_TOOL_CALLS_PER_TURN" value="${esc(maxPerTurn)}" data-original="${esc(maxPerTurn)}" min="1" max="20">
         </div>
       </div>
     </div>
@@ -1209,16 +1213,25 @@ function renderIdentitySection(data: SectionData): string {
     { value: 'de', label: 'Deutsch' }, { value: 'it', label: 'Italiano' },
   ]
 
+  // Slot mapping for prompt API
+  const SLOT_MAP: Record<string, string> = {
+    PROMPT_IDENTITY: 'identity',
+    PROMPT_JOB: 'job',
+    PROMPT_GUARDRAILS: 'guardrails',
+  }
+
   // Build prompts column (left)
   let promptsHtml = `<div style="margin-bottom:12px;font-size:13px;color:var(--on-surface-variant);font-weight:500">${isEs ? 'Haz clic en una pestana para ver y editar el prompt' : 'Click a tab to view and edit the prompt'}</div>`
 
   for (const p of prompts) {
     const value = cfg[p.key] || ''
+    const slot = SLOT_MAP[p.key] || ''
     const lines = (value || ' ').split('\n')
     const lineNums = lines.map((_: string, i: number) => `<span class="code-editor-line-num">${i + 1}</span>`).join('')
-    promptsHtml += `<div class="panel collapsed" style="margin-bottom:8px">
+    promptsHtml += `<div class="panel collapsed" style="margin-bottom:8px" data-slot="${esc(slot)}">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${esc(p.label)}</span>
+        <button type="button" class="act-btn prompt-edit-btn" onclick="event.stopPropagation();promptEdit(this)" style="margin-left:auto;margin-right:8px;font-size:11px;padding:3px 10px">${isEs ? 'Editar' : 'Edit'}</button>
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body" style="padding:0">
@@ -1228,11 +1241,15 @@ function renderIdentitySection(data: SectionData): string {
               <svg class="code-editor-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
               <span>${esc(p.title)}</span>
             </div>
+            <div class="prompt-save-cancel" style="display:none;gap:6px;align-items:center">
+              <button type="button" class="act-btn act-btn-cta prompt-save-btn" onclick="promptSave(this)" style="font-size:11px;padding:3px 10px">${isEs ? 'Guardar' : 'Save'}</button>
+              <button type="button" class="act-btn prompt-cancel-btn" onclick="promptCancel(this)" style="font-size:11px;padding:3px 10px">${isEs ? 'Cancelar' : 'Cancel'}</button>
+            </div>
             <span class="code-editor-pos" data-ce-pos="${esc(p.key)}">LN 1, COL 1</span>
           </div>
           <div class="code-editor-body" style="min-height:160px;max-height:350px">
             <div class="code-editor-lines" data-ce-lines="${esc(p.key)}">${lineNums}</div>
-            <textarea class="code-editor-textarea" name="${esc(p.key)}" data-original="${esc(value)}" data-ce-key="${esc(p.key)}" style="min-height:160px">${esc(value)}</textarea>
+            <textarea class="code-editor-textarea" name="${esc(p.key)}" data-original="${esc(value)}" data-ce-key="${esc(p.key)}" style="min-height:160px" readonly>${esc(value)}</textarea>
           </div>
         </div>
       </div>
@@ -1311,10 +1328,274 @@ function renderIdentitySection(data: SectionData): string {
   })();
   </script>`
 
+  // --- Condensed Voice (TTS) panel for column 2 ---
+  const ttsActive = data.moduleStates?.some(m => m.name === 'tts' && m.active) ?? false
+
+  let voicePanelHtml = ''
+  if (!ttsActive) {
+    const ttsMsg = isEs
+      ? 'El modulo de voz (TTS) no esta activado. Activalo desde <a href="/console/modules">Modulos</a>.'
+      : 'The voice (TTS) module is not active. Activate it from <a href="/console/modules">Modules</a>.'
+    voicePanelHtml = `<div class="panel collapsed" style="margin-top:12px">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">
+        <div class="panel-info module-inactive-notice">${ttsMsg}</div>
+      </div>
+    </div>`
+  } else {
+    const ttsHasApiKey = !!(cfg['TTS_GOOGLE_API_KEY'])
+    const ttsAudioFreq = cfg['TTS_AUDIO_TO_AUDIO_FREQ'] || '80'
+    const ttsTextFreq = cfg['TTS_TEXT_TO_AUDIO_FREQ'] || '10'
+    const ttsMaxDur = cfg['TTS_MAX_DURATION'] || '2'
+    const ttsSpeakRate = cfg['TTS_SPEAKING_RATE'] || '1.0'
+    const ttsPitch = cfg['TTS_PITCH'] || '0.0'
+    const ttsVoice = cfg['TTS_VOICE_NAME'] || 'es-US-Studio-B'
+
+    const ttsFreqOpts = Array.from({ length: 11 }, (_, i) => i * 10)
+    const ttsAudioFreqSel = ttsFreqOpts.map(v =>
+      `<option value="${v}" ${String(v) === ttsAudioFreq ? 'selected' : ''}>${v}%</option>`
+    ).join('')
+    const ttsTextFreqSel = ttsFreqOpts.map(v =>
+      `<option value="${v}" ${String(v) === ttsTextFreq ? 'selected' : ''}>${v}%</option>`
+    ).join('')
+
+    const ttsDurOpts = [
+      { value: '1', label: isEs ? '~1 min' : '~1 min' },
+      { value: '2', label: isEs ? '~2 min' : '~2 min' },
+      { value: '3', label: isEs ? '~3 min' : '~3 min' },
+      { value: '5', label: isEs ? '~5 min' : '~5 min' },
+    ]
+    const ttsDurSel = ttsDurOpts.map(d =>
+      `<option value="${d.value}" ${d.value === ttsMaxDur ? 'selected' : ''}>${d.label}</option>`
+    ).join('')
+
+    // Condensed voice list (top voices only)
+    const ttsVoices = [
+      { value: 'es-US-Studio-B', label: 'ES (US) Studio B (M)' },
+      { value: 'es-US-Studio-F', label: 'ES (US) Studio F (F)' },
+      { value: 'es-ES-Neural2-A', label: 'ES (ES) Neural2 A (M)' },
+      { value: 'es-ES-Neural2-B', label: 'ES (ES) Neural2 B (F)' },
+      { value: 'en-US-Studio-M', label: 'EN (US) Studio M (M)' },
+      { value: 'en-US-Studio-O', label: 'EN (US) Studio O (F)' },
+      { value: 'en-GB-Studio-B', label: 'EN (GB) Studio B (M)' },
+      { value: 'en-GB-Studio-C', label: 'EN (GB) Studio C (F)' },
+      { value: 'pt-BR-Neural2-A', label: 'PT (BR) Neural2 A (F)' },
+      { value: 'pt-BR-Neural2-B', label: 'PT (BR) Neural2 B (M)' },
+      { value: 'fr-FR-Neural2-A', label: 'FR Neural2 A (F)' },
+      { value: 'fr-FR-Neural2-B', label: 'FR Neural2 B (M)' },
+      { value: 'de-DE-Neural2-B', label: 'DE Neural2 B (M)' },
+      { value: 'de-DE-Neural2-C', label: 'DE Neural2 C (F)' },
+      { value: 'it-IT-Neural2-A', label: 'IT Neural2 A (F)' },
+      { value: 'it-IT-Neural2-C', label: 'IT Neural2 C (M)' },
+    ]
+    const ttsHasCustom = !ttsVoices.some(v => v.value === ttsVoice)
+    const ttsCustomOpt = ttsHasCustom ? `<option value="${esc(ttsVoice)}" selected>${esc(ttsVoice)} (custom)</option>` : ''
+    const ttsVoiceOpts = ttsVoices.map(v =>
+      `<option value="${esc(v.value)}" ${v.value === ttsVoice ? 'selected' : ''}>${esc(v.label)}</option>`
+    ).join('')
+
+    const ttsApiStatus = ttsHasApiKey
+      ? `<span class="panel-badge badge-active">${isEs ? 'API Key OK' : 'API Key OK'}</span>`
+      : `<span class="panel-badge" style="background:rgba(255,59,48,0.12);color:var(--error)">${isEs ? 'Sin API Key' : 'No API Key'}</span>`
+
+    const cfs = 'margin-bottom:10px'
+    const cls = 'font-size:12px;font-weight:500;display:block;margin-bottom:3px;color:var(--text-secondary)'
+    const css = 'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-primary)'
+
+    voicePanelHtml = `<div class="panel collapsed" style="margin-top:12px">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}</span>
+        ${ttsApiStatus}
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body" style="padding:12px 16px">
+        <div style="${cfs}">
+          <label style="${cls}">${isEs ? 'Audio → Audio' : 'Audio → Audio'}</label>
+          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(ttsAudioFreq)}" style="${css}">${ttsAudioFreqSel}</select>
+        </div>
+        <div style="${cfs}">
+          <label style="${cls}">${isEs ? 'Texto → Audio' : 'Text → Audio'}</label>
+          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(ttsTextFreq)}" style="${css}">${ttsTextFreqSel}</select>
+        </div>
+        <div style="${cfs}">
+          <label style="${cls}">${isEs ? 'Duracion max' : 'Max duration'}</label>
+          <select name="TTS_MAX_DURATION" data-original="${esc(ttsMaxDur)}" style="${css}">${ttsDurSel}</select>
+        </div>
+        <div style="${cfs}">
+          <label style="${cls}">${isEs ? 'Voz' : 'Voice'}</label>
+          <select name="TTS_VOICE_NAME" data-original="${esc(ttsVoice)}" style="${css}" id="id-tts-voice-select">${ttsCustomOpt}${ttsVoiceOpts}</select>
+        </div>
+        <div style="${cfs}">
+          <label style="${cls}">${isEs ? 'Velocidad' : 'Speed'}</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" id="id-tts-rate" name="TTS_SPEAKING_RATE" min="0.25" max="4.0" step="0.25" value="${esc(ttsSpeakRate)}"
+              data-original="${esc(ttsSpeakRate)}" oninput="document.getElementById('id-tts-rate-val').textContent=this.value+'x'" style="flex:1;accent-color:var(--primary)">
+            <span id="id-tts-rate-val" style="font-size:12px;font-weight:600;min-width:32px;text-align:right">${esc(ttsSpeakRate)}x</span>
+          </div>
+        </div>
+        <div style="${cfs}">
+          <label style="${cls}">${isEs ? 'Tono' : 'Pitch'}</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" id="id-tts-pitch" name="TTS_PITCH" min="-20.0" max="20.0" step="0.5" value="${esc(ttsPitch)}"
+              data-original="${esc(ttsPitch)}" oninput="document.getElementById('id-tts-pitch-val').textContent=this.value" style="flex:1;accent-color:var(--primary)">
+            <span id="id-tts-pitch-val" style="font-size:12px;font-weight:600;min-width:32px;text-align:right">${esc(ttsPitch)}</span>
+          </div>
+        </div>
+        <div style="${cfs}">
+          <label style="${cls}">API Key</label>
+          <div style="position:relative">
+            <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
+              data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
+              style="${css};padding-right:30px" placeholder="AIza...">
+            <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
+              style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:12px;color:var(--text-tertiary)">&#128065;</button>
+          </div>
+        </div>
+        <div style="margin-top:6px;padding-top:8px;border-top:1px solid var(--border-light)">
+          <button type="button" id="id-tts-preview-btn" class="wa-btn wa-btn-connect" onclick="idTtsPreview()"
+            style="font-size:11px;padding:4px 12px" ${!ttsHasApiKey ? 'disabled' : ''}>
+            &#9654; ${isEs ? 'Previsualizar' : 'Preview'}
+          </button>
+          <span id="id-tts-preview-status" style="font-size:11px;color:var(--text-tertiary);margin-left:6px"></span>
+          <audio id="id-tts-preview-audio" style="width:100%;display:none;margin-top:6px" controls></audio>
+        </div>
+      </div>
+    </div>`
+  }
+
+  // --- Prompt edit/save/cancel script ---
+  const promptEditScript = `<script>
+(function(){
+  var savingMsg = ${JSON.stringify(isEs ? 'Guardando...' : 'Saving...')};
+  var savedMsg = ${JSON.stringify(isEs ? 'Guardado' : 'Saved')};
+  var errorMsg = ${JSON.stringify(isEs ? 'Error al guardar' : 'Save error')};
+
+  function getPanel(el) {
+    return el.closest('.panel[data-slot]');
+  }
+
+  window.promptEdit = function(btn) {
+    var panel = getPanel(btn);
+    if (!panel) return;
+    var ta = panel.querySelector('.code-editor-textarea');
+    var sc = panel.querySelector('.prompt-save-cancel');
+    ta.removeAttribute('readonly');
+    ta.focus();
+    btn.style.display = 'none';
+    sc.style.display = 'flex';
+  };
+
+  window.promptCancel = function(btn) {
+    var panel = getPanel(btn);
+    if (!panel) return;
+    var ta = panel.querySelector('.code-editor-textarea');
+    var editBtn = panel.querySelector('.prompt-edit-btn');
+    var sc = panel.querySelector('.prompt-save-cancel');
+    ta.value = ta.getAttribute('data-original');
+    ta.setAttribute('readonly', '');
+    sc.style.display = 'none';
+    editBtn.style.display = '';
+    // Update line numbers
+    var key = ta.getAttribute('data-ce-key');
+    if (key && typeof window.updateLineNums === 'function') window.updateLineNums(key);
+    // Trigger dirty tracking reset
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  window.promptSave = async function(btn) {
+    var panel = getPanel(btn);
+    if (!panel) return;
+    var slot = panel.getAttribute('data-slot');
+    var ta = panel.querySelector('.code-editor-textarea');
+    var editBtn = panel.querySelector('.prompt-edit-btn');
+    var sc = panel.querySelector('.prompt-save-cancel');
+
+    btn.disabled = true;
+    btn.textContent = savingMsg;
+
+    try {
+      var res = await fetch('/console/api/prompts/slot', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slot: slot, variant: 'default', content: ta.value })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      ta.setAttribute('data-original', ta.value);
+      ta.setAttribute('readonly', '');
+      sc.style.display = 'none';
+      editBtn.style.display = '';
+      // Flash success
+      if (typeof window.showToast === 'function') window.showToast(savedMsg, 'success');
+      // Reset dirty tracking
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch(e) {
+      if (typeof window.showToast === 'function') window.showToast(errorMsg + ': ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = ${JSON.stringify(isEs ? 'Guardar' : 'Save')};
+    }
+  };
+})();
+</script>`
+
+  // --- TTS preview script for identity page ---
+  const idTtsPreviewScript = ttsActive ? `<script>
+(function(){
+  window.idTtsPreview = async function() {
+    var btn = document.getElementById('id-tts-preview-btn');
+    var status = document.getElementById('id-tts-preview-status');
+    var audio = document.getElementById('id-tts-preview-audio');
+    var voiceSel = document.getElementById('id-tts-voice-select');
+    var rateInput = document.getElementById('id-tts-rate');
+    var pitchInput = document.getElementById('id-tts-pitch');
+    if (!btn || !voiceSel) return;
+
+    btn.disabled = true;
+    status.textContent = ${JSON.stringify(isEs ? 'Generando...' : 'Generating...')};
+    audio.style.display = 'none';
+
+    var voiceName = voiceSel.value;
+    var langCode = voiceName.substring(0, voiceName.lastIndexOf('-', voiceName.lastIndexOf('-') - 1));
+
+    try {
+      var res = await fetch('/console/api/console/tts-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voiceName: voiceName,
+          languageCode: langCode,
+          speakingRate: parseFloat(rateInput.value) || 1.0,
+          pitch: parseFloat(pitchInput.value) || 0.0,
+          text: ${JSON.stringify(isEs
+            ? 'Hola, soy tu agente de inteligencia artificial. Asi es como suena mi voz.'
+            : 'Hello, I am your AI agent. This is how my voice sounds.')}
+        })
+      });
+      if (!res.ok) throw new Error('API error ' + res.status);
+      var blob = await res.blob();
+      var url = URL.createObjectURL(blob);
+      audio.src = url;
+      audio.style.display = 'block';
+      audio.play();
+      status.textContent = '';
+    } catch(e) {
+      status.textContent = ${JSON.stringify(isEs ? 'Error' : 'Error')} + ': ' + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+})();
+</script>` : ''
+
   return `<div style="display:grid;grid-template-columns:3fr 2fr;gap:24px;align-items:start">
     <div>${promptsHtml}</div>
-    <div>${identityHtml}</div>
-  </div>`
+    <div>${identityHtml}${voicePanelHtml}</div>
+  </div>
+  ${promptEditScript}
+  ${idTtsPreviewScript}`
 }
 
 // ═══════════════════════════════════════════
@@ -2571,7 +2852,7 @@ function renderUsersSection(data: SectionData): string {
       if(!confirm(lang==='es'?'¿Desactivar '+cbs.length+' usuario(s)?':'Deactivate '+cbs.length+' user(s)?'))return;
       cbs.forEach(function(cb){
         var f=document.createElement('form');f.method='POST';f.action='/console/users/deactivate';
-        f.innerHTML='<input name="_section" value="users"><input name="_lang" value="'+lang+'"><input name="userId" value="'+cb.value+'">';
+        f.innerHTML='<input name="_section" value="users"><input name="_lang" value="'+lang+'"><input name="userId" value="'+cb.value+'"><input name="_redirect" value="'+location.pathname+location.search+'">';
         document.body.appendChild(f);f.submit();
       });
     };
@@ -3219,6 +3500,9 @@ function renderUsersSection(data: SectionData): string {
         if(ta&&!ta.value.trim()){ta.removeAttribute('readonly');ta.style.background='';ta.style.cursor='';
           var btn=document.getElementById('unregistered-msg-edit-btn');if(btn)btn.style.display='none'}
       }
+      // Trigger dirty tracking — the hidden select has data-original
+      var sel=document.querySelector('select[name="unregisteredBehavior"]');
+      if(sel)sel.dispatchEvent(new Event('input',{bubbles:true}));
     };
     window.enableUnregMsgEdit=function(){
       var ta=document.getElementById('unregistered-msg-textarea');

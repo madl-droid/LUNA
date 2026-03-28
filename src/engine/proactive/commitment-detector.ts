@@ -4,6 +4,7 @@
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../../modules/prompts/types.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { ProactiveConfig } from '../types.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
@@ -12,7 +13,7 @@ import { validateCommitment } from './commitment-validator.js'
 
 const logger = pino({ name: 'engine:commitment-detector' })
 
-const DETECTOR_SYSTEM = `You are a commitment detector. Analyze the agent's response to a contact and determine if the agent made any promises or commitments.
+const DETECTOR_SYSTEM_FALLBACK = `You are a commitment detector. Analyze the agent's response to a contact and determine if the agent made any promises or commitments.
 
 RESPOND EXCLUSIVELY in valid JSON. No additional text.
 
@@ -70,12 +71,17 @@ export async function detectCommitments(
   }
 
   try {
+    const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+    const systemPrompt = promptsSvc
+      ? (await promptsSvc.getSystemPrompt('commitment-detector-system')) || DETECTOR_SYSTEM_FALLBACK
+      : DETECTOR_SYSTEM_FALLBACK
+
     const result = await callLLMWithFallback(
       {
         task: 'commitment-detect',
         provider: engineConfig.classifyProvider,
         model: engineConfig.classifyModel,
-        system: DETECTOR_SYSTEM,
+        system: systemPrompt,
         messages: [{ role: 'user', content: `Agent response:\n"${responseText}"` }],
         maxTokens: 256,
         temperature: 0.1,

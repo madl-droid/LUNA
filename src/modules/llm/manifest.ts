@@ -1,22 +1,23 @@
 // LUNA — Module: LLM
 // Gateway unificado de LLM con circuit breaker, routing por tarea, usage tracking.
+// Incluye: TTS (Text-to-Speech) y model scanner como servicios integrados.
 
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
-import { numEnvMin, floatEnvMin, boolEnv } from '../../kernel/config-helpers.js'
+import { numEnvMin, numEnv, floatEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { LLMGateway } from './llm-gateway.js'
-import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget } from './types.js'
+import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget, TTSRequest } from './types.js'
 
 let _gateway: LLMGateway | null = null
 
 const manifest: ModuleManifest = {
   name: 'llm',
-  version: '1.0.0',
+  version: '1.1.0',
   description: {
-    es: 'Gateway LLM unificado — circuit breaker, routing, tracking, seguridad',
-    en: 'Unified LLM gateway — circuit breaker, routing, tracking, security',
+    es: 'Gateway LLM unificado — circuit breaker, routing, tracking, TTS, model scanner',
+    en: 'Unified LLM gateway — circuit breaker, routing, tracking, TTS, model scanner',
   },
   type: 'core-module',
   removable: false,
@@ -74,13 +75,16 @@ const manifest: ModuleManifest = {
 
     // Fallback chain order (comma-separated)
     LLM_FALLBACK_CHAIN: z.string().default('anthropic,google'),
+
+    // Model scanner
+    MODEL_SCAN_INTERVAL_MS: numEnv(21600000),
   }),
 
   console: {
     title: { es: 'Gateway LLM', en: 'LLM Gateway' },
     info: {
-      es: 'Gestión centralizada de proveedores LLM: routing, circuit breaker, costos y seguridad.',
-      en: 'Centralized LLM provider management: routing, circuit breaker, costs and security.',
+      es: 'Gestión centralizada de proveedores LLM: routing, circuit breaker, costos, TTS y escáner de modelos.',
+      en: 'Centralized LLM provider management: routing, circuit breaker, costs, TTS and model scanner.',
     },
     order: 10,
     group: 'system',
@@ -128,6 +132,10 @@ const manifest: ModuleManifest = {
       // Fallback chain
       { key: 'LLM_FALLBACK_CHAIN', type: 'text', label: { es: 'Cadena de fallback', en: 'Fallback chain' },
         info: { es: 'Orden de proveedores separados por coma (ej: anthropic,google)', en: 'Provider order comma-separated (e.g.: anthropic,google)' } },
+
+      // Model scanner
+      { key: 'MODEL_SCAN_INTERVAL_MS', type: 'number', label: { es: 'Intervalo de escaneo de modelos (ms)', en: 'Model scan interval (ms)' },
+        info: { es: 'Cada cuánto escanear modelos disponibles (default: 21600000 = 6 horas)', en: 'How often to scan available models (default: 21600000 = 6 hours)' } },
     ],
     apiRoutes: [
       // Provider status
@@ -255,6 +263,81 @@ const manifest: ModuleManifest = {
           }
         },
       },
+      // TTS — Text-to-Speech synthesis
+      {
+        method: 'POST',
+        path: 'tts',
+        handler: async (req, res) => {
+          if (!_gateway) {
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
+            return
+          }
+          try {
+            const body = await parseBody<TTSRequest>(req)
+            if (!body?.text || !body?.voice) {
+              jsonResponse(res, 400, { error: 'Missing text or voice' })
+              return
+            }
+            const result = await _gateway.tts(body)
+            jsonResponse(res, 200, result)
+          } catch (err) {
+            jsonResponse(res, 500, { error: `TTS failed: ${String(err)}` })
+          }
+        },
+      },
+      // Model scanner — status
+      {
+        method: 'GET',
+        path: 'scanner/status',
+        handler: async (_req, res) => {
+          if (!_gateway) {
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
+            return
+          }
+          const scan = _gateway.getLastScanResult()
+          jsonResponse(res, 200, scan ?? { anthropic: [], google: [], lastScanAt: null, replacements: [] })
+        },
+      },
+      // Model scanner — get models
+      {
+        method: 'GET',
+        path: 'scanner/models',
+        handler: async (_req, res) => {
+          if (!_gateway) {
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
+            return
+          }
+          const scan = _gateway.getLastScanResult()
+          const models = {
+            anthropic: scan?.anthropic.map(m => m.id) ?? [],
+            gemini: scan?.google.map(m => m.id) ?? [],
+          }
+          jsonResponse(res, 200, { models, scan })
+        },
+      },
+      // Model scanner — trigger scan
+      {
+        method: 'POST',
+        path: 'scanner/scan',
+        handler: async (_req, res) => {
+          if (!_gateway) {
+            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
+            return
+          }
+          try {
+            const result = await _gateway.scanModels()
+            jsonResponse(res, 200, {
+              ok: true,
+              anthropic: result.anthropic.length,
+              google: result.google.length,
+              replacements: result.replacements,
+              errors: result.errors,
+            })
+          } catch (err) {
+            jsonResponse(res, 500, { error: 'Scan failed: ' + String(err) })
+          }
+        },
+      },
     ],
   },
 
@@ -266,7 +349,7 @@ const manifest: ModuleManifest = {
     // Create gateway
     _gateway = new LLMGateway(db, redis, config)
     _gateway.setRegistry(registry)
-    await _gateway.init(db)
+    await _gateway.init(db, config.MODEL_SCAN_INTERVAL_MS)
 
     // Register service — this is how the engine and other modules access the gateway
     registry.provide('llm:gateway', _gateway)
@@ -294,6 +377,17 @@ const manifest: ModuleManifest = {
         outputTokens: response.outputTokens,
         toolCalls: response.toolCalls,
       }
+    })
+
+    // Register llm:tts hook handler — enables hook-based TTS calls
+    registry.addHook('llm', 'llm:tts', async (payload) => {
+      const result = await _gateway!.tts({
+        text: payload.text,
+        voice: payload.voice,
+        languageCode: payload.languageCode,
+        audioEncoding: payload.audioEncoding as 'MP3' | 'LINEAR16' | 'OGG_OPUS' | undefined,
+      })
+      return result
     })
 
     // Register llm:models_available hook handler

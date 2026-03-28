@@ -45,7 +45,7 @@ const manifest: ModuleManifest = {
       en: 'Generate voice notes from text using Google Cloud TTS.',
     },
     order: 45,
-    group: 'agent',
+    group: 'modules',
     icon: '&#127908;',
     fields: [
       {

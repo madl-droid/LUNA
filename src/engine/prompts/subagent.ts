@@ -3,9 +3,12 @@
 // NO incluye identity.md ni guardrails.md (esos van en fase 4).
 
 import type { ContextBundle, ExecutionStep, ToolDefinition } from '../types.js'
+import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../../modules/prompts/types.js'
 import { escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
-const SUBAGENT_SYSTEM = `Eres un agente de ejecución. Tu trabajo es completar una tarea específica usando las herramientas disponibles.
+// Fallback used when prompts:service not available
+const SUBAGENT_SYSTEM_FALLBACK = `Eres un agente de ejecución. Tu trabajo es completar una tarea específica usando las herramientas disponibles.
 
 Reglas:
 - Ejecuta SOLO la tarea indicada, nada más
@@ -18,16 +21,20 @@ Reglas:
 /**
  * Build the subagent prompt for a specific execution step.
  */
-export function buildSubagentPrompt(
+export async function buildSubagentPrompt(
   ctx: ContextBundle,
   step: ExecutionStep,
   toolDefs: ToolDefinition[],
-): {
+  registry?: Registry,
+): Promise<{
   system: string
   userMessage: string
   tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
-} {
-  const system = SUBAGENT_SYSTEM
+}> {
+  // Try template, fallback to hardcoded
+  const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
+  let system = svc ? await svc.getSystemPrompt('subagent-system') : ''
+  if (!system) system = SUBAGENT_SYSTEM_FALLBACK
 
   // Build user message with task context
   const parts: string[] = []

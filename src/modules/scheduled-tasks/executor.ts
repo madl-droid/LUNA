@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../prompts/types.js'
 import type { LLMChatPayload } from '../../kernel/types.js'
 import type { ScheduledTask, ScheduledTasksConfig, TaskAction } from './types.js'
 import * as store from './store.js'
@@ -30,7 +31,7 @@ export async function executeTask(
 
     const payload: LLMChatPayload = {
       task: 'scheduled-task',
-      system: buildSystemPrompt(task, recipientInfo),
+      system: await buildSystemPrompt(task, recipientInfo, registry),
       messages: [{ role: 'user', content: task.prompt }],
       temperature: 0.3,
       traceId,
@@ -261,7 +262,21 @@ async function resolveRecipientInfo(registry: Registry, task: ScheduledTask): Pr
   return ''
 }
 
-function buildSystemPrompt(task: ScheduledTask, recipientInfo: string): string {
+async function buildSystemPrompt(task: ScheduledTask, recipientInfo: string, registry?: Registry): Promise<string> {
+  if (registry) {
+    const svc = registry.getOptional<PromptsService>('prompts:service')
+    if (svc) {
+      const tmpl = await svc.getSystemPrompt('scheduled-task-system', {
+        taskName: task.name,
+        triggerType: task.trigger_type,
+        cronExpression: task.trigger_type === 'cron' ? ` (${task.cron})` : '',
+        triggerEvent: task.trigger_event ? `\nEvento: ${task.trigger_event}` : '',
+        recipientInfo,
+      })
+      if (tmpl) return tmpl
+    }
+  }
+  // Fallback to hardcoded prompt
   return `Eres LUNA, un agente de IA. Estas ejecutando una tarea programada.
 
 Nombre de la tarea: ${task.name}

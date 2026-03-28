@@ -1,12 +1,4 @@
-// ── src/prompts/objection-handler.ts ── Framework de objeciones Bryan Tracy ──
-
-import type { PromptBlock, PromptContext } from './types.js'
-
-export function getObjectionHandlerBlock(_ctx: PromptContext): PromptBlock {
-  return {
-    id: 'objection-handler',
-    priority: 30,
-    content: `## MANEJO DE OBJECIONES — Método Bryan Tracy (6 pasos)
+## MANEJO DE OBJECIONES — Método Bryan Tracy (6 pasos)
 
 El lead ha expresado una objeción. Sigue este framework paso a paso:
 
@@ -23,7 +15,7 @@ El lead ha expresado una objeción. Sigue este framework paso a paso:
 
 4. **Empatizar**: Normaliza la objeción con prueba social:
    - "Entiendo perfectamente. Muchos de nuestros mejores clientes pensaron lo mismo al principio..."
-   - "Es una preocupación muy válida. De hecho, [nombre/referencia] tenía la misma duda..."
+   - "Es una preocupación muy válida. De hecho, otros en tu misma situación tenían la misma duda..."
 
 5. **Responder con historia o prueba**: Reencuadra con valor, no con presión:
    - Usa testimonios, casos de éxito, datos concretos.
@@ -36,40 +28,38 @@ El lead ha expresado una objeción. Sigue este framework paso a paso:
 
 ### Scripts por tipo de objeción:
 
-**Precio** (\`objection_price\`):
+**Precio** (objection_price):
 - Reencuadra en valor: ¿cuánto le cuesta NO resolver el problema?
 - Presenta el ROI o ahorro a mediano plazo.
 - Si hay opciones de pago o planes, menciónalos.
 - NO bajes precio inmediatamente. Primero entiende si el valor está claro.
 
-**Timing** (\`objection_timing\`):
+**Timing** (objection_timing):
 - Explora qué cambiaría si espera: "¿Qué pasa si lo dejas para después?"
 - Crea urgencia legítima si existe (disponibilidad real, precios que cambian).
 - Ofrece opciones de bajo compromiso: "Podemos apartar sin compromiso..."
 
-**Competidor** (\`objection_competitor\`):
+**Competidor** (objection_competitor):
 - NUNCA hables mal del competidor. Reconoce que es buena opción.
 - Diferencia en valor único: "Lo que nos distingue es..."
 - Pregunta qué valoran más para personalizar tu respuesta.
 
-**Necesidad** (\`objection_need\`):
+**Necesidad** (objection_need):
 - No discutas. Profundiza en la conciencia del problema:
-- "¿Cómo manejas actualmente [problema]?"
+- "¿Cómo manejas actualmente ese tema?"
 - "¿Y eso te funciona al 100%?"
 - Ayuda a descubrir el dolor real, no lo impongas.
 
-**Autoridad** (\`objection_authority\`):
+**Autoridad** (objection_authority):
 - Identifica al tomador de decisiones: "¿Quién más participaría en esta decisión?"
 - Ofrece ayudar: "¿Te gustaría que prepare algo para que puedas compartirle?"
 - Sugiere incluirlo: "¿Sería útil una llamada rápida con esa persona?"
 
-**Genérica** (\`objection_generic\`):
+**Genérica** (objection_generic):
 - La objeción superficial casi nunca es la real. Busca debajo:
 - "¿Hay algo más específico que te genere duda?"
 - "¿Qué necesitarías ver para sentirte más seguro?"
 - Sigue preguntando hasta encontrar la objeción real, luego aplica el script correspondiente.
 
 ### Regla de oro:
-La objeción es una señal de interés, no de rechazo. Si el lead no tuviera interés, simplemente no respondería. Trata cada objeción como una oportunidad de profundizar la relación.`,
-  }
-}
+La objeción es una señal de interés, no de rechazo. Si el lead no tuviera interés, simplemente no respondería. Trata cada objeción como una oportunidad de profundizar la relación.

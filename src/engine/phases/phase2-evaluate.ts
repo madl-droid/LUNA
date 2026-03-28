@@ -3,6 +3,7 @@
 // Analiza intención, emoción, riesgo, genera plan de ejecución.
 
 import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
 import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig, ProactiveContextBundle, ReplanContext } from '../types.js'
 import { buildEvaluatorPrompt, buildProactiveEvaluatorPrompt } from '../prompts/evaluator.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
@@ -47,6 +48,7 @@ export async function phase2Evaluate(
   ctx: ContextBundle,
   config: EngineConfig,
   replanContext?: ReplanContext,
+  registry?: Registry,
 ): Promise<EvaluatorOutput> {
   const startMs = Date.now()
   const proactive = isProactiveContext(ctx)
@@ -56,8 +58,8 @@ export async function phase2Evaluate(
   // Build prompt (different for proactive vs reactive)
   const toolCatalog = getCatalog()
   let { system, userMessage } = proactive
-    ? buildProactiveEvaluatorPrompt(ctx, toolCatalog)
-    : buildEvaluatorPrompt(ctx, toolCatalog)
+    ? await buildProactiveEvaluatorPrompt(ctx, toolCatalog, registry)
+    : await buildEvaluatorPrompt(ctx, toolCatalog, registry)
 
   // Inject replanning context if this is a replan attempt
   if (replanContext) {
@@ -146,6 +148,9 @@ function parseEvaluatorResponse(text: string, ctx: ContextBundle): EvaluatorOutp
       executionPlan: parseExecutionPlan(parsed.execution_plan),
       toolsNeeded: Array.isArray(parsed.tools_needed) ? parsed.tools_needed : [],
       needsAcknowledgment: parsed.needs_acknowledgment ?? false,
+      subIntent: parsed.sub_intent ?? undefined,
+      objectionType: parsed.objection_type ?? undefined,
+      objectionStep: typeof parsed.objection_step === 'number' ? parsed.objection_step : undefined,
       rawResponse: text,
     }
 
