@@ -785,6 +785,13 @@ const manifest: ModuleManifest = {
     ACK_EMAIL_HOLD_MS: numEnv(2000),
     ACK_EMAIL_MESSAGE: z.string().default(''),
     ACK_EMAIL_STYLE: z.string().default('formal'),
+    // Response format (form builder — same pattern as WhatsApp)
+    EMAIL_FORMAT_ADVANCED: boolEnv(false),
+    FORMAT_INSTRUCTIONS_EMAIL: z.string().default(''),
+    EMAIL_FORMAT_TONE: z.string().default('profesional'),
+    EMAIL_FORMAT_MAX_SENTENCES: numEnv(4),
+    EMAIL_FORMAT_MAX_PARAGRAPHS: numEnv(4),
+    EMAIL_FORMAT_EMOJI_LEVEL: z.string().default('nunca'),
     // Firma de email
     EMAIL_SIGNATURE_MODE: z.string().default('gmail'),    // gmail | custom | auto
     EMAIL_SIGNATURE_TEXT: z.string().default(''),          // only used if mode = 'custom'
@@ -1067,13 +1074,12 @@ const manifest: ModuleManifest = {
         ],
       },
       { key: '_divider_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' } },
-      {
-        key: 'FORMAT_INSTRUCTIONS_EMAIL',
-        type: 'textarea',
-        label: { es: 'Instrucciones de formato', en: 'Format instructions' },
-        info: { es: 'Instrucciones que el compositor usa para dar formato a las respuestas de email. Dejar vacío para usar el default.', en: 'Instructions the compositor uses to format email responses. Leave empty for default.' },
-        rows: 6,
-      },
+      { key: 'EMAIL_FORMAT_ADVANCED', type: 'boolean', label: { es: 'Prompting avanzado', en: 'Advanced prompting' }, info: { es: 'Activa el editor de texto para personalizar el prompt de formato manualmente', en: 'Enable text editor to manually customize the format prompt' } },
+      { key: 'FORMAT_INSTRUCTIONS_EMAIL', type: 'textarea', label: { es: 'Instrucciones de formato', en: 'Format instructions' }, rows: 8, visibleWhen: { key: 'EMAIL_FORMAT_ADVANCED', value: 'true' }, fieldType: 'code-editor' as never },
+      { key: 'EMAIL_FORMAT_TONE', type: 'select', label: { es: 'Tono', en: 'Tone' }, visibleWhen: { key: 'EMAIL_FORMAT_ADVANCED', value: 'false' }, options: [{ value: 'ninguno', label: { es: 'Sin especificar', en: 'None' } }, { value: 'formal', label: { es: 'Formal', en: 'Formal' } }, { value: 'profesional', label: { es: 'Profesional', en: 'Professional' } }, { value: 'amigable', label: { es: 'Amigable', en: 'Friendly' } }, { value: 'directo', label: { es: 'Directo', en: 'Direct' } }] },
+      { key: 'EMAIL_FORMAT_MAX_SENTENCES', type: 'number', label: { es: 'Max oraciones por parrafo', en: 'Max sentences per paragraph' }, min: 1, max: 15, width: 'half', visibleWhen: { key: 'EMAIL_FORMAT_ADVANCED', value: 'false' } },
+      { key: 'EMAIL_FORMAT_MAX_PARAGRAPHS', type: 'number', label: { es: 'Max parrafos por respuesta', en: 'Max paragraphs per response' }, min: 1, max: 15, width: 'half', visibleWhen: { key: 'EMAIL_FORMAT_ADVANCED', value: 'false' } },
+      { key: 'EMAIL_FORMAT_EMOJI_LEVEL', type: 'select', label: { es: 'Uso de emojis', en: 'Emoji usage' }, visibleWhen: { key: 'EMAIL_FORMAT_ADVANCED', value: 'false' }, options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'bajo', label: { es: 'Bajo', en: 'Low' } }, { value: 'moderado', label: { es: 'Moderado', en: 'Moderate' } }] },
       { key: '_divider_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' } },
       {
         key: 'EMAIL_ATT_IMAGES',

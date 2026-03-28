@@ -14,7 +14,11 @@ import type {
 import { buildSubagentPrompt } from '../prompts/subagent.js'
 import { callLLM } from '../utils/llm-client.js'
 import { loadGuardrails, checkGuardrails } from './guardrails.js'
-import { executeTool } from '../mocks/tool-registry.js'
+
+// Interface for executing tools via tools:registry service
+interface ToolExecutor {
+  executeTool(name: string, input: Record<string, unknown>, ctx: unknown): Promise<{ success: boolean; data?: unknown; error?: string }>
+}
 
 const logger = pino({ name: 'engine:subagent' })
 
@@ -118,7 +122,19 @@ export async function runSubagent(
             continue
           }
 
-          const toolResult = await executeTool(toolCall.name, toolCall.input)
+          const toolsRegistry = registry?.getOptional<ToolExecutor>('tools:registry')
+          if (!toolsRegistry) {
+            toolResults.push(JSON.stringify({
+              tool: toolCall.name,
+              error: 'Tools module not active — cannot execute tool',
+            }))
+            continue
+          }
+          const toolResult = await toolsRegistry.executeTool(toolCall.name, toolCall.input, {
+            contactId: ctx.contactId,
+            agentId: ctx.agentId,
+            traceId: ctx.traceId,
+          })
           lastData = toolResult.data
           toolResults.push(JSON.stringify({
             tool: toolCall.name,

@@ -135,6 +135,25 @@ export interface ResolvedRoute {
   fallbackLevel: FallbackLevel
 }
 
+/**
+ * Maps custom task names (used by engine/modules) to canonical route names.
+ * This ensures all LLM calls route through the configured providers/models
+ * with proper fallback chains, even when callers use descriptive task names.
+ */
+const TASK_ALIASES: Record<string, LLMTask> = {
+  'evaluate': 'classify',
+  'proactive-evaluate': 'classify',
+  'compose': 'respond',
+  'detect_commitment': 'classify',
+  'process_attachment': 'vision',
+  'subagent': 'tools',
+  'scheduled-task': 'tools',
+  'extract_qualification': 'classify',
+  'parse_signature': 'classify',
+  'extract_knowledge': 'vision',
+  'transcribe': 'vision',
+}
+
 export class TaskRouter {
   private routes: Map<LLMTask, TaskRoute> = new Map()
   private fallbackChain: LLMProviderName[] = ['anthropic', 'google']
@@ -248,7 +267,8 @@ export class TaskRouter {
     overrideApiKeyEnv?: string,
   ): ResolvedRoute[] {
     const results: ResolvedRoute[] = []
-    const route = this.routes.get(task)
+    const resolvedTask = TASK_ALIASES[task] ?? task
+    const route = this.routes.get(resolvedTask as LLMTask)
 
     // If explicit override, try that first
     if (overrideProvider && overrideModel) {

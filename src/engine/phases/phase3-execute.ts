@@ -15,7 +15,6 @@ import type {
   EngineConfig,
 } from '../types.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
-import { executeTool as mockExecuteTool, getDefinition as mockGetDefinition } from '../mocks/tool-registry.js'
 import { runSubagent } from '../subagent/subagent.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { StepSemaphore } from '../concurrency/step-semaphore.js'
@@ -44,13 +43,9 @@ async function executeTool(
   if (real) {
     return real.executeTool(toolName, params, ctx ?? {})
   }
-  // No real registry available
-  if (process.env.NODE_ENV === 'production') {
-    logger.error({ toolName }, 'Tool execution requested but tools module is not active (production)')
-    return { success: false, error: `Tool "${toolName}" unavailable: tools module not active` }
-  }
-  logger.warn({ toolName }, 'Using MOCK tool registry — responses will contain fake data')
-  return mockExecuteTool(toolName, params)
+  // No real registry available — fail explicitly
+  logger.error({ toolName }, 'Tool execution requested but tools module is not active')
+  return { success: false, error: `Tool "${toolName}" unavailable: tools module not active` }
 }
 
 function getDefinition(
@@ -62,10 +57,7 @@ function getDefinition(
     const defs = real.getEnabledToolDefinitions()
     return defs.find(d => d.name === toolName) ?? null
   }
-  if (process.env.NODE_ENV === 'production') {
-    return null
-  }
-  return mockGetDefinition(toolName)
+  return null
 }
 
 /**

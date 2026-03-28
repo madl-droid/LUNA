@@ -315,6 +315,13 @@ const manifest: ModuleManifest = {
     // Anti-spam (short-window burst protection)
     GOOGLE_CHAT_ANTISPAM_MAX: numEnv(5),
     GOOGLE_CHAT_ANTISPAM_WINDOW_MS: numEnv(60000),
+    // Response format (form builder)
+    GOOGLE_CHAT_FORMAT_ADVANCED: boolEnv(false),
+    FORMAT_INSTRUCTIONS_GOOGLE_CHAT: z.string().default(''),
+    GOOGLE_CHAT_FORMAT_TONE: z.string().default('profesional'),
+    GOOGLE_CHAT_FORMAT_MAX_SENTENCES: numEnv(3),
+    GOOGLE_CHAT_FORMAT_MAX_PARAGRAPHS: numEnv(3),
+    GOOGLE_CHAT_FORMAT_EMOJI_LEVEL: z.string().default('bajo'),
     // Attachment processing — Google Chat supports images and documents
     GOOGLE_CHAT_ATT_IMAGES: boolEnv(true),
     GOOGLE_CHAT_ATT_DOCUMENTS: boolEnv(true),
@@ -513,6 +520,13 @@ const manifest: ModuleManifest = {
         label: { es: 'Mensaje pre-cierre', en: 'Pre-close message' },
         info: { es: 'Texto del recordatorio antes de cerrar sesion por inactividad.', en: 'Reminder text before closing session due to inactivity.' },
       },
+      { key: '_divider_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' } },
+      { key: 'GOOGLE_CHAT_FORMAT_ADVANCED', type: 'boolean', label: { es: 'Prompting avanzado', en: 'Advanced prompting' }, info: { es: 'Activa el editor de texto para personalizar el prompt de formato manualmente', en: 'Enable text editor to manually customize the format prompt' } },
+      { key: 'FORMAT_INSTRUCTIONS_GOOGLE_CHAT', type: 'textarea', label: { es: 'Instrucciones de formato', en: 'Format instructions' }, rows: 8, visibleWhen: { key: 'GOOGLE_CHAT_FORMAT_ADVANCED', value: 'true' }, fieldType: 'code-editor' as never },
+      { key: 'GOOGLE_CHAT_FORMAT_TONE', type: 'select', label: { es: 'Tono', en: 'Tone' }, visibleWhen: { key: 'GOOGLE_CHAT_FORMAT_ADVANCED', value: 'false' }, options: [{ value: 'ninguno', label: { es: 'Sin especificar', en: 'None' } }, { value: 'formal', label: { es: 'Formal', en: 'Formal' } }, { value: 'profesional', label: { es: 'Profesional', en: 'Professional' } }, { value: 'amigable', label: { es: 'Amigable', en: 'Friendly' } }, { value: 'directo', label: { es: 'Directo', en: 'Direct' } }] },
+      { key: 'GOOGLE_CHAT_FORMAT_MAX_SENTENCES', type: 'number', label: { es: 'Max oraciones por parrafo', en: 'Max sentences per paragraph' }, min: 1, max: 15, width: 'half', visibleWhen: { key: 'GOOGLE_CHAT_FORMAT_ADVANCED', value: 'false' } },
+      { key: 'GOOGLE_CHAT_FORMAT_MAX_PARAGRAPHS', type: 'number', label: { es: 'Max parrafos por respuesta', en: 'Max paragraphs per response' }, min: 1, max: 15, width: 'half', visibleWhen: { key: 'GOOGLE_CHAT_FORMAT_ADVANCED', value: 'false' } },
+      { key: 'GOOGLE_CHAT_FORMAT_EMOJI_LEVEL', type: 'select', label: { es: 'Uso de emojis', en: 'Emoji usage' }, visibleWhen: { key: 'GOOGLE_CHAT_FORMAT_ADVANCED', value: 'false' }, options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'bajo', label: { es: 'Bajo', en: 'Low' } }, { value: 'moderado', label: { es: 'Moderado', en: 'Moderate' } }] },
       { key: '_divider_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' } },
       {
         key: 'GOOGLE_CHAT_ATT_IMAGES',
