@@ -591,7 +591,19 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
   </div>`
 
-  // Panel 2: Funciones avanzadas
+  // Panel 2: Models (primary + downgrade + fallback)
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${t('sec_models', data.lang)}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${t('sec_models_info', data.lang)}</div>
+      ${renderModelsContent(data)}
+    </div>
+  </div>`
+
+  // Panel 3: Funciones avanzadas
   const featTitle = data.lang === 'es' ? 'Funciones avanzadas' : 'Advanced features'
   const featInfo = data.lang === 'es'
     ? 'Extraccion de URLs, scoring nocturno de leads, compresion de sesiones y reporte diario.'
