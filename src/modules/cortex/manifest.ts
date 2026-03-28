@@ -76,7 +76,7 @@ const manifest: ModuleManifest = {
     },
     order: 90,
     group: 'system',
-    icon: '&#129504;', // 🧠
+    icon: '&#129504;', // overridden by ICON_OVERRIDES in templates.ts
     fields: [
       {
         key: 'CORTEX_REFLEX_ENABLED',

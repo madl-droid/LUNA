@@ -13,7 +13,7 @@
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  border-radius: 1.5rem;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 500;
 }
@@ -46,14 +46,18 @@
 }
 
 .wa-btn {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
   border: none;
-  border-radius: 1.5rem;
-  font-size: 13px;
-  font-weight: 500;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .wa-btn:disabled { opacity: 0.4; cursor: not-allowed; }

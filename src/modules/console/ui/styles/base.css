@@ -49,6 +49,25 @@
   /* Focus ring (unified) */
   --primary-focus: rgba(255, 94, 14, 0.12);
 
+  /* Spacing tokens — consistent rhythm */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Radius tokens — Apple HIG */
+  --radius-sm: 0.5rem;    /* 8px — inputs, badges, small containers */
+  --radius-md: 0.75rem;   /* 12px — cards, modals, elevated panels */
+  --radius-lg: 1rem;      /* 16px — large containers */
+  --radius-pill: 1.5rem;  /* 24px — buttons, tags, pills */
+
+  /* Component spacing — inter-element gaps */
+  --field-gap: 2.75rem;       /* vertical gap between consecutive fields */
+  --panel-gap: var(--space-md); /* gap between panels */
+  --section-gap: var(--space-lg); /* gap between sections */
+
   /* Aliases for modules that used non-standard names */
   --bg-primary: var(--surface-container-lowest);
   --bg-secondary: var(--surface-container-low);

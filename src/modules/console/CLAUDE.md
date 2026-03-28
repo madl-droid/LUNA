@@ -17,12 +17,27 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
 - `ui/styles/*.css` — 5 CSS files (base, layout, components, whatsapp, sidebar)
 
 ## Sidebar dinámico
-- 6 categorías con i18n keys (`cat_channels`, `cat_agent`, etc.) vía `t()`
+- **Lista plana sin títulos de categoría** — todos los items en un solo grupo `main`
 - Items fijos (secciones con renderers custom) + items dinámicos (módulos activos con `console.group`)
 - Los módulos declaran `group` e `icon` en su `manifest.console` para aparecer automáticamente
-- **Canales NO aparecen individualmente en el sidebar** — se gestionan desde la pestaña unificada `/console/channels`
-- Módulos con `group: 'channels'` se excluyen del sidebar dinámico automáticamente
+- **Canales NO aparecen individualmente en el sidebar** — se gestionan desde `/console/channels`
+- Módulos con `group: 'channels'` se excluyen del sidebar automáticamente
+- Módulos con `group: 'agent'` que no están en HERRAMIENTAS_FIXED → van como subtab de Herramientas
+- **REGLA: Herramientas SIEMPRE al final del sidebar** (order: 999)
+- **REGLA: Todo módulo DEBE tener entrada en `ICON_OVERRIDES`** (templates.ts) — no emoji
+- Orden: por campo `order` del manifest
 - Mobile: hamburger menu con drawer lateral (no horizontal scroll)
+
+### Estructura sidebar
+```
+[sin títulos — lista plana]
+  Dashboard (0)
+  Canales (10)
+  Contactos (20)
+  Agente (30)        ← submenu: knowledge, memory, identity, advanced
+  Cortex (90)        ← módulo dinámico, group: 'system'
+  Herramientas (999) ← SIEMPRE último, submenu: tools, lead-scoring, etc.
+```
 
 ## Pestaña Canales (`/console/channels`)
 - Vista unificada de todos los canales como cards en grid responsive (2 por fila desktop, 1 mobile)

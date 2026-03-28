@@ -35,10 +35,27 @@ Full spec in `DESIGN.md`. Key principles:
 - **Tertiary:** `#E62111` (crimson) — errors, destructive
 - **Neutral:** `#E1E1E1` — base surface
 
+### Design Tokens (MANDATORY)
+- **Spacing:** `--space-xs/sm/md/lg/xl` — never hardcode px spacing
+- **Radius:** `--radius-sm` (0.5rem), `--radius-md` (0.75rem), `--radius-pill` (1.5rem) — never hardcode px radius
+- **Gaps:** `--field-gap` (2.75rem), `--panel-gap` (16px), `--section-gap` (24px)
+
+### Button System (4 variants ONLY)
+1. **Primary** (`act-btn-cta`): solid orange, NO icon, text only
+2. **Secondary** (`act-btn-config`): gray neutral, icon + text
+3. **Success** (`act-btn-add`): soft green, icon + text
+4. **Destructive** (`act-btn-remove`): soft red, icon + text
+All: pill shape (`--radius-pill`), 12px/600 weight. Modifiers: `--compact`, `--sm`.
+
+### Icon System
+- **Outlined thin-stroke** SVGs (stroke-width 1.8) — no filled/solid icons
+- **Squircle containers** (`.icon-squircle`): rounded-square bg, 44/36/48px sizes
+- **ICON_OVERRIDES** in templates.ts — every module MUST have SVG override
+
 ### Core Rules
 - **No borders for sectioning** — use tonal background shifts only
-- **Subtle shadows only** — `0 1px 4px rgba(0,0,0,0.05)` on hover
-- **SVG monochrome icons** — all icons are stroke-based SVGs that inherit `currentColor`. Override module emoji icons via `ICON_OVERRIDES` map in `templates.ts`
+- **Subtle shadows only** — `--shadow-subtle` on hover, `--shadow-float` on modals
+- **No inline styles** for CSS — use utility classes (`u-mt-md`, `u-hidden`, etc.)
 - **SVG flags** for language selection — emoji flags don't render reliably
 
 ### Icons System

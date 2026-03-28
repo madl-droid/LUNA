@@ -168,7 +168,7 @@ function renderStatusBar(channel: ModuleInfo, data: SectionData, _channelName: s
       </div>
       ${connectionInfo ? `<div class="chs-bar-detail">${esc(connectionInfo)}</div>` : ''}
     </div>
-    <button class="ch-btn-action ${connected ? 'ch-btn-disconnect' : 'ch-btn-connect'}" onclick="${btnAction}">${btnLabel}</button>
+    <button class="act-btn ${connected ? 'act-btn-remove' : 'act-btn-add'}" onclick="${btnAction}">${btnLabel}</button>
   </div>`
 }
 
@@ -340,7 +340,7 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
       const label = f.label[lang] ?? f.label.es ?? f.key
       html += `<div class="chs-field chs-field-readonly"${vw.attrs}${vw.hidden ? ' style="display:none"' : ''}>
         <div class="chs-field-label">${esc(label)}</div>
-        <div class="chs-field-value">${esc(val) || '<span style="color:var(--on-surface-dim)">—</span>'}</div>
+        <div class="chs-field-value">${esc(val) || '<span class="u-text-muted">—</span>'}</div>
       </div>`
       i++
       continue
@@ -418,7 +418,7 @@ function renderBudgetCard(channelId: string, lang: Lang, config: Record<string, 
     const pct = Math.min((spent / budget) * 100, 100)
     const overBudget = spent > budget
     const overPct = overBudget ? Math.round(((spent - budget) / budget) * 100) : 0
-    const barColor = overBudget ? 'var(--error, #dc2626)' : 'var(--success, #34c759)'
+    const barColor = overBudget ? 'var(--error)' : 'var(--success)'
     const overLabel = overBudget
       ? (lang === 'es' ? `${overPct}% sobre presupuesto` : `${overPct}% over budget`)
       : ''
@@ -436,10 +436,10 @@ function renderBudgetCard(channelId: string, lang: Lang, config: Record<string, 
       </div>
       <div class="chs-budget-bar">
         <div class="chs-budget-bar-fill" style="width:${pct}%;background:${barColor}"></div>
-        ${overBudget ? `<div class="chs-budget-bar-over" style="width:${Math.min(overPct, 100)}%;background:var(--error, #dc2626);opacity:0.3"></div>` : ''}
+        ${overBudget ? `<div class="chs-budget-bar-over" style="width:${Math.min(overPct, 100)}%;background:var(--error);opacity:0.3"></div>` : ''}
       </div>
       ${overLabel ? `<div class="chs-budget-warning">${overLabel}</div>` : ''}
-      <div class="chs-budget-row" style="margin-top:12px">
+      <div class="chs-budget-row u-mt-md">
         <span>${avgLabel}</span>
         <span class="chs-budget-val">$${avgCost.toFixed(2)}</span>
       </div>
@@ -456,7 +456,7 @@ function renderBudgetCard(channelId: string, lang: Lang, config: Record<string, 
     <div class="chs-budget-bar">
       <div class="chs-budget-bar-fill" style="width:0%;background:var(--on-surface-dim)"></div>
     </div>
-    <div class="chs-budget-row" style="margin-top:12px">
+    <div class="chs-budget-row u-mt-md">
       <span>${avgLabel}</span>
       <span class="chs-budget-val">$0.00</span>
     </div>
