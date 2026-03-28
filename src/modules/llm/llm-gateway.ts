@@ -469,6 +469,62 @@ export class LLMGateway {
   }
 
   // ═══════════════════════════════════════════
+  // Batch / Async Processing (50% discount)
+  // ═══════════════════════════════════════════
+
+  /**
+   * Submit a batch of requests for async processing.
+   * Uses Anthropic Message Batches API (50% off) or Google Batch API.
+   */
+  async submitBatch(
+    requests: import('./types.js').LLMBatchRequest[],
+    provider: LLMProviderName = 'anthropic',
+  ): Promise<string> {
+    const adapter = this.adapters.get(provider)
+    if (!adapter?.submitBatch) {
+      throw new Error(`Batch processing not supported by ${provider}`)
+    }
+    const apiKey = this.getDefaultApiKey(provider)
+    if (!apiKey) throw new Error(`No API key for ${provider}`)
+
+    const batchId = await adapter.submitBatch(requests, apiKey)
+    logger.info({ provider, batchId, count: requests.length }, 'Batch submitted')
+    return batchId
+  }
+
+  /**
+   * Check the status of a submitted batch.
+   */
+  async getBatchStatus(
+    batchId: string,
+    provider: LLMProviderName = 'anthropic',
+  ): Promise<import('./types.js').LLMBatchInfo> {
+    const adapter = this.adapters.get(provider)
+    if (!adapter?.getBatchStatus) {
+      throw new Error(`Batch status not supported by ${provider}`)
+    }
+    const apiKey = this.getDefaultApiKey(provider)
+    if (!apiKey) throw new Error(`No API key for ${provider}`)
+    return adapter.getBatchStatus(batchId, apiKey)
+  }
+
+  /**
+   * Retrieve results of a completed batch.
+   */
+  async getBatchResults(
+    batchId: string,
+    provider: LLMProviderName = 'anthropic',
+  ): Promise<import('./types.js').LLMBatchResult[]> {
+    const adapter = this.adapters.get(provider)
+    if (!adapter?.getBatchResults) {
+      throw new Error(`Batch results not supported by ${provider}`)
+    }
+    const apiKey = this.getDefaultApiKey(provider)
+    if (!apiKey) throw new Error(`No API key for ${provider}`)
+    return adapter.getBatchResults(batchId, apiKey)
+  }
+
+  // ═══════════════════════════════════════════
   // Internal
   // ═══════════════════════════════════════════
 

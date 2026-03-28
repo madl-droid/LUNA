@@ -11,6 +11,9 @@ import type {
   LLMRequest,
   LLMResponse,
   LLMToolCall,
+  LLMBatchRequest,
+  LLMBatchResult,
+  LLMBatchInfo,
   ModelInfo,
   ContentPart,
   LLMMessage,
@@ -214,6 +217,97 @@ export class AnthropicAdapter implements ProviderAdapter {
       logger.error({ err }, 'Failed to list Anthropic models')
       return []
     }
+  }
+
+  async submitBatch(requests: LLMBatchRequest[], apiKey: string): Promise<string> {
+    const batchRequests = requests.map(r => ({
+      custom_id: r.customId,
+      params: {
+        model: r.request.model ?? 'claude-sonnet-4-5-20250929',
+        max_tokens: r.request.maxTokens ?? 2048,
+        messages: r.request.messages.map(m => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content : this.buildAnthropicContent(m as LLMMessage),
+        })),
+        ...(r.request.system ? { system: r.request.system } : {}),
+      },
+    }))
+
+    const res = await fetch('https://api.anthropic.com/v1/messages/batches', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ requests: batchRequests }),
+    })
+
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`Anthropic batch submit failed: ${errText}`)
+    }
+    const data = await res.json() as { id: string }
+    return data.id
+  }
+
+  async getBatchStatus(batchId: string, apiKey: string): Promise<LLMBatchInfo> {
+    const res = await fetch(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    })
+    if (!res.ok) throw new Error(`Anthropic batch status failed: ${res.status}`)
+    const data = await res.json() as Record<string, unknown>
+    const counts = data.request_counts as Record<string, number> | undefined
+    return {
+      batchId,
+      provider: 'anthropic',
+      status: (data.processing_status as string) === 'ended' ? 'ended' : 'processing',
+      totalRequests: (counts?.processing ?? 0) + (counts?.succeeded ?? 0) + (counts?.errored ?? 0),
+      completedRequests: counts?.succeeded ?? 0,
+      failedRequests: counts?.errored ?? 0,
+      createdAt: String(data.created_at ?? ''),
+      endedAt: data.ended_at ? String(data.ended_at) : undefined,
+    }
+  }
+
+  async getBatchResults(batchId: string, apiKey: string): Promise<LLMBatchResult[]> {
+    const res = await fetch(`https://api.anthropic.com/v1/messages/batches/${batchId}/results`, {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    })
+    if (!res.ok) throw new Error(`Anthropic batch results failed: ${res.status}`)
+    const text = await res.text()
+    // Results are JSONL (one JSON per line)
+    return text.trim().split('\n').filter(Boolean).map((line: string) => {
+      const item = JSON.parse(line) as Record<string, unknown>
+      const result = item.result as Record<string, unknown> | undefined
+      if (result?.type === 'succeeded') {
+        const msg = result.message as Record<string, unknown>
+        const usage = msg.usage as Record<string, number> | undefined
+        let respText = ''
+        for (const block of (msg.content as Array<Record<string, unknown>>) ?? []) {
+          if (block.type === 'text') respText += block.text
+        }
+        return {
+          customId: String(item.custom_id ?? ''),
+          response: {
+            text: respText,
+            provider: 'anthropic' as const,
+            model: String(msg.model ?? ''),
+            inputTokens: usage?.input_tokens ?? 0,
+            outputTokens: usage?.output_tokens ?? 0,
+            durationMs: 0,
+            fromFallback: false,
+            attempt: 0,
+          },
+        }
+      }
+      return {
+        customId: String(item.custom_id ?? ''),
+        error: result?.type === 'errored'
+          ? JSON.stringify((result as Record<string, unknown>).error ?? 'batch item failed')
+          : 'unknown error',
+      }
+    })
   }
 
   private buildAnthropicContent(msg: LLMMessage): string | Anthropic.ContentBlockParam[] {

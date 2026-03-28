@@ -320,6 +320,12 @@ export interface ProviderAdapter {
   isInitialized(): boolean
   chat(request: LLMRequest, apiKey: string, timeoutMs: number): Promise<LLMResponse>
   listModels?(apiKey: string): Promise<ModelInfo[]>
+  /** Submit a batch of requests for async processing (50% discount) */
+  submitBatch?(requests: LLMBatchRequest[], apiKey: string): Promise<string>
+  /** Check the status of a submitted batch */
+  getBatchStatus?(batchId: string, apiKey: string): Promise<LLMBatchInfo>
+  /** Retrieve results of a completed batch */
+  getBatchResults?(batchId: string, apiKey: string): Promise<LLMBatchResult[]>
 }
 
 // ═══════════════════════════════════════════
