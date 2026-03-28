@@ -143,23 +143,24 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     try {
       const response = await client.messages.create(
-        params as Anthropic.MessageCreateParams,
+        params as unknown as Anthropic.MessageCreateParams,
         { signal: controller.signal },
       )
 
+      const msg = response as Anthropic.Message
       let text = ''
       const toolCalls: LLMToolCall[] = []
       const codeResults: Array<{ code: string; output: string; error?: string }> = []
 
-      for (const block of response.content) {
+      for (const block of msg.content) {
         if (block.type === 'text') {
           text += block.text
         } else if (block.type === 'tool_use') {
           toolCalls.push({ name: block.name, input: block.input as Record<string, unknown> })
         }
         // Code execution results (type: 'code_execution_result' — Anthropic built-in)
-        if ((block as Record<string, unknown>).type === 'code_execution_result') {
-          const ceBlock = block as Record<string, unknown>
+        if ((block as unknown as Record<string, unknown>).type === 'code_execution_result') {
+          const ceBlock = block as unknown as Record<string, unknown>
           codeResults.push({
             code: String((ceBlock as Record<string, unknown>).code ?? ''),
             output: String((ceBlock as Record<string, unknown>).output ?? ''),
@@ -174,16 +175,16 @@ export class AnthropicAdapter implements ProviderAdapter {
       }
 
       // Extract cache metrics from usage
-      const usage = response.usage as Record<string, unknown>
+      const usage = msg.usage as unknown as Record<string, unknown>
       const cacheReadTokens = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : undefined
       const cacheCreationTokens = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : undefined
 
       return {
         text,
         provider: 'anthropic',
-        model: response.model,
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+        model: msg.model,
+        inputTokens: msg.usage.input_tokens,
+        outputTokens: msg.usage.output_tokens,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         durationMs: Date.now() - start,
         fromFallback: false,
@@ -416,7 +417,7 @@ export class GoogleAdapter implements ProviderAdapter {
       modelConfig.tools = geminiTools
     }
 
-    const genModel = client.getGenerativeModel(modelConfig as Parameters<typeof client.getGenerativeModel>[0])
+    const genModel = client.getGenerativeModel(modelConfig as unknown as Parameters<typeof client.getGenerativeModel>[0])
 
     // Build conversation: system messages go to systemInstruction, rest to history
     const nonSystemMessages = request.messages.filter(m => m.role !== 'system')
@@ -450,7 +451,7 @@ export class GoogleAdapter implements ProviderAdapter {
             })
           }
           // Code execution results
-          const p = part as Record<string, unknown>
+          const p = part as unknown as Record<string, unknown>
           if ('executableCode' in p && p.executableCode) {
             const ec = p.executableCode as Record<string, unknown>
             codeResults.push({
