@@ -85,8 +85,43 @@ Tooltip shown on hover via CSS (`.header-status-tooltip`)
 - CSS variables: `--category-name` (`--primary`, `--on-surface-variant`)
 - HTML IDs: kebab-case (`btn-save`, `notif-dot`)
 - All colors via CSS variables — never hardcode hex in components
-- Border-radius: `0.5rem` for containers, `1.5rem` for pill buttons
+- Border-radius: `0.5rem` for containers, `0.75rem` for elevated cards/modals, `1.5rem` for pill buttons
 - Transitions: `0.15s ease` for hover, `0.3s cubic-bezier` for slide animations
+
+## REGLA: Reutilizar clases y variables del design system
+
+**OBLIGATORIO para todo módulo que renderice HTML en la consola.**
+
+### Variables CSS — usar SOLO las de `base.css :root`
+- Colores: `--primary`, `--primary-hover`, `--primary-light`, `--primary-medium`, `--primary-focus`
+- Superficies: `--surface`, `--surface-container-lowest/low/high/highest`
+- Texto: `--on-surface`, `--on-surface-variant`, `--on-surface-dim`
+- Semánticos: `--success`, `--warning`, `--error`, `--info`
+- Bordes: `--outline-variant`
+- Sombras: `--shadow-subtle`, `--shadow-float`
+- **NO inventar variables** (`--my-bg`, `--accent`, `--border`) — si falta algo, agregarlo a `base.css`
+
+### Clases CSS — reutilizar antes de crear
+- **Paneles**: `.panel`, `.panel-header`, `.panel-body`, `.panel-title`
+- **Campos**: `.field`, `.field-label`, `.field input/select`
+- **Toggles**: `.toggle`, `.toggle-sm` (iOS style, active = `--success`)
+- **Botones**: `.act-btn-add/remove/config/cta`, `.btn-secondary`
+- **Tablas**: `.users-table`, `.users-table-head`
+- **Filtros**: `.filter-bar`, `.filter-group`, `.filter-label`
+- **Dropdowns**: `.custom-select`, `.custom-select-btn/panel/option`
+- **Badges**: `.panel-badge`, `.badge-active`, `.badge-soon`
+- **Tooltips**: `.info-btn`, `.info-tooltip`
+- **Modals**: `.wizard-overlay`, `.wizard-modal`, `.wizard-input`, `.wizard-btn-*`
+- **Tabs**: `.chs-tabs`, `.chs-tab`
+- **Focus ring**: `box-shadow: 0 0 0 3px var(--primary-focus)` — SIEMPRE igual
+
+### Inline styles — prohibidos para CSS presentacional
+- **NO**: `style="display:flex;gap:12px;background:var(--surface-container-lowest);border-radius:0.5rem;padding:14px"`
+- **SÍ**: Crear clase en `components.css` o en un `<style>` scoped con prefijo del módulo
+- **Excepción**: `style="display:none"` para JS toggles y `style="width:${pct}%"` para valores dinámicos
+
+### Prefijos de módulo para clases scoped
+Si un módulo necesita clases propias, usar prefijo corto: `ls-` (lead-scoring), `ki-` (knowledge), `st-` (scheduled-tasks), `ts-` (templates-sections), `freight-`, `fd-` (freshdesk)
 
 ## How static files are served
 - `server.ts` maps `/console/static/*` to `ui/` (dev) or `dist/console/` (prod)
