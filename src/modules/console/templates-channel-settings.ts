@@ -301,9 +301,9 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
             <div class="chs-toggle-title">${esc(label)}</div>
             ${descText ? `<div class="chs-toggle-desc">${esc(descText)}</div>` : ''}
           </div>
+          <input type="hidden" name="${tf.key}" value="false">
           <label class="toggle toggle-sm">
             <input type="checkbox" name="${tf.key}" value="true" ${checked ? 'checked' : ''} data-original="${checked ? 'true' : 'false'}" onchange="instantApply(this)">
-            <input type="hidden" name="${tf.key}" value="false">
             <span class="toggle-slider"></span>
           </label>
         </div>`
@@ -325,9 +325,9 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
           <div class="chs-toggle-title">${esc(label)}</div>
           ${descText ? `<div class="chs-toggle-desc">${esc(descText)}</div>` : ''}
         </div>
+        <input type="hidden" name="${f.key}" value="false">
         <label class="toggle toggle-sm">
           <input type="checkbox" name="${f.key}" value="true" ${checked ? 'checked' : ''} data-original="${checked ? 'true' : 'false'}" onchange="instantApply(this)">
-          <input type="hidden" name="${f.key}" value="false">
           <span class="toggle-slider"></span>
         </label>
       </div>`

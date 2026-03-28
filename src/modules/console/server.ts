@@ -1058,6 +1058,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       if (section === 'agente' && !agenteSubpage) {
         agenteSubpage = 'knowledge'
       }
+      // Voice tab removed — redirect to identity (TTS settings are in identity page)
+      if (section === 'agente' && agenteSubpage === 'voice') {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/agente/identity?lang=${lang}` })
+        res.end()
+        return true
+      }
 
       // Redirect old section IDs to unified agente page
       const agenteRedirects: Record<string, string> = {
@@ -1087,6 +1094,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       const herramientasRedirects: Record<string, string> = {
         'tools': 'tools', 'lead-scoring': 'lead-scoring', 'freight': 'freight',
         'medilink': 'medilink', 'scheduled-tasks': 'scheduled-tasks', 'google-apps': 'google-apps',
+        'freshdesk': 'freshdesk',
       }
       if (herramientasRedirects[section]) {
         const lang = detectLang(req)
@@ -1159,7 +1167,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           if (renderFn) {
             sectionData.scheduledTasksHtml = await renderFn(lang)
           }
-        } catch { /* module not available */ }
+        } catch (err) { logger.error({ err }, 'Failed to render scheduled-tasks section (standalone)') }
       }
 
       // Knowledge: render via module service
@@ -1168,8 +1176,10 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const renderFn = registry.getOptional<(lang: string) => Promise<string>>('knowledge:renderSection')
           if (renderFn) {
             sectionData.knowledgeItemsHtml = await renderFn(lang)
+          } else {
+            logger.warn('knowledge:renderSection service not found (standalone route)')
           }
-        } catch { /* module not available */ }
+        } catch (err) { logger.error({ err }, 'Failed to render knowledge section (standalone)') }
       }
 
       // Lead scoring: render inline via module service
@@ -1205,8 +1215,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             const renderFn = registry.getOptional<(lang: string) => Promise<string>>('knowledge:renderSection')
             if (renderFn) {
               sectionData.knowledgeItemsHtml = await renderFn(lang)
+            } else {
+              logger.warn('knowledge:renderSection service not registered — module may be inactive or failed to init')
             }
-          } catch { /* module not available */ }
+          } catch (err) {
+            logger.error({ err }, 'Failed to render knowledge section')
+          }
           sectionData.agenteContent = renderSection('knowledge', sectionData) ?? `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'memory') {
           // Only show basic memory fields (active conversations + basic retention)
@@ -1226,9 +1240,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } else if (agenteSubpage === 'identity') {
           sectionData.agenteContent = renderSection('identity', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
-        } else if (agenteSubpage === 'voice') {
-          sectionData.agenteContent = renderSection('voice-tts', sectionData) ??
-            `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo TTS no disponible.' : 'TTS module not available.'}</p></div></div>`
         }
       }
 
@@ -1240,13 +1251,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         if (herramientasSubpage === 'tools') {
           sectionData.herramientasContent = renderSection('tools-cards', sectionData) ?? notAvailable('herramientas')
         } else if (herramientasSubpage === 'lead-scoring') {
-          // Use lead-scoring's custom renderer if available
           try {
             const renderFn = registry.getOptional<(lang: string) => string>('lead-scoring:renderSection')
             if (renderFn) {
               sectionData.herramientasContent = renderFn(lang)
             }
-          } catch { /* ignore */ }
+          } catch (err) { logger.error({ err }, 'Failed to render lead-scoring section') }
           if (!sectionData.herramientasContent) {
             sectionData.herramientasContent = notAvailable('calificacion')
           }
@@ -1258,7 +1268,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
               if (renderFn) {
                 sectionData.herramientasContent = renderFn(lang)
               }
-            } catch { /* ignore */ }
+            } catch (err) { logger.error({ err }, 'Failed to render freight section') }
           }
           if (!sectionData.herramientasContent) {
             sectionData.herramientasContent = notAvailable('flete')
@@ -1274,7 +1284,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             if (renderFn) {
               sectionData.herramientasContent = await renderFn(lang)
             }
-          } catch { /* ignore */ }
+          } catch (err) { logger.error({ err }, 'Failed to render scheduled-tasks section') }
           if (!sectionData.herramientasContent) {
             sectionData.herramientasContent = notAvailable('tareas programadas')
           }
@@ -1287,7 +1297,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             try {
               const renderFn = registry.getOptional<(lang: string) => string>('freshdesk:renderSection')
               if (renderFn) html += renderFn(lang)
-            } catch { /* module not available */ }
+            } catch (err) { logger.error({ err }, 'Failed to render freshdesk section') }
             sectionData.herramientasContent = html
           } else {
             sectionData.herramientasContent = notAvailable('Freshdesk')

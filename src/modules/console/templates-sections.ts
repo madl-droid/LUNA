@@ -1028,6 +1028,8 @@ export const SECTION_REDIRECTS: Record<string, string> = {
   // Old channel direct URLs → nested under channels
   'whatsapp': 'channels/whatsapp',
   'email': 'channels/gmail',
+  // TTS page → identity (TTS is a feature, not a tool)
+  'tts': 'agente/identity',
 }
 
 // ═══════════════════════════════════════════
@@ -1040,9 +1042,11 @@ function renderToolsCardsSection(data: SectionData): string {
   const cfg = data.config
 
   // Collect tool modules from herramientas group
+  // Exclude: core agent modules (tools, prompts, engine, memory, knowledge) and TTS (feature, not a tool)
+  const TOOLS_PAGE_EXCLUDE = new Set(['tools', 'prompts', 'engine', 'memory', 'knowledge', 'tts'])
   const toolModules = (data.moduleStates ?? [])
-    .filter(m => (m.console as unknown as Record<string, unknown>)?.group === 'agent' || m.type === 'feature')
-    .filter(m => m.name !== 'tools' && m.name !== 'prompts' && m.name !== 'engine')
+    .filter(m => !TOOLS_PAGE_EXCLUDE.has(m.name))
+    .filter(m => (m.console as unknown as Record<string, unknown>)?.group === 'agent' || (m.console as unknown as Record<string, unknown>)?.group === 'modules' || m.type === 'feature')
     .sort((a, b) => {
       // Active first, then alphabetical
       if (a.active !== b.active) return a.active ? -1 : 1
