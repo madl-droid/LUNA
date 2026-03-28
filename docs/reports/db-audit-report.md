@@ -5,34 +5,44 @@
 Auditoría completa de la base de datos: identificar tablas/columnas sin uso, duplicados, queries ineficientes, índices faltantes, y oportunidades de mejora.
 
 ### Completado ✅
-**Bloque A — Cambios seguros ejecutados:**
+
+**Bloque A — Optimizaciones de queries:**
 1. **Migración SQL de limpieza** (`docs/migrations/s-db-cleanup.sql`):
    - DROP `system_state` (tabla sin uso en código)
    - DROP `user_lists_backup` (remanente de migración completada)
    - 5 índices nuevos para queries frecuentes
 2. **Fix N+1 en campaign tags** — `listCampaigns()` pasó de 1+N queries a 1 query con `json_agg`
-3. **Fix N+1 en commitment scanner** — eliminado re-fetch individual de `getPendingCommitments()` por cada commitment
-4. **Optimización `listLeads()`** — subqueries correlacionadas reemplazadas por LEFT JOIN con sesiones pre-agregadas
-5. **Consolidación `getLeadDetail()`** — de 5 queries secuenciales a 3 queries paralelos (`Promise.all`)
+3. **Fix N+1 en commitment scanner** — eliminado re-fetch individual por cada commitment
+4. **Optimización `listLeads()`** — subqueries correlacionadas → LEFT JOIN pre-agregado
+5. **Consolidación `getLeadDetail()`** — de 5 queries secuenciales a 3 paralelos (`Promise.all`)
+
+**Bloque B — Migración de columnas deprecadas:**
+1. **B2: Messages dual-write eliminado** — `saveMessage()` solo escribe columnas nuevas (`role`, `content_text`, `agent_id`). Fallbacks en phase1 y proactive usan `role`/`content_text`.
+2. **B3: contact_channels migrado** — 11 archivos actualizados de `channel_name`/`channel_contact_id` a `channel_type`/`channel_identifier`. ON CONFLICT actualizado.
+3. **B4: compressed_summary reemplazado** — Session loading ahora usa LEFT JOIN LATERAL a `session_summaries`. Evaluator y follow-up prompts no cambian.
+4. **B5: Migración SQL extendida** — DROP de columnas deprecadas en messages, contact_channels, sessions. Nuevo UNIQUE constraint.
 
 ### No completado ❌
-**Bloque B — Documentado como deuda técnica futura:**
-1. **Doble fuente de verdad `contacts.qualification_*` vs `agent_contacts`** — lead-scoring escribe a contacts, memory module escribe a agent_contacts. Requiere migración coordinada.
-2. **Dual-write en messages** — columnas viejas (`sender_type`, `sender_id`, `content` JSONB) aún escritas junto a nuevas (`role`, `content_text`). Código de fallback lee las viejas.
-3. **`contact_channels` columnas viejas** — `channel_name`/`channel_contact_id` siguen en uso (incluido UNIQUE constraint). Nuevas `channel_type`/`channel_identifier` no adoptadas.
-4. **`sessions.compressed_summary`** — aún usada activamente en evaluator prompt y follow-up prompts. No se puede eliminar sin reemplazar por `session_summaries`.
-5. **Phase 3 migration** — no ejecutable hasta completar B1-B4.
+1. **B1: Doble fuente de verdad `contacts.qualification_*` vs `agent_contacts`** — Lead-scoring escribe directamente a `contacts.qualification_status/score/data`. Memory module escribe a `agent_contacts.lead_status/qualification_score/qualification_data`. Unificar requiere refactorizar lead-scoring para usar `agent_contacts` con un `agentId` context, lo cual es un cambio arquitectural mayor. Las columnas `qualification_*` en contacts NO se eliminan en la migración.
 
 ### Archivos creados/modificados
 | Archivo | Cambio |
 |---------|--------|
-| `docs/migrations/s-db-cleanup.sql` | **NUEVO** — migración: DROP tablas, CREATE INDEX |
+| `docs/migrations/s-db-cleanup.sql` | **NUEVO** — DROP tablas, CREATE INDEX, DROP columnas deprecadas |
 | `src/modules/lead-scoring/campaign-queries.ts` | Fix N+1: tags con json_agg inline |
-| `src/engine/proactive/jobs/commitment-check.ts` | Fix N+1: commitment data desde row |
-| `src/modules/lead-scoring/pg-queries.ts` | Optimizar listLeads + consolidar getLeadDetail |
+| `src/engine/proactive/jobs/commitment-check.ts` | Fix N+1 + migrar a channel_type/channel_identifier |
+| `src/modules/lead-scoring/pg-queries.ts` | Optimizar listLeads, consolidar getLeadDetail, migrar columnas |
+| `src/modules/memory/pg-store.ts` | Eliminar dual-write, actualizar CREATE TABLE y queries |
+| `src/engine/phases/phase1-intake.ts` | Migrar findContact + ensureVoiceChannel + session loading |
+| `src/engine/phases/phase3-execute.ts` | Migrar compressed_summary → session_summaries |
+| `src/engine/proactive/proactive-pipeline.ts` | Migrar contact lookup + session loading + history fallback |
+| `src/engine/proactive/jobs/follow-up.ts` | Migrar a channel_type/channel_identifier |
+| `src/engine/proactive/jobs/reactivation.ts` | Migrar a channel_type/channel_identifier |
+| `src/engine/proactive/jobs/reminder.ts` | Migrar a channel_type/channel_identifier |
+| `src/modules/twilio-voice/voice-engine.ts` | Migrar voice channel lookup |
 
 ### Interfaces expuestas (exports que otros consumen)
-Ninguna nueva. Los cambios son internos a los módulos existentes.
+Ninguna nueva. Los cambios son internos a los módulos existentes. `SessionInfo.compressedSummary` se mantiene como campo pero ahora se llena desde `session_summaries`.
 
 ### Dependencias instaladas
 Ninguna.
@@ -42,16 +52,25 @@ Ninguna.
 - No hay test suite automatizada en el proyecto
 
 ### Decisiones técnicas
-1. **Bloque A vs B**: Se separó en cambios seguros (optimizaciones de query) vs cambios invasivos (migración de columnas). Solo Bloque A se ejecutó.
-2. **commitment-check**: Se construye el objeto `Commitment` directamente desde los campos del query SQL en lugar de hacer un round-trip completo por `getPendingCommitments`. Los campos no presentes en el query (sessionId, scheduledAt, etc.) se dejan como defaults — el evaluator solo usa commitmentType, description, priority, dueAt, requiresTool, attemptCount.
-3. **getLeadDetail Promise.all**: Las 3 queries son independientes (solo dependen de contactId) así que se ejecutan en paralelo.
+1. **B1 no migrado**: `contacts.qualification_*` sigue siendo la fuente de verdad para lead-scoring. Migrar a `agent_contacts` requiere que lead-scoring tenga un agentId context y que se sincronicen ambas tablas. Demasiado riesgo para esta sesión.
+2. **compressed_summary → LATERAL JOIN**: En vez de cambiar el tipo `SessionInfo`, se mantiene el campo `compressedSummary` pero se puebla desde `session_summaries.summary_text` via LEFT JOIN LATERAL. Cero cambios en consumidores (evaluator, follow-up).
+3. **Messages dual-write eliminado**: Los campos legacy (`channelName`, `senderType`, `senderId`, `content`) del tipo `StoredMessage` se mantienen en la interfaz TypeScript pero se derivan de las columnas nuevas (`role` → `senderType`, `content_text` → `content.text`).
+4. **ON CONFLICT**: La constraint de contact_channels migra de `(channel_name, channel_contact_id)` a `(channel_type, channel_identifier)`. La migración SQL crea la nueva constraint.
 
 ### Riesgos o deuda técnica
-1. **Doble fuente de verdad** (B1) es el riesgo principal: `contacts.qualification_*` y `agent_contacts.qualification_*` pueden divergir.
-2. **Phase 3 migration** sigue bloqueada hasta que el código migre a columnas nuevas.
-3. **`getCampaignStats()`** usa `NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)` que puede ser lento con muchos registros — candidato a optimización futura con LEFT JOIN.
+1. **Doble fuente de verdad qualification_*** — principal riesgo. `contacts` y `agent_contacts` pueden tener datos diferentes.
+2. **Migración SQL es destructiva** — `s-db-cleanup.sql` hace DROP COLUMN. Debe ejecutarse DESPUÉS de deployar el código nuevo. Ejecutar la migración con código viejo causa errores.
+3. **`getCampaignStats()`** usa `NOT IN (SELECT DISTINCT ...)` — puede ser lento con muchos registros.
+4. **Backfill necesario** — Si hay filas de `messages` que solo tienen `sender_type` sin `role`, esas filas tendrán `role = NULL` y no se mostrarán correctamente. Agregar un UPDATE backfill antes de ejecutar la migración:
+   ```sql
+   UPDATE messages SET role = CASE WHEN sender_type = 'agent' THEN 'assistant' ELSE 'user' END
+   WHERE role IS NULL AND sender_type IS NOT NULL;
+   UPDATE messages SET content_text = content->>'text'
+   WHERE content_text IS NULL AND content IS NOT NULL;
+   ```
 
 ### Notas para integración
-- La migración `s-db-cleanup.sql` debe ejecutarse manualmente en cada entorno (staging, producción).
-- Los cambios de código son backward-compatible — funcionan con o sin la migración SQL aplicada.
-- Los índices se crean con `IF NOT EXISTS` — seguro ejecutar múltiples veces.
+1. **Orden de deploy**: Código primero → backfill SQL → migración `s-db-cleanup.sql`
+2. Los cambios de código son backward-compatible durante el período de transición (COALESCE y fallbacks)
+3. Los índices se crean con `IF NOT EXISTS` — seguro ejecutar múltiples veces
+4. La migración usa `IF EXISTS` para todos los DROP — idempotente
