@@ -1,8 +1,8 @@
--- 010: Alter-ego — Simulation & Testing subsystem for Cortex
+-- 010: Trace — Simulation & Testing subsystem for Cortex
 -- 3 tables: scenarios, runs, results
 
 -- Scenario definitions
-CREATE TABLE IF NOT EXISTS alter_ego_scenarios (
+CREATE TABLE IF NOT EXISTS trace_scenarios (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name        TEXT NOT NULL,
   description TEXT,
@@ -11,13 +11,13 @@ CREATE TABLE IF NOT EXISTS alter_ego_scenarios (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_alter_ego_scenarios_created
-  ON alter_ego_scenarios (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trace_scenarios_created
+  ON trace_scenarios (created_at DESC);
 
 -- Simulation runs (batch of N simulations)
-CREATE TABLE IF NOT EXISTS alter_ego_runs (
+CREATE TABLE IF NOT EXISTS trace_runs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  scenario_id      UUID NOT NULL REFERENCES alter_ego_scenarios(id) ON DELETE CASCADE,
+  scenario_id      UUID NOT NULL REFERENCES trace_scenarios(id) ON DELETE CASCADE,
   variant_name     TEXT NOT NULL DEFAULT 'baseline',
   status           TEXT NOT NULL DEFAULT 'pending'
                    CHECK (status IN ('pending', 'running', 'analyzing', 'completed', 'failed', 'cancelled')),
@@ -36,15 +36,15 @@ CREATE TABLE IF NOT EXISTS alter_ego_runs (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_alter_ego_runs_scenario
-  ON alter_ego_runs (scenario_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_alter_ego_runs_status
-  ON alter_ego_runs (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trace_runs_scenario
+  ON trace_runs (scenario_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trace_runs_status
+  ON trace_runs (status, created_at DESC);
 
 -- Individual simulation results per message
-CREATE TABLE IF NOT EXISTS alter_ego_results (
+CREATE TABLE IF NOT EXISTS trace_results (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  run_id          UUID NOT NULL REFERENCES alter_ego_runs(id) ON DELETE CASCADE,
+  run_id          UUID NOT NULL REFERENCES trace_runs(id) ON DELETE CASCADE,
   sim_index       SMALLINT NOT NULL DEFAULT 0,
   message_index   SMALLINT NOT NULL,
   message_text    TEXT NOT NULL,
@@ -76,5 +76,5 @@ CREATE TABLE IF NOT EXISTS alter_ego_results (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_alter_ego_results_run
-  ON alter_ego_results (run_id, sim_index, message_index);
+CREATE INDEX IF NOT EXISTS idx_trace_results_run
+  ON trace_results (run_id, sim_index, message_index);

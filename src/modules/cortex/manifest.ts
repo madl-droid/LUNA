@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { boolEnv, numEnv, numEnvMin } from '../../kernel/config-helpers.js'
-import { jsonResponse, parseQuery } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import type { CortexConfig } from './types.js'
 import { RingBuffer } from './reflex/ring-buffer.js'
 import { createCounters } from './reflex/counters.js'
@@ -16,11 +16,11 @@ import { checkHealth } from './reflex/health.js'
 import { getMetricsSummary, writeHealthSnapshot } from './reflex/metrics-store.js'
 import { PulseScheduler } from './pulse/scheduler.js'
 import { ensurePulseTable, listReports, getReportById } from './pulse/store.js'
-import { ensureAlterEgoTables, listScenarios, getScenario, createScenario, updateScenario, deleteScenario, listRuns, getRun, deleteRun, getResults, getResultById } from './alter-ego/store.js'
-import { launchRun, cancelRun, isRunActive } from './alter-ego/runner.js'
-import { renderAlterEgoSection } from './alter-ego/render.js'
-import type { AlterEgoConfig, RunRequest, ScenarioConfig } from './alter-ego/types.js'
-import { VALID_SIM_COUNTS } from './alter-ego/types.js'
+import { ensureTraceTables, listScenarios, getScenario, createScenario, updateScenario, deleteScenario, listRuns, getRun, deleteRun, getResults, getResultById } from './trace/store.js'
+import { launchRun, cancelRun, isRunActive } from './trace/runner.js'
+import { renderTraceSection } from './trace/render.js'
+import type { TraceConfig, RunRequest, ScenarioConfig } from './trace/types.js'
+import { VALID_SIM_COUNTS } from './trace/types.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'cortex' })
@@ -72,14 +72,14 @@ const manifest: ModuleManifest = {
     CORTEX_PULSE_LLM_ESCALATION_THRESHOLD: numEnvMin(1, 5),
     CORTEX_PULSE_LOGS_MAX_UNIQUE: numEnvMin(10, 500),
 
-    // ─── Alter-ego config ───
-    CORTEX_ALTER_EGO_ENABLED: boolEnv(false),
-    CORTEX_ALTER_EGO_MODEL: z.string().default('sonnet'),
-    CORTEX_ALTER_EGO_ANALYSIS_MODEL: z.string().default('opus'),
-    CORTEX_ALTER_EGO_MAX_CONCURRENT: numEnvMin(1, 3),
-    CORTEX_ALTER_EGO_MAX_TOKENS_PHASE2: numEnvMin(128, 512),
-    CORTEX_ALTER_EGO_MAX_TOKENS_PHASE4: numEnvMin(256, 1024),
-    CORTEX_ALTER_EGO_MAX_TOKENS_ANALYSIS: numEnvMin(512, 4096),
+    // ─── Trace config ───
+    CORTEX_TRACE_ENABLED: boolEnv(false),
+    CORTEX_TRACE_MODEL: z.string().default('sonnet'),
+    CORTEX_TRACE_ANALYSIS_MODEL: z.string().default('opus'),
+    CORTEX_TRACE_MAX_CONCURRENT: numEnvMin(1, 3),
+    CORTEX_TRACE_MAX_TOKENS_PHASE2: numEnvMin(128, 512),
+    CORTEX_TRACE_MAX_TOKENS_PHASE4: numEnvMin(256, 1024),
+    CORTEX_TRACE_MAX_TOKENS_ANALYSIS: numEnvMin(512, 4096),
   }),
 
   console: {
@@ -213,27 +213,27 @@ const manifest: ModuleManifest = {
         label: { es: 'Modelo LLM por defecto', en: 'Default LLM model' },
         info: { es: 'haiku para la mayoría. sonnet para análisis complejos.', en: 'haiku for most. sonnet for complex analysis.' },
       },
-      { key: 'divider-alter-ego', type: 'divider', label: { es: 'Alter-ego — Simulador de Pipeline', en: 'Alter-ego — Pipeline Simulator' } },
+      { key: 'divider-trace', type: 'divider', label: { es: 'Trace — Simulador de Pipeline', en: 'Trace — Pipeline Simulator' } },
       {
-        key: 'CORTEX_ALTER_EGO_ENABLED',
+        key: 'CORTEX_TRACE_ENABLED',
         type: 'boolean',
-        label: { es: 'Alter-ego activo', en: 'Alter-ego enabled' },
+        label: { es: 'Trace activo', en: 'Trace enabled' },
         info: { es: 'Activa el sistema de simulación y pruebas del pipeline', en: 'Enable pipeline simulation and testing system' },
       },
       {
-        key: 'CORTEX_ALTER_EGO_MODEL',
+        key: 'CORTEX_TRACE_MODEL',
         type: 'text',
         label: { es: 'Modelo simulación', en: 'Simulation model' },
         info: { es: 'Modelo LLM para Phase 2+4 en simulaciones', en: 'LLM model for Phase 2+4 in simulations' },
       },
       {
-        key: 'CORTEX_ALTER_EGO_ANALYSIS_MODEL',
+        key: 'CORTEX_TRACE_ANALYSIS_MODEL',
         type: 'text',
         label: { es: 'Modelo análisis', en: 'Analysis model' },
         info: { es: 'Modelo LLM para Analyst+Synthesizer (opus recomendado)', en: 'LLM model for Analyst+Synthesizer (opus recommended)' },
       },
       {
-        key: 'CORTEX_ALTER_EGO_MAX_CONCURRENT',
+        key: 'CORTEX_TRACE_MAX_CONCURRENT',
         type: 'number',
         label: { es: 'Concurrencia máx.', en: 'Max concurrency' },
         info: { es: 'Máximo de simulaciones simultáneas', en: 'Max simultaneous simulations' },
@@ -280,9 +280,9 @@ const manifest: ModuleManifest = {
       const history = evaluator ? await evaluator.alerts.getAlertHistory(10) : []
       const metrics = await getMetricsSummary(redis)
       let html = renderCortexSection(health, alerts, history, metrics, lang)
-      // Append Alter-ego section
+      // Append Trace section
       try {
-        html += await renderAlterEgoSection(db, lang, config.CORTEX_ALTER_EGO_ENABLED)
+        html += await renderTraceSection(db, lang, config.CORTEX_TRACE_ENABLED)
       } catch { /* best effort */ }
       return html
     })
@@ -314,26 +314,26 @@ const manifest: ModuleManifest = {
       logger.info('Cortex Pulse initialized')
     }
 
-    // ─── Alter-ego initialization ───
-    const alterEgoConfig: AlterEgoConfig = {
-      CORTEX_ALTER_EGO_ENABLED: config.CORTEX_ALTER_EGO_ENABLED,
-      CORTEX_ALTER_EGO_MODEL: config.CORTEX_ALTER_EGO_MODEL,
-      CORTEX_ALTER_EGO_ANALYSIS_MODEL: config.CORTEX_ALTER_EGO_ANALYSIS_MODEL,
-      CORTEX_ALTER_EGO_MAX_CONCURRENT: config.CORTEX_ALTER_EGO_MAX_CONCURRENT,
-      CORTEX_ALTER_EGO_MAX_TOKENS_PHASE2: config.CORTEX_ALTER_EGO_MAX_TOKENS_PHASE2,
-      CORTEX_ALTER_EGO_MAX_TOKENS_PHASE4: config.CORTEX_ALTER_EGO_MAX_TOKENS_PHASE4,
-      CORTEX_ALTER_EGO_MAX_TOKENS_ANALYSIS: config.CORTEX_ALTER_EGO_MAX_TOKENS_ANALYSIS,
+    // ─── Trace initialization ───
+    const traceConfig: TraceConfig = {
+      CORTEX_TRACE_ENABLED: config.CORTEX_TRACE_ENABLED,
+      CORTEX_TRACE_MODEL: config.CORTEX_TRACE_MODEL,
+      CORTEX_TRACE_ANALYSIS_MODEL: config.CORTEX_TRACE_ANALYSIS_MODEL,
+      CORTEX_TRACE_MAX_CONCURRENT: config.CORTEX_TRACE_MAX_CONCURRENT,
+      CORTEX_TRACE_MAX_TOKENS_PHASE2: config.CORTEX_TRACE_MAX_TOKENS_PHASE2,
+      CORTEX_TRACE_MAX_TOKENS_PHASE4: config.CORTEX_TRACE_MAX_TOKENS_PHASE4,
+      CORTEX_TRACE_MAX_TOKENS_ANALYSIS: config.CORTEX_TRACE_MAX_TOKENS_ANALYSIS,
     }
 
-    if (config.CORTEX_ALTER_EGO_ENABLED) {
-      await ensureAlterEgoTables(db)
+    if (config.CORTEX_TRACE_ENABLED) {
+      await ensureTraceTables(db)
 
-      registry.provide('cortex:alter-ego', {
+      registry.provide('cortex:trace', {
         isRunActive: () => isRunActive(),
-        launchRun: (req: RunRequest) => launchRun(db, registry, req, alterEgoConfig),
+        launchRun: (req: RunRequest) => launchRun(db, registry, req, traceConfig),
       })
 
-      logger.info('Cortex Alter-ego initialized')
+      logger.info('Cortex Trace initialized')
     }
 
     // Set up API routes
@@ -410,10 +410,10 @@ const manifest: ModuleManifest = {
             })
           },
         },
-        // ─── Alter-ego API routes ───
+        // ─── Trace API routes ───
         {
           method: 'GET',
-          path: 'alter-ego/scenarios',
+          path: 'trace/scenarios',
           handler: async (req, res) => {
             const query = parseQuery(req)
             const limit = Math.min(parseInt(query.get('limit') ?? '20', 10), 100)
@@ -424,13 +424,13 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'POST',
-          path: 'alter-ego/scenarios',
+          path: 'trace/scenarios',
           handler: async (req, res) => {
-            if (!config.CORTEX_ALTER_EGO_ENABLED) {
-              jsonResponse(res, 400, { error: 'Alter-ego is disabled' })
+            if (!config.CORTEX_TRACE_ENABLED) {
+              jsonResponse(res, 400, { error: 'Trace is disabled' })
               return
             }
-            const body = await import('../../kernel/http-helpers.js').then(m => m.parseBody<{ name: string; description?: string; config: ScenarioConfig }>(req))
+            const body = await parseBody<{ name: string; description?: string; config: ScenarioConfig }>(req)
             if (!body.name || !body.config?.messages?.length) {
               jsonResponse(res, 400, { error: 'name and config.messages are required' })
               return
@@ -441,7 +441,7 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'GET',
-          path: 'alter-ego/scenarios/:id',
+          path: 'trace/scenarios/:id',
           handler: async (req, res) => {
             const id = extractId(req, 'scenarios')
             const scenario = await getScenario(db, id)
@@ -451,17 +451,17 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'PUT',
-          path: 'alter-ego/scenarios/:id',
+          path: 'trace/scenarios/:id',
           handler: async (req, res) => {
             const id = extractId(req, 'scenarios')
-            const body = await import('../../kernel/http-helpers.js').then(m => m.parseBody<{ name: string; description?: string; config: ScenarioConfig }>(req))
+            const body = await parseBody<{ name: string; description?: string; config: ScenarioConfig }>(req)
             await updateScenario(db, id, body.name, body.description ?? null, body.config)
             jsonResponse(res, 200, { ok: true })
           },
         },
         {
           method: 'DELETE',
-          path: 'alter-ego/scenarios/:id',
+          path: 'trace/scenarios/:id',
           handler: async (req, res) => {
             const id = extractId(req, 'scenarios')
             await deleteScenario(db, id)
@@ -470,13 +470,13 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'POST',
-          path: 'alter-ego/run',
+          path: 'trace/run',
           handler: async (req, res) => {
-            if (!config.CORTEX_ALTER_EGO_ENABLED) {
-              jsonResponse(res, 400, { error: 'Alter-ego is disabled' })
+            if (!config.CORTEX_TRACE_ENABLED) {
+              jsonResponse(res, 400, { error: 'Trace is disabled' })
               return
             }
-            const body = await import('../../kernel/http-helpers.js').then(m => m.parseBody<RunRequest>(req))
+            const body = await parseBody<RunRequest>(req)
             if (!body.scenarioId || !body.adminContext) {
               jsonResponse(res, 400, { error: 'scenarioId and adminContext are required' })
               return
@@ -493,7 +493,7 @@ const manifest: ModuleManifest = {
                 adminContext: body.adminContext,
                 modelOverride: body.modelOverride,
                 analysisModel: body.analysisModel,
-              }, alterEgoConfig)
+              }, traceConfig)
               jsonResponse(res, 201, run)
             } catch (err) {
               jsonResponse(res, 400, { error: err instanceof Error ? err.message : 'Failed to launch run' })
@@ -502,20 +502,20 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'GET',
-          path: 'alter-ego/runs',
+          path: 'trace/runs',
           handler: async (req, res) => {
             const query = parseQuery(req)
             const limit = Math.min(parseInt(query.get('limit') ?? '20', 10), 100)
             const offset = parseInt(query.get('offset') ?? '0', 10)
             const scenarioId = query.get('scenario_id') ?? undefined
-            const status = query.get('status') as import('./alter-ego/types.js').RunStatus | undefined
+            const status = query.get('status') as import('./trace/types.js').RunStatus | undefined
             const runs = await listRuns(db, { scenarioId, status }, limit, offset)
             jsonResponse(res, 200, { runs })
           },
         },
         {
           method: 'GET',
-          path: 'alter-ego/runs/:id',
+          path: 'trace/runs/:id',
           handler: async (req, res) => {
             const id = extractId(req, 'runs')
             const run = await getRun(db, id)
@@ -525,7 +525,7 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'POST',
-          path: 'alter-ego/runs/:id/cancel',
+          path: 'trace/runs/:id/cancel',
           handler: async (req, res) => {
             const id = extractId(req, 'runs')
             const cancelled = cancelRun(id)
@@ -534,7 +534,7 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'DELETE',
-          path: 'alter-ego/runs/:id',
+          path: 'trace/runs/:id',
           handler: async (req, res) => {
             const id = extractId(req, 'runs')
             await deleteRun(db, id)
@@ -543,7 +543,7 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'GET',
-          path: 'alter-ego/runs/:id/results',
+          path: 'trace/runs/:id/results',
           handler: async (req, res) => {
             const id = extractId(req, 'runs')
             const query = parseQuery(req)
@@ -554,7 +554,7 @@ const manifest: ModuleManifest = {
         },
         {
           method: 'GET',
-          path: 'alter-ego/runs/:id/results/:resultId',
+          path: 'trace/runs/:id/results/:resultId',
           handler: async (req, res) => {
             const url = new URL(req.url ?? '', 'http://localhost')
             const segments = url.pathname.split('/')
@@ -686,5 +686,6 @@ function extractId(req: import('node:http').IncomingMessage, segment: string): s
   const url = new URL(req.url ?? '', 'http://localhost')
   const parts = url.pathname.split('/')
   const idx = parts.findIndex((p: string) => p === segment)
-  return parts[idx + 1] ?? ''
+  if (idx === -1 || idx + 1 >= parts.length) return ''
+  return parts[idx + 1]!
 }

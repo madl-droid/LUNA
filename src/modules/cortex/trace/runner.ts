@@ -1,11 +1,11 @@
-// cortex/alter-ego/runner.ts — Orchestrator: manages N simulation runs with concurrency
+// cortex/trace/runner.ts — Orchestrator: manages N simulation runs with concurrency
 // Uses a simple semaphore (no BullMQ). Launches async, returns immediately.
 
 import type { Pool } from 'pg'
 import type { Registry } from '../../../kernel/registry.js'
 import type {
   ScenarioConfig, RunRequest, RunRow, RunSummary,
-  AlterEgoConfig, ResultRow, SandboxToolResult,
+  TraceConfig, ResultRow, SandboxToolResult,
 } from './types.js'
 import { VALID_SIM_COUNTS } from './types.js'
 import * as store from './store.js'
@@ -14,7 +14,7 @@ import { analyzeSimulation } from './analyst.js'
 import { synthesizeResults } from './synthesizer.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'cortex:alter-ego:runner' })
+const logger = pino({ name: 'cortex:trace:runner' })
 
 /** Active runs tracked in-memory for cancellation */
 const activeRuns = new Map<string, { cancelled: boolean }>()
@@ -27,7 +27,7 @@ export async function launchRun(
   db: Pool,
   registry: Registry,
   request: RunRequest,
-  alterEgoConfig: AlterEgoConfig,
+  traceConfig: TraceConfig,
 ): Promise<RunRow> {
   // Validate sim count
   if (!VALID_SIM_COUNTS.includes(request.simCount)) {
@@ -61,7 +61,7 @@ export async function launchRun(
   activeRuns.set(run.id, runState)
 
   // Launch async processing (non-blocking)
-  processRun(db, registry, run, scenario.config, variant?.promptOverrides, alterEgoConfig, request, runState)
+  processRun(db, registry, run, scenario.config, variant?.promptOverrides, traceConfig, request, runState)
     .catch(err => {
       logger.error({ err, runId: run.id }, 'Run processing failed fatally')
       store.updateRunStatus(db, run.id, 'failed', { error: err instanceof Error ? err.message : 'Fatal error' })
@@ -101,7 +101,7 @@ async function processRun(
   run: RunRow,
   scenario: ScenarioConfig,
   variantOverrides: import('./types.js').PromptOverrides | undefined,
-  alterEgoConfig: AlterEgoConfig,
+  traceConfig: TraceConfig,
   request: RunRequest,
   runState: { cancelled: boolean },
 ): Promise<void> {
@@ -112,7 +112,7 @@ async function processRun(
     progress: { completed: 0, total: run.sim_count, analyzing: 0 },
   })
 
-  const maxConcurrent = alterEgoConfig.CORTEX_ALTER_EGO_MAX_CONCURRENT
+  const maxConcurrent = traceConfig.CORTEX_TRACE_MAX_CONCURRENT
   const simCount = run.sim_count
   let completed = 0
   let totalTokensIn = 0
@@ -155,7 +155,7 @@ async function processRun(
           runId: run.id,
           simIndex: idx,
           modelOverride: request.modelOverride,
-          alterEgoConfig,
+          traceConfig,
         })
 
         allResults[idx] = simResult.results
@@ -196,16 +196,17 @@ async function processRun(
 
     try {
       const analysisResult = await analyzeSimulation(
-        registry, results, request.adminContext, alterEgoConfig, request.analysisModel,
+        registry, results, request.adminContext, traceConfig, request.analysisModel,
       )
 
       analyses.push(analysisResult.analysis)
-      totalTokensIn += analysisResult.tokens
-      totalTokensOut += analysisResult.tokens
+      totalTokensIn += analysisResult.tokensInput
+      totalTokensOut += analysisResult.tokensOutput
 
       // Update each result row with its analysis
+      const analysisTokens = analysisResult.tokensInput + analysisResult.tokensOutput
       for (const r of results) {
-        await store.updateResultAnalysis(db, r.id, analysisResult.analysis, analysisResult.model, analysisResult.tokens)
+        await store.updateResultAnalysis(db, r.id, analysisResult.analysis, analysisResult.model, analysisTokens)
       }
 
       analyzingCount++
@@ -233,7 +234,7 @@ async function processRun(
   if (simCount > 1 && analyses.length > 0) {
     try {
       const synthResult = await synthesizeResults(
-        registry, analyses, request.adminContext, summary, alterEgoConfig, request.analysisModel,
+        registry, analyses, request.adminContext, summary, traceConfig, request.analysisModel,
       )
       synthesis = synthResult.synthesis
       synthesisModel = synthResult.model
@@ -261,7 +262,7 @@ async function processRun(
     durationMs: Date.now() - startMs,
     tokensIn: totalTokensIn,
     tokensOut: totalTokensOut,
-  }, 'Alter-ego run completed')
+  }, 'Trace run completed')
 }
 
 // ═══════════════════════════════════════════

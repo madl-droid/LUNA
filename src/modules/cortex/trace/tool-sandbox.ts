@@ -1,4 +1,4 @@
-// cortex/alter-ego/tool-sandbox.ts — Hybrid tool execution for simulation
+// cortex/trace/tool-sandbox.ts — Hybrid tool execution for simulation
 // Read tools execute for real (faithful data), write tools are dry-run (safe).
 // Classification: regex on tool name, with per-tool overrides from scenario.
 
@@ -7,7 +7,7 @@ import type { ExecutionStep, StepResult } from '../../../engine/types.js'
 import type { SandboxToolResult, MockToolResult } from './types.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'cortex:alter-ego:sandbox' })
+const logger = pino({ name: 'cortex:trace:sandbox' })
 
 // ═══════════════════════════════════════════
 // Tool classification: read vs write

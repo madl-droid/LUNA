@@ -1,4 +1,4 @@
-// cortex/alter-ego/simulator.ts — Executes one full simulation (Shadow Phase 2+3+4)
+// cortex/trace/simulator.ts — Executes one full simulation (Shadow Phase 2+3+4)
 // Imports the same prompt builders as the real engine, calls LLM directly.
 // NEVER touches processMessage(). NEVER sends real messages.
 
@@ -13,10 +13,10 @@ import { buildCompositorPrompt } from '../../../engine/prompts/compositor.js'
 import { buildSimContext } from './context-builder.js'
 import { executeSandboxPlan } from './tool-sandbox.js'
 import { insertResult } from './store.js'
-import type { ScenarioConfig, PromptOverrides, ResultRow, AlterEgoConfig } from './types.js'
+import type { ScenarioConfig, PromptOverrides, ResultRow, TraceConfig } from './types.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'cortex:alter-ego:simulator' })
+const logger = pino({ name: 'cortex:trace:simulator' })
 
 const KNOWLEDGE_DIR = 'instance/knowledge'
 
@@ -24,7 +24,7 @@ export interface SimulationConfig {
   runId: string
   simIndex: number
   modelOverride?: string
-  alterEgoConfig: AlterEgoConfig
+  traceConfig: TraceConfig
 }
 
 export interface SimulationResult {
@@ -126,7 +126,7 @@ export async function runSingleSimulation(
       ]
 
       // Fetch the persisted row to return
-      const row = await db.query(`SELECT * FROM alter_ego_results WHERE id = $1`, [resultId])
+      const row = await db.query(`SELECT * FROM trace_results WHERE id = $1`, [resultId])
       if (row.rows[0]) results.push(row.rows[0] as ResultRow)
 
     } catch (err) {
@@ -142,7 +142,7 @@ export async function runSingleSimulation(
         rawPhase4: err instanceof Error ? err.message : 'Unknown error',
       })
 
-      const row = await db.query(`SELECT * FROM alter_ego_results WHERE id = $1`, [resultId])
+      const row = await db.query(`SELECT * FROM trace_results WHERE id = $1`, [resultId])
       if (row.rows[0]) results.push(row.rows[0] as ResultRow)
     }
   }
@@ -169,12 +169,12 @@ async function shadowPhase2(
 
   const { system, userMessage } = await buildEvaluatorPrompt(ctx, toolCatalog, regForPrompts)
 
-  const model = config.modelOverride ?? config.alterEgoConfig.CORTEX_ALTER_EGO_MODEL
-  const maxTokens = config.alterEgoConfig.CORTEX_ALTER_EGO_MAX_TOKENS_PHASE2
+  const model = config.modelOverride ?? config.traceConfig.CORTEX_TRACE_MODEL
+  const maxTokens = config.traceConfig.CORTEX_TRACE_MAX_TOKENS_PHASE2
 
   // Call LLM via hook
   const llmResult = await registry.callHook('llm:chat', {
-    task: 'alter-ego-evaluate',
+    task: 'trace-evaluate',
     system,
     messages: [{ role: 'user', content: userMessage }],
     maxTokens,
@@ -266,11 +266,11 @@ async function shadowPhase4(
     ctx, evaluation, execution, KNOWLEDGE_DIR, regForPrompts,
   )
 
-  const model = config.modelOverride ?? config.alterEgoConfig.CORTEX_ALTER_EGO_MODEL
-  const maxTokens = config.alterEgoConfig.CORTEX_ALTER_EGO_MAX_TOKENS_PHASE4
+  const model = config.modelOverride ?? config.traceConfig.CORTEX_TRACE_MODEL
+  const maxTokens = config.traceConfig.CORTEX_TRACE_MAX_TOKENS_PHASE4
 
   const llmResult = await registry.callHook('llm:chat', {
-    task: 'alter-ego-compose',
+    task: 'trace-compose',
     system,
     messages: [{ role: 'user', content: userMessage }],
     maxTokens,

@@ -1,4 +1,4 @@
-// cortex/alter-ego/types.ts — Domain types for Alter-ego simulation subsystem
+// cortex/trace/types.ts — Domain types for Trace simulation subsystem
 
 import type { ChannelName } from '../../../channels/types.js'
 import type { HistoryMessage, UserType } from '../../../engine/types.js'
@@ -7,14 +7,14 @@ import type { HistoryMessage, UserType } from '../../../engine/types.js'
 // Config
 // ═══════════════════════════════════════════
 
-export interface AlterEgoConfig {
-  CORTEX_ALTER_EGO_ENABLED: boolean
-  CORTEX_ALTER_EGO_MODEL: string
-  CORTEX_ALTER_EGO_ANALYSIS_MODEL: string
-  CORTEX_ALTER_EGO_MAX_CONCURRENT: number
-  CORTEX_ALTER_EGO_MAX_TOKENS_PHASE2: number
-  CORTEX_ALTER_EGO_MAX_TOKENS_PHASE4: number
-  CORTEX_ALTER_EGO_MAX_TOKENS_ANALYSIS: number
+export interface TraceConfig {
+  CORTEX_TRACE_ENABLED: boolean
+  CORTEX_TRACE_MODEL: string
+  CORTEX_TRACE_ANALYSIS_MODEL: string
+  CORTEX_TRACE_MAX_CONCURRENT: number
+  CORTEX_TRACE_MAX_TOKENS_PHASE2: number
+  CORTEX_TRACE_MAX_TOKENS_PHASE4: number
+  CORTEX_TRACE_MAX_TOKENS_ANALYSIS: number
 }
 
 // ═══════════════════════════════════════════

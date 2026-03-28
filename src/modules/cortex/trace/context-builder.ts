@@ -1,4 +1,4 @@
-// cortex/alter-ego/context-builder.ts — Builds ContextBundle for simulation
+// cortex/trace/context-builder.ts — Builds ContextBundle for simulation
 // Reads real DB data (read-only) when contactRef is provided,
 // otherwise builds synthetic context. NEVER writes to DB.
 
@@ -13,7 +13,7 @@ import type {
 import type { ScenarioMessage } from './types.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'cortex:alter-ego:context' })
+const logger = pino({ name: 'cortex:trace:context' })
 
 /** Full permissions for simulation (no restrictions) */
 const SIM_PERMISSIONS: UserPermissions = {

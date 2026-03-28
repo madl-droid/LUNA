@@ -1,5 +1,5 @@
-// cortex/alter-ego/store.ts — PostgreSQL persistence for Alter-ego
-// Tables: alter_ego_scenarios, alter_ego_runs, alter_ego_results
+// cortex/trace/store.ts — PostgreSQL persistence for Trace
+// Tables: trace_scenarios, trace_runs, trace_results
 // Pattern follows pulse/store.ts
 
 import type { Pool } from 'pg'
@@ -9,16 +9,16 @@ import type {
 } from './types.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'cortex:alter-ego:store' })
+const logger = pino({ name: 'cortex:trace:store' })
 
 // ═══════════════════════════════════════════
 // DDL (safety net — migration 010 is canonical)
 // ═══════════════════════════════════════════
 
-export async function ensureAlterEgoTables(db: Pool): Promise<void> {
+export async function ensureTraceTables(db: Pool): Promise<void> {
   try {
     await db.query(`
-      CREATE TABLE IF NOT EXISTS alter_ego_scenarios (
+      CREATE TABLE IF NOT EXISTS trace_scenarios (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name TEXT NOT NULL, description TEXT,
         config JSONB NOT NULL DEFAULT '{}',
@@ -26,11 +26,12 @@ export async function ensureAlterEgoTables(db: Pool): Promise<void> {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`)
     await db.query(`
-      CREATE TABLE IF NOT EXISTS alter_ego_runs (
+      CREATE TABLE IF NOT EXISTS trace_runs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        scenario_id UUID NOT NULL REFERENCES alter_ego_scenarios(id) ON DELETE CASCADE,
+        scenario_id UUID NOT NULL REFERENCES trace_scenarios(id) ON DELETE CASCADE,
         variant_name TEXT NOT NULL DEFAULT 'baseline',
-        status TEXT NOT NULL DEFAULT 'pending',
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending','running','analyzing','completed','failed','cancelled')),
         sim_count SMALLINT NOT NULL DEFAULT 1,
         admin_context TEXT NOT NULL,
         config JSONB,
@@ -42,9 +43,9 @@ export async function ensureAlterEgoTables(db: Pool): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`)
     await db.query(`
-      CREATE TABLE IF NOT EXISTS alter_ego_results (
+      CREATE TABLE IF NOT EXISTS trace_results (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        run_id UUID NOT NULL REFERENCES alter_ego_runs(id) ON DELETE CASCADE,
+        run_id UUID NOT NULL REFERENCES trace_runs(id) ON DELETE CASCADE,
         sim_index SMALLINT NOT NULL DEFAULT 0,
         message_index SMALLINT NOT NULL,
         message_text TEXT NOT NULL,
@@ -57,9 +58,9 @@ export async function ensureAlterEgoTables(db: Pool): Promise<void> {
         analysis TEXT, analysis_model TEXT, analysis_tokens INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`)
-    logger.debug('alter_ego tables ensured')
+    logger.debug('trace tables ensured')
   } catch (err) {
-    logger.error({ err }, 'Failed to ensure alter_ego tables')
+    logger.error({ err }, 'Failed to ensure trace tables')
     throw err
   }
 }
@@ -72,18 +73,18 @@ export async function createScenario(
   db: Pool, name: string, description: string | null, config: ScenarioConfig,
 ): Promise<ScenarioRow> {
   const { rows } = await db.query(
-    `INSERT INTO alter_ego_scenarios (name, description, config)
+    `INSERT INTO trace_scenarios (name, description, config)
      VALUES ($1, $2, $3)
      RETURNING id, name, description, config, created_at, updated_at`,
     [name, description, JSON.stringify(config)],
   )
-  return rows[0] as ScenarioRow
+  return rows[0]! as ScenarioRow
 }
 
 export async function listScenarios(db: Pool, limit = 20, offset = 0): Promise<ScenarioRow[]> {
   const { rows } = await db.query(
     `SELECT id, name, description, config, created_at, updated_at
-     FROM alter_ego_scenarios ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+     FROM trace_scenarios ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
     [limit, offset],
   )
   return rows as ScenarioRow[]
@@ -92,7 +93,7 @@ export async function listScenarios(db: Pool, limit = 20, offset = 0): Promise<S
 export async function getScenario(db: Pool, id: string): Promise<ScenarioRow | null> {
   const { rows } = await db.query(
     `SELECT id, name, description, config, created_at, updated_at
-     FROM alter_ego_scenarios WHERE id = $1`,
+     FROM trace_scenarios WHERE id = $1`,
     [id],
   )
   return (rows[0] as ScenarioRow | undefined) ?? null
@@ -102,14 +103,14 @@ export async function updateScenario(
   db: Pool, id: string, name: string, description: string | null, config: ScenarioConfig,
 ): Promise<void> {
   await db.query(
-    `UPDATE alter_ego_scenarios SET name = $2, description = $3, config = $4, updated_at = now()
+    `UPDATE trace_scenarios SET name = $2, description = $3, config = $4, updated_at = now()
      WHERE id = $1`,
     [id, name, description, JSON.stringify(config)],
   )
 }
 
 export async function deleteScenario(db: Pool, id: string): Promise<void> {
-  await db.query(`DELETE FROM alter_ego_scenarios WHERE id = $1`, [id])
+  await db.query(`DELETE FROM trace_scenarios WHERE id = $1`, [id])
 }
 
 // ═══════════════════════════════════════════
@@ -125,7 +126,7 @@ export async function createRun(
   config?: Record<string, unknown>,
 ): Promise<RunRow> {
   const { rows } = await db.query(
-    `INSERT INTO alter_ego_runs (scenario_id, variant_name, sim_count, admin_context, config,
+    `INSERT INTO trace_runs (scenario_id, variant_name, sim_count, admin_context, config,
        progress)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
@@ -133,7 +134,7 @@ export async function createRun(
       config ? JSON.stringify(config) : null,
       JSON.stringify({ completed: 0, total: simCount, analyzing: 0 })],
   )
-  return rows[0] as RunRow
+  return rows[0]! as RunRow
 }
 
 export async function updateRunStatus(
@@ -196,7 +197,7 @@ export async function updateRunStatus(
     idx++
   }
 
-  await db.query(`UPDATE alter_ego_runs SET ${sets.join(', ')} WHERE id = $1`, params)
+  await db.query(`UPDATE trace_runs SET ${sets.join(', ')} WHERE id = $1`, params)
 }
 
 export async function listRuns(
@@ -219,19 +220,19 @@ export async function listRuns(
   params.push(limit, offset)
 
   const { rows } = await db.query(
-    `SELECT * FROM alter_ego_runs ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
+    `SELECT * FROM trace_runs ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
     params,
   )
   return rows as RunRow[]
 }
 
 export async function getRun(db: Pool, id: string): Promise<RunRow | null> {
-  const { rows } = await db.query(`SELECT * FROM alter_ego_runs WHERE id = $1`, [id])
+  const { rows } = await db.query(`SELECT * FROM trace_runs WHERE id = $1`, [id])
   return (rows[0] as RunRow | undefined) ?? null
 }
 
 export async function deleteRun(db: Pool, id: string): Promise<void> {
-  await db.query(`DELETE FROM alter_ego_runs WHERE id = $1`, [id])
+  await db.query(`DELETE FROM trace_runs WHERE id = $1`, [id])
 }
 
 // ═══════════════════════════════════════════
@@ -251,7 +252,7 @@ export async function insertResult(
   },
 ): Promise<string> {
   const { rows } = await db.query(
-    `INSERT INTO alter_ego_results (
+    `INSERT INTO trace_results (
        run_id, sim_index, message_index, message_text,
        intent, emotion, tools_planned, execution_plan, injection_risk, on_scope,
        tools_executed, response_text,
@@ -270,14 +271,14 @@ export async function insertResult(
       r.rawPhase2 ? JSON.stringify(r.rawPhase2) : null, r.rawPhase4 ?? null,
     ],
   )
-  return (rows[0] as { id: string }).id
+  return (rows[0]! as { id: string }).id
 }
 
 export async function updateResultAnalysis(
   db: Pool, id: string, analysis: string, model: string, tokens: number,
 ): Promise<void> {
   await db.query(
-    `UPDATE alter_ego_results SET analysis = $2, analysis_model = $3, analysis_tokens = $4 WHERE id = $1`,
+    `UPDATE trace_results SET analysis = $2, analysis_model = $3, analysis_tokens = $4 WHERE id = $1`,
     [id, analysis, model, tokens],
   )
 }
@@ -285,19 +286,19 @@ export async function updateResultAnalysis(
 export async function getResults(db: Pool, runId: string, simIndex?: number): Promise<ResultRow[]> {
   if (simIndex !== undefined) {
     const { rows } = await db.query(
-      `SELECT * FROM alter_ego_results WHERE run_id = $1 AND sim_index = $2 ORDER BY message_index`,
+      `SELECT * FROM trace_results WHERE run_id = $1 AND sim_index = $2 ORDER BY message_index`,
       [runId, simIndex],
     )
     return rows as ResultRow[]
   }
   const { rows } = await db.query(
-    `SELECT * FROM alter_ego_results WHERE run_id = $1 ORDER BY sim_index, message_index`,
+    `SELECT * FROM trace_results WHERE run_id = $1 ORDER BY sim_index, message_index`,
     [runId],
   )
   return rows as ResultRow[]
 }
 
 export async function getResultById(db: Pool, id: string): Promise<ResultRow | null> {
-  const { rows } = await db.query(`SELECT * FROM alter_ego_results WHERE id = $1`, [id])
+  const { rows } = await db.query(`SELECT * FROM trace_results WHERE id = $1`, [id])
   return (rows[0] as ResultRow | undefined) ?? null
 }

@@ -1,21 +1,21 @@
-// cortex/alter-ego/render.ts — Console HTML section for Alter-ego
+// cortex/trace/render.ts — Console HTML section for Trace
 
 import type { Pool } from 'pg'
 import * as store from './store.js'
 import { isRunActive } from './runner.js'
 
 /**
- * Render the Alter-ego dashboard section within Cortex console.
+ * Render the Trace dashboard section within Cortex console.
  */
-export async function renderAlterEgoSection(
+export async function renderTraceSection(
   db: Pool,
   lang: 'es' | 'en',
   enabled: boolean,
 ): Promise<string> {
   const t = lang === 'es'
     ? {
-        title: 'Alter-ego — Simulador de Pipeline',
-        disabled: 'Alter-ego está desactivado',
+        title: 'Trace — Simulador de Pipeline',
+        disabled: 'Trace está desactivado',
         enable: 'Actívalo en la configuración de Cortex',
         scenarios: 'Escenarios',
         runs: 'Simulaciones recientes',
@@ -28,8 +28,8 @@ export async function renderAlterEgoSection(
         newScenario: 'Nuevo escenario',
       }
     : {
-        title: 'Alter-ego — Pipeline Simulator',
-        disabled: 'Alter-ego is disabled',
+        title: 'Trace — Pipeline Simulator',
+        disabled: 'Trace is disabled',
         enable: 'Enable it in Cortex configuration',
         scenarios: 'Scenarios',
         runs: 'Recent Simulations',
@@ -42,7 +42,7 @@ export async function renderAlterEgoSection(
         newScenario: 'New scenario',
       }
 
-  let html = `<div class="alter-ego-section" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">`
+  let html = `<div class="trace-section" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">`
   html += `<h2 style="margin:0 0 16px;display:flex;align-items:center;gap:8px;">&#129516; ${t.title}</h2>`
 
   if (!enabled) {

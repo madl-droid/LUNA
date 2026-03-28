@@ -1,16 +1,17 @@
-// cortex/alter-ego/analyst.ts — LLM Analyst: evaluates each individual simulation
-// Uses Opus/Gemini Pro with extended thinking for deep analysis.
+// cortex/trace/analyst.ts — LLM Analyst: evaluates each individual simulation
+// Uses Opus/Gemini Pro for deep analysis.
 
 import type { Registry } from '../../../kernel/registry.js'
-import type { ResultRow, AlterEgoConfig } from './types.js'
+import type { ResultRow, TraceConfig } from './types.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'cortex:alter-ego:analyst' })
+const logger = pino({ name: 'cortex:trace:analyst' })
 
 export interface AnalysisResult {
   analysis: string
   model: string
-  tokens: number
+  tokensInput: number
+  tokensOutput: number
 }
 
 /**
@@ -22,17 +23,17 @@ export async function analyzeSimulation(
   registry: Registry,
   results: ResultRow[],
   adminContext: string,
-  config: AlterEgoConfig,
+  config: TraceConfig,
   modelOverride?: string,
 ): Promise<AnalysisResult> {
-  const model = modelOverride ?? config.CORTEX_ALTER_EGO_ANALYSIS_MODEL
-  const maxTokens = config.CORTEX_ALTER_EGO_MAX_TOKENS_ANALYSIS
+  const model = modelOverride ?? config.CORTEX_TRACE_ANALYSIS_MODEL
+  const maxTokens = config.CORTEX_TRACE_MAX_TOKENS_ANALYSIS
 
   const system = buildAnalystSystemPrompt(adminContext)
   const userMessage = buildAnalystUserMessage(results)
 
   const llmResult = await registry.callHook('llm:chat', {
-    task: 'alter-ego-analyze',
+    task: 'trace-analyze',
     system,
     messages: [{ role: 'user', content: userMessage }],
     maxTokens,
@@ -42,13 +43,14 @@ export async function analyzeSimulation(
 
   if (!llmResult?.text) {
     logger.warn('Analyst LLM returned empty response')
-    return { analysis: '[Analysis failed: empty LLM response]', model, tokens: 0 }
+    return { analysis: '[Analysis failed: empty LLM response]', model, tokensInput: 0, tokensOutput: 0 }
   }
 
   return {
     analysis: llmResult.text.trim(),
     model,
-    tokens: (llmResult.inputTokens ?? 0) + (llmResult.outputTokens ?? 0),
+    tokensInput: llmResult.inputTokens ?? 0,
+    tokensOutput: llmResult.outputTokens ?? 0,
   }
 }
 

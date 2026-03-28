@@ -1,11 +1,11 @@
-// cortex/alter-ego/synthesizer.ts — Aggregated analysis of N simulations
+// cortex/trace/synthesizer.ts — Aggregated analysis of N simulations
 // Only runs when sim_count > 1. Uses extended thinking for strategic insights.
 
 import type { Registry } from '../../../kernel/registry.js'
-import type { AlterEgoConfig, RunSummary } from './types.js'
+import type { TraceConfig, RunSummary } from './types.js'
 import pino from 'pino'
 
-const logger = pino({ name: 'cortex:alter-ego:synthesizer' })
+const logger = pino({ name: 'cortex:trace:synthesizer' })
 
 export interface SynthesisResult {
   synthesis: string
@@ -23,17 +23,17 @@ export async function synthesizeResults(
   analyses: string[],
   adminContext: string,
   summary: RunSummary,
-  config: AlterEgoConfig,
+  config: TraceConfig,
   modelOverride?: string,
 ): Promise<SynthesisResult> {
-  const model = modelOverride ?? config.CORTEX_ALTER_EGO_ANALYSIS_MODEL
-  const maxTokens = config.CORTEX_ALTER_EGO_MAX_TOKENS_ANALYSIS
+  const model = modelOverride ?? config.CORTEX_TRACE_ANALYSIS_MODEL
+  const maxTokens = config.CORTEX_TRACE_MAX_TOKENS_ANALYSIS
 
   const system = buildSynthesizerPrompt(adminContext, summary)
   const userMessage = buildSynthesizerUserMessage(analyses, summary)
 
   const llmResult = await registry.callHook('llm:chat', {
-    task: 'alter-ego-synthesize',
+    task: 'trace-synthesize',
     system,
     messages: [{ role: 'user', content: userMessage }],
     maxTokens,
@@ -96,7 +96,7 @@ function buildSynthesizerUserMessage(analyses: string[], summary: RunSummary): s
 
   msg += `---\n\n## Análisis individuales\n\n`
   for (let i = 0; i < analyses.length; i++) {
-    msg += `### Simulación ${i + 1}\n\n${analyses[i]}\n\n---\n\n`
+    msg += `### Simulación ${i + 1}\n\n${analyses[i]!}\n\n---\n\n`
   }
 
   return msg
