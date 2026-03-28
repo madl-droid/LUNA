@@ -190,12 +190,13 @@ export class TaskRouter {
     }
 
     // Parse per-task downgrade targets from JSON env vars
+    const cfg = config as unknown as Record<string, string | undefined>
     const downgradeMap: Record<string, string | undefined> = {
-      classify: (config as Record<string, unknown>).LLM_ROUTE_CLASSIFY_DOWNGRADE as string | undefined,
-      respond: (config as Record<string, unknown>).LLM_ROUTE_RESPOND_DOWNGRADE as string | undefined,
-      complex: (config as Record<string, unknown>).LLM_ROUTE_COMPLEX_DOWNGRADE as string | undefined,
-      tools: (config as Record<string, unknown>).LLM_ROUTE_TOOLS_DOWNGRADE as string | undefined,
-      proactive: (config as Record<string, unknown>).LLM_ROUTE_PROACTIVE_DOWNGRADE as string | undefined,
+      classify: cfg.LLM_ROUTE_CLASSIFY_DOWNGRADE,
+      respond: cfg.LLM_ROUTE_RESPOND_DOWNGRADE,
+      complex: cfg.LLM_ROUTE_COMPLEX_DOWNGRADE,
+      tools: cfg.LLM_ROUTE_TOOLS_DOWNGRADE,
+      proactive: cfg.LLM_ROUTE_PROACTIVE_DOWNGRADE,
     }
 
     for (const [task, json] of Object.entries(downgradeMap)) {

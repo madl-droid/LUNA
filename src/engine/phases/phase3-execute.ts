@@ -428,6 +428,7 @@ async function executeWebSearch(
         messages: [{ role: 'user', content: `Busca información actualizada sobre: ${query}` }],
         maxTokens: 1024,
         temperature: 0.1,
+        googleSearchGrounding: true, // Use native Google Search grounding for real-time results
       },
       'anthropic',
       config.classifyModel,
@@ -437,7 +438,11 @@ async function executeWebSearch(
       stepIndex: index,
       type: 'web_search',
       success: true,
-      data: { searchResult: result.text, provider: result.provider },
+      data: {
+        searchResult: result.text,
+        provider: result.provider,
+        sources: result.groundingMetadata?.sources,
+      },
       durationMs: Date.now() - startMs,
     }
   } catch (err) {

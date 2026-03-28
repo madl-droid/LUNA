@@ -16,8 +16,6 @@ import type {
   LLMMessage,
 } from './types.js'
 
-type GooglePart = { text: string } | { inlineData: { data: string; mimeType: string } }
-
 const logger = pino({ name: 'llm:providers' })
 
 // ═══════════════════════════════════════════

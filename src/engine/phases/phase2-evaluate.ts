@@ -93,6 +93,7 @@ Genera un nuevo plan que tome en cuenta estos resultados. No repitas pasos que y
         messages: [{ role: 'user', content: userMessage }],
         maxTokens: 512,
         temperature: config.temperatureClassify,
+        jsonMode: true, // Force JSON output — Anthropic: prefill trick, Google: responseMimeType
       },
       config.fallbackClassifyProvider,
       config.fallbackClassifyModel,
