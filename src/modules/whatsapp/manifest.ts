@@ -245,8 +245,9 @@ const manifest: ModuleManifest = {
 
     const db = registry.getDb()
     // Stable instance ID: survives container recreation across deploys.
-    // Falls back to hostname only for local dev without INSTANCE_ID set.
-    const instanceId = process.env.INSTANCE_ID || 'luna-default'
+    // Read from kernel config (populated from env by kernel/config.ts).
+    const { getEnv } = await import('../../kernel/config.js')
+    const instanceId = getEnv('INSTANCE_ID') || 'luna-default'
 
     // ── Agent name: read from centralized prompts config ──
     const getAgentName = (): string => {

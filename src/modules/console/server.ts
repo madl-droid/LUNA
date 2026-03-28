@@ -1068,7 +1068,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       // Redirect old section IDs to unified agente page
       const agenteRedirects: Record<string, string> = {
-        llm: 'advanced', pipeline: 'advanced', infra: 'advanced',
         knowledge: 'knowledge', memory: 'memory', prompts: 'identity',
       }
       if (agenteRedirects[section]) {

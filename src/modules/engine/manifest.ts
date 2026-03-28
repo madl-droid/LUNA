@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { boolEnv, numEnvMin } from '../../kernel/config-helpers.js'
-import { initEngine, stopEngine, getEngineStats } from '../../engine/index.js'
+import { initEngine, stopEngine, getEngineStats, reloadEngineConfig } from '../../engine/index.js'
 import { runAttachmentMigration } from '../../engine/attachments/migration.js'
 import { registerQueryAttachmentTool } from '../../engine/attachments/tools/query-attachment.js'
 import { registerWebExploreTool } from '../../engine/attachments/tools/web-explore.js'
@@ -447,6 +447,9 @@ const manifest: ModuleManifest = {
     // Hot-reload on console config change
     registry.addHook('engine', 'console:config_applied', async () => {
       attConfig = registry.getConfig<EngineModuleConfig>('engine')
+
+      // Hot-reload core engine config (models, pipeline, concurrency, etc.)
+      reloadEngineConfig()
 
       // Dynamic extreme logging: read DEBUG_EXTREME_LOG and update global pino level
       try {

@@ -113,6 +113,9 @@ const manifest: ModuleManifest = {
       TTS_MAX_CHARS: number
       TTS_ENABLED_CHANNELS: string
       TTS_AUTO_FOR_AUDIO_INPUT: boolean
+      TTS_AUDIO_TO_AUDIO_FREQ: number
+      TTS_TEXT_TO_AUDIO_FREQ: number
+      TTS_MAX_DURATION: string
     }>('tts')
 
     if (!config.TTS_GOOGLE_API_KEY) {

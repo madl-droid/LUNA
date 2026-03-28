@@ -287,20 +287,6 @@ export function renderPipelineUnifiedSection(data: SectionData): string {
     </div>
   </div>`
 
-  // Panel 3: Naturalidad — ACK params moved to each channel's settings page
-  const natInfo = data.lang === 'es'
-    ? 'Los avisos de naturalidad (acknowledgments) se configuran ahora en la pestaña de ajustes de cada canal: WhatsApp y Gmail.'
-    : 'Naturalness acknowledgments are now configured in each channel\'s settings tab: WhatsApp and Gmail.'
-  h += `<div class="panel">
-    <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${t('sec_naturalidad', data.lang)}</span>
-      <span class="panel-chevron">&#9660;</span>
-    </div>
-    <div class="panel-body">
-      <div class="panel-info">${natInfo}</div>
-    </div>
-  </div>`
-
   return h
 }
 
@@ -1015,22 +1001,8 @@ export function renderChannelsSection(data: SectionData): string {
 <script type="application/json" id="channel-wizards-data">${JSON.stringify(wizardData)}</script>`
 }
 
-/** Old section IDs that redirect to unified pages */
-export const SECTION_REDIRECTS: Record<string, string> = {
-  'apikeys': 'agente/advanced',
-  'models': 'agente/advanced',
-  'llm-limits': 'agente/advanced',
-  'llm-cb': 'agente/advanced',
-  'followup': 'agente/advanced',
-  'naturalidad': 'agente/advanced',
-  'db': 'agente/advanced',
-  'redis': 'agente/advanced',
-  // Old channel direct URLs → nested under channels
-  'whatsapp': 'channels/whatsapp',
-  'email': 'channels/gmail',
-  // TTS page → identity (TTS is a feature, not a tool)
-  'tts': 'agente/identity',
-}
+/** Old section IDs that redirect to unified pages (kept empty — all legacy routes removed) */
+export const SECTION_REDIRECTS: Record<string, string> = {}
 
 // ═══════════════════════════════════════════
 // Tools Cards section — card grid with global params

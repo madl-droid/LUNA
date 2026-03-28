@@ -14,6 +14,9 @@ export interface TTSConfig {
   TTS_MAX_CHARS: number
   TTS_ENABLED_CHANNELS: string
   TTS_AUTO_FOR_AUDIO_INPUT: boolean
+  TTS_AUDIO_TO_AUDIO_FREQ: number
+  TTS_TEXT_TO_AUDIO_FREQ: number
+  TTS_MAX_DURATION: string
 }
 
 export interface SynthesizeResult {
@@ -39,9 +42,16 @@ export class TTSService {
   }
 
   shouldAutoTTS(channel: string, inputContentType: string): boolean {
-    return this.config.TTS_AUTO_FOR_AUDIO_INPUT
-      && this.isEnabledForChannel(channel)
-      && inputContentType === 'audio'
+    if (!this.isEnabledForChannel(channel)) return false
+    if (!this.config.TTS_AUTO_FOR_AUDIO_INPUT) return false
+
+    // Frequency-based probability: 0 = never, 100 = always
+    const freq = inputContentType === 'audio'
+      ? this.config.TTS_AUDIO_TO_AUDIO_FREQ
+      : this.config.TTS_TEXT_TO_AUDIO_FREQ
+    if (freq <= 0) return false
+    if (freq >= 100) return true
+    return Math.random() * 100 < freq
   }
 
   async synthesize(text: string): Promise<SynthesizeResult | null> {
@@ -50,7 +60,11 @@ export class TTSService {
       return null
     }
 
-    const truncated = text.substring(0, this.config.TTS_MAX_CHARS)
+    // Duration limit: ~700 chars per minute of spoken audio
+    const durationMinutes = parseFloat(this.config.TTS_MAX_DURATION) || 2
+    const durationChars = Math.round(durationMinutes * 700)
+    const maxChars = Math.min(this.config.TTS_MAX_CHARS, durationChars)
+    const truncated = text.substring(0, maxChars)
 
     try {
       const response = await fetch(`${TTS_API_URL}?key=${this.config.TTS_GOOGLE_API_KEY}`, {
