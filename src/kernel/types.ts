@@ -33,6 +33,7 @@ export interface HookMap {
 
   // LLM (pipeline ↔ providers)
   'llm:chat':               [LLMChatPayload, LLMChatResult]
+  'llm:tts':                [LLMTTSPayload, LLMTTSResult]
   'llm:models_available':   [{ provider: string }, LLMModelsResult]
   'llm:provider_down':      [{ provider: string; reason: string }, void]
   'llm:provider_up':        [{ provider: string }, void]
@@ -182,6 +183,19 @@ export interface LLMChatResult {
 
 export interface LLMModelsResult {
   models: Array<{ id: string; displayName: string; family: string }>
+}
+
+export interface LLMTTSPayload {
+  text: string
+  voice: string
+  languageCode?: string
+  audioEncoding?: string
+}
+
+export interface LLMTTSResult {
+  audioBase64: string
+  mimeType: string
+  voice: string
 }
 
 export interface JobRegistration {

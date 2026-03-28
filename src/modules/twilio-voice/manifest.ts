@@ -21,12 +21,6 @@ let mediaServer: MediaStreamServer | null = null
 let twilioAdapter: TwilioAdapter | null = null
 let _registry: Registry | null = null
 
-/** Resolve effective voice language: per-channel override → global accent from prompts */
-function getEffectiveLanguage(config: TwilioVoiceConfig, registry: Registry): string {
-  if (config.VOICE_GEMINI_LANGUAGE) return config.VOICE_GEMINI_LANGUAGE
-  const promptsSvc = registry.getOptional<{ getAccent(): string }>('prompts:service')
-  return promptsSvc?.getAccent() || 'es-MX'
-}
 
 // ═══════════════════════════════════════════
 // API Routes
@@ -177,6 +171,11 @@ const apiRoutes: ApiRoute[] = [
           languageCode: 'es-US',
           audioEncoding: 'MP3',
         })
+
+        if (!result) {
+          jsonResponse(res, 503, { error: 'TTS service not available' })
+          return
+        }
 
         jsonResponse(res, 200, {
           audioBase64: result.audioBase64,
@@ -713,15 +712,6 @@ const manifest: ModuleManifest = {
     twilioAdapter = null
     _registry = null
   },
-}
-
-function getGoogleApiKey(): string {
-  try {
-    const llmConfig = _registry?.getConfig<{ GOOGLE_AI_API_KEY?: string }>('llm')
-    return llmConfig?.GOOGLE_AI_API_KEY ?? ''
-  } catch {
-    return ''
-  }
 }
 
 export default manifest
