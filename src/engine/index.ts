@@ -1,7 +1,7 @@
 // LUNA Engine — Public API
 // Re-exports para consumo externo.
 
-export { initEngine, processMessage, stopEngine, getEngineConfig, getEngineStats } from './engine.js'
+export { initEngine, processMessage, stopEngine, getEngineConfig, getEngineStats, reloadEngineConfig } from './engine.js'
 export { processProactive } from './proactive/proactive-pipeline.js'
 
 // Types

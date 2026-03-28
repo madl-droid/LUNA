@@ -469,6 +469,30 @@ export function getEngineConfig(): EngineConfig {
 }
 
 /**
+ * Hot-reload engine config from process.env (called after console save + reloadKernelConfig).
+ * Re-initializes concurrency controls if limits changed.
+ */
+export function reloadEngineConfig(): void {
+  const prev = engineConfig
+  engineConfig = loadEngineConfig()
+
+  // Re-init semaphore if concurrency limits changed
+  if (prev.maxConcurrentPipelines !== engineConfig.maxConcurrentPipelines
+    || prev.maxQueueSize !== engineConfig.maxQueueSize) {
+    pipelineSemaphore = new PipelineSemaphore(
+      engineConfig.maxConcurrentPipelines,
+      engineConfig.maxQueueSize,
+    )
+  }
+
+  logger.info({
+    maxPipelines: engineConfig.maxConcurrentPipelines,
+    maxQueue: engineConfig.maxQueueSize,
+    testMode: engineConfig.testMode,
+  }, 'Engine config hot-reloaded from console')
+}
+
+/**
  * Get concurrency stats for monitoring.
  */
 export function getEngineStats(): {
