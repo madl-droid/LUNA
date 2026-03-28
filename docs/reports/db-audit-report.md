@@ -22,8 +22,11 @@ Auditoría completa de la base de datos: identificar tablas/columnas sin uso, du
 3. **B4: compressed_summary reemplazado** — Session loading ahora usa LEFT JOIN LATERAL a `session_summaries`. Evaluator y follow-up prompts no cambian.
 4. **B5: Migración SQL extendida** — DROP de columnas deprecadas en messages, contact_channels, sessions. Nuevo UNIQUE constraint.
 
+**Bloque B1 — Unificación qualification_* → agent_contacts:**
+1. **B1: Fuente única de verdad en `agent_contacts`** — Todo lead-scoring, engine, proactive jobs y voice ahora leen/escriben `agent_contacts.lead_status/qualification_score/qualification_data` en vez de `contacts.qualification_*`. Se agregó `agentId` a `ToolExecutionContext`. `LeadQueries` recibe agentId en constructor. Migración SQL incluye backfill + DROP columnas.
+
 ### No completado ❌
-1. **B1: Doble fuente de verdad `contacts.qualification_*` vs `agent_contacts`** — Lead-scoring escribe directamente a `contacts.qualification_status/score/data`. Memory module escribe a `agent_contacts.lead_status/qualification_score/qualification_data`. Unificar requiere refactorizar lead-scoring para usar `agent_contacts` con un `agentId` context, lo cual es un cambio arquitectural mayor. Las columnas `qualification_*` en contacts NO se eliminan en la migración.
+Nada pendiente. Toda la auditoría fue ejecutada.
 
 ### Archivos creados/modificados
 | Archivo | Cambio |
@@ -39,7 +42,10 @@ Auditoría completa de la base de datos: identificar tablas/columnas sin uso, du
 | `src/engine/proactive/jobs/follow-up.ts` | Migrar a channel_type/channel_identifier |
 | `src/engine/proactive/jobs/reactivation.ts` | Migrar a channel_type/channel_identifier |
 | `src/engine/proactive/jobs/reminder.ts` | Migrar a channel_type/channel_identifier |
-| `src/modules/twilio-voice/voice-engine.ts` | Migrar voice channel lookup |
+| `src/modules/twilio-voice/voice-engine.ts` | Migrar voice channel lookup + qualification reads |
+| `src/modules/tools/types.ts` | Agregar `agentId` a ToolExecutionContext |
+| `src/modules/lead-scoring/extract-tool.ts` | Migrar reads/writes a agent_contacts |
+| `src/engine/phases/phase5-validate.ts` | Migrar fallback write a agent_contacts |
 
 ### Interfaces expuestas (exports que otros consumen)
 Ninguna nueva. Los cambios son internos a los módulos existentes. `SessionInfo.compressedSummary` se mantiene como campo pero ahora se llena desde `session_summaries`.
@@ -58,16 +64,9 @@ Ninguna.
 4. **ON CONFLICT**: La constraint de contact_channels migra de `(channel_name, channel_contact_id)` a `(channel_type, channel_identifier)`. La migración SQL crea la nueva constraint.
 
 ### Riesgos o deuda técnica
-1. **Doble fuente de verdad qualification_*** — principal riesgo. `contacts` y `agent_contacts` pueden tener datos diferentes.
-2. **Migración SQL es destructiva** — `s-db-cleanup.sql` hace DROP COLUMN. Debe ejecutarse DESPUÉS de deployar el código nuevo. Ejecutar la migración con código viejo causa errores.
-3. **`getCampaignStats()`** usa `NOT IN (SELECT DISTINCT ...)` — puede ser lento con muchos registros.
-4. **Backfill necesario** — Si hay filas de `messages` que solo tienen `sender_type` sin `role`, esas filas tendrán `role = NULL` y no se mostrarán correctamente. Agregar un UPDATE backfill antes de ejecutar la migración:
-   ```sql
-   UPDATE messages SET role = CASE WHEN sender_type = 'agent' THEN 'assistant' ELSE 'user' END
-   WHERE role IS NULL AND sender_type IS NOT NULL;
-   UPDATE messages SET content_text = content->>'text'
-   WHERE content_text IS NULL AND content IS NOT NULL;
-   ```
+1. **Migración SQL es destructiva** — `s-db-cleanup.sql` hace DROP COLUMN en 3 tablas. Debe ejecutarse DESPUÉS de deployar el código nuevo.
+2. **`getCampaignStats()`** usa `NOT IN (SELECT DISTINCT ...)` — puede ser lento con muchos registros.
+3. **Backfill incluido en migración** — Messages y agent_contacts se backfillean automáticamente.
 
 ### Notas para integración
 1. **Orden de deploy**: Código primero → backfill SQL → migración `s-db-cleanup.sql`
