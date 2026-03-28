@@ -449,7 +449,7 @@ export function renderGoogleAppsSection(data: SectionData): string {
           <span class="ts-gws-card-icon">${svc.icon}</span>
           <span class="ts-gws-card-name">${svc.name}</span>
         </div>
-        <label class="toggle" style="flex-shrink:0" onclick="event.stopPropagation()">
+        <label class="toggle u-flex-shrink-0" onclick="event.stopPropagation()">
           <input type="checkbox" class="gws-toggle" data-service="${svc.id}" ${isActive ? 'checked' : ''} onchange="gwsServiceToggled(this)">
           <span class="toggle-slider"></span>
         </label>
@@ -970,14 +970,14 @@ export function renderChannelsSection(data: SectionData): string {
 
     let connectionBtn = ''
     if (card.active && card.status === 'connected') {
-      connectionBtn = `<button class="ch-btn-action ch-btn-disconnect" onclick="channelDisconnect('${esc(card.id)}', '${lang}')">${unplugSvg} ${t('ch_disconnect', lang)}</button>`
+      connectionBtn = `<button class="act-btn act-btn-remove" onclick="channelDisconnect('${esc(card.id)}', '${lang}')">${unplugSvg} ${t('ch_disconnect', lang)}</button>`
     } else if (card.active && card.status !== 'connected') {
-      connectionBtn = `<button class="ch-btn-action ch-btn-connect" onclick="channelConnect('${esc(card.id)}', '${lang}')">${plugSvg} ${t('ch_connect', lang)}</button>`
+      connectionBtn = `<button class="act-btn act-btn-add" onclick="channelConnect('${esc(card.id)}', '${lang}')">${plugSvg} ${t('ch_connect', lang)}</button>`
     }
 
     // Footer: config + connect/disconnect only when active
     const footerHtml = card.active
-      ? `<div class="ch-card-footer"><a href="${card.settingsUrl}" class="ch-btn-action ch-btn-gear" title="${t('ch_settings', lang)}">${GEAR_SVG} ${t('ch_settings', lang)}</a><span class="ch-footer-spacer"></span>${connectionBtn}</div>`
+      ? `<div class="ch-card-footer"><a href="${card.settingsUrl}" class="act-btn act-btn-config" title="${t('ch_settings', lang)}">${GEAR_SVG} ${t('ch_settings', lang)}</a><span class="ch-footer-spacer"></span>${connectionBtn}</div>`
       : ''
 
     // Status tooltip text
@@ -1225,14 +1225,14 @@ function renderIdentitySection(data: SectionData): string {
     const slot = SLOT_MAP[p.key] || ''
     const lines = (value || ' ').split('\n')
     const lineNums = lines.map((_: string, i: number) => `<span class="code-editor-line-num">${i + 1}</span>`).join('')
-    promptsHtml += `<div class="panel collapsed" style="margin-bottom:8px" data-slot="${esc(slot)}">
+    promptsHtml += `<div class="panel collapsed u-mb-sm" data-slot="${esc(slot)}">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${esc(p.label)}</span>
         <button type="button" class="act-btn prompt-edit-btn ts-prompt-edit-btn" onclick="event.stopPropagation();promptEdit(this)">${isEs ? 'Editar' : 'Edit'}</button>
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body" style="padding:0">
-        <div class="code-editor" style="border:none;border-radius:0">
+        <div class="code-editor code-editor--flush">
           <div class="code-editor-header">
             <div class="code-editor-header-left">
               <svg class="code-editor-header-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -1333,7 +1333,7 @@ function renderIdentitySection(data: SectionData): string {
     const ttsMsg = isEs
       ? 'El modulo de voz (TTS) no esta activado. Activalo desde <a href="/console/modules">Modulos</a>.'
       : 'The voice (TTS) module is not active. Activate it from <a href="/console/modules">Modules</a>.'
-    voicePanelHtml = `<div class="panel collapsed" style="margin-top:12px">
+    voicePanelHtml = `<div class="panel collapsed u-mt-md">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}</span>
         <span class="panel-chevron">&#9660;</span>
@@ -1398,7 +1398,7 @@ function renderIdentitySection(data: SectionData): string {
       ? `<span class="panel-badge badge-active">${isEs ? 'API Key OK' : 'API Key OK'}</span>`
       : `<span class="panel-badge" class="ts-badge-error">${isEs ? 'Sin API Key' : 'No API Key'}</span>`
 
-    voicePanelHtml = `<div class="panel collapsed" style="margin-top:12px">
+    voicePanelHtml = `<div class="panel collapsed u-mt-md">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}</span>
         ${ttsApiStatus}
@@ -1425,7 +1425,7 @@ function renderIdentitySection(data: SectionData): string {
           <label class="ts-tts-label-compact">${isEs ? 'Velocidad' : 'Speed'}</label>
           <div class="ts-tts-range-wrap-compact">
             <input type="range" id="id-tts-rate" name="TTS_SPEAKING_RATE" min="0.25" max="4.0" step="0.25" value="${esc(ttsSpeakRate)}"
-              data-original="${esc(ttsSpeakRate)}" oninput="document.getElementById('id-tts-rate-val').textContent=this.value+'x'" style="flex:1;accent-color:var(--primary)">
+              data-original="${esc(ttsSpeakRate)}" oninput="document.getElementById('id-tts-rate-val').textContent=this.value+'x'" class="range-primary">
             <span id="id-tts-rate-val" class="ts-tts-range-value-compact">${esc(ttsSpeakRate)}x</span>
           </div>
         </div>
@@ -1433,7 +1433,7 @@ function renderIdentitySection(data: SectionData): string {
           <label class="ts-tts-label-compact">${isEs ? 'Tono' : 'Pitch'}</label>
           <div class="ts-tts-range-wrap-compact">
             <input type="range" id="id-tts-pitch" name="TTS_PITCH" min="-20.0" max="20.0" step="0.5" value="${esc(ttsPitch)}"
-              data-original="${esc(ttsPitch)}" oninput="document.getElementById('id-tts-pitch-val').textContent=this.value" style="flex:1;accent-color:var(--primary)">
+              data-original="${esc(ttsPitch)}" oninput="document.getElementById('id-tts-pitch-val').textContent=this.value" class="range-primary">
             <span id="id-tts-pitch-val" class="ts-tts-range-value-compact">${esc(ttsPitch)}</span>
           </div>
         </div>
@@ -1442,14 +1442,14 @@ function renderIdentitySection(data: SectionData): string {
           <div class="ts-tts-password-wrap">
             <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
               data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              class="ts-tts-select-compact" style="padding-right:30px" placeholder="AIza...">
+              class="ts-tts-select-compact" class="input-with-icon" placeholder="AIza...">
             <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
               class="ts-tts-toggle-vis-compact">&#128065;</button>
           </div>
         </div>
         <div class="ts-tts-preview-area-compact">
-          <button type="button" id="id-tts-preview-btn" class="wa-btn wa-btn-connect ts-prompt-btn-sm" onclick="idTtsPreview()"
-            style="padding:4px 12px" ${!ttsHasApiKey ? 'disabled' : ''}>
+          <button type="button" id="id-tts-preview-btn" class="act-btn act-btn-add act-btn--compact" onclick="idTtsPreview()"
+            ${!ttsHasApiKey ? 'disabled' : ''}>
             &#9654; ${isEs ? 'Previsualizar' : 'Preview'}
           </button>
           <span id="id-tts-preview-status" class="ts-tts-preview-status-compact"></span>
@@ -1729,7 +1729,7 @@ function renderVoiceTTSSection(data: SectionData): string {
         <input type="range" id="tts-${id}" name="${id}" min="${min}" max="${max}" step="${step}" value="${esc(value)}"
           data-original="${esc(value)}"
           oninput="document.getElementById('tts-${id}-val').textContent=this.value+'${unit}'"
-          style="flex:1;accent-color:var(--primary)">
+          class="range-primary">
         <span id="tts-${id}-val" class="ts-tts-range-value">${esc(value)}${unit}</span>
       </div>
       <span class="ts-tts-hint">${info}</span>
@@ -1797,7 +1797,7 @@ function renderVoiceTTSSection(data: SectionData): string {
           <div class="ts-tts-password-wrap">
             <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
               data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              class="ts-tts-select" style="padding-right:36px" placeholder="AIza...">
+              class="ts-tts-select input-with-icon" placeholder="AIza...">
             <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
               class="ts-tts-toggle-vis">&#128065;</button>
           </div>
@@ -1810,8 +1810,8 @@ function renderVoiceTTSSection(data: SectionData): string {
         <!-- Preview button -->
         <div class="ts-tts-preview-area">
           <div class="ts-tts-preview-row">
-            <button type="button" id="tts-preview-btn" class="wa-btn wa-btn-connect ts-gws-btn-sm" onclick="ttsPreview()"
-              style="padding:6px 14px" ${!hasApiKey ? 'disabled' : ''}>
+            <button type="button" id="tts-preview-btn" class="act-btn act-btn-add act-btn--sm" onclick="ttsPreview()"
+              ${!hasApiKey ? 'disabled' : ''}>
               &#9654; ${isEs ? 'Previsualizar voz' : 'Preview voice'}
             </button>
             <span id="tts-preview-status" class="ts-tts-preview-status"></span>
@@ -3007,7 +3007,7 @@ function renderUsersSection(data: SectionData): string {
     const typeLabel = isSys ? (lang === 'es' ? 'Sistema' : 'System') : (lang === 'es' ? 'Custom' : 'Custom')
     const countLabel = lang === 'es' ? 'contactos' : 'contacts'
 
-    html += `<div class="ch-card cb-card${inactiveClass}" data-base-id="${esc(lt)}" data-enabled="${cfg.isEnabled}" ${!isPartners ? `onclick="if(!event.target.closest('.toggle,.ch-btn-action,a'))toggleBaseConfigClick('${esc(lt)}')" style="cursor:pointer"` : ''}>
+    html += `<div class="ch-card cb-card${inactiveClass}" data-base-id="${esc(lt)}" data-enabled="${cfg.isEnabled}" ${!isPartners ? `onclick="if(!event.target.closest('.toggle,.act-btn,.ch-btn-action,a'))toggleBaseConfigClick('${esc(lt)}')" style="cursor:pointer"` : ''}>
       <div class="ch-card-top">
         <div class="ch-card-icon ts-cb-icon-primary">
           ${SVG_CONTACTS_ICON}
@@ -3031,9 +3031,9 @@ function renderUsersSection(data: SectionData): string {
       </div>
       <div class="ch-card-footer">${isPartners
         ? `<span class="panel-badge badge-soon">${lang === 'es' ? 'Proximamente' : 'Coming soon'}</span>`
-        : `<button type="button" class="ch-btn-action ch-btn-gear" onclick="event.stopPropagation();toggleBaseConfigClick('${esc(lt)}')">${GEAR_SVG} ${lang === 'es' ? 'Configurar' : 'Configure'}</button>
+        : `<button type="button" class="act-btn act-btn-config" onclick="event.stopPropagation();toggleBaseConfigClick('${esc(lt)}')">${GEAR_SVG} ${lang === 'es' ? 'Configurar' : 'Configure'}</button>
            <span class="ch-footer-spacer"></span>
-           <a href="/console/contacts/${esc(lt)}?lang=${lang}" class="ch-btn-action ch-btn-connect" onclick="event.stopPropagation()">${SVG_EYE} ${lang === 'es' ? 'Ver' : 'View'}</a>`
+           <a href="/console/contacts/${esc(lt)}?lang=${lang}" class="act-btn act-btn-add" onclick="event.stopPropagation()">${SVG_EYE} ${lang === 'es' ? 'Ver' : 'View'}</a>`
       }</div>
     </div>`
   }
@@ -3105,7 +3105,7 @@ function renderUsersSection(data: SectionData): string {
       const whEnabledCol1 = (cfg.syncConfig as Record<string, unknown>)?.webhookEnabled === true
       const whEnabledOrigCol1 = whEnabledCol1 ? 'on' : ''
       html += `<div class="field-divider"><span class="field-divider-label">Webhook</span></div>
-        <div class="chs-toggle-row" style="padding:10px 14px">
+        <div class="chs-toggle-row chs-toggle-row--compact">
           <span style="font-size:13px">${lang === 'es' ? 'Recibir leads desde webhook' : 'Receive leads from webhook'}</span>
           <span class="ch-footer-spacer"></span>
           <label class="toggle toggle-sm" onclick="event.stopPropagation()">
@@ -3142,7 +3142,7 @@ function renderUsersSection(data: SectionData): string {
       const aPrompt = cfg.assignmentPrompt || ''
       const aOrig = aEnabled ? 'on' : ''
       html += `<div class="field-divider"><span class="field-divider-label">${lang === 'es' ? 'Reglas de asignacion' : 'Assignment rules'}</span></div>
-        <div class="chs-toggle-row" style="padding:10px 14px">
+        <div class="chs-toggle-row chs-toggle-row--compact">
           <span style="font-size:13px">${lang === 'es' ? 'Asignacion automatica por LLM' : 'LLM auto-assignment'}</span>
           <span class="ch-footer-spacer"></span>
           <input type="checkbox" class="perm-cb" class="ts-perm-cb"
@@ -3220,7 +3220,7 @@ function renderUsersSection(data: SectionData): string {
     html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${lang === 'es' ? 'Subagentes' : 'Subagents'}</span>
       <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
-      <div class="chs-toggle-row" style="padding:10px 14px">
+      <div class="chs-toggle-row chs-toggle-row--compact">
         <span style="font-size:13px">${lang === 'es' ? 'Permitir subagentes' : 'Allow subagents'}</span>
         <span class="ch-footer-spacer"></span>
         <input type="checkbox" class="perm-cb" class="ts-perm-cb"
@@ -3266,7 +3266,7 @@ function renderUsersSection(data: SectionData): string {
         <div class="ts-roles-desc">${lang === 'es' ? 'Define etiquetas para clasificar coworkers. Se usan para escalamientos y human-in-the-loop.' : 'Define labels to classify coworkers. Used for escalations and human-in-the-loop.'}</div>
         <div id="coworker-roles-list">${roleList}</div>
         <input type="hidden" name="coworker_roles" value="${esc(rolesOrig)}" data-original="${esc(rolesOrig)}" id="coworker-roles-hidden">
-        <button type="button" class="ch-btn-action ch-btn-gear" style="margin-top:12px" onclick="openRolesModal()">
+        <button type="button" class="act-btn act-btn-config u-mt-md" onclick="openRolesModal()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           ${lang === 'es' ? 'Editar etiquetas' : 'Edit labels'}
         </button>
@@ -3367,7 +3367,7 @@ function renderUsersSection(data: SectionData): string {
       <div id="unregistered-msg-field" style="display:${behavior === 'message' ? 'block' : 'none'};margin-top:12px">
         <div class="ts-unreg-msg-header">
           <label class="wizard-label" style="margin:0">${lang === 'es' ? 'Mensaje automatico' : 'Auto-message'}</label>
-          <button type="button" id="unregistered-msg-edit-btn" class="ch-btn-action ch-btn-gear ts-gws-btn-sm" style="padding:4px 10px;display:${hasSavedMsg ? 'inline-flex' : 'none'}" onclick="enableUnregMsgEdit()">
+          <button type="button" id="unregistered-msg-edit-btn" class="act-btn act-btn-config act-btn--compact" style="display:${hasSavedMsg ? 'inline-flex' : 'none'}" onclick="enableUnregMsgEdit()">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             ${lang === 'es' ? 'Editar' : 'Edit'}
           </button>

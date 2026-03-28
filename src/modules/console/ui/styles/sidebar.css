@@ -182,7 +182,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 11px;
+  border-radius: var(--radius-pill);
   background: var(--surface-container-high, #e8e8ec);
   color: var(--on-surface-dim, #6e6e73);
   flex-shrink: 0;
@@ -197,9 +197,9 @@
 }
 
 .content-area.content-fade-out { opacity: 0; }
-.content-area .panel { margin-bottom: 16px; }
+.content-area .panel { margin-bottom: var(--panel-gap); }
 
-.section-header { margin-bottom: 24px; }
+.section-header { margin-bottom: var(--section-gap); }
 
 .section-title {
   font-size: 1.65rem;

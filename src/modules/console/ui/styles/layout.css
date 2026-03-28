@@ -30,7 +30,7 @@ header {
 .header-brand-icon {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--on-surface);
   display: flex;
   align-items: center;
@@ -533,7 +533,7 @@ main { flex: 1; min-height: 0; }
 
 .save-bar button, .save-bar a {
   padding: 8px 24px;
-  border-radius: 1.5rem;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
