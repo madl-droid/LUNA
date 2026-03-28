@@ -25,6 +25,11 @@ interface LLMGatewayLike {
     temperature?: number
     tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
     jsonMode?: boolean
+    jsonSchema?: Record<string, unknown>
+    thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number }
+    googleSearchGrounding?: boolean
+    citations?: boolean
+    codeExecution?: boolean
     traceId?: string
   }): Promise<{
     text: string
@@ -34,6 +39,14 @@ interface LLMGatewayLike {
     outputTokens: number
     toolCalls?: Array<{ name: string; input: Record<string, unknown> }>
     durationMs: number
+    cacheReadTokens?: number
+    cacheCreationTokens?: number
+    fallbackLevel?: 'primary' | 'downgrade' | 'cross-api'
+    groundingMetadata?: {
+      searchQueries?: string[]
+      sources?: Array<{ uri: string; title: string }>
+    }
+    codeResults?: Array<{ code: string; output: string; error?: string }>
   }>
 }
 
@@ -146,6 +159,11 @@ async function callViaGateway(options: LLMCallOptions): Promise<LLMCallResult> {
     temperature: options.temperature,
     tools: options.tools,
     jsonMode: options.jsonMode,
+    jsonSchema: options.jsonSchema,
+    thinking: options.thinking,
+    googleSearchGrounding: options.googleSearchGrounding,
+    citations: options.citations,
+    codeExecution: options.codeExecution,
   })
 
   return {
@@ -155,6 +173,10 @@ async function callViaGateway(options: LLMCallOptions): Promise<LLMCallResult> {
     inputTokens: response.inputTokens,
     outputTokens: response.outputTokens,
     toolCalls: response.toolCalls,
+    cacheReadTokens: response.cacheReadTokens,
+    fallbackLevel: response.fallbackLevel,
+    groundingMetadata: response.groundingMetadata,
+    codeResults: response.codeResults,
   }
 }
 

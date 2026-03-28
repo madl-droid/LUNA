@@ -241,6 +241,20 @@ function renderModelsContent(data: SectionData): string {
   for (const [prefix, labelKey, infoKey] of modelTasks) {
     h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || 'anthropic', cv(data, prefix + '_MODEL'), models, data.lang, labelKey, infoKey)
   }
+  // Downgrade targets (same provider, lesser model — used before cross-API fallback)
+  const downgradeTasks: [string, string, string][] = [
+    ['LLM_CLASSIFY_DOWNGRADE', 'f_LLM_CLASSIFY', 'i_LLM_DG'],
+    ['LLM_RESPOND_DOWNGRADE', 'f_LLM_RESPOND', 'i_LLM_DG'],
+    ['LLM_COMPLEX_DOWNGRADE', 'f_LLM_COMPLEX', 'i_LLM_DG'],
+    ['LLM_TOOLS_DOWNGRADE', 'f_LLM_TOOLS', 'i_LLM_DG'],
+    ['LLM_PROACTIVE_DOWNGRADE', 'f_LLM_PROACTIVE', 'i_LLM_DG'],
+  ]
+
+  h += `<div class="section-label with-border">${data.lang === 'es' ? 'Downgrade (mismo provider, modelo menor)' : 'Downgrade (same provider, lesser model)'}</div>`
+  for (const [prefix, labelKey] of downgradeTasks) {
+    h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || '', cv(data, prefix + '_MODEL') || '', models, data.lang, labelKey)
+  }
+
   h += `<div class="section-label with-border">${t('models_fallback', data.lang)}</div>`
   for (const [prefix, labelKey, infoKey] of fallbackTasks) {
     h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || 'anthropic', cv(data, prefix + '_MODEL'), models, data.lang, labelKey, infoKey)

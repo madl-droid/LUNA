@@ -66,15 +66,33 @@ const manifest: ModuleManifest = {
     LLM_DAILY_BUDGET_USD: floatEnvMin(0, 0),
     LLM_MONTHLY_BUDGET_USD: floatEnvMin(0, 0),
 
-    // Task routing (JSON strings)
+    // Task routing — primary targets (JSON strings)
     LLM_ROUTE_CLASSIFY: z.string().default(''),
     LLM_ROUTE_RESPOND: z.string().default(''),
     LLM_ROUTE_COMPLEX: z.string().default(''),
     LLM_ROUTE_TOOLS: z.string().default(''),
     LLM_ROUTE_PROACTIVE: z.string().default(''),
 
+    // Task routing — downgrade targets (provider + model per task)
+    LLM_CLASSIFY_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_CLASSIFY_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_RESPOND_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_RESPOND_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_COMPLEX_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_COMPLEX_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_TOOLS_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_TOOLS_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_PROACTIVE_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_PROACTIVE_DOWNGRADE_MODEL: z.string().default(''),
+
     // Fallback chain order (comma-separated)
     LLM_FALLBACK_CHAIN: z.string().default('anthropic,google'),
+
+    // Prompt caching (Anthropic: cache_control, Google: implicit for 2.5+)
+    LLM_PROMPT_CACHE_ENABLED: boolEnv(true),
+
+    // Citations (Anthropic only — source attribution for knowledge responses)
+    LLM_CITATIONS_ENABLED: boolEnv(false),
 
     // Model scanner
     MODEL_SCAN_INTERVAL_MS: numEnv(21600000),

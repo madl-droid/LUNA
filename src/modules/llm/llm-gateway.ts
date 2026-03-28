@@ -6,7 +6,7 @@ import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
-import { CircuitBreakerManager } from './circuit-breaker.js'
+import { CircuitBreakerManager, EscalatingCBManager } from './circuit-breaker.js'
 import { TaskRouter, type ResolvedRoute } from './task-router.js'
 import { UsageTracker } from './usage-tracker.js'
 import { createAdapters } from './providers.js'
@@ -24,6 +24,7 @@ import {
   type ModelInfo,
   type TaskRoute,
   type CircuitBreakerConfig,
+  type EscalatingCBSnapshot,
   type UsageSummary,
   type TTSRequest,
   type TTSResponse,
@@ -41,6 +42,8 @@ const logger = pino({ name: 'llm:gateway' })
 export class LLMGateway {
   private adapters: Map<LLMProviderName, ProviderAdapter>
   private breakers: CircuitBreakerManager
+  /** Escalating circuit breaker per provider:model target (2 fails in 30min → 1h→3h→6h) */
+  private targetBreakers: EscalatingCBManager
   private router: TaskRouter
   private tracker: UsageTracker
   private apiKeys = new Map<string, string>()
@@ -75,6 +78,15 @@ export class LLMGateway {
       if (this.registry) {
         this.registry.runHook('llm:provider_up', { provider })
       }
+    }
+
+    // Escalating CB per model-target (2 fails in 30 min → 1h → 3h → 6h cooldown)
+    this.targetBreakers = new EscalatingCBManager()
+    this.targetBreakers.onRecovery = (targetKey) => {
+      logger.info({ target: targetKey }, 'Target recovered from escalating CB')
+    }
+    this.targetBreakers.onOpen = (targetKey, level) => {
+      logger.warn({ target: targetKey, escalation: level }, 'Target marked DOWN by escalating CB')
     }
 
     // Retry config
@@ -197,12 +209,18 @@ export class LLMGateway {
         throw new Error('LLM budget exceeded: ' + budgetCheck.reason)
       }
 
-      // Check circuit breaker (unless bypass requested)
+      // Check circuit breakers (legacy per-provider + escalating per-target)
       if (!request.bypassCircuitBreaker) {
-        const breaker = this.breakers.get(target.provider)
-        if (!breaker.isAvailable()) {
-          logger.warn({ provider: target.provider }, 'Circuit breaker open, skipping')
+        const providerBreaker = this.breakers.get(target.provider)
+        if (!providerBreaker.isAvailable()) {
+          logger.warn({ provider: target.provider }, 'Provider CB open, skipping')
           lastError = new Error('Circuit breaker open for ' + target.provider)
+          continue
+        }
+        const targetBreaker = this.targetBreakers.get(target.provider, target.model)
+        if (!targetBreaker.isAvailable()) {
+          logger.warn({ provider: target.provider, model: target.model, level: target.fallbackLevel }, 'Target CB open, skipping')
+          lastError = new Error(`Escalating CB open for ${target.provider}:${target.model}`)
           continue
         }
       }
@@ -217,6 +235,10 @@ export class LLMGateway {
         }
         result.text = sanitized.text
         result.fromFallback = target.isFallback
+        result.fallbackLevel = target.fallbackLevel
+        if (target.fallbackLevel !== 'primary') {
+          result.fallbackReason = lastError?.message ?? 'primary_unavailable'
+        }
         return result
       }
       lastError = new Error(`Provider ${target.provider}/${target.model} failed after retries`)
@@ -355,10 +377,24 @@ export class LLMGateway {
   }
 
   /**
-   * Get circuit breaker snapshots.
+   * Get legacy circuit breaker snapshots (per provider).
    */
   getCircuitBreakerStatus() {
     return this.breakers.allSnapshots()
+  }
+
+  /**
+   * Get escalating circuit breaker snapshots (per provider:model target).
+   */
+  getTargetCBStatus(): EscalatingCBSnapshot[] {
+    return this.targetBreakers.allSnapshots()
+  }
+
+  /**
+   * Reset escalating circuit breaker for a specific target.
+   */
+  resetTargetCB(provider: LLMProviderName, model: string): void {
+    this.targetBreakers.resetTarget(provider, model)
   }
 
   // ═══════════════════════════════════════════
@@ -433,6 +469,62 @@ export class LLMGateway {
   }
 
   // ═══════════════════════════════════════════
+  // Batch / Async Processing (50% discount)
+  // ═══════════════════════════════════════════
+
+  /**
+   * Submit a batch of requests for async processing.
+   * Uses Anthropic Message Batches API (50% off) or Google Batch API.
+   */
+  async submitBatch(
+    requests: import('./types.js').LLMBatchRequest[],
+    provider: LLMProviderName = 'anthropic',
+  ): Promise<string> {
+    const adapter = this.adapters.get(provider)
+    if (!adapter?.submitBatch) {
+      throw new Error(`Batch processing not supported by ${provider}`)
+    }
+    const apiKey = this.getDefaultApiKey(provider)
+    if (!apiKey) throw new Error(`No API key for ${provider}`)
+
+    const batchId = await adapter.submitBatch(requests, apiKey)
+    logger.info({ provider, batchId, count: requests.length }, 'Batch submitted')
+    return batchId
+  }
+
+  /**
+   * Check the status of a submitted batch.
+   */
+  async getBatchStatus(
+    batchId: string,
+    provider: LLMProviderName = 'anthropic',
+  ): Promise<import('./types.js').LLMBatchInfo> {
+    const adapter = this.adapters.get(provider)
+    if (!adapter?.getBatchStatus) {
+      throw new Error(`Batch status not supported by ${provider}`)
+    }
+    const apiKey = this.getDefaultApiKey(provider)
+    if (!apiKey) throw new Error(`No API key for ${provider}`)
+    return adapter.getBatchStatus(batchId, apiKey)
+  }
+
+  /**
+   * Retrieve results of a completed batch.
+   */
+  async getBatchResults(
+    batchId: string,
+    provider: LLMProviderName = 'anthropic',
+  ): Promise<import('./types.js').LLMBatchResult[]> {
+    const adapter = this.adapters.get(provider)
+    if (!adapter?.getBatchResults) {
+      throw new Error(`Batch results not supported by ${provider}`)
+    }
+    const apiKey = this.getDefaultApiKey(provider)
+    if (!apiKey) throw new Error(`No API key for ${provider}`)
+    return adapter.getBatchResults(batchId, apiKey)
+  }
+
+  // ═══════════════════════════════════════════
   // Internal
   // ═══════════════════════════════════════════
 
@@ -462,8 +554,9 @@ export class LLMGateway {
         const response = await adapter.chat(req, target.apiKey, timeout)
         response.attempt = attempt
 
-        // Record success
+        // Record success on both breakers
         this.breakers.get(target.provider).recordSuccess()
+        this.targetBreakers.get(target.provider, target.model).recordSuccess()
         await this.tracker.record(
           response, task, target.provider, target.model,
           Date.now() - attemptStart, true, undefined, request.traceId,
@@ -488,9 +581,10 @@ export class LLMGateway {
         // Only count retryable errors toward circuit breaker
         if (this.isRetryableError(error)) {
           if (attempt === this.retryMax) {
-            // All retries exhausted — record circuit breaker failure
-            const opened = this.breakers.get(target.provider).recordFailure(error.message)
-            if (opened && this.registry) {
+            // All retries exhausted — record failure on both breakers
+            const providerOpened = this.breakers.get(target.provider).recordFailure(error.message)
+            this.targetBreakers.get(target.provider, target.model).recordFailure(error.message)
+            if (providerOpened && this.registry) {
               await this.registry.runHook('llm:provider_down', {
                 provider: target.provider,
                 reason: error.message,
@@ -502,9 +596,10 @@ export class LLMGateway {
             await sleep(delay)
           }
         } else {
-          // Non-retryable error — count as circuit breaker failure immediately
-          const opened = this.breakers.get(target.provider).recordFailure(error.message)
-          if (opened && this.registry) {
+          // Non-retryable error — count as failure on both breakers immediately
+          const providerOpened = this.breakers.get(target.provider).recordFailure(error.message)
+          this.targetBreakers.get(target.provider, target.model).recordFailure(error.message)
+          if (providerOpened && this.registry) {
             await this.registry.runHook('llm:provider_down', {
               provider: target.provider,
               reason: error.message,

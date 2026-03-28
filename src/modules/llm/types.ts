@@ -77,6 +77,8 @@ export interface RouteTarget {
   temperature?: number
   /** Max output tokens override */
   maxTokens?: number
+  /** Downgrade target — same provider, lesser model (used before cross-API fallback) */
+  downgrade?: RouteTarget
 }
 
 // ═══════════════════════════════════════════
@@ -96,6 +98,18 @@ export interface CircuitBreakerConfig {
   halfOpenMax: number
 }
 
+/** Config for the escalating circuit breaker (per model-target) */
+export interface EscalatingCBConfig {
+  /** Failures within window to trip (default: 2) */
+  failureThreshold: number
+  /** Time window to count failures — ms (default: 1_800_000 = 30 min) */
+  windowMs: number
+  /** Max requests to allow in half-open state (default: 1) */
+  halfOpenMax: number
+  /** Escalating recovery durations — ms (default: [3_600_000, 10_800_000, 21_600_000]) */
+  recoverySteps: number[]
+}
+
 export interface CircuitBreakerSnapshot {
   provider: LLMProviderName
   state: CircuitState
@@ -103,6 +117,16 @@ export interface CircuitBreakerSnapshot {
   lastFailureAt: number | null
   openedAt: number | null
   successesSinceHalfOpen: number
+}
+
+export interface EscalatingCBSnapshot {
+  targetKey: string
+  state: CircuitState
+  failures: number
+  lastFailureAt: number | null
+  openedAt: number | null
+  escalationLevel: number
+  currentRecoveryMs: number
 }
 
 // ═══════════════════════════════════════════
@@ -145,8 +169,10 @@ export interface LLMRequest {
   temperature?: number
   /** Tools for function calling */
   tools?: LLMToolDef[]
-  /** Force JSON output */
+  /** Force JSON output (Anthropic: prefill trick, Google: responseMimeType) */
   jsonMode?: boolean
+  /** JSON schema for structured output (Google: responseSchema) */
+  jsonSchema?: Record<string, unknown>
   /** Override API key env var */
   apiKeyEnv?: string
   /** Trace/correlation ID for logging */
@@ -155,6 +181,17 @@ export interface LLMRequest {
   timeoutMs?: number
   /** Skip circuit breaker check (emergency) */
   bypassCircuitBreaker?: boolean
+  /** Extended thinking (Anthropic: thinking param, Google: thinkingConfig) */
+  thinking?: {
+    type: 'enabled' | 'adaptive'
+    budgetTokens?: number
+  }
+  /** Enable Google Search grounding (Google only, ignored by Anthropic) */
+  googleSearchGrounding?: boolean
+  /** Enable citations / source attribution (Anthropic only, ignored by Google) */
+  citations?: boolean
+  /** Enable server-side code execution (Anthropic: code_execution tool, Google: codeExecution tool) */
+  codeExecution?: boolean
 }
 
 export interface LLMToolCall {
@@ -173,6 +210,33 @@ export interface LLMResponse {
   fromFallback: boolean
   /** Which attempt succeeded (0 = first try) */
   attempt: number
+  /** Prompt cache: tokens read from cache (Anthropic/Google) */
+  cacheReadTokens?: number
+  /** Prompt cache: tokens written to cache (Anthropic) */
+  cacheCreationTokens?: number
+  /** Extended thinking: tokens used for thinking (not billed as output) */
+  thinkingTokens?: number
+  /** Which fallback level was used */
+  fallbackLevel?: 'primary' | 'downgrade' | 'cross-api'
+  /** Why fallback was triggered */
+  fallbackReason?: string
+  /** Google Search grounding metadata */
+  groundingMetadata?: {
+    searchQueries?: string[]
+    sources?: Array<{ uri: string; title: string }>
+  }
+  /** Citations from knowledge sources (Anthropic) */
+  citations?: Array<{
+    citedText: string
+    sourceTitle?: string
+    sourceUrl?: string
+  }>
+  /** Code execution results */
+  codeResults?: Array<{
+    code: string
+    output: string
+    error?: string
+  }>
 }
 
 // ═══════════════════════════════════════════
@@ -256,6 +320,12 @@ export interface ProviderAdapter {
   isInitialized(): boolean
   chat(request: LLMRequest, apiKey: string, timeoutMs: number): Promise<LLMResponse>
   listModels?(apiKey: string): Promise<ModelInfo[]>
+  /** Submit a batch of requests for async processing (50% discount) */
+  submitBatch?(requests: LLMBatchRequest[], apiKey: string): Promise<string>
+  /** Check the status of a submitted batch */
+  getBatchStatus?(batchId: string, apiKey: string): Promise<LLMBatchInfo>
+  /** Retrieve results of a completed batch */
+  getBatchResults?(batchId: string, apiKey: string): Promise<LLMBatchResult[]>
 }
 
 // ═══════════════════════════════════════════
@@ -319,13 +389,24 @@ export interface LLMModuleConfig {
 // ═══════════════════════════════════════════
 
 export const DEFAULT_COST_TABLE: Record<string, { inputPer1M: number; outputPer1M: number }> = {
-  // Anthropic (USD per 1M tokens)
+  // Anthropic — Claude 4.5 (USD per 1M tokens)
   'claude-haiku-4-5-20251001': { inputPer1M: 0.80, outputPer1M: 4.00 },
   'claude-sonnet-4-5-20250929': { inputPer1M: 3.00, outputPer1M: 15.00 },
   'claude-opus-4-5-20251101': { inputPer1M: 15.00, outputPer1M: 75.00 },
-  // Google
+  // Anthropic — Claude 4.6
+  'claude-sonnet-4-6-20260214': { inputPer1M: 3.00, outputPer1M: 15.00 },
+  'claude-opus-4-6-20260210': { inputPer1M: 5.00, outputPer1M: 25.00 },
+  // Google — Gemini 2.5
   'gemini-2.5-flash': { inputPer1M: 0.15, outputPer1M: 0.60 },
+  'gemini-2.5-flash-lite': { inputPer1M: 0.075, outputPer1M: 0.30 },
   'gemini-2.5-pro': { inputPer1M: 1.25, outputPer1M: 10.00 },
+  // Google — Gemini 3
+  'gemini-3-flash': { inputPer1M: 0.15, outputPer1M: 0.60 },
+  'gemini-3-pro': { inputPer1M: 1.25, outputPer1M: 10.00 },
+  'gemini-3.1-pro': { inputPer1M: 1.25, outputPer1M: 10.00 },
+  // Google — TTS (Preview — pricing TBD)
+  'gemini-2.5-pro-preview-tts': { inputPer1M: 0, outputPer1M: 0 },
+  'gemini-2.5-flash-preview-tts': { inputPer1M: 0, outputPer1M: 0 },
 }
 
 // ═══════════════════════════════════════════
@@ -377,4 +458,34 @@ export interface ModelReplacement {
   oldModel: string
   newModel: string
   reason: string
+}
+
+// ═══════════════════════════════════════════
+// Batch / async processing
+// ═══════════════════════════════════════════
+
+export type LLMBatchStatus = 'processing' | 'ended' | 'expired' | 'canceling' | 'canceled'
+
+export interface LLMBatchRequest {
+  /** Unique ID for this batch item (for correlating results) */
+  customId: string
+  /** The LLM request to execute */
+  request: LLMRequest
+}
+
+export interface LLMBatchResult {
+  customId: string
+  response?: LLMResponse
+  error?: string
+}
+
+export interface LLMBatchInfo {
+  batchId: string
+  provider: LLMProviderName
+  status: LLMBatchStatus
+  totalRequests: number
+  completedRequests: number
+  failedRequests: number
+  createdAt: string
+  endedAt?: string
 }

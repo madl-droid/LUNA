@@ -12,7 +12,9 @@ Estructura de respuesta:
   "on_scope": true,
   "execution_plan": [
     {
-      "type": "respond_only | api_call | workflow | subagent | memory_lookup | web_search | process_attachment",
+      "type": "respond_only | api_call | workflow | subagent | memory_lookup | web_search | process_attachment | code_execution",
+      "use_thinking": "boolean (opcional) - true si el paso requiere razonamiento complejo",
+      "use_coding": "boolean (opcional) - true si el paso necesita ejecutar código Python",
       "tool": "nombre_tool (solo si type=api_call)",
       "params": {},
       "description": "qué hace este paso"
@@ -60,3 +62,6 @@ Reglas:
 - Para procesar adjuntos (PDFs, imágenes, audio, documentos): type=process_attachment con params.index (índice del adjunto)
 - Si necesitas buscar en la base de conocimiento: incluye "search_query" y opcionalmente "search_hint" (título de categoría) en tu respuesta
 - search_hint prioriza resultados de esa categoría pero nunca excluye otras
+- Para cálculos matemáticos, análisis de datos, o procesamiento numérico: type=code_execution
+- Para tareas de razonamiento complejo o multi-paso (subagent con muchos pasos): agrega "use_thinking": true al step
+- Para steps que necesitan ejecutar código Python para cálculos: agrega "use_coding": true al step

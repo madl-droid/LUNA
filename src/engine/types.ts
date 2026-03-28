@@ -184,6 +184,7 @@ export type ExecutionPlanType =
   | 'memory_lookup'
   | 'web_search'
   | 'process_attachment'
+  | 'code_execution'
 
 export interface ExecutionStep {
   type: ExecutionPlanType
@@ -191,6 +192,10 @@ export interface ExecutionStep {
   params?: Record<string, unknown>
   description?: string
   dependsOn?: number[]  // indices of steps this depends on
+  /** Phase 2 hint: activate extended thinking for this step's LLM calls */
+  useThinking?: boolean
+  /** Phase 2 hint: activate code execution sandbox for this step */
+  useCoding?: boolean
 }
 
 export interface EvaluatorOutput {
@@ -461,7 +466,17 @@ export interface LLMCallOptions {
   maxTokens?: number
   temperature?: number
   jsonMode?: boolean
+  /** JSON schema for structured output (Google: responseSchema) */
+  jsonSchema?: Record<string, unknown>
   tools?: LLMToolDef[]
+  /** Extended thinking (Anthropic: adaptive thinking, Google: thinkingConfig) */
+  thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number }
+  /** Enable Google Search grounding (Google only) */
+  googleSearchGrounding?: boolean
+  /** Enable citations / source attribution (Anthropic only) */
+  citations?: boolean
+  /** Enable server-side code execution (both providers) */
+  codeExecution?: boolean
 }
 
 export interface LLMToolDef {
@@ -477,6 +492,17 @@ export interface LLMCallResult {
   inputTokens: number
   outputTokens: number
   toolCalls?: Array<{ name: string; input: Record<string, unknown> }>
+  /** Prompt cache tokens read (cost savings) */
+  cacheReadTokens?: number
+  /** Which fallback level was used */
+  fallbackLevel?: 'primary' | 'downgrade' | 'cross-api'
+  /** Google Search grounding metadata */
+  groundingMetadata?: {
+    searchQueries?: string[]
+    sources?: Array<{ uri: string; title: string }>
+  }
+  /** Code execution results */
+  codeResults?: Array<{ code: string; output: string; error?: string }>
 }
 
 // ═══════════════════════════════════════════
