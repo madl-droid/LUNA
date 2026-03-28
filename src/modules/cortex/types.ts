@@ -33,6 +33,14 @@ export interface CortexConfig {
   CORTEX_PULSE_LLM_ESCALATION_MODEL: string
   CORTEX_PULSE_LLM_ESCALATION_THRESHOLD: number
   CORTEX_PULSE_LOGS_MAX_UNIQUE: number
+  // Alter-ego config
+  CORTEX_ALTER_EGO_ENABLED: boolean
+  CORTEX_ALTER_EGO_MODEL: string
+  CORTEX_ALTER_EGO_ANALYSIS_MODEL: string
+  CORTEX_ALTER_EGO_MAX_CONCURRENT: number
+  CORTEX_ALTER_EGO_MAX_TOKENS_PHASE2: number
+  CORTEX_ALTER_EGO_MAX_TOKENS_PHASE4: number
+  CORTEX_ALTER_EGO_MAX_TOKENS_ANALYSIS: number
 }
 
 // ═══════════════════════════════════════════
