@@ -95,26 +95,80 @@ Right: Notification bell (dropdown) → Language (SVG flags dropdown) → Status
 
 ## 6. Components
 
-### Unified Action Buttons (`act-btn`)
-All action buttons across channels AND contacts share the same system. Same height, pill shape, icon+text.
+### Design Tokens (CSS Variables)
+All components use centralized tokens from `base.css :root`. **Never hardcode px/hex values.**
 
-| Variant | Class | Background | Color | Usage |
-|---------|-------|-----------|-------|-------|
-| **Add/Connect** | `act-btn-add` | `rgba(52,199,89,0.12)` | `#1a8f3a` | Add user, connect channel |
-| **Remove/Disconnect** | `act-btn-remove` | `rgba(230,33,17,0.08)` | `var(--error)` | Deactivate, disconnect, delete |
-| **Configure** | `act-btn-config` | `var(--surface-container-high)` | `var(--on-surface-variant)` | Settings, cancel, pagination |
-| **CTA** | `act-btn-cta` | `var(--primary)` | `#fff` | Save in modals, primary actions |
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--space-xs` | 4px | Minimal spacing |
+| `--space-sm` | 8px | Compact spacing |
+| `--space-md` | 16px | Default spacing |
+| `--space-lg` | 24px | Section spacing |
+| `--space-xl` | 32px | Large gaps |
+| `--radius-sm` | 0.5rem (8px) | Inputs, badges, small containers |
+| `--radius-md` | 0.75rem (12px) | Cards, modals, elevated panels, icon squircles |
+| `--radius-lg` | 1rem (16px) | Large containers |
+| `--radius-pill` | 1.5rem (24px) | Buttons, tags, pills |
+| `--field-gap` | 2.75rem | Vertical gap between consecutive fields |
+| `--panel-gap` | 16px | Gap between panels |
+| `--section-gap` | 24px | Gap between sections |
 
-Base: `font-size: 12px; font-weight: 600; padding: 7px 16px; border-radius: 1.5rem;`
+### Button Hierarchy (4 variants)
+All buttons follow a strict 4-variant visual hierarchy. **Do NOT create custom button styles.**
 
-### Secondary Button
-`btn-secondary`: Neutral background (`surface-container-high`), no border, 0.5rem radius. For inline secondary actions.
+| Variant | Class | Background | Color | Icon | Usage |
+|---------|-------|-----------|-------|------|-------|
+| **Primary** | `act-btn act-btn-cta` | `var(--primary)` solid orange | `#fff` | **No icon** | Save, main CTA |
+| **Secondary** | `act-btn act-btn-config` | `var(--surface-container-high)` neutral gray | `var(--on-surface-variant)` | Icon left | Settings, cancel, pagination |
+| **Success** | `act-btn act-btn-add` | `rgba(52,199,89,0.12)` soft green | `#1a8f3a` | Icon left | Add, connect, enable |
+| **Destructive** | `act-btn act-btn-remove` | `rgba(230,33,17,0.08)` soft red | `var(--error)` | Icon left | Delete, disconnect, deactivate |
+
+**Base styles** (shared by all): `font-size: 12px; font-weight: 600; padding: 7px 16px; border-radius: var(--radius-pill);`
+
+**Size modifiers:**
+- `act-btn--compact`: `padding: 4px 12px; font-size: 11px;`
+- `act-btn--sm`: `padding: 6px 14px;`
+
+**Legacy aliases** (backwards compat only, prefer act-btn):
+- `btn-secondary` → same as `act-btn-config` (pill shape)
+- `btn-danger` → same as `act-btn-remove` (pill shape)
+
+### Icons (Thin Outlined + Squircle Container)
+All icons follow a unified system: **outlined thin-stroke SVGs** inside **squircle containers** with soft backgrounds.
+
+**Icon rules:**
+- All icons: SVG monochrome, `stroke="currentColor"`, `stroke-width="1.8"`
+- **No filled icons** — only outlined/stroked
+- **No colored emoji** — override with SVG in `ICON_OVERRIDES` map
+- **No inline SVG styles** — icons inherit color from parent
+- Sizes: 20x20px (sidebar), 16-18px (header), 14px (contact badges), 16px (buttons)
+
+**Squircle container** (`.icon-squircle`):
+```
+width: 44px; height: 44px; border-radius: var(--radius-md);
+background: var(--surface-container-low); color: var(--on-surface-dim);
+```
+
+| Size | Class | Dimensions |
+|------|-------|------------|
+| Default | `.icon-squircle` | 44x44px |
+| Small | `.icon-squircle--sm` | 36x36px |
+| Large | `.icon-squircle--lg` | 48x48px |
+
+| Color variant | Class | Background | Color |
+|---------------|-------|-----------|-------|
+| Blue | `icon-squircle--blue` | `rgba(0,122,255,0.12)` | `#007aff` |
+| Orange | `icon-squircle--orange` | `var(--primary-light)` | `var(--primary)` |
+| Green | `icon-squircle--green` | `rgba(52,199,89,0.12)` | `#1a8f3a` |
+| Red | `icon-squircle--red` | `rgba(230,33,17,0.06)` | `var(--error)` |
+| Pink | `icon-squircle--pink` | `rgba(255,45,85,0.1)` | `#ff2d55` |
 
 ### Cards / Panels
-- `surface-container-lowest` bg, radius 0.5rem
+- `surface-container-lowest` bg, radius `var(--radius-sm)`
 - No border, no static shadow
 - `--shadow-subtle` on hover only
-- **Panel body padding:** `16px 20px 20px` (standardized with channel settings)
+- **Panel body padding:** `0 20px 20px` (standardized with channel settings)
+- **Panel gap:** `var(--panel-gap)` between consecutive panels
 
 ### Input Fields
 - `surface-container-low` fill, no border, radius 0.5rem
@@ -128,14 +182,18 @@ Base: `font-size: 12px; font-weight: 600; padding: 7px 16px; border-radius: 1.5r
 
 ### Icons
 - All sidebar/UI icons: **SVG monochrome**, stroke-based, inherit `currentColor`
+- **Outlined thin stroke** (stroke-width 1.8) — no filled/solid icons
 - No colored emoji icons — override with SVG in `ICON_OVERRIDES` map
-- Stroke-width 1.8, 20x20px in sidebar, 16-18px in header, 14px in contact badges, 16px in action buttons
+- **Squircle containers** (`.icon-squircle`): rounded-square with soft bg, used for KPIs, tool cards, channel icons
+- Sizes: 20x20px in sidebar, 16-18px in header, 14px in contact badges, 16px in buttons
+- **Every new module MUST have an entry in `ICON_OVERRIDES`** (templates.ts)
 
 ### Info Tooltips (`(i)` button)
-- Dark bubble hover tooltip (same style everywhere: fields AND channel cards)
+- **Unified system**: `.info-btn`/`.info-tooltip` (16px) and `.ch-info-btn`/`.ch-info-tip` (14px compact)
+- Same visual: dark bubble hover tooltip, `max-width: 260px`, arrow pointing down
 - Structure: `<span class="info-wrap"><button class="info-btn">i</button><div class="info-tooltip">text</div></span>`
-- Button: 16x16px circle, serif italic "i", `--surface-container-high` bg
-- Tooltip: absolute positioned above, dark bg (`--on-surface`), white text, 11px, arrow pointing down
+- Button: circle, serif italic "i", `--surface-container-high` bg
+- Tooltip: absolute positioned above, dark bg (`--on-surface`), white text, 11px
 - Shows on hover (CSS only, no JS)
 - Fields use `info` or `description` property in manifest — both work via `infoBtnWithTip()`
 
@@ -302,36 +360,42 @@ The console NEVER uses internal API endpoints for config/CRUD operations. The sa
 
 ### Do
 - Use white space as structure — increase spacing, not add lines
-- Use 0.5rem radius consistently for all containers
+- Use design token variables for ALL spacing (`--space-*`), radius (`--radius-*`), and gaps (`--field-gap`, `--panel-gap`, `--section-gap`)
+- Use `var(--radius-sm)` for containers, `var(--radius-md)` for cards/modals, `var(--radius-pill)` for buttons
 - Keep shadows barely perceptible
-- Use SVG monochrome icons that inherit `currentColor`
+- Use SVG monochrome **outlined thin-stroke** icons that inherit `currentColor`
+- Use `.icon-squircle` containers for icon display (never bare icons in cards/KPIs)
 - Use SVG flags for language selection (not emoji — they don't render in all environments)
-- Use `act-btn` system for all action buttons (not ad-hoc styles)
+- Use `act-btn` system for all action buttons (4 variants: primary/secondary/success/destructive)
 - Use `wizard-overlay` + `wizard-modal` for all modals (not custom modal CSS)
 - Use `js-custom-select` for all dropdowns (not native `<select>` styling)
 - Use `data-original` for dirty tracking on config fields
 - Show validation errors inline under the field (red border + message), not browser tooltips
 - Standardize section headers: breadcrumb + title (1.65rem) + description (2 lines clamped)
+- Use utility classes (`u-mt-md`, `u-mb-sm`, `u-text-muted`, `u-hidden`) instead of inline styles
 - **Use ONLY CSS variables from `base.css`** — never hardcode hex colors or rgba values in modules
 - **Use `var(--primary-focus)` for ALL focus rings** — `box-shadow: 0 0 0 3px var(--primary-focus)`
-- **Use existing CSS classes from `components.css`** before creating new ones — check panels, fields, toggles, badges, buttons, tables, filters, wizards
-- **Prefix module-scoped classes** with a short prefix (`ls-`, `ki-`, `st-`, `ts-`, `freight-`, `fd-`) to avoid collisions
-- **Use `var(--success)` (#34c759) for active toggle state** — all toggles must look identical
+- **Use existing CSS classes from `components.css`** before creating new ones
+- **Prefix module-scoped classes** with a short prefix (`ls-`, `ki-`, `st-`, `ts-`, `freight-`, `fd-`)
+- **Use `var(--success)` for active toggle state** — all toggles must look identical
 - **Use `.toggle` / `.toggle-sm` classes** for switch components — never create custom toggle CSS
+- **Add `ICON_OVERRIDES` entry** for every new module (templates.ts)
 
 ### Don't
 - Use `#000000` — use `--on-surface` (#1A1A1A)
-- Use colored emoji icons in sidebar or navigation
+- Use colored emoji icons in sidebar or navigation — always SVG monochrome
+- Use filled/solid icons — only outlined thin-stroke
 - Use 1px solid borders for sectioning
 - Use aggressive drop shadows
 - Use gradients on backgrounds (only on brand icon)
 - Put toggles through the save flow — they apply instantly
-- Use internal API endpoints (`/console/api/`) for config or CRUD from the console UI — APIs are for external systems only
-- Create custom button styles — use `act-btn-*` variants
+- Use internal API endpoints (`/console/api/`) for config or CRUD from the console UI
+- Create custom button styles — use `act-btn-*` variants (4 hierarchy levels)
 - Create custom modal CSS — use wizard classes
 - Use browser-native form validation tooltips — use `wizard-field-error` inline messages
-- **Use inline `style="..."` for presentational CSS** — extract to CSS classes. Only `display:none` JS toggles and dynamic values (`width:${pct}%`) may remain inline
-- **Define custom CSS variables** (`--my-color`, `--bg-primary`, `--accent`) — use ONLY the variables defined in `base.css :root`
-- **Use non-standard colors for accent/focus** — the primary accent is ALWAYS Fox Orange `var(--primary)`, focus ring is ALWAYS `var(--primary-focus)`, active toggle is ALWAYS `var(--success)`
-- **Use `border-radius` values other than `0.5rem`** (containers), `0.75rem` (elevated cards/modals), `1.5rem` (pill buttons) — no `4px`, `6px`, `8px`, `10px`
+- **Use inline `style="..."` for presentational CSS** — extract to CSS classes
+- **Define custom CSS variables** — use ONLY the variables defined in `base.css :root`
+- **Use hardcoded px for border-radius** — use `var(--radius-sm/md/lg/pill)` only
+- **Use hardcoded px for spacing** — use `var(--space-*)` or `var(--field-gap/panel-gap/section-gap)`
+- **Use hardcoded hex for semantic colors** — use `var(--error)`, `var(--success)`, `var(--warning)`, `var(--info)`
 - **Create custom toggle, tab, or dropdown components** — reuse `.toggle`, `.chs-tab`, `.custom-select` from `components.css`
