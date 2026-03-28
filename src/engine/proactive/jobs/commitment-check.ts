@@ -5,7 +5,6 @@
 import pino from 'pino'
 import type { ProactiveJobContext, ProactiveCandidate } from '../../types.js'
 import type { ChannelName } from '../../../channels/types.js'
-import type { MemoryManager } from '../../../modules/memory/memory-manager.js'
 import { processProactive } from '../proactive-pipeline.js'
 
 const logger = pino({ name: 'engine:job:commitment-check' })
@@ -45,13 +44,27 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
     )
 
     let processed = 0
-    const memMgr = ctx.registry.getOptional<MemoryManager>('memory:manager')
 
     for (const row of result.rows) {
-      // Build commitment data for the pipeline
-      const commitmentData = memMgr
-        ? (await memMgr.getPendingCommitments('luna', row.contact_id)).find(c => c.id === row.id) ?? null
-        : null
+      // Build commitment data directly from the query row (avoids N+1 re-fetch)
+      const commitmentData: import('../../../modules/memory/types.js').Commitment = {
+        id: row.id,
+        agentId: 'luna',
+        contactId: row.contact_id,
+        commitmentBy: 'agent',
+        description: row.description,
+        commitmentType: row.commitment_type,
+        priority: row.priority,
+        dueAt: row.due_at ? new Date(row.due_at) : null,
+        status: row.status,
+        attemptCount: row.attempt_count ?? 0,
+        requiresTool: row.requires_tool ?? null,
+        sortOrder: 0,
+        reminderSent: false,
+        metadata: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
 
       const candidate: ProactiveCandidate = {
         contactId: row.contact_id,
@@ -61,7 +74,7 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
         triggerType: 'commitment',
         triggerId: row.id,
         reason: `Commitment due: "${row.description}" (${row.commitment_type}, ${row.status})`,
-        commitmentData: commitmentData ?? undefined,
+        commitmentData,
         isOverdue: row.status === 'overdue',
       }
 

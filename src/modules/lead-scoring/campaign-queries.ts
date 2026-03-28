@@ -125,18 +125,31 @@ export class CampaignQueries {
              COALESCE(c.allowed_channels, '{}') AS allowed_channels,
              COALESCE(c.prompt_context, '') AS prompt_context,
              c.active, COALESCE(c.utm_data, '{}') AS utm_data,
-             c.created_at, COALESCE(c.updated_at, c.created_at) AS updated_at
+             c.created_at, COALESCE(c.updated_at, c.created_at) AS updated_at,
+             COALESCE(
+               json_agg(
+                 json_build_object('id', t.id, 'name', t.name, 'tag_type', t.tag_type, 'color', t.color)
+               ) FILTER (WHERE t.id IS NOT NULL),
+               '[]'
+             ) AS tags
       FROM campaigns c
+      LEFT JOIN campaign_tag_assignments a ON a.campaign_id = c.id
+      LEFT JOIN campaign_tags t ON t.id = a.tag_id
       ${where}
+      GROUP BY c.id
       ORDER BY c.visible_id ASC
     `)
 
-    const campaigns: CampaignRecord[] = []
-    for (const row of result.rows) {
-      const tags = await this.getTagsForCampaign(row.id)
-      campaigns.push(this.mapCampaignRow(row, tags))
-    }
-    return campaigns
+    return result.rows.map((row: Record<string, unknown>) => {
+      const rawTags = (Array.isArray(row.tags) ? row.tags : JSON.parse(String(row.tags))) as Array<Record<string, string>>
+      const tags: CampaignTag[] = rawTags.map(t => ({
+        id: t.id!,
+        name: t.name!,
+        tagType: t.tag_type as 'platform' | 'source',
+        color: t.color!,
+      }))
+      return this.mapCampaignRow(row, tags)
+    })
   }
 
   async getCampaignById(id: string): Promise<CampaignRecord | null> {

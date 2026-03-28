@@ -86,21 +86,20 @@ export class LeadQueries {
         COALESCE(c.qualification_data, '{}') AS qualification_data,
         c.created_at,
         c.updated_at,
-        (
-          SELECT MAX(s.last_activity_at)
-          FROM sessions s
-          WHERE s.contact_id = c.id
-        ) AS last_activity_at,
-        (
-          SELECT COALESCE(SUM(s.message_count), 0)
-          FROM sessions s
-          WHERE s.contact_id = c.id
-        ) AS message_count,
+        sa.last_activity_at,
+        COALESCE(sa.message_count, 0) AS message_count,
         lc.campaign_id AS latest_campaign_id,
         lc.campaign_name AS latest_campaign_name,
         lc.campaign_visible_id AS latest_campaign_visible_id
       FROM contacts c
       LEFT JOIN contact_channels cc ON cc.contact_id = c.id AND cc.is_primary = true
+      LEFT JOIN (
+        SELECT contact_id,
+               MAX(last_activity_at) AS last_activity_at,
+               COALESCE(SUM(message_count), 0)::int AS message_count
+        FROM sessions
+        GROUP BY contact_id
+      ) sa ON sa.contact_id = c.id
       LEFT JOIN LATERAL (
         SELECT xcc.campaign_id, xc.name AS campaign_name, xc.visible_id AS campaign_visible_id
         FROM contact_campaigns xcc
@@ -147,67 +146,68 @@ export class LeadQueries {
    * Get full lead detail including channels and recent messages.
    */
   async getLeadDetail(contactId: string): Promise<LeadDetail | null> {
-    // Contact info
-    const contactResult = await this.db.query(
-      `SELECT
-        c.id AS contact_id,
-        c.display_name,
-        c.contact_type,
-        c.qualification_status,
-        COALESCE(c.qualification_score, 0) AS qualification_score,
-        COALESCE(c.qualification_data, '{}') AS qualification_data,
-        c.created_at,
-        c.updated_at
-      FROM contacts c
-      WHERE c.id = $1`,
-      [contactId],
-    )
+    // Query 1: Contact + session aggregates + latest campaign (3-in-1)
+    // Query 2: Channels
+    // Query 3: Recent messages
+    const [contactResult, channelsResult, messagesResult] = await Promise.all([
+      this.db.query(
+        `SELECT
+          c.id AS contact_id,
+          c.display_name,
+          c.contact_type,
+          c.qualification_status,
+          COALESCE(c.qualification_score, 0) AS qualification_score,
+          COALESCE(c.qualification_data, '{}') AS qualification_data,
+          c.created_at,
+          c.updated_at,
+          sa.last_activity_at,
+          COALESCE(sa.message_count, 0) AS message_count,
+          lc.campaign_id AS latest_campaign_id,
+          lc.campaign_name AS latest_campaign_name,
+          lc.campaign_visible_id AS latest_campaign_visible_id
+        FROM contacts c
+        LEFT JOIN (
+          SELECT contact_id,
+                 MAX(last_activity_at) AS last_activity_at,
+                 COALESCE(SUM(message_count), 0)::int AS message_count
+          FROM sessions
+          WHERE contact_id = $1
+          GROUP BY contact_id
+        ) sa ON sa.contact_id = c.id
+        LEFT JOIN LATERAL (
+          SELECT xcc.campaign_id, xc.name AS campaign_name, xc.visible_id AS campaign_visible_id
+          FROM contact_campaigns xcc
+          JOIN campaigns xc ON xc.id = xcc.campaign_id
+          WHERE xcc.contact_id = c.id
+          ORDER BY xcc.matched_at DESC
+          LIMIT 1
+        ) lc ON true
+        WHERE c.id = $1`,
+        [contactId],
+      ),
+      this.db.query(
+        `SELECT channel_name, channel_contact_id, is_primary
+         FROM contact_channels
+         WHERE contact_id = $1
+         ORDER BY is_primary DESC`,
+        [contactId],
+      ),
+      this.db.query(
+        `SELECT m.id, m.sender_type, m.content, m.created_at
+         FROM messages m
+         JOIN sessions s ON s.id = m.session_id
+         WHERE s.contact_id = $1
+         ORDER BY m.created_at DESC
+         LIMIT 30`,
+        [contactId],
+      ),
+    ])
 
     if (contactResult.rows.length === 0) return null
     const r = contactResult.rows[0]
 
-    // Channels
-    const channelsResult = await this.db.query(
-      `SELECT channel_name, channel_contact_id, is_primary
-       FROM contact_channels
-       WHERE contact_id = $1
-       ORDER BY is_primary DESC`,
-      [contactId],
-    )
-
-    // Session info
-    const sessionResult = await this.db.query(
-      `SELECT MAX(last_activity_at) AS last_activity_at,
-              COALESCE(SUM(message_count), 0) AS message_count
-       FROM sessions
-       WHERE contact_id = $1`,
-      [contactId],
-    )
-
-    // Recent messages (last 30 across sessions)
-    const messagesResult = await this.db.query(
-      `SELECT m.id, m.sender_type, m.content, m.created_at
-       FROM messages m
-       JOIN sessions s ON s.id = m.session_id
-       WHERE s.contact_id = $1
-       ORDER BY m.created_at DESC
-       LIMIT 30`,
-      [contactId],
-    )
-
-    // Latest campaign
-    const latestCampaignResult = await this.db.query(
-      `SELECT cc.campaign_id, c.name, c.visible_id
-       FROM contact_campaigns cc
-       JOIN campaigns c ON c.id = cc.campaign_id
-       WHERE cc.contact_id = $1
-       ORDER BY cc.matched_at DESC LIMIT 1`,
-      [contactId],
-    ).catch(() => ({ rows: [] }))
-
     const primaryChannel = channelsResult.rows.find((ch: { is_primary: boolean }) => ch.is_primary)
-    const sessionRow = sessionResult.rows[0]
-    const lcRow = latestCampaignResult.rows[0] as { campaign_id: string; name: string; visible_id: number } | undefined
+    const lcRow = r as { latest_campaign_id: string | null; latest_campaign_name: string | null; latest_campaign_visible_id: number | null }
 
     return {
       contactId: r.contact_id,
@@ -222,11 +222,11 @@ export class LeadQueries {
         : r.qualification_data,
       createdAt: r.created_at?.toISOString() ?? '',
       updatedAt: r.updated_at?.toISOString() ?? '',
-      lastActivityAt: sessionRow?.last_activity_at?.toISOString() ?? null,
-      messageCount: parseInt(sessionRow?.message_count ?? '0', 10),
-      latestCampaignId: lcRow?.campaign_id ?? null,
-      latestCampaignName: lcRow?.name ?? null,
-      latestCampaignVisibleId: lcRow?.visible_id ?? null,
+      lastActivityAt: r.last_activity_at?.toISOString() ?? null,
+      messageCount: parseInt(r.message_count ?? '0', 10),
+      latestCampaignId: lcRow.latest_campaign_id ?? null,
+      latestCampaignName: lcRow.latest_campaign_name ?? null,
+      latestCampaignVisibleId: lcRow.latest_campaign_visible_id ?? null,
       channels: channelsResult.rows.map((ch: { channel_name: string; channel_contact_id: string; is_primary: boolean }) => ({
         channel: ch.channel_name,
         channelContactId: ch.channel_contact_id,
