@@ -75,10 +75,12 @@ Right: Notification bell (dropdown) → Language (SVG flags dropdown) → Status
 ### Sidebar (1/5 viewport)
 - Width: `calc(100vw / 5)`, min 230px, max 280px
 - Background: `surface-container-lowest`
-- Group titles: muted gray (`--on-surface-dim`), uppercase
+- **Flat list, no group titles** — all items in a single group sorted by `order`
 - Items: 15px text, 20px SVG monochrome icons (gray, inherit color)
 - Active item: **filled orange pill** (`--primary` bg, white text, orange shadow `0 2px 8px rgba(255,94,14,0.25)`)
-- **Submenu:** Collapsible under parent items (Canales, Contactos). Shows sub-items with smaller icons, badge counts (grey `badge-soon`), status dots.
+- **Submenu:** Collapsible under Agente (knowledge, memory, identity, advanced) and Herramientas (tools, lead-scoring, etc.)
+- **REGLA: Herramientas siempre al final** (order: 999). Todos los módulos no-core van ahí como subtab.
+- Dynamic modules appear between Agente and Herramientas, sorted by order field.
 - Mobile: off-canvas drawer, max 85vw
 
 ### Section Header (standardized across all tabs)

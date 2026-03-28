@@ -17,25 +17,26 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
 - `ui/styles/*.css` — 5 CSS files (base, layout, components, whatsapp, sidebar)
 
 ## Sidebar dinámico
-- 3 categorías: `channels` (sin título), `agent` (sin título), `system` (muestra "SISTEMA")
+- **Lista plana sin títulos de categoría** — todos los items en un solo grupo `main`
 - Items fijos (secciones con renderers custom) + items dinámicos (módulos activos con `console.group`)
 - Los módulos declaran `group` e `icon` en su `manifest.console` para aparecer automáticamente
-- **Canales NO aparecen individualmente en el sidebar** — se gestionan desde la pestaña unificada `/console/channels`
-- Módulos con `group: 'channels'` se excluyen del sidebar dinámico automáticamente
-- **REGLA: Herramientas SIEMPRE al final del sidebar** (group: system, order: 999)
-- **REGLA: Todo módulo con icono DEBE tener entrada en `ICON_OVERRIDES`** (templates.ts) — no emoji
-- Orden dentro de cada grupo: por campo `order` del manifest
+- **Canales NO aparecen individualmente en el sidebar** — se gestionan desde `/console/channels`
+- Módulos con `group: 'channels'` se excluyen del sidebar automáticamente
+- Módulos con `group: 'agent'` que no están en HERRAMIENTAS_FIXED → van como subtab de Herramientas
+- **REGLA: Herramientas SIEMPRE al final del sidebar** (order: 999)
+- **REGLA: Todo módulo DEBE tener entrada en `ICON_OVERRIDES`** (templates.ts) — no emoji
+- Orden: por campo `order` del manifest
 - Mobile: hamburger menu con drawer lateral (no horizontal scroll)
 
 ### Estructura sidebar
 ```
-[channels — sin título]
-  Dashboard (0), Canales (1), Contactos (2)
-[agent — sin título]
-  Agente (1)
-SISTEMA
-  {módulos dinámicos por order}
-  Herramientas (999) ← siempre último
+[sin títulos — lista plana]
+  Dashboard (0)
+  Canales (10)
+  Contactos (20)
+  Agente (30)        ← submenu: knowledge, memory, identity, advanced
+  Cortex (90)        ← módulo dinámico, group: 'system'
+  Herramientas (999) ← SIEMPRE último, submenu: tools, lead-scoring, etc.
 ```
 
 ## Pestaña Canales (`/console/channels`)

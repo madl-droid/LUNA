@@ -12,10 +12,9 @@ interface SidebarCategory {
   key: string  // i18n key (cat_*)
 }
 
+// Single flat list — no group titles, everything sorted by order
 const CATEGORIES: SidebarCategory[] = [
-  { id: 'channels', key: 'cat_channels' },
-  { id: 'agent', key: 'cat_agent' },
-  { id: 'system', key: 'cat_system' },
+  { id: 'main', key: 'cat_channels' },
 ]
 
 // Fixed sections: have custom renderers in templates-sections.ts
@@ -48,16 +47,16 @@ const ICONS = {
 
 const FIXED_SECTIONS: FixedSection[] = [
   // Dashboard — overview with charts
-  { id: 'dashboard', key: 'sec_dashboard', icon: ICONS.dashboard, group: 'channels', order: 0 },
+  { id: 'dashboard', key: 'sec_dashboard', icon: ICONS.dashboard, group: 'main', order: 0 },
   // Channels — solo la pestaña unificada; los canales individuales se gestionan desde ahí
-  { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'channels', order: 1 },
+  { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'main', order: 10 },
   // Contacts — right below channels
-  { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'channels', order: 2 },
+  { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'main', order: 20 },
   // Agent — unified page with sub-tabs: knowledge, memory, identity, advanced
-  { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'agent', order: 1 },
+  { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'main', order: 30 },
   // Herramientas — unified page with sub-tabs: tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps
-  // REGLA: Herramientas siempre al final del sidebar (order 999, group system)
-  { id: 'herramientas', key: 'sec_herramientas', icon: svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), group: 'system', order: 999 },
+  // REGLA: Herramientas SIEMPRE al final del sidebar (order 999)
+  { id: 'herramientas', key: 'sec_herramientas', icon: svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), group: 'main', order: 999 },
 ]
 
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
@@ -401,7 +400,7 @@ function renderSidebar(opts: PageOptions): string {
 
   // 2. Add dynamic modules (only if not already a fixed section)
   //    Skip channel modules — managed from Canales tab
-  //    Skip agent-group modules that aren't fixed — they go into Herramientas submenu
+  //    Skip agent-group modules that go into Herramientas submenu (not sidebar)
   const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'freshdesk'])
   for (const mod of dynModules) {
     if (FIXED_IDS.has(mod.name)) continue
@@ -409,13 +408,8 @@ function renderSidebar(opts: PageOptions): string {
     if (mod.group === 'channels') continue
     // Agent-group modules that are not fixed sidebar items → Herramientas subtab (not sidebar item)
     if (mod.group === 'agent' && !HERRAMIENTAS_FIXED.has(mod.name)) continue
-    const group = mod.group
-    if (!categoryItems[group]) {
-      // Unknown group — add as new category (key = group name as fallback)
-      categoryItems[group] = []
-      CATEGORIES.push({ id: group, key: group })
-    }
-    categoryItems[group]!.push({
+    // All dynamic sidebar modules go into the single 'main' group (flat sidebar, no titles)
+    categoryItems['main']!.push({
       id: mod.name,
       label: mod.title[opts.lang] || mod.title.es || mod.name,
       icon: ICON_OVERRIDES[mod.name] || ICONS.fallback,
@@ -435,8 +429,8 @@ function renderSidebar(opts: PageOptions): string {
     if (!items || items.length === 0) continue
 
     const groupLabel = t(cat.key, opts.lang)
-    // Hide category title for channels and agent groups
-    const titleHtml = (cat.id === 'channels' || cat.id === 'agent') ? '' : `<div class="sidebar-group-title">${groupLabel}</div>`
+    // Hide category title for main group (flat sidebar, no separators)
+    const titleHtml = cat.id === 'main' ? '' : `<div class="sidebar-group-title">${groupLabel}</div>`
     nav += `<div class="sidebar-group">${titleHtml}`
 
     for (const item of items) {
