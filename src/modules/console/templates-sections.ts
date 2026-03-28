@@ -1028,8 +1028,6 @@ export const SECTION_REDIRECTS: Record<string, string> = {
   // Old channel direct URLs → nested under channels
   'whatsapp': 'channels/whatsapp',
   'email': 'channels/gmail',
-  // Modules page → herramientas (modules sidebar removed)
-  'modules': 'herramientas',
   // TTS page → identity (TTS is a feature, not a tool)
   'tts': 'agente/identity',
 }
