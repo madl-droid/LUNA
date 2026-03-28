@@ -184,6 +184,7 @@ export type ExecutionPlanType =
   | 'memory_lookup'
   | 'web_search'
   | 'process_attachment'
+  | 'code_execution'
 
 export interface ExecutionStep {
   type: ExecutionPlanType
@@ -191,6 +192,10 @@ export interface ExecutionStep {
   params?: Record<string, unknown>
   description?: string
   dependsOn?: number[]  // indices of steps this depends on
+  /** Phase 2 hint: activate extended thinking for this step's LLM calls */
+  useThinking?: boolean
+  /** Phase 2 hint: activate code execution sandbox for this step */
+  useCoding?: boolean
 }
 
 export interface EvaluatorOutput {

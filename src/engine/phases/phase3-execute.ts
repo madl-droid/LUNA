@@ -216,6 +216,9 @@ async function executeStep(
       case 'process_attachment':
         return await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
 
+      case 'code_execution':
+        return await executeCodeExecution(step, index, config, startMs)
+
       case 'respond_only':
         return {
           stepIndex: index,
@@ -449,6 +452,57 @@ async function executeWebSearch(
     return {
       stepIndex: index,
       type: 'web_search',
+      success: false,
+      error: String(err),
+      durationMs: Date.now() - startMs,
+    }
+  }
+}
+
+/**
+ * Execute code via LLM's built-in code execution sandbox (Python).
+ * Phase 2 decides when to use this (e.g. math calculations, data analysis).
+ */
+async function executeCodeExecution(
+  step: ExecutionStep,
+  index: number,
+  config: EngineConfig,
+  startMs: number,
+): Promise<StepResult> {
+  const task = step.description ?? step.params?.task as string ?? ''
+  if (!task) {
+    return { stepIndex: index, type: 'code_execution', success: false, error: 'No task description', durationMs: Date.now() - startMs }
+  }
+
+  try {
+    const result = await callLLMWithFallback(
+      {
+        task: 'tools',
+        messages: [{ role: 'user', content: `Ejecuta código Python para: ${task}` }],
+        maxTokens: 2048,
+        temperature: 0.1,
+        codeExecution: true,
+        thinking: step.useThinking ? { type: 'adaptive', budgetTokens: 4096 } : undefined,
+      },
+      config.fallbackClassifyProvider,
+      config.fallbackClassifyModel,
+    )
+
+    return {
+      stepIndex: index,
+      type: 'code_execution',
+      success: true,
+      data: {
+        text: result.text,
+        codeResults: result.codeResults,
+        provider: result.provider,
+      },
+      durationMs: Date.now() - startMs,
+    }
+  } catch (err) {
+    return {
+      stepIndex: index,
+      type: 'code_execution',
       success: false,
       error: String(err),
       durationMs: Date.now() - startMs,

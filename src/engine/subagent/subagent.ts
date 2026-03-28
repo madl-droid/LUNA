@@ -83,7 +83,7 @@ export async function runSubagent(
     iterations++
 
     try {
-      // Call LLM with tools
+      // Call LLM with tools (+ optional thinking/coding from Phase 2 hints)
       const result = await callLLM({
         task: 'subagent',
         provider: config.toolsProvider,
@@ -97,6 +97,8 @@ export async function runSubagent(
           description: t.description,
           inputSchema: t.inputSchema,
         })) : undefined,
+        thinking: step.useThinking ? { type: 'adaptive', budgetTokens: 4096 } : undefined,
+        codeExecution: step.useCoding ?? false,
       })
 
       tokensUsed += result.inputTokens + result.outputTokens
