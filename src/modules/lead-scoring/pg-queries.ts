@@ -42,7 +42,7 @@ export class LeadQueries {
     }
 
     if (search) {
-      conditions.push(`(c.display_name ILIKE $${paramIdx} OR cc.channel_contact_id ILIKE $${paramIdx})`)
+      conditions.push(`(c.display_name ILIKE $${paramIdx} OR cc.channel_identifier ILIKE $${paramIdx})`)
       params.push(`%${search}%`)
       paramIdx++
     }
@@ -78,8 +78,8 @@ export class LeadQueries {
       SELECT
         c.id AS contact_id,
         c.display_name,
-        COALESCE(cc.channel_contact_id, '') AS channel_contact_id,
-        COALESCE(cc.channel_name, '') AS channel,
+        COALESCE(cc.channel_identifier, '') AS channel_identifier,
+        COALESCE(cc.channel_type, '') AS channel,
         c.contact_type,
         c.qualification_status,
         COALESCE(c.qualification_score, 0) AS qualification_score,
@@ -120,7 +120,7 @@ export class LeadQueries {
     const leads: LeadSummary[] = result.rows.map((r: any) => ({
       contactId: r.contact_id,
       displayName: r.display_name,
-      channelContactId: r.channel_contact_id,
+      channelContactId: r.channel_identifier,
       channel: r.channel,
       contactType: r.contact_type,
       qualificationStatus: r.qualification_status,
@@ -186,14 +186,14 @@ export class LeadQueries {
         [contactId],
       ),
       this.db.query(
-        `SELECT channel_name, channel_contact_id, is_primary
+        `SELECT channel_type, channel_identifier, is_primary
          FROM contact_channels
          WHERE contact_id = $1
          ORDER BY is_primary DESC`,
         [contactId],
       ),
       this.db.query(
-        `SELECT m.id, m.sender_type, m.content, m.created_at
+        `SELECT m.id, m.role, m.content_text, m.created_at
          FROM messages m
          JOIN sessions s ON s.id = m.session_id
          WHERE s.contact_id = $1
@@ -212,8 +212,8 @@ export class LeadQueries {
     return {
       contactId: r.contact_id,
       displayName: r.display_name,
-      channelContactId: primaryChannel?.channel_contact_id ?? '',
-      channel: primaryChannel?.channel_name ?? '',
+      channelContactId: primaryChannel?.channel_identifier ?? '',
+      channel: primaryChannel?.channel_type ?? '',
       contactType: r.contact_type,
       qualificationStatus: r.qualification_status,
       qualificationScore: parseInt(r.qualification_score, 10),
@@ -227,15 +227,15 @@ export class LeadQueries {
       latestCampaignId: lcRow.latest_campaign_id ?? null,
       latestCampaignName: lcRow.latest_campaign_name ?? null,
       latestCampaignVisibleId: lcRow.latest_campaign_visible_id ?? null,
-      channels: channelsResult.rows.map((ch: { channel_name: string; channel_contact_id: string; is_primary: boolean }) => ({
-        channel: ch.channel_name,
-        channelContactId: ch.channel_contact_id,
+      channels: channelsResult.rows.map((ch: { channel_type: string; channel_identifier: string; is_primary: boolean }) => ({
+        channel: ch.channel_type,
+        channelContactId: ch.channel_identifier,
         isPrimary: ch.is_primary,
       })),
-      recentMessages: messagesResult.rows.map((m: { id: string; sender_type: string; content: unknown; created_at: Date }) => ({
+      recentMessages: messagesResult.rows.map((m: { id: string; role: string; content_text: string; created_at: Date }) => ({
         id: m.id,
-        senderType: m.sender_type,
-        content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
+        senderType: m.role === 'assistant' ? 'agent' : 'user',
+        content: { type: 'text', text: m.content_text ?? '' },
         createdAt: m.created_at?.toISOString() ?? '',
       })).reverse(), // chronological order
     }

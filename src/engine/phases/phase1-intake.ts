@@ -274,7 +274,7 @@ async function loadHistoryFromDb(
 ): Promise<HistoryMessage[]> {
   try {
     const result = await db.query(
-      `SELECT sender_type, content, created_at
+      `SELECT role, content_text, created_at
        FROM messages
        WHERE session_id = $1
        ORDER BY created_at DESC
@@ -283,8 +283,8 @@ async function loadHistoryFromDb(
     )
 
     return result.rows.reverse().map((row: Record<string, unknown>) => ({
-      role: row.sender_type === 'agent' ? 'assistant' as const : 'user' as const,
-      content: typeof row.content === 'object' ? ((row.content as Record<string, string>)?.text ?? '') : String(row.content),
+      role: row.role === 'assistant' ? 'assistant' as const : 'user' as const,
+      content: (row.content_text as string) ?? '',
       timestamp: row.created_at as Date,
     }))
   } catch (err) {
@@ -357,10 +357,10 @@ async function findContact(
 ): Promise<ContactInfo | null> {
   const contactQuery = `SELECT c.id, c.display_name, c.contact_type, c.qualification_status,
               c.qualification_score, c.qualification_data, c.created_at,
-              cc.channel_contact_id, cc.channel_name, cc.id AS cc_id
+              cc.channel_identifier, cc.channel_type, cc.id AS cc_id
        FROM contacts c
        JOIN contact_channels cc ON cc.contact_id = c.id
-       WHERE cc.channel_contact_id = $1 AND cc.channel_name = $2
+       WHERE cc.channel_identifier = $1 AND cc.channel_type = $2
        LIMIT 1`
 
   try {
@@ -372,13 +372,13 @@ async function findContact(
 
       if (result.rows.length > 0) {
         const row = result.rows[0]!
-        // Auto-migrate: update channel_contact_id from phone to LID
+        // Auto-migrate: update channel_identifier from phone to LID
         try {
           await db.query(
-            `UPDATE contact_channels SET channel_contact_id = $1 WHERE id = $2`,
+            `UPDATE contact_channels SET channel_identifier = $1 WHERE id = $2`,
             [channelContactId, row.cc_id],
           )
-          logger.info({ contactId: row.id, oldId: fallbackContactId, newId: channelContactId, channel }, 'Auto-migrated contact_channels (phone → LID)')
+          logger.info({ contactId: row.id, oldId: fallbackContactId, newId: channelContactId, channel }, 'Auto-migrated contact_channels channel_identifier (phone → LID)')
         } catch (err) {
           logger.warn({ err, contactId: row.id }, 'Failed to auto-migrate contact_channels')
         }
@@ -397,7 +397,7 @@ async function findContact(
     return {
       id: row.id,
       channelContactId: channelContactId, // always return the LID (current identifier)
-      channel: row.channel_name,
+      channel: row.channel_type,
       displayName: row.display_name,
       contactType: row.contact_type,
       qualificationStatus: row.qualification_status,
@@ -419,9 +419,9 @@ async function findContact(
 async function ensureVoiceChannel(db: Pool, contactId: string, phoneNumber: string): Promise<void> {
   try {
     await db.query(
-      `INSERT INTO contact_channels (contact_id, channel_name, channel_contact_id, channel_type, channel_identifier, is_primary)
-       VALUES ($1, 'voice', $2, 'voice', $2, false)
-       ON CONFLICT (channel_name, channel_contact_id) DO NOTHING`,
+      `INSERT INTO contact_channels (contact_id, channel_type, channel_identifier, is_primary)
+       VALUES ($1, 'voice', $2, false)
+       ON CONFLICT (channel_type, channel_identifier) DO NOTHING`,
       [contactId, phoneNumber],
     )
   } catch (err) {
@@ -442,11 +442,15 @@ async function loadOrCreateSession(
   if (contactId) {
     try {
       const result = await db.query(
-        `SELECT id, contact_id, agent_id, channel_name, started_at, last_activity_at,
-                message_count, compressed_summary
-         FROM sessions
-         WHERE contact_id = $1 AND channel_name = $2 AND last_activity_at > $3
-         ORDER BY last_activity_at DESC
+        `SELECT s.id, s.contact_id, s.agent_id, s.channel_name, s.started_at, s.last_activity_at,
+                s.message_count, ss.summary_text AS compressed_summary
+         FROM sessions s
+         LEFT JOIN LATERAL (
+           SELECT summary_text FROM session_summaries
+           WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+         ) ss ON true
+         WHERE s.contact_id = $1 AND s.channel_name = $2 AND s.last_activity_at > $3
+         ORDER BY s.last_activity_at DESC
          LIMIT 1`,
         [contactId, channel, cutoff],
       )
@@ -461,7 +465,7 @@ async function loadOrCreateSession(
           startedAt: row.started_at,
           lastActivityAt: row.last_activity_at,
           messageCount: row.message_count,
-          compressedSummary: row.compressed_summary,
+          compressedSummary: row.compressed_summary ?? null,
           isNew: false,
         }
       }

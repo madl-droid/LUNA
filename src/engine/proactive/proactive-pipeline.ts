@@ -224,10 +224,10 @@ async function buildProactiveContext(
   const contactResult = await db.query(
     `SELECT c.id, c.display_name, c.contact_type, c.qualification_status,
             c.qualification_score, c.qualification_data, c.created_at,
-            cc.channel_contact_id, cc.channel_name
+            cc.channel_identifier, cc.channel_type
      FROM contacts c
      JOIN contact_channels cc ON cc.contact_id = c.id
-     WHERE c.id = $1 AND cc.channel_name = $2
+     WHERE c.id = $1 AND cc.channel_type = $2
      LIMIT 1`,
     [candidate.contactId, candidate.channel],
   )
@@ -239,8 +239,8 @@ async function buildProactiveContext(
   }
   const contact = contactRow ? {
     id: contactRow.id,
-    channelContactId: contactRow.channel_contact_id,
-    channel: contactRow.channel_name,
+    channelContactId: contactRow.channel_identifier,
+    channel: contactRow.channel_type,
     displayName: contactRow.display_name,
     contactType: contactRow.contact_type,
     qualificationStatus: contactRow.qualification_status,
@@ -345,13 +345,13 @@ async function loadRecentHistory(
     }
 
     const result = await db.query(
-      `SELECT sender_type, content, created_at FROM messages
+      `SELECT role, content_text, created_at FROM messages
        WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2`,
       [sessionId, limit],
     )
     return result.rows.reverse().map((row: Record<string, unknown>) => ({
-      role: row.sender_type === 'agent' ? 'assistant' as const : 'user' as const,
-      content: typeof row.content === 'object' ? ((row.content as Record<string, string>)?.text ?? '') : String(row.content),
+      role: row.role === 'assistant' ? 'assistant' as const : 'user' as const,
+      content: (row.content_text as string) ?? '',
       timestamp: row.created_at as Date,
     }))
   } catch {
@@ -384,11 +384,15 @@ async function findOrCreateSession(
 
   try {
     const result = await db.query(
-      `SELECT id, contact_id, agent_id, channel_name, started_at, last_activity_at,
-              message_count, compressed_summary
-       FROM sessions
-       WHERE contact_id = $1 AND channel_name = $2 AND last_activity_at > $3
-       ORDER BY last_activity_at DESC LIMIT 1`,
+      `SELECT s.id, s.contact_id, s.agent_id, s.channel_name, s.started_at, s.last_activity_at,
+              s.message_count, ss.summary_text AS compressed_summary
+       FROM sessions s
+       LEFT JOIN LATERAL (
+         SELECT summary_text FROM session_summaries
+         WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+       ) ss ON true
+       WHERE s.contact_id = $1 AND s.channel_name = $2 AND s.last_activity_at > $3
+       ORDER BY s.last_activity_at DESC LIMIT 1`,
       [contactId, channel, cutoff],
     )
 
@@ -397,7 +401,7 @@ async function findOrCreateSession(
       return {
         id: row.id, contactId: row.contact_id, agentId: row.agent_id ?? agentId,
         channel: row.channel_name, startedAt: row.started_at, lastActivityAt: row.last_activity_at,
-        messageCount: row.message_count, compressedSummary: row.compressed_summary, isNew: false,
+        messageCount: row.message_count, compressedSummary: row.compressed_summary ?? null, isNew: false,
       }
     }
   } catch { /* create new */ }

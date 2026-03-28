@@ -289,8 +289,8 @@ async function loadContact(db: Pool, phoneNumber: string): Promise<ContactInfo |
     `SELECT c.id, c.display_name, c.qualification_status
      FROM contacts c
      JOIN contact_channels cc ON cc.contact_id = c.id
-     WHERE cc.channel_name = 'voice'
-       AND (cc.channel_contact_id = $1 OR cc.channel_contact_id = $2)
+     WHERE cc.channel_type = 'voice'
+       AND (cc.channel_identifier = $1 OR cc.channel_identifier = $2)
      LIMIT 1`,
     [phoneNumber, normalized],
   )

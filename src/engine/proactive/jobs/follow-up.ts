@@ -28,7 +28,7 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
     const result = await ctx.db.query(
       `SELECT ac.contact_id, ac.follow_up_count,
               c.display_name,
-              cc.channel_contact_id, cc.channel_name
+              cc.channel_identifier, cc.channel_type
        FROM agent_contacts ac
        JOIN contacts c ON c.id = ac.contact_id
        JOIN contact_channels cc ON cc.contact_id = ac.contact_id AND cc.is_primary = true
@@ -46,8 +46,8 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
     for (const row of result.rows) {
       const candidate: ProactiveCandidate = {
         contactId: row.contact_id,
-        channelContactId: row.channel_contact_id,
-        channel: row.channel_name as ChannelName,
+        channelContactId: row.channel_identifier,
+        channel: row.channel_type as ChannelName,
         displayName: row.display_name,
         triggerType: 'follow_up',
         reason: `Lead inactive for >${inactivityHours}h. Follow-up ${(row.follow_up_count ?? 0) + 1}/${maxAttempts}.`,

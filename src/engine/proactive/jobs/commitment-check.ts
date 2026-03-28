@@ -27,7 +27,7 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
       `SELECT cm.id, cm.contact_id, cm.description, cm.commitment_type,
               cm.due_at, cm.status, cm.attempt_count, cm.requires_tool, cm.priority,
               c.display_name,
-              cc.channel_contact_id, cc.channel_name
+              cc.channel_identifier, cc.channel_type
        FROM commitments cm
        JOIN contacts c ON c.id = cm.contact_id
        JOIN contact_channels cc ON cc.contact_id = cm.contact_id AND cc.is_primary = true
@@ -68,8 +68,8 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
 
       const candidate: ProactiveCandidate = {
         contactId: row.contact_id,
-        channelContactId: row.channel_contact_id,
-        channel: row.channel_name as ChannelName,
+        channelContactId: row.channel_identifier,
+        channel: row.channel_type as ChannelName,
         displayName: row.display_name,
         triggerType: 'commitment',
         triggerId: row.id,

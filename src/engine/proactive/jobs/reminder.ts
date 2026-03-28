@@ -23,7 +23,7 @@ export async function runReminder(ctx: ProactiveJobContext): Promise<void> {
       `SELECT cm.id AS commitment_id, cm.contact_id, cm.description,
               cm.event_starts_at, cm.commitment_type, cm.assigned_to,
               c.display_name,
-              cc.channel_contact_id, cc.channel_name
+              cc.channel_identifier, cc.channel_type
        FROM commitments cm
        JOIN contacts c ON c.id = cm.contact_id
        JOIN contact_channels cc ON cc.contact_id = cm.contact_id AND cc.is_primary = true
@@ -42,8 +42,8 @@ export async function runReminder(ctx: ProactiveJobContext): Promise<void> {
     for (const row of result.rows) {
       const candidate: ProactiveCandidate = {
         contactId: row.contact_id,
-        channelContactId: row.channel_contact_id,
-        channel: row.channel_name as ChannelName,
+        channelContactId: row.channel_identifier,
+        channel: row.channel_type as ChannelName,
         displayName: row.display_name,
         triggerType: 'reminder',
         triggerId: row.commitment_id,
@@ -86,7 +86,7 @@ async function notifySalesperson(
   // Look up salesperson's channel info
   try {
     const spResult = await ctx.db.query(
-      `SELECT cc.channel_contact_id, cc.channel_name
+      `SELECT cc.channel_identifier, cc.channel_type
        FROM contact_channels cc
        JOIN contacts c ON c.id = cc.contact_id
        WHERE c.display_name = $1 OR c.id::text = $1
@@ -101,8 +101,8 @@ async function notifySalesperson(
     // Fire message:send directly (simple notification, no pipeline)
     const sp = spResult.rows[0]!
     await ctx.registry.runHook('message:send', {
-      channel: sp.channel_name,
-      to: sp.channel_contact_id,
+      channel: sp.channel_type,
+      to: sp.channel_identifier,
       content: {
         type: 'text',
         text: `📅 Recordatorio: ${row.description} con ${row.display_name} — ${(row.event_starts_at as Date).toLocaleString('es-CO', { timeZone: ctx.proactiveConfig.business_hours.timezone })}`,

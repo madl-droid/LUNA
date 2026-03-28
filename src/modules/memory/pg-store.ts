@@ -30,10 +30,20 @@ const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
   id UUID PRIMARY KEY,
   session_id TEXT NOT NULL,
-  channel_name TEXT NOT NULL,
-  sender_type TEXT NOT NULL,
-  sender_id TEXT NOT NULL,
-  content JSONB NOT NULL,
+  agent_id TEXT DEFAULT '',
+  role TEXT NOT NULL DEFAULT 'user',
+  content_text TEXT NOT NULL DEFAULT '',
+  content_type TEXT NOT NULL DEFAULT 'text',
+  media_path TEXT,
+  media_mime TEXT,
+  media_analysis TEXT,
+  intent TEXT,
+  emotion TEXT,
+  tokens_used INTEGER,
+  latency_ms INTEGER,
+  model_used TEXT,
+  token_count INTEGER,
+  metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
@@ -60,25 +70,20 @@ export class PgStore {
     try {
       await this.pool.query(
         `INSERT INTO messages (
-          id, session_id, channel_name, sender_type, sender_id, content, created_at,
-          agent_id, role, content_text, content_type,
+          id, session_id, agent_id, role, content_text, content_type, created_at,
           media_path, media_mime, media_analysis,
           intent, emotion, tokens_used, latency_ms, model_used, token_count, metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT (id) DO NOTHING`,
         [
           message.id,
           message.sessionId,
-          message.channelName,
-          message.senderType,
-          message.senderId,
-          JSON.stringify(message.content),
-          message.createdAt,
           message.agentId,
           message.role,
           message.contentText,
           message.contentType ?? 'text',
+          message.createdAt,
           message.mediaPath ?? null,
           message.mediaMime ?? null,
           message.mediaAnalysis ?? null,
@@ -98,8 +103,7 @@ export class PgStore {
 
   async getSessionMessages(sessionId: string, limit = 100): Promise<StoredMessage[]> {
     const result = await this.pool.query(
-      `SELECT id, session_id, channel_name, sender_type, sender_id, content, created_at,
-              agent_id, role, content_text, content_type,
+      `SELECT id, session_id, agent_id, role, content_text, content_type, created_at,
               media_path, media_mime, media_analysis,
               intent, emotion, tokens_used, latency_ms, model_used, token_count, metadata
        FROM messages
@@ -113,12 +117,12 @@ export class PgStore {
       id: row.id,
       sessionId: row.session_id,
       agentId: row.agent_id ?? '',
-      channelName: row.channel_name,
-      senderType: row.sender_type,
-      senderId: row.sender_id,
-      content: row.content,
-      role: row.role ?? (row.sender_type === 'agent' ? 'assistant' : 'user'),
-      contentText: row.content_text ?? row.content?.text ?? '',
+      channelName: '',
+      senderType: row.role === 'assistant' ? 'agent' as const : 'user' as const,
+      senderId: '',
+      content: { type: row.content_type ?? 'text', text: row.content_text ?? '' },
+      role: row.role ?? 'user',
+      contentText: row.content_text ?? '',
       contentType: row.content_type ?? 'text',
       mediaPath: row.media_path,
       mediaMime: row.media_mime,

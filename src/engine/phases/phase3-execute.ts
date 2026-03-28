@@ -379,10 +379,15 @@ async function executeMemoryLookup(
   // Fallback: direct DB query (legacy)
   try {
     const result = await db.query(
-      `SELECT id, started_at, last_activity_at, message_count, compressed_summary
-       FROM sessions
-       WHERE contact_id = $1 AND id != $2
-       ORDER BY last_activity_at DESC
+      `SELECT s.id, s.started_at, s.last_activity_at, s.message_count,
+              ss.summary_text AS compressed_summary
+       FROM sessions s
+       LEFT JOIN LATERAL (
+         SELECT summary_text FROM session_summaries
+         WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+       ) ss ON true
+       WHERE s.contact_id = $1 AND s.id != $2
+       ORDER BY s.last_activity_at DESC
        LIMIT 5`,
       [ctx.contactId, ctx.session.id],
     )

@@ -27,7 +27,7 @@ export async function runReactivation(ctx: ProactiveJobContext): Promise<void> {
     const result = await ctx.db.query(
       `SELECT ac.contact_id, ac.follow_up_count,
               c.display_name,
-              cc.channel_contact_id, cc.channel_name,
+              cc.channel_identifier, cc.channel_type,
               COALESCE((ac.agent_data->>'reactivation_attempts')::int, 0) AS reactivation_attempts
        FROM agent_contacts ac
        JOIN contacts c ON c.id = ac.contact_id
@@ -47,8 +47,8 @@ export async function runReactivation(ctx: ProactiveJobContext): Promise<void> {
 
       const candidate: ProactiveCandidate = {
         contactId: row.contact_id,
-        channelContactId: row.channel_contact_id,
-        channel: row.channel_name as ChannelName,
+        channelContactId: row.channel_identifier,
+        channel: row.channel_type as ChannelName,
         displayName: row.display_name,
         triggerType: 'reactivation',
         reason: `Cold lead for >${daysInactive} days. Reactivation attempt ${attempts + 1}/${maxAttempts}.`,
