@@ -21,6 +21,18 @@ export interface CortexConfig {
   CORTEX_REFLEX_MEM_THRESHOLD: number
   CORTEX_REFLEX_DISK_THRESHOLD: number
   CORTEX_REFLEX_LATENCY_THRESHOLD_MS: number
+  // Pulse config
+  CORTEX_PULSE_ENABLED: boolean
+  CORTEX_PULSE_MODE: string
+  CORTEX_PULSE_BATCH_TIME: string
+  CORTEX_PULSE_DELIVERY_TIME: string
+  CORTEX_PULSE_SYNC_INTERVAL_HOURS: number
+  CORTEX_PULSE_IMMEDIATE_CRITICAL_COUNT: number
+  CORTEX_PULSE_IMMEDIATE_FLAP_TIMEOUT_MS: number
+  CORTEX_PULSE_LLM_DEFAULT_MODEL: string
+  CORTEX_PULSE_LLM_ESCALATION_MODEL: string
+  CORTEX_PULSE_LLM_ESCALATION_THRESHOLD: number
+  CORTEX_PULSE_LOGS_MAX_UNIQUE: number
 }
 
 // ═══════════════════════════════════════════
@@ -125,6 +137,103 @@ export interface HealthStatus {
     avg_latency_ms: number
   }
   circuit_breakers: Record<string, 'open' | 'closed' | 'half-open'>
+}
+
+// ═══════════════════════════════════════════
+// Dispatch
+// ═══════════════════════════════════════════
+
+// ═══════════════════════════════════════════
+// Pulse — Health analysis
+// ═══════════════════════════════════════════
+
+export type PulseMode = 'batch' | 'sync'
+export type PulseReportMode = 'batch' | 'sync' | 'immediate'
+export type OverallHealthAssessment = 'healthy' | 'degraded' | 'critical'
+
+export interface PulseIncident {
+  what: string
+  impact: string
+  root_cause: string
+  immediate_fix: string
+  long_term_fix: string
+}
+
+export interface PulseMetricsSummary {
+  messages_processed: number
+  avg_latency_ms: number
+  error_rate: string
+  fallback_rate: string
+  uptime_percent: string
+}
+
+export interface PulseReport {
+  period: string
+  period_start: string
+  period_end: string
+  overall_health: OverallHealthAssessment
+  summary: string
+  incidents: PulseIncident[]
+  metrics_summary: PulseMetricsSummary
+  recommendations: string[]
+}
+
+export interface PulseReportRow {
+  id: string
+  period_start: string
+  period_end: string
+  mode: PulseReportMode
+  report_json: PulseReport
+  model_used: string
+  tokens_used: number
+  created_at: string
+}
+
+/** Curated data package sent to LLM (~4-8K tokens) */
+export interface PulseDataPackage {
+  alerts: Array<{
+    rule: string
+    severity: string
+    state: string
+    message: string
+    triggeredAt: number
+    resolvedAt: number | null
+    duration_seconds: number | null
+    flapCount: number
+  }>
+  metrics: import('./reflex/metrics-store.js').MetricsSummary
+  hourly_metrics: Array<{
+    hour: string
+    pipeline: number
+    llm_errors: number
+    llm_fallbacks: number
+  }>
+  logs: Array<{
+    component: string
+    level: string
+    message: string
+    count: number
+    first_seen: string
+    last_seen: string
+  }>
+  health_snapshot: Record<string, unknown> | null
+  circuit_breakers: Record<string, string>
+  period_start: string
+  period_end: string
+}
+
+export interface PulseConfig {
+  CORTEX_PULSE_ENABLED: boolean
+  CORTEX_PULSE_MODE: string
+  CORTEX_PULSE_BATCH_TIME: string
+  CORTEX_PULSE_DELIVERY_TIME: string
+  CORTEX_PULSE_SYNC_INTERVAL_HOURS: number
+  CORTEX_PULSE_IMMEDIATE_CRITICAL_COUNT: number
+  CORTEX_PULSE_IMMEDIATE_FLAP_TIMEOUT_MS: number
+  CORTEX_PULSE_LLM_DEFAULT_MODEL: string
+  CORTEX_PULSE_LLM_ESCALATION_MODEL: string
+  CORTEX_PULSE_LLM_ESCALATION_THRESHOLD: number
+  CORTEX_PULSE_LOGS_MAX_UNIQUE: number
 }
 
 // ═══════════════════════════════════════════

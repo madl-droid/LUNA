@@ -1,11 +1,12 @@
 // cortex/manifest.ts — Cortex module: the nervous system of LUNA
 // Feature: Reflex — real-time monitoring and alerts, 100% code, zero LLM.
+// Feature: Pulse — LLM-based health analysis and recommendations.
 
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { boolEnv, numEnv, numEnvMin } from '../../kernel/config-helpers.js'
-import { jsonResponse } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseQuery } from '../../kernel/http-helpers.js'
 import type { CortexConfig } from './types.js'
 import { RingBuffer } from './reflex/ring-buffer.js'
 import { createCounters } from './reflex/counters.js'
@@ -13,11 +14,14 @@ import { registerSensors, clearSensors } from './reflex/sensors.js'
 import { Evaluator } from './reflex/evaluator.js'
 import { checkHealth } from './reflex/health.js'
 import { getMetricsSummary, writeHealthSnapshot } from './reflex/metrics-store.js'
+import { PulseScheduler } from './pulse/scheduler.js'
+import { ensurePulseTable, listReports, getReportById } from './pulse/store.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'cortex' })
 
 let evaluator: Evaluator | null = null
+let pulseScheduler: PulseScheduler | null = null
 let snapshotTimer: ReturnType<typeof setInterval> | null = null
 
 const manifest: ModuleManifest = {
@@ -49,6 +53,19 @@ const manifest: ModuleManifest = {
     CORTEX_REFLEX_MEM_THRESHOLD: numEnv(80),
     CORTEX_REFLEX_DISK_THRESHOLD: numEnv(90),
     CORTEX_REFLEX_LATENCY_THRESHOLD_MS: numEnv(10_000),
+
+    // ─── Pulse config ───
+    CORTEX_PULSE_ENABLED: boolEnv(false),
+    CORTEX_PULSE_MODE: z.string().default('batch'),
+    CORTEX_PULSE_BATCH_TIME: z.string().default('02:00'),
+    CORTEX_PULSE_DELIVERY_TIME: z.string().default('07:00'),
+    CORTEX_PULSE_SYNC_INTERVAL_HOURS: numEnv(24),
+    CORTEX_PULSE_IMMEDIATE_CRITICAL_COUNT: numEnvMin(2, 3),
+    CORTEX_PULSE_IMMEDIATE_FLAP_TIMEOUT_MS: numEnv(3_600_000),
+    CORTEX_PULSE_LLM_DEFAULT_MODEL: z.string().default('haiku'),
+    CORTEX_PULSE_LLM_ESCALATION_MODEL: z.string().default('sonnet'),
+    CORTEX_PULSE_LLM_ESCALATION_THRESHOLD: numEnvMin(1, 5),
+    CORTEX_PULSE_LOGS_MAX_UNIQUE: numEnvMin(10, 500),
   }),
 
   console: {
@@ -140,6 +157,48 @@ const manifest: ModuleManifest = {
         label: { es: 'Fin silencio', en: 'Silence end' },
         info: { es: 'Hora fin silencio INFO (HH:MM)', en: 'Info silence end (HH:MM)' },
       },
+      { key: 'divider-pulse', type: 'divider', label: { es: 'Pulse — Análisis inteligente', en: 'Pulse — Smart analysis' } },
+      {
+        key: 'CORTEX_PULSE_ENABLED',
+        type: 'boolean',
+        label: { es: 'Pulse activo', en: 'Pulse enabled' },
+        info: { es: 'Activa el análisis LLM de salud del sistema', en: 'Enable LLM-based system health analysis' },
+      },
+      {
+        key: 'CORTEX_PULSE_MODE',
+        type: 'select',
+        label: { es: 'Modo', en: 'Mode' },
+        options: [
+          { value: 'batch', label: { es: 'Batch (reporte diario)', en: 'Batch (daily report)' } },
+          { value: 'sync', label: { es: 'Sync (periódico)', en: 'Sync (periodic)' } },
+        ],
+      },
+      {
+        key: 'CORTEX_PULSE_BATCH_TIME',
+        type: 'text',
+        label: { es: 'Hora generación batch', en: 'Batch generation time' },
+        info: { es: 'Hora de generación del reporte (HH:MM)', en: 'Report generation time (HH:MM)' },
+      },
+      {
+        key: 'CORTEX_PULSE_DELIVERY_TIME',
+        type: 'text',
+        label: { es: 'Hora entrega batch', en: 'Batch delivery time' },
+        info: { es: 'Hora de entrega al admin (HH:MM)', en: 'Admin delivery time (HH:MM)' },
+      },
+      {
+        key: 'CORTEX_PULSE_SYNC_INTERVAL_HOURS',
+        type: 'number',
+        label: { es: 'Intervalo sync (horas)', en: 'Sync interval (hours)' },
+        info: { es: 'Cada cuántas horas generar reporte en modo sync', en: 'Hours between reports in sync mode' },
+        min: 1,
+        unit: 'h',
+      },
+      {
+        key: 'CORTEX_PULSE_LLM_DEFAULT_MODEL',
+        type: 'text',
+        label: { es: 'Modelo LLM por defecto', en: 'Default LLM model' },
+        info: { es: 'haiku para la mayoría. sonnet para análisis complejos.', en: 'haiku for most. sonnet for complex analysis.' },
+      },
     ],
     apiRoutes: [], // populated in init()
   },
@@ -191,6 +250,25 @@ const manifest: ModuleManifest = {
       } catch { /* best effort */ }
     }, 60_000)
 
+    // ─── Pulse initialization ───
+    if (config.CORTEX_PULSE_ENABLED) {
+      await ensurePulseTable(db)
+
+      pulseScheduler = new PulseScheduler(
+        db, redis, registry, config, config, evaluator.alerts, ringBuffer,
+      )
+      pulseScheduler.start()
+
+      // Provide Pulse service
+      registry.provide('cortex:pulse', {
+        getScheduler: () => pulseScheduler,
+        onAlertChange: (rule: string, severity: string, state: string, flapCount: number) =>
+          pulseScheduler?.onAlertChange(rule, severity, state, flapCount),
+      })
+
+      logger.info('Cortex Pulse initialized')
+    }
+
     // Set up API routes
     if (manifest.console) {
       manifest.console.apiRoutes = [
@@ -227,6 +305,44 @@ const manifest: ModuleManifest = {
             jsonResponse(res, 200, metrics)
           },
         },
+        // ─── Pulse API routes ───
+        {
+          method: 'GET',
+          path: 'pulse/reports',
+          handler: async (req, res) => {
+            const query = parseQuery(req)
+            const limit = Math.min(parseInt(query.get('limit') ?? '20', 10), 100)
+            const offset = parseInt(query.get('offset') ?? '0', 10)
+            const reports = await listReports(db, limit, offset)
+            jsonResponse(res, 200, { reports })
+          },
+        },
+        {
+          method: 'GET',
+          path: 'pulse/reports/:id',
+          handler: async (req, res) => {
+            const url = new URL(req.url ?? '', 'http://localhost')
+            const segments = url.pathname.split('/')
+            const id = segments[segments.length - 1] ?? ''
+            const report = await getReportById(db, id)
+            if (!report) {
+              jsonResponse(res, 404, { error: 'Report not found' })
+              return
+            }
+            jsonResponse(res, 200, report)
+          },
+        },
+        {
+          method: 'GET',
+          path: 'pulse/status',
+          handler: async (_req, res) => {
+            jsonResponse(res, 200, {
+              enabled: config.CORTEX_PULSE_ENABLED,
+              mode: config.CORTEX_PULSE_MODE,
+              schedulerRunning: pulseScheduler !== null,
+            })
+          },
+        },
       ]
     }
 
@@ -234,6 +350,10 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    if (pulseScheduler) {
+      pulseScheduler.stop()
+      pulseScheduler = null
+    }
     if (snapshotTimer) {
       clearInterval(snapshotTimer)
       snapshotTimer = null
