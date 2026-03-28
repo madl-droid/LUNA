@@ -38,7 +38,7 @@ Full spec in `DESIGN.md`. Key principles:
 ### Design Tokens (MANDATORY)
 - **Spacing:** `--space-xs/sm/md/lg/xl` — never hardcode px spacing
 - **Radius:** `--radius-sm` (0.5rem), `--radius-md` (0.75rem), `--radius-pill` (1.5rem) — never hardcode px radius
-- **Gaps:** `--field-gap` (2.75rem), `--panel-gap` (16px), `--section-gap` (24px)
+- **Gaps:** `--field-gap` (1.25rem/20px), `--panel-gap` (16px), `--section-gap` (24px), `--panel-padding` (16px 20px 20px)
 
 ### Button System (4 variants ONLY)
 1. **Primary** (`act-btn-cta`): solid orange, NO icon, text only
@@ -119,10 +119,12 @@ Tooltip shown on hover via CSS (`.header-status-tooltip`)
 - **NO inventar variables** (`--my-bg`, `--accent`, `--border`) — si falta algo, agregarlo a `base.css`
 
 ### Clases CSS — reutilizar antes de crear
-- **Paneles**: `.panel`, `.panel-header`, `.panel-body`, `.panel-title`
+- **Paneles**: `.panel`, `.panel-header`, `.panel-body` (padding: `var(--panel-padding)` SIEMPRE)
 - **Campos**: `.field`, `.field-label`, `.field input/select`
 - **Toggles**: `.toggle`, `.toggle-sm` (iOS style, active = `--success`)
-- **Botones**: `.act-btn-add/remove/config/cta`, `.btn-secondary`
+- **Botones**: `.act-btn-add/remove/config/cta` — secondary/success/destructive SIEMPRE con ícono a la izquierda
+- **Selects**: **TODOS** los `<select>` DEBEN tener `class="js-custom-select"` — NUNCA selects nativos del browser
+- **Sliders**: **TODOS** los `<input type="range">` DEBEN tener `class="range-primary"` — estilo Apple unificado
 - **Tablas**: `.users-table`, `.users-table-head`
 - **Filtros**: `.filter-bar`, `.filter-group`, `.filter-label`
 - **Dropdowns**: `.custom-select`, `.custom-select-btn/panel/option`

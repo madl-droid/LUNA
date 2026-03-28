@@ -672,7 +672,7 @@ export function renderEngineMetricsSection(data: SectionData): string {
     <div class="panel-body">
       <div class="metrics-period-row">
         <label>${t('em_period', lang)}:
-          <select id="metrics-period" class="metrics-period-select">
+          <select id="metrics-period" class="metrics-period-select js-custom-select">
             <option value="24h">24h</option>
             <option value="7d">7d</option>
             <option value="30d">30d</option>
@@ -1071,7 +1071,7 @@ function renderToolsCardsSection(data: SectionData): string {
           <input type="checkbox" ${active ? 'checked' : ''} onchange="toggleToolModule('${esc(mod.name)}', this.checked)">
           <span class="toggle-slider"></span>
         </label>
-        <a class="act-btn act-btn-config" href="/console/herramientas/${esc(mod.name)}?lang=${lang}">${isEs ? 'Configurar' : 'Configure'}</a>
+        <a class="act-btn act-btn-config" href="/console/herramientas/${esc(mod.name)}?lang=${lang}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> ${isEs ? 'Configurar' : 'Configure'}</a>
       </div>
     </div>`
   }
@@ -1283,11 +1283,11 @@ function renderIdentitySection(data: SectionData): string {
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Cargo' : 'Title'} *</span></div>
         <input type="text" name="AGENT_TITLE" value="${esc(cfg['AGENT_TITLE'] || '')}" data-original="${esc(cfg['AGENT_TITLE'] || '')}" required></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Idioma principal' : 'Main language'} *</span></div>
-        <select name="AGENT_LANGUAGE" data-original="${esc(agentLang)}" id="agent-language-select">${langSelectHtml}</select></div>
+        <select name="AGENT_LANGUAGE" data-original="${esc(agentLang)}" id="agent-language-select" class="js-custom-select">${langSelectHtml}</select></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Pais' : 'Country'}</span></div>
         <input type="text" name="AGENT_COUNTRY" value="${esc(cfg['AGENT_COUNTRY'] || '')}" data-original="${esc(cfg['AGENT_COUNTRY'] || '')}"></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Acento' : 'Accent'}</span></div>
-        <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select">${accentOptionsHtml}</select></div>
+        <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select" class="js-custom-select">${accentOptionsHtml}</select></div>
     </div>
   </div>
   <script type="application/json" id="accent-map-data">${JSON.stringify(ACCENT_MAP)}</script>
@@ -1407,19 +1407,19 @@ function renderIdentitySection(data: SectionData): string {
       <div class="panel-body ts-tts-body-compact">
         <div class="ts-tts-field-compact">
           <label class="ts-tts-label-compact">${isEs ? 'Audio → Audio' : 'Audio → Audio'}</label>
-          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(ttsAudioFreq)}" class="ts-tts-select-compact">${ttsAudioFreqSel}</select>
+          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(ttsAudioFreq)}" class="ts-tts-select-compact js-custom-select">${ttsAudioFreqSel}</select>
         </div>
         <div class="ts-tts-field-compact">
           <label class="ts-tts-label-compact">${isEs ? 'Texto → Audio' : 'Text → Audio'}</label>
-          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(ttsTextFreq)}" class="ts-tts-select-compact">${ttsTextFreqSel}</select>
+          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(ttsTextFreq)}" class="ts-tts-select-compact js-custom-select">${ttsTextFreqSel}</select>
         </div>
         <div class="ts-tts-field-compact">
           <label class="ts-tts-label-compact">${isEs ? 'Duracion max' : 'Max duration'}</label>
-          <select name="TTS_MAX_DURATION" data-original="${esc(ttsMaxDur)}" class="ts-tts-select-compact">${ttsDurSel}</select>
+          <select name="TTS_MAX_DURATION" data-original="${esc(ttsMaxDur)}" class="ts-tts-select-compact js-custom-select">${ttsDurSel}</select>
         </div>
         <div class="ts-tts-field-compact">
           <label class="ts-tts-label-compact">${isEs ? 'Voz' : 'Voice'}</label>
-          <select name="TTS_VOICE_NAME" data-original="${esc(ttsVoice)}" class="ts-tts-select-compact" id="id-tts-voice-select">${ttsCustomOpt}${ttsVoiceOpts}</select>
+          <select name="TTS_VOICE_NAME" data-original="${esc(ttsVoice)}" class="ts-tts-select-compact js-custom-select" id="id-tts-voice-select">${ttsCustomOpt}${ttsVoiceOpts}</select>
         </div>
         <div class="ts-tts-field-compact">
           <label class="ts-tts-label-compact">${isEs ? 'Velocidad' : 'Speed'}</label>
@@ -1442,7 +1442,7 @@ function renderIdentitySection(data: SectionData): string {
           <div class="ts-tts-password-wrap">
             <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
               data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              class="ts-tts-select-compact" class="input-with-icon" placeholder="AIza...">
+              class="ts-tts-select-compact js-custom-select" class="input-with-icon" placeholder="AIza...">
             <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
               class="ts-tts-toggle-vis-compact">&#128065;</button>
           </div>
@@ -1745,7 +1745,7 @@ function renderVoiceTTSSection(data: SectionData): string {
       <div class="panel-body">
         <div class="ts-tts-field">
           <label class="ts-tts-label">${isEs ? 'Responder audio con audio' : 'Reply audio with audio'}</label>
-          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(audioToAudioFreq)}" class="ts-tts-select">
+          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(audioToAudioFreq)}" class="ts-tts-select js-custom-select">
             ${audioFreqSelect}
           </select>
           <span class="ts-tts-hint">${isEs ? 'Frecuencia con la que el agente responde notas de voz con audio' : 'How often the agent replies to voice notes with audio'}</span>
@@ -1753,7 +1753,7 @@ function renderVoiceTTSSection(data: SectionData): string {
 
         <div class="ts-tts-field">
           <label class="ts-tts-label">${isEs ? 'Responder texto con audio' : 'Reply text with audio'}</label>
-          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(textToAudioFreq)}" class="ts-tts-select">
+          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(textToAudioFreq)}" class="ts-tts-select js-custom-select">
             ${textFreqSelect}
           </select>
           <span class="ts-tts-hint">${isEs ? 'Frecuencia con la que el agente responde mensajes de texto con audio' : 'How often the agent replies to text messages with audio'}</span>
@@ -1761,7 +1761,7 @@ function renderVoiceTTSSection(data: SectionData): string {
 
         <div class="ts-tts-field">
           <label class="ts-tts-label">${isEs ? 'Duracion maxima de audios' : 'Max audio duration'}</label>
-          <select name="TTS_MAX_DURATION" data-original="${esc(maxDurationVal)}" class="ts-tts-select" id="tts-max-duration">
+          <select name="TTS_MAX_DURATION" data-original="${esc(maxDurationVal)}" class="ts-tts-select js-custom-select" id="tts-max-duration">
             ${durationSelect}
           </select>
           <span class="ts-tts-hint">${isEs ? 'El agente ajustara la longitud de sus respuestas para no exceder este limite' : 'The agent will adjust response length to stay within this limit'}</span>
@@ -1771,7 +1771,7 @@ function renderVoiceTTSSection(data: SectionData): string {
           <label class="ts-tts-label">${isEs ? 'Canales habilitados' : 'Enabled channels'}</label>
           <input type="text" name="TTS_ENABLED_CHANNELS" value="${esc(cfg['TTS_ENABLED_CHANNELS'] || 'whatsapp')}"
             data-original="${esc(cfg['TTS_ENABLED_CHANNELS'] || 'whatsapp')}"
-            class="ts-tts-select" placeholder="whatsapp, google-chat">
+            class="ts-tts-select js-custom-select" placeholder="whatsapp, google-chat">
           <span class="ts-tts-hint">${isEs ? 'Separados por coma' : 'Comma-separated'}</span>
         </div>
       </div>
@@ -1787,7 +1787,7 @@ function renderVoiceTTSSection(data: SectionData): string {
       <div class="panel-body">
         <div class="ts-tts-field">
           <label class="ts-tts-label">${isEs ? 'Voz' : 'Voice'}</label>
-          <select name="TTS_VOICE_NAME" data-original="${esc(currentVoice)}" class="ts-tts-select" id="tts-voice-select">
+          <select name="TTS_VOICE_NAME" data-original="${esc(currentVoice)}" class="ts-tts-select js-custom-select" id="tts-voice-select">
             ${customOption}${voiceOptions}
           </select>
         </div>
@@ -3199,7 +3199,7 @@ function renderUsersSection(data: SectionData): string {
         <input type="hidden" name="mod_${esc(lt)}_${esc(mod.name)}" value="${modOrig}" data-original="${modOrig}">
       </div>`
 
-      html += `<div class="perm-grid" style="padding-left:28px;margin-bottom:8px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
+      html += `<div class="perm-grid u-mb-sm" style="padding-left:28px" id="mod-tools-${esc(lt)}-${esc(mod.name)}">`
       for (const tool of mod.tools) {
         const checked = isAdmin || isAllTools || perms.tools.includes(tool.name)
         const origVal = checked ? 'on' : ''

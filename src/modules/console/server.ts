@@ -1445,17 +1445,20 @@ function renderAckMessagesPage(lang: string): string {
 
   return `
     <div class="chs-desc">${desc}</div>
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">${filterLabel}:</span>
+        <select id="ack-channel-filter" class="js-custom-select" onchange="ackLoadMessages()">
+          <option value="">${allChannels}</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="email">Email</option>
+          <option value="google-chat">Google Chat</option>
+        </select>
+      </div>
+      <span style="flex:1"></span>
+      <button class="act-btn act-btn-cta" onclick="ackAddRow()">${addLabel}</button>
+    </div>
     <div class="panel"><div class="panel-body">
-        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-          <label style="font-size:13px;color:var(--on-surface-dim)">${filterLabel}:</label>
-          <select id="ack-channel-filter" class="js-custom-select" style="min-width:150px" onchange="ackLoadMessages()">
-            <option value="">${allChannels}</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="email">Email</option>
-            <option value="google-chat">Google Chat</option>
-          </select>
-          <button class="act-btn act-btn-cta" onclick="ackAddRow()" style="margin-left:auto">${addLabel}</button>
-        </div>
         <div class="users-table-scroll">
         <table class="users-table">
           <thead class="users-table-head">
@@ -1469,7 +1472,7 @@ function renderAckMessagesPage(lang: string): string {
           <tbody id="ack-tbody"></tbody>
         </table>
         </div>
-        <div id="ack-empty" style="display:none;text-align:center;padding:24px;color:var(--on-surface-dim)">${emptyLabel}</div>
+        <div id="ack-empty" class="panel-body-empty">${emptyLabel}</div>
       </div>
     </div>
     <script>
