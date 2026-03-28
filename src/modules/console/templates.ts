@@ -401,7 +401,7 @@ function renderSidebar(opts: PageOptions): string {
   // 2. Add dynamic modules (only if not already a fixed section)
   //    Skip channel modules — managed from Canales tab
   //    Skip agent-group modules that aren't fixed — they go into Herramientas submenu
-  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'freshdesk'])
+  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps'])
   for (const mod of dynModules) {
     if (FIXED_IDS.has(mod.name)) continue
     if (!mod.active) continue

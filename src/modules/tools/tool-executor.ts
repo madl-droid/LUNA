@@ -18,8 +18,8 @@ export class ToolExecutor {
   private readonly maxCallsPerTurn: number
 
   constructor(config: ToolsConfig) {
-    this.backoffMs = config.TOOLS_RETRY_BACKOFF_MS
-    this.globalTimeout = config.TOOLS_EXECUTION_TIMEOUT_MS
+    this.backoffMs = config.TOOLS_RETRY_BACKOFF_S * 1000
+    this.globalTimeout = config.TOOLS_EXECUTION_TIMEOUT_S * 1000
     this.maxCallsPerTurn = config.PIPELINE_MAX_TOOL_CALLS_PER_TURN
   }
 

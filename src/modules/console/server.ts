@@ -119,7 +119,20 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
   } catch (err) {
     logger.warn({ err }, 'Could not read config from DB')
   }
-  const config = { ...defaults, ...envValues, ...dbValues }
+  // Merge module config defaults (Zod-parsed with .default()) so UI sees defaults for unset fields
+  const moduleDefaults: Record<string, string> = {}
+  try {
+    for (const m of registry.listModules()) {
+      if (!m.active || !m.manifest.configSchema) continue
+      try {
+        const parsed = registry.getConfig<Record<string, unknown>>(m.manifest.name)
+        for (const [k, v] of Object.entries(parsed)) {
+          if (v !== undefined && v !== null) moduleDefaults[k] = String(v)
+        }
+      } catch { /* skip modules without config */ }
+    }
+  } catch { /* ignore */ }
+  const config = { ...moduleDefaults, ...defaults, ...envValues, ...dbValues }
 
   // Version
   const version = kernelConfig.buildVersion || packageJsonVersion || 'dev'

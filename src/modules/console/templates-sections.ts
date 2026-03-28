@@ -1077,24 +1077,24 @@ function renderToolsCardsSection(data: SectionData): string {
   cardsHtml += '</div>'
 
   // Global tool params
-  const backoff = cfg['TOOLS_RETRY_BACKOFF_MS'] || '1000'
-  const timeout = cfg['TOOLS_EXECUTION_TIMEOUT_MS'] || '30000'
+  const backoff = cfg['TOOLS_RETRY_BACKOFF_S'] || '1'
+  const timeout = cfg['TOOLS_EXECUTION_TIMEOUT_S'] || '30'
   const maxPerTurn = cfg['PIPELINE_MAX_TOOL_CALLS_PER_TURN'] || '5'
 
   const globalParams = `<div class="panel" style="margin-top:8px">
     <div class="panel-body" style="padding:20px">
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
         <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
-          <span class="field-label">${isEs ? 'Backoff reintentos (ms)' : 'Retry backoff (ms)'}</span>
-          <input type="text" inputmode="numeric" name="TOOLS_RETRY_BACKOFF_MS" value="${esc(backoff)}" data-original="${esc(backoff)}">
+          <span class="field-label">${isEs ? 'Espera entre intentos (s)' : 'Wait between retries (s)'}</span>
+          <input type="number" inputmode="numeric" name="TOOLS_RETRY_BACKOFF_S" value="${esc(backoff)}" data-original="${esc(backoff)}" min="1" max="30">
         </div>
         <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
-          <span class="field-label">${isEs ? 'Timeout ejecucion (ms)' : 'Execution timeout (ms)'}</span>
-          <input type="text" inputmode="numeric" name="TOOLS_EXECUTION_TIMEOUT_MS" value="${esc(timeout)}" data-original="${esc(timeout)}">
+          <span class="field-label">${isEs ? 'Tiempo max. ejecucion (s)' : 'Max execution time (s)'}</span>
+          <input type="number" inputmode="numeric" name="TOOLS_EXECUTION_TIMEOUT_S" value="${esc(timeout)}" data-original="${esc(timeout)}" min="5" max="120">
         </div>
         <div class="field" style="display:flex;flex-direction:column;gap:6px;padding:0">
           <span class="field-label">${isEs ? 'Max herramientas por turno' : 'Max tools per turn'}</span>
-          <input type="text" inputmode="numeric" name="PIPELINE_MAX_TOOL_CALLS_PER_TURN" value="${esc(maxPerTurn)}" data-original="${esc(maxPerTurn)}">
+          <input type="number" inputmode="numeric" name="PIPELINE_MAX_TOOL_CALLS_PER_TURN" value="${esc(maxPerTurn)}" data-original="${esc(maxPerTurn)}" min="1" max="20">
         </div>
       </div>
     </div>

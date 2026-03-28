@@ -124,8 +124,6 @@ const manifest: ModuleManifest = {
     WHATSAPP_ATT_VIDEO: boolEnv(false),
     WHATSAPP_ATT_SPREADSHEETS: boolEnv(true),
     WHATSAPP_ATT_TEXT: boolEnv(true),
-    WHATSAPP_ATT_MAX_SIZE_MB: numEnvMin(1, 25),
-    WHATSAPP_ATT_MAX_PER_MSG: numEnvMin(1, 5),
     // Response format
     WHATSAPP_FORMAT_ADVANCED: boolEnv(false),
     FORMAT_INSTRUCTIONS_WHATSAPP: z.string().default(''),
@@ -163,12 +161,12 @@ const manifest: ModuleManifest = {
       // ═══ TAB: Comportamiento ═══
       { key: '_tab_behavior', type: 'divider', label: { es: 'Comportamiento', en: 'Behavior' }, tab: 'behavior' },
       // Row 1: 3-column switch grid
-      { key: 'WHATSAPP_PRIVACY_READ_RECEIPTS', type: 'boolean', label: { es: 'Confirmacion de lectura', en: 'Read receipts' }, tab: 'behavior', grid: 'switches' },
-      { key: 'WHATSAPP_PRIVACY_LAST_SEEN', type: 'boolean', label: { es: 'Ultima conexion', en: 'Last seen' }, tab: 'behavior', grid: 'switches' },
-      { key: 'WHATSAPP_MARK_ONLINE', type: 'boolean', label: { es: 'En linea', en: 'Online' }, tab: 'behavior', grid: 'switches' },
-      { key: 'WHATSAPP_MISSED_MSG_ENABLED', type: 'boolean', label: { es: 'Buscar mensajes perdidos', en: 'Search missed messages' }, tab: 'behavior', grid: 'switches' },
-      { key: 'WHATSAPP_BATCH_ENABLED', type: 'boolean', label: { es: 'Agrupar mensajes', en: 'Group messages' }, tab: 'behavior', grid: 'switches' },
-      { key: 'WHATSAPP_PRECLOSE_ENABLED', type: 'boolean', label: { es: 'Follow-up pre-cierre', en: 'Pre-close follow-up' }, tab: 'behavior', grid: 'switches' },
+      { key: 'WHATSAPP_PRIVACY_READ_RECEIPTS', type: 'boolean', label: { es: 'Confirmacion de lectura', en: 'Read receipts' }, description: { es: 'Enviar ticks azules', en: 'Send blue ticks' }, icon: '&#9989;', tab: 'behavior', width: 'third' },
+      { key: 'WHATSAPP_PRIVACY_LAST_SEEN', type: 'boolean', label: { es: 'Ultima conexion', en: 'Last seen' }, description: { es: 'Mostrar hora de conexion', en: 'Show connection time' }, icon: '&#128338;', tab: 'behavior', width: 'third' },
+      { key: 'WHATSAPP_MARK_ONLINE', type: 'boolean', label: { es: 'En linea', en: 'Online' }, description: { es: 'Aparecer en linea al conectar', en: 'Appear online on connect' }, icon: '&#128994;', tab: 'behavior', width: 'third' },
+      { key: 'WHATSAPP_MISSED_MSG_ENABLED', type: 'boolean', label: { es: 'Mensajes perdidos', en: 'Missed messages' }, description: { es: 'Procesar mensajes offline', en: 'Process offline messages' }, icon: '&#128269;', tab: 'behavior', width: 'third' },
+      { key: 'WHATSAPP_BATCH_ENABLED', type: 'boolean', label: { es: 'Agrupar mensajes', en: 'Group messages' }, description: { es: 'Acumular antes de procesar', en: 'Accumulate before processing' }, icon: '&#128230;', tab: 'behavior', width: 'third' },
+      { key: 'WHATSAPP_PRECLOSE_ENABLED', type: 'boolean', label: { es: 'Follow-up pre-cierre', en: 'Pre-close follow-up' }, description: { es: 'Recordatorio antes de cerrar', en: 'Reminder before closing' }, icon: '&#128276;', tab: 'behavior', width: 'third' },
       // Row 2: 2-column selectors
       { key: '_divider_selectors', type: 'divider', label: { es: 'Ajustes de tiempo', en: 'Time settings' }, tab: 'behavior' },
       { key: 'WHATSAPP_SESSION_TIMEOUT_HOURS', type: 'number', label: { es: 'Tiempo de vida de sesion', en: 'Session lifetime' }, info: { es: 'Horas de inactividad para cerrar la sesion (minimo 3)', en: 'Inactivity hours to close the session (min 3)' }, min: 3, max: 24, unit: 'h', width: 'half', tab: 'behavior' },
@@ -212,9 +210,6 @@ const manifest: ModuleManifest = {
       { key: 'WHATSAPP_ATT_VIDEO', type: 'boolean', label: { es: 'Procesar videos', en: 'Process videos' }, description: { es: 'Videos recibidos por WhatsApp', en: 'Videos received via WhatsApp' }, icon: '&#127909;', tab: 'attachments', width: 'third' },
       { key: 'WHATSAPP_ATT_SPREADSHEETS', type: 'boolean', label: { es: 'Procesar hojas de calculo', en: 'Process spreadsheets' }, description: { es: 'Excel y CSV', en: 'Excel and CSV' }, icon: '&#128202;', tab: 'attachments', width: 'third' },
       { key: 'WHATSAPP_ATT_TEXT', type: 'boolean', label: { es: 'Procesar archivos de texto', en: 'Process text files' }, description: { es: '.txt, .md, .json', en: '.txt, .md, .json' }, icon: '&#128221;', tab: 'attachments', width: 'third' },
-      // Attachment limits
-      { key: 'WHATSAPP_ATT_MAX_SIZE_MB', type: 'number', label: { es: 'Tamano max (MB)', en: 'Max size (MB)' }, info: { es: 'Tamano maximo de archivo a procesar', en: 'Maximum file size to process' }, min: 1, max: 50, unit: 'MB', width: 'half', tab: 'attachments' },
-      { key: 'WHATSAPP_ATT_MAX_PER_MSG', type: 'number', label: { es: 'Max adjuntos por mensaje', en: 'Max attachments per message' }, info: { es: 'Maximo de adjuntos a procesar por mensaje o batch', en: 'Max attachments to process per message or batch' }, min: 1, max: 15, width: 'half', tab: 'attachments' },
     ],
     apiRoutes,
     connectionWizard: {
@@ -444,8 +439,6 @@ interface WhatsAppFullConfig {
   WHATSAPP_ATT_VIDEO: boolean
   WHATSAPP_ATT_SPREADSHEETS: boolean
   WHATSAPP_ATT_TEXT: boolean
-  WHATSAPP_ATT_MAX_SIZE_MB: number
-  WHATSAPP_ATT_MAX_PER_MSG: number
   // Response format
   WHATSAPP_FORMAT_ADVANCED: boolean
   FORMAT_INSTRUCTIONS_WHATSAPP: string
@@ -508,8 +501,8 @@ function buildAttachmentConfig(cfg: WhatsAppFullConfig): import('../../engine/at
   if (cfg.WHATSAPP_ATT_TEXT) categories.push('text')
   return {
     enabledCategories: categories,
-    maxFileSizeMb: cfg.WHATSAPP_ATT_MAX_SIZE_MB,
-    maxAttachmentsPerMessage: cfg.WHATSAPP_ATT_MAX_PER_MSG,
+    maxFileSizeMb: 25,
+    maxAttachmentsPerMessage: 5,
   }
 }
 

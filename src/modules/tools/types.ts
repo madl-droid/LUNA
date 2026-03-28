@@ -131,8 +131,8 @@ export interface GeminiToolDef {
 // ═══════════════════════════════════════════
 
 export interface ToolsConfig {
-  TOOLS_RETRY_BACKOFF_MS: number
-  TOOLS_EXECUTION_TIMEOUT_MS: number
+  TOOLS_RETRY_BACKOFF_S: number
+  TOOLS_EXECUTION_TIMEOUT_S: number
   PIPELINE_MAX_TOOL_CALLS_PER_TURN: number
 }
 
