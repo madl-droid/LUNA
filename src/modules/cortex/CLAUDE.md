@@ -3,39 +3,44 @@
 Módulo de monitoreo y alertas en tiempo real. Feature principal: **Reflex** — detecta problemas y alerta al admin antes de perder leads. 100% código, cero LLM.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, console, API routes
+- `manifest.ts` — lifecycle, configSchema, console, API routes, render section
 - `types.ts` — Alert, Rule, CounterSet, HealthStatus, CortexConfig
 - `reflex/sensors.ts` — hook listeners que alimentan contadores + ring buffer
 - `reflex/counters.ts` — contadores in-memory con flush periódico a Redis
 - `reflex/ring-buffer.ts` — buffer circular de logs WARN/ERROR (~20KB)
-- `reflex/rules.ts` — definiciones de reglas (critical, degraded, info)
+- `reflex/rules.ts` — 13 reglas: 6 critical, 5 degraded, 2 info
 - `reflex/evaluator.ts` — setInterval tri-frecuencia (60s/5m/15m), NO BullMQ
-- `reflex/alert-manager.ts` — state machine de alertas (triggered/resolved/escalated)
-- `reflex/dispatcher.ts` — despacho multi-canal con mapa de dependencias
-- `reflex/health.ts` — health check enriquecido (PG, Redis, WA, email, BullMQ, circuit breakers)
+- `reflex/alert-manager.ts` — state machine: triggered/resolved/escalated + anti-flapping
+- `reflex/dispatcher.ts` — despacho multi-canal + mapa dependencias + silencio programado
+- `reflex/health.ts` — health check enriquecido (PG, Redis, WA, email, BullMQ, CBs)
+- `reflex/metrics-store.ts` — lectura/escritura estructurada de métricas Redis
 
 ## Manifest
 - **type**: `feature`
 - **depends**: `[]` (sin dependencias duras, monitorea lo que exista)
-- **configSchema**: `CORTEX_REFLEX_*` (intervalos, umbrales, canales, Telegram)
+- **configSchema**: `CORTEX_REFLEX_*` (intervalos, umbrales, canales, Telegram, silencio)
 
 ## Servicios expuestos
-- `cortex:health` — `{ check(), getActiveAlerts(), getAlertHistory(limit?) }`
+- `cortex:health` — `{ check(), getActiveAlerts(), getAlertHistory(limit?), getMetrics() }`
+- `cortex:renderSection` — `(lang) => Promise<string>` dashboard HTML para console
 
 ## API routes (bajo /console/api/cortex/)
 - `GET health` — health check completo (status, components, pipeline, circuit breakers)
 - `GET alerts/active` — alertas activas
 - `GET alerts/history` — historial de alertas (7 días)
+- `GET metrics` — métricas actuales (pipeline, LLM, tools, hourly)
 
-## Arquitectura de 4 capas
-- **Capa A (Sensores)**: hook listeners dentro del proceso (prioridad 1)
-- **Capa B (Evaluador)**: setInterval nativo, checks directos + métricas
-- **Capa C (Watchdog)**: cron del host, fuera del container (`deploy/watchdog/`)
-- **Capa D (Heartbeat)**: Healthchecks.io + UptimeRobot (externo)
+## Reglas (13 total)
+- **6 críticas** (checks directos): PG, Redis, WA, memoria, disco, event loop
+- **5 degraded** (métricas): circuit breaker, BullMQ queue, latencia, tools, email OAuth
+- **2 info** (acumuladas): leads sin respuesta, tasa fallback alta
 
-## Reglas
-- 6 críticas: PG down, Redis down, WA disconnected, memoria >80%, disco >90%, event loop lag >500ms
-- Degraded + Info se agregan en Ola 2
+## Alert lifecycle
+- `triggered` → `resolved` (condición desaparece)
+- `triggered` → `escalated` (DEGRADADO sin resolver >15 min → re-enviar como CRÍTICO)
+- Anti-flapping: resolve+re-trigger <5 min → agrupa como "inestable"
+- Dedup: misma regla máx 1 alerta cada 5 min
+- Silencio: INFO silenciadas 23:00-07:00 (configurable). CRÍTICO siempre pasa.
 
 ## Trampas
 - Evaluador es setInterval, NO BullMQ. Si Redis muere, el evaluador sigue vivo.
@@ -45,3 +50,4 @@ Módulo de monitoreo y alertas en tiempo real. Feature principal: **Reflex** —
 - Mapa de dependencias: no alertar por WA cuando WA es lo que cayó.
 - `reflexBus` es EventEmitter interno del módulo para comunicación sensor→evaluador.
 - API routes se populan en init() mutando manifest.console.apiRoutes (patrón estándar).
+- Health snapshot se escribe a Redis cada 60s para consumo por dashboard/Pulse.

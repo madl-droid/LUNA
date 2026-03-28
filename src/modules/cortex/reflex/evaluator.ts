@@ -4,10 +4,10 @@
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
 import type { Registry } from '../../../kernel/registry.js'
-import type { CortexConfig, CounterSet, RuleCheckContext } from '../types.js'
+import type { CortexConfig, CounterSet, Rule, RuleCheckContext } from '../types.js'
 import type { RingBuffer } from './ring-buffer.js'
 import { AlertManager } from './alert-manager.js'
-import { CRITICAL_RULES, ALL_RULES } from './rules.js'
+import { CRITICAL_RULES, DEGRADED_RULES, INFO_RULES } from './rules.js'
 import { flushToRedis } from './counters.js'
 import { reflexBus } from './sensors.js'
 import pino from 'pino'
@@ -129,14 +129,10 @@ export class Evaluator {
 
   private async runTrendChecks(): Promise<void> {
     const ctx = this.buildContext()
-    // Trend rules are added in Ola 2
-    const trendRules = ALL_RULES.filter(r => r.severity === 'degraded' || r.severity === 'info')
-    if (trendRules.length > 0) {
-      await this.evaluateRules(trendRules, ctx)
-    }
+    await this.evaluateRules([...DEGRADED_RULES, ...INFO_RULES], ctx)
   }
 
-  private async evaluateRules(rules: typeof ALL_RULES, ctx: RuleCheckContext): Promise<void> {
+  private async evaluateRules(rules: Rule[], ctx: RuleCheckContext): Promise<void> {
     for (const rule of rules) {
       try {
         const isFailing = await rule.check(ctx)

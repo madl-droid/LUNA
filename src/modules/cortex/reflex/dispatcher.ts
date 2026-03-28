@@ -34,6 +34,12 @@ export async function dispatchAlert(
     return
   }
 
+  // Silence check: INFO alerts silenced during quiet hours (CRITICAL always passes)
+  if (alert.severity === 'info' && isInSilenceWindow(config)) {
+    logger.debug({ rule: alert.rule }, 'Alert silenced (quiet hours)')
+    return
+  }
+
   // Filter out channels that depend on failed components
   const availableChannels = enabledChannels.filter(ch => {
     const deps = channelDeps[ch] ?? []
@@ -180,6 +186,30 @@ async function sendEmail(message: string, admins: AdminContact[], registry: Regi
 }
 
 // ─── Admin resolution ──────────────────
+
+// ─── Silence window ─────────────────────
+
+function isInSilenceWindow(config: CortexConfig): boolean {
+  const now = new Date()
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+
+  const [startH, startM] = config.CORTEX_REFLEX_SILENCE_START.split(':').map(Number)
+  const [endH, endM] = config.CORTEX_REFLEX_SILENCE_END.split(':').map(Number)
+
+  if (startH === undefined || startM === undefined || endH === undefined || endM === undefined) {
+    return false
+  }
+
+  const startMinutes = startH * 60 + startM
+  const endMinutes = endH * 60 + endM
+
+  if (startMinutes <= endMinutes) {
+    // Same day: e.g. 09:00 - 17:00
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes
+  }
+  // Crosses midnight: e.g. 23:00 - 07:00
+  return currentMinutes >= startMinutes || currentMinutes < endMinutes
+}
 
 async function resolveAdmins(registry: Registry): Promise<AdminContact[]> {
   try {
