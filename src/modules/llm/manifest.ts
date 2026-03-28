@@ -385,7 +385,7 @@ const manifest: ModuleManifest = {
         text: payload.text,
         voice: payload.voice,
         languageCode: payload.languageCode,
-        audioEncoding: payload.audioEncoding,
+        audioEncoding: payload.audioEncoding as 'MP3' | 'LINEAR16' | 'OGG_OPUS' | undefined,
       })
       return result
     })
