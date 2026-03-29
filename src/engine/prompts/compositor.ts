@@ -7,6 +7,7 @@ import type { ContextBundle, EvaluatorOutput, ExecutionOutput } from '../types.j
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import { escapeDataForPrompt, escapeHistory, wrapUserContent } from '../utils/prompt-escape.js'
+import type { ConfigStore } from '../../modules/lead-scoring/config-store.js'
 
 // Default channel format instructions (overridable via config_store)
 const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
@@ -226,6 +227,49 @@ export async function buildCompositorPrompt(
       : ''
     systemParts.push(`\n--- CAMPAÑA ACTIVA ---\nCampaña: ${ctx.campaign.name}${ctxLine}
 Adapta tu respuesta al contexto de esta campaña.`)
+  }
+
+  // Qualification context (from lead-scoring module)
+  if (registry && ctx.contact?.contactType === 'lead') {
+    const scoringConfig = registry.getOptional<ConfigStore>('lead-scoring:config')
+    if (scoringConfig) {
+      try {
+        const { buildQualificationSummary, resolveFramework } = await import('../../modules/lead-scoring/scoring-engine.js')
+        const qualConfig = scoringConfig.getConfig()
+        const qualData = ctx.contact.qualificationData ?? {}
+        const summary = buildQualificationSummary(qualData, qualConfig, 'es')
+
+        // Get objective and neverAskDirectly fields
+        const fw = resolveFramework(qualConfig, qualData)
+        const qualParts: string[] = [`\n--- CALIFICACIÓN DEL LEAD ---\n${summary}`]
+
+        if (fw) {
+          // Objective instruction
+          const objectiveMap: Record<string, string> = {
+            schedule: 'Tu objetivo es agendar una cita/reunión con este lead.',
+            sell: 'Tu objetivo es cerrar una venta con este lead.',
+            escalate: 'Tu objetivo es escalar este lead a un humano cuando esté calificado.',
+            attend_only: 'Tu objetivo es atender y resolver las dudas de este lead.',
+          }
+          const objInstruction = objectiveMap[fw.objective]
+          if (objInstruction) {
+            qualParts.push(objInstruction)
+          }
+
+          // Never ask directly
+          const neverAsk = fw.criteria.filter(c => c.neverAskDirectly)
+          if (neverAsk.length > 0) {
+            const names = neverAsk.map(c => c.name.es)
+            qualParts.push(`NUNCA preguntes directamente por: ${names.join(', ')}. Infiere estos datos de la conversación.`)
+          }
+
+          // Directo flow instruction
+          qualParts.push(`Si el contacto pide directamente la acción objetivo (ej: "quiero una cita", "quiero comprar"), primero intenta obtener las preguntas esenciales de calificación. Si insiste, procede directamente sin completar la calificación.`)
+        }
+
+        systemParts.push(qualParts.join('\n'))
+      } catch { /* lead-scoring module not available */ }
+    }
   }
 
   // Criticizer: system base (Cat 2 file) + custom (Cat 1 DB)

@@ -1,12 +1,26 @@
 // LUNA — Module: lead-scoring — Types
 // Interfaces del sistema de calificación de leads.
+// Multi-framework, objectives, client_type detection, directo flow.
 
 // ═══════════════════════════════════════════
 // Framework types
 // ═══════════════════════════════════════════
 
-/** Available qualification frameworks */
-export type FrameworkType = 'champ' | 'spin' | 'champ_gov' | 'custom'
+/** Available qualification frameworks (no custom — only presets) */
+export type FrameworkType = 'champ' | 'spin' | 'champ_gov'
+
+/** Client type — detected from first interaction, routes to framework */
+export type ClientType = 'b2b' | 'b2c' | 'b2g'
+
+/** Mapping from client type to framework */
+export const CLIENT_TYPE_FRAMEWORK: Record<ClientType, FrameworkType> = {
+  b2b: 'champ',
+  b2c: 'spin',
+  b2g: 'champ_gov',
+}
+
+/** Objective — what the agent should do when lead qualifies */
+export type FrameworkObjective = 'schedule' | 'sell' | 'escalate' | 'attend_only'
 
 /** A stage groups related criteria within a framework */
 export interface FrameworkStage {
@@ -19,23 +33,14 @@ export interface FrameworkStage {
 /** A complete framework preset */
 export interface FrameworkPreset {
   type: FrameworkType
+  clientType: ClientType
   name: { es: string; en: string }
   description: { es: string; en: string }
   stages: FrameworkStage[]
   criteria: QualifyingCriterion[]
   disqualifyReasons: DisqualifyReason[]
-}
-
-// ═══════════════════════════════════════════
-// Auto Signals — computed by code, not LLM
-// ═══════════════════════════════════════════
-
-export interface AutoSignalDefinition {
-  key: string                              // 'engagement', 'geo_fit', 'channel_source', etc.
-  name: { es: string; en: string }
-  description: { es: string; en: string }
-  weight: number                           // 0-100 contribution to score
-  enabled: boolean
+  /** Max 2 essential questions — asked before converting a lead directly */
+  essentialQuestions: string[]
 }
 
 // ═══════════════════════════════════════════
@@ -43,8 +48,8 @@ export interface AutoSignalDefinition {
 // ═══════════════════════════════════════════
 
 export interface QualifyingCriterion {
-  key: string                              // unique id: 'budget', 'authority', 'zone', etc.
-  name: { es: string; en: string }         // display name
+  key: string                              // auto-generated from name.en (snake_case)
+  name: { es: string; en: string }         // display name (user edits this, key auto-derives)
   type: 'text' | 'boolean' | 'enum'       // data type
   options?: string[]                       // only for 'enum' type
   weight: number                           // 0-100 contribution to score
@@ -65,21 +70,23 @@ export interface QualifyingThresholds {
   qualified: number                        // score >= qualified → qualified
 }
 
-export type QualifiedAction = 'scheduled' | 'payment_link' | 'escalate_human'
-
-export interface QualifyingConfig {
-  /** Active framework type. 'custom' = no preset, fully manual config */
-  framework: FrameworkType
-  /** Stages defined by the framework (or custom stages) */
+/** Config per active framework */
+export interface FrameworkConfig {
+  type: FrameworkType
+  enabled: boolean
+  objective: FrameworkObjective
   stages: FrameworkStage[]
   criteria: QualifyingCriterion[]
-  thresholds: QualifyingThresholds
-  qualifiedActions: QualifiedAction[]
-  defaultQualifiedAction: QualifiedAction
   disqualifyReasons: DisqualifyReason[]
-  /** Auto signals: response speed, question count, has campaign */
-  autoSignals: AutoSignalDefinition[]
-  maxCustomCriteria: number
+  /** Max 2 essential questions keys — asked before converting a lead directly (directo flow) */
+  essentialQuestions: string[]
+}
+
+export interface QualifyingConfig {
+  /** Active frameworks — one or more can be active simultaneously */
+  frameworks: FrameworkConfig[]
+  /** Global thresholds (apply to all frameworks) */
+  thresholds: QualifyingThresholds
   /** Always true — system always recalculates on config change */
   recalculateOnConfigChange: boolean
   /** Minimum confidence (0-1) to accept an LLM extraction. Default: 0.3 */
@@ -112,6 +119,7 @@ export type QualificationStatus =
   | 'scheduled'
   | 'attended'
   | 'converted'
+  | 'directo'            // skipped qualification, went straight to objective
   | 'out_of_zone'
   | 'not_interested'
   | 'cold'
@@ -159,6 +167,7 @@ export interface ExtractionResult {
   extracted: Record<string, unknown>       // key → value pairs from conversation
   confidence: Record<string, number>       // key → 0-1 confidence
   disqualifyDetected?: string              // disqualify reason key if detected
+  clientTypeDetected?: ClientType          // detected client type (b2b, b2c, b2g)
 }
 
 // ═══════════════════════════════════════════
@@ -199,4 +208,18 @@ export interface LeadDetail extends LeadSummary {
 
 export interface LeadScoringConfig {
   LEAD_SCORING_CONFIG_PATH: string
+}
+
+// ═══════════════════════════════════════════
+// Helper: generate key from name
+// ═══════════════════════════════════════════
+
+/** Generate a snake_case key from an English name string */
+export function generateKeyFromName(nameEn: string): string {
+  return nameEn
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .substring(0, 50)
 }

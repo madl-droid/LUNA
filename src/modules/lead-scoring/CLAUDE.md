@@ -1,19 +1,19 @@
-# Lead Scoring — Sistema de calificacion de leads
+# Lead Scoring — Sistema de calificacion de leads (v2)
 
-Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2G) o criterios custom. Extraccion natural por LLM, scoring por codigo, UI personalizable en console.
+Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) simultaneamente. Deteccion de tipo de cliente, objectives per-framework, flujo directo. Extraccion natural por LLM, scoring por codigo, UI en console.
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios, campaign init
-- `types.ts` — FrameworkType, FrameworkStage, QualifyingConfig, ScoreResult, AutoSignalDefinition, LeadSummary (con campaña)
-- `frameworks.ts` — presets CHAMP, SPIN, CHAMP+Gov con stages, criterios y disqualify reasons
-- `scoring-engine.ts` — motor de scoring: calcula puntos por stage, transiciones, merge de datos, getCurrentStage()
-- `config-store.ts` — lee/escribe instance/qualifying.json, hot-reload, applyFramework(), validacion
-- `extract-tool.ts` — tool `extract_qualification` con prompts conscientes de framework/stage
-- `pg-queries.ts` — queries: listar leads (con ultima campaña), detalle, actualizar score, recalcular batch, stats
-- `templates.ts` — SSR HTML: selector de framework, criterios agrupados por stage, auto signals
-- `campaign-types.ts` — tipos: CampaignRecord, CampaignTag, CampaignMatchResult, CampaignStatRow
-- `campaign-queries.ts` — CRUD campañas, tags, contact-campaign history, stats (entries+conversiones)
-- `campaign-matcher.ts` — fuse.js fuzzy matching con filtros de canal, ronda, y retry
+- `types.ts` — FrameworkType, ClientType, FrameworkObjective, FrameworkConfig, QualifyingConfig (multi-framework), ExtractionResult, generateKeyFromName()
+- `frameworks.ts` — presets CHAMP, SPIN, CHAMP+Gov con stages, criterios, disqualify reasons, essentialQuestions
+- `scoring-engine.ts` — motor de scoring: resolveFramework(), calculateScore(), buildQualificationSummary(), directo status
+- `config-store.ts` — lee/escribe instance/qualifying.json, multi-framework, setFramework(), resetFrameworkToPreset(), migracion old→new
+- `extract-tool.ts` — tool `extract_qualification`: prompt caching, client type detection, conversation buffer, dynamic tool description
+- `pg-queries.ts` — queries: listar leads, detalle, actualizar score, recalcular batch, stats (con directo status)
+- `templates.ts` — SSR HTML: framework cards con toggle+objetivo, criterios per-framework, comportamiento
+- `campaign-types.ts` — tipos de campanas
+- `campaign-queries.ts` — CRUD campanas, tags, contact-campaign history, stats
+- `campaign-matcher.ts` — fuse.js fuzzy matching
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true
@@ -23,92 +23,48 @@ Califica leads usando frameworks predefinidos (CHAMP B2B, SPIN B2C, CHAMP+Gov B2
 ## Servicios registrados
 - `lead-scoring:config` — instancia de ConfigStore
 - `lead-scoring:queries` — instancia de LeadQueries
-- `lead-scoring:campaign-queries` — instancia de CampaignQueries (CRUD campañas, tags, stats)
-- `lead-scoring:match-campaign` — funcion (text, channelName, channelType, roundNumber) => CampaignMatchResult | null
+- `lead-scoring:campaign-queries` — instancia de CampaignQueries
+- `lead-scoring:match-campaign` — funcion de matching de campanas
 - `lead-scoring:reload-campaigns` — recarga indice del matcher
 
-## Hook consumido
-- `console:config_applied` — recarga qualifying.json, recalcula scores si config cambio
+## Multi-framework
+- `frameworks[]` en config: cada uno con type, enabled, objective, stages, criteria, essentialQuestions
+- Client type detection: si >1 framework activo, primera extraccion detecta b2b/b2c/b2g
+- `_client_type` en qualification_data guarda tipo detectado
+- `resolveFramework()` rutea al framework correcto segun client type
 
-## Hook emitido
-- `contact:status_changed` — cuando cambia qualification_status de un lead
+## Objectives per-framework
+- `schedule` | `sell` | `escalate` | `attend_only`
+- Compositor recibe objetivo en espanol para guiar respuestas
+- Configurable desde console en cada card de framework
 
-## Frameworks disponibles
-- `champ` — B2B: Challenges, Authority, Money, Prioritization (16 criterios, 4 stages)
-- `spin` — B2C: Situation, Problem, Implication, Need-payoff (16 criterios, 4 stages)
-- `champ_gov` — B2G: CHAMP + Process Stage + Compliance Fit (24 criterios, 6 stages)
-- `custom` — criterios manuales sin framework (backward compatible con BANT)
+## Flujo directo
+- Status `directo`: lead pide accion objetivo antes de completar calificacion
+- essentialQuestions (max 2 por framework): preguntas minimas antes de convertir directo
+- Estado: new/qualifying → directo → converted/blocked
 
 ## Tool registrada
-- `extract_qualification` — extrae datos del mensaje via LLM, consciente del framework y stage actual
+- `extract_qualification` — extraccion con prompt caching, tool description dinamica
 
 ## API routes (montadas en /console/api/lead-scoring/)
-- `GET /config` — config actual de qualifying.json
+- `GET /config` — config actual
 - `PUT /config` — guardar config nueva
-- `POST /apply-framework` — aplicar un framework preset (reemplaza criterios)
-- `GET /frameworks` — listar presets disponibles
-- `POST /recalculate` — recalcular scores de todos los leads
-- `GET /stats` — estadisticas por status
-- `GET /leads?status=X&search=Y&campaignId=X&limit=50&offset=0&sort=score&dir=desc` — lista paginada (con ultima campaña)
-- `GET /lead?id=X` — detalle de lead (canales, mensajes, datos)
-- `PUT /lead-status` — cambiar status manualmente
-- `POST /disqualify` — descalificar lead con motivo
-- `GET /ui` — servir HTML de la tab
-- **Campañas:**
-- `GET /campaigns` — listar todas con tags
-- `GET /campaign?id=X` — detalle
-- `POST /campaign` — crear (name, keyword, matchThreshold, matchMaxRounds, allowedChannels, promptContext, tagIds)
-- `PUT /campaign` — actualizar
-- `DELETE /campaign?id=X` — eliminar
-- **Tags:**
-- `GET /tags?type=platform|source` — listar
-- `POST /tag` — crear (name, tagType, color)
-- `PUT /tag` — renombrar/cambiar color
-- `DELETE /tag?id=X` — eliminar
-- **Stats:**
-- `GET /campaign-stats` — entries + conversiones por campaña + "sin campaña"
-- `GET /contact-campaigns?contactId=X` — historial de campañas de un contacto
+- `POST /set-framework` — enable/disable framework + objective
+- `POST /reset-framework` — resetear framework a preset
+- `GET /frameworks` — listar presets con estado actual
+- `POST /recalculate` — recalcular scores batch
+- `GET /stats`, `GET /leads`, `GET /lead`, `PUT /lead-status`, `POST /disqualify`
+- Campanas: CRUD + tags + stats (sin cambios)
 
-## Campañas — subsistema de tracking
-- 1 keyword por campaña (frase de matching, puede estar dentro de un párrafo)
-- ID visible autoincramental (1, 2, 3...)
-- promptContext: frase corta (max 200 chars), default = keyword. Se inyecta al LLM compositor
-- Tags: platform y source (M:N). Cada tag tiene nombre, tipo y color (paleta clara)
-- Matching: fuse.js con ignoreLocation, threshold 95% default, retry en error
-- NO match en canales de voz (channelType === 'voice')
-- Solo en las primeras N rondas (matchMaxRounds, 1-3, default 1)
-- allowedChannels: filtro por canal (vacío = todos los no-voz)
-- contact_campaigns: historial de todas las campañas de un contacto
-- Conversión atribuida a la ÚLTIMA campaña
-- Stats: entries (contactos únicos) + conversiones por campaña + "sin campaña"
-
-## Tablas DB del subsistema de campañas
-- `campaigns` — tabla base (existente) + columnas nuevas: visible_id, match_max_rounds, allowed_channels, prompt_context, updated_at
-- `campaign_tags` — tags de plataforma y fuente (id, name, tag_type, color)
-- `campaign_tag_assignments` — join M:N (campaign_id, tag_id)
-- `contact_campaigns` — historial contact↔campaign (contact_id, campaign_id, session_id, channel, score, matched_at)
-
-## Integracion con pipeline
-- Phase 1: `detectCampaign()` llama `lead-scoring:match-campaign` (después de cargar sesión)
-- Phase 3: tool `extract_qualification` se ejecuta cuando el evaluador detecta info relevante
-- Phase 4: compositor inyecta `promptContext` de la campaña detectada
-- Phase 5: `recordMatch()` persiste el match en `contact_campaigns` (fire-and-forget)
-- Phase 5: transicion automatica `new → qualifying` en primera interaccion
-
-## Patrones
-- Scoring es 100% codigo — LLM extrae, codigo decide
-- Weights se normalizan a 100 si no suman 100
-- Enum scoring: opciones ordenadas de peor a mejor (indice/total)
-- `_disqualified` en qualification_data = lead descalificado
-- `_confidence` en qualification_data = tracking de confianza por campo
-- Recalculacion batch usa transaccion SQL
-- getCurrentStage() determina la etapa con campos pendientes para enfocar extraccion
-- Auto signals: senales calculadas por codigo (engagement, geo, canal, historial, horario), peso configurable
+## Integracion con evaluator/compositor
+- Evaluator: recibe `buildQualificationSummary()` en ingles (score, stage, missing, known, essential questions)
+- Compositor: recibe summary en espanol + objetivo + neverAskDirectly + instruccion directo
+- Tool description: dinamica, refleja frameworks activos y nombres de criterios
 
 ## Trampas
-- Config se guarda en instance/qualifying.json (archivo JSON), NO en .env
-- Max 10 criterios para custom framework; presets no tienen limite
-- Tool solo se registra si modulo tools esta activo (depends: ['tools'])
-- Al aplicar framework preset se reemplazan criterios y disqualifyReasons pero se conservan thresholds y actions
-- Configs viejas sin campo `framework` se migran automaticamente a `framework: 'custom'`
-- **Helpers HTTP y config**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js`. NO redefinir localmente.
+- Config en instance/qualifying.json (JSON), NO en .env
+- Keys auto-generadas desde name.en via generateKeyFromName() — no edicion manual
+- Configs viejas (single framework, custom) se migran automaticamente
+- Prompt cache se invalida en cambio de config (clearExtractionPromptCache)
+- `_client_type` y `_disqualified` son campos reservados en qualification_data
+- Helpers HTTP: usa jsonResponse, parseBody, parseQuery de kernel/http-helpers.js
