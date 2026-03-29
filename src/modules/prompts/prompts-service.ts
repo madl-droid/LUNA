@@ -120,7 +120,7 @@ export class PromptsServiceImpl implements PromptsService {
     // Inject agent persona and accent into identity
     const cfg = this.registry.getConfig<{
       AGENT_NAME: string; AGENT_LAST_NAME: string; AGENT_TITLE: string
-      AGENT_LANGUAGE: string; AGENT_COUNTRY: string
+      AGENT_LANGUAGE: string; AGENT_COUNTRY: string; COMPANY_NAME: string
       AGENT_ACCENT: string; AGENT_ACCENT_PROMPT: string
     }>('prompts')
 
@@ -129,6 +129,7 @@ export class PromptsServiceImpl implements PromptsService {
     const fullName = [cfg.AGENT_NAME, cfg.AGENT_LAST_NAME].filter(Boolean).join(' ')
     if (fullName) personaParts.push(`Tu nombre es ${fullName}.`)
     if (cfg.AGENT_TITLE) personaParts.push(`Tu cargo es ${cfg.AGENT_TITLE}.`)
+    if (cfg.COMPANY_NAME) personaParts.push(`Trabajas en ${cfg.COMPANY_NAME}.`)
     if (cfg.AGENT_LANGUAGE) personaParts.push(`Tu idioma principal es ${cfg.AGENT_LANGUAGE}.`)
     if (cfg.AGENT_COUNTRY) personaParts.push(`Operas desde ${cfg.AGENT_COUNTRY}.`)
 

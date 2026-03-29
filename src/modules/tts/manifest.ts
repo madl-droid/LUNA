@@ -6,6 +6,7 @@ import pino from 'pino'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { boolEnv, numEnv } from '../../kernel/config-helpers.js'
+import * as configStore from '../../kernel/config-store.js'
 import { TTSService } from './tts-service.js'
 
 const logger = pino({ name: 'tts' })
@@ -21,10 +22,11 @@ const manifest: ModuleManifest = {
   },
   type: 'feature',
   removable: true,
-  activateByDefault: false,
+  activateByDefault: true,
   depends: [],
 
   configSchema: z.object({
+    TTS_ENABLED: boolEnv(true),
     TTS_GOOGLE_API_KEY: z.string().default(''),
     TTS_VOICE_LANGUAGE: z.string().default('es-US'),
     TTS_VOICE_NAME: z.string().default('es-US-Studio-B'),
@@ -105,6 +107,7 @@ const manifest: ModuleManifest = {
 
   async init(registry: Registry) {
     const config = registry.getConfig<{
+      TTS_ENABLED: boolean
       TTS_GOOGLE_API_KEY: string
       TTS_VOICE_LANGUAGE: string
       TTS_VOICE_NAME: string
@@ -118,11 +121,24 @@ const manifest: ModuleManifest = {
       TTS_MAX_DURATION: string
     }>('tts')
 
-    if (!config.TTS_GOOGLE_API_KEY) {
-      logger.warn('TTS module active but no API key configured')
+    if (!config.TTS_ENABLED) {
+      logger.info('TTS module loaded but disabled via TTS_ENABLED=false')
+      return
     }
 
-    service = new TTSService(config)
+    // Fall back to general Google AI API key if TTS-specific key not set
+    let apiKey = config.TTS_GOOGLE_API_KEY
+    if (!apiKey) {
+      const pool = registry.getDb()
+      apiKey = await configStore.get(pool, 'GOOGLE_AI_API_KEY').catch(() => '') ?? ''
+    }
+
+    if (!apiKey) {
+      logger.warn('TTS module active but no API key configured (set GOOGLE_AI_API_KEY in LLM settings)')
+    }
+
+    const ttsConfig = { ...config, TTS_GOOGLE_API_KEY: apiKey }
+    service = new TTSService(ttsConfig)
     registry.provide('tts:service', service)
 
     logger.info('TTS module initialized')
