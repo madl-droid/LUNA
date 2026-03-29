@@ -3,6 +3,7 @@
 
 import { getEnv } from '../kernel/config.js'
 import type { EngineConfig, LLMProvider } from './types.js'
+import { SUBAGENT_HARD_LIMITS } from './subagent/types.js'
 
 function env(key: string, fallback: string): string {
   return getEnv(key) ?? fallback
@@ -88,10 +89,11 @@ export function loadEngineConfig(): EngineConfig {
     batchCron: env('BATCH_CRON', '0 2 * * *'),
     batchTimezone: env('BATCH_TIMEZONE', 'America/Mexico_City'),
 
-    // Subagent defaults
-    subagentMaxIterations: envInt('SUBAGENT_MAX_ITERATIONS', 5),
-    subagentTimeoutMs: envInt('SUBAGENT_TIMEOUT_MS', 20000),
-    subagentMaxTokenBudget: envInt('SUBAGENT_MAX_TOKEN_BUDGET', 15000),
+    // Subagent v2 — hard limits (not configurable from console, safety only)
+    // User-configurable token budget lives in subagent_types table
+    subagentMaxIterations: SUBAGENT_HARD_LIMITS.HARD_MAX_ITERATIONS,
+    subagentTimeoutMs: SUBAGENT_HARD_LIMITS.HARD_TIMEOUT_MS,
+    subagentMaxTokenBudget: SUBAGENT_HARD_LIMITS.HARD_MAX_TOKEN_BUDGET,
 
     // Replanning
     maxReplanAttempts: Math.min(envInt('PIPELINE_MAX_REPLAN_ATTEMPTS', 2), 5),

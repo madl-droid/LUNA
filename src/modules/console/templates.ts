@@ -62,7 +62,7 @@ const FIXED_SECTIONS: FixedSection[] = [
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
 // Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
 // Include old section IDs + modules that are now inside the unified "agente" page
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics', 'freshdesk', 'modules', 'tts'])
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics', 'freshdesk', 'modules', 'tts', 'subagents'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 export const ICON_OVERRIDES: Record<string, string> = {
@@ -86,6 +86,7 @@ export const ICON_OVERRIDES: Record<string, string> = {
   'freshdesk': svgIcon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8"/><path d="M8 11h6"/>'),
   'tts': svgIcon('<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'),
   'cortex': svgIcon('<circle cx="12" cy="12" r="2.5"/><circle cx="5" cy="6" r="1.5"/><circle cx="19" cy="6" r="1.5"/><circle cx="5" cy="18" r="1.5"/><circle cx="19" cy="18" r="1.5"/><line x1="7" y1="7" x2="10" y2="10"/><line x1="14" y1="10" x2="17" y2="7"/><line x1="7" y1="17" x2="10" y2="14"/><line x1="14" y1="14" x2="17" y2="17"/>'),
+  'subagents': svgIcon('<circle cx="12" cy="8" r="3"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 11v3"/><path d="M8 16l4-2 4 2"/>'),
 }
 
 // ═══════════════════════════════════════════
@@ -466,11 +467,13 @@ function renderSidebar(opts: PageOptions): string {
           identity: svgIcon('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'),
           voice: svgIcon('<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'),
           advanced: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 14h3"/><path d="M1 9h3"/><path d="M1 14h3"/>'),
+          subagents: svgIcon('<circle cx="12" cy="8" r="3"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 11v3"/><path d="M8 16l4-2 4 2"/>'),
         }
         const agenteTabs = [
           { id: 'knowledge', key: 'sec_agente_knowledge' },
           { id: 'memory', key: 'sec_agente_memory' },
           { id: 'identity', key: 'sec_agente_identity' },
+          { id: 'subagents', key: 'sec_agente_subagents' },
           { id: 'advanced', key: 'sec_agente_advanced' },
         ]
         nav += '<div class="sidebar-submenu">'

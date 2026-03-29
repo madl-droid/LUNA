@@ -196,6 +196,8 @@ export interface ExecutionStep {
   useThinking?: boolean
   /** Phase 2 hint: activate code execution sandbox for this step */
   useCoding?: boolean
+  /** Subagent slug from catalog (for type='subagent') */
+  subagentSlug?: string
 }
 
 export interface EvaluatorOutput {
