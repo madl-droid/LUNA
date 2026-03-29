@@ -29,6 +29,8 @@ let registry: Registry
 let pipelineSemaphore: PipelineSemaphore
 let contactLock: ContactLock
 let checkpointMgr: CheckpointManager | null = null
+/** Temporary stash for completed steps during checkpoint resume. Keyed by messageId. */
+const pendingResumeSteps = new Map<string, import('./types.js').StepResult[]>()
 
 /**
  * Initialize the engine. Call once at startup.
@@ -93,7 +95,7 @@ export function initEngine(reg: Registry): void {
     checkpointMgr = new CheckpointManager(db)
 
     // On startup: expire stale checkpoints, resume recent ones, cleanup old ones
-    initCheckpoints(db, redis).catch(err =>
+    initCheckpoints().catch(err =>
       logger.error({ err }, 'Failed to initialize checkpoints'),
     )
   }
@@ -161,8 +163,10 @@ async function processMessageInner(
   db: import('pg').Pool,
   redis: import('ioredis').Redis,
   totalStart: number,
-  resumeSteps?: import('./types.js').StepResult[],
 ): Promise<PipelineResult> {
+  // Check if this is a resumed message with pre-completed steps
+  const resumeSteps = pendingResumeSteps.get(message.id)
+  if (resumeSteps) pendingResumeSteps.delete(message.id)
   let traceId = ''
   let avisoTimer: ReturnType<typeof setTimeout> | null = null
   let checkpointId: string | undefined
@@ -604,11 +608,6 @@ async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promi
   logger.info({ traceId: ctx.traceId, to: ctx.message.from, text }, 'Aviso de proceso enviado')
 }
 
-/**
- * Check if admin-only mode is active.
- * Reads DEBUG_ADMIN_ONLY from config_store (runtime check).
- * Falls back to ENGINE_TEST_MODE if DEBUG_ADMIN_ONLY is not set.
- */
 // ═══════════════════════════════════════════
 // Checkpoint resume & cleanup (startup only)
 // ═══════════════════════════════════════════
@@ -618,10 +617,7 @@ async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promi
  * Simple approach: re-process the message through the full pipeline,
  * passing completed steps so Phase 3 skips them.
  */
-async function initCheckpoints(
-  db: import('pg').Pool,
-  redis: import('ioredis').Redis,
-): Promise<void> {
+async function initCheckpoints(): Promise<void> {
   if (!checkpointMgr) return
 
   await checkpointMgr.expireStale(engineConfig.checkpointResumeWindowMs)
@@ -646,8 +642,8 @@ async function initCheckpoints(
       }, 'Resuming from checkpoint')
 
       try {
-        // Re-process the full pipeline, but Phase 3 will skip completed steps
-        const fakeMessage: IncomingMessage = {
+        // Reconstruct a minimal IncomingMessage from checkpoint data
+        const resumeMessage: IncomingMessage = {
           id: cp.messageId,
           channelName: cp.channel as IncomingMessage['channelName'],
           channelMessageId: cp.messageId,
@@ -661,8 +657,18 @@ async function initCheckpoints(
         // Mark old checkpoint as failed (new pipeline run creates its own)
         await checkpointMgr.fail(cp.id, 'Resumed: new pipeline run with completed steps')
 
-        // Re-enter pipeline with completed steps from checkpoint
-        await processMessageInner(fakeMessage, db, redis, Date.now(), cp.stepResults)
+        // Stash completed steps so processMessageInner can pick them up
+        pendingResumeSteps.set(cp.messageId, cp.stepResults)
+
+        // Go through full processMessage for proper concurrency/timeout control
+        const result = await processMessage(resumeMessage)
+
+        // Clean up stash (in case it wasn't consumed)
+        pendingResumeSteps.delete(cp.messageId)
+
+        if (!result.success) {
+          logger.warn({ checkpointId: cp.id, error: result.error }, 'Checkpoint resume pipeline failed')
+        }
       } catch (err) {
         logger.error({ err, checkpointId: cp.id }, 'Checkpoint resume failed')
         await checkpointMgr.fail(cp.id, `Resume error: ${String(err)}`).catch(() => {})

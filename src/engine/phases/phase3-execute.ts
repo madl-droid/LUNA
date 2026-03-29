@@ -104,15 +104,30 @@ export async function phase3Execute(
     return { results: [], allSucceeded: true, partialData: {} }
   }
 
-  // Build set of already-completed step indices (from checkpoint resume)
-  const completedIndices = new Set<number>(
-    (opts?.completedSteps ?? []).map(s => s.stepIndex),
-  )
+  // Build set of already-completed step indices (from checkpoint resume).
+  // Only trust a completed step if the plan step at that index has the same type —
+  // if Phase 2 generated a different plan on resume, indices may not correspond.
+  const completedIndices = new Set<number>()
+  const validCompletedSteps: StepResult[] = []
+  for (const sr of opts?.completedSteps ?? []) {
+    const planStep = executionPlan[sr.stepIndex]
+    if (planStep && planStep.type === sr.type) {
+      completedIndices.add(sr.stepIndex)
+      validCompletedSteps.push(sr)
+    } else {
+      logger.warn({
+        traceId: ctx.traceId,
+        stepIndex: sr.stepIndex,
+        expectedType: planStep?.type,
+        actualType: sr.type,
+      }, 'Discarding mismatched completed step from checkpoint')
+    }
+  }
 
   // Group steps by dependency
   const { independent, dependent } = groupStepsByDependency(executionPlan)
 
-  const results: StepResult[] = [...(opts?.completedSteps ?? [])]
+  const results: StepResult[] = [...validCompletedSteps]
   const stepSemaphore = new StepSemaphore(config.maxConcurrentSteps)
 
   // Helper: execute step with checkpoint persistence
