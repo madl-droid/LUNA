@@ -65,14 +65,30 @@ Fallback — otro provider, capacidades equivalentes (2 retries)
 ```
 
 ## Criticizer (quality gate — 2 pasos)
-Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
-1. **Pro revisa**: Gemini Pro (task `'criticize'`) evalúa la respuesta y responde APPROVED o lista de problemas.
-2. **Flash regenera**: Si hay problemas, Flash (compositor original) regenera con el feedback de Pro como instrucciones adicionales. Flash tiene el contexto completo (identity, guardrails, historial), así que produce mejor corrección que Pro.
+Paso separado en Phase 4 que revisa la respuesta antes de enviarla. **OFF por defecto** (`LLM_CRITICIZER_ENABLED=false`).
+1. **Pro revisa**: Gemini Pro (task `'criticize'`, con fallback chain) evalúa la respuesta y retorna JSON estructurado: `{approved: true}` o refinements (`tone`, `length`, `remove`, `add`, `rephrase`).
+2. **Flash regenera**: Si hay refinements, se inyectan como instrucciones naturales en el system prompt del compositor. Flash regenera con el contexto completo (identity, guardrails, historial) — nunca ve "CORRECCIONES DEL REVISOR".
 - Si Pro aprueba → respuesta original se envía sin cambios
-- Si Pro encuentra problemas → Flash regenera con feedback
+- Si Pro encuentra problemas → Flash regenera con refinements inyectados
 - Si falla cualquier paso → fail-open, respuesta original se envía
 - Implementado en `runCriticizer()` en `phase4-compose.ts`
 - No se ejecuta sobre respuestas fallback (templates de archivo)
+
+## Escalating Circuit Breaker (por model-target)
+- Clave: `provider:model` (ej: "anthropic:claude-sonnet-4-6")
+- Trigger: 2 fallas en 30 min
+- Escalamiento: 1h → 3h → 6h → loop cada 6h
+- Reset: primer éxito → closed + reset escalation level
+- Independiente del CB legacy por provider (ambos se verifican)
+
+## Features nativos de las APIs
+- **Prompt Caching**: Anthropic `cache_control: { type: 'ephemeral' }` (90% ahorro). Google implícito en 2.5+.
+- **JSON Mode**: Anthropic prefill trick (`{`). Google `responseMimeType: 'application/json'`.
+- **Extended Thinking**: Anthropic `thinking: { type: 'adaptive' }`. Google `thinkingConfig`.
+- **Google Search Grounding**: `{ googleSearch: {} }` tool nativa en web_search.
+- **Code Execution**: Anthropic `{ type: 'code_execution' }`. Google `{ codeExecution: {} }`.
+- **Citations**: Anthropic document blocks (configurable, `LLM_CITATIONS_ENABLED`).
+- **Batch**: Anthropic Message Batches API (50% off). Gateway expone `submitBatch/getBatchStatus/getBatchResults`.
 
 ## Trampas
 - **API keys**: NUNCA se logean ni se incluyen en prompts.

@@ -136,5 +136,8 @@ export function loadEngineConfig(): EngineConfig {
 
     // FIX: E-30 — Agent slug (fallback 'luna' for backward compat)
     agentSlug: env('AGENT_SLUG', 'luna'),
+
+    // Criticizer (quality gate) — OFF by default, enable via LLM_CRITICIZER_ENABLED
+    criticzerEnabled: envBool('LLM_CRITICIZER_ENABLED', false),
   }
 }

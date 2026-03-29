@@ -604,4 +604,7 @@ export interface EngineConfig {
 
   // FIX: E-30 — Agent slug (no hardcoding 'luna')
   agentSlug: string
+
+  // Criticizer (quality gate)
+  criticzerEnabled: boolean
 }

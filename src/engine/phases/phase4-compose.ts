@@ -12,7 +12,7 @@ import type {
   EngineConfig,
 } from '../types.js'
 import { buildCompositorPrompt } from '../prompts/compositor.js'
-import { callLLM } from '../utils/llm-client.js'
+import { callLLM, callLLMWithFallback } from '../utils/llm-client.js'
 import { loadFallback } from '../fallbacks/fallback-loader.js'
 import { formatForChannel } from '../utils/message-formatter.js'
 
@@ -76,8 +76,8 @@ export async function phase4Compose(
   }
 
   // ═══ Criticizer step — quality gate via Gemini Pro ═══
-  // Pro reviews → if issues found, Flash regenerates with Pro's feedback
-  if (responseText && !rawResponse?.startsWith('FALLBACK')) {
+  // Pro reviews → if issues found, Flash regenerates with structured refinements
+  if (config.criticzerEnabled && responseText && !rawResponse?.startsWith('FALLBACK')) {
     responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config)
   }
 
@@ -132,14 +132,15 @@ export async function phase4Compose(
 /**
  * Run the criticizer quality gate (2-step flow):
  *
- * 1. **Pro reviews**: Gemini Pro (task 'criticize') evaluates the response.
+ * 1. **Pro reviews**: Gemini Pro (task 'criticize') evaluates the response
+ *    and returns structured JSON refinements.
  *    - If APPROVED → return original response unchanged.
- *    - If issues found → returns a list of specific problems/instructions.
+ *    - If issues found → returns JSON with specific refinement instructions.
  *
- * 2. **Flash regenerates**: The original compositor model (Flash) gets a second
- *    chance with Pro's feedback injected as additional instructions. Flash has
- *    the full context (identity, guardrails, conversation history), so it
- *    produces a better correction than Pro could without that context.
+ * 2. **Flash regenerates**: The compositor model (Flash) gets a second pass
+ *    with the refinement instructions injected naturally into its system prompt.
+ *    Flash has the full context (identity, guardrails, history), so it produces
+ *    a better correction than Pro could without that context.
  *
  * Fail-open: if criticizer or regeneration fails, original response is returned.
  */
@@ -151,10 +152,10 @@ async function runCriticizer(
   evaluation: EvaluatorOutput,
   config: EngineConfig,
 ): Promise<string> {
-  // ── Step 1: Pro reviews ──
-  let feedback: string
+  // ── Step 1: Pro reviews → structured JSON refinements ──
+  let refinements: CriticRefinements
   try {
-    const result = await callLLM({
+    const result = await callLLMWithFallback({
       task: 'criticize',
       system: `Eres un revisor de calidad de respuestas de un agente de atención al cliente.
 Evalúa la respuesta del agente y decide si es aceptable o necesita corrección.
@@ -168,8 +169,15 @@ Reglas de evaluación:
 6. ¿El tono es profesional y cálido?
 7. ¿Termina con pregunta o CTA claro?
 
-Si la respuesta es aceptable, responde EXACTAMENTE: APPROVED
-Si necesita corrección, lista los problemas específicos y cómo corregirlos. NO reescribas la respuesta, solo da instrucciones claras de qué cambiar.`,
+Responde SOLO con JSON válido. Sin markdown, sin backticks, sin texto fuera del JSON.
+
+Si la respuesta es aceptable:
+{"approved": true}
+
+Si necesita corrección:
+{"approved": false, "tone": "instrucción de tono si aplica", "length": "más corta|más larga|null", "remove": ["frase o dato a eliminar"], "add": ["dato o CTA a incluir"], "rephrase": ["instrucción específica de reformulación"]}
+
+Solo incluye los campos que aplican. Omite los que no necesitan cambio.`,
       messages: [{
         role: 'user',
         content: `Intención del usuario: ${evaluation.intent}
@@ -180,42 +188,42 @@ Respuesta del agente a revisar:
 ${responseText}
 ---
 
-¿Es aceptable o necesita corrección?`,
+¿Es aceptable o necesita corrección? Responde con JSON.`,
       }],
-      maxTokens: 2048,
-      temperature: 0.3,
-    })
+      maxTokens: 1024,
+      temperature: 0.2,
+    }, config.fallbackRespondProvider, config.fallbackRespondModel)
 
     if (!result.text || result.text.trim() === '') {
       return responseText
     }
 
-    const trimmed = result.text.trim()
-    if (trimmed === 'APPROVED') {
+    const parsed = parseCriticResponse(result.text)
+    if (!parsed) {
+      logger.warn({ traceId: ctx.traceId, text: result.text.slice(0, 200) }, 'Criticizer returned unparseable response')
+      return responseText
+    }
+
+    if (parsed.approved) {
       logger.debug({ traceId: ctx.traceId }, 'Criticizer approved response')
       return responseText
     }
 
-    feedback = trimmed
+    refinements = parsed
     logger.info({ traceId: ctx.traceId, provider: result.provider }, 'Criticizer found issues — requesting regeneration')
   } catch (err) {
     logger.warn({ err, traceId: ctx.traceId }, 'Criticizer failed — using original response')
     return responseText
   }
 
-  // ── Step 2: Flash regenerates with feedback ──
+  // ── Step 2: Flash regenerates with structured refinements ──
   try {
-    const feedbackPrompt = `${compositorUserMessage}
-
---- CORRECCIONES DEL REVISOR ---
-Tu respuesta anterior fue revisada y se encontraron estos problemas:
-${feedback}
-
-Genera una nueva respuesta corrigiendo estos problemas. Responde SOLO con la respuesta corregida, sin explicaciones ni prefijos.`
+    const refinementInstructions = buildRefinementInstructions(refinements)
+    const enrichedSystem = `${compositorSystem}\n\n--- INSTRUCCIONES ADICIONALES ---\n${refinementInstructions}`
 
     const regenerated = await callWithRetries(
       config.respondProvider, config.respondModel,
-      compositorSystem, feedbackPrompt,
+      enrichedSystem, compositorUserMessage,
       config, ctx.traceId,
     )
 
@@ -230,6 +238,55 @@ Genera una nueva respuesta corrigiendo estos problemas. Responde SOLO con la res
     logger.warn({ err, traceId: ctx.traceId }, 'Criticizer regeneration error — using original response')
     return responseText
   }
+}
+
+// ─── Criticizer helpers ─────────────────────────
+
+interface CriticRefinements {
+  approved: boolean
+  tone?: string
+  length?: string | null
+  remove?: string[]
+  add?: string[]
+  rephrase?: string[]
+}
+
+function parseCriticResponse(text: string): CriticRefinements | null {
+  try {
+    const parsed = JSON.parse(text.trim()) as Record<string, unknown>
+    if (typeof parsed['approved'] !== 'boolean') return null
+    return parsed as unknown as CriticRefinements
+  } catch {
+    // Try extracting JSON from response if wrapped in extra text
+    const match = text.match(/\{[\s\S]*\}/)
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]) as Record<string, unknown>
+        if (typeof parsed['approved'] !== 'boolean') return null
+        return parsed as unknown as CriticRefinements
+      } catch { /* fall through */ }
+    }
+    return null
+  }
+}
+
+function buildRefinementInstructions(r: CriticRefinements): string {
+  const parts: string[] = []
+  if (r.tone) parts.push(`Ajusta el tono: ${r.tone}`)
+  if (r.length === 'más corta') parts.push('Haz la respuesta más concisa.')
+  if (r.length === 'más larga') parts.push('Expande la respuesta con más detalle.')
+  if (r.remove && r.remove.length > 0) {
+    parts.push(`No incluyas: ${r.remove.join('; ')}`)
+  }
+  if (r.add && r.add.length > 0) {
+    parts.push(`Asegúrate de incluir: ${r.add.join('; ')}`)
+  }
+  if (r.rephrase && r.rephrase.length > 0) {
+    for (const instruction of r.rephrase) {
+      parts.push(instruction)
+    }
+  }
+  return parts.join('\n')
 }
 
 /**

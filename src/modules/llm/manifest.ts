@@ -217,6 +217,11 @@ const manifest: ModuleManifest = {
         info: { es: 'Orden de proveedores separados por coma (ej: anthropic,google)', en: 'Provider order comma-separated (e.g.: anthropic,google)' } },
 
       // Model scanner
+      // Criticizer (quality gate)
+      { key: 'LLM_CRITICIZER_ENABLED', type: 'boolean', label: { es: 'Criticizer habilitado', en: 'Criticizer enabled' },
+        info: { es: 'Gate de calidad: Gemini Pro revisa la respuesta antes de enviarla. Si encuentra problemas, Flash regenera. OFF por defecto.', en: 'Quality gate: Gemini Pro reviews response before sending. If issues found, Flash regenerates. OFF by default.' } },
+
+      // Model scanner
       { key: 'MODEL_SCAN_INTERVAL_MS', type: 'number', label: { es: 'Intervalo de escaneo de modelos (ms)', en: 'Model scan interval (ms)' },
         info: { es: 'Cada cuánto escanear modelos disponibles (default: 21600000 = 6 horas)', en: 'How often to scan available models (default: 21600000 = 6 hours)' } },
     ],
