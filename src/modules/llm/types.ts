@@ -82,6 +82,7 @@ export const TASK_TO_KEY_GROUP: Record<string, { provider: LLMProviderName; grou
   // Gemini groups
   respond: { provider: 'google', group: 'engine' },
   web_search: { provider: 'google', group: 'engine' },
+  criticize: { provider: 'google', group: 'engine' },
   vision: { provider: 'google', group: 'multimedia' },
   stt: { provider: 'google', group: 'multimedia' },
   tts: { provider: 'google', group: 'voice' },
