@@ -608,7 +608,7 @@ export interface EngineConfig {
   agentSlug: string
 
   // Criticizer (quality gate): 'disabled' | 'complex_only' | 'always'
-  criticzerMode: 'disabled' | 'complex_only' | 'always'
+  criticizerMode: 'disabled' | 'complex_only' | 'always'
 
   // Checkpoints (resumable pipelines)
   checkpointEnabled: boolean

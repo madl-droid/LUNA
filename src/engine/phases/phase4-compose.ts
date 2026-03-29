@@ -15,6 +15,7 @@ import { buildCompositorPrompt } from '../prompts/compositor.js'
 import { callLLM, callLLMWithFallback } from '../utils/llm-client.js'
 import { loadFallback } from '../fallbacks/fallback-loader.js'
 import { formatForChannel } from '../utils/message-formatter.js'
+import { isComplexPlan } from './phase3-execute.js'
 
 const logger = pino({ name: 'engine:phase4' })
 
@@ -77,8 +78,8 @@ export async function phase4Compose(
 
   // ═══ Criticizer step — quality gate via Gemini Pro ═══
   // Mode: 'disabled' = skip, 'complex_only' = 3+ LLM steps, 'always' = every response
-  if (config.criticzerMode !== 'disabled' && responseText && !rawResponse?.startsWith('FALLBACK')) {
-    const shouldCriticize = config.criticzerMode === 'always' || isComplexPlan(evaluation)
+  if (config.criticizerMode !== 'disabled' && responseText && !rawResponse?.startsWith('FALLBACK')) {
+    const shouldCriticize = config.criticizerMode === 'always' || isComplexPlan(evaluation)
     if (shouldCriticize) {
       responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config, registry)
     }
@@ -132,14 +133,7 @@ export async function phase4Compose(
   }
 }
 
-/** LLM step types that count for complexity routing */
-const LLM_STEP_TYPES = new Set(['subagent', 'web_search', 'code_execution'])
-const COMPLEX_PLAN_THRESHOLD = 3
-
-function isComplexPlan(evaluation: EvaluatorOutput): boolean {
-  const llmSteps = evaluation.executionPlan.filter(s => LLM_STEP_TYPES.has(s.type)).length
-  return llmSteps >= COMPLEX_PLAN_THRESHOLD
-}
+// isComplexPlan imported from phase3-execute.ts (single source of truth)
 
 /**
  * Run the criticizer quality gate (2-step flow):
@@ -163,14 +157,14 @@ async function runCriticizer(
   registry?: Registry,
 ): Promise<string> {
   // ── Load criticizer prompt from prompts service ──
-  const criticzerPrompt = await loadCriticzerPrompt(registry)
+  const criticizerPrompt = await loadCriticizerPrompt(registry)
 
   // ── Step 1: Pro reviews → structured JSON refinements ──
   let refinements: CriticRefinements
   try {
     const result = await callLLMWithFallback({
       task: 'criticize',
-      system: `${criticzerPrompt}
+      system: `${criticizerPrompt}
 
 Responde SOLO con JSON válido. Sin markdown, sin backticks, sin texto fuera del JSON.
 
@@ -293,7 +287,7 @@ function buildRefinementInstructions(r: CriticRefinements): string {
 }
 
 /** Default criticizer prompt when prompts service is not available */
-const DEFAULT_CRITICZER_PROMPT = `Eres un revisor de calidad de respuestas de un agente de atención al cliente.
+const DEFAULT_CRITICIZER_PROMPT = `Eres un revisor de calidad de respuestas de un agente de atención al cliente.
 Evalúa la respuesta del agente y decide si es aceptable o necesita corrección.
 
 Reglas de evaluación:
@@ -309,15 +303,15 @@ Reglas de evaluación:
  * Load criticizer prompt from prompts service (criticizer-base + custom checklist).
  * Falls back to hardcoded default if prompts service is not available.
  */
-async function loadCriticzerPrompt(registry?: Registry): Promise<string> {
-  if (!registry) return DEFAULT_CRITICZER_PROMPT
+async function loadCriticizerPrompt(registry?: Registry): Promise<string> {
+  if (!registry) return DEFAULT_CRITICIZER_PROMPT
 
   const promptsService = registry.getOptional<{
     getSystemPrompt(name: string): Promise<string>
     getCompositorPrompts(userType: string): Promise<{ criticizer: string }>
   }>('prompts:service')
 
-  if (!promptsService) return DEFAULT_CRITICZER_PROMPT
+  if (!promptsService) return DEFAULT_CRITICIZER_PROMPT
 
   try {
     const [criticBase, compositorPrompts] = await Promise.all([
@@ -325,9 +319,9 @@ async function loadCriticzerPrompt(registry?: Registry): Promise<string> {
       promptsService.getCompositorPrompts('default'),
     ])
     const combined = [criticBase, compositorPrompts.criticizer].filter(Boolean).join('\n')
-    return combined || DEFAULT_CRITICZER_PROMPT
+    return combined || DEFAULT_CRITICIZER_PROMPT
   } catch {
-    return DEFAULT_CRITICZER_PROMPT
+    return DEFAULT_CRITICIZER_PROMPT
   }
 }
 

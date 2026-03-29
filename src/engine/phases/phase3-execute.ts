@@ -79,13 +79,21 @@ export interface Phase3Options {
  * LLM-requiring step types: subagent, web_search, code_execution
  * Deterministic (no LLM): api_call, workflow, memory_lookup, process_attachment, respond_only
  */
-function countLLMSteps(plan: ExecutionStep[]): number {
-  const llmTypes = new Set(['subagent', 'web_search', 'code_execution'])
-  return plan.filter(s => llmTypes.has(s.type)).length
-}
+/** LLM step types that count for complexity routing */
+const LLM_STEP_TYPES = new Set(['subagent', 'web_search', 'code_execution'])
 
 /** Threshold: plans with this many LLM steps or more are "complex" */
-const COMPLEX_PLAN_THRESHOLD = 3
+export const COMPLEX_PLAN_THRESHOLD = 3
+
+export function countLLMSteps(plan: ExecutionStep[]): number {
+  return plan.filter(s => LLM_STEP_TYPES.has(s.type)).length
+}
+
+/** Check if an evaluation plan is complex (3+ LLM steps) */
+export function isComplexPlan(evaluation: EvaluatorOutput): boolean {
+  const llmSteps = evaluation.executionPlan.filter(s => LLM_STEP_TYPES.has(s.type)).length
+  return llmSteps >= COMPLEX_PLAN_THRESHOLD
+}
 
 /**
  * Execute Phase 3: Run the execution plan from Phase 2.
@@ -111,14 +119,14 @@ export async function phase3Execute(
 
   const { executionPlan } = evaluation
   const llmStepCount = countLLMSteps(executionPlan)
-  const isComplexPlan = llmStepCount >= COMPLEX_PLAN_THRESHOLD
-  const stepLlmTask = isComplexPlan ? 'complex' : 'tools'
+  const planIsComplex = llmStepCount >= COMPLEX_PLAN_THRESHOLD
+  const stepLlmTask = planIsComplex ? 'complex' : 'tools'
 
   logger.info({
     traceId: ctx.traceId,
     planSteps: executionPlan.length,
     llmSteps: llmStepCount,
-    complexity: isComplexPlan ? 'complex' : 'simple',
+    complexity: planIsComplex ? 'complex' : 'simple',
     resumingSteps: opts?.completedSteps?.length ?? 0,
   }, 'Phase 3 start')
 
