@@ -337,6 +337,14 @@ const manifest: ModuleManifest = {
       }
     })
 
+    // Ensure accent prompt is generated if accent was set (e.g. by setup wizard)
+    // but accent prompt was never generated yet
+    const bootCfg = registry.getConfig<{ AGENT_ACCENT: string; AGENT_ACCENT_PROMPT: string }>('prompts')
+    if (bootCfg.AGENT_ACCENT && !bootCfg.AGENT_ACCENT_PROMPT) {
+      await generateAccentPrompt(registry)
+      await registry.reloadAllModuleConfigs()
+    }
+
     logger.info('Prompts module initialized')
   },
 
