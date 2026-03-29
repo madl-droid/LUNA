@@ -117,11 +117,27 @@ export class PromptsServiceImpl implements PromptsService {
       relationship = await this.getPrompt('relationship', 'default')
     }
 
-    // Inject accent prompt if configured
-    const cfg = this.registry.getConfig<{ AGENT_ACCENT: string; AGENT_ACCENT_PROMPT: string }>('prompts')
+    // Inject agent persona and accent into identity
+    const cfg = this.registry.getConfig<{
+      AGENT_NAME: string; AGENT_LAST_NAME: string; AGENT_TITLE: string
+      AGENT_LANGUAGE: string; AGENT_COUNTRY: string
+      AGENT_ACCENT: string; AGENT_ACCENT_PROMPT: string
+    }>('prompts')
+
+    // Build persona header from config fields
+    const personaParts: string[] = []
+    const fullName = [cfg.AGENT_NAME, cfg.AGENT_LAST_NAME].filter(Boolean).join(' ')
+    if (fullName) personaParts.push(`Tu nombre es ${fullName}.`)
+    if (cfg.AGENT_TITLE) personaParts.push(`Tu cargo es ${cfg.AGENT_TITLE}.`)
+    if (cfg.AGENT_LANGUAGE) personaParts.push(`Tu idioma principal es ${cfg.AGENT_LANGUAGE}.`)
+    if (cfg.AGENT_COUNTRY) personaParts.push(`Operas desde ${cfg.AGENT_COUNTRY}.`)
+
     let finalIdentity = identity
+    if (personaParts.length > 0) {
+      finalIdentity = personaParts.join(' ') + '\n\n' + identity
+    }
     if (cfg.AGENT_ACCENT && cfg.AGENT_ACCENT_PROMPT) {
-      finalIdentity = identity + '\n\n--- ACENTO ---\n' + cfg.AGENT_ACCENT_PROMPT
+      finalIdentity = finalIdentity + '\n\n--- ACENTO ---\n' + cfg.AGENT_ACCENT_PROMPT
     }
 
     return { identity: finalIdentity, job, guardrails, relationship, criticizer }
