@@ -10,9 +10,23 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - `rate-limiter.ts` — Redis-backed rate limiter con limites configurables (defaults: workspace 80/h 1500/d, free 20/h 400/d)
 
 ## Manifest
-- type: `channel`, removable: true, activateByDefault: false
+- type: `channel`, channelType: `async`, removable: true, activateByDefault: false
+- console.title: "Gmail"
 - depends: [] — google-apps es OPCIONAL (si está activo, comparte su OAuth; si no, email usa su propio OAuth)
-- configSchema: polling, filtering, reply mode, footer, rate limit (configurable), always-CC, custom labels, batching, sessions, naturalidad, OAuth
+- configSchema:
+  - **Polling**: EMAIL_POLL_INTERVAL_MS (60000), EMAIL_MAX_HISTORY_FETCH (20)
+  - **Filtering**: EMAIL_NOREPLY_ADDRESSES, EMAIL_NOREPLY_PATTERNS, EMAIL_PROCESS_LABELS ('INBOX'), EMAIL_SKIP_LABELS ('SPAM,TRASH'), EMAIL_AUTO_MARK_READ (true), EMAIL_ONLY_FIRST_IN_THREAD (true), EMAIL_IGNORE_SUBJECTS, EMAIL_ALLOWED_DOMAINS, EMAIL_BLOCKED_DOMAINS
+  - **Reply**: EMAIL_REPLY_MODE ('reply-sender'), EMAIL_INCLUDE_SIGNATURE (true), EMAIL_ALWAYS_CC
+  - **Footer**: EMAIL_FOOTER_ENABLED (false), EMAIL_FOOTER_TEXT
+  - **Rate limit**: EMAIL_ACCOUNT_TYPE ('workspace'), EMAIL_RATE_LIMIT_PER_HOUR (0=auto), EMAIL_RATE_LIMIT_PER_DAY (0=auto)
+  - **Labels**: EMAIL_CUSTOM_LABELS (JSON array)
+  - **Batching**: EMAIL_BATCH_WAIT_MS (0)
+  - **Sessions**: EMAIL_SESSION_INACTIVITY_HOURS (48), EMAIL_PRECLOSE_FOLLOWUP_HOURS (0), EMAIL_PRECLOSE_FOLLOWUP_TEXT
+  - **OAuth standalone**: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_TOKEN_REFRESH_BUFFER_MS (300000)
+  - **ACK**: ACK_EMAIL_TRIGGER_MS (0=off), ACK_EMAIL_HOLD_MS (2000), ACK_EMAIL_MESSAGE, ACK_EMAIL_STYLE ('formal')
+  - **Formato**: EMAIL_FORMAT_ADVANCED (false), FORMAT_INSTRUCTIONS_EMAIL, EMAIL_FORMAT_TONE ('profesional'), EMAIL_FORMAT_MAX_SENTENCES (4), EMAIL_FORMAT_MAX_PARAGRAPHS (4), EMAIL_FORMAT_EMOJI_LEVEL ('nunca')
+  - **Firma**: EMAIL_SIGNATURE_MODE ('gmail'), EMAIL_SIGNATURE_TEXT
+  - **Attachments**: EMAIL_ATT_IMAGES/DOCUMENTS/SPREADSHEETS/PRESENTATIONS/TEXT/AUDIO (all true), EMAIL_ATT_MAX_SIZE_MB (25), EMAIL_ATT_MAX_PER_MSG (10)
 
 ## Labels Gmail
 - **Default** (siempre existen): LUNA/Agent, LUNA/Escalated, LUNA/Converted, LUNA/Human-Loop, LUNA/Ignored

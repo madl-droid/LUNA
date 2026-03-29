@@ -11,7 +11,13 @@
 
 ## Manifest
 - type: `core-module`, removable: false, activateByDefault: true
-- configSchema: buffer, compresión, modelos, retención, purga, batch crons (20+ params)
+- configSchema (27 params):
+  - **Buffer/sesiones**: MEMORY_BUFFER_MESSAGE_COUNT (50), MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN (30), MEMORY_SESSION_MAX_TTL_HOURS (24)
+  - **Compresión**: MEMORY_COMPRESSION_THRESHOLD (30), MEMORY_COMPRESSION_KEEP_RECENT (10), MEMORY_COMPRESSION_MODEL ('claude-haiku-4-5-20251001')
+  - **Modelos**: MEMORY_EMBEDDING_MODEL ('text-embedding-3-small'), MEMORY_MAX_CONTACT_MEMORY_WORDS (2000)
+  - **Retención**: MEMORY_SUMMARY_RETENTION_DAYS (90), MEMORY_ARCHIVE_RETENTION_YEARS (5), MEMORY_PIPELINE_LOGS_RETENTION_DAYS (90), MEMORY_MEDIA_IMAGE_RETENTION_YEARS (5)
+  - **Purga**: MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS (true), MEMORY_PURGE_MERGED_SUMMARIES (false), MEMORY_RECOMPRESSION_INTERVAL_DAYS (30)
+  - **Batch crons**: MEMORY_BATCH_COMPRESS_CRON ('0 2 * * *'), MEMORY_BATCH_EMBEDDINGS_CRON ('30 2 * * *'), MEMORY_BATCH_MERGE_CRON ('0 3 * * *'), MEMORY_BATCH_RECOMPRESS_CRON ('0 4 1 * *'), MEMORY_BATCH_MEDIA_PURGE_CRON ('0 5 * * 0'), MEMORY_BATCH_LOGS_PURGE_CRON ('0 5 * * 0'), MEMORY_BATCH_ARCHIVE_PURGE_CRON ('0 5 1 * *')
 
 ## Servicio registrado
 - `memory:manager` — instancia de MemoryManager

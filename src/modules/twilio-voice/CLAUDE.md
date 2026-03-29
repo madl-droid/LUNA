@@ -16,6 +16,7 @@ Llamadas telefónicas con IA conversacional en tiempo real. Twilio provee la tel
 
 ## Manifest
 - type: `channel`, channelType: `voice`, removable: true, activateByDefault: false
+- console.title: "Twilio (Voz)" / "Twilio (Voice)"
 - depends: `['memory', 'llm']`
 - configSchema: 29 params organizados en secciones (Twilio, Gemini Live, Generación, VAD, Silencio, Límites)
 

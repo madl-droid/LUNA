@@ -10,6 +10,7 @@ Sigue el patrón estándar de canales instant (igual que WhatsApp): channel-conf
 
 ## Manifest
 - type: `channel`, channelType: `instant`, removable: true, activateByDefault: false
+- console.title: "Google Chat"
 - depends: [] (independiente, lee AGENT_NAME de prompts:service si disponible)
 - configSchema: conexión, rooms, threads, retries, cards, channel-runtime (aviso, rate, session, preclose)
 

@@ -92,10 +92,10 @@ await registry.runHook('message:send', payload)
 const result = await registry.callHook('llm:chat', payload)
 ```
 
-## Panel Console (oficina)
+## Panel Console
 
 ```typescript
-oficina: {
+console: {
   title: { es: '...', en: '...' },
   info:  { es: '...', en: '...' },
   order: 50,                    // posición en sidebar
@@ -108,14 +108,14 @@ oficina: {
 
 Tipos de campo: `text`, `textarea`, `secret`, `number`, `boolean`, `select`, `tags`, `duration`, `divider`, `readonly`, `model-select`.
 
-API routes se montan en `/oficina/api/{moduleName}/{path}`.
+API routes se montan en `/console/api/{moduleName}/{path}`.
 
 ## Verificación post-creación
 
 - [ ] Logs: `'Module discovered: mi-modulo'` al arrancar
 - [ ] Logs: `'Module activated: mi-modulo'`
 - [ ] `GET /health` incluye el módulo
-- [ ] Panel visible en `/oficina`
+- [ ] Panel visible en `/console`
 - [ ] Toggle OFF/ON funciona
 - [ ] CLAUDE.md creado y agregado a lista en CLAUDE.md raíz
 - [ ] **Si type='channel'**: `connectionWizard` definido con instrucciones, links, y campos
