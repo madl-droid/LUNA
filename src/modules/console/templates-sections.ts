@@ -1220,14 +1220,17 @@ function renderIdentitySection(data: SectionData): string {
   }
 
   // Build prompts column (left)
-  let promptsHtml = `<div class="ts-prompts-hint">${isEs ? 'Haz clic en una pestana para ver y editar el prompt' : 'Click a tab to view and edit the prompt'}</div>`
+  let promptsHtml = ''
+  let isFirstPrompt = true
 
   for (const p of prompts) {
     const value = cfg[p.key] || ''
     const slot = SLOT_MAP[p.key] || ''
     const lines = (value || ' ').split('\n')
     const lineNums = lines.map((_: string, i: number) => `<span class="code-editor-line-num">${i + 1}</span>`).join('')
-    promptsHtml += `<div class="panel collapsed u-mb-sm" data-slot="${esc(slot)}">
+    const collapsedCls = isFirstPrompt ? '' : 'collapsed'
+    isFirstPrompt = false
+    promptsHtml += `<div class="panel ${collapsedCls} u-mb-sm" data-slot="${esc(slot)}">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${esc(p.label)}</span>
         <button type="button" class="act-btn prompt-edit-btn ts-prompt-edit-btn" onclick="event.stopPropagation();promptEdit(this)">${isEs ? 'Editar' : 'Edit'}</button>
