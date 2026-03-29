@@ -62,6 +62,13 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
   let system = svc ? await svc.getSystemPrompt('evaluator-system') : ''
   if (!system) system = EVALUATOR_SYSTEM_FALLBACK
 
+  // Inject job + guardrails so the evaluator knows the agent's mission and rules
+  if (svc) {
+    const prompts = await svc.getCompositorPrompts(ctx.userType)
+    if (prompts.job) system += `\n\n--- TRABAJO ---\n${prompts.job}`
+    if (prompts.guardrails) system += `\n\n--- REGLAS ---\n${prompts.guardrails}`
+  }
+
   if (allowedTools.length > 15) {
     // Compact catalog: name + 1-line description only
     system += TOOL_CATALOG_COMPACT_HEADER
@@ -292,6 +299,13 @@ export async function buildProactiveEvaluatorPrompt(
   const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
   let system = svc ? await svc.getSystemPrompt('proactive-evaluator-system') : ''
   if (!system) system = PROACTIVE_EVALUATOR_SYSTEM_FALLBACK
+
+  // Inject job + guardrails so the proactive evaluator knows the agent's mission and rules
+  if (svc) {
+    const prompts = await svc.getCompositorPrompts(ctx.userType ?? 'lead')
+    if (prompts.job) system += `\n\n--- TRABAJO ---\n${prompts.job}`
+    if (prompts.guardrails) system += `\n\n--- REGLAS ---\n${prompts.guardrails}`
+  }
 
   // Add available tools
   if (toolCatalog.length > 0) {
