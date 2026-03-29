@@ -334,7 +334,17 @@ async function handleExtraction(
   // Multi-framework: detect client type first if unknown
   const clientType = existingData['_client_type'] as ClientType | undefined
   if (!clientType && active.length > 1) {
-    return await handleClientTypeDetection(messageText, contactId, agentSlug, existingData, currentStatus, config, db, registry)
+    const detection = await handleClientTypeDetection(messageText, contactId, agentSlug, existingData, currentStatus, config, db, registry)
+    if (!detection.success) return detection
+    // If client type was detected, update existingData in memory so resolveFramework works
+    const detectedType = (detection.data as Record<string, unknown> | undefined)?.clientTypeDetected
+    if (detectedType) {
+      existingData['_client_type'] = detectedType
+    } else {
+      // Could not determine client type — return without extracting
+      return detection
+    }
+    // Fall through to normal extraction with the now-known client type
   }
 
   // Resolve framework

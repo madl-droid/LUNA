@@ -85,23 +85,24 @@ export class ConfigStore {
    * Enable/disable a framework and set its objective.
    */
   setFramework(frameworkType: FrameworkType, enabled: boolean, objective?: FrameworkObjective): QualifyingConfig {
-    const existing = this.config.frameworks.find(f => f.type === frameworkType)
+    const clone = JSON.parse(JSON.stringify(this.config)) as QualifyingConfig
+    const existing = clone.frameworks.find(f => f.type === frameworkType)
     if (existing) {
       existing.enabled = enabled
       if (objective) existing.objective = objective
     } else if (enabled) {
       const preset = FRAMEWORK_PRESETS[frameworkType]!
-      this.config.frameworks.push({
+      clone.frameworks.push({
         type: frameworkType,
         enabled: true,
         objective: objective ?? 'schedule',
-        stages: preset.stages,
-        criteria: preset.criteria,
-        disqualifyReasons: preset.disqualifyReasons,
-        essentialQuestions: preset.essentialQuestions,
+        stages: JSON.parse(JSON.stringify(preset.stages)),
+        criteria: JSON.parse(JSON.stringify(preset.criteria)),
+        disqualifyReasons: JSON.parse(JSON.stringify(preset.disqualifyReasons)),
+        essentialQuestions: [...preset.essentialQuestions],
       })
     }
-    this.save(this.config)
+    this.save(clone)
     return this.config
   }
 
@@ -110,14 +111,15 @@ export class ConfigStore {
    */
   resetFrameworkToPreset(frameworkType: FrameworkType): QualifyingConfig {
     const preset = FRAMEWORK_PRESETS[frameworkType]!
-    const existing = this.config.frameworks.find(f => f.type === frameworkType)
+    const clone = JSON.parse(JSON.stringify(this.config)) as QualifyingConfig
+    const existing = clone.frameworks.find(f => f.type === frameworkType)
     if (existing) {
-      existing.stages = preset.stages
-      existing.criteria = preset.criteria
-      existing.disqualifyReasons = preset.disqualifyReasons
-      existing.essentialQuestions = preset.essentialQuestions
+      existing.stages = JSON.parse(JSON.stringify(preset.stages))
+      existing.criteria = JSON.parse(JSON.stringify(preset.criteria))
+      existing.disqualifyReasons = JSON.parse(JSON.stringify(preset.disqualifyReasons))
+      existing.essentialQuestions = [...preset.essentialQuestions]
     }
-    this.save(this.config)
+    this.save(clone)
     return this.config
   }
 

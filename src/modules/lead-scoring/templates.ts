@@ -744,12 +744,16 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
       '<div class="ls-weight-total" style="color:' + weightColor + '" id="ls-weight-total">' + L.weight_total + ': ' + totalWeight + '/100</div>'
   }
 
+  function lsEsc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  }
+
   function buildCriRow(cr, i) {
-    var nameVal = (cr.name && (cr.name[LANG] || cr.name.es)) || ''
-    var optVal = (cr.options || []).join(',')
+    var nameVal = lsEsc((cr.name && (cr.name[LANG] || cr.name.es)) || '')
+    var optVal = lsEsc((cr.options || []).join(','))
     var optDisabled = cr.type !== 'enum' ? 'disabled' : ''
     return '<tr data-ls-cri="' + i + '">' +
-      '<td><input value="' + (cr.key||'') + '" data-field="key" style="width:80px" readonly></td>' +
+      '<td><input value="' + lsEsc(cr.key||'') + '" data-field="key" style="width:80px" readonly></td>' +
       '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\'name\',this.value)"></td>' +
       '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\'type\',this.value)">' +
         '<option value="text"' + (cr.type==='text'?' selected':'') + '>' + L.type_text + '</option>' +
@@ -814,8 +818,8 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   window.lsAddCri = function() {
     var fw = getActiveFw()
     if (!fw) return
-    var activeCard = document.querySelector('.ls-fw-card.active')
-    var stage = activeCard ? activeCard.getAttribute('data-fw') : ''
+    // Use first stage of the framework as default (not the framework type)
+    var stage = (fw.stages && fw.stages.length > 0) ? fw.stages[0].key : ''
     var stageCount = fw.criteria.filter(function(c) { return c.stage === stage }).length
     if (stageCount >= 5) {
       if (window.showToast) showToast('Maximo 5 criterios por etapa', 'error')
@@ -825,7 +829,7 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
       key: '', name: { es: '', en: '' }, type: 'text', weight: 0,
       required: false, neverAskDirectly: false, stage: stage
     })
-    lsSaveConfig()
+    location.reload()
   }
 
   function updateWeightTotal() {
