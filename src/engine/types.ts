@@ -604,4 +604,11 @@ export interface EngineConfig {
 
   // FIX: E-30 — Agent slug (no hardcoding 'luna')
   agentSlug: string
+
+  // Checkpoints (resumable pipelines)
+  checkpointEnabled: boolean
+  /** Max age (ms) of incomplete checkpoints eligible for resume on startup */
+  checkpointResumeWindowMs: number
+  /** Days after which completed/failed checkpoints are purged */
+  checkpointCleanupDays: number
 }

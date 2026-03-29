@@ -185,6 +185,7 @@ Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.
 009_db-cleanup.sql           — drop unused tables, add indexes, final column cleanup
 010_alter-ego-v1.sql         — trace_scenarios, trace_runs, trace_results (Cortex simulation & testing)
 011_cross-channel-v1.sql     — relax proactive_outreach_log channel constraint for all channels
+012_task-checkpoints.sql     — task_checkpoints table for resumable pipeline execution
 ```
 
 ### Cómo agregar una nueva migración
@@ -266,6 +267,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/cortex/CLAUDE.md` — sistema nervioso: monitoreo, alertas, Reflex, Pulse, Trace (simulación y testing)
 - `src/tools/freshdesk/CLAUDE.md` — Freshdesk Knowledge Base (búsqueda, artículos, sync semanal)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
+- `src/engine/checkpoints/CLAUDE.md` — checkpoints para pipelines resumibles
 - `deploy/CLAUDE.md` — infraestructura y despliegue
 
 ### Docs de referencia (consultar cuando sea relevante)

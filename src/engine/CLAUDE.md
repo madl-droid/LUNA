@@ -17,6 +17,12 @@ concurrency/
   contact-lock.ts     — serialización per-contacto (capa 2)
   step-semaphore.ts   — concurrencia de steps en Phase 3 (capa 3)
 
+checkpoints/
+  types.ts            — TaskCheckpoint, Phase1Snapshot, CheckpointStatus
+  checkpoint-manager.ts — CRUD + resume + cleanup para task_checkpoints
+  index.ts            — re-exports
+  CLAUDE.md           — documentación del subsistema
+
 phases/
   phase1-intake.ts    — normalización + context loading via memory:manager + users:resolve (<200ms)
   phase2-evaluate.ts  — evaluación con LLM (reactivo + proactivo, NO_ACTION)
