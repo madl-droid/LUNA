@@ -3,6 +3,7 @@
 
 export { initEngine, processMessage, stopEngine, getEngineConfig, getEngineStats, reloadEngineConfig } from './engine.js'
 export { processProactive } from './proactive/proactive-pipeline.js'
+export { CheckpointManager } from './checkpoints/index.js'
 
 // Types
 export type {

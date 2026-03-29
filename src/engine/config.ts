@@ -136,5 +136,10 @@ export function loadEngineConfig(): EngineConfig {
 
     // FIX: E-30 — Agent slug (fallback 'luna' for backward compat)
     agentSlug: env('AGENT_SLUG', 'luna'),
+
+    // Checkpoints (resumable pipelines)
+    checkpointEnabled: envBool('ENGINE_CHECKPOINT_ENABLED', true),
+    checkpointResumeWindowMs: envInt('ENGINE_CHECKPOINT_RESUME_WINDOW_MS', 300000), // 5 min
+    checkpointCleanupDays: envInt('ENGINE_CHECKPOINT_CLEANUP_DAYS', 7),
   }
 }
