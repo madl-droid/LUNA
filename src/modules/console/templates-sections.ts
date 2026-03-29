@@ -1127,6 +1127,7 @@ function renderIdentitySection(data: SectionData): string {
     { key: 'PROMPT_IDENTITY', label: isEs ? 'Identidad' : 'Identity', title: 'IDENTITY PROMPT' },
     { key: 'PROMPT_JOB', label: isEs ? 'Descripcion del trabajo' : 'Job description', title: 'JOB DESCRIPTION PROMPT' },
     { key: 'PROMPT_GUARDRAILS', label: isEs ? 'Reglas' : 'Rules', title: 'RULES PROMPT' },
+    { key: 'PROMPT_CRITICIZER', label: isEs ? 'Checklist de calidad' : 'Quality checklist', title: 'QUALITY CHECKLIST PROMPT' },
   ]
 
   // Language → accent mapping (BCP-47 code → country label)
@@ -1215,6 +1216,7 @@ function renderIdentitySection(data: SectionData): string {
     PROMPT_IDENTITY: 'identity',
     PROMPT_JOB: 'job',
     PROMPT_GUARDRAILS: 'guardrails',
+    PROMPT_CRITICIZER: 'criticizer',
   }
 
   // Build prompts column (left)
@@ -1258,15 +1260,25 @@ function renderIdentitySection(data: SectionData): string {
   const agentLastName = cfg['AGENT_LAST_NAME'] || ''
   const agentLang = cfg['AGENT_LANGUAGE'] || 'es'
   const agentAccent = cfg['AGENT_ACCENT'] || ''
+  const agentCountry = cfg['AGENT_COUNTRY'] || ''
+  const companyName = cfg['COMPANY_NAME'] || ''
 
   const langSelectHtml = langOptions.map(o =>
     `<option value="${o.value}" ${o.value === agentLang ? 'selected' : ''}>${esc(o.label)}</option>`
   ).join('')
 
+  // Build country options for current language (derived from ACCENT_MAP)
+  const currentCountries = ACCENT_MAP[agentLang] || []
+  const noCountryLabel = isEs ? '— Sin especificar —' : '— Not specified —'
+  const countryOptionsHtml = `<option value="">${esc(noCountryLabel)}</option>` +
+    currentCountries.map(a =>
+      `<option value="${esc(a.country)}" ${a.country === agentCountry ? 'selected' : ''}>${esc(a.country)}</option>`
+    ).join('')
+
   // Build accent options for current language
   const currentAccents = ACCENT_MAP[agentLang] || []
-  const noAccent = isEs ? 'Sin acento (neutro)' : 'No accent (neutral)'
-  const accentOptionsHtml = `<option value="">${esc(noAccent)}</option>` +
+  const neutralLabel = isEs ? 'Neutro' : 'Neutral'
+  const accentOptionsHtml = `<option value="">${esc(neutralLabel)}</option>` +
     currentAccents.map(a =>
       `<option value="${esc(a.code)}" ${a.code === agentAccent ? 'selected' : ''}>${esc(a.country)} (${esc(a.code)})</option>`
     ).join('')
@@ -1276,16 +1288,18 @@ function renderIdentitySection(data: SectionData): string {
       <span class="panel-title">${isEs ? 'Identidad del agente' : 'Agent identity'}</span>
     </div>
     <div class="panel-body">
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Empresa' : 'Company'} *</span></div>
+        <input type="text" name="COMPANY_NAME" value="${esc(companyName)}" data-original="${esc(companyName)}" required></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Nombre' : 'Name'} *</span></div>
         <input type="text" name="AGENT_NAME" value="${esc(agentName)}" data-original="${esc(agentName)}" required></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Apellido' : 'Last name'} *</span></div>
-        <input type="text" name="AGENT_LAST_NAME" value="${esc(agentLastName)}" data-original="${esc(agentLastName)}" required></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Cargo' : 'Title'} *</span></div>
-        <input type="text" name="AGENT_TITLE" value="${esc(cfg['AGENT_TITLE'] || '')}" data-original="${esc(cfg['AGENT_TITLE'] || '')}" required></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Apellido' : 'Last name'}</span></div>
+        <input type="text" name="AGENT_LAST_NAME" value="${esc(agentLastName)}" data-original="${esc(agentLastName)}"></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Cargo' : 'Title'}</span></div>
+        <input type="text" name="AGENT_TITLE" value="${esc(cfg['AGENT_TITLE'] || '')}" data-original="${esc(cfg['AGENT_TITLE'] || '')}"></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Idioma principal' : 'Main language'} *</span></div>
         <select name="AGENT_LANGUAGE" data-original="${esc(agentLang)}" id="agent-language-select" class="js-custom-select">${langSelectHtml}</select></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Pais' : 'Country'}</span></div>
-        <input type="text" name="AGENT_COUNTRY" value="${esc(cfg['AGENT_COUNTRY'] || '')}" data-original="${esc(cfg['AGENT_COUNTRY'] || '')}"></div>
+      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Pa\u00eds' : 'Country'}</span></div>
+        <select name="AGENT_COUNTRY" data-original="${esc(agentCountry)}" id="agent-country-select" class="js-custom-select">${countryOptionsHtml}</select></div>
       <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Acento' : 'Accent'}</span></div>
         <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select" class="js-custom-select">${accentOptionsHtml}</select></div>
     </div>
@@ -1294,24 +1308,32 @@ function renderIdentitySection(data: SectionData): string {
   <script>
   (function() {
     var langSel = document.getElementById('agent-language-select');
+    var countrySel = document.getElementById('agent-country-select');
     var accentSel = document.getElementById('agent-accent-select');
     var accentMap = JSON.parse(document.getElementById('accent-map-data').textContent);
     var isEs = ${isEs ? 'true' : 'false'};
     var accentWarningMsg = ${JSON.stringify(isEs
-      ? 'Si configuras un acento, el agente puede tener dificultades al responder en otros idiomas. ¿Deseas continuar?'
+      ? 'Si configuras un acento, el agente puede tener dificultades al responder en otros idiomas. \u00bfDeseas continuar?'
       : 'Setting an accent may cause issues when responding in other languages. Continue?')};
 
-    if (!langSel || !accentSel) return;
+    if (!langSel || !countrySel || !accentSel) return;
 
     langSel.addEventListener('change', function() {
       var selectedLang = langSel.value;
-      var accents = accentMap[selectedLang] || [];
-      var noAccentLabel = isEs ? 'Sin acento (neutro)' : 'No accent (neutral)';
-      var html = '<option value="">' + noAccentLabel + '</option>';
-      accents.forEach(function(a) {
-        html += '<option value="' + a.code + '">' + a.country + ' (' + a.code + ')</option>';
-      });
-      accentSel.innerHTML = html;
+      var entries = accentMap[selectedLang] || [];
+      var neutralLbl = isEs ? 'Neutro' : 'Neutral';
+      var noCountryLbl = isEs ? '\u2014 Sin especificar \u2014' : '\u2014 Not specified \u2014';
+
+      // Update country dropdown
+      var ch = '<option value="">' + noCountryLbl + '</option>';
+      entries.forEach(function(a) { ch += '<option value="' + a.country + '">' + a.country + '</option>'; });
+      countrySel.innerHTML = ch;
+      countrySel.value = '';
+
+      // Update accent dropdown
+      var ah = '<option value="">' + neutralLbl + '</option>';
+      entries.forEach(function(a) { ah += '<option value="' + a.code + '">' + a.country + ' (' + a.code + ')</option>'; });
+      accentSel.innerHTML = ah;
       accentSel.value = '';
     });
 
@@ -1326,24 +1348,12 @@ function renderIdentitySection(data: SectionData): string {
   </script>`
 
   // --- Condensed Voice (TTS) panel for column 2 ---
-  const ttsActive = data.moduleStates?.some(m => m.name === 'tts' && m.active) ?? false
+  // TTS uses the general Google AI API key (same as Gemini LLM)
+  const ttsHasApiKey = !!(cfg['GOOGLE_AI_API_KEY'])
+  const ttsEnabled = (cfg['TTS_ENABLED'] ?? 'true') === 'true'
 
   let voicePanelHtml = ''
-  if (!ttsActive) {
-    const ttsMsg = isEs
-      ? 'El modulo de voz (TTS) no esta activado. Activalo desde <a href="/console/modules">Modulos</a>.'
-      : 'The voice (TTS) module is not active. Activate it from <a href="/console/modules">Modules</a>.'
-    voicePanelHtml = `<div class="panel collapsed u-mt-md">
-      <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}</span>
-        <span class="panel-chevron">&#9660;</span>
-      </div>
-      <div class="panel-body">
-        <div class="panel-info module-inactive-notice">${ttsMsg}</div>
-      </div>
-    </div>`
-  } else {
-    const ttsHasApiKey = !!(cfg['TTS_GOOGLE_API_KEY'])
+  {
     const ttsAudioFreq = cfg['TTS_AUDIO_TO_AUDIO_FREQ'] || '80'
     const ttsTextFreq = cfg['TTS_TEXT_TO_AUDIO_FREQ'] || '10'
     const ttsMaxDur = cfg['TTS_MAX_DURATION'] || '2'
@@ -1360,10 +1370,10 @@ function renderIdentitySection(data: SectionData): string {
     ).join('')
 
     const ttsDurOpts = [
-      { value: '1', label: isEs ? '~1 min' : '~1 min' },
-      { value: '2', label: isEs ? '~2 min' : '~2 min' },
-      { value: '3', label: isEs ? '~3 min' : '~3 min' },
-      { value: '5', label: isEs ? '~5 min' : '~5 min' },
+      { value: '1', label: '~1 min' },
+      { value: '2', label: '~2 min' },
+      { value: '3', label: '~3 min' },
+      { value: '5', label: '~5 min' },
     ]
     const ttsDurSel = ttsDurOpts.map(d =>
       `<option value="${d.value}" ${d.value === ttsMaxDur ? 'selected' : ''}>${d.label}</option>`
@@ -1394,23 +1404,39 @@ function renderIdentitySection(data: SectionData): string {
       `<option value="${esc(v.value)}" ${v.value === ttsVoice ? 'selected' : ''}>${esc(v.label)}</option>`
     ).join('')
 
-    const ttsApiStatus = ttsHasApiKey
-      ? `<span class="panel-badge badge-active">${isEs ? 'API Key OK' : 'API Key OK'}</span>`
-      : `<span class="panel-badge" class="ts-badge-error">${isEs ? 'Sin API Key' : 'No API Key'}</span>`
+    const ttsStatusBadge = !ttsEnabled
+      ? `<span class="panel-badge">${isEs ? 'Desactivado' : 'Disabled'}</span>`
+      : ttsHasApiKey
+        ? `<span class="panel-badge badge-active">${isEs ? 'Activo' : 'Active'}</span>`
+        : `<span class="panel-badge ts-badge-error">${isEs ? 'Sin API Key de Google' : 'No Google API Key'}</span>`
+
+    const ttsNoKeyMsg = !ttsHasApiKey
+      ? `<div class="panel-info module-inactive-notice" style="margin-bottom:8px">${isEs
+          ? 'Se necesita una API Key de Google AI para TTS. Config\u00farala en <a href="/console/llm">LLM \u2192 API Keys</a>.'
+          : 'A Google AI API Key is needed for TTS. Configure it in <a href="/console/llm">LLM \u2192 API Keys</a>.'}</div>`
+      : ''
 
     voicePanelHtml = `<div class="panel collapsed u-mt-md">
       <div class="panel-header" onclick="togglePanel(this)">
         <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}</span>
-        ${ttsApiStatus}
+        ${ttsStatusBadge}
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body ts-tts-body-compact">
+        <div class="ts-tts-field-compact" style="margin-bottom:12px">
+          <label class="ts-tts-label-compact" style="font-weight:600">${isEs ? 'Activar TTS' : 'Enable TTS'}</label>
+          <label class="toggle-switch" style="margin-left:auto">
+            <input type="checkbox" name="TTS_ENABLED" value="true" data-original="${ttsEnabled ? 'true' : 'false'}" ${ttsEnabled ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        ${ttsNoKeyMsg}
         <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Audio → Audio' : 'Audio → Audio'}</label>
+          <label class="ts-tts-label-compact">${isEs ? 'Audio \u2192 Audio' : 'Audio \u2192 Audio'}</label>
           <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(ttsAudioFreq)}" class="ts-tts-select-compact js-custom-select">${ttsAudioFreqSel}</select>
         </div>
         <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Texto → Audio' : 'Text → Audio'}</label>
+          <label class="ts-tts-label-compact">${isEs ? 'Texto \u2192 Audio' : 'Text \u2192 Audio'}</label>
           <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(ttsTextFreq)}" class="ts-tts-select-compact js-custom-select">${ttsTextFreqSel}</select>
         </div>
         <div class="ts-tts-field-compact">
@@ -1435,16 +1461,6 @@ function renderIdentitySection(data: SectionData): string {
             <input type="range" id="id-tts-pitch" name="TTS_PITCH" min="-20.0" max="20.0" step="0.5" value="${esc(ttsPitch)}"
               data-original="${esc(ttsPitch)}" oninput="document.getElementById('id-tts-pitch-val').textContent=this.value" class="range-primary">
             <span id="id-tts-pitch-val" class="ts-tts-range-value-compact">${esc(ttsPitch)}</span>
-          </div>
-        </div>
-        <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">API Key</label>
-          <div class="ts-tts-password-wrap">
-            <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              class="ts-tts-select-compact js-custom-select" class="input-with-icon" placeholder="AIza...">
-            <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
-              class="ts-tts-toggle-vis-compact">&#128065;</button>
           </div>
         </div>
         <div class="ts-tts-preview-area-compact">
@@ -1535,7 +1551,7 @@ function renderIdentitySection(data: SectionData): string {
 </script>`
 
   // --- TTS preview script for identity page ---
-  const idTtsPreviewScript = ttsActive ? `<script>
+  const idTtsPreviewScript = ttsHasApiKey ? `<script>
 (function(){
   window.idTtsPreview = async function() {
     var btn = document.getElementById('id-tts-preview-btn');
