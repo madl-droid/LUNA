@@ -2,7 +2,7 @@
 // Renders lead-scoring qualification view: filters, metrics, frameworks, behavior, signals.
 
 import type { ConfigStore } from './config-store.js'
-import type { QualifyingConfig, FrameworkType } from './types.js'
+import type { QualifyingConfig, FrameworkConfig, FrameworkType } from './types.js'
 
 type Lang = 'es' | 'en'
 
@@ -196,18 +196,9 @@ export function renderLeadScoringConsole(store: ConfigStore, lang: Lang): string
       ${renderCriteriaPanel(config, lang)}
     </div>
 
-    <!-- Settings tabs: Comportamiento | Senales automaticas -->
-    <div class="ls-settings-tabs">
-      <button class="ls-stab ls-stab-active" onclick="lsSettingsTab('behavior')" id="ls-stab-behavior">${l('tab_behavior', lang)}</button>
-      <button class="ls-stab" onclick="lsSettingsTab('signals')" id="ls-stab-signals">${l('tab_signals', lang)}</button>
-    </div>
-
+    <!-- Settings: Comportamiento -->
     <div id="ls-settings-behavior">
       ${renderBehaviorTab(config, lang)}
-    </div>
-
-    <div id="ls-settings-signals" style="display:none">
-      ${renderSignalsTab(config, lang)}
     </div>
 
     <!-- Save button -->
@@ -412,44 +403,59 @@ const FRAMEWORK_DEFS: Array<{ value: FrameworkType; nameKey: string; typeKey: st
 ]
 
 function renderFrameworkCards(config: QualifyingConfig, lang: Lang): string {
-  const activeFw = config.framework || 'spin'
+  const enabledTypes = new Set(config.frameworks.filter(f => f.enabled).map(f => f.type))
 
   const cards = FRAMEWORK_DEFS.map(fw => {
-    const isActive = fw.value === activeFw
+    const isActive = enabledTypes.has(fw.value)
     const activeClass = isActive ? ' active' : ''
     const toggleClass = isActive ? ' on' : ''
+    const fwConfig = config.frameworks.find(f => f.type === fw.value)
+    const objective = fwConfig?.objective ?? 'schedule'
 
     return `
       <div class="ls-fw-card${activeClass}" id="ls-fw-card-${fw.value}" data-fw="${fw.value}">
         <div class="ls-fw-card-type">${l(fw.typeKey, lang)}</div>
         <div class="ls-fw-card-title">${l(fw.nameKey, lang)}</div>
         <div class="ls-fw-card-desc">${l(fw.descKey, lang)}</div>
+        <div style="font-size:11px;color:var(--on-surface-dim);margin-bottom:8px">
+          ${lang === 'es' ? 'Objetivo' : 'Objective'}:
+          <select style="font-size:11px;padding:2px 6px;border:1px solid var(--outline-variant);border-radius:4px;background:var(--surface-container-lowest);color:var(--on-surface)"
+            onchange="lsSetObjective('${fw.value}',this.value)" ${!isActive ? 'disabled' : ''}>
+            <option value="schedule" ${objective === 'schedule' ? 'selected' : ''}>${l('act_scheduled', lang)}</option>
+            <option value="sell" ${objective === 'sell' ? 'selected' : ''}>Vender</option>
+            <option value="escalate" ${objective === 'escalate' ? 'selected' : ''}>${l('act_escalate_human', lang)}</option>
+            <option value="attend_only" ${objective === 'attend_only' ? 'selected' : ''}>Solo atender</option>
+          </select>
+        </div>
         <div class="ls-fw-card-actions">
           <button type="button" class="ls-fw-toggle${toggleClass}" id="ls-fw-toggle-${fw.value}"
-            onclick="lsToggleFramework('${fw.value}')"></button>
+            onclick="lsToggleFramework('${fw.value}',${isActive})"></button>
           <button type="button" class="wa-btn" onclick="lsViewFramework('${fw.value}')"
             style="font-size:11px;padding:3px 10px" id="ls-fw-view-${fw.value}">${l('fw_view', lang)}</button>
         </div>
       </div>`
   }).join('')
 
+  const enabledCount = enabledTypes.size
+  const noteDisplay = enabledCount > 1 ? 'block' : 'none'
+
   return `
     <div class="ls-fw-grid">
       ${cards}
     </div>
-    <div class="ls-fw-note" id="ls-fw-multi-note">${l('fw_multi_note', lang)}</div>`
+    <div class="ls-fw-note" id="ls-fw-multi-note" style="display:${noteDisplay}">${l('fw_multi_note', lang)}</div>`
 }
 
 // ═══════════════════════════════════════════
 // Criteria panel (shown when "Ver" clicked)
 // ═══════════════════════════════════════════
 
-function renderCriterionRow(cr: QualifyingConfig['criteria'][number], i: number, lang: Lang, _stageCount: number): string {
+function renderCriterionRow(cr: FrameworkConfig['criteria'][number], i: number, lang: Lang, _stageCount: number): string {
   const nameVal = esc(cr.name[lang] || cr.name.es)
 
   return `
     <tr data-ls-cri="${i}">
-      <td><input value="${esc(cr.key)}" data-field="key" style="width:80px" onchange="lsUpdateCri(${i},'key',this.value)"></td>
+      <td><input value="${esc(cr.key)}" data-field="key" style="width:80px" readonly></td>
       <td><input value="${nameVal}" data-field="name" onchange="lsUpdateCri(${i},'name',this.value)"></td>
       <td><select data-field="type" onchange="lsUpdateCri(${i},'type',this.value)">
         <option value="text" ${cr.type === 'text' ? 'selected' : ''}>${l('type_text', lang)}</option>
@@ -469,9 +475,15 @@ function renderCriterionRow(cr: QualifyingConfig['criteria'][number], i: number,
 }
 
 function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
-  const totalWeight = config.criteria.reduce((s, c) => s + c.weight, 0)
+  // Default: show first enabled framework's criteria
+  const fw = config.frameworks.find(f => f.enabled) ?? config.frameworks[0]
+  if (!fw) return '<p>No framework configured</p>'
+
+  const criteria = fw.criteria
+  const stages = fw.stages
+  const totalWeight = criteria.reduce((s, c) => s + c.weight, 0)
   const weightColor = totalWeight === 100 ? 'var(--success)' : 'var(--warning)'
-  const hasStages = config.stages && config.stages.length > 0
+  const hasStages = stages && stages.length > 0
 
   const theadCols = `
     <th>${l('th_key', lang)}</th><th>${l('th_name', lang)}</th>
@@ -481,9 +493,9 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
   let bodyHtml: string
 
   if (hasStages) {
-    const sortedStages = [...config.stages].sort((a, b) => a.order - b.order)
+    const sortedStages = [...stages].sort((a, b) => a.order - b.order)
     const stageBlocks = sortedStages.map(stage => {
-      const stageCriteria = config.criteria
+      const stageCriteria = criteria
         .map((cr, i) => ({ cr, i }))
         .filter(({ cr }) => cr.stage === stage.key)
 
@@ -502,7 +514,7 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
       const rows = stageCriteria.map(({ cr, i }) => renderCriterionRow(cr, i, lang, stageCriteria.length)).join('')
       return stageHeader + rows
     }).join('')
-    const orphans = config.criteria
+    const orphans = criteria
       .map((cr, i) => ({ cr, i }))
       .filter(({ cr }) => !cr.stage)
     const orphanRows = orphans.length > 0
@@ -511,7 +523,7 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
 
     bodyHtml = stageBlocks + orphanRows
   } else {
-    bodyHtml = config.criteria.map((cr, i) => renderCriterionRow(cr, i, lang, config.criteria.length)).join('')
+    bodyHtml = criteria.map((cr, i) => renderCriterionRow(cr, i, lang, criteria.length)).join('')
   }
 
   return `
@@ -534,24 +546,8 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
 // ═══════════════════════════════════════════
 
 function renderBehaviorTab(config: QualifyingConfig, lang: Lang): string {
-  const currentAction = config.defaultQualifiedAction || 'scheduled'
-
   return `
     <div style="padding:12px 0">
-      <!-- Post-qualification action -->
-      <div class="ls-setting-row">
-        <div class="ls-setting-left">
-          <span class="ls-setting-label">${l('sec_post_action', lang)}</span>
-          <span class="ls-info-icon" title="${l('sec_post_action_info', lang)}">i</span>
-          <div class="ls-setting-info">${l('sec_post_action_info', lang)}</div>
-        </div>
-        <select id="ls-post-action" onchange="lsConfig.defaultQualifiedAction=this.value" style="padding:6px 10px;border:1px solid var(--outline-variant);border-radius:6px;font-size:13px;min-width:160px">
-          <option value="scheduled" ${currentAction === 'scheduled' ? 'selected' : ''}>${l('act_scheduled', lang)}</option>
-          <option value="payment_link" disabled class="ls-dropdown-disabled">${l('act_payment_link', lang)} — ${l('act_payment_link_soon', lang)}</option>
-          <option value="escalate_human" ${currentAction === 'escalate_human' ? 'selected' : ''}>${l('act_escalate_human', lang)}</option>
-        </select>
-      </div>
-
       <!-- Min confidence slider -->
       <div class="ls-setting-row">
         <div class="ls-setting-left">
@@ -598,42 +594,6 @@ function renderBehaviorTab(config: QualifyingConfig, lang: Lang): string {
 }
 
 // ═══════════════════════════════════════════
-// Signals tab
-// ═══════════════════════════════════════════
-
-function renderSignalsTab(config: QualifyingConfig, lang: Lang): string {
-  const signals = config.autoSignals || []
-
-  const signalDefs = [
-    { key: 'response_speed', nameKey: 'sig_response_speed', descKey: 'sig_response_speed_desc' },
-    { key: 'question_count', nameKey: 'sig_question_count', descKey: 'sig_question_count_desc' },
-    { key: 'has_campaign', nameKey: 'sig_has_campaign', descKey: 'sig_has_campaign_desc' },
-  ]
-
-  const rows = signalDefs.map(def => {
-    const sig = signals.find(s => s.key === def.key)
-    const enabled = sig?.enabled ?? false
-    const toggleClass = enabled ? ' on' : ''
-    const idx = signals.findIndex(s => s.key === def.key)
-
-    return `
-      <div class="ls-setting-row">
-        <div class="ls-setting-left">
-          <span class="ls-setting-label">${l(def.nameKey, lang)}</span>
-          <div class="ls-setting-info">${l(def.descKey, lang)}</div>
-        </div>
-        <button type="button" class="ls-sig-toggle${toggleClass}" id="ls-sig-${def.key}"
-          onclick="lsToggleSignal('${def.key}',${idx})"></button>
-      </div>`
-  }).join('')
-
-  return `
-    <div style="padding:12px 0">
-      ${rows}
-    </div>`
-}
-
-// ═══════════════════════════════════════════
 // Client script
 // ═══════════════════════════════════════════
 
@@ -650,14 +610,6 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   var lsViewingFw = null
 
   window.lsConfig = lsConfig
-
-  // ═══ Settings tabs ═══
-  window.lsSettingsTab = function(tab) {
-    document.getElementById('ls-settings-behavior').style.display = tab === 'behavior' ? '' : 'none'
-    document.getElementById('ls-settings-signals').style.display = tab === 'signals' ? '' : 'none'
-    document.getElementById('ls-stab-behavior').className = 'ls-stab' + (tab === 'behavior' ? ' ls-stab-active' : '')
-    document.getElementById('ls-stab-signals').className = 'ls-stab' + (tab === 'signals' ? ' ls-stab-active' : '')
-  }
 
   // ═══ Filters ═══
   window.lsApplyFilters = function() {
@@ -716,16 +668,26 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   }
 
   // ═══ Framework toggle & view ═══
-  window.lsToggleFramework = function(fw) {
-    if (!confirm(L.fw_confirm)) return
-    fetch(API + '/apply-framework', {
+  window.lsToggleFramework = function(fw, currentlyEnabled) {
+    fetch(API + '/set-framework', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ framework: fw })
+      body: JSON.stringify({ framework: fw, enabled: !currentlyEnabled })
     }).then(function(r){return r.json()}).then(function(d) {
       if (d.ok) { lsToast(L.fw_applied, 'success'); location.reload() }
       else lsToast(d.error || L.fw_apply_error, 'error')
     }).catch(function(){ lsToast(L.fw_apply_error, 'error') })
+  }
+
+  window.lsSetObjective = function(fw, objective) {
+    fetch(API + '/set-framework', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ framework: fw, enabled: true, objective: objective })
+    }).then(function(r){return r.json()}).then(function(d) {
+      if (d.ok) { lsToast(L.saved, 'success') }
+      else lsToast(d.error || L.save_error, 'error')
+    }).catch(function(){ lsToast(L.save_error, 'error') })
   }
 
   window.lsViewFramework = function(fw) {
@@ -738,30 +700,94 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     }
     lsViewingFw = fw
     panel.style.display = ''
-    // Reload config to show criteria for active framework
-    fetch(API + '/config').then(function(r){return r.json()}).then(function(d) {
-      if (d.config) {
-        lsConfig = d.config
-        window.lsConfig = lsConfig
-      }
-    }).catch(function(){})
+    // Re-render criteria panel for the selected framework
+    lsRenderCriteriaForFw(fw)
   }
 
-  // Check multi-framework note
-  function checkMultiNote() {
-    var note = document.getElementById('ls-fw-multi-note')
-    if (!note) return
-    var fwCards = document.querySelectorAll('.ls-fw-card')
-    note.style.display = fwCards.length > 1 ? 'block' : 'none'
+  function lsRenderCriteriaForFw(fwType) {
+    var fwObj = lsConfig.frameworks ? lsConfig.frameworks.find(function(f){return f.type === fwType}) : null
+    if (!fwObj) return
+    var panel = document.getElementById('ls-criteria-panel')
+    if (!panel) return
+
+    var criteria = fwObj.criteria || []
+    var stages = fwObj.stages || []
+    var totalWeight = criteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
+    var weightColor = totalWeight === 100 ? 'var(--success)' : 'var(--warning)'
+
+    var theadCols = '<th>' + L.th_key + '</th><th>' + L.th_name + '</th>' +
+      '<th>' + L.th_type + '</th><th>' + L.th_options + '</th><th>' + L.th_weight + '</th>' +
+      '<th>' + L.th_required + '</th><th>' + L.th_never_ask + '</th><th></th>'
+
+    var bodyHtml = ''
+    if (stages.length > 0) {
+      stages.sort(function(a,b){return a.order - b.order})
+      stages.forEach(function(stage) {
+        var stageCri = []
+        criteria.forEach(function(cr, i) { if (cr.stage === stage.key) stageCri.push({cr:cr,i:i}) })
+        if (stageCri.length === 0) return
+        var stageWeight = stageCri.reduce(function(s,x){return s + (x.cr.weight||0)}, 0)
+        var stageName = stage.name[LANG] || stage.name.es || ''
+        var stageDesc = stage.description[LANG] || stage.description.es || ''
+        bodyHtml += '<tr class="ls-stage-header"><td colspan="8">' + stageName +
+          '<span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">' + stageDesc + '</span>' +
+          '<span style="float:right;font-weight:400;color:var(--on-surface-dim)">' + stageWeight + 'pts &middot; ' + stageCri.length + '/5</span></td></tr>'
+        stageCri.forEach(function(x) { bodyHtml += buildCriRow(x.cr, x.i) })
+      })
+    } else {
+      criteria.forEach(function(cr, i) { bodyHtml += buildCriRow(cr, i) })
+    }
+
+    panel.innerHTML = '<div style="overflow-x:auto"><table class="ls-table" id="ls-criteria-table">' +
+      '<thead><tr>' + theadCols + '</tr></thead><tbody>' + bodyHtml + '</tbody></table></div>' +
+      '<div style="padding:8px 12px;text-align:right"><button type="button" class="act-btn" onclick="lsAddCri()" style="font-size:12px">+ ' + L.add_criterion + '</button></div>' +
+      '<div class="ls-weight-total" style="color:' + weightColor + '" id="ls-weight-total">' + L.weight_total + ': ' + totalWeight + '/100</div>'
   }
-  checkMultiNote()
+
+  function lsEsc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  }
+
+  function buildCriRow(cr, i) {
+    var nameVal = lsEsc((cr.name && (cr.name[LANG] || cr.name.es)) || '')
+    var optVal = lsEsc((cr.options || []).join(','))
+    var optDisabled = cr.type !== 'enum' ? 'disabled' : ''
+    return '<tr data-ls-cri="' + i + '">' +
+      '<td><input value="' + lsEsc(cr.key||'') + '" data-field="key" style="width:80px" readonly></td>' +
+      '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\'name\',this.value)"></td>' +
+      '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\'type\',this.value)">' +
+        '<option value="text"' + (cr.type==='text'?' selected':'') + '>' + L.type_text + '</option>' +
+        '<option value="enum"' + (cr.type==='enum'?' selected':'') + '>' + L.type_list + '</option>' +
+        '<option value="boolean"' + (cr.type==='boolean'?' selected':'') + '>' + L.type_boolean + '</option>' +
+      '</select></td>' +
+      '<td><input value="' + optVal + '" data-field="options" placeholder="opt1,opt2" ' + optDisabled + ' onchange="lsUpdateCri(' + i + ',\'options\',this.value)"></td>' +
+      '<td><input type="number" class="ls-w-input" value="' + (cr.weight||0) + '" min="0" max="100" onchange="lsUpdateCri(' + i + ',\'weight\',parseInt(this.value)||0)"></td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.required?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'required\',this.checked)"></td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.neverAskDirectly?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'neverAskDirectly\',this.checked)"></td>' +
+      '<td><button type="button" class="ls-clear-btn" onclick="lsClearCri(' + i + ')" title="Limpiar">&#10005;</button></td></tr>'
+  }
+
+  // ═══ Helper: get criteria for current viewing framework ═══
+  function getActiveFwCriteria() {
+    if (!lsViewingFw || !lsConfig.frameworks) return []
+    var fw = lsConfig.frameworks.find(function(f){return f.type === lsViewingFw})
+    return fw ? fw.criteria : []
+  }
+  function getActiveFw() {
+    if (!lsViewingFw || !lsConfig.frameworks) return null
+    return lsConfig.frameworks.find(function(f){return f.type === lsViewingFw}) || null
+  }
 
   // ═══ Criteria CRUD ═══
   window.lsUpdateCri = function(i, field, value) {
-    var cr = lsConfig.criteria[i]
+    var criteria = getActiveFwCriteria()
+    var cr = criteria[i]
     if (!cr) return
-    if (field === 'key') cr.key = value
-    else if (field === 'name') { cr.name.es = value; cr.name.en = value }
+    if (field === 'name') {
+      cr.name.es = value; cr.name.en = value
+      // Auto-generate key from name
+      cr.key = value.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '').substring(0, 50)
+    }
     else if (field === 'type') { cr.type = value; if (value !== 'enum') delete cr.options }
     else if (field === 'options') cr.options = value.split(',').map(function(s){return s.trim()}).filter(Boolean)
     else if (field === 'weight') cr.weight = parseInt(value, 10) || 0
@@ -771,15 +797,14 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   }
 
   window.lsClearCri = function(i) {
-    var cr = lsConfig.criteria[i]
+    var criteria = getActiveFwCriteria()
+    var cr = criteria[i]
     if (!cr) return
-    // Check min 1 per stage
     if (cr.stage) {
-      var stageCri = lsConfig.criteria.filter(function(c){return c.stage === cr.stage})
+      var stageCri = criteria.filter(function(c){return c.stage === cr.stage})
       var filled = stageCri.filter(function(c){return c.key && c.name && c.name.es})
       if (filled.length <= 1) { lsToast('Minimo 1 criterio por etapa', 'error'); return }
     }
-    // Clear instead of delete
     cr.key = ''
     cr.name = { es: '', en: '' }
     cr.type = 'text'
@@ -791,40 +816,29 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   }
 
   window.lsAddCri = function() {
-    // Find current stage (from active framework view)
-    var activeCard = document.querySelector('.ls-fw-card.active')
-    var stage = activeCard ? activeCard.getAttribute('data-fw') : ''
-    // Check max 5 per stage
-    var stageCount = lsConfig.criteria.filter(function(c) { return c.stage === stage }).length
+    var fw = getActiveFw()
+    if (!fw) return
+    // Use first stage of the framework as default (not the framework type)
+    var stage = (fw.stages && fw.stages.length > 0) ? fw.stages[0].key : ''
+    var stageCount = fw.criteria.filter(function(c) { return c.stage === stage }).length
     if (stageCount >= 5) {
       if (window.showToast) showToast('Maximo 5 criterios por etapa', 'error')
       return
     }
-    lsConfig.criteria.push({
+    fw.criteria.push({
       key: '', name: { es: '', en: '' }, type: 'text', weight: 0,
       required: false, neverAskDirectly: false, stage: stage
     })
-    lsSaveConfig()
+    location.reload()
   }
 
   function updateWeightTotal() {
-    var total = lsConfig.criteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
+    var criteria = getActiveFwCriteria()
+    var total = criteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
     var el = document.getElementById('ls-weight-total')
     if (el) {
       el.textContent = L.weight_total + ': ' + total + '/100'
       el.style.color = total === 100 ? 'var(--success)' : 'var(--warning)'
-    }
-  }
-
-  // ═══ Auto Signals toggle ═══
-  window.lsToggleSignal = function(key, idx) {
-    if (!lsConfig.autoSignals || !lsConfig.autoSignals[idx]) return
-    var sig = lsConfig.autoSignals[idx]
-    sig.enabled = !sig.enabled
-    var btn = document.getElementById('ls-sig-' + key)
-    if (btn) {
-      if (sig.enabled) btn.classList.add('on')
-      else btn.classList.remove('on')
     }
   }
 
@@ -833,13 +847,17 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     // Always recalculate
     lsConfig.recalculateOnConfigChange = true
 
-    // Validate weights
-    if (lsConfig.criteria && lsConfig.criteria.length > 0) {
-      var activeCriteria = lsConfig.criteria.filter(function(c){return c.key && c.key.length > 0})
-      var total = activeCriteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
-      if (total !== 100 && activeCriteria.length > 0) {
-        lsToast(L.weight_error.replace('{n}', String(total)), 'error')
-        return
+    // Validate weights per framework
+    if (lsConfig.frameworks) {
+      for (var fi = 0; fi < lsConfig.frameworks.length; fi++) {
+        var fw = lsConfig.frameworks[fi]
+        if (!fw.enabled) continue
+        var activeCriteria = (fw.criteria || []).filter(function(c){return c.key && c.key.length > 0})
+        var total = activeCriteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
+        if (total !== 100 && activeCriteria.length > 0) {
+          lsToast(fw.type + ': ' + L.weight_error.replace('{n}', String(total)), 'error')
+          return
+        }
       }
     }
 

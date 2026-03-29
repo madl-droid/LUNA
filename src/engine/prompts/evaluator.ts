@@ -6,6 +6,7 @@ import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
+import type { ConfigStore } from '../../modules/lead-scoring/config-store.js'
 
 // Fallback used when prompts:service not available
 const EVALUATOR_SYSTEM_FALLBACK = `Eres el módulo evaluador de LUNA, un agente de ventas por WhatsApp/email.
@@ -156,6 +157,23 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
   // Campaign context
   if (ctx.campaign) {
     parts.push(`[Campaña: ${ctx.campaign.name}]`)
+  }
+
+  // Qualification context (from lead-scoring module)
+  if (registry && ctx.contact?.contactType === 'lead') {
+    const scoringConfig = registry.getOptional<ConfigStore>('lead-scoring:config')
+    if (scoringConfig) {
+      try {
+        const { buildQualificationSummary } = await import('../../modules/lead-scoring/scoring-engine.js')
+        const qualConfig = scoringConfig.getConfig()
+        const qualData = ctx.contact.qualificationData ?? {}
+        const summary = buildQualificationSummary(qualData, qualConfig, 'en')
+        if (summary) {
+          parts.push(`[Qualification state:]`)
+          parts.push(summary)
+        }
+      } catch { /* lead-scoring module not available */ }
+    }
   }
 
   // Knowledge v2 injection (structured catalog for evaluator)

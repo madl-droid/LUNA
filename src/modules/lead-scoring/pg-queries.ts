@@ -298,7 +298,7 @@ export class LeadQueries {
        JOIN contacts c ON c.id = ac.contact_id
        WHERE c.contact_type = 'lead'
          AND ac.agent_id = ${this.agentSubquery}
-         AND ac.lead_status NOT IN ('blocked', 'converted')`,
+         AND ac.lead_status NOT IN ('blocked', 'converted', 'directo')`,
     )
 
     return result.rows.map((r: { contact_id: string; qualification_data: unknown; qualification_status: string }) => ({
@@ -407,7 +407,7 @@ export class LeadQueries {
       params.push(qualification)
     }
 
-    const targetStatuses = ['attended', 'cold', 'qualifying', 'qualified', 'converted']
+    const targetStatuses = ['attended', 'cold', 'qualifying', 'qualified', 'converted', 'directo']
 
     const result = await this.db.query(
       `SELECT ac.lead_status AS status, ch.channel_type AS channel, COUNT(DISTINCT c.id) AS count

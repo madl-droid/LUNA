@@ -1,8 +1,8 @@
 // LUNA — Module: lead-scoring — Framework Presets
 // Definiciones de CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G).
-// El admin elige un framework o usa 'custom' para config manual.
+// No custom framework — only presets. No auto signals — moved to Cortex.
 
-import type { FrameworkPreset, AutoSignalDefinition } from './types.js'
+import type { FrameworkPreset, FrameworkType } from './types.js'
 
 // ═══════════════════════════════════════════
 // CHAMP — B2B (InsightSquared)
@@ -10,11 +10,13 @@ import type { FrameworkPreset, AutoSignalDefinition } from './types.js'
 
 export const CHAMP_PRESET: FrameworkPreset = {
   type: 'champ',
+  clientType: 'b2b',
   name: { es: 'CHAMP (B2B)', en: 'CHAMP (B2B)' },
   description: {
     es: 'Framework B2B: Desafíos, Autoridad, Presupuesto, Priorización',
     en: 'B2B framework: Challenges, Authority, Money, Prioritization',
   },
+  essentialQuestions: ['main_problem', 'contact_role'],
   stages: [
     {
       key: 'challenges',
@@ -225,11 +227,13 @@ export const CHAMP_PRESET: FrameworkPreset = {
 
 export const SPIN_PRESET: FrameworkPreset = {
   type: 'spin',
+  clientType: 'b2c',
   name: { es: 'SPIN Selling (B2C)', en: 'SPIN Selling (B2C)' },
   description: {
     es: 'Framework B2C: Situación, Problema, Implicación, Cierre',
     en: 'B2C framework: Situation, Problem, Implication, Need-payoff',
   },
+  essentialQuestions: ['product_interest', 'main_pain'],
   stages: [
     {
       key: 'situation',
@@ -438,11 +442,13 @@ export const SPIN_PRESET: FrameworkPreset = {
 
 export const CHAMP_GOV_PRESET: FrameworkPreset = {
   type: 'champ_gov',
+  clientType: 'b2g',
   name: { es: 'CHAMP + Gov (B2G)', en: 'CHAMP + Gov (B2G)' },
   description: {
     es: 'Framework B2G: CHAMP + Etapa del proceso + Encaje normativo',
     en: 'B2G framework: CHAMP + Process Stage + Compliance Fit',
   },
+  essentialQuestions: ['institutional_need', 'contact_role'],
   stages: [
     {
       key: 'challenges',
@@ -741,52 +747,15 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
 }
 
 // ═══════════════════════════════════════════
-// Default Auto Signals (apply to all frameworks)
-// ═══════════════════════════════════════════
-
-export const DEFAULT_AUTO_SIGNALS: AutoSignalDefinition[] = [
-  {
-    key: 'response_speed',
-    name: { es: 'Velocidad de respuesta', en: 'Response speed' },
-    description: {
-      es: 'Debajo del rango promedio = bueno, dentro = ok, por encima = malo. Rango calculado por etapa.',
-      en: 'Below average range = good, within = ok, above = bad. Range calculated per stage.',
-    },
-    weight: 5,
-    enabled: false,
-  },
-  {
-    key: 'question_count',
-    name: { es: 'Cantidad de preguntas', en: 'Question count' },
-    description: {
-      es: '0-2 preguntas = bajo, 2-4 = medio, más de 4 = bueno.',
-      en: '0-2 questions = low, 2-4 = medium, more than 4 = good.',
-    },
-    weight: 3,
-    enabled: false,
-  },
-  {
-    key: 'has_campaign',
-    name: { es: '¿Tiene campaña?', en: 'Has campaign?' },
-    description: {
-      es: 'Sí = 2 puntos, No = 0 puntos.',
-      en: 'Yes = 2 points, No = 0 points.',
-    },
-    weight: 2,
-    enabled: false,
-  },
-]
-
-// ═══════════════════════════════════════════
 // Registry
 // ═══════════════════════════════════════════
 
-export const FRAMEWORK_PRESETS: Record<string, FrameworkPreset> = {
+export const FRAMEWORK_PRESETS: Record<FrameworkType, FrameworkPreset> = {
   champ: CHAMP_PRESET,
   spin: SPIN_PRESET,
   champ_gov: CHAMP_GOV_PRESET,
 }
 
-export function getFrameworkPreset(type: string): FrameworkPreset | undefined {
-  return FRAMEWORK_PRESETS[type]
+export function getFrameworkPreset(type: FrameworkType): FrameworkPreset {
+  return FRAMEWORK_PRESETS[type]!
 }
