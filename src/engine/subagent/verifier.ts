@@ -74,7 +74,7 @@ export async function verifySubagentResult(
       confidence: typeof parsed.confidence === 'number'
         ? Math.max(0, Math.min(1, parsed.confidence))
         : 0.5,
-      feedback: parsed.feedback,
+      feedback: typeof parsed.feedback === 'string' ? parsed.feedback : undefined,
       issues: Array.isArray(parsed.issues) ? parsed.issues : undefined,
     }
   } catch (err) {

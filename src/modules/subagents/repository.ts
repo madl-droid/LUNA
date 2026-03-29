@@ -74,7 +74,8 @@ export async function createType(db: Pool, data: CreateSubagentType): Promise<Su
       data.systemPrompt ?? '',
     ],
   )
-  return mapTypeRow(rows[0]! as Record<string, unknown>)
+  if (!rows[0]) throw new Error('INSERT INTO subagent_types returned no rows')
+  return mapTypeRow(rows[0] as Record<string, unknown>)
 }
 
 export async function updateType(db: Pool, id: string, data: UpdateSubagentType): Promise<SubagentTypeRow | null> {
@@ -149,7 +150,7 @@ export async function getUsageSummary(
 
   const interval = intervals[period]!
 
-  // Get per-subagent breakdown
+  // Get per-subagent breakdown (interval is from hardcoded whitelist, cast via $1::interval)
   const { rows } = await db.query<{
     subagent_slug: string
     executions: string
@@ -170,9 +171,9 @@ export async function getUsageSummary(
       COALESCE(AVG(u.duration_ms), 0)::text AS avg_duration,
       COALESCE(SUM(CASE WHEN u.success THEN 1 ELSE 0 END), 0)::text AS success_count
     FROM subagent_usage u
-    WHERE u.created_at >= now() - interval '${interval}'
+    WHERE u.created_at >= now() - $1::interval
     GROUP BY u.subagent_slug
-  `)
+  `, [interval])
 
   // Get subagent names for display
   const { rows: typeRows } = await db.query(`SELECT slug, name FROM subagent_types`)

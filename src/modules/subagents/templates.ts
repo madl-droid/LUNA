@@ -280,7 +280,7 @@ export function renderSubagentsSection(
           <div class="sa-row-top">
             <div class="sa-row-top-field">
               <label class="sa-label">${l('slug', lang)}</label>
-              <input type="text" id="sa-slug" placeholder="${l('slugPlaceholder', lang)}" class="sa-input" pattern="[a-z0-9][a-z0-9-]*[a-z0-9]">
+              <input type="text" id="sa-slug" placeholder="${l('slugPlaceholder', lang)}" class="sa-input" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?">
               <div class="sa-help">${l('slugHelp', lang)}</div>
             </div>
             <div class="sa-row-top-field">

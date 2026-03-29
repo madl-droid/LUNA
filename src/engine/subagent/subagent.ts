@@ -134,6 +134,18 @@ export async function runSubagentV2(
       }
 
       const retryResult = await runSubagentLoop(ctx, retryStep, filteredTools, config, runConfig, registry)
+
+      // Re-verify the retry result
+      let retryVerification = verification // Keep original if re-verify fails
+      if (retryResult.success) {
+        retryVerification = await verifySubagentResult(
+          step.description ?? 'Ejecutar tarea',
+          retryResult.data,
+          retryResult.success,
+          config,
+        )
+      }
+
       // Merge retry into result
       result = {
         ...retryResult,
@@ -143,7 +155,7 @@ export async function runSubagentV2(
         childSpawned: result.childSpawned || retryResult.childSpawned,
         childResults: [...(result.childResults ?? []), ...(retryResult.childResults ?? [])],
         costUsd: result.costUsd + retryResult.costUsd,
-        verification,
+        verification: retryVerification,
       }
     } else if (verification.verdict === 'fail') {
       logger.warn({
@@ -287,8 +299,14 @@ async function runSubagentLoop(
         for (const toolCall of result.toolCalls) {
           // Handle spawn_subagent meta-tool
           if (toolCall.name === 'spawn_subagent') {
+            const spawnInput = toolCall.input as Record<string, unknown>
+            if (typeof spawnInput?.subagent_slug !== 'string' || !spawnInput.subagent_slug.trim()
+              || typeof spawnInput?.task !== 'string' || !spawnInput.task.trim()) {
+              toolResults.push(JSON.stringify({ tool: 'spawn_subagent', error: 'Invalid input: subagent_slug and task are required strings' }))
+              continue
+            }
             const spawnResult = await handleSpawnSubagent(
-              toolCall.input as { subagent_slug: string; task: string; tools?: string[] },
+              spawnInput as { subagent_slug: string; task: string; tools?: string[] },
               ctx,
               toolDefs,
               config,
