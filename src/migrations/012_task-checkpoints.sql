@@ -1,40 +1,33 @@
--- 012: Task checkpoint system for resumable pipeline execution
--- Allows long multi-step pipelines to survive crashes and resume from last completed step
+-- 012: Task checkpoint system for resumable Phase 3 execution plans
+-- When Phase 2 generates a multi-step plan, checkpoints track which steps
+-- completed so Phase 3 can skip them on retry after a crash.
 
--- Main checkpoint table: one row per pipeline execution
 CREATE TABLE IF NOT EXISTS task_checkpoints (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  trace_id      TEXT NOT NULL,
-  message_id    TEXT NOT NULL,
-  contact_id    TEXT,
-  agent_id      TEXT NOT NULL,
-  channel       TEXT NOT NULL,
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trace_id        TEXT NOT NULL,
+  message_id      TEXT NOT NULL,
+  contact_id      TEXT,
+  channel         TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'running'
+                  CHECK (status IN ('running', 'completed', 'failed')),
 
-  -- Pipeline phase tracking (1-5)
-  current_phase SMALLINT NOT NULL DEFAULT 1,
-  status        TEXT NOT NULL DEFAULT 'running'
-                CHECK (status IN ('running', 'completed', 'failed', 'resuming')),
+  -- Minimal message payload for resume (~200 bytes)
+  message_from    TEXT NOT NULL,
+  message_text    TEXT,
 
-  -- Serialized state for resume
-  message_payload   JSONB NOT NULL,             -- original IncomingMessage (needed to re-enter pipeline)
-  phase1_result     JSONB,                      -- ContextBundle essentials (contact, session, agent, etc.)
-  phase2_result     JSONB,                      -- EvaluatorOutput
-  phase3_result     JSONB,                      -- ExecutionOutput (partial or complete)
-  phase4_result     JSONB,                      -- CompositorOutput
-  step_results      JSONB NOT NULL DEFAULT '[]', -- Array of StepResult for completed steps in Phase 3
+  -- Phase 3 execution state
+  execution_plan  JSONB NOT NULL DEFAULT '[]',     -- ExecutionStep[] from Phase 2
+  step_results    JSONB NOT NULL DEFAULT '[]',     -- StepResult[] completed so far
 
-  -- Metadata
-  replan_attempt    SMALLINT NOT NULL DEFAULT 0,
-  error             TEXT,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  completed_at      TIMESTAMPTZ,
-
-  -- Prevent duplicate active checkpoints for same message
-  CONSTRAINT uq_checkpoint_message UNIQUE (message_id, status)
+  error           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Indexes for resume queries and cleanup
-CREATE INDEX IF NOT EXISTS idx_checkpoints_status ON task_checkpoints (status) WHERE status IN ('running', 'resuming');
-CREATE INDEX IF NOT EXISTS idx_checkpoints_created ON task_checkpoints (created_at);
-CREATE INDEX IF NOT EXISTS idx_checkpoints_contact ON task_checkpoints (contact_id) WHERE contact_id IS NOT NULL;
+-- Fast lookup for resume on startup
+CREATE INDEX IF NOT EXISTS idx_checkpoints_status
+  ON task_checkpoints (status) WHERE status = 'running';
+
+-- Cleanup of old rows
+CREATE INDEX IF NOT EXISTS idx_checkpoints_created
+  ON task_checkpoints (created_at);

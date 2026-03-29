@@ -125,9 +125,9 @@ export async function phase3Execute(
 
     const result = await executeStep(step, index, ctx, db, redis, config, registry)
 
-    // Persist step result to checkpoint (fire-and-forget)
+    // Persist step result to checkpoint (fire-and-forget, never blocks)
     if (cpMgr && cpId) {
-      cpMgr.saveStepResult(cpId, result).catch(err =>
+      cpMgr.appendStep(cpId, result).catch(err =>
         logger.warn({ err, checkpointId: cpId, stepIndex: index }, 'Failed to save step checkpoint'),
       )
     }

@@ -1,40 +1,37 @@
-# Checkpoints — Resumable Pipeline Execution
+# Checkpoints — Resumable Phase 3 Execution Plans
 
-Persiste el estado de ejecución del pipeline a DB para que pipelines interrumpidos por crash/timeout puedan reanudar desde el último paso completado.
+Cuando Phase 2 genera un plan de ejecución multi-step, los checkpoints persisten qué steps se completaron. Si el sistema cae, al reiniciar Phase 3 salta los steps ya hechos.
 
 ## Archivos
-- `types.ts` — TaskCheckpoint, Phase1Snapshot, CheckpointStatus
-- `checkpoint-manager.ts` — CRUD para tabla `task_checkpoints`, resume, cleanup
+- `types.ts` — TaskCheckpoint, CheckpointStatus
+- `checkpoint-manager.ts` — create, appendStep, complete, fail, findIncomplete, cleanup
 - `index.ts` — re-exports
 
 ## Tabla: task_checkpoints
 - Migración: `src/migrations/012_task-checkpoints.sql`
-- Un row por ejecución de pipeline
-- Guarda: message payload, resultados de cada fase (JSONB), step results de Phase 3
-- Status: running → completed/failed/resuming
+- Schema liviana: 10 columnas. Sin JSONB de contexto. Solo plan + step results.
+- `execution_plan` — el plan de Phase 2 (ExecutionStep[])
+- `step_results` — steps completados (StepResult[]), append atómico via `||`
 
-## Flujo
-1. **Pipeline start** (Phase 1 done): `create()` + `savePhase1()`
-2. **Phase 2 done**: `savePhase2()` con EvaluatorOutput
-3. **Cada step de Phase 3**: `saveStepResult()` — append al array
-4. **Phase 3 done**: `savePhase3()` con ExecutionOutput
-5. **Phase 4 done**: `savePhase4()` con CompositorOutput
-6. **Phase 5 done**: `complete()`
-7. **Error**: `fail()` con mensaje de error
+## Flujo normal
+1. Phase 2 termina → `create()` fire-and-forget (INSERT ~1-2ms)
+2. Phase 3 ejecuta cada step → `appendStep()` fire-and-forget por step
+3. Pipeline completo → `complete()` fire-and-forget
+4. Pipeline error → `fail()` fire-and-forget
 
-## Resume (al reiniciar)
-1. `expireStale()` — marca como failed los checkpoints más viejos que `checkpointResumeWindowMs`
-2. `findIncomplete()` — busca checkpoints en status 'running' dentro de la ventana
-3. `markResuming()` — claim atómico (previene duplicados)
-4. `resumeFromCheckpoint()` en engine.ts — re-entra al pipeline desde la fase apropiada
+## Resume al reiniciar
+1. `expireStale()` — marca como failed los viejos que ya no vale la pena resumir
+2. `findIncomplete()` — busca checkpoints en 'running' dentro de la ventana
+3. Para cada uno con steps completados: re-procesar el mensaje completo
+4. `processMessageInner()` recibe `resumeSteps` — Phase 3 los salta
+
+## Principios de diseño
+- **Zero-await en hot path**: create() y appendStep() nunca bloquean el pipeline
+- **No serializar contexto**: Phase 1+2 se re-ejecutan (~300ms), no vale guardar snapshots
+- **Resume simple**: re-procesar mensaje completo, Phase 3 es inteligente y salta steps ya hechos
+- **Tabla liviana**: sin columns de Phase 1/2/3/4 result. Solo plan + steps + status.
 
 ## Config (env vars)
-- `ENGINE_CHECKPOINT_ENABLED` (default: true) — habilita/deshabilita
-- `ENGINE_CHECKPOINT_RESUME_WINDOW_MS` (default: 300000 / 5min) — ventana de resume
-- `ENGINE_CHECKPOINT_CLEANUP_DAYS` (default: 7) — purga checkpoints viejos
-
-## Trampas
-- Los saves de checkpoint son fire-and-forget (catch silencioso) — no bloquean el pipeline
-- Si checkpoint falla al crear, el pipeline continúa sin checkpoints
-- Resume re-ejecuta Phase 1 completo (es rápido, <200ms) para reconstruir ContextBundle fresco
-- Step results de Phase 3 se acumulan incrementalmente via `|| jsonb_concat`
+- `ENGINE_CHECKPOINT_ENABLED` (default: true)
+- `ENGINE_CHECKPOINT_RESUME_WINDOW_MS` (default: 300000 / 5min)
+- `ENGINE_CHECKPOINT_CLEANUP_DAYS` (default: 7)
