@@ -308,8 +308,8 @@ const manifest: ModuleManifest = {
               primary: data.primary,
               fallbacks: data.fallbacks ?? [],
             }
-            _gateway.setRoute(data.task, route)
-            jsonResponse(res, 200, { ok: true })
+            const result = _gateway.setRoute(data.task, route)
+            jsonResponse(res, 200, { ok: true, warning: result.warning })
           } catch (err) {
             jsonResponse(res, 400, { error: 'Invalid route data: ' + String(err) })
           }

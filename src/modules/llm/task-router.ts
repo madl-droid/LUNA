@@ -263,6 +263,11 @@ export class TaskRouter {
             apiKeyEnv: parsed.apiKeyEnv,
             downgrade: existing.primary.downgrade, // preserve downgrade if already set
           }
+          // Validate the route and warn if problematic
+          const warning = this.validateRoute(task as LLMTask, existing)
+          if (warning) {
+            logger.warn({ task, provider: parsed.provider }, warning)
+          }
         }
       } catch (err) {
         logger.warn({ task, err }, 'Failed to parse route config, using default')
@@ -296,10 +301,13 @@ export class TaskRouter {
 
   /**
    * Update a specific task route (from console UI).
+   * Returns a warning message if the route has a problem (e.g. web_search without Google).
    */
-  setRoute(task: LLMTask, route: TaskRoute): void {
+  setRoute(task: LLMTask, route: TaskRoute): { warning?: string } {
+    const warning = this.validateRoute(task, route)
     this.routes.set(task, route)
-    logger.info({ task, primary: route.primary.provider + '/' + route.primary.model }, 'Route updated')
+    logger.info({ task, primary: route.primary.provider + '/' + route.primary.model, warning }, 'Route updated')
+    return { warning }
   }
 
   /**
@@ -429,6 +437,18 @@ export class TaskRouter {
       seen.add(key)
       return true
     })
+  }
+
+  /**
+   * Validate a route configuration and return a warning if problematic.
+   * web_search MUST use Google as primary for native search grounding.
+   * Anthropic does not have native web search — results will be degraded.
+   */
+  private validateRoute(task: LLMTask, route: TaskRoute): string | undefined {
+    if (task === 'web_search' && route.primary.provider !== 'google') {
+      return 'web_search debe usar Google como provider primario. Anthropic no tiene búsqueda web nativa — los resultados serán degradados o fallarán.'
+    }
+    return undefined
   }
 
   // ─── Private helpers ────────────────────────

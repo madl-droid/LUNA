@@ -362,9 +362,10 @@ export class LLMGateway {
 
   /**
    * Update a task route (from console).
+   * Returns warning if the route configuration is problematic.
    */
-  setRoute(task: LLMTask, route: TaskRoute): void {
-    this.router.setRoute(task, route)
+  setRoute(task: LLMTask, route: TaskRoute): { warning?: string } {
+    return this.router.setRoute(task, route)
   }
 
   /**

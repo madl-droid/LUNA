@@ -271,6 +271,8 @@ ${conversationText.slice(0, 15000)}`
 
         const llmResult = await ctx.registry.callHook('llm:chat', {
           task: 'nightly-compress',
+          provider: batchLlm.provider,
+          model: batchLlm.model,
           system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente. Extrae la información clave.',
           messages: [{
             role: 'user' as const,
