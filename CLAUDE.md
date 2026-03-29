@@ -183,6 +183,8 @@ Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.
 007_rename-oficina.sql       — rename oficina→console
 008_replan-metrics.sql       — add replan columns to pipeline_logs
 009_db-cleanup.sql           — drop unused tables, add indexes, final column cleanup
+010_alter-ego-v1.sql         — trace_scenarios, trace_runs, trace_results (Cortex simulation & testing)
+011_cross-channel-v1.sql     — relax proactive_outreach_log channel constraint for all channels
 ```
 
 ### Cómo agregar una nueva migración
