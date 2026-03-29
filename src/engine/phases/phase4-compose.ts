@@ -182,7 +182,7 @@ ${responseText}
 
 ¿Es aceptable o necesita corrección?`,
       }],
-      maxTokens: 500,
+      maxTokens: 2048,
       temperature: 0.3,
     })
 
