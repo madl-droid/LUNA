@@ -1,5 +1,5 @@
 // LUNA — Setup wizard: HTTP handler
-// Runs BEFORE modules are loaded. Handles GET/POST for /setup/step/{1-4}.
+// Runs BEFORE modules are loaded. Handles GET/POST for /setup/step/{1-5}.
 // State between steps is in-memory (ephemeral, keyed by cookie).
 
 import * as http from 'node:http'
@@ -12,35 +12,13 @@ import * as configStore from '../config-store.js'
 import { hashPassword, createSession, sessionCookie } from './auth.js'
 import { st, detectSetupLang, type SetupLang } from './i18n.js'
 import {
-  stepWelcome, stepAdmin, stepLLM, stepSystem, setupCompletePage,
+  stepWelcome, stepAdmin, stepAgent, stepApiKeys, stepSystem, setupCompletePage,
   emptyState, type SetupState,
 } from './templates.js'
 
 const logger = pino({ name: 'kernel:setup' })
 
 const SETUP_COOKIE = 'luna_setup_token'
-
-// ═══════════════════════════════════════════
-// Default LLM models per provider
-// ═══════════════════════════════════════════
-
-const ANTHROPIC_MODELS = {
-  classify: 'claude-haiku-4-5-20251001',
-  tools: 'claude-haiku-4-5-20251001',
-  compress: 'claude-haiku-4-5-20251001',
-  respond: 'claude-sonnet-4-6',
-  complex: 'claude-sonnet-4-6',
-  proactive: 'claude-sonnet-4-6',
-}
-
-const GOOGLE_MODELS = {
-  classify: 'gemini-2.5-flash',
-  tools: 'gemini-2.5-flash',
-  compress: 'gemini-2.5-flash',
-  respond: 'gemini-2.5-pro',
-  complex: 'gemini-2.5-pro',
-  proactive: 'gemini-2.5-flash',
-}
 
 // ═══════════════════════════════════════════
 // Form parser (application/x-www-form-urlencoded)
@@ -118,6 +96,7 @@ function generateUserId(): string {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^\+\d{7,15}$/
+const VALID_AGENT_LANGS = new Set(['es', 'en', 'pt', 'fr', 'de', 'it'])
 
 function validateAdmin(form: Record<string, string>, lang: SetupLang): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -132,17 +111,18 @@ function validateAdmin(form: Record<string, string>, lang: SetupLang): Record<st
   return errors
 }
 
-function validateLLM(form: Record<string, string>, lang: SetupLang): Record<string, string> {
+function validateAgent(form: Record<string, string>, lang: SetupLang): Record<string, string> {
   const errors: Record<string, string> = {}
-  const proc = form['processing_provider'] ?? 'anthropic'
-  const inter = form['interaction_provider'] ?? 'anthropic'
-  const needsAnthropic = proc === 'anthropic' || inter === 'anthropic'
-  const needsGoogle = proc === 'google' || inter === 'google'
-  if (needsAnthropic && !form['anthropic_api_key']?.trim()) {
-    errors['anthropic_api_key'] = st('err_anthropic_key_required', lang)
-  }
-  if (needsGoogle && !form['google_api_key']?.trim()) {
-    errors['google_api_key'] = st('err_google_key_required', lang)
+  if (!form['agent_name']?.trim()) errors['agent_name'] = st('err_agent_name_required', lang)
+  return errors
+}
+
+function validateApiKeys(form: Record<string, string>, lang: SetupLang): Record<string, string> {
+  const errors: Record<string, string> = {}
+  const hasAnthropic = !!form['anthropic_api_key']?.trim()
+  const hasGoogle = !!form['google_api_key']?.trim()
+  if (!hasAnthropic && !hasGoogle) {
+    errors['_global'] = st('err_no_api_key', lang)
   }
   return errors
 }
@@ -248,10 +228,14 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
         return
       }
       if (urlPath === '/setup/step/3') {
-        sendHtml(res, stepLLM(lang, state), token)
+        sendHtml(res, stepAgent(lang, state), token)
         return
       }
       if (urlPath === '/setup/step/4') {
+        sendHtml(res, stepApiKeys(lang, state), token)
+        return
+      }
+      if (urlPath === '/setup/step/5') {
         sendHtml(res, stepSystem(lang, state), token)
         return
       }
@@ -295,24 +279,40 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
         return
       }
 
-      // Step 3: LLM configuration
+      // Step 3: Agent persona
       if (urlPath === '/setup/step/3') {
-        state.processingProvider = form['processing_provider'] === 'google' ? 'google' : 'anthropic'
-        state.interactionProvider = form['interaction_provider'] === 'google' ? 'google' : 'anthropic'
-        state.anthropicApiKey = form['anthropic_api_key']?.trim() ?? ''
-        state.googleApiKey = form['google_api_key']?.trim() ?? ''
+        state.agentName = form['agent_name']?.trim() ?? ''
+        state.agentLastName = form['agent_last_name']?.trim() ?? ''
+        state.agentTitle = form['agent_title']?.trim() ?? ''
+        const agentLang = form['agent_language']?.trim() ?? 'es'
+        state.agentLanguage = VALID_AGENT_LANGS.has(agentLang) ? agentLang : 'es'
+        state.agentAccent = form['agent_accent']?.trim() ?? ''
 
-        const errors = validateLLM(form, lang)
+        const errors = validateAgent(form, lang)
         if (Object.keys(errors).length > 0) {
-          sendHtml(res, stepLLM(lang, state, errors), token)
+          sendHtml(res, stepAgent(lang, state, errors), token)
           return
         }
         redirect(res, '/setup/step/4', token)
         return
       }
 
-      // Step 4: System settings — FINALIZE
+      // Step 4: API Keys
       if (urlPath === '/setup/step/4') {
+        state.anthropicApiKey = form['anthropic_api_key']?.trim() ?? ''
+        state.googleApiKey = form['google_api_key']?.trim() ?? ''
+
+        const errors = validateApiKeys(form, lang)
+        if (Object.keys(errors).length > 0) {
+          sendHtml(res, stepApiKeys(lang, state, errors), token)
+          return
+        }
+        redirect(res, '/setup/step/5', token)
+        return
+      }
+
+      // Step 5: System settings — FINALIZE
+      if (urlPath === '/setup/step/5') {
         state.instanceName = form['instance_name']?.trim() ?? ''
         state.logLevel = form['log_level'] ?? 'info'
         state.nodeEnv = form['node_env'] ?? 'production'
@@ -434,25 +434,58 @@ async function finalizeSetup(ctx: WizardContext, state: SetupState, token: strin
     client.release()
   }
 
-  // 3. Persist config to config_store (has its own transaction internally)
-  const procModels = state.processingProvider === 'anthropic' ? ANTHROPIC_MODELS : GOOGLE_MODELS
-  const interModels = state.interactionProvider === 'anthropic' ? ANTHROPIC_MODELS : GOOGLE_MODELS
+  // 3. Persist config to config_store
+  // Determine primary provider based on which API keys are provided
+  // Priority: Anthropic > Google (engine defaults assume anthropic)
+  const hasAnthropic = !!state.anthropicApiKey
+  const hasGoogle = !!state.googleApiKey
 
   const configEntries: Record<string, string> = {
-    ...(state.anthropicApiKey ? { ANTHROPIC_API_KEY: state.anthropicApiKey } : {}),
-    ...(state.googleApiKey ? { GOOGLE_AI_API_KEY: state.googleApiKey } : {}),
-    LLM_CLASSIFY_MODEL: procModels.classify,
-    LLM_TOOLS_MODEL: procModels.tools,
-    LLM_COMPRESS_MODEL: procModels.compress,
-    LLM_RESPOND_MODEL: interModels.respond,
-    LLM_COMPLEX_MODEL: interModels.complex,
-    LLM_PROACTIVE_MODEL: interModels.proactive,
-    ...(state.processingProvider === 'anthropic' && state.googleApiKey
-      ? { LLM_FALLBACK_CLASSIFY_MODEL: GOOGLE_MODELS.classify }
-      : {}),
-    ...(state.interactionProvider === 'anthropic' && state.googleApiKey
-      ? { LLM_FALLBACK_RESPOND_MODEL: GOOGLE_MODELS.respond, LLM_FALLBACK_COMPLEX_MODEL: GOOGLE_MODELS.complex }
-      : {}),
+    // API keys
+    ...(hasAnthropic ? { ANTHROPIC_API_KEY: state.anthropicApiKey } : {}),
+    ...(hasGoogle ? { GOOGLE_AI_API_KEY: state.googleApiKey } : {}),
+
+    // Agent persona — written to config_store, read by prompts module via registry.getConfig()
+    AGENT_NAME: state.agentName,
+    ...(state.agentLastName ? { AGENT_LAST_NAME: state.agentLastName } : {}),
+    ...(state.agentTitle ? { AGENT_TITLE: state.agentTitle } : {}),
+    AGENT_LANGUAGE: state.agentLanguage,
+    ...(state.agentAccent ? { AGENT_ACCENT: state.agentAccent } : {}),
+
+    // LLM provider routing — engine reads LLM_*_PROVIDER to know which provider to use
+    // No model selection: engine defaults apply (haiku for classify/tools, sonnet for respond/proactive, opus for complex)
+    ...(hasAnthropic ? {
+      LLM_CLASSIFY_PROVIDER: 'anthropic',
+      LLM_TOOLS_PROVIDER: 'anthropic',
+      LLM_RESPOND_PROVIDER: 'anthropic',
+      LLM_COMPLEX_PROVIDER: 'anthropic',
+      LLM_PROACTIVE_PROVIDER: 'anthropic',
+    } : {
+      // Only Google available — set all providers to google with appropriate models
+      LLM_CLASSIFY_PROVIDER: 'google',
+      LLM_CLASSIFY_MODEL: 'gemini-2.5-flash',
+      LLM_TOOLS_PROVIDER: 'google',
+      LLM_TOOLS_MODEL: 'gemini-2.5-flash',
+      LLM_RESPOND_PROVIDER: 'google',
+      LLM_RESPOND_MODEL: 'gemini-2.5-pro',
+      LLM_COMPLEX_PROVIDER: 'google',
+      LLM_COMPLEX_MODEL: 'gemini-2.5-pro',
+      LLM_PROACTIVE_PROVIDER: 'google',
+      LLM_PROACTIVE_MODEL: 'gemini-2.5-flash',
+    }),
+
+    // Fallback providers (if both keys are available)
+    ...(hasAnthropic && hasGoogle ? {
+      LLM_FALLBACK_CLASSIFY_MODEL: 'gemini-2.5-flash',
+      LLM_FALLBACK_CLASSIFY_PROVIDER: 'google',
+      LLM_FALLBACK_RESPOND_MODEL: 'gemini-2.5-flash',
+      LLM_FALLBACK_RESPOND_PROVIDER: 'google',
+      LLM_FALLBACK_COMPLEX_MODEL: 'gemini-2.5-pro',
+      LLM_FALLBACK_COMPLEX_PROVIDER: 'google',
+    } : {}),
+    ...(hasGoogle && !hasAnthropic ? {} : {}), // Google-only has no Anthropic fallback
+
+    // System config
     LOG_LEVEL: state.logLevel,
     NODE_ENV: state.nodeEnv,
     ...(state.instanceName ? { INSTANCE_NAME: state.instanceName } : {}),
@@ -507,8 +540,11 @@ export async function saveFactoryResetPrefill(pool: Pool, redis: Redis): Promise
     adminName: admin?.display_name ?? '',
     adminEmail,
     adminPhone,
-    processingProvider: (allConfig['LLM_CLASSIFY_MODEL']?.startsWith('claude') ? 'anthropic' : 'google') as 'anthropic' | 'google',
-    interactionProvider: (allConfig['LLM_RESPOND_MODEL']?.startsWith('claude') ? 'anthropic' : 'google') as 'anthropic' | 'google',
+    agentName: allConfig['AGENT_NAME'] ?? 'Luna',
+    agentLastName: allConfig['AGENT_LAST_NAME'] ?? '',
+    agentTitle: allConfig['AGENT_TITLE'] ?? '',
+    agentLanguage: allConfig['AGENT_LANGUAGE'] ?? 'es',
+    agentAccent: allConfig['AGENT_ACCENT'] ?? '',
     anthropicApiKey: allConfig['ANTHROPIC_API_KEY'] ?? '',
     googleApiKey: allConfig['GOOGLE_AI_API_KEY'] ?? '',
     instanceName: allConfig['INSTANCE_NAME'] ?? '',
