@@ -368,6 +368,8 @@ export interface ProactiveConfig {
     inactivity_hours: number
     max_attempts: number
     cross_channel: boolean
+    /** Ordered list of channels to try when cross_channel is true */
+    channel_fallback_order: import('../channels/types.js').ChannelName[]
   }
   reminders: {
     enabled: boolean

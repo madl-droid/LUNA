@@ -11,7 +11,8 @@
     "scan_interval_minutes": 15,
     "inactivity_hours": 4,
     "max_attempts": 3,
-    "cross_channel": false
+    "cross_channel": false,
+    "channel_fallback_order": ["whatsapp", "email", "google-chat"]
   },
   "reminders": {
     "enabled": true,

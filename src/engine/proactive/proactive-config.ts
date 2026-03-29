@@ -13,7 +13,7 @@ const CONFIG_PATH = resolve('instance/proactive.json')
 const DEFAULT_CONFIG: ProactiveConfig = {
   enabled: false,
   business_hours: { start: 8, end: 17, timezone: 'America/Bogota', days: [1, 2, 3, 4, 5] },
-  follow_up: { enabled: false, scan_interval_minutes: 15, inactivity_hours: 4, max_attempts: 3, cross_channel: false },
+  follow_up: { enabled: false, scan_interval_minutes: 15, inactivity_hours: 4, max_attempts: 3, cross_channel: false, channel_fallback_order: ['whatsapp', 'email', 'google-chat'] },
   reminders: { enabled: false, scan_interval_minutes: 30, hours_before_event: 2, notify_salesperson: true },
   commitments: { enabled: false, scan_interval_minutes: 5, max_attempts: 5, generic_auto_cancel_hours: 24, commitment_types: [] },
   reactivation: { enabled: false, cron: '0 9 * * 1-5', days_inactive: 7, max_attempts: 2, max_per_run: 20 },
