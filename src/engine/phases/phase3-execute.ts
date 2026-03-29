@@ -61,8 +61,28 @@ function getDefinition(
 }
 
 /**
+ * Count steps in the plan that require sequential LLM calls.
+ * Used to determine if the plan is "complex" (3+ LLM steps → Opus)
+ * or "simple" (≤2 LLM steps → Sonnet).
+ *
+ * LLM-requiring step types: subagent, web_search, code_execution
+ * Deterministic (no LLM): api_call, workflow, memory_lookup, process_attachment, respond_only
+ */
+function countLLMSteps(plan: ExecutionStep[]): number {
+  const llmTypes = new Set(['subagent', 'web_search', 'code_execution'])
+  return plan.filter(s => llmTypes.has(s.type)).length
+}
+
+/** Threshold: plans with this many LLM steps or more are "complex" */
+const COMPLEX_PLAN_THRESHOLD = 3
+
+/**
  * Execute Phase 3: Run the execution plan from Phase 2.
  * Steps run with concurrency controlled by StepSemaphore.
+ *
+ * Plan complexity routing:
+ * - Simple plans (≤2 LLM steps): LLM calls in steps use task 'tools' → Sonnet
+ * - Complex plans (3+ LLM steps): LLM calls in steps use task 'complex' → Opus
  */
 export async function phase3Execute(
   ctx: ContextBundle,
@@ -74,12 +94,16 @@ export async function phase3Execute(
 ): Promise<ExecutionOutput> {
   const startMs = Date.now()
 
+  const { executionPlan } = evaluation
+  const llmStepCount = countLLMSteps(executionPlan)
+  const isComplexPlan = llmStepCount >= COMPLEX_PLAN_THRESHOLD
+
   logger.info({
     traceId: ctx.traceId,
-    planSteps: evaluation.executionPlan.length,
+    planSteps: executionPlan.length,
+    llmSteps: llmStepCount,
+    complexity: isComplexPlan ? 'complex' : 'simple',
   }, 'Phase 3 start')
-
-  const { executionPlan } = evaluation
 
   // If respond_only, skip execution
   if (executionPlan.length === 1 && executionPlan[0]!.type === 'respond_only') {
@@ -99,7 +123,7 @@ export async function phase3Execute(
     const parallelResults = await Promise.allSettled(
       independent.map(({ step, index }) =>
         stepSemaphore.run(() =>
-          executeStep(step, index, ctx, db, redis, config, registry),
+          executeStep(step, index, ctx, db, redis, config, registry, isComplexPlan),
         ),
       ),
     )
@@ -139,7 +163,7 @@ export async function phase3Execute(
     }
 
     const result = await stepSemaphore.run(() =>
-      executeStep(step, index, ctx, db, redis, config, registry),
+      executeStep(step, index, ctx, db, redis, config, registry, isComplexPlan),
     )
     results.push(result)
   }
@@ -185,8 +209,11 @@ async function executeStep(
   redis: Redis,
   config: EngineConfig,
   registry: Registry,
+  isComplexPlan = false,
 ): Promise<StepResult> {
   const startMs = Date.now()
+  // LLM task type for steps: 'complex' (Opus) for complex plans, 'tools' (Sonnet) for simple
+  const stepLlmTask = isComplexPlan ? 'complex' : 'tools'
 
   try {
     switch (step.type) {
@@ -209,7 +236,7 @@ async function executeStep(
         return await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
 
       case 'code_execution':
-        return await executeCodeExecution(step, index, config, startMs)
+        return await executeCodeExecution(step, index, config, startMs, stepLlmTask)
 
       case 'respond_only':
         return {
@@ -465,6 +492,7 @@ async function executeCodeExecution(
   index: number,
   config: EngineConfig,
   startMs: number,
+  llmTask = 'tools',
 ): Promise<StepResult> {
   const task = step.description ?? step.params?.task as string ?? ''
   if (!task) {
@@ -474,7 +502,7 @@ async function executeCodeExecution(
   try {
     const result = await callLLMWithFallback(
       {
-        task: 'tools',
+        task: llmTask,
         messages: [{ role: 'user', content: `Ejecuta código Python para: ${task}` }],
         maxTokens: 2048,
         temperature: 0.1,

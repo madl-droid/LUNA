@@ -56,7 +56,54 @@ export type LLMTask =
   | 'web_search'
   | 'compress'
   | 'ack'
+  | 'criticize'
+  | 'document_read'
+  | 'batch'
   | 'custom'
+
+// ═══════════════════════════════════════════
+// API key groups (for advanced key management)
+// ═══════════════════════════════════════════
+
+/**
+ * API key capability groups for advanced key management.
+ * In advanced mode, each group can have its own API key.
+ * If a group key is not set, falls back to the provider's main key.
+ */
+export type GeminiKeyGroup = 'engine' | 'multimedia' | 'voice' | 'knowledge'
+export type AnthropicKeyGroup = 'engine' | 'cortex' | 'memory'
+export type ApiKeyGroup = GeminiKeyGroup | AnthropicKeyGroup
+
+/**
+ * Maps LLM tasks to their API key capability group.
+ * Used by the gateway to select the correct API key in advanced mode.
+ */
+export const TASK_TO_KEY_GROUP: Record<string, { provider: LLMProviderName; group: ApiKeyGroup } | undefined> = {
+  // Gemini groups
+  respond: { provider: 'google', group: 'engine' },
+  web_search: { provider: 'google', group: 'engine' },
+  vision: { provider: 'google', group: 'multimedia' },
+  stt: { provider: 'google', group: 'multimedia' },
+  tts: { provider: 'google', group: 'voice' },
+  // Knowledge embeddings handled separately via KNOWLEDGE_GOOGLE_AI_API_KEY
+
+  // Anthropic groups
+  classify: { provider: 'anthropic', group: 'engine' },
+  tools: { provider: 'anthropic', group: 'engine' },
+  complex: { provider: 'anthropic', group: 'engine' },
+  proactive: { provider: 'anthropic', group: 'engine' },
+  compress: { provider: 'anthropic', group: 'memory' },
+  batch: { provider: 'anthropic', group: 'memory' },
+  document_read: { provider: 'anthropic', group: 'engine' },
+
+  // Cortex tasks (resolved via aliases to 'complex', but need own key group)
+  'trace-evaluate': { provider: 'anthropic', group: 'cortex' },
+  'trace-compose': { provider: 'anthropic', group: 'cortex' },
+  'trace-analyze': { provider: 'anthropic', group: 'cortex' },
+  'trace-synthesize': { provider: 'anthropic', group: 'cortex' },
+  'cortex-analyze': { provider: 'anthropic', group: 'cortex' },
+  'cortex-pulse': { provider: 'anthropic', group: 'cortex' },
+}
 
 // ═══════════════════════════════════════════
 // Task routing
@@ -337,10 +384,24 @@ export interface LLMModuleConfig {
   ANTHROPIC_API_KEY: string
   GOOGLE_AI_API_KEY: string
 
-  // Per-capability API key overrides
+  // API key mode: 'basic' (one key per provider) or 'advanced' (per-group keys)
+  LLM_API_MODE: string
+
+  // Per-capability API key overrides (legacy — kept for backward compat)
   LLM_VISION_API_KEY: string
   LLM_STT_API_KEY: string
   LLM_IMAGE_GEN_API_KEY: string
+
+  // Advanced mode: Gemini group keys
+  LLM_GOOGLE_ENGINE_API_KEY: string
+  LLM_GOOGLE_MULTIMEDIA_API_KEY: string
+  LLM_GOOGLE_VOICE_API_KEY: string
+  LLM_GOOGLE_KNOWLEDGE_API_KEY: string
+
+  // Advanced mode: Anthropic group keys
+  LLM_ANTHROPIC_ENGINE_API_KEY: string
+  LLM_ANTHROPIC_CORTEX_API_KEY: string
+  LLM_ANTHROPIC_MEMORY_API_KEY: string
 
   // Circuit breaker
   LLM_CB_FAILURE_THRESHOLD: number

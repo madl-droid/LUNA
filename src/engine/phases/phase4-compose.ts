@@ -75,6 +75,9 @@ export async function phase4Compose(
     rawResponse = 'FALLBACK: all providers failed'
   }
 
+  // ═══ Criticizer step — quality gate via Gemini Pro ═══
+  responseText = await runCriticizer(responseText, ctx, evaluation, config, registry)
+
   // ═══ Channel formatting ═══
   const formattedParts = formatForChannel(responseText, ctx.message.channelName, registry)
 
@@ -120,6 +123,76 @@ export async function phase4Compose(
     audioDurationSeconds,
     outputFormat,
     rawResponse,
+  }
+}
+
+/**
+ * Run the criticizer quality gate.
+ * Sends the generated response to Gemini Pro (task: 'criticize') for review.
+ * If the criticizer detects issues, it returns a corrected response.
+ * If the criticizer fails or approves, the original response is returned unchanged.
+ *
+ * Complexity criteria for using Opus in Phase 3 (documented here as reference):
+ * - A plan is "complex" when it has 3+ steps that involve sequential LLM calls
+ *   (subagent, web_search, code_execution). These require Opus for better reasoning.
+ * - A plan is "simple" when it has ≤2 LLM steps or only deterministic steps
+ *   (api_call, memory_lookup, process_attachment). These use Sonnet.
+ */
+async function runCriticizer(
+  responseText: string,
+  ctx: ContextBundle,
+  evaluation: EvaluatorOutput,
+  config: EngineConfig,
+  _registry?: Registry,
+): Promise<string> {
+  try {
+    const result = await callLLM({
+      task: 'criticize',
+      system: `Eres un revisor de calidad de respuestas de un agente de atención al cliente.
+Evalúa la respuesta del agente y decide si es aceptable o necesita corrección.
+
+Reglas de evaluación:
+1. ¿Responde lo que el usuario preguntó? No se va por la tangente.
+2. ¿Es apropiado para el canal? Longitud y formato correctos.
+3. ¿Respeta guardrails? No inventa información, no promete de más.
+4. ¿Los resultados de tools están integrados naturalmente?
+5. ¿NO revela datos internos del sistema?
+6. ¿El tono es profesional y cálido?
+7. ¿Termina con pregunta o CTA claro?
+
+Si la respuesta es aceptable, responde EXACTAMENTE: APPROVED
+Si necesita corrección, responde con la versión corregida directamente (sin explicación, sin prefijo).`,
+      messages: [{
+        role: 'user',
+        content: `Intención del usuario: ${evaluation.intent}
+Canal: ${ctx.message.channelName}
+
+Respuesta del agente a revisar:
+---
+${responseText}
+---
+
+¿Es aceptable o necesita corrección?`,
+      }],
+      maxTokens: config.maxOutputTokens,
+      temperature: 0.3,
+    })
+
+    if (!result.text || result.text.trim() === '') {
+      return responseText
+    }
+
+    const trimmed = result.text.trim()
+    if (trimmed === 'APPROVED') {
+      logger.debug({ traceId: ctx.traceId }, 'Criticizer approved response')
+      return responseText
+    }
+
+    logger.info({ traceId: ctx.traceId, provider: result.provider }, 'Criticizer corrected response')
+    return trimmed
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Criticizer failed — using original response')
+    return responseText
   }
 }
 
