@@ -98,6 +98,13 @@ export function initEngine(reg: Registry): void {
     initCheckpoints().catch(err =>
       logger.error({ err }, 'Failed to initialize checkpoints'),
     )
+
+    // Periodic cleanup every 6 hours
+    setInterval(() => {
+      checkpointMgr?.cleanup(engineConfig.checkpointCleanupDays).catch(err =>
+        logger.warn({ err }, 'Periodic checkpoint cleanup failed'),
+      )
+    }, 6 * 60 * 60 * 1000)
   }
 
   // Start proactive runner (BullMQ)

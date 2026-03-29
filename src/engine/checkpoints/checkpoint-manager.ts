@@ -90,7 +90,10 @@ export class CheckpointManager {
    */
   async findIncomplete(maxAgeMs: number): Promise<TaskCheckpoint[]> {
     const { rows } = await this.db.query<Record<string, unknown>>(
-      `SELECT * FROM task_checkpoints
+      `SELECT id, trace_id, message_id, contact_id, channel, status,
+              message_from, sender_name, channel_message_id, message_text,
+              execution_plan, step_results, error, created_at, updated_at
+       FROM task_checkpoints
        WHERE status = 'running'
          AND created_at > now() - ($1 || ' milliseconds')::interval
        ORDER BY created_at ASC`,

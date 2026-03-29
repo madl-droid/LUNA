@@ -16,7 +16,7 @@ Cuando Phase 2 genera un plan de ejecución multi-step, los checkpoints persiste
 ## Flujo normal
 1. Phase 2 termina → `create()` fire-and-forget (INSERT ~1-2ms)
 2. Phase 3 ejecuta cada step → `appendStep()` fire-and-forget por step
-3. Pipeline completo → `complete()` fire-and-forget
+3. Pipeline completo → `complete()` awaited (prevents duplicate responses on resume)
 4. Pipeline error → `fail()` fire-and-forget
 
 ## Resume al reiniciar
@@ -26,7 +26,7 @@ Cuando Phase 2 genera un plan de ejecución multi-step, los checkpoints persiste
 4. `processMessageInner()` recibe `resumeSteps` — Phase 3 los salta
 
 ## Principios de diseño
-- **Zero-await en hot path**: create() y appendStep() nunca bloquean el pipeline
+- **Zero-await en hot path**: create() y appendStep() nunca bloquean el pipeline. complete() is awaited to prevent duplicate responses on resume.
 - **No serializar contexto**: Phase 1+2 se re-ejecutan (~300ms), no vale guardar snapshots
 - **Resume simple**: re-procesar mensaje completo, Phase 3 es inteligente y salta steps ya hechos
 - **Tabla liviana**: sin columns de Phase 1/2/3/4 result. Solo plan + steps + status.

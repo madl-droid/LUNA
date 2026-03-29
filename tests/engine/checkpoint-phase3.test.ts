@@ -3,32 +3,7 @@
 
 import { describe, it, expect } from 'vitest'
 import type { ExecutionStep, StepResult } from '../../src/engine/types.js'
-
-// ─── Extracted logic under test ─────────────
-// We test the step-validation logic that Phase 3 uses to decide which
-// completed steps to trust. This mirrors the code in phase3-execute.ts
-// without needing the full Phase 3 infrastructure.
-
-function validateCompletedSteps(
-  executionPlan: ExecutionStep[],
-  completedSteps: StepResult[],
-): { validIndices: Set<number>; validSteps: StepResult[]; discarded: number } {
-  const validIndices = new Set<number>()
-  const validSteps: StepResult[] = []
-  let discarded = 0
-
-  for (const sr of completedSteps) {
-    const planStep = executionPlan[sr.stepIndex]
-    if (planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined)) {
-      validIndices.add(sr.stepIndex)
-      validSteps.push(sr)
-    } else {
-      discarded++
-    }
-  }
-
-  return { validIndices, validSteps, discarded }
-}
+import { validateCompletedSteps } from '../../src/engine/phases/phase3-execute.js'
 
 // ─── Test Data ──────────────────────────────
 

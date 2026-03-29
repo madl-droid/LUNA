@@ -107,14 +107,11 @@ export async function phase3Execute(
   // Build set of already-completed step indices (from checkpoint resume).
   // Only trust a completed step if the plan step at that index has the same type —
   // if Phase 2 generated a different plan on resume, indices may not correspond.
-  const completedIndices = new Set<number>()
-  const validCompletedSteps: StepResult[] = []
+  const { validIndices: completedIndices, validSteps: validCompletedSteps } =
+    validateCompletedSteps(executionPlan, opts?.completedSteps ?? [])
   for (const sr of opts?.completedSteps ?? []) {
     const planStep = executionPlan[sr.stepIndex]
-    if (planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined)) {
-      completedIndices.add(sr.stepIndex)
-      validCompletedSteps.push(sr)
-    } else {
+    if (!(planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined))) {
       logger.warn({
         traceId: ctx.traceId,
         stepIndex: sr.stepIndex,
@@ -165,9 +162,7 @@ export async function phase3Execute(
 
     for (const settled of parallelResults) {
       if (settled.status === 'fulfilled') {
-        if (!completedIndices.has(settled.value.stepIndex)) {
-          results.push(settled.value)
-        }
+        results.push(settled.value)
       } else {
         results.push({
           stepIndex: -1,
@@ -203,9 +198,7 @@ export async function phase3Execute(
     }
 
     const result = await stepSemaphore.run(() => executeWithCheckpoint(step, index))
-    if (!completedIndices.has(index)) {
-      results.push(result)
-    }
+    results.push(result)
   }
 
   const allSucceeded = results.every(r => r.success)
@@ -681,6 +674,31 @@ function getAttachmentEngineConfig(registry: Registry, fallback: EngineConfig): 
     urlMaxSizeMb: fallback.attachmentUrlMaxSizeMb,
     urlEnabled: fallback.attachmentUrlEnabled,
   }
+}
+
+/**
+ * Validate which completed steps from a previous run can be trusted for the current plan.
+ * A step is valid if the plan step at that index has the same type and tool.
+ */
+export function validateCompletedSteps(
+  executionPlan: ExecutionStep[],
+  completedSteps: StepResult[],
+): { validIndices: Set<number>; validSteps: StepResult[]; discarded: number } {
+  const validIndices = new Set<number>()
+  const validSteps: StepResult[] = []
+  let discarded = 0
+
+  for (const sr of completedSteps) {
+    const planStep = executionPlan[sr.stepIndex]
+    if (planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined)) {
+      validIndices.add(sr.stepIndex)
+      validSteps.push(sr)
+    } else {
+      discarded++
+    }
+  }
+
+  return { validIndices, validSteps, discarded }
 }
 
 /**
