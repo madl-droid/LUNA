@@ -111,7 +111,7 @@ export async function phase3Execute(
   const validCompletedSteps: StepResult[] = []
   for (const sr of opts?.completedSteps ?? []) {
     const planStep = executionPlan[sr.stepIndex]
-    if (planStep && planStep.type === sr.type) {
+    if (planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined)) {
       completedIndices.add(sr.stepIndex)
       validCompletedSteps.push(sr)
     } else {
@@ -119,7 +119,9 @@ export async function phase3Execute(
         traceId: ctx.traceId,
         stepIndex: sr.stepIndex,
         expectedType: planStep?.type,
+        expectedTool: planStep?.tool,
         actualType: sr.type,
+        actualTool: sr.tool,
       }, 'Discarding mismatched completed step from checkpoint')
     }
   }
@@ -251,38 +253,48 @@ async function executeStep(
   const startMs = Date.now()
 
   try {
+    let result: StepResult
+
     switch (step.type) {
       case 'api_call':
-        return await executeApiCall(step, index, startMs, config, registry, { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId })
+        result = await executeApiCall(step, index, startMs, config, registry, { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId })
+        break
 
       case 'workflow':
-        return await executeWorkflow(step, index, startMs, registry)
+        result = await executeWorkflow(step, index, startMs, registry)
+        break
 
       case 'subagent':
-        return await executeSubagent(step, index, ctx, config, startMs, registry)
+        result = await executeSubagent(step, index, ctx, config, startMs, registry)
+        break
 
       case 'memory_lookup':
-        return await executeMemoryLookup(step, index, db, ctx, registry, startMs)
+        result = await executeMemoryLookup(step, index, db, ctx, registry, startMs)
+        break
 
       case 'web_search':
-        return await executeWebSearch(step, index, config, startMs)
+        result = await executeWebSearch(step, index, config, startMs)
+        break
 
       case 'process_attachment':
-        return await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
+        result = await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
+        break
 
       case 'code_execution':
-        return await executeCodeExecution(step, index, config, startMs)
+        result = await executeCodeExecution(step, index, config, startMs)
+        break
 
       case 'respond_only':
-        return {
+        result = {
           stepIndex: index,
           type: 'respond_only',
           success: true,
           durationMs: Date.now() - startMs,
         }
+        break
 
       default:
-        return {
+        result = {
           stepIndex: index,
           type: step.type,
           success: false,
@@ -290,10 +302,15 @@ async function executeStep(
           durationMs: Date.now() - startMs,
         }
     }
+
+    // Attach tool name to result for checkpoint step validation
+    if (step.tool) result.tool = step.tool
+    return result
   } catch (err) {
     return {
       stepIndex: index,
       type: step.type,
+      tool: step.tool,
       success: false,
       error: String(err),
       durationMs: Date.now() - startMs,

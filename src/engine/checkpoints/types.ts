@@ -14,6 +14,8 @@ export interface TaskCheckpoint {
   status: CheckpointStatus
 
   messageFrom: string
+  senderName: string
+  channelMessageId: string
   messageText: string | null
 
   executionPlan: ExecutionStep[]

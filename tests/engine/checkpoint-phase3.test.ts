@@ -19,7 +19,7 @@ function validateCompletedSteps(
 
   for (const sr of completedSteps) {
     const planStep = executionPlan[sr.stepIndex]
-    if (planStep && planStep.type === sr.type) {
+    if (planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined)) {
       validIndices.add(sr.stepIndex)
       validSteps.push(sr)
     } else {
@@ -38,8 +38,8 @@ const plan: ExecutionStep[] = [
   { type: 'workflow', tool: 'create_event', description: 'Create calendar event', dependsOn: [1] },
 ]
 
-function makeStepResult(index: number, type: ExecutionStep['type'], success = true): StepResult {
-  return { stepIndex: index, type, success, durationMs: 100, data: { mock: true } }
+function makeStepResult(index: number, type: ExecutionStep['type'], success = true, tool?: string): StepResult {
+  return { stepIndex: index, type, tool, success, durationMs: 100, data: { mock: true } }
 }
 
 // ─── Tests ──────────────────────────────────
@@ -47,10 +47,10 @@ function makeStepResult(index: number, type: ExecutionStep['type'], success = tr
 describe('Phase 3 checkpoint step validation', () => {
 
   describe('validateCompletedSteps', () => {
-    it('accepts steps whose type matches the plan', () => {
+    it('accepts steps whose type and tool match the plan', () => {
       const completed = [
-        makeStepResult(0, 'api_call'),
-        makeStepResult(1, 'api_call'),
+        makeStepResult(0, 'api_call', true, 'search_knowledge'),
+        makeStepResult(1, 'api_call', true, 'check_calendar'),
       ]
 
       const { validIndices, validSteps, discarded } = validateCompletedSteps(plan, completed)
@@ -65,8 +65,8 @@ describe('Phase 3 checkpoint step validation', () => {
     it('discards steps whose type does NOT match the plan', () => {
       // Step 0 claims to be 'workflow' but plan has 'api_call' at index 0
       const completed = [
-        makeStepResult(0, 'workflow'),
-        makeStepResult(1, 'api_call'),
+        makeStepResult(0, 'workflow', true, 'search_knowledge'),
+        makeStepResult(1, 'api_call', true, 'check_calendar'),
       ]
 
       const { validIndices, validSteps, discarded } = validateCompletedSteps(plan, completed)
@@ -80,8 +80,8 @@ describe('Phase 3 checkpoint step validation', () => {
 
     it('discards steps with out-of-bounds index', () => {
       const completed = [
-        makeStepResult(0, 'api_call'),
-        makeStepResult(99, 'api_call'), // plan only has 3 steps
+        makeStepResult(0, 'api_call', true, 'search_knowledge'),
+        makeStepResult(99, 'api_call', true, 'unknown_tool'), // plan only has 3 steps
       ]
 
       const { validIndices, discarded } = validateCompletedSteps(plan, completed)
@@ -101,15 +101,30 @@ describe('Phase 3 checkpoint step validation', () => {
 
     it('handles all steps already completed', () => {
       const completed = [
-        makeStepResult(0, 'api_call'),
-        makeStepResult(1, 'api_call'),
-        makeStepResult(2, 'workflow'),
+        makeStepResult(0, 'api_call', true, 'search_knowledge'),
+        makeStepResult(1, 'api_call', true, 'check_calendar'),
+        makeStepResult(2, 'workflow', true, 'create_event'),
       ]
 
       const { validIndices, validSteps } = validateCompletedSteps(plan, completed)
 
       expect(validIndices.size).toBe(3)
       expect(validSteps).toHaveLength(3)
+    })
+
+    it('discards steps whose tool does NOT match (same type)', () => {
+      // Both are api_call but different tools — should be discarded
+      const completed = [
+        makeStepResult(0, 'api_call', true, 'wrong_tool'),
+        makeStepResult(1, 'api_call', true, 'check_calendar'),
+      ]
+
+      const { validIndices, discarded } = validateCompletedSteps(plan, completed)
+
+      expect(validIndices.size).toBe(1)
+      expect(validIndices.has(0)).toBe(false) // tool mismatch
+      expect(validIndices.has(1)).toBe(true)  // tool matches
+      expect(discarded).toBe(1)
     })
 
     it('discards ALL steps when plan changed completely', () => {
@@ -119,8 +134,8 @@ describe('Phase 3 checkpoint step validation', () => {
       ]
 
       const completed = [
-        makeStepResult(0, 'api_call'),
-        makeStepResult(1, 'api_call'),
+        makeStepResult(0, 'api_call', true, 'search_knowledge'),
+        makeStepResult(1, 'api_call', true, 'check_calendar'),
       ]
 
       const { validIndices, discarded } = validateCompletedSteps(newPlan, completed)
@@ -154,7 +169,7 @@ describe('Phase 3 checkpoint step validation', () => {
     })
 
     it('dependency check works with pre-loaded completed results', () => {
-      const completedSteps = [makeStepResult(1, 'api_call', true)]
+      const completedSteps = [makeStepResult(1, 'api_call', true, 'check_calendar')]
       const results: StepResult[] = [...completedSteps]
 
       // Step 2 depends on step 1 — check if dependency succeeded
@@ -168,7 +183,7 @@ describe('Phase 3 checkpoint step validation', () => {
     })
 
     it('dependency check catches failed pre-loaded steps', () => {
-      const completedSteps = [makeStepResult(1, 'api_call', false)] // step 1 FAILED
+      const completedSteps = [makeStepResult(1, 'api_call', false, 'check_calendar')] // step 1 FAILED
       const results: StepResult[] = [...completedSteps]
 
       const step2 = plan[2]!

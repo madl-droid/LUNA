@@ -16,6 +16,8 @@ function makeCheckpoint(overrides: Partial<TaskCheckpoint> = {}): TaskCheckpoint
     channel: 'whatsapp',
     status: 'running',
     messageFrom: '5215512345678@s.whatsapp.net',
+    senderName: 'María López',
+    channelMessageId: 'wa-ext-msg-001',
     messageText: 'Quiero agendar para mañana',
     executionPlan: [
       { type: 'api_call', tool: 'search_knowledge' },
@@ -45,9 +47,9 @@ describe('Checkpoint resume', () => {
       const resumeMessage = {
         id: cp.messageId,
         channelName: cp.channel,
-        channelMessageId: cp.messageId,
+        channelMessageId: cp.channelMessageId || cp.messageId,
         from: cp.messageFrom,
-        senderName: '',
+        senderName: cp.senderName || '',
         timestamp: cp.createdAt,
         content: { type: 'text' as const, text: cp.messageText ?? '' },
         attachments: [],
@@ -55,7 +57,9 @@ describe('Checkpoint resume', () => {
 
       expect(resumeMessage.id).toBe('msg-resume-1')
       expect(resumeMessage.channelName).toBe('whatsapp')
+      expect(resumeMessage.channelMessageId).toBe('wa-ext-msg-001')
       expect(resumeMessage.from).toBe('5215512345678@s.whatsapp.net')
+      expect(resumeMessage.senderName).toBe('María López')
       expect(resumeMessage.content.text).toBe('Quiero agendar para mañana')
       expect(resumeMessage.timestamp).toEqual(new Date('2026-03-29T10:00:00Z'))
     })

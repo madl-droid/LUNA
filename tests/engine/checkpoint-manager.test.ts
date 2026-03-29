@@ -92,6 +92,8 @@ describe('CheckpointManager', () => {
         contactId: 'contact-1',
         channel: 'whatsapp',
         messageFrom: '5215500000000@s.whatsapp.net',
+        senderName: 'Juan',
+        channelMessageId: 'wa-msg-1',
         messageText: 'Hola quiero info',
         executionPlan: samplePlan,
       })
@@ -106,8 +108,10 @@ describe('CheckpointManager', () => {
       expect(q.params[2]).toBe('contact-1')       // contact_id
       expect(q.params[3]).toBe('whatsapp')        // channel
       expect(q.params[4]).toBe('5215500000000@s.whatsapp.net') // message_from
-      expect(q.params[5]).toBe('Hola quiero info') // message_text
-      expect(JSON.parse(q.params[6] as string)).toHaveLength(2) // execution_plan
+      expect(q.params[5]).toBe('Juan')             // sender_name
+      expect(q.params[6]).toBe('wa-msg-1')         // channel_message_id
+      expect(q.params[7]).toBe('Hola quiero info') // message_text
+      expect(JSON.parse(q.params[8] as string)).toHaveLength(2) // execution_plan
     })
 
     it('truncates message_text to 1000 chars', async () => {
@@ -116,11 +120,11 @@ describe('CheckpointManager', () => {
 
       await mgr.create({
         traceId: 't', messageId: 'm', contactId: null, channel: 'gmail',
-        messageFrom: 'user@test.com', messageText: longText,
-        executionPlan: [],
+        messageFrom: 'user@test.com', senderName: '', channelMessageId: '',
+        messageText: longText, executionPlan: [],
       })
 
-      const savedText = mock.queries[0]!.params[5] as string
+      const savedText = mock.queries[0]!.params[7] as string
       expect(savedText.length).toBe(1000)
     })
 
@@ -129,12 +133,12 @@ describe('CheckpointManager', () => {
 
       await mgr.create({
         traceId: 't', messageId: 'm', contactId: null, channel: 'whatsapp',
-        messageFrom: 'from', messageText: null,
-        executionPlan: [],
+        messageFrom: 'from', senderName: '', channelMessageId: '',
+        messageText: null, executionPlan: [],
       })
 
-      // null → '' via (params.messageText ?? '').slice(0, 1000)
-      expect(mock.queries[0]!.params[5]).toBe('')
+      // null stays null (preserve semantic distinction)
+      expect(mock.queries[0]!.params[7]).toBeNull()
     })
 
     it('returns empty string if INSERT returns no rows', async () => {
@@ -142,7 +146,8 @@ describe('CheckpointManager', () => {
 
       const id = await mgr.create({
         traceId: 't', messageId: 'm', contactId: null, channel: 'whatsapp',
-        messageFrom: 'f', messageText: null, executionPlan: [],
+        messageFrom: 'f', senderName: '', channelMessageId: '',
+        messageText: null, executionPlan: [],
       })
 
       expect(id).toBe('')

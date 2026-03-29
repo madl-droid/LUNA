@@ -266,6 +266,8 @@ async function processMessageInner(
         contactId: ctx.contactId,
         channel: message.channelName,
         messageFrom: message.from,
+        senderName: message.senderName ?? '',
+        channelMessageId: message.channelMessageId ?? '',
         messageText: message.content.text ?? null,
         executionPlan: evaluation.executionPlan,
       }).catch(cpErr => {
@@ -355,6 +357,9 @@ async function processMessageInner(
       evaluation = await phase2Evaluate(ctx, engineConfig, replanCtx, registry)
       phase2DurationMs += Date.now() - replanP2Start
 
+      // Clear completed steps from previous plan — new plan may have different steps
+      phase3Opts.completedSteps = undefined
+
       execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry, phase3Opts)
     }
 
@@ -417,9 +422,9 @@ async function processMessageInner(
       totalDurationMs,
     }, 'Phase 5 done — pipeline complete')
 
-    // Mark checkpoint complete
+    // Mark checkpoint complete (awaited to prevent duplicate responses on resume)
     if (checkpointMgr && checkpointId) {
-      checkpointMgr.complete(checkpointId).catch(cpErr =>
+      await checkpointMgr.complete(checkpointId).catch(cpErr =>
         logger.warn({ err: cpErr, traceId }, 'Failed to complete checkpoint'),
       )
     }
@@ -619,6 +624,7 @@ async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promi
  */
 async function initCheckpoints(): Promise<void> {
   if (!checkpointMgr) return
+  const db = registry.getDb()
 
   await checkpointMgr.expireStale(engineConfig.checkpointResumeWindowMs)
 
@@ -634,6 +640,21 @@ async function initCheckpoints(): Promise<void> {
         continue
       }
 
+      // Idempotency check: skip if a response was already sent for this message
+      try {
+        const alreadySent = await db.query(
+          `SELECT 1 FROM messages WHERE reply_to_message_id = $1 AND direction = 'outbound' LIMIT 1`,
+          [cp.messageId],
+        )
+        if (alreadySent.rows.length > 0) {
+          logger.info({ checkpointId: cp.id, messageId: cp.messageId }, 'Response already sent — skipping resume')
+          await checkpointMgr.complete(cp.id)
+          continue
+        }
+      } catch (idempErr) {
+        logger.warn({ err: idempErr, checkpointId: cp.id }, 'Idempotency check failed — resuming anyway')
+      }
+
       logger.info({
         checkpointId: cp.id,
         traceId: cp.traceId,
@@ -646,9 +667,9 @@ async function initCheckpoints(): Promise<void> {
         const resumeMessage: IncomingMessage = {
           id: cp.messageId,
           channelName: cp.channel as IncomingMessage['channelName'],
-          channelMessageId: cp.messageId,
+          channelMessageId: cp.channelMessageId || cp.messageId,
           from: cp.messageFrom,
-          senderName: '',
+          senderName: cp.senderName || '',
           timestamp: cp.createdAt,
           content: { type: 'text', text: cp.messageText ?? '' },
           attachments: [],

@@ -224,6 +224,8 @@ export interface EvaluatorOutput {
 export interface StepResult {
   stepIndex: number
   type: ExecutionPlanType
+  /** Tool name (if applicable) — used for checkpoint step validation */
+  tool?: string
   success: boolean
   data?: unknown
   error?: string

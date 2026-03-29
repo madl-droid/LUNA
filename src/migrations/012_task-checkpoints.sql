@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS task_checkpoints (
 
   -- Minimal message payload for resume (~200 bytes)
   message_from    TEXT NOT NULL,
+  sender_name     TEXT NOT NULL DEFAULT '',
+  channel_message_id TEXT NOT NULL DEFAULT '',
   message_text    TEXT,
 
   -- Phase 3 execution state

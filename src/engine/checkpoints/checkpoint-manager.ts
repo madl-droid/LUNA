@@ -24,13 +24,15 @@ export class CheckpointManager {
     contactId: string | null
     channel: string
     messageFrom: string
+    senderName: string
+    channelMessageId: string
     messageText: string | null
     executionPlan: ExecutionStep[]
   }): Promise<string> {
     const { rows } = await this.db.query<{ id: string }>(
       `INSERT INTO task_checkpoints
-         (trace_id, message_id, contact_id, channel, message_from, message_text, execution_plan)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (trace_id, message_id, contact_id, channel, message_from, sender_name, channel_message_id, message_text, execution_plan)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         params.traceId,
@@ -38,7 +40,9 @@ export class CheckpointManager {
         params.contactId,
         params.channel,
         params.messageFrom,
-        (params.messageText ?? '').slice(0, 1000),
+        params.senderName,
+        params.channelMessageId,
+        params.messageText?.slice(0, 1000) ?? null,
         JSON.stringify(params.executionPlan),
       ],
     )
@@ -138,6 +142,8 @@ function rowToCheckpoint(row: Record<string, unknown>): TaskCheckpoint {
     channel: row.channel as string,
     status: row.status as CheckpointStatus,
     messageFrom: row.message_from as string,
+    senderName: (row.sender_name as string) ?? '',
+    channelMessageId: (row.channel_message_id as string) ?? '',
     messageText: row.message_text as string | null,
     executionPlan: (row.execution_plan ?? []) as ExecutionStep[],
     stepResults: (row.step_results ?? []) as StepResult[],
