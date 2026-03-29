@@ -132,6 +132,7 @@ const manifest: ModuleManifest = {
     AGENT_TITLE: z.string().default(''),
     AGENT_LANGUAGE: z.string().default('es'),
     AGENT_COUNTRY: z.string().default(''),
+    COMPANY_NAME: z.string().default(''),
     AGENT_ACCENT: z.string().default(''),
     // Generated accent prompt — injected into context when accent is set
     // Content will be built by a future accent prompt generator
@@ -202,11 +203,21 @@ const manifest: ModuleManifest = {
         width: 'half',
       },
       {
+        key: 'COMPANY_NAME',
+        type: 'text',
+        label: { es: 'Empresa', en: 'Company' },
+        info: {
+          es: 'Nombre de la empresa donde trabaja el agente. Se inyecta en la identidad del agente.',
+          en: 'Company the agent works for. Injected into the agent identity.',
+        },
+        width: 'half',
+      },
+      {
         key: 'AGENT_COUNTRY',
         type: 'text',
-        label: { es: 'Pais', en: 'Country' },
+        label: { es: 'Pa\u00eds', en: 'Country' },
         info: {
-          es: 'Pais donde opera el agente. Afecta contexto regional y referencias culturales.',
+          es: 'Pa\u00eds donde opera el agente. Afecta contexto regional y referencias culturales.',
           en: 'Country where the agent operates. Affects regional context and cultural references.',
         },
         width: 'half',

@@ -27,9 +27,7 @@ export interface SetupState {
   // API keys (both providers — no model/provider selection)
   anthropicApiKey: string
   googleApiKey: string
-  instanceName: string
-  logLevel: string
-  nodeEnv: string
+  companyName: string
 }
 
 export function emptyState(): SetupState {
@@ -46,9 +44,7 @@ export function emptyState(): SetupState {
     agentAccent: '',
     anthropicApiKey: '',
     googleApiKey: '',
-    instanceName: '',
-    logLevel: 'info',
-    nodeEnv: 'production',
+    companyName: '',
   }
 }
 
@@ -438,32 +434,18 @@ export function stepSystem(lang: SetupLang, state: SetupState, errors?: Record<s
     ${e['_global'] ? `<div class="global-error">${esc(e['_global'])}</div>` : ''}
     <form method="POST" action="/setup/step/5">
       <div class="field">
-        <label>${esc(st('instance_name', lang))}</label>
-        <input type="text" name="instance_name" value="${esc(state.instanceName)}"
-          placeholder="${esc(st('instance_name_placeholder', lang))}">
-      </div>
-      <div class="half-row">
-        <div class="field">
-          <label>${esc(st('log_level', lang))}</label>
-          <select name="log_level">
-            ${['info', 'debug', 'warn', 'error'].map(l =>
-              `<option value="${l}" ${state.logLevel === l ? 'selected' : ''}>${l}</option>`
-            ).join('')}
-          </select>
-        </div>
-        <div class="field">
-          <label>${esc(st('node_env', lang))}</label>
-          <select name="node_env">
-            <option value="production" ${state.nodeEnv === 'production' ? 'selected' : ''}>${esc(st('node_env_production', lang))}</option>
-            <option value="development" ${state.nodeEnv === 'development' ? 'selected' : ''}>${esc(st('node_env_development', lang))}</option>
-          </select>
-        </div>
+        <label>${esc(st('company_name', lang))} *</label>
+        <input type="text" name="company_name" value="${esc(state.companyName)}" required
+          placeholder="${esc(st('company_name_placeholder', lang))}"
+          class="${e['company_name'] ? 'field-error' : ''}">
+        ${e['company_name'] ? `<div class="error-msg">${esc(e['company_name'])}</div>` : ''}
+        <div class="hint">${esc(st('company_name_hint', lang))}</div>
       </div>
 
       <h3 style="margin-top:24px; font-size:15px;">${esc(st('summary_title', lang))}</h3>
       <table class="summary-table">
         <tr><td>${esc(st('summary_admin', lang))}</td><td>${esc(state.adminName)} (${esc(state.adminEmail)})</td></tr>
-        <tr><td>${esc(st('summary_agent', lang))}</td><td>${esc(agentFullName)}${state.agentTitle ? ` — ${esc(state.agentTitle)}` : ''}</td></tr>
+        <tr><td>${esc(st('summary_agent', lang))}</td><td>${esc(agentFullName)}${state.agentTitle ? ` \u2014 ${esc(state.agentTitle)}` : ''}</td></tr>
         <tr><td>${esc(st('summary_agent_lang', lang))}</td><td>${esc(agentLangLabel)}</td></tr>
         <tr><td>${esc(st('summary_agent_accent', lang))}</td><td>${esc(accentLabel)}</td></tr>
         ${state.anthropicApiKey ? `<tr><td>Anthropic API Key</td><td>${esc(st('summary_masked', lang))}</td></tr>` : ''}
@@ -487,16 +469,24 @@ export function setupCompletePage(lang: SetupLang): string {
     <div class="success-check">&#10003;</div>
     <h2 style="text-align:center;">${esc(st('setup_complete_title', lang))}</h2>
     <p class="step-desc" style="text-align:center;">${esc(st('setup_complete_text', lang))}</p>
-    <div class="btn-row" style="justify-content:center;">
+
+    <div class="warning-box" style="margin-top:20px;">
+      <strong>${esc(st('setup_defaults_title', lang))}</strong><br>
+      ${esc(st('setup_defaults_messages', lang))}<br><br>
+      ${esc(st('setup_defaults_change', lang))}<br>
+      <a href="/console/contacts?page=config&lang=${lang}" style="font-weight:600;">${esc(st('setup_defaults_link', lang))}</a>
+    </div>
+
+    <div class="btn-row" style="justify-content:center; margin-top:20px;">
       <a href="/console" class="btn btn-primary">${esc(st('go_to_console', lang))}</a>
     </div>
-    <script>setTimeout(() => window.location.href = '/console', 3000);</script>`
+    <script>setTimeout(() => window.location.href = '/console', 8000);</script>`
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LUNA — Setup Complete</title>
+  <title>LUNA \u2014 Setup Complete</title>
   <style>${WIZARD_CSS}</style>
 </head>
 <body>
