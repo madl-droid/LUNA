@@ -12,9 +12,10 @@ import type {
   EngineConfig,
 } from '../types.js'
 import { buildCompositorPrompt } from '../prompts/compositor.js'
-import { callLLM } from '../utils/llm-client.js'
+import { callLLM, callLLMWithFallback } from '../utils/llm-client.js'
 import { loadFallback } from '../fallbacks/fallback-loader.js'
 import { formatForChannel } from '../utils/message-formatter.js'
+import { isComplexPlan } from './phase3-execute.js'
 
 const logger = pino({ name: 'engine:phase4' })
 
@@ -75,6 +76,15 @@ export async function phase4Compose(
     rawResponse = 'FALLBACK: all providers failed'
   }
 
+  // ═══ Criticizer step — quality gate via Gemini Pro ═══
+  // Mode: 'disabled' = skip, 'complex_only' = 3+ LLM steps, 'always' = every response
+  if (config.criticizerMode !== 'disabled' && responseText && !rawResponse?.startsWith('FALLBACK')) {
+    const shouldCriticize = config.criticizerMode === 'always' || isComplexPlan(evaluation)
+    if (shouldCriticize) {
+      responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config, registry)
+    }
+  }
+
   // ═══ Channel formatting ═══
   const formattedParts = formatForChannel(responseText, ctx.message.channelName, registry)
 
@@ -120,6 +130,198 @@ export async function phase4Compose(
     audioDurationSeconds,
     outputFormat,
     rawResponse,
+  }
+}
+
+// isComplexPlan imported from phase3-execute.ts (single source of truth)
+
+/**
+ * Run the criticizer quality gate (2-step flow):
+ *
+ * 1. **Pro reviews**: Gemini Pro (task 'criticize') evaluates the response
+ *    and returns structured JSON refinements.
+ *    Prompt loaded from prompts module (criticizer-base + custom checklist).
+ *
+ * 2. **Flash regenerates**: The compositor model (Flash) gets a second pass
+ *    with the refinement instructions injected naturally into its system prompt.
+ *
+ * Fail-open: if criticizer or regeneration fails, original response is returned.
+ */
+async function runCriticizer(
+  responseText: string,
+  compositorSystem: string,
+  compositorUserMessage: string,
+  ctx: ContextBundle,
+  evaluation: EvaluatorOutput,
+  config: EngineConfig,
+  registry?: Registry,
+): Promise<string> {
+  // ── Load criticizer prompt from prompts service ──
+  const criticizerPrompt = await loadCriticizerPrompt(registry)
+
+  // ── Step 1: Pro reviews → structured JSON refinements ──
+  let refinements: CriticRefinements
+  try {
+    const result = await callLLMWithFallback({
+      task: 'criticize',
+      system: `${criticizerPrompt}
+
+Responde SOLO con JSON válido. Sin markdown, sin backticks, sin texto fuera del JSON.
+
+Si la respuesta es aceptable:
+{"approved": true}
+
+Si necesita corrección:
+{"approved": false, "tone": "instrucción de tono si aplica", "length": "más corta|más larga|null", "remove": ["frase o dato a eliminar"], "add": ["dato o CTA a incluir"], "rephrase": ["instrucción específica de reformulación"]}
+
+Solo incluye los campos que aplican. Omite los que no necesitan cambio.`,
+      messages: [{
+        role: 'user',
+        content: `Intención del usuario: ${evaluation.intent}
+Canal: ${ctx.message.channelName}
+
+Respuesta del agente a revisar:
+---
+${responseText}
+---
+
+¿Es aceptable o necesita corrección? Responde con JSON.`,
+      }],
+      maxTokens: 1024,
+      temperature: 0.2,
+    }, config.fallbackRespondProvider, config.fallbackRespondModel)
+
+    if (!result.text || result.text.trim() === '') {
+      return responseText
+    }
+
+    const parsed = parseCriticResponse(result.text)
+    if (!parsed) {
+      logger.warn({ traceId: ctx.traceId, text: result.text.slice(0, 200) }, 'Criticizer returned unparseable response')
+      return responseText
+    }
+
+    if (parsed.approved) {
+      logger.debug({ traceId: ctx.traceId }, 'Criticizer approved response')
+      return responseText
+    }
+
+    refinements = parsed
+    logger.info({ traceId: ctx.traceId, provider: result.provider }, 'Criticizer found issues — requesting regeneration')
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Criticizer failed — using original response')
+    return responseText
+  }
+
+  // ── Step 2: Flash regenerates with structured refinements ──
+  try {
+    const refinementInstructions = buildRefinementInstructions(refinements)
+    const enrichedSystem = `${compositorSystem}\n\n--- INSTRUCCIONES ADICIONALES ---\n${refinementInstructions}`
+
+    const regenerated = await callWithRetries(
+      config.respondProvider, config.respondModel,
+      enrichedSystem, compositorUserMessage,
+      config, ctx.traceId,
+    )
+
+    if (regenerated) {
+      logger.info({ traceId: ctx.traceId }, 'Criticizer regeneration succeeded')
+      return regenerated
+    }
+
+    logger.warn({ traceId: ctx.traceId }, 'Criticizer regeneration failed — using original response')
+    return responseText
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Criticizer regeneration error — using original response')
+    return responseText
+  }
+}
+
+// ─── Criticizer helpers ─────────────────────────
+
+interface CriticRefinements {
+  approved: boolean
+  tone?: string
+  length?: string | null
+  remove?: string[]
+  add?: string[]
+  rephrase?: string[]
+}
+
+function parseCriticResponse(text: string): CriticRefinements | null {
+  try {
+    const parsed = JSON.parse(text.trim()) as Record<string, unknown>
+    if (typeof parsed['approved'] !== 'boolean') return null
+    return parsed as unknown as CriticRefinements
+  } catch {
+    // Try extracting JSON from response if wrapped in extra text
+    const match = text.match(/\{[\s\S]*\}/)
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]) as Record<string, unknown>
+        if (typeof parsed['approved'] !== 'boolean') return null
+        return parsed as unknown as CriticRefinements
+      } catch { /* fall through */ }
+    }
+    return null
+  }
+}
+
+function buildRefinementInstructions(r: CriticRefinements): string {
+  const parts: string[] = []
+  if (r.tone) parts.push(`Ajusta el tono: ${r.tone}`)
+  if (r.length === 'más corta') parts.push('Haz la respuesta más concisa.')
+  if (r.length === 'más larga') parts.push('Expande la respuesta con más detalle.')
+  if (r.remove && r.remove.length > 0) {
+    parts.push(`No incluyas: ${r.remove.join('; ')}`)
+  }
+  if (r.add && r.add.length > 0) {
+    parts.push(`Asegúrate de incluir: ${r.add.join('; ')}`)
+  }
+  if (r.rephrase && r.rephrase.length > 0) {
+    for (const instruction of r.rephrase) {
+      parts.push(instruction)
+    }
+  }
+  return parts.join('\n')
+}
+
+/** Default criticizer prompt when prompts service is not available */
+const DEFAULT_CRITICIZER_PROMPT = `Eres un revisor de calidad de respuestas de un agente de atención al cliente.
+Evalúa la respuesta del agente y decide si es aceptable o necesita corrección.
+
+Reglas de evaluación:
+1. ¿Responde lo que el usuario preguntó? No se va por la tangente.
+2. ¿Es apropiado para el canal? Longitud y formato correctos.
+3. ¿Respeta guardrails? No inventa información, no promete de más.
+4. ¿Los resultados de tools están integrados naturalmente? No dice "según la herramienta...".
+5. ¿NO revela datos internos del sistema? (API keys, nombres de modelos, IDs internos)
+6. ¿El tono es profesional y cálido?
+7. ¿Termina con pregunta o CTA claro?`
+
+/**
+ * Load criticizer prompt from prompts service (criticizer-base + custom checklist).
+ * Falls back to hardcoded default if prompts service is not available.
+ */
+async function loadCriticizerPrompt(registry?: Registry): Promise<string> {
+  if (!registry) return DEFAULT_CRITICIZER_PROMPT
+
+  const promptsService = registry.getOptional<{
+    getSystemPrompt(name: string): Promise<string>
+    getCompositorPrompts(userType: string): Promise<{ criticizer: string }>
+  }>('prompts:service')
+
+  if (!promptsService) return DEFAULT_CRITICIZER_PROMPT
+
+  try {
+    const [criticBase, compositorPrompts] = await Promise.all([
+      promptsService.getSystemPrompt('criticizer-base'),
+      promptsService.getCompositorPrompts('default'),
+    ])
+    const combined = [criticBase, compositorPrompts.criticizer].filter(Boolean).join('\n')
+    return combined || DEFAULT_CRITICIZER_PROMPT
+  } catch {
+    return DEFAULT_CRITICIZER_PROMPT
   }
 }
 

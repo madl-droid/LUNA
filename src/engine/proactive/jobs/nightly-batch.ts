@@ -157,7 +157,7 @@ Evalúa este lead frío. Responde SOLO con JSON:
         }
 
         const llmResult = await ctx.registry.callHook('llm:chat', {
-          task: 'classify',
+          task: 'nightly-scoring',
           system: 'Eres un analista de leads. Evalúa si un lead frío vale la pena reactivar.',
           messages: [{
             role: 'user' as const,
@@ -270,7 +270,7 @@ ${conversationText.slice(0, 15000)}`
         }
 
         const llmResult = await ctx.registry.callHook('llm:chat', {
-          task: 'compress',
+          task: 'nightly-compress',
           provider: batchLlm.provider,
           model: batchLlm.model,
           system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente. Extrae la información clave.',

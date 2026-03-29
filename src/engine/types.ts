@@ -607,6 +607,9 @@ export interface EngineConfig {
   // FIX: E-30 — Agent slug (no hardcoding 'luna')
   agentSlug: string
 
+  // Criticizer (quality gate): 'disabled' | 'complex_only' | 'always'
+  criticizerMode: 'disabled' | 'complex_only' | 'always'
+
   // Checkpoints (resumable pipelines)
   checkpointEnabled: boolean
   /** Max age (ms) of incomplete checkpoints eligible for resume on startup */

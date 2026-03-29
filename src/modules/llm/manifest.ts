@@ -29,7 +29,10 @@ const manifest: ModuleManifest = {
     ANTHROPIC_API_KEY: z.string().default(''),
     GOOGLE_AI_API_KEY: z.string().default(''),
 
-    // Per-capability API key overrides
+    // API key mode: basic (one key per provider) or advanced (per-group keys)
+    LLM_API_MODE: z.string().default('basic'),
+
+    // Per-capability API key overrides (legacy — kept for backward compat)
     LLM_VISION_API_KEY: z.string().default(''),
     LLM_STT_API_KEY: z.string().default(''),
     LLM_IMAGE_GEN_API_KEY: z.string().default(''),
@@ -37,6 +40,17 @@ const manifest: ModuleManifest = {
     // Knowledge embeddings API key override
     KNOWLEDGE_EMBEDDING_API_SEPARATE: boolEnv(false),
     KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(''),
+
+    // Advanced mode: Gemini group keys (fallback to GOOGLE_AI_API_KEY if empty)
+    LLM_GOOGLE_ENGINE_API_KEY: z.string().default(''),
+    LLM_GOOGLE_MULTIMEDIA_API_KEY: z.string().default(''),
+    LLM_GOOGLE_VOICE_API_KEY: z.string().default(''),
+    LLM_GOOGLE_KNOWLEDGE_API_KEY: z.string().default(''),
+
+    // Advanced mode: Anthropic group keys (fallback to ANTHROPIC_API_KEY if empty)
+    LLM_ANTHROPIC_ENGINE_API_KEY: z.string().default(''),
+    LLM_ANTHROPIC_CORTEX_API_KEY: z.string().default(''),
+    LLM_ANTHROPIC_MEMORY_API_KEY: z.string().default(''),
 
     // Circuit breaker
     LLM_CB_FAILURE_THRESHOLD: numEnvMin(1, 5),
@@ -72,6 +86,12 @@ const manifest: ModuleManifest = {
     LLM_ROUTE_COMPLEX: z.string().default(''),
     LLM_ROUTE_TOOLS: z.string().default(''),
     LLM_ROUTE_PROACTIVE: z.string().default(''),
+    LLM_ROUTE_CRITICIZE: z.string().default(''),
+    LLM_ROUTE_DOCUMENT_READ: z.string().default(''),
+    LLM_ROUTE_BATCH: z.string().default(''),
+
+    // Criticizer mode (quality gate — Pro reviews, Flash regenerates)
+    LLM_CRITICIZER_MODE: z.string().default('complex_only'),
 
     // Task routing — downgrade targets (provider + model per task)
     LLM_CLASSIFY_DOWNGRADE_PROVIDER: z.string().default(''),
@@ -108,18 +128,69 @@ const manifest: ModuleManifest = {
     group: 'system',
     icon: '&#129504;',
     fields: [
-      // API Keys
+      // API Keys — Basic mode (always visible)
       { key: 'ANTHROPIC_API_KEY', type: 'secret', label: { es: 'API Key Anthropic', en: 'Anthropic API Key' } },
       { key: 'GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Google AI', en: 'Google AI API Key' } },
-      { key: 'LLM_VISION_API_KEY', type: 'secret', label: { es: 'API Key Vision (override)', en: 'Vision API Key (override)' },
-        info: { es: 'Usar API key diferente para tareas de visión', en: 'Use different API key for vision tasks' } },
-      { key: 'LLM_STT_API_KEY', type: 'secret', label: { es: 'API Key STT (override)', en: 'STT API Key (override)' },
-        info: { es: 'Usar API key diferente para Speech-to-Text', en: 'Use different API key for Speech-to-Text' } },
-      { key: 'LLM_IMAGE_GEN_API_KEY', type: 'secret', label: { es: 'API Key Image Gen (override)', en: 'Image Gen API Key (override)' } },
+
+      // API Key mode toggle
+      { key: 'LLM_API_MODE', type: 'select', label: { es: 'Modo de API Keys', en: 'API Key Mode' },
+        info: {
+          es: 'Básico: una sola key por proveedor. Avanzado: keys separadas por grupo de uso (Engine, Multimedia, Voz, etc.). Si un grupo no tiene key, usa la principal.',
+          en: 'Basic: one key per provider. Advanced: separate keys per usage group (Engine, Multimedia, Voice, etc.). If a group has no key, falls back to the main one.',
+        },
+        options: [
+          { value: 'basic', label: { es: 'Básico', en: 'Basic' } },
+          { value: 'advanced', label: { es: 'Avanzado', en: 'Advanced' } },
+        ],
+      },
+
+      // Advanced mode — Gemini group keys
+      { key: 'LLM_GOOGLE_ENGINE_API_KEY', type: 'secret',
+        label: { es: 'Gemini — Engine', en: 'Gemini — Engine' },
+        info: { es: 'Key para llamadas del engine que usan Gemini (compose, web_search)', en: 'Key for engine calls using Gemini (compose, web_search)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+      { key: 'LLM_GOOGLE_MULTIMEDIA_API_KEY', type: 'secret',
+        label: { es: 'Gemini — Multimedia', en: 'Gemini — Multimedia' },
+        info: { es: 'Key para lectura de multimedia (visión, STT, procesamiento de archivos)', en: 'Key for multimedia processing (vision, STT, file processing)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+      { key: 'LLM_GOOGLE_VOICE_API_KEY', type: 'secret',
+        label: { es: 'Gemini — Voz', en: 'Gemini — Voice' },
+        info: { es: 'Key para Gemini Live y Gemini TTS', en: 'Key for Gemini Live and Gemini TTS' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+      { key: 'LLM_GOOGLE_KNOWLEDGE_API_KEY', type: 'secret',
+        label: { es: 'Gemini — Knowledge', en: 'Gemini — Knowledge' },
+        info: { es: 'Key para embeddings y operaciones de conocimiento', en: 'Key for embeddings and knowledge operations' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+
+      // Advanced mode — Anthropic group keys
+      { key: 'LLM_ANTHROPIC_ENGINE_API_KEY', type: 'secret',
+        label: { es: 'Anthropic — Engine', en: 'Anthropic — Engine' },
+        info: { es: 'Key para llamadas del engine que usan Anthropic (classify, tools)', en: 'Key for engine calls using Anthropic (classify, tools)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+      { key: 'LLM_ANTHROPIC_CORTEX_API_KEY', type: 'secret',
+        label: { es: 'Anthropic — Cortex', en: 'Anthropic — Cortex' },
+        info: { es: 'Key para todas las llamadas del módulo Cortex (Pulse, Trace, Reflex)', en: 'Key for all Cortex module calls (Pulse, Trace, Reflex)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+      { key: 'LLM_ANTHROPIC_MEMORY_API_KEY', type: 'secret',
+        label: { es: 'Anthropic — Memoria', en: 'Anthropic — Memory' },
+        info: { es: 'Key para resúmenes, compresión de memoria y batch nocturno', en: 'Key for summaries, memory compression and nightly batch' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+
+      // Legacy per-capability overrides (hidden behind advanced mode)
+      { key: 'LLM_VISION_API_KEY', type: 'secret', label: { es: 'API Key Vision (legacy)', en: 'Vision API Key (legacy)' },
+        info: { es: 'Usar API key diferente para tareas de visión (legacy, preferir modo avanzado)', en: 'Use different API key for vision tasks (legacy, prefer advanced mode)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+      { key: 'LLM_STT_API_KEY', type: 'secret', label: { es: 'API Key STT (legacy)', en: 'STT API Key (legacy)' },
+        info: { es: 'Usar API key diferente para Speech-to-Text (legacy, preferir modo avanzado)', en: 'Use different API key for Speech-to-Text (legacy, prefer advanced mode)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+      { key: 'LLM_IMAGE_GEN_API_KEY', type: 'secret', label: { es: 'API Key Image Gen (legacy)', en: 'Image Gen API Key (legacy)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
       { key: 'KNOWLEDGE_EMBEDDING_API_SEPARATE', type: 'boolean', label: { es: 'API Key de embeddings diferente', en: 'Separate embedding API Key' },
-        info: { es: 'Si se activa, usa una API key diferente para embeddings de conocimiento. Si no, usa la misma de Google AI.', en: 'If enabled, use a separate API key for knowledge embeddings. Otherwise uses the Google AI key.' } },
+        info: { es: 'Si se activa, usa una API key diferente para embeddings de conocimiento. Si no, usa la misma de Google AI.', en: 'If enabled, use a separate API key for knowledge embeddings. Otherwise uses the Google AI key.' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
       { key: 'KNOWLEDGE_GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Embeddings (override)', en: 'Embeddings API Key (override)' },
-        info: { es: 'API key de Google AI para embeddings de conocimiento (text-embedding-004)', en: 'Google AI API key for knowledge embeddings (text-embedding-004)' } },
+        info: { es: 'API key de Google AI para embeddings de conocimiento (text-embedding-004)', en: 'Google AI API key for knowledge embeddings (text-embedding-004)' },
+        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
 
       // Circuit breaker
       { key: 'LLM_CB_FAILURE_THRESHOLD', type: 'number', label: { es: 'Fallos para circuit breaker', en: 'Failures for circuit breaker' },
@@ -150,6 +221,20 @@ const manifest: ModuleManifest = {
       // Fallback chain
       { key: 'LLM_FALLBACK_CHAIN', type: 'text', label: { es: 'Cadena de fallback', en: 'Fallback chain' },
         info: { es: 'Orden de proveedores separados por coma (ej: anthropic,google)', en: 'Provider order comma-separated (e.g.: anthropic,google)' } },
+
+      // Model scanner
+      // Criticizer (quality gate)
+      { key: 'LLM_CRITICIZER_MODE', type: 'select', label: { es: 'Criticizer (gate de calidad)', en: 'Criticizer (quality gate)' },
+        info: {
+          es: 'Gemini Pro revisa la respuesta antes de enviarla. Si encuentra problemas, Flash regenera con refinements. El prompt se configura en la pestaña Identidad > Criticizer.',
+          en: 'Gemini Pro reviews response before sending. If issues found, Flash regenerates with refinements. Prompt configured in Identity > Criticizer tab.',
+        },
+        options: [
+          { value: 'disabled', label: { es: 'Desactivado', en: 'Disabled' } },
+          { value: 'complex_only', label: { es: 'Solo complejo (3+ pasos LLM)', en: 'Complex only (3+ LLM steps)' } },
+          { value: 'always', label: { es: 'Siempre', en: 'Always' } },
+        ],
+      },
 
       // Model scanner
       { key: 'MODEL_SCAN_INTERVAL_MS', type: 'number', label: { es: 'Intervalo de escaneo de modelos (ms)', en: 'Model scan interval (ms)' },
@@ -243,8 +328,8 @@ const manifest: ModuleManifest = {
               primary: data.primary,
               fallbacks: data.fallbacks ?? [],
             }
-            _gateway.setRoute(data.task, route)
-            jsonResponse(res, 200, { ok: true })
+            const result = _gateway.setRoute(data.task, route)
+            jsonResponse(res, 200, { ok: true, warning: result.warning })
           } catch (err) {
             jsonResponse(res, 400, { error: 'Invalid route data: ' + String(err) })
           }

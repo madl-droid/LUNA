@@ -72,9 +72,37 @@ export interface Phase3Options {
 }
 
 /**
+ * Count steps in the plan that require sequential LLM calls.
+ * Used to determine if the plan is "complex" (3+ LLM steps → Opus)
+ * or "simple" (≤2 LLM steps → Sonnet).
+ *
+ * LLM-requiring step types: subagent, web_search, code_execution
+ * Deterministic (no LLM): api_call, workflow, memory_lookup, process_attachment, respond_only
+ */
+/** LLM step types that count for complexity routing */
+const LLM_STEP_TYPES = new Set(['subagent', 'web_search', 'code_execution'])
+
+/** Threshold: plans with this many LLM steps or more are "complex" */
+export const COMPLEX_PLAN_THRESHOLD = 3
+
+export function countLLMSteps(plan: ExecutionStep[]): number {
+  return plan.filter(s => LLM_STEP_TYPES.has(s.type)).length
+}
+
+/** Check if an evaluation plan is complex (3+ LLM steps) */
+export function isComplexPlan(evaluation: EvaluatorOutput): boolean {
+  const llmSteps = evaluation.executionPlan.filter(s => LLM_STEP_TYPES.has(s.type)).length
+  return llmSteps >= COMPLEX_PLAN_THRESHOLD
+}
+
+/**
  * Execute Phase 3: Run the execution plan from Phase 2.
  * Steps run with concurrency controlled by StepSemaphore.
  * If checkpoint options are provided, skips already-completed steps and persists new results.
+ *
+ * Plan complexity routing:
+ * - Simple plans (≤2 LLM steps): LLM calls in steps use task 'tools' → Sonnet
+ * - Complex plans (3+ LLM steps): LLM calls in steps use task 'complex' → Opus
  */
 export async function phase3Execute(
   ctx: ContextBundle,
@@ -89,13 +117,18 @@ export async function phase3Execute(
   const cpMgr = opts?.checkpointManager
   const cpId = opts?.checkpointId
 
+  const { executionPlan } = evaluation
+  const llmStepCount = countLLMSteps(executionPlan)
+  const planIsComplex = llmStepCount >= COMPLEX_PLAN_THRESHOLD
+  const stepLlmTask = planIsComplex ? 'complex' : 'tools'
+
   logger.info({
     traceId: ctx.traceId,
-    planSteps: evaluation.executionPlan.length,
+    planSteps: executionPlan.length,
+    llmSteps: llmStepCount,
+    complexity: planIsComplex ? 'complex' : 'simple',
     resumingSteps: opts?.completedSteps?.length ?? 0,
   }, 'Phase 3 start')
-
-  const { executionPlan } = evaluation
 
   // If respond_only, skip execution
   if (executionPlan.length === 1 && executionPlan[0]!.type === 'respond_only') {
@@ -137,7 +170,7 @@ export async function phase3Execute(
       if (prev) return prev
     }
 
-    const result = await executeStep(step, index, ctx, db, redis, config, registry)
+    const result = await executeStep(step, index, ctx, db, redis, config, registry, stepLlmTask)
 
     // Persist step result to checkpoint (fire-and-forget, never blocks)
     if (cpMgr && cpId) {
@@ -242,6 +275,7 @@ async function executeStep(
   redis: Redis,
   config: EngineConfig,
   registry: Registry,
+  llmTask = 'tools',
 ): Promise<StepResult> {
   const startMs = Date.now()
 
@@ -258,7 +292,7 @@ async function executeStep(
         break
 
       case 'subagent':
-        result = await executeSubagent(step, index, ctx, config, startMs, registry)
+        result = await executeSubagent(step, index, ctx, config, startMs, registry, llmTask)
         break
 
       case 'memory_lookup':
@@ -266,7 +300,7 @@ async function executeStep(
         break
 
       case 'web_search':
-        result = await executeWebSearch(step, index, config, startMs)
+        result = await executeWebSearch(step, index, config, startMs, llmTask)
         break
 
       case 'process_attachment':
@@ -274,7 +308,7 @@ async function executeStep(
         break
 
       case 'code_execution':
-        result = await executeCodeExecution(step, index, config, startMs)
+        result = await executeCodeExecution(step, index, config, startMs, llmTask)
         break
 
       case 'respond_only':
@@ -385,6 +419,7 @@ async function executeSubagent(
   config: EngineConfig,
   startMs: number,
   registry: Registry,
+  llmTask = 'tools',
 ): Promise<StepResult> {
   const toolNames = ctx.userPermissions.tools.includes('*')
     ? (step.params?.tools as string[] ?? [])
@@ -394,7 +429,7 @@ async function executeSubagent(
     .map(name => getDefinition(name, registry))
     .filter((d): d is NonNullable<typeof d> => d !== null)
 
-  const result = await runSubagent(ctx, step, toolDefs, config, registry)
+  const result = await runSubagent(ctx, step, toolDefs, config, registry, llmTask)
 
   return {
     stepIndex: index,
@@ -485,6 +520,7 @@ async function executeWebSearch(
   index: number,
   config: EngineConfig,
   startMs: number,
+  _llmTask = 'tools', // accepted for consistency but web_search always uses its own task (needs grounding)
 ): Promise<StepResult> {
   const query = step.description ?? step.params?.query as string ?? ''
   if (!query) {
@@ -537,6 +573,7 @@ async function executeCodeExecution(
   index: number,
   config: EngineConfig,
   startMs: number,
+  llmTask = 'tools',
 ): Promise<StepResult> {
   const task = step.description ?? step.params?.task as string ?? ''
   if (!task) {
@@ -546,7 +583,7 @@ async function executeCodeExecution(
   try {
     const result = await callLLMWithFallback(
       {
-        task: 'tools',
+        task: llmTask,
         messages: [{ role: 'user', content: `Ejecuta código Python para: ${task}` }],
         maxTokens: 2048,
         temperature: 0.1,

@@ -120,9 +120,8 @@ export function generateQuietReport(data: PulseDataPackage): AnalysisResult {
 
 // ─── Helpers ─────────────────────────────
 
-function resolveTask(model: string): string {
-  if (model.includes('sonnet')) return 'complex'
-  return 'classify' // haiku-level tasks
+function resolveTask(_model: string): string {
+  return 'cortex-pulse'
 }
 
 function buildUserMessage(data: PulseDataPackage): string {
