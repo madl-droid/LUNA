@@ -77,21 +77,23 @@ const dict: Record<string, Record<SetupLang, string>> = {
   api_google_hint: { es: 'Proveedor de fallback (Gemini). Obt\u00e9n tu key en aistudio.google.com', en: 'Fallback provider (Gemini). Get your key at aistudio.google.com' },
   err_no_api_key: { es: 'Debes ingresar al menos una API key', en: 'You must enter at least one API key' },
 
-  // ─── Step 5: System settings ─────────────
-  system_title: { es: 'Ajustes del Sistema', en: 'System Settings' },
+  // ─── Step 5: Company + summary ───────────
+  system_title: { es: 'Tu Empresa', en: 'Your Company' },
   system_text: {
-    es: 'Configura los ajustes finales y revisa el resumen antes de finalizar.',
-    en: 'Configure final settings and review the summary before finishing.',
+    es: 'Ingresa el nombre de tu empresa y revisa el resumen antes de finalizar.',
+    en: 'Enter your company name and review the summary before finishing.',
   },
-  instance_name: { es: 'Nombre de la instancia', en: 'Instance name' },
-  instance_name_placeholder: { es: 'Ej: Mi Empresa', en: 'E.g.: My Company' },
-  log_level: { es: 'Nivel de log', en: 'Log level' },
-  node_env: { es: 'Entorno', en: 'Environment' },
-  node_env_development: { es: 'Desarrollo', en: 'Development' },
-  node_env_production: { es: 'Producci\u00f3n', en: 'Production' },
+  company_name: { es: 'Nombre de la empresa', en: 'Company name' },
+  company_name_placeholder: { es: 'Ej: Acme Corp', en: 'E.g.: Acme Corp' },
+  company_name_hint: {
+    es: 'El agente sabr\u00e1 que trabaja para esta empresa y se presentar\u00e1 como parte de ella.',
+    en: 'The agent will know it works for this company and introduce itself as part of it.',
+  },
+  err_company_name_required: { es: 'El nombre de la empresa es requerido', en: 'Company name is required' },
   summary_title: { es: 'Resumen de configuraci\u00f3n', en: 'Configuration summary' },
   summary_admin: { es: 'Administrador', en: 'Admin' },
   summary_agent: { es: 'Agente', en: 'Agent' },
+  summary_company: { es: 'Empresa', en: 'Company' },
   summary_agent_lang: { es: 'Idioma del agente', en: 'Agent language' },
   summary_agent_accent: { es: 'Acento', en: 'Accent' },
   summary_masked: { es: '(configurada)', en: '(configured)' },
@@ -102,6 +104,16 @@ const dict: Record<string, Record<SetupLang, string>> = {
     es: 'Tu instancia de LUNA est\u00e1 lista. Ser\u00e1s redirigido al panel de control.',
     en: 'Your LUNA instance is ready. You will be redirected to the control panel.',
   },
+  setup_defaults_title: { es: 'Configuraci\u00f3n por defecto', en: 'Default settings' },
+  setup_defaults_messages: {
+    es: 'Por defecto, los mensajes de contactos nuevos se ignoran. Solo se responde a administradores.',
+    en: 'By default, messages from new contacts are ignored. Only admins get responses.',
+  },
+  setup_defaults_change: {
+    es: 'Para cambiar esto, ve a Contactos \u2192 Configuraci\u00f3n en la consola:',
+    en: 'To change this, go to Contacts \u2192 Settings in the console:',
+  },
+  setup_defaults_link: { es: 'Configuraci\u00f3n de contactos', en: 'Contact settings' },
   go_to_console: { es: 'Ir al panel', en: 'Go to console' },
 
   // ─── Login page ──────────────────────────

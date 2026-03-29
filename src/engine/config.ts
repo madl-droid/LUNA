@@ -139,5 +139,10 @@ export function loadEngineConfig(): EngineConfig {
 
     // Criticizer (quality gate): disabled | complex_only | always
     criticzerMode: env('LLM_CRITICIZER_MODE', 'complex_only') as 'disabled' | 'complex_only' | 'always',
+
+    // Checkpoints (resumable pipelines)
+    checkpointEnabled: envBool('ENGINE_CHECKPOINT_ENABLED', true),
+    checkpointResumeWindowMs: envInt('ENGINE_CHECKPOINT_RESUME_WINDOW_MS', 300000), // 5 min
+    checkpointCleanupDays: envInt('ENGINE_CHECKPOINT_CLEANUP_DAYS', 7),
   }
 }

@@ -2376,7 +2376,7 @@ export function createApiRoutes(): ApiRoute[] {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()!
           const config = await configStore.getAll(registry.getDb())
-          const apiKey = config['TTS_GOOGLE_API_KEY']
+          const apiKey = config['TTS_GOOGLE_API_KEY'] || config['GOOGLE_AI_API_KEY']
           if (!apiKey) {
             jsonResponse(res, 400, { error: 'TTS API key not configured' })
             return

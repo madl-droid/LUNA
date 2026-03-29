@@ -14,6 +14,7 @@ import type {
   ExecutionStep,
   EngineConfig,
 } from '../types.js'
+import type { CheckpointManager } from '../checkpoints/checkpoint-manager.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import { runSubagent } from '../subagent/subagent.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
@@ -60,6 +61,16 @@ function getDefinition(
   return null
 }
 
+/** Options for checkpoint-aware Phase 3 execution */
+export interface Phase3Options {
+  /** Checkpoint manager for persisting step results */
+  checkpointManager?: CheckpointManager
+  /** Checkpoint ID for this pipeline execution */
+  checkpointId?: string
+  /** Already-completed step results from a previous (crashed) run */
+  completedSteps?: StepResult[]
+}
+
 /**
  * Count steps in the plan that require sequential LLM calls.
  * Used to determine if the plan is "complex" (3+ LLM steps → Opus)
@@ -79,6 +90,7 @@ const COMPLEX_PLAN_THRESHOLD = 3
 /**
  * Execute Phase 3: Run the execution plan from Phase 2.
  * Steps run with concurrency controlled by StepSemaphore.
+ * If checkpoint options are provided, skips already-completed steps and persists new results.
  *
  * Plan complexity routing:
  * - Simple plans (≤2 LLM steps): LLM calls in steps use task 'tools' → Sonnet
@@ -91,8 +103,11 @@ export async function phase3Execute(
   redis: Redis,
   config: EngineConfig,
   registry: Registry,
+  opts?: Phase3Options,
 ): Promise<ExecutionOutput> {
   const startMs = Date.now()
+  const cpMgr = opts?.checkpointManager
+  const cpId = opts?.checkpointId
 
   const { executionPlan } = evaluation
   const llmStepCount = countLLMSteps(executionPlan)
@@ -104,6 +119,7 @@ export async function phase3Execute(
     planSteps: executionPlan.length,
     llmSteps: llmStepCount,
     complexity: isComplexPlan ? 'complex' : 'simple',
+    resumingSteps: opts?.completedSteps?.length ?? 0,
   }, 'Phase 3 start')
 
   // If respond_only, skip execution
@@ -113,19 +129,59 @@ export async function phase3Execute(
     return { results: [], allSucceeded: true, partialData: {} }
   }
 
+  // Build set of already-completed step indices (from checkpoint resume).
+  // Only trust a completed step if the plan step at that index has the same type —
+  // if Phase 2 generated a different plan on resume, indices may not correspond.
+  const { validIndices: completedIndices, validSteps: validCompletedSteps } =
+    validateCompletedSteps(executionPlan, opts?.completedSteps ?? [])
+  for (const sr of opts?.completedSteps ?? []) {
+    const planStep = executionPlan[sr.stepIndex]
+    if (!(planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined))) {
+      logger.warn({
+        traceId: ctx.traceId,
+        stepIndex: sr.stepIndex,
+        expectedType: planStep?.type,
+        expectedTool: planStep?.tool,
+        actualType: sr.type,
+        actualTool: sr.tool,
+      }, 'Discarding mismatched completed step from checkpoint')
+    }
+  }
+
   // Group steps by dependency
   const { independent, dependent } = groupStepsByDependency(executionPlan)
 
-  const results: StepResult[] = []
+  const results: StepResult[] = [...validCompletedSteps]
   const stepSemaphore = new StepSemaphore(config.maxConcurrentSteps)
+
+  // Helper: execute step with checkpoint persistence
+  async function executeWithCheckpoint(step: ExecutionStep, index: number): Promise<StepResult> {
+    // Skip if already completed in a previous run
+    if (completedIndices.has(index)) {
+      const prev = results.find(r => r.stepIndex === index)
+      if (prev) return prev
+    }
+
+    const result = await executeStep(step, index, ctx, db, redis, config, registry, stepLlmTask)
+
+    // Persist step result to checkpoint (fire-and-forget, never blocks)
+    if (cpMgr && cpId) {
+      cpMgr.appendStep(cpId, result).catch(err =>
+        logger.warn({ err, checkpointId: cpId, stepIndex: index }, 'Failed to save step checkpoint'),
+      )
+    }
+
+    return result
+  }
 
   // Execute independent steps in parallel (concurrency-limited)
   if (independent.length > 0) {
+    // Filter out already-completed independent steps
+    const toRun = independent.filter(({ index }) => !completedIndices.has(index))
+
     const parallelResults = await Promise.allSettled(
-      independent.map(({ step, index }) =>
-        stepSemaphore.run(() =>
-          executeStep(step, index, ctx, db, redis, config, registry, stepLlmTask),
-        ),
+      toRun.map(({ step, index }) =>
+        stepSemaphore.run(() => executeWithCheckpoint(step, index)),
       ),
     )
 
@@ -146,6 +202,9 @@ export async function phase3Execute(
 
   // Execute dependent steps sequentially (still through semaphore for resource control)
   for (const { step, index } of dependent) {
+    // Skip if already completed in a previous run
+    if (completedIndices.has(index)) continue
+
     // Check if all dependencies succeeded before executing
     const depsFailed = step.dependsOn?.some(depIdx => {
       const depResult = results.find(r => r.stepIndex === depIdx)
@@ -163,9 +222,7 @@ export async function phase3Execute(
       continue
     }
 
-    const result = await stepSemaphore.run(() =>
-      executeStep(step, index, ctx, db, redis, config, registry, stepLlmTask),
-    )
+    const result = await stepSemaphore.run(() => executeWithCheckpoint(step, index))
     results.push(result)
   }
 
@@ -215,38 +272,48 @@ async function executeStep(
   const startMs = Date.now()
 
   try {
+    let result: StepResult
+
     switch (step.type) {
       case 'api_call':
-        return await executeApiCall(step, index, startMs, config, registry, { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId })
+        result = await executeApiCall(step, index, startMs, config, registry, { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId })
+        break
 
       case 'workflow':
-        return await executeWorkflow(step, index, startMs, registry)
+        result = await executeWorkflow(step, index, startMs, registry)
+        break
 
       case 'subagent':
-        return await executeSubagent(step, index, ctx, config, startMs, registry, llmTask)
+        result = await executeSubagent(step, index, ctx, config, startMs, registry, llmTask)
+        break
 
       case 'memory_lookup':
-        return await executeMemoryLookup(step, index, db, ctx, registry, startMs)
+        result = await executeMemoryLookup(step, index, db, ctx, registry, startMs)
+        break
 
       case 'web_search':
-        return await executeWebSearch(step, index, config, startMs, llmTask)
+        result = await executeWebSearch(step, index, config, startMs, llmTask)
+        break
 
       case 'process_attachment':
-        return await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
+        result = await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
+        break
 
       case 'code_execution':
-        return await executeCodeExecution(step, index, config, startMs, llmTask)
+        result = await executeCodeExecution(step, index, config, startMs, llmTask)
+        break
 
       case 'respond_only':
-        return {
+        result = {
           stepIndex: index,
           type: 'respond_only',
           success: true,
           durationMs: Date.now() - startMs,
         }
+        break
 
       default:
-        return {
+        result = {
           stepIndex: index,
           type: step.type,
           success: false,
@@ -254,10 +321,15 @@ async function executeStep(
           durationMs: Date.now() - startMs,
         }
     }
+
+    // Attach tool name to result for checkpoint step validation
+    if (step.tool) result.tool = step.tool
+    return result
   } catch (err) {
     return {
       stepIndex: index,
       type: step.type,
+      tool: step.tool,
       success: false,
       error: String(err),
       durationMs: Date.now() - startMs,
@@ -631,6 +703,31 @@ function getAttachmentEngineConfig(registry: Registry, fallback: EngineConfig): 
     urlMaxSizeMb: fallback.attachmentUrlMaxSizeMb,
     urlEnabled: fallback.attachmentUrlEnabled,
   }
+}
+
+/**
+ * Validate which completed steps from a previous run can be trusted for the current plan.
+ * A step is valid if the plan step at that index has the same type and tool.
+ */
+export function validateCompletedSteps(
+  executionPlan: ExecutionStep[],
+  completedSteps: StepResult[],
+): { validIndices: Set<number>; validSteps: StepResult[]; discarded: number } {
+  const validIndices = new Set<number>()
+  const validSteps: StepResult[] = []
+  let discarded = 0
+
+  for (const sr of completedSteps) {
+    const planStep = executionPlan[sr.stepIndex]
+    if (planStep && planStep.type === sr.type && (planStep.tool ?? undefined) === (sr.tool ?? undefined)) {
+      validIndices.add(sr.stepIndex)
+      validSteps.push(sr)
+    } else {
+      discarded++
+    }
+  }
+
+  return { validIndices, validSteps, discarded }
 }
 
 /**

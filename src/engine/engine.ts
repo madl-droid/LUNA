@@ -19,6 +19,8 @@ import { registerCreateCommitmentTool } from './proactive/tools/create-commitmen
 import { generateAck, mapStepToAction } from './ack/ack-service.js'
 import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
+import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
+import type { Phase3Options } from './phases/phase3-execute.js'
 
 const logger = pino({ name: 'engine' })
 
@@ -26,6 +28,9 @@ let engineConfig: EngineConfig
 let registry: Registry
 let pipelineSemaphore: PipelineSemaphore
 let contactLock: ContactLock
+let checkpointMgr: CheckpointManager | null = null
+/** Temporary stash for completed steps during checkpoint resume. Keyed by messageId. */
+const pendingResumeSteps = new Map<string, import('./types.js').StepResult[]>()
 
 /**
  * Initialize the engine. Call once at startup.
@@ -82,9 +87,27 @@ export function initEngine(reg: Registry): void {
     logger.warn({ err }, 'Failed to register create_commitment tool'),
   )
 
-  // Start proactive runner (BullMQ)
+  // Initialize checkpoint manager
   const db = registry.getDb()
   const redis = registry.getRedis()
+
+  if (engineConfig.checkpointEnabled) {
+    checkpointMgr = new CheckpointManager(db)
+
+    // On startup: expire stale checkpoints, resume recent ones, cleanup old ones
+    initCheckpoints().catch(err =>
+      logger.error({ err }, 'Failed to initialize checkpoints'),
+    )
+
+    // Periodic cleanup every 6 hours
+    setInterval(() => {
+      checkpointMgr?.cleanup(engineConfig.checkpointCleanupDays).catch(err =>
+        logger.warn({ err }, 'Periodic checkpoint cleanup failed'),
+      )
+    }, 6 * 60 * 60 * 1000)
+  }
+
+  // Start proactive runner (BullMQ)
   startProactiveRunner(db, redis, engineConfig, registry).catch(err =>
     logger.error({ err }, 'Failed to start proactive runner'),
   )
@@ -148,8 +171,12 @@ async function processMessageInner(
   redis: import('ioredis').Redis,
   totalStart: number,
 ): Promise<PipelineResult> {
+  // Check if this is a resumed message with pre-completed steps
+  const resumeSteps = pendingResumeSteps.get(message.id)
+  if (resumeSteps) pendingResumeSteps.delete(message.id)
   let traceId = ''
   let avisoTimer: ReturnType<typeof setTimeout> | null = null
+  let checkpointId: string | undefined
   // Shared state so the ACK timer knows if the pipeline failed or completed
   const pipelineState = { failed: false, completed: false }
 
@@ -236,6 +263,26 @@ async function processMessageInner(
       planSteps: evaluation.executionPlan.length,
     }, 'Phase 2 done')
 
+    // Create checkpoint for the execution plan (non-blocking, resolves before Phase 3 steps run)
+    let checkpointPromise: Promise<string> | undefined
+    if (checkpointMgr && evaluation.executionPlan.length > 0
+        && evaluation.executionPlan[0]?.type !== 'respond_only') {
+      checkpointPromise = checkpointMgr.create({
+        traceId,
+        messageId: message.id,
+        contactId: ctx.contactId,
+        channel: message.channelName,
+        messageFrom: message.from,
+        senderName: message.senderName ?? '',
+        channelMessageId: message.channelMessageId ?? '',
+        messageText: message.content.text ?? null,
+        executionPlan: evaluation.executionPlan,
+      }).catch(cpErr => {
+        logger.warn({ err: cpErr, traceId }, 'Checkpoint create failed — continuing without')
+        return ''
+      })
+    }
+
     // ═══ PHASE 3+4: Execute + Compose (with aviso de proceso timer) ═══
     const avisoConfig = getAvisoConfig(ctx.message.channelName)
     let avisoSentAt: number | undefined = undefined
@@ -278,8 +325,16 @@ async function processMessageInner(
         }, avisoConfig.triggerMs)
       : null
 
+    // Resolve checkpoint ID (INSERT ~1-2ms, ran concurrently with aviso timer setup above)
+    if (checkpointPromise) checkpointId = await checkpointPromise || undefined
+
     const p3Start = Date.now()
-    let execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
+    const phase3Opts: Phase3Options = {
+      checkpointManager: (checkpointId && checkpointMgr) ? checkpointMgr : undefined,
+      checkpointId,
+      completedSteps: resumeSteps,
+    }
+    let execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry, phase3Opts)
 
     // ═══ REPLANNING LOOP ═══
     let replanAttempts = 0
@@ -309,7 +364,10 @@ async function processMessageInner(
       evaluation = await phase2Evaluate(ctx, engineConfig, replanCtx, registry)
       phase2DurationMs += Date.now() - replanP2Start
 
-      execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
+      // Clear completed steps from previous plan — new plan may have different steps
+      phase3Opts.completedSteps = undefined
+
+      execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry, phase3Opts)
     }
 
     const phase3DurationMs = Date.now() - p3Start
@@ -371,6 +429,13 @@ async function processMessageInner(
       totalDurationMs,
     }, 'Phase 5 done — pipeline complete')
 
+    // Mark checkpoint complete (awaited to prevent duplicate responses on resume)
+    if (checkpointMgr && checkpointId) {
+      await checkpointMgr.complete(checkpointId).catch(cpErr =>
+        logger.warn({ err: cpErr, traceId }, 'Failed to complete checkpoint'),
+      )
+    }
+
     // Pipeline log (fire-and-forget via memory:manager)
     const memMgr = registry.getOptional<import('../modules/memory/memory-manager.js').MemoryManager>('memory:manager')
     if (memMgr && ctx.contactId) {
@@ -411,6 +476,13 @@ async function processMessageInner(
     pipelineState.failed = true
     if (avisoTimer) clearTimeout(avisoTimer)
     const totalDurationMs = Date.now() - totalStart
+
+    // Mark checkpoint failed
+    if (checkpointMgr && checkpointId) {
+      checkpointMgr.fail(checkpointId, String(err)).catch(cpErr =>
+        logger.warn({ cpErr, traceId }, 'Failed to mark checkpoint as failed'),
+      )
+    }
 
     logger.error({
       traceId: traceId || 'unknown',
@@ -548,11 +620,93 @@ async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promi
   logger.info({ traceId: ctx.traceId, to: ctx.message.from, text }, 'Aviso de proceso enviado')
 }
 
+// ═══════════════════════════════════════════
+// Checkpoint resume & cleanup (startup only)
+// ═══════════════════════════════════════════
+
 /**
- * Check if admin-only mode is active.
- * Reads DEBUG_ADMIN_ONLY from config_store (runtime check).
- * Falls back to ENGINE_TEST_MODE if DEBUG_ADMIN_ONLY is not set.
+ * On startup: expire stale, resume recent incomplete pipelines, cleanup old.
+ * Simple approach: re-process the message through the full pipeline,
+ * passing completed steps so Phase 3 skips them.
  */
+async function initCheckpoints(): Promise<void> {
+  if (!checkpointMgr) return
+  const db = registry.getDb()
+
+  await checkpointMgr.expireStale(engineConfig.checkpointResumeWindowMs)
+
+  const incomplete = await checkpointMgr.findIncomplete(engineConfig.checkpointResumeWindowMs)
+
+  if (incomplete.length > 0) {
+    logger.info({ count: incomplete.length }, 'Found incomplete checkpoints — resuming')
+
+    for (const cp of incomplete) {
+      // Skip if no steps were completed (nothing to salvage)
+      if (cp.stepResults.length === 0) {
+        await checkpointMgr.fail(cp.id, 'No steps completed — not worth resuming')
+        continue
+      }
+
+      // Idempotency check: skip if a response was already sent for this message
+      try {
+        const alreadySent = await db.query(
+          `SELECT 1 FROM messages WHERE reply_to_message_id = $1 AND direction = 'outbound' LIMIT 1`,
+          [cp.messageId],
+        )
+        if (alreadySent.rows.length > 0) {
+          logger.info({ checkpointId: cp.id, messageId: cp.messageId }, 'Response already sent — skipping resume')
+          await checkpointMgr.complete(cp.id)
+          continue
+        }
+      } catch (idempErr) {
+        logger.warn({ err: idempErr, checkpointId: cp.id }, 'Idempotency check failed — resuming anyway')
+      }
+
+      logger.info({
+        checkpointId: cp.id,
+        traceId: cp.traceId,
+        completedSteps: cp.stepResults.length,
+        totalSteps: cp.executionPlan.length,
+      }, 'Resuming from checkpoint')
+
+      try {
+        // Reconstruct a minimal IncomingMessage from checkpoint data
+        const resumeMessage: IncomingMessage = {
+          id: cp.messageId,
+          channelName: cp.channel as IncomingMessage['channelName'],
+          channelMessageId: cp.channelMessageId || cp.messageId,
+          from: cp.messageFrom,
+          senderName: cp.senderName || '',
+          timestamp: cp.createdAt,
+          content: { type: 'text', text: cp.messageText ?? '' },
+          attachments: [],
+        }
+
+        // Mark old checkpoint as failed (new pipeline run creates its own)
+        await checkpointMgr.fail(cp.id, 'Resumed: new pipeline run with completed steps')
+
+        // Stash completed steps so processMessageInner can pick them up
+        pendingResumeSteps.set(cp.messageId, cp.stepResults)
+
+        // Go through full processMessage for proper concurrency/timeout control
+        const result = await processMessage(resumeMessage)
+
+        // Clean up stash (in case it wasn't consumed)
+        pendingResumeSteps.delete(cp.messageId)
+
+        if (!result.success) {
+          logger.warn({ checkpointId: cp.id, error: result.error }, 'Checkpoint resume pipeline failed')
+        }
+      } catch (err) {
+        logger.error({ err, checkpointId: cp.id }, 'Checkpoint resume failed')
+        await checkpointMgr.fail(cp.id, `Resume error: ${String(err)}`).catch(() => {})
+      }
+    }
+  }
+
+  await checkpointMgr.cleanup(engineConfig.checkpointCleanupDays)
+}
+
 async function isAdminOnlyActive(registry: Registry): Promise<boolean> {
   try {
     const db = registry.getDb()

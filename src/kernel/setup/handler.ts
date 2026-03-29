@@ -311,11 +311,16 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
         return
       }
 
-      // Step 5: System settings — FINALIZE
+      // Step 5: Company + finalize
       if (urlPath === '/setup/step/5') {
-        state.instanceName = form['instance_name']?.trim() ?? ''
-        state.logLevel = form['log_level'] ?? 'info'
-        state.nodeEnv = form['node_env'] ?? 'production'
+        state.companyName = form['company_name']?.trim() ?? ''
+
+        // Validate company name
+        if (!state.companyName) {
+          const errors = { company_name: st('err_company_name_required', lang) }
+          sendHtml(res, stepSystem(lang, state, errors), token)
+          return
+        }
 
         try {
           const authToken = await finalizeSetup(ctx, state, token)
@@ -485,15 +490,34 @@ async function finalizeSetup(ctx: WizardContext, state: SetupState, token: strin
     } : {}),
     ...(hasGoogle && !hasAnthropic ? {} : {}), // Google-only has no Anthropic fallback
 
-    // System config
-    LOG_LEVEL: state.logLevel,
-    NODE_ENV: state.nodeEnv,
-    ...(state.instanceName ? { INSTANCE_NAME: state.instanceName } : {}),
+    // Company name — injected into agent identity
+    COMPANY_NAME: state.companyName,
+
+    // System config (sensible defaults — no user choice needed)
+    LOG_LEVEL: 'info',
+    NODE_ENV: 'production',
     CONSOLE_LANG: state.lang,
     SETUP_COMPLETED: 'true',
   }
 
   await configStore.setMultiple(pool, configEntries)
+
+  // 3b. Ensure default user list configs:
+  //     - admin: always enabled, always responded to
+  //     - lead: enabled, unregistered_behavior = 'silence' (register but don't respond)
+  const DEFAULT_LEAD_PERMS = JSON.stringify({ tools: [], skills: [], subagents: false, allAccess: false })
+
+  await pool.query(
+    `INSERT INTO user_list_config (list_type, display_name, is_enabled, permissions, max_users, unregistered_behavior)
+     VALUES ('lead', 'Leads', true, $1, NULL, 'silence')
+     ON CONFLICT (list_type) DO NOTHING`,
+    [DEFAULT_LEAD_PERMS],
+  )
+  // Ensure admin list is enabled (already created above in transaction, but ensure unregistered_behavior)
+  await pool.query(
+    `UPDATE user_list_config SET is_enabled = true, unregistered_behavior = 'silence'
+     WHERE list_type = 'admin' AND is_enabled = false`,
+  )
 
   // 4. Create session for the admin (auto-login after setup)
   const sessionToken = await createSession(redis, userId)
@@ -547,9 +571,7 @@ export async function saveFactoryResetPrefill(pool: Pool, redis: Redis): Promise
     agentAccent: allConfig['AGENT_ACCENT'] ?? '',
     anthropicApiKey: allConfig['ANTHROPIC_API_KEY'] ?? '',
     googleApiKey: allConfig['GOOGLE_AI_API_KEY'] ?? '',
-    instanceName: allConfig['INSTANCE_NAME'] ?? '',
-    logLevel: allConfig['LOG_LEVEL'] ?? 'info',
-    nodeEnv: allConfig['NODE_ENV'] ?? 'production',
+    companyName: allConfig['COMPANY_NAME'] ?? '',
     lang: (allConfig['CONSOLE_LANG'] as SetupLang) ?? 'es',
   }
 
