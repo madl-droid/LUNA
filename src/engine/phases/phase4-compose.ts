@@ -76,7 +76,10 @@ export async function phase4Compose(
   }
 
   // ═══ Criticizer step — quality gate via Gemini Pro ═══
-  responseText = await runCriticizer(responseText, ctx, evaluation, config, registry)
+  // Pro reviews → if issues found, Flash regenerates with Pro's feedback
+  if (responseText && !rawResponse?.startsWith('FALLBACK')) {
+    responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config)
+  }
 
   // ═══ Channel formatting ═══
   const formattedParts = formatForChannel(responseText, ctx.message.channelName, registry)
@@ -127,24 +130,29 @@ export async function phase4Compose(
 }
 
 /**
- * Run the criticizer quality gate.
- * Sends the generated response to Gemini Pro (task: 'criticize') for review.
- * If the criticizer detects issues, it returns a corrected response.
- * If the criticizer fails or approves, the original response is returned unchanged.
+ * Run the criticizer quality gate (2-step flow):
  *
- * Complexity criteria for using Opus in Phase 3 (documented here as reference):
- * - A plan is "complex" when it has 3+ steps that involve sequential LLM calls
- *   (subagent, web_search, code_execution). These require Opus for better reasoning.
- * - A plan is "simple" when it has ≤2 LLM steps or only deterministic steps
- *   (api_call, memory_lookup, process_attachment). These use Sonnet.
+ * 1. **Pro reviews**: Gemini Pro (task 'criticize') evaluates the response.
+ *    - If APPROVED → return original response unchanged.
+ *    - If issues found → returns a list of specific problems/instructions.
+ *
+ * 2. **Flash regenerates**: The original compositor model (Flash) gets a second
+ *    chance with Pro's feedback injected as additional instructions. Flash has
+ *    the full context (identity, guardrails, conversation history), so it
+ *    produces a better correction than Pro could without that context.
+ *
+ * Fail-open: if criticizer or regeneration fails, original response is returned.
  */
 async function runCriticizer(
   responseText: string,
+  compositorSystem: string,
+  compositorUserMessage: string,
   ctx: ContextBundle,
   evaluation: EvaluatorOutput,
   config: EngineConfig,
-  _registry?: Registry,
 ): Promise<string> {
+  // ── Step 1: Pro reviews ──
+  let feedback: string
   try {
     const result = await callLLM({
       task: 'criticize',
@@ -155,13 +163,13 @@ Reglas de evaluación:
 1. ¿Responde lo que el usuario preguntó? No se va por la tangente.
 2. ¿Es apropiado para el canal? Longitud y formato correctos.
 3. ¿Respeta guardrails? No inventa información, no promete de más.
-4. ¿Los resultados de tools están integrados naturalmente?
-5. ¿NO revela datos internos del sistema?
+4. ¿Los resultados de tools están integrados naturalmente? No dice "según la herramienta...".
+5. ¿NO revela datos internos del sistema? (API keys, nombres de modelos, IDs internos)
 6. ¿El tono es profesional y cálido?
 7. ¿Termina con pregunta o CTA claro?
 
 Si la respuesta es aceptable, responde EXACTAMENTE: APPROVED
-Si necesita corrección, responde con la versión corregida directamente (sin explicación, sin prefijo).`,
+Si necesita corrección, lista los problemas específicos y cómo corregirlos. NO reescribas la respuesta, solo da instrucciones claras de qué cambiar.`,
       messages: [{
         role: 'user',
         content: `Intención del usuario: ${evaluation.intent}
@@ -174,7 +182,7 @@ ${responseText}
 
 ¿Es aceptable o necesita corrección?`,
       }],
-      maxTokens: config.maxOutputTokens,
+      maxTokens: 500,
       temperature: 0.3,
     })
 
@@ -188,10 +196,38 @@ ${responseText}
       return responseText
     }
 
-    logger.info({ traceId: ctx.traceId, provider: result.provider }, 'Criticizer corrected response')
-    return trimmed
+    feedback = trimmed
+    logger.info({ traceId: ctx.traceId, provider: result.provider }, 'Criticizer found issues — requesting regeneration')
   } catch (err) {
     logger.warn({ err, traceId: ctx.traceId }, 'Criticizer failed — using original response')
+    return responseText
+  }
+
+  // ── Step 2: Flash regenerates with feedback ──
+  try {
+    const feedbackPrompt = `${compositorUserMessage}
+
+--- CORRECCIONES DEL REVISOR ---
+Tu respuesta anterior fue revisada y se encontraron estos problemas:
+${feedback}
+
+Genera una nueva respuesta corrigiendo estos problemas. Responde SOLO con la respuesta corregida, sin explicaciones ni prefijos.`
+
+    const regenerated = await callWithRetries(
+      config.respondProvider, config.respondModel,
+      compositorSystem, feedbackPrompt,
+      config, ctx.traceId,
+    )
+
+    if (regenerated) {
+      logger.info({ traceId: ctx.traceId }, 'Criticizer regeneration succeeded')
+      return regenerated
+    }
+
+    logger.warn({ traceId: ctx.traceId }, 'Criticizer regeneration failed — using original response')
+    return responseText
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Criticizer regeneration error — using original response')
     return responseText
   }
 }

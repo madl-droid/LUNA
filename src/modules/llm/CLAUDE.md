@@ -64,13 +64,15 @@ Downgrade — mismo provider, modelo menor (2 retries)
 Fallback — otro provider, capacidades equivalentes (2 retries)
 ```
 
-## Criticizer (quality gate)
+## Criticizer (quality gate — 2 pasos)
 Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
-- Modelo: Gemini Pro (task `'criticize'`)
-- Si responde "APPROVED" → respuesta original se envía sin cambios
-- Si responde con texto → se usa como respuesta corregida
-- Si falla → respuesta original se envía (fail-open)
+1. **Pro revisa**: Gemini Pro (task `'criticize'`) evalúa la respuesta y responde APPROVED o lista de problemas.
+2. **Flash regenera**: Si hay problemas, Flash (compositor original) regenera con el feedback de Pro como instrucciones adicionales. Flash tiene el contexto completo (identity, guardrails, historial), así que produce mejor corrección que Pro.
+- Si Pro aprueba → respuesta original se envía sin cambios
+- Si Pro encuentra problemas → Flash regenera con feedback
+- Si falla cualquier paso → fail-open, respuesta original se envía
 - Implementado en `runCriticizer()` en `phase4-compose.ts`
+- No se ejecuta sobre respuestas fallback (templates de archivo)
 
 ## Trampas
 - **API keys**: NUNCA se logean ni se incluyen en prompts.
