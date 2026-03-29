@@ -4,6 +4,7 @@
 import type { ContextBundle, ToolCatalogEntry, ProactiveContextBundle } from '../types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
+import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
 // Fallback used when prompts:service not available
@@ -42,7 +43,9 @@ Reglas:
 - Para objeciones: identifica objection_type y objection_step según contexto de la conversación
 - Para cálculos matemáticos, análisis de datos, o procesamiento numérico: type=code_execution
 - Para tareas que requieren razonamiento complejo o multi-paso: agrega "use_thinking": true al step
-- Para steps que necesitan ejecutar código Python: agrega "use_coding": true al step`
+- Para steps que necesitan ejecutar código Python: agrega "use_coding": true al step
+- Para tareas complejas que requieren múltiples tools o razonamiento autónomo: type=subagent con "subagent_slug" del catálogo de subagentes
+- Solo usa type=subagent si hay subagentes disponibles (se listan abajo si los hay)`
 
 const TOOL_CATALOG_HEADER = `\nTools disponibles (solo usar las listadas):`
 const TOOL_CATALOG_COMPACT_HEADER = `\nTools disponibles (catálogo resumido — pide definición completa si la necesitas):`
@@ -50,7 +53,7 @@ const TOOL_CATALOG_COMPACT_HEADER = `\nTools disponibles (catálogo resumido —
 /**
  * Build the evaluator prompt for Phase 2.
  */
-export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalogEntry[], registry?: Registry): Promise<{
+export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: ToolCatalogEntry[], registry?: Registry, subagentCatalog?: SubagentCatalogEntry[]): Promise<{
   system: string
   userMessage: string
 }> {
@@ -79,6 +82,16 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
     system += TOOL_CATALOG_HEADER
     for (const tool of allowedTools) {
       system += `\n- ${tool.name} [${tool.category}]: ${tool.description}`
+    }
+  }
+
+  // Inject enabled subagent types (only if any exist)
+  if (subagentCatalog && subagentCatalog.length > 0) {
+    system += `\n\nSubagentes disponibles (para tareas complejas que requieren múltiples tools o razonamiento autónomo):`
+    system += `\nPara usar un subagente: { "type": "subagent", "subagent_slug": "slug", "description": "tarea a realizar", "params": { "tools": ["tool1", "tool2"] } }`
+    for (const sa of subagentCatalog) {
+      const tools = sa.allowedTools.length > 0 ? ` [tools: ${sa.allowedTools.join(', ')}]` : ''
+      system += `\n- "${sa.slug}" (${sa.name}): ${sa.description}${tools}`
     }
   }
 

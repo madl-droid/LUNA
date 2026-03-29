@@ -8,10 +8,16 @@ import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig, Proac
 import { buildEvaluatorPrompt, buildProactiveEvaluatorPrompt } from '../prompts/evaluator.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import type { ToolCatalogEntry } from '../types.js'
+import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 
 // Interface for reading tool catalog from tools:registry service
 interface ToolRegistryReader {
   getCatalog(contactType?: string): ToolCatalogEntry[]
+}
+
+// Interface for reading subagent catalog from subagents:catalog service
+interface SubagentCatalogReader {
+  getEnabledTypes(): SubagentCatalogEntry[]
 }
 
 const logger = pino({ name: 'engine:phase2' })
@@ -63,9 +69,14 @@ export async function phase2Evaluate(
   // Build prompt — use real tool catalog from tools:registry when available
   const toolsRegistry = registry?.getOptional<ToolRegistryReader>('tools:registry')
   const toolCatalog = toolsRegistry?.getCatalog() ?? []
+
+  // Get enabled subagent types from subagents:catalog
+  const subagentCatalog = registry?.getOptional<SubagentCatalogReader>('subagents:catalog')
+  const subagentTypes = subagentCatalog?.getEnabledTypes() ?? []
+
   let { system, userMessage } = proactive
     ? await buildProactiveEvaluatorPrompt(ctx, toolCatalog, registry)
-    : await buildEvaluatorPrompt(ctx, toolCatalog, registry)
+    : await buildEvaluatorPrompt(ctx, toolCatalog, registry, subagentTypes)
 
   // Inject replanning context if this is a replan attempt
   if (replanContext) {
@@ -193,6 +204,9 @@ function parseExecutionPlan(plan: unknown): ExecutionStep[] {
     params: (step.params as Record<string, unknown>) ?? undefined,
     description: (step.description as string) ?? undefined,
     dependsOn: step.depends_on as number[] | undefined,
+    useThinking: step.use_thinking as boolean | undefined,
+    useCoding: step.use_coding as boolean | undefined,
+    subagentSlug: step.subagent_slug as string | undefined,
   }))
 }
 
