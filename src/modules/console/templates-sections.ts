@@ -1429,7 +1429,9 @@ function renderIdentitySection(data: SectionData): string {
         <div class="ts-tts-field-compact" style="margin-bottom:12px">
           <label class="ts-tts-label-compact" style="font-weight:600">${isEs ? 'Activar TTS' : 'Enable TTS'}</label>
           <label class="toggle-switch" style="margin-left:auto">
-            <input type="checkbox" name="TTS_ENABLED" value="true" data-original="${ttsEnabled ? 'true' : 'false'}" ${ttsEnabled ? 'checked' : ''}>
+            <input type="hidden" name="TTS_ENABLED" value="${ttsEnabled ? 'true' : 'false'}" data-original="${ttsEnabled ? 'true' : 'false'}">
+            <input type="checkbox" name="TTS_ENABLED" value="true" data-original="${ttsEnabled ? 'true' : 'false'}" ${ttsEnabled ? 'checked' : ''}
+              onchange="this.previousElementSibling.value=this.checked?'true':'false'">
             <span class="toggle-slider"></span>
           </label>
         </div>
