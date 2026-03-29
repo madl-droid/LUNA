@@ -16,7 +16,7 @@ Cada módulo es un directorio dentro de `src/modules/` con un archivo `manifest.
 
 | Archivo | Propósito |
 |---------|-----------|
-| `src/kernel/types.ts` | Interfaces: ModuleManifest, HookMap, OficinaField, ApiRoute, LoadedModule |
+| `src/kernel/types.ts` | Interfaces: ModuleManifest, HookMap, ConsoleField, ApiRoute, LoadedModule |
 | `src/kernel/registry.ts` | Bus central: hooks, DI, config por módulo, lifecycles |
 | `src/kernel/loader.ts` | Descubrimiento, sync con DB, topological sort, activación |
 | `src/kernel/server.ts` | HTTP server con mount/unmount dinámico de rutas |
@@ -127,7 +127,7 @@ El contrato que todo módulo debe implementar. Se define en `src/kernel/types.ts
 | `activateByDefault?: boolean` | `true` → se activa automáticamente al descubrirse por primera vez |
 | `depends?: string[]` | Nombres de módulos que deben estar activos antes de `init()` |
 | `configSchema?: ZodObject` | Schema Zod con las env vars que el módulo necesita |
-| `oficina?: ModuleOficinaDef` | Panel UI en la Console (campos, API routes, etc.) |
+| `console?: ModuleConsoleDef` | Panel UI en la Console (campos, API routes, etc.) |
 | `init: (registry) => Promise<void>` | Se llama al activar. Aquí se inicializa todo el módulo |
 | `stop?: () => Promise<void>` | Se llama al desactivar. Aquí se limpian recursos |
 
@@ -162,7 +162,7 @@ const result = await registry.callHook('llm:chat', payload)
 | Lifecycle | `module:activated`, `module:deactivated` |
 | Mensajes | `message:incoming`, `message:classified`, `message:before_respond`, `message:response_ready`, `message:send`, `message:sent` |
 | LLM | `llm:chat`, `llm:models_available`, `llm:provider_down`, `llm:provider_up` |
-| Console | `oficina:config_saved`, `oficina:config_applied` |
+| Console | `console:config_saved`, `console:config_applied` |
 | Contactos | `contact:new`, `contact:status_changed` |
 | Usuarios | `user:resolved` |
 | Jobs | `job:register`, `job:run` |
@@ -190,7 +190,7 @@ const svc = registry.getOptional<MiTipo>('otro-modulo:servicio')
 |----------|---------------------|
 | `whatsapp:adapter` | whatsapp — BaileysAdapter |
 | `llm:gateway` | llm — LLMGateway |
-| `oficina:requestHandler` | console — handler HTTP de la Console |
+| `console:requestHandler` | console — handler HTTP de la Console |
 | `users:db` | users — acceso a listas de usuarios |
 | `tools:registry` | tools — catálogo de tools |
 | `kernel:server` | (kernel) — instancia del Server HTTP |
@@ -241,14 +241,14 @@ configSchema: z.object({
 
 **Convención de nombres:** `MI_MODULO_NOMBRE_VAR` — siempre en UPPER_SNAKE_CASE con el prefijo del nombre del módulo en mayúsculas.
 
-## 7. Panel en la Console (oficina)
+## 7. Panel en la Console
 
-Cada módulo puede declarar un panel en la Console de LUNA mediante el campo `oficina` en su manifest. Esto incluye campos de configuración editables y endpoints HTTP propios.
+Cada módulo puede declarar un panel en la Console de LUNA mediante el campo `console` en su manifest. Esto incluye campos de configuración editables y endpoints HTTP propios.
 
 ### 7.1 Estructura del panel
 
 ```typescript
-oficina: {
+console: {
   title: { es: 'Mi Módulo', en: 'My Module' },
   info:  { es: 'Descripción...', en: 'Description...' },
   order: 50,         // Posición en sidebar (menor = más arriba)
@@ -289,14 +289,14 @@ oficina: {
 
 ### 7.4 API Routes
 
-Cada módulo puede declarar endpoints HTTP propios. Se montan automáticamente bajo `/oficina/api/{moduleName}/{path}` cuando el módulo se activa, y se desmontan cuando se desactiva.
+Cada módulo puede declarar endpoints HTTP propios. Se montan automáticamente bajo `/console/api/{moduleName}/{path}` cuando el módulo se activa, y se desmontan cuando se desactiva.
 
 ```typescript
 apiRoutes: [
   {
     method: 'GET',
     path: 'status',
-    // Acceso: GET /oficina/api/mi-modulo/status
+    // Acceso: GET /console/api/mi-modulo/status
     handler: async (req, res) => {
       jsonResponse(res, 200, { status: 'running' })
     },
@@ -353,7 +353,7 @@ const manifest: ModuleManifest = {
     MI_MODULO_INTERVAL_MS: numEnv(60000),
   }),
 
-  oficina: { ... },   // ver sección 7
+  console: { ... },   // ver sección 7
 
   async init(registry: Registry) {
     const config = registry.getConfig<{ ... }>('mi-modulo')
@@ -398,7 +398,7 @@ MI_MODULO_INTERVAL_MS=60000
 
 ### Paso 5 — Activar desde la Console
 
-En la sección Modules de la Console, usar el toggle ON/OFF para activar el módulo. La Console usa `POST /oficina/modules/toggle` internamente.
+En la sección Modules de la Console, usar el toggle ON/OFF para activar el módulo. La Console usa `POST /console/modules/toggle` internamente.
 
 ## 9. Patrones comunes
 
@@ -500,7 +500,7 @@ Todos los imports que un módulo típicamente necesita:
 
 ```typescript
 // Tipos del kernel
-import type { ModuleManifest, ApiRoute, OficinaField } from '../../kernel/types.js'
+import type { ModuleManifest, ApiRoute, ConsoleField } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 
 // Config helpers (Zod)
@@ -530,7 +530,7 @@ Checklist para confirmar que un módulo nuevo está funcionando correctamente:
 | Módulo descubierto | Logs al arrancar: `'Module discovered: mi-modulo'` |
 | Módulo activado | Logs al arrancar: `'Module activated: mi-modulo'` |
 | Health check | `GET /health` — el módulo aparece en la lista de módulos activos |
-| Panel en Console | Ir a `/oficina` — el módulo tiene su sección con campos y toggle |
-| API route propia | `GET /oficina/api/mi-modulo/status` — responde 200 |
+| Panel en Console | Ir a `/console` — el módulo tiene su sección con campos y toggle |
+| API route propia | `GET /console/api/mi-modulo/status` — responde 200 |
 | Desactivación | Toggle OFF en Console → logs: `'Module deactivated: mi-modulo'` |
 | Reactivación | Toggle ON en Console → módulo se re-inicializa correctamente |
