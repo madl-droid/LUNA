@@ -16,7 +16,8 @@ import type {
 } from '../types.js'
 import type { CheckpointManager } from '../checkpoints/checkpoint-manager.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
-import { runSubagent } from '../subagent/subagent.js'
+import { runSubagent, runSubagentV2 } from '../subagent/subagent.js'
+import type { SubagentCatalogEntry, RecordSubagentUsage } from '../../modules/subagents/types.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { StepSemaphore } from '../concurrency/step-semaphore.js'
 import { processAttachments, buildFallbackMessages } from '../attachments/processor.js'
@@ -410,7 +411,8 @@ async function executeWorkflow(
 }
 
 /**
- * Execute subagent mini-loop.
+ * Execute subagent v2 (catalog-based with verification and spawn).
+ * Falls back to legacy runSubagent if subagents module is not active.
  */
 async function executeSubagent(
   step: ExecutionStep,
@@ -429,6 +431,55 @@ async function executeSubagent(
     .map(name => getDefinition(name, registry))
     .filter((d): d is NonNullable<typeof d> => d !== null)
 
+  // Check if subagents catalog is available (module active)
+  const catalog = registry.getOptional<{
+    getBySlug(slug: string): SubagentCatalogEntry | null
+    recordUsage(record: RecordSubagentUsage): Promise<void>
+  }>('subagents:catalog')
+
+  if (catalog && step.subagentSlug) {
+    // v2 path: catalog-based subagent with verification + spawn
+    const result = await runSubagentV2(ctx, step, toolDefs, config, registry)
+
+    // Record usage for metrics
+    try {
+      const entry = catalog.getBySlug(step.subagentSlug)
+      await catalog.recordUsage({
+        subagentTypeId: entry?.id ?? null,
+        subagentSlug: step.subagentSlug,
+        traceId: ctx.traceId,
+        iterations: result.iterations,
+        tokensUsed: result.tokensUsed,
+        durationMs: result.durationMs,
+        success: result.success,
+        verified: !!result.verification,
+        verificationVerdict: result.verification?.verdict,
+        childSpawned: result.childSpawned,
+        costUsd: result.costUsd,
+        error: result.error,
+      })
+    } catch (err) {
+      logger.warn({ err, traceId: ctx.traceId }, 'Failed to record subagent usage')
+    }
+
+    return {
+      stepIndex: index,
+      type: 'subagent',
+      success: result.success,
+      data: {
+        result: result.data,
+        iterations: result.iterations,
+        tokensUsed: result.tokensUsed,
+        subagentSlug: result.subagentSlug,
+        verification: result.verification,
+        childSpawned: result.childSpawned,
+      },
+      error: result.error,
+      durationMs: Date.now() - startMs,
+    }
+  }
+
+  // Legacy fallback: no catalog module
   const result = await runSubagent(ctx, step, toolDefs, config, registry, llmTask)
 
   return {

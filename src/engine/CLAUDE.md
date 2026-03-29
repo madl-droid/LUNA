@@ -56,8 +56,10 @@ prompts/
   subagent.ts         — prompt builder para subagent mini-loop
 
 subagent/
-  subagent.ts         — mini-loop con guardrails y tool calling nativo
-  guardrails.ts       — límites configurables del subagent
+  subagent.ts         — subagent v2: loop con verificación, spawn recursivo (1 nivel), soft/hard guardrails
+  guardrails.ts       — guardrails soft (warn+continue) / hard (crash protection)
+  verifier.ts         — verificador de calidad: accept/retry/fail (usa classifyModel)
+  types.ts            — tipos internos: SubagentRunConfig, SubagentResultV2, SUBAGENT_HARD_LIMITS
 
 proactive/
   proactive-pipeline.ts — pipeline proactivo: Phase 1 simplificado + reusa Phases 2-5
