@@ -245,9 +245,9 @@ export class TaskRouter {
       complex: config.LLM_ROUTE_COMPLEX,
       tools: config.LLM_ROUTE_TOOLS,
       proactive: config.LLM_ROUTE_PROACTIVE,
-      criticize: (config as unknown as Record<string, string>)['LLM_ROUTE_CRITICIZE'],
-      document_read: (config as unknown as Record<string, string>)['LLM_ROUTE_DOCUMENT_READ'],
-      batch: (config as unknown as Record<string, string>)['LLM_ROUTE_BATCH'],
+      criticize: config.LLM_ROUTE_CRITICIZE,
+      document_read: config.LLM_ROUTE_DOCUMENT_READ,
+      batch: config.LLM_ROUTE_BATCH,
     }
 
     for (const [task, json] of Object.entries(routeMap)) {
@@ -489,12 +489,12 @@ export class TaskRouter {
   private resolveGroupApiKey(provider: LLMProviderName, task: string): string | null {
     // Try original task name first, then resolved alias
     const resolvedTask = TASK_ALIASES[task] ?? task
-    const mapping = TASK_TO_KEY_GROUP[task] ?? TASK_TO_KEY_GROUP[resolvedTask]
-    if (!mapping) return null
+    const group = TASK_TO_KEY_GROUP[task] ?? TASK_TO_KEY_GROUP[resolvedTask]
+    if (!group) return null
 
     // Build the env var name: LLM_{PROVIDER}_{GROUP}_API_KEY
     const providerUpper = provider === 'anthropic' ? 'ANTHROPIC' : 'GOOGLE'
-    const groupUpper = mapping.group.toUpperCase()
+    const groupUpper = group.toUpperCase()
     const envVar = `LLM_${providerUpper}_${groupUpper}_API_KEY`
 
     return this.apiKeys.get(envVar) ?? null

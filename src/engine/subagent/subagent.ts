@@ -32,6 +32,7 @@ export async function runSubagent(
   toolDefs: ToolDefinition[],
   config: EngineConfig,
   registry?: Registry,
+  llmTask = 'subagent',
 ): Promise<SubagentResult> {
   const startMs = Date.now()
 
@@ -89,7 +90,7 @@ export async function runSubagent(
     try {
       // Call LLM with tools (+ optional thinking/coding from Phase 2 hints)
       const result = await callLLM({
-        task: 'subagent',
+        task: llmTask,
         provider: config.toolsProvider,
         model: config.toolsModel,
         system,

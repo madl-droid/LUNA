@@ -97,6 +97,7 @@ export async function phase3Execute(
   const { executionPlan } = evaluation
   const llmStepCount = countLLMSteps(executionPlan)
   const isComplexPlan = llmStepCount >= COMPLEX_PLAN_THRESHOLD
+  const stepLlmTask = isComplexPlan ? 'complex' : 'tools'
 
   logger.info({
     traceId: ctx.traceId,
@@ -123,7 +124,7 @@ export async function phase3Execute(
     const parallelResults = await Promise.allSettled(
       independent.map(({ step, index }) =>
         stepSemaphore.run(() =>
-          executeStep(step, index, ctx, db, redis, config, registry, isComplexPlan),
+          executeStep(step, index, ctx, db, redis, config, registry, stepLlmTask),
         ),
       ),
     )
@@ -163,7 +164,7 @@ export async function phase3Execute(
     }
 
     const result = await stepSemaphore.run(() =>
-      executeStep(step, index, ctx, db, redis, config, registry, isComplexPlan),
+      executeStep(step, index, ctx, db, redis, config, registry, stepLlmTask),
     )
     results.push(result)
   }
@@ -209,11 +210,9 @@ async function executeStep(
   redis: Redis,
   config: EngineConfig,
   registry: Registry,
-  isComplexPlan = false,
+  llmTask = 'tools',
 ): Promise<StepResult> {
   const startMs = Date.now()
-  // LLM task type for steps: 'complex' (Opus) for complex plans, 'tools' (Sonnet) for simple
-  const stepLlmTask = isComplexPlan ? 'complex' : 'tools'
 
   try {
     switch (step.type) {
@@ -224,19 +223,19 @@ async function executeStep(
         return await executeWorkflow(step, index, startMs, registry)
 
       case 'subagent':
-        return await executeSubagent(step, index, ctx, config, startMs, registry)
+        return await executeSubagent(step, index, ctx, config, startMs, registry, llmTask)
 
       case 'memory_lookup':
         return await executeMemoryLookup(step, index, db, ctx, registry, startMs)
 
       case 'web_search':
-        return await executeWebSearch(step, index, config, startMs)
+        return await executeWebSearch(step, index, config, startMs, llmTask)
 
       case 'process_attachment':
         return await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)
 
       case 'code_execution':
-        return await executeCodeExecution(step, index, config, startMs, stepLlmTask)
+        return await executeCodeExecution(step, index, config, startMs, llmTask)
 
       case 'respond_only':
         return {
@@ -340,6 +339,7 @@ async function executeSubagent(
   config: EngineConfig,
   startMs: number,
   registry: Registry,
+  llmTask = 'tools',
 ): Promise<StepResult> {
   const toolNames = ctx.userPermissions.tools.includes('*')
     ? (step.params?.tools as string[] ?? [])
@@ -349,7 +349,7 @@ async function executeSubagent(
     .map(name => getDefinition(name, registry))
     .filter((d): d is NonNullable<typeof d> => d !== null)
 
-  const result = await runSubagent(ctx, step, toolDefs, config, registry)
+  const result = await runSubagent(ctx, step, toolDefs, config, registry, llmTask)
 
   return {
     stepIndex: index,
@@ -440,6 +440,7 @@ async function executeWebSearch(
   index: number,
   config: EngineConfig,
   startMs: number,
+  _llmTask = 'tools', // accepted for consistency but web_search always uses its own task (needs grounding)
 ): Promise<StepResult> {
   const query = step.description ?? step.params?.query as string ?? ''
   if (!query) {

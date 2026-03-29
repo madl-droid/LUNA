@@ -65,7 +65,10 @@ Fallback — otro provider, capacidades equivalentes (2 retries)
 ```
 
 ## Criticizer (quality gate — 2 pasos)
-Paso separado en Phase 4 que revisa la respuesta antes de enviarla. **OFF por defecto** (`LLM_CRITICIZER_ENABLED=false`).
+Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
+**Modo** (`LLM_CRITICIZER_MODE`): `disabled` | `complex_only` (default) | `always`.
+- `complex_only`: solo corre para planes con 3+ pasos LLM (misma definición que Phase 3).
+- Prompt del criticizer viene del módulo prompts (criticizer-base + custom checklist en Identity > Criticizer).
 1. **Pro revisa**: Gemini Pro (task `'criticize'`, con fallback chain) evalúa la respuesta y retorna JSON estructurado: `{approved: true}` o refinements (`tone`, `length`, `remove`, `add`, `rephrase`).
 2. **Flash regenera**: Si hay refinements, se inyectan como instrucciones naturales en el system prompt del compositor. Flash regenera con el contexto completo (identity, guardrails, historial) — nunca ve "CORRECCIONES DEL REVISOR".
 - Si Pro aprueba → respuesta original se envía sin cambios

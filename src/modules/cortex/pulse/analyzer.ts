@@ -120,11 +120,8 @@ export function generateQuietReport(data: PulseDataPackage): AnalysisResult {
 
 // ─── Helpers ─────────────────────────────
 
-function resolveTask(model: string): string {
-  // Use cortex-pulse task name so the LLM gateway routes to the cortex API key group
-  // in advanced mode. The alias resolves to 'complex' for model routing.
-  if (model.includes('sonnet')) return 'cortex-pulse'
-  return 'cortex-pulse' // always use cortex group for Pulse analysis
+function resolveTask(_model: string): string {
+  return 'cortex-pulse'
 }
 
 function buildUserMessage(data: PulseDataPackage): string {

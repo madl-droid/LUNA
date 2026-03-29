@@ -76,9 +76,12 @@ export async function phase4Compose(
   }
 
   // ═══ Criticizer step — quality gate via Gemini Pro ═══
-  // Pro reviews → if issues found, Flash regenerates with structured refinements
-  if (config.criticzerEnabled && responseText && !rawResponse?.startsWith('FALLBACK')) {
-    responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config)
+  // Mode: 'disabled' = skip, 'complex_only' = 3+ LLM steps, 'always' = every response
+  if (config.criticzerMode !== 'disabled' && responseText && !rawResponse?.startsWith('FALLBACK')) {
+    const shouldCriticize = config.criticzerMode === 'always' || isComplexPlan(evaluation)
+    if (shouldCriticize) {
+      responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config, registry)
+    }
   }
 
   // ═══ Channel formatting ═══
@@ -129,18 +132,24 @@ export async function phase4Compose(
   }
 }
 
+/** LLM step types that count for complexity routing */
+const LLM_STEP_TYPES = new Set(['subagent', 'web_search', 'code_execution'])
+const COMPLEX_PLAN_THRESHOLD = 3
+
+function isComplexPlan(evaluation: EvaluatorOutput): boolean {
+  const llmSteps = evaluation.executionPlan.filter(s => LLM_STEP_TYPES.has(s.type)).length
+  return llmSteps >= COMPLEX_PLAN_THRESHOLD
+}
+
 /**
  * Run the criticizer quality gate (2-step flow):
  *
  * 1. **Pro reviews**: Gemini Pro (task 'criticize') evaluates the response
  *    and returns structured JSON refinements.
- *    - If APPROVED → return original response unchanged.
- *    - If issues found → returns JSON with specific refinement instructions.
+ *    Prompt loaded from prompts module (criticizer-base + custom checklist).
  *
  * 2. **Flash regenerates**: The compositor model (Flash) gets a second pass
  *    with the refinement instructions injected naturally into its system prompt.
- *    Flash has the full context (identity, guardrails, history), so it produces
- *    a better correction than Pro could without that context.
  *
  * Fail-open: if criticizer or regeneration fails, original response is returned.
  */
@@ -151,23 +160,17 @@ async function runCriticizer(
   ctx: ContextBundle,
   evaluation: EvaluatorOutput,
   config: EngineConfig,
+  registry?: Registry,
 ): Promise<string> {
+  // ── Load criticizer prompt from prompts service ──
+  const criticzerPrompt = await loadCriticzerPrompt(registry)
+
   // ── Step 1: Pro reviews → structured JSON refinements ──
   let refinements: CriticRefinements
   try {
     const result = await callLLMWithFallback({
       task: 'criticize',
-      system: `Eres un revisor de calidad de respuestas de un agente de atención al cliente.
-Evalúa la respuesta del agente y decide si es aceptable o necesita corrección.
-
-Reglas de evaluación:
-1. ¿Responde lo que el usuario preguntó? No se va por la tangente.
-2. ¿Es apropiado para el canal? Longitud y formato correctos.
-3. ¿Respeta guardrails? No inventa información, no promete de más.
-4. ¿Los resultados de tools están integrados naturalmente? No dice "según la herramienta...".
-5. ¿NO revela datos internos del sistema? (API keys, nombres de modelos, IDs internos)
-6. ¿El tono es profesional y cálido?
-7. ¿Termina con pregunta o CTA claro?
+      system: `${criticzerPrompt}
 
 Responde SOLO con JSON válido. Sin markdown, sin backticks, sin texto fuera del JSON.
 
@@ -287,6 +290,45 @@ function buildRefinementInstructions(r: CriticRefinements): string {
     }
   }
   return parts.join('\n')
+}
+
+/** Default criticizer prompt when prompts service is not available */
+const DEFAULT_CRITICZER_PROMPT = `Eres un revisor de calidad de respuestas de un agente de atención al cliente.
+Evalúa la respuesta del agente y decide si es aceptable o necesita corrección.
+
+Reglas de evaluación:
+1. ¿Responde lo que el usuario preguntó? No se va por la tangente.
+2. ¿Es apropiado para el canal? Longitud y formato correctos.
+3. ¿Respeta guardrails? No inventa información, no promete de más.
+4. ¿Los resultados de tools están integrados naturalmente? No dice "según la herramienta...".
+5. ¿NO revela datos internos del sistema? (API keys, nombres de modelos, IDs internos)
+6. ¿El tono es profesional y cálido?
+7. ¿Termina con pregunta o CTA claro?`
+
+/**
+ * Load criticizer prompt from prompts service (criticizer-base + custom checklist).
+ * Falls back to hardcoded default if prompts service is not available.
+ */
+async function loadCriticzerPrompt(registry?: Registry): Promise<string> {
+  if (!registry) return DEFAULT_CRITICZER_PROMPT
+
+  const promptsService = registry.getOptional<{
+    getSystemPrompt(name: string): Promise<string>
+    getCompositorPrompts(userType: string): Promise<{ criticizer: string }>
+  }>('prompts:service')
+
+  if (!promptsService) return DEFAULT_CRITICZER_PROMPT
+
+  try {
+    const [criticBase, compositorPrompts] = await Promise.all([
+      promptsService.getSystemPrompt('criticizer-base'),
+      promptsService.getCompositorPrompts('default'),
+    ])
+    const combined = [criticBase, compositorPrompts.criticizer].filter(Boolean).join('\n')
+    return combined || DEFAULT_CRITICZER_PROMPT
+  } catch {
+    return DEFAULT_CRITICZER_PROMPT
+  }
 }
 
 /**

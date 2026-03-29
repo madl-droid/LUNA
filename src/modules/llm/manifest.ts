@@ -86,6 +86,12 @@ const manifest: ModuleManifest = {
     LLM_ROUTE_COMPLEX: z.string().default(''),
     LLM_ROUTE_TOOLS: z.string().default(''),
     LLM_ROUTE_PROACTIVE: z.string().default(''),
+    LLM_ROUTE_CRITICIZE: z.string().default(''),
+    LLM_ROUTE_DOCUMENT_READ: z.string().default(''),
+    LLM_ROUTE_BATCH: z.string().default(''),
+
+    // Criticizer mode (quality gate — Pro reviews, Flash regenerates)
+    LLM_CRITICIZER_MODE: z.string().default('complex_only'),
 
     // Task routing — downgrade targets (provider + model per task)
     LLM_CLASSIFY_DOWNGRADE_PROVIDER: z.string().default(''),
@@ -218,8 +224,17 @@ const manifest: ModuleManifest = {
 
       // Model scanner
       // Criticizer (quality gate)
-      { key: 'LLM_CRITICIZER_ENABLED', type: 'boolean', label: { es: 'Criticizer habilitado', en: 'Criticizer enabled' },
-        info: { es: 'Gate de calidad: Gemini Pro revisa la respuesta antes de enviarla. Si encuentra problemas, Flash regenera. OFF por defecto.', en: 'Quality gate: Gemini Pro reviews response before sending. If issues found, Flash regenerates. OFF by default.' } },
+      { key: 'LLM_CRITICIZER_MODE', type: 'select', label: { es: 'Criticizer (gate de calidad)', en: 'Criticizer (quality gate)' },
+        info: {
+          es: 'Gemini Pro revisa la respuesta antes de enviarla. Si encuentra problemas, Flash regenera con refinements. El prompt se configura en la pestaña Identidad > Criticizer.',
+          en: 'Gemini Pro reviews response before sending. If issues found, Flash regenerates with refinements. Prompt configured in Identity > Criticizer tab.',
+        },
+        options: [
+          { value: 'disabled', label: { es: 'Desactivado', en: 'Disabled' } },
+          { value: 'complex_only', label: { es: 'Solo complejo (3+ pasos LLM)', en: 'Complex only (3+ LLM steps)' } },
+          { value: 'always', label: { es: 'Siempre', en: 'Always' } },
+        ],
+      },
 
       // Model scanner
       { key: 'MODEL_SCAN_INTERVAL_MS', type: 'number', label: { es: 'Intervalo de escaneo de modelos (ms)', en: 'Model scan interval (ms)' },
