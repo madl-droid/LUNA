@@ -1241,6 +1241,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } else if (agenteSubpage === 'identity') {
           sectionData.agenteContent = renderSection('identity', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
+        } else if (agenteSubpage === 'subagents') {
+          try {
+            const renderFn = registry.getOptional<(lang: string) => Promise<string>>('subagents:renderSection')
+            if (renderFn) {
+              sectionData.agenteContent = await renderFn(lang)
+            }
+          } catch (err) { logger.error({ err }, 'Failed to render subagents section') }
+          if (!sectionData.agenteContent) {
+            sectionData.agenteContent = `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de subagentes no disponible.' : 'Subagents module not available.'}</p></div></div>`
+          }
         }
       }
 

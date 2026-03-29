@@ -8,7 +8,8 @@ import type { Pool } from 'pg'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import * as repo from './repository.js'
 import { createCatalogService } from './service.js'
-import type { CreateSubagentType, UpdateSubagentType } from './types.js'
+import { renderSubagentsSection } from './templates.js'
+import type { CreateSubagentType, UpdateSubagentType, SubagentUsageSummary } from './types.js'
 
 /** Build API routes (called from init with closure over db + registry) */
 function createApiRoutes(db: Pool, registry: Registry): ApiRoute[] {
@@ -220,6 +221,24 @@ const manifest: ModuleManifest = {
     if (manifest.console) {
       manifest.console.apiRoutes = routes
     }
+
+    // Provide render function so console can call it
+    registry.provide('subagents:renderSection', async (lang: 'es' | 'en') => {
+      const types = await repo.listTypes(db)
+      const usage: SubagentUsageSummary = await repo.getUsageSummary(db, 'day')
+
+      // Fetch available tools for the selector
+      let availableTools: Array<{ name: string; description: string }> = []
+      try {
+        interface ToolCatalogEntry { name: string; description: string }
+        const toolsRegistry = registry.getOptional<{ getCatalog(): ToolCatalogEntry[] }>('tools:registry')
+        if (toolsRegistry) {
+          availableTools = toolsRegistry.getCatalog().map(t => ({ name: t.name, description: t.description }))
+        }
+      } catch { /* tools module not available */ }
+
+      return renderSubagentsSection(types, usage, lang, availableTools)
+    })
   },
 
   async stop() {
