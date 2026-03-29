@@ -44,28 +44,44 @@ const dict: Record<string, Record<SetupLang, string>> = {
   err_password_min: { es: 'La contrase\u00f1a debe tener al menos 8 caracteres', en: 'Password must be at least 8 characters' },
   err_password_mismatch: { es: 'Las contrase\u00f1as no coinciden', en: 'Passwords do not match' },
 
-  // ─── Step 3: LLM Configuration ──────────
-  llm_title: { es: 'Configuraci\u00f3n de IA', en: 'AI Configuration' },
-  llm_text: {
-    es: 'Configura los proveedores de IA que LUNA usar\u00e1 para procesar mensajes. Necesitas al menos una API key.',
-    en: 'Configure the AI providers LUNA will use to process messages. You need at least one API key.',
+  // ─── Step 3: Agent Persona ───────────────
+  agent_title: { es: 'Personalidad del Agente', en: 'Agent Persona' },
+  agent_text: {
+    es: 'Define la identidad de tu agente de IA. Nombre, cargo, idioma y acento que usar\u00e1 al comunicarse.',
+    en: 'Define your AI agent\'s identity. Name, role, language and accent it will use when communicating.',
   },
-  llm_processing_provider: { es: 'Proveedor para procesamiento (clasificar, herramientas, comprimir)', en: 'Processing provider (classify, tools, compress)' },
-  llm_interaction_provider: { es: 'Proveedor para interacci\u00f3n (responder, complejo, proactivo)', en: 'Interaction provider (respond, complex, proactive)' },
-  llm_anthropic: { es: 'Anthropic (Claude)', en: 'Anthropic (Claude)' },
-  llm_google: { es: 'Google (Gemini)', en: 'Google (Gemini)' },
+  agent_name: { es: 'Nombre del agente', en: 'Agent first name' },
+  agent_last_name: { es: 'Apellido', en: 'Last name' },
+  agent_role: { es: 'Cargo / Rol', en: 'Title / Role' },
+  agent_role_placeholder: { es: 'Ej: Ejecutiva de ventas', en: 'E.g.: Sales Executive' },
+  agent_role_hint: { es: 'C\u00f3mo se presenta el agente ante los leads.', en: 'How the agent introduces itself to leads.' },
+  agent_language: { es: 'Idioma principal', en: 'Primary language' },
+  agent_language_hint: { es: 'Idioma por defecto para respuestas y mensajes del sistema.', en: 'Default language for responses and system messages.' },
+  agent_accent: { es: 'Acento / Regionalismo', en: 'Accent / Regionalism' },
+  agent_accent_warning: {
+    es: 'Configurar un acento hace que el agente use expresiones y modismos regionales. Esto puede afectar su capacidad de comunicarse de forma natural en otros idiomas. Si tus leads hablan varios idiomas, considera dejar el acento vac\u00edo.',
+    en: 'Setting an accent makes the agent use regional expressions and idioms. This may affect its ability to communicate naturally in other languages. If your leads speak multiple languages, consider leaving the accent empty.',
+  },
+  agent_no_accent: { es: 'Sin acento', en: 'No accent' },
+  err_agent_name_required: { es: 'El nombre del agente es requerido', en: 'Agent name is required' },
+
+  // ─── Step 4: API Keys ───────────────────
+  api_title: { es: 'Claves de API', en: 'API Keys' },
+  api_text: {
+    es: 'Ingresa las API keys de los proveedores de IA. Necesitas al menos una. Anthropic (Claude) es el proveedor principal; Google (Gemini) se usa como fallback.',
+    en: 'Enter the AI provider API keys. You need at least one. Anthropic (Claude) is the primary provider; Google (Gemini) is used as fallback.',
+  },
   llm_anthropic_key: { es: 'API Key de Anthropic', en: 'Anthropic API Key' },
   llm_google_key: { es: 'API Key de Google AI', en: 'Google AI API Key' },
-  err_anthropic_key_required: { es: 'Se requiere API Key de Anthropic (seleccionado como proveedor)', en: 'Anthropic API Key required (selected as provider)' },
-  err_google_key_required: { es: 'Se requiere API Key de Google AI (seleccionado como proveedor)', en: 'Google AI API Key required (selected as provider)' },
-  err_no_provider: { es: 'Debes seleccionar al menos un proveedor de IA', en: 'You must select at least one AI provider' },
-  llm_test_connection: { es: 'Probar conexi\u00f3n', en: 'Test connection' },
+  api_anthropic_hint: { es: 'Proveedor principal (Claude). Obt\u00e9n tu key en console.anthropic.com', en: 'Primary provider (Claude). Get your key at console.anthropic.com' },
+  api_google_hint: { es: 'Proveedor de fallback (Gemini). Obt\u00e9n tu key en aistudio.google.com', en: 'Fallback provider (Gemini). Get your key at aistudio.google.com' },
+  err_no_api_key: { es: 'Debes ingresar al menos una API key', en: 'You must enter at least one API key' },
 
-  // ─── Step 4: System settings ─────────────
+  // ─── Step 5: System settings ─────────────
   system_title: { es: 'Ajustes del Sistema', en: 'System Settings' },
   system_text: {
-    es: 'Configura los ajustes finales de tu instancia.',
-    en: 'Configure the final settings for your instance.',
+    es: 'Configura los ajustes finales y revisa el resumen antes de finalizar.',
+    en: 'Configure final settings and review the summary before finishing.',
   },
   instance_name: { es: 'Nombre de la instancia', en: 'Instance name' },
   instance_name_placeholder: { es: 'Ej: Mi Empresa', en: 'E.g.: My Company' },
@@ -75,12 +91,12 @@ const dict: Record<string, Record<SetupLang, string>> = {
   node_env_production: { es: 'Producci\u00f3n', en: 'Production' },
   summary_title: { es: 'Resumen de configuraci\u00f3n', en: 'Configuration summary' },
   summary_admin: { es: 'Administrador', en: 'Admin' },
-  summary_llm: { es: 'Proveedor IA', en: 'AI Provider' },
-  summary_processing: { es: 'Procesamiento', en: 'Processing' },
-  summary_interaction: { es: 'Interacci\u00f3n', en: 'Interaction' },
+  summary_agent: { es: 'Agente', en: 'Agent' },
+  summary_agent_lang: { es: 'Idioma del agente', en: 'Agent language' },
+  summary_agent_accent: { es: 'Acento', en: 'Accent' },
   summary_masked: { es: '(configurada)', en: '(configured)' },
 
-  // ─── Step 4: Complete ────────────────────
+  // ─── Complete ────────────────────────────
   setup_complete_title: { es: '\u00a1Instalaci\u00f3n completa!', en: 'Setup complete!' },
   setup_complete_text: {
     es: 'Tu instancia de LUNA est\u00e1 lista. Ser\u00e1s redirigido al panel de control.',

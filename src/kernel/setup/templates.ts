@@ -1,5 +1,6 @@
 // LUNA — Setup wizard: SSR templates
 // Full-page wizard layout (no sidebar — console not loaded yet).
+// 5 steps: language → admin → agent persona → API keys → system + summary
 
 import { st, type SetupLang } from './i18n.js'
 
@@ -17,8 +18,13 @@ export interface SetupState {
   adminEmail: string
   adminPhone: string
   adminPassword: string
-  processingProvider: 'anthropic' | 'google'
-  interactionProvider: 'anthropic' | 'google'
+  // Agent persona
+  agentName: string
+  agentLastName: string
+  agentTitle: string
+  agentLanguage: string
+  agentAccent: string
+  // API keys (both providers — no model/provider selection)
   anthropicApiKey: string
   googleApiKey: string
   instanceName: string
@@ -33,8 +39,11 @@ export function emptyState(): SetupState {
     adminEmail: '',
     adminPhone: '',
     adminPassword: '',
-    processingProvider: 'anthropic',
-    interactionProvider: 'anthropic',
+    agentName: 'Luna',
+    agentLastName: '',
+    agentTitle: '',
+    agentLanguage: 'es',
+    agentAccent: '',
     anthropicApiKey: '',
     googleApiKey: '',
     instanceName: '',
@@ -43,6 +52,8 @@ export function emptyState(): SetupState {
   }
 }
 
+export const TOTAL_STEPS = 5
+
 // ═══════════════════════════════════════════
 // CSS (inline — no dependency on console module)
 // ═══════════════════════════════════════════
@@ -50,7 +61,8 @@ export function emptyState(): SetupState {
 const WIZARD_CSS = `
   :root { --primary: #FF5E0E; --primary-hover: #e85400; --primary-light: rgba(255,94,14,0.08);
     --bg: #f5f5f7; --card: #ffffff; --text: #2d2d2d; --text-muted: #6e6e73; --text-dim: #86868b;
-    --border: rgba(0,0,0,0.06); --error: #E62111; --success: #34c759; --radius: 0.75rem; }
+    --border: rgba(0,0,0,0.06); --error: #E62111; --success: #34c759; --radius: 0.75rem;
+    --warning: #f59e0b; --warning-bg: rgba(245,158,11,0.08); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg); color: var(--text); min-height: 100vh;
@@ -82,6 +94,8 @@ const WIZARD_CSS = `
   .error-msg { color: var(--error); font-size: 0.75rem; margin-top: 2px; }
   .global-error { background: rgba(230,33,17,0.06); border: 1px solid var(--error); border-radius: 0.5rem;
     padding: 10px 14px; color: var(--error); font-size: 0.8rem; margin-bottom: 16px; }
+  .warning-box { background: var(--warning-bg); border: 1px solid var(--warning); border-radius: 0.5rem;
+    padding: 10px 14px; font-size: 0.78rem; margin-bottom: 16px; color: #92400e; line-height: 1.5; }
   .btn-row { display: flex; justify-content: space-between; margin-top: 28px; gap: 12px; }
   .btn { padding: 10px 24px; border-radius: 1.5rem; font-size: 0.85rem; font-weight: 500;
     cursor: pointer; border: none; transition: all 0.15s ease; font-family: inherit; text-decoration: none; display: inline-block; }
@@ -96,12 +110,7 @@ const WIZARD_CSS = `
     background: none; font-family: inherit; }
   .lang-option:hover, .lang-option.selected { border-color: var(--primary); color: var(--primary);
     background: var(--primary-light); }
-  .provider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0 16px; }
-  .provider-card { padding: 14px; border: 1.5px solid #e0e0e2; border-radius: 0.5rem; cursor: pointer;
-    text-align: center; font-size: 0.8rem; font-weight: 600; transition: all 0.15s ease; }
-  .provider-card:hover, .provider-card.selected { border-color: var(--primary); color: var(--primary);
-    background: var(--primary-light); }
-  .provider-card input[type=radio] { display: none; }
+  .half-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .summary-table { width: 100%; font-size: 0.8rem; border-collapse: collapse; margin: 12px 0; }
   .summary-table td { padding: 8px 0; border-bottom: 1px solid #e0e0e2; }
   .summary-table td:first-child { color: var(--text-muted); width: 40%; }
@@ -161,7 +170,7 @@ export function stepWelcome(lang: SetupLang, state: SetupState): string {
         </button>
       </div>
     </form>`
-  return setupLayout(1, 4, content, lang)
+  return setupLayout(1, TOTAL_STEPS, content, lang)
 }
 
 // ═══════════════════════════════════════════
@@ -210,56 +219,189 @@ export function stepAdmin(lang: SetupLang, state: SetupState, errors?: Record<st
         <button type="submit" class="btn btn-primary">${esc(st('next', lang))}</button>
       </div>
     </form>`
-  return setupLayout(2, 4, content, lang)
+  return setupLayout(2, TOTAL_STEPS, content, lang)
 }
 
 // ═══════════════════════════════════════════
-// Step 3: LLM Configuration
+// Step 3: Agent Persona
 // ═══════════════════════════════════════════
 
-export function stepLLM(lang: SetupLang, state: SetupState, errors?: Record<string, string>): string {
+/** Language options for agent (matches prompts module configSchema) */
+const AGENT_LANGUAGES = [
+  { value: 'es', label: 'Español / Spanish' },
+  { value: 'en', label: 'English / Inglés' },
+  { value: 'pt', label: 'Português / Portuguese' },
+  { value: 'fr', label: 'Français / French' },
+  { value: 'de', label: 'Deutsch / German' },
+  { value: 'it', label: 'Italiano / Italian' },
+]
+
+/** Accent options grouped by language (most common per language) */
+const ACCENT_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  es: [
+    { value: '', label: '— Sin acento / No accent —' },
+    { value: 'es-MX', label: 'México' },
+    { value: 'es-AR', label: 'Argentina' },
+    { value: 'es-CO', label: 'Colombia' },
+    { value: 'es-CL', label: 'Chile' },
+    { value: 'es-PE', label: 'Perú' },
+    { value: 'es-VE', label: 'Venezuela' },
+    { value: 'es-EC', label: 'Ecuador' },
+    { value: 'es-ES', label: 'España' },
+    { value: 'es-BO', label: 'Bolivia' },
+    { value: 'es-CR', label: 'Costa Rica' },
+    { value: 'es-CU', label: 'Cuba' },
+    { value: 'es-DO', label: 'República Dominicana' },
+    { value: 'es-SV', label: 'El Salvador' },
+    { value: 'es-GT', label: 'Guatemala' },
+    { value: 'es-HN', label: 'Honduras' },
+    { value: 'es-NI', label: 'Nicaragua' },
+    { value: 'es-PA', label: 'Panamá' },
+    { value: 'es-PY', label: 'Paraguay' },
+    { value: 'es-PR', label: 'Puerto Rico' },
+    { value: 'es-UY', label: 'Uruguay' },
+    { value: 'es-GQ', label: 'Guinea Ecuatorial' },
+  ],
+  en: [
+    { value: '', label: '— No accent —' },
+    { value: 'en-US', label: 'United States' },
+    { value: 'en-GB', label: 'United Kingdom' },
+    { value: 'en-AU', label: 'Australia' },
+    { value: 'en-CA', label: 'Canada' },
+    { value: 'en-IN', label: 'India' },
+    { value: 'en-IE', label: 'Ireland' },
+    { value: 'en-JM', label: 'Jamaica' },
+    { value: 'en-KE', label: 'Kenya' },
+    { value: 'en-NZ', label: 'New Zealand' },
+    { value: 'en-NG', label: 'Nigeria' },
+    { value: 'en-PH', label: 'Philippines' },
+    { value: 'en-SG', label: 'Singapore' },
+    { value: 'en-ZA', label: 'South Africa' },
+    { value: 'en-GH', label: 'Ghana' },
+  ],
+  pt: [
+    { value: '', label: '— Sem sotaque / No accent —' },
+    { value: 'pt-BR', label: 'Brasil' },
+    { value: 'pt-PT', label: 'Portugal' },
+    { value: 'pt-AO', label: 'Angola' },
+    { value: 'pt-MZ', label: 'Moçambique' },
+    { value: 'pt-CV', label: 'Cabo Verde' },
+  ],
+  fr: [
+    { value: '', label: '— Sans accent / No accent —' },
+    { value: 'fr-FR', label: 'France' },
+    { value: 'fr-CA', label: 'Canada (Québec)' },
+    { value: 'fr-BE', label: 'Belgique' },
+    { value: 'fr-CH', label: 'Suisse' },
+    { value: 'fr-SN', label: 'Sénégal' },
+    { value: 'fr-CM', label: 'Cameroun' },
+    { value: 'fr-CD', label: 'Congo (RDC)' },
+    { value: 'fr-CI', label: "Côte d'Ivoire" },
+    { value: 'fr-HT', label: 'Haïti' },
+  ],
+  de: [
+    { value: '', label: '— Kein Akzent / No accent —' },
+    { value: 'de-DE', label: 'Deutschland' },
+    { value: 'de-AT', label: 'Österreich' },
+    { value: 'de-CH', label: 'Schweiz' },
+    { value: 'de-LI', label: 'Liechtenstein' },
+    { value: 'de-LU', label: 'Luxemburg' },
+  ],
+  it: [
+    { value: '', label: '— Senza accento / No accent —' },
+    { value: 'it-IT', label: 'Italia' },
+    { value: 'it-CH', label: 'Svizzera (Ticino)' },
+    { value: 'it-SM', label: 'San Marino' },
+  ],
+}
+
+export function stepAgent(lang: SetupLang, state: SetupState, errors?: Record<string, string>): string {
   const e = errors ?? {}
+  const langOptions = AGENT_LANGUAGES.map(o =>
+    `<option value="${o.value}" ${state.agentLanguage === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
+  ).join('')
+
+  // Build accent options based on selected agent language (fallback to 'es')
+  const accentList = ACCENT_OPTIONS[state.agentLanguage] ?? ACCENT_OPTIONS['es']!
+  const accentOptions = accentList.map(o =>
+    `<option value="${o.value}" ${state.agentAccent === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
+  ).join('')
+
   const content = `
-    <h2>${esc(st('llm_title', lang))}</h2>
-    <p class="step-desc">${esc(st('llm_text', lang))}</p>
+    <h2>${esc(st('agent_title', lang))}</h2>
+    <p class="step-desc">${esc(st('agent_text', lang))}</p>
     ${e['_global'] ? `<div class="global-error">${esc(e['_global'])}</div>` : ''}
     <form method="POST" action="/setup/step/3">
-      <div class="field">
-        <label>${esc(st('llm_processing_provider', lang))}</label>
-        <div class="provider-grid">
-          <label class="provider-card ${state.processingProvider === 'anthropic' ? 'selected' : ''}">
-            <input type="radio" name="processing_provider" value="anthropic"
-              ${state.processingProvider === 'anthropic' ? 'checked' : ''}>
-            ${esc(st('llm_anthropic', lang))}
-          </label>
-          <label class="provider-card ${state.processingProvider === 'google' ? 'selected' : ''}">
-            <input type="radio" name="processing_provider" value="google"
-              ${state.processingProvider === 'google' ? 'checked' : ''}>
-            ${esc(st('llm_google', lang))}
-          </label>
+      <div class="half-row">
+        <div class="field">
+          <label>${esc(st('agent_name', lang))} *</label>
+          <input type="text" name="agent_name" value="${esc(state.agentName)}" required
+            class="${e['agent_name'] ? 'field-error' : ''}">
+          ${e['agent_name'] ? `<div class="error-msg">${esc(e['agent_name'])}</div>` : ''}
+        </div>
+        <div class="field">
+          <label>${esc(st('agent_last_name', lang))}</label>
+          <input type="text" name="agent_last_name" value="${esc(state.agentLastName)}">
         </div>
       </div>
       <div class="field">
-        <label>${esc(st('llm_interaction_provider', lang))}</label>
-        <div class="provider-grid">
-          <label class="provider-card ${state.interactionProvider === 'anthropic' ? 'selected' : ''}">
-            <input type="radio" name="interaction_provider" value="anthropic"
-              ${state.interactionProvider === 'anthropic' ? 'checked' : ''}>
-            ${esc(st('llm_anthropic', lang))}
-          </label>
-          <label class="provider-card ${state.interactionProvider === 'google' ? 'selected' : ''}">
-            <input type="radio" name="interaction_provider" value="google"
-              ${state.interactionProvider === 'google' ? 'checked' : ''}>
-            ${esc(st('llm_google', lang))}
-          </label>
+        <label>${esc(st('agent_role', lang))}</label>
+        <input type="text" name="agent_title" value="${esc(state.agentTitle)}"
+          placeholder="${esc(st('agent_role_placeholder', lang))}">
+        <div class="hint">${esc(st('agent_role_hint', lang))}</div>
+      </div>
+      <div class="half-row">
+        <div class="field">
+          <label>${esc(st('agent_language', lang))}</label>
+          <select name="agent_language" id="agent-language-select">${langOptions}</select>
+          <div class="hint">${esc(st('agent_language_hint', lang))}</div>
+        </div>
+        <div class="field">
+          <label>${esc(st('agent_accent', lang))}</label>
+          <select name="agent_accent" id="agent-accent-select">${accentOptions}</select>
         </div>
       </div>
+      <div class="warning-box">${st('agent_accent_warning', lang)}</div>
+      <div class="btn-row">
+        <a href="/setup/step/2" class="btn btn-secondary">${esc(st('back', lang))}</a>
+        <button type="submit" class="btn btn-primary">${esc(st('next', lang))}</button>
+      </div>
+    </form>
+    <script>
+      // When agent language changes, update accent options dynamically
+      const accentData = ${JSON.stringify(ACCENT_OPTIONS)};
+      const langSel = document.getElementById('agent-language-select');
+      const accentSel = document.getElementById('agent-accent-select');
+      if (langSel && accentSel) {
+        langSel.addEventListener('change', () => {
+          const opts = accentData[langSel.value] || [];
+          accentSel.innerHTML = opts.map(o =>
+            '<option value="' + o.value + '">' + o.label + '</option>'
+          ).join('');
+        });
+      }
+    </script>`
+  return setupLayout(3, TOTAL_STEPS, content, lang)
+}
+
+// ═══════════════════════════════════════════
+// Step 4: API Keys
+// ═══════════════════════════════════════════
+
+export function stepApiKeys(lang: SetupLang, state: SetupState, errors?: Record<string, string>): string {
+  const e = errors ?? {}
+  const content = `
+    <h2>${esc(st('api_title', lang))}</h2>
+    <p class="step-desc">${esc(st('api_text', lang))}</p>
+    ${e['_global'] ? `<div class="global-error">${esc(e['_global'])}</div>` : ''}
+    <form method="POST" action="/setup/step/4">
       <div class="field">
         <label>${esc(st('llm_anthropic_key', lang))}</label>
         <input type="password" name="anthropic_api_key" value="${esc(state.anthropicApiKey)}"
           placeholder="sk-ant-..."
           class="${e['anthropic_api_key'] ? 'field-error' : ''}">
         ${e['anthropic_api_key'] ? `<div class="error-msg">${esc(e['anthropic_api_key'])}</div>` : ''}
+        <div class="hint">${esc(st('api_anthropic_hint', lang))}</div>
       </div>
       <div class="field">
         <label>${esc(st('llm_google_key', lang))}</label>
@@ -267,75 +409,73 @@ export function stepLLM(lang: SetupLang, state: SetupState, errors?: Record<stri
           placeholder="AIza..."
           class="${e['google_api_key'] ? 'field-error' : ''}">
         ${e['google_api_key'] ? `<div class="error-msg">${esc(e['google_api_key'])}</div>` : ''}
+        <div class="hint">${esc(st('api_google_hint', lang))}</div>
       </div>
       <div class="btn-row">
-        <a href="/setup/step/2" class="btn btn-secondary">${esc(st('back', lang))}</a>
+        <a href="/setup/step/3" class="btn btn-secondary">${esc(st('back', lang))}</a>
         <button type="submit" class="btn btn-primary">${esc(st('next', lang))}</button>
       </div>
-    </form>
-    <script>
-      // Highlight selected provider cards
-      document.querySelectorAll('.provider-card input[type=radio]').forEach(r => {
-        r.addEventListener('change', () => {
-          const grid = r.closest('.provider-grid');
-          grid.querySelectorAll('.provider-card').forEach(c => c.classList.remove('selected'));
-          r.closest('.provider-card').classList.add('selected');
-        });
-      });
-    </script>`
-  return setupLayout(3, 4, content, lang)
+    </form>`
+  return setupLayout(4, TOTAL_STEPS, content, lang)
 }
 
 // ═══════════════════════════════════════════
-// Step 4: System Settings + Summary
+// Step 5: System Settings + Summary
 // ═══════════════════════════════════════════
 
 export function stepSystem(lang: SetupLang, state: SetupState, errors?: Record<string, string>): string {
   const e = errors ?? {}
-  const procLabel = state.processingProvider === 'anthropic' ? st('llm_anthropic', lang) : st('llm_google', lang)
-  const interLabel = state.interactionProvider === 'anthropic' ? st('llm_anthropic', lang) : st('llm_google', lang)
+  const agentFullName = [state.agentName, state.agentLastName].filter(Boolean).join(' ')
+  const agentLangLabel = AGENT_LANGUAGES.find(o => o.value === state.agentLanguage)?.label ?? state.agentLanguage
+  const accentList = ACCENT_OPTIONS[state.agentLanguage] ?? []
+  const accentLabel = state.agentAccent
+    ? (accentList.find(o => o.value === state.agentAccent)?.label ?? state.agentAccent)
+    : st('agent_no_accent', lang)
 
   const content = `
     <h2>${esc(st('system_title', lang))}</h2>
     <p class="step-desc">${esc(st('system_text', lang))}</p>
     ${e['_global'] ? `<div class="global-error">${esc(e['_global'])}</div>` : ''}
-    <form method="POST" action="/setup/step/4">
+    <form method="POST" action="/setup/step/5">
       <div class="field">
         <label>${esc(st('instance_name', lang))}</label>
         <input type="text" name="instance_name" value="${esc(state.instanceName)}"
           placeholder="${esc(st('instance_name_placeholder', lang))}">
       </div>
-      <div class="field">
-        <label>${esc(st('log_level', lang))}</label>
-        <select name="log_level">
-          ${['info', 'debug', 'warn', 'error'].map(l =>
-            `<option value="${l}" ${state.logLevel === l ? 'selected' : ''}>${l}</option>`
-          ).join('')}
-        </select>
-      </div>
-      <div class="field">
-        <label>${esc(st('node_env', lang))}</label>
-        <select name="node_env">
-          <option value="production" ${state.nodeEnv === 'production' ? 'selected' : ''}>${esc(st('node_env_production', lang))}</option>
-          <option value="development" ${state.nodeEnv === 'development' ? 'selected' : ''}>${esc(st('node_env_development', lang))}</option>
-        </select>
+      <div class="half-row">
+        <div class="field">
+          <label>${esc(st('log_level', lang))}</label>
+          <select name="log_level">
+            ${['info', 'debug', 'warn', 'error'].map(l =>
+              `<option value="${l}" ${state.logLevel === l ? 'selected' : ''}>${l}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>${esc(st('node_env', lang))}</label>
+          <select name="node_env">
+            <option value="production" ${state.nodeEnv === 'production' ? 'selected' : ''}>${esc(st('node_env_production', lang))}</option>
+            <option value="development" ${state.nodeEnv === 'development' ? 'selected' : ''}>${esc(st('node_env_development', lang))}</option>
+          </select>
+        </div>
       </div>
 
       <h3 style="margin-top:24px; font-size:15px;">${esc(st('summary_title', lang))}</h3>
       <table class="summary-table">
         <tr><td>${esc(st('summary_admin', lang))}</td><td>${esc(state.adminName)} (${esc(state.adminEmail)})</td></tr>
-        <tr><td>${esc(st('summary_processing', lang))}</td><td>${esc(procLabel)}</td></tr>
-        <tr><td>${esc(st('summary_interaction', lang))}</td><td>${esc(interLabel)}</td></tr>
+        <tr><td>${esc(st('summary_agent', lang))}</td><td>${esc(agentFullName)}${state.agentTitle ? ` — ${esc(state.agentTitle)}` : ''}</td></tr>
+        <tr><td>${esc(st('summary_agent_lang', lang))}</td><td>${esc(agentLangLabel)}</td></tr>
+        <tr><td>${esc(st('summary_agent_accent', lang))}</td><td>${esc(accentLabel)}</td></tr>
         ${state.anthropicApiKey ? `<tr><td>Anthropic API Key</td><td>${esc(st('summary_masked', lang))}</td></tr>` : ''}
         ${state.googleApiKey ? `<tr><td>Google AI API Key</td><td>${esc(st('summary_masked', lang))}</td></tr>` : ''}
       </table>
 
       <div class="btn-row">
-        <a href="/setup/step/3" class="btn btn-secondary">${esc(st('back', lang))}</a>
+        <a href="/setup/step/4" class="btn btn-secondary">${esc(st('back', lang))}</a>
         <button type="submit" class="btn btn-primary">${esc(st('finish', lang))}</button>
       </div>
     </form>`
-  return setupLayout(4, 4, content, lang)
+  return setupLayout(5, TOTAL_STEPS, content, lang)
 }
 
 // ═══════════════════════════════════════════
