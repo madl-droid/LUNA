@@ -41,7 +41,7 @@ export async function verifySubagentResult(
   result: unknown,
   success: boolean,
   config: EngineConfig,
-): Promise<VerificationResult> {
+): Promise<VerificationResult & { tokensUsed: number }> {
   try {
     const userMessage = [
       `Tarea asignada al subagente: ${taskDescription}`,
@@ -63,6 +63,7 @@ export async function verifySubagentResult(
       jsonMode: true,
     })
 
+    const verifierTokens = llmResult.inputTokens + llmResult.outputTokens
     const parsed = JSON.parse(llmResult.text)
 
     const verdict = ['accept', 'retry', 'fail'].includes(parsed.verdict)
@@ -76,10 +77,11 @@ export async function verifySubagentResult(
         : 0.5,
       feedback: typeof parsed.feedback === 'string' ? parsed.feedback : undefined,
       issues: Array.isArray(parsed.issues) ? parsed.issues : undefined,
+      tokensUsed: verifierTokens,
     }
   } catch (err) {
     logger.error({ err }, 'Verifier LLM call failed — defaulting to accept')
     // If verifier fails, don't block the pipeline — accept by default
-    return { verdict: 'accept', confidence: 0.5 }
+    return { verdict: 'accept', confidence: 0.5, tokensUsed: 0 }
   }
 }

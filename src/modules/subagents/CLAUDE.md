@@ -31,7 +31,7 @@ reload(): Promise<void>  // Recarga cache desde DB
 - `GET usage?period=day|week|month|hour` — métricas agregadas
 - `GET available-tools` — lista tools disponibles (para selector en consola)
 
-## Tablas (migración 012)
+## Tablas (migración 013)
 - `subagent_types` — CRUD, campos: slug, name, description, enabled, model_tier, token_budget, verify_result, can_spawn_children, allowed_tools, system_prompt
 - `subagent_usage` — tracking: iterations, tokens_used, duration_ms, success, verified, cost_usd
 

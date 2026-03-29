@@ -1,4 +1,4 @@
--- Migration 012: Subagents v1
+-- Migration 013: Subagents v1
 -- Sistema de subagents especializados con CRUD, verificación y uso.
 
 -- ═══════════════════════════════════════════

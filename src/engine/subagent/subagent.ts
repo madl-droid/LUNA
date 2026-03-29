@@ -111,6 +111,7 @@ export async function runSubagentV2(
     )
 
     result.verification = verification
+    result.tokensUsed += verification.tokensUsed
 
     if (verification.verdict === 'retry') {
       logger.info({
@@ -137,6 +138,7 @@ export async function runSubagentV2(
 
       // Re-verify the retry result
       let retryVerification = verification // Keep original if re-verify fails
+      let reVerifyTokens = 0
       if (retryResult.success) {
         retryVerification = await verifySubagentResult(
           step.description ?? 'Ejecutar tarea',
@@ -144,13 +146,14 @@ export async function runSubagentV2(
           retryResult.success,
           config,
         )
+        reVerifyTokens = retryVerification.tokensUsed
       }
 
-      // Merge retry into result
+      // Merge retry into result (include re-verification tokens)
       result = {
         ...retryResult,
         iterations: result.iterations + retryResult.iterations,
-        tokensUsed: result.tokensUsed + retryResult.tokensUsed,
+        tokensUsed: result.tokensUsed + retryResult.tokensUsed + reVerifyTokens,
         softLimitsHit: [...result.softLimitsHit, ...retryResult.softLimitsHit],
         childSpawned: result.childSpawned || retryResult.childSpawned,
         childResults: [...(result.childResults ?? []), ...(retryResult.childResults ?? [])],
@@ -288,6 +291,7 @@ async function runSubagentLoop(
           inputSchema: t.inputSchema,
         })) : undefined,
         thinking: runConfig.useThinking ? { type: 'adaptive', budgetTokens: runConfig.thinkingBudget } : undefined,
+        codeExecution: step.useCoding ?? false,
       })
 
       tokensUsed += result.inputTokens + result.outputTokens

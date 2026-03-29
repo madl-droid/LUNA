@@ -552,13 +552,15 @@ function renderScript(lang: Lang): string {
     }
 
     try {
+      let res
       if (editId) {
         body.id = editId
-        await fetch(API + '/type', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+        res = await fetch(API + '/type', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
       } else {
         body.slug = slug
-        await fetch(API + '/type', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+        res = await fetch(API + '/type', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
       }
+      if (!res.ok) { const err = await res.text(); alert('Error: ' + err); return }
       location.reload()
     } catch(e) {
       alert('Error: ' + e.message)
@@ -568,7 +570,8 @@ function renderScript(lang: Lang): string {
   window.saDelete = async function(id) {
     if (!confirm(L.deleteConfirm)) return
     try {
-      await fetch(API + '/type?id=' + encodeURIComponent(id), { method: 'DELETE' })
+      const res = await fetch(API + '/type?id=' + encodeURIComponent(id), { method: 'DELETE' })
+      if (!res.ok) { const err = await res.text(); alert('Error: ' + err); return }
       location.reload()
     } catch(e) {
       alert('Error: ' + e.message)
