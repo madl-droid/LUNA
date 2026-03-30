@@ -2,6 +2,7 @@
 // Server-side rendered HTML for the knowledge items management UI.
 
 import type { KnowledgeItem, KnowledgeCategory } from './types.js'
+import { extractGoogleId } from './item-manager.js'
 
 type Lang = 'es' | 'en'
 
@@ -136,8 +137,11 @@ function renderCoreKnowledgeCards(lang: Lang, items: KnowledgeItem[], config?: {
   const productsDesc = config?.productsDescription ?? ''
 
   // Find existing knowledge items matching core URLs to avoid creating duplicates
-  const faqItem = faqUrl ? items.find(i => i.sourceUrl === faqUrl) : undefined
-  const productsItem = productsUrl ? items.find(i => i.sourceUrl === productsUrl) : undefined
+  // Match by sourceId (Google resource ID) for robustness against URL format differences
+  const faqExtracted = faqUrl ? extractGoogleId(faqUrl) : null
+  const productsExtracted = productsUrl ? extractGoogleId(productsUrl) : null
+  const faqItem = faqExtracted ? items.find(i => i.sourceId === faqExtracted.id) : (faqUrl ? items.find(i => i.sourceUrl === faqUrl) : undefined)
+  const productsItem = productsExtracted ? items.find(i => i.sourceId === productsExtracted.id) : (productsUrl ? items.find(i => i.sourceUrl === productsUrl) : undefined)
 
   const faqDefaultDesc = lang === 'es'
     ? 'Preguntas frecuentes del negocio. El agente consulta esta fuente para resolver dudas comunes de clientes sobre precios, horarios, politicas, procesos y servicios.'

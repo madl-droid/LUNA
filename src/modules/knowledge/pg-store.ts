@@ -1111,6 +1111,15 @@ export class KnowledgePgStore {
     return item
   }
 
+  async findItemBySourceId(sourceId: string): Promise<KnowledgeItem | null> {
+    const res = await this.db.query<ItemRow>(
+      `SELECT * FROM knowledge_items WHERE source_id = $1 LIMIT 1`, [sourceId],
+    )
+    const row = res.rows[0]
+    if (!row) return null
+    return mapItemRow(row)
+  }
+
   async listItems(): Promise<KnowledgeItem[]> {
     const res = await this.db.query<ItemRow>(
       `SELECT * FROM knowledge_items ORDER BY created_at DESC`,

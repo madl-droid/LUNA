@@ -88,6 +88,19 @@ export class KnowledgeItemManager {
     const extracted = extractGoogleId(data.sourceUrl)
     if (!extracted) throw new Error('URL no válida. Debe ser una URL de Google Sheets, Docs o Drive.')
 
+    // Check for existing item with same Google resource ID to prevent duplicates
+    const existing = await this.pgStore.findItemBySourceId(extracted.id)
+    if (existing) {
+      // Update existing item instead of creating a duplicate
+      await this.pgStore.updateItem(existing.id, {
+        title: data.title,
+        description: data.description,
+        categoryId: data.categoryId,
+      })
+      logger.info({ id: existing.id, title: data.title }, 'Knowledge item already exists, updated instead')
+      return (await this.pgStore.getItem(existing.id))!
+    }
+
     const id = await this.pgStore.insertItem({
       title: data.title,
       description: data.description,
