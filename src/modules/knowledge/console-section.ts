@@ -117,7 +117,7 @@ export function renderKnowledgeSection(
   html += renderCategoriesModal(categories, lang)
 
   // ── Client-side JS ──
-  html += renderClientScript(lang)
+  html += renderClientScript(lang, categories)
 
   // ── Styles ──
   html += renderStyles()
@@ -158,7 +158,7 @@ function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; f
             <div class="ki-core-card-title">${esc(title)} ${statusBadge}</div>
             <p class="ki-core-card-desc">${esc(desc)}</p>
           </div>
-          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiOpenWizardForCore('${esc(key)}', ${JSON.stringify(title)}, ${JSON.stringify(defaultDesc)}, '')">
+          <button type="button" class="act-btn act-btn-add act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(defaultDesc)}" data-url="" onclick="kiOpenWizardFromBtn(this)">
             ${t('configure_btn', lang)}
           </button>
         </div>
@@ -173,7 +173,7 @@ function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; f
           <p class="ki-core-card-desc">${esc(desc)}</p>
           <p class="ki-core-card-url">${esc(url)}</p>
         </div>
-        <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiOpenWizardForCore('${esc(key)}', ${JSON.stringify(title)}, ${JSON.stringify(desc)}, ${JSON.stringify(url)})">
+        <button type="button" class="act-btn act-btn-config act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(desc)}" data-url="${esc(url)}" onclick="kiOpenWizardFromBtn(this)">
           ${t('edit_btn', lang)}
         </button>
       </div>
@@ -275,102 +275,97 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 // Wizard Modal (3-step)
 // ═══════════════════════════════════════════
 
-function renderWizardModal(categories: KnowledgeCategory[], lang: Lang): string {
+function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string {
   const isEs = lang === 'es'
 
-  return `<div id="ki-wizard" class="wizard-overlay" style="display:none">
-    <div class="wizard-modal" style="position:relative;max-width:640px">
-      <button type="button" class="wizard-close" onclick="kiCloseWizard()">&times;</button>
+  return `<div class="wizard-overlay" id="ki-wizard" style="display:none" onclick="if(event.target===this)kiCloseWizard()">
+  <div class="wizard-modal">
+    <button class="wizard-close" onclick="kiCloseWizard()">&times;</button>
+    <div class="wizard-steps">
+      <!-- Title -->
+      <div class="wizard-title" id="ki-wiz-title-text">${isEs ? 'Agregar Conocimiento' : 'Add Knowledge'}</div>
 
-      <!-- Step indicators -->
-      <div class="ki-wiz-stepper">
-        <div class="ki-wiz-stepper-step ki-wiz-stepper-active" data-step="1">
-          <span class="ki-wiz-stepper-dot">1</span>
-          <span class="ki-wiz-stepper-label">${t('step_basic', lang)}</span>
+      <!-- Step count + dots -->
+      <div class="wizard-step-count">3 ${isEs ? 'pasos' : 'steps'}</div>
+      <div class="wizard-step-indicator" id="ki-wiz-dots">
+        <div class="wizard-dot active" data-dot="0">1</div>
+        <div class="wizard-dot-line"></div>
+        <div class="wizard-dot" data-dot="1">2</div>
+        <div class="wizard-dot-line"></div>
+        <div class="wizard-dot" data-dot="2">3</div>
+      </div>
+
+      <!-- Page 1: Basic Info -->
+      <div class="wizard-page active" data-page="0">
+        <div class="wizard-page-title">${t('step_basic', lang)}</div>
+
+        <label class="wizard-label">${t('item_title', lang)} *</label>
+        <input type="text" id="ki-wiz-title" class="wizard-input" maxlength="120" placeholder="${isEs ? 'Nombre del recurso' : 'Resource name'}" onfocus="kiWizClearErr('title')">
+        <div class="wizard-field-error" id="ki-wiz-err-title"></div>
+
+        <label class="wizard-label">${t('item_desc', lang)} *</label>
+        <textarea id="ki-wiz-desc" class="wizard-input" rows="3" maxlength="200" style="resize:vertical"
+          placeholder="${isEs ? 'Min. 20 caracteres. Describe el contenido para que el agente lo use como contexto.' : 'Min. 20 chars. Describe the content so the agent uses it as context.'}" onfocus="kiWizClearErr('desc')"></textarea>
+        <div class="wizard-field-error" id="ki-wiz-err-desc"></div>
+
+        <label class="wizard-label">${t('item_category', lang)}</label>
+        <div class="ki-category-field">
+          <input type="text" id="ki-wiz-cat-input" class="wizard-input" placeholder="${isEs ? 'Buscar o crear categoria...' : 'Search or create category...'}" oninput="kiWizFilterCats()" onfocus="kiWizShowCatDropdown()">
+          <input type="hidden" id="ki-wiz-category">
+          <div class="ki-cat-dropdown" id="ki-wiz-cat-dropdown" style="display:none"></div>
+          <div class="ki-cat-tags" id="ki-wiz-cat-selected"></div>
         </div>
-        <div class="ki-wiz-stepper-line" data-after="1"></div>
-        <div class="ki-wiz-stepper-step" data-step="2">
-          <span class="ki-wiz-stepper-dot">2</span>
-          <span class="ki-wiz-stepper-label">${t('step_tabs', lang)}</span>
-        </div>
-        <div class="ki-wiz-stepper-line" data-after="2"></div>
-        <div class="ki-wiz-stepper-step" data-step="3">
-          <span class="ki-wiz-stepper-dot">3</span>
-          <span class="ki-wiz-stepper-label">${t('step_columns', lang)}</span>
+
+        <label class="wizard-label">${t('item_url', lang)} *</label>
+        <input type="url" id="ki-wiz-url" class="wizard-input" placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiWizClearErr('url')">
+        <div class="wizard-field-error" id="ki-wiz-err-url"></div>
+
+        <div class="wizard-error" id="ki-wiz-general-error" style="display:none"></div>
+
+        <div class="wizard-actions">
+          <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiCloseWizard()">${t('cancel', lang)}</button>
+          <button type="button" class="wizard-btn wizard-btn-primary" id="ki-wiz-next1" onclick="kiWizStep1Next()">${t('next', lang)}</button>
         </div>
       </div>
 
-      <!-- Step 1: Basic Info -->
-      <div id="ki-wiz-step1" class="ki-wiz-panel">
-        <div class="wizard-title">${t('step_basic', lang)}</div>
-        <div class="ki-wiz-form-group">
-          <label class="wizard-label">${t('item_title', lang)} *</label>
-          <input type="text" id="ki-wiz-title" class="wizard-input" required maxlength="120" onfocus="kiWizClearErr('title')" />
-          <div class="wizard-field-error" id="ki-wiz-err-title"></div>
-        </div>
-        <div class="ki-wiz-form-group">
-          <label class="wizard-label">${t('item_desc', lang)} *</label>
-          <textarea id="ki-wiz-desc" class="wizard-input" rows="3" required minlength="20" maxlength="200" onfocus="kiWizClearErr('desc')" style="resize:vertical"
-            placeholder="${isEs ? 'Min. 20 caracteres. Describe el contenido para que el agente lo use como contexto.' : 'Min. 20 chars. Describe the content so the agent can use it as context.'}"></textarea>
-          <div class="wizard-field-error" id="ki-wiz-err-desc"></div>
-        </div>
-        <div class="ki-wiz-form-group">
-          <label class="wizard-label">${t('item_category', lang)}</label>
-          <div class="ki-tags-picker" id="ki-wiz-category-tags">
-            ${categories.map(c => `<span class="ki-tag-option" data-cat-id="${esc(c.id)}" onclick="kiWizToggleCatTag(this)">${esc(c.title)}</span>`).join('')}
-          </div>
-          <input type="hidden" id="ki-wiz-category" />
-        </div>
-        <div class="ki-wiz-form-group">
-          <label class="wizard-label">${t('item_url', lang)} *</label>
-          <input type="url" id="ki-wiz-url" class="wizard-input" required placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiWizClearErr('url')" />
-          <div class="wizard-field-error" id="ki-wiz-err-url"></div>
-        </div>
+      <!-- Page 2: Tabs/Sheets -->
+      <div class="wizard-page" data-page="1">
+        <div class="wizard-page-title">${t('step_tabs', lang)}</div>
+        <p class="wizard-instructions">${isEs ? 'Describe cada hoja para que el agente sepa que informacion contiene.' : 'Describe each sheet so the agent knows what information it contains.'}</p>
+        <div id="ki-wiz-tabs-list"></div>
         <div class="wizard-actions">
-          <button type="button" class="act-btn act-btn-config" onclick="kiCloseWizard()">${t('cancel', lang)}</button>
-          <button type="button" class="act-btn act-btn-cta" id="ki-wiz-next1" onclick="kiWizStep1Next()">${t('next', lang)}</button>
-        </div>
-      </div>
-
-      <!-- Step 2: Tabs -->
-      <div id="ki-wiz-step2" class="ki-wiz-panel" style="display:none">
-        <div class="wizard-title">${t('step_tabs', lang)}</div>
-        <div id="ki-wiz-tabs-list" class="ki-wiz-tabs-container">
-          <p class="ki-empty-note">${t('no_tabs', lang)}</p>
-        </div>
-        <div class="wizard-actions">
-          <button type="button" class="act-btn act-btn-config" onclick="kiWizRefreshTabs()">
+          <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiWizRefreshTabs()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             ${t('refresh', lang)}
           </button>
-          <button type="button" class="act-btn act-btn-config" onclick="kiWizSkipToFinish()">${t('skip', lang)}</button>
-          <button type="button" class="act-btn act-btn-cta" id="ki-wiz-next2" onclick="kiWizStep2Next()">${t('next', lang)}</button>
+          <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiWizSkipToFinish()">${t('skip', lang)}</button>
+          <button type="button" class="wizard-btn wizard-btn-primary" id="ki-wiz-next2" onclick="kiWizStep2Next()">${t('next', lang)}</button>
         </div>
       </div>
 
-      <!-- Step 3: Columns -->
-      <div id="ki-wiz-step3" class="ki-wiz-panel" style="display:none">
-        <div class="wizard-title">${t('step_columns', lang)}</div>
-        <div id="ki-wiz-col-tab-nav" class="ki-wiz-col-tab-nav"></div>
-        <div id="ki-wiz-cols-list" class="ki-wiz-cols-container">
-          <p class="ki-empty-note">${t('no_cols', lang)}</p>
-        </div>
+      <!-- Page 3: Columns -->
+      <div class="wizard-page" data-page="2">
+        <div class="wizard-page-title">${t('step_columns', lang)}</div>
+        <p class="wizard-instructions">${isEs ? 'Describe cada columna para mejorar la precision de busqueda.' : 'Describe each column to improve search accuracy.'}</p>
+        <div id="ki-wiz-col-tab-nav" style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap"></div>
+        <div id="ki-wiz-cols-list"></div>
         <div class="wizard-actions">
-          <button type="button" class="act-btn act-btn-config" onclick="kiWizRefreshCols()">
+          <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiWizRefreshCols()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             ${t('refresh', lang)}
           </button>
-          <button type="button" class="act-btn act-btn-cta" onclick="kiWizFinish()">${t('finish', lang)}</button>
+          <button type="button" class="wizard-btn wizard-btn-primary" onclick="kiWizFinish()">${t('finish', lang)}</button>
         </div>
       </div>
 
-      <!-- Loading overlay (shown between steps) -->
-      <div id="ki-wiz-loading" class="ki-wiz-loading" style="display:none">
+      <!-- Loading overlay -->
+      <div class="wizard-page" data-page="loading" style="text-align:center;padding:48px 24px">
         <div class="ki-wiz-loading-spinner"></div>
-        <div class="ki-wiz-loading-text" id="ki-wiz-loading-text">${isEs ? 'Escaneando...' : 'Scanning...'}</div>
+        <div id="ki-wiz-loading-text" style="margin-top:16px;color:var(--on-surface-dim)">${isEs ? 'Procesando...' : 'Processing...'}</div>
       </div>
     </div>
-  </div>`
+  </div>
+</div>`
 }
 
 // ═══════════════════════════════════════════
@@ -404,7 +399,7 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
 // Client Script
 // ═══════════════════════════════════════════
 
-function renderClientScript(lang: Lang): string {
+function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string {
   const isEs = lang === 'es'
   return `<script>(function(){
   var API = '/console/api/knowledge/items';
@@ -422,6 +417,8 @@ function renderClientScript(lang: Lang): string {
     return fetch(API + (path || ''), opts).then(function(r) { return r.json(); });
   }
 
+  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
   // ── Wizard state ──
   var wizState = {
     itemId: null,
@@ -429,8 +426,28 @@ function renderClientScript(lang: Lang): string {
     coreKey: null,
     tabs: [],
     activeTabIdx: 0,
-    step: 1,
   };
+
+  // ── Page navigation (global wizard pattern) ──
+  function showWizPage(pageIdx) {
+    var modal = document.getElementById('ki-wizard');
+    var pages = modal.querySelectorAll('.wizard-page');
+    var dots = modal.querySelectorAll('.wizard-dot');
+    var lines = modal.querySelectorAll('.wizard-dot-line');
+    for (var i = 0; i < pages.length; i++) {
+      var pIdx = pages[i].getAttribute('data-page');
+      pages[i].classList.toggle('active', pIdx === String(pageIdx));
+    }
+    if (typeof pageIdx === 'number') {
+      for (var j = 0; j < dots.length; j++) dots[j].classList.toggle('active', j <= pageIdx);
+      for (var k = 0; k < lines.length; k++) lines[k].classList.toggle('active', k < pageIdx);
+    }
+  }
+
+  function showLoading(msg) {
+    document.getElementById('ki-wiz-loading-text').textContent = msg || '';
+    showWizPage('loading');
+  }
 
   // ── Error helpers ──
   function wizShowErr(field, msg) {
@@ -451,114 +468,120 @@ function renderClientScript(lang: Lang): string {
     ['title', 'desc', 'url'].forEach(function(f) { window.kiWizClearErr(f); });
   }
 
+  // ── Category searchable dropdown ──
+  var allCategories = ${JSON.stringify(categories.map(c => ({ id: c.id, title: c.title })))};
+
+  window.kiWizFilterCats = function() {
+    var input = document.getElementById('ki-wiz-cat-input');
+    var dropdown = document.getElementById('ki-wiz-cat-dropdown');
+    var q = input.value.toLowerCase().trim();
+    if (!q) { dropdown.style.display = 'none'; return; }
+
+    var matches = allCategories.filter(function(c) { return c.title.toLowerCase().indexOf(q) !== -1; });
+    var html = '';
+    matches.forEach(function(c) {
+      html += '<div class="ki-cat-dropdown-item" onclick="kiWizSelectCat(\\'' + c.id + '\\', \\'' + esc(c.title) + '\\')">' + esc(c.title) + '</div>';
+    });
+    // Option to create new
+    var exact = allCategories.some(function(c) { return c.title.toLowerCase() === q; });
+    if (!exact && q.length > 0) {
+      html += '<div class="ki-cat-dropdown-item ki-cat-create" onclick="kiWizCreateCat(\\'' + esc(input.value.trim()) + '\\')">+ ${isEs ? 'Crear' : 'Create'} &quot;' + esc(input.value.trim()) + '&quot;</div>';
+    }
+    dropdown.innerHTML = html;
+    dropdown.style.display = html ? '' : 'none';
+  };
+
+  window.kiWizSelectCat = function(id, title) {
+    document.getElementById('ki-wiz-category').value = id;
+    document.getElementById('ki-wiz-cat-input').value = '';
+    document.getElementById('ki-wiz-cat-dropdown').style.display = 'none';
+    document.getElementById('ki-wiz-cat-selected').innerHTML = '<span class="ki-cat-chip">' + esc(title) + ' <button type="button" onclick="kiWizClearCat()">&times;</button></span>';
+  };
+
+  window.kiWizClearCat = function() {
+    document.getElementById('ki-wiz-category').value = '';
+    document.getElementById('ki-wiz-cat-selected').innerHTML = '';
+  };
+
+  window.kiWizCreateCat = function(name) {
+    fetch('/console/api/knowledge/categories', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({title: name})
+    }).then(function(r){return r.json();}).then(function(r) {
+      if (r.id) {
+        allCategories.push({id: r.id, title: name});
+        kiWizSelectCat(r.id, name);
+      }
+    });
+  };
+
+  window.kiWizShowCatDropdown = function() { kiWizFilterCats(); };
+
   // ── Wizard open/close ──
-  function showLoading(msg) {
-    var el = document.getElementById('ki-wiz-loading');
-    var txt = document.getElementById('ki-wiz-loading-text');
-    if (el) el.style.display = '';
-    if (txt) txt.textContent = msg || '${isEs ? 'Procesando...' : 'Processing...'}';
-    for (var i = 1; i <= 3; i++) {
-      var p = document.getElementById('ki-wiz-step' + i);
-      if (p) p.style.display = 'none';
-    }
+  function resetCategoryField() {
+    document.getElementById('ki-wiz-category').value = '';
+    document.getElementById('ki-wiz-cat-input').value = '';
+    document.getElementById('ki-wiz-cat-dropdown').style.display = 'none';
+    document.getElementById('ki-wiz-cat-selected').innerHTML = '';
   }
 
-  function hideLoading() {
-    var el = document.getElementById('ki-wiz-loading');
-    if (el) el.style.display = 'none';
-  }
-
-  function showStep(n) {
-    wizState.step = n;
-    hideLoading();
-    for (var i = 1; i <= 3; i++) {
-      var panel = document.getElementById('ki-wiz-step' + i);
-      if (panel) panel.style.display = i === n ? '' : 'none';
-    }
-    // Update stepper dots + lines
-    var steps = document.querySelectorAll('.ki-wiz-stepper-step');
-    for (var j = 0; j < steps.length; j++) {
-      var stepNum = parseInt(steps[j].getAttribute('data-step') || '0', 10);
-      if (stepNum <= n) steps[j].classList.add('ki-wiz-stepper-active');
-      else steps[j].classList.remove('ki-wiz-stepper-active');
-    }
-    var lines = document.querySelectorAll('.ki-wiz-stepper-line');
-    for (var k = 0; k < lines.length; k++) {
-      var afterStep = parseInt(lines[k].getAttribute('data-after') || '0', 10);
-      if (afterStep < n) lines[k].classList.add('ki-wiz-stepper-line-active');
-      else lines[k].classList.remove('ki-wiz-stepper-line-active');
-    }
+  function setCategorySelection(catId) {
+    if (!catId) { resetCategoryField(); return; }
+    var cat = allCategories.find(function(c) { return c.id === catId; });
+    if (cat) { kiWizSelectCat(cat.id, cat.title); }
   }
 
   window.kiOpenWizard = function() {
-    wizState = { itemId: null, editing: false, coreKey: null, tabs: [], activeTabIdx: 0, step: 1 };
+    wizState = { itemId: null, editing: false, coreKey: null, tabs: [], activeTabIdx: 0 };
     document.getElementById('ki-wizard').style.display = '';
     document.getElementById('ki-wiz-title').value = '';
     document.getElementById('ki-wiz-desc').value = '';
-    document.getElementById('ki-wiz-category').value = '';
     var urlInput = document.getElementById('ki-wiz-url');
     urlInput.value = '';
     urlInput.disabled = false;
-    resetTags();
+    resetCategoryField();
     wizClearAllErr();
-    showStep(1);
+    showWizPage(0);
     setTimeout(function() { document.getElementById('ki-wiz-title').focus(); }, 100);
   };
 
   window.kiOpenWizardEdit = function(data) {
-    wizState = { itemId: data.id, editing: true, coreKey: null, tabs: [], activeTabIdx: 0, step: 1 };
+    wizState = { itemId: data.id, editing: true, coreKey: null, tabs: [], activeTabIdx: 0 };
     document.getElementById('ki-wizard').style.display = '';
     document.getElementById('ki-wiz-title').value = data.title;
     document.getElementById('ki-wiz-desc').value = data.description;
-    document.getElementById('ki-wiz-category').value = data.categoryId || '';
     var urlInput = document.getElementById('ki-wiz-url');
     urlInput.value = data.sourceUrl;
     urlInput.disabled = true;
-    setTagSelection(data.categoryId || '');
+    setCategorySelection(data.categoryId || '');
     wizClearAllErr();
-    showStep(1);
+    showWizPage(0);
     setTimeout(function() { document.getElementById('ki-wiz-title').focus(); }, 100);
   };
 
   window.kiOpenWizardForCore = function(key, title, desc, url) {
-    wizState = { itemId: null, editing: !!url, coreKey: key, tabs: [], activeTabIdx: 0, step: 1 };
+    wizState = { itemId: null, editing: !!url, coreKey: key, tabs: [], activeTabIdx: 0 };
     document.getElementById('ki-wizard').style.display = '';
     document.getElementById('ki-wiz-title').value = title;
     document.getElementById('ki-wiz-desc').value = desc;
-    document.getElementById('ki-wiz-category').value = '';
     var urlInput = document.getElementById('ki-wiz-url');
     urlInput.value = url;
     urlInput.disabled = !!url;
-    resetTags();
+    resetCategoryField();
     wizClearAllErr();
-    showStep(1);
+    showWizPage(0);
     setTimeout(function() { (url ? document.getElementById('ki-wiz-desc') : document.getElementById('ki-wiz-url')).focus(); }, 100);
+  };
+
+  window.kiOpenWizardFromBtn = function(btn) {
+    var key = btn.getAttribute('data-core-key');
+    var title = btn.getAttribute('data-title');
+    var desc = btn.getAttribute('data-desc');
+    var url = btn.getAttribute('data-url');
+    kiOpenWizardForCore(key, title, desc, url);
   };
 
   window.kiCloseWizard = function() {
     document.getElementById('ki-wizard').style.display = 'none';
-  };
-
-  // ── Tag picker ──
-  function resetTags() {
-    var tags = document.querySelectorAll('#ki-wiz-category-tags .ki-tag-option');
-    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected');
-  }
-
-  function setTagSelection(catId) {
-    var tags = document.querySelectorAll('#ki-wiz-category-tags .ki-tag-option');
-    for (var i = 0; i < tags.length; i++) {
-      if (tags[i].getAttribute('data-cat-id') === catId) tags[i].classList.add('ki-tag-selected');
-      else tags[i].classList.remove('ki-tag-selected');
-    }
-  }
-
-  window.kiWizToggleCatTag = function(el) {
-    var tags = el.parentNode.querySelectorAll('.ki-tag-option');
-    var wasSelected = el.classList.contains('ki-tag-selected');
-    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected');
-    if (!wasSelected) el.classList.add('ki-tag-selected');
-    document.getElementById('ki-wiz-category').value = wasSelected ? '' : el.getAttribute('data-cat-id');
   };
 
   // ── Step 1: Next ──
@@ -582,7 +605,7 @@ function renderClientScript(lang: Lang): string {
       showLoading('${isEs ? 'Actualizando y escaneando hojas...' : 'Updating and scanning sheets...'}');
       api('', 'PUT', { id: wizState.itemId, title: title, description: desc, categoryId: cat || undefined })
         .then(function(r) {
-          if (r.error) { hideLoading(); showStep(1); wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
+          if (r.error) { showWizPage(0); wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
           toast('${isEs ? 'Actualizado' : 'Updated'}');
           return api('/scan-tabs', 'POST', { id: wizState.itemId });
         })
@@ -592,10 +615,10 @@ function renderClientScript(lang: Lang): string {
           if (r.tabs) wizState.tabs = r.tabs;
           else if (r.error) { toast(r.error, 'error'); }
           renderWizTabs();
-          showStep(2);
+          showWizPage(1);
         })
         .catch(function(err) {
-          hideLoading(); showStep(1);
+          showWizPage(0);
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           toast(String(err), 'error');
         });
@@ -612,7 +635,7 @@ function renderClientScript(lang: Lang): string {
     api('/verify-url', 'POST', { sourceUrl: url })
       .then(function(v) {
         if (v.accessible === false) {
-          hideLoading(); showStep(1);
+          showWizPage(0);
           wizShowErr('url', v.error || '${isEs ? 'No se puede acceder al recurso' : 'Cannot access the resource'}');
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return null;
@@ -622,7 +645,7 @@ function renderClientScript(lang: Lang): string {
       .then(function(r) {
         if (!r) return;
         if (r.error) {
-          hideLoading(); showStep(1);
+          showWizPage(0);
           wizShowErr('url', r.error);
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return;
@@ -638,10 +661,10 @@ function renderClientScript(lang: Lang): string {
         if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
         if (r.tabs) wizState.tabs = r.tabs;
         renderWizTabs();
-        showStep(2);
+        showWizPage(1);
       })
       .catch(function(err) {
-        hideLoading(); showStep(1);
+        showWizPage(0);
         if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
         toast(String(err), 'error');
       });
@@ -667,8 +690,6 @@ function renderClientScript(lang: Lang): string {
     }
     container.innerHTML = html;
   }
-
-  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   window.kiWizSaveTabDesc = function(tabId, desc) {
     api('/tab-description', 'PUT', { tabId: tabId, description: desc }).catch(function() {});
@@ -708,7 +729,7 @@ function renderClientScript(lang: Lang): string {
     chain.then(function() {
       if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
       renderWizCols();
-      showStep(3);
+      showWizPage(2);
     }).catch(function(err) {
       if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
       toast(String(err), 'error');
@@ -851,10 +872,15 @@ function renderClientScript(lang: Lang): string {
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
-  // ── Close modals on overlay click ──
-  document.getElementById('ki-wizard').addEventListener('click', function(e) {
-    if (e.target === this) window.kiCloseWizard();
+  // ── Close cat dropdown on outside click ──
+  document.addEventListener('click', function(e) {
+    var field = document.querySelector('.ki-category-field');
+    if (field && !field.contains(e.target)) {
+      document.getElementById('ki-wiz-cat-dropdown').style.display = 'none';
+    }
   });
+
+  // ── Close modals on overlay click ──
   var catModal = document.getElementById('ki-cat-modal');
   if (catModal) catModal.addEventListener('click', function(e) {
     if (e.target === this) window.kiCloseCategoriesModal();
@@ -955,44 +981,28 @@ function renderStyles(): string {
 /* Wizard field error */
 .wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:0.5rem; }
 
-/* Wizard stepper (dots + lines) */
-.ki-wiz-stepper { display:flex; align-items:center; justify-content:center; gap:0; margin:0 0 20px; padding:16px 24px 0; }
-.ki-wiz-stepper-step { display:flex; flex-direction:column; align-items:center; gap:4px; flex-shrink:0; }
-.ki-wiz-stepper-dot { width:28px; height:28px; border-radius:50%; background:var(--surface-container-high); color:var(--on-surface-dim); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; transition:all .2s; }
-.ki-wiz-stepper-label { font-size:11px; color:var(--on-surface-dim); white-space:nowrap; }
-.ki-wiz-stepper-line { flex:1; height:2px; background:var(--outline-variant); margin:0 6px; margin-bottom:18px; min-width:24px; transition:background .2s; }
-.ki-wiz-stepper-line-active { background:var(--primary); }
-.ki-wiz-stepper-step.ki-wiz-stepper-active .ki-wiz-stepper-dot { background:var(--primary); color:#fff; }
-.ki-wiz-stepper-step.ki-wiz-stepper-active .ki-wiz-stepper-label { color:var(--primary); font-weight:600; }
-
-/* Wizard loading overlay */
-.ki-wiz-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; gap:16px; }
-.ki-wiz-loading-spinner { width:36px; height:36px; border:3px solid var(--outline-variant); border-top-color:var(--primary); border-radius:50%; animation:ki-spin 0.8s linear infinite; }
+/* Wizard loading spinner */
+.ki-wiz-loading-spinner { width:36px; height:36px; border:3px solid var(--outline-variant); border-top-color:var(--primary); border-radius:50%; animation:ki-spin 0.8s linear infinite; margin:0 auto; }
 @keyframes ki-spin { to { transform:rotate(360deg); } }
-.ki-wiz-loading-text { font-size:14px; color:var(--on-surface-dim); }
-
-/* Wizard panels */
-.ki-wiz-panel { padding:0 24px 16px; }
-.ki-wiz-form-group { margin-bottom:14px; }
 
 /* Wizard tabs (step 2) */
-.ki-wiz-tabs-container { max-height:360px; overflow-y:auto; }
 .ki-wiz-tab-row { padding:10px; background:var(--surface-container-low); border-radius:0.5rem; margin-bottom:8px; }
 .ki-wiz-tab-name { font-weight:600; font-size:13px; color:var(--on-surface); }
 
 /* Wizard columns (step 3) */
-.ki-wiz-col-tab-nav { display:flex; gap:4px; margin-bottom:12px; flex-wrap:wrap; }
 .ki-wiz-col-tab-btn.ki-wiz-col-tab-active { background:var(--primary); color:#fff; border-color:var(--primary); }
-.ki-wiz-cols-container { max-height:360px; overflow-y:auto; }
 .ki-wiz-col-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
 .ki-wiz-col-name { font-size:13px; font-weight:500; color:var(--on-surface); min-width:120px; flex-shrink:0; }
 .ki-wiz-col-desc { flex:1; }
 
-/* Tags picker */
-.ki-tags-picker { display:flex; flex-wrap:wrap; gap:6px; padding:8px 0; }
-.ki-tag-option { display:inline-block; padding:4px 12px; border-radius:1rem; font-size:12px; cursor:pointer; border:1px solid var(--outline-variant); background:var(--surface-container-lowest); color:var(--on-surface-dim); transition:all .15s; }
-.ki-tag-option:hover { border-color:var(--primary); color:var(--primary); }
-.ki-tag-option.ki-tag-selected { background:var(--primary); color:#fff; border-color:var(--primary); }
+/* Category searchable dropdown */
+.ki-category-field { position:relative; }
+.ki-cat-dropdown { position:absolute; top:100%; left:0; right:0; background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:0.5rem; max-height:200px; overflow-y:auto; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+.ki-cat-dropdown-item { padding:8px 12px; cursor:pointer; font-size:13px; }
+.ki-cat-dropdown-item:hover { background:var(--surface-container-low); }
+.ki-cat-dropdown-item.ki-cat-create { color:var(--primary); font-weight:500; }
+.ki-cat-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; margin-top:6px; background:var(--primary); color:#fff; border-radius:1rem; font-size:12px; }
+.ki-cat-chip button { background:none; border:none; color:#fff; cursor:pointer; font-size:14px; padding:0 2px; }
 
 /* Categories modal */
 .ki-cat-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--outline-variant); }
