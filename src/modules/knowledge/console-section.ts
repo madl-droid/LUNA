@@ -363,6 +363,12 @@ function renderWizardModal(categories: KnowledgeCategory[], lang: Lang): string 
           <button type="button" class="act-btn act-btn-cta" onclick="kiWizFinish()">${t('finish', lang)}</button>
         </div>
       </div>
+
+      <!-- Loading overlay (shown between steps) -->
+      <div id="ki-wiz-loading" class="ki-wiz-loading" style="display:none">
+        <div class="ki-wiz-loading-spinner"></div>
+        <div class="ki-wiz-loading-text" id="ki-wiz-loading-text">${isEs ? 'Escaneando...' : 'Scanning...'}</div>
+      </div>
     </div>
   </div>`
 }
@@ -446,8 +452,25 @@ function renderClientScript(lang: Lang): string {
   }
 
   // ── Wizard open/close ──
+  function showLoading(msg) {
+    var el = document.getElementById('ki-wiz-loading');
+    var txt = document.getElementById('ki-wiz-loading-text');
+    if (el) el.style.display = '';
+    if (txt) txt.textContent = msg || '${isEs ? 'Procesando...' : 'Processing...'}';
+    for (var i = 1; i <= 3; i++) {
+      var p = document.getElementById('ki-wiz-step' + i);
+      if (p) p.style.display = 'none';
+    }
+  }
+
+  function hideLoading() {
+    var el = document.getElementById('ki-wiz-loading');
+    if (el) el.style.display = 'none';
+  }
+
   function showStep(n) {
     wizState.step = n;
+    hideLoading();
     for (var i = 1; i <= 3; i++) {
       var panel = document.getElementById('ki-wiz-step' + i);
       if (panel) panel.style.display = i === n ? '' : 'none';
@@ -556,9 +579,10 @@ function renderClientScript(lang: Lang): string {
 
     if (wizState.editing && wizState.itemId) {
       // Update existing item then scan tabs
+      showLoading('${isEs ? 'Actualizando y escaneando hojas...' : 'Updating and scanning sheets...'}');
       api('', 'PUT', { id: wizState.itemId, title: title, description: desc, categoryId: cat || undefined })
         .then(function(r) {
-          if (r.error) { wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
+          if (r.error) { hideLoading(); showStep(1); wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
           toast('${isEs ? 'Actualizado' : 'Updated'}');
           return api('/scan-tabs', 'POST', { id: wizState.itemId });
         })
@@ -571,6 +595,7 @@ function renderClientScript(lang: Lang): string {
           showStep(2);
         })
         .catch(function(err) {
+          hideLoading(); showStep(1);
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           toast(String(err), 'error');
         });
@@ -583,9 +608,11 @@ function renderClientScript(lang: Lang): string {
     }
 
     // Creating new item: verify URL, create item, scan tabs
+    showLoading('${isEs ? 'Verificando URL y escaneando hojas...' : 'Verifying URL and scanning sheets...'}');
     api('/verify-url', 'POST', { sourceUrl: url })
       .then(function(v) {
         if (v.accessible === false) {
+          hideLoading(); showStep(1);
           wizShowErr('url', v.error || '${isEs ? 'No se puede acceder al recurso' : 'Cannot access the resource'}');
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return null;
@@ -595,6 +622,7 @@ function renderClientScript(lang: Lang): string {
       .then(function(r) {
         if (!r) return;
         if (r.error) {
+          hideLoading(); showStep(1);
           wizShowErr('url', r.error);
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return;
@@ -613,6 +641,7 @@ function renderClientScript(lang: Lang): string {
         showStep(2);
       })
       .catch(function(err) {
+        hideLoading(); showStep(1);
         if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
         toast(String(err), 'error');
       });
@@ -935,6 +964,12 @@ function renderStyles(): string {
 .ki-wiz-stepper-line-active { background:var(--primary); }
 .ki-wiz-stepper-step.ki-wiz-stepper-active .ki-wiz-stepper-dot { background:var(--primary); color:#fff; }
 .ki-wiz-stepper-step.ki-wiz-stepper-active .ki-wiz-stepper-label { color:var(--primary); font-weight:600; }
+
+/* Wizard loading overlay */
+.ki-wiz-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; gap:16px; }
+.ki-wiz-loading-spinner { width:36px; height:36px; border:3px solid var(--outline-variant); border-top-color:var(--primary); border-radius:50%; animation:ki-spin 0.8s linear infinite; }
+@keyframes ki-spin { to { transform:rotate(360deg); } }
+.ki-wiz-loading-text { font-size:14px; color:var(--on-surface-dim); }
 
 /* Wizard panels */
 .ki-wiz-panel { padding:0 24px 16px; }

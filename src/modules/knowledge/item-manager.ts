@@ -158,24 +158,29 @@ export class KnowledgeItemManager {
 
     if (item.sourceType === 'sheets') {
       const sheets = this.registry.getOptional<SheetsService>('google:sheets')
-      if (!sheets) throw new Error('Servicio Google Sheets no disponible')
-
-      const info = await sheets.getSpreadsheet(item.sourceId)
-      tabNames = info.sheets.map(s => s.title)
+      if (sheets) {
+        const info = await sheets.getSpreadsheet(item.sourceId)
+        tabNames = info.sheets.map(s => s.title)
+      } else {
+        // Fallback: use Google Sheets API v4 with API key (public sheets only)
+        tabNames = await this.scanSheetsPublic(item.sourceId)
+      }
     } else if (item.sourceType === 'docs') {
-      // Google Docs: single document = single "tab" (the document itself)
       const docs = this.registry.getOptional<DocsService>('google:docs')
-      if (!docs) throw new Error('Servicio Google Docs no disponible')
-
-      const doc = await docs.getDocument(item.sourceId)
-      tabNames = [doc.title || 'Documento']
+      if (docs) {
+        const doc = await docs.getDocument(item.sourceId)
+        tabNames = [doc.title || 'Documento']
+      } else {
+        tabNames = ['Documento']
+      }
     } else if (item.sourceType === 'drive') {
-      // Drive folder: each file is a "tab"
       const drive = this.registry.getOptional<DriveService>('google:drive')
-      if (!drive) throw new Error('Servicio Google Drive no disponible')
-
-      const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 50 })
-      tabNames = result.files.map(f => f.name)
+      if (drive) {
+        const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 50 })
+        tabNames = result.files.map(f => f.name)
+      } else {
+        throw new Error('Servicio Google Drive no disponible — requiere OAuth')
+      }
     }
 
     // Preserve existing descriptions where tab names match
@@ -213,13 +218,15 @@ export class KnowledgeItemManager {
 
     if (item.sourceType === 'sheets') {
       const sheets = this.registry.getOptional<SheetsService>('google:sheets')
-      if (!sheets) throw new Error('Servicio Google Sheets no disponible')
-
-      // Read first row to get column headers
-      const range = `'${tabRow.tab_name}'!1:1`
-      const data = await sheets.readRange(item.sourceId, range)
-      if (data.values?.[0]) {
-        columnNames = data.values[0].filter(v => v.trim() !== '')
+      if (sheets) {
+        const range = `'${tabRow.tab_name}'!1:1`
+        const data = await sheets.readRange(item.sourceId, range)
+        if (data.values?.[0]) {
+          columnNames = data.values[0].filter(v => v.trim() !== '')
+        }
+      } else {
+        // Fallback: use Google Sheets API v4 with API key (public sheets only)
+        columnNames = await this.scanColumnsPublic(item.sourceId, tabRow.tab_name)
       }
     } else if (item.sourceType === 'docs') {
       // Docs don't have columns in the traditional sense
@@ -415,5 +422,55 @@ export class KnowledgeItemManager {
     }
 
     return totalChunks
+  }
+
+  // ─── Public API fallbacks (no OAuth needed) ──
+
+  /** Scan sheet tabs using Google Sheets API v4 with API key (public sheets only) */
+  private async scanSheetsPublic(spreadsheetId: string): Promise<string[]> {
+    const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+    if (!apiKey) throw new Error('No hay API key de Google configurada (KNOWLEDGE_GOOGLE_AI_API_KEY)')
+
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.title&key=${encodeURIComponent(apiKey)}`
+    logger.info({ spreadsheetId }, 'Scanning sheets via public API (no OAuth)')
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      logger.warn({ status: res.status, body: body.substring(0, 200) }, 'Public Sheets API failed')
+      if (res.status === 403 || res.status === 404) {
+        throw new Error('No se puede acceder al documento. Verifica que este compartido como "Cualquier persona con el enlace".')
+      }
+      throw new Error(`Error al consultar Google Sheets API (${res.status})`)
+    }
+
+    const data = await res.json() as { sheets?: Array<{ properties?: { title?: string } }> }
+    const names = (data.sheets ?? []).map(s => s.properties?.title ?? '').filter(Boolean)
+    if (names.length === 0) throw new Error('No se encontraron hojas en el documento')
+
+    logger.info({ spreadsheetId, count: names.length }, 'Sheets scanned via public API')
+    return names
+  }
+
+  /** Scan column headers using Google Sheets API v4 with API key (public sheets only) */
+  private async scanColumnsPublic(spreadsheetId: string, tabName: string): Promise<string[]> {
+    const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+    if (!apiKey) throw new Error('No hay API key de Google configurada (KNOWLEDGE_GOOGLE_AI_API_KEY)')
+
+    const range = encodeURIComponent(`'${tabName}'!1:1`)
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${range}?key=${encodeURIComponent(apiKey)}`
+    logger.info({ spreadsheetId, tabName }, 'Scanning columns via public API (no OAuth)')
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      logger.warn({ status: res.status, body: body.substring(0, 200) }, 'Public Sheets API columns failed')
+      throw new Error(`Error al leer columnas (${res.status})`)
+    }
+
+    const data = await res.json() as { values?: string[][] }
+    const headers = (data.values?.[0] ?? []).filter(v => v.trim() !== '')
+    logger.info({ spreadsheetId, tabName, count: headers.length }, 'Columns scanned via public API')
+    return headers
   }
 }

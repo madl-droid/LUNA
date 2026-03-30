@@ -887,19 +887,38 @@ function createApiRoutes(): ApiRoute[] {
           }
           // Try to access the resource
           const googleApps = _registry?.getOptional<{ sheets: { getSpreadsheet: (id: string) => Promise<unknown> }; docs: { getDocument: (id: string) => Promise<unknown> }; drive: { listFiles: (opts: { folderId: string; pageSize: number }) => Promise<unknown> } }>('google-apps:api')
-          if (!googleApps) {
-            // Can't verify without Google Apps, allow creation with warning
-            jsonResponse(res, 200, { accessible: true, warning: 'Google Apps no conectado. No se pudo verificar acceso.' })
+          if (googleApps) {
+            try {
+              if (extracted.type === 'sheets') await googleApps.sheets.getSpreadsheet(extracted.id)
+              else if (extracted.type === 'docs') await googleApps.docs.getDocument(extracted.id)
+              else await googleApps.drive.listFiles({ folderId: extracted.id, pageSize: 1 })
+              jsonResponse(res, 200, { accessible: true })
+            } catch {
+              jsonResponse(res, 200, { accessible: false, error: 'No se puede acceder al recurso. Verifica permisos y URL.' })
+            }
             return
           }
-          try {
-            if (extracted.type === 'sheets') await googleApps.sheets.getSpreadsheet(extracted.id)
-            else if (extracted.type === 'docs') await googleApps.docs.getDocument(extracted.id)
-            else await googleApps.drive.listFiles({ folderId: extracted.id, pageSize: 1 })
-            jsonResponse(res, 200, { accessible: true })
-          } catch {
-            jsonResponse(res, 200, { accessible: false, error: 'No se puede acceder al recurso. Verifica permisos y URL.' })
+          // Fallback: verify Sheets via public API with API key
+          if (extracted.type === 'sheets') {
+            const cfg = _registry?.getConfig<{ KNOWLEDGE_GOOGLE_AI_API_KEY: string }>('knowledge')
+            const apiKey = cfg?.KNOWLEDGE_GOOGLE_AI_API_KEY
+            if (apiKey) {
+              try {
+                const checkUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(extracted.id)}?fields=spreadsheetId&key=${encodeURIComponent(apiKey)}`
+                const checkRes = await fetch(checkUrl, { signal: AbortSignal.timeout(10000) })
+                if (checkRes.ok) {
+                  jsonResponse(res, 200, { accessible: true })
+                } else {
+                  jsonResponse(res, 200, { accessible: false, error: 'No se puede acceder. Verifica que el documento este compartido como "Cualquier persona con el enlace".' })
+                }
+              } catch {
+                jsonResponse(res, 200, { accessible: true, warning: 'No se pudo verificar acceso.' })
+              }
+              return
+            }
           }
+          // No way to verify — allow with warning
+          jsonResponse(res, 200, { accessible: true, warning: 'Google Apps no conectado. No se pudo verificar acceso.' })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err), accessible: false })
         }
