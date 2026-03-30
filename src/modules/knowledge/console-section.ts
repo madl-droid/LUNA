@@ -74,12 +74,9 @@ export function renderKnowledgeSection(
 ): string {
   let html = ''
 
-  // ── Core knowledge (FAQ + Products) ──
-  html += renderCoreKnowledgeCards(lang, config)
-
-  // ── Header with Add + Edit Categories + Generate Embeddings ──
+  // ── Global action bar (above everything) ──
   html += `<div class="ki-header">
-    <h2 class="ki-title">${t('title', lang)}</h2>
+    <div></div>
     <div style="display:flex;gap:8px;align-items:center">
       <button type="button" class="act-btn act-btn-cta" onclick="kiBulkVectorize()" style="font-size:13px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -95,6 +92,12 @@ export function renderKnowledgeSection(
       </button>
     </div>
   </div>`
+
+  // ── Core knowledge (FAQ + Products) ──
+  html += renderCoreKnowledgeCards(lang, config)
+
+  // ── Additional knowledge title ──
+  html += `<h2 class="ki-title" style="margin:20px 0 12px">${t('title', lang)}</h2>`
 
   // ── Items list ──
   if (items.length === 0) {
@@ -280,11 +283,20 @@ function renderWizardModal(categories: KnowledgeCategory[], lang: Lang): string 
       <button type="button" class="wizard-close" onclick="kiCloseWizard()">&times;</button>
 
       <!-- Step indicators -->
-      <div class="wizard-steps">
-        <div class="ki-wiz-step-indicators">
-          <span class="ki-wiz-step-dot ki-wiz-step-active" data-step="1">1. ${t('step_basic', lang)}</span>
-          <span class="ki-wiz-step-dot" data-step="2">2. ${t('step_tabs', lang)}</span>
-          <span class="ki-wiz-step-dot" data-step="3">3. ${t('step_columns', lang)}</span>
+      <div class="ki-wiz-stepper">
+        <div class="ki-wiz-stepper-step ki-wiz-stepper-active" data-step="1">
+          <span class="ki-wiz-stepper-dot">1</span>
+          <span class="ki-wiz-stepper-label">${t('step_basic', lang)}</span>
+        </div>
+        <div class="ki-wiz-stepper-line" data-after="1"></div>
+        <div class="ki-wiz-stepper-step" data-step="2">
+          <span class="ki-wiz-stepper-dot">2</span>
+          <span class="ki-wiz-stepper-label">${t('step_tabs', lang)}</span>
+        </div>
+        <div class="ki-wiz-stepper-line" data-after="2"></div>
+        <div class="ki-wiz-stepper-step" data-step="3">
+          <span class="ki-wiz-stepper-dot">3</span>
+          <span class="ki-wiz-stepper-label">${t('step_columns', lang)}</span>
         </div>
       </div>
 
@@ -440,11 +452,18 @@ function renderClientScript(lang: Lang): string {
       var panel = document.getElementById('ki-wiz-step' + i);
       if (panel) panel.style.display = i === n ? '' : 'none';
     }
-    var dots = document.querySelectorAll('.ki-wiz-step-dot');
-    for (var j = 0; j < dots.length; j++) {
-      var stepNum = parseInt(dots[j].getAttribute('data-step') || '0', 10);
-      if (stepNum <= n) dots[j].classList.add('ki-wiz-step-active');
-      else dots[j].classList.remove('ki-wiz-step-active');
+    // Update stepper dots + lines
+    var steps = document.querySelectorAll('.ki-wiz-stepper-step');
+    for (var j = 0; j < steps.length; j++) {
+      var stepNum = parseInt(steps[j].getAttribute('data-step') || '0', 10);
+      if (stepNum <= n) steps[j].classList.add('ki-wiz-stepper-active');
+      else steps[j].classList.remove('ki-wiz-stepper-active');
+    }
+    var lines = document.querySelectorAll('.ki-wiz-stepper-line');
+    for (var k = 0; k < lines.length; k++) {
+      var afterStep = parseInt(lines[k].getAttribute('data-after') || '0', 10);
+      if (afterStep < n) lines[k].classList.add('ki-wiz-stepper-line-active');
+      else lines[k].classList.remove('ki-wiz-stepper-line-active');
     }
   }
 
@@ -536,19 +555,31 @@ function renderClientScript(lang: Lang): string {
     if (btn) { btn.disabled = true; btn.textContent = '${isEs ? 'Procesando...' : 'Processing...'}'; }
 
     if (wizState.editing && wizState.itemId) {
-      // Update existing item
+      // Update existing item then scan tabs
       api('', 'PUT', { id: wizState.itemId, title: title, description: desc, categoryId: cat || undefined })
         .then(function(r) {
-          if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
-          if (r.error) { wizShowErr('title', r.error); return; }
+          if (r.error) { wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
           toast('${isEs ? 'Actualizado' : 'Updated'}');
-          loadTabsAndGoStep2();
+          return api('/scan-tabs', 'POST', { id: wizState.itemId });
+        })
+        .then(function(r) {
+          if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+          if (!r) return;
+          if (r.tabs) wizState.tabs = r.tabs;
+          else if (r.error) { toast(r.error, 'error'); }
+          renderWizTabs();
+          showStep(2);
         })
         .catch(function(err) {
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           toast(String(err), 'error');
         });
       return;
+    }
+
+    // Core items with existing URL but no itemId — need to create as new item
+    if (wizState.coreKey && wizState.editing && !wizState.itemId) {
+      wizState.editing = false;
     }
 
     // Creating new item: verify URL, create item, scan tabs
@@ -568,7 +599,7 @@ function renderClientScript(lang: Lang): string {
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return;
         }
-        wizState.itemId = r.id || r.item?.id;
+        wizState.itemId = r.item?.id || r.id;
         wizState.editing = true;
         toast('${isEs ? 'Conocimiento creado' : 'Knowledge created'}');
         // Auto-scan tabs
@@ -586,16 +617,6 @@ function renderClientScript(lang: Lang): string {
         toast(String(err), 'error');
       });
   };
-
-  function loadTabsAndGoStep2() {
-    api('/scan-tabs', 'POST', { id: wizState.itemId })
-      .then(function(r) {
-        if (r.tabs) wizState.tabs = r.tabs;
-        renderWizTabs();
-        showStep(2);
-      })
-      .catch(function(err) { toast(String(err), 'error'); });
-  }
 
   // ── Step 2: Tabs rendering ──
   function renderWizTabs() {
@@ -905,13 +926,18 @@ function renderStyles(): string {
 /* Wizard field error */
 .wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:0.5rem; }
 
-/* Wizard step indicators */
-.ki-wiz-step-indicators { display:flex; gap:4px; margin-bottom:16px; }
-.ki-wiz-step-dot { font-size:12px; padding:4px 12px; border-radius:1rem; background:var(--surface-container-low); color:var(--on-surface-dim); cursor:default; }
-.ki-wiz-step-dot.ki-wiz-step-active { background:var(--primary); color:#fff; }
+/* Wizard stepper (dots + lines) */
+.ki-wiz-stepper { display:flex; align-items:center; justify-content:center; gap:0; margin:0 0 20px; padding:16px 24px 0; }
+.ki-wiz-stepper-step { display:flex; flex-direction:column; align-items:center; gap:4px; flex-shrink:0; }
+.ki-wiz-stepper-dot { width:28px; height:28px; border-radius:50%; background:var(--surface-container-high); color:var(--on-surface-dim); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; transition:all .2s; }
+.ki-wiz-stepper-label { font-size:11px; color:var(--on-surface-dim); white-space:nowrap; }
+.ki-wiz-stepper-line { flex:1; height:2px; background:var(--outline-variant); margin:0 6px; margin-bottom:18px; min-width:24px; transition:background .2s; }
+.ki-wiz-stepper-line-active { background:var(--primary); }
+.ki-wiz-stepper-step.ki-wiz-stepper-active .ki-wiz-stepper-dot { background:var(--primary); color:#fff; }
+.ki-wiz-stepper-step.ki-wiz-stepper-active .ki-wiz-stepper-label { color:var(--primary); font-weight:600; }
 
 /* Wizard panels */
-.ki-wiz-panel { padding:0 4px; }
+.ki-wiz-panel { padding:0 24px 16px; }
 .ki-wiz-form-group { margin-bottom:14px; }
 
 /* Wizard tabs (step 2) */
