@@ -94,7 +94,7 @@ export function renderKnowledgeSection(
   </div>`
 
   // ── Core knowledge (FAQ + Products) ──
-  html += renderCoreKnowledgeCards(lang, config)
+  html += renderCoreKnowledgeCards(lang, items, config)
 
   // ── Additional knowledge title ──
   html += `<h2 class="ki-title" style="margin:20px 0 12px">${t('title', lang)}</h2>`
@@ -129,11 +129,15 @@ export function renderKnowledgeSection(
 // Core Knowledge Cards (FAQ + Products)
 // ═══════════════════════════════════════════
 
-function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string }): string {
+function renderCoreKnowledgeCards(lang: Lang, items: KnowledgeItem[], config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string }): string {
   const faqUrl = config?.faqSheetUrl ?? ''
   const faqDesc = config?.faqDescription ?? ''
   const productsUrl = config?.productsSheetUrl ?? ''
   const productsDesc = config?.productsDescription ?? ''
+
+  // Find existing knowledge items matching core URLs to avoid creating duplicates
+  const faqItem = faqUrl ? items.find(i => i.sourceUrl === faqUrl) : undefined
+  const productsItem = productsUrl ? items.find(i => i.sourceUrl === productsUrl) : undefined
 
   const faqDefaultDesc = lang === 'es'
     ? 'Preguntas frecuentes del negocio. El agente consulta esta fuente para resolver dudas comunes de clientes sobre precios, horarios, politicas, procesos y servicios.'
@@ -145,7 +149,7 @@ function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; f
   const faqDisplayDesc = faqDesc || faqDefaultDesc
   const productsDisplayDesc = productsDesc || productsDefaultDesc
 
-  function coreCard(key: string, title: string, url: string, desc: string, defaultDesc: string): string {
+  function coreCard(key: string, title: string, url: string, desc: string, defaultDesc: string, existingItemId?: string): string {
     const hasUrl = !!url
     const statusBadge = hasUrl
       ? `<span class="ki-badge ki-badge-loaded">${lang === 'es' ? 'Configurado' : 'Configured'}</span>`
@@ -158,7 +162,7 @@ function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; f
             <div class="ki-core-card-title">${esc(title)} ${statusBadge}</div>
             <p class="ki-core-card-desc">${esc(desc)}</p>
           </div>
-          <button type="button" class="act-btn act-btn-add act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(defaultDesc)}" data-url="" onclick="kiOpenWizardFromBtn(this)">
+          <button type="button" class="act-btn act-btn-add act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(defaultDesc)}" data-url="" data-item-id="" onclick="kiOpenWizardFromBtn(this)">
             ${t('configure_btn', lang)}
           </button>
         </div>
@@ -173,7 +177,7 @@ function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; f
           <p class="ki-core-card-desc">${esc(desc)}</p>
           <p class="ki-core-card-url">${esc(url)}</p>
         </div>
-        <button type="button" class="act-btn act-btn-config act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(desc)}" data-url="${esc(url)}" onclick="kiOpenWizardFromBtn(this)">
+        <button type="button" class="act-btn act-btn-config act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(desc)}" data-url="${esc(url)}" data-item-id="${esc(existingItemId ?? '')}" onclick="kiOpenWizardFromBtn(this)">
           ${t('edit_btn', lang)}
         </button>
       </div>
@@ -183,8 +187,8 @@ function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; f
   return `<div class="panel" style="margin:0 0 24px 0;padding:0"><div class="panel-body" style="padding:20px">
     <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${t('core_knowledge', lang)}</div>
     <div style="display:flex;flex-direction:column;gap:12px">
-      ${coreCard('faq', 'FAQ', faqUrl, faqDisplayDesc, faqDefaultDesc)}
-      ${coreCard('products', lang === 'es' ? 'Productos y servicios' : 'Products & services', productsUrl, productsDisplayDesc, productsDefaultDesc)}
+      ${coreCard('faq', 'FAQ', faqUrl, faqDisplayDesc, faqDefaultDesc, faqItem?.id)}
+      ${coreCard('products', lang === 'es' ? 'Productos y servicios' : 'Products & services', productsUrl, productsDisplayDesc, productsDefaultDesc, productsItem?.id)}
     </div>
   </div></div>`
 }
@@ -558,18 +562,19 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     setTimeout(function() { document.getElementById('ki-wiz-title').focus(); }, 100);
   };
 
-  window.kiOpenWizardForCore = function(key, title, desc, url) {
-    wizState = { itemId: null, editing: !!url, coreKey: key, tabs: [], activeTabIdx: 0 };
+  window.kiOpenWizardForCore = function(key, title, desc, url, existingItemId) {
+    var hasExisting = !!(existingItemId && existingItemId.length > 5);
+    wizState = { itemId: hasExisting ? existingItemId : null, editing: hasExisting, coreKey: key, tabs: [], activeTabIdx: 0 };
     document.getElementById('ki-wizard').style.display = '';
     document.getElementById('ki-wiz-title').value = title;
     document.getElementById('ki-wiz-desc').value = desc;
     var urlInput = document.getElementById('ki-wiz-url');
     urlInput.value = url;
-    urlInput.disabled = !!url;
+    urlInput.disabled = hasExisting;
     resetCategoryField();
     wizClearAllErr();
     showWizPage(0);
-    setTimeout(function() { (url ? document.getElementById('ki-wiz-desc') : document.getElementById('ki-wiz-url')).focus(); }, 100);
+    setTimeout(function() { (hasExisting ? document.getElementById('ki-wiz-desc') : document.getElementById('ki-wiz-url')).focus(); }, 100);
   };
 
   window.kiOpenWizardFromBtn = function(btn) {
@@ -577,7 +582,8 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     var title = btn.getAttribute('data-title');
     var desc = btn.getAttribute('data-desc');
     var url = btn.getAttribute('data-url');
-    kiOpenWizardForCore(key, title, desc, url);
+    var itemId = btn.getAttribute('data-item-id');
+    kiOpenWizardForCore(key, title, desc, url, itemId);
   };
 
   window.kiCloseWizard = function() {
