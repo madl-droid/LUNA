@@ -18,7 +18,7 @@ const t = (key: string, lang: Lang): string => {
     item_title: { es: 'Titulo', en: 'Title' },
     item_desc: { es: 'Descripcion', en: 'Description' },
     item_category: { es: 'Categoria', en: 'Category' },
-    item_url: { es: 'URL (Google Sheets, Docs, Drive, PDF, YouTube)', en: 'URL (Google Sheets, Docs, Drive, PDF, YouTube)' },
+    item_url: { es: 'URL (Sheets, Docs, Slides, Drive, PDF, YouTube, Web)', en: 'URL (Sheets, Docs, Slides, Drive, PDF, YouTube, Web)' },
     source_slides: { es: 'Slides', en: 'Slides' },
     source_pdf: { es: 'PDF', en: 'PDF' },
     source_youtube: { es: 'YouTube', en: 'YouTube' },
@@ -236,17 +236,16 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         title="${esc(coreTip)}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="${item.isCore ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         ${item.isCore ? `<span class="ki-icon-label">${coreCount}/${maxCore}</span>` : ''}
-        <span class="ki-info-dot" title="${esc(coreTip)}">i</span>
+        <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip">${esc(coreTip)}</span></span>
       </button>
       <button type="button" class="ki-icon-btn ${item.shareable ? 'ki-icon-btn--share-on' : ''}"
-        onclick="kiToggleShareable('${esc(item.id)}', ${item.shareable ? 'false' : 'true'})"
-        title="${esc(shareTip)}">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        <span class="ki-info-dot" title="${esc(shareTip)}">i</span>
+        onclick="kiToggleShareable('${esc(item.id)}', ${item.shareable ? 'false' : 'true'})">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip">${esc(shareTip)}</span></span>
       </button>
-      <button type="button" class="act-btn act-btn-cta act-btn--compact"
+      <button type="button" class="act-btn act-btn-add act-btn--compact"
         onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>
         ${isEs ? 'Entrenar' : 'Train'}
       </button>
       ${isInactive ? `<button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteItem('${esc(item.id)}')">${t('delete_btn', lang)}</button>` : ''}
@@ -315,7 +314,7 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
 
         <div class="wizard-actions">
           <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiCloseWizard()">${t('cancel', lang)}</button>
-          <button type="button" class="wizard-btn ki-wiz-btn-green" id="ki-wiz-next1" onclick="kiWizStep1Next()">${t('next', lang)}</button>
+          <button type="button" class="wizard-btn act-btn act-btn-add" id="ki-wiz-next1" onclick="kiWizStep1Next()">${t('next', lang)}</button>
         </div>
       </div>
 
@@ -333,7 +332,7 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             ${t('refresh', lang)}
           </button>
-          <button type="button" class="wizard-btn ki-wiz-btn-green" id="ki-wiz-next2" onclick="kiWizStep2Next()">${t('next', lang)}</button>
+          <button type="button" class="wizard-btn act-btn act-btn-add" id="ki-wiz-next2" onclick="kiWizStep2Next()">${t('next', lang)}</button>
         </div>
       </div>
 
@@ -352,7 +351,7 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             ${t('refresh', lang)}
           </button>
-          <button type="button" class="wizard-btn ki-wiz-btn-green" onclick="kiWizFinish()">${t('finish', lang)}</button>
+          <button type="button" class="wizard-btn act-btn act-btn-add" onclick="kiWizFinish()">${t('finish', lang)}</button>
         </div>
       </div>
 
@@ -433,7 +432,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
   };
 
   // ── Page navigation (global wizard pattern) ──
-  function showWizPage(pageIdx) {
+  window.showWizPage = function showWizPage(pageIdx) {
     var modal = document.getElementById('ki-wizard');
     var pages = modal.querySelectorAll('.wizard-page');
     var dots = modal.querySelectorAll('.wizard-dot');
@@ -450,7 +449,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
 
   function showLoading(msg) {
     document.getElementById('ki-wiz-loading-text').textContent = msg || '';
-    showWizPage('loading');
+    window.showWizPage('loading');
   }
 
   // ── Error helpers ──
@@ -544,7 +543,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     urlInput.disabled = false;
     resetCategoryField();
     wizClearAllErr();
-    showWizPage(0);
+    window.showWizPage(0);
     setTimeout(function() { document.getElementById('ki-wiz-title').focus(); }, 100);
   };
 
@@ -558,7 +557,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     urlInput.disabled = true;
     setCategorySelection(data.categoryId || '');
     wizClearAllErr();
-    showWizPage(0);
+    window.showWizPage(0);
     setTimeout(function() { document.getElementById('ki-wiz-title').focus(); }, 100);
   };
 
@@ -573,7 +572,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     urlInput.disabled = hasExisting;
     resetCategoryField();
     wizClearAllErr();
-    showWizPage(0);
+    window.showWizPage(0);
     setTimeout(function() { (hasExisting ? document.getElementById('ki-wiz-desc') : document.getElementById('ki-wiz-url')).focus(); }, 100);
   };
 
@@ -603,16 +602,23 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     if (!url) { wizShowErr('url', '${isEs ? 'La URL es requerida' : 'URL is required'}'); hasErr = true; }
     if (hasErr) return;
 
+    // Detect source type from URL — skip scanner for types that don't need it
+    var skipScanner = /\.pdf(\?|$)/i.test(url) || url.indexOf('presentation/d/') !== -1;
+    // Web URLs (not Google, not YouTube, not PDF) also skip
+    if (!skipScanner && !/docs\.google|drive\.google|sheets\.google|youtube\.com/i.test(url) && /^https?:\/\//i.test(url)) {
+      skipScanner = true;
+    }
+
     var btn = document.getElementById('ki-wiz-next1');
     if (btn) { btn.disabled = true; btn.textContent = '${isEs ? 'Procesando...' : 'Processing...'}'; }
 
     if (wizState.editing && wizState.itemId) {
-      // Update existing item then scan tabs
-      showLoading('${isEs ? 'Actualizando y escaneando hojas...' : 'Updating and scanning sheets...'}');
+      showLoading('${isEs ? 'Actualizando...' : 'Updating...'}');
       api('', 'PUT', { id: wizState.itemId, title: title, description: desc, categoryId: cat || undefined })
         .then(function(r) {
-          if (r.error) { showWizPage(0); wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
+          if (r.error) { window.showWizPage(0); wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
           toast('${isEs ? 'Actualizado' : 'Updated'}');
+          if (skipScanner) { kiCloseWizard(); location.reload(); return; }
           return api('/scan-tabs', 'POST', { id: wizState.itemId });
         })
         .then(function(r) {
@@ -621,10 +627,10 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
           if (r.tabs) wizState.tabs = r.tabs;
           else if (r.error) { toast(r.error, 'error'); }
           renderWizTabs();
-          showWizPage(1);
+          window.showWizPage(1);
         })
         .catch(function(err) {
-          showWizPage(0);
+          window.showWizPage(0);
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           toast(String(err), 'error');
         });
@@ -666,26 +672,26 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
           return null;
         }
         wizState.editing = true;
-        toast('${isEs ? 'Conocimiento creado — escaneando hojas...' : 'Knowledge created — scanning sheets...'}');
-        // Auto-scan tabs
+        if (skipScanner) {
+          toast('${isEs ? 'Conocimiento creado' : 'Knowledge created'}');
+          kiCloseWizard(); location.reload(); return;
+        }
+        toast('${isEs ? 'Conocimiento creado — escaneando...' : 'Knowledge created — scanning...'}');
         return api('/scan-tabs', 'POST', { id: wizState.itemId });
       })
       .then(function(r) {
         if (!r) return;
         if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
-        console.log('scan-tabs response:', JSON.stringify(r));
         if (r.error) {
-          toast('${isEs ? 'Error escaneando hojas: ' : 'Error scanning sheets: '}' + r.error, 'error');
-          // Still go to step 2 so user can retry
+          toast('${isEs ? 'Error escaneando: ' : 'Error scanning: '}' + r.error, 'error');
         }
         if (r.tabs) wizState.tabs = r.tabs;
         else if (r.item?.tabs) wizState.tabs = r.item.tabs;
         renderWizTabs();
-        showWizPage(1);
+        window.showWizPage(1);
       })
       .catch(function(err) {
-        console.error('scan-tabs error:', err);
-        showWizPage(0);
+        window.showWizPage(0);
         if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
         toast(String(err), 'error');
       });
@@ -726,15 +732,18 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
 
   window.kiWizRefreshTabs = function() {
     if (!wizState.itemId) return;
-    toast('${isEs ? 'Escaneando tabs...' : 'Scanning tabs...'}', 'info');
+    var refreshBtn = document.querySelector('[onclick="kiWizRefreshTabs()"]');
+    if (refreshBtn) refreshBtn.classList.add('ki-refreshing');
+    toast('${isEs ? 'Escaneando...' : 'Scanning...'}', 'info');
     api('/scan-tabs', 'POST', { id: wizState.itemId })
       .then(function(r) {
+        if (refreshBtn) refreshBtn.classList.remove('ki-refreshing');
         if (r.error) { toast(r.error, 'error'); return; }
         if (r.tabs) wizState.tabs = r.tabs;
         renderWizTabs();
-        toast('${isEs ? 'Tabs actualizadas' : 'Tabs refreshed'}');
+        toast('${isEs ? 'Actualizado' : 'Refreshed'}');
       })
-      .catch(function(err) { toast(String(err), 'error'); });
+      .catch(function(err) { if (refreshBtn) refreshBtn.classList.remove('ki-refreshing'); toast(String(err), 'error'); });
   };
 
   // ── Step 2: Next (scan columns, go to step 3) ──
@@ -836,15 +845,18 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     if (!wizState.tabs || wizState.tabs.length === 0) return;
     var tab = wizState.tabs[wizState.activeTabIdx];
     if (!tab) return;
-    toast('${isEs ? 'Escaneando columnas...' : 'Scanning columns...'}', 'info');
+    var refreshBtn = document.querySelector('[onclick="kiWizRefreshCols()"]');
+    if (refreshBtn) refreshBtn.classList.add('ki-refreshing');
+    toast('${isEs ? 'Escaneando...' : 'Scanning...'}', 'info');
     api('/scan-columns', 'POST', { tabId: tab.id })
       .then(function(r) {
+        if (refreshBtn) refreshBtn.classList.remove('ki-refreshing');
         if (r.error) { toast(r.error, 'error'); return; }
         if (r.columns) tab.columns = r.columns;
         renderColsForActiveTab(null);
-        toast('${isEs ? 'Columnas actualizadas' : 'Columns refreshed'}');
+        toast('${isEs ? 'Actualizado' : 'Refreshed'}');
       })
-      .catch(function(err) { toast(String(err), 'error'); });
+      .catch(function(err) { if (refreshBtn) refreshBtn.classList.remove('ki-refreshing'); toast(String(err), 'error'); });
   };
 
   window.kiWizFinish = function() {
@@ -1083,7 +1095,6 @@ function renderStyles(): string {
 .ki-icon-btn--share-on { color:#3b82f6; }
 .ki-icon-btn--share-on:hover { background:rgba(59,130,246,0.1); }
 .ki-icon-label { font-size:11px; font-weight:600; }
-.ki-info-dot { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; border-radius:50%; background:var(--outline-variant); color:var(--on-surface); font-size:8px; font-weight:700; font-style:italic; cursor:help; line-height:1; opacity:0.6; }
 .ki-yt-hint { display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:10px 12px; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15); border-radius:0.5rem; font-size:12px; color:var(--on-surface-dim); line-height:1.4; }
 .ki-yt-hint svg { flex-shrink:0; margin-top:1px; color:#ef4444; }
 
@@ -1094,17 +1105,19 @@ function renderStyles(): string {
 #ki-wizard .wizard-page-title, #ki-wizard .wizard-title, #ki-wizard .wizard-instructions,
 #ki-cat-modal .wizard-input, #ki-cat-modal .ki-cat-name-input, #ki-cat-modal .ki-cat-desc-input { font-family:inherit; }
 
-/* Wizard green primary button */
-.ki-wiz-btn-green { padding:10px 20px; border-radius:0.5rem; border:none; cursor:pointer; font-size:0.85rem; font-weight:600; font-family:inherit; transition:all 0.15s; background:var(--success, #22c55e); color:#fff; }
-.ki-wiz-btn-green:hover:not(:disabled) { opacity:0.88; box-shadow:0 2px 8px rgba(34,197,94,0.35); }
-.ki-wiz-btn-green:disabled { opacity:0.5; cursor:not-allowed; }
+/* Category chip — lighter orange */
+.ki-cat-chip { opacity:0.85; }
+
+/* Wizard tabs/columns scrollable area */
+#ki-wiz-tabs-list, #ki-wiz-cols-list { max-height:320px; overflow-y:auto; }
 
 /* Wizard field error */
 .wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:0.5rem; }
 
-/* Wizard loading spinner */
+/* Wizard loading spinner + refresh animation */
 .ki-wiz-loading-spinner { width:36px; height:36px; border:3px solid var(--outline-variant); border-top-color:var(--primary); border-radius:50%; animation:ki-spin 0.8s linear infinite; margin:0 auto; }
 @keyframes ki-spin { to { transform:rotate(360deg); } }
+.ki-refreshing svg { animation:ki-spin 0.6s linear infinite; }
 
 /* Wizard tabs (step 2) */
 .ki-wiz-tab-row { padding:10px; background:var(--surface-container-low); border-radius:0.5rem; margin-bottom:8px; }
