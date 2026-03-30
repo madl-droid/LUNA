@@ -153,14 +153,22 @@ export class KnowledgeItemManager {
   async scanTabs(id: string): Promise<KnowledgeItemTab[]> {
     const item = await this.pgStore.getItem(id)
     if (!item) throw new Error('Item no encontrado')
+    logger.info({ id, sourceType: item.sourceType, sourceId: item.sourceId }, 'scanTabs starting')
 
     let tabNames: string[] = []
 
     if (item.sourceType === 'sheets') {
       const sheets = this.registry.getOptional<SheetsService>('google:sheets')
+      logger.info({ hasOAuth: !!sheets }, 'Sheets service check')
       if (sheets) {
-        const info = await sheets.getSpreadsheet(item.sourceId)
-        tabNames = info.sheets.map(s => s.title)
+        try {
+          const info = await sheets.getSpreadsheet(item.sourceId)
+          tabNames = info.sheets.map(s => s.title)
+          logger.info({ tabCount: tabNames.length, tabs: tabNames }, 'OAuth scan success')
+        } catch (oauthErr) {
+          logger.warn({ err: oauthErr }, 'OAuth Sheets scan failed, trying public API fallback')
+          tabNames = await this.scanSheetsPublic(item.sourceId)
+        }
       } else {
         // Fallback: use Google Sheets API v4 with API key (public sheets only)
         tabNames = await this.scanSheetsPublic(item.sourceId)

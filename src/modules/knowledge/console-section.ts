@@ -650,20 +650,34 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return;
         }
-        wizState.itemId = r.item?.id || r.id;
+        wizState.itemId = r.item?.id || r.item?.item?.id || r.id;
+        if (!wizState.itemId) {
+          console.error('Knowledge create response missing id:', JSON.stringify(r));
+          showWizPage(0);
+          wizShowErr('url', '${isEs ? 'Error: no se recibio ID del item creado' : 'Error: no item ID received'}');
+          if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+          return null;
+        }
         wizState.editing = true;
-        toast('${isEs ? 'Conocimiento creado' : 'Knowledge created'}');
+        toast('${isEs ? 'Conocimiento creado — escaneando hojas...' : 'Knowledge created — scanning sheets...'}');
         // Auto-scan tabs
         return api('/scan-tabs', 'POST', { id: wizState.itemId });
       })
       .then(function(r) {
         if (!r) return;
         if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+        console.log('scan-tabs response:', JSON.stringify(r));
+        if (r.error) {
+          toast('${isEs ? 'Error escaneando hojas: ' : 'Error scanning sheets: '}' + r.error, 'error');
+          // Still go to step 2 so user can retry
+        }
         if (r.tabs) wizState.tabs = r.tabs;
+        else if (r.item?.tabs) wizState.tabs = r.item.tabs;
         renderWizTabs();
         showWizPage(1);
       })
       .catch(function(err) {
+        console.error('scan-tabs error:', err);
         showWizPage(0);
         if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
         toast(String(err), 'error');
@@ -839,7 +853,11 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
 
   window.kiDeleteItem = function(id) {
     if (!confirm('${t('confirm_delete', lang)}')) return;
-    api('/delete', 'POST', { id: id })
+    // Deactivate first (required by API), then delete
+    api('/active', 'PUT', { id: id, active: false })
+      .then(function() {
+        return api('/delete', 'POST', { id: id });
+      })
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
         toast('${isEs ? 'Eliminado' : 'Deleted'}');
