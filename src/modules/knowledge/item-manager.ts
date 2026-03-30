@@ -8,12 +8,25 @@ import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeCache } from './cache.js'
 import type { KnowledgeManager } from './knowledge-manager.js'
 import type { VectorizeWorker } from './vectorize-worker.js'
+import { createHash } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { resolve, join } from 'node:path'
 import type {
   KnowledgeItem,
   KnowledgeItemTab,
   KnowledgeSourceType,
   KnowledgeConfig,
+  SmartChunk,
 } from './types.js'
+import {
+  chunkDocs,
+  chunkSheets,
+  chunkPdf,
+  chunkYoutube,
+  chunkWeb,
+  parseYoutubeChapters,
+  linkChunks,
+} from './extractors/smart-chunker.js'
 
 const logger = pino({ name: 'knowledge:items' })
 
@@ -106,6 +119,72 @@ export class KnowledgeItemManager {
 
   setVectorizeWorker(worker: VectorizeWorker): void {
     this.vectorizeWorker = worker
+  }
+
+  // ─── Smart chunk persistence helper ─────────
+
+  /**
+   * Create a document record + insert smart linked chunks + enqueue vectorization.
+   * Used by all v2 loaders instead of knowledgeManager.addDocument().
+   */
+  private async persistSmartChunks(
+    item: KnowledgeItem,
+    docTitle: string,
+    mimeType: string,
+    chunks: SmartChunk[],
+    opts?: { buffer?: Buffer; description?: string },
+  ): Promise<number> {
+    if (chunks.length === 0) return 0
+
+    // Save file to disk if buffer provided (PDFs, etc.)
+    let filePath: string | null = null
+    let contentHash = ''
+    if (opts?.buffer) {
+      contentHash = createHash('sha256').update(opts.buffer).digest('hex')
+      const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+      await mkdir(knowledgeDir, { recursive: true })
+      const safeFileName = `${contentHash.substring(0, 12)}_${docTitle.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 80)}`
+      filePath = safeFileName
+      await writeFile(join(knowledgeDir, safeFileName), opts.buffer)
+    } else {
+      contentHash = createHash('sha256').update(docTitle + chunks[0]!.content.substring(0, 500)).digest('hex')
+    }
+
+    // Create document record
+    const docId = await this.pgStore.insertDocument({
+      title: docTitle,
+      description: opts?.description ?? item.description ?? '',
+      isCore: false,
+      sourceType: 'drive',
+      sourceRef: item.id,
+      contentHash,
+      filePath: filePath ?? '',
+      mimeType,
+      metadata: { chunkerVersion: 'smart-v2', chunkCount: chunks.length },
+    })
+
+    // Link and insert chunks
+    const linked = linkChunks(item.id, chunks)
+    await this.pgStore.insertLinkedChunks(docId, linked)
+
+    // Assign category
+    if (item.categoryId) {
+      await this.pgStore.assignDocumentCategory(docId, item.categoryId)
+    }
+
+    // Enqueue vectorization
+    if (this.vectorizeWorker) {
+      this.vectorizeWorker.enqueueDocument(docId).catch(err => {
+        logger.warn({ err, docId }, 'Failed to enqueue vectorization')
+      })
+    }
+
+    logger.info({
+      docId, title: docTitle, chunkCount: linked.length,
+      types: [...new Set(linked.map(c => c.contentType))],
+    }, '[SMART-CHUNKS] Persisted')
+
+    return linked.length
   }
 
   // ─── CRUD ───────────────────────────────────
@@ -421,52 +500,32 @@ export class KnowledgeItemManager {
     if (!sheets) throw new Error('Servicio Google Sheets no disponible')
 
     const allTabs = item.tabs ?? await this.pgStore.getItemTabs(item.id)
-    // Skip ignored tabs
     const tabs = allTabs.filter(t => !t.ignored)
     let totalChunks = 0
 
     for (const tab of tabs) {
       const range = `'${tab.tabName}'!A:ZZ`
       const data = await sheets.readRange(item.sourceId, range)
-
       if (!data.values || data.values.length < 2) continue
 
-      const headers = data.values[0]!
-      const rows = data.values.slice(1)
+      const rawHeaders = data.values[0]!
+      const rawRows = data.values.slice(1)
 
-      // Determine which column indices to include (skip ignored columns)
+      // Filter ignored columns
       const tabColumns = tab.columns ?? await this.pgStore.getTabColumns(tab.id)
       const ignoredColNames = new Set(tabColumns.filter(c => c.ignored).map(c => c.columnName.trim()))
+      const colIndices = rawHeaders.map((h, i) => ({ h: h?.trim() ?? '', i })).filter(c => c.h && !ignoredColNames.has(c.h))
+      const headers = colIndices.map(c => c.h)
+      const rows = rawRows.map(row => colIndices.map(c => row[c.i]?.trim() ?? '')).filter(r => r.some(v => v))
 
-      // Build text content from rows
-      const textParts: string[] = []
-      for (const row of rows) {
-        const parts: string[] = []
-        for (let i = 0; i < headers.length; i++) {
-          const header = headers[i]?.trim()
-          const value = row[i]?.trim()
-          if (header && value && !ignoredColNames.has(header)) {
-            parts.push(`${header}: ${value}`)
-          }
-        }
-        if (parts.length > 0) textParts.push(parts.join(' | '))
-      }
+      if (rows.length === 0) continue
 
-      if (textParts.length === 0) continue
-
-      // Create a document for this tab
-      const content = textParts.join('\n')
-      const buffer = Buffer.from(content, 'utf-8')
+      // Smart chunk: CSV with repeated headers
+      const chunks = chunkSheets(headers, rows)
       const docTitle = `${item.title} — ${tab.tabName}`
-
-      const doc = await this.knowledgeManager.addDocument(buffer, `${docTitle}.txt`, {
-        sourceType: 'drive',
-        sourceRef: item.id,
+      totalChunks += await this.persistSmartChunks(item, docTitle, 'text/csv', chunks, {
         description: tab.description || `Tab ${tab.tabName} de ${item.title}`,
-        categoryIds: item.categoryId ? [item.categoryId] : [],
       })
-
-      totalChunks += doc.chunkCount
     }
 
     return totalChunks
@@ -479,33 +538,60 @@ export class KnowledgeItemManager {
     const doc = await docs.getDocument(item.sourceId)
     if (!doc.body.trim()) return 0
 
-    const buffer = Buffer.from(doc.body, 'utf-8')
-    const result = await this.knowledgeManager.addDocument(buffer, `${doc.title}.txt`, {
-      sourceType: 'drive',
-      sourceRef: item.id,
-      description: item.description || doc.title,
-      categoryIds: item.categoryId ? [item.categoryId] : [],
-    })
-
-    return result.chunkCount
+    // Smart chunk: split by headings with word overlap
+    const chunks = chunkDocs(doc.body)
+    return this.persistSmartChunks(item, doc.title || item.title, 'text/plain', chunks)
   }
 
   private async loadSlidesContent(item: KnowledgeItem): Promise<number> {
-    const slides = this.registry.getOptional<SlidesService>('google:slides')
-    if (!slides) throw new Error('Servicio Google Slides no disponible')
+    const slidesService = this.registry.getOptional<SlidesService>('google:slides')
+    const drive = this.registry.getOptional<DriveService>('google:drive')
 
-    const text = await slides.getSlideText(item.sourceId)
-    if (!text.trim()) return 0
+    // Get slide text per slide
+    const slideText = slidesService ? await slidesService.getSlideText(item.sourceId) : ''
+    const slideTexts = slideText.split(/---slide---/i).map(s => s.trim()).filter(Boolean)
 
-    const buffer = Buffer.from(text, 'utf-8')
-    const result = await this.knowledgeManager.addDocument(buffer, `${item.title}.txt`, {
-      sourceType: 'drive',
-      sourceRef: item.id,
-      description: item.description || item.title,
-      categoryIds: item.categoryId ? [item.categoryId] : [],
-    })
-    logger.info({ itemId: item.id, title: item.title, chunks: result.chunkCount }, 'Slides content loaded')
-    return result.chunkCount
+    // Try to export as PDF and render each page as image for multimodal
+    let slideImages: string[] = []
+    if (drive) {
+      try {
+        const pdfBuffer = await drive.exportFile(item.sourceId, 'application/pdf')
+        const pdfBytes = Buffer.from(pdfBuffer, 'utf-8')
+        if (pdfBytes.length > 100) {
+          const { PDFParse } = await import('pdf-parse')
+          const parser = new PDFParse({ data: new Uint8Array(pdfBytes) })
+          const screenshots = await parser.getScreenshot({
+            scale: 1.5,
+            imageBuffer: true,
+          })
+          if (screenshots?.pages) {
+            slideImages = screenshots.pages
+              .map(p => p.data ? Buffer.from(p.data).toString('base64') : '')
+              .filter(Boolean)
+          }
+          await parser.destroy().catch(() => {})
+        }
+      } catch (err) {
+        logger.warn({ err, itemId: item.id }, '[SLIDES] PDF export/screenshot failed, using text-only')
+      }
+    }
+
+    // Build slide chunks: image + text per slide
+    const { chunkSlides } = await import('./extractors/smart-chunker.js')
+    const slideData = slideTexts.map((text, i) => ({
+      text,
+      imageBase64: slideImages[i],
+      title: `Slide ${i + 1}`,
+    }))
+
+    // Fallback: if no individual slides, treat as single text document
+    if (slideData.length === 0 && slideText.trim()) {
+      const chunks = chunkDocs(slideText)
+      return this.persistSmartChunks(item, item.title, 'text/plain', chunks)
+    }
+
+    const chunks = chunkSlides(slideData)
+    return this.persistSmartChunks(item, item.title, 'application/vnd.google-apps.presentation', chunks)
   }
 
   private async loadDriveContent(item: KnowledgeItem): Promise<number> {
@@ -631,52 +717,50 @@ export class KnowledgeItemManager {
 
     if (!text.trim()) return 0
 
-    const buf = Buffer.from(text, 'utf-8')
-    const doc = await this.knowledgeManager.addDocument(buf, `${fileName}.txt`, {
-      sourceType: 'drive', sourceRef: item.id,
+    // Use smart chunker for Drive files
+    const chunks = chunkDocs(text)
+    return this.persistSmartChunks(item, fileName, 'text/plain', chunks, {
       description: fileName,
-      categoryIds: item.categoryId ? [item.categoryId] : [],
     })
-    return doc.chunkCount
   }
 
-  /** Load a PDF from a direct URL or Drive file */
+  /** Load a PDF: extract per-page text (for FTS) + send raw PDF blocks (for multimodal embedding) */
   private async loadPdfContent(item: KnowledgeItem): Promise<number> {
     let pdfBuffer: Buffer
 
     if (item.sourceUrl.startsWith('http') && !item.sourceUrl.includes('drive.google.com')) {
-      // Direct PDF URL
       const res = await fetch(item.sourceUrl, { signal: AbortSignal.timeout(30000) })
       if (!res.ok) throw new Error(`Failed to fetch PDF: ${res.status}`)
       pdfBuffer = Buffer.from(await res.arrayBuffer())
     } else {
-      // Drive file
       const drive = this.registry.getOptional<DriveService>('google:drive')
       if (!drive) throw new Error('Servicio Google Drive no disponible para descargar PDF')
       pdfBuffer = await drive.downloadFile(item.sourceId)
     }
 
-    const text = await extractTextFromPdf(pdfBuffer)
-    if (!text.trim()) {
-      logger.warn({ itemId: item.id, title: item.title }, 'PDF has no extractable text')
-      // Still create a document with a notice
-      const notice = `[PDF sin texto extraíble — posiblemente escaneado como imagen: ${item.title}]`
-      const buf = Buffer.from(notice, 'utf-8')
-      const doc = await this.knowledgeManager.addDocument(buf, `${item.title}.txt`, {
-        sourceType: 'drive', sourceRef: item.id,
-        description: item.description,
-        categoryIds: item.categoryId ? [item.categoryId] : [],
-      })
-      return doc.chunkCount
-    }
+    // Extract per-page text for FTS content in each chunk
+    const { PDFParse } = await import('pdf-parse')
+    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) })
+    const textResult = await parser.getText()
+    const pageTexts = (textResult.pages ?? []).map(p => p.text ?? '')
+    const totalPages = pageTexts.length || 1
+    await parser.destroy().catch(() => {})
 
-    const buf = Buffer.from(text, 'utf-8')
-    const doc = await this.knowledgeManager.addDocument(buf, `${item.title}.txt`, {
-      sourceType: 'drive', sourceRef: item.id,
+    // Save PDF to disk so vectorize worker can read it for multimodal embedding
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
+    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    await mkdir(knowledgeDir, { recursive: true })
+    const safeFileName = `${contentHash.substring(0, 12)}_${item.title.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
+    await writeFile(join(knowledgeDir, safeFileName), pdfBuffer)
+
+    // Smart chunk: 6-page blocks with 1-page overlap, ref to PDF file
+    const chunks = chunkPdf(pageTexts, safeFileName, totalPages)
+    logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[PDF] Smart chunked')
+
+    return this.persistSmartChunks(item, item.title, 'application/pdf', chunks, {
+      buffer: pdfBuffer,
       description: item.description,
-      categoryIds: item.categoryId ? [item.categoryId] : [],
     })
-    return doc.chunkCount
   }
 
   // ─── Web URL helpers ─────────────────────────
@@ -747,23 +831,19 @@ export class KnowledgeItemManager {
     } catch { return null }
   }
 
-  /** Load web content — fetches each non-ignored tab URL with Readability */
+  /** Load web content — extract semantic blocks with associated images */
   private async loadWebContent(item: KnowledgeItem): Promise<number> {
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    // Determine URLs to fetch
     const parsed = new URL(item.sourceUrl)
     const isRoot = parsed.pathname === '/' || parsed.pathname === ''
 
     let urls: string[]
     if (isRoot && allTabs.length > 0) {
-      // Root domain: tabs are the internal links
       urls = allTabs.filter(t => !t.ignored).map(t => t.tabName)
-      // Also include the root page itself
       urls.unshift(item.sourceUrl)
     } else {
-      // Specific page: just that URL
       urls = [item.sourceUrl]
     }
 
@@ -771,18 +851,15 @@ export class KnowledgeItemManager {
     for (const url of urls) {
       if (ignoredNames.has(url)) continue
       try {
-        const text = await this.extractWebPage(url)
-        if (!text.trim()) continue
+        const blocks = await this.extractWebBlocks(url)
+        if (blocks.length === 0) continue
 
+        const chunks = chunkWeb(blocks)
         const pageTitle = new URL(url).pathname || url
-        const buf = Buffer.from(text, 'utf-8')
-        const doc = await this.knowledgeManager.addDocument(buf, `${pageTitle}.txt`, {
-          sourceType: 'drive', sourceRef: item.id,
+        totalChunks += await this.persistSmartChunks(item, pageTitle, 'text/html', chunks, {
           description: `Web: ${url}`,
-          categoryIds: item.categoryId ? [item.categoryId] : [],
         })
-        totalChunks += doc.chunkCount
-        logger.info({ url, chunks: doc.chunkCount }, '[WEB] Page content loaded')
+        logger.info({ url, blocks: blocks.length, chunks: chunks.length }, '[WEB] Page smart chunked')
       } catch (err) {
         logger.warn({ err, url }, '[WEB] Failed to extract page')
       }
@@ -791,8 +868,8 @@ export class KnowledgeItemManager {
     return totalChunks
   }
 
-  /** Extract readable text from a web page using Readability */
-  private async extractWebPage(url: string): Promise<string> {
+  /** Extract semantic blocks (heading + content + images) from a web page */
+  private async extractWebBlocks(url: string): Promise<import('./extractors/smart-chunker.js').WebBlock[]> {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(15000),
       headers: { 'User-Agent': 'LUNA-KnowledgeBot/1.0' },
@@ -801,21 +878,90 @@ export class KnowledgeItemManager {
 
     const html = await res.text()
     const { JSDOM } = await import('jsdom')
-    const { Readability } = await import('@mozilla/readability')
     const dom = new JSDOM(html, { url })
-    const reader = new Readability(dom.window.document)
-    const article = reader.parse()
+    const doc = dom.window.document
 
-    if (article?.textContent) {
-      return `${article.title ?? ''}\n\n${article.textContent}`
+    // Remove scripts, styles, nav, footer, sidebar
+    for (const tag of ['script', 'style', 'nav', 'footer', 'aside', 'header']) {
+      doc.querySelectorAll(tag).forEach(el => el.remove())
     }
 
-    // Fallback: extract all text from body
-    const body = dom.window.document.body
-    return body?.textContent?.trim() ?? ''
+    const blocks: import('./extractors/smart-chunker.js').WebBlock[] = []
+    const body = doc.body
+    if (!body) return blocks
+
+    // Split by headings (H1-H3) — each heading starts a new block
+    let currentHeading: string | null = null
+    let currentText = ''
+    let currentImages: Array<{ data: string; mimeType: string }> = []
+
+    const flushBlock = () => {
+      if (currentText.trim()) {
+        blocks.push({ text: currentText.trim(), heading: currentHeading, images: currentImages })
+      }
+      currentText = ''
+      currentImages = []
+    }
+
+    const walkNode = (node: Node) => {
+      if (node.nodeType === 1) { // Element
+        const el = node as Element
+        const tag = el.tagName.toLowerCase()
+
+        if (['h1', 'h2', 'h3'].includes(tag)) {
+          flushBlock()
+          currentHeading = el.textContent?.trim() ?? null
+          return
+        }
+
+        if (tag === 'img') {
+          const src = el.getAttribute('src')
+          const alt = el.getAttribute('alt') ?? ''
+          const width = parseInt(el.getAttribute('width') ?? '0', 10)
+          const height = parseInt(el.getAttribute('height') ?? '0', 10)
+
+          // Filter decorative images
+          if (!src) return
+          if (alt === '') return
+          if (/icon|logo|banner|avatar|spacer|pixel/i.test(src)) return
+          if (width > 0 && width < 100 && height > 0 && height < 100) return
+
+          // Include alt text as description (downloading images inline is too expensive for scanning)
+          if (currentImages.length < 6) {
+            try {
+              new URL(src, url) // validate URL
+              currentText += `\n[Imagen: ${alt}]\n`
+            } catch { /* invalid URL */ }
+          }
+          return
+        }
+
+        if (['p', 'li', 'td', 'div', 'span', 'blockquote', 'pre', 'code'].includes(tag)) {
+          const text = el.textContent?.trim()
+          if (text) currentText += text + '\n'
+          return
+        }
+      }
+
+      // Walk children
+      for (const child of Array.from(node.childNodes)) {
+        walkNode(child)
+      }
+    }
+
+    walkNode(body)
+    flushBlock()
+
+    // If no headings found, treat entire page as one block
+    if (blocks.length === 0) {
+      const text = body.textContent?.trim()
+      if (text) blocks.push({ text, heading: null, images: [] })
+    }
+
+    return blocks
   }
 
-  /** YouTube: load transcripts + descriptions + thumbnails for playlist or channel videos */
+  /** YouTube: smart chunk — header (thumbnail+meta) + transcript by chapters/5min */
   private async loadYoutubeContent(item: KnowledgeItem): Promise<number> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
     let videos: Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }> = []
@@ -823,7 +969,6 @@ export class KnowledgeItemManager {
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    // Determine if this is a playlist or channel
     const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
     if (playlistMatch?.[1]) {
       videos = await this.listPlaylistVideos(playlistMatch[1], apiKey)
@@ -842,79 +987,53 @@ export class KnowledgeItemManager {
 
     let totalChunks = 0
     for (const video of videos) {
-      if (ignoredNames.has(video.title)) {
-        logger.debug({ videoTitle: video.title }, '[YT] Video ignored')
-        continue
-      }
+      if (ignoredNames.has(video.title)) continue
       try {
-        // 1. Fetch transcript (subtitles)
+        // 1. Fetch transcript with offset/duration for time-based chunking
         const { fetchTranscript } = await import('youtube-transcript')
-        const segments = await fetchTranscript(video.id, { lang: 'es' }).catch(() =>
+        const rawSegments = await fetchTranscript(video.id, { lang: 'es' }).catch(() =>
           fetchTranscript(video.id).catch(() => []),
         )
-        const transcript = segments.map(s => s.text).join(' ')
+        const segments = rawSegments.map(s => ({
+          text: s.text,
+          offset: (s as unknown as { offset?: number }).offset ?? 0,
+          duration: (s as unknown as { duration?: number }).duration,
+        }))
 
-        // 2. Build full text: title + description + transcript
-        const textParts: string[] = [video.title]
-        if (video.description.trim()) {
-          textParts.push(`\nDescripción:\n${video.description}`)
-        }
-        if (transcript.trim()) {
-          textParts.push(`\nTranscripción:\n${transcript}`)
-        }
-
-        const fullText = textParts.join('\n')
-        if (fullText.length < 50) {
-          logger.warn({ videoId: video.id, title: video.title }, '[YT] Too little content (no transcript + no description)')
+        if (segments.length === 0 && !video.description.trim()) {
+          logger.warn({ videoId: video.id, title: video.title }, '[YT] No transcript + no description, skipping')
           continue
         }
 
-        const buf = Buffer.from(fullText, 'utf-8')
-        const doc = await this.knowledgeManager.addDocument(buf, `${video.title}.txt`, {
-          sourceType: 'drive', sourceRef: item.id,
-          description: `YouTube: ${video.title}`,
-          categoryIds: item.categoryId ? [item.categoryId] : [],
-        })
-        totalChunks += doc.chunkCount
-
-        // 3. Analyze thumbnail with vision LLM → adds visual context to knowledge
+        // 2. Download thumbnail as base64 for multimodal header chunk
+        let thumbnailBase64: string | undefined
         if (video.thumbnailUrl) {
           try {
             const thumbRes = await fetch(video.thumbnailUrl, { signal: AbortSignal.timeout(10000) })
             if (thumbRes.ok) {
-              const thumbBuffer = Buffer.from(await thumbRes.arrayBuffer())
-              const base64 = thumbBuffer.toString('base64')
-              const visionResult = await this.registry.callHook('llm:chat', {
-                task: 'knowledge-yt-thumbnail',
-                system: 'Describe el contenido visual de este thumbnail de YouTube en 2-3 oraciones. Incluye: personas, productos, textos visibles, gráficos, colores dominantes. Sé conciso.',
-                messages: [{
-                  role: 'user' as const,
-                  content: [
-                    { type: 'image_url', data: base64, mimeType: 'image/jpeg' },
-                    { type: 'text', text: `Describe este thumbnail del video "${video.title}"` },
-                  ],
-                }],
-                maxTokens: 300,
-                temperature: 0.1,
-              })
-              if (visionResult?.text?.trim()) {
-                // Add thumbnail description as a small supplementary document
-                const thumbText = `Thumbnail del video "${video.title}":\n${visionResult.text.trim()}`
-                const thumbBuf = Buffer.from(thumbText, 'utf-8')
-                await this.knowledgeManager.addDocument(thumbBuf, `${video.title} — thumbnail.txt`, {
-                  sourceType: 'drive', sourceRef: item.id,
-                  description: `Thumbnail: ${video.title}`,
-                  categoryIds: item.categoryId ? [item.categoryId] : [],
-                })
-                logger.info({ videoId: video.id }, '[YT] Thumbnail described and embedded')
-              }
+              thumbnailBase64 = Buffer.from(await thumbRes.arrayBuffer()).toString('base64')
             }
-          } catch (err) {
-            logger.debug({ err, videoId: video.id }, '[YT] Thumbnail analysis failed (non-fatal)')
-          }
+          } catch { /* non-fatal */ }
         }
 
-        logger.info({ videoId: video.id, title: video.title, chunks: doc.chunkCount, hasDesc: !!video.description.trim(), hasTranscript: !!transcript.trim() }, '[YT] Video content embedded')
+        // 3. Parse chapters from description (if any)
+        const chapters = video.description ? parseYoutubeChapters(video.description) : null
+
+        // 4. Smart chunk: header + transcript sections
+        const chunks = chunkYoutube(
+          { title: video.title, description: video.description, thumbnailBase64 },
+          segments,
+          chapters,
+        )
+
+        totalChunks += await this.persistSmartChunks(item, video.title, 'text/plain', chunks, {
+          description: `YouTube: ${video.title}`,
+        })
+
+        logger.info({
+          videoId: video.id, title: video.title, chunkCount: chunks.length,
+          hasChapters: !!chapters, hasThumbnail: !!thumbnailBase64, segmentCount: segments.length,
+        }, '[YT] Video smart chunked')
       } catch (err) {
         logger.warn({ err, videoId: video.id, title: video.title }, '[YT] Failed to process video')
       }
