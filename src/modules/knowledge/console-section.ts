@@ -2,7 +2,6 @@
 // Server-side rendered HTML for the knowledge items management UI.
 
 import type { KnowledgeItem, KnowledgeCategory } from './types.js'
-import { extractGoogleId } from './item-manager.js'
 
 type Lang = 'es' | 'en'
 
@@ -72,53 +71,42 @@ export function renderKnowledgeSection(
   items: KnowledgeItem[],
   categories: KnowledgeCategory[],
   lang: Lang,
-  config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string },
+  _config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string },
 ): string {
   let html = ''
 
-  // ── Global action bar (above everything) ──
-  html += `<div class="ki-header">
-    <div></div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button type="button" class="act-btn act-btn-cta" onclick="kiBulkVectorize()" style="font-size:13px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        ${t('train_agent', lang)}
-      </button>
-      <button type="button" class="act-btn act-btn-config" onclick="kiOpenCategoriesModal()" style="font-size:13px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        ${t('categories', lang)}
-      </button>
-      <button type="button" class="act-btn act-btn-add" onclick="kiOpenWizard()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        ${t('add_btn', lang)}
-      </button>
-    </div>
-  </div>`
-
-  // ── Core knowledge (FAQ + Products) ──
-  html += renderCoreKnowledgeCards(lang, items, config)
-
-  // ── Additional knowledge title ──
-  html += `<h2 class="ki-title" style="margin:20px 0 12px">${t('title', lang)}</h2>`
-
-  // ── Items list ──
   if (items.length === 0) {
-    html += `<div class="panel ki-empty-state">
+    // ── Empty state — no action bar, just the dashed panel ──
+    html += `<div class="ki-empty-state">
       <div class="ki-empty-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--on-surface-dim)"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       </div>
       <p class="ki-empty-title">${t('no_items', lang)}</p>
       <p class="ki-empty-body">${t('no_items_hint', lang)}</p>
-      <div class="ki-empty-hints">
-        <span>💬 ${lang === 'es' ? 'Preguntas frecuentes' : 'FAQs'}</span>
-        <span>🛍️ ${lang === 'es' ? 'Productos y servicios' : 'Products & services'}</span>
-      </div>
-      <button type="button" class="act-btn act-btn-add" onclick="kiOpenWizard()" style="margin-top:12px">
+      <button type="button" class="act-btn act-btn-add ki-empty-add-btn" onclick="kiOpenWizard()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         ${t('add_btn', lang)}
       </button>
     </div>`
   } else {
+    // ── Action bar — only when items exist ──
+    html += `<div class="ki-header">
+      <div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button type="button" class="act-btn act-btn-cta" onclick="kiBulkVectorize()" style="font-size:13px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          ${t('train_agent', lang)}
+        </button>
+        <button type="button" class="act-btn act-btn-config" onclick="kiOpenCategoriesModal()" style="font-size:13px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          ${t('categories', lang)}
+        </button>
+        <button type="button" class="act-btn act-btn-add" onclick="kiOpenWizard()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          ${t('add_btn', lang)}
+        </button>
+      </div>
+    </div>`
     for (const item of items) {
       html += renderItemCard(item, categories, lang)
     }
@@ -141,61 +129,6 @@ export function renderKnowledgeSection(
 
 // ═══════════════════════════════════════════
 // Core Knowledge Cards (FAQ + Products)
-// ═══════════════════════════════════════════
-
-function renderCoreKnowledgeCards(lang: Lang, items: KnowledgeItem[], config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string }): string {
-  const faqUrl = config?.faqSheetUrl ?? ''
-  const faqDesc = config?.faqDescription ?? ''
-  const productsUrl = config?.productsSheetUrl ?? ''
-  const productsDesc = config?.productsDescription ?? ''
-
-  // Find existing knowledge items matching core URLs to avoid creating duplicates
-  // Match by sourceId (Google resource ID) for robustness against URL format differences
-  const faqExtracted = faqUrl ? extractGoogleId(faqUrl) : null
-  const productsExtracted = productsUrl ? extractGoogleId(productsUrl) : null
-  const faqItem = faqExtracted ? items.find(i => i.sourceId === faqExtracted.id) : (faqUrl ? items.find(i => i.sourceUrl === faqUrl) : undefined)
-  const productsItem = productsExtracted ? items.find(i => i.sourceId === productsExtracted.id) : (productsUrl ? items.find(i => i.sourceUrl === productsUrl) : undefined)
-
-  const faqDefaultDesc = lang === 'es'
-    ? 'Preguntas frecuentes del negocio. El agente consulta esta fuente para resolver dudas comunes de clientes sobre precios, horarios, politicas, procesos y servicios.'
-    : 'Business FAQ. The agent queries this source to resolve common questions about pricing, hours, policies, processes and services.'
-  const productsDefaultDesc = lang === 'es'
-    ? 'Catalogo de productos y servicios. El agente consulta esta fuente para informar sobre caracteristicas, precios, disponibilidad y comparaciones entre productos.'
-    : 'Products and services catalog. The agent queries this source to inform about features, pricing, availability and comparisons.'
-
-  const faqDisplayDesc = faqDesc || faqDefaultDesc
-  const productsDisplayDesc = productsDesc || productsDefaultDesc
-
-  // Only show configured core cards — no "not configured" placeholders
-  const hasAnyCore = !!faqUrl || !!productsUrl
-  if (!hasAnyCore) return ''
-
-  function coreCard(key: string, title: string, url: string, desc: string, existingItemId?: string): string {
-    if (!url) return '' // skip unconfigured cards entirely
-
-    return `<div class="panel ki-core-card">
-      <div class="ki-core-card-header">
-        <div style="flex:1;min-width:0">
-          <div class="ki-core-card-title">${esc(title)} <span class="ki-badge ki-badge-loaded">${lang === 'es' ? 'Configurado' : 'Configured'}</span> <span class="ki-badge ki-badge-core">Core</span></div>
-          <p class="ki-core-card-desc">${esc(desc)}</p>
-          <p class="ki-core-card-url">${esc(url)}</p>
-        </div>
-        <button type="button" class="act-btn act-btn-config act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(desc)}" data-url="${esc(url)}" data-item-id="${esc(existingItemId ?? '')}" onclick="kiOpenWizardFromBtn(this)">
-          ${t('edit_btn', lang)}
-        </button>
-      </div>
-    </div>`
-  }
-
-  return `<div class="panel" style="margin:0 0 24px 0;padding:0"><div class="panel-body" style="padding:20px">
-    <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${t('core_knowledge', lang)}</div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      ${coreCard('faq', 'FAQ', faqUrl, faqDisplayDesc, faqItem?.id)}
-      ${coreCard('products', lang === 'es' ? 'Productos y servicios' : 'Products & services', productsUrl, productsDisplayDesc, productsItem?.id)}
-    </div>
-  </div></div>`
-}
-
 // ═══════════════════════════════════════════
 // Item Card
 // ═══════════════════════════════════════════
@@ -1133,11 +1066,10 @@ function renderStyles(): string {
 .ki-cat-desc-input { width:100%; padding:5px 10px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:12px; background:var(--surface-container-lowest); color:var(--on-surface-dim); box-sizing:border-box; }
 
 /* Empty state */
-.ki-empty-state { padding:32px 24px; text-align:center; }
-.ki-empty-icon { margin-bottom:12px; display:flex; justify-content:center; }
-.ki-empty-title { font-size:16px; font-weight:600; color:var(--on-surface); margin:0 0 6px; }
-.ki-empty-body { font-size:13px; color:var(--on-surface-dim); margin:0 0 12px; max-width:400px; margin-left:auto; margin-right:auto; line-height:1.5; }
-.ki-empty-hints { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; }
-.ki-empty-hints span { font-size:13px; color:var(--on-surface-dim); background:var(--surface-container-low); padding:6px 14px; border-radius:1rem; }
+.ki-empty-state { padding:40px 24px; text-align:center; border:1.5px dashed var(--outline-variant); border-radius:1rem; background:var(--surface-container-lowest); }
+.ki-empty-icon { margin-bottom:14px; display:flex; justify-content:center; color:var(--on-surface-dim); opacity:0.5; }
+.ki-empty-title { font-size:15px; font-weight:600; color:var(--on-surface); margin:0 0 6px; }
+.ki-empty-body { font-size:13px; color:var(--on-surface-dim); margin:0 0 20px; max-width:360px; margin-left:auto; margin-right:auto; line-height:1.55; }
+.ki-empty-add-btn { font-size:14px; padding:10px 20px; }
 </style>`
 }
