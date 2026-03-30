@@ -299,8 +299,12 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
         </div>
 
         <label class="wizard-label">${t('item_url', lang)} *</label>
-        <input type="url" id="ki-wiz-url" class="wizard-input" placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiWizClearErr('url')">
+        <input type="url" id="ki-wiz-url" class="wizard-input" placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiWizClearErr('url')" oninput="kiWizCheckYoutube(this.value)">
         <div class="wizard-field-error" id="ki-wiz-err-url"></div>
+        <div id="ki-wiz-yt-hint" class="ki-yt-hint" style="display:none">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          ${isEs ? 'Para mayor efectividad recomendamos habilitar los subtítulos automáticos en los videos de este canal/playlist.' : 'For best results we recommend enabling automatic subtitles on videos in this channel/playlist.'}
+        </div>
 
         <div class="wizard-error" id="ki-wiz-general-error" style="display:none"></div>
 
@@ -972,6 +976,12 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
   };
 
 
+  // ── YouTube URL hint ──
+  window.kiWizCheckYoutube = function(url) {
+    var hint = document.getElementById('ki-wiz-yt-hint');
+    if (hint) hint.style.display = (url && url.indexOf('youtube.com') !== -1) ? '' : 'none';
+  };
+
   // ── Shareable toggle ──
   window.kiToggleShareable = function(id, shareable) {
     api('/shareable', 'PUT', { id: id, shareable: shareable })
@@ -1064,6 +1074,8 @@ function renderStyles(): string {
 .ki-btn-core-on { background:rgba(255,149,0,0.12) !important; color:var(--warning) !important; border-color:rgba(255,149,0,0.3) !important; }
 .ki-btn-share-on { background:rgba(59,130,246,0.12) !important; color:var(--info, #3b82f6) !important; border-color:rgba(59,130,246,0.3) !important; }
 .ki-info-dot { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; background:var(--outline-variant); color:var(--on-surface); font-size:9px; font-weight:700; font-style:italic; margin-left:4px; cursor:help; line-height:1; }
+.ki-yt-hint { display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:10px 12px; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15); border-radius:0.5rem; font-size:12px; color:var(--on-surface-dim); line-height:1.4; }
+.ki-yt-hint svg { flex-shrink:0; margin-top:1px; color:#ef4444; }
 
 .ki-empty-note { font-size:12px; color:var(--on-surface-dim); margin:4px 0; }
 

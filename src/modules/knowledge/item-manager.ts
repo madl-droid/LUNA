@@ -268,8 +268,24 @@ export class KnowledgeItemManager {
       // Single PDF → one tab
       tabNames = ['PDF']
     } else if (item.sourceType === 'youtube') {
-      // YouTube: for now list as single tab until YouTube API integration
-      tabNames = ['Videos']
+      const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+      const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
+      if (playlistMatch?.[1]) {
+        // Direct playlist → list videos as tabs
+        const videos = await this.listPlaylistVideos(playlistMatch[1], apiKey)
+        tabNames = videos.map(v => v.title)
+      } else {
+        // Channel → list playlists as tabs (or uploads)
+        const channelMatch = YOUTUBE_CHANNEL_REGEX.exec(item.sourceUrl)
+        if (channelMatch && apiKey) {
+          const handle = channelMatch[1] ?? channelMatch[2]!
+          const playlists = await this.listChannelPlaylists(handle, apiKey)
+          tabNames = playlists.map(p => p.title)
+          if (tabNames.length === 0) tabNames = ['Uploads']
+        } else {
+          tabNames = ['Videos']
+        }
+      }
     }
 
     // Preserve existing descriptions where tab names match
@@ -633,14 +649,119 @@ export class KnowledgeItemManager {
     return doc.chunkCount
   }
 
-  /** YouTube content loading (stub — requires youtube-transcript package) */
-  private async loadYoutubeContent(_item: KnowledgeItem): Promise<number> {
-    // TODO: Implement YouTube transcript loading
-    // 1. Use YouTube Data API v3 to list videos in playlist
-    // 2. Use youtube-transcript to fetch transcripts for each video
-    // 3. Chunk and embed each transcript
-    logger.warn({ itemId: _item.id }, 'YouTube loading not yet implemented')
-    return 0
+  /** YouTube: load transcripts for playlist or channel videos */
+  private async loadYoutubeContent(item: KnowledgeItem): Promise<number> {
+    const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+    let videoIds: Array<{ id: string; title: string }> = []
+
+    const allTabs = item.tabs ?? []
+    const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
+
+    // Determine if this is a playlist or channel
+    const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
+    if (playlistMatch?.[1]) {
+      // Direct playlist
+      videoIds = await this.listPlaylistVideos(playlistMatch[1], apiKey)
+    } else {
+      // Channel — try to get uploads playlist
+      const channelMatch = YOUTUBE_CHANNEL_REGEX.exec(item.sourceUrl)
+      if (channelMatch) {
+        const handle = channelMatch[1] ?? channelMatch[2]!
+        const uploadsPlaylistId = await this.getChannelUploadsPlaylist(handle, apiKey)
+        if (uploadsPlaylistId) {
+          videoIds = await this.listPlaylistVideos(uploadsPlaylistId, apiKey)
+        }
+      }
+    }
+
+    logger.info({ itemId: item.id, videoCount: videoIds.length }, '[YT] Videos found')
+
+    let totalChunks = 0
+    for (const video of videoIds) {
+      if (ignoredNames.has(video.title)) {
+        logger.debug({ videoTitle: video.title }, '[YT] Video ignored')
+        continue
+      }
+      try {
+        const { fetchTranscript } = await import('youtube-transcript')
+        const segments = await fetchTranscript(video.id, { lang: 'es' }).catch(() =>
+          fetchTranscript(video.id).catch(() => []),
+        )
+        if (segments.length === 0) {
+          logger.warn({ videoId: video.id, title: video.title }, '[YT] No transcript available')
+          continue
+        }
+        const text = segments.map(s => s.text).join(' ')
+        if (!text.trim()) continue
+
+        const buf = Buffer.from(`${video.title}\n\n${text}`, 'utf-8')
+        const doc = await this.knowledgeManager.addDocument(buf, `${video.title}.txt`, {
+          sourceType: 'drive', sourceRef: item.id,
+          description: `YouTube: ${video.title}`,
+          categoryIds: item.categoryId ? [item.categoryId] : [],
+        })
+        totalChunks += doc.chunkCount
+        logger.info({ videoId: video.id, title: video.title, chunks: doc.chunkCount }, '[YT] Video transcript embedded')
+      } catch (err) {
+        logger.warn({ err, videoId: video.id, title: video.title }, '[YT] Failed to get transcript')
+      }
+    }
+
+    return totalChunks
+  }
+
+  /** List videos in a YouTube playlist via Data API v3 */
+  private async listPlaylistVideos(playlistId: string, apiKey: string): Promise<Array<{ id: string; title: string }>> {
+    if (!apiKey) { logger.warn('No Google API key for YouTube Data API'); return [] }
+    const videos: Array<{ id: string; title: string }> = []
+    let pageToken = ''
+    for (let page = 0; page < 5; page++) {
+      const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+      if (!res.ok) { logger.warn({ status: res.status }, '[YT] Playlist API error'); break }
+      const data = await res.json() as { items?: Array<{ snippet?: { resourceId?: { videoId?: string }; title?: string } }>; nextPageToken?: string }
+      for (const item of data.items ?? []) {
+        const vid = item.snippet?.resourceId?.videoId
+        const title = item.snippet?.title ?? 'Sin título'
+        if (vid) videos.push({ id: vid, title })
+      }
+      if (!data.nextPageToken) break
+      pageToken = data.nextPageToken
+    }
+    return videos
+  }
+
+  /** List playlists for a YouTube channel */
+  private async listChannelPlaylists(handle: string, apiKey: string): Promise<Array<{ id: string; title: string }>> {
+    if (!apiKey) return []
+    // Get channel ID first
+    const isHandle = !handle.startsWith('UC')
+    const param = isHandle ? `forHandle=${encodeURIComponent(handle)}` : `id=${encodeURIComponent(handle)}`
+    const chUrl = `https://www.googleapis.com/youtube/v3/channels?part=id&${param}&key=${encodeURIComponent(apiKey)}`
+    const chRes = await fetch(chUrl, { signal: AbortSignal.timeout(10000) })
+    if (!chRes.ok) return []
+    const chData = await chRes.json() as { items?: Array<{ id?: string }> }
+    const channelId = chData.items?.[0]?.id
+    if (!channelId) return []
+
+    const plUrl = `https://www.googleapis.com/youtube/v3/playlists?part=snippet&channelId=${encodeURIComponent(channelId)}&maxResults=50&key=${encodeURIComponent(apiKey)}`
+    const plRes = await fetch(plUrl, { signal: AbortSignal.timeout(10000) })
+    if (!plRes.ok) return []
+    const plData = await plRes.json() as { items?: Array<{ id?: string; snippet?: { title?: string } }> }
+    return (plData.items ?? []).map(p => ({ id: p.id ?? '', title: p.snippet?.title ?? '' })).filter(p => p.id)
+  }
+
+  /** Get the "uploads" playlist ID for a YouTube channel */
+  private async getChannelUploadsPlaylist(handle: string, apiKey: string): Promise<string | null> {
+    if (!apiKey) return null
+    // Try by handle first, then by channel ID
+    const isHandle = !handle.startsWith('UC')
+    const param = isHandle ? `forHandle=${encodeURIComponent(handle)}` : `id=${encodeURIComponent(handle)}`
+    const url = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&${param}&key=${encodeURIComponent(apiKey)}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
+    if (!res.ok) { logger.warn({ status: res.status }, '[YT] Channel API error'); return null }
+    const data = await res.json() as { items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }> }
+    return data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads ?? null
   }
 
   // ─── Public API fallbacks (no OAuth needed) ──

@@ -107,6 +107,16 @@ export class KnowledgeManager {
 
     // Chunk the extracted content
     const chunks = chunkSections(extracted.sections)
+    logger.info({
+      fileName,
+      mimeType,
+      sections: extracted.sections.length,
+      totalChunks: chunks.length,
+      chunkLengths: chunks.map(c => c.content.length),
+      firstChunkPreview: chunks[0]?.content.substring(0, 200),
+      sourceType: options.sourceType,
+      sourceRef: options.sourceRef,
+    }, '[CHUNKS] Document chunked')
 
     // Persist document
     const title = extracted.metadata.originalName ?? fileName
@@ -124,6 +134,7 @@ export class KnowledgeManager {
 
     // Persist chunks (available for FTS immediately)
     await this.pgStore.insertChunks(docId, chunks)
+    logger.info({ docId, chunkCount: chunks.length, title }, '[CHUNKS] Chunks persisted to DB')
 
     // Assign categories
     for (const catId of categoryIds) {

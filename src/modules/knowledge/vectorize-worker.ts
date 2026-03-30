@@ -67,21 +67,30 @@ export class VectorizeWorker {
   }
 
   private async processDocument(documentId: string): Promise<void> {
-    this.log.info({ documentId }, 'processing document embeddings')
+    this.log.info({ documentId }, '[EMBED] Starting document embedding')
 
     await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'processing')
 
     try {
       const chunks = await this.pgStore.getChunksWithoutEmbedding(documentId)
+      this.log.info({
+        documentId,
+        chunkCount: chunks.length,
+        chunkIds: chunks.map(c => c.id),
+        contentLengths: chunks.map(c => c.content.length),
+      }, '[EMBED] Chunks loaded for embedding')
+
       if (chunks.length === 0) {
-        this.log.info({ documentId }, 'no chunks without embedding, marking done')
+        this.log.info({ documentId }, '[EMBED] No chunks without embedding, marking done')
         await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
         return
       }
 
+      const startMs = Date.now()
       await this.embedChunks(chunks)
+      const durationMs = Date.now() - startMs
       await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
-      this.log.info({ documentId, chunksProcessed: chunks.length }, 'document embeddings complete')
+      this.log.info({ documentId, chunksProcessed: chunks.length, durationMs, avgMsPerChunk: Math.round(durationMs / chunks.length) }, '[EMBED] Document embeddings complete')
     } catch (err) {
       this.log.error({ documentId, err }, 'failed to process document embeddings')
       await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'failed')
@@ -148,17 +157,24 @@ export class VectorizeWorker {
     chunks: Array<{ id: string; content: string; documentId: string }>,
   ): Promise<void> {
     const texts = chunks.map((c) => c.content)
+    this.log.info({ batchSize: texts.length, textLengths: texts.map(t => t.length) }, '[EMBED] Sending batch to embedding model')
     const embeddings = await this.embeddingService.generateBatchEmbeddings(texts)
 
+    let successCount = 0
+    let nullCount = 0
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!
       const embedding = embeddings[i] ?? null
       if (embedding) {
         await this.pgStore.updateChunkEmbedding(chunk.id, embedding)
+        successCount++
+        this.log.debug({ chunkId: chunk.id, dims: embedding.length, contentLen: chunk.content.length }, '[EMBED] Chunk embedded')
       } else {
-        this.log.warn({ chunkId: chunk.id }, 'embedding returned null, skipping chunk')
+        nullCount++
+        this.log.warn({ chunkId: chunk.id, contentPreview: chunk.content.substring(0, 100) }, '[EMBED] Embedding returned null, skipping chunk')
       }
     }
+    this.log.info({ batchSize: chunks.length, success: successCount, null: nullCount }, '[EMBED] Batch complete')
   }
 
   // ─── Public API ────────────────────────────────────────

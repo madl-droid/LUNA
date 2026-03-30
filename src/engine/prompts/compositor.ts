@@ -388,6 +388,7 @@ Adapta tu respuesta al contexto de esta campaña.`)
       if (inj.items && inj.items.length > 0) {
         // Group by category for compositor context
         const seen = new Set<string>()
+        let hasShareable = false
         for (const item of inj.items) {
           const catLabel = item.categoryTitle ?? item.categoryId ?? null
           const key = catLabel ?? '__none__'
@@ -396,7 +397,16 @@ Adapta tu respuesta al contexto de esta campaña.`)
             seen.add(key)
           }
           const desc = item.description ? ` — ${escapeDataForPrompt(item.description, 150)}` : ''
-          userParts.push(`  - ${escapeDataForPrompt(item.title, 100)}${desc}`)
+          // Only show source URL when shareable — LLM can share it with user
+          if (item.shareable && item.sourceUrl) {
+            hasShareable = true
+            userParts.push(`  - ${escapeDataForPrompt(item.title, 100)}${desc} [COMPARTIBLE: ${escapeDataForPrompt(item.sourceUrl, 300)}]`)
+          } else {
+            userParts.push(`  - ${escapeDataForPrompt(item.title, 100)}${desc}`)
+          }
+        }
+        if (hasShareable) {
+          userParts.push(`\n[INSTRUCCIÓN COMPARTIR: Los items marcados [COMPARTIBLE: url] pueden ser compartidos con el usuario. Si la información que proporcionas proviene de un item compartible y el usuario se beneficiaría de acceder al documento completo, incluye el enlace en tu respuesta de forma natural, por ejemplo: "Puedes ver más detalles aquí: {url}". NUNCA compartas URLs de items que NO estén marcados como compartibles.]`)
         }
       }
     }
