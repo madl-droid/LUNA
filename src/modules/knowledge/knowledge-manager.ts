@@ -23,7 +23,7 @@ import type {
   DocumentSourceType,
 } from './types.js'
 import { extractContent, resolveMimeType } from './extractors/index.js'
-import { chunkSections } from './extractors/chunker.js'
+import { chunkDocs, linkChunks } from './extractors/smart-chunker.js'
 
 const logger = pino({ name: 'knowledge:manager' })
 
@@ -105,18 +105,21 @@ export class KnowledgeManager {
     const filePath = join(knowledgeDir, safeFileName)
     await writeFile(filePath, buffer)
 
-    // Chunk the extracted content
-    const chunks = chunkSections(extracted.sections)
+    // Smart chunk: split by headings with proper overlap
+    const fullText = extracted.sections.map(s => {
+      const heading = s.title ? `## ${s.title}\n` : ''
+      return heading + s.content
+    }).join('\n\n')
+
+    const smartChunks = chunkDocs(fullText)
+    const sourceId = options.sourceRef ?? contentHash
+
     logger.info({
-      fileName,
-      mimeType,
+      fileName, mimeType,
       sections: extracted.sections.length,
-      totalChunks: chunks.length,
-      chunkLengths: chunks.map(c => c.content.length),
-      firstChunkPreview: chunks[0]?.content.substring(0, 200),
+      totalChunks: smartChunks.length,
       sourceType: options.sourceType,
-      sourceRef: options.sourceRef,
-    }, '[CHUNKS] Document chunked')
+    }, '[CHUNKS] Document smart-chunked')
 
     // Persist document
     const title = extracted.metadata.originalName ?? fileName
@@ -132,9 +135,10 @@ export class KnowledgeManager {
       metadata: { ...extracted.metadata, ...options.metadata },
     })
 
-    // Persist chunks (available for FTS immediately)
-    await this.pgStore.insertChunks(docId, chunks)
-    logger.info({ docId, chunkCount: chunks.length, title }, '[CHUNKS] Chunks persisted to DB')
+    // Link and persist smart chunks
+    const linked = linkChunks(sourceId, smartChunks)
+    await this.pgStore.insertLinkedChunks(docId, linked)
+    logger.info({ docId, chunkCount: linked.length, title }, '[CHUNKS] Smart chunks persisted')
 
     // Assign categories
     for (const catId of categoryIds) {
@@ -151,7 +155,7 @@ export class KnowledgeManager {
     // Invalidate caches
     if (options.isCore) await this.cache.invalidate()
 
-    logger.info({ id: docId, title, isCore: options.isCore, chunks: chunks.length }, 'Document added')
+    logger.info({ id: docId, title, isCore: options.isCore, chunks: linked.length }, 'Document added')
     return (await this.pgStore.getDocument(docId))!
   }
 

@@ -11,7 +11,7 @@ import type { KnowledgeSyncSource } from './types.js'
 import { SYNC_FREQUENCY_MS, type KnowledgeConfig } from './types.js'
 import { isSupportedMimeType, GOOGLE_NATIVE_TYPES, resolveMimeType } from './extractors/index.js'
 import { isSlidesAvailable, extractSlides } from './extractors/slides.js'
-import { chunkSections } from './extractors/chunker.js'
+import { chunkDocs, linkChunks } from './extractors/smart-chunker.js'
 
 const logger = pino({ name: 'knowledge:sync' })
 
@@ -182,13 +182,13 @@ export class SyncManager {
       const extracted = await extractSlides(file.id, this.registry)
       if (!extracted) return
 
-      const chunks = chunkSections(extracted.sections)
+      const chunks = chunkDocs(extracted.sections.map(s => (s.title ? `## ${s.title}\n` : '') + s.content).join('\n\n'))
       if (existing) {
         // Update existing document
         const { createHash } = await import('node:crypto')
         const newHash = createHash('sha256').update(extracted.text).digest('hex')
         await this.pgStore.updateDocumentHash(existing.id, newHash, chunks.length)
-        await this.pgStore.insertChunks(existing.id, chunks)
+        await this.pgStore.insertLinkedChunks(existing.id, linkChunks(existing.id, chunks))
       } else {
         const buffer = Buffer.from(extracted.text, 'utf-8')
         await this.knowledgeManager.addDocument(buffer, file.name, {
@@ -234,10 +234,10 @@ export class SyncManager {
 
       const { extractContent } = await import('./extractors/index.js')
       const extracted = await extractContent(buffer, file.name, effectiveMime, this.registry)
-      const chunks = chunkSections(extracted.sections)
+      const chunks = chunkDocs(extracted.sections.map(s => (s.title ? `## ${s.title}\n` : '') + s.content).join('\n\n'))
 
       await this.pgStore.updateDocumentHash(existing.id, newHash, chunks.length)
-      await this.pgStore.insertChunks(existing.id, chunks)
+      await this.pgStore.insertLinkedChunks(existing.id, linkChunks(existing.id, chunks))
 
       logger.info({ id: existing.id, title: file.name }, 'Drive document updated')
     } else {
@@ -288,10 +288,10 @@ export class SyncManager {
         // Update
         const { extractContent } = await import('./extractors/index.js')
         const extracted = await extractContent(buffer, fileName, mimeType, this.registry)
-        const chunks = chunkSections(extracted.sections)
+        const chunks = chunkDocs(extracted.sections.map(s => (s.title ? `## ${s.title}\n` : '') + s.content).join('\n\n'))
 
         await this.pgStore.updateDocumentHash(existing.id, newHash, chunks.length)
-        await this.pgStore.insertChunks(existing.id, chunks)
+        await this.pgStore.insertLinkedChunks(existing.id, linkChunks(existing.id, chunks))
       } else {
         // New
         await this.knowledgeManager.addDocument(buffer, fileName, {

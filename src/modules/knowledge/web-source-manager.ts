@@ -9,7 +9,7 @@ import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeWebSource, SyncFrequency } from './types.js'
 import { SYNC_FREQUENCY_MS } from './types.js'
 import { extractContent, resolveMimeType } from './extractors/index.js'
-import { chunkSections } from './extractors/chunker.js'
+import { chunkDocs, linkChunks } from './extractors/smart-chunker.js'
 
 const logger = pino({ name: 'knowledge:web-sources' })
 
@@ -137,9 +137,10 @@ export class WebSourceManager {
     const mimeType = resolveMimeType(webSource.url, contentType.split(';')[0]?.trim())
     const extracted = await extractContent(buffer, webSource.url, mimeType, this.registry)
 
-    // Chunk content
-    const chunks = chunkSections(extracted.sections)
-    if (chunks.length === 0) {
+    // Smart chunk content
+    const fullText = extracted.sections.map(s => (s.title ? `## ${s.title}\n` : '') + s.content).join('\n\n')
+    const smartChunks = chunkDocs(fullText)
+    if (smartChunks.length === 0) {
       logger.warn({ id, url: webSource.url }, 'No chunks extracted from web source')
       return
     }
@@ -150,11 +151,9 @@ export class WebSourceManager {
 
     let documentId: string
     if (existingDoc) {
-      // Update existing: delete old chunks (insertChunks handles this), update hash
       documentId = existingDoc.id
-      await this.pgStore.updateDocumentHash(documentId, newHash, chunks.length)
+      await this.pgStore.updateDocumentHash(documentId, newHash, smartChunks.length)
     } else {
-      // Create new pseudo-document
       documentId = await this.pgStore.insertDocument({
         title: webSource.title,
         category: 'consultable' as unknown as import('./types.js').KnowledgeCategory,
@@ -171,17 +170,18 @@ export class WebSourceManager {
       })
     }
 
-    // Insert chunks
-    await this.pgStore.insertChunks(documentId, chunks)
+    // Insert linked smart chunks
+    const linked = linkChunks(sourceRef, smartChunks)
+    await this.pgStore.insertLinkedChunks(documentId, linked)
 
     // Update web source record with cache metadata
     await this.pgStore.updateWebSource(id, {
       cacheHash: newHash,
       cachedAt: new Date(),
-      chunkCount: chunks.length,
+      chunkCount: linked.length,
     })
 
-    logger.info({ id, documentId, chunkCount: chunks.length }, 'Web source cached successfully')
+    logger.info({ id, documentId, chunkCount: linked.length }, 'Web source cached successfully')
   }
 
   async refreshAll(): Promise<void> {

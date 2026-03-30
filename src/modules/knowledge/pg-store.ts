@@ -454,37 +454,6 @@ export class KnowledgePgStore {
 
   // ─── Chunks CRUD ───────────────────────────
 
-  async insertChunks(documentId: string, chunks: Array<{
-    content: string
-    section: string | null
-    chunkIndex: number
-    page: number | null
-  }>): Promise<void> {
-    if (chunks.length === 0) return
-
-    await this.db.query(`DELETE FROM knowledge_chunks WHERE document_id = $1`, [documentId])
-
-    const values: string[] = []
-    const params: unknown[] = []
-    let idx = 1
-
-    for (const chunk of chunks) {
-      values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, to_tsvector('spanish', $${idx - 4}))`)
-      params.push(documentId, chunk.content, chunk.section, chunk.chunkIndex, chunk.page)
-    }
-
-    await this.db.query(
-      `INSERT INTO knowledge_chunks (document_id, content, section, chunk_index, page, tsv)
-       VALUES ${values.join(', ')}`,
-      params,
-    )
-
-    await this.db.query(
-      `UPDATE knowledge_documents SET chunk_count = $1, updated_at = now() WHERE id = $2`,
-      [chunks.length, documentId],
-    )
-  }
-
   async searchChunksFTS(query: string, limit: number): Promise<Array<{
     chunkId: string
     documentId: string
@@ -685,18 +654,6 @@ export class KnowledgePgStore {
         ],
       )
     }
-  }
-
-  /** Insert a multimodal chunk with pre-computed embedding (from raw file embedding) */
-  async insertMultimodalChunk(documentId: string, content: string, embedding: number[]): Promise<string> {
-    const embStr = `[${embedding.join(',')}]`
-    const res = await this.db.query<{ id: string }>(
-      `INSERT INTO knowledge_chunks (document_id, content, section, chunk_index, page, has_embedding, embedding, tsv)
-       VALUES ($1, $2, 'multimodal', 9999, NULL, true, $3::vector, to_tsvector('spanish', $2))
-       RETURNING id`,
-      [documentId, content, embStr],
-    )
-    return res.rows[0]!.id
   }
 
   async getAllChunksByCategory(_category: KnowledgeCategory): Promise<Array<{
