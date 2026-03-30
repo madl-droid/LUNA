@@ -332,7 +332,9 @@ export class KnowledgeItemManager {
     const sheets = this.registry.getOptional<SheetsService>('google:sheets')
     if (!sheets) throw new Error('Servicio Google Sheets no disponible')
 
-    const tabs = item.tabs ?? await this.pgStore.getItemTabs(item.id)
+    const allTabs = item.tabs ?? await this.pgStore.getItemTabs(item.id)
+    // Skip ignored tabs
+    const tabs = allTabs.filter(t => !t.ignored)
     let totalChunks = 0
 
     for (const tab of tabs) {
@@ -344,6 +346,10 @@ export class KnowledgeItemManager {
       const headers = data.values[0]!
       const rows = data.values.slice(1)
 
+      // Determine which column indices to include (skip ignored columns)
+      const tabColumns = tab.columns ?? await this.pgStore.getTabColumns(tab.id)
+      const ignoredColNames = new Set(tabColumns.filter(c => c.ignored).map(c => c.columnName.trim()))
+
       // Build text content from rows
       const textParts: string[] = []
       for (const row of rows) {
@@ -351,7 +357,7 @@ export class KnowledgeItemManager {
         for (let i = 0; i < headers.length; i++) {
           const header = headers[i]?.trim()
           const value = row[i]?.trim()
-          if (header && value) {
+          if (header && value && !ignoredColNames.has(header)) {
             parts.push(`${header}: ${value}`)
           }
         }

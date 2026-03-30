@@ -250,11 +250,11 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
     <span class="toggle-slider"></span>
   </label>`
 
-  // Load Content button
-  html += `<button type="button" class="act-btn act-btn-add act-btn--compact"
+  // Train (load + embed) button
+  html += `<button type="button" class="act-btn act-btn-cta act-btn--compact"
     onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-    ${t('load_content', lang)}
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    ${lang === 'es' ? 'Entrenar' : 'Train'}
   </button>`
 
   // Delete (only if inactive)
@@ -265,12 +265,28 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 
   html += `</div></div>` // close actions + header
 
-  // ── Content status line ──
+  // ── Content status line + sync frequency ──
+  const freqOptions: Array<{ value: string; label: string }> = [
+    { value: '6h',  label: lang === 'es' ? 'Cada 6 horas' : 'Every 6 hours' },
+    { value: '12h', label: lang === 'es' ? 'Cada 12 horas' : 'Every 12 hours' },
+    { value: '24h', label: lang === 'es' ? 'Cada 24 horas' : 'Every 24 hours' },
+    { value: '1w',  label: lang === 'es' ? 'Cada semana' : 'Every week' },
+    { value: '1m',  label: lang === 'es' ? 'Cada mes' : 'Every month' },
+  ]
+  const freqSelect = `<select class="ki-freq-select" onchange="kiSetFrequency('${esc(item.id)}', this.value)">
+    ${freqOptions.map(o => `<option value="${o.value}" ${item.updateFrequency === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+  </select>`
+
+  const syncInfo = item.lastSyncCheckedAt
+    ? `<span class="ki-sync-info">${lang === 'es' ? 'Verificado' : 'Checked'}: ${new Date(item.lastSyncCheckedAt).toLocaleDateString()}</span>`
+    : ''
+
   html += `<div class="ki-load-status-line">
     ${item.contentLoaded
       ? `<span class="ki-badge ki-badge-loaded">${t('content_loaded', lang)} — ${item.chunkCount} ${t('chunks', lang)}</span>`
       : `<span class="ki-badge ki-badge-pending">${t('not_loaded', lang)}</span>`
     }
+    <div class="ki-freq-row">${freqSelect}${syncInfo}</div>
   </div>`
 
   html += `</div>` // close panel
@@ -711,11 +727,19 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     var html = '';
     for (var i = 0; i < wizState.tabs.length; i++) {
       var tab = wizState.tabs[i];
-      html += '<div class="ki-wiz-tab-row" data-tab-id="' + esc(tab.id) + '">'
+      var tabIgnored = !!(tab.ignored);
+      html += '<div class="ki-wiz-tab-row' + (tabIgnored ? ' ki-wiz-row-ignored' : '') + '" data-tab-id="' + esc(tab.id) + '">'
+        + '<div class="ki-wiz-tab-header">'
         + '<div class="ki-wiz-tab-name">' + esc(tab.tabName || tab.tab_name || '') + '</div>'
+        + '<label class="toggle toggle-sm ki-ignore-toggle" title="${isEs ? 'Ignorar esta hoja' : 'Ignore this sheet'}">'
+        + '<input type="checkbox" ' + (tabIgnored ? 'checked' : '') + ' onchange="kiToggleTabIgnore(\\'' + esc(tab.id) + '\\', this.checked)" />'
+        + '<span class="toggle-slider"></span>'
+        + '</label>'
+        + '<span class="ki-ignore-label">${isEs ? 'Ignorar' : 'Ignore'}</span>'
+        + '</div>'
         + '<textarea class="wizard-input ki-wiz-tab-desc" rows="2" placeholder="${t('tab_desc', lang)}"'
         + ' onblur="kiWizSaveTabDesc(\\'' + esc(tab.id) + '\\', this.value)"'
-        + ' style="resize:vertical;font-size:13px;margin-top:4px">' + esc(tab.description || '') + '</textarea>'
+        + ' style="resize:vertical;font-size:13px;margin-top:4px"' + (tabIgnored ? ' disabled' : '') + '>' + esc(tab.description || '') + '</textarea>'
         + '</div>';
     }
     container.innerHTML = html;
@@ -807,11 +831,18 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     var html = '';
     for (var j = 0; j < tab.columns.length; j++) {
       var col = tab.columns[j];
-      html += '<div class="ki-wiz-col-row">'
+      var colIgnored = !!(col.ignored);
+      html += '<div class="ki-wiz-col-row' + (colIgnored ? ' ki-wiz-row-ignored' : '') + '">'
         + '<span class="ki-wiz-col-name">' + esc(col.columnName || col.column_name || '') + '</span>'
         + '<input type="text" class="wizard-input ki-wiz-col-desc" placeholder="${t('col_desc', lang)}"'
         + ' value="' + esc(col.description || '') + '"'
-        + ' onblur="kiWizSaveColDesc(\\'' + esc(col.id) + '\\', this.value)" />'
+        + ' onblur="kiWizSaveColDesc(\\'' + esc(col.id) + '\\', this.value)"'
+        + (colIgnored ? ' disabled' : '') + ' />'
+        + '<label class="toggle toggle-sm ki-ignore-toggle" title="${isEs ? 'Ignorar esta columna' : 'Ignore this column'}">'
+        + '<input type="checkbox" ' + (colIgnored ? 'checked' : '') + ' onchange="kiToggleColumnIgnore(\\'' + esc(col.id) + '\\', this.checked)" />'
+        + '<span class="toggle-slider"></span>'
+        + '</label>'
+        + '<span class="ki-ignore-label">${isEs ? 'Ignorar' : 'Ignore'}</span>'
         + '</div>';
     }
     listEl.innerHTML = html;
@@ -971,6 +1002,49 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
+  // ── Set sync frequency per item ──
+  window.kiSetFrequency = function(id, freq) {
+    api('/frequency', 'PUT', { id: id, frequency: freq })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Frecuencia actualizada' : 'Frequency updated'}');
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
+  // ── Ignore tab toggle ──
+  window.kiToggleTabIgnore = function(tabId, ignored) {
+    api('/tab-ignore', 'PUT', { tabId: tabId, ignored: ignored })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        // Update local wizState
+        for (var i = 0; i < wizState.tabs.length; i++) {
+          if (wizState.tabs[i].id === tabId) { wizState.tabs[i].ignored = ignored; break; }
+        }
+        toast(ignored ? '${isEs ? 'Hoja ignorada' : 'Sheet ignored'}' : '${isEs ? 'Hoja incluida' : 'Sheet included'}');
+        renderWizTabs();
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
+  // ── Ignore column toggle ──
+  window.kiToggleColumnIgnore = function(colId, ignored) {
+    api('/column-ignore', 'PUT', { columnId: colId, ignored: ignored })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        // Update local wizState
+        var tab = wizState.tabs[wizState.activeTabIdx];
+        if (tab && tab.columns) {
+          for (var j = 0; j < tab.columns.length; j++) {
+            if (tab.columns[j].id === colId) { tab.columns[j].ignored = ignored; break; }
+          }
+        }
+        toast(ignored ? '${isEs ? 'Columna ignorada' : 'Column ignored'}' : '${isEs ? 'Columna incluida' : 'Column included'}');
+        renderColsForActiveTab(null);
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
 })()</script>`
 }
 
@@ -1022,13 +1096,25 @@ function renderStyles(): string {
 
 /* Wizard tabs (step 2) */
 .ki-wiz-tab-row { padding:10px; background:var(--surface-container-low); border-radius:0.5rem; margin-bottom:8px; }
-.ki-wiz-tab-name { font-weight:600; font-size:13px; color:var(--on-surface); }
+.ki-wiz-tab-header { display:flex; align-items:center; gap:8px; }
+.ki-wiz-tab-name { font-weight:600; font-size:13px; color:var(--on-surface); flex:1; }
+.ki-wiz-row-ignored { opacity:0.5; }
 
 /* Wizard columns (step 3) */
 .ki-wiz-col-tab-btn.ki-wiz-col-tab-active { background:var(--primary); color:#fff; border-color:var(--primary); }
 .ki-wiz-col-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
 .ki-wiz-col-name { font-size:13px; font-weight:500; color:var(--on-surface); min-width:120px; flex-shrink:0; }
 .ki-wiz-col-desc { flex:1; }
+
+/* Ignore toggle */
+.ki-ignore-toggle { margin:0; }
+.ki-ignore-label { font-size:11px; color:var(--on-surface-dim); white-space:nowrap; }
+
+/* Sync frequency row */
+.ki-load-status-line { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.ki-freq-row { display:flex; align-items:center; gap:8px; }
+.ki-freq-select { font-size:12px; padding:3px 8px; border:1px solid var(--outline-variant); border-radius:0.5rem; background:var(--surface-container-lowest); color:var(--on-surface); cursor:pointer; }
+.ki-sync-info { font-size:11px; color:var(--on-surface-dim); }
 
 /* Category searchable dropdown */
 .ki-category-field { position:relative; }

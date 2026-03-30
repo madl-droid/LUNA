@@ -1131,6 +1131,54 @@ export class KnowledgePgStore {
     return items
   }
 
+  /** Update last Drive change-detection state (called after each sync check) */
+  async updateItemSyncStatus(id: string, checkedAt: Date, modifiedTime: string | null): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_items
+       SET last_sync_checked_at = $1, last_modified_time = COALESCE($2, last_modified_time), updated_at = now()
+       WHERE id = $3`,
+      [checkedAt, modifiedTime, id],
+    )
+  }
+
+  /** Return active items whose sync interval has elapsed (ready for change check) */
+  async listItemsDueForSync(): Promise<KnowledgeItem[]> {
+    const res = await this.db.query<ItemRow>(`
+      SELECT * FROM knowledge_items
+      WHERE active = true
+        AND (
+          last_sync_checked_at IS NULL
+          OR last_sync_checked_at < NOW() - (
+            CASE update_frequency
+              WHEN '6h'  THEN INTERVAL '6 hours'
+              WHEN '12h' THEN INTERVAL '12 hours'
+              WHEN '1w'  THEN INTERVAL '7 days'
+              WHEN '1m'  THEN INTERVAL '30 days'
+              ELSE            INTERVAL '24 hours'
+            END
+          )
+        )
+      ORDER BY last_sync_checked_at ASC NULLS FIRST
+    `)
+    return res.rows.map(mapItemRow)
+  }
+
+  /** Toggle ignored flag on a tab */
+  async updateTabIgnored(tabId: string, ignored: boolean): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_item_tabs SET ignored = $1 WHERE id = $2`,
+      [ignored, tabId],
+    )
+  }
+
+  /** Toggle ignored flag on a column */
+  async updateColumnIgnored(columnId: string, ignored: boolean): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_item_columns SET ignored = $1 WHERE id = $2`,
+      [ignored, columnId],
+    )
+  }
+
   async updateItem(id: string, updates: {
     title?: string
     description?: string
@@ -1140,6 +1188,7 @@ export class KnowledgePgStore {
     contentLoaded?: boolean
     embeddingStatus?: EmbeddingStatus
     chunkCount?: number
+    updateFrequency?: import('./types.js').SyncFrequency
   }): Promise<void> {
     const sets: string[] = []
     const params: unknown[] = []
@@ -1153,6 +1202,7 @@ export class KnowledgePgStore {
     if (updates.contentLoaded !== undefined) { sets.push(`content_loaded = $${idx++}`); params.push(updates.contentLoaded) }
     if (updates.embeddingStatus !== undefined) { sets.push(`embedding_status = $${idx++}`); params.push(updates.embeddingStatus) }
     if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
+    if (updates.updateFrequency !== undefined) { sets.push(`update_frequency = $${idx++}`); params.push(updates.updateFrequency) }
 
     if (sets.length === 0) return
     sets.push(`updated_at = now()`)
@@ -1491,6 +1541,9 @@ interface ItemRow {
   content_loaded: boolean
   embedding_status: string
   chunk_count: number
+  update_frequency: string
+  last_sync_checked_at: Date | null
+  last_modified_time: string | null
   created_at: Date
   updated_at: Date
 }
@@ -1509,6 +1562,9 @@ function mapItemRow(r: ItemRow): KnowledgeItem {
     contentLoaded: r.content_loaded,
     embeddingStatus: r.embedding_status as EmbeddingStatus,
     chunkCount: r.chunk_count,
+    updateFrequency: (r.update_frequency ?? '24h') as import('./types.js').SyncFrequency,
+    lastSyncCheckedAt: r.last_sync_checked_at ?? null,
+    lastModifiedTime: r.last_modified_time ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -1520,6 +1576,7 @@ interface ItemTabRow {
   tab_name: string
   description: string
   position: number
+  ignored: boolean
 }
 
 function mapItemTabRow(r: ItemTabRow): KnowledgeItemTab {
@@ -1529,6 +1586,7 @@ function mapItemTabRow(r: ItemTabRow): KnowledgeItemTab {
     tabName: r.tab_name,
     description: r.description,
     position: r.position,
+    ignored: r.ignored ?? false,
   }
 }
 
@@ -1538,6 +1596,7 @@ interface ItemColumnRow {
   column_name: string
   description: string
   position: number
+  ignored: boolean
 }
 
 function mapItemColumnRow(r: ItemColumnRow): KnowledgeItemColumn {
@@ -1547,5 +1606,6 @@ function mapItemColumnRow(r: ItemColumnRow): KnowledgeItemColumn {
     columnName: r.column_name,
     description: r.description,
     position: r.position,
+    ignored: r.ignored ?? false,
   }
 }

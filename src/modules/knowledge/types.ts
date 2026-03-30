@@ -308,6 +308,9 @@ export interface KnowledgeItem {
   contentLoaded: boolean
   embeddingStatus: EmbeddingStatus
   chunkCount: number
+  updateFrequency: SyncFrequency   // how often to check for changes
+  lastSyncCheckedAt: Date | null   // last Drive modifiedTime check
+  lastModifiedTime: string | null  // last known Drive modifiedTime
   createdAt: Date
   updatedAt: Date
   tabs?: KnowledgeItemTab[]
@@ -319,6 +322,7 @@ export interface KnowledgeItemTab {
   tabName: string
   description: string
   position: number
+  ignored: boolean              // skip this tab during embedding
   columns?: KnowledgeItemColumn[]
 }
 
@@ -328,4 +332,5 @@ export interface KnowledgeItemColumn {
   columnName: string
   description: string
   position: number
+  ignored: boolean              // skip this column during row text building
 }

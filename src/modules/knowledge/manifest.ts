@@ -862,6 +862,68 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // PUT /console/api/knowledge/items/frequency — update sync frequency for an item
+    {
+      method: 'PUT',
+      path: 'items/frequency',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string; frequency: string }>(req)
+          if (!body.id || !body.frequency) {
+            jsonResponse(res, 400, { error: 'Falta id o frequency' })
+            return
+          }
+          const validFreqs = ['6h', '12h', '24h', '1w', '1m']
+          if (!validFreqs.includes(body.frequency)) {
+            jsonResponse(res, 400, { error: 'Frecuencia no valida' })
+            return
+          }
+          await getPgStore().updateItem(body.id, { updateFrequency: body.frequency as import('./types.js').SyncFrequency })
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items/tab-ignore — toggle ignored flag on a tab
+    {
+      method: 'PUT',
+      path: 'items/tab-ignore',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ tabId: string; ignored: boolean }>(req)
+          if (!body.tabId) {
+            jsonResponse(res, 400, { error: 'Falta tabId' })
+            return
+          }
+          await getPgStore().updateTabIgnored(body.tabId, !!body.ignored)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items/column-ignore — toggle ignored flag on a column
+    {
+      method: 'PUT',
+      path: 'items/column-ignore',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ columnId: string; ignored: boolean }>(req)
+          if (!body.columnId) {
+            jsonResponse(res, 400, { error: 'Falta columnId' })
+            return
+          }
+          await getPgStore().updateColumnIgnored(body.columnId, !!body.ignored)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
     // POST /console/api/knowledge/items/verify-url — check Google resource accessibility
     {
       method: 'POST',

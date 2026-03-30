@@ -6,6 +6,7 @@ import type { ContextBundle, ExecutionStep, ToolDefinition } from '../types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
+import type { KnowledgeManager } from '../../modules/knowledge/knowledge-manager.js'
 import { escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
 // Fallback used when no custom prompt and prompts:service not available
@@ -88,6 +89,40 @@ export async function buildSubagentPrompt(
     parts.push(`\nSubagente: ${catalogEntry.name}`)
     if (catalogEntry.description) {
       parts.push(`Rol: ${catalogEntry.description}`)
+    }
+  }
+
+  // ── Filtered knowledge catalog (only when categories assigned + search_knowledge available) ──
+  const hasSearchTool = toolDefs.some(t => t.name === 'search_knowledge')
+  const filteredCats = catalogEntry?.allowedKnowledgeCategories ?? []
+  if (hasSearchTool && filteredCats.length > 0) {
+    try {
+      const km = registry?.getOptional<KnowledgeManager>('knowledge:manager')
+      if (km) {
+        const injection = await km.getInjection()
+        // Filter categories to only those allowed
+        const allowedSet = new Set(filteredCats)
+        const relevantCats = injection.categories.filter(c => allowedSet.has(c.id))
+        const relevantItems = (injection.items ?? []).filter(item => item.categoryId && allowedSet.has(item.categoryId))
+
+        if (relevantCats.length > 0 || relevantItems.length > 0) {
+          parts.push(`\nCatálogo de conocimiento disponible (usa search_knowledge para consultar):`)
+          for (const cat of relevantCats) {
+            const catItems = relevantItems.filter(i => i.categoryId === cat.id)
+            const desc = cat.description ? ` — ${cat.description}` : ''
+            parts.push(`  Categoría '${cat.title}'${desc}:`)
+            for (const item of catItems) {
+              const itemDesc = item.description ? ` — ${item.description}` : ''
+              parts.push(`    - '${item.title}'${itemDesc}`)
+            }
+            if (catItems.length === 0) {
+              parts.push(`    (sin items)`)
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-fatal — subagent works without knowledge catalog
     }
   }
 

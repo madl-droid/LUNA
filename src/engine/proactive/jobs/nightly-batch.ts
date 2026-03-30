@@ -482,52 +482,140 @@ Escribe el resumen en español, enfocándote en tendencias y datos relevantes.`
 
 // ─── 4. Scan & Embed Knowledge Items ─────────
 
-interface ItemEmbedManager {
+const MAX_EMBED_RETRIES = 3
+const EMBED_RETRY_DELAY_MS = 2000
+
+interface KnowledgePgStore {
   listItemsNeedingEmbedding(): Promise<Array<{ id: string; title: string; contentLoaded: boolean; embeddingStatus: string }>>
+  listItemsDueForSync(): Promise<Array<{ id: string; title: string; sourceId: string; sourceType: string; lastModifiedTime: string | null }>>
+  updateItemSyncStatus(id: string, checkedAt: Date, modifiedTime: string | null): Promise<void>
 }
 
-interface ItemManager {
+interface KnowledgeItemManager {
   loadContent(id: string): Promise<{ chunks: number }>
 }
 
+interface DriveService {
+  getFile(fileId: string): Promise<{ modifiedTime?: string }>
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number,
+  delayMs: number,
+  label: string,
+): Promise<T> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      if (attempt < maxAttempts) {
+        logger.warn({ err, attempt, maxAttempts, label }, 'Retrying after error')
+        await new Promise(r => setTimeout(r, delayMs * attempt))
+      }
+    }
+  }
+  throw lastErr
+}
+
 async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<void> {
-  const pgStore = ctx.registry.getOptional<ItemEmbedManager>('knowledge:pg-store')
-  const itemManager = ctx.registry.getOptional<ItemManager>('knowledge:item-manager')
+  const pgStore = ctx.registry.getOptional<KnowledgePgStore>('knowledge:pg-store')
+  const itemManager = ctx.registry.getOptional<KnowledgeItemManager>('knowledge:item-manager')
 
   if (!pgStore || !itemManager) {
-    logger.debug({ traceId: ctx.traceId }, 'knowledge:pg-store or knowledge:item-manager not available, skipping embedding scan')
+    logger.debug({ traceId: ctx.traceId }, 'knowledge services not available, skipping knowledge scan')
     return
   }
 
-  logger.info({ traceId: ctx.traceId }, 'Scanning knowledge items for missing embeddings')
+  const drive = ctx.registry.getOptional<DriveService>('google:drive')
+
+  logger.info({ traceId: ctx.traceId }, 'Starting knowledge items sync scan')
+
+  let checked = 0
+  let reembedded = 0
+  let noChange = 0
+  let failed = 0
 
   try {
-    const items = await pgStore.listItemsNeedingEmbedding()
-
-    if (items.length === 0) {
-      logger.info({ traceId: ctx.traceId }, 'All active knowledge items are embedded')
-      return
-    }
-
-    logger.info({ traceId: ctx.traceId, count: items.length }, 'Found knowledge items needing embedding')
-
-    let loaded = 0
-    let failed = 0
-
-    for (const item of items) {
+    // Step A: items that have never been loaded or embedding failed → load unconditionally
+    const unloaded = await pgStore.listItemsNeedingEmbedding()
+    for (const item of unloaded) {
       try {
-        const result = await itemManager.loadContent(item.id)
-        loaded++
-        logger.info({ traceId: ctx.traceId, itemId: item.id, title: item.title, chunks: result.chunks }, 'Knowledge item content loaded and queued for embedding')
+        const result = await withRetry(
+          () => itemManager.loadContent(item.id),
+          MAX_EMBED_RETRIES,
+          EMBED_RETRY_DELAY_MS,
+          `loadContent:${item.id}`,
+        )
+        reembedded++
+        logger.info({ traceId: ctx.traceId, itemId: item.id, title: item.title, chunks: result.chunks }, 'Unloaded item embedded')
       } catch (err) {
         failed++
-        logger.warn({ traceId: ctx.traceId, err, itemId: item.id, title: item.title }, 'Failed to load/embed knowledge item')
+        logger.warn({ traceId: ctx.traceId, err, itemId: item.id, title: item.title }, 'Failed to embed unloaded item')
       }
     }
 
-    logger.info({ traceId: ctx.traceId, total: items.length, loaded, failed }, 'Knowledge embedding scan complete')
+    // Step B: items due for sync check → compare Drive modifiedTime
+    const dueItems = await pgStore.listItemsDueForSync()
+    for (const item of dueItems) {
+      checked++
+      const now = new Date()
+      try {
+        let changed = false
+        let latestModifiedTime: string | null = item.lastModifiedTime
+
+        // Check Drive modifiedTime if service available (skip Drive folders — use item-level check)
+        if (drive && item.sourceType !== 'drive') {
+          try {
+            const meta = await withRetry(
+              () => drive.getFile(item.sourceId),
+              2,
+              1000,
+              `getFile:${item.sourceId}`,
+            )
+            if (meta.modifiedTime) {
+              latestModifiedTime = meta.modifiedTime
+              changed = !item.lastModifiedTime || meta.modifiedTime !== item.lastModifiedTime
+            } else {
+              // Cannot determine — treat as changed to be safe
+              changed = true
+            }
+          } catch (err) {
+            logger.warn({ traceId: ctx.traceId, err, itemId: item.id }, 'Drive metadata check failed, treating as changed')
+            changed = true
+          }
+        } else {
+          // No Drive service or drive-type item — always re-embed on schedule
+          changed = true
+        }
+
+        // Update sync timestamp regardless of whether we re-embed
+        await pgStore.updateItemSyncStatus(item.id, now, latestModifiedTime)
+
+        if (changed) {
+          await withRetry(
+            () => itemManager.loadContent(item.id),
+            MAX_EMBED_RETRIES,
+            EMBED_RETRY_DELAY_MS,
+            `loadContent:${item.id}`,
+          )
+          reembedded++
+          logger.info({ traceId: ctx.traceId, itemId: item.id, title: item.title }, 'Item changed — re-embedded')
+        } else {
+          noChange++
+          logger.debug({ traceId: ctx.traceId, itemId: item.id, title: item.title }, 'Item unchanged — skipped')
+        }
+      } catch (err) {
+        failed++
+        logger.warn({ traceId: ctx.traceId, err, itemId: item.id, title: item.title }, 'Knowledge item sync failed')
+      }
+    }
+
+    logger.info({ traceId: ctx.traceId, checked, reembedded, noChange, failed }, 'Knowledge sync scan complete')
   } catch (err) {
-    logger.error({ err, traceId: ctx.traceId }, 'Knowledge embedding scan failed')
+    logger.error({ err, traceId: ctx.traceId }, 'Knowledge sync scan failed')
   }
 }
 

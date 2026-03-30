@@ -46,6 +46,7 @@ export function createCatalogService(db: Pool): SubagentsCatalogService {
         verifyResult: t.verifyResult,
         canSpawnChildren: t.canSpawnChildren,
         allowedTools: t.allowedTools,
+        allowedKnowledgeCategories: t.allowedKnowledgeCategories,
         systemPrompt: t.systemPrompt,
       }))
       cacheBySlug = new Map(cache.map(e => [e.slug, e]))

@@ -12,6 +12,7 @@ export interface SubagentTypeRow {
   verifyResult: boolean
   canSpawnChildren: boolean
   allowedTools: string[]
+  allowedKnowledgeCategories: string[]
   systemPrompt: string
   sortOrder: number
   createdAt: string
@@ -29,6 +30,7 @@ export interface CreateSubagentType {
   verifyResult?: boolean
   canSpawnChildren?: boolean
   allowedTools?: string[]
+  allowedKnowledgeCategories?: string[]
   systemPrompt?: string
 }
 
@@ -42,6 +44,7 @@ export interface UpdateSubagentType {
   verifyResult?: boolean
   canSpawnChildren?: boolean
   allowedTools?: string[]
+  allowedKnowledgeCategories?: string[]
   systemPrompt?: string
   sortOrder?: number
 }
@@ -96,6 +99,7 @@ export interface SubagentCatalogEntry {
   verifyResult: boolean
   canSpawnChildren: boolean
   allowedTools: string[]
+  allowedKnowledgeCategories: string[]
   systemPrompt: string
 }
 
