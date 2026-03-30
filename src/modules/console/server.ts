@@ -29,6 +29,92 @@ try {
   packageJsonVersion = pkg.version ?? 'dev'
 } catch { /* fallback to dev */ }
 
+/** Render a styled 404 page with biblical-flavored wandering metaphor */
+function render404Page(lang: string): string {
+  const isEs = lang === 'es'
+  const title = isEs ? 'En el desierto' : 'In the wilderness'
+  const verse = isEs
+    ? 'Anduvieron perdidos por el desierto, por la soledad sin camino...'
+    : 'They wandered in the wilderness in a solitary way...'
+  const ref = 'Salmos 107:4'
+  const subtitle = isEs
+    ? 'Parece que este camino no lleva a ningun lugar conocido.'
+    : 'It seems this path leads to no known place.'
+  const hint = isEs
+    ? 'Pero no te preocupes — hasta los mas grandes caminantes se han perdido antes de encontrar su destino.'
+    : 'But do not worry — even the greatest wanderers have been lost before finding their destiny.'
+  const btnText = isEs ? 'Volver al inicio' : 'Return home'
+
+  return `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna — 404</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      font-family:'Montserrat',sans-serif;
+      min-height:100vh;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,#1a1a2e 0%,#16213e 40%,#0f3460 100%);
+      color:#e1e1e1;overflow:hidden;position:relative;
+    }
+    .stars{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+    .star{position:absolute;background:#fff;border-radius:50%;animation:twinkle var(--d,3s) ease-in-out infinite alternate}
+    @keyframes twinkle{0%{opacity:0.2;transform:scale(0.8)}100%{opacity:1;transform:scale(1.2)}}
+    .container{text-align:center;z-index:1;max-width:520px;padding:40px 24px}
+    .num{font-size:8rem;font-weight:700;line-height:1;background:linear-gradient(135deg,#FF5E0E,#FFB800);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px;text-shadow:0 0 60px rgba(255,94,14,0.3)}
+    .title{font-size:1.4rem;font-weight:600;margin-bottom:24px;color:#FFB800}
+    .verse{font-style:italic;font-size:1rem;color:rgba(225,225,225,0.7);margin-bottom:6px;line-height:1.6}
+    .ref{font-size:0.8rem;color:rgba(225,225,225,0.4);margin-bottom:32px}
+    .subtitle{font-size:0.95rem;color:rgba(225,225,225,0.6);margin-bottom:12px;line-height:1.5}
+    .hint{font-size:0.85rem;color:rgba(225,225,225,0.45);margin-bottom:36px;line-height:1.5}
+    .btn{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:12px 28px;border-radius:50px;border:none;
+      background:linear-gradient(135deg,#FF5E0E,#e04a00);
+      color:#fff;font-family:inherit;font-size:0.9rem;font-weight:600;
+      cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;
+      text-decoration:none;
+    }
+    .btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(255,94,14,0.4)}
+    .compass{animation:spin 8s linear infinite;display:inline-block}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .footprint{position:fixed;bottom:20px;right:20px;opacity:0.15;font-size:2rem;z-index:0}
+  </style>
+</head>
+<body>
+  <div class="stars" id="stars"></div>
+  <div class="container">
+    <div class="num">404</div>
+    <div class="title">${title}</div>
+    <div class="verse">"${verse}"</div>
+    <div class="ref">${ref}</div>
+    <div class="subtitle">${subtitle}</div>
+    <div class="hint">${hint}</div>
+    <a href="/console?lang=${lang}" class="btn">
+      <span class="compass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg></span>
+      ${btnText}
+    </a>
+  </div>
+  <script>
+  (function(){
+    var s=document.getElementById('stars');
+    for(var i=0;i<60;i++){
+      var d=document.createElement('div');d.className='star';
+      d.style.cssText='width:'+(.5+Math.random()*2)+'px;height:'+(.5+Math.random()*2)+'px;top:'+Math.random()*100+'%;left:'+Math.random()*100+'%;--d:'+(2+Math.random()*4)+'s;animation-delay:-'+Math.random()*4+'s';
+      s.appendChild(d);
+    }
+  })();
+  </script>
+</body>
+</html>`
+}
+
 function findEnvFile(): string {
   const candidates = [
     path.resolve(process.cwd(), '.env'),
@@ -309,8 +395,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           return true
         }
       }
-      res.writeHead(404, { 'Content-Type': 'text/plain' })
-      res.end('Not found')
+      const notFoundLang = (req.url?.includes('lang=en') ? 'en' : 'es')
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(render404Page(notFoundLang))
       return true
     }
 
@@ -1345,8 +1432,8 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       }
 
       if (!content) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' })
-        res.end('Section not found')
+        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(render404Page(lang))
         return true
       }
 
