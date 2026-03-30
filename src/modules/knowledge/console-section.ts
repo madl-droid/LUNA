@@ -117,6 +117,27 @@ export function renderKnowledgeSection(
     html += renderItemsList(items, categories, lang)
   }
 
+  // ── Training stats footer ──
+  if (items.length > 0) {
+    const trainedItems = items.filter(i => i.embeddingStatus === 'done')
+    const totalChunks = items.reduce((sum, i) => sum + (i.chunkCount ?? 0), 0)
+    const activeItems = items.filter(i => i.active)
+    // Find most recent updatedAt as "last training"
+    const lastTrained = items
+      .filter(i => i.embeddingStatus === 'done')
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]
+
+    const lastDate = lastTrained
+      ? `${lastTrained.updatedAt.getDate().toString().padStart(2, '0')}/${(lastTrained.updatedAt.getMonth() + 1).toString().padStart(2, '0')}/${lastTrained.updatedAt.getFullYear()} ${lang === 'es' ? 'a las' : 'at'} ${lastTrained.updatedAt.getHours().toString().padStart(2, '0')}:${lastTrained.updatedAt.getMinutes().toString().padStart(2, '0')}`
+      : (lang === 'es' ? 'nunca' : 'never')
+
+    const statsText = lang === 'es'
+      ? `Último entrenamiento el ${lastDate} sobre ${trainedItems.length} conocimientos, ${activeItems.length} activos, para un total de ${totalChunks} datos procesados.`
+      : `Last training on ${lastDate} across ${trainedItems.length} knowledge items, ${activeItems.length} active, for a total of ${totalChunks} processed data points.`
+
+    html += `<p class="ki-stats-footer">${esc(statsText)}</p>`
+  }
+
   // ── Wizard Modal (3-step) ──
   html += renderWizardModal(categories, lang)
 
@@ -235,8 +256,7 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
       </button>
       <button type="button" class="ki-icon-btn ${item.isCore ? 'ki-icon-btn--core-on' : ''}"
-        onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})"
-        title="${esc(coreTip)}">
+        onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="${item.isCore ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         ${item.isCore ? `<span class="ki-icon-label">${coreCount}/${maxCore}</span>` : ''}
         <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip">${esc(coreTip)}</span></span>
@@ -410,9 +430,11 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
 function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProduction: boolean): string {
   const isEs = lang === 'es'
   return `<script>(function(){
+  try { // IIFE error guard — logs to console if anything breaks
+
   var API = '/console/api/knowledge/items';
   var IS_PRODUCTION = ${isProduction ? 'true' : 'false'};
-  var COOLDOWN_MS = IS_PRODUCTION ? 30 * 60 * 1000 : 0; // 30min in prod, 0 in dev/staging
+  var COOLDOWN_MS = IS_PRODUCTION ? 30 * 60 * 1000 : 0;
 
   function toast(msg, type) {
     if (window.showToast) window.showToast(msg, type || 'success');
@@ -1117,6 +1139,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
+  } catch(e) { console.error('[LUNA Knowledge] Script error:', e); }
 })()</script>`
 }
 
@@ -1136,6 +1159,11 @@ function renderStyles(): string {
 /* Nombre column */
 .ki-col-nombre { display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden; }
 .ki-col-acciones { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+
+/* Fix: overflow clipping on positioned ancestors — tooltips get cut by parent overflow:hidden */
+.ki-row { overflow:visible !important; }
+.ki-col-acciones .info-wrap { position:relative; }
+.ki-col-acciones .info-tooltip { z-index:100; white-space:normal; }
 
 /* Source icon */
 .ki-source-icon { width:36px; height:36px; border-radius:0.6rem; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -1172,6 +1200,7 @@ function renderStyles(): string {
 .ki-yt-hint svg { flex-shrink:0; margin-top:1px; color:#ef4444; }
 
 .ki-empty-note { font-size:12px; color:var(--on-surface-dim); margin:4px 0; }
+.ki-stats-footer { font-size:11px; color:var(--on-surface-dim); text-align:center; margin:20px 0 4px; opacity:0.7; }
 
 /* Wizard font fix (global has monospace — override to inherit) */
 #ki-wizard .wizard-input, #ki-wizard .wizard-btn, #ki-wizard .wizard-label,
