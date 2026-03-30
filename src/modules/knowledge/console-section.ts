@@ -62,21 +62,58 @@ export function renderKnowledgeSection(
   const faqDesc = config?.faqDescription ?? ''
   const productsUrl = config?.productsSheetUrl ?? ''
   const productsDesc = config?.productsDescription ?? ''
-  const descPlaceholder = lang === 'es'
-    ? 'Describe el contenido de esta fuente. Esta descripcion se usa como contexto para el agente.'
-    : 'Describe this source content. This description is used as context for the agent.'
+  const faqDescPlaceholder = lang === 'es'
+    ? 'Preguntas frecuentes del negocio. El agente consulta esta fuente para resolver dudas comunes de clientes sobre precios, horarios, politicas, procesos y servicios.'
+    : 'Business frequently asked questions. The agent queries this source to resolve common customer questions about pricing, hours, policies, processes and services.'
+  const productsDescPlaceholder = lang === 'es'
+    ? 'Catalogo de productos y servicios. El agente consulta esta fuente para informar sobre caracteristicas, precios, disponibilidad y comparaciones entre productos.'
+    : 'Products and services catalog. The agent queries this source to inform about features, pricing, availability and product comparisons.'
+  const faqReadonly = faqUrl ? ' readonly' : ''
+  const faqReadonlyStyle = faqUrl ? ';background:var(--surface-container-low);cursor:default' : ''
+  const productsReadonly = productsUrl ? ' readonly' : ''
+  const productsReadonlyStyle = productsUrl ? ';background:var(--surface-container-low);cursor:default' : ''
   html += `<div class="panel" style="margin:0 0 24px 0;padding:0"><div class="panel-body" style="padding:20px">
     <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${lang === 'es' ? 'Conocimiento principal' : 'Core knowledge'}</div>
     <div style="display:flex;flex-direction:column;gap:14px">
       <div>
-        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">FAQ — Google Sheet</label>
-        <input type="text" class="wizard-input" name="KNOWLEDGE_FAQ_SHEET_URL" value="${esc(faqUrl)}" data-original="${esc(faqUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..." style="font-size:13px">
-        <textarea class="wizard-input" name="KNOWLEDGE_FAQ_DESCRIPTION" data-original="${esc(faqDesc)}" placeholder="${descPlaceholder}" rows="2" style="font-size:13px;margin-top:6px;resize:vertical">${esc(faqDesc)}</textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <label style="font-size:12px;font-weight:600">FAQ</label>
+          ${faqUrl ? `<button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiToggleCoreEdit(this)" style="font-size:11px;padding:3px 10px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            ${lang === 'es' ? 'Editar' : 'Edit'}
+          </button>` : ''}
+        </div>
+        <input type="text" class="wizard-input" name="KNOWLEDGE_FAQ_SHEET_URL" value="${esc(faqUrl)}" data-original="${esc(faqUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..."${faqReadonly} style="font-size:13px${faqReadonlyStyle}">
+        <textarea class="wizard-input" name="KNOWLEDGE_FAQ_DESCRIPTION" data-original="${esc(faqDesc)}" placeholder="${faqDescPlaceholder}" rows="2"${faqReadonly} style="font-size:13px;margin-top:6px;resize:vertical${faqReadonlyStyle}">${esc(faqDesc)}</textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreTabs('faq')" style="font-size:11px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
+            ${lang === 'es' ? 'Escanear Hojas' : 'Scan Sheets'}
+          </button>
+          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreColumns('faq')" style="font-size:11px">
+            ${lang === 'es' ? 'Escanear Columnas' : 'Scan Columns'}
+          </button>
+        </div>
       </div>
       <div>
-        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">${lang === 'es' ? 'Productos y servicios' : 'Products & services'} — Google Sheet</label>
-        <input type="text" class="wizard-input" name="KNOWLEDGE_PRODUCTS_SHEET_URL" value="${esc(productsUrl)}" data-original="${esc(productsUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..." style="font-size:13px">
-        <textarea class="wizard-input" name="KNOWLEDGE_PRODUCTS_DESCRIPTION" data-original="${esc(productsDesc)}" placeholder="${descPlaceholder}" rows="2" style="font-size:13px;margin-top:6px;resize:vertical">${esc(productsDesc)}</textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <label style="font-size:12px;font-weight:600">${lang === 'es' ? 'Productos y servicios' : 'Products & services'}</label>
+          ${productsUrl ? `<button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiToggleCoreEdit(this)" style="font-size:11px;padding:3px 10px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            ${lang === 'es' ? 'Editar' : 'Edit'}
+          </button>` : ''}
+        </div>
+        <input type="text" class="wizard-input" name="KNOWLEDGE_PRODUCTS_SHEET_URL" value="${esc(productsUrl)}" data-original="${esc(productsUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..."${productsReadonly} style="font-size:13px${productsReadonlyStyle}">
+        <textarea class="wizard-input" name="KNOWLEDGE_PRODUCTS_DESCRIPTION" data-original="${esc(productsDesc)}" placeholder="${productsDescPlaceholder}" rows="2"${productsReadonly} style="font-size:13px;margin-top:6px;resize:vertical${productsReadonlyStyle}">${esc(productsDesc)}</textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreTabs('products')" style="font-size:11px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
+            ${lang === 'es' ? 'Escanear Hojas' : 'Scan Sheets'}
+          </button>
+          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreColumns('products')" style="font-size:11px">
+            ${lang === 'es' ? 'Escanear Columnas' : 'Scan Columns'}
+          </button>
+        </div>
       </div>
     </div>
   </div></div>`
@@ -85,6 +122,10 @@ export function renderKnowledgeSection(
   html += `<div class="ki-header">
     <h2 class="ki-title">${t('title', lang)}</h2>
     <div style="display:flex;gap:8px;align-items:center">
+      <button type="button" class="act-btn act-btn-config" onclick="kiBulkVectorize()" style="font-size:13px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        ${lang === 'es' ? 'Generar Embeddings' : 'Generate Embeddings'}
+      </button>
       <button type="button" class="act-btn" onclick="kiOpenCategoriesModal()" style="font-size:13px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         ${lang === 'es' ? 'Categorias' : 'Categories'}
@@ -153,18 +194,19 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
   // Edit button
   html += `<button type="button" class="act-btn" onclick="kiOpenEditModal('${esc(item.id)}', ${JSON.stringify(esc(item.title)).replace(/'/g, '\\\'')}, ${JSON.stringify(esc(item.description)).replace(/'/g, '\\\'')}, '${esc(item.categoryId ?? '')}', ${JSON.stringify(esc(item.sourceUrl)).replace(/'/g, '\\\'')})" style="font-size:11px;padding:4px 10px">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    ${lang === 'es' ? ' Editar' : ' Edit'}
   </button>`
 
   // Active toggle
-  html += `<label class="ki-toggle-label">
-    <input type="checkbox" class="ki-toggle-input" ${item.active ? 'checked' : ''}
+  html += `<label class="toggle toggle-sm">
+    <input type="checkbox" ${item.active ? 'checked' : ''}
       onchange="kiToggleActive('${esc(item.id)}', this.checked)" />
     <span class="toggle-slider"></span>
   </label>`
 
   // Delete (only if inactive)
   if (isInactive) {
-    html += `<button type="button" class="btn btn-sm btn-danger ki-delete-btn"
+    html += `<button type="button" class="act-btn act-btn-remove act-btn--compact"
       onclick="kiDeleteItem('${esc(item.id)}')">${t('delete_btn', lang)}</button>`
   }
 
@@ -174,7 +216,7 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
   html += `<div class="ki-tabs-section">
     <div class="ki-tabs-header">
       <span class="ki-section-label">${t('tabs', lang)}</span>
-      <button type="button" class="btn btn-sm btn-outline ki-scan-btn"
+      <button type="button" class="act-btn act-btn-config act-btn--compact"
         onclick="kiScanTabs('${esc(item.id)}')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
         ${t('scan_tabs', lang)}
@@ -188,7 +230,7 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         <div class="ki-tab-name">${esc(tab.tabName)}</div>
         <input type="text" class="ki-tab-desc-input" placeholder="${t('tab_desc', lang)}"
           value="${esc(tab.description)}" onblur="kiSaveTabDesc('${esc(tab.id)}', this.value)" />
-        <button type="button" class="btn btn-sm btn-outline ki-scan-cols-btn"
+        <button type="button" class="act-btn act-btn-config act-btn--compact"
           onclick="kiScanColumns('${esc(tab.id)}', '${esc(item.id)}')">
           ${t('scan_cols', lang)}
         </button>`
@@ -217,7 +259,7 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 
   // ── Load Content button ──
   html += `<div class="ki-load-section">
-    <button type="button" class="btn btn-primary ki-load-btn"
+    <button type="button" class="act-btn act-btn-cta"
       onclick="kiLoadContent('${esc(item.id)}')"
       ${!item.active ? 'disabled' : ''}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -267,8 +309,8 @@ function renderAddModal(categories: KnowledgeCategory[], lang: Lang): string {
             <div class="wizard-field-error" id="ki-err-url"></div>
           </div>
           <div class="wizard-actions">
-            <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiCloseModal()">${t('cancel', lang)}</button>
-            <button type="submit" class="wizard-btn wizard-btn-primary">${t('save', lang)}</button>
+            <button type="button" class="act-btn act-btn-config" onclick="kiCloseModal()">${t('cancel', lang)}</button>
+            <button type="submit" class="act-btn act-btn-cta">${t('save', lang)}</button>
           </div>
         </form>
       </div>
@@ -292,7 +334,7 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
         <div id="ki-cat-list">${rows || `<p style="color:var(--on-surface-dim);font-size:13px">${isEs ? 'No hay categorias.' : 'No categories.'}</p>`}</div>
         <div style="margin-top:16px;display:flex;gap:8px">
           <input type="text" id="ki-cat-new-name" class="wizard-input" placeholder="${isEs ? 'Nueva categoria...' : 'New category...'}" maxlength="60" />
-          <button type="button" class="wizard-btn wizard-btn-primary" onclick="kiAddCategory()" style="font-size:13px">${isEs ? 'Agregar' : 'Add'}</button>
+          <button type="button" class="act-btn act-btn-cta" onclick="kiAddCategory()" style="font-size:13px">${isEs ? 'Agregar' : 'Add'}</button>
         </div>
       </div>
     </div>
@@ -578,6 +620,59 @@ function renderClientScript(lang: Lang): string {
       })
       .catch(function(err) { toast(String(err), 'error') })
   }
+
+  window.kiToggleCoreEdit = function(btn) {
+    var container = btn.closest('div').parentElement
+    var inputs = container.querySelectorAll('input, textarea')
+    for (var i = 0; i < inputs.length; i++) {
+      inputs[i].removeAttribute('readonly')
+      inputs[i].style.background = ''
+      inputs[i].style.cursor = ''
+    }
+    btn.style.display = 'none'
+  }
+
+  window.kiScanCoreTabs = function(type) {
+    var urlField = type === 'faq' ? 'KNOWLEDGE_FAQ_SHEET_URL' : 'KNOWLEDGE_PRODUCTS_SHEET_URL'
+    var url = document.querySelector('[name="' + urlField + '"]').value.trim()
+    if (!url) { toast('${lang === 'es' ? 'Ingresa una URL primero' : 'Enter a URL first'}', 'error'); return }
+    toast('${lang === 'es' ? 'Escaneando hojas...' : 'Scanning sheets...'}', 'info')
+    fetch('/console/api/knowledge/items/scan-tabs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceUrl: url, type: type })
+    }).then(function(r) { return r.json() }).then(function(r) {
+      if (r.error) { toast(r.error, 'error'); return }
+      toast(('${lang === 'es' ? 'Hojas encontradas: ' : 'Sheets found: '}') + (r.tabs || []).length)
+      location.reload()
+    }).catch(function(err) { toast(String(err), 'error') })
+  }
+
+  window.kiScanCoreColumns = function(type) {
+    var urlField = type === 'faq' ? 'KNOWLEDGE_FAQ_SHEET_URL' : 'KNOWLEDGE_PRODUCTS_SHEET_URL'
+    var url = document.querySelector('[name="' + urlField + '"]').value.trim()
+    if (!url) { toast('${lang === 'es' ? 'Ingresa una URL primero' : 'Enter a URL first'}', 'error'); return }
+    toast('${lang === 'es' ? 'Escaneando columnas...' : 'Scanning columns...'}', 'info')
+    fetch('/console/api/knowledge/items/scan-columns', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceUrl: url, type: type })
+    }).then(function(r) { return r.json() }).then(function(r) {
+      if (r.error) { toast(r.error, 'error'); return }
+      toast(('${lang === 'es' ? 'Columnas encontradas: ' : 'Columns found: '}') + (r.columns || []).length)
+      location.reload()
+    }).catch(function(err) { toast(String(err), 'error') })
+  }
+
+  window.kiBulkVectorize = function() {
+    if (!confirm('${lang === 'es' ? '¿Generar embeddings para todo el contenido pendiente?' : 'Generate embeddings for all pending content?'}')) return
+    toast('${lang === 'es' ? 'Generando embeddings...' : 'Generating embeddings...'}', 'info')
+    fetch('/console/api/knowledge/vectorize', { method: 'POST' })
+      .then(function(r) { return r.json() })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return }
+        toast('${lang === 'es' ? 'Embeddings en proceso' : 'Embeddings in progress'}')
+      })
+      .catch(function(err) { toast(String(err), 'error') })
+  }
 })()</script>`
 }
 
@@ -630,6 +725,8 @@ function renderStyles(): string {
 .ki-load-btn:disabled { opacity:0.5; cursor:not-allowed; }
 .ki-load-status { font-size:12px; }
 .ki-delete-btn { font-size:11px; }
+
+.wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:var(--radius-sm, 0.5rem); }
 
 /* Modal — uses wizard-overlay + wizard-modal from components.css */
 .ki-tags-picker { display:flex; flex-wrap:wrap; gap:6px; padding:8px 0; }

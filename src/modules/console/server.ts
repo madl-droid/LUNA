@@ -33,10 +33,6 @@ try {
 function render404Page(lang: string): string {
   const isEs = lang === 'es'
   const title = isEs ? 'En el desierto' : 'In the wilderness'
-  const verse = isEs
-    ? 'Anduvieron perdidos por el desierto, por la soledad sin camino...'
-    : 'They wandered in the wilderness in a solitary way...'
-  const ref = 'Salmos 107:4'
   const subtitle = isEs
     ? 'Parece que este camino no lleva a ningun lugar conocido.'
     : 'It seems this path leads to no known place.'
@@ -69,8 +65,6 @@ function render404Page(lang: string): string {
     .container{text-align:center;z-index:1;max-width:520px;padding:40px 24px}
     .num{font-size:8rem;font-weight:700;line-height:1;background:linear-gradient(135deg,#FF5E0E,#FFB800);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px;text-shadow:0 0 60px rgba(255,94,14,0.3)}
     .title{font-size:1.4rem;font-weight:600;margin-bottom:24px;color:#FFB800}
-    .verse{font-style:italic;font-size:1rem;color:rgba(225,225,225,0.7);margin-bottom:6px;line-height:1.6}
-    .ref{font-size:0.8rem;color:rgba(225,225,225,0.4);margin-bottom:32px}
     .subtitle{font-size:0.95rem;color:rgba(225,225,225,0.6);margin-bottom:12px;line-height:1.5}
     .hint{font-size:0.85rem;color:rgba(225,225,225,0.45);margin-bottom:36px;line-height:1.5}
     .btn{
@@ -92,8 +86,6 @@ function render404Page(lang: string): string {
   <div class="container">
     <div class="num">404</div>
     <div class="title">${title}</div>
-    <div class="verse">"${verse}"</div>
-    <div class="ref">${ref}</div>
     <div class="subtitle">${subtitle}</div>
     <div class="hint">${hint}</div>
     <a href="/console?lang=${lang}" class="btn">

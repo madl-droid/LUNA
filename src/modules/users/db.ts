@@ -83,9 +83,9 @@ const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
 }
 
 const DEFAULT_LEAD_PERMISSIONS: UserPermissions = {
-  tools: [],
-  skills: [],
-  subagents: false,
+  tools: ['*'],
+  skills: ['*'],
+  subagents: true,
   allAccess: false,
 }
 
@@ -205,7 +205,7 @@ export class UsersDb {
 
   /** Seed default configs for system lists if they don't exist. */
   async seedDefaults(): Promise<void> {
-    const DEFAULT_COWORKER_PERMISSIONS: UserPermissions = { tools: [], skills: [], subagents: false, allAccess: false }
+    const DEFAULT_COWORKER_PERMISSIONS: UserPermissions = { tools: ['*'], skills: ['*'], subagents: true, allAccess: false }
 
     const systemLists: Array<{ type: string; name: string; perms: UserPermissions; maxUsers?: number; behavior?: string }> = [
       { type: 'admin', name: 'Administradores', perms: DEFAULT_ADMIN_PERMISSIONS, maxUsers: 5 },
