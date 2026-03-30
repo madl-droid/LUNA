@@ -75,9 +75,11 @@ export function renderKnowledgeSection(
   items: KnowledgeItem[],
   categories: KnowledgeCategory[],
   lang: Lang,
-  _config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string },
+  config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string; nodeEnv?: string },
 ): string {
   let html = ''
+  const hasPending = items.some(i => i.active && i.embeddingStatus !== 'done')
+  const isProduction = config?.nodeEnv === 'production'
 
   if (items.length === 0) {
     // ── Empty state — no action bar, just the dashed panel ──
@@ -97,9 +99,10 @@ export function renderKnowledgeSection(
     html += `<div class="ki-header">
       <div></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button type="button" class="act-btn act-btn-cta" onclick="kiBulkVectorize()" style="font-size:13px">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-          ${t('train_agent', lang)}
+        <button type="button" id="ki-bulk-train-btn" class="act-btn ${hasPending ? 'act-btn-cta' : 'act-btn-config'}" onclick="kiBulkVectorize()" style="font-size:13px" ${hasPending ? '' : 'disabled'}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>
+          <span id="ki-bulk-train-label">${t('train_agent', lang)}</span>
+          <span id="ki-bulk-train-timer" class="ki-cooldown-timer" style="display:none"></span>
         </button>
         <button type="button" class="act-btn act-btn-config" onclick="kiOpenCategoriesModal()" style="font-size:13px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -121,7 +124,7 @@ export function renderKnowledgeSection(
   html += renderCategoriesModal(categories, lang)
 
   // ── Client-side JS ──
-  html += renderClientScript(lang, categories)
+  html += renderClientScript(lang, categories, isProduction)
 
   // ── Styles ──
   html += renderStyles()
@@ -243,10 +246,12 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip">${esc(shareTip)}</span></span>
       </button>
-      <button type="button" class="act-btn act-btn-add act-btn--compact"
+      <button type="button" class="act-btn act-btn--compact ki-train-btn ${item.active && item.embeddingStatus !== 'done' ? 'act-btn-add' : 'act-btn-config'}"
+        data-item-id="${esc(item.id)}"
         onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>
-        ${isEs ? 'Entrenar' : 'Train'}
+        <span class="ki-train-label">${isEs ? 'Entrenar' : 'Train'}</span>
+        <span class="ki-train-timer ki-cooldown-timer" style="display:none"></span>
       </button>
       ${isInactive ? `<button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteItem('${esc(item.id)}')">${t('delete_btn', lang)}</button>` : ''}
       <label class="toggle toggle-sm" style="margin-left:4px">
@@ -402,10 +407,12 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
 // Client Script
 // ═══════════════════════════════════════════
 
-function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string {
+function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProduction: boolean): string {
   const isEs = lang === 'es'
   return `<script>(function(){
   var API = '/console/api/knowledge/items';
+  var IS_PRODUCTION = ${isProduction ? 'true' : 'false'};
+  var COOLDOWN_MS = IS_PRODUCTION ? 30 * 60 * 1000 : 0; // 30min in prod, 0 in dev/staging
 
   function toast(msg, type) {
     if (window.showToast) window.showToast(msg, type || 'success');
@@ -421,6 +428,69 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
   }
 
   function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  // ── Cooldown system ──
+  // Keys: 'ki-cd-bulk' for global, 'ki-cd-{itemId}' for per-item
+  function getCooldownEnd(key) {
+    var val = localStorage.getItem(key);
+    return val ? parseInt(val, 10) : 0;
+  }
+  function setCooldown(key) {
+    if (!COOLDOWN_MS) return;
+    localStorage.setItem(key, String(Date.now() + COOLDOWN_MS));
+  }
+  function formatCountdown(ms) {
+    var totalSec = Math.ceil(ms / 1000);
+    var m = Math.floor(totalSec / 60);
+    var s = totalSec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  // Update all cooldown timers every second
+  var cdInterval = setInterval(function() {
+    var now = Date.now();
+    // Global bulk button
+    var bulkEnd = getCooldownEnd('ki-cd-bulk');
+    var bulkBtn = document.getElementById('ki-bulk-train-btn');
+    var bulkLabel = document.getElementById('ki-bulk-train-label');
+    var bulkTimer = document.getElementById('ki-bulk-train-timer');
+    if (bulkBtn && bulkEnd > now) {
+      bulkBtn.disabled = true;
+      bulkBtn.classList.remove('act-btn-cta');
+      bulkBtn.classList.add('act-btn-config');
+      if (bulkTimer) { bulkTimer.style.display = ''; bulkTimer.textContent = formatCountdown(bulkEnd - now); }
+      if (bulkLabel) bulkLabel.style.display = 'none';
+    } else if (bulkBtn && bulkEnd > 0 && bulkEnd <= now) {
+      localStorage.removeItem('ki-cd-bulk');
+      location.reload();
+    }
+
+    // Per-item train buttons
+    var trainBtns = document.querySelectorAll('.ki-train-btn');
+    for (var i = 0; i < trainBtns.length; i++) {
+      var btn = trainBtns[i];
+      var itemId = btn.getAttribute('data-item-id');
+      if (!itemId) continue;
+      var itemEnd = getCooldownEnd('ki-cd-' + itemId);
+      // Also check if global cooldown blocks this button
+      var blocked = (bulkEnd > now) || (itemEnd > now);
+      var endTime = Math.max(bulkEnd > now ? bulkEnd : 0, itemEnd > now ? itemEnd : 0);
+      var timer = btn.querySelector('.ki-train-timer');
+      var label = btn.querySelector('.ki-train-label');
+      if (blocked) {
+        btn.disabled = true;
+        btn.classList.remove('act-btn-add');
+        btn.classList.add('act-btn-config');
+        if (timer) { timer.style.display = ''; timer.textContent = formatCountdown(endTime - now); }
+        if (label) label.style.display = 'none';
+      } else if (itemEnd > 0 && itemEnd <= now) {
+        localStorage.removeItem('ki-cd-' + itemId);
+        // Restore button state
+        if (timer) timer.style.display = 'none';
+        if (label) label.style.display = '';
+      }
+    }
+  }, 1000);
 
   // ── Wizard state ──
   var wizState = {
@@ -904,25 +974,27 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
   };
 
   window.kiLoadContent = function(id) {
-    if (!confirm('${isEs ? '¿Cargar contenido y generar embeddings?' : 'Load content and generate embeddings?'}')) return;
-    toast('${isEs ? 'Cargando contenido...' : 'Loading content...'}', 'info');
+    if (!confirm('${isEs ? '¿Entrenar este contenido?' : 'Train this content?'}')) return;
+    toast('${isEs ? 'Entrenando...' : 'Training...'}', 'info');
     api('/load-content', 'POST', { id: id })
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
-        toast('${isEs ? 'Contenido cargado: ' : 'Content loaded: '}' + r.chunks + ' chunks');
+        setCooldown('ki-cd-' + id);
+        toast('${isEs ? 'Entrenado: ' : 'Trained: '}' + r.chunks + ' chunks');
         location.reload();
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
   window.kiBulkVectorize = function() {
-    if (!confirm('${isEs ? '¿Generar embeddings para todo el contenido pendiente?' : 'Generate embeddings for all pending content?'}')) return;
-    toast('${isEs ? 'Generando embeddings...' : 'Generating embeddings...'}', 'info');
+    if (!confirm('${isEs ? '¿Entrenar todo el contenido pendiente?' : 'Train all pending content?'}')) return;
+    toast('${isEs ? 'Entrenando agente...' : 'Training agent...'}', 'info');
     fetch('/console/api/knowledge/vectorize', { method: 'POST' })
       .then(function(r) { return r.json(); })
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
-        toast('${isEs ? 'Embeddings en proceso' : 'Embeddings in progress'}');
+        setCooldown('ki-cd-bulk');
+        toast('${isEs ? 'Entrenamiento iniciado' : 'Training started'}');
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -1095,6 +1167,7 @@ function renderStyles(): string {
 .ki-icon-btn--share-on { color:#3b82f6; }
 .ki-icon-btn--share-on:hover { background:rgba(59,130,246,0.1); }
 .ki-icon-label { font-size:11px; font-weight:600; }
+.ki-cooldown-timer { font-size:11px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--on-surface-dim); }
 .ki-yt-hint { display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:10px 12px; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15); border-radius:0.5rem; font-size:12px; color:var(--on-surface-dim); line-height:1.4; }
 .ki-yt-hint svg { flex-shrink:0; margin-top:1px; color:#ef4444; }
 
