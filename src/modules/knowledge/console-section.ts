@@ -14,12 +14,16 @@ const t = (key: string, lang: Lang): string => {
     title: { es: 'Conocimiento adicional', en: 'Additional knowledge' },
     add_btn: { es: 'Agregar Conocimiento', en: 'Add Knowledge' },
     no_items: { es: 'No hay items de conocimiento. Agrega uno para comenzar.', en: 'No knowledge items. Add one to get started.' },
-    item_title: { es: 'Título', en: 'Title' },
-    item_desc: { es: 'Descripción', en: 'Description' },
-    item_category: { es: 'Categoría', en: 'Category' },
+    item_title: { es: 'Titulo', en: 'Title' },
+    item_desc: { es: 'Descripcion', en: 'Description' },
+    item_category: { es: 'Categoria', en: 'Category' },
     item_url: { es: 'URL de Google (Sheets, Docs o Drive)', en: 'Google URL (Sheets, Docs or Drive)' },
     save: { es: 'Guardar', en: 'Save' },
     cancel: { es: 'Cancelar', en: 'Cancel' },
+    next: { es: 'Siguiente', en: 'Next' },
+    skip: { es: 'Omitir', en: 'Skip' },
+    finish: { es: 'Finalizar', en: 'Finish' },
+    refresh: { es: 'Actualizar', en: 'Refresh' },
     scan_tabs: { es: 'Escanear Tabs', en: 'Scan Tabs' },
     scan_cols: { es: 'Escanear Columnas', en: 'Scan Columns' },
     load_content: { es: 'Cargar Contenido', en: 'Load Content' },
@@ -27,12 +31,14 @@ const t = (key: string, lang: Lang): string => {
     inactive: { es: 'Inactivo', en: 'Inactive' },
     core: { es: 'Core', en: 'Core' },
     delete_btn: { es: 'Eliminar', en: 'Delete' },
+    edit_btn: { es: 'Editar', en: 'Edit' },
+    configure_btn: { es: 'Configurar', en: 'Configure' },
     tabs: { es: 'Tabs', en: 'Tabs' },
     columns: { es: 'Columnas', en: 'Columns' },
     no_tabs: { es: 'Sin tabs escaneadas', en: 'No tabs scanned' },
     no_cols: { es: 'Sin columnas escaneadas', en: 'No columns scanned' },
-    tab_desc: { es: 'Descripción del tab', en: 'Tab description' },
-    col_desc: { es: 'Descripción', en: 'Description' },
+    tab_desc: { es: 'Descripcion del tab', en: 'Tab description' },
+    col_desc: { es: 'Descripcion', en: 'Description' },
     source_sheets: { es: 'Sheets', en: 'Sheets' },
     source_docs: { es: 'Docs', en: 'Docs' },
     source_drive: { es: 'Drive', en: 'Drive' },
@@ -44,10 +50,21 @@ const t = (key: string, lang: Lang): string => {
     content_loaded: { es: 'Contenido cargado', en: 'Content loaded' },
     not_loaded: { es: 'Sin cargar', en: 'Not loaded' },
     confirm_delete: { es: '¿Eliminar este item?', en: 'Delete this item?' },
-    settings_title: { es: 'Configuración', en: 'Settings' },
+    settings_title: { es: 'Configuracion', en: 'Settings' },
+    core_knowledge: { es: 'Conocimiento principal', en: 'Core knowledge' },
+    step_basic: { es: 'Informacion basica', en: 'Basic info' },
+    step_tabs: { es: 'Hojas / Tabs', en: 'Sheets / Tabs' },
+    step_columns: { es: 'Columnas', en: 'Columns' },
+    no_url_configured: { es: 'URL no configurada. Configura este recurso para comenzar.', en: 'URL not configured. Configure this resource to get started.' },
+    gen_embeddings: { es: 'Generar Embeddings', en: 'Generate Embeddings' },
+    categories: { es: 'Categorias', en: 'Categories' },
   }
   return map[key]?.[lang] ?? key
 }
+
+// ═══════════════════════════════════════════
+// Main export
+// ═══════════════════════════════════════════
 
 export function renderKnowledgeSection(
   items: KnowledgeItem[],
@@ -57,80 +74,22 @@ export function renderKnowledgeSection(
 ): string {
   let html = ''
 
-  // ── Core knowledge (FAQ + Productos y servicios) ──
-  const faqUrl = config?.faqSheetUrl ?? ''
-  const faqDesc = config?.faqDescription ?? ''
-  const productsUrl = config?.productsSheetUrl ?? ''
-  const productsDesc = config?.productsDescription ?? ''
-  const faqDescPlaceholder = lang === 'es'
-    ? 'Preguntas frecuentes del negocio. El agente consulta esta fuente para resolver dudas comunes de clientes sobre precios, horarios, politicas, procesos y servicios.'
-    : 'Business frequently asked questions. The agent queries this source to resolve common customer questions about pricing, hours, policies, processes and services.'
-  const productsDescPlaceholder = lang === 'es'
-    ? 'Catalogo de productos y servicios. El agente consulta esta fuente para informar sobre caracteristicas, precios, disponibilidad y comparaciones entre productos.'
-    : 'Products and services catalog. The agent queries this source to inform about features, pricing, availability and product comparisons.'
-  const faqReadonly = faqUrl ? ' readonly' : ''
-  const faqReadonlyStyle = faqUrl ? ';background:var(--surface-container-low);cursor:default' : ''
-  const productsReadonly = productsUrl ? ' readonly' : ''
-  const productsReadonlyStyle = productsUrl ? ';background:var(--surface-container-low);cursor:default' : ''
-  html += `<div class="panel" style="margin:0 0 24px 0;padding:0"><div class="panel-body" style="padding:20px">
-    <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${lang === 'es' ? 'Conocimiento principal' : 'Core knowledge'}</div>
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <label style="font-size:12px;font-weight:600">FAQ</label>
-          ${faqUrl ? `<button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiToggleCoreEdit(this)" style="font-size:11px;padding:3px 10px">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            ${lang === 'es' ? 'Editar' : 'Edit'}
-          </button>` : ''}
-        </div>
-        <input type="text" class="wizard-input" name="KNOWLEDGE_FAQ_SHEET_URL" value="${esc(faqUrl)}" data-original="${esc(faqUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..."${faqReadonly} style="font-size:13px${faqReadonlyStyle}">
-        <textarea class="wizard-input" name="KNOWLEDGE_FAQ_DESCRIPTION" data-original="${esc(faqDesc)}" placeholder="${faqDescPlaceholder}" rows="2"${faqReadonly} style="font-size:13px;margin-top:6px;resize:vertical${faqReadonlyStyle}">${esc(faqDesc)}</textarea>
-        <div style="display:flex;gap:6px;margin-top:6px">
-          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreTabs('faq')" style="font-size:11px">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
-            ${lang === 'es' ? 'Escanear Hojas' : 'Scan Sheets'}
-          </button>
-          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreColumns('faq')" style="font-size:11px">
-            ${lang === 'es' ? 'Escanear Columnas' : 'Scan Columns'}
-          </button>
-        </div>
-      </div>
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <label style="font-size:12px;font-weight:600">${lang === 'es' ? 'Productos y servicios' : 'Products & services'}</label>
-          ${productsUrl ? `<button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiToggleCoreEdit(this)" style="font-size:11px;padding:3px 10px">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            ${lang === 'es' ? 'Editar' : 'Edit'}
-          </button>` : ''}
-        </div>
-        <input type="text" class="wizard-input" name="KNOWLEDGE_PRODUCTS_SHEET_URL" value="${esc(productsUrl)}" data-original="${esc(productsUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..."${productsReadonly} style="font-size:13px${productsReadonlyStyle}">
-        <textarea class="wizard-input" name="KNOWLEDGE_PRODUCTS_DESCRIPTION" data-original="${esc(productsDesc)}" placeholder="${productsDescPlaceholder}" rows="2"${productsReadonly} style="font-size:13px;margin-top:6px;resize:vertical${productsReadonlyStyle}">${esc(productsDesc)}</textarea>
-        <div style="display:flex;gap:6px;margin-top:6px">
-          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreTabs('products')" style="font-size:11px">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
-            ${lang === 'es' ? 'Escanear Hojas' : 'Scan Sheets'}
-          </button>
-          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiScanCoreColumns('products')" style="font-size:11px">
-            ${lang === 'es' ? 'Escanear Columnas' : 'Scan Columns'}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div></div>`
+  // ── Core knowledge (FAQ + Products) ──
+  html += renderCoreKnowledgeCards(lang, config)
 
-  // ── Header with Add + Edit Categories buttons ──
+  // ── Header with Add + Edit Categories + Generate Embeddings ──
   html += `<div class="ki-header">
     <h2 class="ki-title">${t('title', lang)}</h2>
     <div style="display:flex;gap:8px;align-items:center">
-      <button type="button" class="act-btn act-btn-config" onclick="kiBulkVectorize()" style="font-size:13px">
+      <button type="button" class="act-btn act-btn-cta" onclick="kiBulkVectorize()" style="font-size:13px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        ${lang === 'es' ? 'Generar Embeddings' : 'Generate Embeddings'}
+        ${t('gen_embeddings', lang)}
       </button>
-      <button type="button" class="act-btn" onclick="kiOpenCategoriesModal()" style="font-size:13px">
+      <button type="button" class="act-btn act-btn-config" onclick="kiOpenCategoriesModal()" style="font-size:13px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        ${lang === 'es' ? 'Categorias' : 'Categories'}
+        ${t('categories', lang)}
       </button>
-      <button type="button" class="act-btn act-btn-cta" onclick="kiOpenAddModal()">
+      <button type="button" class="act-btn act-btn-add" onclick="kiOpenWizard()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         ${t('add_btn', lang)}
       </button>
@@ -148,8 +107,8 @@ export function renderKnowledgeSection(
     }
   }
 
-  // ── Add/Edit Modal ──
-  html += renderAddModal(categories, lang)
+  // ── Wizard Modal (3-step) ──
+  html += renderWizardModal(categories, lang)
 
   // ── Categories Edit Modal ──
   html += renderCategoriesModal(categories, lang)
@@ -163,12 +122,89 @@ export function renderKnowledgeSection(
   return html
 }
 
+// ═══════════════════════════════════════════
+// Core Knowledge Cards (FAQ + Products)
+// ═══════════════════════════════════════════
+
+function renderCoreKnowledgeCards(lang: Lang, config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string }): string {
+  const faqUrl = config?.faqSheetUrl ?? ''
+  const faqDesc = config?.faqDescription ?? ''
+  const productsUrl = config?.productsSheetUrl ?? ''
+  const productsDesc = config?.productsDescription ?? ''
+
+  const faqDefaultDesc = lang === 'es'
+    ? 'Preguntas frecuentes del negocio. El agente consulta esta fuente para resolver dudas comunes de clientes sobre precios, horarios, politicas, procesos y servicios.'
+    : 'Business FAQ. The agent queries this source to resolve common questions about pricing, hours, policies, processes and services.'
+  const productsDefaultDesc = lang === 'es'
+    ? 'Catalogo de productos y servicios. El agente consulta esta fuente para informar sobre caracteristicas, precios, disponibilidad y comparaciones entre productos.'
+    : 'Products and services catalog. The agent queries this source to inform about features, pricing, availability and comparisons.'
+
+  const faqDisplayDesc = faqDesc || faqDefaultDesc
+  const productsDisplayDesc = productsDesc || productsDefaultDesc
+
+  function coreCard(key: string, title: string, url: string, desc: string, defaultDesc: string): string {
+    const hasUrl = !!url
+    const statusBadge = hasUrl
+      ? `<span class="ki-badge ki-badge-loaded">${lang === 'es' ? 'Configurado' : 'Configured'}</span>`
+      : `<span class="ki-badge ki-badge-pending">${lang === 'es' ? 'Sin configurar' : 'Not configured'}</span>`
+
+    if (!hasUrl) {
+      return `<div class="panel ki-core-card">
+        <div class="ki-core-card-header">
+          <div>
+            <div class="ki-core-card-title">${esc(title)} ${statusBadge}</div>
+            <p class="ki-core-card-desc">${esc(desc)}</p>
+          </div>
+          <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiOpenWizardForCore('${esc(key)}', ${JSON.stringify(title)}, ${JSON.stringify(defaultDesc)}, '')">
+            ${t('configure_btn', lang)}
+          </button>
+        </div>
+        <p class="ki-core-card-notice">${t('no_url_configured', lang)}</p>
+      </div>`
+    }
+
+    return `<div class="panel ki-core-card">
+      <div class="ki-core-card-header">
+        <div style="flex:1;min-width:0">
+          <div class="ki-core-card-title">${esc(title)} ${statusBadge} <span class="ki-badge ki-badge-core">Core</span></div>
+          <p class="ki-core-card-desc">${esc(desc)}</p>
+          <p class="ki-core-card-url">${esc(url)}</p>
+        </div>
+        <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiOpenWizardForCore('${esc(key)}', ${JSON.stringify(title)}, ${JSON.stringify(desc)}, ${JSON.stringify(url)})">
+          ${t('edit_btn', lang)}
+        </button>
+      </div>
+    </div>`
+  }
+
+  return `<div class="panel" style="margin:0 0 24px 0;padding:0"><div class="panel-body" style="padding:20px">
+    <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${t('core_knowledge', lang)}</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${coreCard('faq', 'FAQ', faqUrl, faqDisplayDesc, faqDefaultDesc)}
+      ${coreCard('products', lang === 'es' ? 'Productos y servicios' : 'Products & services', productsUrl, productsDisplayDesc, productsDefaultDesc)}
+    </div>
+  </div></div>`
+}
+
+// ═══════════════════════════════════════════
+// Item Card
+// ═══════════════════════════════════════════
+
 function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], lang: Lang): string {
   const sourceLabel = t(`source_${item.sourceType}`, lang)
   const statusLabel = t(`status_${item.embeddingStatus}`, lang)
   const statusClass = `ki-status-${item.embeddingStatus}`
   const category = categories.find(c => c.id === item.categoryId)
   const isInactive = !item.active
+
+  // Serialize item data for the wizard
+  const itemData = JSON.stringify({
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    categoryId: item.categoryId ?? '',
+    sourceUrl: item.sourceUrl,
+  }).replace(/'/g, '&#39;').replace(/</g, '\\u003c')
 
   let html = `<div class="panel ki-item ${isInactive ? 'ki-item-inactive' : ''}" data-item-id="${esc(item.id)}">
     <div class="ki-item-header">
@@ -192,9 +228,9 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
   </label>`
 
   // Edit button
-  html += `<button type="button" class="act-btn" onclick="kiOpenEditModal('${esc(item.id)}', ${JSON.stringify(esc(item.title)).replace(/'/g, '\\\'')}, ${JSON.stringify(esc(item.description)).replace(/'/g, '\\\'')}, '${esc(item.categoryId ?? '')}', ${JSON.stringify(esc(item.sourceUrl)).replace(/'/g, '\\\'')})" style="font-size:11px;padding:4px 10px">
+  html += `<button type="button" class="act-btn act-btn-config act-btn--compact" onclick='kiOpenWizardEdit(${itemData})'>
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-    ${lang === 'es' ? ' Editar' : ' Edit'}
+    ${t('edit_btn', lang)}
   </button>`
 
   // Active toggle
@@ -204,6 +240,13 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
     <span class="toggle-slider"></span>
   </label>`
 
+  // Load Content button
+  html += `<button type="button" class="act-btn act-btn-add act-btn--compact"
+    onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    ${t('load_content', lang)}
+  </button>`
+
   // Delete (only if inactive)
   if (isInactive) {
     html += `<button type="button" class="act-btn act-btn-remove act-btn--compact"
@@ -212,65 +255,12 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 
   html += `</div></div>` // close actions + header
 
-  // ── Tabs section ──
-  html += `<div class="ki-tabs-section">
-    <div class="ki-tabs-header">
-      <span class="ki-section-label">${t('tabs', lang)}</span>
-      <button type="button" class="act-btn act-btn-config act-btn--compact"
-        onclick="kiScanTabs('${esc(item.id)}')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
-        ${t('scan_tabs', lang)}
-      </button>
-    </div>`
-
-  if (item.tabs && item.tabs.length > 0) {
-    html += `<div class="ki-tabs-list">`
-    for (const tab of item.tabs) {
-      html += `<div class="ki-tab-row" data-tab-id="${esc(tab.id)}">
-        <div class="ki-tab-name">${esc(tab.tabName)}</div>
-        <input type="text" class="ki-tab-desc-input" placeholder="${t('tab_desc', lang)}"
-          value="${esc(tab.description)}" onblur="kiSaveTabDesc('${esc(tab.id)}', this.value)" />
-        <button type="button" class="act-btn act-btn-config act-btn--compact"
-          onclick="kiScanColumns('${esc(tab.id)}', '${esc(item.id)}')">
-          ${t('scan_cols', lang)}
-        </button>`
-
-      // Columns
-      if (tab.columns && tab.columns.length > 0) {
-        html += `<div class="ki-columns-list">`
-        for (const col of tab.columns) {
-          html += `<div class="ki-col-row" data-col-id="${esc(col.id)}">
-            <span class="ki-col-name">${esc(col.columnName)}</span>
-            <input type="text" class="ki-col-desc-input" placeholder="${t('col_desc', lang)}"
-              value="${esc(col.description)}" onblur="kiSaveColDesc('${esc(col.id)}', this.value)" />
-          </div>`
-        }
-        html += `</div>`
-      }
-
-      html += `</div>` // close tab-row
+  // ── Content status line ──
+  html += `<div class="ki-load-status-line">
+    ${item.contentLoaded
+      ? `<span class="ki-badge ki-badge-loaded">${t('content_loaded', lang)} — ${item.chunkCount} ${t('chunks', lang)}</span>`
+      : `<span class="ki-badge ki-badge-pending">${t('not_loaded', lang)}</span>`
     }
-    html += `</div>`
-  } else {
-    html += `<p class="ki-empty-note">${t('no_tabs', lang)}</p>`
-  }
-
-  html += `</div>` // close tabs-section
-
-  // ── Load Content button ──
-  html += `<div class="ki-load-section">
-    <button type="button" class="act-btn act-btn-cta"
-      onclick="kiLoadContent('${esc(item.id)}')"
-      ${!item.active ? 'disabled' : ''}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      ${t('load_content', lang)}
-    </button>
-    <span class="ki-load-status">
-      ${item.contentLoaded
-        ? `<span class="ki-badge ki-badge-loaded">${t('content_loaded', lang)} — ${item.chunkCount} ${t('chunks', lang)}</span>`
-        : `<span class="ki-badge ki-badge-pending">${t('not_loaded', lang)}</span>`
-      }
-    </span>
   </div>`
 
   html += `</div>` // close panel
@@ -278,52 +268,103 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
   return html
 }
 
-function renderAddModal(categories: KnowledgeCategory[], lang: Lang): string {
-  return `<div id="ki-modal" class="wizard-overlay" style="display:none">
-    <div class="wizard-modal" style="position:relative">
-      <button type="button" class="wizard-close" onclick="kiCloseModal()">&times;</button>
+// ═══════════════════════════════════════════
+// Wizard Modal (3-step)
+// ═══════════════════════════════════════════
+
+function renderWizardModal(categories: KnowledgeCategory[], lang: Lang): string {
+  const isEs = lang === 'es'
+
+  return `<div id="ki-wizard" class="wizard-overlay" style="display:none">
+    <div class="wizard-modal" style="position:relative;max-width:640px">
+      <button type="button" class="wizard-close" onclick="kiCloseWizard()">&times;</button>
+
+      <!-- Step indicators -->
       <div class="wizard-steps">
-        <div class="wizard-title">${t('add_btn', lang)}</div>
-        <form id="ki-form" onsubmit="kiSubmitForm(event)">
-          <div class="wizard-form">
-            <label class="wizard-label">${t('item_title', lang)} *</label>
-            <input type="text" id="ki-f-title" class="wizard-input" required maxlength="120" onfocus="kiClearError('title')" />
-            <div class="wizard-field-error" id="ki-err-title"></div>
+        <div class="ki-wiz-step-indicators">
+          <span class="ki-wiz-step-dot ki-wiz-step-active" data-step="1">1. ${t('step_basic', lang)}</span>
+          <span class="ki-wiz-step-dot" data-step="2">2. ${t('step_tabs', lang)}</span>
+          <span class="ki-wiz-step-dot" data-step="3">3. ${t('step_columns', lang)}</span>
+        </div>
+      </div>
+
+      <!-- Step 1: Basic Info -->
+      <div id="ki-wiz-step1" class="ki-wiz-panel">
+        <div class="wizard-title">${t('step_basic', lang)}</div>
+        <div class="ki-wiz-form-group">
+          <label class="wizard-label">${t('item_title', lang)} *</label>
+          <input type="text" id="ki-wiz-title" class="wizard-input" required maxlength="120" onfocus="kiWizClearErr('title')" />
+          <div class="wizard-field-error" id="ki-wiz-err-title"></div>
+        </div>
+        <div class="ki-wiz-form-group">
+          <label class="wizard-label">${t('item_desc', lang)} *</label>
+          <textarea id="ki-wiz-desc" class="wizard-input" rows="3" required minlength="20" maxlength="200" onfocus="kiWizClearErr('desc')" style="resize:vertical"
+            placeholder="${isEs ? 'Min. 20 caracteres. Describe el contenido para que el agente lo use como contexto.' : 'Min. 20 chars. Describe the content so the agent can use it as context.'}"></textarea>
+          <div class="wizard-field-error" id="ki-wiz-err-desc"></div>
+        </div>
+        <div class="ki-wiz-form-group">
+          <label class="wizard-label">${t('item_category', lang)}</label>
+          <div class="ki-tags-picker" id="ki-wiz-category-tags">
+            ${categories.map(c => `<span class="ki-tag-option" data-cat-id="${esc(c.id)}" onclick="kiWizToggleCatTag(this)">${esc(c.title)}</span>`).join('')}
           </div>
-          <div class="wizard-form">
-            <label class="wizard-label">${t('item_desc', lang)} *</label>
-            <textarea id="ki-f-desc" class="wizard-input" rows="2" required minlength="20" maxlength="200" onfocus="kiClearError('desc')" style="resize:vertical"
-              placeholder="${lang === 'es' ? 'Min. 20 caracteres. Describe el contenido para que el agente lo use como contexto.' : 'Min. 20 chars. Describe the content so the agent can use it as context.'}"></textarea>
-            <div class="wizard-field-error" id="ki-err-desc"></div>
-          </div>
-          <div class="wizard-form">
-            <label class="wizard-label">${t('item_category', lang)}</label>
-            <div class="ki-tags-picker" id="ki-f-category-tags">
-              ${categories.map(c => `<span class="ki-tag-option" data-cat-id="${esc(c.id)}" onclick="kiToggleCatTag(this)">${esc(c.title)}</span>`).join('')}
-            </div>
-            <input type="hidden" id="ki-f-category" />
-          </div>
-          <div class="wizard-form">
-            <label class="wizard-label">${t('item_url', lang)} *</label>
-            <input type="url" id="ki-f-url" class="wizard-input" required placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiClearError('url')" />
-            <div class="wizard-field-error" id="ki-err-url"></div>
-          </div>
-          <div class="wizard-actions">
-            <button type="button" class="act-btn act-btn-config" onclick="kiCloseModal()">${t('cancel', lang)}</button>
-            <button type="submit" class="act-btn act-btn-cta">${t('save', lang)}</button>
-          </div>
-        </form>
+          <input type="hidden" id="ki-wiz-category" />
+        </div>
+        <div class="ki-wiz-form-group">
+          <label class="wizard-label">${t('item_url', lang)} *</label>
+          <input type="url" id="ki-wiz-url" class="wizard-input" required placeholder="https://docs.google.com/spreadsheets/d/..." onfocus="kiWizClearErr('url')" />
+          <div class="wizard-field-error" id="ki-wiz-err-url"></div>
+        </div>
+        <div class="wizard-actions">
+          <button type="button" class="act-btn act-btn-config" onclick="kiCloseWizard()">${t('cancel', lang)}</button>
+          <button type="button" class="act-btn act-btn-cta" id="ki-wiz-next1" onclick="kiWizStep1Next()">${t('next', lang)}</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Tabs -->
+      <div id="ki-wiz-step2" class="ki-wiz-panel" style="display:none">
+        <div class="wizard-title">${t('step_tabs', lang)}</div>
+        <div id="ki-wiz-tabs-list" class="ki-wiz-tabs-container">
+          <p class="ki-empty-note">${t('no_tabs', lang)}</p>
+        </div>
+        <div class="wizard-actions">
+          <button type="button" class="act-btn act-btn-config" onclick="kiWizRefreshTabs()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            ${t('refresh', lang)}
+          </button>
+          <button type="button" class="act-btn act-btn-config" onclick="kiWizSkipToFinish()">${t('skip', lang)}</button>
+          <button type="button" class="act-btn act-btn-cta" id="ki-wiz-next2" onclick="kiWizStep2Next()">${t('next', lang)}</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Columns -->
+      <div id="ki-wiz-step3" class="ki-wiz-panel" style="display:none">
+        <div class="wizard-title">${t('step_columns', lang)}</div>
+        <div id="ki-wiz-col-tab-nav" class="ki-wiz-col-tab-nav"></div>
+        <div id="ki-wiz-cols-list" class="ki-wiz-cols-container">
+          <p class="ki-empty-note">${t('no_cols', lang)}</p>
+        </div>
+        <div class="wizard-actions">
+          <button type="button" class="act-btn act-btn-config" onclick="kiWizRefreshCols()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            ${t('refresh', lang)}
+          </button>
+          <button type="button" class="act-btn act-btn-cta" onclick="kiWizFinish()">${t('finish', lang)}</button>
+        </div>
       </div>
     </div>
   </div>`
 }
 
+// ═══════════════════════════════════════════
+// Categories Modal
+// ═══════════════════════════════════════════
+
 function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): string {
   const isEs = lang === 'es'
   const rows = categories.map(c => `<div class="ki-cat-row" data-cat-id="${esc(c.id)}">
     <input type="text" class="ki-cat-name-input" value="${esc(c.title)}" maxlength="60" />
-    <button type="button" class="act-btn act-btn-danger" onclick="kiDeleteCategory('${esc(c.id)}', this)" style="font-size:11px;padding:4px 10px">${isEs ? 'Eliminar' : 'Delete'}</button>
-    <button type="button" class="act-btn" onclick="kiRenameCategory('${esc(c.id)}', this)" style="font-size:11px;padding:4px 10px">${isEs ? 'Guardar' : 'Save'}</button>
+    <button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteCategory('${esc(c.id)}', this)">${isEs ? 'Eliminar' : 'Delete'}</button>
+    <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiRenameCategory('${esc(c.id)}', this)">${isEs ? 'Guardar' : 'Save'}</button>
   </div>`).join('')
 
   return `<div id="ki-cat-modal" class="wizard-overlay" style="display:none">
@@ -341,346 +382,495 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
   </div>`
 }
 
+// ═══════════════════════════════════════════
+// Client Script
+// ═══════════════════════════════════════════
+
 function renderClientScript(lang: Lang): string {
+  const isEs = lang === 'es'
   return `<script>(function(){
-  var API = '/console/api/knowledge/items'
+  var API = '/console/api/knowledge/items';
 
   function toast(msg, type) {
-    if (window.showToast) window.showToast(msg, type || 'success')
+    if (window.showToast) window.showToast(msg, type || 'success');
   }
 
   function api(path, method, body) {
-    var opts = { method: method || 'GET', headers: {} }
+    var opts = { method: method || 'GET', headers: {} };
     if (body) {
-      opts.headers['Content-Type'] = 'application/json'
-      opts.body = JSON.stringify(body)
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
     }
-    return fetch(API + (path || ''), opts).then(function(r) { return r.json() })
+    return fetch(API + (path || ''), opts).then(function(r) { return r.json(); });
   }
 
-  function showError(field, msg) {
-    var el = document.getElementById('ki-err-' + field)
-    var input = document.getElementById('ki-f-' + field)
-    if (el) { el.textContent = msg; el.style.display = 'block' }
-    if (input) input.classList.add('invalid')
+  // ── Wizard state ──
+  var wizState = {
+    itemId: null,
+    editing: false,
+    coreKey: null,
+    tabs: [],
+    activeTabIdx: 0,
+    step: 1,
+  };
+
+  // ── Error helpers ──
+  function wizShowErr(field, msg) {
+    var el = document.getElementById('ki-wiz-err-' + field);
+    var input = document.getElementById('ki-wiz-' + field);
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+    if (input) input.classList.add('invalid');
   }
 
-  window.kiClearError = function(field) {
-    var el = document.getElementById('ki-err-' + field)
-    var input = document.getElementById('ki-f-' + field)
-    if (el) { el.textContent = ''; el.style.display = 'none' }
-    if (input) input.classList.remove('invalid')
+  window.kiWizClearErr = function(field) {
+    var el = document.getElementById('ki-wiz-err-' + field);
+    var input = document.getElementById('ki-wiz-' + field);
+    if (el) { el.textContent = ''; el.style.display = 'none'; }
+    if (input) input.classList.remove('invalid');
+  };
+
+  function wizClearAllErr() {
+    ['title', 'desc', 'url'].forEach(function(f) { window.kiWizClearErr(f); });
   }
 
-  function clearAllErrors() {
-    ['title', 'desc', 'url'].forEach(function(f) { kiClearError(f) })
+  // ── Wizard open/close ──
+  function showStep(n) {
+    wizState.step = n;
+    for (var i = 1; i <= 3; i++) {
+      var panel = document.getElementById('ki-wiz-step' + i);
+      if (panel) panel.style.display = i === n ? '' : 'none';
+    }
+    var dots = document.querySelectorAll('.ki-wiz-step-dot');
+    for (var j = 0; j < dots.length; j++) {
+      var stepNum = parseInt(dots[j].getAttribute('data-step') || '0', 10);
+      if (stepNum <= n) dots[j].classList.add('ki-wiz-step-active');
+      else dots[j].classList.remove('ki-wiz-step-active');
+    }
   }
 
-  var editingItemId = null
+  window.kiOpenWizard = function() {
+    wizState = { itemId: null, editing: false, coreKey: null, tabs: [], activeTabIdx: 0, step: 1 };
+    document.getElementById('ki-wizard').style.display = '';
+    document.getElementById('ki-wiz-title').value = '';
+    document.getElementById('ki-wiz-desc').value = '';
+    document.getElementById('ki-wiz-category').value = '';
+    var urlInput = document.getElementById('ki-wiz-url');
+    urlInput.value = '';
+    urlInput.disabled = false;
+    resetTags();
+    wizClearAllErr();
+    showStep(1);
+    setTimeout(function() { document.getElementById('ki-wiz-title').focus(); }, 100);
+  };
 
-  window.kiOpenAddModal = function() {
-    editingItemId = null
-    document.getElementById('ki-modal').style.display = ''
-    document.getElementById('ki-f-title').value = ''
-    document.getElementById('ki-f-desc').value = ''
-    document.getElementById('ki-f-category').value = ''
-    var urlInput = document.getElementById('ki-f-url')
-    urlInput.value = ''
-    urlInput.disabled = false
-    // Reset tags
-    var tags = document.querySelectorAll('.ki-tag-option')
-    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected')
-    clearAllErrors()
-    var h3 = document.querySelector('#ki-modal .ki-modal-header h3')
-    if (h3) h3.textContent = '${lang === 'es' ? 'Agregar Conocimiento' : 'Add Knowledge'}'
-    setTimeout(function() { document.getElementById('ki-f-title').focus() }, 100)
+  window.kiOpenWizardEdit = function(data) {
+    wizState = { itemId: data.id, editing: true, coreKey: null, tabs: [], activeTabIdx: 0, step: 1 };
+    document.getElementById('ki-wizard').style.display = '';
+    document.getElementById('ki-wiz-title').value = data.title;
+    document.getElementById('ki-wiz-desc').value = data.description;
+    document.getElementById('ki-wiz-category').value = data.categoryId || '';
+    var urlInput = document.getElementById('ki-wiz-url');
+    urlInput.value = data.sourceUrl;
+    urlInput.disabled = true;
+    setTagSelection(data.categoryId || '');
+    wizClearAllErr();
+    showStep(1);
+    setTimeout(function() { document.getElementById('ki-wiz-title').focus(); }, 100);
+  };
+
+  window.kiOpenWizardForCore = function(key, title, desc, url) {
+    wizState = { itemId: null, editing: !!url, coreKey: key, tabs: [], activeTabIdx: 0, step: 1 };
+    document.getElementById('ki-wizard').style.display = '';
+    document.getElementById('ki-wiz-title').value = title;
+    document.getElementById('ki-wiz-desc').value = desc;
+    document.getElementById('ki-wiz-category').value = '';
+    var urlInput = document.getElementById('ki-wiz-url');
+    urlInput.value = url;
+    urlInput.disabled = !!url;
+    resetTags();
+    wizClearAllErr();
+    showStep(1);
+    setTimeout(function() { (url ? document.getElementById('ki-wiz-desc') : document.getElementById('ki-wiz-url')).focus(); }, 100);
+  };
+
+  window.kiCloseWizard = function() {
+    document.getElementById('ki-wizard').style.display = 'none';
+  };
+
+  // ── Tag picker ──
+  function resetTags() {
+    var tags = document.querySelectorAll('#ki-wiz-category-tags .ki-tag-option');
+    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected');
   }
 
-  window.kiOpenEditModal = function(id, title, desc, catId, url) {
-    editingItemId = id
-    document.getElementById('ki-modal').style.display = ''
-    document.getElementById('ki-f-title').value = title
-    document.getElementById('ki-f-desc').value = desc
-    var urlInput = document.getElementById('ki-f-url')
-    urlInput.value = url
-    urlInput.disabled = true
-    document.getElementById('ki-f-category').value = catId || ''
-    // Set tag selection
-    var tags = document.querySelectorAll('.ki-tag-option')
+  function setTagSelection(catId) {
+    var tags = document.querySelectorAll('#ki-wiz-category-tags .ki-tag-option');
     for (var i = 0; i < tags.length; i++) {
-      if (tags[i].getAttribute('data-cat-id') === catId) tags[i].classList.add('ki-tag-selected')
-      else tags[i].classList.remove('ki-tag-selected')
+      if (tags[i].getAttribute('data-cat-id') === catId) tags[i].classList.add('ki-tag-selected');
+      else tags[i].classList.remove('ki-tag-selected');
     }
-    clearAllErrors()
-    var h3 = document.querySelector('#ki-modal .ki-modal-header h3')
-    if (h3) h3.textContent = '${lang === 'es' ? 'Editar Conocimiento' : 'Edit Knowledge'}'
-    setTimeout(function() { document.getElementById('ki-f-title').focus() }, 100)
   }
 
-  window.kiCloseModal = function() {
-    document.getElementById('ki-modal').style.display = 'none'
-  }
+  window.kiWizToggleCatTag = function(el) {
+    var tags = el.parentNode.querySelectorAll('.ki-tag-option');
+    var wasSelected = el.classList.contains('ki-tag-selected');
+    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected');
+    if (!wasSelected) el.classList.add('ki-tag-selected');
+    document.getElementById('ki-wiz-category').value = wasSelected ? '' : el.getAttribute('data-cat-id');
+  };
 
-  window.kiSubmitForm = function(e) {
-    e.preventDefault()
-    clearAllErrors()
-    var title = document.getElementById('ki-f-title').value.trim()
-    var desc = document.getElementById('ki-f-desc').value.trim()
-    var cat = document.getElementById('ki-f-category').value
-    var url = document.getElementById('ki-f-url').value.trim()
-    var hasErr = false
-    if (!title) { showError('title', '${lang === 'es' ? 'El titulo es requerido' : 'Title is required'}'); hasErr = true }
-    if (!desc || desc.length < 20) { showError('desc', '${lang === 'es' ? 'La descripcion es requerida (min. 20 caracteres)' : 'Description is required (min. 20 characters)'}'); hasErr = true }
-    if (!url) { showError('url', '${lang === 'es' ? 'La URL es requerida' : 'URL is required'}'); hasErr = true }
-    if (hasErr) return
+  // ── Step 1: Next ──
+  window.kiWizStep1Next = function() {
+    wizClearAllErr();
+    var title = document.getElementById('ki-wiz-title').value.trim();
+    var desc = document.getElementById('ki-wiz-desc').value.trim();
+    var cat = document.getElementById('ki-wiz-category').value;
+    var url = document.getElementById('ki-wiz-url').value.trim();
+    var hasErr = false;
+    if (!title) { wizShowErr('title', '${isEs ? 'El titulo es requerido' : 'Title is required'}'); hasErr = true; }
+    if (!desc || desc.length < 20) { wizShowErr('desc', '${isEs ? 'La descripcion es requerida (min. 20 caracteres)' : 'Description is required (min. 20 characters)'}'); hasErr = true; }
+    if (!url) { wizShowErr('url', '${isEs ? 'La URL es requerida' : 'URL is required'}'); hasErr = true; }
+    if (hasErr) return;
 
-    var submitBtn = document.querySelector('#ki-form .act-btn-cta')
+    var btn = document.getElementById('ki-wiz-next1');
+    if (btn) { btn.disabled = true; btn.textContent = '${isEs ? 'Procesando...' : 'Processing...'}'; }
 
-    // Edit mode: skip URL verification, just update
-    if (editingItemId) {
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '${lang === 'es' ? 'Guardando...' : 'Saving...'}' }
-      api('', 'PUT', { id: editingItemId, title: title, description: desc, categoryId: cat || undefined })
+    if (wizState.editing && wizState.itemId) {
+      // Update existing item
+      api('', 'PUT', { id: wizState.itemId, title: title, description: desc, categoryId: cat || undefined })
         .then(function(r) {
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
-          if (r.error) { showError('title', r.error); return }
-          toast('${lang === 'es' ? 'Conocimiento actualizado' : 'Knowledge updated'}')
-          window.kiCloseModal()
-          location.reload()
+          if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+          if (r.error) { wizShowErr('title', r.error); return; }
+          toast('${isEs ? 'Actualizado' : 'Updated'}');
+          loadTabsAndGoStep2();
         })
         .catch(function(err) {
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
-          toast(String(err), 'error')
-        })
-      return
+          if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+          toast(String(err), 'error');
+        });
+      return;
     }
 
-    // Add mode: verify URL accessibility first
-    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '${lang === 'es' ? 'Verificando...' : 'Verifying...'}' }
+    // Creating new item: verify URL, create item, scan tabs
     api('/verify-url', 'POST', { sourceUrl: url })
       .then(function(v) {
         if (v.accessible === false) {
-          showError('url', v.error || '${lang === 'es' ? 'No se puede acceder al recurso' : 'Cannot access the resource'}')
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
-          return
+          wizShowErr('url', v.error || '${isEs ? 'No se puede acceder al recurso' : 'Cannot access the resource'}');
+          if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+          return null;
         }
-        return api('', 'POST', { title: title, description: desc, categoryId: cat || undefined, sourceUrl: url })
+        return api('', 'POST', { title: title, description: desc, categoryId: cat || undefined, sourceUrl: url });
       })
       .then(function(r) {
-        if (!r) return
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
-        if (r.error) { showError('url', r.error); return }
-        toast('${lang === 'es' ? 'Conocimiento agregado' : 'Knowledge added'}')
-        window.kiCloseModal()
-        location.reload()
+        if (!r) return;
+        if (r.error) {
+          wizShowErr('url', r.error);
+          if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+          return;
+        }
+        wizState.itemId = r.id || r.item?.id;
+        wizState.editing = true;
+        toast('${isEs ? 'Conocimiento creado' : 'Knowledge created'}');
+        // Auto-scan tabs
+        return api('/scan-tabs', 'POST', { id: wizState.itemId });
+      })
+      .then(function(r) {
+        if (!r) return;
+        if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+        if (r.tabs) wizState.tabs = r.tabs;
+        renderWizTabs();
+        showStep(2);
       })
       .catch(function(err) {
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '${t('save', lang)}' }
-        toast(String(err), 'error')
+        if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+        toast(String(err), 'error');
+      });
+  };
+
+  function loadTabsAndGoStep2() {
+    api('/scan-tabs', 'POST', { id: wizState.itemId })
+      .then(function(r) {
+        if (r.tabs) wizState.tabs = r.tabs;
+        renderWizTabs();
+        showStep(2);
       })
+      .catch(function(err) { toast(String(err), 'error'); });
   }
 
+  // ── Step 2: Tabs rendering ──
+  function renderWizTabs() {
+    var container = document.getElementById('ki-wiz-tabs-list');
+    if (!container) return;
+    if (!wizState.tabs || wizState.tabs.length === 0) {
+      container.innerHTML = '<p class="ki-empty-note">${t('no_tabs', lang)}</p>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < wizState.tabs.length; i++) {
+      var tab = wizState.tabs[i];
+      html += '<div class="ki-wiz-tab-row" data-tab-id="' + esc(tab.id) + '">'
+        + '<div class="ki-wiz-tab-name">' + esc(tab.tabName || tab.tab_name || '') + '</div>'
+        + '<textarea class="wizard-input ki-wiz-tab-desc" rows="2" placeholder="${t('tab_desc', lang)}"'
+        + ' onblur="kiWizSaveTabDesc(\\'' + esc(tab.id) + '\\', this.value)"'
+        + ' style="resize:vertical;font-size:13px;margin-top:4px">' + esc(tab.description || '') + '</textarea>'
+        + '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  window.kiWizSaveTabDesc = function(tabId, desc) {
+    api('/tab-description', 'PUT', { tabId: tabId, description: desc }).catch(function() {});
+  };
+
+  window.kiWizRefreshTabs = function() {
+    if (!wizState.itemId) return;
+    toast('${isEs ? 'Escaneando tabs...' : 'Scanning tabs...'}', 'info');
+    api('/scan-tabs', 'POST', { id: wizState.itemId })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        if (r.tabs) wizState.tabs = r.tabs;
+        renderWizTabs();
+        toast('${isEs ? 'Tabs actualizadas' : 'Tabs refreshed'}');
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
+  // ── Step 2: Next (scan columns, go to step 3) ──
+  window.kiWizStep2Next = function() {
+    if (!wizState.tabs || wizState.tabs.length === 0) {
+      toast('${isEs ? 'No hay tabs para escanear columnas' : 'No tabs to scan columns for'}', 'error');
+      return;
+    }
+    var btn = document.getElementById('ki-wiz-next2');
+    if (btn) { btn.disabled = true; btn.textContent = '${isEs ? 'Escaneando...' : 'Scanning...'}'; }
+
+    // Scan columns for all tabs sequentially
+    var chain = Promise.resolve();
+    wizState.tabs.forEach(function(tab) {
+      chain = chain.then(function() {
+        return api('/scan-columns', 'POST', { tabId: tab.id }).then(function(r) {
+          if (r.columns) tab.columns = r.columns;
+        });
+      });
+    });
+    chain.then(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+      renderWizCols();
+      showStep(3);
+    }).catch(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
+      toast(String(err), 'error');
+    });
+  };
+
+  window.kiWizSkipToFinish = function() {
+    toast('${isEs ? 'Listo' : 'Done'}');
+    window.kiCloseWizard();
+    location.reload();
+  };
+
+  // ── Step 3: Columns rendering ──
+  function renderWizCols() {
+    var navEl = document.getElementById('ki-wiz-col-tab-nav');
+    var listEl = document.getElementById('ki-wiz-cols-list');
+    if (!navEl || !listEl) return;
+
+    if (!wizState.tabs || wizState.tabs.length === 0) {
+      navEl.innerHTML = '';
+      listEl.innerHTML = '<p class="ki-empty-note">${t('no_cols', lang)}</p>';
+      return;
+    }
+
+    // Tab navigation
+    var navHtml = '';
+    for (var i = 0; i < wizState.tabs.length; i++) {
+      var active = i === wizState.activeTabIdx ? ' ki-wiz-col-tab-active' : '';
+      navHtml += '<button type="button" class="act-btn act-btn-config act-btn--compact ki-wiz-col-tab-btn' + active + '" onclick="kiWizSelectColTab(' + i + ')">'
+        + esc(wizState.tabs[i].tabName || wizState.tabs[i].tab_name || 'Tab ' + (i + 1)) + '</button>';
+    }
+    navEl.innerHTML = navHtml;
+
+    renderColsForActiveTab(listEl);
+  }
+
+  function renderColsForActiveTab(listEl) {
+    if (!listEl) listEl = document.getElementById('ki-wiz-cols-list');
+    if (!listEl) return;
+    var tab = wizState.tabs[wizState.activeTabIdx];
+    if (!tab || !tab.columns || tab.columns.length === 0) {
+      listEl.innerHTML = '<p class="ki-empty-note">${t('no_cols', lang)}</p>';
+      return;
+    }
+    var html = '';
+    for (var j = 0; j < tab.columns.length; j++) {
+      var col = tab.columns[j];
+      html += '<div class="ki-wiz-col-row">'
+        + '<span class="ki-wiz-col-name">' + esc(col.columnName || col.column_name || '') + '</span>'
+        + '<input type="text" class="wizard-input ki-wiz-col-desc" placeholder="${t('col_desc', lang)}"'
+        + ' value="' + esc(col.description || '') + '"'
+        + ' onblur="kiWizSaveColDesc(\\'' + esc(col.id) + '\\', this.value)" />'
+        + '</div>';
+    }
+    listEl.innerHTML = html;
+  }
+
+  window.kiWizSelectColTab = function(idx) {
+    wizState.activeTabIdx = idx;
+    renderWizCols();
+  };
+
+  window.kiWizSaveColDesc = function(colId, desc) {
+    api('/column-description', 'PUT', { columnId: colId, description: desc }).catch(function() {});
+  };
+
+  window.kiWizRefreshCols = function() {
+    if (!wizState.tabs || wizState.tabs.length === 0) return;
+    var tab = wizState.tabs[wizState.activeTabIdx];
+    if (!tab) return;
+    toast('${isEs ? 'Escaneando columnas...' : 'Scanning columns...'}', 'info');
+    api('/scan-columns', 'POST', { tabId: tab.id })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        if (r.columns) tab.columns = r.columns;
+        renderColsForActiveTab(null);
+        toast('${isEs ? 'Columnas actualizadas' : 'Columns refreshed'}');
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
+  window.kiWizFinish = function() {
+    toast('${isEs ? 'Listo' : 'Done'}');
+    window.kiCloseWizard();
+    location.reload();
+  };
+
+  // ── Item actions (outside wizard) ──
   window.kiToggleActive = function(id, active) {
     api('/active', 'PUT', { id: id, active: active })
       .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast(active ? '${lang === 'es' ? 'Activado' : 'Activated'}' : '${lang === 'es' ? 'Desactivado' : 'Deactivated'}')
-        location.reload()
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast(active ? '${isEs ? 'Activado' : 'Activated'}' : '${isEs ? 'Desactivado' : 'Deactivated'}');
+        location.reload();
       })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
 
   window.kiToggleCore = function(id, isCore) {
     api('/core', 'PUT', { id: id, isCore: isCore })
       .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); location.reload(); return }
-        toast(isCore ? 'Core ON' : 'Core OFF')
+        if (r.error) { toast(r.error, 'error'); location.reload(); return; }
+        toast(isCore ? 'Core ON' : 'Core OFF');
       })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
 
   window.kiDeleteItem = function(id) {
-    if (!confirm('${t('confirm_delete', lang)}')) return
+    if (!confirm('${t('confirm_delete', lang)}')) return;
     api('/delete', 'POST', { id: id })
       .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Eliminado' : 'Deleted'}')
-        location.reload()
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Eliminado' : 'Deleted'}');
+        location.reload();
       })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
-
-  window.kiScanTabs = function(id) {
-    toast('${lang === 'es' ? 'Escaneando tabs...' : 'Scanning tabs...'}', 'info')
-    api('/scan-tabs', 'POST', { id: id })
-      .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Tabs escaneadas' : 'Tabs scanned'}')
-        location.reload()
-      })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
-
-  window.kiScanColumns = function(tabId, itemId) {
-    toast('${lang === 'es' ? 'Escaneando columnas...' : 'Scanning columns...'}', 'info')
-    api('/scan-columns', 'POST', { tabId: tabId })
-      .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Columnas escaneadas' : 'Columns scanned'}')
-        location.reload()
-      })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
-
-  window.kiSaveTabDesc = function(tabId, desc) {
-    api('/tab-description', 'PUT', { tabId: tabId, description: desc })
-      .catch(function() {})
-  }
-
-  window.kiSaveColDesc = function(colId, desc) {
-    api('/column-description', 'PUT', { columnId: colId, description: desc })
-      .catch(function() {})
-  }
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
 
   window.kiLoadContent = function(id) {
-    if (!confirm('${lang === 'es' ? '¿Cargar contenido y generar embeddings?' : 'Load content and generate embeddings?'}')) return
-    toast('${lang === 'es' ? 'Cargando contenido...' : 'Loading content...'}', 'info')
+    if (!confirm('${isEs ? '¿Cargar contenido y generar embeddings?' : 'Load content and generate embeddings?'}')) return;
+    toast('${isEs ? 'Cargando contenido...' : 'Loading content...'}', 'info');
     api('/load-content', 'POST', { id: id })
       .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Contenido cargado: ' : 'Content loaded: '}' + r.chunks + ' chunks')
-        location.reload()
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Contenido cargado: ' : 'Content loaded: '}' + r.chunks + ' chunks');
+        location.reload();
       })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
-
-  // Close modal on overlay click
-  document.getElementById('ki-modal').addEventListener('click', function(e) {
-    if (e.target === this) window.kiCloseModal()
-  })
-  var catModal = document.getElementById('ki-cat-modal')
-  if (catModal) catModal.addEventListener('click', function(e) {
-    if (e.target === this) window.kiCloseCategoriesModal()
-  })
-
-  // ── Tag picker (single select) ──
-  window.kiToggleCatTag = function(el) {
-    var tags = el.parentNode.querySelectorAll('.ki-tag-option')
-    var wasSelected = el.classList.contains('ki-tag-selected')
-    for (var i = 0; i < tags.length; i++) tags[i].classList.remove('ki-tag-selected')
-    if (!wasSelected) el.classList.add('ki-tag-selected')
-    document.getElementById('ki-f-category').value = wasSelected ? '' : el.getAttribute('data-cat-id')
-  }
-
-  // ── Categories CRUD ──
-  var CAT_API = '/console/api/knowledge/categories'
-
-  window.kiOpenCategoriesModal = function() {
-    document.getElementById('ki-cat-modal').style.display = ''
-  }
-  window.kiCloseCategoriesModal = function() {
-    document.getElementById('ki-cat-modal').style.display = 'none'
-  }
-
-  window.kiAddCategory = function() {
-    var inp = document.getElementById('ki-cat-new-name')
-    var name = inp.value.trim()
-    if (!name) return
-    fetch(CAT_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: name }) })
-      .then(function(r) { return r.json() })
-      .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Categoria agregada' : 'Category added'}')
-        location.reload()
-      })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
-
-  window.kiRenameCategory = function(id, btn) {
-    var row = btn.closest('.ki-cat-row')
-    var name = row.querySelector('.ki-cat-name-input').value.trim()
-    if (!name) return
-    fetch(CAT_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, title: name }) })
-      .then(function(r) { return r.json() })
-      .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Categoria actualizada' : 'Category updated'}')
-        row.style.background = 'var(--success-container)'; setTimeout(function() { row.style.background = '' }, 600)
-      })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
-
-  window.kiDeleteCategory = function(id, btn) {
-    if (!confirm('${lang === 'es' ? '¿Eliminar esta categoria?' : 'Delete this category?'}')) return
-    fetch(CAT_API + '/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) })
-      .then(function(r) { return r.json() })
-      .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Categoria eliminada' : 'Category deleted'}')
-        location.reload()
-      })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
-
-  window.kiToggleCoreEdit = function(btn) {
-    var container = btn.closest('div').parentElement
-    var inputs = container.querySelectorAll('input, textarea')
-    for (var i = 0; i < inputs.length; i++) {
-      inputs[i].removeAttribute('readonly')
-      inputs[i].style.background = ''
-      inputs[i].style.cursor = ''
-    }
-    btn.style.display = 'none'
-  }
-
-  window.kiScanCoreTabs = function(type) {
-    var urlField = type === 'faq' ? 'KNOWLEDGE_FAQ_SHEET_URL' : 'KNOWLEDGE_PRODUCTS_SHEET_URL'
-    var url = document.querySelector('[name="' + urlField + '"]').value.trim()
-    if (!url) { toast('${lang === 'es' ? 'Ingresa una URL primero' : 'Enter a URL first'}', 'error'); return }
-    toast('${lang === 'es' ? 'Escaneando hojas...' : 'Scanning sheets...'}', 'info')
-    fetch('/console/api/knowledge/items/scan-tabs', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceUrl: url, type: type })
-    }).then(function(r) { return r.json() }).then(function(r) {
-      if (r.error) { toast(r.error, 'error'); return }
-      toast(('${lang === 'es' ? 'Hojas encontradas: ' : 'Sheets found: '}') + (r.tabs || []).length)
-      location.reload()
-    }).catch(function(err) { toast(String(err), 'error') })
-  }
-
-  window.kiScanCoreColumns = function(type) {
-    var urlField = type === 'faq' ? 'KNOWLEDGE_FAQ_SHEET_URL' : 'KNOWLEDGE_PRODUCTS_SHEET_URL'
-    var url = document.querySelector('[name="' + urlField + '"]').value.trim()
-    if (!url) { toast('${lang === 'es' ? 'Ingresa una URL primero' : 'Enter a URL first'}', 'error'); return }
-    toast('${lang === 'es' ? 'Escaneando columnas...' : 'Scanning columns...'}', 'info')
-    fetch('/console/api/knowledge/items/scan-columns', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceUrl: url, type: type })
-    }).then(function(r) { return r.json() }).then(function(r) {
-      if (r.error) { toast(r.error, 'error'); return }
-      toast(('${lang === 'es' ? 'Columnas encontradas: ' : 'Columns found: '}') + (r.columns || []).length)
-      location.reload()
-    }).catch(function(err) { toast(String(err), 'error') })
-  }
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
 
   window.kiBulkVectorize = function() {
-    if (!confirm('${lang === 'es' ? '¿Generar embeddings para todo el contenido pendiente?' : 'Generate embeddings for all pending content?'}')) return
-    toast('${lang === 'es' ? 'Generando embeddings...' : 'Generating embeddings...'}', 'info')
+    if (!confirm('${isEs ? '¿Generar embeddings para todo el contenido pendiente?' : 'Generate embeddings for all pending content?'}')) return;
+    toast('${isEs ? 'Generando embeddings...' : 'Generating embeddings...'}', 'info');
     fetch('/console/api/knowledge/vectorize', { method: 'POST' })
-      .then(function(r) { return r.json() })
+      .then(function(r) { return r.json(); })
       .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return }
-        toast('${lang === 'es' ? 'Embeddings en proceso' : 'Embeddings in progress'}')
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Embeddings en proceso' : 'Embeddings in progress'}');
       })
-      .catch(function(err) { toast(String(err), 'error') })
-  }
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
+  // ── Close modals on overlay click ──
+  document.getElementById('ki-wizard').addEventListener('click', function(e) {
+    if (e.target === this) window.kiCloseWizard();
+  });
+  var catModal = document.getElementById('ki-cat-modal');
+  if (catModal) catModal.addEventListener('click', function(e) {
+    if (e.target === this) window.kiCloseCategoriesModal();
+  });
+
+  // ── Categories CRUD ──
+  var CAT_API = '/console/api/knowledge/categories';
+
+  window.kiOpenCategoriesModal = function() {
+    document.getElementById('ki-cat-modal').style.display = '';
+  };
+  window.kiCloseCategoriesModal = function() {
+    document.getElementById('ki-cat-modal').style.display = 'none';
+  };
+
+  window.kiAddCategory = function() {
+    var inp = document.getElementById('ki-cat-new-name');
+    var name = inp.value.trim();
+    if (!name) return;
+    fetch(CAT_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: name }) })
+      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Categoria agregada' : 'Category added'}');
+        location.reload();
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
+  window.kiRenameCategory = function(id, btn) {
+    var row = btn.closest('.ki-cat-row');
+    var name = row.querySelector('.ki-cat-name-input').value.trim();
+    if (!name) return;
+    fetch(CAT_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, title: name }) })
+      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Categoria actualizada' : 'Category updated'}');
+        row.style.background = 'var(--success-container)'; setTimeout(function() { row.style.background = ''; }, 600);
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
+  window.kiDeleteCategory = function(id, btn) {
+    if (!confirm('${isEs ? '¿Eliminar esta categoria?' : 'Delete this category?'}')) return;
+    fetch(CAT_API + '/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) })
+      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Categoria eliminada' : 'Category deleted'}');
+        location.reload();
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
 })()</script>`
 }
+
+// ═══════════════════════════════════════════
+// Styles
+// ═══════════════════════════════════════════
 
 function renderStyles(): string {
   return `<style>
 .ki-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
 .ki-title { font-size:18px; font-weight:600; margin:0; color:var(--on-surface); }
-.ki-add-btn { display:inline-flex; align-items:center; gap:6px; }
 .ki-item { margin-bottom:12px; padding:16px; }
 .ki-item-inactive { opacity:0.6; }
 .ki-item-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
@@ -688,7 +878,7 @@ function renderStyles(): string {
 .ki-item-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .ki-item-name { font-weight:600; font-size:15px; color:var(--on-surface); }
 .ki-item-desc { margin:4px 0 0; font-size:13px; color:var(--on-surface-dim); }
-.ki-item-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.ki-item-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; flex-wrap:wrap; }
 .ki-badge { display:inline-block; padding:2px 8px; border-radius:0.5rem; font-size:11px; font-weight:500; }
 .ki-badge-source { background:var(--surface-container-low); color:var(--on-surface-dim); }
 .ki-badge-core { background:rgba(255,149,0,0.12); color:var(--warning); }
@@ -701,38 +891,49 @@ function renderStyles(): string {
 .ki-tag { display:inline-block; margin-top:6px; padding:2px 10px; border-radius:0.5rem; font-size:11px; background:var(--surface-container-low); color:var(--on-surface-dim); }
 .ki-core-label { display:flex; align-items:center; gap:4px; cursor:pointer; font-size:12px; color:var(--on-surface-dim); }
 .ki-core-text { font-size:11px; }
-.ki-toggle-label { position:relative; display:inline-block; width:36px; height:20px; }
-.ki-toggle-label .ki-toggle-input { opacity:0; width:0; height:0; }
-.ki-toggle-label .toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; border-radius:20px; transition:.3s; }
-.ki-toggle-label .toggle-slider:before { position:absolute; content:""; height:14px; width:14px; left:3px; bottom:3px; background-color:white; border-radius:50%; transition:.3s; }
-.ki-toggle-label .ki-toggle-input:checked + .toggle-slider { background-color:var(--success); }
-.ki-toggle-label .ki-toggle-input:checked + .toggle-slider:before { transform:translateX(16px); }
-.ki-tabs-section { margin-top:12px; padding-top:12px; border-top:1px solid var(--outline-variant); }
-.ki-tabs-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-.ki-section-label { font-size:13px; font-weight:600; color:var(--on-surface-dim); text-transform:uppercase; letter-spacing:0.5px; }
-.ki-tabs-list { display:flex; flex-direction:column; gap:6px; }
-.ki-tab-row { padding:8px; background:var(--surface-container-low); border-radius:0.5rem; }
-.ki-tab-name { font-weight:500; font-size:13px; color:var(--on-surface); margin-bottom:4px; }
-.ki-tab-desc-input { width:100%; border:1px solid var(--outline-variant); border-radius:0.5rem; padding:4px 8px; font-size:12px; margin-bottom:4px; background:var(--surface-container-lowest); color:var(--on-surface); }
-.ki-scan-cols-btn { font-size:11px; }
-.ki-columns-list { margin-top:6px; padding-left:12px; display:flex; flex-direction:column; gap:4px; }
-.ki-col-row { display:flex; align-items:center; gap:8px; }
-.ki-col-name { font-size:12px; font-weight:500; color:var(--on-surface); min-width:100px; }
-.ki-col-desc-input { flex:1; border:1px solid var(--outline-variant); border-radius:0.5rem; padding:3px 8px; font-size:11px; background:var(--surface-container-lowest); color:var(--on-surface); }
+.ki-load-status-line { margin-top:10px; padding-top:10px; border-top:1px solid var(--outline-variant); font-size:12px; }
 .ki-empty-note { font-size:12px; color:var(--on-surface-dim); margin:4px 0; }
-.ki-load-section { margin-top:12px; padding-top:12px; border-top:1px solid var(--outline-variant); display:flex; align-items:center; gap:12px; }
-.ki-load-btn { display:inline-flex; align-items:center; gap:6px; font-size:13px; }
-.ki-load-btn:disabled { opacity:0.5; cursor:not-allowed; }
-.ki-load-status { font-size:12px; }
-.ki-delete-btn { font-size:11px; }
 
-.wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:var(--radius-sm, 0.5rem); }
+/* Core knowledge cards */
+.ki-core-card { margin-bottom:8px; padding:14px; }
+.ki-core-card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.ki-core-card-title { font-weight:600; font-size:14px; color:var(--on-surface); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ki-core-card-desc { margin:4px 0 0; font-size:13px; color:var(--on-surface-dim); line-height:1.4; }
+.ki-core-card-url { margin:4px 0 0; font-size:11px; color:var(--on-surface-dim); opacity:0.7; word-break:break-all; }
+.ki-core-card-notice { font-size:12px; color:var(--warning); margin:8px 0 0; }
 
-/* Modal — uses wizard-overlay + wizard-modal from components.css */
+/* Wizard field error */
+.wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:0.5rem; }
+
+/* Wizard step indicators */
+.ki-wiz-step-indicators { display:flex; gap:4px; margin-bottom:16px; }
+.ki-wiz-step-dot { font-size:12px; padding:4px 12px; border-radius:1rem; background:var(--surface-container-low); color:var(--on-surface-dim); cursor:default; }
+.ki-wiz-step-dot.ki-wiz-step-active { background:var(--primary); color:#fff; }
+
+/* Wizard panels */
+.ki-wiz-panel { padding:0 4px; }
+.ki-wiz-form-group { margin-bottom:14px; }
+
+/* Wizard tabs (step 2) */
+.ki-wiz-tabs-container { max-height:360px; overflow-y:auto; }
+.ki-wiz-tab-row { padding:10px; background:var(--surface-container-low); border-radius:0.5rem; margin-bottom:8px; }
+.ki-wiz-tab-name { font-weight:600; font-size:13px; color:var(--on-surface); }
+
+/* Wizard columns (step 3) */
+.ki-wiz-col-tab-nav { display:flex; gap:4px; margin-bottom:12px; flex-wrap:wrap; }
+.ki-wiz-col-tab-btn.ki-wiz-col-tab-active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.ki-wiz-cols-container { max-height:360px; overflow-y:auto; }
+.ki-wiz-col-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.ki-wiz-col-name { font-size:13px; font-weight:500; color:var(--on-surface); min-width:120px; flex-shrink:0; }
+.ki-wiz-col-desc { flex:1; }
+
+/* Tags picker */
 .ki-tags-picker { display:flex; flex-wrap:wrap; gap:6px; padding:8px 0; }
 .ki-tag-option { display:inline-block; padding:4px 12px; border-radius:1rem; font-size:12px; cursor:pointer; border:1px solid var(--outline-variant); background:var(--surface-container-lowest); color:var(--on-surface-dim); transition:all .15s; }
 .ki-tag-option:hover { border-color:var(--primary); color:var(--primary); }
 .ki-tag-option.ki-tag-selected { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+/* Categories modal */
 .ki-cat-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--outline-variant); }
 .ki-cat-name-input { flex:1; padding:6px 10px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; background:var(--surface-container-lowest); color:var(--on-surface); }
 </style>`
