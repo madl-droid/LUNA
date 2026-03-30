@@ -168,16 +168,8 @@ function statusCell(item: KnowledgeItem, lang: Lang): string {
 // ═══════════════════════════════════════════
 
 function renderItemsList(items: KnowledgeItem[], categories: KnowledgeCategory[], lang: Lang): string {
-  const isEs = lang === 'es'
   const coreCount = items.filter(i => i.isCore).length
-  let html = `<div class="ki-list">
-    <div class="ki-list-header">
-      <span>${isEs ? 'NOMBRE' : 'NAME'}</span>
-      <span>${isEs ? 'TIPO' : 'TYPE'}</span>
-      <span>${isEs ? 'ESTADO' : 'STATUS'}</span>
-      <span>${isEs ? 'ACTIVO' : 'ACTIVE'}</span>
-      <span>${isEs ? 'ACCIONES' : 'ACTIONS'}</span>
-    </div>`
+  let html = `<div class="ki-list">`
   for (const item of items) {
     html += renderItemCard(item, categories, lang, coreCount)
   }
@@ -295,7 +287,7 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
 
         <div class="wizard-actions">
           <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiCloseWizard()">${t('cancel', lang)}</button>
-          <button type="button" class="wizard-btn wizard-btn-primary" id="ki-wiz-next1" onclick="kiWizStep1Next()">${t('next', lang)}</button>
+          <button type="button" class="wizard-btn ki-wiz-btn-green" id="ki-wiz-next1" onclick="kiWizStep1Next()">${t('next', lang)}</button>
         </div>
       </div>
 
@@ -305,12 +297,15 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
         <p class="wizard-instructions">${isEs ? 'Describe cada hoja para que el agente sepa que informacion contiene.' : 'Describe each sheet so the agent knows what information it contains.'}</p>
         <div id="ki-wiz-tabs-list"></div>
         <div class="wizard-actions">
+          <button type="button" class="wizard-btn wizard-btn-secondary" onclick="showWizPage(0)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            ${isEs ? 'Atrás' : 'Back'}
+          </button>
           <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiWizRefreshTabs()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             ${t('refresh', lang)}
           </button>
-          <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiWizSkipToFinish()">${t('skip', lang)}</button>
-          <button type="button" class="wizard-btn wizard-btn-primary" id="ki-wiz-next2" onclick="kiWizStep2Next()">${t('next', lang)}</button>
+          <button type="button" class="wizard-btn ki-wiz-btn-green" id="ki-wiz-next2" onclick="kiWizStep2Next()">${t('next', lang)}</button>
         </div>
       </div>
 
@@ -321,11 +316,15 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
         <div id="ki-wiz-col-tab-nav" style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap"></div>
         <div id="ki-wiz-cols-list"></div>
         <div class="wizard-actions">
+          <button type="button" class="wizard-btn wizard-btn-secondary" onclick="showWizPage(1)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            ${isEs ? 'Atrás' : 'Back'}
+          </button>
           <button type="button" class="wizard-btn wizard-btn-secondary" onclick="kiWizRefreshCols()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             ${t('refresh', lang)}
           </button>
-          <button type="button" class="wizard-btn wizard-btn-primary" onclick="kiWizFinish()">${t('finish', lang)}</button>
+          <button type="button" class="wizard-btn ki-wiz-btn-green" onclick="kiWizFinish()">${t('finish', lang)}</button>
         </div>
       </div>
 
@@ -1000,8 +999,6 @@ function renderStyles(): string {
 
 /* List table layout */
 .ki-list { display:flex; flex-direction:column; gap:8px; }
-.ki-list-header { display:grid; grid-template-columns:1fr 90px 150px 70px auto; gap:12px; padding:4px 16px 8px; }
-.ki-list-header span { font-size:11px; font-weight:600; color:var(--on-surface-dim); letter-spacing:0.06em; text-transform:uppercase; }
 .ki-row { display:grid !important; grid-template-columns:1fr 90px 150px 70px auto; gap:12px; align-items:center; padding:14px 16px !important; }
 .ki-row-inactive { opacity:0.55; }
 
@@ -1035,6 +1032,16 @@ function renderStyles(): string {
 .ki-btn-core-on { background:rgba(255,149,0,0.12) !important; color:var(--warning) !important; border-color:rgba(255,149,0,0.3) !important; }
 
 .ki-empty-note { font-size:12px; color:var(--on-surface-dim); margin:4px 0; }
+
+/* Wizard font fix (global has monospace — override to inherit) */
+#ki-wizard .wizard-input, #ki-wizard .wizard-btn, #ki-wizard .wizard-label,
+#ki-wizard .wizard-page-title, #ki-wizard .wizard-title, #ki-wizard .wizard-instructions,
+#ki-cat-modal .wizard-input, #ki-cat-modal .ki-cat-name-input, #ki-cat-modal .ki-cat-desc-input { font-family:inherit; }
+
+/* Wizard green primary button */
+.ki-wiz-btn-green { padding:10px 20px; border-radius:0.5rem; border:none; cursor:pointer; font-size:0.85rem; font-weight:600; font-family:inherit; transition:all 0.15s; background:var(--success, #22c55e); color:#fff; }
+.ki-wiz-btn-green:hover:not(:disabled) { opacity:0.88; box-shadow:0 2px 8px rgba(34,197,94,0.35); }
+.ki-wiz-btn-green:disabled { opacity:0.5; cursor:not-allowed; }
 
 /* Wizard field error */
 .wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:0.5rem; }
