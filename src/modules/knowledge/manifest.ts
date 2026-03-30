@@ -1225,13 +1225,19 @@ const manifest: ModuleManifest = {
       const items = await itemManager!.list()
       const categories = await pgStore!.listCategories()
       const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_FAQ_DESCRIPTION: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string; KNOWLEDGE_PRODUCTS_DESCRIPTION: string }>('knowledge')
-      const kernelCfg = registry.getConfig<{ NODE_ENV?: string }>('kernel') ?? {}
+      // Check if debugging is active (config_store) — skips cooldown
+      let debugActive = false
+      try {
+        const db = registry.getDb()
+        const dbg = await db.query(`SELECT value FROM config_store WHERE key = 'DEBUG_EXTREME_LOG'`)
+        debugActive = dbg.rows[0]?.value === 'true'
+      } catch { /* non-critical */ }
       return renderKnowledgeSection(items, categories, lang, {
         faqSheetUrl: cfg?.KNOWLEDGE_FAQ_SHEET_URL ?? '',
         faqDescription: cfg?.KNOWLEDGE_FAQ_DESCRIPTION ?? '',
         productsSheetUrl: cfg?.KNOWLEDGE_PRODUCTS_SHEET_URL ?? '',
         productsDescription: cfg?.KNOWLEDGE_PRODUCTS_DESCRIPTION ?? '',
-        nodeEnv: kernelCfg.NODE_ENV ?? 'development',
+        debugMode: debugActive,
       })
     })
 

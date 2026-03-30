@@ -236,8 +236,10 @@ export class VectorizeWorker {
     await this.queue.add('vectorize-document', { type: 'document', documentId }, {
       removeOnComplete: 100,
       removeOnFail: 50,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
     })
-    this.log.info({ documentId }, 'enqueued document for vectorization')
+    this.log.info({ documentId }, '[EMBED] Enqueued document for vectorization')
   }
 
   async enqueueBulk(): Promise<{ enqueued: boolean; reason?: string }> {
@@ -258,9 +260,11 @@ export class VectorizeWorker {
     await this.queue.add('vectorize-bulk', { type: 'bulk' }, {
       removeOnComplete: 20,
       removeOnFail: 10,
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 10000 },
     })
 
-    this.log.info('enqueued bulk vectorization')
+    this.log.info('[EMBED] Enqueued bulk vectorization')
     return { enqueued: true }
   }
 

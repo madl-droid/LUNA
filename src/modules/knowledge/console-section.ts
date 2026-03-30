@@ -75,11 +75,11 @@ export function renderKnowledgeSection(
   items: KnowledgeItem[],
   categories: KnowledgeCategory[],
   lang: Lang,
-  config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string; nodeEnv?: string },
+  config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string; debugMode?: boolean },
 ): string {
   let html = ''
   const hasPending = items.some(i => i.active && i.embeddingStatus !== 'done')
-  const isProduction = config?.nodeEnv === 'production'
+  const isProduction = !config?.debugMode // cooldown only when debugging OFF
 
   if (items.length === 0) {
     // ── Empty state — no action bar, just the dashed panel ──
@@ -99,7 +99,7 @@ export function renderKnowledgeSection(
     html += `<div class="ki-header">
       <div></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button type="button" id="ki-bulk-train-btn" class="act-btn ${hasPending ? 'act-btn-cta' : 'act-btn-config'}" onclick="kiBulkVectorize()" style="font-size:13px" ${hasPending ? '' : 'disabled'}>
+        <button type="button" id="ki-bulk-train-btn" class="act-btn ${hasPending ? 'act-btn-cta' : 'act-btn-config'}" onclick="kiBulkVectorize()" style="font-size:13px" ${!hasPending ? 'disabled' : ''}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>
           <span id="ki-bulk-train-label">${t('train_agent', lang)}</span>
           <span id="ki-bulk-train-timer" class="ki-cooldown-timer" style="display:none"></span>
@@ -246,7 +246,7 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip">${esc(shareTip)}</span></span>
       </button>
-      <button type="button" class="act-btn act-btn--compact ki-train-btn ${item.active && item.embeddingStatus !== 'done' ? 'act-btn-add' : 'act-btn-config'}"
+      <button type="button" class="act-btn act-btn--compact ki-train-btn ${item.active && item.embeddingStatus !== 'done' ? 'act-btn-cta' : 'act-btn-config'}"
         data-item-id="${esc(item.id)}"
         onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>
@@ -479,7 +479,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       var label = btn.querySelector('.ki-train-label');
       if (blocked) {
         btn.disabled = true;
-        btn.classList.remove('act-btn-add');
+        btn.classList.remove('act-btn-cta');
         btn.classList.add('act-btn-config');
         if (timer) { timer.style.display = ''; timer.textContent = formatCountdown(endTime - now); }
         if (label) label.style.display = 'none';
