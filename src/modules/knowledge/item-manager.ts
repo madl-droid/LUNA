@@ -57,6 +57,9 @@ export function extractGoogleId(url: string): { id: string; type: KnowledgeSourc
   // Direct PDF URL (any domain)
   if (DIRECT_PDF_REGEX.test(url)) return { id: url, type: 'pdf' }
 
+  // Generic web URL (any http/https)
+  if (/^https?:\/\/.+\..+/.test(url)) return { id: url, type: 'web' }
+
   return null
 }
 
@@ -267,6 +270,8 @@ export class KnowledgeItemManager {
     } else if (item.sourceType === 'slides') {
       // Google Slides → single tab (all slides as one document)
       tabNames = ['Presentación']
+    } else if (item.sourceType === 'web') {
+      tabNames = await this.scanWebTabs(item.sourceUrl)
     } else if (item.sourceType === 'pdf') {
       // Single PDF → one tab
       tabNames = ['PDF']
@@ -378,6 +383,8 @@ export class KnowledgeItemManager {
       totalChunks = await this.loadSlidesContent(item)
     } else if (item.sourceType === 'drive') {
       totalChunks = await this.loadDriveContent(item)
+    } else if (item.sourceType === 'web') {
+      totalChunks = await this.loadWebContent(item)
     } else if (item.sourceType === 'pdf') {
       totalChunks = await this.loadPdfContent(item)
     } else if (item.sourceType === 'youtube') {
@@ -670,6 +677,142 @@ export class KnowledgeItemManager {
       categoryIds: item.categoryId ? [item.categoryId] : [],
     })
     return doc.chunkCount
+  }
+
+  // ─── Web URL helpers ─────────────────────────
+
+  /**
+   * Scan a web URL for "tabs":
+   * - Root domain (no path or just /): fetch page, extract same-domain internal links → each = tab
+   * - Specific page: single tab with page title
+   */
+  private async scanWebTabs(sourceUrl: string): Promise<string[]> {
+    try {
+      const parsed = new URL(sourceUrl)
+      const isRoot = parsed.pathname === '/' || parsed.pathname === ''
+
+      if (!isRoot) {
+        // Specific page — one tab with page title
+        const title = await this.fetchPageTitle(sourceUrl)
+        return [title || parsed.pathname]
+      }
+
+      // Root domain — crawl first-level internal links
+      const res = await fetch(sourceUrl, {
+        signal: AbortSignal.timeout(15000),
+        headers: { 'User-Agent': 'LUNA-KnowledgeBot/1.0' },
+      })
+      if (!res.ok) return [parsed.hostname]
+
+      const html = await res.text()
+      const { JSDOM } = await import('jsdom')
+      const dom = new JSDOM(html, { url: sourceUrl })
+      const doc = dom.window.document
+
+      const links = new Set<string>()
+      const anchors = doc.querySelectorAll('a[href]')
+      for (const a of anchors) {
+        try {
+          const href = new URL(a.getAttribute('href')!, sourceUrl)
+          // Same domain only, first-level paths (1 directory deep max)
+          if (href.hostname !== parsed.hostname) continue
+          if (href.pathname === '/' || href.pathname === '') continue
+          const segments = href.pathname.split('/').filter(Boolean)
+          if (segments.length > 2) continue // skip deep paths
+          const clean = href.origin + href.pathname
+          if (!links.has(clean)) links.add(clean)
+        } catch { /* skip invalid URLs */ }
+      }
+
+      if (links.size === 0) return [parsed.hostname]
+      const tabNames = Array.from(links).slice(0, 50) // max 50 tabs
+      logger.info({ sourceUrl, linkCount: tabNames.length }, '[WEB] Root domain scanned')
+      return tabNames
+    } catch (err) {
+      logger.warn({ err, sourceUrl }, '[WEB] Scan failed')
+      return ['Página web']
+    }
+  }
+
+  private async fetchPageTitle(url: string): Promise<string | null> {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+        headers: { 'User-Agent': 'LUNA-KnowledgeBot/1.0' },
+      })
+      if (!res.ok) return null
+      const html = await res.text()
+      const match = /<title[^>]*>([^<]+)<\/title>/i.exec(html)
+      return match?.[1]?.trim() ?? null
+    } catch { return null }
+  }
+
+  /** Load web content — fetches each non-ignored tab URL with Readability */
+  private async loadWebContent(item: KnowledgeItem): Promise<number> {
+    const allTabs = item.tabs ?? []
+    const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
+
+    // Determine URLs to fetch
+    const parsed = new URL(item.sourceUrl)
+    const isRoot = parsed.pathname === '/' || parsed.pathname === ''
+
+    let urls: string[]
+    if (isRoot && allTabs.length > 0) {
+      // Root domain: tabs are the internal links
+      urls = allTabs.filter(t => !t.ignored).map(t => t.tabName)
+      // Also include the root page itself
+      urls.unshift(item.sourceUrl)
+    } else {
+      // Specific page: just that URL
+      urls = [item.sourceUrl]
+    }
+
+    let totalChunks = 0
+    for (const url of urls) {
+      if (ignoredNames.has(url)) continue
+      try {
+        const text = await this.extractWebPage(url)
+        if (!text.trim()) continue
+
+        const pageTitle = new URL(url).pathname || url
+        const buf = Buffer.from(text, 'utf-8')
+        const doc = await this.knowledgeManager.addDocument(buf, `${pageTitle}.txt`, {
+          sourceType: 'drive', sourceRef: item.id,
+          description: `Web: ${url}`,
+          categoryIds: item.categoryId ? [item.categoryId] : [],
+        })
+        totalChunks += doc.chunkCount
+        logger.info({ url, chunks: doc.chunkCount }, '[WEB] Page content loaded')
+      } catch (err) {
+        logger.warn({ err, url }, '[WEB] Failed to extract page')
+      }
+    }
+
+    return totalChunks
+  }
+
+  /** Extract readable text from a web page using Readability */
+  private async extractWebPage(url: string): Promise<string> {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
+      headers: { 'User-Agent': 'LUNA-KnowledgeBot/1.0' },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    const html = await res.text()
+    const { JSDOM } = await import('jsdom')
+    const { Readability } = await import('@mozilla/readability')
+    const dom = new JSDOM(html, { url })
+    const reader = new Readability(dom.window.document)
+    const article = reader.parse()
+
+    if (article?.textContent) {
+      return `${article.title ?? ''}\n\n${article.textContent}`
+    }
+
+    // Fallback: extract all text from body
+    const body = dom.window.document.body
+    return body?.textContent?.trim() ?? ''
   }
 
   /** YouTube: load transcripts for playlist or channel videos */

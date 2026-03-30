@@ -22,6 +22,7 @@ const t = (key: string, lang: Lang): string => {
     source_slides: { es: 'Slides', en: 'Slides' },
     source_pdf: { es: 'PDF', en: 'PDF' },
     source_youtube: { es: 'YouTube', en: 'YouTube' },
+    source_web: { es: 'Web', en: 'Web' },
     save: { es: 'Guardar', en: 'Save' },
     cancel: { es: 'Cancelar', en: 'Cancel' },
     next: { es: 'Siguiente', en: 'Next' },
@@ -160,6 +161,10 @@ function sourceIcon(sourceType: string): string {
       bg: 'rgba(239,68,68,0.12)', color: '#ef4444',
       path: '<path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19.13c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.46z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>',
     },
+    web: {
+      bg: 'rgba(107,114,128,0.12)', color: '#6b7280',
+      path: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    },
   }
   const def = icons[sourceType] ?? icons['docs']!
   return `<div class="ki-source-icon" style="background:${def.bg};color:${def.color}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${def.path}</svg></div>`
@@ -208,9 +213,6 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
     categoryId: item.categoryId ?? '', sourceUrl: item.sourceUrl,
   }).replace(/'/g, '&#39;').replace(/</g, '\\u003c')
 
-  const coreLabel = item.isCore
-    ? `${isEs ? 'Principal' : 'Main'} (${coreCount}/${maxCore})`
-    : (isEs ? 'Principal' : 'Main')
   const coreTip = isEs ? 'Marca este conocimiento como principal para que el agente lo consulte con prioridad (max 3)' : 'Mark this knowledge as main so the agent queries it with priority (max 3)'
   const shareTip = isEs ? 'Permite al agente compartir el enlace de este archivo con el usuario cuando sea relevante' : 'Allows the agent to share the link to this file with the user when relevant'
 
@@ -225,28 +227,22 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
     </div>
     <div class="ki-col-tipo"><span class="ki-badge ki-badge-source">${esc(sourceLabel)}</span></div>
     <div class="ki-col-estado">${statusCell(item, lang)}</div>
-    <div class="ki-col-activo">
-      <label class="toggle toggle-sm">
-        <input type="checkbox" ${item.active ? 'checked' : ''} onchange="kiToggleActive('${esc(item.id)}', this.checked)" />
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
     <div class="ki-col-acciones">
-      <button type="button" class="act-btn act-btn-config act-btn--compact" onclick='kiOpenWizardEdit(${itemData})'>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        ${t('edit_btn', lang)}
+      <button type="button" class="ki-icon-btn" onclick='kiOpenWizardEdit(${itemData})' title="${t('edit_btn', lang)}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
       </button>
-      <button type="button" class="act-btn act-btn--compact ${item.isCore ? 'ki-btn-core-on' : 'act-btn-config'}"
+      <button type="button" class="ki-icon-btn ${item.isCore ? 'ki-icon-btn--core-on' : ''}"
         onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})"
         title="${esc(coreTip)}">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        ${esc(coreLabel)}<span class="ki-info-dot" title="${esc(coreTip)}">i</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="${item.isCore ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        ${item.isCore ? `<span class="ki-icon-label">${coreCount}/${maxCore}</span>` : ''}
+        <span class="ki-info-dot" title="${esc(coreTip)}">i</span>
       </button>
-      <button type="button" class="act-btn act-btn--compact ${item.shareable ? 'ki-btn-share-on' : 'act-btn-config'}"
+      <button type="button" class="ki-icon-btn ${item.shareable ? 'ki-icon-btn--share-on' : ''}"
         onclick="kiToggleShareable('${esc(item.id)}', ${item.shareable ? 'false' : 'true'})"
         title="${esc(shareTip)}">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        ${isEs ? 'Compartir' : 'Share'}<span class="ki-info-dot" title="${esc(shareTip)}">i</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <span class="ki-info-dot" title="${esc(shareTip)}">i</span>
       </button>
       <button type="button" class="act-btn act-btn-cta act-btn--compact"
         onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
@@ -254,6 +250,10 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         ${isEs ? 'Entrenar' : 'Train'}
       </button>
       ${isInactive ? `<button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteItem('${esc(item.id)}')">${t('delete_btn', lang)}</button>` : ''}
+      <label class="toggle toggle-sm" style="margin-left:4px">
+        <input type="checkbox" ${item.active ? 'checked' : ''} onchange="kiToggleActive('${esc(item.id)}', this.checked)" />
+        <span class="toggle-slider"></span>
+      </label>
     </div>
   </div>`
 }
@@ -1046,7 +1046,7 @@ function renderStyles(): string {
 
 /* List table layout */
 .ki-list { display:flex; flex-direction:column; gap:8px; }
-.ki-row { display:grid !important; grid-template-columns:1fr 90px 150px 70px auto; gap:12px; align-items:center; padding:14px 16px !important; }
+.ki-row { display:grid !important; grid-template-columns:1fr 80px 120px auto; gap:12px; align-items:center; padding:14px 16px !important; }
 .ki-row-inactive { opacity:0.55; }
 
 /* Nombre column */
@@ -1075,10 +1075,15 @@ function renderStyles(): string {
 .ki-dot-failed { background:var(--error, #ef4444); }
 .ki-chunks { font-size:11px; color:var(--on-surface-dim); margin-left:2px; }
 
-/* Core active button */
-.ki-btn-core-on { background:rgba(255,149,0,0.12) !important; color:var(--warning) !important; border-color:rgba(255,149,0,0.3) !important; }
-.ki-btn-share-on { background:rgba(59,130,246,0.12) !important; color:var(--info, #3b82f6) !important; border-color:rgba(59,130,246,0.3) !important; }
-.ki-info-dot { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; background:var(--outline-variant); color:var(--on-surface); font-size:9px; font-weight:700; font-style:italic; margin-left:4px; cursor:help; line-height:1; }
+/* Icon-only action buttons */
+.ki-icon-btn { display:inline-flex; align-items:center; gap:3px; padding:6px; border-radius:0.5rem; border:none; background:none; color:var(--on-surface-dim); cursor:pointer; transition:all 0.15s; }
+.ki-icon-btn:hover { background:var(--surface-container-low); color:var(--on-surface); }
+.ki-icon-btn--core-on { color:#e6a817; }
+.ki-icon-btn--core-on:hover { background:rgba(230,168,23,0.1); }
+.ki-icon-btn--share-on { color:#3b82f6; }
+.ki-icon-btn--share-on:hover { background:rgba(59,130,246,0.1); }
+.ki-icon-label { font-size:11px; font-weight:600; }
+.ki-info-dot { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; border-radius:50%; background:var(--outline-variant); color:var(--on-surface); font-size:8px; font-weight:700; font-style:italic; cursor:help; line-height:1; opacity:0.6; }
 .ki-yt-hint { display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:10px 12px; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15); border-radius:0.5rem; font-size:12px; color:var(--on-surface-dim); line-height:1.4; }
 .ki-yt-hint svg { flex-shrink:0; margin-top:1px; color:#ef4444; }
 

@@ -295,7 +295,7 @@ export interface UpgradeSuggestion {
 // Knowledge Items (v3 — Google Sheets/Docs/Drive sources)
 // ═══════════════════════════════════════════
 
-export type KnowledgeSourceType = 'sheets' | 'docs' | 'slides' | 'drive' | 'pdf' | 'youtube'
+export type KnowledgeSourceType = 'sheets' | 'docs' | 'slides' | 'drive' | 'pdf' | 'youtube' | 'web'
 
 export interface KnowledgeItem {
   id: string
