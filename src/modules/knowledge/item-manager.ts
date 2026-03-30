@@ -110,6 +110,9 @@ export class KnowledgeItemManager {
       sourceId: extracted.id,
     })
 
+    // Invalidate injection cache so evaluator sees the new item
+    await this.cache.invalidate()
+
     logger.info({ id, title: data.title, sourceType: extracted.type }, 'Knowledge item created')
     return (await this.pgStore.getItem(id))!
   }
@@ -128,12 +131,14 @@ export class KnowledgeItemManager {
     categoryId?: string | null
   }): Promise<void> {
     await this.pgStore.updateItem(id, updates)
+    // Invalidate injection cache so evaluator sees updated title/description
+    await this.cache.invalidate()
   }
 
   async toggleActive(id: string, active: boolean): Promise<void> {
     await this.pgStore.updateItem(id, { active })
-    const item = await this.pgStore.getItem(id)
-    if (item?.isCore) await this.cache.invalidate()
+    // Always invalidate: active items are now part of injection catalog
+    await this.cache.invalidate()
     logger.info({ id, active }, 'Item active toggled')
   }
 

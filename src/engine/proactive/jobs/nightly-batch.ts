@@ -74,6 +74,9 @@ export async function runNightlyBatch(ctx: ProactiveJobContext): Promise<void> {
     // 3. Generate daily report
     await generateDailyReport(ctx)
 
+    // 4. Auto-embed knowledge items that are missing embeddings
+    await scanAndEmbedKnowledgeItems(ctx)
+
     // Mark as completed
     await ctx.redis.set(redisKey, '1', 'EX', 86400)
 
@@ -474,6 +477,57 @@ Escribe el resumen en español, enfocándote en tendencias y datos relevantes.`
     logger.info({ traceId: ctx.traceId, date: dateStr, synced, hasNarrative: !!narrative }, 'Daily report generated')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Daily report generation failed')
+  }
+}
+
+// ─── 4. Scan & Embed Knowledge Items ─────────
+
+interface ItemEmbedManager {
+  listItemsNeedingEmbedding(): Promise<Array<{ id: string; title: string; contentLoaded: boolean; embeddingStatus: string }>>
+}
+
+interface ItemManager {
+  loadContent(id: string): Promise<{ chunks: number }>
+}
+
+async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<void> {
+  const pgStore = ctx.registry.getOptional<ItemEmbedManager>('knowledge:pg-store')
+  const itemManager = ctx.registry.getOptional<ItemManager>('knowledge:item-manager')
+
+  if (!pgStore || !itemManager) {
+    logger.debug({ traceId: ctx.traceId }, 'knowledge:pg-store or knowledge:item-manager not available, skipping embedding scan')
+    return
+  }
+
+  logger.info({ traceId: ctx.traceId }, 'Scanning knowledge items for missing embeddings')
+
+  try {
+    const items = await pgStore.listItemsNeedingEmbedding()
+
+    if (items.length === 0) {
+      logger.info({ traceId: ctx.traceId }, 'All active knowledge items are embedded')
+      return
+    }
+
+    logger.info({ traceId: ctx.traceId, count: items.length }, 'Found knowledge items needing embedding')
+
+    let loaded = 0
+    let failed = 0
+
+    for (const item of items) {
+      try {
+        const result = await itemManager.loadContent(item.id)
+        loaded++
+        logger.info({ traceId: ctx.traceId, itemId: item.id, title: item.title, chunks: result.chunks }, 'Knowledge item content loaded and queued for embedding')
+      } catch (err) {
+        failed++
+        logger.warn({ traceId: ctx.traceId, err, itemId: item.id, title: item.title }, 'Failed to load/embed knowledge item')
+      }
+    }
+
+    logger.info({ traceId: ctx.traceId, total: items.length, loaded, failed }, 'Knowledge embedding scan complete')
+  } catch (err) {
+    logger.error({ err, traceId: ctx.traceId }, 'Knowledge embedding scan failed')
   }
 }
 

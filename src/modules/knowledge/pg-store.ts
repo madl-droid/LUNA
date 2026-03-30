@@ -1182,6 +1182,33 @@ export class KnowledgePgStore {
     return res.rows.map(mapItemRow)
   }
 
+  /** Return active items (id, title, description, categoryId) — no tabs/columns, for Phase 1 injection */
+  async listActiveItemsForInjection(): Promise<Pick<KnowledgeItem, 'id' | 'title' | 'description' | 'categoryId'>[]> {
+    const res = await this.db.query<{ id: string; title: string; description: string; category_id: string | null }>(
+      `SELECT id, title, description, category_id
+       FROM knowledge_items
+       WHERE active = true
+       ORDER BY title`,
+    )
+    return res.rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      categoryId: row.category_id,
+    }))
+  }
+
+  /** Return active items that need content loading or re-embedding (for nightly scan) */
+  async listItemsNeedingEmbedding(): Promise<KnowledgeItem[]> {
+    const res = await this.db.query<ItemRow>(
+      `SELECT * FROM knowledge_items
+       WHERE active = true
+         AND (content_loaded = false OR embedding_status NOT IN ('done', 'processing'))
+       ORDER BY created_at ASC`,
+    )
+    return res.rows.map(mapItemRow)
+  }
+
   // ─── Item Tabs CRUD ─────────────────────
 
   async getItemTabs(itemId: string): Promise<KnowledgeItemTab[]> {

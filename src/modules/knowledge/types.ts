@@ -174,10 +174,20 @@ export interface KnowledgeWebSource {
 // Knowledge Injection (Phase 1 output)
 // ═══════════════════════════════════════════
 
+export interface KnowledgeInjectionItem {
+  id: string
+  title: string
+  description: string
+  categoryId: string | null
+  categoryTitle?: string
+}
+
 export interface KnowledgeInjection {
   coreDocuments: Array<{ title: string; description: string }>
   categories: Array<{ id: string; title: string; description: string }>
   apiConnectors: Array<{ title: string; description: string }>
+  /** Active knowledge items grouped for evaluator catalog (v3) */
+  items: KnowledgeInjectionItem[]
 }
 
 // ═══════════════════════════════════════════

@@ -325,7 +325,16 @@ Adapta tu respuesta al contexto de esta campaña.`)
     userParts.push(`\n[Datos resueltos:]`)
     for (const result of execution.results) {
       if (result.success && result.data) {
-        userParts.push(`- ${result.type}: ${escapeDataForPrompt(JSON.stringify(result.data).substring(0, 500))}`)
+        // Special formatting for search_knowledge results
+        if (result.tool === 'search_knowledge' && isKnowledgeResultArray(result.data)) {
+          userParts.push(`- Conocimiento encontrado:`)
+          for (const match of result.data) {
+            const source = match.source ? ` [fuente: ${escapeDataForPrompt(match.source, 100)}]` : ''
+            userParts.push(`  ${escapeDataForPrompt(match.content, 2000)}${source}`)
+          }
+        } else {
+          userParts.push(`- ${result.type}${result.tool ? ` (${result.tool})` : ''}: ${escapeDataForPrompt(JSON.stringify(result.data).substring(0, 800))}`)
+        }
       } else if (!result.success) {
         userParts.push(`- ${result.type}: FALLÓ (${escapeDataForPrompt(result.error ?? 'error desconocido', 200)})`)
       }
@@ -399,4 +408,22 @@ Adapta tu respuesta al contexto de esta campaña.`)
  */
 export function clearPromptCache(): void {
   fileCache.clear()
+}
+
+// ─── Helpers ──────────────────────────────────
+
+interface KnowledgeMatch {
+  content: string
+  source?: string
+  score?: number
+  type?: string
+}
+
+/**
+ * Type guard: check if data is an array of knowledge search results.
+ */
+function isKnowledgeResultArray(data: unknown): data is KnowledgeMatch[] {
+  if (!Array.isArray(data) || data.length === 0) return false
+  const first = data[0] as Record<string, unknown>
+  return typeof first === 'object' && first !== null && typeof first['content'] === 'string'
 }

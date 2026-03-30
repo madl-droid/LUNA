@@ -16,6 +16,7 @@ import type {
   KnowledgeDocument,
   KnowledgeSearchResult,
   KnowledgeInjection,
+  KnowledgeInjectionItem,
   KnowledgeStats,
   UpgradeSuggestion,
   DocumentMetadata,
@@ -215,11 +216,24 @@ export class KnowledgeManager {
     if (cached) return cached
 
     // Build fresh
-    const [coreDocs, categories, connectors] = await Promise.all([
+    const [coreDocs, categories, connectors, activeItems] = await Promise.all([
       this.pgStore.getCoreDocuments(),
       this.pgStore.listCategories(),
       this.pgStore.listApiConnectors(),
+      this.pgStore.listActiveItemsForInjection(),
     ])
+
+    // Build category title lookup
+    const catTitleById = new Map(categories.map(c => [c.id, c.title]))
+
+    // Map items to injection format
+    const injectionItems: KnowledgeInjectionItem[] = activeItems.map(item => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      categoryId: item.categoryId,
+      categoryTitle: item.categoryId ? catTitleById.get(item.categoryId) : undefined,
+    }))
 
     const injection: KnowledgeInjection = {
       coreDocuments: coreDocs.map(d => ({ title: d.title, description: d.description })),
@@ -227,6 +241,7 @@ export class KnowledgeManager {
       apiConnectors: connectors
         .filter(c => c.active)
         .map(c => ({ title: c.title, description: c.description })),
+      items: injectionItems,
     }
 
     // Cache it

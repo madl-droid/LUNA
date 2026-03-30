@@ -1134,8 +1134,10 @@ const manifest: ModuleManifest = {
       itemManager.setVectorizeWorker(vectorizeWorker)
     }
 
-    // Register service
+    // Register services
     registry.provide('knowledge:manager', knowledgeManager)
+    registry.provide('knowledge:pg-store', pgStore)
+    registry.provide('knowledge:item-manager', itemManager)
 
     // Register console section renderer
     registry.provide('knowledge:renderSection', async (lang: 'es' | 'en') => {

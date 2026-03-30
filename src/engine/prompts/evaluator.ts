@@ -179,25 +179,63 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
   // Knowledge v2 injection (structured catalog for evaluator)
   if (ctx.knowledgeInjection) {
     const inj = ctx.knowledgeInjection
+
+    // Items grouped by category — gives the evaluator a clear map of available knowledge
+    if (inj.items && inj.items.length > 0) {
+      parts.push(`[Base de conocimiento disponible (buscar con search_knowledge):]`)
+
+      // Group by category
+      const byCategory = new Map<string, typeof inj.items>()
+      const noCategory: typeof inj.items = []
+      for (const item of inj.items) {
+        const key = item.categoryTitle ?? item.categoryId ?? '__none__'
+        if (!item.categoryId) {
+          noCategory.push(item)
+        } else {
+          const group = byCategory.get(key) ?? []
+          group.push(item)
+          byCategory.set(key, group)
+        }
+      }
+
+      for (const [catTitle, items] of byCategory) {
+        parts.push(`  Categoría "${catTitle}":`)
+        for (const item of items) {
+          const desc = item.description ? ` — ${item.description}` : ''
+          parts.push(`    - ${item.title}${desc}`)
+        }
+      }
+      if (noCategory.length > 0) {
+        parts.push(`  Sin categoría:`)
+        for (const item of noCategory) {
+          const desc = item.description ? ` — ${item.description}` : ''
+          parts.push(`    - ${item.title}${desc}`)
+        }
+      }
+    } else {
+      // Fallback: show categories only
+      if (inj.categories.length > 0) {
+        parts.push(`[Categorías de conocimiento:]`)
+        for (const c of inj.categories) {
+          parts.push(`- ${c.title}: ${c.description}`)
+        }
+      }
+    }
+
     if (inj.coreDocuments.length > 0) {
-      parts.push(`[Documentos core disponibles:]`)
+      parts.push(`[Documentos core (siempre disponibles):]`)
       for (const d of inj.coreDocuments) {
         parts.push(`- ${d.title}: ${d.description}`)
       }
     }
-    if (inj.categories.length > 0) {
-      parts.push(`[Categorías de conocimiento:]`)
-      for (const c of inj.categories) {
-        parts.push(`- ${c.title}: ${c.description}`)
-      }
-    }
+
     if (inj.apiConnectors.length > 0) {
       parts.push(`[APIs disponibles:]`)
       for (const a of inj.apiConnectors) {
         parts.push(`- ${a.title}: ${a.description}`)
       }
     }
-    parts.push(`[Si necesitas buscar conocimiento, indica search_query y opcionalmente search_hint (título de categoría para priorizar)]`)
+    parts.push(`[Para buscar en el conocimiento usa search_knowledge con search_query; agrega search_hint con el nombre de categoría para priorizar resultados]`)
   }
 
   // Assignment rules — injected for leads/unregistered so LLM can classify contacts
