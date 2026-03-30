@@ -132,7 +132,7 @@ export class KnowledgeItemManager {
     docTitle: string,
     mimeType: string,
     chunks: SmartChunk[],
-    opts?: { buffer?: Buffer; description?: string },
+    opts?: { buffer?: Buffer; description?: string; fileUrl?: string },
   ): Promise<number> {
     if (chunks.length === 0) return 0
 
@@ -150,7 +150,7 @@ export class KnowledgeItemManager {
       contentHash = createHash('sha256').update(docTitle + chunks[0]!.content.substring(0, 500)).digest('hex')
     }
 
-    // Create document record
+    // Create document record — store fileUrl in metadata for shareable links
     const docId = await this.pgStore.insertDocument({
       title: docTitle,
       description: opts?.description ?? item.description ?? '',
@@ -160,7 +160,11 @@ export class KnowledgeItemManager {
       contentHash,
       filePath: filePath ?? '',
       mimeType,
-      metadata: { chunkerVersion: 'smart-v2', chunkCount: chunks.length },
+      metadata: {
+        chunkerVersion: 'smart-v2',
+        chunkCount: chunks.length,
+        ...(opts?.fileUrl ? { fileUrl: opts.fileUrl } : {}),
+      },
     })
 
     // Link and insert chunks
@@ -623,7 +627,7 @@ export class KnowledgeItemManager {
 
   /** Load a single file from Drive, dispatching by MIME type */
   private async loadDriveFile(
-    file: { id: string; name: string; mimeType: string },
+    file: { id: string; name: string; mimeType: string; webViewLink?: string },
     item: KnowledgeItem,
   ): Promise<number> {
     const drive = this.registry.getOptional<DriveService>('google:drive')!
@@ -721,6 +725,7 @@ export class KnowledgeItemManager {
     const chunks = chunkDocs(text)
     return this.persistSmartChunks(item, fileName, 'text/plain', chunks, {
       description: fileName,
+      fileUrl: file.webViewLink,
     })
   }
 

@@ -1951,6 +1951,7 @@ select.wizard-input option:checked {
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   margin-bottom: 20px;
+  align-items: start;
 }
 
 /* Third-width field groups (3 columns) */
@@ -3427,15 +3428,15 @@ select.wizard-input option:checked {
 }
 .tool-card {
   background: var(--surface-container-lowest);
-  border-radius: var(--radius-sm);
-  padding: 20px;
+  border-radius: var(--radius-md);
+  padding: var(--section-gap);
   box-shadow: var(--shadow-subtle);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-md);
   transition: box-shadow 0.2s ease;
 }
-.tool-card:hover { box-shadow: var(--shadow-subtle); }
+.tool-card:hover { box-shadow: var(--shadow-float); }
 .tool-card.disabled { opacity: 0.6; }
 .tool-card-header {
   display: flex;
@@ -3549,11 +3550,12 @@ select.wizard-input option:checked {
   background: var(--surface-container-lowest);
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-md);
-  padding: 14px;
+  padding: var(--section-gap);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: box-shadow 0.2s ease;
   position: relative;
 }
+.ts-gws-card:hover { box-shadow: var(--shadow-float); }
 
 .ts-gws-card-inactive {
   opacity: 0.6;

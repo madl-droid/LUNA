@@ -155,9 +155,10 @@ function renderStyles(): string {
 .sa-form-footer { display:flex; gap:8px; justify-content:flex-end; padding-top:12px; border-top:1px solid var(--outline-variant) }
 .sa-btn-form { font-size:13px; padding:7px 16px; border-radius:0.5rem }
 
-.sa-list { display:flex; flex-direction:column; gap:8px }
+.sa-list { display:flex; flex-direction:column; gap:var(--space-md) }
 
-.sa-card { background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:0.5rem; padding:14px 16px; transition:border-color 0.15s ease }
+.sa-card { background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:0.5rem; padding:var(--section-gap); transition:box-shadow 0.2s ease }
+.sa-card:hover { box-shadow:var(--shadow-float) }
 .sa-card-disabled { opacity:0.55 }
 .sa-card-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px }
 .sa-card-body { flex:1; min-width:0 }

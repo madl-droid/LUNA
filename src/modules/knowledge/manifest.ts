@@ -1225,12 +1225,12 @@ const manifest: ModuleManifest = {
       const items = await itemManager!.list()
       const categories = await pgStore!.listCategories()
       const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_FAQ_DESCRIPTION: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string; KNOWLEDGE_PRODUCTS_DESCRIPTION: string }>('knowledge')
-      // Check if debugging is active (config_store) — skips cooldown
+      // Check if Debugging toggle is active (ENGINE_TEST_MODE in config_store)
       let debugActive = false
       try {
         const db = registry.getDb()
-        const dbg = await db.query(`SELECT value FROM config_store WHERE key = 'DEBUG_EXTREME_LOG'`)
-        debugActive = dbg.rows[0]?.value === 'true'
+        const dbg = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+        debugActive = (dbg.rows[0] as { value: string } | undefined)?.value === 'true'
       } catch { /* non-critical */ }
       return renderKnowledgeSection(items, categories, lang, {
         faqSheetUrl: cfg?.KNOWLEDGE_FAQ_SHEET_URL ?? '',
@@ -1284,6 +1284,7 @@ const manifest: ModuleManifest = {
                   source: r.source,
                   score: r.score,
                   type: r.type,
+                  fileUrl: r.fileUrl,
                 })),
                 count: results.length,
               },

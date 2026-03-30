@@ -462,6 +462,7 @@ export class KnowledgePgStore {
     rank: number
     documentTitle: string
     categoryIds: string[]
+    fileUrl: string | null
   }>> {
     const res = await this.db.query<{
       chunk_id: string
@@ -471,6 +472,7 @@ export class KnowledgePgStore {
       rank: number
       document_title: string
       category_ids: string[]
+      file_url: string | null
     }>(
       `SELECT
         c.id as chunk_id,
@@ -479,12 +481,13 @@ export class KnowledgePgStore {
         c.section,
         ts_rank(c.tsv, plainto_tsquery('spanish', $1)) as rank,
         d.title as document_title,
-        COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+        COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids,
+        d.metadata->>'fileUrl' as file_url
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
        LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
        WHERE c.tsv @@ plainto_tsquery('spanish', $1)
-       GROUP BY c.id, c.document_id, c.content, c.section, c.tsv, d.title
+       GROUP BY c.id, c.document_id, c.content, c.section, c.tsv, d.title, d.metadata
        ORDER BY rank DESC
        LIMIT $2`,
       [query, limit],
@@ -498,6 +501,7 @@ export class KnowledgePgStore {
       rank: r.rank,
       documentTitle: r.document_title,
       categoryIds: r.category_ids,
+      fileUrl: r.file_url,
     }))
   }
 
@@ -509,6 +513,7 @@ export class KnowledgePgStore {
     similarity: number
     documentTitle: string
     categoryIds: string[]
+    fileUrl: string | null
   }>> {
     const embStr = `[${embedding.join(',')}]`
     const res = await this.db.query<{
@@ -519,6 +524,7 @@ export class KnowledgePgStore {
       similarity: number
       document_title: string
       category_ids: string[]
+      file_url: string | null
     }>(
       `SELECT
         c.id as chunk_id,
@@ -527,12 +533,13 @@ export class KnowledgePgStore {
         c.section,
         1 - (c.embedding <=> $1::vector) as similarity,
         d.title as document_title,
-        COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids
+        COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids,
+        d.metadata->>'fileUrl' as file_url
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
        LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
        WHERE c.has_embedding = true
-       GROUP BY c.id, c.document_id, c.content, c.section, c.embedding, d.title
+       GROUP BY c.id, c.document_id, c.content, c.section, c.embedding, d.title, d.metadata
        ORDER BY c.embedding <=> $1::vector
        LIMIT $2`,
       [embStr, limit],
@@ -546,6 +553,7 @@ export class KnowledgePgStore {
       similarity: r.similarity,
       documentTitle: r.document_title,
       categoryIds: r.category_ids,
+      fileUrl: r.file_url,
     }))
   }
 

@@ -45,7 +45,7 @@ export function selectField(key: string, value: string, options: Array<{value: s
     return `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(optLabel)}</option>`
   }).join('')
   return `<div class="field"><div class="field-left"><span class="field-label">${esc(labelStr ?? key)}</span></div>
-    <select name="${key}" data-original="${esc(value)}">${optionsHtml}</select></div>`
+    <select class="js-custom-select" name="${key}" data-original="${esc(value)}">${optionsHtml}</select></div>`
 }
 
 export function textareaField(key: string, value: string, lang: Lang, labelKey?: string, infoKey?: string): string {
@@ -265,7 +265,7 @@ export function renderConsoleField(field: ConsoleField, value: string, lang: Lan
         return `<option value="${esc(o.value)}" ${o.value === value ? 'selected' : ''}>${esc(optLabel)}</option>`
       }).join('')
       return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
-        <select name="${field.key}" data-original="${esc(value)}">${optionsHtml}</select></div>`
+        <select class="js-custom-select" name="${field.key}" data-original="${esc(value)}">${optionsHtml}</select></div>`
     }
     case 'textarea': {
       if ((field as unknown as Record<string, unknown>).fieldType === 'code-editor') {

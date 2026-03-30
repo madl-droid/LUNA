@@ -99,6 +99,7 @@ export class KnowledgeSearchEngine {
         score: 0,
         type: 'chunk',
         documentId: r.documentId,
+        fileUrl: r.fileUrl ?? undefined,
         combinedScore: r.similarity * wVector,
         categoryIds: r.categoryIds ?? [],
       })
@@ -116,6 +117,7 @@ export class KnowledgeSearchEngine {
           score: 0,
           type: 'chunk',
           documentId: r.documentId,
+          fileUrl: r.fileUrl ?? undefined,
           combinedScore: r.rank * wFts,
           categoryIds: r.categoryIds ?? [],
         })

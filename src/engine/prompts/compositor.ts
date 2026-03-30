@@ -330,7 +330,8 @@ Adapta tu respuesta al contexto de esta campaña.`)
           userParts.push(`- Conocimiento encontrado:`)
           for (const match of result.data) {
             const source = match.source ? ` [fuente: ${escapeDataForPrompt(match.source, 100)}]` : ''
-            userParts.push(`  ${escapeDataForPrompt(match.content, 2000)}${source}`)
+            const fileLink = match.fileUrl ? ` [archivo: ${escapeDataForPrompt(match.fileUrl, 300)}]` : ''
+            userParts.push(`  ${escapeDataForPrompt(match.content, 2000)}${source}${fileLink}`)
           }
         } else {
           userParts.push(`- ${result.type}${result.tool ? ` (${result.tool})` : ''}: ${escapeDataForPrompt(JSON.stringify(result.data).substring(0, 800))}`)
@@ -406,7 +407,7 @@ Adapta tu respuesta al contexto de esta campaña.`)
           }
         }
         if (hasShareable) {
-          userParts.push(`\n[INSTRUCCIÓN COMPARTIR: Los items marcados [COMPARTIBLE: url] pueden ser compartidos con el usuario. Si la información que proporcionas proviene de un item compartible y el usuario se beneficiaría de acceder al documento completo, incluye el enlace en tu respuesta de forma natural, por ejemplo: "Puedes ver más detalles aquí: {url}". NUNCA compartas URLs de items que NO estén marcados como compartibles.]`)
+          userParts.push(`\n[INSTRUCCIÓN COMPARTIR: Los items marcados [COMPARTIBLE: url] pueden ser compartidos con el usuario. Cuando la información que proporcionas proviene de un item compartible y el usuario se beneficiaría de acceder al documento o recurso original, incluye el enlace en tu respuesta de forma natural. Ejemplos: "Puedes verlo completo aquí: {url}", "Te comparto el enlace del catálogo: {url}". Si la fuente es una carpeta de Drive, comparte el enlace de la carpeta que contiene los archivos. NUNCA inventes URLs ni compartas enlaces de items que NO estén marcados como compartibles.]`)
         }
       }
     }
@@ -454,6 +455,7 @@ interface KnowledgeMatch {
   source?: string
   score?: number
   type?: string
+  fileUrl?: string
 }
 
 /**

@@ -94,16 +94,13 @@ const manifest: ModuleManifest = {
     WHATSAPP_AVISO_TRIGGER_MS: numEnv(3000),
     WHATSAPP_AVISO_HOLD_MS: numEnv(2000),
     WHATSAPP_AVISO_MESSAGE: z.string().default('Un momento, estoy revisando eso...'),
-    WHATSAPP_AVISO_STYLE: z.string().default('casual'),
-    // Rate limits
-    WHATSAPP_RATE_LIMIT_HOUR: numEnvMin(1, 30),
     // Socket tuning
     WHATSAPP_MARK_ONLINE: boolEnv(true),
     WHATSAPP_REJECT_CALLS: boolEnv(true),
     // Privacy
     WHATSAPP_PRIVACY_LAST_SEEN: boolEnv(false),
-    WHATSAPP_PRIVACY_PROFILE_PIC: z.string().default(''),
-    WHATSAPP_PRIVACY_STATUS: z.string().default(''),
+    WHATSAPP_PRIVACY_PROFILE_PIC: z.string().default('all'),
+    WHATSAPP_PRIVACY_STATUS: z.string().default('all'),
     WHATSAPP_PRIVACY_READ_RECEIPTS: boolEnv(true),
     // Message batching
     WHATSAPP_BATCH_ENABLED: boolEnv(true),
@@ -168,20 +165,17 @@ const manifest: ModuleManifest = {
       { key: 'WHATSAPP_BATCH_ENABLED', type: 'boolean', label: { es: 'Agrupar mensajes', en: 'Group messages' }, description: { es: 'Acumular antes de procesar', en: 'Accumulate before processing' }, icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>', tab: 'behavior', width: 'third' },
       { key: 'WHATSAPP_PRECLOSE_ENABLED', type: 'boolean', label: { es: 'Follow-up pre-cierre', en: 'Pre-close follow-up' }, description: { es: 'Recordatorio antes de cerrar', en: 'Reminder before closing' }, icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>', tab: 'behavior', width: 'third' },
       // Row 2: 2-column selectors
-      { key: '_divider_selectors', type: 'divider', label: { es: 'Ajustes de tiempo', en: 'Time settings' }, tab: 'behavior' },
-      { key: 'WHATSAPP_SESSION_TIMEOUT_HOURS', type: 'number', label: { es: 'Tiempo de vida de sesion', en: 'Session lifetime' }, info: { es: 'Horas de inactividad para cerrar la sesion (minimo 3)', en: 'Inactivity hours to close the session (min 3)' }, min: 3, max: 24, unit: 'h', width: 'half', tab: 'behavior' },
-      { key: 'WHATSAPP_BATCH_WAIT_SECONDS', type: 'number', label: { es: 'Tiempo de agrupado', en: 'Grouping time' }, info: { es: 'Segundos para acumular mensajes antes de procesar (10-90, multiplos de 10)', en: 'Seconds to collect messages before processing (10-90, multiples of 10)' }, min: 10, max: 90, step: 10, unit: 's', width: 'half', tab: 'behavior', fieldType: 'volume' },
+      { key: '_divider_selectors', type: 'divider', label: { es: 'Ajustes generales', en: 'General settings' }, tab: 'behavior' },
+      { key: 'WHATSAPP_SESSION_TIMEOUT_HOURS', type: 'number', label: { es: 'Tiempo de vida de sesion', en: 'Session lifetime' }, info: { es: 'Horas de inactividad para cerrar la sesion (minimo 3)', en: 'Inactivity hours to close the session (min 3)' }, min: 3, max: 24, unit: 'horas', width: 'half', tab: 'behavior' },
+      { key: 'WHATSAPP_BATCH_WAIT_SECONDS', type: 'number', label: { es: 'Tiempo de agrupado', en: 'Grouping time' }, info: { es: 'Segundos para acumular mensajes antes de procesar (10-90, multiplos de 10)', en: 'Seconds to collect messages before processing (10-90, multiples of 10)' }, min: 10, max: 90, step: 10, unit: 'segundos', width: 'half', tab: 'behavior', fieldType: 'volume' },
       { key: 'WHATSAPP_MISSED_MSG_WINDOW_MIN', type: 'select', label: { es: 'Frecuencia busqueda mensajes', en: 'Missed messages frequency' }, info: { es: 'Ventana para procesar mensajes perdidos', en: 'Window to process missed messages' }, width: 'half', tab: 'behavior', options: [{ value: '5', label: '5 min' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' }, { value: '60', label: '60 min' }] },
-      { key: 'WHATSAPP_PRECLOSE_FOLLOWUP_HOURS', type: 'number', label: { es: 'Tiempo follow-up pre-cierre', en: 'Pre-close follow-up time' }, info: { es: 'Horas antes del cierre para enviar recordatorio (max: timeout sesion - 2h)', en: 'Hours before close to send reminder (max: session timeout - 2h)' }, min: 0, max: 22, unit: 'h', width: 'half', tab: 'behavior' },
-      { key: 'WHATSAPP_AVISO_TRIGGER_MS', type: 'number', label: { es: 'Tiempo para enviar ACK', en: 'Time to send ACK' }, info: { es: 'Minutos de espera antes de enviar mensaje de espera', en: 'Minutes to wait before sending wait message' }, min: 60000, max: 1800000, step: 60000, unit: 'min', width: 'half', tab: 'behavior', fieldType: 'volume' },
-      { key: 'WHATSAPP_AVISO_HOLD_MS', type: 'number', label: { es: 'Tiempo respuesta post-ACK', en: 'Response time after ACK' }, info: { es: 'Minutos de pausa despues del ACK antes de enviar respuesta real', en: 'Minutes to pause after ACK before sending real response' }, min: 60000, max: 600000, step: 60000, unit: 'min', width: 'half', tab: 'behavior', fieldType: 'volume' },
+      { key: 'WHATSAPP_PRECLOSE_FOLLOWUP_HOURS', type: 'number', label: { es: 'Tiempo follow-up pre-cierre', en: 'Pre-close follow-up time' }, info: { es: 'Horas antes del cierre para enviar recordatorio (max: timeout sesion - 2h)', en: 'Hours before close to send reminder (max: session timeout - 2h)' }, min: 0, max: 22, unit: 'horas', width: 'half', tab: 'behavior' },
+      { key: 'WHATSAPP_AVISO_TRIGGER_MS', type: 'number', label: { es: 'Tiempo para ACK', en: 'Time to ACK' }, info: { es: 'Minutos de espera antes de enviar mensaje de espera', en: 'Minutes to wait before sending wait message' }, min: 60000, max: 1800000, step: 60000, unit: 'minutos', width: 'half', tab: 'behavior', fieldType: 'volume' },
+      { key: 'WHATSAPP_AVISO_HOLD_MS', type: 'number', label: { es: 'Tiempo post-ACK', en: 'Post-ACK time' }, info: { es: 'Minutos de pausa despues del ACK antes de enviar respuesta real', en: 'Minutes to pause after ACK before sending real response' }, min: 60000, max: 600000, step: 60000, unit: 'minutos', width: 'half', tab: 'behavior', fieldType: 'volume' },
       // Pre-close message
       { key: 'WHATSAPP_PRECLOSE_MESSAGE', type: 'text', label: { es: 'Mensaje pre-cierre', en: 'Pre-close message' }, info: { es: 'Texto del recordatorio antes de cerrar la sesion', en: 'Reminder text before closing session' }, tab: 'behavior' },
       // ACK config
-      { key: 'WHATSAPP_AVISO_MESSAGE', type: 'text', label: { es: 'Mensaje de espera', en: 'Wait message' }, info: { es: 'Texto que se envia mientras se procesa la respuesta', en: 'Text sent while processing the response' }, tab: 'behavior' },
-      { key: 'WHATSAPP_AVISO_STYLE', type: 'select', label: { es: 'Estilo de ACK', en: 'ACK style' }, options: [{ value: 'formal', label: 'Formal' }, { value: 'casual', label: 'Casual' }, { value: 'express', label: 'Express' }, { value: 'dynamic', label: 'Dynamic' }], tab: 'behavior', width: 'half' },
-      // Rate limits
-      { key: 'WHATSAPP_RATE_LIMIT_HOUR', type: 'number', label: { es: 'Max mensajes por hora', en: 'Max messages per hour' }, min: 1, max: 100, width: 'half', tab: 'behavior' },
+      { key: 'WHATSAPP_AVISO_MESSAGE', type: 'text', label: { es: 'Mensaje de ACK', en: 'ACK message' }, info: { es: 'Texto que se envia mientras se procesa la respuesta', en: 'Text sent while processing the response' }, tab: 'behavior' },
 
       // ═══ TAB: Formato de respuesta ═══
       { key: '_tab_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' }, tab: 'format' },
@@ -417,8 +411,6 @@ interface WhatsAppFullConfig {
   WHATSAPP_AVISO_TRIGGER_MS: number
   WHATSAPP_AVISO_HOLD_MS: number
   WHATSAPP_AVISO_MESSAGE: string
-  WHATSAPP_AVISO_STYLE: string
-  WHATSAPP_RATE_LIMIT_HOUR: number
   WHATSAPP_MARK_ONLINE: boolean
   WHATSAPP_REJECT_CALLS: boolean
   WHATSAPP_PRIVACY_LAST_SEEN: boolean
@@ -469,12 +461,12 @@ interface WhatsAppFullConfig {
  */
 function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/types.js').ChannelRuntimeConfig {
   return {
-    rateLimitHour: cfg.WHATSAPP_RATE_LIMIT_HOUR,
+    rateLimitHour: 0,
     rateLimitDay: 200,
     avisoTriggerMs: cfg.WHATSAPP_AVISO_TRIGGER_MS,
     avisoHoldMs: cfg.WHATSAPP_AVISO_HOLD_MS,
     avisoMessages: cfg.WHATSAPP_AVISO_MESSAGE ? [cfg.WHATSAPP_AVISO_MESSAGE] : [],
-    avisoStyle: (cfg.WHATSAPP_AVISO_STYLE || 'casual') as import('../../channels/types.js').AvisoStyle,
+    avisoStyle: 'casual' as import('../../channels/types.js').AvisoStyle,
     sessionTimeoutMs: cfg.WHATSAPP_SESSION_TIMEOUT_HOURS * 3600000,
     batchWaitSeconds: cfg.WHATSAPP_BATCH_WAIT_SECONDS,
     precloseFollowupMs: cfg.WHATSAPP_PRECLOSE_FOLLOWUP_HOURS * 3600000,

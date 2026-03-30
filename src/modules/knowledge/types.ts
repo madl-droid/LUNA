@@ -242,6 +242,7 @@ export interface KnowledgeSearchResult {
   type: 'chunk' | 'faq'
   documentId?: string
   faqId?: string
+  fileUrl?: string            // shareable URL of the specific source file
 }
 
 export interface KnowledgeSearchOptions {

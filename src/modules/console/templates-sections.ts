@@ -912,7 +912,8 @@ const GEAR_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
 
 // ─── Channels marked as "coming soon" — toggle disabled, no settings link ───
 // To enable a channel when it's ready, remove its ID from this set.
-const COMING_SOON_CHANNELS = new Set(['google-chat', 'twilio-voice'])
+const COMING_SOON_CHANNELS: ReadonlySet<string> = new Set(['google-chat', 'twilio-voice'])
+void COMING_SOON_CHANNELS // used on line 985
 
 // Helper: renders a single metric cell with label + hover tooltip
 function metricCell(field: string, label: string, info: string, nd: string): string {
@@ -982,6 +983,7 @@ export function renderChannelsSection(data: SectionData): string {
   </div>`
 
   const cardsHtml = cards.map(card => {
+    const comingSoon = COMING_SOON_CHANNELS.has(card.id)
     const typeLabel = t('ch_type_' + card.channelType, lang)
     const statusLabels: Record<string, string> = {
       connected: t('ch_connected', lang),
@@ -997,39 +999,43 @@ export function renderChannelsSection(data: SectionData): string {
     const unplugSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`
 
     let connectionBtn = ''
-    if (card.active && card.status === 'connected') {
+    if (!comingSoon && card.active && card.status === 'connected') {
       connectionBtn = `<button class="act-btn act-btn-remove" onclick="channelDisconnect('${esc(card.id)}', '${lang}')">${unplugSvg} ${t('ch_disconnect', lang)}</button>`
-    } else if (card.active && card.status !== 'connected') {
+    } else if (!comingSoon && card.active && card.status !== 'connected') {
       connectionBtn = `<button class="act-btn act-btn-add" onclick="channelConnect('${esc(card.id)}', '${lang}')">${plugSvg} ${t('ch_connect', lang)}</button>`
     }
 
-    // Footer: config + connect/disconnect only when active
-    const footerHtml = card.active
-      ? `<div class="ch-card-footer"><a href="${card.settingsUrl}" class="act-btn act-btn-config" title="${t('ch_settings', lang)}">${GEAR_SVG} ${t('ch_settings', lang)}</a><span class="ch-footer-spacer"></span>${connectionBtn}</div>`
-      : ''
+    // Footer: coming-soon badge OR config + connect/disconnect when active
+    const footerHtml = comingSoon
+      ? `<div class="ch-card-footer"><span class="panel-badge badge-soon">${lang === 'es' ? 'Próximamente' : 'Coming soon'}</span></div>`
+      : card.active
+        ? `<div class="ch-card-footer"><a href="${card.settingsUrl}" class="act-btn act-btn-config" title="${t('ch_settings', lang)}">${GEAR_SVG} ${t('ch_settings', lang)}</a><span class="ch-footer-spacer"></span>${connectionBtn}</div>`
+        : ''
+
+    // Toggle: disabled for coming-soon channels
+    const toggleHtml = comingSoon
+      ? `<label class="toggle toggle-sm"><input type="checkbox" disabled><span class="toggle-slider"></span></label>`
+      : `<label class="toggle toggle-sm"><input type="checkbox" ${toggleChecked} data-module="${esc(card.moduleName)}" data-redirect="/console/channels?lang=${lang}" onchange="toggleChannelConfirm(this)"><span class="toggle-slider"></span></label>`
 
     // Status tooltip text
     const statusLabel = statusLabels[card.status] ?? card.status
 
     return `
-    <div class="ch-card${card.active ? '' : ' ch-card-inactive'}" data-channel-id="${esc(card.id)}" data-status="${card.status}" data-filter-status="${filterStatus}" data-filter-type="${card.channelType}">
+    <div class="ch-card${(card.active && !comingSoon) ? '' : ' ch-card-inactive'}" data-channel-id="${esc(card.id)}" data-status="${comingSoon ? 'inactive' : card.status}" data-filter-status="${comingSoon ? 'inactive' : filterStatus}" data-filter-type="${card.channelType}">
       <div class="ch-card-top">
-        <div class="ch-card-icon" title="${statusLabel}">
+        <div class="ch-card-icon" title="${comingSoon ? (lang === 'es' ? 'Próximamente' : 'Coming soon') : statusLabel}">
           ${card.icon}
-          <span class="ch-icon-tooltip">${statusLabel}</span>
+          <span class="ch-icon-tooltip">${comingSoon ? (lang === 'es' ? 'Próximamente' : 'Coming soon') : statusLabel}</span>
         </div>
         <div class="ch-card-title-area">
           <div class="ch-card-name">${esc(card.name)}</div>
           <div class="ch-card-type">${esc(typeLabel)}</div>
         </div>
-        <label class="toggle toggle-sm">
-          <input type="checkbox" ${toggleChecked} data-module="${esc(card.moduleName)}" data-redirect="/console/channels?lang=${lang}" onchange="toggleChannelConfirm(this)">
-          <span class="toggle-slider"></span>
-        </label>
+        ${toggleHtml}
       </div>
       <div class="ch-card-desc">${esc(card.description)}</div>
       <div class="ch-card-error"></div>
-      ${card.active ? renderMetricsForType(card.channelType, card.id, lang) : ''}
+      ${(!comingSoon && card.active) ? renderMetricsForType(card.channelType, card.id, lang) : ''}
       ${footerHtml}
     </div>`
   }).join('')

@@ -175,9 +175,10 @@ function renderStyles(): string {
 .st-form-footer { display:flex; gap:8px; justify-content:flex-end; padding-top:12px; border-top:1px solid var(--outline-variant) }
 .st-btn-form { font-size:13px; padding:7px 16px; border-radius:0.5rem }
 
-.st-task-list { display:flex; flex-direction:column; gap:8px }
+.st-task-list { display:flex; flex-direction:column; gap:var(--space-md) }
 
-.st-task-card { background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:0.5rem; padding:14px 16px; transition:border-color 0.15s ease }
+.st-task-card { background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:0.5rem; padding:var(--section-gap); transition:box-shadow 0.2s ease }
+.st-task-card:hover { box-shadow:var(--shadow-float) }
 .st-task-card-disabled { opacity:0.55 }
 .st-card-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px }
 .st-card-body { flex:1; min-width:0 }

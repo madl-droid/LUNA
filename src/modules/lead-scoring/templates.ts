@@ -242,9 +242,10 @@ function renderStyles(): string {
     .ls-metric-val { width:40px;text-align:right;font-size:13px;font-weight:600;flex-shrink:0 }
 
     /* ── Framework cards ── */
-    .ls-fw-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px }
-    .ls-fw-card { border:2px solid var(--outline-variant);border-radius:0.5rem;padding:14px;transition:all 0.2s;
+    .ls-fw-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-md);margin-bottom:12px }
+    .ls-fw-card { border:2px solid var(--outline-variant);border-radius:0.5rem;padding:var(--section-gap);transition:all 0.2s;
       background:var(--surface-container-lowest);cursor:default }
+    .ls-fw-card:not(.active):hover { box-shadow:var(--shadow-float) }
     .ls-fw-card.active { border-color:var(--primary);box-shadow:0 0 12px var(--primary-medium) }
     .ls-fw-card-title { font-weight:700;font-size:14px;margin-bottom:2px }
     .ls-fw-card-type { font-size:11px;font-weight:600;color:var(--primary);text-transform:uppercase;letter-spacing:0.05em }

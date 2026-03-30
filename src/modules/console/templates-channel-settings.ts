@@ -101,7 +101,6 @@ export function renderChannelSettingsPage(channel: ModuleInfo, data: SectionData
         ${renderPeriodFilter(channelId, lang)}
         ${renderBudgetCard(channelId, lang, config)}
         ${renderActivityCard(channelId, lang)}
-        ${renderTipCard(channelId, lang)}
       </div>
     </div>
 <script type="application/json" id="channel-wizards-data">${JSON.stringify(wizardJson)}</script>`
@@ -466,7 +465,7 @@ function renderBudgetCard(channelId: string, lang: Lang, config: Record<string, 
 
 // ── Tip card ──
 
-function renderTipCard(channelId: string, lang: Lang): string {
+export function renderTipCard(channelId: string, lang: Lang): string {
   const tip = CHANNEL_TIPS[channelId]?.[lang]
   if (!tip) return ''
 

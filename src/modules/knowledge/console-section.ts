@@ -121,21 +121,20 @@ export function renderKnowledgeSection(
   if (items.length > 0) {
     const trainedItems = items.filter(i => i.embeddingStatus === 'done')
     const totalChunks = items.reduce((sum, i) => sum + (i.chunkCount ?? 0), 0)
-    const activeItems = items.filter(i => i.active)
-    // Find most recent updatedAt as "last training"
     const lastTrained = items
       .filter(i => i.embeddingStatus === 'done')
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]
 
+    const pad = (n: number) => n.toString().padStart(2, '0')
     const lastDate = lastTrained
-      ? `${lastTrained.updatedAt.getDate().toString().padStart(2, '0')}/${(lastTrained.updatedAt.getMonth() + 1).toString().padStart(2, '0')}/${lastTrained.updatedAt.getFullYear()} ${lang === 'es' ? 'a las' : 'at'} ${lastTrained.updatedAt.getHours().toString().padStart(2, '0')}:${lastTrained.updatedAt.getMinutes().toString().padStart(2, '0')}`
+      ? `${pad(lastTrained.updatedAt.getDate())}/${pad(lastTrained.updatedAt.getMonth() + 1)}/${lastTrained.updatedAt.getFullYear().toString().slice(2)} ${pad(lastTrained.updatedAt.getHours())}:${pad(lastTrained.updatedAt.getMinutes())}`
       : (lang === 'es' ? 'nunca' : 'never')
 
     const statsText = lang === 'es'
-      ? `Último entrenamiento el ${lastDate} sobre ${trainedItems.length} conocimientos, ${activeItems.length} activos, para un total de ${totalChunks} datos procesados.`
-      : `Last training on ${lastDate} across ${trainedItems.length} knowledge items, ${activeItems.length} active, for a total of ${totalChunks} processed data points.`
+      ? `Último entrenamiento: ${lastDate} sobre ${trainedItems.length} conocimientos para un total de ${totalChunks} datos.`
+      : `Last training: ${lastDate} across ${trainedItems.length} knowledge items for a total of ${totalChunks} data points.`
 
-    html += `<p class="ki-stats-footer">${esc(statsText)}</p>`
+    html += `<p class="ki-stats-footer" id="ki-stats-footer">${esc(statsText)}</p>`
   }
 
   // ── Wizard Modal (3-step) ──
@@ -1024,11 +1023,25 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
         setCooldown('ki-cd-' + id);
-        toast('${isEs ? 'Entrenado: ' : 'Trained: '}' + r.chunks + ' chunks');
+        toast('${isEs ? 'Entrenado: ' : 'Trained: '}' + r.chunks + ' ${isEs ? 'datos' : 'data points'}');
+        updateStatsFooter();
         location.reload();
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
+
+  function updateStatsFooter() {
+    var footer = document.getElementById('ki-stats-footer');
+    if (!footer) return;
+    var now = new Date();
+    var dd = ('0' + now.getDate()).slice(-2);
+    var mm = ('0' + (now.getMonth() + 1)).slice(-2);
+    var yy = String(now.getFullYear()).slice(2);
+    var hh = ('0' + now.getHours()).slice(-2);
+    var mi = ('0' + now.getMinutes()).slice(-2);
+    var items = document.querySelectorAll('.ki-row');
+    footer.textContent = '${isEs ? 'Último entrenamiento' : 'Last training'}: ' + dd + '/' + mm + '/' + yy + ' ' + hh + ':' + mi + ' ${isEs ? 'sobre' : 'across'} ' + items.length + ' ${isEs ? 'conocimientos' : 'knowledge items'}.';
+  }
 
   window.kiBulkVectorize = function() {
     if (!confirm('${isEs ? '¿Entrenar todo el contenido pendiente?' : 'Train all pending content?'}')) return;
@@ -1039,6 +1052,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
         if (r.error) { toast(r.error, 'error'); return; }
         setCooldown('ki-cd-bulk');
         toast('${isEs ? 'Entrenamiento iniciado' : 'Training started'}');
+        updateStatsFooter();
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -1203,8 +1217,9 @@ function renderStyles(): string {
 .ki-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
 
 /* List table layout */
-.ki-list { display:flex; flex-direction:column; gap:8px; }
-.ki-row { display:grid !important; grid-template-columns:1fr 80px 120px auto; gap:12px; align-items:center; padding:14px 16px !important; }
+.ki-list { display:flex; flex-direction:column; gap:var(--space-md); }
+.ki-row { display:grid !important; grid-template-columns:1fr 80px 120px auto; gap:12px; align-items:center; padding:var(--section-gap) !important; transition:box-shadow 0.2s ease; }
+.ki-row:hover { box-shadow:var(--shadow-float); }
 .ki-row-inactive { opacity:0.55; }
 
 /* Nombre column */
