@@ -82,7 +82,46 @@ export interface KnowledgeChunk {
   chunkIndex: number
   page: number | null         // para PDFs
   hasEmbedding: boolean
+  sourceId: string | null
+  chunkTotal: number | null
+  prevChunkId: string | null
+  nextChunkId: string | null
+  contentType: ChunkContentType
+  mediaRefs: MediaRef[] | null
+  extraMetadata: Record<string, unknown> | null
   createdAt: Date
+}
+
+// ═══════════════════════════════════════════
+// Smart Chunking (v2 — type-specific strategies)
+// ═══════════════════════════════════════════
+
+export type ChunkContentType = 'text' | 'csv' | 'pdf_pages' | 'slide' | 'image_text' | 'yt_header' | 'yt_transcript'
+
+export interface MediaRef {
+  mimeType: string
+  data?: string       // base64 inline data
+  filePath?: string   // on-disk reference
+}
+
+/** Pre-insert chunk (no ID yet, no linking) */
+export interface SmartChunk {
+  content: string
+  contentType: ChunkContentType
+  section: string | null
+  page: number | null
+  mediaRefs: MediaRef[] | null
+  extraMetadata: Record<string, unknown> | null
+}
+
+/** Post-linking chunk (with IDs and chain pointers) */
+export interface LinkedChunk extends SmartChunk {
+  id: string
+  chunkIndex: number
+  chunkTotal: number
+  prevChunkId: string | null
+  nextChunkId: string | null
+  sourceId: string
 }
 
 // ═══════════════════════════════════════════

@@ -158,27 +158,79 @@ export class VectorizeWorker {
   // ─── Embedding helper ─────────────────────────────────
 
   private async embedChunks(
-    chunks: Array<{ id: string; content: string; documentId: string }>,
+    chunks: Array<{ id: string; content: string; documentId: string; contentType: string; mediaRefs: Array<{ mimeType: string; data?: string; filePath?: string }> | null; extraMetadata: Record<string, unknown> | null }>,
   ): Promise<void> {
-    const texts = chunks.map((c) => c.content)
-    this.log.info({ batchSize: texts.length, textLengths: texts.map(t => t.length) }, '[EMBED] Sending batch to embedding model')
-    const embeddings = await this.embeddingService.generateBatchEmbeddings(texts)
+    // Separate text-only chunks (can batch) from multimodal chunks (must embed individually)
+    const textChunks = chunks.filter(c => !c.mediaRefs || c.mediaRefs.length === 0 || c.contentType === 'text' || c.contentType === 'csv')
+    const multimodalChunks = chunks.filter(c => c.mediaRefs && c.mediaRefs.length > 0 && c.contentType !== 'text' && c.contentType !== 'csv')
 
     let successCount = 0
     let nullCount = 0
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i]!
-      const embedding = embeddings[i] ?? null
-      if (embedding) {
-        await this.pgStore.updateChunkEmbedding(chunk.id, embedding)
-        successCount++
-        this.log.debug({ chunkId: chunk.id, dims: embedding.length, contentLen: chunk.content.length }, '[EMBED] Chunk embedded')
-      } else {
-        nullCount++
-        this.log.warn({ chunkId: chunk.id, contentPreview: chunk.content.substring(0, 100) }, '[EMBED] Embedding returned null, skipping chunk')
+
+    // Batch embed text-only chunks (efficient)
+    if (textChunks.length > 0) {
+      const texts = textChunks.map(c => c.content)
+      this.log.info({ batchSize: texts.length, types: textChunks.map(c => c.contentType) }, '[EMBED] Batch text embedding')
+      const embeddings = await this.embeddingService.generateBatchEmbeddings(texts)
+
+      for (let i = 0; i < textChunks.length; i++) {
+        const chunk = textChunks[i]!
+        const embedding = embeddings[i] ?? null
+        if (embedding) {
+          await this.pgStore.updateChunkEmbedding(chunk.id, embedding)
+          successCount++
+        } else {
+          nullCount++
+          this.log.warn({ chunkId: chunk.id, contentType: chunk.contentType }, '[EMBED] Text embedding null')
+        }
       }
     }
-    this.log.info({ batchSize: chunks.length, success: successCount, null: nullCount }, '[EMBED] Batch complete')
+
+    // Embed multimodal chunks individually (pdf_pages, slide, image_text, yt_header)
+    for (const chunk of multimodalChunks) {
+      try {
+        let embedding: number[] | null = null
+
+        if (chunk.contentType === 'pdf_pages' && chunk.mediaRefs?.[0]?.filePath) {
+          // PDF: read the file and send raw PDF to embedding
+          const { resolve, join } = await import('node:path')
+          const { readFile } = await import('node:fs/promises')
+          const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+          const buffer = await readFile(join(knowledgeDir, chunk.mediaRefs[0].filePath))
+          if (buffer.length <= 20 * 1024 * 1024) {
+            embedding = await this.embeddingService.generateFileEmbedding(buffer, 'application/pdf')
+          }
+        } else if (chunk.mediaRefs && chunk.mediaRefs.length > 0) {
+          // Slides, web images, YT thumbnails: build multimodal parts
+          const firstMedia = chunk.mediaRefs[0]!
+          if (firstMedia.data) {
+            // Send image + text together via generateFileEmbedding for single media
+            // For multiple images, we need a new method — for now send text + first image
+            const imgBuffer = Buffer.from(firstMedia.data, 'base64')
+            embedding = await this.embeddingService.generateFileEmbedding(imgBuffer, firstMedia.mimeType)
+          }
+        }
+
+        // Fallback: if multimodal failed, embed as text
+        if (!embedding) {
+          embedding = await this.embeddingService.generateEmbedding(chunk.content)
+        }
+
+        if (embedding) {
+          await this.pgStore.updateChunkEmbedding(chunk.id, embedding)
+          successCount++
+          this.log.info({ chunkId: chunk.id, contentType: chunk.contentType, dims: embedding.length }, '[EMBED] Multimodal chunk embedded')
+        } else {
+          nullCount++
+          this.log.warn({ chunkId: chunk.id, contentType: chunk.contentType }, '[EMBED] Multimodal embedding null')
+        }
+      } catch (err) {
+        nullCount++
+        this.log.warn({ err, chunkId: chunk.id, contentType: chunk.contentType }, '[EMBED] Multimodal chunk failed')
+      }
+    }
+
+    this.log.info({ total: chunks.length, text: textChunks.length, multimodal: multimodalChunks.length, success: successCount, null: nullCount }, '[EMBED] Batch complete')
   }
 
   /**

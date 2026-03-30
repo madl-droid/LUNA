@@ -614,23 +614,37 @@ export class KnowledgePgStore {
     id: string
     content: string
     documentId: string
+    contentType: string
+    mediaRefs: Array<{ mimeType: string; data?: string; filePath?: string }> | null
+    extraMetadata: Record<string, unknown> | null
   }>> {
+    const cols = 'id, content, document_id, COALESCE(content_type, \'text\') as content_type, media_refs, extra_metadata'
     if (documentId) {
-      const res = await this.db.query<{ id: string; content: string; document_id: string }>(
-        `SELECT id, content, document_id FROM knowledge_chunks
+      const res = await this.db.query<{ id: string; content: string; document_id: string; content_type: string; media_refs: unknown; extra_metadata: unknown }>(
+        `SELECT ${cols} FROM knowledge_chunks
          WHERE document_id = $1 AND has_embedding = false
          ORDER BY chunk_index`,
         [documentId],
       )
-      return res.rows.map(r => ({ id: r.id, content: r.content, documentId: r.document_id }))
+      return res.rows.map(r => ({
+        id: r.id, content: r.content, documentId: r.document_id,
+        contentType: r.content_type,
+        mediaRefs: (r.media_refs as Array<{ mimeType: string; data?: string; filePath?: string }>) ?? null,
+        extraMetadata: (r.extra_metadata as Record<string, unknown>) ?? null,
+      }))
     }
 
-    const res = await this.db.query<{ id: string; content: string; document_id: string }>(
-      `SELECT id, content, document_id FROM knowledge_chunks
+    const res = await this.db.query<{ id: string; content: string; document_id: string; content_type: string; media_refs: unknown; extra_metadata: unknown }>(
+      `SELECT ${cols} FROM knowledge_chunks
        WHERE has_embedding = false
        ORDER BY document_id, chunk_index`,
     )
-    return res.rows.map(r => ({ id: r.id, content: r.content, documentId: r.document_id }))
+    return res.rows.map(r => ({
+      id: r.id, content: r.content, documentId: r.document_id,
+      contentType: r.content_type,
+      mediaRefs: (r.media_refs as Array<{ mimeType: string; data?: string; filePath?: string }>) ?? null,
+      extraMetadata: (r.extra_metadata as Record<string, unknown>) ?? null,
+    }))
   }
 
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
@@ -639,6 +653,38 @@ export class KnowledgePgStore {
       `UPDATE knowledge_chunks SET embedding = $1::vector, has_embedding = true WHERE id = $2`,
       [embStr, chunkId],
     )
+  }
+
+  /** Insert smart linked chunks (v2 — type-specific with media refs and linking) */
+  async insertLinkedChunks(documentId: string, chunks: import('./types.js').LinkedChunk[]): Promise<void> {
+    if (chunks.length === 0) return
+
+    // Delete existing chunks for this document first
+    await this.db.query(`DELETE FROM knowledge_chunks WHERE document_id = $1`, [documentId])
+
+    for (const chunk of chunks) {
+      await this.db.query(
+        `INSERT INTO knowledge_chunks
+         (id, document_id, content, section, chunk_index, page, source_id, chunk_total,
+          prev_chunk_id, next_chunk_id, content_type, media_refs, extra_metadata, tsv)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, to_tsvector('spanish', $3))`,
+        [
+          chunk.id,
+          documentId,
+          chunk.content,
+          chunk.section,
+          chunk.chunkIndex,
+          chunk.page,
+          chunk.sourceId,
+          chunk.chunkTotal,
+          chunk.prevChunkId,
+          chunk.nextChunkId,
+          chunk.contentType,
+          chunk.mediaRefs ? JSON.stringify(chunk.mediaRefs) : null,
+          chunk.extraMetadata ? JSON.stringify(chunk.extraMetadata) : null,
+        ],
+      )
+    }
   }
 
   /** Insert a multimodal chunk with pre-computed embedding (from raw file embedding) */
