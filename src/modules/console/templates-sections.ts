@@ -2228,6 +2228,7 @@ const SVG_PLUS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
 const SVG_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
 const SVG_DEACTIVATE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
 const SVG_DELETE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+const SVG_EYE_SMALL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
 
 function renderUsersSection(data: SectionData): string {
   const lang = data.lang
@@ -2327,6 +2328,26 @@ function renderUsersSection(data: SectionData): string {
 
     if (users.length > 0) {
       const isCoworker = lt === 'coworker'
+      const isLead = lt === 'lead'
+
+      if (isLead) {
+        html += `<style>
+.lead-detail-row td { padding: 0 !important; border-top: none !important; }
+.lead-detail-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 20px; background: var(--surface-container-lowest); border-top: 1px solid var(--outline-variant); }
+.lead-detail-col { min-width: 0; }
+.lead-detail-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--on-surface-variant); margin-bottom: 8px; }
+.lead-detail-content { font-size: 13px; }
+.ts-score-badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 600; background: var(--surface-container-high); }
+.ts-time-ago { font-size: 12px; color: var(--on-surface-variant); }
+.ts-commit-item { padding: 6px 0; border-bottom: 1px solid var(--outline-variant); }
+.ts-commit-item:last-child { border-bottom: none; }
+.ts-criteria-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--outline-variant); }
+.ts-criteria-item:last-child { border-bottom: none; }
+.ts-criteria-key { font-weight: 500; text-transform: capitalize; }
+.ts-criteria-val { color: var(--on-surface-variant); }
+</style>`
+      }
+
       html += `<div class="users-table-scroll"><table class="users-table" id="tbl-${esc(lt)}"><thead><tr class="users-table-head">
         <th><input type="checkbox" class="user-cb" id="cb-all-${esc(lt)}" title="${lang === 'es' ? 'Seleccionar todos' : 'Select all'}" onclick="userToggleAll('${esc(lt)}')"></th>
         <th>ID</th>
@@ -2335,6 +2356,13 @@ function renderUsersSection(data: SectionData): string {
         <th>${lang === 'es' ? 'Datos de contacto' : 'Contact info'}</th>
         <th>${lang === 'es' ? 'Fuente' : 'Source'}</th>
         <th>${lang === 'es' ? 'Estado' : 'Status'}</th>
+        ${isLead ? `<th>${lang === 'es' ? 'Campaña' : 'Campaign'}</th>` : ''}
+        ${isLead ? `<th>${lang === 'es' ? 'Interacciones' : 'Interactions'}</th>` : ''}
+        ${isLead ? `<th>${lang === 'es' ? 'Calificación' : 'Score'}</th>` : ''}
+        ${isLead ? `<th>${lang === 'es' ? 'Compromisos' : 'Commitments'}</th>` : ''}
+        ${isLead ? `<th>${lang === 'es' ? 'Último recibido' : 'Last received'}</th>` : ''}
+        ${isLead ? `<th>${lang === 'es' ? 'Último enviado' : 'Last sent'}</th>` : ''}
+        ${isLead ? `<th></th>` : ''}
       </tr></thead><tbody>`
 
       for (const user of users) {
@@ -2357,6 +2385,16 @@ function renderUsersSection(data: SectionData): string {
         const channelList = user.contacts.map(c => c.channel).join(',')
         const senderIds = user.contacts.map(c => c.senderId).join(' ')
         const userRole = (user.metadata as Record<string, unknown>)?.role as string ?? ''
+
+        // Lead-specific metadata
+        const meta = (user.metadata ?? {}) as Record<string, unknown>
+        const campaign = (meta.campaign as string) ?? (meta.source_campaign as string) ?? ''
+        const interactions = (meta.messageCount as number) ?? (meta.interactions as number) ?? 0
+        const qScore = (meta.qualificationScore as number) ?? 0
+        const pendingCommits = (meta.pendingCommitments as number) ?? 0
+        const lastInbound = (meta.lastInbound as string) ?? ''
+        const lastOutbound = (meta.lastOutbound as string) ?? ''
+
         html += `<tr data-user-id="${esc(user.id)}" data-user-name="${esc(user.displayName || '')}" data-user-active="${user.isActive}" data-contacts="${esc(contactsJson)}" data-channels="${esc(channelList)}" data-source="${esc(user.source)}" data-role="${esc(userRole)}" data-search="${esc((user.displayName || '') + ' ' + senderIds)}">`
 
         const isSuperAdmin = user.source === 'setup_wizard'
@@ -2368,7 +2406,36 @@ function renderUsersSection(data: SectionData): string {
           <td>${contactBadges}</td>
           <td><span class="user-source-badge">${esc(user.source)}</span></td>
           <td>${statusHtml}</td>
+          ${isLead ? `<td>${campaign ? `<span class="user-source-badge">${esc(campaign)}</span>` : '—'}</td>` : ''}
+          ${isLead ? `<td>${interactions}</td>` : ''}
+          ${isLead ? `<td>${qScore > 0 ? `<span class="ts-score-badge" style="--score:${qScore}">${qScore}</span>` : '—'}</td>` : ''}
+          ${isLead ? `<td>${pendingCommits > 0 ? pendingCommits : '—'}</td>` : ''}
+          ${isLead ? `<td>${lastInbound ? `<span class="ts-time-ago" data-ts="${esc(lastInbound)}">${esc(lastInbound)}</span>` : '—'}</td>` : ''}
+          ${isLead ? `<td>${lastOutbound ? `<span class="ts-time-ago" data-ts="${esc(lastOutbound)}">${esc(lastOutbound)}</span>` : '—'}</td>` : ''}
+          ${isLead ? `<td><button type="button" class="act-btn act-btn-config act-btn--compact" onclick="toggleLeadDetail(this, '${esc(user.id)}')">${SVG_EYE_SMALL} ${lang === 'es' ? 'Ver' : 'View'}</button></td>` : ''}
         </tr>`
+
+        if (isLead) {
+          const detailColspan = isCoworker ? 8 : 7 + 7
+          html += `<tr class="lead-detail-row" id="lead-detail-${esc(user.id)}" style="display:none">
+  <td colspan="${detailColspan}">
+    <div class="lead-detail-container">
+      <div class="lead-detail-col">
+        <div class="lead-detail-title">${lang === 'es' ? 'Compromisos pendientes' : 'Pending commitments'}</div>
+        <div class="lead-detail-content" id="lead-commits-${esc(user.id)}">
+          <span class="ts-config-muted">${lang === 'es' ? 'Cargando...' : 'Loading...'}</span>
+        </div>
+      </div>
+      <div class="lead-detail-col">
+        <div class="lead-detail-title">${lang === 'es' ? 'Criterios de calificación' : 'Qualification criteria'}</div>
+        <div class="lead-detail-content" id="lead-criteria-${esc(user.id)}">
+          <span class="ts-config-muted">${lang === 'es' ? 'Cargando...' : 'Loading...'}</span>
+        </div>
+      </div>
+    </div>
+  </td>
+</tr>`
+        }
 
         // (contacts editing moved to modal)
       }
@@ -2998,6 +3065,69 @@ function renderUsersSection(data: SectionData): string {
       })
     });
 
+    // ── Toggle lead detail row ──
+    window.toggleLeadDetail=function(btn,userId){
+      var row=document.getElementById('lead-detail-'+userId);
+      if(!row)return;
+      var isOpen=row.style.display!=='none';
+      row.style.display=isOpen?'none':'';
+      if(!isOpen&&!row.getAttribute('data-loaded')){
+        row.setAttribute('data-loaded','1');
+        fetch('/console/api/users/lead-detail?userId='+encodeURIComponent(userId))
+          .then(function(r){return r.json()})
+          .then(function(d){
+            var commitsEl=document.getElementById('lead-commits-'+userId);
+            var criteriaEl=document.getElementById('lead-criteria-'+userId);
+            if(commitsEl){
+              if(d.commitments&&d.commitments.length>0){
+                commitsEl.innerHTML=d.commitments.map(function(c){
+                  return '<div class="ts-commit-item"><strong>'+(c.description||c.type||'—')+'</strong>'+
+                    (c.dueDate?'<br><span class="ts-time-ago">'+c.dueDate+'</span>':'')+
+                    (c.status?' <span class="user-source-badge">'+c.status+'</span>':'')+'</div>';
+                }).join('');
+              }else{
+                commitsEl.innerHTML='<span class="ts-config-muted">'+(lang==='es'?'Sin compromisos pendientes':'No pending commitments')+'</span>';
+              }
+            }
+            if(criteriaEl){
+              if(d.criteria&&Object.keys(d.criteria).length>0){
+                var items='';
+                for(var key in d.criteria){
+                  if(d.criteria.hasOwnProperty(key)){
+                    var val=d.criteria[key];
+                    items+='<div class="ts-criteria-item"><span class="ts-criteria-key">'+key+'</span><span class="ts-criteria-val">'+(val!=null?val:'—')+'</span></div>';
+                  }
+                }
+                criteriaEl.innerHTML=items;
+              }else{
+                criteriaEl.innerHTML='<span class="ts-config-muted">'+(lang==='es'?'Sin datos de calificación':'No qualification data')+'</span>';
+              }
+            }
+          })
+          .catch(function(){
+            var commitsEl=document.getElementById('lead-commits-'+userId);
+            if(commitsEl)commitsEl.innerHTML='<span style="color:var(--error)">Error</span>';
+          });
+      }
+    };
+
+    // ── Format timestamps as relative time ──
+    document.querySelectorAll('.ts-time-ago[data-ts]').forEach(function(el){
+      var ts=el.getAttribute('data-ts');
+      if(!ts)return;
+      var date=new Date(ts);
+      if(isNaN(date.getTime()))return;
+      var now=new Date();
+      var diff=Math.floor((now.getTime()-date.getTime())/1000);
+      var text='';
+      if(diff<60)text=(lang==='es'?'hace ':'')+diff+'s'+(lang!=='es'?' ago':'');
+      else if(diff<3600)text=(lang==='es'?'hace ':'')+Math.floor(diff/60)+'m'+(lang!=='es'?' ago':'');
+      else if(diff<86400)text=(lang==='es'?'hace ':'')+Math.floor(diff/3600)+'h'+(lang!=='es'?' ago':'');
+      else text=(lang==='es'?'hace ':'')+Math.floor(diff/86400)+'d'+(lang!=='es'?' ago':'');
+      el.textContent=text;
+      el.title=date.toLocaleString();
+    });
+
     // Re-init custom selects for filter bar (loaded after initial init)
     if(typeof initCustomSelects==='function')initCustomSelects();
   })()</script>`
@@ -3136,8 +3266,9 @@ function renderUsersSection(data: SectionData): string {
           </label>
           <input type="hidden" name="webhook_enabled_lead" value="${whEnabledOrigCol1}" data-original="${whEnabledOrigCol1}">
         </div>
-        <div style="padding:10px 14px;margin-top:4px">
-          <button class="act-btn act-btn-cta" onclick="contactIgnored('${lang}')" style="width:100%">
+        <div class="ts-contact-ignored-wrap">
+          <button class="act-btn act-btn-cta ts-contact-ignored-btn" onclick="contactIgnored('${lang}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
             ${lang === 'es' ? 'Contactar ignorados' : 'Contact ignored leads'}
           </button>
         </div>

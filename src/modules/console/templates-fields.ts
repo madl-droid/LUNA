@@ -250,6 +250,9 @@ export function renderConsoleField(field: ConsoleField, value: string, lang: Lan
         <select name="${field.key}" data-original="${esc(value)}">${optionsHtml}</select></div>`
     }
     case 'textarea': {
+      if ((field as unknown as Record<string, unknown>).fieldType === 'code-editor') {
+        return codeEditorField(field.key, value, label)
+      }
       const rows = field.rows ? ` rows="${field.rows}"` : ''
       return `<div class="field">${fieldLeft(field.key, label, info, lang)}
         <textarea name="${field.key}" data-original="${esc(value)}"${rows}>${esc(value)}</textarea></div>`

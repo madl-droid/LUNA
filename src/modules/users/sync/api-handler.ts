@@ -5,7 +5,7 @@ import type { ServerResponse } from 'node:http'
 import pino from 'pino'
 import type { Registry } from '../../../kernel/registry.js'
 import type { ApiRoute } from '../../../kernel/types.js'
-import { jsonResponse, parseBody } from '../../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, parseQuery } from '../../../kernel/http-helpers.js'
 import type { UsersDb } from '../db.js'
 import type { UserCache } from '../cache.js'
 import { importCsv, importArray, parseCsv } from './csv-import.js'
@@ -620,6 +620,46 @@ export function createApiRoutes(registry: Registry, db: UsersDb, cache: UserCach
 
           json(res, { ok: true, token: newToken })
         } catch (err) {
+          error(res, String(err), 500)
+        }
+      },
+    },
+
+    // GET /console/api/users/lead-detail?userId=xxx — lead detail (commitments + qualification)
+    {
+      method: 'GET',
+      path: 'lead-detail',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const userId = q.get('userId')
+          if (!userId) return error(res, 'Missing required query param: userId')
+
+          const pool = registry.getDb()
+
+          // Qualification data
+          const qualResult = await pool.query(
+            `SELECT qualification_score, qualification_data FROM agent_contacts WHERE contact_id = $1 LIMIT 1`,
+            [userId],
+          )
+          const qualRow = qualResult.rows[0]
+          const score: number = qualRow?.qualification_score ?? 0
+          const criteria: Record<string, unknown> = qualRow?.qualification_data ?? {}
+
+          // Pending commitments
+          const commResult = await pool.query(
+            `SELECT id, description, commitment_type, due_date, status
+             FROM commitments
+             WHERE contact_id = $1 AND status IN ('pending', 'overdue')
+             ORDER BY due_date ASC
+             LIMIT 20`,
+            [userId],
+          )
+          const commitments = commResult.rows
+
+          json(res, { commitments, criteria, score })
+        } catch (err) {
+          logger.error({ err }, 'Lead detail fetch failed')
           error(res, String(err), 500)
         }
       },

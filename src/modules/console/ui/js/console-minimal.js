@@ -281,6 +281,40 @@
     // Toggle visibility of dependent fields
     updateVisibleWhen(el.name, el.checked ? 'true' : 'false')
 
+    // When toggling advanced format mode, populate/clear the code editor
+    if (el.name === 'WHATSAPP_FORMAT_ADVANCED' || el.name === 'EMAIL_FORMAT_ADVANCED' || el.name === 'GOOGLE_CHAT_FORMAT_ADVANCED') {
+      var channel = el.name.replace('_FORMAT_ADVANCED', '')
+      var formatKey = 'FORMAT_INSTRUCTIONS_' + channel
+      var ta = document.querySelector('textarea[name="' + formatKey + '"]')
+      if (ta) {
+        if (el.checked) {
+          // Build prompt from form fields and populate the code editor
+          ta.value = buildFormatPromptFromForm(channel)
+          ta.setAttribute('data-original', ta.value)
+          // Update line numbers if code editor
+          var ceKey = ta.getAttribute('data-ce-key')
+          if (ceKey) {
+            var linesEl = document.querySelector('[data-ce-lines="' + ceKey + '"]')
+            if (linesEl) {
+              var count = (ta.value || '').split('\n').length
+              var nums = ''
+              for (var li = 1; li <= count; li++) nums += '<span class="code-editor-line-num">' + li + '</span>'
+              linesEl.innerHTML = nums
+            }
+          }
+        } else {
+          // Clear when deactivating advanced mode
+          ta.value = ''
+          ta.setAttribute('data-original', '')
+          var ceKey2 = ta.getAttribute('data-ce-key')
+          if (ceKey2) {
+            var linesEl2 = document.querySelector('[data-ce-lines="' + ceKey2 + '"]')
+            if (linesEl2) linesEl2.innerHTML = '<span class="code-editor-line-num">1</span>'
+          }
+        }
+      }
+    }
+
     fetch('/console/apply', { method: 'POST', body: body, headers: { 'X-Instant-Toggle': '1' } })
       .then(function (r) {
         if (r.ok || r.redirected) {
@@ -308,6 +342,68 @@
       var expected = el.getAttribute('data-visible-when-value')
       el.style.display = (value === expected) ? '' : 'none'
     })
+  }
+
+  // Build format prompt from form fields (mirrors engine/prompts/compositor.ts buildFormatFromForm)
+  function buildFormatPromptFromForm(channelPrefix) {
+    function getVal(key) {
+      var el = document.querySelector('[name="' + channelPrefix + '_FORMAT_' + key + '"]')
+      if (!el) return ''
+      if (el.type === 'checkbox') return el.checked ? 'true' : 'false'
+      // For hidden inputs paired with checkboxes
+      if (el.type === 'hidden' && el.name.indexOf('FORMAT_') !== -1) {
+        var cb = document.querySelector('input[type="checkbox"][name="' + el.name + '"]')
+        if (cb) return cb.checked ? 'true' : 'false'
+        return el.value
+      }
+      return el.value || ''
+    }
+
+    var tone = getVal('TONE') || 'ninguno'
+    var maxSentences = getVal('MAX_SENTENCES') || '2'
+    var maxParagraphs = getVal('MAX_PARAGRAPHS') || '2'
+    var emojiLevel = getVal('EMOJI_LEVEL') || 'bajo'
+    var typosEnabled = getVal('TYPOS_ENABLED') === 'true'
+    var typosIntensity = getVal('TYPOS_INTENSITY') || '0'
+    var typosTypes = getVal('TYPOS_TYPES') || ''
+    var openingSigns = getVal('OPENING_SIGNS') || 'nunca'
+    var audioEnabled = getVal('AUDIO_ENABLED') === 'true'
+    var voiceStyles = getVal('VOICE_STYLES') === 'true'
+    var ex1 = getVal('EXAMPLE_1') || ''
+    var ex2 = getVal('EXAMPLE_2') || ''
+    var ex3 = getVal('EXAMPLE_3') || ''
+
+    var channelName = channelPrefix.replace('WHATSAPP', 'WHATSAPP').replace('EMAIL', 'EMAIL').replace('GOOGLE_CHAT', 'GOOGLE_CHAT')
+    var lines = ['FORMATO ' + channelName + ':']
+
+    if (tone !== 'ninguno') lines.push('- Tono: ' + tone)
+    lines.push('- Maximo ' + maxSentences + ' oraciones por parrafo')
+    lines.push('- Maximo ' + maxParagraphs + ' parrafos por respuesta')
+
+    var emojiMap = { nunca: 'No uses emojis', bajo: 'Usa emojis con moderacion (1-2 por mensaje)', moderado: 'Usa emojis moderadamente', alto: 'Usa emojis libremente' }
+    lines.push('- ' + (emojiMap[emojiLevel] || emojiMap.bajo))
+
+    if (openingSigns === 'inicio') lines.push('- Usa signos de apertura al inicio de preguntas y exclamaciones (¿ ¡)')
+    else if (openingSigns === 'ambos') lines.push('- Usa signos de apertura y cierre en preguntas y exclamaciones (¿...? ¡...!)')
+    else lines.push('- No uses signos de apertura (¿ ¡), solo cierra con ? y !')
+
+    if (typosEnabled) {
+      lines.push('- Introduce errores de escritura sutiles para sonar mas natural (intensidad: ' + typosIntensity + ')')
+      if (typosTypes) lines.push('  Tipos: ' + typosTypes)
+    }
+
+    if (audioEnabled) {
+      lines.push('- Puedes responder con notas de voz cuando sea apropiado')
+      if (voiceStyles) lines.push('- Varia el estilo de voz segun el contexto (energetico, calmado, empatico)')
+    }
+
+    var examples = [ex1, ex2, ex3].filter(Boolean)
+    if (examples.length > 0) {
+      lines.push('- Ejemplos del estilo esperado:')
+      for (var ei = 0; ei < examples.length; ei++) lines.push('  ' + (ei + 1) + '. "' + examples[ei] + '"')
+    }
+
+    return lines.join('\n')
   }
 
   // === Toggle instant apply ===

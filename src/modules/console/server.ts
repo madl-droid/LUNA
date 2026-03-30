@@ -1033,7 +1033,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           'gmail': 'email',
           'google-chat': 'google-chat',
           'twilio-voice': 'twilio-voice',
-          'ack-messages': 'ack-messages',
         }
         section = channelSectionMap[channelSettingsId] ?? channelSettingsId
       }
@@ -1326,9 +1325,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       // Channel settings pages: use the 2-column channel settings renderer
       let content: string | null = null
-      if (channelSettingsId === 'ack-messages') {
-        content = renderAckMessagesPage(lang)
-      } else if (channelSettingsId) {
+      if (channelSettingsId) {
         const chMod = data.moduleStates.find(m => m.name === channelSettingsId)
         if (chMod && chMod.type === 'channel') {
           content = renderChannelSettingsPage(chMod, sectionData)
@@ -1435,124 +1432,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
   }
 }
 
-/**
- * Render the ACK Messages management page (subtab under Canales)
- */
-function renderAckMessagesPage(lang: string): string {
-  const isEs = lang === 'es'
-  const desc = isEs
-    ? 'Mensajes automaticos que se envian mientras el agente procesa una respuesta.'
-    : 'Automatic messages sent while the agent processes a response.'
-  const channelLabel = isEs ? 'Canal' : 'Channel'
-  const textLabel = isEs ? 'Mensaje' : 'Message'
-  const activeLabel = isEs ? 'Activo' : 'Active'
-  const addLabel = isEs ? 'Agregar mensaje' : 'Add message'
-  const saveLabel = isEs ? 'Guardar' : 'Save'
-  const deleteLabel = isEs ? 'Eliminar' : 'Delete'
-  const allChannels = isEs ? 'Todos los canales' : 'All channels'
-  const filterLabel = isEs ? 'Filtrar por canal' : 'Filter by channel'
-  const emptyLabel = isEs ? 'No hay mensajes ACK configurados.' : 'No ACK messages configured.'
-
-  return `
-    <div class="chs-desc">${desc}</div>
-    <div class="filter-bar">
-      <div class="filter-group">
-        <span class="filter-label">${filterLabel}:</span>
-        <select id="ack-channel-filter" class="js-custom-select" onchange="ackLoadMessages()">
-          <option value="">${allChannels}</option>
-          <option value="whatsapp">WhatsApp</option>
-          <option value="email">Email</option>
-          <option value="google-chat">Google Chat</option>
-        </select>
-      </div>
-      <span style="flex:1"></span>
-      <button class="act-btn act-btn-cta" onclick="ackAddRow()">${addLabel}</button>
-    </div>
-    <div class="panel"><div class="panel-body">
-        <div class="users-table-scroll">
-        <table class="users-table">
-          <thead class="users-table-head">
-            <tr>
-              <th style="width:130px">${channelLabel}</th>
-              <th>${textLabel}</th>
-              <th style="width:70px;text-align:center">${activeLabel}</th>
-              <th style="width:80px"></th>
-            </tr>
-          </thead>
-          <tbody id="ack-tbody"></tbody>
-        </table>
-        </div>
-        <div id="ack-empty" class="panel-body-empty">${emptyLabel}</div>
-      </div>
-    </div>
-    <script>
-    (function(){
-      var allCh = '${allChannels}';
-      var saveL = '${saveLabel}';
-      var delL = '${deleteLabel}';
-
-      window.ackLoadMessages = function() {
-        var ch = document.getElementById('ack-channel-filter').value;
-        var url = '/console/api/console/ack-messages' + (ch ? '?channel='+ch : '');
-        fetch(url).then(function(r){return r.json()}).then(function(d){
-          var tbody = document.getElementById('ack-tbody');
-          var empty = document.getElementById('ack-empty');
-          if (!d.messages || d.messages.length === 0) {
-            tbody.innerHTML = '';
-            empty.style.display = 'block';
-            return;
-          }
-          empty.style.display = 'none';
-          tbody.innerHTML = d.messages.map(function(m){
-            return '<tr data-id="'+m.id+'">'
-              +'<td><select class="ack-ch js-custom-select" style="width:120px">'
-              +'<option value=""'+(m.channel===''?' selected':'')+'>'+allCh+'</option>'
-              +'<option value="whatsapp"'+(m.channel==='whatsapp'?' selected':'')+'>WhatsApp</option>'
-              +'<option value="email"'+(m.channel==='email'?' selected':'')+'>Email</option>'
-              +'<option value="google-chat"'+(m.channel==='google-chat'?' selected':'')+'>Google Chat</option>'
-              +'</select></td>'
-              +'<td><input type="text" class="ack-text" value="'+m.text.replace(/"/g,'&quot;')+'" style="width:100%;padding:6px 8px;border:1px solid var(--outline);border-radius:6px;background:var(--surface);color:var(--on-surface)"></td>'
-              +'<td style="text-align:center"><label class="toggle toggle-sm"><input type="checkbox" class="ack-active"'+(m.active?' checked':'')+' onchange="ackSave(this)"><span class="toggle-slider"></span></label></td>'
-              +'<td style="display:flex;gap:4px">'
-              +'<button class="act-btn" onclick="ackSave(this)" style="font-size:12px;padding:4px 10px">'+saveL+'</button>'
-              +'<button class="act-btn act-btn-danger" onclick="ackDelete(this)" style="font-size:12px;padding:4px 10px">'+delL+'</button>'
-              +'</td></tr>';
-          }).join('');
-        }).catch(function(){});
-      };
-
-      window.ackAddRow = function() {
-        var ch = document.getElementById('ack-channel-filter').value || '';
-        fetch('/console/api/console/ack-messages', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({channel:ch, text:'Nuevo mensaje...'})
-        }).then(function(){ackLoadMessages()});
-      };
-
-      window.ackSave = function(el) {
-        var tr = el.closest('tr');
-        var id = tr.getAttribute('data-id');
-        var ch = tr.querySelector('.ack-ch').value;
-        var text = tr.querySelector('.ack-text').value;
-        var active = tr.querySelector('.ack-active').checked;
-        fetch('/console/api/console/ack-messages/'+id, {
-          method:'PUT', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({channel:ch, text:text, active:active})
-        }).then(function(r){
-          if(r.ok) { tr.style.background='var(--success-container)'; setTimeout(function(){tr.style.background='';},600); }
-        });
-      };
-
-      window.ackDelete = function(el) {
-        var tr = el.closest('tr');
-        var id = tr.getAttribute('data-id');
-        fetch('/console/api/console/ack-messages/'+id, {method:'DELETE'}).then(function(){ackLoadMessages()});
-      };
-
-      ackLoadMessages();
-    })();
-    </script>`
-}
 
 /**
  * Creates API routes for console module endpoints
@@ -1915,139 +1794,6 @@ export function createApiRoutes(): ApiRoute[] {
         } catch (err) {
           logger.error({ err }, 'Failed to fetch engine metrics')
           jsonResponse(res, 500, { error: 'Failed to fetch metrics' })
-        }
-      },
-    },
-
-    // ── ACK Messages CRUD ──
-
-    // GET /console/api/console/ack-messages?channel=whatsapp
-    {
-      method: 'GET',
-      path: 'ack-messages',
-      handler: async (req, res) => {
-        try {
-          const { getRegistryRef } = await import('./manifest-ref.js')
-          const registry = getRegistryRef()
-          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
-
-          const query = parseQuery(req)
-          const channel = query.get('channel')
-          const db = registry.getDb()
-
-          let result
-          if (channel) {
-            result = await db.query(
-              `SELECT id, channel, text, active, sort_order, created_at, updated_at FROM ack_messages WHERE channel = $1 ORDER BY sort_order, created_at`,
-              [channel],
-            )
-          } else {
-            result = await db.query(
-              `SELECT id, channel, text, active, sort_order, created_at, updated_at FROM ack_messages ORDER BY channel, sort_order, created_at`,
-            )
-          }
-          jsonResponse(res, 200, { messages: result.rows })
-        } catch (err) {
-          logger.warn({ err }, 'Failed to fetch ack messages')
-          jsonResponse(res, 200, { messages: [] })
-        }
-      },
-    },
-
-    // POST /console/api/console/ack-messages
-    {
-      method: 'POST',
-      path: 'ack-messages',
-      handler: async (req, res) => {
-        try {
-          const { getRegistryRef } = await import('./manifest-ref.js')
-          const registry = getRegistryRef()
-          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
-
-          const body = await parseBody<{ channel?: string; text: string; sort_order?: number }>(req)
-          if (!body?.text) { jsonResponse(res, 400, { error: 'text is required' }); return }
-
-          const db = registry.getDb()
-          const result = await db.query(
-            `INSERT INTO ack_messages (channel, text, sort_order) VALUES ($1, $2, $3) RETURNING id, channel, text, active, sort_order, created_at`,
-            [body.channel ?? '', body.text, body.sort_order ?? 0],
-          )
-          jsonResponse(res, 201, { message: result.rows[0] })
-        } catch (err) {
-          logger.error({ err }, 'Failed to create ack message')
-          jsonResponse(res, 500, { error: 'Failed to create' })
-        }
-      },
-    },
-
-    // PUT /console/api/console/ack-messages/:id
-    {
-      method: 'PUT',
-      path: 'ack-messages',
-      handler: async (req, res) => {
-        try {
-          const { getRegistryRef } = await import('./manifest-ref.js')
-          const registry = getRegistryRef()
-          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
-
-          // Extract ID from URL path: /console/api/console/ack-messages/{id}
-          const url = req.url ?? ''
-          const idMatch = url.match(/ack-messages\/([^?/]+)/)
-          const id = idMatch?.[1]
-          if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
-
-          const body = await parseBody<{ channel?: string; text?: string; active?: boolean; sort_order?: number }>(req)
-          if (!body) { jsonResponse(res, 400, { error: 'Invalid body' }); return }
-
-          const db = registry.getDb()
-          const sets: string[] = []
-          const vals: unknown[] = []
-          let idx = 1
-
-          if (body.text !== undefined) { sets.push(`text = $${idx++}`); vals.push(body.text) }
-          if (body.channel !== undefined) { sets.push(`channel = $${idx++}`); vals.push(body.channel) }
-          if (body.active !== undefined) { sets.push(`active = $${idx++}`); vals.push(body.active) }
-          if (body.sort_order !== undefined) { sets.push(`sort_order = $${idx++}`); vals.push(body.sort_order) }
-          sets.push(`updated_at = now()`)
-
-          if (sets.length <= 1) { jsonResponse(res, 400, { error: 'Nothing to update' }); return }
-
-          vals.push(id)
-          const result = await db.query(
-            `UPDATE ack_messages SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, channel, text, active, sort_order, updated_at`,
-            vals,
-          )
-          if (result.rows.length === 0) { jsonResponse(res, 404, { error: 'Not found' }); return }
-          jsonResponse(res, 200, { message: result.rows[0] })
-        } catch (err) {
-          logger.error({ err }, 'Failed to update ack message')
-          jsonResponse(res, 500, { error: 'Failed to update' })
-        }
-      },
-    },
-
-    // DELETE /console/api/console/ack-messages/:id
-    {
-      method: 'DELETE',
-      path: 'ack-messages',
-      handler: async (req, res) => {
-        try {
-          const { getRegistryRef } = await import('./manifest-ref.js')
-          const registry = getRegistryRef()
-          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
-
-          const url = req.url ?? ''
-          const idMatch = url.match(/ack-messages\/([^?/]+)/)
-          const id = idMatch?.[1]
-          if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
-
-          const db = registry.getDb()
-          const result = await db.query(`DELETE FROM ack_messages WHERE id = $1 RETURNING id`, [id])
-          if (result.rows.length === 0) { jsonResponse(res, 404, { error: 'Not found' }); return }
-          jsonResponse(res, 200, { ok: true })
-        } catch (err) {
-          logger.error({ err }, 'Failed to delete ack message')
-          jsonResponse(res, 500, { error: 'Failed to delete' })
         }
       },
     },

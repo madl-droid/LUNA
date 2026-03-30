@@ -4198,3 +4198,16 @@ select.wizard-input option:checked {
   border-radius: 2px;
   border: none;
 }
+
+/* -- Contact ignored button -- */
+.ts-contact-ignored-wrap {
+  padding: 10px 14px;
+  margin-top: 4px;
+}
+.ts-contact-ignored-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}

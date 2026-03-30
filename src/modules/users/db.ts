@@ -219,7 +219,7 @@ export class UsersDb {
         `INSERT INTO user_list_config (list_type, display_name, is_enabled, is_system, permissions, max_users, unregistered_behavior)
          VALUES ($1, $2, $3, true, $4, $5, $6)
          ON CONFLICT (list_type) DO UPDATE SET is_system = true`,
-        [list.type, list.name, list.type === 'admin', JSON.stringify(list.perms), list.maxUsers ?? null, list.behavior ?? 'silence'],
+        [list.type, list.name, list.type === 'admin' || list.type === 'lead', JSON.stringify(list.perms), list.maxUsers ?? null, list.behavior ?? 'silence'],
       )
     }
 
@@ -710,6 +710,113 @@ export class UsersDb {
       unregisteredMessage: row.unregistered_message,
       maxUsers: row.max_users,
       updatedAt: new Date(row.updated_at),
+    }
+  }
+
+  /** Enrich lead users with data from agent_contacts, messages, and commitments tables. */
+  async enrichLeadMetadata(users: UserWithContacts[]): Promise<void> {
+    if (users.length === 0) return
+    // Collect all sender_ids with channels to map to engine contacts
+    const senderPairs: Array<{ userId: string; senderId: string; channel: string }> = []
+    for (const u of users) {
+      const primary = u.contacts.find(c => c.isPrimary) ?? u.contacts[0]
+      if (primary) senderPairs.push({ userId: u.id, senderId: primary.senderId, channel: primary.channel })
+    }
+    if (senderPairs.length === 0) return
+
+    // Map sender_ids to engine contact_ids via contact_channels table
+    const senderIds = senderPairs.map(p => p.senderId)
+
+    try {
+      // Get engine contact IDs mapped to sender IDs
+      const mappingResult = await this.pool.query(
+        `SELECT cc.channel_contact_id, cc.contact_id
+         FROM contact_channels cc
+         WHERE cc.channel_contact_id = ANY($1)`,
+        [senderIds],
+      )
+
+      const senderToContactId = new Map<string, string>()
+      for (const row of mappingResult.rows) {
+        senderToContactId.set(row.channel_contact_id as string, row.contact_id as string)
+      }
+
+      const userToContactId = new Map<string, string>()
+      for (const p of senderPairs) {
+        const cid = senderToContactId.get(p.senderId)
+        if (cid) userToContactId.set(p.userId, cid)
+      }
+
+      const contactIds = [...new Set(userToContactId.values())]
+      if (contactIds.length === 0) return
+
+      // Fetch qualification data + campaign from agent_contacts
+      const qualResult = await this.pool.query(
+        `SELECT ac.contact_id, ac.qualification_score, ac.qualification_data, ac.source_campaign
+         FROM agent_contacts ac
+         WHERE ac.contact_id = ANY($1::uuid[])`,
+        [contactIds],
+      )
+      const qualMap = new Map<string, Record<string, unknown>>()
+      for (const row of qualResult.rows) {
+        qualMap.set(row.contact_id as string, row as Record<string, unknown>)
+      }
+
+      // Fetch message counts + last inbound/outbound timestamps
+      const msgResult = await this.pool.query(
+        `SELECT m.contact_id,
+                COUNT(*) AS message_count,
+                MAX(CASE WHEN m.role = 'user' THEN m.created_at END) AS last_inbound,
+                MAX(CASE WHEN m.role = 'assistant' THEN m.created_at END) AS last_outbound
+         FROM messages m
+         WHERE m.contact_id = ANY($1::uuid[])
+         GROUP BY m.contact_id`,
+        [contactIds],
+      )
+      const msgMap = new Map<string, Record<string, unknown>>()
+      for (const row of msgResult.rows) {
+        msgMap.set(row.contact_id as string, row as Record<string, unknown>)
+      }
+
+      // Fetch pending commitments count
+      const commitResult = await this.pool.query(
+        `SELECT contact_id, COUNT(*) AS pending_count
+         FROM commitments
+         WHERE contact_id = ANY($1::uuid[]) AND status IN ('pending', 'overdue')
+         GROUP BY contact_id`,
+        [contactIds],
+      )
+      const commitMap = new Map<string, number>()
+      for (const row of commitResult.rows) {
+        commitMap.set(row.contact_id as string, parseInt(row.pending_count as string, 10))
+      }
+
+      // Enrich each user's metadata
+      for (const u of users) {
+        const cid = userToContactId.get(u.id)
+        if (!cid) continue
+
+        const meta = (u.metadata ?? {}) as Record<string, unknown>
+        const qual = qualMap.get(cid)
+        const msg = msgMap.get(cid)
+        const commits = commitMap.get(cid) ?? 0
+
+        if (qual) {
+          meta.qualificationScore = qual.qualification_score ?? 0
+          meta.source_campaign = qual.source_campaign ?? ''
+          meta.campaign = qual.source_campaign ?? ''
+        }
+        if (msg) {
+          meta.messageCount = parseInt(msg.message_count as string, 10) || 0
+          meta.lastInbound = msg.last_inbound ? new Date(msg.last_inbound as string).toISOString() : ''
+          meta.lastOutbound = msg.last_outbound ? new Date(msg.last_outbound as string).toISOString() : ''
+        }
+        meta.pendingCommitments = commits
+        u.metadata = meta
+      }
+    } catch (err) {
+      // Non-critical: if enrichment fails, just show basic data
+      logger.warn({ err }, 'Failed to enrich lead metadata — showing basic data')
     }
   }
 

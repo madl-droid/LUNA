@@ -102,6 +102,10 @@ const manifest: ModuleManifest = {
         usersByType[c.listType] = await db!.listByType(c.listType, false)
         counts[c.listType] = usersByType[c.listType]!.length
       }
+      // Enrich lead users with qualification, interactions, and commitment data
+      if (usersByType['lead'] && usersByType['lead'].length > 0) {
+        await db!.enrichLeadMetadata(usersByType['lead'])
+      }
       // Active channels for contact type dropdowns
       const channels = registry.listModules()
         .filter(m => m.manifest.type === 'channel' && m.active)
