@@ -796,16 +796,9 @@ function createApiRoutes(): ApiRoute[] {
             return
           }
           await getItemManager().scanColumns(body.tabId)
-          const item = await getPgStore().getPool().query<{ item_id: string }>(
-            `SELECT item_id FROM knowledge_item_tabs WHERE id = $1`, [body.tabId],
-          )
-          const itemId = item.rows[0]?.item_id
-          if (itemId) {
-            const refreshed = await getItemManager().get(itemId)
-            jsonResponse(res, 200, { item: refreshed })
-          } else {
-            jsonResponse(res, 200, { ok: true })
-          }
+          // Return the columns for this specific tab (client expects { columns: [...] })
+          const columns = await getPgStore().getTabColumns(body.tabId)
+          jsonResponse(res, 200, { columns })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
         }

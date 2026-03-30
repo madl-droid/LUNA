@@ -13,9 +13,19 @@ export class DocsService {
   }
 
   async getDocument(documentId: string): Promise<DocInfo> {
-    const res = await this.docs.documents.get({ documentId })
+    const res = await this.docs.documents.get({
+      documentId,
+      includeTabsContent: true,
+    })
 
-    // Extraer texto plano del body
+    // Extract tabs info from response
+    const rawTabs = (res.data as Record<string, unknown>).tabs as
+      Array<{ tabProperties?: { tabId?: string; title?: string; index?: number }; childTabs?: unknown[] }> | undefined
+
+    const tabs = this.flattenTabs(rawTabs ?? [])
+
+    // Extraer texto plano del body (legacy field — populated from first tab when includeTabsContent=false)
+    // With includeTabsContent=true, body may be empty; content lives inside each tab's documentTab.body
     const body = this.extractPlainText(res.data.body?.content ?? [])
 
     return {
@@ -23,7 +33,30 @@ export class DocsService {
       title: res.data.title ?? '',
       body,
       revisionId: res.data.revisionId ?? undefined,
+      tabs: tabs.length > 0 ? tabs : undefined,
     }
+  }
+
+  /** Flatten nested tab tree into a flat array with tabId, title, index */
+  private flattenTabs(
+    tabs: Array<{ tabProperties?: { tabId?: string; title?: string; index?: number }; childTabs?: unknown[] }>,
+  ): Array<{ tabId: string; title: string; index: number }> {
+    const result: Array<{ tabId: string; title: string; index: number }> = []
+    for (const tab of tabs) {
+      if (tab.tabProperties) {
+        result.push({
+          tabId: tab.tabProperties.tabId ?? '',
+          title: tab.tabProperties.title ?? '',
+          index: tab.tabProperties.index ?? result.length,
+        })
+      }
+      if (Array.isArray(tab.childTabs)) {
+        result.push(...this.flattenTabs(
+          tab.childTabs as Array<{ tabProperties?: { tabId?: string; title?: string; index?: number }; childTabs?: unknown[] }>,
+        ))
+      }
+    }
+    return result
   }
 
   async createDocument(title: string, content?: string): Promise<DocInfo> {

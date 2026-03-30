@@ -50,7 +50,10 @@ interface SheetsService {
 }
 
 interface DocsService {
-  getDocument(documentId: string): Promise<{ documentId: string; title: string; body: string }>
+  getDocument(documentId: string): Promise<{
+    documentId: string; title: string; body: string
+    tabs?: Array<{ tabId: string; title: string; index: number }>
+  }>
 }
 
 interface DriveService {
@@ -177,7 +180,13 @@ export class KnowledgeItemManager {
       const docs = this.registry.getOptional<DocsService>('google:docs')
       if (docs) {
         const doc = await docs.getDocument(item.sourceId)
-        tabNames = [doc.title || 'Documento']
+        if (doc.tabs && doc.tabs.length > 0) {
+          tabNames = doc.tabs.map(t => t.title || 'Sin título')
+          logger.info({ tabCount: tabNames.length, tabs: tabNames }, 'Docs tabs scanned via OAuth')
+        } else {
+          // Fallback: document has no tabs or single default tab
+          tabNames = [doc.title || 'Documento']
+        }
       } else {
         tabNames = ['Documento']
       }

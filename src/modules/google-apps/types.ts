@@ -118,6 +118,7 @@ export interface DocInfo {
   title: string
   body: string // plain text content
   revisionId?: string
+  tabs?: Array<{ tabId: string; title: string; index: number }>
 }
 
 // ═══════════════════════════════════════════
