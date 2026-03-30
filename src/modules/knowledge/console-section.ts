@@ -259,12 +259,12 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="${item.isCore ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         ${item.isCore ? `<span class="ki-icon-label">${coreCount}/${maxCore}</span>` : ''}
-        <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip">${esc(coreTip)}</span></span>
+        <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip info-flip">${esc(coreTip)}</span></span>
       </button>
       <button type="button" class="ki-icon-btn ${item.shareable ? 'ki-icon-btn--share-on' : ''}"
         onclick="kiToggleShareable('${esc(item.id)}', ${item.shareable ? 'false' : 'true'})">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip">${esc(shareTip)}</span></span>
+        <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip info-flip">${esc(shareTip)}</span></span>
       </button>
       <button type="button" class="act-btn act-btn--compact ki-train-btn ${item.active && item.embeddingStatus !== 'done' ? 'act-btn-cta' : 'act-btn-config'}"
         data-item-id="${esc(item.id)}"
@@ -695,9 +695,10 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     if (hasErr) return;
 
     // Detect source type from URL — skip scanner for types that don't need it
-    var skipScanner = /\.pdf(\?|$)/i.test(url) || url.indexOf('presentation/d/') !== -1;
+    var lUrl = url.toLowerCase();
+    var skipScanner = lUrl.indexOf('.pdf') !== -1 || url.indexOf('presentation/d/') !== -1;
     // Web URLs (not Google, not YouTube, not PDF) also skip
-    if (!skipScanner && !/docs\.google|drive\.google|sheets\.google|youtube\.com/i.test(url) && /^https?:\/\//i.test(url)) {
+    if (!skipScanner && lUrl.indexOf('docs.google') === -1 && lUrl.indexOf('drive.google') === -1 && lUrl.indexOf('sheets.google') === -1 && lUrl.indexOf('youtube.com') === -1 && lUrl.indexOf('http') === 0) {
       skipScanner = true;
     }
 

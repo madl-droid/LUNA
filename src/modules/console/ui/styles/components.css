@@ -236,6 +236,15 @@
   border-top-color: var(--on-surface);
 }
 
+.info-tooltip.info-flip {
+  left: auto;
+  right: 0;
+}
+.info-tooltip.info-flip::after {
+  left: auto;
+  right: 12px;
+}
+
 .info-btn:hover + .info-tooltip,
 .info-tooltip:hover {
   opacity: 1;
@@ -1503,6 +1512,15 @@ select.wizard-input option:checked {
 .ch-info-tip:hover {
   opacity: 1;
   pointer-events: auto;
+}
+
+.ch-info-tip.info-flip {
+  left: auto;
+  right: 0;
+}
+.ch-info-tip.info-flip::after {
+  left: auto;
+  right: 16px;
 }
 
 .ch-metric-value {

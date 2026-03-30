@@ -2305,4 +2305,51 @@
     if (!s) return ''
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
+
+  // ═══ Tooltip auto-positioning (prevent overflow) ═══
+  // Covers both tooltip systems: .info-btn/.info-tooltip and .ch-info-btn/.ch-info-tip
+  var TOOLTIP_PAIRS = [
+    { btn: 'info-btn',    tip: 'info-tooltip' },
+    { btn: 'ch-info-btn', tip: 'ch-info-tip'  },
+  ]
+
+  // Returns the right-edge (px from left of viewport) of the nearest ancestor
+  // that clips overflow (overflow hidden/scroll/auto/clip), or viewport width.
+  function getClipRight(el) {
+    var node = el.parentElement
+    while (node && node !== document.documentElement) {
+      var ov = window.getComputedStyle(node).overflow
+      if (ov === 'hidden' || ov === 'scroll' || ov === 'auto' || ov === 'clip') {
+        return node.getBoundingClientRect().right
+      }
+      node = node.parentElement
+    }
+    return window.innerWidth || document.documentElement.clientWidth
+  }
+
+  document.addEventListener('mouseover', function (e) {
+    var target = e.target
+    var pair = null
+    for (var i = 0; i < TOOLTIP_PAIRS.length; i++) {
+      if (target.closest && target.closest('.' + TOOLTIP_PAIRS[i].btn)) {
+        pair = TOOLTIP_PAIRS[i]
+        break
+      }
+    }
+    if (!pair) return
+
+    var btn = target.closest('.' + pair.btn)
+    var tooltip = btn.nextElementSibling
+    if (!tooltip || !tooltip.classList.contains(pair.tip)) return
+
+    // Reset first so rect reflects default left:0 position
+    tooltip.classList.remove('info-flip')
+
+    var rect = tooltip.getBoundingClientRect()
+    var clipRight = getClipRight(tooltip)
+
+    if (rect.right > clipRight - 8) {
+      tooltip.classList.add('info-flip')
+    }
+  })
 })()
