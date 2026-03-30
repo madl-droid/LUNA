@@ -271,7 +271,7 @@ const manifest: ModuleManifest = {
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
-    GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar,gmail'),
+    GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar,gmail,youtube'),
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
     GOOGLE_API_TIMEOUT_MS: numEnv(30000),
     GOOGLE_API_RETRY_MAX: numEnv(2),
@@ -280,8 +280,8 @@ const manifest: ModuleManifest = {
   console: {
     title: { es: 'Google Workspace', en: 'Google Workspace' },
     info: {
-      es: 'Conexión OAuth2 a Google. Habilita Drive, Sheets, Docs, Slides y Calendar. Cada servicio se activa/desactiva individualmente.',
-      en: 'OAuth2 connection to Google. Enables Drive, Sheets, Docs, Slides and Calendar. Each service can be toggled individually.',
+      es: 'Conexión OAuth2 a Google. Habilita Drive, Sheets, Docs, Slides, Calendar, Gmail y YouTube. Cada servicio se activa/desactiva individualmente.',
+      en: 'OAuth2 connection to Google. Enables Drive, Sheets, Docs, Slides, Calendar, Gmail and YouTube. Each service can be toggled individually.',
     },
     order: 15,
     group: 'modules',
@@ -289,9 +289,18 @@ const manifest: ModuleManifest = {
     fields: [
       {
         key: 'GOOGLE_ENABLED_SERVICES',
-        type: 'text',
-        label: { es: 'Servicios habilitados', en: 'Enabled services' },
-        info: { es: 'Servicios separados por coma: drive, sheets, docs, slides, calendar', en: 'Comma-separated services: drive, sheets, docs, slides, calendar' },
+        type: 'tags',
+        label: { es: 'APIs habilitadas', en: 'Enabled APIs' },
+        info: { es: 'Selecciona las APIs de Google a habilitar. Requiere re-autenticación al cambiar.', en: 'Select which Google APIs to enable. Requires re-authentication when changed.' },
+        options: [
+          { value: 'drive', label: 'Drive' },
+          { value: 'sheets', label: 'Sheets' },
+          { value: 'docs', label: 'Docs' },
+          { value: 'slides', label: 'Slides' },
+          { value: 'calendar', label: 'Calendar' },
+          { value: 'gmail', label: 'Gmail' },
+          { value: 'youtube', label: 'YouTube' },
+        ],
       },
       {
         key: 'GOOGLE_TOKEN_REFRESH_BUFFER_MS',

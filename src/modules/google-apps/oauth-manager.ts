@@ -30,6 +30,9 @@ export const SCOPES_BY_SERVICE: Record<string, string[]> = {
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/gmail.modify',
   ],
+  youtube: [
+    'https://www.googleapis.com/auth/youtube.readonly',
+  ],
 }
 
 export class OAuthManager {

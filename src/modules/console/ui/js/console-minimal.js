@@ -1029,6 +1029,28 @@
     checkDirty()
   })
 
+  // Tag options (predefined selectable chips)
+  document.addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-tag-option]')
+    if (!chip) return
+    var key = chip.getAttribute('data-tag-option')
+    var tagVal = chip.getAttribute('data-tag-value')
+    var hidden = document.querySelector('input[type="hidden"][name="' + key + '"]')
+    if (!hidden) return
+    var sep = hidden.getAttribute('data-separator') || ','
+    var current = hidden.value ? hidden.value.split(sep).map(function (s) { return s.trim() }).filter(Boolean) : []
+    var idx = current.indexOf(tagVal)
+    if (idx >= 0) {
+      current.splice(idx, 1)
+      chip.classList.remove('field-tag-option--active')
+    } else {
+      current.push(tagVal)
+      chip.classList.add('field-tag-option--active')
+    }
+    hidden.value = current.join(sep)
+    checkDirty()
+  })
+
   function rebuildTags(key, hidden, sep) {
     var container = document.querySelector('[data-tags-for="' + key + '"]')
     if (!container) return

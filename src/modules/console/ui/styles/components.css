@@ -638,6 +638,35 @@
   box-shadow: 0 0 0 3px var(--primary-focus);
 }
 
+.field-tag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.field-tag-option {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid var(--outline-variant);
+  background: var(--surface-container-low);
+  color: var(--on-surface-dim);
+  transition: all 0.15s ease;
+}
+.field-tag-option:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.field-tag-option--active {
+  background: var(--primary-light);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
 /* ═══ Duration field ═══ */
 .field-duration {
   display: flex;

@@ -122,8 +122,26 @@ export function readonlyField(_key: string, value: string, label: string): strin
     <span class="field-readonly">${esc(value)}</span></div>`
 }
 
-export function tagsField(key: string, value: string, lang: Lang, label: string, separator = ',', tip = ''): string {
+export function tagsField(key: string, value: string, lang: Lang, label: string, separator = ',', tip = '', options?: Array<{ value: string; label: string | { es: string; en: string } }>): string {
   const tags = value ? value.split(separator).map(t => t.trim()).filter(Boolean) : []
+
+  // If predefined options are provided, render as selectable chips (no free-text input)
+  if (options && options.length > 0) {
+    const selectedSet = new Set(tags)
+    const chipsHtml = options.map(o => {
+      const optLabel = typeof o.label === 'object' ? (o.label[lang] || o.label['es'] || o.value) : (o.label || o.value)
+      const active = selectedSet.has(o.value) ? ' field-tag-option--active' : ''
+      return `<button type="button" class="field-tag-option${active}" data-tag-option="${esc(key)}" data-tag-value="${esc(o.value)}">${esc(optLabel)}</button>`
+    }).join('')
+    return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
+      <div class="field-tags-wrap">
+        <div class="field-tag-options" data-tags-for="${esc(key)}">${chipsHtml}</div>
+        <input type="hidden" name="${esc(key)}" value="${esc(value)}" data-original="${esc(value)}" data-separator="${esc(separator)}">
+      </div>
+    </div>`
+  }
+
+  // Free-text tags (existing behavior)
   const tagsHtml = tags.map(tag =>
     `<span class="field-tag">${esc(tag)}<button type="button" class="field-tag-remove" data-tag-key="${esc(key)}" data-tag-value="${esc(tag)}">&times;</button></span>`
   ).join('')
@@ -223,7 +241,7 @@ export function renderConsoleField(field: ConsoleField, value: string, lang: Lan
       return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
         <span class="field-readonly">${esc(value)}</span></div>`
     case 'tags':
-      return tagsField(field.key, value, lang, label, field.separator, tip)
+      return tagsField(field.key, value, lang, label, field.separator, tip, field.options)
     case 'duration': return durationField(field.key, value, lang, label, field.unit || 'ms', info, lang)
     case 'secret':
       return `<div class="field">${fieldLeft(field.key, label, info, lang)}
