@@ -22,7 +22,7 @@ export class SheetsService {
   async getSpreadsheet(spreadsheetId: string): Promise<SheetProperties> {
     const res = await googleApiCall(() => this.sheets.spreadsheets.get({
       spreadsheetId,
-      fields: 'spreadsheetId, properties.title, sheets.properties',
+      fields: 'spreadsheetId,properties.title,sheets.properties',
     }), this.apiConfig, 'sheets.spreadsheets.get')
 
     return {
@@ -102,7 +102,7 @@ export class SheetsService {
       requestBody: {
         properties: { title },
       },
-      fields: 'spreadsheetId, properties.title, sheets.properties',
+      fields: 'spreadsheetId,properties.title,sheets.properties',
     })
 
     return {
