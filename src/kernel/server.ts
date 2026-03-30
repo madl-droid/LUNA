@@ -151,9 +151,10 @@ export class Server {
       // Try matched module routes (strip query params for matching)
       // Supports exact match and prefix match (for routes with path params like /ack-messages/:id)
       const urlPath = url.split('?')[0]
-      const matched = this.routes.find(r =>
-        r.method === method && (urlPath === r.fullPath || urlPath!.startsWith(r.fullPath + '/'))
-      )
+      // Match most specific route first (longest path wins to avoid /items matching /items/scan-tabs)
+      const matched = this.routes
+        .filter(r => r.method === method && (urlPath === r.fullPath || urlPath!.startsWith(r.fullPath + '/')))
+        .sort((a, b) => b.fullPath.length - a.fullPath.length)[0]
       if (matched) {
         try {
           await matched.handler(req, res)
