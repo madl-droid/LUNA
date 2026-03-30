@@ -484,7 +484,12 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       if (bulkLabel) bulkLabel.style.display = 'none';
     } else if (bulkBtn && bulkEnd > 0 && bulkEnd <= now) {
       localStorage.removeItem('ki-cd-bulk');
-      location.reload();
+      // Restore button state without reload
+      bulkBtn.disabled = false;
+      bulkBtn.classList.remove('act-btn-config');
+      bulkBtn.classList.add('act-btn-cta');
+      if (bulkTimer) bulkTimer.style.display = 'none';
+      if (bulkLabel) bulkLabel.style.display = '';
     }
 
     // Per-item train buttons
@@ -964,7 +969,13 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
         toast(active ? '${isEs ? 'Activado' : 'Activated'}' : '${isEs ? 'Desactivado' : 'Deactivated'}');
-        location.reload();
+        // Update row style in-place
+        var row = document.querySelector('[data-item-id="' + id + '"]');
+        if (row) {
+          row.classList.toggle('ki-row-inactive', !active);
+          // Reload only if deactivated (needs to show delete button)
+          if (!active) setTimeout(function() { location.reload(); }, 400);
+        }
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -972,11 +983,21 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
   window.kiToggleCore = function(id, isCore) {
     api('/core', 'PUT', { id: id, isCore: isCore })
       .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); location.reload(); return; }
+        if (r.error) { toast(r.error, 'error'); return; }
         toast(isCore
           ? '${isEs ? 'Marcado como principal' : 'Marked as main'}'
           : '${isEs ? 'Quitado de principales' : 'Removed from main'}');
-        location.reload();
+        // Update star icon in-place
+        var row = document.querySelector('[data-item-id="' + id + '"]');
+        if (row) {
+          var btn = row.querySelector('.ki-icon-btn--core-on, .ki-icon-btn:nth-child(2)');
+          if (btn) {
+            btn.classList.toggle('ki-icon-btn--core-on', isCore);
+            var svg = btn.querySelector('svg');
+            if (svg) svg.setAttribute('fill', isCore ? 'currentColor' : 'none');
+            btn.setAttribute('onclick', "kiToggleCore('" + id + "', " + (isCore ? 'false' : 'true') + ")");
+          }
+        }
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -1055,7 +1076,23 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
         toast('${isEs ? 'Categoria agregada' : 'Category added'}');
-        location.reload();
+        // Add row to modal DOM — stay in modal
+        allCategories.push({ id: r.id, title: name });
+        var list = document.getElementById('ki-cat-list');
+        if (list) {
+          var row = document.createElement('div');
+          row.className = 'ki-cat-row';
+          row.setAttribute('data-cat-id', r.id);
+          row.innerHTML = '<div class="ki-cat-row-fields">'
+            + '<input type="text" class="ki-cat-name-input" value="' + esc(name) + '" maxlength="60" />'
+            + '<input type="text" class="ki-cat-desc-input" value="" maxlength="140" placeholder="${isEs ? 'Descripcion corta...' : 'Short description...'}" />'
+            + '</div><div class="ki-cat-row-actions">'
+            + '<button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiRenameCategory(\\'' + r.id + '\\', this)">${isEs ? 'Guardar' : 'Save'}</button>'
+            + '<button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteCategory(\\'' + r.id + '\\', this)">${isEs ? 'Eliminar' : 'Delete'}</button>'
+            + '</div>';
+          list.appendChild(row);
+        }
+        inp.value = '';
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -1082,7 +1119,11 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
         toast('${isEs ? 'Categoria eliminada' : 'Category deleted'}');
-        location.reload();
+        // Remove row from DOM — stay in modal
+        var row = btn.closest('.ki-cat-row');
+        if (row) { row.style.opacity = '0'; row.style.transition = 'opacity 0.3s'; setTimeout(function() { row.remove(); }, 300); }
+        // Also remove from allCategories array
+        allCategories = allCategories.filter(function(c) { return c.id !== id; });
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -1102,7 +1143,16 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
         toast(shareable
           ? '${isEs ? 'Compartible activado' : 'Sharing enabled'}'
           : '${isEs ? 'Compartible desactivado' : 'Sharing disabled'}');
-        location.reload();
+        // Update share icon in-place
+        var row = document.querySelector('[data-item-id="' + id + '"]');
+        if (row) {
+          var btns = row.querySelectorAll('.ki-icon-btn');
+          var shareBtn = btns[2]; // 3rd icon button = share
+          if (shareBtn) {
+            shareBtn.classList.toggle('ki-icon-btn--share-on', shareable);
+            shareBtn.setAttribute('onclick', "kiToggleShareable('" + id + "', " + (shareable ? 'false' : 'true') + ")");
+          }
+        }
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
