@@ -25,6 +25,11 @@ export const SCOPES_BY_SERVICE: Record<string, string[]> = {
   calendar: [
     'https://www.googleapis.com/auth/calendar',
   ],
+  gmail: [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.modify',
+  ],
 }
 
 export class OAuthManager {

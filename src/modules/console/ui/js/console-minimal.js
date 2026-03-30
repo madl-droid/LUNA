@@ -1662,9 +1662,9 @@
       createConnectModal(waTitle, body)
 
     } else if (channelId === 'gmail') {
-      // ── Gmail: uses the same OAuth wizard as Google Apps (openOAuthWizard) ──
-      // This wizard has the full flow: account type, project setup, credentials, callback URL
-      openOAuthWizard('gmail')
+      // ── Gmail: redirect to Google Workspace config (gmail is managed there) ──
+      window.location.href = '/console/google-apps?lang=' + (document.documentElement.lang || 'es')
+      return
 
     } else {
       // ── Generic: google-chat, twilio-voice, future channels — all from manifest ──

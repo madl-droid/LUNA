@@ -40,7 +40,7 @@ export interface TokenInfo {
 // Service toggles
 // ═══════════════════════════════════════════
 
-export type GoogleServiceName = 'drive' | 'sheets' | 'docs' | 'slides' | 'calendar'
+export type GoogleServiceName = 'drive' | 'sheets' | 'docs' | 'slides' | 'calendar' | 'gmail'
 
 export interface GoogleServiceStatus {
   name: GoogleServiceName

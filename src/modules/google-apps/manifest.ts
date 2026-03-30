@@ -119,7 +119,8 @@ const apiRoutes: ApiRoute[] = [
         const redirectUri = getRedirectUri(req)
         const config = _registry!.getConfig<GoogleApiConfig>('google-apps')
         const enabledServices = parseEnabledServices(config.GOOGLE_ENABLED_SERVICES)
-        // Gmail scopes removed — gmail module handles its own OAuth now
+        // Ensure gmail scopes are always requested during credential setup
+        enabledServices.push('gmail')
         const url = oauthManager.generateAuthUrl([...new Set(enabledServices)], redirectUri)
         jsonResponse(res, 200, { ok: true, authUrl: url })
       } catch (err) {
@@ -263,14 +264,14 @@ const manifest: ModuleManifest = {
   },
   type: 'provider',
   removable: true,
-  activateByDefault: false,
+  activateByDefault: true,
   depends: [],
 
   configSchema: z.object({
     GOOGLE_CLIENT_ID: z.string().default(''),
     GOOGLE_CLIENT_SECRET: z.string().default(''),
     GOOGLE_REFRESH_TOKEN: z.string().default(''),
-    GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar'),
+    GOOGLE_ENABLED_SERVICES: z.string().default('drive,sheets,docs,slides,calendar,gmail'),
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
     GOOGLE_API_TIMEOUT_MS: numEnv(30000),
     GOOGLE_API_RETRY_MAX: numEnv(2),

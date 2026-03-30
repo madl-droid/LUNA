@@ -417,6 +417,8 @@ export function renderGoogleAppsSection(data: SectionData): string {
       perms: ['view', 'share', 'create', 'edit', 'delete'] },
     { id: 'calendar', name: 'Google Calendar', icon: '&#128197;',
       perms: ['view', 'create', 'edit', 'delete'] },
+    { id: 'gmail', name: 'Gmail', icon: '&#9993;',
+      perms: ['view', 'create', 'edit', 'delete'] },
   ]
 
   const permLabels: Record<string, Record<string, string>> = {
@@ -426,6 +428,10 @@ export function renderGoogleAppsSection(data: SectionData): string {
     edit:   { es: 'Editar', en: 'Edit' },
     delete: { es: 'Eliminar', en: 'Delete' },
   }
+
+  // Gmail channel auth status for the Gmail service card
+  const gmailConnected = data.gmailAuth?.connected ?? false
+  const gmailEmail = data.gmailAuth?.email ?? null
 
   const serviceCards = services.map(svc => {
     const isActive = enabledSet.has(svc.id)
@@ -443,6 +449,19 @@ export function renderGoogleAppsSection(data: SectionData): string {
       </label>`
     }).join('')
 
+    // Gmail service card gets a connection status badge
+    let statusBadge = ''
+    if (svc.id === 'gmail') {
+      const badgeColor = gmailConnected ? 'var(--success)' : 'var(--on-surface-dim)'
+      const badgeText = gmailConnected
+        ? (isEs ? 'Conectado' : 'Connected') + (gmailEmail ? ` (${esc(gmailEmail)})` : '')
+        : (isEs ? 'No conectado' : 'Not connected')
+      statusBadge = `<div style="padding:8px 14px;font-size:12px;color:${badgeColor};display:flex;align-items:center;gap:6px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${badgeColor};display:inline-block"></span>
+        ${badgeText}
+      </div>`
+    }
+
     return `<div class="gws-card ts-gws-card${!isActive ? ' ts-gws-card-inactive' : ''}" data-service="${svc.id}">
       <div class="ts-gws-card-header" onclick="gwsToggleCard('${svc.id}')">
         <div class="ts-gws-card-name-wrap">
@@ -453,7 +472,7 @@ export function renderGoogleAppsSection(data: SectionData): string {
           <input type="checkbox" class="gws-toggle" data-service="${svc.id}" ${isActive ? 'checked' : ''} onchange="gwsServiceToggled(this)">
           <span class="toggle-slider"></span>
         </label>
-      </div>
+      </div>${statusBadge}
       <div class="gws-card-body ts-gws-card-body" data-card-body="${svc.id}">
         <div class="ts-gws-perms-title">${isEs ? 'Permisos del agente' : 'Agent permissions'}</div>
         <div class="ts-gws-perms-list">
@@ -495,7 +514,7 @@ export function renderGoogleAppsSection(data: SectionData): string {
 
     // Build per-service perms
     var permsData = {};
-    var services = ['drive','sheets','docs','slides','calendar'];
+    var services = ['drive','sheets','docs','slides','calendar','gmail'];
     services.forEach(function(svc) {
       var checks = document.querySelectorAll('.gws-perm[data-service="' + svc + '"]');
       var activePerms = [];
@@ -822,7 +841,12 @@ function buildChannelCards(data: SectionData): ChannelCard[] {
     { id: 'twilio-voice', moduleName: 'twilio-voice', sectionId: 'twilio-voice', defaultType: 'voice' },
   ]
 
+  const googleAppsActive = modules.some(m => m.name === 'google-apps' && m.active)
+
   for (const ch of channelDefs) {
+    // Gmail channel is only shown when google-apps module is active
+    if (ch.id === 'gmail' && !googleAppsActive) continue
+
     const mod = modules.find(m => m.name === ch.moduleName)
     const isActive = mod?.active ?? false
     const channelType = mod?.channelType ?? ch.defaultType
