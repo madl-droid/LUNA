@@ -815,10 +815,10 @@ export class KnowledgeItemManager {
     return body?.textContent?.trim() ?? ''
   }
 
-  /** YouTube: load transcripts for playlist or channel videos */
+  /** YouTube: load transcripts + descriptions + thumbnails for playlist or channel videos */
   private async loadYoutubeContent(item: KnowledgeItem): Promise<number> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
-    let videoIds: Array<{ id: string; title: string }> = []
+    let videos: Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }> = []
 
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
@@ -826,50 +826,97 @@ export class KnowledgeItemManager {
     // Determine if this is a playlist or channel
     const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
     if (playlistMatch?.[1]) {
-      // Direct playlist
-      videoIds = await this.listPlaylistVideos(playlistMatch[1], apiKey)
+      videos = await this.listPlaylistVideos(playlistMatch[1], apiKey)
     } else {
-      // Channel — try to get uploads playlist
       const channelMatch = YOUTUBE_CHANNEL_REGEX.exec(item.sourceUrl)
       if (channelMatch) {
         const handle = channelMatch[1] ?? channelMatch[2]!
         const uploadsPlaylistId = await this.getChannelUploadsPlaylist(handle, apiKey)
         if (uploadsPlaylistId) {
-          videoIds = await this.listPlaylistVideos(uploadsPlaylistId, apiKey)
+          videos = await this.listPlaylistVideos(uploadsPlaylistId, apiKey)
         }
       }
     }
 
-    logger.info({ itemId: item.id, videoCount: videoIds.length }, '[YT] Videos found')
+    logger.info({ itemId: item.id, videoCount: videos.length }, '[YT] Videos found')
 
     let totalChunks = 0
-    for (const video of videoIds) {
+    for (const video of videos) {
       if (ignoredNames.has(video.title)) {
         logger.debug({ videoTitle: video.title }, '[YT] Video ignored')
         continue
       }
       try {
+        // 1. Fetch transcript (subtitles)
         const { fetchTranscript } = await import('youtube-transcript')
         const segments = await fetchTranscript(video.id, { lang: 'es' }).catch(() =>
           fetchTranscript(video.id).catch(() => []),
         )
-        if (segments.length === 0) {
-          logger.warn({ videoId: video.id, title: video.title }, '[YT] No transcript available')
+        const transcript = segments.map(s => s.text).join(' ')
+
+        // 2. Build full text: title + description + transcript
+        const textParts: string[] = [video.title]
+        if (video.description.trim()) {
+          textParts.push(`\nDescripción:\n${video.description}`)
+        }
+        if (transcript.trim()) {
+          textParts.push(`\nTranscripción:\n${transcript}`)
+        }
+
+        const fullText = textParts.join('\n')
+        if (fullText.length < 50) {
+          logger.warn({ videoId: video.id, title: video.title }, '[YT] Too little content (no transcript + no description)')
           continue
         }
-        const text = segments.map(s => s.text).join(' ')
-        if (!text.trim()) continue
 
-        const buf = Buffer.from(`${video.title}\n\n${text}`, 'utf-8')
+        const buf = Buffer.from(fullText, 'utf-8')
         const doc = await this.knowledgeManager.addDocument(buf, `${video.title}.txt`, {
           sourceType: 'drive', sourceRef: item.id,
           description: `YouTube: ${video.title}`,
           categoryIds: item.categoryId ? [item.categoryId] : [],
         })
         totalChunks += doc.chunkCount
-        logger.info({ videoId: video.id, title: video.title, chunks: doc.chunkCount }, '[YT] Video transcript embedded')
+
+        // 3. Analyze thumbnail with vision LLM → adds visual context to knowledge
+        if (video.thumbnailUrl) {
+          try {
+            const thumbRes = await fetch(video.thumbnailUrl, { signal: AbortSignal.timeout(10000) })
+            if (thumbRes.ok) {
+              const thumbBuffer = Buffer.from(await thumbRes.arrayBuffer())
+              const base64 = thumbBuffer.toString('base64')
+              const visionResult = await this.registry.callHook('llm:chat', {
+                task: 'knowledge-yt-thumbnail',
+                system: 'Describe el contenido visual de este thumbnail de YouTube en 2-3 oraciones. Incluye: personas, productos, textos visibles, gráficos, colores dominantes. Sé conciso.',
+                messages: [{
+                  role: 'user' as const,
+                  content: [
+                    { type: 'image_url', data: base64, mimeType: 'image/jpeg' },
+                    { type: 'text', text: `Describe este thumbnail del video "${video.title}"` },
+                  ],
+                }],
+                maxTokens: 300,
+                temperature: 0.1,
+              })
+              if (visionResult?.text?.trim()) {
+                // Add thumbnail description as a small supplementary document
+                const thumbText = `Thumbnail del video "${video.title}":\n${visionResult.text.trim()}`
+                const thumbBuf = Buffer.from(thumbText, 'utf-8')
+                await this.knowledgeManager.addDocument(thumbBuf, `${video.title} — thumbnail.txt`, {
+                  sourceType: 'drive', sourceRef: item.id,
+                  description: `Thumbnail: ${video.title}`,
+                  categoryIds: item.categoryId ? [item.categoryId] : [],
+                })
+                logger.info({ videoId: video.id }, '[YT] Thumbnail described and embedded')
+              }
+            }
+          } catch (err) {
+            logger.debug({ err, videoId: video.id }, '[YT] Thumbnail analysis failed (non-fatal)')
+          }
+        }
+
+        logger.info({ videoId: video.id, title: video.title, chunks: doc.chunkCount, hasDesc: !!video.description.trim(), hasTranscript: !!transcript.trim() }, '[YT] Video content embedded')
       } catch (err) {
-        logger.warn({ err, videoId: video.id, title: video.title }, '[YT] Failed to get transcript')
+        logger.warn({ err, videoId: video.id, title: video.title }, '[YT] Failed to process video')
       }
     }
 
@@ -877,19 +924,22 @@ export class KnowledgeItemManager {
   }
 
   /** List videos in a YouTube playlist via Data API v3 */
-  private async listPlaylistVideos(playlistId: string, apiKey: string): Promise<Array<{ id: string; title: string }>> {
+  private async listPlaylistVideos(playlistId: string, apiKey: string): Promise<Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }>> {
     if (!apiKey) { logger.warn('No Google API key for YouTube Data API'); return [] }
-    const videos: Array<{ id: string; title: string }> = []
+    const videos: Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }> = []
     let pageToken = ''
     for (let page = 0; page < 5; page++) {
       const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
       if (!res.ok) { logger.warn({ status: res.status }, '[YT] Playlist API error'); break }
-      const data = await res.json() as { items?: Array<{ snippet?: { resourceId?: { videoId?: string }; title?: string } }>; nextPageToken?: string }
+      const data = await res.json() as { items?: Array<{ snippet?: { resourceId?: { videoId?: string }; title?: string; description?: string; thumbnails?: { high?: { url?: string }; medium?: { url?: string }; default?: { url?: string } } } }>; nextPageToken?: string }
       for (const item of data.items ?? []) {
-        const vid = item.snippet?.resourceId?.videoId
-        const title = item.snippet?.title ?? 'Sin título'
-        if (vid) videos.push({ id: vid, title })
+        const s = item.snippet
+        const vid = s?.resourceId?.videoId
+        const title = s?.title ?? 'Sin título'
+        const description = s?.description ?? ''
+        const thumbnailUrl = s?.thumbnails?.high?.url ?? s?.thumbnails?.medium?.url ?? s?.thumbnails?.default?.url ?? null
+        if (vid) videos.push({ id: vid, title, description, thumbnailUrl })
       }
       if (!data.nextPageToken) break
       pageToken = data.nextPageToken
