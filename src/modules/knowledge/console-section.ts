@@ -14,7 +14,8 @@ const t = (key: string, lang: Lang): string => {
   const map: Record<string, { es: string; en: string }> = {
     title: { es: 'Conocimiento adicional', en: 'Additional knowledge' },
     add_btn: { es: 'Agregar Conocimiento', en: 'Add Knowledge' },
-    no_items: { es: 'No hay items de conocimiento. Agrega uno para comenzar.', en: 'No knowledge items. Add one to get started.' },
+    no_items: { es: 'Sin conocimientos aún', en: 'No knowledge yet' },
+    no_items_hint: { es: 'Para que tu agente funcione bien, recomendamos agregar al menos Preguntas Frecuentes y Productos o Servicios.', en: 'For your agent to work well, we recommend adding at least FAQs and Products or Services.' },
     item_title: { es: 'Titulo', en: 'Title' },
     item_desc: { es: 'Descripcion', en: 'Description' },
     item_category: { es: 'Categoria', en: 'Category' },
@@ -57,7 +58,7 @@ const t = (key: string, lang: Lang): string => {
     step_tabs: { es: 'Hojas / Tabs', en: 'Sheets / Tabs' },
     step_columns: { es: 'Columnas', en: 'Columns' },
     no_url_configured: { es: 'URL no configurada. Configura este recurso para comenzar.', en: 'URL not configured. Configure this resource to get started.' },
-    gen_embeddings: { es: 'Generar Embeddings', en: 'Generate Embeddings' },
+    train_agent: { es: 'Entrenar agente', en: 'Train agent' },
     categories: { es: 'Categorias', en: 'Categories' },
   }
   return map[key]?.[lang] ?? key
@@ -80,8 +81,8 @@ export function renderKnowledgeSection(
     <div></div>
     <div style="display:flex;gap:8px;align-items:center">
       <button type="button" class="act-btn act-btn-cta" onclick="kiBulkVectorize()" style="font-size:13px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        ${t('gen_embeddings', lang)}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        ${t('train_agent', lang)}
       </button>
       <button type="button" class="act-btn act-btn-config" onclick="kiOpenCategoriesModal()" style="font-size:13px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -102,9 +103,21 @@ export function renderKnowledgeSection(
 
   // ── Items list ──
   if (items.length === 0) {
-    html += `<div class="panel"><div class="panel-body panel-body-flat panel-body-empty">
-      <p style="color:var(--on-surface-dim)">${t('no_items', lang)}</p>
-    </div></div>`
+    html += `<div class="panel ki-empty-state">
+      <div class="ki-empty-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--on-surface-dim)"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </div>
+      <p class="ki-empty-title">${t('no_items', lang)}</p>
+      <p class="ki-empty-body">${t('no_items_hint', lang)}</p>
+      <div class="ki-empty-hints">
+        <span>💬 ${lang === 'es' ? 'Preguntas frecuentes' : 'FAQs'}</span>
+        <span>🛍️ ${lang === 'es' ? 'Productos y servicios' : 'Products & services'}</span>
+      </div>
+      <button type="button" class="act-btn act-btn-add" onclick="kiOpenWizard()" style="margin-top:12px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        ${t('add_btn', lang)}
+      </button>
+    </div>`
   } else {
     for (const item of items) {
       html += renderItemCard(item, categories, lang)
@@ -153,31 +166,17 @@ function renderCoreKnowledgeCards(lang: Lang, items: KnowledgeItem[], config?: {
   const faqDisplayDesc = faqDesc || faqDefaultDesc
   const productsDisplayDesc = productsDesc || productsDefaultDesc
 
-  function coreCard(key: string, title: string, url: string, desc: string, defaultDesc: string, existingItemId?: string): string {
-    const hasUrl = !!url
-    const statusBadge = hasUrl
-      ? `<span class="ki-badge ki-badge-loaded">${lang === 'es' ? 'Configurado' : 'Configured'}</span>`
-      : `<span class="ki-badge ki-badge-pending">${lang === 'es' ? 'Sin configurar' : 'Not configured'}</span>`
+  // Only show configured core cards — no "not configured" placeholders
+  const hasAnyCore = !!faqUrl || !!productsUrl
+  if (!hasAnyCore) return ''
 
-    if (!hasUrl) {
-      return `<div class="panel ki-core-card">
-        <div class="ki-core-card-header">
-          <div>
-            <div class="ki-core-card-title">${esc(title)} ${statusBadge}</div>
-            <p class="ki-core-card-desc">${esc(desc)}</p>
-          </div>
-          <button type="button" class="act-btn act-btn-add act-btn--compact" data-core-key="${esc(key)}" data-title="${esc(title)}" data-desc="${esc(defaultDesc)}" data-url="" data-item-id="" onclick="kiOpenWizardFromBtn(this)">
-            ${t('configure_btn', lang)}
-          </button>
-        </div>
-        <p class="ki-core-card-notice">${t('no_url_configured', lang)}</p>
-      </div>`
-    }
+  function coreCard(key: string, title: string, url: string, desc: string, existingItemId?: string): string {
+    if (!url) return '' // skip unconfigured cards entirely
 
     return `<div class="panel ki-core-card">
       <div class="ki-core-card-header">
         <div style="flex:1;min-width:0">
-          <div class="ki-core-card-title">${esc(title)} ${statusBadge} <span class="ki-badge ki-badge-core">Core</span></div>
+          <div class="ki-core-card-title">${esc(title)} <span class="ki-badge ki-badge-loaded">${lang === 'es' ? 'Configurado' : 'Configured'}</span> <span class="ki-badge ki-badge-core">Core</span></div>
           <p class="ki-core-card-desc">${esc(desc)}</p>
           <p class="ki-core-card-url">${esc(url)}</p>
         </div>
@@ -191,8 +190,8 @@ function renderCoreKnowledgeCards(lang: Lang, items: KnowledgeItem[], config?: {
   return `<div class="panel" style="margin:0 0 24px 0;padding:0"><div class="panel-body" style="padding:20px">
     <div style="font-size:1rem;font-weight:700;color:var(--on-surface);margin-bottom:12px">${t('core_knowledge', lang)}</div>
     <div style="display:flex;flex-direction:column;gap:12px">
-      ${coreCard('faq', 'FAQ', faqUrl, faqDisplayDesc, faqDefaultDesc, faqItem?.id)}
-      ${coreCard('products', lang === 'es' ? 'Productos y servicios' : 'Products & services', productsUrl, productsDisplayDesc, productsDefaultDesc, productsItem?.id)}
+      ${coreCard('faq', 'FAQ', faqUrl, faqDisplayDesc, faqItem?.id)}
+      ${coreCard('products', lang === 'es' ? 'Productos y servicios' : 'Products & services', productsUrl, productsDisplayDesc, productsItem?.id)}
     </div>
   </div></div>`
 }
@@ -383,9 +382,14 @@ function renderWizardModal(_categories: KnowledgeCategory[], lang: Lang): string
 function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): string {
   const isEs = lang === 'es'
   const rows = categories.map(c => `<div class="ki-cat-row" data-cat-id="${esc(c.id)}">
-    <input type="text" class="ki-cat-name-input" value="${esc(c.title)}" maxlength="60" />
-    <button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteCategory('${esc(c.id)}', this)">${isEs ? 'Eliminar' : 'Delete'}</button>
-    <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiRenameCategory('${esc(c.id)}', this)">${isEs ? 'Guardar' : 'Save'}</button>
+    <div class="ki-cat-row-fields">
+      <input type="text" class="ki-cat-name-input" value="${esc(c.title)}" maxlength="60" placeholder="${isEs ? 'Nombre de categoría' : 'Category name'}" />
+      <input type="text" class="ki-cat-desc-input" value="${esc(c.description)}" maxlength="140" placeholder="${isEs ? 'Descripción corta (ej: productos con precio y disponibilidad)' : 'Short description (e.g. products with price and availability)'}" />
+    </div>
+    <div class="ki-cat-row-actions">
+      <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="kiRenameCategory('${esc(c.id)}', this)">${isEs ? 'Guardar' : 'Save'}</button>
+      <button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteCategory('${esc(c.id)}', this)">${isEs ? 'Eliminar' : 'Delete'}</button>
+    </div>
   </div>`).join('')
 
   return `<div id="ki-cat-modal" class="wizard-overlay" style="display:none">
@@ -393,6 +397,7 @@ function renderCategoriesModal(categories: KnowledgeCategory[], lang: Lang): str
       <button type="button" class="wizard-close" onclick="kiCloseCategoriesModal()">&times;</button>
       <div class="wizard-steps">
         <div class="wizard-title">${isEs ? 'Editar categorias' : 'Edit categories'}</div>
+        <p style="font-size:12px;color:var(--on-surface-dim);margin:0 0 12px">${isEs ? 'La descripción le indica al agente qué tipo de información hay en cada categoría.' : 'The description tells the agent what information is in each category.'}</p>
         <div id="ki-cat-list">${rows || `<p style="color:var(--on-surface-dim);font-size:13px">${isEs ? 'No hay categorias.' : 'No categories.'}</p>`}</div>
         <div style="margin-top:16px;display:flex;gap:8px">
           <input type="text" id="ki-cat-new-name" class="wizard-input" placeholder="${isEs ? 'Nueva categoria...' : 'New category...'}" maxlength="60" />
@@ -942,8 +947,9 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
   window.kiRenameCategory = function(id, btn) {
     var row = btn.closest('.ki-cat-row');
     var name = row.querySelector('.ki-cat-name-input').value.trim();
+    var desc = (row.querySelector('.ki-cat-desc-input') || {}).value || '';
     if (!name) return;
-    fetch(CAT_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, title: name }) })
+    fetch(CAT_API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, title: name, description: desc.trim() }) })
       .then(function(r) { return r.json(); })
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
@@ -1034,7 +1040,18 @@ function renderStyles(): string {
 .ki-cat-chip button { background:none; border:none; color:#fff; cursor:pointer; font-size:14px; padding:0 2px; }
 
 /* Categories modal */
-.ki-cat-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--outline-variant); }
-.ki-cat-name-input { flex:1; padding:6px 10px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; background:var(--surface-container-lowest); color:var(--on-surface); }
+.ki-cat-row { display:flex; align-items:flex-start; gap:8px; padding:10px 0; border-bottom:1px solid var(--outline-variant); }
+.ki-cat-row-fields { flex:1; display:flex; flex-direction:column; gap:6px; min-width:0; }
+.ki-cat-row-actions { display:flex; flex-direction:column; gap:4px; flex-shrink:0; }
+.ki-cat-name-input { width:100%; padding:6px 10px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; background:var(--surface-container-lowest); color:var(--on-surface); box-sizing:border-box; }
+.ki-cat-desc-input { width:100%; padding:5px 10px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:12px; background:var(--surface-container-lowest); color:var(--on-surface-dim); box-sizing:border-box; }
+
+/* Empty state */
+.ki-empty-state { padding:32px 24px; text-align:center; }
+.ki-empty-icon { margin-bottom:12px; display:flex; justify-content:center; }
+.ki-empty-title { font-size:16px; font-weight:600; color:var(--on-surface); margin:0 0 6px; }
+.ki-empty-body { font-size:13px; color:var(--on-surface-dim); margin:0 0 12px; max-width:400px; margin-left:auto; margin-right:auto; line-height:1.5; }
+.ki-empty-hints { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; }
+.ki-empty-hints span { font-size:13px; color:var(--on-surface-dim); background:var(--surface-container-low); padding:6px 14px; border-radius:1rem; }
 </style>`
 }

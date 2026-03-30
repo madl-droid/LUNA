@@ -375,7 +375,34 @@ Adapta tu respuesta al contexto de esta campaña.`)
     }
   }
 
-  // Knowledge context
+  // Core knowledge catalog (always-relevant docs and items the agent should know about)
+  if (ctx.knowledgeInjection) {
+    const inj = ctx.knowledgeInjection
+    if (inj.coreDocuments.length > 0 || (inj.items && inj.items.length > 0)) {
+      userParts.push(`\n[Base de conocimiento disponible:]`)
+      if (inj.coreDocuments.length > 0) {
+        for (const d of inj.coreDocuments) {
+          userParts.push(`- ${escapeDataForPrompt(d.title, 100)}: ${escapeDataForPrompt(d.description, 200)}`)
+        }
+      }
+      if (inj.items && inj.items.length > 0) {
+        // Group by category for compositor context
+        const seen = new Set<string>()
+        for (const item of inj.items) {
+          const catLabel = item.categoryTitle ?? item.categoryId ?? null
+          const key = catLabel ?? '__none__'
+          if (!seen.has(key) && catLabel) {
+            userParts.push(`  Categoría "${escapeDataForPrompt(catLabel, 60)}":`)
+            seen.add(key)
+          }
+          const desc = item.description ? ` — ${escapeDataForPrompt(item.description, 150)}` : ''
+          userParts.push(`  - ${escapeDataForPrompt(item.title, 100)}${desc}`)
+        }
+      }
+    }
+  }
+
+  // Knowledge context (legacy RAG fallback)
   if (ctx.knowledgeMatches.length > 0) {
     userParts.push(`\n[Información del negocio:]`)
     for (const match of ctx.knowledgeMatches) {
