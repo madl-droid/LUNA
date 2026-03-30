@@ -19,6 +19,7 @@ const t = (key: string, lang: Lang): string => {
     item_desc: { es: 'Descripcion', en: 'Description' },
     item_category: { es: 'Categoria', en: 'Category' },
     item_url: { es: 'URL (Google Sheets, Docs, Drive, PDF, YouTube)', en: 'URL (Google Sheets, Docs, Drive, PDF, YouTube)' },
+    source_slides: { es: 'Slides', en: 'Slides' },
     source_pdf: { es: 'PDF', en: 'PDF' },
     source_youtube: { es: 'YouTube', en: 'YouTube' },
     save: { es: 'Guardar', en: 'Save' },
@@ -143,9 +144,13 @@ function sourceIcon(sourceType: string): string {
       bg: 'rgba(26,110,240,0.12)', color: '#1a6ef0',
       path: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
     },
-    drive: {
+    slides: {
       bg: 'rgba(245,158,11,0.12)', color: '#d97706',
-      path: '<path d="M22 20H2l4-8h12l4 8z"/><path d="M12 4L6 16"/><path d="M12 4l6 12"/>',
+      path: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+    },
+    drive: {
+      bg: 'rgba(107,114,128,0.12)', color: '#6b7280',
+      path: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
     },
     pdf: {
       bg: 'rgba(220,38,38,0.12)', color: '#dc2626',

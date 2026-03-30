@@ -40,7 +40,7 @@ export function extractGoogleId(url: string): { id: string; type: KnowledgeSourc
   if (m?.[1]) return { id: m[1], type: 'docs' }
 
   m = SLIDES_REGEX.exec(url)
-  if (m?.[1]) return { id: m[1], type: 'docs' } // slides handled as docs initially, reclassified on create
+  if (m?.[1]) return { id: m[1], type: 'slides' }
 
   m = DRIVE_FOLDER_REGEX.exec(url)
   if (m?.[1]) return { id: m[1], type: 'drive' }
@@ -125,7 +125,7 @@ export class KnowledgeItemManager {
           const mime = meta.mimeType
           if (mime === 'application/vnd.google-apps.spreadsheet') extracted.type = 'sheets'
           else if (mime === 'application/vnd.google-apps.document') extracted.type = 'docs'
-          else if (mime === 'application/vnd.google-apps.presentation') extracted.type = 'docs' // slides treated as docs
+          else if (mime === 'application/vnd.google-apps.presentation') extracted.type = 'slides'
           else if (mime === 'application/pdf') extracted.type = 'pdf'
           // Other files stay as 'drive' (single file mode)
           logger.info({ fileId: extracted.id, mime, resolvedType: extracted.type }, 'Drive file reclassified')
@@ -264,6 +264,9 @@ export class KnowledgeItemManager {
       } else {
         throw new Error('Servicio Google Drive no disponible — requiere OAuth')
       }
+    } else if (item.sourceType === 'slides') {
+      // Google Slides → single tab (all slides as one document)
+      tabNames = ['Presentación']
     } else if (item.sourceType === 'pdf') {
       // Single PDF → one tab
       tabNames = ['PDF']
@@ -371,6 +374,8 @@ export class KnowledgeItemManager {
       totalChunks = await this.loadSheetsContent(item)
     } else if (item.sourceType === 'docs') {
       totalChunks = await this.loadDocsContent(item)
+    } else if (item.sourceType === 'slides') {
+      totalChunks = await this.loadSlidesContent(item)
     } else if (item.sourceType === 'drive') {
       totalChunks = await this.loadDriveContent(item)
     } else if (item.sourceType === 'pdf') {
@@ -475,6 +480,24 @@ export class KnowledgeItemManager {
       categoryIds: item.categoryId ? [item.categoryId] : [],
     })
 
+    return result.chunkCount
+  }
+
+  private async loadSlidesContent(item: KnowledgeItem): Promise<number> {
+    const slides = this.registry.getOptional<SlidesService>('google:slides')
+    if (!slides) throw new Error('Servicio Google Slides no disponible')
+
+    const text = await slides.getSlideText(item.sourceId)
+    if (!text.trim()) return 0
+
+    const buffer = Buffer.from(text, 'utf-8')
+    const result = await this.knowledgeManager.addDocument(buffer, `${item.title}.txt`, {
+      sourceType: 'drive',
+      sourceRef: item.id,
+      description: item.description || item.title,
+      categoryIds: item.categoryId ? [item.categoryId] : [],
+    })
+    logger.info({ itemId: item.id, title: item.title, chunks: result.chunkCount }, 'Slides content loaded')
     return result.chunkCount
   }
 
