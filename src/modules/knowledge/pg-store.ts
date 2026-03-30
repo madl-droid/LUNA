@@ -641,6 +641,18 @@ export class KnowledgePgStore {
     )
   }
 
+  /** Insert a multimodal chunk with pre-computed embedding (from raw file embedding) */
+  async insertMultimodalChunk(documentId: string, content: string, embedding: number[]): Promise<string> {
+    const embStr = `[${embedding.join(',')}]`
+    const res = await this.db.query<{ id: string }>(
+      `INSERT INTO knowledge_chunks (document_id, content, section, chunk_index, page, has_embedding, embedding, tsv)
+       VALUES ($1, $2, 'multimodal', 9999, NULL, true, $3::vector, to_tsvector('spanish', $2))
+       RETURNING id`,
+      [documentId, content, embStr],
+    )
+    return res.rows[0]!.id
+  }
+
   async getAllChunksByCategory(_category: KnowledgeCategory): Promise<Array<{
     content: string
     source: string

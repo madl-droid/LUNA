@@ -82,6 +82,52 @@ export class EmbeddingService {
     }
   }
 
+  /**
+   * Generate embedding from raw file (PDF, image, etc.) using Gemini Embedding 2 multimodal.
+   * Sends the file as inlineData — the model natively understands visual content.
+   * Limits: PDF max ~6 pages, images max 6 per request.
+   */
+  async generateFileEmbedding(data: Buffer, mimeType: string): Promise<number[] | null> {
+    if (!this.isAvailable()) return null
+    if (data.length === 0) return null
+
+    // Supported multimodal MIME types for embedding
+    const SUPPORTED = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']
+    if (!SUPPORTED.includes(mimeType)) {
+      this.log.debug({ mimeType }, '[EMBED] Unsupported MIME for multimodal embedding, skipping')
+      return null
+    }
+
+    if (!this.consumeToken()) {
+      this.log.warn('[EMBED] Rate limit reached, skipping file embedding')
+      return null
+    }
+
+    try {
+      const model = this.client!.getGenerativeModel({ model: MODEL })
+      const base64 = data.toString('base64')
+      this.log.info({ mimeType, sizeBytes: data.length, base64Length: base64.length }, '[EMBED] Sending file to multimodal embedding')
+
+      const result = await model.embedContent({
+        content: {
+          role: 'user',
+          parts: [{
+            inlineData: { mimeType, data: base64 },
+          }],
+        },
+      })
+
+      const values = result.embedding.values
+      this.log.info({ mimeType, dims: values.length }, '[EMBED] Multimodal file embedding generated')
+      this.resetFailures()
+      return values
+    } catch (err) {
+      this.recordFailure()
+      this.log.error({ err, mimeType, sizeBytes: data.length }, '[EMBED] Multimodal file embedding failed')
+      return null
+    }
+  }
+
   async generateBatchEmbeddings(texts: string[]): Promise<(number[] | null)[]> {
     if (!this.isAvailable()) return texts.map(() => null)
     if (texts.length === 0) return []

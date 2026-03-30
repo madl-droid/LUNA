@@ -21,8 +21,7 @@ const BASIC_EXTRACTORS: Record<string, ExtractorFn> = {
   'text/plain': extractPlainText,
   // JSON
   'application/json': extractJSON,
-  // PDF
-  'application/pdf': extractPDF,
+  // PDF handled separately in extractContent() for vision support
   // Word documents
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extractDocx,
   // Excel / CSV
@@ -100,6 +99,16 @@ export async function extractContent(
   mimeType: string,
   registry?: Registry,
 ): Promise<ExtractedContent> {
+  // PDF: enhanced extractor with optional vision for image-heavy pages
+  if (mimeType === 'application/pdf') {
+    try {
+      return await extractPDF(input, fileName, registry)
+    } catch (err) {
+      logger.error({ fileName, mimeType, err }, 'PDF extraction failed, falling back to plain text')
+      return extractPlainText(input, fileName)
+    }
+  }
+
   // Basic extractors (no external service needed)
   const basicExtractor = BASIC_EXTRACTORS[mimeType]
   if (basicExtractor) {

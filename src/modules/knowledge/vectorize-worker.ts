@@ -88,6 +88,10 @@ export class VectorizeWorker {
 
       const startMs = Date.now()
       await this.embedChunks(chunks)
+
+      // Multimodal: if document is PDF or image, also embed the raw file
+      await this.tryMultimodalEmbedding(documentId, chunks)
+
       const durationMs = Date.now() - startMs
       await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
       this.log.info({ documentId, chunksProcessed: chunks.length, durationMs, avgMsPerChunk: Math.round(durationMs / chunks.length) }, '[EMBED] Document embeddings complete')
@@ -175,6 +179,61 @@ export class VectorizeWorker {
       }
     }
     this.log.info({ batchSize: chunks.length, success: successCount, null: nullCount }, '[EMBED] Batch complete')
+  }
+
+  /**
+   * For PDF and image documents, send the raw file to Gemini Embedding 2 multimodal.
+   * Creates an additional chunk with the file-level vector — captures visual content
+   * that text extraction misses (charts, diagrams, scanned text, etc.)
+   */
+  private async tryMultimodalEmbedding(
+    documentId: string,
+    _existingChunks: Array<{ id: string; content: string; documentId: string }>,
+  ): Promise<void> {
+    try {
+      const doc = await this.pgStore.getDocument(documentId)
+      if (!doc) return
+
+      const MULTIMODAL_MIMES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']
+      if (!MULTIMODAL_MIMES.includes(doc.mimeType)) return
+      if (!doc.filePath) return
+
+      // Read the original file
+      const { resolve, join } = await import('node:path')
+      const { readFile } = await import('node:fs/promises')
+      const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+      const filePath = join(knowledgeDir, doc.filePath)
+
+      let fileBuffer: Buffer
+      try {
+        fileBuffer = await readFile(filePath)
+      } catch {
+        this.log.warn({ documentId, filePath: doc.filePath }, '[EMBED] Could not read file for multimodal embedding')
+        return
+      }
+
+      // 20MB limit for embedding API request
+      if (fileBuffer.length > 20 * 1024 * 1024) {
+        this.log.warn({ documentId, sizeBytes: fileBuffer.length }, '[EMBED] File too large for multimodal embedding (>20MB)')
+        return
+      }
+
+      this.log.info({ documentId, mimeType: doc.mimeType, sizeBytes: fileBuffer.length, title: doc.title }, '[EMBED] Generating multimodal file embedding')
+
+      const embedding = await this.embeddingService.generateFileEmbedding(fileBuffer, doc.mimeType)
+      if (!embedding) {
+        this.log.warn({ documentId }, '[EMBED] Multimodal embedding returned null')
+        return
+      }
+
+      // Store as an additional chunk with the file-level vector
+      const multimodalContent = `[Contenido visual completo: ${doc.title}]`
+      const chunkId = await this.pgStore.insertMultimodalChunk(documentId, multimodalContent, embedding)
+
+      this.log.info({ documentId, chunkId, dims: embedding.length, title: doc.title }, '[EMBED] Multimodal file embedding stored as chunk')
+    } catch (err) {
+      this.log.warn({ err, documentId }, '[EMBED] Multimodal embedding failed (non-fatal)')
+    }
   }
 
   // ─── Public API ────────────────────────────────────────
