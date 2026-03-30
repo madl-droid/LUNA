@@ -45,7 +45,7 @@ const t = (key: string, lang: Lang): string => {
     source_drive: { es: 'Drive', en: 'Drive' },
     status_pending: { es: 'Pendiente', en: 'Pending' },
     status_processing: { es: 'Procesando', en: 'Processing' },
-    status_done: { es: 'Listo', en: 'Done' },
+    status_done: { es: 'Entrenado', en: 'Trained' },
     status_failed: { es: 'Error', en: 'Failed' },
     chunks: { es: 'chunks', en: 'chunks' },
     content_loaded: { es: 'Contenido cargado', en: 'Content loaded' },
@@ -107,9 +107,7 @@ export function renderKnowledgeSection(
         </button>
       </div>
     </div>`
-    for (const item of items) {
-      html += renderItemCard(item, categories, lang)
-    }
+    html += renderItemsList(items, categories, lang)
   }
 
   // ── Wizard Modal (3-step) ──
@@ -130,101 +128,118 @@ export function renderKnowledgeSection(
 // ═══════════════════════════════════════════
 // Core Knowledge Cards (FAQ + Products)
 // ═══════════════════════════════════════════
-// Item Card
+// Source icon by type
 // ═══════════════════════════════════════════
 
-function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], lang: Lang): string {
+function sourceIcon(sourceType: string): string {
+  const icons: Record<string, { bg: string; color: string; path: string }> = {
+    sheets: {
+      bg: 'rgba(26,158,92,0.12)', color: '#1a9e5c',
+      path: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',
+    },
+    docs: {
+      bg: 'rgba(26,110,240,0.12)', color: '#1a6ef0',
+      path: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+    },
+    drive: {
+      bg: 'rgba(245,158,11,0.12)', color: '#d97706',
+      path: '<path d="M22 20H2l4-8h12l4 8z"/><path d="M12 4L6 16"/><path d="M12 4l6 12"/>',
+    },
+  }
+  const def = icons[sourceType] ?? icons['docs']!
+  return `<div class="ki-source-icon" style="background:${def.bg};color:${def.color}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${def.path}</svg></div>`
+}
+
+// ═══════════════════════════════════════════
+// Status dot
+// ═══════════════════════════════════════════
+
+function statusCell(item: KnowledgeItem, lang: Lang): string {
+  const dotClass = `ki-dot-${item.embeddingStatus}`
+  const label = t(`status_${item.embeddingStatus}`, lang)
+  const chunks = item.embeddingStatus === 'done' && item.chunkCount
+    ? `<span class="ki-chunks">${item.chunkCount} ${t('chunks', lang)}</span>`
+    : ''
+  return `<span class="ki-status-row"><span class="ki-dot ${dotClass}"></span>${esc(label)}${chunks}</span>`
+}
+
+// ═══════════════════════════════════════════
+// Items list with header
+// ═══════════════════════════════════════════
+
+function renderItemsList(items: KnowledgeItem[], categories: KnowledgeCategory[], lang: Lang): string {
+  const isEs = lang === 'es'
+  const coreCount = items.filter(i => i.isCore).length
+  let html = `<div class="ki-list">
+    <div class="ki-list-header">
+      <span>${isEs ? 'NOMBRE' : 'NAME'}</span>
+      <span>${isEs ? 'TIPO' : 'TYPE'}</span>
+      <span>${isEs ? 'ESTADO' : 'STATUS'}</span>
+      <span>${isEs ? 'ACTIVO' : 'ACTIVE'}</span>
+      <span>${isEs ? 'ACCIONES' : 'ACTIONS'}</span>
+    </div>`
+  for (const item of items) {
+    html += renderItemCard(item, categories, lang, coreCount)
+  }
+  html += `</div>`
+  return html
+}
+
+// ═══════════════════════════════════════════
+// Item Card (table row)
+// ═══════════════════════════════════════════
+
+function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], lang: Lang, coreCount: number): string {
+  const isEs = lang === 'es'
   const sourceLabel = t(`source_${item.sourceType}`, lang)
-  const statusLabel = t(`status_${item.embeddingStatus}`, lang)
-  const statusClass = `ki-status-${item.embeddingStatus}`
   const category = categories.find(c => c.id === item.categoryId)
   const isInactive = !item.active
+  const maxCore = 3
 
-  // Serialize item data for the wizard
   const itemData = JSON.stringify({
-    id: item.id,
-    title: item.title,
-    description: item.description,
-    categoryId: item.categoryId ?? '',
-    sourceUrl: item.sourceUrl,
+    id: item.id, title: item.title, description: item.description,
+    categoryId: item.categoryId ?? '', sourceUrl: item.sourceUrl,
   }).replace(/'/g, '&#39;').replace(/</g, '\\u003c')
 
-  let html = `<div class="panel ki-item ${isInactive ? 'ki-item-inactive' : ''}" data-item-id="${esc(item.id)}">
-    <div class="ki-item-header">
-      <div class="ki-item-info">
-        <div class="ki-item-title-row">
-          <span class="ki-item-name">${esc(item.title)}</span>
-          <span class="ki-badge ki-badge-source">${esc(sourceLabel)}</span>
-          ${item.isCore ? `<span class="ki-badge ki-badge-core">${t('core', lang)}</span>` : ''}
-          <span class="ki-badge ${statusClass}">${esc(statusLabel)}</span>
-          ${item.contentLoaded ? `<span class="ki-badge ki-badge-loaded">${item.chunkCount} ${t('chunks', lang)}</span>` : ''}
-        </div>
+  const coreLabel = item.isCore
+    ? `${isEs ? 'Principal' : 'Main'} (${coreCount}/${maxCore})`
+    : (isEs ? 'Marcar como principal' : 'Mark as main')
+
+  return `<div class="panel ki-row${isInactive ? ' ki-row-inactive' : ''}" data-item-id="${esc(item.id)}">
+    <div class="ki-col-nombre">
+      ${sourceIcon(item.sourceType)}
+      <div class="ki-nombre-info">
+        <span class="ki-item-name">${esc(item.title)}</span>
         ${item.description ? `<p class="ki-item-desc">${esc(item.description)}</p>` : ''}
         ${category ? `<span class="ki-tag">${esc(category.title)}</span>` : ''}
       </div>
-      <div class="ki-item-actions">`
-
-  // Core checkbox
-  html += `<label class="ki-core-label" title="${t('core', lang)}">
-    <input type="checkbox" ${item.isCore ? 'checked' : ''} onchange="kiToggleCore('${esc(item.id)}', this.checked)" />
-    <span class="ki-core-text">${t('core', lang)}</span>
-  </label>`
-
-  // Edit button
-  html += `<button type="button" class="act-btn act-btn-config act-btn--compact" onclick='kiOpenWizardEdit(${itemData})'>
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-    ${t('edit_btn', lang)}
-  </button>`
-
-  // Active toggle
-  html += `<label class="toggle toggle-sm">
-    <input type="checkbox" ${item.active ? 'checked' : ''}
-      onchange="kiToggleActive('${esc(item.id)}', this.checked)" />
-    <span class="toggle-slider"></span>
-  </label>`
-
-  // Train (load + embed) button
-  html += `<button type="button" class="act-btn act-btn-cta act-btn--compact"
-    onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-    ${lang === 'es' ? 'Entrenar' : 'Train'}
-  </button>`
-
-  // Delete (only if inactive)
-  if (isInactive) {
-    html += `<button type="button" class="act-btn act-btn-remove act-btn--compact"
-      onclick="kiDeleteItem('${esc(item.id)}')">${t('delete_btn', lang)}</button>`
-  }
-
-  html += `</div></div>` // close actions + header
-
-  // ── Content status line + sync frequency ──
-  const freqOptions: Array<{ value: string; label: string }> = [
-    { value: '6h',  label: lang === 'es' ? 'Cada 6 horas' : 'Every 6 hours' },
-    { value: '12h', label: lang === 'es' ? 'Cada 12 horas' : 'Every 12 hours' },
-    { value: '24h', label: lang === 'es' ? 'Cada 24 horas' : 'Every 24 hours' },
-    { value: '1w',  label: lang === 'es' ? 'Cada semana' : 'Every week' },
-    { value: '1m',  label: lang === 'es' ? 'Cada mes' : 'Every month' },
-  ]
-  const freqSelect = `<select class="ki-freq-select" onchange="kiSetFrequency('${esc(item.id)}', this.value)">
-    ${freqOptions.map(o => `<option value="${o.value}" ${item.updateFrequency === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
-  </select>`
-
-  const syncInfo = item.lastSyncCheckedAt
-    ? `<span class="ki-sync-info">${lang === 'es' ? 'Verificado' : 'Checked'}: ${new Date(item.lastSyncCheckedAt).toLocaleDateString()}</span>`
-    : ''
-
-  html += `<div class="ki-load-status-line">
-    ${item.contentLoaded
-      ? `<span class="ki-badge ki-badge-loaded">${t('content_loaded', lang)} — ${item.chunkCount} ${t('chunks', lang)}</span>`
-      : `<span class="ki-badge ki-badge-pending">${t('not_loaded', lang)}</span>`
-    }
-    <div class="ki-freq-row">${freqSelect}${syncInfo}</div>
+    </div>
+    <div class="ki-col-tipo"><span class="ki-badge ki-badge-source">${esc(sourceLabel)}</span></div>
+    <div class="ki-col-estado">${statusCell(item, lang)}</div>
+    <div class="ki-col-activo">
+      <label class="toggle toggle-sm">
+        <input type="checkbox" ${item.active ? 'checked' : ''} onchange="kiToggleActive('${esc(item.id)}', this.checked)" />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="ki-col-acciones">
+      <button type="button" class="act-btn act-btn-config act-btn--compact" onclick='kiOpenWizardEdit(${itemData})'>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        ${t('edit_btn', lang)}
+      </button>
+      <button type="button" class="act-btn act-btn--compact ${item.isCore ? 'ki-btn-core-on' : 'act-btn-config'}"
+        onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        ${esc(coreLabel)}
+      </button>
+      <button type="button" class="act-btn act-btn-cta act-btn--compact"
+        onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        ${isEs ? 'Entrenar' : 'Train'}
+      </button>
+      ${isInactive ? `<button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteItem('${esc(item.id)}')">${t('delete_btn', lang)}</button>` : ''}
+    </div>
   </div>`
-
-  html += `</div>` // close panel
-
-  return html
 }
 
 // ═══════════════════════════════════════════
@@ -826,7 +841,10 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
     api('/core', 'PUT', { id: id, isCore: isCore })
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); location.reload(); return; }
-        toast(isCore ? 'Core ON' : 'Core OFF');
+        toast(isCore
+          ? '${isEs ? 'Marcado como principal' : 'Marked as main'}'
+          : '${isEs ? 'Quitado de principales' : 'Removed from main'}');
+        location.reload();
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -935,15 +953,6 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
-  // ── Set sync frequency per item ──
-  window.kiSetFrequency = function(id, freq) {
-    api('/frequency', 'PUT', { id: id, frequency: freq })
-      .then(function(r) {
-        if (r.error) { toast(r.error, 'error'); return; }
-        toast('${isEs ? 'Frecuencia actualizada' : 'Frequency updated'}');
-      })
-      .catch(function(err) { toast(String(err), 'error'); });
-  };
 
   // ── Ignore tab toggle ──
   window.kiToggleTabIgnore = function(tabId, ignored) {
@@ -988,37 +997,44 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
 function renderStyles(): string {
   return `<style>
 .ki-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-.ki-title { font-size:18px; font-weight:600; margin:0; color:var(--on-surface); }
-.ki-item { margin-bottom:12px; padding:16px; }
-.ki-item-inactive { opacity:0.6; }
-.ki-item-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
-.ki-item-info { flex:1; min-width:0; }
-.ki-item-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.ki-item-name { font-weight:600; font-size:15px; color:var(--on-surface); }
-.ki-item-desc { margin:4px 0 0; font-size:13px; color:var(--on-surface-dim); }
-.ki-item-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; flex-wrap:wrap; }
+
+/* List table layout */
+.ki-list { display:flex; flex-direction:column; gap:8px; }
+.ki-list-header { display:grid; grid-template-columns:1fr 90px 150px 70px auto; gap:12px; padding:4px 16px 8px; }
+.ki-list-header span { font-size:11px; font-weight:600; color:var(--on-surface-dim); letter-spacing:0.06em; text-transform:uppercase; }
+.ki-row { display:grid !important; grid-template-columns:1fr 90px 150px 70px auto; gap:12px; align-items:center; padding:14px 16px !important; }
+.ki-row-inactive { opacity:0.55; }
+
+/* Nombre column */
+.ki-col-nombre { display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden; }
+.ki-col-acciones { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+
+/* Source icon */
+.ki-source-icon { width:36px; height:36px; border-radius:0.6rem; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+
+/* Nombre info */
+.ki-nombre-info { min-width:0; overflow:hidden; }
+.ki-item-name { font-weight:600; font-size:14px; color:var(--on-surface); display:block; }
+.ki-item-desc { margin:2px 0 0; font-size:12px; color:var(--on-surface-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ki-tag { display:inline-block; margin-top:4px; padding:1px 8px; border-radius:0.5rem; font-size:11px; background:var(--surface-container-low); color:var(--on-surface-dim); }
+
+/* Badges */
 .ki-badge { display:inline-block; padding:2px 8px; border-radius:0.5rem; font-size:11px; font-weight:500; }
 .ki-badge-source { background:var(--surface-container-low); color:var(--on-surface-dim); }
-.ki-badge-core { background:rgba(255,149,0,0.12); color:var(--warning); }
-.ki-badge-loaded { background:rgba(52,199,89,0.12); color:var(--success); }
-.ki-badge-pending { background:rgba(255,149,0,0.12); color:var(--warning); }
-.ki-status-pending { background:rgba(255,149,0,0.12); color:var(--warning); }
-.ki-status-processing { background:rgba(0,122,255,0.12); color:var(--info); }
-.ki-status-done { background:rgba(52,199,89,0.12); color:var(--success); }
-.ki-status-failed { background:rgba(230,33,17,0.08); color:var(--error); }
-.ki-tag { display:inline-block; margin-top:6px; padding:2px 10px; border-radius:0.5rem; font-size:11px; background:var(--surface-container-low); color:var(--on-surface-dim); }
-.ki-core-label { display:flex; align-items:center; gap:4px; cursor:pointer; font-size:12px; color:var(--on-surface-dim); }
-.ki-core-text { font-size:11px; }
-.ki-load-status-line { margin-top:10px; padding-top:10px; border-top:1px solid var(--outline-variant); font-size:12px; }
-.ki-empty-note { font-size:12px; color:var(--on-surface-dim); margin:4px 0; }
 
-/* Core knowledge cards */
-.ki-core-card { margin-bottom:8px; padding:14px; }
-.ki-core-card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
-.ki-core-card-title { font-weight:600; font-size:14px; color:var(--on-surface); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.ki-core-card-desc { margin:4px 0 0; font-size:13px; color:var(--on-surface-dim); line-height:1.4; }
-.ki-core-card-url { margin:4px 0 0; font-size:11px; color:var(--on-surface-dim); opacity:0.7; word-break:break-all; }
-.ki-core-card-notice { font-size:12px; color:var(--warning); margin:8px 0 0; }
+/* Status dots */
+.ki-status-row { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--on-surface); }
+.ki-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; display:inline-block; }
+.ki-dot-pending { background:var(--warning, #f59e0b); }
+.ki-dot-processing { background:var(--info, #3b82f6); }
+.ki-dot-done { background:var(--success, #22c55e); }
+.ki-dot-failed { background:var(--error, #ef4444); }
+.ki-chunks { font-size:11px; color:var(--on-surface-dim); margin-left:2px; }
+
+/* Core active button */
+.ki-btn-core-on { background:rgba(255,149,0,0.12) !important; color:var(--warning) !important; border-color:rgba(255,149,0,0.3) !important; }
+
+.ki-empty-note { font-size:12px; color:var(--on-surface-dim); margin:4px 0; }
 
 /* Wizard field error */
 .wizard-field-error { display:none; color:var(--error, #d32f2f); font-size:12px; margin-top:4px; padding:4px 8px; background:rgba(211,47,47,0.08); border-radius:0.5rem; }
@@ -1043,11 +1059,6 @@ function renderStyles(): string {
 .ki-ignore-toggle { margin:0; }
 .ki-ignore-label { font-size:11px; color:var(--on-surface-dim); white-space:nowrap; }
 
-/* Sync frequency row */
-.ki-load-status-line { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-.ki-freq-row { display:flex; align-items:center; gap:8px; }
-.ki-freq-select { font-size:12px; padding:3px 8px; border:1px solid var(--outline-variant); border-radius:0.5rem; background:var(--surface-container-lowest); color:var(--on-surface); cursor:pointer; }
-.ki-sync-info { font-size:11px; color:var(--on-surface-dim); }
 
 /* Category searchable dropdown */
 .ki-category-field { position:relative; }

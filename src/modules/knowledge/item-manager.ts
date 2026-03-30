@@ -225,6 +225,7 @@ export class KnowledgeItemManager {
     const newTabs = tabNames.map((name, i) => ({
       tabName: name,
       description: existingByName.get(name)?.description ?? '',
+      ignored: existingByName.get(name)?.ignored ?? false,
       position: i,
     }))
 
@@ -277,6 +278,7 @@ export class KnowledgeItemManager {
     const newCols = columnNames.map((name, i) => ({
       columnName: name,
       description: existingByName.get(name)?.description ?? '',
+      ignored: existingByName.get(name)?.ignored ?? false,
       position: i,
     }))
 

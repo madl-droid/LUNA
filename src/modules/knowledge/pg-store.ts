@@ -1272,14 +1272,14 @@ export class KnowledgePgStore {
     return tabs
   }
 
-  async replaceItemTabs(itemId: string, tabs: Array<{ tabName: string; description: string; position: number }>): Promise<string[]> {
+  async replaceItemTabs(itemId: string, tabs: Array<{ tabName: string; description: string; position: number; ignored?: boolean }>): Promise<string[]> {
     await this.db.query(`DELETE FROM knowledge_item_tabs WHERE item_id = $1`, [itemId])
     const ids: string[] = []
     for (const tab of tabs) {
       const res = await this.db.query<{ id: string }>(
-        `INSERT INTO knowledge_item_tabs (item_id, tab_name, description, position)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
-        [itemId, tab.tabName, tab.description, tab.position],
+        `INSERT INTO knowledge_item_tabs (item_id, tab_name, description, position, ignored)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [itemId, tab.tabName, tab.description, tab.position, tab.ignored ?? false],
       )
       ids.push(res.rows[0]!.id)
     }
@@ -1302,13 +1302,13 @@ export class KnowledgePgStore {
     return res.rows.map(mapItemColumnRow)
   }
 
-  async replaceTabColumns(tabId: string, columns: Array<{ columnName: string; description: string; position: number }>): Promise<void> {
+  async replaceTabColumns(tabId: string, columns: Array<{ columnName: string; description: string; position: number; ignored?: boolean }>): Promise<void> {
     await this.db.query(`DELETE FROM knowledge_item_columns WHERE tab_id = $1`, [tabId])
     for (const col of columns) {
       await this.db.query(
-        `INSERT INTO knowledge_item_columns (tab_id, column_name, description, position)
-         VALUES ($1, $2, $3, $4)`,
-        [tabId, col.columnName, col.description, col.position],
+        `INSERT INTO knowledge_item_columns (tab_id, column_name, description, position, ignored)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [tabId, col.columnName, col.description, col.position, col.ignored ?? false],
       )
     }
   }
