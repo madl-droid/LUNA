@@ -180,6 +180,8 @@ export interface KnowledgeInjectionItem {
   description: string
   categoryId: string | null
   categoryTitle?: string
+  shareable?: boolean
+  sourceUrl?: string
 }
 
 export interface KnowledgeInjection {
@@ -293,7 +295,7 @@ export interface UpgradeSuggestion {
 // Knowledge Items (v3 — Google Sheets/Docs/Drive sources)
 // ═══════════════════════════════════════════
 
-export type KnowledgeSourceType = 'sheets' | 'docs' | 'drive'
+export type KnowledgeSourceType = 'sheets' | 'docs' | 'drive' | 'pdf' | 'youtube'
 
 export interface KnowledgeItem {
   id: string
@@ -311,6 +313,7 @@ export interface KnowledgeItem {
   updateFrequency: SyncFrequency   // how often to check for changes
   lastSyncCheckedAt: Date | null   // last Drive modifiedTime check
   lastModifiedTime: string | null  // last known Drive modifiedTime
+  shareable: boolean              // agent can share the source URL with users
   createdAt: Date
   updatedAt: Date
   tabs?: KnowledgeItemTab[]

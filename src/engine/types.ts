@@ -110,6 +110,8 @@ export interface KnowledgeInjectionItem {
   description: string
   categoryId: string | null
   categoryTitle?: string
+  shareable?: boolean
+  sourceUrl?: string
 }
 
 export interface KnowledgeInjection {

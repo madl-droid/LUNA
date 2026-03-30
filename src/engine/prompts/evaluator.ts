@@ -202,14 +202,16 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
         parts.push(`  Categoría "${catTitle}":`)
         for (const item of items) {
           const desc = item.description ? ` — ${item.description}` : ''
-          parts.push(`    - ${item.title}${desc}`)
+          const share = item.shareable ? ' [compartible]' : ''
+          parts.push(`    - ${item.title}${desc}${share}`)
         }
       }
       if (noCategory.length > 0) {
         parts.push(`  Sin categoría:`)
         for (const item of noCategory) {
           const desc = item.description ? ` — ${item.description}` : ''
-          parts.push(`    - ${item.title}${desc}`)
+          const share = item.shareable ? ' [compartible]' : ''
+          parts.push(`    - ${item.title}${desc}${share}`)
         }
       }
     } else {

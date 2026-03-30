@@ -20,9 +20,18 @@ const logger = pino({ name: 'knowledge:items' })
 // Google resource ID extractors
 const SHEETS_REGEX = /\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/
 const DOCS_REGEX = /\/document\/d\/([a-zA-Z0-9_-]+)/
+const SLIDES_REGEX = /\/presentation\/d\/([a-zA-Z0-9_-]+)/
 const DRIVE_FOLDER_REGEX = /\/folders\/([a-zA-Z0-9_-]+)/
 const DRIVE_FILE_REGEX = /\/file\/d\/([a-zA-Z0-9_-]+)/
+const YOUTUBE_PLAYLIST_REGEX = /[?&]list=([a-zA-Z0-9_-]+)/
+const YOUTUBE_CHANNEL_REGEX = /youtube\.com\/(?:@([a-zA-Z0-9_.-]+)|channel\/([a-zA-Z0-9_-]+))/
+const DIRECT_PDF_REGEX = /^https?:\/\/.+\.pdf(\?.*)?$/i
 
+/**
+ * Extract resource ID and type from a URL.
+ * Supports: Google Sheets, Docs, Slides, Drive folders/files, direct PDF links, YouTube.
+ * Drive files are returned as 'drive' — caller should reclassify based on MIME type.
+ */
 export function extractGoogleId(url: string): { id: string; type: KnowledgeSourceType } | null {
   let m = SHEETS_REGEX.exec(url)
   if (m?.[1]) return { id: m[1], type: 'sheets' }
@@ -30,11 +39,23 @@ export function extractGoogleId(url: string): { id: string; type: KnowledgeSourc
   m = DOCS_REGEX.exec(url)
   if (m?.[1]) return { id: m[1], type: 'docs' }
 
+  m = SLIDES_REGEX.exec(url)
+  if (m?.[1]) return { id: m[1], type: 'docs' } // slides handled as docs initially, reclassified on create
+
   m = DRIVE_FOLDER_REGEX.exec(url)
   if (m?.[1]) return { id: m[1], type: 'drive' }
 
   m = DRIVE_FILE_REGEX.exec(url)
-  if (m?.[1]) return { id: m[1], type: 'drive' }
+  if (m?.[1]) return { id: m[1], type: 'drive' } // reclassified on create based on MIME
+
+  // YouTube playlist or channel
+  m = YOUTUBE_PLAYLIST_REGEX.exec(url)
+  if (m?.[1] && url.includes('youtube.com')) return { id: m[1], type: 'youtube' }
+  m = YOUTUBE_CHANNEL_REGEX.exec(url)
+  if (m?.[1] || m?.[2]) return { id: (m?.[1] ?? m?.[2])!, type: 'youtube' }
+
+  // Direct PDF URL (any domain)
+  if (DIRECT_PDF_REGEX.test(url)) return { id: url, type: 'pdf' }
 
   return null
 }
@@ -57,9 +78,16 @@ interface DocsService {
 }
 
 interface DriveService {
-  listFiles(options: { folderId?: string; pageSize?: number }): Promise<{
-    files: Array<{ id: string; name: string; mimeType: string }>
+  listFiles(options: { folderId?: string; mimeType?: string; pageSize?: number }): Promise<{
+    files: Array<{ id: string; name: string; mimeType: string; webViewLink?: string }>
   }>
+  getFile(fileId: string): Promise<{ id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string }>
+  downloadFile(fileId: string): Promise<Buffer>
+  exportFile(fileId: string, exportMimeType: string): Promise<string>
+}
+
+interface SlidesService {
+  getSlideText(presentationId: string): Promise<string>
 }
 
 export class KnowledgeItemManager {
@@ -86,7 +114,26 @@ export class KnowledgeItemManager {
     sourceUrl: string
   }): Promise<KnowledgeItem> {
     const extracted = extractGoogleId(data.sourceUrl)
-    if (!extracted) throw new Error('URL no válida. Debe ser una URL de Google Sheets, Docs o Drive.')
+    if (!extracted) throw new Error('URL no válida. Debe ser una URL de Google Sheets, Docs, Drive, PDF o YouTube.')
+
+    // Reclassify Drive files based on actual MIME type (sheets/docs/pdf shared via drive.google.com/file/d/)
+    if (extracted.type === 'drive' && DRIVE_FILE_REGEX.test(data.sourceUrl)) {
+      const drive = this.registry.getOptional<DriveService>('google:drive')
+      if (drive) {
+        try {
+          const meta = await drive.getFile(extracted.id)
+          const mime = meta.mimeType
+          if (mime === 'application/vnd.google-apps.spreadsheet') extracted.type = 'sheets'
+          else if (mime === 'application/vnd.google-apps.document') extracted.type = 'docs'
+          else if (mime === 'application/vnd.google-apps.presentation') extracted.type = 'docs' // slides treated as docs
+          else if (mime === 'application/pdf') extracted.type = 'pdf'
+          // Other files stay as 'drive' (single file mode)
+          logger.info({ fileId: extracted.id, mime, resolvedType: extracted.type }, 'Drive file reclassified')
+        } catch (err) {
+          logger.warn({ err, fileId: extracted.id }, 'Could not resolve Drive file type, using generic drive')
+        }
+      }
+    }
 
     // Check for existing item with same Google resource ID to prevent duplicates
     const existing = await this.pgStore.findItemBySourceId(extracted.id)
@@ -211,11 +258,18 @@ export class KnowledgeItemManager {
     } else if (item.sourceType === 'drive') {
       const drive = this.registry.getOptional<DriveService>('google:drive')
       if (drive) {
-        const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 50 })
+        const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 100 })
         tabNames = result.files.map(f => f.name)
+        logger.info({ fileCount: tabNames.length, files: tabNames.slice(0, 10) }, 'Drive folder files scanned')
       } else {
         throw new Error('Servicio Google Drive no disponible — requiere OAuth')
       }
+    } else if (item.sourceType === 'pdf') {
+      // Single PDF → one tab
+      tabNames = ['PDF']
+    } else if (item.sourceType === 'youtube') {
+      // YouTube: for now list as single tab until YouTube API integration
+      tabNames = ['Videos']
     }
 
     // Preserve existing descriptions where tab names match
@@ -303,6 +357,10 @@ export class KnowledgeItemManager {
       totalChunks = await this.loadDocsContent(item)
     } else if (item.sourceType === 'drive') {
       totalChunks = await this.loadDriveContent(item)
+    } else if (item.sourceType === 'pdf') {
+      totalChunks = await this.loadPdfContent(item)
+    } else if (item.sourceType === 'youtube') {
+      totalChunks = await this.loadYoutubeContent(item)
     }
 
     await this.pgStore.updateItem(id, {
@@ -408,63 +466,181 @@ export class KnowledgeItemManager {
     const drive = this.registry.getOptional<DriveService>('google:drive')
     if (!drive) throw new Error('Servicio Google Drive no disponible')
 
-    const sheetsService = this.registry.getOptional<SheetsService>('google:sheets')
-    const docsService = this.registry.getOptional<DocsService>('google:docs')
+    const allTabs = item.tabs ?? []
+    const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 50 })
+    const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 100 })
     let totalChunks = 0
 
     for (const file of result.files) {
-      if (file.mimeType === 'application/vnd.google-apps.spreadsheet' && sheetsService) {
-        // Google Sheet — read all tabs
-        const info = await sheetsService.getSpreadsheet(file.id)
-        for (const sheet of info.sheets) {
-          const range = `'${sheet.title}'!A:ZZ`
-          const data = await sheetsService.readRange(file.id, range)
+      if (ignoredNames.has(file.name)) {
+        logger.debug({ name: file.name }, 'Drive file ignored')
+        continue
+      }
 
-          if (!data.values || data.values.length < 2) continue
-
-          const headers = data.values[0]!
-          const rows = data.values.slice(1)
-          const textParts: string[] = []
-          for (const row of rows) {
-            const parts: string[] = []
-            for (let i = 0; i < headers.length; i++) {
-              const header = headers[i]?.trim()
-              const value = row[i]?.trim()
-              if (header && value) parts.push(`${header}: ${value}`)
-            }
-            if (parts.length > 0) textParts.push(parts.join(' | '))
-          }
-
-          if (textParts.length === 0) continue
-
-          const content = textParts.join('\n')
-          const buffer = Buffer.from(content, 'utf-8')
-          const doc = await this.knowledgeManager.addDocument(buffer, `${file.name} — ${sheet.title}.txt`, {
-            sourceType: 'drive',
-            sourceRef: item.id,
-            description: `${file.name} — ${sheet.title}`,
-            categoryIds: item.categoryId ? [item.categoryId] : [],
-          })
-          totalChunks += doc.chunkCount
-        }
-      } else if (file.mimeType === 'application/vnd.google-apps.document' && docsService) {
-        // Google Doc
-        const doc = await docsService.getDocument(file.id)
-        if (!doc.body.trim()) continue
-        const buffer = Buffer.from(doc.body, 'utf-8')
-        const result = await this.knowledgeManager.addDocument(buffer, `${doc.title}.txt`, {
-          sourceType: 'drive',
-          sourceRef: item.id,
-          description: doc.title,
-          categoryIds: item.categoryId ? [item.categoryId] : [],
-        })
-        totalChunks += result.chunkCount
+      try {
+        const chunks = await this.loadDriveFile(file, item)
+        totalChunks += chunks
+      } catch (err) {
+        logger.warn({ err, fileId: file.id, name: file.name }, 'Failed to load drive file, skipping')
       }
     }
 
     return totalChunks
+  }
+
+  /** Load a single file from Drive, dispatching by MIME type */
+  private async loadDriveFile(
+    file: { id: string; name: string; mimeType: string },
+    item: KnowledgeItem,
+  ): Promise<number> {
+    const drive = this.registry.getOptional<DriveService>('google:drive')!
+    const sheetsService = this.registry.getOptional<SheetsService>('google:sheets')
+    const docsService = this.registry.getOptional<DocsService>('google:docs')
+    const slidesService = this.registry.getOptional<SlidesService>('google:slides')
+
+    const mime = file.mimeType
+    let text = ''
+    let fileName = file.name
+
+    // ── Google Workspace native formats (use APIs) ──
+    if (mime === 'application/vnd.google-apps.spreadsheet' && sheetsService) {
+      const info = await sheetsService.getSpreadsheet(file.id)
+      let totalChunks = 0
+      for (const sheet of info.sheets) {
+        const data = await sheetsService.readRange(file.id, `'${sheet.title}'!A:ZZ`)
+        if (!data.values || data.values.length < 2) continue
+        const headers = data.values[0]!
+        const textParts: string[] = []
+        for (const row of data.values.slice(1)) {
+          const parts: string[] = []
+          for (let i = 0; i < headers.length; i++) {
+            const header = headers[i]?.trim()
+            const value = row[i]?.trim()
+            if (header && value) parts.push(`${header}: ${value}`)
+          }
+          if (parts.length > 0) textParts.push(parts.join(' | '))
+        }
+        if (textParts.length === 0) continue
+        const buf = Buffer.from(textParts.join('\n'), 'utf-8')
+        const doc = await this.knowledgeManager.addDocument(buf, `${file.name} — ${sheet.title}.txt`, {
+          sourceType: 'drive', sourceRef: item.id,
+          description: `${file.name} — ${sheet.title}`,
+          categoryIds: item.categoryId ? [item.categoryId] : [],
+        })
+        totalChunks += doc.chunkCount
+      }
+      return totalChunks
+
+    } else if (mime === 'application/vnd.google-apps.document' && docsService) {
+      const doc = await docsService.getDocument(file.id)
+      text = doc.body
+      fileName = doc.title
+
+    } else if (mime === 'application/vnd.google-apps.presentation' && slidesService) {
+      text = await slidesService.getSlideText(file.id)
+
+    } else if (mime === 'application/vnd.google-apps.spreadsheet') {
+      // No Sheets service — export as CSV
+      text = await drive.exportFile(file.id, 'text/csv')
+
+    } else if (mime === 'application/vnd.google-apps.document') {
+      text = await drive.exportFile(file.id, 'text/plain')
+
+    } else if (mime === 'application/vnd.google-apps.presentation') {
+      text = await drive.exportFile(file.id, 'text/plain')
+
+    // ── Office formats uploaded to Drive (export via Drive API) ──
+    } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      || mime === 'application/msword') {
+      text = await drive.exportFile(file.id, 'text/plain')
+
+    } else if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      || mime === 'application/vnd.ms-excel') {
+      text = await drive.exportFile(file.id, 'text/csv')
+
+    } else if (mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+      || mime === 'application/vnd.ms-powerpoint') {
+      text = await drive.exportFile(file.id, 'text/plain')
+
+    // ── PDF ──
+    } else if (mime === 'application/pdf') {
+      const buffer = await drive.downloadFile(file.id)
+      text = await extractTextFromPdf(buffer)
+      if (!text.trim()) {
+        logger.warn({ fileId: file.id, name: file.name }, 'PDF has no extractable text (possibly scanned image)')
+      }
+
+    // ── Plain text / Markdown ──
+    } else if (mime === 'text/plain' || mime === 'text/markdown' || mime === 'text/csv'
+      || file.name.endsWith('.md') || file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
+      const buffer = await drive.downloadFile(file.id)
+      text = buffer.toString('utf-8')
+
+    // ── Unsupported format ──
+    } else {
+      logger.debug({ mime, name: file.name }, 'Unsupported MIME type in Drive, skipping')
+      return 0
+    }
+
+    if (!text.trim()) return 0
+
+    const buf = Buffer.from(text, 'utf-8')
+    const doc = await this.knowledgeManager.addDocument(buf, `${fileName}.txt`, {
+      sourceType: 'drive', sourceRef: item.id,
+      description: fileName,
+      categoryIds: item.categoryId ? [item.categoryId] : [],
+    })
+    return doc.chunkCount
+  }
+
+  /** Load a PDF from a direct URL or Drive file */
+  private async loadPdfContent(item: KnowledgeItem): Promise<number> {
+    let pdfBuffer: Buffer
+
+    if (item.sourceUrl.startsWith('http') && !item.sourceUrl.includes('drive.google.com')) {
+      // Direct PDF URL
+      const res = await fetch(item.sourceUrl, { signal: AbortSignal.timeout(30000) })
+      if (!res.ok) throw new Error(`Failed to fetch PDF: ${res.status}`)
+      pdfBuffer = Buffer.from(await res.arrayBuffer())
+    } else {
+      // Drive file
+      const drive = this.registry.getOptional<DriveService>('google:drive')
+      if (!drive) throw new Error('Servicio Google Drive no disponible para descargar PDF')
+      pdfBuffer = await drive.downloadFile(item.sourceId)
+    }
+
+    const text = await extractTextFromPdf(pdfBuffer)
+    if (!text.trim()) {
+      logger.warn({ itemId: item.id, title: item.title }, 'PDF has no extractable text')
+      // Still create a document with a notice
+      const notice = `[PDF sin texto extraíble — posiblemente escaneado como imagen: ${item.title}]`
+      const buf = Buffer.from(notice, 'utf-8')
+      const doc = await this.knowledgeManager.addDocument(buf, `${item.title}.txt`, {
+        sourceType: 'drive', sourceRef: item.id,
+        description: item.description,
+        categoryIds: item.categoryId ? [item.categoryId] : [],
+      })
+      return doc.chunkCount
+    }
+
+    const buf = Buffer.from(text, 'utf-8')
+    const doc = await this.knowledgeManager.addDocument(buf, `${item.title}.txt`, {
+      sourceType: 'drive', sourceRef: item.id,
+      description: item.description,
+      categoryIds: item.categoryId ? [item.categoryId] : [],
+    })
+    return doc.chunkCount
+  }
+
+  /** YouTube content loading (stub — requires youtube-transcript package) */
+  private async loadYoutubeContent(_item: KnowledgeItem): Promise<number> {
+    // TODO: Implement YouTube transcript loading
+    // 1. Use YouTube Data API v3 to list videos in playlist
+    // 2. Use youtube-transcript to fetch transcripts for each video
+    // 3. Chunk and embed each transcript
+    logger.warn({ itemId: _item.id }, 'YouTube loading not yet implemented')
+    return 0
   }
 
   // ─── Public API fallbacks (no OAuth needed) ──
@@ -515,5 +691,21 @@ export class KnowledgeItemManager {
     const headers = (data.values?.[0] ?? []).filter(v => v.trim() !== '')
     logger.info({ spreadsheetId, tabName, count: headers.length }, 'Columns scanned via public API')
     return headers
+  }
+}
+
+// ═══════════════════════════════════════════
+// PDF text extraction helper
+// ═══════════════════════════════════════════
+
+async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+  try {
+    const { PDFParse } = await import('pdf-parse')
+    const parser = new PDFParse({ data: new Uint8Array(buffer) })
+    const result = await parser.getText()
+    return result.text ?? ''
+  } catch (err) {
+    logger.warn({ err }, 'pdf-parse failed')
+    return ''
   }
 }

@@ -746,6 +746,25 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // PUT /console/api/knowledge/items/shareable
+    {
+      method: 'PUT',
+      path: 'items/shareable',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string; shareable: boolean }>(req)
+          if (!body.id) {
+            jsonResponse(res, 400, { error: 'Falta id' })
+            return
+          }
+          await getPgStore().updateItem(body.id, { shareable: !!body.shareable })
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
     // POST /console/api/knowledge/items/delete
     {
       method: 'POST',

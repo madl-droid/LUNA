@@ -226,13 +226,15 @@ export class KnowledgeManager {
     // Build category title lookup
     const catTitleById = new Map(categories.map(c => [c.id, c.title]))
 
-    // Map items to injection format
+    // Map items to injection format (include shareable URL if flagged)
     const injectionItems: KnowledgeInjectionItem[] = activeItems.map(item => ({
       id: item.id,
       title: item.title,
       description: item.description,
       categoryId: item.categoryId,
       categoryTitle: item.categoryId ? catTitleById.get(item.categoryId) : undefined,
+      shareable: item.shareable ?? false,
+      sourceUrl: item.shareable ? item.sourceUrl : undefined,
     }))
 
     const injection: KnowledgeInjection = {

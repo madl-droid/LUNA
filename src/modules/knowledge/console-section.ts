@@ -18,7 +18,9 @@ const t = (key: string, lang: Lang): string => {
     item_title: { es: 'Titulo', en: 'Title' },
     item_desc: { es: 'Descripcion', en: 'Description' },
     item_category: { es: 'Categoria', en: 'Category' },
-    item_url: { es: 'URL de Google (Sheets, Docs o Drive)', en: 'Google URL (Sheets, Docs or Drive)' },
+    item_url: { es: 'URL (Google Sheets, Docs, Drive, PDF, YouTube)', en: 'URL (Google Sheets, Docs, Drive, PDF, YouTube)' },
+    source_pdf: { es: 'PDF', en: 'PDF' },
+    source_youtube: { es: 'YouTube', en: 'YouTube' },
     save: { es: 'Guardar', en: 'Save' },
     cancel: { es: 'Cancelar', en: 'Cancel' },
     next: { es: 'Siguiente', en: 'Next' },
@@ -145,6 +147,14 @@ function sourceIcon(sourceType: string): string {
       bg: 'rgba(245,158,11,0.12)', color: '#d97706',
       path: '<path d="M22 20H2l4-8h12l4 8z"/><path d="M12 4L6 16"/><path d="M12 4l6 12"/>',
     },
+    pdf: {
+      bg: 'rgba(220,38,38,0.12)', color: '#dc2626',
+      path: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h2m-2 3h6"/>',
+    },
+    youtube: {
+      bg: 'rgba(239,68,68,0.12)', color: '#ef4444',
+      path: '<path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19.13c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.46z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>',
+    },
   }
   const def = icons[sourceType] ?? icons['docs']!
   return `<div class="ki-source-icon" style="background:${def.bg};color:${def.color}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${def.path}</svg></div>`
@@ -195,7 +205,9 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
 
   const coreLabel = item.isCore
     ? `${isEs ? 'Principal' : 'Main'} (${coreCount}/${maxCore})`
-    : (isEs ? 'Marcar como principal' : 'Mark as main')
+    : (isEs ? 'Principal' : 'Main')
+  const coreTip = isEs ? 'Marca este conocimiento como principal para que el agente lo consulte con prioridad (max 3)' : 'Mark this knowledge as main so the agent queries it with priority (max 3)'
+  const shareTip = isEs ? 'Permite al agente compartir el enlace de este archivo con el usuario cuando sea relevante' : 'Allows the agent to share the link to this file with the user when relevant'
 
   return `<div class="panel ki-row${isInactive ? ' ki-row-inactive' : ''}" data-item-id="${esc(item.id)}">
     <div class="ki-col-nombre">
@@ -220,9 +232,16 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         ${t('edit_btn', lang)}
       </button>
       <button type="button" class="act-btn act-btn--compact ${item.isCore ? 'ki-btn-core-on' : 'act-btn-config'}"
-        onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})">
+        onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})"
+        title="${esc(coreTip)}">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        ${esc(coreLabel)}
+        ${esc(coreLabel)}<span class="ki-info-dot" title="${esc(coreTip)}">i</span>
+      </button>
+      <button type="button" class="act-btn act-btn--compact ${item.shareable ? 'ki-btn-share-on' : 'act-btn-config'}"
+        onclick="kiToggleShareable('${esc(item.id)}', ${item.shareable ? 'false' : 'true'})"
+        title="${esc(shareTip)}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        ${isEs ? 'Compartir' : 'Share'}<span class="ki-info-dot" title="${esc(shareTip)}">i</span>
       </button>
       <button type="button" class="act-btn act-btn-cta act-btn--compact"
         onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
@@ -953,6 +972,19 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
   };
 
 
+  // ── Shareable toggle ──
+  window.kiToggleShareable = function(id, shareable) {
+    api('/shareable', 'PUT', { id: id, shareable: shareable })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast(shareable
+          ? '${isEs ? 'Compartible activado' : 'Sharing enabled'}'
+          : '${isEs ? 'Compartible desactivado' : 'Sharing disabled'}');
+        location.reload();
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
+  };
+
   // ── Ignore tab toggle ──
   window.kiToggleTabIgnore = function(tabId, ignored) {
     api('/tab-ignore', 'PUT', { tabId: tabId, ignored: ignored })
@@ -1030,6 +1062,8 @@ function renderStyles(): string {
 
 /* Core active button */
 .ki-btn-core-on { background:rgba(255,149,0,0.12) !important; color:var(--warning) !important; border-color:rgba(255,149,0,0.3) !important; }
+.ki-btn-share-on { background:rgba(59,130,246,0.12) !important; color:var(--info, #3b82f6) !important; border-color:rgba(59,130,246,0.3) !important; }
+.ki-info-dot { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; background:var(--outline-variant); color:var(--on-surface); font-size:9px; font-weight:700; font-style:italic; margin-left:4px; cursor:help; line-height:1; }
 
 .ki-empty-note { font-size:12px; color:var(--on-surface-dim); margin:4px 0; }
 

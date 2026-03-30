@@ -1183,12 +1183,14 @@ export class KnowledgePgStore {
     title?: string
     description?: string
     categoryId?: string | null
+    sourceType?: import('./types.js').KnowledgeSourceType
     isCore?: boolean
     active?: boolean
     contentLoaded?: boolean
     embeddingStatus?: EmbeddingStatus
     chunkCount?: number
     updateFrequency?: import('./types.js').SyncFrequency
+    shareable?: boolean
   }): Promise<void> {
     const sets: string[] = []
     const params: unknown[] = []
@@ -1197,12 +1199,14 @@ export class KnowledgePgStore {
     if (updates.title !== undefined) { sets.push(`title = $${idx++}`); params.push(updates.title) }
     if (updates.description !== undefined) { sets.push(`description = $${idx++}`); params.push(updates.description) }
     if (updates.categoryId !== undefined) { sets.push(`category_id = $${idx++}`); params.push(updates.categoryId) }
+    if (updates.sourceType !== undefined) { sets.push(`source_type = $${idx++}`); params.push(updates.sourceType) }
     if (updates.isCore !== undefined) { sets.push(`is_core = $${idx++}`); params.push(updates.isCore) }
     if (updates.active !== undefined) { sets.push(`active = $${idx++}`); params.push(updates.active) }
     if (updates.contentLoaded !== undefined) { sets.push(`content_loaded = $${idx++}`); params.push(updates.contentLoaded) }
     if (updates.embeddingStatus !== undefined) { sets.push(`embedding_status = $${idx++}`); params.push(updates.embeddingStatus) }
     if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
     if (updates.updateFrequency !== undefined) { sets.push(`update_frequency = $${idx++}`); params.push(updates.updateFrequency) }
+    if (updates.shareable !== undefined) { sets.push(`shareable = $${idx++}`); params.push(updates.shareable) }
 
     if (sets.length === 0) return
     sets.push(`updated_at = now()`)
@@ -1232,10 +1236,10 @@ export class KnowledgePgStore {
     return res.rows.map(mapItemRow)
   }
 
-  /** Return active items (id, title, description, categoryId) — no tabs/columns, for Phase 1 injection */
-  async listActiveItemsForInjection(): Promise<Pick<KnowledgeItem, 'id' | 'title' | 'description' | 'categoryId'>[]> {
-    const res = await this.db.query<{ id: string; title: string; description: string; category_id: string | null }>(
-      `SELECT id, title, description, category_id
+  /** Return active items for Phase 1 injection — lightweight, no tabs/columns */
+  async listActiveItemsForInjection(): Promise<Pick<KnowledgeItem, 'id' | 'title' | 'description' | 'categoryId' | 'shareable' | 'sourceUrl'>[]> {
+    const res = await this.db.query<{ id: string; title: string; description: string; category_id: string | null; shareable: boolean; source_url: string }>(
+      `SELECT id, title, description, category_id, shareable, source_url
        FROM knowledge_items
        WHERE active = true
        ORDER BY title`,
@@ -1245,6 +1249,8 @@ export class KnowledgePgStore {
       title: row.title,
       description: row.description,
       categoryId: row.category_id,
+      shareable: row.shareable ?? false,
+      sourceUrl: row.source_url,
     }))
   }
 
@@ -1544,6 +1550,7 @@ interface ItemRow {
   update_frequency: string
   last_sync_checked_at: Date | null
   last_modified_time: string | null
+  shareable: boolean
   created_at: Date
   updated_at: Date
 }
@@ -1565,6 +1572,7 @@ function mapItemRow(r: ItemRow): KnowledgeItem {
     updateFrequency: (r.update_frequency ?? '24h') as import('./types.js').SyncFrequency,
     lastSyncCheckedAt: r.last_sync_checked_at ?? null,
     lastModifiedTime: r.last_modified_time ?? null,
+    shareable: r.shareable ?? false,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
