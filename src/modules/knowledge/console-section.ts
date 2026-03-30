@@ -643,7 +643,8 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[]): string
         return api('', 'POST', { title: title, description: desc, categoryId: cat || undefined, sourceUrl: url });
       })
       .then(function(r) {
-        if (!r) return;
+        console.log('CREATE response:', JSON.stringify(r));
+        if (!r) { console.log('CREATE returned null/undefined'); return; }
         if (r.error) {
           showWizPage(0);
           wizShowErr('url', r.error);
