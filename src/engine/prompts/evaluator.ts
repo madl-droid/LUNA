@@ -113,6 +113,29 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
     system += `\nPara leer estos sitios: { "type": "api_call", "tool": "web_explore", "params": { "url": "..." } }`
   }
 
+  // Google Apps domain routing — use native API tools instead of web scraping
+  const googleToolNames = allowedTools.map(t => t.name)
+  const hasDocsRead = googleToolNames.includes('docs-read')
+  const hasSheetsRead = googleToolNames.includes('sheets-read')
+  const hasSlidesRead = googleToolNames.includes('slides-read')
+  const hasDriveGet = googleToolNames.includes('drive-get-file')
+  if (hasDocsRead || hasSheetsRead || hasSlidesRead || hasDriveGet) {
+    system += `\n\nURLs de Google (usar tools de API nativa, NO web_explore ni web-researcher):`
+    system += `\nCuando el usuario envíe un link de Google Drive/Docs/Sheets/Slides, extrae el ID del recurso de la URL y usa la tool correspondiente:`
+    if (hasDocsRead) system += `\n- docs.google.com/document/d/{ID}/... → { "type": "api_call", "tool": "docs-read", "params": { "documentId": "{ID}" } }`
+    if (hasSheetsRead) system += `\n- docs.google.com/spreadsheets/d/{ID}/... → { "type": "api_call", "tool": "sheets-read", "params": { "spreadsheetId": "{ID}" } }`
+    if (hasSlidesRead) system += `\n- docs.google.com/presentation/d/{ID}/... → { "type": "api_call", "tool": "slides-read", "params": { "presentationId": "{ID}" } }`
+    if (hasDriveGet) system += `\n- drive.google.com/file/d/{ID}/... → { "type": "api_call", "tool": "drive-get-file", "params": { "fileId": "{ID}" } }`
+    system += `\nEl ID es el string largo entre /d/ y el siguiente /. Ejemplo: https://docs.google.com/document/d/1aBcDeFgHiJk/edit → ID = "1aBcDeFgHiJk"`
+  }
+
+  // YouTube URLs — use web_explore directly, no need for web-researcher
+  const hasWebExplore = googleToolNames.includes('web_explore')
+  if (hasWebExplore) {
+    system += `\n\nURLs de YouTube (youtube.com, youtu.be): leer con web_explore directo, NO usar web-researcher.`
+    system += `\n{ "type": "api_call", "tool": "web_explore", "params": { "url": "https://youtube.com/..." } }`
+  }
+
   // Build user message with context
   const parts: string[] = []
 
