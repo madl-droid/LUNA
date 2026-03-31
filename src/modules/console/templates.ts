@@ -46,14 +46,12 @@ const ICONS = {
 }
 
 const FIXED_SECTIONS: FixedSection[] = [
-  // Dashboard — overview with charts
-  { id: 'dashboard', key: 'sec_dashboard', icon: ICONS.dashboard, group: 'main', order: 0 },
+  // Agent — first item, unified page with dashboard + sub-tabs: knowledge, memory, identity, advanced
+  { id: 'agente', key: 'sec_agente', icon: svgIcon('<circle cx="12" cy="7" r="3.5"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/><path d="M2 13.5A4.5 4.5 0 0 1 4 12"/><path d="M22 13.5A4.5 4.5 0 0 0 20 12"/><path d="M2 13.5v1.5a1 1 0 0 0 1 1h1.5"/><path d="M22 13.5v1.5a1 1 0 0 1-1 1h-1.5"/>'), group: 'main', order: 0 },
   // Channels — solo la pestaña unificada; los canales individuales se gestionan desde ahí
   { id: 'channels', key: 'sec_channels', icon: ICONS.channels, group: 'main', order: 10 },
   // Contacts — right below channels
   { id: 'contacts', key: 'sec_contacts', icon: svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'), group: 'main', order: 20 },
-  // Agent — unified page with sub-tabs: knowledge, memory, identity, advanced
-  { id: 'agente', key: 'sec_agente', icon: svgIcon('<path d="M12 8V4H8"/><rect x="2" y="8" width="20" height="12" rx="2"/><circle cx="8" cy="14" r="1.5"/><circle cx="16" cy="14" r="1.5"/><path d="M9 18h6"/>'), group: 'main', order: 30 },
   // Herramientas — unified page with sub-tabs: tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps
   // REGLA: Herramientas SIEMPRE al final del sidebar (order 999)
   { id: 'herramientas', key: 'sec_herramientas', icon: svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), group: 'main', order: 999 },
@@ -68,7 +66,7 @@ const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp'
 export const ICON_OVERRIDES: Record<string, string> = {
   'tools': svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'),
   'prompts': svgIcon('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
-  'memory': svgIcon('<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>'),
+  'memory': svgIcon('<path d="M9.5 2A3.5 3.5 0 0 0 6 5.5c0 .28.04.55.1.8A3.5 3.5 0 0 0 3 9.5c0 1.13.54 2.14 1.38 2.78A2.5 2.5 0 0 0 2 14.5a2.5 2.5 0 0 0 2.5 2.5c.23 0 .46-.04.67-.1A3 3 0 0 0 8 20h8a3 3 0 0 0 2.83-3.1c.21.06.44.1.67.1A2.5 2.5 0 0 0 22 14.5a2.5 2.5 0 0 0-2.38-2.22A3.5 3.5 0 0 0 21 9.5a3.5 3.5 0 0 0-3.1-3.47c.07-.25.1-.52.1-.8A3.5 3.5 0 0 0 14.5 2h-5z"/><line x1="12" y1="5" x2="12" y2="20"/>'),
   'users': svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   'knowledge': svgIcon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'),
   'model-scanner': svgIcon('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'),
@@ -435,8 +433,8 @@ function renderSidebar(opts: PageOptions): string {
     nav += `<div class="sidebar-group">${titleHtml}`
 
     for (const item of items) {
-      const isActive = opts.section === item.id
-      const itemHref = item.id === 'dashboard' ? `/console?lang=${opts.lang}` : `/console/${item.id}?lang=${opts.lang}`
+      const isActive = opts.section === item.id || (item.id === 'agente' && opts.section === 'dashboard')
+      const itemHref = `/console/${item.id}?lang=${opts.lang}`
       nav += `<a href="${itemHref}" class="sidebar-item ${isActive ? 'active' : ''}">
         <span class="nav-icon">${item.icon}</span>
         <span>${item.label}</span>
@@ -463,7 +461,7 @@ function renderSidebar(opts: PageOptions): string {
       if (item.id === 'agente' && (isActive || opts.agenteSubpage)) {
         const agenteIcons = {
           knowledge: svgIcon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'),
-          memory: svgIcon('<path d="M12 2a7 7 0 0 0-5.42 2.57A5.5 5.5 0 0 0 2 9.5a5.5 5.5 0 0 0 3.36 5.07A5 5 0 0 0 9 19h2v3h2v-3h2a5 5 0 0 0 3.64-4.43A5.5 5.5 0 0 0 22 9.5a5.5 5.5 0 0 0-4.58-5.43A7 7 0 0 0 12 2z"/><path d="M12 2v20"/><path d="M5 9.5c2.5 0 4.5.5 7 2"/><path d="M19 9.5c-2.5 0-4.5.5-7 2"/>'),
+          memory: svgIcon('<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/>'),
           identity: svgIcon('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'),
           voice: svgIcon('<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'),
           advanced: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 14h3"/><path d="M1 9h3"/><path d="M1 14h3"/>'),

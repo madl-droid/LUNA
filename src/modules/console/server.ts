@@ -1096,9 +1096,12 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       let section = pathOnly.replace(/^\//, '')
 
-      // /console (root) renders dashboard directly
+      // /console (root) → redirect to agente (which renders dashboard)
       if (section === '' || section === '/') {
-        section = 'dashboard'
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/agente?lang=${lang}` })
+        res.end()
+        return true
       }
 
       // Nested channel settings: /console/channels/{channelId} → render channel section inside channels layout
@@ -1134,9 +1137,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         agenteSubpage = agenteMatch[1]
         section = 'agente'
       }
-      // /console/agente without subpage → default to knowledge
+      // /console/agente without subpage → show dashboard
       if (section === 'agente' && !agenteSubpage) {
-        agenteSubpage = 'knowledge'
+        section = 'dashboard'
       }
       // Voice tab removed — redirect to identity (TTS settings are in identity page)
       if (section === 'agente' && agenteSubpage === 'voice') {

@@ -1205,7 +1205,7 @@ const manifest: ModuleManifest = {
     registry.provide('knowledge:renderSection', async (lang: 'es' | 'en') => {
       const items = await itemManager!.list()
       const categories = await pgStore!.listCategories()
-      const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_FAQ_DESCRIPTION: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string; KNOWLEDGE_PRODUCTS_DESCRIPTION: string }>('knowledge')
+      const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_FAQ_DESCRIPTION: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string; KNOWLEDGE_PRODUCTS_DESCRIPTION: string; KNOWLEDGE_SYNC_FREQUENCY: string }>('knowledge')
       // Check if cooldown should be active — only in production (ENGINE_TEST_MODE explicitly 'false')
       // If ENGINE_TEST_MODE is missing or 'true' → debug/dev mode → no cooldown
       let debugActive = true // default: no cooldown
@@ -1221,6 +1221,7 @@ const manifest: ModuleManifest = {
         productsSheetUrl: cfg?.KNOWLEDGE_PRODUCTS_SHEET_URL ?? '',
         productsDescription: cfg?.KNOWLEDGE_PRODUCTS_DESCRIPTION ?? '',
         debugMode: debugActive,
+        syncFrequency: cfg?.KNOWLEDGE_SYNC_FREQUENCY ?? '24h',
       })
     })
 

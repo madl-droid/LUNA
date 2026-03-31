@@ -75,11 +75,19 @@ export function renderKnowledgeSection(
   items: KnowledgeItem[],
   categories: KnowledgeCategory[],
   lang: Lang,
-  config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string; debugMode?: boolean },
+  config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string; debugMode?: boolean; syncFrequency?: string },
 ): string {
   let html = ''
   const hasPending = items.some(i => i.active && i.embeddingStatus !== 'done')
   const isProduction = !config?.debugMode // cooldown only when debugging OFF
+  const syncFrequency = config?.syncFrequency ?? '24h'
+  const syncOptions: { value: string; label: string }[] = [
+    { value: '6h',  label: lang === 'es' ? 'Cada 6 horas'  : 'Every 6 hours'  },
+    { value: '12h', label: lang === 'es' ? 'Cada 12 horas' : 'Every 12 hours' },
+    { value: '24h', label: lang === 'es' ? 'Cada 24 horas' : 'Every 24 hours' },
+    { value: '1w',  label: lang === 'es' ? 'Cada semana'   : 'Every week'     },
+    { value: '1m',  label: lang === 'es' ? 'Cada mes'      : 'Every month'    },
+  ]
 
   if (items.length === 0) {
     // ── Empty state — no action bar, just the dashed panel ──
@@ -96,8 +104,14 @@ export function renderKnowledgeSection(
     </div>`
   } else {
     // ── Action bar — only when items exist ──
+    const syncOptsHtml = syncOptions.map(o =>
+      `<option value="${o.value}"${o.value === syncFrequency ? ' selected' : ''}>${esc(o.label)}</option>`
+    ).join('')
     html += `<div class="ki-header">
-      <div></div>
+      <div class="ki-sync-freq">
+        <label class="ki-sync-label" for="ki-sync-freq-sel">${lang === 'es' ? 'ACTUALIZACIÓN' : 'SYNC'}</label>
+        <select id="ki-sync-freq-sel" class="js-custom-select" onchange="kiSaveSyncFreq(this.value)">${syncOptsHtml}</select>
+      </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button type="button" id="ki-bulk-train-btn" class="act-btn ${hasPending ? 'act-btn-cta' : 'act-btn-config'}" onclick="kiBulkVectorize()" style="font-size:13px" ${!hasPending ? 'disabled' : ''}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>
@@ -982,6 +996,21 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     toast('${isEs ? 'Listo' : 'Done'}');
     window.kiCloseWizard();
     location.reload();
+  };
+
+  // ── Sync frequency save ──
+  window.kiSaveSyncFreq = function(value) {
+    fetch('/console/api/console/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ KNOWLEDGE_SYNC_FREQUENCY: value }),
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (r.error) { toast(r.error, 'error'); return; }
+        toast('${isEs ? 'Frecuencia guardada' : 'Frequency saved'}');
+      })
+      .catch(function(err) { toast(String(err), 'error'); });
   };
 
   // ── Item actions (outside wizard) ──
