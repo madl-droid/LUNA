@@ -1307,10 +1307,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } else if (agenteSubpage === 'memory') {
           // Only show basic memory fields (active conversations + basic retention)
           const memoryBasicKeys = new Set([
-            '_div_sessions', 'MEMORY_BUFFER_MESSAGE_COUNT', 'MEMORY_SESSION_MAX_TTL_HOURS',
-            'MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN',
+            '_div_sessions', 'MEMORY_SESSION_REOPEN_WINDOW_HOURS', 'LLM_PROMPT_CACHE_ENABLED',
+            'MEMORY_BUFFER_TURNS_INSTANT', 'MEMORY_BUFFER_TURNS_ASYNC', 'MEMORY_BUFFER_TURNS_VOICE',
+            '_div_compression', 'MEMORY_COMPRESSION_THRESHOLD', 'MEMORY_COMPRESSION_KEEP_RECENT',
+            'MEMORY_COMPRESSION_MODEL', 'MEMORY_EMBEDDING_MODEL', 'MEMORY_MAX_CONTACT_MEMORY_WORDS',
             '_div_retention', 'MEMORY_SUMMARY_RETENTION_DAYS', 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS',
-            'MEMORY_ARCHIVE_RETENTION_YEARS', 'MEMORY_MEDIA_IMAGE_RETENTION_YEARS',
+            'MEMORY_ARCHIVE_RETENTION_YEARS', 'MEMORY_MEDIA_RETENTION_MONTHS',
+            'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', 'MEMORY_PURGE_MERGED_SUMMARIES', 'MEMORY_RECOMPRESSION_INTERVAL_DAYS',
+            '_div_crons', 'MEMORY_BATCH_COMPRESS_CRON', 'MEMORY_BATCH_EMBEDDINGS_CRON',
+            'MEMORY_BATCH_MERGE_CRON', 'MEMORY_BATCH_RECOMPRESS_CRON',
+            'MEMORY_BATCH_MEDIA_PURGE_CRON', 'MEMORY_BATCH_LOGS_PURGE_CRON', 'MEMORY_BATCH_ARCHIVE_PURGE_CRON',
           ])
           const memoryMod = data.moduleStates.find(m => m.name === 'memory')
           if (memoryMod?.active && memoryMod.console?.fields?.length) {
