@@ -34,15 +34,24 @@ export class VectorizeWorker {
     this.embeddingService = embeddingService
     this.log = logger.child({ component: 'vectorize-worker' })
 
+    // BullMQ requires dedicated Redis connections with maxRetriesPerRequest: null
+    const bullRedisOpts = {
+      host: redis.options.host ?? 'localhost',
+      port: redis.options.port ?? 6379,
+      password: redis.options.password,
+      db: redis.options.db ?? 0,
+      maxRetriesPerRequest: null,
+    }
+
     this.queue = new Queue<VectorizeJobData>(QUEUE_NAME, {
-      connection: redis as never,
+      connection: bullRedisOpts,
     })
 
     this.worker = new Worker<VectorizeJobData>(
       QUEUE_NAME,
       async (job) => this.processJob(job.data),
       {
-        connection: redis as never,
+        connection: bullRedisOpts,
         concurrency: 1,
       },
     )
