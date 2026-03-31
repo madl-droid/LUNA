@@ -18,7 +18,8 @@ const labels: Record<Lang, Record<string, string>> = {
     enabled: 'Activo',
     sectionBasic: 'Datos basicos',
     sectionBehavior: 'Configuracion',
-    sectionTools: 'Herramientas y conocimiento',
+    sectionTools: 'Herramientas permitidas',
+    sectionCats: 'Categorias de conocimiento',
     sectionAdvanced: 'Avanzado',
     modelTier: 'Modelo',
     modelNormal: 'Normal (rapido)',
@@ -32,10 +33,8 @@ const labels: Record<Lang, Record<string, string>> = {
     verifyHelp: 'Un LLM revisa la calidad del resultado. Si no pasa, reintenta una vez.',
     canSpawn: 'Puede crear sub-subagentes',
     spawnHelp: 'Permite dividir la tarea en sub-tareas (max 1 nivel de profundidad).',
-    tools: 'Herramientas permitidas',
     toolsHelp: 'Sin seleccion = todas las herramientas disponibles.',
     noTools: 'No hay herramientas disponibles.',
-    knowledgeCategories: 'Categorias de conocimiento',
     knowledgeCategoriesHelp: 'Sin seleccion = accede a todas las categorias.',
     noCats: 'No hay categorias de conocimiento configuradas.',
     additionalPromptToggle: 'Agregar prompt de sistema adicional',
@@ -61,8 +60,16 @@ const labels: Record<Lang, Record<string, string>> = {
     usageAvgTime: 'Tiempo prom.',
     usageTop3: 'Top subagentes',
     noUsage: 'Sin datos en este periodo.',
-    allTools: 'Todas',
     mockLabel: 'Datos de ejemplo',
+    cardModel: 'Modelo',
+    cardVerify: 'Verificar',
+    cardSpawn: 'Sub-agentes',
+    cardTools: 'Herramientas',
+    cardKnowledge: 'Conocimiento',
+    cardYes: '✓ Activo',
+    cardNo: '— No',
+    allTools: 'Todas',
+    allCats: 'Todas',
   },
   en: {
     title: 'Subagents',
@@ -75,7 +82,8 @@ const labels: Record<Lang, Record<string, string>> = {
     enabled: 'Active',
     sectionBasic: 'Basic data',
     sectionBehavior: 'Configuration',
-    sectionTools: 'Tools & knowledge',
+    sectionTools: 'Allowed tools',
+    sectionCats: 'Knowledge categories',
     sectionAdvanced: 'Advanced',
     modelTier: 'Model',
     modelNormal: 'Normal (fast)',
@@ -89,10 +97,8 @@ const labels: Record<Lang, Record<string, string>> = {
     verifyHelp: 'An LLM reviews the result quality. If it fails, retries once.',
     canSpawn: 'Can create sub-subagents',
     spawnHelp: 'Allows splitting the task into sub-tasks (max 1 level deep).',
-    tools: 'Allowed tools',
     toolsHelp: 'No selection = all available tools.',
     noTools: 'No tools available.',
-    knowledgeCategories: 'Knowledge categories',
     knowledgeCategoriesHelp: 'No selection = access to all categories.',
     noCats: 'No knowledge categories configured.',
     additionalPromptToggle: 'Add additional system prompt',
@@ -118,8 +124,16 @@ const labels: Record<Lang, Record<string, string>> = {
     usageAvgTime: 'Avg time',
     usageTop3: 'Top subagents',
     noUsage: 'No usage data for this period.',
-    allTools: 'All',
     mockLabel: 'Sample data',
+    cardModel: 'Model',
+    cardVerify: 'Verify',
+    cardSpawn: 'Sub-agents',
+    cardTools: 'Tools',
+    cardKnowledge: 'Knowledge',
+    cardYes: '✓ Active',
+    cardNo: '— No',
+    allTools: 'All',
+    allCats: 'All',
   },
 }
 
@@ -129,12 +143,6 @@ function l(key: string, lang: Lang): string {
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
-  return String(n)
 }
 
 function formatGroupName(raw: string): string {
@@ -148,16 +156,20 @@ function codeEditorLines(value: string): string {
   return html
 }
 
+const chevronSvg = `<svg class="sa-collapse-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`
+
 function renderStyles(): string {
   return `<style>
 /* Subagents — scoped (.sa-) */
 .sa-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px }
 .sa-counter { font-size:13px; color:var(--on-surface-dim) }
-
 .sa-form-wrap { display:none; margin-bottom:16px }
+
 .sa-label { font-size:12px; font-weight:600; text-transform:uppercase; color:var(--on-surface-dim); display:block; margin-bottom:4px }
 .sa-toggle-label { font-size:12px; font-weight:500; color:var(--on-surface-variant) }
 .sa-slug-preview { font-size:11px; font-family:monospace; color:var(--on-surface-dim); margin-top:3px }
+.sa-help { font-size:10px; color:var(--on-surface-dim); margin-top:3px }
+.sa-field-group { margin-bottom:14px }
 
 .sa-input { width:100%; padding:9px 12px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; background:var(--surface-container-lowest); color:var(--on-surface) }
 .sa-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-focus) }
@@ -166,68 +178,72 @@ function renderStyles(): string {
 .sa-input-sm { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; background:var(--surface-container-lowest); color:var(--on-surface) }
 .sa-input-sm:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-focus) }
 
-.sa-field-group { margin-bottom:14px }
-.sa-help { font-size:10px; color:var(--on-surface-dim); margin-top:3px }
-
-/* Form sections */
+/* Form sections (gray boxes) */
 .sa-form-section { background:var(--surface-container-low); border-radius:0.5rem; padding:16px; margin-bottom:12px }
+.sa-form-section:last-of-type { margin-bottom:0 }
 .sa-form-section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--on-surface-dim); padding-bottom:10px; margin-bottom:14px; border-bottom:1px solid var(--outline-variant) }
 .sa-basic-cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px }
 .sa-func-cols { display:grid; grid-template-columns:1fr 1.6fr; gap:12px; margin-bottom:12px; align-items:start }
+.sa-func-right { display:flex; flex-direction:column; gap:8px }
 
-/* Toggles in behavior box */
+/* Collapsible sections */
+.sa-collapse { background:var(--surface-container-low); border-radius:0.5rem; overflow:hidden }
+.sa-collapse-header { width:100%; display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:none; border:none; cursor:pointer; text-align:left; gap:8px }
+.sa-collapse-header:hover { background:var(--surface-container) }
+.sa-collapse-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--on-surface-dim); flex:1 }
+.sa-collapse-chevron { transition:transform 0.2s ease; flex-shrink:0; color:var(--on-surface-dim) }
+.sa-collapse-open .sa-collapse-chevron { transform:rotate(180deg) }
+.sa-collapse-body { padding:0 14px 14px }
+
+/* Tool groups */
+.sa-tool-group { margin-bottom:12px }
+.sa-tool-group:last-child { margin-bottom:0 }
+.sa-tool-group-header { display:flex; align-items:center; justify-content:space-between; padding:4px 0; margin-bottom:6px }
+.sa-tool-group-name { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim) }
+.sa-tool-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px }
+.sa-tool-row { display:flex; align-items:center; gap:5px; padding:5px 6px; border-radius:4px; cursor:pointer; font-size:12px; color:var(--on-surface); user-select:none }
+.sa-tool-row:hover { background:var(--surface-container-high) }
+.sa-tool-row input[type=checkbox] { flex-shrink:0; margin:0; cursor:pointer; accent-color:var(--primary) }
+.sa-tool-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.sa-info-btn { width:15px; height:15px; border-radius:50%; border:1px solid var(--outline-variant); background:none; cursor:pointer; font-size:9px; font-weight:700; color:var(--on-surface-dim); flex-shrink:0; padding:0; line-height:13px; text-align:center }
+.sa-info-btn:hover { background:var(--primary-light); color:var(--primary); border-color:var(--primary) }
+.sa-divider { height:1px; background:var(--outline-variant); margin:10px 0 }
+
+/* Toggles in config */
 .sa-toggles-list { display:flex; flex-direction:column; gap:12px; margin-top:4px }
 .sa-toggle-item { display:flex; align-items:flex-start; gap:8px }
 .sa-toggle-item .toggle { flex-shrink:0; margin-top:1px }
 
-/* Tool groups */
-.sa-tool-group { margin-bottom:14px }
-.sa-tool-group:last-child { margin-bottom:0 }
-.sa-tool-group-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px }
-.sa-tool-group-name { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim) }
-.sa-tool-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px }
-.sa-tool-row { display:flex; align-items:center; gap:5px; padding:5px 6px; border-radius:4px; cursor:pointer; font-size:12px; color:var(--on-surface); user-select:none }
-.sa-tool-row:hover { background:var(--surface-container-high) }
-.sa-tool-row input[type=checkbox] { flex-shrink:0; margin:0; cursor:pointer }
-.sa-tool-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.sa-info-btn { width:15px; height:15px; border-radius:50%; border:1px solid var(--outline-variant); background:none; cursor:pointer; font-size:9px; font-weight:700; color:var(--on-surface-dim); flex-shrink:0; padding:0; line-height:13px; text-align:center }
-.sa-info-btn:hover { background:var(--primary-light); color:var(--primary); border-color:var(--primary) }
-.sa-group-cb { cursor:pointer }
-.sa-divider { height:1px; background:var(--outline-variant); margin:12px 0 }
-
-/* Prompt section */
+/* Prompt */
 .sa-prompt-toggle-row { display:flex; align-items:flex-start; gap:8px }
 .sa-prompt-section { margin-top:12px }
+.sa-form-footer { display:flex; gap:8px; justify-content:flex-end; padding-top:4px }
 
 /* Card list */
 .sa-list { display:flex; flex-direction:column; gap:10px }
-.sa-card-view { display:flex; align-items:flex-start; justify-content:space-between; gap:10px }
+.sa-inline-form { display:none; padding-top:16px; border-top:1px solid var(--outline-variant); margin-top:14px }
+
+/* Card body redesign */
+.sa-card-layout { display:flex; align-items:flex-start; justify-content:space-between; gap:12px }
 .sa-card-body { flex:1; min-width:0 }
-.sa-card-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px }
-.sa-card-name { font-weight:600; font-size:14px }
-.sa-card-slug { font-size:12px; color:var(--on-surface-dim); font-family:monospace }
-.sa-card-meta { font-size:12px; color:var(--on-surface-dim); margin-bottom:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap }
-.sa-card-desc { font-size:12px; color:var(--on-surface-variant); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:500px }
-.sa-card-actions { display:flex; gap:4px; flex-shrink:0; align-items:center }
-.sa-card-toggle-wrap { display:flex; align-items:center; gap:6px; padding-right:6px; border-right:1px solid var(--outline-variant) }
+.sa-card-name { font-weight:700; font-size:15px; color:var(--on-surface); margin-bottom:1px }
+.sa-card-slug { font-size:11px; color:var(--on-surface-dim); font-family:monospace; margin-bottom:6px }
+.sa-card-desc { font-size:12px; color:var(--on-surface-variant); margin-bottom:10px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+.sa-card-info-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; padding-top:10px; border-top:1px solid var(--outline-variant) }
+.sa-card-info-item { }
+.sa-info-key { display:block; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim); margin-bottom:2px }
+.sa-info-val { display:block; font-size:12px; font-weight:500; color:var(--on-surface) }
+.sa-info-yes { color:var(--success) }
+.sa-info-no { color:var(--on-surface-dim) }
+
+/* Card actions */
+.sa-card-actions { display:flex; align-items:center; gap:6px; flex-shrink:0 }
 .sa-card-disabled { opacity:0.55 }
-.sa-inline-form { display:none; padding-top:16px; border-top:1px solid var(--outline-variant); margin-top:12px }
-.sa-form-footer { display:flex; gap:8px; justify-content:flex-end; padding-top:4px }
-
-.sa-badge-model { background:rgba(0,122,255,0.1); color:var(--info); font-size:10px }
-.sa-badge-tokens { background:rgba(88,86,214,0.1); color:#5856d6; font-size:10px }
-.sa-badge-verify { background:rgba(52,199,89,0.1); color:var(--success); font-size:10px }
-.sa-badge-spawn { background:rgba(255,149,0,0.12); color:var(--warning); font-size:10px }
-.sa-badge-tools { background:var(--surface-container-low); color:var(--on-surface-dim); font-size:10px }
-
-.sa-empty { padding:40px 20px; text-align:center }
-.sa-empty-icon { font-size:32px; margin-bottom:8px }
-.sa-empty-text { color:var(--on-surface-dim); font-size:14px }
 
 /* Usage metrics */
 .sa-usage-panel { margin-top:24px }
-.sa-metrics-grid { display:grid; grid-template-columns:1.8fr 1fr 1fr 1fr; gap:12px }
-.sa-usage-stat { text-align:center; padding:16px 12px }
+.sa-metrics-grid { display:grid; grid-template-columns:1.8fr 1fr 1fr 1fr; gap:12px; align-items:center }
+.sa-usage-stat { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px 12px; text-align:center; align-self:center }
 .sa-usage-stat-value { font-size:22px; font-weight:700; color:var(--on-surface) }
 .sa-usage-stat-label { font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim); margin-top:4px }
 .sa-top3-card { padding:16px }
@@ -239,25 +255,31 @@ function renderStyles(): string {
 .sa-top3-count { font-size:13px; font-weight:700; color:var(--primary) }
 .sa-mock-badge { display:inline-block; font-size:10px; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.12); color:var(--warning); font-weight:600; margin-left:8px; vertical-align:middle }
 
+.sa-empty { padding:40px 20px; text-align:center }
+.sa-empty-icon { font-size:32px; margin-bottom:8px }
+.sa-empty-text { color:var(--on-surface-dim); font-size:14px }
+
+@media (max-width:900px) {
+  .sa-card-info-grid { grid-template-columns:repeat(3,1fr) }
+}
 @media (max-width:768px) {
-  .sa-basic-cols { grid-template-columns:1fr }
-  .sa-func-cols { grid-template-columns:1fr }
+  .sa-basic-cols,.sa-func-cols { grid-template-columns:1fr }
   .sa-tool-grid { grid-template-columns:repeat(2,1fr) }
   .sa-metrics-grid { grid-template-columns:1fr 1fr }
+  .sa-card-info-grid { grid-template-columns:repeat(2,1fr) }
 }
 </style>`
 }
 
-// Render tools grouped by sourceModule
-function renderToolsGroups(
+// Render tool groups for a form (new or inline)
+function renderToolGroups(
   availableTools: AvailableTool[],
-  allowedTools: string[],
+  allowedTools: string[],  // empty = all allowed
   idPrefix: string,
   lang: Lang,
 ): string {
-  if (availableTools.length === 0) return `<p class="sa-help">${l('noTools', lang)}</p>`
+  if (availableTools.length === 0) return `<p class="sa-help" style="margin:0">${l('noTools', lang)}</p>`
 
-  // Group by group (sourceModule)
   const groupMap = new Map<string, AvailableTool[]>()
   for (const t of availableTools) {
     const g = t.group || 'general'
@@ -265,31 +287,32 @@ function renderToolsGroups(
     groupMap.get(g)!.push(t)
   }
 
+  const allAllowed = allowedTools.length === 0
   let html = ''
   for (const [group, tools] of groupMap) {
     const groupLabel = formatGroupName(group)
-    const allChecked = tools.length > 0 && tools.every(t => allowedTools.includes(t.name))
-    const someChecked = tools.some(t => allowedTools.includes(t.name))
+    // Group is enabled if allAllowed OR at least one tool from this group is in allowedTools
+    const groupEnabled = allAllowed || tools.some(t => allowedTools.includes(t.name))
     const grpId = `${esc(idPrefix)}-grp-${group.replace(/[^a-z0-9]/gi, '-')}`
 
     html += `
       <div class="sa-tool-group">
         <div class="sa-tool-group-header">
           <span class="sa-tool-group-name">${esc(groupLabel)}</span>
-          <input type="checkbox" class="sa-group-cb" id="${grpId}"
-            data-group="${esc(group)}"
-            ${allChecked ? 'checked' : ''}
-            ${!allChecked && someChecked ? 'data-indeterminate="1"' : ''}
-            onchange="saGroupToggle(this)">
+          <label class="toggle toggle-sm" title="${esc(groupLabel)}">
+            <input type="checkbox" class="sa-group-toggle" id="${grpId}"
+              data-group="${esc(group)}"${groupEnabled ? ' checked' : ''}
+              onchange="saGroupToggle(this)">
+            <span class="toggle-slider"></span>
+          </label>
         </div>
-        <div class="sa-tool-grid">
+        <div class="sa-tool-grid" style="${groupEnabled ? '' : 'display:none'}">
           ${tools.map(tool => {
-            const checked = allowedTools.includes(tool.name)
+            const checked = allAllowed || allowedTools.includes(tool.name)
             const cbId = `${esc(idPrefix)}-t-${tool.name.replace(/[^a-z0-9]/gi, '-')}`
             return `<label class="sa-tool-row" for="${cbId}">
               <input type="checkbox" class="sa-tool-cb" id="${cbId}" value="${esc(tool.name)}"
-                data-group="${esc(group)}"${checked ? ' checked' : ''}
-                onchange="saToolCbChange(this)">
+                data-group="${esc(group)}"${checked ? ' checked' : ''}>
               <span class="sa-tool-name" title="${esc(tool.displayName)}">${esc(tool.displayName)}</span>
               <button type="button" class="sa-info-btn" title="${esc(tool.description)}"
                 onclick="event.preventDefault();event.stopPropagation();alert(this.title)">i</button>
@@ -301,17 +324,18 @@ function renderToolsGroups(
   return html
 }
 
-// Render knowledge categories as flat checkbox grid
-function renderCatGrid(
+// Render category checkboxes
+function renderCatRows(
   availableCategories: AvailableCategory[],
   allowedCategories: string[],
   idPrefix: string,
   lang: Lang,
 ): string {
-  if (availableCategories.length === 0) return `<p class="sa-help">${l('noCats', lang)}</p>`
+  if (availableCategories.length === 0) return `<p class="sa-help" style="margin:0">${l('noCats', lang)}</p>`
+  const allAllowed = allowedCategories.length === 0
   return `<div class="sa-tool-grid">
     ${availableCategories.map(c => {
-      const checked = allowedCategories.includes(c.id)
+      const checked = allAllowed || allowedCategories.includes(c.id)
       const cbId = `${esc(idPrefix)}-c-${c.id.replace(/[^a-z0-9]/gi, '-')}`
       return `<label class="sa-tool-row" for="${cbId}">
         <input type="checkbox" class="sa-cat-cb" id="${cbId}" value="${esc(c.id)}"${checked ? ' checked' : ''}>
@@ -323,7 +347,7 @@ function renderCatGrid(
 
 function renderFormSections(opts: {
   isNew: boolean
-  idPrefix: string        // '' for new, t.id for inline
+  idPrefix: string
   t?: SubagentTypeRow
   availableTools: AvailableTool[]
   availableCategories: AvailableCategory[]
@@ -342,8 +366,7 @@ function renderFormSections(opts: {
   const allowedCategories = t ? t.allowedKnowledgeCategories : []
   const hasPrompt = systemPrompt.length > 0
 
-  // Selector helpers — new form uses id=, inline uses class=
-  const A = (newAttr: string, inlineAttr: string) => isNew ? newAttr : inlineAttr
+  const A = (newAttr: string, inlineClass: string) => isNew ? newAttr : inlineClass
   const nameAttr = A('id="sa-name" class="sa-input"', 'class="sa-if-name sa-input"')
   const descAttr = A('id="sa-description" class="sa-textarea"', 'class="sa-if-desc sa-textarea"')
   const modelAttr = A('id="sa-model-tier" class="js-custom-select"', 'class="sa-if-model js-custom-select"')
@@ -356,19 +379,20 @@ function renderFormSections(opts: {
   const promptLinesAttr = A('id="sa-prompt-lines" class="code-editor-lines"', 'class="sa-if-prompt-lines code-editor-lines"')
   const promptTextAttr = A('id="sa-system-prompt" class="code-editor-textarea"', 'class="sa-if-prompt code-editor-textarea"')
   const ceKey = isNew ? 'new' : esc(idPrefix)
+  const pfx = idPrefix || 'new'
 
   const slugRow = isNew
     ? `<div class="sa-slug-preview">${l('slugPreview', lang)} <code id="sa-slug-preview">...</code><input type="hidden" id="sa-slug" value=""></div>`
     : `<div class="sa-slug-preview">${l('slugPreview', lang)} <code>${esc(t?.slug ?? '')}</code></div>`
 
   const enabledRow = isNew ? `
-    <div class="sa-field-group" style="display:flex;align-items:center;gap:8px;margin-top:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
       <label class="toggle toggle-sm"><input type="checkbox" id="sa-enabled" checked><span class="toggle-slider"></span></label>
       <span class="sa-toggle-label">${l('enabled', lang)}</span>
     </div>` : ''
 
-  const toolsHtml = renderToolsGroups(availableTools, allowedTools, idPrefix || 'new', lang)
-  const catsHtml = renderCatGrid(availableCategories, allowedCategories, idPrefix || 'new', lang)
+  const toolsHtml = renderToolGroups(availableTools, allowedTools, pfx, lang)
+  const catsHtml = renderCatRows(availableCategories, allowedCategories, pfx, lang)
 
   return `
     <!-- ① Datos básicos -->
@@ -389,7 +413,7 @@ function renderFormSections(opts: {
           <div class="sa-help">${l('modelHelp', lang)}</div>
         </div>
       </div>
-      <div class="sa-field-group">
+      <div>
         <label class="sa-label">${l('description', lang)}</label>
         <textarea ${descAttr} rows="2" placeholder="${l('descPlaceholder', lang)}">${desc}</textarea>
       </div>
@@ -398,7 +422,7 @@ function renderFormSections(opts: {
 
     <!-- ② Funcionamiento: 2 side-by-side boxes -->
     <div class="sa-func-cols">
-      <!-- Configuracion -->
+      <!-- Left: Configuración -->
       <div class="sa-form-section" style="margin-bottom:0">
         <div class="sa-form-section-title">${l('sectionBehavior', lang)}</div>
         <div class="sa-field-group">
@@ -429,16 +453,31 @@ function renderFormSections(opts: {
         </div>
       </div>
 
-      <!-- Herramientas y conocimiento -->
-      <div class="sa-form-section" style="margin-bottom:0">
-        <div class="sa-form-section-title">${l('sectionTools', lang)}</div>
-        <div class="sa-label" style="margin-bottom:3px">${l('tools', lang)}</div>
-        <div class="sa-help" style="margin-bottom:8px">${l('toolsHelp', lang)}</div>
-        ${toolsHtml}
-        <div class="sa-divider"></div>
-        <div class="sa-label" style="margin-bottom:3px">${l('knowledgeCategories', lang)}</div>
-        <div class="sa-help" style="margin-bottom:8px">${l('knowledgeCategoriesHelp', lang)}</div>
-        ${catsHtml}
+      <!-- Right: 2 collapsibles -->
+      <div class="sa-func-right">
+        <!-- Herramientas collapsible (closed by default) -->
+        <div class="sa-collapse">
+          <button type="button" class="sa-collapse-header" onclick="saCollapseToggle(this)">
+            <span class="sa-collapse-label">${l('sectionTools', lang)}</span>
+            ${chevronSvg}
+          </button>
+          <div class="sa-collapse-body" style="display:none">
+            <div class="sa-help" style="margin-bottom:10px">${l('toolsHelp', lang)}</div>
+            ${toolsHtml}
+          </div>
+        </div>
+
+        <!-- Categorías collapsible (closed by default) -->
+        <div class="sa-collapse">
+          <button type="button" class="sa-collapse-header" onclick="saCollapseToggle(this)">
+            <span class="sa-collapse-label">${l('sectionCats', lang)}</span>
+            ${chevronSvg}
+          </button>
+          <div class="sa-collapse-body" style="display:none">
+            <div class="sa-help" style="margin-bottom:10px">${l('knowledgeCategoriesHelp', lang)}</div>
+            ${catsHtml}
+          </div>
+        </div>
       </div>
     </div>
 
@@ -489,35 +528,45 @@ export function renderSubagentsSection(
         <div class="sa-empty-text">${l('noSubagents', lang)}</div>
       </div>`
     : types.map(t => {
-        const toolsLabel = t.allowedTools.length === 0 ? l('allTools', lang) : `${t.allowedTools.length}`
+        const toolsLabel = t.allowedTools.length === 0 ? l('allTools', lang) : String(t.allowedTools.length)
+        const catsLabel = t.allowedKnowledgeCategories.length === 0 ? l('allCats', lang) : String(t.allowedKnowledgeCategories.length)
+        const modelLabel = t.modelTier === 'complex' ? 'Complejo' : 'Normal'
+
         return `
       <div class="panel${!t.enabled ? ' sa-card-disabled' : ''}" data-sa-id="${esc(t.id)}" style="padding:var(--section-gap)">
-        <div class="sa-card-view">
+        <div class="sa-card-layout">
           <div class="sa-card-body">
-            <div class="sa-card-title-row">
-              <span class="sa-card-name">${esc(t.name)}</span>
-              <span class="sa-card-slug">${esc(t.slug)}</span>
-              ${!t.enabled ? '<span class="panel-badge badge-soon sa-badge-off">OFF</span>' : ''}
+            <div class="sa-card-name">${esc(t.name)}</div>
+            <div class="sa-card-slug">${esc(t.slug)}</div>
+            ${t.description ? `<div class="sa-card-desc">${esc(t.description)}</div>` : ''}
+            <div class="sa-card-info-grid">
+              <div class="sa-card-info-item">
+                <span class="sa-info-key">${l('cardModel', lang)}</span>
+                <span class="sa-info-val">${esc(modelLabel)}</span>
+              </div>
+              <div class="sa-card-info-item">
+                <span class="sa-info-key">${l('cardVerify', lang)}</span>
+                <span class="sa-info-val ${t.verifyResult ? 'sa-info-yes' : 'sa-info-no'}">${t.verifyResult ? l('cardYes', lang) : l('cardNo', lang)}</span>
+              </div>
+              <div class="sa-card-info-item">
+                <span class="sa-info-key">${l('cardSpawn', lang)}</span>
+                <span class="sa-info-val ${t.canSpawnChildren ? 'sa-info-yes' : 'sa-info-no'}">${t.canSpawnChildren ? l('cardYes', lang) : l('cardNo', lang)}</span>
+              </div>
+              <div class="sa-card-info-item">
+                <span class="sa-info-key">${l('cardTools', lang)}</span>
+                <span class="sa-info-val">${esc(toolsLabel)}</span>
+              </div>
+              <div class="sa-card-info-item">
+                <span class="sa-info-key">${l('cardKnowledge', lang)}</span>
+                <span class="sa-info-val">${esc(catsLabel)}</span>
+              </div>
             </div>
-            <div class="sa-card-meta">
-              <span class="panel-badge sa-badge-model">${t.modelTier === 'complex' ? '&#9733; complex' : 'normal'}</span>
-              <span class="panel-badge sa-badge-tokens">${formatNumber(t.tokenBudget)} tokens</span>
-              ${t.verifyResult ? `<span class="panel-badge sa-badge-verify">&#10003; verify</span>` : ''}
-              ${t.canSpawnChildren ? `<span class="panel-badge sa-badge-spawn">&#8618; spawn</span>` : ''}
-              <span class="panel-badge sa-badge-tools">${esc(toolsLabel)} tools</span>
-            </div>
-            ${t.description ? `<div class="sa-card-desc" title="${esc(t.description)}">${esc(t.description)}</div>` : ''}
           </div>
+          <!-- Actions: edit/delete + toggle at end -->
           <div class="sa-card-actions">
-            <!-- Toggle enabled (instant-apply, outside the form) -->
-            <div class="sa-card-toggle-wrap">
-              <label class="toggle toggle-sm">
-                <input type="checkbox" class="sa-card-toggle" ${t.enabled ? 'checked' : ''}
-                  onchange="saToggleEnabled('${esc(t.id)}', this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="saEdit('${esc(t.id)}')">
+            <button type="button" class="act-btn act-btn-config act-btn--compact sa-edit-btn"
+              style="${!t.enabled ? 'display:none' : ''}"
+              onclick="saEdit('${esc(t.id)}')">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
               ${l('edit', lang)}
             </button>
@@ -527,12 +576,17 @@ export function renderSubagentsSection(
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
               ${l('delete', lang)}
             </button>
+            <label class="toggle toggle-sm">
+              <input type="checkbox" class="sa-card-toggle"${t.enabled ? ' checked' : ''}
+                onchange="saToggleEnabled('${esc(t.id)}', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
           </div>
         </div>
         <!-- Inline edit form -->
         <div class="sa-inline-form" data-sa-inline="${esc(t.id)}">
           ${renderFormSections({ isNew: false, idPrefix: t.id, t, availableTools, availableCategories: availableKnowledgeCategories, lang })}
-          <div class="sa-form-footer">
+          <div class="sa-form-footer" style="margin-top:12px">
             <button type="button" class="act-btn act-btn-config" onclick="saCancelEdit('${esc(t.id)}')">${l('cancel', lang)}</button>
             <button type="button" class="act-btn act-btn-add" onclick="saSaveInline('${esc(t.id)}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -554,19 +608,15 @@ export function renderSubagentsSection(
       </button>
     </div>
 
-    <!-- New subagent form -->
+    <!-- New subagent form — no outer white box, sections are the gray boxes -->
     <div id="sa-form" class="sa-form-wrap">
-      <div class="panel">
-        <div style="padding:20px">
-          ${renderFormSections({ isNew: true, idPrefix: '', availableTools, availableCategories: availableKnowledgeCategories, lang })}
-          <div class="sa-form-footer">
-            <button type="button" class="act-btn act-btn-config" onclick="saHideForm()">${l('cancel', lang)}</button>
-            <button type="button" class="act-btn act-btn-add" onclick="saSaveNew()">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-              ${l('save', lang)}
-            </button>
-          </div>
-        </div>
+      ${renderFormSections({ isNew: true, idPrefix: '', availableTools, availableCategories: availableKnowledgeCategories, lang })}
+      <div class="sa-form-footer">
+        <button type="button" class="act-btn act-btn-config" onclick="saHideForm()">${l('cancel', lang)}</button>
+        <button type="button" class="act-btn act-btn-add" onclick="saSaveNew()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          ${l('save', lang)}
+        </button>
       </div>
     </div>
 
@@ -649,32 +699,29 @@ function renderScript(lang: Lang): string {
   const API = '/console/api/subagents'
   const L = ${JSON.stringify(labels[lang])}
 
-  // Init indeterminate group checkboxes on load
-  document.querySelectorAll('[data-indeterminate="1"]').forEach(function(cb) {
-    cb.indeterminate = true
-  })
-
-  // ── Tool group checkbox logic ──
-  window.saGroupToggle = function(groupCb) {
-    var groupEl = groupCb.closest('.sa-tool-group')
-    groupEl.querySelectorAll('.sa-tool-cb').forEach(function(cb) { cb.checked = groupCb.checked })
+  // ── Collapsible sections ──
+  window.saCollapseToggle = function(header) {
+    var body = header.parentNode.querySelector('.sa-collapse-body')
+    var open = body.style.display !== 'none'
+    body.style.display = open ? 'none' : 'block'
+    header.classList.toggle('sa-collapse-open', !open)
   }
 
-  window.saToolCbChange = function(toolCb) {
-    var groupEl = toolCb.closest('.sa-tool-group')
-    var groupCb = groupEl.querySelector('.sa-group-cb')
-    if (!groupCb) return
-    var all = groupEl.querySelectorAll('.sa-tool-cb')
-    var checked = groupEl.querySelectorAll('.sa-tool-cb:checked')
-    groupCb.indeterminate = checked.length > 0 && checked.length < all.length
-    groupCb.checked = checked.length === all.length
+  // ── Group toggle (show/hide tools, check/uncheck all) ──
+  window.saGroupToggle = function(toggleInput) {
+    var groupEl = toggleInput.closest('.sa-tool-group')
+    var grid = groupEl.querySelector('.sa-tool-grid')
+    if (!grid) return
+    grid.style.display = toggleInput.checked ? 'grid' : 'none'
+    groupEl.querySelectorAll('.sa-tool-cb').forEach(function(cb) {
+      cb.checked = toggleInput.checked
+    })
   }
 
   // ── Slug auto-generation ──
   window.saAutoSlug = function(nameInput) {
     var slug = (nameInput.value || '')
-      .toLowerCase()
-      .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+      .toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
       .replace(/[^a-z0-9\\s-]/g, '').trim()
       .replace(/\\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
     var preview = document.getElementById('sa-slug-preview')
@@ -695,39 +742,53 @@ function renderScript(lang: Lang): string {
   window.saSyncCodeLines = function(textarea) {
     var linesEl = textarea.parentNode.querySelector('.code-editor-lines')
     if (!linesEl) return
-    var lines = textarea.value.split('\\n')
-    linesEl.innerHTML = lines.map(function(_, i) {
+    linesEl.innerHTML = textarea.value.split('\\n').map(function(_, i) {
       return '<span class="code-editor-line-num">' + (i + 1) + '</span>'
     }).join('')
   }
 
   // ── Close all open forms ──
   function closeAllForms() {
-    var topForm = document.getElementById('sa-form')
-    if (topForm) topForm.style.display = 'none'
+    var top = document.getElementById('sa-form')
+    if (top) top.style.display = 'none'
     document.querySelectorAll('.sa-inline-form').forEach(function(f) { f.style.display = 'none' })
-    document.querySelectorAll('.sa-card-view').forEach(function(v) { v.style.display = 'flex' })
+    document.querySelectorAll('.sa-card-layout').forEach(function(v) { v.style.display = 'flex' })
+  }
+
+  // Collect selected tools from a form container (only from enabled groups)
+  function getSelectedTools(container) {
+    var tools = []
+    container.querySelectorAll('.sa-tool-group').forEach(function(group) {
+      var toggle = group.querySelector('.sa-group-toggle')
+      if (toggle && !toggle.checked) return
+      group.querySelectorAll('.sa-tool-cb:checked').forEach(function(cb) { tools.push(cb.value) })
+    })
+    return tools
+  }
+
+  // Collect selected categories
+  function getSelectedCats(container) {
+    return Array.from(container.querySelectorAll('.sa-cat-cb:checked')).map(function(cb) { return cb.value })
   }
 
   // ── Toggle enabled (instant-apply from card) ──
   window.saToggleEnabled = async function(id, checked) {
     try {
       var res = await fetch(API + '/type', {
-        method: 'PUT',
-        headers: {'Content-Type':'application/json'},
+        method: 'PUT', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ id: id, enabled: checked })
       })
       if (!res.ok) {
-        var card = document.querySelector('[data-sa-id="' + id + '"]')
-        if (card) { var t = card.querySelector('.sa-card-toggle'); if (t) t.checked = !checked }
+        var card2 = document.querySelector('[data-sa-id="' + id + '"]')
+        if (card2) { var t2 = card2.querySelector('.sa-card-toggle'); if (t2) t2.checked = !checked }
         alert('Error al actualizar'); return
       }
       var card = document.querySelector('[data-sa-id="' + id + '"]')
       if (!card) return
       card.classList.toggle('sa-card-disabled', !checked)
-      var badge = card.querySelector('.sa-badge-off')
-      if (badge) badge.style.display = checked ? 'none' : ''
+      var editBtn = card.querySelector('.sa-edit-btn')
       var delBtn = card.querySelector('.sa-delete-btn')
+      if (editBtn) editBtn.style.display = checked ? '' : 'none'
       if (delBtn) delBtn.style.display = checked ? 'none' : ''
     } catch(e) { alert('Error: ' + e.message) }
   }
@@ -750,8 +811,13 @@ function renderScript(lang: Lang): string {
     var pt = document.getElementById('sa-prompt-toggle'); if (pt) pt.checked = false
     var ps = document.getElementById('sa-prompt-section'); if (ps) ps.style.display = 'none'
     var sp2 = document.getElementById('sa-system-prompt'); if (sp2) sp2.value = ''
-    f.querySelectorAll('.sa-tool-cb,.sa-cat-cb').forEach(function(cb) { cb.checked = false })
-    f.querySelectorAll('.sa-group-cb').forEach(function(cb) { cb.checked = false; cb.indeterminate = false })
+    // Reset tools: all group toggles ON, all tools checked
+    f.querySelectorAll('.sa-group-toggle').forEach(function(t) {
+      t.checked = true
+      var grid = t.closest('.sa-tool-group').querySelector('.sa-tool-grid')
+      if (grid) grid.style.display = 'grid'
+    })
+    f.querySelectorAll('.sa-tool-cb,.sa-cat-cb').forEach(function(cb) { cb.checked = true })
     var ms = document.getElementById('sa-model-tier')
     if (ms) { ms.value = 'normal'; ms.dispatchEvent(new Event('change')) }
     f.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -779,8 +845,8 @@ function renderScript(lang: Lang): string {
         tokenBudget: tokenBudget,
         verifyResult: document.getElementById('sa-verify-result').checked,
         canSpawnChildren: document.getElementById('sa-can-spawn').checked,
-        allowedTools: Array.from(form.querySelectorAll('.sa-tool-cb:checked')).map(function(cb) { return cb.value }),
-        allowedKnowledgeCategories: Array.from(form.querySelectorAll('.sa-cat-cb:checked')).map(function(cb) { return cb.value }),
+        allowedTools: getSelectedTools(form),
+        allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (document.getElementById('sa-system-prompt').value || '') : '',
         sortOrder: parseInt(document.getElementById('sa-priority').value, 10) || 0,
       })})
@@ -794,10 +860,10 @@ function renderScript(lang: Lang): string {
     closeAllForms()
     var card = document.querySelector('[data-sa-id="' + id + '"]')
     if (!card) return
-    var view = card.querySelector('.sa-card-view')
+    var layout = card.querySelector('.sa-card-layout')
     var form = card.querySelector('.sa-inline-form')
-    if (!view || !form) return
-    view.style.display = 'none'
+    if (!layout || !form) return
+    layout.style.display = 'none'
     form.style.display = 'block'
     form.querySelectorAll('select.js-custom-select:not([data-custom-init])').forEach(function(sel) {
       if (typeof window._initOneCustomSelect === 'function') window._initOneCustomSelect(sel)
@@ -808,9 +874,9 @@ function renderScript(lang: Lang): string {
   window.saCancelEdit = function(id) {
     var card = document.querySelector('[data-sa-id="' + id + '"]')
     if (!card) return
-    var view = card.querySelector('.sa-card-view')
+    var layout = card.querySelector('.sa-card-layout')
     var form = card.querySelector('.sa-inline-form')
-    if (view) view.style.display = 'flex'
+    if (layout) layout.style.display = 'flex'
     if (form) form.style.display = 'none'
   }
 
@@ -831,8 +897,8 @@ function renderScript(lang: Lang): string {
         tokenBudget: tokenBudget,
         verifyResult: form.querySelector('.sa-if-verify').checked,
         canSpawnChildren: form.querySelector('.sa-if-spawn').checked,
-        allowedTools: Array.from(form.querySelectorAll('.sa-tool-cb:checked')).map(function(cb) { return cb.value }),
-        allowedKnowledgeCategories: Array.from(form.querySelectorAll('.sa-cat-cb:checked')).map(function(cb) { return cb.value }),
+        allowedTools: getSelectedTools(form),
+        allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (form.querySelector('.sa-if-prompt').value || '') : '',
         sortOrder: parseInt(form.querySelector('.sa-if-priority').value, 10) || 0,
       })})
@@ -869,8 +935,7 @@ function renderScript(lang: Lang): string {
         : top3.map(function(e,i) {
             return '<div class="sa-top3-row"><div><span class="sa-top3-name">' + (i+1) + '. ' + esc(e.name) + '</span><span class="sa-top3-slug"> ' + esc(e.slug) + '</span></div><span class="sa-top3-count">' + e.executions + '</span></div>'
           }).join('')
-      var content = document.getElementById('sa-usage-content')
-      content.innerHTML =
+      document.getElementById('sa-usage-content').innerHTML =
         '<div class="sa-metrics-grid">' +
           '<div class="panel sa-top3-card"><div class="sa-top3-title">' + L.usageTop3 + '</div>' + top3Html + '</div>' +
           stat(d.totalExecutions, L.usageExecs) +
