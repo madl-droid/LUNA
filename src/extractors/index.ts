@@ -34,6 +34,7 @@ export { toExtractedContent } from './types.js'
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
+import { extractDocx } from './docx.js'
 
 // ─── Legacy fallback para extractores aún no migrados ────
 async function legacyExtract(input: Buffer, fileName: string, mimeType: string, registry?: Registry): Promise<ExtractedContent> {
@@ -46,6 +47,8 @@ const MIGRATED_EXTRACTORS: Record<string, (input: Buffer, fileName: string, regi
   'text/markdown': extractMarkdown,
   'text/plain': extractPlainText,
   'application/json': extractJSON,
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extractDocx,
+  'application/msword': extractDocx,
 }
 
 // ─── MIME types soportados ──────────────────
