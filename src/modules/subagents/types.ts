@@ -14,6 +14,10 @@ export interface SubagentTypeRow {
   allowedTools: string[]
   allowedKnowledgeCategories: string[]
   systemPrompt: string
+  /** System subagents cannot be deleted and have protected fields */
+  isSystem: boolean
+  /** Enable Google Search grounding (Google/Gemini only) */
+  googleSearchGrounding: boolean
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -32,6 +36,7 @@ export interface CreateSubagentType {
   allowedTools?: string[]
   allowedKnowledgeCategories?: string[]
   systemPrompt?: string
+  googleSearchGrounding?: boolean
 }
 
 /** Input for updating a subagent type */
@@ -46,6 +51,7 @@ export interface UpdateSubagentType {
   allowedTools?: string[]
   allowedKnowledgeCategories?: string[]
   systemPrompt?: string
+  googleSearchGrounding?: boolean
   sortOrder?: number
 }
 
@@ -101,6 +107,10 @@ export interface SubagentCatalogEntry {
   allowedTools: string[]
   allowedKnowledgeCategories: string[]
   systemPrompt: string
+  /** System subagents cannot be deleted and have protected fields */
+  isSystem: boolean
+  /** Enable Google Search grounding (Google/Gemini only) */
+  googleSearchGrounding: boolean
 }
 
 /** Input for recording a subagent execution */

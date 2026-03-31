@@ -133,6 +133,7 @@ const manifest: ModuleManifest = {
     AGENT_LANGUAGE: z.string().default('es'),
     AGENT_COUNTRY: z.string().default(''),
     COMPANY_NAME: z.string().default(''),
+    COMPANY_WEBSITES: z.string().default(''),
     AGENT_ACCENT: z.string().default(''),
     // Generated accent prompt — injected into context when accent is set
     // Content will be built by a future accent prompt generator
@@ -210,6 +211,18 @@ const manifest: ModuleManifest = {
           en: 'Company the agent works for. Injected into the agent identity.',
         },
         width: 'half',
+      },
+      {
+        key: 'COMPANY_WEBSITES',
+        type: 'tags',
+        label: { es: 'Sitios web de la empresa', en: 'Company websites' },
+        info: {
+          es: 'URLs del sitio web de la empresa (separadas por coma). El agente puede leer estas páginas directamente sin usar el subagente de búsqueda web.',
+          en: 'Company website URLs (comma separated). The agent can read these pages directly without the web search subagent.',
+        },
+        separator: ',',
+        width: 'full',
+        placeholder: 'https://miempresa.com, https://docs.miempresa.com',
       },
       {
         key: 'AGENT_COUNTRY',

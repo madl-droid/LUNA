@@ -28,6 +28,8 @@ function mapTypeRow(r: Record<string, unknown>): SubagentTypeRow {
     allowedTools: (r.allowed_tools as string[]) ?? [],
     allowedKnowledgeCategories: (r.allowed_knowledge_categories as string[]) ?? [],
     systemPrompt: (r.system_prompt as string) ?? '',
+    isSystem: (r.is_system as boolean) ?? false,
+    googleSearchGrounding: (r.google_search_grounding as boolean) ?? false,
     sortOrder: (r.sort_order as number) ?? 0,
     createdAt: (r.created_at as Date)?.toISOString() ?? '',
     updatedAt: (r.updated_at as Date)?.toISOString() ?? '',
@@ -59,8 +61,9 @@ export async function getEnabledTypes(db: Pool): Promise<SubagentTypeRow[]> {
 export async function createType(db: Pool, data: CreateSubagentType): Promise<SubagentTypeRow> {
   const { rows } = await db.query(
     `INSERT INTO subagent_types (slug, name, description, enabled, model_tier, token_budget,
-      verify_result, can_spawn_children, allowed_tools, allowed_knowledge_categories, system_prompt)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      verify_result, can_spawn_children, allowed_tools, allowed_knowledge_categories, system_prompt,
+      google_search_grounding)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       data.slug,
@@ -74,27 +77,30 @@ export async function createType(db: Pool, data: CreateSubagentType): Promise<Su
       data.allowedTools ?? [],
       data.allowedKnowledgeCategories ?? [],
       data.systemPrompt ?? '',
+      data.googleSearchGrounding ?? false,
     ],
   )
   if (!rows[0]) throw new Error('INSERT INTO subagent_types returned no rows')
   return mapTypeRow(rows[0] as Record<string, unknown>)
 }
 
-export async function updateType(db: Pool, id: string, data: UpdateSubagentType): Promise<SubagentTypeRow | null> {
+export async function updateType(db: Pool, id: string, data: UpdateSubagentType, isSystem = false): Promise<SubagentTypeRow | null> {
   const sets: string[] = []
   const params: unknown[] = []
   let idx = 1
 
-  if (data.name !== undefined) { sets.push(`name = $${idx++}`); params.push(data.name) }
+  // System subagents: only allow enabled, tokenBudget, description, sortOrder, allowedKnowledgeCategories
+  if (data.name !== undefined && !isSystem) { sets.push(`name = $${idx++}`); params.push(data.name) }
   if (data.description !== undefined) { sets.push(`description = $${idx++}`); params.push(data.description) }
   if (data.enabled !== undefined) { sets.push(`enabled = $${idx++}`); params.push(data.enabled) }
-  if (data.modelTier !== undefined) { sets.push(`model_tier = $${idx++}`); params.push(data.modelTier) }
+  if (data.modelTier !== undefined && !isSystem) { sets.push(`model_tier = $${idx++}`); params.push(data.modelTier) }
   if (data.tokenBudget !== undefined) { sets.push(`token_budget = $${idx++}`); params.push(Math.max(5000, data.tokenBudget)) }
-  if (data.verifyResult !== undefined) { sets.push(`verify_result = $${idx++}`); params.push(data.verifyResult) }
-  if (data.canSpawnChildren !== undefined) { sets.push(`can_spawn_children = $${idx++}`); params.push(data.canSpawnChildren) }
-  if (data.allowedTools !== undefined) { sets.push(`allowed_tools = $${idx++}`); params.push(data.allowedTools) }
+  if (data.verifyResult !== undefined && !isSystem) { sets.push(`verify_result = $${idx++}`); params.push(data.verifyResult) }
+  if (data.canSpawnChildren !== undefined && !isSystem) { sets.push(`can_spawn_children = $${idx++}`); params.push(data.canSpawnChildren) }
+  if (data.allowedTools !== undefined && !isSystem) { sets.push(`allowed_tools = $${idx++}`); params.push(data.allowedTools) }
   if (data.allowedKnowledgeCategories !== undefined) { sets.push(`allowed_knowledge_categories = $${idx++}`); params.push(data.allowedKnowledgeCategories) }
-  if (data.systemPrompt !== undefined) { sets.push(`system_prompt = $${idx++}`); params.push(data.systemPrompt) }
+  if (data.systemPrompt !== undefined && !isSystem) { sets.push(`system_prompt = $${idx++}`); params.push(data.systemPrompt) }
+  if (data.googleSearchGrounding !== undefined && !isSystem) { sets.push(`google_search_grounding = $${idx++}`); params.push(data.googleSearchGrounding) }
   if (data.sortOrder !== undefined) { sets.push(`sort_order = $${idx++}`); params.push(data.sortOrder) }
 
   if (sets.length === 0) return getTypeById(db, id)
@@ -109,9 +115,14 @@ export async function updateType(db: Pool, id: string, data: UpdateSubagentType)
   return rows[0] ? mapTypeRow(rows[0] as Record<string, unknown>) : null
 }
 
-export async function deleteType(db: Pool, id: string): Promise<boolean> {
+export async function deleteType(db: Pool, id: string): Promise<{ deleted: boolean; isSystem?: boolean }> {
+  // Check if system subagent — cannot delete
+  const { rows: checkRows } = await db.query('SELECT is_system FROM subagent_types WHERE id = $1', [id])
+  if (checkRows[0] && (checkRows[0] as Record<string, unknown>).is_system === true) {
+    return { deleted: false, isSystem: true }
+  }
   const { rowCount } = await db.query('DELETE FROM subagent_types WHERE id = $1', [id])
-  return (rowCount ?? 0) > 0
+  return { deleted: (rowCount ?? 0) > 0 }
 }
 
 // ═══════════════════════════════════════════

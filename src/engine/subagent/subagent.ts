@@ -1,5 +1,6 @@
-// LUNA Engine — Subagent v2
-// Loop principal con verificación, spawn recursivo (1 nivel), y guardrails soft/hard.
+// LUNA Engine — Subagent v2.1
+// Loop principal con verificación iterativa (max 3 retries con conversación continua),
+// spawn recursivo (1 nivel), guardrails soft/hard, y Google Search Grounding.
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
@@ -10,6 +11,7 @@ import type {
   ToolDefinition,
 } from '../types.js'
 import type { SubagentResultV2, SubagentRunConfig } from './types.js'
+import { SUBAGENT_HARD_LIMITS } from './types.js'
 import { buildGuardrails, checkGuardrails } from './guardrails.js'
 import { verifySubagentResult } from './verifier.js'
 import { buildSubagentPrompt } from '../prompts/subagent.js'
@@ -27,6 +29,20 @@ interface ToolExecutor {
 interface SubagentCatalog {
   getEnabledTypes(): SubagentCatalogEntry[]
   getBySlug(slug: string): SubagentCatalogEntry | null
+}
+
+// ── Retry context for iterative verification ──
+interface RetryContext {
+  /** Full conversation from the previous attempt */
+  previousMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  /** The result data from the previous attempt */
+  previousResult: unknown
+  /** Verifier's feedback on what to improve */
+  feedback?: string
+  /** Specific issues found by the verifier */
+  issues?: string[]
+  /** Which retry attempt this is (1-based) */
+  attempt: number
 }
 
 /**
@@ -52,6 +68,7 @@ function resolveRunConfig(
     maxOutputTokens: 2048,
     useThinking: isComplex,
     thinkingBudget: 4096,
+    useGrounding: entry.googleSearchGrounding === true,
     guardrails: buildGuardrails(entry.tokenBudget, entry.allowedTools),
     isChild,
   }
@@ -59,7 +76,7 @@ function resolveRunConfig(
 
 /**
  * Run a subagent from the catalog.
- * Resolves the subagent type, builds config, runs the loop with verification.
+ * Resolves the subagent type, builds config, runs the loop with iterative verification.
  */
 export async function runSubagentV2(
   ctx: ContextBundle,
@@ -98,77 +115,78 @@ export async function runSubagentV2(
     ? toolDefs.filter(t => entry.allowedTools.includes(t.name))
     : toolDefs
 
-  // Run the main loop
+  // Run the main loop (first attempt)
   let result = await runSubagentLoop(ctx, step, filteredTools, config, runConfig, registry)
 
-  // ── Verification ──
+  // ── Iterative verification (max MAX_VERIFY_RETRIES retries with conversation continuity) ──
   if (entry.verifyResult && result.success) {
-    const verification = await verifySubagentResult(
-      step.description ?? 'Ejecutar tarea',
-      result.data,
-      result.success,
-      config,
-    )
+    let retryCount = 0
+    const taskDescription = step.description ?? 'Ejecutar tarea'
 
-    result.verification = verification
-    result.tokensUsed += verification.tokensUsed
+    while (retryCount < SUBAGENT_HARD_LIMITS.MAX_VERIFY_RETRIES) {
+      const verification = await verifySubagentResult(
+        taskDescription,
+        result.data,
+        result.success,
+        config,
+        retryCount,
+      )
 
-    if (verification.verdict === 'retry') {
+      result.verification = verification
+      result.tokensUsed += verification.tokensUsed
+
+      if (verification.verdict === 'accept') {
+        break
+      }
+
+      if (verification.verdict === 'fail') {
+        logger.warn({
+          traceId: ctx.traceId,
+          slug,
+          retryCount,
+          feedback: verification.feedback,
+          issues: verification.issues,
+        }, 'Verifier failed the result')
+        result.success = false
+        result.error = verification.feedback ?? 'Verification failed'
+        break
+      }
+
+      // verdict === 'retry' → continue conversation with feedback
+      retryCount++
       logger.info({
         traceId: ctx.traceId,
         slug,
+        retryCount,
+        maxRetries: SUBAGENT_HARD_LIMITS.MAX_VERIFY_RETRIES,
         feedback: verification.feedback,
-      }, 'Verifier requested retry')
+      }, 'Verifier requested retry — continuing conversation')
 
-      // Retry once with verifier feedback
-      const retryStep: ExecutionStep = {
-        ...step,
-        description: [
-          step.description ?? 'Ejecutar tarea',
-          '',
-          'CORRECCIÓN REQUERIDA:',
-          verification.feedback ?? 'Mejorar el resultado anterior.',
-          verification.issues?.length
-            ? `Problemas específicos: ${verification.issues.join(', ')}`
-            : '',
-        ].filter(Boolean).join('\n'),
-      }
+      const retryResult = await runSubagentLoop(
+        ctx, step, filteredTools, config, runConfig, registry,
+        {
+          previousMessages: result.conversationHistory ?? [],
+          previousResult: result.data,
+          feedback: verification.feedback,
+          issues: verification.issues,
+          attempt: retryCount,
+        },
+      )
 
-      const retryResult = await runSubagentLoop(ctx, retryStep, filteredTools, config, runConfig, registry)
-
-      // Re-verify the retry result
-      let retryVerification = verification // Keep original if re-verify fails
-      let reVerifyTokens = 0
-      if (retryResult.success) {
-        retryVerification = await verifySubagentResult(
-          step.description ?? 'Ejecutar tarea',
-          retryResult.data,
-          retryResult.success,
-          config,
-        )
-        reVerifyTokens = retryVerification.tokensUsed
-      }
-
-      // Merge retry into result (include re-verification tokens)
+      // Merge metrics cumulatively
       result = {
         ...retryResult,
         iterations: result.iterations + retryResult.iterations,
-        tokensUsed: result.tokensUsed + retryResult.tokensUsed + reVerifyTokens,
+        tokensUsed: result.tokensUsed + retryResult.tokensUsed,
         softLimitsHit: [...result.softLimitsHit, ...retryResult.softLimitsHit],
         childSpawned: result.childSpawned || retryResult.childSpawned,
         childResults: [...(result.childResults ?? []), ...(retryResult.childResults ?? [])],
         costUsd: result.costUsd + retryResult.costUsd,
-        verification: retryVerification,
+        retryAttempt: retryCount,
       }
-    } else if (verification.verdict === 'fail') {
-      logger.warn({
-        traceId: ctx.traceId,
-        slug,
-        feedback: verification.feedback,
-        issues: verification.issues,
-      }, 'Verifier failed the result')
-      result.success = false
-      result.error = verification.feedback ?? 'Verification failed'
+
+      // If the retry itself failed, don't try to verify again
+      if (!result.success) break
     }
   }
 
@@ -178,6 +196,8 @@ export async function runSubagentV2(
 
 /**
  * Core subagent loop: LLM + tool calling with guardrails.
+ * Supports iterative retry: when retryContext is provided, the loop continues
+ * the previous conversation instead of starting from scratch.
  */
 async function runSubagentLoop(
   ctx: ContextBundle,
@@ -186,6 +206,7 @@ async function runSubagentLoop(
   config: EngineConfig,
   runConfig: SubagentRunConfig,
   registry: Registry,
+  retryContext?: RetryContext,
 ): Promise<SubagentResultV2> {
   const startMs = Date.now()
   const { guardrails, entry } = runConfig
@@ -196,6 +217,9 @@ async function runSubagentLoop(
     model: runConfig.model,
     tools: toolDefs.map(t => t.name),
     isChild: runConfig.isChild,
+    isRetry: !!retryContext,
+    retryAttempt: retryContext?.attempt,
+    useGrounding: runConfig.useGrounding,
   }, 'Subagent loop starting')
 
   // Build prompt
@@ -236,9 +260,36 @@ async function runSubagentLoop(
   let childSpawned = false
   const childResults: SubagentResultV2[] = []
 
-  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-    { role: 'user', content: userMessage },
-  ]
+  // ── Initialize messages: continue conversation on retry, or start fresh ──
+  let messages: Array<{ role: 'user' | 'assistant'; content: string }>
+
+  if (retryContext && retryContext.previousMessages.length > 0) {
+    // Continue the previous conversation — append correction request
+    messages = [...retryContext.previousMessages]
+
+    const correctionParts: string[] = [
+      `CORRECCIÓN REQUERIDA (intento ${retryContext.attempt}/${SUBAGENT_HARD_LIMITS.MAX_VERIFY_RETRIES}):`,
+      retryContext.feedback ?? 'Mejorar el resultado anterior.',
+    ]
+    if (retryContext.issues?.length) {
+      correctionParts.push(`Problemas específicos: ${retryContext.issues.join(', ')}`)
+    }
+    correctionParts.push(
+      '',
+      'Tu resultado anterior fue:',
+      JSON.stringify(retryContext.previousResult, null, 2)?.slice(0, 2000) ?? '(sin datos)',
+      '',
+      'Corrige o mejora el resultado. No repitas pasos que ya completaste correctamente.',
+    )
+
+    messages.push({ role: 'user', content: correctionParts.join('\n') })
+  } else {
+    // Fresh start
+    messages = [{ role: 'user', content: userMessage }]
+  }
+
+  // Determine LLM task: use 'web_search' for grounding (routes to Gemini Flash chain)
+  const llmTask = runConfig.useGrounding ? 'web_search' : 'subagent'
 
   while (true) {
     // Check guardrails
@@ -265,6 +316,7 @@ async function runSubagentLoop(
           hardLimitHit: check.reason,
           childSpawned,
           childResults: childResults.length > 0 ? childResults : undefined,
+          conversationHistory: messages,
           costUsd: 0, // Will be calculated by caller
         }
       }
@@ -278,9 +330,9 @@ async function runSubagentLoop(
     try {
       // Call LLM
       const result = await callLLM({
-        task: 'subagent',
-        provider: runConfig.provider,
-        model: runConfig.model,
+        task: llmTask,
+        provider: runConfig.useGrounding ? undefined : runConfig.provider, // Let task router handle provider for grounding
+        model: runConfig.useGrounding ? undefined : runConfig.model,       // Let task router handle model for grounding
         system,
         messages,
         maxTokens: runConfig.maxOutputTokens,
@@ -291,6 +343,7 @@ async function runSubagentLoop(
           inputSchema: t.inputSchema,
         })) : undefined,
         thinking: runConfig.useThinking ? { type: 'adaptive', budgetTokens: runConfig.thinkingBudget } : undefined,
+        googleSearchGrounding: runConfig.useGrounding,
         codeExecution: step.useCoding ?? false,
       })
 
@@ -384,6 +437,9 @@ async function runSubagentLoop(
         finalData = result.text || lastData
       }
 
+      // Add final response to conversation history (for potential retry)
+      messages.push({ role: 'assistant', content: result.text })
+
       logger.info({
         traceId: ctx.traceId,
         slug: entry.slug,
@@ -391,6 +447,7 @@ async function runSubagentLoop(
         tokensUsed,
         durationMs: Date.now() - startMs,
         childSpawned,
+        isRetry: !!retryContext,
       }, 'Subagent loop completed')
 
       return {
@@ -403,6 +460,7 @@ async function runSubagentLoop(
         softLimitsHit,
         childSpawned,
         childResults: childResults.length > 0 ? childResults : undefined,
+        conversationHistory: messages,
         costUsd: 0, // Will be calculated by caller
       }
     } catch (err) {
@@ -418,6 +476,7 @@ async function runSubagentLoop(
         softLimitsHit,
         childSpawned,
         childResults: childResults.length > 0 ? childResults : undefined,
+        conversationHistory: messages,
         costUsd: 0,
         error: String(err),
       }

@@ -2,9 +2,11 @@
 // Verifica la calidad del resultado del subagent.
 // Usa el mismo modelo de Phase 2 (classifyModel).
 // Veredicto: accept / retry (con feedback) / fail.
+// Soporta verificación progresiva: más estricto en cada retry.
 
 import pino from 'pino'
 import type { VerificationResult } from './types.js'
+import { SUBAGENT_HARD_LIMITS } from './types.js'
 import type { EngineConfig } from '../types.js'
 import { callLLM } from '../utils/llm-client.js'
 
@@ -35,29 +37,49 @@ Reglas:
 /**
  * Verify the result of a subagent execution.
  * Uses the classify model (Phase 2) for consistency.
+ *
+ * @param taskDescription - What was asked of the subagent
+ * @param result - The result data from the subagent
+ * @param success - Whether the subagent reported success
+ * @param config - Engine config for model selection
+ * @param retryAttempt - Which retry attempt this is (0 = first verification, 1+ = post-retry). Higher = stricter.
  */
 export async function verifySubagentResult(
   taskDescription: string,
   result: unknown,
   success: boolean,
   config: EngineConfig,
+  retryAttempt = 0,
 ): Promise<VerificationResult & { tokensUsed: number }> {
   try {
-    const userMessage = [
+    const parts: string[] = [
       `Tarea asignada al subagente: ${taskDescription}`,
       ``,
       `Estado de ejecución: ${success ? 'completada' : 'fallida'}`,
       ``,
       `Resultado obtenido:`,
       JSON.stringify(result, null, 2)?.slice(0, 4000) ?? '(sin datos)',
-    ].join('\n')
+    ]
+
+    // Progressive strictness: after retries, be more demanding
+    if (retryAttempt > 0) {
+      parts.push('')
+      parts.push(`--- CONTEXTO DE VERIFICACIÓN ---`)
+      parts.push(`Este es el intento ${retryAttempt + 1} de ${SUBAGENT_HARD_LIMITS.MAX_VERIFY_RETRIES + 1}.`)
+      parts.push(`El subagente recibió feedback y corrigió su respuesta anterior.`)
+      if (retryAttempt >= 2) {
+        parts.push(`ATENCIÓN: Este es uno de los últimos intentos. Si los mismos problemas persisten, usa "fail" en vez de "retry".`)
+      } else {
+        parts.push(`Sé más exigente: verifica que el feedback anterior fue atendido.`)
+      }
+    }
 
     const llmResult = await callLLM({
       task: 'subagent-verify',
       provider: config.classifyProvider,
       model: config.classifyModel,
       system: VERIFIER_SYSTEM,
-      messages: [{ role: 'user', content: userMessage }],
+      messages: [{ role: 'user', content: parts.join('\n') }],
       maxTokens: 512,
       temperature: 0.1,
       jsonMode: true,

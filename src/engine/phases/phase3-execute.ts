@@ -300,9 +300,24 @@ async function executeStep(
         result = await executeMemoryLookup(step, index, db, ctx, registry, startMs)
         break
 
-      case 'web_search':
-        result = await executeWebSearch(step, index, config, startMs, llmTask)
+      case 'web_search': {
+        // Auto-route to web-researcher subagent if available and enabled
+        const webCatalog = registry?.getOptional<{ getBySlug(slug: string): { slug: string } | null }>('subagents:catalog')
+        const webResearcher = webCatalog?.getBySlug('web-researcher')
+        if (webResearcher) {
+          const webStep: ExecutionStep = {
+            ...step,
+            type: 'subagent',
+            subagentSlug: 'web-researcher',
+            description: step.description ?? (step.params?.query as string) ?? '',
+          }
+          result = await executeSubagent(webStep, index, ctx, config, startMs, registry, llmTask)
+        } else {
+          // Fallback: legacy direct web search (no subagent module or web-researcher disabled)
+          result = await executeWebSearch(step, index, config, startMs, llmTask)
+        }
         break
+      }
 
       case 'process_attachment':
         result = await executeProcessAttachment(step, index, ctx, db, redis, config, registry, startMs)

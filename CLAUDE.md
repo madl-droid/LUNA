@@ -42,7 +42,7 @@ src/
     medilink/        — integración Medilink/HealthAtom: pacientes, citas, follow-up (ver CLAUDE.md)
     freshdesk/       — integración Freshdesk Knowledge Base: búsqueda y sync de artículos (ver CLAUDE.md)
     cortex/          — sistema nervioso: monitoreo, alertas, Reflex (ver CLAUDE.md)
-    subagents/       — subagentes especializados: CRUD, verificación, spawn, métricas (ver CLAUDE.md)
+    subagents/       — subagentes especializados: CRUD, system subagents, web-researcher, verificación iterativa (3 retries), spawn, métricas (ver CLAUDE.md)
   tools/
     freight/         — tool de estimación de flete (ver src/tools/freight/CLAUDE.md)
     freshdesk/       — tools de Freshdesk KB: búsqueda, artículos, sync (ver src/tools/freshdesk/CLAUDE.md)
@@ -188,6 +188,7 @@ Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.
 011_cross-channel-v1.sql     — relax proactive_outreach_log channel constraint for all channels
 012_task-checkpoints.sql     — task_checkpoints table for resumable pipeline execution
 013_subagents-v1.sql         — subagent_types (CRUD), subagent_usage (métricas)
+018_subagents-v2.sql         — is_system, google_search_grounding, seed web-researcher
 ```
 
 ### Cómo agregar una nueva migración
@@ -267,7 +268,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks)
 - `src/modules/freshdesk/CLAUDE.md` — wrapper modular de tools Freshdesk KB
 - `src/modules/cortex/CLAUDE.md` — sistema nervioso: monitoreo, alertas, Reflex, Pulse, Trace (simulación y testing)
-- `src/modules/subagents/CLAUDE.md` — subagentes especializados (CRUD, verificación, spawn recursivo, métricas)
+- `src/modules/subagents/CLAUDE.md` — subagentes especializados (CRUD, system subagents, web-researcher, verificación iterativa 3 retries, spawn, métricas)
 - `src/tools/freshdesk/CLAUDE.md` — Freshdesk Knowledge Base (búsqueda, artículos, sync semanal)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `src/engine/checkpoints/CLAUDE.md` — checkpoints para pipelines resumibles

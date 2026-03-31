@@ -7,6 +7,7 @@ CRUD de tipos de subagent configurables desde consola. Expone catálogo al engin
 - `types.ts` — SubagentTypeRow, SubagentCatalogEntry, SubagentUsageSummary, etc.
 - `repository.ts` — CRUD subagent_types + tracking subagent_usage (raw SQL)
 - `service.ts` — SubagentsCatalogService: cache in-memory, reload, getBySlug
+- `templates.ts` — HTML templates para consola (cards, editor, badges)
 
 ## Manifest
 - type: `feature`, depends: `['llm']`
@@ -22,17 +23,26 @@ getUsageSummary(period): Promise<SubagentUsageSummary>  // Para consola
 reload(): Promise<void>  // Recarga cache desde DB
 ```
 
-## API Routes (`/console/api/subagents/`)
-- `GET types` — lista todos los tipos
-- `GET type?id=` — detalle de un tipo
-- `POST type` — crear tipo (slug + name requeridos)
-- `PUT type` — actualizar tipo (id requerido)
-- `DELETE type?id=` — eliminar tipo
-- `GET usage?period=day|week|month|hour` — métricas agregadas
-- `GET available-tools` — lista tools disponibles (para selector en consola)
+## System Subagents (`is_system = true`)
+- No se pueden eliminar (API retorna 403)
+- Campos protegidos no editables: slug, name, modelTier, verifyResult, canSpawnChildren, allowedTools, systemPrompt, googleSearchGrounding
+- Campos editables: enabled, tokenBudget, description, sortOrder, allowedKnowledgeCategories
+- UI muestra badge "Sistema" y deshabilita campos protegidos
+- Seed: `web-researcher` (migración 018)
 
-## Tablas (migración 013)
-- `subagent_types` — CRUD, campos: slug, name, description, enabled, model_tier, token_budget, verify_result, can_spawn_children, allowed_tools, system_prompt
+## Web Researcher (subagente de sistema)
+- Slug: `web-researcher`, Google Search Grounding habilitado
+- Centraliza búsqueda web: Phase 3 redirige `web_search` steps al web-researcher si está habilitado
+- Tools: `web_explore`, `search_knowledge`
+- Verificación + spawn habilitados
+
+## Verificación iterativa
+- `MAX_VERIFY_RETRIES = 3` (antes 1)
+- Loop: verify → accept/retry/fail. En retry, continúa la conversación (no empieza de cero)
+- El verificador se vuelve más estricto en intentos posteriores
+
+## Tablas (migraciones 013 + 018)
+- `subagent_types` — CRUD + `is_system`, `google_search_grounding`
 - `subagent_usage` — tracking: iterations, tokens_used, duration_ms, success, verified, cost_usd
 
 ## Trampas
@@ -41,3 +51,5 @@ reload(): Promise<void>  // Recarga cache desde DB
 - `token_budget` tiene CHECK >= 5000 en DB y validación en API
 - Slug debe ser kebab-case: `/^[a-z0-9][a-z0-9-]*[a-z0-9]$/`
 - Si el módulo no está activo, el engine cae a legacy subagent (backward compat)
+- `deleteType()` retorna `{ deleted, isSystem }` — verificar antes de 403
+- `updateType()` filtra campos protegidos si `isSystem=true`
