@@ -1225,13 +1225,15 @@ const manifest: ModuleManifest = {
       const items = await itemManager!.list()
       const categories = await pgStore!.listCategories()
       const cfg = registry.getConfig<{ KNOWLEDGE_FAQ_SHEET_URL: string; KNOWLEDGE_FAQ_DESCRIPTION: string; KNOWLEDGE_PRODUCTS_SHEET_URL: string; KNOWLEDGE_PRODUCTS_DESCRIPTION: string }>('knowledge')
-      // Check if Debugging toggle is active (ENGINE_TEST_MODE in config_store)
-      let debugActive = false
+      // Check if cooldown should be active — only in production (ENGINE_TEST_MODE explicitly 'false')
+      // If ENGINE_TEST_MODE is missing or 'true' → debug/dev mode → no cooldown
+      let debugActive = true // default: no cooldown
       try {
         const db = registry.getDb()
         const dbg = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
-        debugActive = (dbg.rows[0] as { value: string } | undefined)?.value === 'true'
-      } catch { /* non-critical */ }
+        const val = (dbg.rows[0] as { value: string } | undefined)?.value
+        debugActive = val !== 'false' // only 'false' means production → cooldown active
+      } catch { /* non-critical — default to debug mode */ }
       return renderKnowledgeSection(items, categories, lang, {
         faqSheetUrl: cfg?.KNOWLEDGE_FAQ_SHEET_URL ?? '',
         faqDescription: cfg?.KNOWLEDGE_FAQ_DESCRIPTION ?? '',

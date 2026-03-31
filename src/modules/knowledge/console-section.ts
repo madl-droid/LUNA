@@ -435,6 +435,14 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
   var IS_PRODUCTION = ${isProduction ? 'true' : 'false'};
   var COOLDOWN_MS = IS_PRODUCTION ? 30 * 60 * 1000 : 0;
 
+  // Clear stale cooldowns if no cooldown mode
+  if (!COOLDOWN_MS) {
+    var keys = Object.keys(localStorage);
+    for (var k = 0; k < keys.length; k++) {
+      if (keys[k].indexOf('ki-cd-') === 0) localStorage.removeItem(keys[k]);
+    }
+  }
+
   function toast(msg, type) {
     if (window.showToast) window.showToast(msg, type || 'success');
   }
