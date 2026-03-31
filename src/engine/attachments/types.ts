@@ -76,6 +76,8 @@ export interface ProcessedAttachment {
   sourceRef: string | null
   /** Whether LLM enrichment was performed */
   llmEnriched: boolean
+  /** Disk path for stored binary (images) — for re-consultation */
+  filePath: string | null
 }
 
 /** URL extraction result */

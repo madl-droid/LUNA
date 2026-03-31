@@ -6,3 +6,4 @@
 
 ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS llm_text TEXT;
 ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS category_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS file_path TEXT;

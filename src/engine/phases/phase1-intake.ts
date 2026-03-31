@@ -80,12 +80,6 @@ export async function phase1Intake(
     ? classifyAttachments(message)
     : []
 
-  // 5c. Launch attachment processing in parallel (downloads, extraction, LLM enrichment)
-  // Runs concurrently with context loading below — results injected into history as messages
-  const attachmentProcessingPromise = (config.attachmentEnabled && message.attachments?.length)
-    ? processAttachmentsInPhase1(message, config, registry, db, redis)
-    : Promise.resolve(null)
-
   // 6-10. Load context in parallel (graceful degradation)
   // Knowledge v2: try knowledge:manager.getInjection() first, fallback to rag-local
   const knowledgeManagerSvc = registry.getOptional<{ getInjection(): Promise<KnowledgeInjection> }>('knowledge:manager')
@@ -158,7 +152,12 @@ export async function phase1Intake(
     message.threadId,
   )
 
-  // 11b. Detect campaign (needs session for round number)
+  // 11b. Launch attachment processing in parallel (now that session.id is available)
+  const attachmentProcessingPromise = (config.attachmentEnabled && message.attachments?.length)
+    ? processAttachmentsInPhase1(message, config, registry, db, redis, session.id)
+    : Promise.resolve(null)
+
+  // 11c. Detect campaign (needs session for round number)
   const detectedCampaign = detectCampaign(registry, normalizedText, message.channelName, session.messageCount)
 
   // 12-15. Load memory context in parallel
@@ -300,6 +299,7 @@ async function processAttachmentsInPhase1(
   registry: Registry,
   db: Pool,
   redis: Redis,
+  sessionId: string,
 ): Promise<import('../attachments/types.js').AttachmentContext | null> {
   if (!message.attachments?.length) return null
 
@@ -328,7 +328,7 @@ async function processAttachmentsInPhase1(
     channelAttConfig,
     attEngineConfig,
     message.channelName,
-    'pending', // sessionId not yet available — will be updated in persistOneAttachment
+    sessionId,
     message.id,
     registry,
     db,

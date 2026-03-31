@@ -13,7 +13,9 @@
 //   - Large (> 8192 tokens): inject [Category] + LLM-generated description
 // Each processed attachment is stored in interaction DB as a message-like record.
 
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
+import { writeFile, mkdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
@@ -43,6 +45,30 @@ const logger = pino({ name: 'engine:attachments' })
 
 /** Max attachments processed simultaneously — prevents memory/CPU spikes */
 const MAX_CONCURRENT = 3
+
+/** Directory for stored image binaries (relative to process.cwd()) */
+const MEDIA_DIR = resolve(process.cwd(), 'instance', 'knowledge', 'media')
+
+/**
+ * Save an image binary to disk for re-consultation.
+ * Returns the relative file path (from instance/) or null on failure.
+ * Uses content hash prefix + sanitized filename to avoid collisions.
+ */
+async function saveImageToDisk(buffer: Buffer, filename: string): Promise<string | null> {
+  try {
+    await mkdir(MEDIA_DIR, { recursive: true })
+    const hash = createHash('sha256').update(buffer).digest('hex').substring(0, 12)
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 80)
+    const diskName = `${hash}_${safeName}`
+    const fullPath = join(MEDIA_DIR, diskName)
+    await writeFile(fullPath, buffer)
+    logger.debug({ filename, diskName }, 'Image binary saved to disk')
+    return `instance/knowledge/media/${diskName}`
+  } catch (err) {
+    logger.warn({ err, filename }, 'Failed to save image binary to disk')
+    return null
+  }
+}
 
 /**
  * Run async tasks in parallel with a concurrency limit.
@@ -170,6 +196,7 @@ export async function processAttachments(
           sourceType: 'file_attachment',
           sourceRef: att.id,
           llmEnriched: false,
+          filePath: null,
         }
         persistOneAttachment(failed, sessionId, messageId, channelName, db).catch(e =>
           logger.warn({ e, filename: att.filename }, 'Failed to persist failed attachment'),
@@ -249,6 +276,7 @@ async function processOneAttachment(
       sourceType: 'file_attachment',
       sourceRef: att.id,
       llmEnriched: false,
+      filePath: null,
     }
   }
 
@@ -276,6 +304,7 @@ async function processOneAttachment(
       sourceType: 'file_attachment',
       sourceRef: att.id,
       llmEnriched: false,
+      filePath: null,
     }
   }
 
@@ -298,6 +327,7 @@ async function processOneAttachment(
   let rawText = ''
   let llmText: string | null = null
   let llmEnriched = false
+  let filePath: string | null = null
 
   if (mimeCategory === 'image') {
     // Image: code extraction → metadata only, LLM → vision description
@@ -308,6 +338,8 @@ async function processOneAttachment(
       : `[Imagen: ${att.filename}]`
     llmText = enriched.kind === 'image' ? enriched.llmEnrichment?.description ?? null : null
     llmEnriched = !!llmText
+    // Save image binary to disk for re-consultation
+    filePath = await saveImageToDisk(data, att.filename)
   } else if (mimeCategory === 'video') {
     // Video: code extraction → format/duration, LLM → multimodal description + transcription
     const videoResult = await extractVideo(data, att.filename, att.mimeType)
@@ -347,6 +379,7 @@ async function processOneAttachment(
       sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
       sourceRef: att.id,
       llmEnriched,
+      filePath,
     }
   }
 
@@ -422,6 +455,7 @@ async function processOneAttachment(
     sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
     sourceRef: att.id,
     llmEnriched,
+    filePath,
   }
 }
 
@@ -454,6 +488,7 @@ async function processAudio(
       sourceType: 'audio_transcription',
       sourceRef: att.id,
       llmEnriched: false,
+      filePath: null,
     }
   }
 
@@ -479,6 +514,7 @@ async function processAudio(
     sourceType: 'audio_transcription',
     sourceRef: att.id,
     llmEnriched: true, // STT is LLM-powered
+    filePath: null,
   }
 }
 
@@ -552,8 +588,8 @@ async function persistOneAttachment(
 
   await db.query(
     `INSERT INTO attachment_extractions
-     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref, file_path)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      ON CONFLICT DO NOTHING`,
     [
       att.id,
@@ -572,6 +608,7 @@ async function persistOneAttachment(
       att.status,
       att.injectionRisk,
       att.sourceRef,
+      att.filePath,
     ],
   )
 }

@@ -31,6 +31,7 @@ export async function runAttachmentMigration(db: Pool): Promise<void> {
         status TEXT NOT NULL,
         injection_risk BOOLEAN DEFAULT false,
         source_ref TEXT,
+        file_path TEXT,
         created_at TIMESTAMPTZ DEFAULT now()
       )
     `)
