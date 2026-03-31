@@ -1,16 +1,16 @@
 // LUNA — Module: knowledge — Embedding Service
-// Google gemini-embedding-exp-03-07 (1536 dims) with circuit breaker and rate limiting.
-// Soporta texto, imágenes, video, código. Degrades gracefully: on failure → FTS-only.
+// Google Gemini Embedding 2 (multimodal) via REST API with outputDimensionality.
+// Degrades gracefully: on failure → FTS-only search.
 
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import type pino from 'pino'
 
 // Gemini Embedding 2 — natively multimodal (text, images, PDFs, video, audio)
-// gemini-embedding-2-preview outputs 3072 dims, truncated to 1536 via Matryoshka
-// (pgvector index max 2000 dims; first 1536 dims carry most semantic signal)
+// Uses outputDimensionality=1536 to get properly normalized 1536-dim vectors
+// (model outputs 3072 by default, but pgvector index max is 2000 dims)
 const MODEL = 'gemini-embedding-2-preview'
 const DIMENSIONS = 1536
 const MAX_BATCH_SIZE = 100
+const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 // Circuit breaker: 3 failures in 5 min → open for 5 min
 const CB_FAILURE_THRESHOLD = 3
@@ -19,12 +19,10 @@ const CB_COOLDOWN_MS = 5 * 60 * 1000
 
 // Rate limit: tier 2 = 5000 RPM
 const RATE_LIMIT_RPM = 5000
-const RATE_LIMIT_INTERVAL_MS = 60_000 / RATE_LIMIT_RPM  // ~12ms between requests
 
 export class EmbeddingService {
   private readonly apiKey: string
   private readonly log: pino.Logger
-  private readonly client: GoogleGenerativeAI | null
 
   // Circuit breaker state
   private failures: number[] = []
@@ -38,10 +36,7 @@ export class EmbeddingService {
     this.apiKey = apiKey
     this.log = logger.child({ component: 'embedding-service' })
 
-    if (apiKey) {
-      this.client = new GoogleGenerativeAI(apiKey)
-    } else {
-      this.client = null
+    if (!apiKey) {
       this.log.warn('No API key provided — embeddings disabled')
     }
   }
@@ -51,24 +46,48 @@ export class EmbeddingService {
   // ───────────────────────────────────────────
 
   isAvailable(): boolean {
-    if (!this.client || !this.apiKey) return false
+    if (!this.apiKey) return false
     if (Date.now() < this.cbOpenUntil) return false
     return true
   }
 
+  /**
+   * Generate embedding for a text string.
+   * Uses REST API with outputDimensionality=1536.
+   */
   async generateEmbedding(text: string): Promise<number[] | null> {
     if (!this.isAvailable()) return null
     if (!text.trim()) return null
-
     if (!this.consumeToken()) {
       this.log.warn('Rate limit reached, skipping embedding')
       return null
     }
 
     try {
-      const model = this.client!.getGenerativeModel({ model: MODEL })
-      const result = await model.embedContent(text)
-      const values = result.embedding.values.slice(0, DIMENSIONS)
+      const body = {
+        model: `models/${MODEL}`,
+        content: { parts: [{ text }] },
+        outputDimensionality: DIMENSIONS,
+      }
+
+      const res = await fetch(`${API_BASE}/${MODEL}:embedContent?key=${this.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        throw new Error(`Embedding API ${res.status}: ${errText.substring(0, 200)}`)
+      }
+
+      const data = await res.json() as { embedding?: { values?: number[] } }
+      const values = data.embedding?.values
+      if (!values || values.length === 0) {
+        this.log.warn('Embedding response missing values')
+        return null
+      }
 
       this.resetFailures()
       return values
@@ -80,18 +99,16 @@ export class EmbeddingService {
   }
 
   /**
-   * Generate embedding from raw file (PDF, image, etc.) using Gemini Embedding 2 multimodal.
-   * Sends the file as inlineData — the model natively understands visual content.
-   * Limits: PDF max ~6 pages, images max 6 per request.
+   * Generate embedding from raw file (PDF, image) using multimodal inlineData.
+   * REST API with outputDimensionality=1536.
    */
   async generateFileEmbedding(data: Buffer, mimeType: string): Promise<number[] | null> {
     if (!this.isAvailable()) return null
     if (data.length === 0) return null
 
-    // Supported multimodal MIME types for embedding
     const SUPPORTED = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']
     if (!SUPPORTED.includes(mimeType)) {
-      this.log.debug({ mimeType }, '[EMBED] Unsupported MIME for multimodal embedding, skipping')
+      this.log.debug({ mimeType }, '[EMBED] Unsupported MIME for multimodal embedding')
       return null
     }
 
@@ -101,20 +118,33 @@ export class EmbeddingService {
     }
 
     try {
-      const model = this.client!.getGenerativeModel({ model: MODEL })
       const base64 = data.toString('base64')
-      this.log.info({ mimeType, sizeBytes: data.length, base64Length: base64.length }, '[EMBED] Sending file to multimodal embedding')
+      this.log.info({ mimeType, sizeBytes: data.length }, '[EMBED] Sending file to multimodal embedding')
 
-      const result = await model.embedContent({
+      const body = {
+        model: `models/${MODEL}`,
         content: {
-          role: 'user',
-          parts: [{
-            inlineData: { mimeType, data: base64 },
-          }],
+          parts: [{ inlineData: { mimeType, data: base64 } }],
         },
+        outputDimensionality: DIMENSIONS,
+      }
+
+      const res = await fetch(`${API_BASE}/${MODEL}:embedContent?key=${this.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
       })
 
-      const values = result.embedding.values.slice(0, DIMENSIONS)
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        throw new Error(`File embedding API ${res.status}: ${errText.substring(0, 200)}`)
+      }
+
+      const result = await res.json() as { embedding?: { values?: number[] } }
+      const values = result.embedding?.values
+      if (!values) return null
+
       this.log.info({ mimeType, dims: values.length }, '[EMBED] Multimodal file embedding generated')
       this.resetFailures()
       return values
@@ -125,6 +155,10 @@ export class EmbeddingService {
     }
   }
 
+  /**
+   * Batch embed multiple texts.
+   * REST API batchEmbedContents with outputDimensionality=1536.
+   */
   async generateBatchEmbeddings(texts: string[]): Promise<(number[] | null)[]> {
     if (!this.isAvailable()) return texts.map(() => null)
     if (texts.length === 0) return []
@@ -140,21 +174,35 @@ export class EmbeddingService {
     }
 
     try {
-      const model = this.client!.getGenerativeModel({ model: MODEL })
-      const result = await model.batchEmbedContents({
+      const body = {
         requests: capped.map(text => ({
-          content: { role: 'user', parts: [{ text }] },
+          model: `models/${MODEL}`,
+          content: { parts: [{ text }] },
+          outputDimensionality: DIMENSIONS,
         })),
+      }
+
+      const res = await fetch(`${API_BASE}/${MODEL}:batchEmbedContents?key=${this.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
       })
 
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        throw new Error(`Batch embedding API ${res.status}: ${errText.substring(0, 200)}`)
+      }
+
+      const data = await res.json() as { embeddings?: Array<{ values?: number[] }> }
       this.resetFailures()
 
-      return result.embeddings.map((emb, i) => {
-        if (!emb || !emb.values) {
+      return (data.embeddings ?? []).map((emb, i) => {
+        if (!emb?.values) {
           this.log.warn({ index: i }, 'Missing embedding in batch result')
           return null
         }
-        return emb.values.slice(0, DIMENSIONS)
+        return emb.values
       })
     } catch (err) {
       this.recordFailure()
@@ -170,7 +218,6 @@ export class EmbeddingService {
   private recordFailure(): void {
     const now = Date.now()
     this.failures.push(now)
-    // Keep only failures within the window
     this.failures = this.failures.filter(t => now - t < CB_WINDOW_MS)
 
     if (this.failures.length >= CB_FAILURE_THRESHOLD) {
@@ -203,8 +250,11 @@ export class EmbeddingService {
   private refillTokens(): void {
     const now = Date.now()
     const elapsed = now - this.lastRefill
-    const refill = (elapsed / RATE_LIMIT_INTERVAL_MS)
-    this.tokens = Math.min(RATE_LIMIT_RPM, this.tokens + refill)
-    this.lastRefill = now
+    if (elapsed <= 0) return
+    const refill = Math.floor(elapsed / (60_000 / RATE_LIMIT_RPM))
+    if (refill > 0) {
+      this.tokens = Math.min(RATE_LIMIT_RPM, this.tokens + refill)
+      this.lastRefill = now
+    }
   }
 }
