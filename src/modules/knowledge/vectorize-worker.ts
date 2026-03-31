@@ -100,10 +100,13 @@ export class VectorizeWorker {
 
       const durationMs = Date.now() - startMs
       await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
+      // Propagate status to parent knowledge_item (via source_ref)
+      await this.updateParentItemStatus(documentId, 'done')
       this.log.info({ documentId, chunksProcessed: chunks.length, durationMs, avgMsPerChunk: Math.round(durationMs / chunks.length) }, '[EMBED] Document embeddings complete')
     } catch (err) {
       this.log.error({ documentId, err }, 'failed to process document embeddings')
       await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'failed')
+      await this.updateParentItemStatus(documentId, 'failed')
       throw err
     }
   }
@@ -237,6 +240,22 @@ export class VectorizeWorker {
     }
 
     this.log.info({ total: chunks.length, text: textChunks.length, multimodal: multimodalChunks.length, success: successCount, null: nullCount }, '[EMBED] Batch complete')
+  }
+
+  /** Update the parent knowledge_item embedding status when its document finishes */
+  private async updateParentItemStatus(documentId: string, status: 'done' | 'failed'): Promise<void> {
+    try {
+      const doc = await this.pgStore.getDocument(documentId)
+      if (!doc?.sourceRef) return
+      // Update the knowledge_item's embedding_status
+      await this.pgStore.getPool().query(
+        `UPDATE knowledge_items SET embedding_status = $1, updated_at = now() WHERE id = $2`,
+        [status, doc.sourceRef],
+      )
+      this.log.info({ documentId, itemId: doc.sourceRef, status }, '[EMBED] Parent item status updated')
+    } catch (err) {
+      this.log.warn({ err, documentId }, '[EMBED] Failed to update parent item status (non-fatal)')
+    }
   }
 
   // ─── Public API ────────────────────────────────────────

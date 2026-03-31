@@ -113,16 +113,15 @@ export function chunkDocs(text: string): SmartChunk[] {
 // 2. SHEETS → CSV with repeated headers
 // ═══════════════════════════════════════════
 
-const ROWS_PER_CHUNK = 50
-
 export function chunkSheets(headers: string[], rows: string[][]): SmartChunk[] {
   const chunks: SmartChunk[] = []
   const headerLine = headers.join(',')
 
-  for (let i = 0; i < rows.length; i += ROWS_PER_CHUNK) {
-    const batch = rows.slice(i, i + ROWS_PER_CHUNK)
-    const csvLines = [headerLine, ...batch.map(row => row.join(','))]
-    const content = csvLines.join('\n')
+  // 1 row = 1 chunk, with header prepended for context
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!
+    const content = headerLine + '\n' + row.join(',')
+    if (content.trim().length < 20) continue
 
     chunks.push({
       content,
@@ -131,9 +130,9 @@ export function chunkSheets(headers: string[], rows: string[][]): SmartChunk[] {
       page: null,
       mediaRefs: null,
       extraMetadata: {
-        row_range: `${i + 2}-${i + 1 + batch.length}`,  // +2 because row 1 is header
+        row_index: i + 2,  // +2 because row 1 is header in sheet
         headers,
-        row_count: batch.length,
+        row_count: 1,
       },
     })
   }

@@ -1057,9 +1057,10 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
-  var lastTrainChunks = 0;
+  var trainSession = { items: 0, chunks: 0 };
   function updateStatsFooter(chunks) {
-    if (chunks) lastTrainChunks += chunks;
+    trainSession.items++;
+    if (chunks) trainSession.chunks += chunks;
     var footer = document.getElementById('ki-stats-footer');
     if (!footer) return;
     var now = new Date();
@@ -1068,9 +1069,8 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     var yy = String(now.getFullYear()).slice(2);
     var hh = ('0' + now.getHours()).slice(-2);
     var mi = ('0' + now.getMinutes()).slice(-2);
-    var items = document.querySelectorAll('.ki-row');
-    var datosText = lastTrainChunks > 0 ? (' ${isEs ? 'para un total de' : 'for a total of'} ' + lastTrainChunks + ' ${isEs ? 'datos' : 'data points'}.') : '.';
-    footer.textContent = '${isEs ? 'Último entrenamiento' : 'Last training'}: ' + dd + '/' + mm + '/' + yy + ' ' + hh + ':' + mi + ' ${isEs ? 'sobre' : 'across'} ' + items.length + ' ${isEs ? 'conocimientos' : 'knowledge items'}' + datosText;
+    var datosText = trainSession.chunks > 0 ? (' ${isEs ? 'para un total de' : 'for a total of'} ' + trainSession.chunks + ' ${isEs ? 'datos' : 'data points'}.') : '.';
+    footer.textContent = '${isEs ? 'Último entrenamiento' : 'Last training'}: ' + dd + '/' + mm + '/' + yy + ' ' + hh + ':' + mi + ' ${isEs ? 'sobre' : 'across'} ' + trainSession.items + ' ${isEs ? 'conocimiento' : 'knowledge item'}' + (trainSession.items > 1 ? 's' : '') + datosText;
   }
 
   window.kiBulkVectorize = function() {
