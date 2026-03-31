@@ -178,8 +178,9 @@ function renderStyles(): string {
 .sa-input-sm { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; background:var(--surface-container-lowest); color:var(--on-surface) }
 .sa-input-sm:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-focus) }
 
-/* Form sections (gray boxes) */
-.sa-form-section { background:var(--surface-container-low); border-radius:0.5rem; padding:16px; margin-bottom:12px }
+/* Form sections (panel-like white boxes) */
+.sa-form-section { background:var(--surface-container-lowest); border-radius:var(--radius-sm); padding:var(--panel-padding); margin-bottom:12px; box-shadow:var(--shadow-subtle); transition:box-shadow 0.2s ease }
+.sa-form-section:hover { box-shadow:var(--shadow-float) }
 .sa-form-section:last-of-type { margin-bottom:0 }
 .sa-form-section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--on-surface-dim); padding-bottom:10px; margin-bottom:14px; border-bottom:1px solid var(--outline-variant) }
 .sa-basic-cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px }
@@ -187,9 +188,10 @@ function renderStyles(): string {
 .sa-func-right { display:flex; flex-direction:column; gap:8px }
 
 /* Collapsible sections */
-.sa-collapse { background:var(--surface-container-low); border-radius:0.5rem; overflow:hidden }
+.sa-collapse { background:var(--surface-container-lowest); border-radius:var(--radius-sm); overflow:hidden; box-shadow:var(--shadow-subtle); transition:box-shadow 0.2s ease }
+.sa-collapse:hover { box-shadow:var(--shadow-float) }
 .sa-collapse-header { width:100%; display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:none; border:none; cursor:pointer; text-align:left; gap:8px }
-.sa-collapse-header:hover { background:var(--surface-container) }
+.sa-collapse-header:hover { background:var(--surface-container-low) }
 .sa-collapse-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--on-surface-dim); flex:1 }
 .sa-collapse-chevron { transition:transform 0.2s ease; flex-shrink:0; color:var(--on-surface-dim) }
 .sa-collapse-open .sa-collapse-chevron { transform:rotate(180deg) }
@@ -221,29 +223,40 @@ function renderStyles(): string {
 
 /* Card list */
 .sa-list { display:flex; flex-direction:column; gap:10px }
-.sa-inline-form { display:none; padding-top:16px; border-top:1px solid var(--outline-variant); margin-top:14px }
-
-/* Card body redesign */
-.sa-card-layout { display:flex; align-items:flex-start; justify-content:space-between; gap:12px }
-.sa-card-body { flex:1; min-width:0 }
-.sa-card-name { font-weight:700; font-size:15px; color:var(--on-surface); margin-bottom:1px }
-.sa-card-slug { font-size:11px; color:var(--on-surface-dim); font-family:monospace; margin-bottom:6px }
-.sa-card-desc { font-size:12px; color:var(--on-surface-variant); margin-bottom:10px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
-.sa-card-info-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; padding-top:10px; border-top:1px solid var(--outline-variant) }
-.sa-card-info-item { }
-.sa-info-key { display:block; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim); margin-bottom:2px }
-.sa-info-val { display:block; font-size:12px; font-weight:500; color:var(--on-surface) }
-.sa-info-yes { color:var(--success) }
-.sa-info-no { color:var(--on-surface-dim) }
-
-/* Card actions */
-.sa-card-actions { display:flex; align-items:center; gap:6px; flex-shrink:0 }
 .sa-card-disabled { opacity:0.55 }
+
+/* Panel transparent when editing inline */
+.panel.sa-card-editing {
+  background:transparent !important;
+  box-shadow:none !important;
+  padding:0 !important;
+  overflow:visible !important;
+}
+
+/* Card — horizontal layout */
+.sa-card-row { display:flex; align-items:center; gap:16px; min-height:48px; padding:2px 0 }
+.sa-card-main { flex:1; min-width:0 }
+.sa-card-name-row { display:flex; align-items:baseline; gap:8px; margin-bottom:1px }
+.sa-card-name { font-weight:700; font-size:14px; color:var(--on-surface) }
+.sa-card-slug { font-size:11px; color:var(--on-surface-dim); font-family:monospace }
+.sa-card-desc { font-size:12px; color:var(--on-surface-variant); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px }
+/* Meta area — icon chips between name and actions */
+.sa-card-meta { display:flex; align-items:center; gap:8px; flex-shrink:0 }
+.sa-badge-model { padding:4px 10px; border-radius:var(--radius-pill); font-size:11px; font-weight:600; white-space:nowrap; background:rgba(0,122,255,0.1); color:var(--info) }
+.sa-verify-chip { width:28px; height:28px; border-radius:50%; border:1px solid var(--outline-variant); display:flex; align-items:center; justify-content:center; color:var(--on-surface-dim); flex-shrink:0; background:none }
+.sa-verify-chip.sa-verify-active { border-color:rgba(52,199,89,0.5); color:var(--success); background:rgba(52,199,89,0.08) }
+.sa-stat-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 9px; border-radius:var(--radius-pill); background:var(--surface-container-low); font-size:11px; font-weight:600; color:var(--on-surface-dim); white-space:nowrap }
+.sa-card-right { display:flex; align-items:center; gap:8px; flex-shrink:0 }
+.sa-icon-btn { width:28px; height:28px; border-radius:50%; border:1px solid var(--outline-variant); background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--on-surface-dim); transition:all 0.15s }
+.sa-icon-btn:hover { background:var(--surface-container-low); color:var(--on-surface); box-shadow:var(--shadow-subtle) }
+.sa-icon-btn-del:hover { border-color:rgba(230,33,17,0.3); background:rgba(230,33,17,0.08); color:var(--error) }
+
+.sa-inline-form { display:none; margin-top:4px }
 
 /* Usage metrics */
 .sa-usage-panel { margin-top:24px }
-.sa-metrics-grid { display:grid; grid-template-columns:1.8fr 1fr 1fr 1fr; gap:12px; align-items:center }
-.sa-usage-stat { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px 12px; text-align:center; align-self:center }
+.sa-metrics-grid { display:grid; grid-template-columns:1.8fr 1fr 1fr 1fr; gap:12px; align-items:stretch }
+.sa-usage-stat { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px 12px; text-align:center }
 .sa-usage-stat-value { font-size:22px; font-weight:700; color:var(--on-surface) }
 .sa-usage-stat-label { font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim); margin-top:4px }
 .sa-top3-card { padding:16px }
@@ -259,14 +272,11 @@ function renderStyles(): string {
 .sa-empty-icon { font-size:32px; margin-bottom:8px }
 .sa-empty-text { color:var(--on-surface-dim); font-size:14px }
 
-@media (max-width:900px) {
-  .sa-card-info-grid { grid-template-columns:repeat(3,1fr) }
-}
 @media (max-width:768px) {
   .sa-basic-cols,.sa-func-cols { grid-template-columns:1fr }
   .sa-tool-grid { grid-template-columns:repeat(2,1fr) }
   .sa-metrics-grid { grid-template-columns:1fr 1fr }
-  .sa-card-info-grid { grid-template-columns:repeat(2,1fr) }
+  .sa-card-desc { max-width:280px }
 }
 </style>`
 }
@@ -528,53 +538,48 @@ export function renderSubagentsSection(
         <div class="sa-empty-text">${l('noSubagents', lang)}</div>
       </div>`
     : types.map(t => {
-        const toolsLabel = t.allowedTools.length === 0 ? l('allTools', lang) : String(t.allowedTools.length)
-        const catsLabel = t.allowedKnowledgeCategories.length === 0 ? l('allCats', lang) : String(t.allowedKnowledgeCategories.length)
+        const toolsCount = t.allowedTools.length === 0 ? availableTools.length : t.allowedTools.length
+        const catsCount = t.allowedKnowledgeCategories.length === 0 ? availableKnowledgeCategories.length : t.allowedKnowledgeCategories.length
+        const toolsDisplay = String(toolsCount).padStart(3, '0')
+        const catsDisplay = String(catsCount).padStart(3, '0')
         const modelLabel = t.modelTier === 'complex' ? 'Complejo' : 'Normal'
 
         return `
-      <div class="panel${!t.enabled ? ' sa-card-disabled' : ''}" data-sa-id="${esc(t.id)}" style="padding:var(--section-gap)">
-        <div class="sa-card-layout">
-          <div class="sa-card-body">
-            <div class="sa-card-name">${esc(t.name)}</div>
-            <div class="sa-card-slug">${esc(t.slug)}</div>
-            ${t.description ? `<div class="sa-card-desc">${esc(t.description)}</div>` : ''}
-            <div class="sa-card-info-grid">
-              <div class="sa-card-info-item">
-                <span class="sa-info-key">${l('cardModel', lang)}</span>
-                <span class="sa-info-val">${esc(modelLabel)}</span>
-              </div>
-              <div class="sa-card-info-item">
-                <span class="sa-info-key">${l('cardVerify', lang)}</span>
-                <span class="sa-info-val ${t.verifyResult ? 'sa-info-yes' : 'sa-info-no'}">${t.verifyResult ? l('cardYes', lang) : l('cardNo', lang)}</span>
-              </div>
-              <div class="sa-card-info-item">
-                <span class="sa-info-key">${l('cardSpawn', lang)}</span>
-                <span class="sa-info-val ${t.canSpawnChildren ? 'sa-info-yes' : 'sa-info-no'}">${t.canSpawnChildren ? l('cardYes', lang) : l('cardNo', lang)}</span>
-              </div>
-              <div class="sa-card-info-item">
-                <span class="sa-info-key">${l('cardTools', lang)}</span>
-                <span class="sa-info-val">${esc(toolsLabel)}</span>
-              </div>
-              <div class="sa-card-info-item">
-                <span class="sa-info-key">${l('cardKnowledge', lang)}</span>
-                <span class="sa-info-val">${esc(catsLabel)}</span>
-              </div>
+      <div class="panel${!t.enabled ? ' sa-card-disabled' : ''}" data-sa-id="${esc(t.id)}" style="padding:var(--panel-padding)">
+        <!-- Card preview — horizontal layout -->
+        <div class="sa-card-row">
+          <div class="sa-card-main">
+            <div class="sa-card-name-row">
+              <span class="sa-card-name">${esc(t.name)}</span>
+              <span class="sa-card-slug">${esc(t.slug)}</span>
             </div>
+            ${t.description ? `<div class="sa-card-desc">${esc(t.description)}</div>` : ''}
           </div>
-          <!-- Actions: edit/delete + toggle at end -->
-          <div class="sa-card-actions">
-            <button type="button" class="act-btn act-btn-config act-btn--compact sa-edit-btn"
+          <!-- Meta — badges between name and actions -->
+          <div class="sa-card-meta">
+            <span class="sa-badge-model">${esc(modelLabel)}</span>
+            <span class="sa-verify-chip${t.verifyResult ? ' sa-verify-active' : ''}" title="${l('cardVerify', lang)}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            <span class="sa-stat-chip" title="${l('cardTools', lang)}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              ${toolsDisplay}
+            </span>
+            <span class="sa-stat-chip" title="${l('cardKnowledge', lang)}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              ${catsDisplay}
+            </span>
+          </div>
+          <div class="sa-card-right">
+            <button type="button" class="sa-icon-btn sa-edit-btn" title="${l('edit', lang)}"
               style="${!t.enabled ? 'display:none' : ''}"
               onclick="saEdit('${esc(t.id)}')">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              ${l('edit', lang)}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
             </button>
-            <button type="button" class="act-btn act-btn-remove act-btn--compact sa-delete-btn"
+            <button type="button" class="sa-icon-btn sa-icon-btn-del sa-delete-btn" title="${l('delete', lang)}"
               style="${t.enabled ? 'display:none' : ''}"
               onclick="saDelete('${esc(t.id)}')">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-              ${l('delete', lang)}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
             </button>
             <label class="toggle toggle-sm">
               <input type="checkbox" class="sa-card-toggle"${t.enabled ? ' checked' : ''}
@@ -752,7 +757,8 @@ function renderScript(lang: Lang): string {
     var top = document.getElementById('sa-form')
     if (top) top.style.display = 'none'
     document.querySelectorAll('.sa-inline-form').forEach(function(f) { f.style.display = 'none' })
-    document.querySelectorAll('.sa-card-layout').forEach(function(v) { v.style.display = 'flex' })
+    document.querySelectorAll('.sa-card-row').forEach(function(v) { v.style.display = 'flex' })
+    document.querySelectorAll('[data-sa-id]').forEach(function(card) { card.classList.remove('sa-card-editing') })
   }
 
   // Collect selected tools from a form container (only from enabled groups)
@@ -860,10 +866,11 @@ function renderScript(lang: Lang): string {
     closeAllForms()
     var card = document.querySelector('[data-sa-id="' + id + '"]')
     if (!card) return
-    var layout = card.querySelector('.sa-card-layout')
+    var row = card.querySelector('.sa-card-row')
     var form = card.querySelector('.sa-inline-form')
-    if (!layout || !form) return
-    layout.style.display = 'none'
+    if (!row || !form) return
+    row.style.display = 'none'
+    card.classList.add('sa-card-editing')
     form.style.display = 'block'
     form.querySelectorAll('select.js-custom-select:not([data-custom-init])').forEach(function(sel) {
       if (typeof window._initOneCustomSelect === 'function') window._initOneCustomSelect(sel)
@@ -874,9 +881,10 @@ function renderScript(lang: Lang): string {
   window.saCancelEdit = function(id) {
     var card = document.querySelector('[data-sa-id="' + id + '"]')
     if (!card) return
-    var layout = card.querySelector('.sa-card-layout')
+    var row = card.querySelector('.sa-card-row')
     var form = card.querySelector('.sa-inline-form')
-    if (layout) layout.style.display = 'flex'
+    card.classList.remove('sa-card-editing')
+    if (row) row.style.display = 'flex'
     if (form) form.style.display = 'none'
   }
 
