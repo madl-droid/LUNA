@@ -379,7 +379,9 @@ export class MemoryManager {
   }
 
   async purgeOldArchives(): Promise<number> {
-    const years = this.config.MEMORY_ARCHIVE_RETENTION_YEARS ?? 5
+    const years = this.config.MEMORY_ARCHIVE_RETENTION_YEARS ?? 2
+    if (years === 0) return 0   // Desactivado — no purgar
+    if (years >= 999) return 0  // Vitalicio — no purgar
     return await this.pg.purgeOldArchives(years)
   }
 

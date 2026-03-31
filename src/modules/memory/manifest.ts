@@ -27,6 +27,7 @@ const manifest: ModuleManifest = {
     MEMORY_BUFFER_MESSAGE_COUNT: numEnv(50),
     MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN: numEnv(30),
     MEMORY_SESSION_MAX_TTL_HOURS: numEnv(24),
+    MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnv(12),
     MEMORY_COMPRESSION_THRESHOLD: numEnv(30),
     MEMORY_COMPRESSION_KEEP_RECENT: numEnv(10),
 
@@ -37,12 +38,15 @@ const manifest: ModuleManifest = {
 
     // Retention and purge
     MEMORY_SUMMARY_RETENTION_DAYS: numEnv(90),
-    MEMORY_ARCHIVE_RETENTION_YEARS: numEnv(5),
+    MEMORY_ARCHIVE_RETENTION_YEARS: numEnv(2),
     MEMORY_PIPELINE_LOGS_RETENTION_DAYS: numEnv(90),
-    MEMORY_MEDIA_IMAGE_RETENTION_YEARS: numEnv(5),
+    MEMORY_MEDIA_RETENTION_MONTHS: numEnv(24),
     MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolEnv(true),
     MEMORY_PURGE_MERGED_SUMMARIES: boolEnv(false),
     MEMORY_RECOMPRESSION_INTERVAL_DAYS: numEnv(30),
+
+    // Prompt cache (shared with LLM module)
+    LLM_PROMPT_CACHE_ENABLED: boolEnv(true),
 
     // Batch crons
     MEMORY_BATCH_COMPRESS_CRON: z.string().default('0 2 * * *'),
@@ -64,11 +68,23 @@ const manifest: ModuleManifest = {
     group: 'data',
     icon: '&#128190;',
     fields: [
-      // ── Conversaciones activas ──
-      { key: '_div_sessions', type: 'divider', label: { es: 'Conversaciones activas', en: 'Active conversations' } },
-      { key: 'MEMORY_BUFFER_MESSAGE_COUNT', type: 'number', label: { es: 'Mensajes en buffer', en: 'Buffer message count' }, info: { es: 'Mensajes recientes que el agente mantiene en memoria inmediata para responder con contexto', en: 'Recent messages the agent keeps in immediate memory for context-aware responses' }, width: 'half' },
-      { key: 'MEMORY_SESSION_MAX_TTL_HOURS', type: 'number', label: { es: 'Duracion maxima de sesion (h)', en: 'Max session duration (h)' }, info: { es: 'Horas antes de que una sesion activa se cierre automaticamente', en: 'Hours before an active session is automatically closed' }, width: 'half' },
-      { key: 'MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN', type: 'number', label: { es: 'Cierre por inactividad (min)', en: 'Inactivity close (min)' }, info: { es: 'Minutos sin mensajes para cerrar la sesion', en: 'Minutes without messages to close session' }, width: 'half' },
+      // ── Sesiones ──
+      { key: '_div_sessions', type: 'divider', label: { es: 'Sesiones', en: 'Sessions' } },
+      {
+        key: 'MEMORY_SESSION_REOPEN_WINDOW_HOURS',
+        type: 'number',
+        label: { es: 'Ventana de reapertura (h)', en: 'Session reopen window (h)' },
+        info: { es: 'Horas en que un nuevo mensaje reactiva la sesion anterior en vez de abrir una nueva. Maximo 24h.', en: 'Hours in which a new message reactivates the previous session instead of opening a new one. Max 24h.' },
+        width: 'half',
+        min: 1,
+        max: 24,
+      },
+      {
+        key: 'LLM_PROMPT_CACHE_ENABLED',
+        type: 'boolean',
+        label: { es: 'Cache de prompts', en: 'Prompt cache' },
+        info: { es: 'Cachea el system prompt y el historial para reducir costos en conversaciones largas', en: 'Caches the system prompt and history to reduce costs in long conversations' },
+      },
 
       // ── Compresion ──
       { key: '_div_compression', type: 'divider', label: { es: 'Compresion de memoria', en: 'Memory compression' } },
@@ -80,10 +96,32 @@ const manifest: ModuleManifest = {
 
       // ── Retencion ──
       { key: '_div_retention', type: 'divider', label: { es: 'Retencion de datos', en: 'Data retention' } },
-      { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resumenes (dias)', en: 'Summaries (days)' }, info: { es: 'Dias antes de eliminar resumenes de sesion', en: 'Days before deleting session summaries' }, width: 'half' },
-      { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Logs del pipeline (dias)', en: 'Pipeline logs (days)' }, info: { es: 'Dias antes de eliminar registros de procesamiento', en: 'Days before deleting processing logs' }, width: 'half' },
-      { key: 'MEMORY_ARCHIVE_RETENTION_YEARS', type: 'number', label: { es: 'Archivos legales (anos)', en: 'Legal archives (years)' }, info: { es: 'Anos de retencion de archivos de conversacion por cumplimiento', en: 'Years to retain conversation archives for compliance' }, width: 'half' },
-      { key: 'MEMORY_MEDIA_IMAGE_RETENTION_YEARS', type: 'number', label: { es: 'Imagenes y media (anos)', en: 'Images and media (years)' }, info: { es: 'Anos de retencion de archivos media', en: 'Years to retain media files' }, width: 'half' },
+      { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resumenes de interacciones (dias)', en: 'Interaction summaries (days)' }, info: { es: 'Dias antes de eliminar resumenes de sesion', en: 'Days before deleting session summaries' }, width: 'half' },
+      { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Registros del sistema (dias)', en: 'System logs (days)' }, info: { es: 'Dias antes de eliminar registros de procesamiento interno', en: 'Days before deleting internal processing logs' }, width: 'half' },
+      {
+        key: 'MEMORY_ARCHIVE_RETENTION_YEARS',
+        type: 'select',
+        label: { es: 'Duracion del backup legal', en: 'Legal backup duration' },
+        info: { es: 'Tiempo de retencion de conversaciones completas para cumplimiento legal. "Desactivado" no guarda backups.', en: 'Retention time for full conversations for legal compliance. "Disabled" skips backups.' },
+        width: 'half',
+        options: [
+          { value: '0', label: { es: 'Desactivado', en: 'Disabled' } },
+          { value: '1', label: { es: '1 ano', en: '1 year' } },
+          { value: '2', label: { es: '2 anos', en: '2 years' } },
+          { value: '5', label: { es: '5 anos', en: '5 years' } },
+          { value: '10', label: { es: '10 anos', en: '10 years' } },
+          { value: '999', label: { es: 'Vitalicio', en: 'Lifetime' } },
+        ],
+      },
+      {
+        key: 'MEMORY_MEDIA_RETENTION_MONTHS',
+        type: 'number',
+        label: { es: 'Almacenamiento de archivos (meses)', en: 'File storage (months)' },
+        info: { es: 'Meses de retencion de imagenes y archivos multimedia. Maximo 120 meses (10 anos).', en: 'Months to retain images and media files. Maximum 120 months (10 years).' },
+        width: 'half',
+        min: 1,
+        max: 120,
+      },
       { key: 'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', type: 'boolean', label: { es: 'Borrar mensajes tras comprimir', en: 'Purge messages after compress' }, info: { es: 'Eliminar mensajes originales una vez generado el resumen', en: 'Delete original messages once summary is generated' } },
       { key: 'MEMORY_PURGE_MERGED_SUMMARIES', type: 'boolean', label: { es: 'Borrar resumenes fusionados', en: 'Purge merged summaries' }, info: { es: 'Eliminar resumenes intermedios ya integrados en la memoria permanente', en: 'Delete intermediate summaries already integrated into permanent memory' } },
       { key: 'MEMORY_RECOMPRESSION_INTERVAL_DAYS', type: 'number', label: { es: 'Re-compresion (dias)', en: 'Recompression interval (days)' }, info: { es: 'Dias entre re-compresiones de la memoria permanente del contacto', en: 'Days between re-compressions of permanent contact memory' } },
@@ -104,6 +142,7 @@ const manifest: ModuleManifest = {
     const config = registry.getConfig<{
       MEMORY_BUFFER_MESSAGE_COUNT: number
       MEMORY_SESSION_MAX_TTL_HOURS: number
+      MEMORY_SESSION_REOPEN_WINDOW_HOURS: number
       MEMORY_COMPRESSION_THRESHOLD: number
       MEMORY_COMPRESSION_KEEP_RECENT: number
       MEMORY_COMPRESSION_MODEL: string
@@ -112,7 +151,7 @@ const manifest: ModuleManifest = {
       MEMORY_SUMMARY_RETENTION_DAYS: number
       MEMORY_ARCHIVE_RETENTION_YEARS: number
       MEMORY_PIPELINE_LOGS_RETENTION_DAYS: number
-      MEMORY_MEDIA_IMAGE_RETENTION_YEARS: number
+      MEMORY_MEDIA_RETENTION_MONTHS: number
       MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolean
       MEMORY_PURGE_MERGED_SUMMARIES: boolean
       MEMORY_RECOMPRESSION_INTERVAL_DAYS: number
