@@ -240,16 +240,17 @@ function renderStyles(): string {
 .sa-card-name { font-weight:700; font-size:14px; color:var(--on-surface) }
 .sa-card-slug { font-size:11px; color:var(--on-surface-dim); font-family:monospace }
 .sa-card-desc { font-size:12px; color:var(--on-surface-variant); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px }
-/* Meta area — icon chips between name and actions */
-.sa-card-meta { display:flex; align-items:center; gap:8px; flex-shrink:0 }
+/* Meta area — chips + action buttons, all same height and gap */
+.sa-card-meta { display:flex; align-items:center; gap:6px; flex-shrink:0 }
+.sa-meta-item { display:inline-flex; align-items:center; gap:3px; position:relative }
 .sa-badge-model { padding:4px 10px; border-radius:var(--radius-pill); font-size:11px; font-weight:600; white-space:nowrap; background:rgba(0,122,255,0.1); color:var(--info) }
-.sa-verify-chip { width:28px; height:28px; border-radius:50%; border:1px solid var(--outline-variant); display:flex; align-items:center; justify-content:center; color:var(--on-surface-dim); flex-shrink:0; background:none }
-.sa-verify-chip.sa-verify-active { border-color:rgba(52,199,89,0.5); color:var(--success); background:rgba(52,199,89,0.08) }
 .sa-stat-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 9px; border-radius:var(--radius-pill); background:var(--surface-container-low); font-size:11px; font-weight:600; color:var(--on-surface-dim); white-space:nowrap }
-.sa-card-right { display:flex; align-items:center; gap:8px; flex-shrink:0 }
-.sa-icon-btn { width:28px; height:28px; border-radius:50%; border:1px solid var(--outline-variant); background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--on-surface-dim); transition:all 0.15s }
-.sa-icon-btn:hover { background:var(--surface-container-low); color:var(--on-surface); box-shadow:var(--shadow-subtle) }
-.sa-icon-btn-del:hover { border-color:rgba(230,33,17,0.3); background:rgba(230,33,17,0.08); color:var(--error) }
+.sa-verify-chip { background:var(--surface-container-low); color:var(--on-surface-dim) }
+.sa-verify-chip.sa-verify-active { background:rgba(52,199,89,0.1); color:var(--success) }
+.sa-edit-plain,.sa-del-plain { border:none; background:none; cursor:pointer; display:flex; align-items:center; padding:4px 6px; border-radius:6px; transition:all 0.15s; flex-shrink:0; color:var(--on-surface-dim) }
+.sa-edit-plain:hover { color:var(--primary); background:var(--primary-light) }
+.sa-del-plain:hover { color:var(--error); background:rgba(230,33,17,0.08) }
+.sa-card-right { display:flex; align-items:center; flex-shrink:0; margin-left:4px }
 
 .sa-inline-form { display:none; margin-top:4px }
 
@@ -555,32 +556,49 @@ export function renderSubagentsSection(
             </div>
             ${t.description ? `<div class="sa-card-desc">${esc(t.description)}</div>` : ''}
           </div>
-          <!-- Meta — badges between name and actions -->
+          <!-- Meta — all chips + edit/delete, uniform height/gap -->
           <div class="sa-card-meta">
-            <span class="sa-badge-model">${esc(modelLabel)}</span>
-            <span class="sa-verify-chip${t.verifyResult ? ' sa-verify-active' : ''}" title="${l('cardVerify', lang)}">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            </span>
-            <span class="sa-stat-chip" title="${l('cardTools', lang)}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-              ${toolsDisplay}
-            </span>
-            <span class="sa-stat-chip" title="${l('cardKnowledge', lang)}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-              ${catsDisplay}
-            </span>
-          </div>
-          <div class="sa-card-right">
-            <button type="button" class="sa-icon-btn sa-edit-btn" title="${l('edit', lang)}"
+            <div class="sa-meta-item">
+              <span class="sa-badge-model">${esc(modelLabel)}</span>
+              <button class="info-btn" type="button">i</button>
+              <span class="info-tooltip info-flip">${esc(l('modelHelp', lang))}</span>
+            </div>
+            <div class="sa-meta-item">
+              <span class="sa-stat-chip sa-verify-chip${t.verifyResult ? ' sa-verify-active' : ''}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                ok
+              </span>
+              <button class="info-btn" type="button">i</button>
+              <span class="info-tooltip info-flip">${esc(l('verifyHelp', lang))}</span>
+            </div>
+            <div class="sa-meta-item">
+              <span class="sa-stat-chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                ${toolsDisplay}
+              </span>
+              <button class="info-btn" type="button">i</button>
+              <span class="info-tooltip info-flip">${esc(l('toolsHelp', lang))}</span>
+            </div>
+            <div class="sa-meta-item">
+              <span class="sa-stat-chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                ${catsDisplay}
+              </span>
+              <button class="info-btn" type="button">i</button>
+              <span class="info-tooltip info-flip">${esc(l('knowledgeCategoriesHelp', lang))}</span>
+            </div>
+            <button type="button" class="sa-edit-plain sa-edit-btn"
               style="${!t.enabled ? 'display:none' : ''}"
               onclick="saEdit('${esc(t.id)}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
             </button>
-            <button type="button" class="sa-icon-btn sa-icon-btn-del sa-delete-btn" title="${l('delete', lang)}"
+            <button type="button" class="sa-del-plain sa-delete-btn"
               style="${t.enabled ? 'display:none' : ''}"
               onclick="saDelete('${esc(t.id)}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
             </button>
+          </div>
+          <div class="sa-card-right">
             <label class="toggle toggle-sm">
               <input type="checkbox" class="sa-card-toggle"${t.enabled ? ' checked' : ''}
                 onchange="saToggleEnabled('${esc(t.id)}', this.checked)">
