@@ -21,6 +21,10 @@ interface NightlyConfig {
   reportSheetName: string
 }
 
+interface EmbeddingService {
+  generateBatchEmbeddings(texts: string[]): Promise<(number[] | null)[]>
+}
+
 const DEFAULTS: NightlyConfig = {
   scoringEnabled: true,
   scoringThreshold: 40,
@@ -229,6 +233,9 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
     return
   }
 
+  // Embedding service for inline chunk embedding after each compression
+  const embeddingService = ctx.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
+
   logger.info({ traceId: ctx.traceId, batchSize: config.compressionBatchSize }, 'Compressing old sessions')
 
   try {
@@ -241,6 +248,7 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
     }
 
     let compressed = 0
+    let chunksEmbedded = 0
 
     for (const session of batch) {
       try {
@@ -293,7 +301,7 @@ ${conversationText.slice(0, 15000)}`
         const parsed = parseJSON(llmResult.text)
         if (!parsed?.summary) continue
 
-        await memoryManager.compressSession(
+        const summaryId = await memoryManager.compressSession(
           session.sessionId,
           getAgentId(ctx),
           session.contactId,
@@ -318,13 +326,36 @@ ${conversationText.slice(0, 15000)}`
         )
 
         compressed++
+
+        // Embed chunks inline — right after successful compression
+        if (embeddingService) {
+          try {
+            const chunks = await memoryManager.getChunksBySummary(summaryId)
+            if (chunks.length > 0) {
+              const texts = chunks.map(c => c.chunkText)
+              const embeddings = await embeddingService.generateBatchEmbeddings(texts)
+              for (let j = 0; j < chunks.length; j++) {
+                const emb = embeddings[j]
+                if (emb) {
+                  await memoryManager.updateChunkEmbedding(chunks[j]!.id, emb)
+                  chunksEmbedded++
+                }
+              }
+              logger.debug({ sessionId: session.sessionId, chunks: chunks.length, embedded: chunksEmbedded }, 'Chunks embedded inline')
+            }
+          } catch (embedErr) {
+            // Non-fatal: embedSummaryChunks (step 5) will catch stragglers
+            logger.warn({ err: embedErr, sessionId: session.sessionId, traceId: ctx.traceId }, 'Inline chunk embedding failed, will retry in step 5')
+          }
+        }
+
         logger.debug({ sessionId: session.sessionId, messages: messages.length }, 'Session compressed')
       } catch (err) {
         logger.warn({ err, sessionId: session.sessionId, traceId: ctx.traceId }, 'Failed to compress session')
       }
     }
 
-    logger.info({ traceId: ctx.traceId, eligible: batch.length, compressed }, 'Session compression complete')
+    logger.info({ traceId: ctx.traceId, eligible: batch.length, compressed, chunksEmbedded }, 'Session compression complete')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Session compression failed')
   }
@@ -622,11 +653,7 @@ async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<voi
   }
 }
 
-// ─── 5. Embed Summary Chunks ────────────────────
-
-interface EmbeddingService {
-  generateBatchEmbeddings(texts: string[]): Promise<(number[] | null)[]>
-}
+// ─── 5. Embed Summary Chunks (safety net for stragglers) ──────
 
 async function embedSummaryChunks(ctx: ProactiveJobContext): Promise<void> {
   const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
