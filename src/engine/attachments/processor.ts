@@ -1,13 +1,21 @@
-// LUNA Engine — Attachment Processor
-// Main service that orchestrates attachment processing: download, extract, validate, cache.
-// Reuses knowledge extractors (PDF, DOCX, XLSX, images) — does NOT duplicate extraction logic.
+// LUNA Engine — Attachment Processor (v2)
+// Orchestrates attachment processing with dual-result extraction:
+//   1. Code-processed result (text extraction, format conversion) — for embeddings
+//   2. LLM-enriched result (vision description, STT transcription) — for conversation injection
 //
 // KEY DESIGN: Each attachment is an INDEPENDENT unit — processed, validated,
 // and persisted to DB individually. Processing runs in parallel with
 // concurrency control (max 3 simultaneous) to avoid overloading the system.
 // All results are collected and returned as a single AttachmentContext.
+//
+// Size classification uses Gemini Embedding 2 token limit (8192) as threshold:
+//   - Small (≤ 8192 tokens): inject full extracted content with [Category] label
+//   - Large (> 8192 tokens): inject [Category] + LLM-generated description
+// Each processed attachment is stored in interaction DB as a message-like record.
 
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
+import { writeFile, mkdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
@@ -24,9 +32,10 @@ import type {
 import {
   MIME_TO_CATEGORY,
   CATEGORY_LABELS,
+  CATEGORY_LABEL_MAP,
   FALLBACK_MESSAGES,
   SYSTEM_HARD_LIMITS,
-  CHANNEL_SUPPORTED_CATEGORIES,
+  resolveEffectiveCategories,
 } from './types.js'
 import { validateInjection } from './injection-validator.js'
 import { transcribeAudio } from './audio-transcriber.js'
@@ -36,6 +45,30 @@ const logger = pino({ name: 'engine:attachments' })
 
 /** Max attachments processed simultaneously — prevents memory/CPU spikes */
 const MAX_CONCURRENT = 3
+
+/** Directory for stored image binaries (relative to process.cwd()) */
+const MEDIA_DIR = resolve(process.cwd(), 'instance', 'knowledge', 'media')
+
+/**
+ * Save an image binary to disk for re-consultation.
+ * Returns the relative file path (from instance/) or null on failure.
+ * Uses content hash prefix + sanitized filename to avoid collisions.
+ */
+async function saveImageToDisk(buffer: Buffer, filename: string): Promise<string | null> {
+  try {
+    await mkdir(MEDIA_DIR, { recursive: true })
+    const hash = createHash('sha256').update(buffer).digest('hex').substring(0, 12)
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 80)
+    const diskName = `${hash}_${safeName}`
+    const fullPath = join(MEDIA_DIR, diskName)
+    await writeFile(fullPath, buffer)
+    logger.debug({ filename, diskName }, 'Image binary saved to disk')
+    return `instance/knowledge/media/${diskName}`
+  } catch (err) {
+    logger.warn({ err, filename }, 'Failed to save image binary to disk')
+    return null
+  }
+}
 
 /**
  * Run async tasks in parallel with a concurrency limit.
@@ -115,11 +148,8 @@ export async function processAttachments(
 
   const attSlice = attachments.slice(0, effectiveMaxCount)
 
-  // Resolve effective enabled categories: intersection of channel config + platform capabilities
-  const platformCapabilities = CHANNEL_SUPPORTED_CATEGORIES[channelName] ?? []
-  const effectiveCategories = channelConfig.enabledCategories.filter(
-    cat => platformCapabilities.includes(cat),
-  )
+  // Resolve effective enabled categories: engine capabilities × platform capabilities × admin enabled
+  const effectiveCategories = resolveEffectiveCategories(channelName, channelConfig.enabledCategories)
   const effectiveChannelConfig: ChannelAttachmentConfig = {
     ...channelConfig,
     enabledCategories: effectiveCategories,
@@ -144,13 +174,16 @@ export async function processAttachments(
         return processed
       } catch (err) {
         logger.error({ filename: att.filename, err }, 'Attachment processing failed')
+        const failedCategory = resolveCategory(att.mimeType)
         const failed: ProcessedAttachment = {
           id: randomUUID(),
           filename: att.filename,
           mimeType: att.mimeType,
-          category: resolveCategory(att.mimeType),
+          category: failedCategory,
           sizeBytes: att.size,
           extractedText: null,
+          llmText: null,
+          categoryLabel: CATEGORY_LABEL_MAP[failedCategory] ?? failedCategory,
           summary: null,
           tokenEstimate: 0,
           sizeTier: 'small',
@@ -159,6 +192,8 @@ export async function processAttachments(
           injectionRisk: false,
           sourceType: 'file_attachment',
           sourceRef: att.id,
+          llmEnriched: false,
+          filePath: null,
         }
         persistOneAttachment(failed, sessionId, messageId, channelName, db).catch(e =>
           logger.warn({ e, filename: att.filename }, 'Failed to persist failed attachment'),
@@ -214,6 +249,8 @@ async function processOneAttachment(
   const id = randomUUID()
   const category = resolveCategory(att.mimeType)
 
+  const categoryLabel = CATEGORY_LABEL_MAP[category] ?? category
+
   // Check if category is enabled for this channel
   if (!channelConfig.enabledCategories.includes(category)) {
     const label = CATEGORY_LABELS[category] ?? att.mimeType
@@ -225,6 +262,8 @@ async function processOneAttachment(
       category,
       sizeBytes: att.size,
       extractedText: null,
+      llmText: null,
+      categoryLabel,
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
@@ -233,6 +272,8 @@ async function processOneAttachment(
       injectionRisk: false,
       sourceType: 'file_attachment',
       sourceRef: att.id,
+      llmEnriched: false,
+      filePath: null,
     }
   }
 
@@ -249,6 +290,8 @@ async function processOneAttachment(
       category,
       sizeBytes: att.size,
       extractedText: null,
+      llmText: null,
+      categoryLabel,
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
@@ -257,6 +300,8 @@ async function processOneAttachment(
       injectionRisk: false,
       sourceType: 'file_attachment',
       sourceRef: att.id,
+      llmEnriched: false,
+      filePath: null,
     }
   }
 
@@ -269,9 +314,48 @@ async function processOneAttachment(
   }
 
   // Use global extractors for content extraction
-  const { extractContent } = await import('../../extractors/index.js')
-  const extracted = await extractContent(data, att.filename, att.mimeType, registry)
-  const rawText = extracted.text?.trim() ?? ''
+  const { extractContent, enrichWithLLM, classifyMimeType } = await import('../../extractors/index.js')
+  const { extractImage } = await import('../../extractors/image.js')
+  const { extractVideo } = await import('../../extractors/video.js')
+
+  const mimeCategory = classifyMimeType(att.mimeType)
+
+  // ── Step 1: Code extraction (result for embeddings) ──
+  let rawText = ''
+  let llmText: string | null = null
+  let llmEnriched = false
+  let filePath: string | null = null
+
+  if (mimeCategory === 'image') {
+    // Image: code extraction → metadata only, LLM → vision description
+    const imageResult = await extractImage(data, att.filename, att.mimeType)
+    const enriched = await enrichWithLLM(imageResult, registry)
+    rawText = enriched.kind === 'image' && enriched.llmEnrichment?.description
+      ? enriched.llmEnrichment.description
+      : `[Imagen: ${att.filename}]`
+    llmText = enriched.kind === 'image' ? enriched.llmEnrichment?.description ?? null : null
+    llmEnriched = !!llmText
+    // Save image binary to disk for re-consultation
+    filePath = await saveImageToDisk(data, att.filename)
+  } else if (mimeCategory === 'video') {
+    // Video: code extraction → format/duration, LLM → multimodal description + transcription
+    const videoResult = await extractVideo(data, att.filename, att.mimeType)
+    const enriched = await enrichWithLLM(videoResult, registry)
+    if (enriched.kind === 'video' && enriched.llmEnrichment) {
+      const parts: string[] = []
+      if (enriched.llmEnrichment.description) parts.push(enriched.llmEnrichment.description)
+      if (enriched.llmEnrichment.transcription) parts.push(`[Transcripción]: ${enriched.llmEnrichment.transcription}`)
+      rawText = parts.join('\n\n')
+      llmText = rawText
+      llmEnriched = true
+    } else {
+      rawText = `[Video: ${att.filename}, ${videoResult.durationSeconds}s]`
+    }
+  } else {
+    // Text-based formats (PDF, DOCX, XLSX, TXT, etc.)
+    const extracted = await extractContent(data, att.filename, att.mimeType, registry)
+    rawText = extracted.text?.trim() ?? ''
+  }
 
   if (!rawText) {
     return {
@@ -281,14 +365,18 @@ async function processOneAttachment(
       category,
       sizeBytes: att.size,
       extractedText: null,
-      summary: `[Adjunto: ${att.filename}]`,
+      llmText: null,
+      categoryLabel,
+      summary: `[${categoryLabel}] ${att.filename} — no se pudo extraer contenido`,
       tokenEstimate: 0,
       sizeTier: 'small',
       cacheKey: null,
       status: 'extraction_failed',
       injectionRisk: false,
-      sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
+      sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
       sourceRef: att.id,
+      llmEnriched,
+      filePath,
     }
   }
 
@@ -298,6 +386,33 @@ async function processOneAttachment(
   // Token estimation (~4 chars per token)
   const tokenEstimate = Math.ceil(rawText.length / 4)
   const sizeTier = classifySizeTier(tokenEstimate, engineConfig)
+
+  // ── Step 2: For large text-based files, generate LLM description ──
+  if (!llmEnriched && sizeTier === 'large') {
+    try {
+      const descResult = await registry.callHook('llm:chat', {
+        task: 'extractor-summarize-large',
+        system: 'Eres un asistente que resume documentos. Genera una descripción concisa pero completa del documento, cubriendo los puntos principales, estructura y datos relevantes. Responde en español. Máximo 500 palabras.',
+        messages: [{
+          role: 'user' as const,
+          content: [
+            { type: 'text' as const, text: `Resume este documento (${att.filename}):\n\n${rawText.slice(0, 24000)}` },
+          ],
+        }],
+        maxTokens: 1500,
+        temperature: 0.1,
+      })
+      if (descResult && typeof descResult === 'object' && 'text' in descResult) {
+        const desc = (descResult as { text: string }).text?.trim()
+        if (desc) {
+          llmText = desc
+          llmEnriched = true
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, filename: att.filename }, 'Failed to generate LLM description for large file')
+    }
+  }
 
   // Cache large documents in Redis for query_attachment tool
   let cacheKey: string | null = null
@@ -311,11 +426,12 @@ async function processOneAttachment(
     }
   }
 
-  // Build summary for large docs
+  // Build summary for large docs (uses LLM description if available, otherwise truncate)
   let summary: string | null = null
   if (sizeTier === 'large') {
-    const maxChars = engineConfig.summaryMaxTokens * 4
-    summary = `[Resumen de ${att.filename}]: ${rawText.slice(0, maxChars)}...`
+    summary = llmText
+      ? `[${categoryLabel}] ${att.filename} — ${llmText}`
+      : `[${categoryLabel}] ${att.filename}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
   }
 
   return {
@@ -325,14 +441,18 @@ async function processOneAttachment(
     category,
     sizeBytes: att.size,
     extractedText: validation.sanitizedText,
+    llmText,
+    categoryLabel,
     summary,
     tokenEstimate,
     sizeTier,
     cacheKey,
     status: 'processed',
     injectionRisk: validation.injectionRisk,
-    sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
+    sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
     sourceRef: att.id,
+    llmEnriched,
+    filePath,
   }
 }
 
@@ -343,6 +463,7 @@ async function processAudio(
   engineConfig: AttachmentEngineConfig,
   registry: Registry,
 ): Promise<ProcessedAttachment> {
+  const categoryLabel = CATEGORY_LABEL_MAP.audio
   const transcription = await transcribeAudio(data, att.mimeType, registry)
 
   if (!transcription) {
@@ -353,7 +474,9 @@ async function processAudio(
       category: 'audio',
       sizeBytes: att.size,
       extractedText: null,
-      summary: `[Audio: ${att.filename} — no se pudo transcribir]`,
+      llmText: null,
+      categoryLabel,
+      summary: `[${categoryLabel}] ${att.filename} — no se pudo transcribir`,
       tokenEstimate: 0,
       sizeTier: 'small',
       cacheKey: null,
@@ -361,6 +484,8 @@ async function processAudio(
       injectionRisk: false,
       sourceType: 'audio_transcription',
       sourceRef: att.id,
+      llmEnriched: false,
+      filePath: null,
     }
   }
 
@@ -375,6 +500,8 @@ async function processAudio(
     category: 'audio',
     sizeBytes: att.size,
     extractedText: validation.sanitizedText,
+    llmText: transcription, // STT transcription IS the LLM text
+    categoryLabel,
     summary: null,
     tokenEstimate,
     sizeTier,
@@ -383,6 +510,8 @@ async function processAudio(
     injectionRisk: validation.injectionRisk,
     sourceType: 'audio_transcription',
     sourceRef: att.id,
+    llmEnriched: true, // STT is LLM-powered
+    filePath: null,
   }
 }
 
@@ -456,8 +585,8 @@ async function persistOneAttachment(
 
   await db.query(
     `INSERT INTO attachment_extractions
-     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref, file_path)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      ON CONFLICT DO NOTHING`,
     [
       att.id,
@@ -470,10 +599,13 @@ async function persistOneAttachment(
       att.category,
       att.sourceType,
       att.extractedText,
+      att.llmText,
+      att.categoryLabel,
       att.tokenEstimate,
       att.status,
       att.injectionRisk,
       att.sourceRef,
+      att.filePath,
     ],
   )
 }

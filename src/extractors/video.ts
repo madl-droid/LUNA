@@ -10,7 +10,8 @@ import { writeFile, unlink, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { VideoResult } from './types.js'
+import type { VideoResult, LLMEnrichment } from './types.js'
+import type { Registry } from '../kernel/registry.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:video' })
@@ -81,6 +82,73 @@ export async function extractVideo(
       originalName: fileName,
       extractorUsed: 'video-ffprobe',
     },
+  }
+}
+
+// ═══════════════════════════════════════════
+// LLM Enrichment: Descripción + Transcripción via Gemini Multimodal
+// Gemini acepta video directamente (MP4, MOV, WebM, etc.)
+// ═══════════════════════════════════════════
+
+/**
+ * Describe y transcribe un video via Gemini multimodal.
+ * Recibe un VideoResult ya procesado (code-only) y le agrega llmEnrichment.
+ * Si el video tiene audio, pide transcripción además de descripción visual.
+ */
+export async function describeVideo(
+  videoResult: VideoResult,
+  registry: Registry,
+): Promise<VideoResult> {
+  try {
+    const base64Video = videoResult.buffer.toString('base64')
+
+    const hasAudioInstr = videoResult.hasAudio
+      ? '\nEl video tiene audio. Incluye también la transcripción del audio al final, precedida por "[Transcripción]:".'
+      : ''
+
+    const result = await registry.callHook('llm:chat', {
+      task: 'extractor-video-multimodal',
+      system: `Eres un asistente que analiza videos. Describe el contenido visual de forma detallada: escenas, textos visibles, personas, objetos, acciones, transiciones. Sé exhaustivo y preciso. Responde en español.${hasAudioInstr}`,
+      messages: [{
+        role: 'user' as const,
+        content: [
+          { type: 'video' as const, data: base64Video, mimeType: videoResult.mimeType },
+          { type: 'text' as const, text: 'Describe detalladamente el contenido de este video.' },
+        ],
+      }],
+      maxTokens: 4096,
+      temperature: 0.1,
+    })
+
+    if (result && typeof result === 'object' && 'text' in result) {
+      const fullText = (result as { text: string }).text?.trim()
+      if (fullText) {
+        // Separar descripción de transcripción si existe
+        let description = fullText
+        let transcription: string | undefined
+        const transcriptionMarker = '[Transcripción]:'
+        const markerIdx = fullText.indexOf(transcriptionMarker)
+        if (markerIdx !== -1) {
+          description = fullText.slice(0, markerIdx).trim()
+          transcription = fullText.slice(markerIdx + transcriptionMarker.length).trim()
+        }
+
+        const enrichment: LLMEnrichment = {
+          description,
+          transcription,
+          provider: (result as { provider?: string }).provider ?? 'google',
+          generatedAt: new Date(),
+        }
+        logger.info({ format: videoResult.format, duration: videoResult.durationSeconds, descLength: description.length }, 'Video described via multimodal')
+        return { ...videoResult, llmEnrichment: enrichment }
+      }
+    }
+
+    logger.warn({ format: videoResult.format }, 'Video multimodal returned empty — no enrichment')
+    return videoResult
+  } catch (err) {
+    logger.warn({ err, format: videoResult.format }, 'describeVideo failed — returning without enrichment')
+    return videoResult
   }
 }
 

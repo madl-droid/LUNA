@@ -4,7 +4,11 @@
 // Secciones: chapters del video o bloques de 5 minutos de transcript.
 // Thumbnail pertenece a la cabecera, no a secciones.
 
+import type { Registry } from '../kernel/registry.js'
 import type { YouTubeResult, YouTubeHeader, YouTubeTranscriptSection } from './types.js'
+import pino from 'pino'
+
+const logger = pino({ name: 'extractors:youtube' })
 
 const SEGMENT_SECONDS = 300  // 5 minutos
 const OVERLAP_SECONDS = 30
@@ -157,6 +161,57 @@ export function extractYouTube(input: YouTubeInput): YouTubeResult {
       originalName: input.title,
       extractorUsed: 'youtube',
     },
+  }
+}
+
+// ═══════════════════════════════════════════
+// LLM Enrichment: Descripción del thumbnail via Vision
+// ═══════════════════════════════════════════
+
+/**
+ * Describe el thumbnail del video via Gemini Vision.
+ * Recibe un YouTubeResult y describe el thumbnail si existe.
+ * Retorna el YouTubeResult con header.thumbnailDescription populado.
+ */
+export async function describeThumbnail(
+  youtubeResult: YouTubeResult,
+  registry: Registry,
+): Promise<YouTubeResult> {
+  if (!youtubeResult.header.thumbnail) return youtubeResult
+
+  try {
+    const base64 = youtubeResult.header.thumbnail.toString('base64')
+    const mimeType = youtubeResult.header.thumbnailMimeType ?? 'image/jpeg'
+
+    const result = await registry.callHook('llm:chat', {
+      task: 'extractor-thumbnail-vision',
+      system: 'Eres un asistente que describe thumbnails de videos de YouTube. Describe brevemente el contenido visual: textos, personas, objetos, estilo gráfico. Sé conciso (2-3 oraciones). Responde en español.',
+      messages: [{
+        role: 'user' as const,
+        content: [
+          { type: 'image_url' as const, data: base64, mimeType },
+          { type: 'text' as const, text: `Describe el thumbnail del video "${youtubeResult.header.title}".` },
+        ],
+      }],
+      maxTokens: 300,
+      temperature: 0.1,
+    })
+
+    if (result && typeof result === 'object' && 'text' in result) {
+      const desc = (result as { text: string }).text?.trim()
+      if (desc) {
+        return {
+          ...youtubeResult,
+          header: { ...youtubeResult.header, thumbnailDescription: desc },
+        }
+      }
+    }
+
+    logger.warn({ videoId: youtubeResult.videoId }, 'Thumbnail vision returned empty')
+    return youtubeResult
+  } catch (err) {
+    logger.warn({ err, videoId: youtubeResult.videoId }, 'describeThumbnail failed')
+    return youtubeResult
   }
 }
 

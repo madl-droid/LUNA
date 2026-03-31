@@ -98,7 +98,7 @@ export interface HistoryMessage {
 
 export interface AttachmentMetadata {
   index: number
-  type: 'document' | 'image' | 'audio' | 'spreadsheet' | 'presentation' | 'text' | 'unknown'
+  type: 'document' | 'image' | 'audio' | 'video' | 'spreadsheet' | 'presentation' | 'text' | 'unknown'
   name: string | null
   size: number | null
   mime: string | null

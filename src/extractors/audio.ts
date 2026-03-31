@@ -10,7 +10,8 @@ import { writeFile, unlink, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { AudioResult } from './types.js'
+import type { AudioResult, LLMEnrichment } from './types.js'
+import type { Registry } from '../kernel/registry.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:audio' })
@@ -92,6 +93,59 @@ export async function extractAudio(
       originalName: fileName,
       extractorUsed: 'audio-ffprobe',
     },
+  }
+}
+
+// ═══════════════════════════════════════════
+// LLM Enrichment: Transcripción via STT
+// Usa llm:chat con task 'stt' y content part audio.
+// ═══════════════════════════════════════════
+
+/**
+ * Transcribe audio via LLM STT (Gemini).
+ * Recibe un AudioResult ya procesado (code-only) y le agrega llmEnrichment.
+ * Retorna el mismo AudioResult con llmEnrichment populado.
+ */
+export async function transcribeAudioContent(
+  audioResult: AudioResult,
+  registry: Registry,
+): Promise<AudioResult> {
+  try {
+    const base64Audio = audioResult.buffer.toString('base64')
+    const cleanMime = audioResult.mimeType.split(';')[0]!.trim()
+
+    const result = await registry.callHook('llm:chat', {
+      task: 'stt',
+      messages: [{
+        role: 'user' as const,
+        content: [
+          { type: 'audio' as const, data: base64Audio, mimeType: cleanMime },
+          { type: 'text' as const, text: 'Transcribe el audio anterior. Devuelve SOLO el texto transcrito, sin prefijos ni explicaciones.' },
+        ],
+      }],
+      maxTokens: 4096,
+      temperature: 0.1,
+    })
+
+    if (result && typeof result === 'object' && 'text' in result) {
+      const transcription = (result as { text: string }).text?.trim()
+      if (transcription) {
+        const enrichment: LLMEnrichment = {
+          description: `[Transcripción de audio ${audioResult.format}, ${Math.round(audioResult.durationSeconds)}s]`,
+          transcription,
+          provider: (result as { provider?: string }).provider ?? 'google',
+          generatedAt: new Date(),
+        }
+        logger.info({ format: audioResult.format, duration: audioResult.durationSeconds, textLength: transcription.length }, 'Audio transcribed via STT')
+        return { ...audioResult, llmEnrichment: enrichment }
+      }
+    }
+
+    logger.warn({ format: audioResult.format }, 'STT returned empty — no enrichment')
+    return audioResult
+  } catch (err) {
+    logger.warn({ err, format: audioResult.format }, 'transcribeAudioContent failed — returning without enrichment')
+    return audioResult
   }
 }
 

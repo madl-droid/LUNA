@@ -26,6 +26,8 @@ import { normalizeText, detectMessageType } from '../utils/normalizer.js'
 import { detectInputInjection } from '../utils/injection-detector.js'
 import { searchKnowledge } from '../utils/rag-local.js'
 import { classifyAttachments } from '../attachments/classifier.js'
+import { processAttachments, buildFallbackMessages } from '../attachments/processor.js'
+import type { ChannelAttachmentConfig, AttachmentEngineConfig } from '../attachments/types.js'
 import { searchFreshdeskIndex } from '../../tools/freshdesk/freshdesk-rag.js'
 import type { FreshdeskMatch } from '../../tools/freshdesk/types.js'
 
@@ -73,8 +75,7 @@ export async function phase1Intake(
   // 5. Resolve agent ID
   const agentId = await resolveAgentId(memoryManager)
 
-  // 5b. Classify attachments (metadata only — NO processing, NO downloads)
-  // Heavy processing (transcription, extraction) moves to Phase 3 as 'process_attachment' steps
+  // 5b. Classify attachments (metadata for evaluator context)
   const attachmentMeta: AttachmentMetadata[] = config.attachmentEnabled
     ? classifyAttachments(message)
     : []
@@ -151,7 +152,12 @@ export async function phase1Intake(
     message.threadId,
   )
 
-  // 11b. Detect campaign (needs session for round number)
+  // 11b. Launch attachment processing in parallel (now that session.id is available)
+  const attachmentProcessingPromise = (config.attachmentEnabled && message.attachments?.length)
+    ? processAttachmentsInPhase1(message, config, registry, db, redis, session.id)
+    : Promise.resolve(null)
+
+  // 11c. Detect campaign (needs session for round number)
   const detectedCampaign = detectCampaign(registry, normalizedText, message.channelName, session.messageCount)
 
   // 12-15. Load memory context in parallel
@@ -182,6 +188,64 @@ export async function phase1Intake(
   // Invalidate context cache (new message = new context)
   if (contact?.id && memoryManager) {
     memoryManager.invalidateContext(contact.id, agentId).catch(() => {})
+  }
+
+  // 16. Await attachment processing (ran in parallel with steps 6-15)
+  // Inject processed attachments as labeled messages in history so evaluator sees content directly
+  let attachmentContext: import('../attachments/types.js').AttachmentContext | null = null
+  const attachmentFallbackMessages: string[] = []
+
+  try {
+    const attResult = await attachmentProcessingPromise
+    if (attResult) {
+      attachmentContext = attResult
+      attachmentFallbackMessages.push(...attResult.fallbackMessages)
+
+      // Inject each processed attachment as a "message" in history with [Category] label
+      for (const att of attResult.attachments) {
+        // Unsupported by channel: notify evaluator so it knows what the user tried to send
+        if (att.status === 'disabled_by_channel') {
+          history.push({
+            role: 'user',
+            content: `[Adjunto no soportado] El usuario envió ${att.filename} (${att.categoryLabel}) pero este canal no permite procesar ${att.categoryLabel.toLowerCase()}.`,
+            timestamp: new Date(),
+          })
+          continue
+        }
+
+        if (att.status !== 'processed' || !att.extractedText) continue
+
+        let injectedContent: string
+        if (att.sizeTier === 'large' && att.llmText) {
+          // Large file: inject category label + LLM description
+          injectedContent = `[${att.categoryLabel}] ${att.filename} — Descripción: ${att.llmText}`
+        } else if (att.llmText && (att.category === 'images' || att.category === 'audio' || att.category === 'video')) {
+          // Multimedia: inject category label + LLM content (vision/transcription/multimodal)
+          injectedContent = `[${att.categoryLabel}] ${att.llmText}`
+        } else {
+          // Small/medium text file: inject category label + full extracted content
+          injectedContent = `[${att.categoryLabel}] ${att.extractedText}`
+        }
+
+        history.push({
+          role: 'user',
+          content: injectedContent,
+          timestamp: new Date(),
+        })
+      }
+
+      // Inject URL extractions too
+      for (const url of attResult.urls) {
+        if (url.status !== 'processed' || !url.extractedText) continue
+        history.push({
+          role: 'user',
+          content: `[web_link] ${url.title ?? url.url}: ${url.extractedText}`,
+          timestamp: new Date(),
+        })
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, traceId }, 'Attachment processing in Phase 1 failed — evaluator will see metadata only')
   }
 
   const durationMs = Date.now() - startMs
@@ -219,10 +283,72 @@ export async function phase1Intake(
     messageType,
     attachmentMeta,
     assignmentRules,
-    attachmentContext: null, // populated by Phase 3 process_attachment steps
+    attachmentContext, // populated here in Phase 1 (parallel with context loading)
     responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
   }
+}
+
+// ─── Attachment processing in Phase 1 ──────
+
+/** Default attachment config when no channel-specific config exists */
+const DEFAULT_ATTACHMENT_CONFIG: ChannelAttachmentConfig = {
+  enabledCategories: ['documents', 'images', 'text'],
+  maxFileSizeMb: 25,
+  maxAttachmentsPerMessage: 10,
+}
+
+/**
+ * Process attachments in Phase 1 (parallel with context loading).
+ * Downloads, extracts, enriches with LLM, and returns AttachmentContext.
+ * Results are then injected as history messages so the evaluator sees content directly.
+ */
+async function processAttachmentsInPhase1(
+  message: IncomingMessage,
+  config: EngineConfig,
+  registry: Registry,
+  db: Pool,
+  redis: Redis,
+  sessionId: string,
+): Promise<import('../attachments/types.js').AttachmentContext | null> {
+  if (!message.attachments?.length) return null
+
+  // Resolve channel attachment config
+  const channelSvc = registry.getOptional<{ get(): { attachments?: ChannelAttachmentConfig } }>(`channel-config:${message.channelName}`)
+  const channelAttConfig = channelSvc?.get()?.attachments ?? DEFAULT_ATTACHMENT_CONFIG
+
+  // Resolve engine attachment config
+  const engineAttSvc = registry.getOptional<{ get(): AttachmentEngineConfig }>('engine:attachment-config')
+  const attEngineConfig: AttachmentEngineConfig = engineAttSvc?.get() ?? {
+    enabled: config.attachmentEnabled,
+    smallDocTokens: config.attachmentSmallDocTokens,
+    mediumDocTokens: config.attachmentMediumDocTokens,
+    summaryMaxTokens: config.attachmentSummaryMaxTokens,
+    cacheTtlMs: config.attachmentCacheTtlMs,
+    urlFetchTimeoutMs: config.attachmentUrlFetchTimeoutMs,
+    urlMaxSizeMb: config.attachmentUrlMaxSizeMb,
+    urlEnabled: config.attachmentUrlEnabled,
+  }
+
+  if (!attEngineConfig.enabled) return null
+
+  const attachmentContext = await processAttachments(
+    message.attachments,
+    message.content.text ?? '',
+    channelAttConfig,
+    attEngineConfig,
+    message.channelName,
+    sessionId,
+    message.id,
+    registry,
+    db,
+    redis,
+  )
+
+  const fallbacks = buildFallbackMessages(attachmentContext.attachments, channelAttConfig)
+  attachmentContext.fallbackMessages.push(...fallbacks)
+
+  return attachmentContext
 }
 
 // ─── Helpers ──────────────────────────────

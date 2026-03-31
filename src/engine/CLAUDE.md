@@ -115,12 +115,25 @@ Configurable desde consola y .env. Persiste al reinicio.
 6. Phase 4: LLM compositor (retries + fallback) → formato canal → TTS → CompositorOutput
 7. Phase 5: validate, send (pre-formatted), persist, proactive signals
 
-## Adjuntos (2 fases)
+## Adjuntos (procesamiento en Phase 1)
 
-- **Phase 1**: `classifyAttachments()` → solo metadata (tipo, nombre, tamaño, mime) — <1ms
-- **Phase 2**: evaluador ve metadata, puede planificar `process_attachment` steps
-- **Phase 3**: `executeProcessAttachment()` → descarga, extrae texto, resume, transcribe audio (max 3 concurrentes)
-- **Phase 4**: LLM compositor recibe datos procesados de Phase 3
+- **Phase 1**: `classifyAttachments()` + `processAttachmentsInPhase1()` en paralelo con context loading
+  - Descarga, extrae texto (extractores globales), enriquece con LLM (vision/STT/multimodal)
+  - Resultado dual: `extractedText` (code, para embeddings) + `llmText` (LLM, para conversación)
+  - Inyecta cada adjunto como mensaje en `ctx.history` con etiqueta `[category]`:
+    - Pequeño: `[documents] contenido extraído completo...`
+    - Grande: `[documents] archivo.pdf — Descripción: resumen LLM...`
+    - Imagen: `[images] descripción vision...`
+    - Audio: `[audio] transcripción STT...`
+    - Video: `[video] descripción multimodal...`
+    - No soportado: `[Adjunto no soportado] ... este canal no permite procesar X`
+  - Labels = nombre de categoría (documents, images, audio, video, etc.) — sin doble mapeo
+  - Herencia: ENGINE_EXTRACTION_CAPABILITIES × CHANNEL_PLATFORM_CAPABILITIES × admin toggles
+  - Imágenes: binario guardado en `instance/knowledge/media/` para re-consulta
+  - Persiste ambos resultados en `attachment_extractions` (code + LLM)
+- **Phase 2**: evaluador ve contenido de adjuntos ya en el historial (NO necesita planear `process_attachment`)
+- **Phase 3**: `executeProcessAttachment()` se mantiene como fallback si Phase 1 no procesó
+- **Phase 4**: compositor tiene contexto completo desde el historial
 
 ## Phase 4: Retries + Formato + TTS
 

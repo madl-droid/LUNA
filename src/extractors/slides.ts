@@ -6,7 +6,7 @@
 // No se extraen imágenes individuales embebidas.
 
 import type { Registry } from '../kernel/registry.js'
-import type { ExtractedContent, ExtractedSection, SlidesResult, ExtractedSlide } from './types.js'
+import type { ExtractedContent, ExtractedSection, SlidesResult, ExtractedSlide, LLMEnrichment } from './types.js'
 import { isImplicitTitle } from './utils.js'
 import pino from 'pino'
 
@@ -93,6 +93,69 @@ export async function extractGoogleSlides(
  */
 export function isSlidesAvailable(registry: Registry): boolean {
   return registry.getOptional('google:slides') !== null
+}
+
+// ═══════════════════════════════════════════
+// LLM Enrichment: Descripción de screenshots via Vision
+// Cada slide con screenshotPng se describe con Gemini Vision.
+// ═══════════════════════════════════════════
+
+/**
+ * Describe los screenshots de slides via Gemini Vision.
+ * Recibe un SlidesResult y describe cada slide que tenga screenshotPng.
+ * Retorna el SlidesResult con screenshotDescription populado en cada slide.
+ */
+export async function describeSlideScreenshots(
+  slidesResult: SlidesResult,
+  registry: Registry,
+): Promise<SlidesResult> {
+  const slidesWithScreenshots = slidesResult.slides.filter(s => s.screenshotPng !== null)
+  if (slidesWithScreenshots.length === 0) return slidesResult
+
+  const descriptions: string[] = []
+
+  // Process each slide screenshot sequentially (to avoid rate limits)
+  for (const slide of slidesWithScreenshots) {
+    try {
+      const base64 = slide.screenshotPng!.toString('base64')
+      const result = await registry.callHook('llm:chat', {
+        task: 'extractor-slide-vision',
+        system: 'Eres un asistente que describe diapositivas de presentaciones. Describe el contenido visual: textos, gráficos, diagramas, imágenes, layout y diseño. Sé preciso y conciso. Responde en español.',
+        messages: [{
+          role: 'user' as const,
+          content: [
+            { type: 'image_url' as const, data: base64, mimeType: 'image/png' },
+            { type: 'text' as const, text: `Describe el contenido visual de la diapositiva ${slide.index + 1}${slide.title ? ` (${slide.title})` : ''}.` },
+          ],
+        }],
+        maxTokens: 1000,
+        temperature: 0.1,
+      })
+
+      if (result && typeof result === 'object' && 'text' in result) {
+        const desc = (result as { text: string }).text?.trim()
+        if (desc) {
+          slide.screenshotDescription = desc
+          descriptions.push(desc)
+          continue
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, slideIndex: slide.index }, 'Failed to describe slide screenshot')
+    }
+  }
+
+  // Add overall enrichment if any descriptions were generated
+  if (descriptions.length > 0) {
+    const enrichment: LLMEnrichment = {
+      description: `Descripciones visuales de ${descriptions.length} diapositiva(s) generadas`,
+      provider: 'google',
+      generatedAt: new Date(),
+    }
+    return { ...slidesResult, llmEnrichment: enrichment }
+  }
+
+  return slidesResult
 }
 
 // ═══════════════════════════════════════════

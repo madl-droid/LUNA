@@ -25,10 +25,13 @@ export async function runAttachmentMigration(db: Pool): Promise<void> {
         category TEXT NOT NULL,
         source_type TEXT NOT NULL,
         extracted_text TEXT,
+        llm_text TEXT,
+        category_label TEXT NOT NULL DEFAULT '',
         token_estimate INTEGER DEFAULT 0,
         status TEXT NOT NULL,
         injection_risk BOOLEAN DEFAULT false,
         source_ref TEXT,
+        file_path TEXT,
         created_at TIMESTAMPTZ DEFAULT now()
       )
     `)

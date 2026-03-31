@@ -5,7 +5,7 @@
 // Texto acompañante obligatorio (crea contexto mínimo si falta).
 
 import type { Registry } from '../kernel/registry.js'
-import type { ExtractedContent, ImageResult } from './types.js'
+import type { ExtractedContent, ImageResult, LLMEnrichment } from './types.js'
 import { computeMD5, MAX_IMAGE_SIZE } from './utils.js'
 import pino from 'pino'
 
@@ -144,6 +144,70 @@ export async function extractImageWithVision(
     text: description,
     sections: [{ title: `Imagen: ${fileName}`, content: description }],
     metadata: { sizeBytes: input.length, originalName: fileName, extractorUsed: 'image-llm-vision' },
+  }
+}
+
+// ═══════════════════════════════════════════
+// LLM Enrichment: Descripción completa via Vision
+// Genera LLMEnrichment para un ImageResult ya procesado.
+// Usado por: engine processor, knowledge indexer.
+// ═══════════════════════════════════════════
+
+/**
+ * Genera una descripción completa de la imagen via Gemini Vision.
+ * Recibe un ImageResult ya procesado (code-only) y le agrega llmEnrichment.
+ * Retorna el mismo ImageResult con llmEnrichment populado.
+ */
+export async function describeImage(
+  imageResult: ImageResult,
+  registry: Registry,
+): Promise<ImageResult> {
+  try {
+    const base64 = imageResult.buffer.toString('base64')
+
+    // Intentar obtener prompt customizado
+    let systemPrompt = 'Eres un asistente que describe imágenes de forma detallada y completa. Describe TODO el contenido visible: texto, diagramas, tablas, gráficos, logos, personas, objetos, colores, layout. Si hay texto visible, transcríbelo exactamente. Sé exhaustivo y preciso. Responde en español.'
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const promptsSvc = registry.getOptional<any>('prompts:service')
+      if (promptsSvc) {
+        const customPrompt = await promptsSvc.getSystemPrompt('image-description')
+        if (customPrompt) systemPrompt = customPrompt
+      }
+    } catch { /* usar default */ }
+
+    const result = await registry.callHook('llm:chat', {
+      task: 'extractor-image-vision',
+      system: systemPrompt,
+      messages: [{
+        role: 'user' as const,
+        content: [
+          { type: 'image_url' as const, data: base64, mimeType: imageResult.mimeType },
+          { type: 'text' as const, text: 'Describe detalladamente todo el contenido de esta imagen.' },
+        ],
+      }],
+      maxTokens: 2000,
+      temperature: 0.1,
+    })
+
+    if (result && typeof result === 'object' && 'text' in result) {
+      const description = (result as { text: string }).text?.trim()
+      if (description) {
+        const enrichment: LLMEnrichment = {
+          description,
+          provider: (result as { provider?: string }).provider ?? 'google',
+          generatedAt: new Date(),
+        }
+        return { ...imageResult, llmEnrichment: enrichment }
+      }
+    }
+
+    logger.warn({ fileName: imageResult.metadata.originalName }, 'Vision returned empty — no enrichment')
+    return imageResult
+  } catch (err) {
+    logger.warn({ err, fileName: imageResult.metadata.originalName }, 'describeImage failed — returning without enrichment')
+    return imageResult
   }
 }
 

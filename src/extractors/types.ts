@@ -83,12 +83,16 @@ export interface ExtractedSlide {
   title: string | null
   text: string
   screenshotPng: Buffer | null
+  /** Descripción LLM del screenshot — null si no procesado con vision */
+  screenshotDescription?: string
 }
 
 export interface SlidesResult {
   kind: 'slides'
   fileName: string
   slides: ExtractedSlide[]
+  /** Enriquecimiento LLM de screenshots — null si solo code-processed */
+  llmEnrichment?: LLMEnrichment
   metadata: DocumentMetadata
 }
 
@@ -116,6 +120,8 @@ export interface YouTubeHeader {
   duration: number | null
   thumbnail: Buffer | null
   thumbnailMimeType?: string
+  /** Descripción LLM del thumbnail — null si no procesado con vision */
+  thumbnailDescription?: string
 }
 
 export interface YouTubeTranscriptSection {
@@ -134,6 +140,22 @@ export interface YouTubeResult {
 }
 
 // ═══════════════════════════════════════════
+// Enriquecimiento LLM (segundo resultado)
+// Generado por Gemini Vision/STT/Multimodal
+// ═══════════════════════════════════════════
+
+export interface LLMEnrichment {
+  /** Descripción generada por LLM (vision para imágenes/video, STT para audio) */
+  description: string
+  /** Transcripción de audio/video (STT) — solo si tiene audio */
+  transcription?: string
+  /** Provider que generó el enriquecimiento */
+  provider: string
+  /** Timestamp de generación */
+  generatedAt: Date
+}
+
+// ═══════════════════════════════════════════
 // Resultado de extracción de imagen
 // ═══════════════════════════════════════════
 
@@ -145,6 +167,8 @@ export interface ImageResult {
   height: number
   md5: string
   accompanyingText: string
+  /** Descripción LLM (vision) — null si solo code-processed */
+  llmEnrichment?: LLMEnrichment
   position?: number
   totalInMessage?: number
   metadata: DocumentMetadata
@@ -161,6 +185,8 @@ export interface AudioResult {
   mimeType: string
   durationSeconds: number
   accompanyingText: string | null
+  /** Transcripción LLM (STT) — null si solo code-processed */
+  llmEnrichment?: LLMEnrichment
   senderData?: { senderId: string; channel: string; receivedAt: Date }
   metadata: DocumentMetadata
 }
@@ -177,6 +203,8 @@ export interface VideoResult {
   durationSeconds: number
   hasAudio: boolean
   accompanyingText: string | null
+  /** Descripción + transcripción LLM (multimodal) — null si solo code-processed */
+  llmEnrichment?: LLMEnrichment
   senderData?: { senderId: string; channel: string; receivedAt: Date }
   metadata: DocumentMetadata
 }
@@ -238,12 +266,16 @@ export function toExtractedContent(result: ExtractorResult): ExtractedContent {
     }
 
     case 'slides': {
-      const text = result.slides.map(s => `[Slide ${s.index + 1}] ${s.title ?? ''}\n${s.text}`).join('\n\n')
+      const text = result.slides.map(s => {
+        const parts = [`[Slide ${s.index + 1}] ${s.title ?? ''}`, s.text]
+        if (s.screenshotDescription) parts.push(`[Descripción visual]: ${s.screenshotDescription}`)
+        return parts.join('\n')
+      }).join('\n\n')
       return {
         text,
         sections: result.slides.map(s => ({
           title: s.title ?? `Slide ${s.index + 1}`,
-          content: s.text,
+          content: s.screenshotDescription ? `${s.text}\n[Descripción visual]: ${s.screenshotDescription}` : s.text,
           page: s.index + 1,
         })),
         metadata: result.metadata,
@@ -272,25 +304,42 @@ export function toExtractedContent(result: ExtractorResult): ExtractedContent {
       }
     }
 
-    case 'image':
+    case 'image': {
+      // Prefer LLM description if available, fallback to accompanying text
+      const imgText = result.llmEnrichment?.description ?? result.accompanyingText
       return {
-        text: result.accompanyingText,
-        sections: [{ title: null, content: result.accompanyingText }],
+        text: imgText,
+        sections: [{ title: null, content: imgText }],
         metadata: result.metadata,
       }
+    }
 
-    case 'audio':
+    case 'audio': {
+      // Prefer LLM transcription if available
+      const audioText = result.llmEnrichment?.transcription
+        ?? result.llmEnrichment?.description
+        ?? result.accompanyingText
+        ?? `[Audio: ${result.format}, ${result.durationSeconds}s]`
       return {
-        text: result.accompanyingText ?? `[Audio: ${result.format}, ${result.durationSeconds}s]`,
-        sections: [{ title: null, content: result.accompanyingText ?? '' }],
+        text: audioText,
+        sections: [{ title: null, content: audioText }],
         metadata: result.metadata,
       }
+    }
 
-    case 'video':
+    case 'video': {
+      // Combine LLM description + transcription if available
+      const parts: string[] = []
+      if (result.llmEnrichment?.description) parts.push(result.llmEnrichment.description)
+      if (result.llmEnrichment?.transcription) parts.push(`[Transcripción]: ${result.llmEnrichment.transcription}`)
+      const videoText = parts.length > 0
+        ? parts.join('\n\n')
+        : result.accompanyingText ?? `[Video: ${result.format}, ${result.durationSeconds}s]`
       return {
-        text: result.accompanyingText ?? `[Video: ${result.format}, ${result.durationSeconds}s]`,
-        sections: [{ title: null, content: result.accompanyingText ?? '' }],
+        text: videoText,
+        sections: [{ title: null, content: videoText }],
         metadata: result.metadata,
       }
+    }
   }
 }

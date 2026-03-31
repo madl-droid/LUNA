@@ -24,6 +24,7 @@ function categoryFromMime(mime: string | undefined | null): AttachmentMetadata['
   if (MIME_CATEGORIES[mime]) return MIME_CATEGORIES[mime]!
   if (mime.startsWith('image/')) return 'image'
   if (mime.startsWith('audio/')) return 'audio'
+  if (mime.startsWith('video/')) return 'video'
   if (mime.startsWith('text/')) return 'text'
   return 'unknown'
 }
