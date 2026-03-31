@@ -31,10 +31,12 @@ export type {
   DocumentMetadata,
 } from './types.js'
 export { toExtractedContent } from './types.js'
+export { extractSheets } from './sheets.js'
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
 import { extractDocx } from './docx.js'
+import { extractXlsx } from './sheets.js'
 
 // ─── Legacy fallback para extractores aún no migrados ────
 async function legacyExtract(input: Buffer, fileName: string, mimeType: string, registry?: Registry): Promise<ExtractedContent> {
@@ -49,6 +51,10 @@ const MIGRATED_EXTRACTORS: Record<string, (input: Buffer, fileName: string, regi
   'application/json': extractJSON,
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extractDocx,
   'application/msword': extractDocx,
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': extractXlsx,
+  'application/vnd.ms-excel': extractXlsx,
+  'text/csv': extractXlsx,
+  'application/vnd.oasis.opendocument.spreadsheet': extractXlsx,
 }
 
 // ─── MIME types soportados ──────────────────
