@@ -260,22 +260,10 @@ export interface VectorizeJobData {
 }
 
 // ═══════════════════════════════════════════
-// Extractores
+// Extractores — re-export from global src/extractors/
 // ═══════════════════════════════════════════
 
-export interface ExtractedContent {
-  text: string
-  sections: ExtractedSection[]
-  metadata: DocumentMetadata
-}
-
-export interface ExtractedSection {
-  title: string | null
-  content: string
-  page?: number
-}
-
-export type ExtractorFn = (input: Buffer, fileName: string) => Promise<ExtractedContent>
+export type { ExtractedContent, ExtractedSection, ExtractorFn } from '../../extractors/types.js'
 
 // ═══════════════════════════════════════════
 // Config del módulo (parsed from configSchema)

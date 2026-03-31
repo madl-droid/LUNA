@@ -20,6 +20,7 @@ Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada m�
 ## Estructura de directorios
 ```
 src/
+  extractors/        — extractores globales de contenido (ver src/extractors/CLAUDE.md)
   kernel/            — core del sistema modular (ver src/kernel/CLAUDE.md)
   modules/
     whatsapp/        — canal WhatsApp Baileys (ver CLAUDE.md)
@@ -242,6 +243,7 @@ Cada módulo bajo `src/` tiene (o debería tener) su propio CLAUDE.md con contex
 Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, config), Hooks/Servicios, API routes, Patrones, Trampas.
 
 ### Módulos documentados
+- `src/extractors/CLAUDE.md` — **extractores globales de contenido** (CUALQUIER módulo/agente que necesite extraer info DEBE usar estos)
 - `src/modules/CLAUDE.md` — **reglas de creación de módulos** (se carga automáticamente al trabajar en cualquier módulo)
 - `src/kernel/CLAUDE.md` — core del sistema modular
 - `src/kernel/setup/CLAUDE.md` — wizard de instalacion + auth (login/logout, sessions, factory reset)

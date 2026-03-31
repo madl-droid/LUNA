@@ -268,8 +268,8 @@ async function processOneAttachment(
     return processAudio(id, att, data, engineConfig, registry)
   }
 
-  // Use knowledge extractors for content extraction
-  const { extractContent } = await import('../../modules/knowledge/extractors/index.js')
+  // Use global extractors for content extraction
+  const { extractContent } = await import('../../extractors/index.js')
   const extracted = await extractContent(data, att.filename, att.mimeType, registry)
   const rawText = extracted.text?.trim() ?? ''
 
