@@ -448,6 +448,10 @@ export class MemoryManager {
     await this.pg.updateSummaryEmbedding(summaryId, embedding)
   }
 
+  async getChunksBySummary(summaryId: string): Promise<Array<{ id: string; chunkText: string }>> {
+    return await this.pg.getChunksBySummary(summaryId)
+  }
+
   async getChunksWithoutEmbeddings(limit?: number): Promise<Array<{ id: string; chunkText: string }>> {
     return await this.pg.getChunksWithoutEmbeddings(limit)
   }

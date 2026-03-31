@@ -400,6 +400,19 @@ export class PgStore {
     }
   }
 
+  async getChunksBySummary(summaryId: string): Promise<Array<{ id: string; chunkText: string }>> {
+    try {
+      const result = await this.pool.query(
+        `SELECT id, chunk_text FROM summary_chunks WHERE summary_id = $1 AND embedding IS NULL ORDER BY chunk_index ASC`,
+        [summaryId],
+      )
+      return result.rows.map((row: DbRow) => ({ id: row.id, chunkText: row.chunk_text }))
+    } catch (err) {
+      logger.warn({ err, summaryId }, 'Failed to get chunks by summary')
+      return []
+    }
+  }
+
   async getChunksWithoutEmbeddings(limit: number = 100): Promise<Array<{ id: string; chunkText: string }>> {
     try {
       const result = await this.pool.query(
