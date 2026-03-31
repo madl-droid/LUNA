@@ -154,6 +154,7 @@ export async function phase1Intake(
   const detectedCampaign = detectCampaign(registry, normalizedText, message.channelName, session.messageCount)
 
   // 12-15. Load memory context in parallel
+  const historyTurns = getChannelHistoryTurns(registry, message.channelName)
   const [
     historyResult,
     memoryResult,
@@ -161,7 +162,7 @@ export async function phase1Intake(
     summariesResult,
     leadStatusResult,
   ] = await Promise.allSettled([
-    loadHistory(memoryManager, db, session.id, 10),
+    loadHistory(memoryManager, db, session.id, historyTurns),
     contact?.id && memoryManager ? loadContactMemory(memoryManager, agentId, contact.id) : Promise.resolve(null),
     contact?.id && memoryManager ? memoryManager.getPendingCommitments(agentId, contact.id) : Promise.resolve([]),
     contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', 3) : Promise.resolve([]),
@@ -568,5 +569,15 @@ function getChannelSessionTimeout(registry: Registry, channel: string, defaultMs
     if (timeout > 0) return timeout
   }
   return defaultMs
+}
+
+/**
+ * Get history turns for this channel from the channel config service.
+ * Each channel reads its value from memory:buffer-turns (per category: instant/async/voice).
+ * Falls back to 10 if channel config is not available.
+ */
+function getChannelHistoryTurns(registry: Registry, channel: string): number {
+  const svc = registry.getOptional<{ get(): { historyTurns: number } }>(`channel-config:${channel}`)
+  return svc?.get()?.historyTurns ?? 10
 }
 

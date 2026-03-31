@@ -1281,27 +1281,31 @@ const manifest: ModuleManifest = {
 
     // ── Channel Config Service (standard pattern — engine reads this) ──
     registry.provide('channel-config:email', {
-      get: (): import('../../channels/types.js').ChannelRuntimeConfig => ({
-        rateLimitHour: config.EMAIL_RATE_LIMIT_PER_HOUR,
-        rateLimitDay: config.EMAIL_RATE_LIMIT_PER_DAY,
-        avisoTriggerMs: config.ACK_EMAIL_TRIGGER_MS,
-        avisoHoldMs: config.ACK_EMAIL_HOLD_MS,
-        avisoMessages: config.ACK_EMAIL_MESSAGE ? [config.ACK_EMAIL_MESSAGE] : [],
-        avisoStyle: (config.ACK_EMAIL_STYLE || 'formal') as import('../../channels/types.js').AvisoStyle,
-        sessionTimeoutMs: config.EMAIL_SESSION_INACTIVITY_HOURS * 3600000,
-        batchWaitSeconds: config.EMAIL_BATCH_WAIT_MS / 1000,
-        precloseFollowupMs: config.EMAIL_PRECLOSE_FOLLOWUP_HOURS * 3600000,
-        precloseFollowupMessage: config.EMAIL_PRECLOSE_FOLLOWUP_TEXT,
-        typingDelayMsPerChar: 0,
-        typingDelayMinMs: 0,
-        typingDelayMaxMs: 0,
-        channelType: 'async',
-        supportsTypingIndicator: false,
-        antiSpamMaxPerWindow: 0,
-        antiSpamWindowMs: 0,
-        floodThreshold: 0,
-        attachments: buildEmailAttachmentConfig(config),
-      }),
+      get: (): import('../../channels/types.js').ChannelRuntimeConfig => {
+        const bufferTurns = registry.getOptional<{ get(): { instant: number; async: number; voice: number } }>('memory:buffer-turns')?.get()
+        return {
+          rateLimitHour: config.EMAIL_RATE_LIMIT_PER_HOUR,
+          rateLimitDay: config.EMAIL_RATE_LIMIT_PER_DAY,
+          avisoTriggerMs: config.ACK_EMAIL_TRIGGER_MS,
+          avisoHoldMs: config.ACK_EMAIL_HOLD_MS,
+          avisoMessages: config.ACK_EMAIL_MESSAGE ? [config.ACK_EMAIL_MESSAGE] : [],
+          avisoStyle: (config.ACK_EMAIL_STYLE || 'formal') as import('../../channels/types.js').AvisoStyle,
+          sessionTimeoutMs: config.EMAIL_SESSION_INACTIVITY_HOURS * 3600000,
+          batchWaitSeconds: config.EMAIL_BATCH_WAIT_MS / 1000,
+          precloseFollowupMs: config.EMAIL_PRECLOSE_FOLLOWUP_HOURS * 3600000,
+          precloseFollowupMessage: config.EMAIL_PRECLOSE_FOLLOWUP_TEXT,
+          typingDelayMsPerChar: 0,
+          typingDelayMinMs: 0,
+          typingDelayMaxMs: 0,
+          channelType: 'async',
+          supportsTypingIndicator: false,
+          antiSpamMaxPerWindow: 0,
+          antiSpamWindowMs: 0,
+          floodThreshold: 0,
+          historyTurns: bufferTurns?.async ?? 10,
+          attachments: buildEmailAttachmentConfig(config),
+        }
+      },
     })
 
     // Cargar estado previo

@@ -636,7 +636,13 @@ const manifest: ModuleManifest = {
 
     // ── Channel Config Service (ALWAYS register, even without key) ──
     const channelConfigService = {
-      get: () => buildChannelConfig(config),
+      get: () => {
+        const bufferTurns = registry.getOptional<{ get(): { instant: number; async: number; voice: number } }>('memory:buffer-turns')?.get()
+        return {
+          ...buildChannelConfig(config),
+          historyTurns: bufferTurns?.instant ?? 25,
+        }
+      },
     }
     registry.provide('channel-config:google-chat', channelConfigService)
 
@@ -804,6 +810,7 @@ function buildChannelConfig(cfg: GoogleChatConfig): import('../../channels/types
     antiSpamMaxPerWindow: cfg.GOOGLE_CHAT_ANTISPAM_MAX,
     antiSpamWindowMs: cfg.GOOGLE_CHAT_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,
+    historyTurns: 0, // placeholder — overridden in channel-config service get() with memory:buffer-turns
     attachments: buildGoogleChatAttachmentConfig(cfg),
   }
 }

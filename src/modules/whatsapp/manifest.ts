@@ -319,7 +319,13 @@ const manifest: ModuleManifest = {
     // Provides runtime config to the engine. Engine reads via registry.getOptional().
     // Values are always fresh: buildChannelConfig() reads current config on each call.
     const channelConfigService = {
-      get: () => buildChannelConfig(config),
+      get: () => {
+        const bufferTurns = registry.getOptional<{ get(): { instant: number; async: number; voice: number } }>('memory:buffer-turns')?.get()
+        return {
+          ...buildChannelConfig(config),
+          historyTurns: bufferTurns?.instant ?? 25,
+        }
+      },
     }
     registry.provide('channel-config:whatsapp', channelConfigService)
 
@@ -479,6 +485,7 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     antiSpamMaxPerWindow: 5,
     antiSpamWindowMs: 60000,
     floodThreshold: 20,
+    historyTurns: 0, // placeholder — overridden in channel-config service get() with memory:buffer-turns
     attachments: buildAttachmentConfig(cfg),
   }
 }

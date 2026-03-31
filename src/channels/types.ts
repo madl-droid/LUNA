@@ -114,6 +114,8 @@ export interface ChannelRuntimeConfig {
   channelType: 'instant' | 'async' | 'voice'
   /** Whether the channel API supports typing/composing indicators */
   supportsTypingIndicator: boolean
+  /** Number of history turns to load for this channel (from memory:buffer-turns by category) */
+  historyTurns: number
 
   // ── Anti-spam (outbound — prevents agent from spamming a contact) ──
   /** Max outbound messages per window (0 = disabled) */

@@ -661,26 +661,30 @@ const manifest: ModuleManifest = {
     // ── Channel Config Service ──
     // Provides runtime config to the engine via registry.getOptional('channel-config:voice')
     registry.provide('channel-config:voice', {
-      get: (): import('../../channels/types.js').ChannelRuntimeConfig => ({
-        rateLimitHour: config.VOICE_RATE_LIMIT_HOUR,
-        rateLimitDay: config.VOICE_RATE_LIMIT_DAY,
-        avisoTriggerMs: 0, // no aviso for voice — Gemini handles conversation in real-time
-        avisoHoldMs: 0,
-        avisoMessages: [],
-        avisoStyle: 'formal',
-        sessionTimeoutMs: config.VOICE_SESSION_TIMEOUT_HOURS * 3600000,
-        batchWaitSeconds: 0, // no batching for voice
-        precloseFollowupMs: 0,
-        precloseFollowupMessage: '',
-        typingDelayMsPerChar: 0, // not applicable for voice
-        typingDelayMinMs: 0,
-        typingDelayMaxMs: 0,
-        channelType: 'voice',
-        supportsTypingIndicator: false, // voice has no typing indicator
-        antiSpamMaxPerWindow: 0,
-        antiSpamWindowMs: 0,
-        floodThreshold: 0, // no batching/flood for voice
-      }),
+      get: (): import('../../channels/types.js').ChannelRuntimeConfig => {
+        const bufferTurns = registry.getOptional<{ get(): { instant: number; async: number; voice: number } }>('memory:buffer-turns')?.get()
+        return {
+          rateLimitHour: config.VOICE_RATE_LIMIT_HOUR,
+          rateLimitDay: config.VOICE_RATE_LIMIT_DAY,
+          avisoTriggerMs: 0, // no aviso for voice — Gemini handles conversation in real-time
+          avisoHoldMs: 0,
+          avisoMessages: [],
+          avisoStyle: 'formal',
+          sessionTimeoutMs: config.VOICE_SESSION_TIMEOUT_HOURS * 3600000,
+          batchWaitSeconds: 0, // no batching for voice
+          precloseFollowupMs: 0,
+          precloseFollowupMessage: '',
+          typingDelayMsPerChar: 0, // not applicable for voice
+          typingDelayMinMs: 0,
+          typingDelayMaxMs: 0,
+          channelType: 'voice',
+          supportsTypingIndicator: false, // voice has no typing indicator
+          antiSpamMaxPerWindow: 0,
+          antiSpamWindowMs: 0,
+          floodThreshold: 0, // no batching/flood for voice
+          historyTurns: bufferTurns?.voice ?? 7,
+        }
+      },
     })
 
     // Provide services
