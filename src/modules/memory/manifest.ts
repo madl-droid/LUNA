@@ -36,8 +36,10 @@ const manifest: ModuleManifest = {
     MEMORY_BUFFER_TURNS_ASYNC: numEnv(10),
     MEMORY_BUFFER_TURNS_VOICE: numEnv(7),
 
-    // Cross-session context: how many past interaction summaries to inject
-    MEMORY_CONTEXT_SUMMARIES_LIMIT: numEnv(3),
+    // Cross-session context: how many past interaction summaries to inject (per channel category)
+    MEMORY_CONTEXT_SUMMARIES_INSTANT: numEnv(3),
+    MEMORY_CONTEXT_SUMMARIES_ASYNC: numEnv(5),
+    MEMORY_CONTEXT_SUMMARIES_VOICE: numEnv(2),
 
     // Compression and models
     MEMORY_COMPRESSION_MODEL: z.string().default('claude-haiku-4-5-20251001'),
@@ -96,7 +98,9 @@ const manifest: ModuleManifest = {
       { key: 'MEMORY_BUFFER_TURNS_INSTANT', type: 'number', label: { es: 'Historial canales instantáneos', en: 'Instant channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales instantáneos (WhatsApp, Google Chat)', en: 'Conversation turns loaded for instant channels (WhatsApp, Google Chat)' }, width: 'half', min: 5, max: 50 },
       { key: 'MEMORY_BUFFER_TURNS_ASYNC', type: 'number', label: { es: 'Historial canales asíncronos', en: 'Async channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales asíncronos (Gmail)', en: 'Conversation turns loaded for async channels (Gmail)' }, width: 'half', min: 5, max: 50 },
       { key: 'MEMORY_BUFFER_TURNS_VOICE', type: 'number', label: { es: 'Historial canales de voz', en: 'Voice channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales de voz (Twilio)', en: 'Conversation turns loaded for voice channels (Twilio)' }, width: 'half', min: 3, max: 20 },
-      { key: 'MEMORY_CONTEXT_SUMMARIES_LIMIT', type: 'number', label: { es: 'Interacciones previas en contexto', en: 'Past interactions in context' }, info: { es: 'Cantidad de resumenes de interacciones anteriores (de cualquier canal) que se inyectan al contexto del agente', en: 'Number of past interaction summaries (from any channel) injected into the agent context' }, width: 'half', min: 0, max: 10 },
+      { key: 'MEMORY_CONTEXT_SUMMARIES_INSTANT', type: 'number', label: { es: 'Interacciones previas (instantáneo)', en: 'Past interactions (instant)' }, info: { es: 'Resumenes de interacciones anteriores inyectados en canales instantáneos (WhatsApp, Google Chat)', en: 'Past interaction summaries injected for instant channels (WhatsApp, Google Chat)' }, width: 'half', min: 0, max: 10 },
+      { key: 'MEMORY_CONTEXT_SUMMARIES_ASYNC', type: 'number', label: { es: 'Interacciones previas (asíncrono)', en: 'Past interactions (async)' }, info: { es: 'Resumenes de interacciones anteriores inyectados en canales asíncronos (Gmail)', en: 'Past interaction summaries injected for async channels (Gmail)' }, width: 'half', min: 0, max: 10 },
+      { key: 'MEMORY_CONTEXT_SUMMARIES_VOICE', type: 'number', label: { es: 'Interacciones previas (voz)', en: 'Past interactions (voice)' }, info: { es: 'Resumenes de interacciones anteriores inyectados en canales de voz (Twilio)', en: 'Past interaction summaries injected for voice channels (Twilio)' }, width: 'half', min: 0, max: 10 },
 
       // ── Compresion ──
       { key: '_div_compression', type: 'divider', label: { es: 'Compresion de memoria', en: 'Memory compression' } },
@@ -170,7 +174,9 @@ const manifest: ModuleManifest = {
       MEMORY_BUFFER_TURNS_INSTANT: number
       MEMORY_BUFFER_TURNS_ASYNC: number
       MEMORY_BUFFER_TURNS_VOICE: number
-      MEMORY_CONTEXT_SUMMARIES_LIMIT: number
+      MEMORY_CONTEXT_SUMMARIES_INSTANT: number
+      MEMORY_CONTEXT_SUMMARIES_ASYNC: number
+      MEMORY_CONTEXT_SUMMARIES_VOICE: number
     }>('memory')
 
     manager = new MemoryManager(registry.getDb(), registry.getRedis(), config)
@@ -188,9 +194,13 @@ const manifest: ModuleManifest = {
       }),
     })
 
-    // Cross-session summaries limit — read by Phase 1
-    registry.provide('memory:context-summaries-limit', {
-      get: () => config.MEMORY_CONTEXT_SUMMARIES_LIMIT,
+    // Cross-session summaries limit per channel category — read by Phase 1
+    registry.provide('memory:context-summaries', {
+      get: () => ({
+        instant: config.MEMORY_CONTEXT_SUMMARIES_INSTANT,
+        async: config.MEMORY_CONTEXT_SUMMARIES_ASYNC,
+        voice: config.MEMORY_CONTEXT_SUMMARIES_VOICE,
+      }),
     })
   },
 

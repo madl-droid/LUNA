@@ -167,7 +167,7 @@ export async function phase1Intake(
     loadHistory(memoryManager, db, session.id, historyTurns),
     contact?.id && memoryManager ? loadContactMemory(memoryManager, agentId, contact.id) : Promise.resolve(null),
     contact?.id && memoryManager ? memoryManager.getPendingCommitments(agentId, contact.id) : Promise.resolve([]),
-    contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', getContextSummariesLimit(registry)) : Promise.resolve([]),
+    contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', getContextSummariesLimit(registry, message.channelName)) : Promise.resolve([]),
     contact?.id && memoryManager ? memoryManager.getLeadStatus(contact.id, agentId) : Promise.resolve(null),
     memoryManager ? memoryManager.getBufferSummary(session.id) : Promise.resolve(null),
   ])
@@ -623,8 +623,13 @@ function getChannelHistoryTurns(registry: Registry, channel: string): number {
   return svc?.get()?.historyTurns ?? 10
 }
 
-function getContextSummariesLimit(registry: Registry): number {
-  const svc = registry.getOptional<{ get(): number }>('memory:context-summaries-limit')
-  return svc?.get() ?? 3
+function getContextSummariesLimit(registry: Registry, channel: string): number {
+  const channelType = registry.getOptional<{ get(): { channelType: string } }>(`channel-config:${channel}`)?.get()?.channelType ?? 'instant'
+  const svc = registry.getOptional<{ get(): { instant: number; async: number; voice: number } }>('memory:context-summaries')
+  const limits = svc?.get()
+  if (!limits) return 3
+  if (channelType === 'async') return limits.async
+  if (channelType === 'voice') return limits.voice
+  return limits.instant
 }
 
