@@ -12,7 +12,7 @@
 }
 
 .panel:hover {
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-float);
 }
 
 .panel-header {

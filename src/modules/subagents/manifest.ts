@@ -237,7 +237,17 @@ const manifest: ModuleManifest = {
         }
       } catch { /* tools module not available */ }
 
-      return renderSubagentsSection(types, usage, lang, availableTools)
+      // Fetch knowledge categories
+      let availableKnowledgeCategories: Array<{ id: string; title: string }> = []
+      try {
+        interface KnowledgePgStore { listCategories(): Promise<Array<{ id: string; title: string }>> }
+        const knowledgePgStore = registry.getOptional<KnowledgePgStore>('knowledge:pg-store')
+        if (knowledgePgStore) {
+          availableKnowledgeCategories = (await knowledgePgStore.listCategories()).map(c => ({ id: c.id, title: c.title }))
+        }
+      } catch { /* knowledge module not available */ }
+
+      return renderSubagentsSection(types, usage, lang, availableTools, availableKnowledgeCategories)
     })
   },
 
