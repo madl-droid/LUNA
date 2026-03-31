@@ -1091,7 +1091,7 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_AUTO_DOWNGRADE_DAYS: numEnvMin(1, 60),
     KNOWLEDGE_FAQ_SOURCE: z.string().default('manual'),
     KNOWLEDGE_SYNC_ENABLED: boolEnv(true),
-    KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(''),
+    KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(process.env['GOOGLE_AI_API_KEY'] ?? ''),
     KNOWLEDGE_EMBEDDING_ENABLED: boolEnv(true),
     KNOWLEDGE_VECTORIZE_CONCURRENCY: numEnvMin(1, 2),
     KNOWLEDGE_MAX_WEB_SOURCES: numEnvMin(1, 5),

@@ -1217,7 +1217,7 @@ function renderStyles(): string {
 .ki-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
 
 /* List table layout */
-.ki-list { display:flex; flex-direction:column; gap:var(--space-md); }
+.ki-list { display:flex; flex-direction:column; gap:var(--space-sm); }
 .ki-row { display:grid !important; grid-template-columns:1fr 80px 120px auto; gap:12px; align-items:center; padding:var(--section-gap) !important; transition:box-shadow 0.2s ease; }
 .ki-row:hover { box-shadow:var(--shadow-float); }
 .ki-row-inactive { opacity:0.55; }
