@@ -35,6 +35,7 @@ export { extractSheets } from './sheets.js'
 export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable } from './slides.js'
 export { extractImage, extractImageWithVision } from './image.js'
 export { extractWeb, extractWebAsContent } from './web.js'
+export { extractYouTube, parseYoutubeChapters, formatTimestamp } from './youtube.js'
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
