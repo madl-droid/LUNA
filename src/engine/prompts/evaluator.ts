@@ -299,8 +299,18 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
     }
   }
 
-  // Attachment metadata (Phase 1 classified, Phase 3 will process)
-  if (ctx.attachmentMeta.length > 0) {
+  // Attachment context — content already extracted and injected in history as labeled messages
+  if (ctx.attachmentContext && ctx.attachmentContext.attachments.length > 0) {
+    const processed = ctx.attachmentContext.attachments.filter(a => a.status === 'processed')
+    if (processed.length > 0) {
+      parts.push(`[${processed.length} adjunto(s) procesado(s) — su contenido ya aparece en el historial con etiquetas como [Imagen], [PDF/DOC], [Audio], etc.]`)
+    }
+    const failed = ctx.attachmentContext.attachments.filter(a => a.status !== 'processed')
+    if (failed.length > 0) {
+      parts.push(`[${failed.length} adjunto(s) no pudieron procesarse]`)
+    }
+  } else if (ctx.attachmentMeta.length > 0) {
+    // Fallback: Phase 1 processing didn't run — show metadata for manual processing
     parts.push(`[Adjuntos enviados por el contacto:]`)
     for (const att of ctx.attachmentMeta) {
       const sizeMb = att.size ? `${(att.size / (1024 * 1024)).toFixed(1)} MB` : 'tamaño desconocido'
