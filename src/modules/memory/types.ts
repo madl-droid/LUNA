@@ -89,6 +89,20 @@ export interface KeyFact {
 }
 
 // ═══════════════════════════════════════════
+// Summary chunks — Semantic search tier (individual embeddings per chunk)
+// ═══════════════════════════════════════════
+
+export interface SummaryChunk {
+  id: string
+  summaryId: string
+  contactId: string
+  chunkText: string
+  chunkIndex: number
+  embedding?: number[] | null
+  createdAt: Date
+}
+
+// ═══════════════════════════════════════════
 // Contact memory — Cold tier (stored in agent_contacts.contact_memory JSONB)
 // ═══════════════════════════════════════════
 
@@ -218,7 +232,7 @@ export interface HybridSearchResult {
   summaryText: string
   keyFacts: KeyFact[]
   score: number
-  matchType: 'fts' | 'vector' | 'recency'
+  matchType: 'fts' | 'vector' | 'recency' | 'chunk_vector'
   interactionStartedAt: Date
 }
 

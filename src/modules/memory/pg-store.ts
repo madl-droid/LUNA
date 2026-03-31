@@ -374,6 +374,136 @@ export class PgStore {
   }
 
   // ═══════════════════════════════════════════
+  // Summary Chunks — Semantic search tier
+  // ═══════════════════════════════════════════
+
+  async saveChunks(summaryId: string, contactId: string, chunks: string[]): Promise<number> {
+    if (chunks.length === 0) return 0
+    // Build multi-row INSERT
+    const values: unknown[] = []
+    const placeholders: string[] = []
+    for (let i = 0; i < chunks.length; i++) {
+      const offset = i * 4
+      placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`)
+      values.push(summaryId, contactId, chunks[i], i)
+    }
+    try {
+      await this.pool.query(
+        `INSERT INTO summary_chunks (summary_id, contact_id, chunk_text, chunk_index)
+         VALUES ${placeholders.join(', ')}`,
+        values,
+      )
+      return chunks.length
+    } catch (err) {
+      logger.error({ err, summaryId, count: chunks.length }, 'Failed to save chunks')
+      return 0
+    }
+  }
+
+  async getChunksWithoutEmbeddings(limit: number = 100): Promise<Array<{ id: string; chunkText: string }>> {
+    try {
+      const result = await this.pool.query(
+        `SELECT id, chunk_text FROM summary_chunks WHERE embedding IS NULL ORDER BY created_at ASC LIMIT $1`,
+        [limit],
+      )
+      return result.rows.map((row: DbRow) => ({ id: row.id, chunkText: row.chunk_text }))
+    } catch (err) {
+      logger.warn({ err }, 'Failed to get chunks without embeddings')
+      return []
+    }
+  }
+
+  async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
+    try {
+      await this.pool.query(
+        `UPDATE summary_chunks SET embedding = $2::vector WHERE id = $1`,
+        [chunkId, `[${embedding.join(',')}]`],
+      )
+    } catch (err) {
+      logger.warn({ err, chunkId }, 'Failed to update chunk embedding')
+    }
+  }
+
+  async searchChunksVector(
+    contactId: string,
+    embedding: number[],
+    limit: number = 5,
+  ): Promise<HybridSearchResult[]> {
+    try {
+      const result = await this.pool.query(
+        `SELECT sc.id AS chunk_id, sc.chunk_text, sc.summary_id,
+                ss.session_id, ss.summary_text, ss.key_facts, ss.interaction_started_at,
+                1 - (sc.embedding <=> $2::vector) AS similarity
+         FROM summary_chunks sc
+         JOIN session_summaries ss ON ss.id = sc.summary_id
+         WHERE sc.contact_id = $1 AND sc.embedding IS NOT NULL
+         ORDER BY sc.embedding <=> $2::vector
+         LIMIT $3`,
+        [contactId, `[${embedding.join(',')}]`, limit],
+      )
+      return result.rows.map((row: DbRow) => ({
+        summaryId: row.summary_id,
+        sessionId: row.session_id,
+        summaryText: row.chunk_text,  // Return the chunk text (more precise than full summary)
+        keyFacts: row.key_facts ?? [],
+        score: parseFloat(row.similarity),
+        matchType: 'chunk_vector' as const,
+        interactionStartedAt: row.interaction_started_at,
+      }))
+    } catch (err) {
+      logger.warn({ err, contactId }, 'Chunk vector search failed')
+      return []
+    }
+  }
+
+  async searchChunksFTS(
+    contactId: string,
+    query: string,
+    limit: number = 10,
+  ): Promise<HybridSearchResult[]> {
+    try {
+      // Use websearch_to_tsquery for flexible matching (handles partial terms)
+      const result = await this.pool.query(
+        `SELECT sc.summary_id, ss.session_id, sc.chunk_text, ss.key_facts,
+                ss.interaction_started_at,
+                ts_rank(to_tsvector('simple', sc.chunk_text), plainto_tsquery('simple', $2)) AS rank
+         FROM summary_chunks sc
+         JOIN session_summaries ss ON ss.id = sc.summary_id
+         WHERE sc.contact_id = $1
+           AND to_tsvector('simple', sc.chunk_text) @@ plainto_tsquery('simple', $2)
+         ORDER BY rank DESC
+         LIMIT $3`,
+        [contactId, query, limit],
+      )
+      return result.rows.map((row: DbRow) => ({
+        summaryId: row.summary_id,
+        sessionId: row.session_id,
+        summaryText: row.chunk_text,
+        keyFacts: row.key_facts ?? [],
+        score: parseFloat(row.rank),
+        matchType: 'chunk_vector' as const,  // reuse type — it's chunk-sourced
+        interactionStartedAt: row.interaction_started_at,
+      }))
+    } catch (err) {
+      logger.warn({ err, contactId, query }, 'Chunk FTS search failed')
+      return []
+    }
+  }
+
+  async deleteAllSessionMessages(sessionId: string): Promise<number> {
+    try {
+      const result = await this.pool.query(
+        `DELETE FROM messages WHERE session_id = $1`,
+        [sessionId],
+      )
+      return result.rowCount ?? 0
+    } catch (err) {
+      logger.warn({ err, sessionId }, 'Failed to delete all session messages')
+      return 0
+    }
+  }
+
+  // ═══════════════════════════════════════════
   // Commitments
   // ═══════════════════════════════════════════
 

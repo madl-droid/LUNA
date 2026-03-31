@@ -192,9 +192,10 @@ export class MemoryManager {
     language: string = 'es',
     limit: number = 5,
   ): Promise<HybridSearchResult[]> {
-    // Run FTS and recency in parallel
-    const [ftsResults, recentResults] = await Promise.all([
+    // Run FTS (summaries + chunks) and recency in parallel
+    const [ftsResults, chunkFtsResults, recentResults] = await Promise.all([
       this.pg.searchSummariesFTS(contactId, query, language, limit),
+      this.pg.searchChunksFTS(contactId, query, limit),
       this.pg.getRecentSummaries(contactId, 3),
     ])
 
@@ -202,7 +203,15 @@ export class MemoryManager {
     const seen = new Set<string>()
     const merged: HybridSearchResult[] = []
 
-    // FTS results first (higher relevance)
+    // Chunk FTS first (most precise — individual semantic units)
+    for (const r of chunkFtsResults) {
+      if (!seen.has(r.summaryId)) {
+        seen.add(r.summaryId)
+        merged.push({ ...r, score: r.score * 1.2 })  // Boost chunk matches
+      }
+    }
+
+    // Summary FTS (broader matches)
     for (const r of ftsResults) {
       if (!seen.has(r.summaryId)) {
         seen.add(r.summaryId)
@@ -256,21 +265,57 @@ export class MemoryManager {
       interactionClosedAt: closedAt,
     })
 
+    // Generate semantic chunks from summary + key facts
+    const chunks = this.splitSummaryIntoChunks(compression.summary, compression.keyFacts)
+    if (chunks.length > 0) {
+      const saved = await this.pg.saveChunks(summaryId, contactId, chunks)
+      logger.info({ sessionId, summaryId, chunks: saved }, 'Summary chunks saved')
+    }
+
     // Mark session as compressed
     await this.pg.markSessionCompressed(sessionId)
 
-    // Optionally purge hot messages
-    if (this.config.MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS) {
-      const keepRecent = this.config.MEMORY_COMPRESSION_KEEP_RECENT
-      const deleted = await this.pg.deleteSessionHotMessages(sessionId, keepRecent)
-      logger.info({ sessionId, deleted, kept: keepRecent }, 'Purged hot messages after compression')
-    }
+    // Purge ALL hot messages — summary + chunks replace them.
+    // Legal backup lives in conversation_archives (separate tier).
+    const deleted = await this.pg.deleteAllSessionMessages(sessionId)
+    if (deleted > 0) logger.info({ sessionId, deleted }, 'Purged all messages after compression')
 
     // Delete Redis buffer for this session
     await this.redis.deleteSession(sessionId)
 
     logger.info({ sessionId, summaryId, messageCount: compression.originalCount }, 'Session compressed')
     return summaryId
+  }
+
+  /**
+   * Split a summary into semantic chunks for individual embedding.
+   * Strategy: each paragraph becomes a chunk, plus each key fact as a separate chunk.
+   * Minimum chunk size: 20 chars (skip empty/trivial fragments).
+   */
+  splitSummaryIntoChunks(summaryText: string, keyFacts: Array<{ fact: string }>): string[] {
+    const MIN_CHUNK_LENGTH = 20
+    const chunks: string[] = []
+
+    // Split summary by double newline (paragraphs) or bullet points
+    const paragraphs = summaryText
+      .split(/\n{2,}/)
+      .flatMap(p => p.split(/^[-•*]\s+/m))
+      .map(p => p.trim())
+      .filter(p => p.length >= MIN_CHUNK_LENGTH)
+
+    for (const p of paragraphs) {
+      chunks.push(p)
+    }
+
+    // Each key fact as a standalone chunk (high precision for fact recall)
+    for (const kf of keyFacts) {
+      const factText = kf.fact.trim()
+      if (factText.length >= MIN_CHUNK_LENGTH && !chunks.some(c => c.includes(factText))) {
+        chunks.push(factText)
+      }
+    }
+
+    return chunks
   }
 
   // ═══════════════════════════════════════════
@@ -401,6 +446,14 @@ export class MemoryManager {
 
   async updateSummaryEmbedding(summaryId: string, embedding: number[]): Promise<void> {
     await this.pg.updateSummaryEmbedding(summaryId, embedding)
+  }
+
+  async getChunksWithoutEmbeddings(limit?: number): Promise<Array<{ id: string; chunkText: string }>> {
+    return await this.pg.getChunksWithoutEmbeddings(limit)
+  }
+
+  async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
+    await this.pg.updateChunkEmbedding(chunkId, embedding)
   }
 
   async purgeOldPipelineLogs(): Promise<number> {

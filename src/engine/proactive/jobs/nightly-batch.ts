@@ -77,6 +77,9 @@ export async function runNightlyBatch(ctx: ProactiveJobContext): Promise<void> {
     // 4. Auto-embed knowledge items that are missing embeddings
     await scanAndEmbedKnowledgeItems(ctx)
 
+    // 5. Embed summary chunks that are missing embeddings
+    await embedSummaryChunks(ctx)
+
     // Mark as completed
     await ctx.redis.set(redisKey, '1', 'EX', 86400)
 
@@ -616,6 +619,54 @@ async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<voi
     logger.info({ traceId: ctx.traceId, checked, reembedded, noChange, failed }, 'Knowledge sync scan complete')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Knowledge sync scan failed')
+  }
+}
+
+// ─── 5. Embed Summary Chunks ────────────────────
+
+interface EmbeddingService {
+  generateBatchEmbeddings(texts: string[]): Promise<(number[] | null)[]>
+}
+
+async function embedSummaryChunks(ctx: ProactiveJobContext): Promise<void> {
+  const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
+  const embeddingService = ctx.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
+
+  if (!memoryManager || !embeddingService) {
+    logger.debug({ traceId: ctx.traceId }, 'memory/embedding not available, skipping chunk embedding')
+    return
+  }
+
+  try {
+    const chunks = await memoryManager.getChunksWithoutEmbeddings(100)
+    if (chunks.length === 0) {
+      logger.debug({ traceId: ctx.traceId }, 'No chunks need embedding')
+      return
+    }
+
+    logger.info({ traceId: ctx.traceId, count: chunks.length }, 'Embedding summary chunks')
+
+    // Process in batches of 50 (API batch limit)
+    const BATCH_SIZE = 50
+    let embedded = 0
+
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batch = chunks.slice(i, i + BATCH_SIZE)
+      const texts = batch.map(c => c.chunkText)
+      const embeddings = await embeddingService.generateBatchEmbeddings(texts)
+
+      for (let j = 0; j < batch.length; j++) {
+        const emb = embeddings[j]
+        if (emb) {
+          await memoryManager.updateChunkEmbedding(batch[j]!.id, emb)
+          embedded++
+        }
+      }
+    }
+
+    logger.info({ traceId: ctx.traceId, total: chunks.length, embedded }, 'Chunk embedding complete')
+  } catch (err) {
+    logger.error({ err, traceId: ctx.traceId }, 'Chunk embedding failed')
   }
 }
 
