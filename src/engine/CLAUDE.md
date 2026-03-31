@@ -120,11 +120,16 @@ Configurable desde consola y .env. Persiste al reinicio.
 - **Phase 1**: `classifyAttachments()` + `processAttachmentsInPhase1()` en paralelo con context loading
   - Descarga, extrae texto (extractores globales), enriquece con LLM (vision/STT/multimodal)
   - Resultado dual: `extractedText` (code, para embeddings) + `llmText` (LLM, para conversación)
-  - Inyecta cada adjunto como mensaje en `ctx.history` con etiqueta `[Categoría]`:
-    - Pequeño: `[PDF/DOC] contenido extraído completo...`
-    - Grande: `[PDF/DOC] archivo.pdf — Descripción: resumen LLM...`
-    - Imagen: `[Imagen] descripción vision...`
-    - Audio: `[Audio] transcripción STT...`
+  - Inyecta cada adjunto como mensaje en `ctx.history` con etiqueta `[category]`:
+    - Pequeño: `[documents] contenido extraído completo...`
+    - Grande: `[documents] archivo.pdf — Descripción: resumen LLM...`
+    - Imagen: `[images] descripción vision...`
+    - Audio: `[audio] transcripción STT...`
+    - Video: `[video] descripción multimodal...`
+    - No soportado: `[Adjunto no soportado] ... este canal no permite procesar X`
+  - Labels = nombre de categoría (documents, images, audio, video, etc.) — sin doble mapeo
+  - Herencia: ENGINE_EXTRACTION_CAPABILITIES × CHANNEL_PLATFORM_CAPABILITIES × admin toggles
+  - Imágenes: binario guardado en `instance/knowledge/media/` para re-consulta
   - Persiste ambos resultados en `attachment_extractions` (code + LLM)
 - **Phase 2**: evaluador ve contenido de adjuntos ya en el historial (NO necesita planear `process_attachment`)
 - **Phase 3**: `executeProcessAttachment()` se mantiene como fallback si Phase 1 no procesó

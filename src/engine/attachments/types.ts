@@ -81,16 +81,19 @@ export type AttachmentStatus =
   | 'unsupported_type'
   | 'needs_subagent'
 
-/** Category label for injection into conversation context */
+/**
+ * Category label = category name. Used for context injection: [documents], [images], etc.
+ * Single source of truth — no double mapping needed.
+ */
 export const CATEGORY_LABEL_MAP: Record<AttachmentCategory, string> = {
-  documents: 'PDF/DOC',
-  spreadsheets: 'Hoja de cálculo',
-  images: 'Imagen',
-  audio: 'Audio',
-  video: 'Video',
-  presentations: 'Presentación',
-  text: 'TXT/MD',
-  web_link: 'Enlace web',
+  documents: 'documents',
+  spreadsheets: 'spreadsheets',
+  images: 'images',
+  audio: 'audio',
+  video: 'video',
+  presentations: 'presentations',
+  text: 'text',
+  web_link: 'web_link',
 }
 
 /** Threshold tokens for small vs large classification (~8192 tokens ≈ Gemini Embedding 2 limit) */
@@ -107,7 +110,7 @@ export interface ProcessedAttachment {
   extractedText: string | null
   /** LLM-enriched text: description/transcription (for conversation injection) */
   llmText: string | null
-  /** Category label for context injection (e.g. "[PDF/DOC]", "[Imagen]") */
+  /** Category label for context injection (e.g. "[documents]", "[images]") */
   categoryLabel: string
   summary: string | null
   tokenEstimate: number
@@ -221,14 +224,5 @@ export const MIME_TO_CATEGORY: Record<string, AttachmentCategory> = {
   'application/json': 'text',
 } as const
 
-/** Human-readable category names for fallback messages */
-export const CATEGORY_LABELS: Record<AttachmentCategory, string> = {
-  documents: 'documentos',
-  spreadsheets: 'hojas de calculo',
-  images: 'imagenes',
-  audio: 'audio',
-  video: 'videos',
-  presentations: 'presentaciones',
-  text: 'archivos de texto',
-  web_link: 'enlaces web',
-}
+/** Human-readable category names for fallback messages — same as category keys */
+export const CATEGORY_LABELS = CATEGORY_LABEL_MAP

@@ -239,7 +239,7 @@ export async function phase1Intake(
         if (url.status !== 'processed' || !url.extractedText) continue
         history.push({
           role: 'user',
-          content: `[Enlace web] ${url.title ?? url.url}: ${url.extractedText}`,
+          content: `[web_link] ${url.title ?? url.url}: ${url.extractedText}`,
           timestamp: new Date(),
         })
       }

@@ -271,16 +271,18 @@ describe('index.ts — enrichWithLLM', () => {
 // ═══════════════════════════════════════════
 
 describe('attachment types', () => {
-  it('has category labels for all categories', async () => {
+  it('has category labels matching category names (no double mapping)', async () => {
     const { CATEGORY_LABEL_MAP } = await import('../../src/engine/attachments/types.js')
 
-    expect(CATEGORY_LABEL_MAP.documents).toBe('PDF/DOC')
-    expect(CATEGORY_LABEL_MAP.images).toBe('Imagen')
-    expect(CATEGORY_LABEL_MAP.audio).toBe('Audio')
-    expect(CATEGORY_LABEL_MAP.spreadsheets).toBe('Hoja de cálculo')
-    expect(CATEGORY_LABEL_MAP.presentations).toBe('Presentación')
-    expect(CATEGORY_LABEL_MAP.text).toBe('TXT/MD')
-    expect(CATEGORY_LABEL_MAP.web_link).toBe('Enlace web')
+    // Labels equal category keys — single source of truth
+    expect(CATEGORY_LABEL_MAP.documents).toBe('documents')
+    expect(CATEGORY_LABEL_MAP.images).toBe('images')
+    expect(CATEGORY_LABEL_MAP.audio).toBe('audio')
+    expect(CATEGORY_LABEL_MAP.video).toBe('video')
+    expect(CATEGORY_LABEL_MAP.spreadsheets).toBe('spreadsheets')
+    expect(CATEGORY_LABEL_MAP.presentations).toBe('presentations')
+    expect(CATEGORY_LABEL_MAP.text).toBe('text')
+    expect(CATEGORY_LABEL_MAP.web_link).toBe('web_link')
   })
 
   it('has SMALL_FILE_TOKEN_THRESHOLD at 8192', async () => {

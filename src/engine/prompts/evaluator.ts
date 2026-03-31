@@ -303,7 +303,7 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
   if (ctx.attachmentContext && ctx.attachmentContext.attachments.length > 0) {
     const processed = ctx.attachmentContext.attachments.filter(a => a.status === 'processed')
     if (processed.length > 0) {
-      parts.push(`[${processed.length} adjunto(s) procesado(s) — su contenido ya aparece en el historial con etiquetas como [Imagen], [PDF/DOC], [Audio], etc.]`)
+      parts.push(`[${processed.length} adjunto(s) procesado(s) — su contenido ya aparece en el historial con etiquetas como [images], [documents], [audio], [video], etc.]`)
     }
     const failed = ctx.attachmentContext.attachments.filter(a => a.status !== 'processed')
     if (failed.length > 0) {
