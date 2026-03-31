@@ -8,7 +8,7 @@ import type { VectorizeJobData, EmbeddingStatus } from './types.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { EmbeddingService } from './embedding-service.js'
 
-const QUEUE_NAME = 'knowledge:vectorize'
+const QUEUE_NAME = 'knowledge-vectorize'
 const BULK_LOCK_KEY = 'knowledge:vectorize:bulk_lock'
 const BULK_COOLDOWN_KEY = 'knowledge:vectorize:bulk_cooldown'
 const BULK_LOCK_TTL_S = 30 * 60       // 30 minutes
