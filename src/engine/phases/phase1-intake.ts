@@ -167,7 +167,7 @@ export async function phase1Intake(
     loadHistory(memoryManager, db, session.id, historyTurns),
     contact?.id && memoryManager ? loadContactMemory(memoryManager, agentId, contact.id) : Promise.resolve(null),
     contact?.id && memoryManager ? memoryManager.getPendingCommitments(agentId, contact.id) : Promise.resolve([]),
-    contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', 3) : Promise.resolve([]),
+    contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', getContextSummariesLimit(registry)) : Promise.resolve([]),
     contact?.id && memoryManager ? memoryManager.getLeadStatus(contact.id, agentId) : Promise.resolve(null),
     memoryManager ? memoryManager.getBufferSummary(session.id) : Promise.resolve(null),
   ])
@@ -621,5 +621,10 @@ function getChannelSessionTimeout(registry: Registry, channel: string, defaultMs
 function getChannelHistoryTurns(registry: Registry, channel: string): number {
   const svc = registry.getOptional<{ get(): { historyTurns: number } }>(`channel-config:${channel}`)
   return svc?.get()?.historyTurns ?? 10
+}
+
+function getContextSummariesLimit(registry: Registry): number {
+  const svc = registry.getOptional<{ get(): number }>('memory:context-summaries-limit')
+  return svc?.get() ?? 3
 }
 

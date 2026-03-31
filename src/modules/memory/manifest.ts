@@ -36,6 +36,9 @@ const manifest: ModuleManifest = {
     MEMORY_BUFFER_TURNS_ASYNC: numEnv(10),
     MEMORY_BUFFER_TURNS_VOICE: numEnv(7),
 
+    // Cross-session context: how many past interaction summaries to inject
+    MEMORY_CONTEXT_SUMMARIES_LIMIT: numEnv(3),
+
     // Compression and models
     MEMORY_COMPRESSION_MODEL: z.string().default('claude-haiku-4-5-20251001'),
     MEMORY_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
@@ -93,6 +96,7 @@ const manifest: ModuleManifest = {
       { key: 'MEMORY_BUFFER_TURNS_INSTANT', type: 'number', label: { es: 'Historial canales instantáneos', en: 'Instant channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales instantáneos (WhatsApp, Google Chat)', en: 'Conversation turns loaded for instant channels (WhatsApp, Google Chat)' }, width: 'half', min: 5, max: 50 },
       { key: 'MEMORY_BUFFER_TURNS_ASYNC', type: 'number', label: { es: 'Historial canales asíncronos', en: 'Async channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales asíncronos (Gmail)', en: 'Conversation turns loaded for async channels (Gmail)' }, width: 'half', min: 5, max: 50 },
       { key: 'MEMORY_BUFFER_TURNS_VOICE', type: 'number', label: { es: 'Historial canales de voz', en: 'Voice channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales de voz (Twilio)', en: 'Conversation turns loaded for voice channels (Twilio)' }, width: 'half', min: 3, max: 20 },
+      { key: 'MEMORY_CONTEXT_SUMMARIES_LIMIT', type: 'number', label: { es: 'Interacciones previas en contexto', en: 'Past interactions in context' }, info: { es: 'Cantidad de resumenes de interacciones anteriores (de cualquier canal) que se inyectan al contexto del agente', en: 'Number of past interaction summaries (from any channel) injected into the agent context' }, width: 'half', min: 0, max: 10 },
 
       // ── Compresion ──
       { key: '_div_compression', type: 'divider', label: { es: 'Compresion de memoria', en: 'Memory compression' } },
@@ -166,6 +170,7 @@ const manifest: ModuleManifest = {
       MEMORY_BUFFER_TURNS_INSTANT: number
       MEMORY_BUFFER_TURNS_ASYNC: number
       MEMORY_BUFFER_TURNS_VOICE: number
+      MEMORY_CONTEXT_SUMMARIES_LIMIT: number
     }>('memory')
 
     manager = new MemoryManager(registry.getDb(), registry.getRedis(), config)
@@ -181,6 +186,11 @@ const manifest: ModuleManifest = {
         async: config.MEMORY_BUFFER_TURNS_ASYNC,
         voice: config.MEMORY_BUFFER_TURNS_VOICE,
       }),
+    })
+
+    // Cross-session summaries limit — read by Phase 1
+    registry.provide('memory:context-summaries-limit', {
+      get: () => config.MEMORY_CONTEXT_SUMMARIES_LIMIT,
     })
   },
 
