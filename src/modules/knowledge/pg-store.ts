@@ -88,7 +88,7 @@ export class KnowledgePgStore {
         chunk_index   int NOT NULL,
         page          int,
         has_embedding boolean NOT NULL DEFAULT false,
-        embedding     vector(3072),
+        embedding     vector(1536),
         tsv           tsvector,
         created_at    timestamptz NOT NULL DEFAULT now()
       )
@@ -96,7 +96,7 @@ export class KnowledgePgStore {
 
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tsv ON knowledge_chunks USING GIN(tsv)`)
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(document_id)`)
-    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding ON knowledge_chunks USING hnsw (embedding vector_cosine_ops) WHERE has_embedding = true`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WHERE has_embedding = true`)
 
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS knowledge_faqs (

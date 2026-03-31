@@ -6,9 +6,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import type pino from 'pino'
 
 // Gemini Embedding 2 — natively multimodal (text, images, PDFs, video, audio)
-// 3072 dimensions (default for gemini-embedding-2-preview)
+// gemini-embedding-2-preview outputs 3072 dims, truncated to 1536 via Matryoshka
+// (pgvector index max 2000 dims; first 1536 dims carry most semantic signal)
 const MODEL = 'gemini-embedding-2-preview'
-const DIMENSIONS = 3072
+const DIMENSIONS = 1536
 const MAX_BATCH_SIZE = 100
 
 // Circuit breaker: 3 failures in 5 min → open for 5 min
@@ -67,11 +68,7 @@ export class EmbeddingService {
     try {
       const model = this.client!.getGenerativeModel({ model: MODEL })
       const result = await model.embedContent(text)
-      const values = result.embedding.values
-
-      if (values.length !== DIMENSIONS) {
-        this.log.warn({ got: values.length, expected: DIMENSIONS }, 'Unexpected embedding dimensions')
-      }
+      const values = result.embedding.values.slice(0, DIMENSIONS)
 
       this.resetFailures()
       return values
@@ -117,7 +114,7 @@ export class EmbeddingService {
         },
       })
 
-      const values = result.embedding.values
+      const values = result.embedding.values.slice(0, DIMENSIONS)
       this.log.info({ mimeType, dims: values.length }, '[EMBED] Multimodal file embedding generated')
       this.resetFailures()
       return values
@@ -157,7 +154,7 @@ export class EmbeddingService {
           this.log.warn({ index: i }, 'Missing embedding in batch result')
           return null
         }
-        return emb.values
+        return emb.values.slice(0, DIMENSIONS)
       })
     } catch (err) {
       this.recordFailure()
