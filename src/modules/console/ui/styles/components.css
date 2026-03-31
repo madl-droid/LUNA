@@ -4271,15 +4271,17 @@ select.wizard-input option:checked {
 .ki-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
 
 /* List table layout */
-.ki-list { display:flex; flex-direction:column; gap:8px !important; }
+.ki-list { display:flex; flex-direction:column; gap:14px !important; }
 .ki-list .ki-row { margin-bottom:0 !important; }
-.ki-row { display:grid !important; grid-template-columns:1fr 80px 120px auto; gap:12px; align-items:center; padding:var(--section-gap) !important; transition:box-shadow 0.2s ease; }
+.ki-row { display:grid !important; grid-template-columns:1fr 80px 110px auto; gap:12px; align-items:center; padding:var(--section-gap) !important; transition:box-shadow 0.2s ease; }
 .ki-row:hover { box-shadow:var(--shadow-float); }
 .ki-row-inactive { opacity:0.55; }
 
 /* Nombre column */
 .ki-col-nombre { display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden; }
-.ki-col-acciones { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.ki-col-tipo { display:flex; align-items:center; }
+.ki-col-estado { display:flex; align-items:center; }
+.ki-col-acciones { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; }
 
 /* Fix: overflow clipping on positioned ancestors — tooltips get cut by parent overflow:hidden */
 .ki-row { overflow:visible !important; }
@@ -4316,6 +4318,7 @@ select.wizard-input option:checked {
 .ki-icon-btn--share-on { color:#3b82f6; }
 .ki-icon-btn--share-on:hover { background:rgba(59,130,246,0.1); }
 .ki-icon-label { font-size:11px; font-weight:600; }
+.ki-core-count-dim { opacity:0.4; font-weight:500; }
 .ki-cooldown-timer { font-size:11px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--on-surface-dim); }
 .ki-yt-hint { display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:10px 12px; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15); border-radius:0.5rem; font-size:12px; color:var(--on-surface-dim); line-height:1.4; }
 .ki-yt-hint svg { flex-shrink:0; margin-top:1px; color:#ef4444; }

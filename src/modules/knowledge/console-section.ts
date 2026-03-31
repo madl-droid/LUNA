@@ -197,10 +197,7 @@ function sourceIcon(sourceType: string): string {
 function statusCell(item: KnowledgeItem, lang: Lang): string {
   const dotClass = `ki-dot-${item.embeddingStatus}`
   const label = t(`status_${item.embeddingStatus}`, lang)
-  const chunks = item.embeddingStatus === 'done' && item.chunkCount
-    ? `<span class="ki-chunks">${item.chunkCount} ${t('chunks', lang)}</span>`
-    : ''
-  return `<span class="ki-status-row"><span class="ki-dot ${dotClass}"></span>${esc(label)}${chunks}</span>`
+  return `<span class="ki-status-row"><span class="ki-dot ${dotClass}"></span>${esc(label)}</span>`
 }
 
 // ═══════════════════════════════════════════
@@ -252,9 +249,9 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
       </button>
       <button type="button" class="ki-icon-btn ${item.isCore ? 'ki-icon-btn--core-on' : ''}"
-        onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'})">
+        onclick="kiToggleCore('${esc(item.id)}', ${item.isCore ? 'false' : 'true'}, ${coreCount}, ${maxCore})">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="${item.isCore ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        ${item.isCore ? `<span class="ki-icon-label">${coreCount}/${maxCore}</span>` : ''}
+        <span class="ki-icon-label${item.isCore ? '' : ' ki-core-count-dim'}">${coreCount}/${maxCore}</span>
         <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip info-flip">${esc(coreTip)}</span></span>
       </button>
       <button type="button" class="ki-icon-btn ${item.shareable ? 'ki-icon-btn--share-on' : ''}"
@@ -262,14 +259,17 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip info-flip">${esc(shareTip)}</span></span>
       </button>
-      <button type="button" class="act-btn act-btn--compact ki-train-btn ${item.active && item.embeddingStatus !== 'done' ? 'act-btn-cta' : 'act-btn-config'}"
+      ${!isInactive ? `<button type="button" class="act-btn act-btn--compact ki-train-btn ${item.embeddingStatus !== 'done' ? 'act-btn-cta' : 'act-btn-config'}"
         data-item-id="${esc(item.id)}"
-        onclick="kiLoadContent('${esc(item.id)}')" ${!item.active ? 'disabled' : ''}>
+        onclick="kiLoadContent('${esc(item.id)}')">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>
         <span class="ki-train-label">${isEs ? 'Entrenar' : 'Train'}</span>
         <span class="ki-train-timer ki-cooldown-timer" style="display:none"></span>
-      </button>
-      ${isInactive ? `<button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteItem('${esc(item.id)}')">${t('delete_btn', lang)}</button>` : ''}
+      </button>` : ''}
+      ${isInactive ? `<button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="kiDeleteItem('${esc(item.id)}')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        ${t('delete_btn', lang)}
+      </button>` : ''}
       <label class="toggle toggle-sm" style="margin-left:4px">
         <input type="checkbox" ${item.active ? 'checked' : ''} onchange="kiToggleActive('${esc(item.id)}', this.checked)" />
         <span class="toggle-slider"></span>
@@ -1001,24 +1001,19 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
-  window.kiToggleCore = function(id, isCore) {
+  window.kiToggleCore = function(id, isCore, coreCount, maxCore) {
+    if (isCore && coreCount >= maxCore) {
+      toast('${isEs ? 'Límite alcanzado: solo puedes tener 3 conocimientos principales' : 'Limit reached: you can only have 3 main knowledge items'}', 'error');
+      return;
+    }
     api('/core', 'PUT', { id: id, isCore: isCore })
       .then(function(r) {
         if (r.error) { toast(r.error, 'error'); return; }
         toast(isCore
           ? '${isEs ? 'Marcado como principal' : 'Marked as main'}'
           : '${isEs ? 'Quitado de principales' : 'Removed from main'}');
-        // Update star icon in-place
-        var row = document.querySelector('[data-item-id="' + id + '"]');
-        if (row) {
-          var btn = row.querySelector('.ki-icon-btn--core-on, .ki-icon-btn:nth-child(2)');
-          if (btn) {
-            btn.classList.toggle('ki-icon-btn--core-on', isCore);
-            var svg = btn.querySelector('svg');
-            if (svg) svg.setAttribute('fill', isCore ? 'currentColor' : 'none');
-            btn.setAttribute('onclick', "kiToggleCore('" + id + "', " + (isCore ? 'false' : 'true') + ")");
-          }
-        }
+        // Reload to update star counts everywhere
+        setTimeout(function() { location.reload(); }, 300);
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };

@@ -158,7 +158,6 @@ export interface KnowledgeSyncSource {
   type: 'drive' | 'url'
   label: string
   ref: string                 // Drive folder ID o URL
-  frequency: SyncFrequency
   autoCategoryId: string | null  // ID de categoría por defecto
   lastSyncAt: Date | null
   lastSyncStatus: string | null
@@ -204,7 +203,6 @@ export interface KnowledgeWebSource {
   categoryId: string | null   // FK → categories
   cacheHash: string | null    // SHA-256 of last cached content
   cachedAt: Date | null
-  refreshFrequency: SyncFrequency
   chunkCount: number
   createdAt: Date
 }
@@ -291,6 +289,7 @@ export interface KnowledgeConfig {
   KNOWLEDGE_AUTO_DOWNGRADE_DAYS: number
   KNOWLEDGE_FAQ_SOURCE: string
   KNOWLEDGE_SYNC_ENABLED: boolean
+  KNOWLEDGE_SYNC_FREQUENCY: SyncFrequency
   KNOWLEDGE_GOOGLE_AI_API_KEY: string
   KNOWLEDGE_EMBEDDING_ENABLED: boolean
   KNOWLEDGE_VECTORIZE_CONCURRENCY: number
@@ -350,7 +349,6 @@ export interface KnowledgeItem {
   contentLoaded: boolean
   embeddingStatus: EmbeddingStatus
   chunkCount: number
-  updateFrequency: SyncFrequency   // how often to check for changes
   lastSyncCheckedAt: Date | null   // last Drive modifiedTime check
   lastModifiedTime: string | null  // last known Drive modifiedTime
   shareable: boolean              // agent can share the source URL with users

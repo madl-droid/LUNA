@@ -8,7 +8,7 @@ import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import { numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
-import type { KnowledgeConfig, SyncFrequency } from './types.js'
+import type { KnowledgeConfig } from './types.js'
 import { KnowledgePgStore } from './pg-store.js'
 import { KnowledgeSearchEngine } from './search-engine.js'
 import { KnowledgeCache } from './cache.js'
@@ -328,7 +328,7 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const body = await parseBody<{
             url: string; title: string; description?: string
-            categoryId?: string; refreshFrequency?: SyncFrequency
+            categoryId?: string
           }>(req)
           if (!body.url || !body.title) {
             jsonResponse(res, 400, { error: 'Missing url or title' })
@@ -557,7 +557,7 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const body = await parseBody<{
             type: 'drive' | 'url'; label: string; ref: string
-            frequency?: SyncFrequency; autoCategoryId?: string
+            autoCategoryId?: string
           }>(req)
           if (!body.type || !body.label || !body.ref) {
             jsonResponse(res, 400, { error: 'Missing type, label, or ref' })
@@ -567,11 +567,8 @@ function createApiRoutes(): ApiRoute[] {
             type: body.type,
             label: body.label,
             ref: body.ref,
-            frequency: body.frequency ?? '24h',
             autoCategoryId: body.autoCategoryId ?? null,
           })
-          const source = await getPgStore().getSyncSource(id)
-          if (source) getSyncManager().scheduleSync(source)
           jsonResponse(res, 201, { id })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -586,17 +583,13 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            id: string; label?: string; frequency?: SyncFrequency; autoCategoryId?: string
+            id: string; label?: string; autoCategoryId?: string
           }>(req)
           if (!body.id) {
             jsonResponse(res, 400, { error: 'Missing id' })
             return
           }
           await getPgStore().updateSyncSource(body.id, body)
-          if (body.frequency) {
-            const source = await getPgStore().getSyncSource(body.id)
-            if (source) getSyncManager().scheduleSync(source)
-          }
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -615,7 +608,6 @@ function createApiRoutes(): ApiRoute[] {
             jsonResponse(res, 400, { error: 'Missing id' })
             return
           }
-          getSyncManager().unscheduleSync(body.id)
           await getPgStore().deleteSyncSource(body.id)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
@@ -881,30 +873,6 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // PUT /console/api/knowledge/items/frequency — update sync frequency for an item
-    {
-      method: 'PUT',
-      path: 'items/frequency',
-      handler: async (req, res) => {
-        try {
-          const body = await parseBody<{ id: string; frequency: string }>(req)
-          if (!body.id || !body.frequency) {
-            jsonResponse(res, 400, { error: 'Falta id o frequency' })
-            return
-          }
-          const validFreqs = ['6h', '12h', '24h', '1w', '1m']
-          if (!validFreqs.includes(body.frequency)) {
-            jsonResponse(res, 400, { error: 'Frecuencia no valida' })
-            return
-          }
-          await getPgStore().updateItem(body.id, { updateFrequency: body.frequency as import('./types.js').SyncFrequency })
-          jsonResponse(res, 200, { ok: true })
-        } catch (err) {
-          jsonResponse(res, 400, { error: String(err) })
-        }
-      },
-    },
-
     // PUT /console/api/knowledge/items/tab-ignore — toggle ignored flag on a tab
     {
       method: 'PUT',
@@ -1090,6 +1058,7 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_AUTO_DOWNGRADE_DAYS: numEnvMin(1, 60),
     KNOWLEDGE_FAQ_SOURCE: z.string().default('manual'),
     KNOWLEDGE_SYNC_ENABLED: boolEnv(true),
+    KNOWLEDGE_SYNC_FREQUENCY: z.string().default('24h'),
     KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(process.env['GOOGLE_AI_API_KEY'] ?? ''),
     KNOWLEDGE_EMBEDDING_ENABLED: boolEnv(true),
     KNOWLEDGE_VECTORIZE_CONCURRENCY: numEnvMin(1, 2),
@@ -1153,6 +1122,19 @@ const manifest: ModuleManifest = {
         type: 'boolean',
         label: { es: 'Sincronizacion automatica', en: 'Auto sync' },
         info: { es: 'Sincroniza fuentes externas (Drive, URLs) automaticamente', en: 'Auto-sync external sources (Drive, URLs)' },
+      },
+      {
+        key: 'KNOWLEDGE_SYNC_FREQUENCY',
+        type: 'select',
+        label: { es: 'Frecuencia de sincronizacion', en: 'Sync frequency' },
+        info: { es: 'Cada cuanto se verifican cambios en todas las fuentes de conocimiento (Drive, URLs, Items)', en: 'How often to check for changes across all knowledge sources (Drive, URLs, Items)' },
+        options: [
+          { value: '6h', label: { es: 'Cada 6 horas', en: 'Every 6 hours' } },
+          { value: '12h', label: { es: 'Cada 12 horas', en: 'Every 12 hours' } },
+          { value: '24h', label: { es: 'Cada 24 horas', en: 'Every 24 hours' } },
+          { value: '1w', label: { es: 'Cada semana', en: 'Every week' } },
+          { value: '1m', label: { es: 'Cada mes', en: 'Every month' } },
+        ],
       },
     ],
     apiRoutes: createApiRoutes(),

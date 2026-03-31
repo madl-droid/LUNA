@@ -6,8 +6,7 @@ import type { Redis } from 'ioredis'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { KnowledgePgStore } from './pg-store.js'
-import type { KnowledgeWebSource, SyncFrequency } from './types.js'
-import { SYNC_FREQUENCY_MS } from './types.js'
+import type { KnowledgeWebSource } from './types.js'
 import { extractContent, resolveMimeType } from './extractors/index.js'
 import { chunkDocs, linkChunks } from './extractors/smart-chunker.js'
 
@@ -33,7 +32,6 @@ export class WebSourceManager {
     title: string
     description?: string
     categoryId?: string | null
-    refreshFrequency?: SyncFrequency
   }): Promise<string> {
     const count = await this.pgStore.countWebSources()
     if (count >= MAX_WEB_SOURCES) {
@@ -45,7 +43,6 @@ export class WebSourceManager {
       title: data.title,
       description: data.description ?? '',
       categoryId: data.categoryId ?? null,
-      refreshFrequency: data.refreshFrequency ?? '24h',
     })
 
     logger.info({ id, url: data.url, title: data.title }, 'Web source created')
@@ -57,7 +54,6 @@ export class WebSourceManager {
     title: string
     description: string
     categoryId: string | null
-    refreshFrequency: SyncFrequency
   }>): Promise<void> {
     await this.pgStore.updateWebSource(id, updates)
     logger.info({ id, updates: Object.keys(updates) }, 'Web source updated')
@@ -186,18 +182,8 @@ export class WebSourceManager {
 
   async refreshAll(): Promise<void> {
     const sources = await this.pgStore.listWebSources()
-    const now = Date.now()
 
     for (const source of sources) {
-      const frequencyMs = SYNC_FREQUENCY_MS[source.refreshFrequency]
-      const lastCached = source.cachedAt?.getTime() ?? 0
-      const isDue = (now - lastCached) >= frequencyMs
-
-      if (!isDue) {
-        logger.debug({ id: source.id, url: source.url }, 'Web source not due for refresh')
-        continue
-      }
-
       try {
         await this.cacheWebSource(source.id)
       } catch (err) {

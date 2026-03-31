@@ -14,7 +14,6 @@ import type {
   KnowledgeItemTab,
   KnowledgeItemColumn,
   KnowledgeSourceType,
-  SyncFrequency,
   FAQSourceType,
   DocumentSourceType,
   DocumentMetadata,
@@ -842,21 +841,19 @@ export class KnowledgePgStore {
     type: 'drive' | 'url'
     label: string
     ref: string
-    frequency: SyncFrequency
     autoCategoryId: string | null
   }): Promise<string> {
     const res = await this.db.query<{ id: string }>(
-      `INSERT INTO knowledge_sync_sources (type, label, ref, frequency, auto_category_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO knowledge_sync_sources (type, label, ref, auto_category_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [src.type, src.label, src.ref, src.frequency, src.autoCategoryId],
+      [src.type, src.label, src.ref, src.autoCategoryId],
     )
     return res.rows[0]!.id
   }
 
   async updateSyncSource(id: string, updates: {
     label?: string
-    frequency?: SyncFrequency
     autoCategoryId?: string | null
   }): Promise<void> {
     const sets: string[] = []
@@ -864,7 +861,6 @@ export class KnowledgePgStore {
     let idx = 1
 
     if (updates.label !== undefined) { sets.push(`label = $${idx++}`); params.push(updates.label) }
-    if (updates.frequency !== undefined) { sets.push(`frequency = $${idx++}`); params.push(updates.frequency) }
     if (updates.autoCategoryId !== undefined) { sets.push(`auto_category_id = $${idx++}`); params.push(updates.autoCategoryId) }
 
     if (sets.length === 0) return
@@ -974,13 +970,12 @@ export class KnowledgePgStore {
     title: string
     description: string
     categoryId: string | null
-    refreshFrequency: SyncFrequency
   }): Promise<string> {
     const res = await this.db.query<{ id: string }>(
-      `INSERT INTO knowledge_web_sources (url, title, description, category_id, refresh_frequency)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO knowledge_web_sources (url, title, description, category_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [data.url, data.title, data.description, data.categoryId, data.refreshFrequency],
+      [data.url, data.title, data.description, data.categoryId],
     )
     return res.rows[0]!.id
   }
@@ -990,7 +985,6 @@ export class KnowledgePgStore {
     title: string
     description: string
     categoryId: string | null
-    refreshFrequency: SyncFrequency
     cacheHash: string
     cachedAt: Date
     chunkCount: number
@@ -1003,7 +997,6 @@ export class KnowledgePgStore {
     if (updates.title !== undefined) { sets.push(`title = $${idx++}`); params.push(updates.title) }
     if (updates.description !== undefined) { sets.push(`description = $${idx++}`); params.push(updates.description) }
     if (updates.categoryId !== undefined) { sets.push(`category_id = $${idx++}`); params.push(updates.categoryId) }
-    if (updates.refreshFrequency !== undefined) { sets.push(`refresh_frequency = $${idx++}`); params.push(updates.refreshFrequency) }
     if (updates.cacheHash !== undefined) { sets.push(`cache_hash = $${idx++}`); params.push(updates.cacheHash) }
     if (updates.cachedAt !== undefined) { sets.push(`cached_at = $${idx++}`); params.push(updates.cachedAt) }
     if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
@@ -1174,24 +1167,17 @@ export class KnowledgePgStore {
   }
 
   /** Return active items whose sync interval has elapsed (ready for change check) */
-  async listItemsDueForSync(): Promise<KnowledgeItem[]> {
+  async listItemsDueForSync(intervalMs: number): Promise<KnowledgeItem[]> {
+    const intervalSec = Math.floor(intervalMs / 1000)
     const res = await this.db.query<ItemRow>(`
       SELECT * FROM knowledge_items
       WHERE active = true
         AND (
           last_sync_checked_at IS NULL
-          OR last_sync_checked_at < NOW() - (
-            CASE update_frequency
-              WHEN '6h'  THEN INTERVAL '6 hours'
-              WHEN '12h' THEN INTERVAL '12 hours'
-              WHEN '1w'  THEN INTERVAL '7 days'
-              WHEN '1m'  THEN INTERVAL '30 days'
-              ELSE            INTERVAL '24 hours'
-            END
-          )
+          OR last_sync_checked_at < NOW() - ($1 || ' seconds')::interval
         )
       ORDER BY last_sync_checked_at ASC NULLS FIRST
-    `)
+    `, [intervalSec])
     return res.rows.map(mapItemRow)
   }
 
@@ -1221,7 +1207,6 @@ export class KnowledgePgStore {
     contentLoaded?: boolean
     embeddingStatus?: EmbeddingStatus
     chunkCount?: number
-    updateFrequency?: import('./types.js').SyncFrequency
     shareable?: boolean
   }): Promise<void> {
     const sets: string[] = []
@@ -1237,7 +1222,6 @@ export class KnowledgePgStore {
     if (updates.contentLoaded !== undefined) { sets.push(`content_loaded = $${idx++}`); params.push(updates.contentLoaded) }
     if (updates.embeddingStatus !== undefined) { sets.push(`embedding_status = $${idx++}`); params.push(updates.embeddingStatus) }
     if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
-    if (updates.updateFrequency !== undefined) { sets.push(`update_frequency = $${idx++}`); params.push(updates.updateFrequency) }
     if (updates.shareable !== undefined) { sets.push(`shareable = $${idx++}`); params.push(updates.shareable) }
 
     if (sets.length === 0) return
@@ -1467,7 +1451,6 @@ interface SyncSourceRow {
   type: string
   label: string
   ref: string
-  frequency: string
   auto_category_id: string | null
   last_sync_at: Date | null
   last_sync_status: string | null
@@ -1481,7 +1464,6 @@ function mapSyncRow(r: SyncSourceRow): KnowledgeSyncSource {
     type: r.type as 'drive' | 'url',
     label: r.label,
     ref: r.ref,
-    frequency: r.frequency as SyncFrequency,
     autoCategoryId: r.auto_category_id,
     lastSyncAt: r.last_sync_at,
     lastSyncStatus: r.last_sync_status,
@@ -1544,7 +1526,6 @@ interface WebSourceRow {
   category_id: string | null
   cache_hash: string | null
   cached_at: Date | null
-  refresh_frequency: string
   chunk_count: number
   created_at: Date
 }
@@ -1558,7 +1539,6 @@ function mapWebSourceRow(r: WebSourceRow): KnowledgeWebSource {
     categoryId: r.category_id,
     cacheHash: r.cache_hash,
     cachedAt: r.cached_at,
-    refreshFrequency: r.refresh_frequency as SyncFrequency,
     chunkCount: r.chunk_count,
     createdAt: r.created_at,
   }
@@ -1579,7 +1559,6 @@ interface ItemRow {
   content_loaded: boolean
   embedding_status: string
   chunk_count: number
-  update_frequency: string
   last_sync_checked_at: Date | null
   last_modified_time: string | null
   shareable: boolean
@@ -1601,7 +1580,6 @@ function mapItemRow(r: ItemRow): KnowledgeItem {
     contentLoaded: r.content_loaded,
     embeddingStatus: r.embedding_status as EmbeddingStatus,
     chunkCount: r.chunk_count,
-    updateFrequency: (r.update_frequency ?? '24h') as import('./types.js').SyncFrequency,
     lastSyncCheckedAt: r.last_sync_checked_at ?? null,
     lastModifiedTime: r.last_modified_time ?? null,
     shareable: r.shareable ?? false,

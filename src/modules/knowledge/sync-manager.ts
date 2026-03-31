@@ -1,6 +1,6 @@
 // LUNA — Module: knowledge — Sync Manager
 // Sincronización periódica desde Google Drive y URLs.
-// Usa BullMQ para jobs de sync con frecuencias configurables.
+// Timer único global controlado por KNOWLEDGE_SYNC_FREQUENCY.
 
 import pino from 'pino'
 import type { Redis } from 'ioredis'
@@ -16,7 +16,7 @@ import { chunkDocs, linkChunks } from './extractors/smart-chunker.js'
 const logger = pino({ name: 'knowledge:sync' })
 
 export class SyncManager {
-  private timers = new Map<string, ReturnType<typeof setInterval>>()
+  private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(
     private pgStore: KnowledgePgStore,
@@ -27,7 +27,8 @@ export class SyncManager {
   ) {}
 
   /**
-   * Start all configured sync sources on their intervals.
+   * Start a single global sync timer for all knowledge sources.
+   * Frequency is controlled by KNOWLEDGE_SYNC_FREQUENCY config.
    */
   async startAll(): Promise<void> {
     if (!this.config.KNOWLEDGE_SYNC_ENABLED) {
@@ -35,54 +36,39 @@ export class SyncManager {
       return
     }
 
-    const sources = await this.pgStore.listSyncSources()
-    for (const source of sources) {
-      this.scheduleSync(source)
-    }
-    logger.info({ count: sources.length }, 'Sync sources scheduled')
-  }
+    const intervalMs = SYNC_FREQUENCY_MS[this.config.KNOWLEDGE_SYNC_FREQUENCY]
 
-  /**
-   * Stop all sync timers.
-   */
-  stopAll(): void {
-    for (const [id, timer] of this.timers) {
-      clearInterval(timer)
-      this.timers.delete(id)
-    }
-  }
-
-  /**
-   * Schedule a single sync source.
-   */
-  scheduleSync(source: KnowledgeSyncSource): void {
-    // Clear existing timer if any
-    const existing = this.timers.get(source.id)
-    if (existing) clearInterval(existing)
-
-    const intervalMs = SYNC_FREQUENCY_MS[source.frequency]
-
-    const timer = setInterval(() => {
-      this.runSync(source.id).catch(err => {
-        logger.error({ sourceId: source.id, err }, 'Sync job failed')
+    this.timer = setInterval(() => {
+      this.runAllSyncs().catch(err => {
+        logger.error({ err }, 'Sync cycle failed')
       })
     }, intervalMs)
+    this.timer.unref()
 
-    // Don't block process from exiting
-    timer.unref()
-
-    this.timers.set(source.id, timer)
-    logger.info({ id: source.id, label: source.label, frequency: source.frequency }, 'Sync scheduled')
+    logger.info({ frequency: this.config.KNOWLEDGE_SYNC_FREQUENCY, intervalMs }, 'Global sync timer started')
   }
 
   /**
-   * Unschedule a sync source.
+   * Stop the global sync timer.
    */
-  unscheduleSync(sourceId: string): void {
-    const timer = this.timers.get(sourceId)
-    if (timer) {
-      clearInterval(timer)
-      this.timers.delete(sourceId)
+  stopAll(): void {
+    if (this.timer) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
+  }
+
+  /**
+   * Run sync for all configured sources.
+   */
+  async runAllSyncs(): Promise<void> {
+    const sources = await this.pgStore.listSyncSources()
+    for (const source of sources) {
+      try {
+        await this.runSync(source.id)
+      } catch (err) {
+        logger.error({ sourceId: source.id, err }, 'Sync failed for source')
+      }
     }
   }
 
