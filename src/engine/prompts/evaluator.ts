@@ -94,6 +94,23 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
       const tools = sa.allowedTools.length > 0 ? ` [tools: ${sa.allowedTools.join(', ')}]` : ''
       system += `\n- "${sa.slug}" (${sa.name}): ${sa.description}${tools}`
     }
+
+    // Guide evaluator to use web-researcher for web tasks
+    const hasWebResearcher = subagentCatalog.some(sa => sa.slug === 'web-researcher')
+    if (hasWebResearcher) {
+      system += `\n\nPara búsquedas web, lectura de URLs externas, comparaciones con productos/servicios externos, o verificación de información online: usa type=subagent con subagent_slug="web-researcher".`
+      system += `\nNO uses type=web_search directamente — el sistema lo redirigirá automáticamente al web-researcher.`
+    }
+  }
+
+  // Inject company websites (bypass web-researcher — use web_explore directly)
+  const companyWebsites = getCompanyWebsites(registry)
+  if (companyWebsites.length > 0) {
+    system += `\n\nSitios web de la empresa (leer con web_explore directo, NO usar web-researcher):`
+    for (const url of companyWebsites) {
+      system += `\n- ${url}`
+    }
+    system += `\nPara leer estos sitios: { "type": "api_call", "tool": "web_explore", "params": { "url": "..." } }`
   }
 
   // Build user message with context
@@ -463,4 +480,19 @@ export async function buildProactiveEvaluatorPrompt(
   parts.push(`[Channel: ${ctx.message.channelName}]`)
 
   return { system, userMessage: parts.join('\n') }
+}
+
+/**
+ * Get company website URLs from prompts config.
+ * Used to bypass the web-researcher subagent for owned domains.
+ */
+function getCompanyWebsites(registry?: Registry): string[] {
+  if (!registry) return []
+  try {
+    const promptsConfig = registry.getConfig<{ COMPANY_WEBSITES?: string }>('prompts')
+    const raw = promptsConfig?.COMPANY_WEBSITES ?? ''
+    return raw.split(',').map(u => u.trim()).filter(Boolean)
+  } catch {
+    return []
+  }
 }

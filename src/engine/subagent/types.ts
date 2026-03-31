@@ -47,6 +47,8 @@ export interface SubagentRunConfig {
   useThinking: boolean
   /** Thinking budget tokens */
   thinkingBudget: number
+  /** Whether Google Search grounding is active (forces task='web_search' route) */
+  useGrounding: boolean
   /** Guardrails for this run */
   guardrails: SubagentGuardrails
   /** Whether this is a child subagent (cannot spawn more) */
@@ -71,6 +73,10 @@ export interface SubagentResultV2 {
   hardLimitHit?: string
   /** Verification result (if verify was enabled) */
   verification?: VerificationResult
+  /** Which retry attempt produced this result (0 = first try) */
+  retryAttempt?: number
+  /** Conversation history from the loop (for iterative retries) */
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
   /** Whether a child subagent was spawned */
   childSpawned: boolean
   /** Child subagent results (if any were spawned) */
@@ -108,6 +114,6 @@ export const SUBAGENT_HARD_LIMITS = {
   HARD_MAX_TOKEN_BUDGET: 200_000,
   /** Minimum token budget user can set */
   MIN_TOKEN_BUDGET: 5_000,
-  /** Max verification retries */
-  MAX_VERIFY_RETRIES: 1,
+  /** Max verification retries (iterative with conversation continuity) */
+  MAX_VERIFY_RETRIES: 3,
 } as const

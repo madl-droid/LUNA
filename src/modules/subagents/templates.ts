@@ -30,7 +30,7 @@ const labels: Record<Lang, Record<string, string>> = {
     priority: 'Prioridad',
     priorityHelp: 'Menor numero = aparece primero y se invoca con mayor prioridad.',
     verifyResult: 'Verificar resultado',
-    verifyHelp: 'Un LLM revisa la calidad del resultado. Si no pasa, reintenta una vez.',
+    verifyHelp: 'Un LLM revisa la calidad del resultado. Si no pasa, reintenta hasta 3 veces con feedback iterativo.',
     canSpawn: 'Puede crear sub-subagentes',
     spawnHelp: 'Permite dividir la tarea en sub-tareas (max 1 nivel de profundidad).',
     toolsHelp: 'Sin seleccion = todas las herramientas disponibles.',
@@ -70,6 +70,10 @@ const labels: Record<Lang, Record<string, string>> = {
     cardNo: '— No',
     allTools: 'Todas',
     allCats: 'Todas',
+    systemBadge: 'Sistema',
+    systemDeleteBlocked: 'Los subagentes de sistema no se pueden eliminar.',
+    googleGrounding: 'Google Search',
+    googleGroundingHelp: 'Usa Google Search Grounding nativo (Gemini) para buscar información en la web.',
   },
   en: {
     title: 'Subagents',
@@ -94,7 +98,7 @@ const labels: Record<Lang, Record<string, string>> = {
     priority: 'Priority',
     priorityHelp: 'Lower number = appears first and is invoked with higher priority.',
     verifyResult: 'Verify result',
-    verifyHelp: 'An LLM reviews the result quality. If it fails, retries once.',
+    verifyHelp: 'An LLM reviews the result quality. If it fails, retries up to 3 times with iterative feedback.',
     canSpawn: 'Can create sub-subagents',
     spawnHelp: 'Allows splitting the task into sub-tasks (max 1 level deep).',
     toolsHelp: 'No selection = all available tools.',
@@ -134,6 +138,10 @@ const labels: Record<Lang, Record<string, string>> = {
     cardNo: '— No',
     allTools: 'All',
     allCats: 'All',
+    systemBadge: 'System',
+    systemDeleteBlocked: 'System subagents cannot be deleted.',
+    googleGrounding: 'Google Search',
+    googleGroundingHelp: 'Uses native Google Search Grounding (Gemini) to search the web for information.',
   },
 }
 
@@ -239,6 +247,7 @@ function renderStyles(): string {
 .sa-card-name-row { display:flex; align-items:baseline; gap:8px; margin-bottom:1px }
 .sa-card-name { font-weight:700; font-size:14px; color:var(--on-surface) }
 .sa-card-slug { font-size:11px; color:var(--on-surface-dim); font-family:monospace }
+.sa-system-badge { display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:var(--radius-pill); background:rgba(147,51,234,0.1); color:#7c3aed; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em }
 .sa-card-desc { font-size:12px; color:var(--on-surface-variant); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px }
 /* Meta area — chips + action buttons, all same height and gap */
 .sa-card-meta { display:flex; align-items:center; gap:6px; flex-shrink:0 }
@@ -372,10 +381,14 @@ function renderFormSections(opts: {
   const priority = t ? t.sortOrder : 0
   const verifyResult = t ? t.verifyResult : true
   const canSpawn = t ? t.canSpawnChildren : false
+  const grounding = t ? t.googleSearchGrounding : false
   const systemPrompt = t ? t.systemPrompt : ''
   const allowedTools = t ? t.allowedTools : []
   const allowedCategories = t ? t.allowedKnowledgeCategories : []
   const hasPrompt = systemPrompt.length > 0
+  const isSystem = t?.isSystem ?? false
+  // System subagents: name, model, tools, verify, spawn, prompt, grounding are read-only
+  const sysDisabled = isSystem ? ' disabled' : ''
 
   const A = (newAttr: string, inlineClass: string) => isNew ? newAttr : inlineClass
   const nameAttr = A('id="sa-name" class="sa-input"', 'class="sa-if-name sa-input"')
@@ -385,6 +398,7 @@ function renderFormSections(opts: {
   const priorityAttr = A('id="sa-priority" class="sa-input-sm"', 'class="sa-if-priority sa-input-sm"')
   const verifyAttr = A('id="sa-verify-result"', 'class="sa-if-verify"')
   const spawnAttr = A('id="sa-can-spawn"', 'class="sa-if-spawn"')
+  const groundingAttr = A('id="sa-grounding"', 'class="sa-if-grounding"')
   const promptToggleAttr = A('id="sa-prompt-toggle"', 'class="sa-if-prompt-toggle"')
   const promptSectionAttr = A('id="sa-prompt-section"', `class="sa-prompt-section" data-sa-ps="${esc(idPrefix)}"`)
   const promptLinesAttr = A('id="sa-prompt-lines" class="code-editor-lines"', 'class="sa-if-prompt-lines code-editor-lines"')
@@ -412,12 +426,12 @@ function renderFormSections(opts: {
       <div class="sa-basic-cols">
         <div>
           <label class="sa-label">${l('name', lang)}</label>
-          <input type="text" ${nameAttr} value="${name}" placeholder="${l('namePlaceholder', lang)}"${isNew ? ` oninput="saAutoSlug(this)"` : ''}>
+          <input type="text" ${nameAttr} value="${name}" placeholder="${l('namePlaceholder', lang)}"${isNew ? ` oninput="saAutoSlug(this)"` : ''}${sysDisabled}>
           ${slugRow}
         </div>
         <div>
           <label class="sa-label">${l('modelTier', lang)}</label>
-          <select ${modelAttr} style="width:100%">
+          <select ${modelAttr} style="width:100%"${sysDisabled}>
             <option value="normal"${modelTier === 'normal' ? ' selected' : ''}>${l('modelNormal', lang)}</option>
             <option value="complex"${modelTier === 'complex' ? ' selected' : ''}>${l('modelComplex', lang)}</option>
           </select>
@@ -448,17 +462,24 @@ function renderFormSections(opts: {
         </div>
         <div class="sa-toggles-list">
           <div class="sa-toggle-item">
-            <label class="toggle toggle-sm"><input type="checkbox" ${verifyAttr}${verifyResult ? ' checked' : ''}><span class="toggle-slider"></span></label>
+            <label class="toggle toggle-sm"><input type="checkbox" ${verifyAttr}${verifyResult ? ' checked' : ''}${sysDisabled}><span class="toggle-slider"></span></label>
             <div>
               <div class="sa-toggle-label">${l('verifyResult', lang)}</div>
               <div class="sa-help">${l('verifyHelp', lang)}</div>
             </div>
           </div>
           <div class="sa-toggle-item">
-            <label class="toggle toggle-sm"><input type="checkbox" ${spawnAttr}${canSpawn ? ' checked' : ''}><span class="toggle-slider"></span></label>
+            <label class="toggle toggle-sm"><input type="checkbox" ${spawnAttr}${canSpawn ? ' checked' : ''}${sysDisabled}><span class="toggle-slider"></span></label>
             <div>
               <div class="sa-toggle-label">${l('canSpawn', lang)}</div>
               <div class="sa-help">${l('spawnHelp', lang)}</div>
+            </div>
+          </div>
+          <div class="sa-toggle-item">
+            <label class="toggle toggle-sm"><input type="checkbox" ${groundingAttr}${grounding ? ' checked' : ''}${sysDisabled}><span class="toggle-slider"></span></label>
+            <div>
+              <div class="sa-toggle-label">${l('googleGrounding', lang)}</div>
+              <div class="sa-help">${l('googleGroundingHelp', lang)}</div>
             </div>
           </div>
         </div>
@@ -517,7 +538,7 @@ function renderFormSections(opts: {
           <div class="code-editor-body">
             <div ${promptLinesAttr}>${codeEditorLines(systemPrompt)}</div>
             <textarea ${promptTextAttr} rows="8" placeholder="${l('promptPlaceholder', lang)}"
-              oninput="saSyncCodeLines(this)">${esc(systemPrompt)}</textarea>
+              oninput="saSyncCodeLines(this)"${sysDisabled}>${esc(systemPrompt)}</textarea>
           </div>
         </div>
       </div>
@@ -553,6 +574,7 @@ export function renderSubagentsSection(
             <div class="sa-card-name-row">
               <span class="sa-card-name">${esc(t.name)}</span>
               <span class="sa-card-slug">${esc(t.slug)}</span>
+              ${t.isSystem ? `<span class="sa-system-badge">&#128274; ${l('systemBadge', lang)}</span>` : ''}
             </div>
             ${t.description ? `<div class="sa-card-desc">${esc(t.description)}</div>` : ''}
           </div>
@@ -571,6 +593,14 @@ export function renderSubagentsSection(
               <button class="info-btn" type="button">i</button>
               <span class="info-tooltip info-flip">${esc(l('verifyHelp', lang))}</span>
             </div>
+            ${t.googleSearchGrounding ? `<div class="sa-meta-item">
+              <span class="sa-stat-chip sa-verify-chip sa-verify-active">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                ${esc(l('googleGrounding', lang))}
+              </span>
+              <button class="info-btn" type="button">i</button>
+              <span class="info-tooltip info-flip">${esc(l('googleGroundingHelp', lang))}</span>
+            </div>` : ''}
             <div class="sa-meta-item">
               <span class="sa-stat-chip">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
@@ -593,7 +623,8 @@ export function renderSubagentsSection(
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
             </button>
             <button type="button" class="sa-del-plain sa-delete-btn"
-              style="${t.enabled ? 'display:none' : ''}"
+              style="${t.enabled || t.isSystem ? 'display:none' : ''}"
+              ${t.isSystem ? `disabled title="${l('systemDeleteBlocked', lang)}"` : ''}
               onclick="saDelete('${esc(t.id)}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
             </button>
@@ -832,6 +863,7 @@ function renderScript(lang: Lang): string {
     var p = document.getElementById('sa-priority'); if (p) p.value = '0'
     var vr = document.getElementById('sa-verify-result'); if (vr) vr.checked = true
     var cs = document.getElementById('sa-can-spawn'); if (cs) cs.checked = false
+    var gr = document.getElementById('sa-grounding'); if (gr) gr.checked = false
     var pt = document.getElementById('sa-prompt-toggle'); if (pt) pt.checked = false
     var ps = document.getElementById('sa-prompt-section'); if (ps) ps.style.display = 'none'
     var sp2 = document.getElementById('sa-system-prompt'); if (sp2) sp2.value = ''
@@ -869,6 +901,7 @@ function renderScript(lang: Lang): string {
         tokenBudget: tokenBudget,
         verifyResult: document.getElementById('sa-verify-result').checked,
         canSpawnChildren: document.getElementById('sa-can-spawn').checked,
+        googleSearchGrounding: document.getElementById('sa-grounding').checked,
         allowedTools: getSelectedTools(form),
         allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (document.getElementById('sa-system-prompt').value || '') : '',
@@ -923,6 +956,7 @@ function renderScript(lang: Lang): string {
         tokenBudget: tokenBudget,
         verifyResult: form.querySelector('.sa-if-verify').checked,
         canSpawnChildren: form.querySelector('.sa-if-spawn').checked,
+        googleSearchGrounding: form.querySelector('.sa-if-grounding').checked,
         allowedTools: getSelectedTools(form),
         allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (form.querySelector('.sa-if-prompt').value || '') : '',

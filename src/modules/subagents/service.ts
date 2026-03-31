@@ -48,6 +48,8 @@ export function createCatalogService(db: Pool): SubagentsCatalogService {
         allowedTools: t.allowedTools,
         allowedKnowledgeCategories: t.allowedKnowledgeCategories,
         systemPrompt: t.systemPrompt,
+        isSystem: t.isSystem,
+        googleSearchGrounding: t.googleSearchGrounding,
       }))
       cacheBySlug = new Map(cache.map(e => [e.slug, e]))
       logger.info({ count: cache.length }, 'Subagent catalog loaded')

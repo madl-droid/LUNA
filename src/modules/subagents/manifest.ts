@@ -112,7 +112,11 @@ function createApiRoutes(db: Pool, registry: Registry): ApiRoute[] {
             return
           }
 
-          const type = await repo.updateType(db, body.id, body)
+          // Check if system subagent — protected fields are filtered in repository
+          const existing = await repo.getTypeById(db, body.id)
+          const isSystem = existing?.isSystem ?? false
+
+          const type = await repo.updateType(db, body.id, body, isSystem)
           if (!type) {
             jsonResponse(res, 404, { error: 'Not found' })
             return
@@ -136,9 +140,13 @@ function createApiRoutes(db: Pool, registry: Registry): ApiRoute[] {
             jsonResponse(res, 400, { error: 'Missing id' })
             return
           }
-          const deleted = await repo.deleteType(db, id)
+          const result = await repo.deleteType(db, id)
+          if (result.isSystem) {
+            jsonResponse(res, 403, { error: 'System subagents cannot be deleted. You can disable them instead.' })
+            return
+          }
           await reloadCatalog()
-          jsonResponse(res, deleted ? 200 : 404, { ok: deleted })
+          jsonResponse(res, result.deleted ? 200 : 404, { ok: result.deleted })
         } catch (err) {
           jsonResponse(res, 500, { error: String(err) })
         }
