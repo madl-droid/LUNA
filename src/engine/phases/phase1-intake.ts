@@ -203,14 +203,24 @@ export async function phase1Intake(
 
       // Inject each processed attachment as a "message" in history with [Category] label
       for (const att of attResult.attachments) {
+        // Unsupported by channel: notify evaluator so it knows what the user tried to send
+        if (att.status === 'disabled_by_channel') {
+          history.push({
+            role: 'user',
+            content: `[Adjunto no soportado] El usuario envió ${att.filename} (${att.categoryLabel}) pero este canal no permite procesar ${att.categoryLabel.toLowerCase()}.`,
+            timestamp: new Date(),
+          })
+          continue
+        }
+
         if (att.status !== 'processed' || !att.extractedText) continue
 
         let injectedContent: string
         if (att.sizeTier === 'large' && att.llmText) {
           // Large file: inject category label + LLM description
           injectedContent = `[${att.categoryLabel}] ${att.filename} — Descripción: ${att.llmText}`
-        } else if (att.llmText && (att.category === 'images' || att.category === 'audio')) {
-          // Multimedia: inject category label + LLM content (vision/transcription)
+        } else if (att.llmText && (att.category === 'images' || att.category === 'audio' || att.category === 'video')) {
+          // Multimedia: inject category label + LLM content (vision/transcription/multimodal)
           injectedContent = `[${att.categoryLabel}] ${att.llmText}`
         } else {
           // Small/medium text file: inject category label + full extracted content

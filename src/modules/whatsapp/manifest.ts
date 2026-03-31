@@ -496,7 +496,7 @@ function buildAttachmentConfig(cfg: WhatsAppFullConfig): import('../../engine/at
   if (cfg.WHATSAPP_ATT_IMAGES) categories.push('images')
   if (cfg.WHATSAPP_ATT_DOCUMENTS) categories.push('documents')
   if (cfg.WHATSAPP_ATT_AUDIO) categories.push('audio')
-  if (cfg.WHATSAPP_ATT_VIDEO) categories.push('video' as import('../../engine/attachments/types.js').AttachmentCategory)
+  if (cfg.WHATSAPP_ATT_VIDEO) categories.push('video')
   if (cfg.WHATSAPP_ATT_SPREADSHEETS) categories.push('spreadsheets')
   if (cfg.WHATSAPP_ATT_TEXT) categories.push('text')
   return {

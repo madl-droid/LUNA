@@ -1,5 +1,10 @@
 // LUNA Engine — Attachment Processing Types
 // Types for the cross-channel attachment processing subsystem.
+//
+// ARCHITECTURE: The engine defines what it CAN extract (ENGINE_EXTRACTION_CAPABILITIES).
+// Each channel declares what it CAN receive (CHANNEL_PLATFORM_CAPABILITIES).
+// Effective categories = intersection of both, filtered by admin settings per channel.
+// Phase 1 validates before processing — unsupported types notify the evaluator.
 
 /** Categories of attachments supported by the system */
 export type AttachmentCategory =
@@ -7,9 +12,45 @@ export type AttachmentCategory =
   | 'spreadsheets'
   | 'images'
   | 'audio'
+  | 'video'
   | 'presentations'
   | 'text'
   | 'web_link'
+
+/**
+ * All categories the engine's extractors can process.
+ * This is the source of truth — channels inherit from here.
+ */
+export const ENGINE_EXTRACTION_CAPABILITIES: AttachmentCategory[] = [
+  'documents', 'spreadsheets', 'images', 'audio', 'video', 'presentations', 'text', 'web_link',
+]
+
+/**
+ * Per-channel platform capabilities — what each channel can physically receive.
+ * Only categories in this list AND in ENGINE_EXTRACTION_CAPABILITIES are processable.
+ * New channels: add an entry here reflecting platform limitations.
+ */
+export const CHANNEL_PLATFORM_CAPABILITIES: Record<string, AttachmentCategory[]> = {
+  whatsapp: ['images', 'documents', 'audio', 'video', 'spreadsheets', 'text'],
+  email: ['documents', 'spreadsheets', 'images', 'presentations', 'text', 'audio'],
+  'google-chat': ['images', 'documents'],
+  voice: [],
+}
+
+/**
+ * Resolve effective attachment categories for a channel.
+ * Returns the intersection of engine capabilities × platform capabilities × admin-enabled.
+ * This is the SINGLE function all channels should use.
+ */
+export function resolveEffectiveCategories(
+  channelName: string,
+  adminEnabled: AttachmentCategory[],
+): AttachmentCategory[] {
+  const platformCaps = CHANNEL_PLATFORM_CAPABILITIES[channelName] ?? []
+  return ENGINE_EXTRACTION_CAPABILITIES.filter(
+    cat => platformCaps.includes(cat) && adminEnabled.includes(cat),
+  )
+}
 
 /** Per-channel attachment configuration */
 export interface ChannelAttachmentConfig {
@@ -27,6 +68,7 @@ export type AttachmentSourceType =
   | 'audio_transcription'
   | 'url_extraction'
   | 'image_vision'
+  | 'video_multimodal'
 
 /** Status of an attachment after processing */
 export type AttachmentStatus =
@@ -45,6 +87,7 @@ export const CATEGORY_LABEL_MAP: Record<AttachmentCategory, string> = {
   spreadsheets: 'Hoja de cálculo',
   images: 'Imagen',
   audio: 'Audio',
+  video: 'Video',
   presentations: 'Presentación',
   text: 'TXT/MD',
   web_link: 'Enlace web',
@@ -130,18 +173,6 @@ export const SYSTEM_HARD_LIMITS = {
   maxAttachmentsPerMessage: 15,
 } as const
 
-/**
- * Per-channel platform capabilities — what each channel can physically receive.
- * Channel config should only enable categories that the platform supports.
- * Categories NOT in this list for a channel will be silently ignored even if enabled in config.
- */
-export const CHANNEL_SUPPORTED_CATEGORIES: Record<string, AttachmentCategory[]> = {
-  whatsapp: ['images', 'documents', 'audio', 'spreadsheets', 'text'],
-  email: ['documents', 'spreadsheets', 'images', 'presentations', 'text', 'audio'],
-  'google-chat': ['images', 'documents'],
-  voice: [],
-}
-
 /** Predefined fallback messages (not LLM-generated) */
 export const FALLBACK_MESSAGES = {
   disabled_by_channel: 'Disculpa, no puedo ver {fileType} por este canal. Podrias enviarmelo como texto?',
@@ -175,6 +206,12 @@ export const MIME_TO_CATEGORY: Record<string, AttachmentCategory> = {
   'audio/webm': 'audio',
   'audio/opus': 'audio',
   'audio/ogg; codecs=opus': 'audio',
+  // Video
+  'video/mp4': 'video',
+  'video/mpeg': 'video',
+  'video/webm': 'video',
+  'video/3gpp': 'video',
+  'video/quicktime': 'video',
   // Presentations
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'presentations',
   'application/vnd.ms-powerpoint': 'presentations',
@@ -190,6 +227,7 @@ export const CATEGORY_LABELS: Record<AttachmentCategory, string> = {
   spreadsheets: 'hojas de calculo',
   images: 'imagenes',
   audio: 'audio',
+  video: 'videos',
   presentations: 'presentaciones',
   text: 'archivos de texto',
   web_link: 'enlaces web',

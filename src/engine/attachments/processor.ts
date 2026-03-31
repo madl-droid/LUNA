@@ -35,7 +35,7 @@ import {
   CATEGORY_LABEL_MAP,
   FALLBACK_MESSAGES,
   SYSTEM_HARD_LIMITS,
-  CHANNEL_SUPPORTED_CATEGORIES,
+  resolveEffectiveCategories,
 } from './types.js'
 import { validateInjection } from './injection-validator.js'
 import { transcribeAudio } from './audio-transcriber.js'
@@ -148,11 +148,8 @@ export async function processAttachments(
 
   const attSlice = attachments.slice(0, effectiveMaxCount)
 
-  // Resolve effective enabled categories: intersection of channel config + platform capabilities
-  const platformCapabilities = CHANNEL_SUPPORTED_CATEGORIES[channelName] ?? []
-  const effectiveCategories = channelConfig.enabledCategories.filter(
-    cat => platformCapabilities.includes(cat),
-  )
+  // Resolve effective enabled categories: engine capabilities × platform capabilities × admin enabled
+  const effectiveCategories = resolveEffectiveCategories(channelName, channelConfig.enabledCategories)
   const effectiveChannelConfig: ChannelAttachmentConfig = {
     ...channelConfig,
     enabledCategories: effectiveCategories,
@@ -376,7 +373,7 @@ async function processOneAttachment(
       cacheKey: null,
       status: 'extraction_failed',
       injectionRisk: false,
-      sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
+      sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
       sourceRef: att.id,
       llmEnriched,
       filePath,
@@ -452,7 +449,7 @@ async function processOneAttachment(
     cacheKey,
     status: 'processed',
     injectionRisk: validation.injectionRisk,
-    sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
+    sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
     sourceRef: att.id,
     llmEnriched,
     filePath,
