@@ -146,9 +146,9 @@ export interface SentPayload {
   success: boolean
 }
 
-/** Multimodal content part for LLM messages (image, audio, text) */
+/** Multimodal content part for LLM messages (image, audio, video, text) */
 export interface LLMContentPart {
-  type: 'text' | 'image_url' | 'audio'
+  type: 'text' | 'image_url' | 'audio' | 'video'
   text?: string
   /** Base64 data or URL */
   data?: string

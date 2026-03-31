@@ -183,7 +183,7 @@ export interface EscalatingCBSnapshot {
 // ═══════════════════════════════════════════
 
 export interface ContentPart {
-  type: 'text' | 'image_url' | 'audio'
+  type: 'text' | 'image_url' | 'audio' | 'video'
   text?: string
   /** Base64 data or URL */
   data?: string

@@ -39,6 +39,20 @@ export type AttachmentStatus =
   | 'unsupported_type'
   | 'needs_subagent'
 
+/** Category label for injection into conversation context */
+export const CATEGORY_LABEL_MAP: Record<AttachmentCategory, string> = {
+  documents: 'PDF/DOC',
+  spreadsheets: 'Hoja de cálculo',
+  images: 'Imagen',
+  audio: 'Audio',
+  presentations: 'Presentación',
+  text: 'TXT/MD',
+  web_link: 'Enlace web',
+}
+
+/** Threshold tokens for small vs large classification (~8192 tokens ≈ Gemini Embedding 2 limit) */
+export const SMALL_FILE_TOKEN_THRESHOLD = 8192
+
 /** A fully processed attachment ready for context injection */
 export interface ProcessedAttachment {
   id: string
@@ -46,7 +60,12 @@ export interface ProcessedAttachment {
   mimeType: string
   category: AttachmentCategory
   sizeBytes: number
+  /** Code-processed text (for embeddings and storage) */
   extractedText: string | null
+  /** LLM-enriched text: description/transcription (for conversation injection) */
+  llmText: string | null
+  /** Category label for context injection (e.g. "[PDF/DOC]", "[Imagen]") */
+  categoryLabel: string
   summary: string | null
   tokenEstimate: number
   sizeTier: AttachmentSizeTier
@@ -55,6 +74,8 @@ export interface ProcessedAttachment {
   injectionRisk: boolean
   sourceType: AttachmentSourceType
   sourceRef: string | null
+  /** Whether LLM enrichment was performed */
+  llmEnriched: boolean
 }
 
 /** URL extraction result */

@@ -29,15 +29,16 @@ export type {
   AudioResult,
   VideoResult,
   DocumentMetadata,
+  LLMEnrichment,
 } from './types.js'
 export { toExtractedContent } from './types.js'
 export { extractSheets } from './sheets.js'
-export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable } from './slides.js'
-export { extractImage, extractImageWithVision } from './image.js'
+export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable, describeSlideScreenshots } from './slides.js'
+export { extractImage, extractImageWithVision, describeImage } from './image.js'
 export { extractWeb, extractWebAsContent } from './web.js'
-export { extractYouTube, parseYoutubeChapters, formatTimestamp } from './youtube.js'
-export { extractVideo } from './video.js'
-export { extractAudio } from './audio.js'
+export { extractYouTube, parseYoutubeChapters, formatTimestamp, describeThumbnail } from './youtube.js'
+export { extractVideo, describeVideo } from './video.js'
+export { extractAudio, transcribeAudioContent } from './audio.js'
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
@@ -45,6 +46,12 @@ import { extractDocx } from './docx.js'
 import { extractXlsx } from './sheets.js'
 import { extractPDF } from './pdf.js'
 import { extractImageWithVision } from './image.js'
+import { describeImage } from './image.js'
+import { transcribeAudioContent } from './audio.js'
+import { describeVideo } from './video.js'
+import { describeSlideScreenshots } from './slides.js'
+import { describeThumbnail } from './youtube.js'
+import type { ExtractorResult } from './types.js'
 
 // ─── Legacy fallback para extractores aún no migrados ────
 async function legacyExtract(input: Buffer, fileName: string, mimeType: string, registry?: Registry): Promise<ExtractedContent> {
@@ -200,5 +207,56 @@ export async function extractContent(
       sections: [{ title: null, content: text }],
       metadata: { sizeBytes: input.length, originalName: fileName, extractorUsed: 'fallback-plaintext' },
     }
+  }
+}
+
+// ═══════════════════════════════════════════
+// LLM Enrichment orchestrator
+// Segundo paso de extracción: enriquece con LLM
+// ═══════════════════════════════════════════
+
+/**
+ * Enriquece un ExtractorResult con procesamiento LLM.
+ * Llama a la función de enriquecimiento apropiada según el kind:
+ * - image → describeImage (Gemini Vision)
+ * - audio → transcribeAudioContent (STT)
+ * - video → describeVideo (Gemini multimodal)
+ * - slides → describeSlideScreenshots (Vision per slide)
+ * - youtube → describeThumbnail (Vision)
+ * - document/sheets/web → no requiere LLM (ya tienen texto)
+ *
+ * Retorna el result enriquecido (mismo tipo, con llmEnrichment populado).
+ * Si falla, retorna el result original sin enriquecimiento.
+ */
+export async function enrichWithLLM(
+  result: ExtractorResult,
+  registry: Registry,
+): Promise<ExtractorResult> {
+  try {
+    switch (result.kind) {
+      case 'image':
+        return await describeImage(result, registry)
+
+      case 'audio':
+        return await transcribeAudioContent(result, registry)
+
+      case 'video':
+        return await describeVideo(result, registry)
+
+      case 'slides':
+        return await describeSlideScreenshots(result, registry)
+
+      case 'youtube':
+        return await describeThumbnail(result, registry)
+
+      // Text-based: no LLM enrichment needed
+      case 'document':
+      case 'sheets':
+      case 'web':
+        return result
+    }
+  } catch (err) {
+    logger.warn({ err, kind: result.kind }, 'LLM enrichment failed — returning code-only result')
+    return result
   }
 }

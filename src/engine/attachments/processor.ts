@@ -1,11 +1,17 @@
-// LUNA Engine — Attachment Processor
-// Main service that orchestrates attachment processing: download, extract, validate, cache.
-// Reuses knowledge extractors (PDF, DOCX, XLSX, images) — does NOT duplicate extraction logic.
+// LUNA Engine — Attachment Processor (v2)
+// Orchestrates attachment processing with dual-result extraction:
+//   1. Code-processed result (text extraction, format conversion) — for embeddings
+//   2. LLM-enriched result (vision description, STT transcription) — for conversation injection
 //
 // KEY DESIGN: Each attachment is an INDEPENDENT unit — processed, validated,
 // and persisted to DB individually. Processing runs in parallel with
 // concurrency control (max 3 simultaneous) to avoid overloading the system.
 // All results are collected and returned as a single AttachmentContext.
+//
+// Size classification uses Gemini Embedding 2 token limit (8192) as threshold:
+//   - Small (≤ 8192 tokens): inject full extracted content with [Category] label
+//   - Large (> 8192 tokens): inject [Category] + LLM-generated description
+// Each processed attachment is stored in interaction DB as a message-like record.
 
 import { randomUUID } from 'node:crypto'
 import pino from 'pino'
@@ -24,6 +30,7 @@ import type {
 import {
   MIME_TO_CATEGORY,
   CATEGORY_LABELS,
+  CATEGORY_LABEL_MAP,
   FALLBACK_MESSAGES,
   SYSTEM_HARD_LIMITS,
   CHANNEL_SUPPORTED_CATEGORIES,
@@ -144,13 +151,16 @@ export async function processAttachments(
         return processed
       } catch (err) {
         logger.error({ filename: att.filename, err }, 'Attachment processing failed')
+        const failedCategory = resolveCategory(att.mimeType)
         const failed: ProcessedAttachment = {
           id: randomUUID(),
           filename: att.filename,
           mimeType: att.mimeType,
-          category: resolveCategory(att.mimeType),
+          category: failedCategory,
           sizeBytes: att.size,
           extractedText: null,
+          llmText: null,
+          categoryLabel: CATEGORY_LABEL_MAP[failedCategory] ?? failedCategory,
           summary: null,
           tokenEstimate: 0,
           sizeTier: 'small',
@@ -159,6 +169,7 @@ export async function processAttachments(
           injectionRisk: false,
           sourceType: 'file_attachment',
           sourceRef: att.id,
+          llmEnriched: false,
         }
         persistOneAttachment(failed, sessionId, messageId, channelName, db).catch(e =>
           logger.warn({ e, filename: att.filename }, 'Failed to persist failed attachment'),
@@ -214,6 +225,8 @@ async function processOneAttachment(
   const id = randomUUID()
   const category = resolveCategory(att.mimeType)
 
+  const categoryLabel = CATEGORY_LABEL_MAP[category] ?? category
+
   // Check if category is enabled for this channel
   if (!channelConfig.enabledCategories.includes(category)) {
     const label = CATEGORY_LABELS[category] ?? att.mimeType
@@ -225,6 +238,8 @@ async function processOneAttachment(
       category,
       sizeBytes: att.size,
       extractedText: null,
+      llmText: null,
+      categoryLabel,
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
@@ -233,6 +248,7 @@ async function processOneAttachment(
       injectionRisk: false,
       sourceType: 'file_attachment',
       sourceRef: att.id,
+      llmEnriched: false,
     }
   }
 
@@ -249,6 +265,8 @@ async function processOneAttachment(
       category,
       sizeBytes: att.size,
       extractedText: null,
+      llmText: null,
+      categoryLabel,
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
@@ -257,6 +275,7 @@ async function processOneAttachment(
       injectionRisk: false,
       sourceType: 'file_attachment',
       sourceRef: att.id,
+      llmEnriched: false,
     }
   }
 
@@ -269,9 +288,45 @@ async function processOneAttachment(
   }
 
   // Use global extractors for content extraction
-  const { extractContent } = await import('../../extractors/index.js')
-  const extracted = await extractContent(data, att.filename, att.mimeType, registry)
-  const rawText = extracted.text?.trim() ?? ''
+  const { extractContent, enrichWithLLM, classifyMimeType } = await import('../../extractors/index.js')
+  const { extractImage } = await import('../../extractors/image.js')
+  const { extractVideo } = await import('../../extractors/video.js')
+
+  const mimeCategory = classifyMimeType(att.mimeType)
+
+  // ── Step 1: Code extraction (result for embeddings) ──
+  let rawText = ''
+  let llmText: string | null = null
+  let llmEnriched = false
+
+  if (mimeCategory === 'image') {
+    // Image: code extraction → metadata only, LLM → vision description
+    const imageResult = await extractImage(data, att.filename, att.mimeType)
+    const enriched = await enrichWithLLM(imageResult, registry)
+    rawText = enriched.kind === 'image' && enriched.llmEnrichment?.description
+      ? enriched.llmEnrichment.description
+      : `[Imagen: ${att.filename}]`
+    llmText = enriched.kind === 'image' ? enriched.llmEnrichment?.description ?? null : null
+    llmEnriched = !!llmText
+  } else if (mimeCategory === 'video') {
+    // Video: code extraction → format/duration, LLM → multimodal description + transcription
+    const videoResult = await extractVideo(data, att.filename, att.mimeType)
+    const enriched = await enrichWithLLM(videoResult, registry)
+    if (enriched.kind === 'video' && enriched.llmEnrichment) {
+      const parts: string[] = []
+      if (enriched.llmEnrichment.description) parts.push(enriched.llmEnrichment.description)
+      if (enriched.llmEnrichment.transcription) parts.push(`[Transcripción]: ${enriched.llmEnrichment.transcription}`)
+      rawText = parts.join('\n\n')
+      llmText = rawText
+      llmEnriched = true
+    } else {
+      rawText = `[Video: ${att.filename}, ${videoResult.durationSeconds}s]`
+    }
+  } else {
+    // Text-based formats (PDF, DOCX, XLSX, TXT, etc.)
+    const extracted = await extractContent(data, att.filename, att.mimeType, registry)
+    rawText = extracted.text?.trim() ?? ''
+  }
 
   if (!rawText) {
     return {
@@ -281,7 +336,9 @@ async function processOneAttachment(
       category,
       sizeBytes: att.size,
       extractedText: null,
-      summary: `[Adjunto: ${att.filename}]`,
+      llmText: null,
+      categoryLabel,
+      summary: `[${categoryLabel}] ${att.filename} — no se pudo extraer contenido`,
       tokenEstimate: 0,
       sizeTier: 'small',
       cacheKey: null,
@@ -289,6 +346,7 @@ async function processOneAttachment(
       injectionRisk: false,
       sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
       sourceRef: att.id,
+      llmEnriched,
     }
   }
 
@@ -298,6 +356,33 @@ async function processOneAttachment(
   // Token estimation (~4 chars per token)
   const tokenEstimate = Math.ceil(rawText.length / 4)
   const sizeTier = classifySizeTier(tokenEstimate, engineConfig)
+
+  // ── Step 2: For large text-based files, generate LLM description ──
+  if (!llmEnriched && sizeTier === 'large') {
+    try {
+      const descResult = await registry.callHook('llm:chat', {
+        task: 'extractor-summarize-large',
+        system: 'Eres un asistente que resume documentos. Genera una descripción concisa pero completa del documento, cubriendo los puntos principales, estructura y datos relevantes. Responde en español. Máximo 500 palabras.',
+        messages: [{
+          role: 'user' as const,
+          content: [
+            { type: 'text' as const, text: `Resume este documento (${att.filename}):\n\n${rawText.slice(0, 24000)}` },
+          ],
+        }],
+        maxTokens: 1500,
+        temperature: 0.1,
+      })
+      if (descResult && typeof descResult === 'object' && 'text' in descResult) {
+        const desc = (descResult as { text: string }).text?.trim()
+        if (desc) {
+          llmText = desc
+          llmEnriched = true
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, filename: att.filename }, 'Failed to generate LLM description for large file')
+    }
+  }
 
   // Cache large documents in Redis for query_attachment tool
   let cacheKey: string | null = null
@@ -311,11 +396,12 @@ async function processOneAttachment(
     }
   }
 
-  // Build summary for large docs
+  // Build summary for large docs (uses LLM description if available, otherwise truncate)
   let summary: string | null = null
   if (sizeTier === 'large') {
-    const maxChars = engineConfig.summaryMaxTokens * 4
-    summary = `[Resumen de ${att.filename}]: ${rawText.slice(0, maxChars)}...`
+    summary = llmText
+      ? `[${categoryLabel}] ${att.filename} — ${llmText}`
+      : `[${categoryLabel}] ${att.filename}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
   }
 
   return {
@@ -325,6 +411,8 @@ async function processOneAttachment(
     category,
     sizeBytes: att.size,
     extractedText: validation.sanitizedText,
+    llmText,
+    categoryLabel,
     summary,
     tokenEstimate,
     sizeTier,
@@ -333,6 +421,7 @@ async function processOneAttachment(
     injectionRisk: validation.injectionRisk,
     sourceType: category === 'images' ? 'image_vision' : 'file_attachment',
     sourceRef: att.id,
+    llmEnriched,
   }
 }
 
@@ -343,6 +432,7 @@ async function processAudio(
   engineConfig: AttachmentEngineConfig,
   registry: Registry,
 ): Promise<ProcessedAttachment> {
+  const categoryLabel = CATEGORY_LABEL_MAP.audio
   const transcription = await transcribeAudio(data, att.mimeType, registry)
 
   if (!transcription) {
@@ -353,7 +443,9 @@ async function processAudio(
       category: 'audio',
       sizeBytes: att.size,
       extractedText: null,
-      summary: `[Audio: ${att.filename} — no se pudo transcribir]`,
+      llmText: null,
+      categoryLabel,
+      summary: `[${categoryLabel}] ${att.filename} — no se pudo transcribir`,
       tokenEstimate: 0,
       sizeTier: 'small',
       cacheKey: null,
@@ -361,6 +453,7 @@ async function processAudio(
       injectionRisk: false,
       sourceType: 'audio_transcription',
       sourceRef: att.id,
+      llmEnriched: false,
     }
   }
 
@@ -375,6 +468,8 @@ async function processAudio(
     category: 'audio',
     sizeBytes: att.size,
     extractedText: validation.sanitizedText,
+    llmText: transcription, // STT transcription IS the LLM text
+    categoryLabel,
     summary: null,
     tokenEstimate,
     sizeTier,
@@ -383,6 +478,7 @@ async function processAudio(
     injectionRisk: validation.injectionRisk,
     sourceType: 'audio_transcription',
     sourceRef: att.id,
+    llmEnriched: true, // STT is LLM-powered
   }
 }
 
@@ -456,8 +552,8 @@ async function persistOneAttachment(
 
   await db.query(
     `INSERT INTO attachment_extractions
-     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      ON CONFLICT DO NOTHING`,
     [
       att.id,
@@ -470,6 +566,8 @@ async function persistOneAttachment(
       att.category,
       att.sourceType,
       att.extractedText,
+      att.llmText,
+      att.categoryLabel,
       att.tokenEstimate,
       att.status,
       att.injectionRisk,

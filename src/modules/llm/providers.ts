@@ -38,7 +38,7 @@ function buildGoogleParts(content: string | ContentPart[]): Array<{ text: string
   if (typeof content === 'string') return [{ text: content }]
   return content.map(part => {
     if (part.type === 'text' && part.text) return { text: part.text }
-    if ((part.type === 'image_url' || part.type === 'audio') && part.data) {
+    if ((part.type === 'image_url' || part.type === 'audio' || part.type === 'video') && part.data) {
       return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
     }
     return { text: part.text ?? '' }
@@ -331,6 +331,10 @@ export class AnthropicAdapter implements ProviderAdapter {
         // Anthropic doesn't support native audio — log and convert to text placeholder
         logger.debug({ mimeType: part.mimeType }, 'Audio part not supported by Anthropic, converting to text placeholder')
         blocks.push({ type: 'text', text: `[Audio: ${part.mimeType ?? 'audio/unknown'}]` })
+      } else if (part.type === 'video' && part.data) {
+        // Anthropic doesn't support native video — log and convert to text placeholder
+        logger.debug({ mimeType: part.mimeType }, 'Video part not supported by Anthropic, converting to text placeholder')
+        blocks.push({ type: 'text', text: `[Video: ${part.mimeType ?? 'video/unknown'}]` })
       }
     }
     return blocks.length === 1 && blocks[0]!.type === 'text'
