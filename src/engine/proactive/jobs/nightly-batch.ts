@@ -1,11 +1,13 @@
 // LUNA Engine — Nightly Batch Job
 // Procesos nocturnos: scoring de leads, compresión de memoria, reportes.
 // Idempotente: usa fecha como flag. Config desde engine:nightly-config service.
+// Usa taskPool para concurrencia configurable con retries + exponential backoff.
 
 import pino from 'pino'
 import type { ProactiveJobContext } from '../../types.js'
 import type { PromptsService } from '../../../modules/prompts/types.js'
 import type { MemoryManager } from '../../../modules/memory/memory-manager.js'
+import { taskPool } from '../../utils/task-pool.js'
 
 const logger = pino({ name: 'engine:job:nightly-batch' })
 
@@ -19,6 +21,8 @@ interface NightlyConfig {
   reportEnabled: boolean
   reportSheetId: string
   reportSheetName: string
+  concurrency: number
+  maxRetries: number
 }
 
 interface EmbeddingService {
@@ -35,6 +39,8 @@ const DEFAULTS: NightlyConfig = {
   reportEnabled: true,
   reportSheetId: '',
   reportSheetName: 'Daily Report',
+  concurrency: 5,
+  maxRetries: 2,
 }
 
 // FIX: E-30 — Use agent slug from config instead of hardcoded 'luna'
@@ -72,7 +78,7 @@ export async function runNightlyBatch(ctx: ProactiveJobContext): Promise<void> {
     // 1. Score cold leads
     await scoreColdLeads(ctx)
 
-    // 2. Compress old sessions
+    // 2. Compress old sessions (+ inline embedding)
     await compressOldSessions(ctx)
 
     // 3. Generate daily report
@@ -81,7 +87,7 @@ export async function runNightlyBatch(ctx: ProactiveJobContext): Promise<void> {
     // 4. Auto-embed knowledge items that are missing embeddings
     await scanAndEmbedKnowledgeItems(ctx)
 
-    // 5. Embed summary chunks that are missing embeddings
+    // 5. Embed summary chunks that are missing embeddings (safety net)
     await embedSummaryChunks(ctx)
 
     // Mark as completed
@@ -124,16 +130,20 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
     }
 
     let reactivated = 0
-    let scored = 0
 
-    for (const row of result.rows) {
-      try {
+    interface ColdLeadRow { id: string; display_name: string | null; qualification_data: Record<string, unknown> | null; qualification_score: number | null }
+
+    const poolResult = await taskPool({
+      items: result.rows as ColdLeadRow[],
+      concurrency: config.concurrency,
+      maxRetries: config.maxRetries,
+      label: 'nightly-scoring',
+      worker: async (row) => {
         const qualData = row.qualification_data ?? {}
         const dataStr = Object.entries(qualData)
           .map(([k, v]) => `- ${k}: ${v}`)
           .join('\n') || '(sin datos)'
 
-        // Load session summaries for this contact
         const summaries = await ctx.db.query(
           `SELECT summary_text FROM session_summaries
            WHERE contact_id = $1 ORDER BY created_at DESC LIMIT 3`,
@@ -177,13 +187,11 @@ Evalúa este lead frío. Responde SOLO con JSON:
           temperature: 0.2,
         })
 
-        if (!llmResult?.text) continue
-
+        if (!llmResult?.text) return
         const parsed = parseJSON(llmResult.text)
-        if (!parsed || typeof parsed.score !== 'number') continue
+        if (!parsed || typeof parsed.score !== 'number') return
 
         const newScore = Math.max(0, Math.min(100, Math.round(parsed.score)))
-        scored++
 
         await ctx.db.query(
           `UPDATE agent_contacts SET qualification_score = $1, updated_at = NOW()
@@ -207,12 +215,16 @@ Evalúa este lead frío. Responde SOLO con JSON:
           reactivated++
           logger.info({ contactId: row.id, score: newScore, reason: parsed.reason }, 'Cold lead reactivated')
         }
-      } catch (err) {
-        logger.warn({ err, contactId: row.id, traceId: ctx.traceId }, 'Failed to score cold lead')
-      }
-    }
+      },
+    })
 
-    logger.info({ traceId: ctx.traceId, total: result.rows.length, scored, reactivated }, 'Cold lead scoring complete')
+    logger.info({
+      traceId: ctx.traceId,
+      total: result.rows.length,
+      succeeded: poolResult.succeeded,
+      failed: poolResult.failed,
+      reactivated,
+    }, 'Cold lead scoring complete')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Cold lead scoring failed')
   }
@@ -233,7 +245,6 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
     return
   }
 
-  // Embedding service for inline chunk embedding after each compression
   const embeddingService = ctx.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
 
   logger.info({ traceId: ctx.traceId, batchSize: config.compressionBatchSize }, 'Compressing old sessions')
@@ -247,15 +258,17 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
       return
     }
 
-    let compressed = 0
     let chunksEmbedded = 0
 
-    for (const session of batch) {
-      try {
+    const poolResult = await taskPool({
+      items: batch,
+      concurrency: config.concurrency,
+      maxRetries: config.maxRetries,
+      label: 'nightly-compression',
+      worker: async (session) => {
         const messages = await memoryManager.getSessionMessages(session.sessionId)
-        if (messages.length < config.compressionMinMessages) continue
+        if (messages.length < config.compressionMinMessages) return
 
-        // Build conversation text for LLM
         const conversationText = messages
           .map(m => `[${m.role === 'assistant' ? 'Agente' : 'Usuario'}]: ${m.contentText || m.content?.text || ''}`)
           .join('\n')
@@ -296,10 +309,9 @@ ${conversationText.slice(0, 15000)}`
           temperature: 0.3,
         })
 
-        if (!llmResult?.text) continue
-
+        if (!llmResult?.text) return
         const parsed = parseJSON(llmResult.text)
-        if (!parsed?.summary) continue
+        if (!parsed?.summary) return
 
         const summaryId = await memoryManager.compressSession(
           session.sessionId,
@@ -325,8 +337,6 @@ ${conversationText.slice(0, 15000)}`
           session.lastMessageAt,
         )
 
-        compressed++
-
         // Embed chunks inline — right after successful compression
         if (embeddingService) {
           try {
@@ -341,7 +351,6 @@ ${conversationText.slice(0, 15000)}`
                   chunksEmbedded++
                 }
               }
-              logger.debug({ sessionId: session.sessionId, chunks: chunks.length, embedded: chunksEmbedded }, 'Chunks embedded inline')
             }
           } catch (embedErr) {
             // Non-fatal: embedSummaryChunks (step 5) will catch stragglers
@@ -350,12 +359,16 @@ ${conversationText.slice(0, 15000)}`
         }
 
         logger.debug({ sessionId: session.sessionId, messages: messages.length }, 'Session compressed')
-      } catch (err) {
-        logger.warn({ err, sessionId: session.sessionId, traceId: ctx.traceId }, 'Failed to compress session')
-      }
-    }
+      },
+    })
 
-    logger.info({ traceId: ctx.traceId, eligible: batch.length, compressed, chunksEmbedded }, 'Session compression complete')
+    logger.info({
+      traceId: ctx.traceId,
+      eligible: batch.length,
+      compressed: poolResult.succeeded,
+      failed: poolResult.failed,
+      chunksEmbedded,
+    }, 'Session compression complete')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Session compression failed')
   }
@@ -516,9 +529,6 @@ Escribe el resumen en español, enfocándote en tendencias y datos relevantes.`
 
 // ─── 4. Scan & Embed Knowledge Items ─────────
 
-const MAX_EMBED_RETRIES = 3
-const EMBED_RETRY_DELAY_MS = 2000
-
 interface KnowledgePgStore {
   listItemsNeedingEmbedding(): Promise<Array<{ id: string; title: string; contentLoaded: boolean; embeddingStatus: string }>>
   listItemsDueForSync(): Promise<Array<{ id: string; title: string; sourceId: string; sourceType: string; lastModifiedTime: string | null }>>
@@ -533,28 +543,8 @@ interface DriveService {
   getFile(fileId: string): Promise<{ modifiedTime?: string }>
 }
 
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxAttempts: number,
-  delayMs: number,
-  label: string,
-): Promise<T> {
-  let lastErr: unknown
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastErr = err
-      if (attempt < maxAttempts) {
-        logger.warn({ err, attempt, maxAttempts, label }, 'Retrying after error')
-        await new Promise(r => setTimeout(r, delayMs * attempt))
-      }
-    }
-  }
-  throw lastErr
-}
-
 async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<void> {
+  const config = getNightlyConfig(ctx)
   const pgStore = ctx.registry.getOptional<KnowledgePgStore>('knowledge:pg-store')
   const itemManager = ctx.registry.getOptional<KnowledgeItemManager>('knowledge:item-manager')
 
@@ -567,53 +557,42 @@ async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<voi
 
   logger.info({ traceId: ctx.traceId }, 'Starting knowledge items sync scan')
 
-  let checked = 0
-  let reembedded = 0
-  let noChange = 0
-  let failed = 0
-
   try {
-    // Step A: items that have never been loaded or embedding failed → load unconditionally
+    // Step A: items that have never been loaded or embedding failed
     const unloaded = await pgStore.listItemsNeedingEmbedding()
-    for (const item of unloaded) {
-      try {
-        const result = await withRetry(
-          () => itemManager.loadContent(item.id),
-          MAX_EMBED_RETRIES,
-          EMBED_RETRY_DELAY_MS,
-          `loadContent:${item.id}`,
-        )
-        reembedded++
+
+    const poolA = await taskPool({
+      items: unloaded,
+      concurrency: config.concurrency,
+      maxRetries: config.maxRetries,
+      label: 'nightly-knowledge-unloaded',
+      worker: async (item) => {
+        const result = await itemManager.loadContent(item.id)
         logger.info({ traceId: ctx.traceId, itemId: item.id, title: item.title, chunks: result.chunks }, 'Unloaded item embedded')
-      } catch (err) {
-        failed++
-        logger.warn({ traceId: ctx.traceId, err, itemId: item.id, title: item.title }, 'Failed to embed unloaded item')
-      }
-    }
+      },
+    })
 
     // Step B: items due for sync check → compare Drive modifiedTime
     const dueItems = await pgStore.listItemsDueForSync()
-    for (const item of dueItems) {
-      checked++
-      const now = new Date()
-      try {
+    let noChange = 0
+
+    const poolB = await taskPool({
+      items: dueItems,
+      concurrency: config.concurrency,
+      maxRetries: config.maxRetries,
+      label: 'nightly-knowledge-sync',
+      worker: async (item) => {
+        const now = new Date()
         let changed = false
         let latestModifiedTime: string | null = item.lastModifiedTime
 
-        // Check Drive modifiedTime if service available (skip Drive folders — use item-level check)
         if (drive && item.sourceType !== 'drive') {
           try {
-            const meta = await withRetry(
-              () => drive.getFile(item.sourceId),
-              2,
-              1000,
-              `getFile:${item.sourceId}`,
-            )
+            const meta = await drive.getFile(item.sourceId)
             if (meta.modifiedTime) {
               latestModifiedTime = meta.modifiedTime
               changed = !item.lastModifiedTime || meta.modifiedTime !== item.lastModifiedTime
             } else {
-              // Cannot determine — treat as changed to be safe
               changed = true
             }
           } catch (err) {
@@ -621,33 +600,29 @@ async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<voi
             changed = true
           }
         } else {
-          // No Drive service or drive-type item — always re-embed on schedule
           changed = true
         }
 
-        // Update sync timestamp regardless of whether we re-embed
         await pgStore.updateItemSyncStatus(item.id, now, latestModifiedTime)
 
         if (changed) {
-          await withRetry(
-            () => itemManager.loadContent(item.id),
-            MAX_EMBED_RETRIES,
-            EMBED_RETRY_DELAY_MS,
-            `loadContent:${item.id}`,
-          )
-          reembedded++
+          await itemManager.loadContent(item.id)
           logger.info({ traceId: ctx.traceId, itemId: item.id, title: item.title }, 'Item changed — re-embedded')
         } else {
           noChange++
           logger.debug({ traceId: ctx.traceId, itemId: item.id, title: item.title }, 'Item unchanged — skipped')
         }
-      } catch (err) {
-        failed++
-        logger.warn({ traceId: ctx.traceId, err, itemId: item.id, title: item.title }, 'Knowledge item sync failed')
-      }
-    }
+      },
+    })
 
-    logger.info({ traceId: ctx.traceId, checked, reembedded, noChange, failed }, 'Knowledge sync scan complete')
+    logger.info({
+      traceId: ctx.traceId,
+      unloaded: poolA.succeeded,
+      checked: dueItems.length,
+      reembedded: poolB.succeeded - noChange,
+      noChange,
+      failed: poolA.failed + poolB.failed,
+    }, 'Knowledge sync scan complete')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Knowledge sync scan failed')
   }
@@ -656,6 +631,7 @@ async function scanAndEmbedKnowledgeItems(ctx: ProactiveJobContext): Promise<voi
 // ─── 5. Embed Summary Chunks (safety net for stragglers) ──────
 
 async function embedSummaryChunks(ctx: ProactiveJobContext): Promise<void> {
+  const config = getNightlyConfig(ctx)
   const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
   const embeddingService = ctx.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
 
@@ -671,27 +647,42 @@ async function embedSummaryChunks(ctx: ProactiveJobContext): Promise<void> {
       return
     }
 
-    logger.info({ traceId: ctx.traceId, count: chunks.length }, 'Embedding summary chunks')
+    logger.info({ traceId: ctx.traceId, count: chunks.length }, 'Embedding straggler summary chunks')
 
-    // Process in batches of 50 (API batch limit)
+    // Split into batches of 50 (embedding API limit)
     const BATCH_SIZE = 50
-    let embedded = 0
-
+    const batches: Array<Array<{ id: string; chunkText: string }>> = []
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-      const batch = chunks.slice(i, i + BATCH_SIZE)
-      const texts = batch.map(c => c.chunkText)
-      const embeddings = await embeddingService.generateBatchEmbeddings(texts)
-
-      for (let j = 0; j < batch.length; j++) {
-        const emb = embeddings[j]
-        if (emb) {
-          await memoryManager.updateChunkEmbedding(batch[j]!.id, emb)
-          embedded++
-        }
-      }
+      batches.push(chunks.slice(i, i + BATCH_SIZE))
     }
 
-    logger.info({ traceId: ctx.traceId, total: chunks.length, embedded }, 'Chunk embedding complete')
+    let embedded = 0
+
+    const poolResult = await taskPool({
+      items: batches,
+      concurrency: config.concurrency,
+      maxRetries: config.maxRetries,
+      label: 'nightly-embed-stragglers',
+      worker: async (batch) => {
+        const texts = batch.map(c => c.chunkText)
+        const embeddings = await embeddingService.generateBatchEmbeddings(texts)
+        for (let j = 0; j < batch.length; j++) {
+          const emb = embeddings[j]
+          if (emb) {
+            await memoryManager.updateChunkEmbedding(batch[j]!.id, emb)
+            embedded++
+          }
+        }
+      },
+    })
+
+    logger.info({
+      traceId: ctx.traceId,
+      total: chunks.length,
+      embedded,
+      batches: poolResult.succeeded,
+      failed: poolResult.failed,
+    }, 'Straggler chunk embedding complete')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Chunk embedding failed')
   }

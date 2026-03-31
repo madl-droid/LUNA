@@ -45,6 +45,8 @@ interface EngineModuleConfig {
   NIGHTLY_REPORT_ENABLED: boolean
   NIGHTLY_REPORT_SHEET_ID: string
   NIGHTLY_REPORT_SHEET_NAME: string
+  NIGHTLY_CONCURRENCY: number
+  NIGHTLY_MAX_RETRIES: number
 }
 
 const manifest: ModuleManifest = {
@@ -88,6 +90,8 @@ const manifest: ModuleManifest = {
     NIGHTLY_REPORT_ENABLED: boolEnv(true),
     NIGHTLY_REPORT_SHEET_ID: z.string().default(''),
     NIGHTLY_REPORT_SHEET_NAME: z.string().default('Daily Report'),
+    NIGHTLY_CONCURRENCY: numEnvMin(1, 5),
+    NIGHTLY_MAX_RETRIES: numEnvMin(0, 2),
   }),
 
   console: {
@@ -323,6 +327,30 @@ const manifest: ModuleManifest = {
         placeholder: 'Daily Report',
         width: 'half',
       },
+      {
+        key: 'NIGHTLY_CONCURRENCY',
+        type: 'number',
+        label: { es: 'Concurrencia del lote', en: 'Batch concurrency' },
+        description: {
+          es: 'Cuantas tareas se procesan en paralelo durante el lote nocturno.',
+          en: 'How many tasks are processed in parallel during the nightly batch.',
+        },
+        min: 1,
+        max: 20,
+        width: 'half',
+      },
+      {
+        key: 'NIGHTLY_MAX_RETRIES',
+        type: 'number',
+        label: { es: 'Reintentos por tarea', en: 'Retries per task' },
+        description: {
+          es: 'Reintentos con backoff exponencial antes de marcar una tarea como fallida.',
+          en: 'Retries with exponential backoff before marking a task as failed.',
+        },
+        min: 0,
+        max: 5,
+        width: 'half',
+      },
     ],
     apiRoutes: [
       {
@@ -439,6 +467,8 @@ const manifest: ModuleManifest = {
       reportEnabled: attConfig.NIGHTLY_REPORT_ENABLED,
       reportSheetId: attConfig.NIGHTLY_REPORT_SHEET_ID,
       reportSheetName: attConfig.NIGHTLY_REPORT_SHEET_NAME,
+      concurrency: attConfig.NIGHTLY_CONCURRENCY,
+      maxRetries: attConfig.NIGHTLY_MAX_RETRIES,
     })
 
     registry.provide('engine:nightly-config', {
