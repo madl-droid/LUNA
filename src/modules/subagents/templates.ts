@@ -381,6 +381,7 @@ function renderFormSections(opts: {
   const priority = t ? t.sortOrder : 0
   const verifyResult = t ? t.verifyResult : true
   const canSpawn = t ? t.canSpawnChildren : false
+  const grounding = t ? t.googleSearchGrounding : false
   const systemPrompt = t ? t.systemPrompt : ''
   const allowedTools = t ? t.allowedTools : []
   const allowedCategories = t ? t.allowedKnowledgeCategories : []
@@ -397,6 +398,7 @@ function renderFormSections(opts: {
   const priorityAttr = A('id="sa-priority" class="sa-input-sm"', 'class="sa-if-priority sa-input-sm"')
   const verifyAttr = A('id="sa-verify-result"', 'class="sa-if-verify"')
   const spawnAttr = A('id="sa-can-spawn"', 'class="sa-if-spawn"')
+  const groundingAttr = A('id="sa-grounding"', 'class="sa-if-grounding"')
   const promptToggleAttr = A('id="sa-prompt-toggle"', 'class="sa-if-prompt-toggle"')
   const promptSectionAttr = A('id="sa-prompt-section"', `class="sa-prompt-section" data-sa-ps="${esc(idPrefix)}"`)
   const promptLinesAttr = A('id="sa-prompt-lines" class="code-editor-lines"', 'class="sa-if-prompt-lines code-editor-lines"')
@@ -471,6 +473,13 @@ function renderFormSections(opts: {
             <div>
               <div class="sa-toggle-label">${l('canSpawn', lang)}</div>
               <div class="sa-help">${l('spawnHelp', lang)}</div>
+            </div>
+          </div>
+          <div class="sa-toggle-item">
+            <label class="toggle toggle-sm"><input type="checkbox" ${groundingAttr}${grounding ? ' checked' : ''}${sysDisabled}><span class="toggle-slider"></span></label>
+            <div>
+              <div class="sa-toggle-label">${l('googleGrounding', lang)}</div>
+              <div class="sa-help">${l('googleGroundingHelp', lang)}</div>
             </div>
           </div>
         </div>
@@ -584,6 +593,14 @@ export function renderSubagentsSection(
               <button class="info-btn" type="button">i</button>
               <span class="info-tooltip info-flip">${esc(l('verifyHelp', lang))}</span>
             </div>
+            ${t.googleSearchGrounding ? `<div class="sa-meta-item">
+              <span class="sa-stat-chip sa-verify-chip sa-verify-active">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                ${esc(l('googleGrounding', lang))}
+              </span>
+              <button class="info-btn" type="button">i</button>
+              <span class="info-tooltip info-flip">${esc(l('googleGroundingHelp', lang))}</span>
+            </div>` : ''}
             <div class="sa-meta-item">
               <span class="sa-stat-chip">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
@@ -846,6 +863,7 @@ function renderScript(lang: Lang): string {
     var p = document.getElementById('sa-priority'); if (p) p.value = '0'
     var vr = document.getElementById('sa-verify-result'); if (vr) vr.checked = true
     var cs = document.getElementById('sa-can-spawn'); if (cs) cs.checked = false
+    var gr = document.getElementById('sa-grounding'); if (gr) gr.checked = false
     var pt = document.getElementById('sa-prompt-toggle'); if (pt) pt.checked = false
     var ps = document.getElementById('sa-prompt-section'); if (ps) ps.style.display = 'none'
     var sp2 = document.getElementById('sa-system-prompt'); if (sp2) sp2.value = ''
@@ -883,6 +901,7 @@ function renderScript(lang: Lang): string {
         tokenBudget: tokenBudget,
         verifyResult: document.getElementById('sa-verify-result').checked,
         canSpawnChildren: document.getElementById('sa-can-spawn').checked,
+        googleSearchGrounding: document.getElementById('sa-grounding').checked,
         allowedTools: getSelectedTools(form),
         allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (document.getElementById('sa-system-prompt').value || '') : '',
@@ -937,6 +956,7 @@ function renderScript(lang: Lang): string {
         tokenBudget: tokenBudget,
         verifyResult: form.querySelector('.sa-if-verify').checked,
         canSpawnChildren: form.querySelector('.sa-if-spawn').checked,
+        googleSearchGrounding: form.querySelector('.sa-if-grounding').checked,
         allowedTools: getSelectedTools(form),
         allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (form.querySelector('.sa-if-prompt').value || '') : '',
