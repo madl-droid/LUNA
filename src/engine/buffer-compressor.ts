@@ -58,7 +58,7 @@ export async function checkAndCompressBuffer(
       model: config.classifyModel,
       system: 'Eres un asistente que resume conversaciones de soporte y ventas de manera concisa. Responde SOLO con el resumen, sin introducción ni explicación.',
       messages: [{ role: 'user', content: userPrompt }],
-      maxTokens: 500,
+      maxTokens: 1000,
       temperature: 0.2,
     })
 

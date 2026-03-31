@@ -66,7 +66,7 @@ export function loadEngineConfig(): EngineConfig {
 
     // LLM limits
     maxInputTokens: envInt('LLM_MAX_INPUT_TOKENS', 4096),
-    maxOutputTokens: envInt('LLM_MAX_OUTPUT_TOKENS', 2048),
+    maxOutputTokens: envInt('LLM_MAX_OUTPUT_TOKENS', 7000),
     temperatureClassify: envFloat('LLM_TEMPERATURE_CLASSIFY', 0.1),
     temperatureRespond: envFloat('LLM_TEMPERATURE_RESPOND', 0.7),
     temperatureComplex: envFloat('LLM_TEMPERATURE_COMPLEX', 0.5),

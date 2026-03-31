@@ -10,7 +10,7 @@
 // 3. Truncar para prevenir prompt stuffing
 
 /** Escapa un string para uso dentro de un prompt LLM */
-export function escapeForPrompt(text: string, maxLength = 5000): string {
+export function escapeForPrompt(text: string, maxLength = 10000): string {
   if (!text) return ''
 
   const escaped = text
@@ -39,14 +39,14 @@ export function wrapUserContent(text: string, label = 'USER_MESSAGE'): string {
 }
 
 /** Escapa datos estructurados (de DB, tools, etc.) para inyección en prompt */
-export function escapeDataForPrompt(data: string, maxLength = 3000): string {
+export function escapeDataForPrompt(data: string, maxLength = 6000): string {
   return escapeForPrompt(data, maxLength)
 }
 
 /** Escapa y trunca un array de mensajes de historial */
 export function escapeHistory(
   messages: Array<{ role: string; content: string }>,
-  maxPerMessage = 500,
+  maxPerMessage = 1000,
 ): Array<{ role: string; content: string }> {
   return messages.map(m => ({
     role: m.role,

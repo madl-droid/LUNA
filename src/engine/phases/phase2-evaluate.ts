@@ -108,7 +108,7 @@ Genera un nuevo plan que tome en cuenta estos resultados. No repitas pasos que y
         model,
         system,
         messages: [{ role: 'user', content: userMessage }],
-        maxTokens: 512,
+        maxTokens: 2048,
         temperature: config.temperatureClassify,
         jsonMode: true, // Force JSON output — Anthropic: prefill trick, Google: responseMimeType
       },
