@@ -88,7 +88,7 @@ export class KnowledgePgStore {
         chunk_index   int NOT NULL,
         page          int,
         has_embedding boolean NOT NULL DEFAULT false,
-        embedding     vector(1536),
+        embedding     vector(3072),
         tsv           tsvector,
         created_at    timestamptz NOT NULL DEFAULT now()
       )

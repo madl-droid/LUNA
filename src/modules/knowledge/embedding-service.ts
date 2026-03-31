@@ -6,9 +6,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import type pino from 'pino'
 
 // Gemini Embedding 2 — natively multimodal (text, images, PDFs, video, audio)
-// Using 1536 dims via Matryoshka for backward compatibility with existing vectors
+// 3072 dimensions (default for gemini-embedding-2-preview)
 const MODEL = 'gemini-embedding-2-preview'
-const DIMENSIONS = 1536
+const DIMENSIONS = 3072
 const MAX_BATCH_SIZE = 100
 
 // Circuit breaker: 3 failures in 5 min → open for 5 min
