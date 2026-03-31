@@ -270,6 +270,8 @@ export class KnowledgeItemManager {
 
   async toggleActive(id: string, active: boolean): Promise<void> {
     await this.pgStore.updateItem(id, { active })
+    // Toggle searchability of this item's chunks
+    await this.pgStore.setItemChunksSearchable(id, active)
     // Always invalidate: active items are now part of injection catalog
     await this.cache.invalidate()
     logger.info({ id, active }, 'Item active toggled')
@@ -294,12 +296,29 @@ export class KnowledgeItemManager {
     if (!item) throw new Error('Item no encontrado')
     if (item.active) throw new Error('Debe desactivar el item antes de eliminarlo')
 
-    // Clean up associated chunks/documents
+    // Delete files from disk before removing DB records
+    try {
+      const docs = await this.pgStore.getPool().query<{ file_path: string | null }>(
+        `SELECT file_path FROM knowledge_documents WHERE source_ref = $1 AND file_path IS NOT NULL AND file_path != ''`,
+        [id],
+      )
+      const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+      for (const doc of docs.rows) {
+        if (doc.file_path) {
+          const { unlink } = await import('node:fs/promises')
+          await unlink(join(knowledgeDir, doc.file_path)).catch(() => {})
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, id }, 'Failed to clean up files from disk (non-fatal)')
+    }
+
+    // Clean up associated chunks/documents from DB
     await this.pgStore.deleteItemChunks(id)
     await this.pgStore.deleteItem(id)
 
-    if (item.isCore) await this.cache.invalidate()
-    logger.info({ id, title: item.title }, 'Item removed')
+    await this.cache.invalidate()
+    logger.info({ id, title: item.title }, 'Item removed (DB + disk)')
   }
 
   // ─── Scan Tabs ──────────────────────────────

@@ -7,7 +7,7 @@ import type pino from 'pino'
 
 // Gemini Embedding 2 — natively multimodal (text, images, PDFs, video, audio)
 // Using 1536 dims via Matryoshka for backward compatibility with existing vectors
-const MODEL = 'gemini-embedding-2-preview-03-25'
+const MODEL = 'gemini-embedding-2-preview'
 const DIMENSIONS = 1536
 const MAX_BATCH_SIZE = 100
 

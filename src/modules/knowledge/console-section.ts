@@ -119,10 +119,10 @@ export function renderKnowledgeSection(
 
   // ── Training stats footer ──
   if (items.length > 0) {
-    const trainedItems = items.filter(i => i.embeddingStatus === 'done')
+    const trainedItems = items.filter(i => i.contentLoaded)
     const totalChunks = items.reduce((sum, i) => sum + (i.chunkCount ?? 0), 0)
     const lastTrained = items
-      .filter(i => i.embeddingStatus === 'done')
+      .filter(i => i.contentLoaded)
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]
 
     const pad = (n: number) => n.toString().padStart(2, '0')
@@ -857,9 +857,10 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     var btn = document.getElementById('ki-wiz-next2');
     if (btn) { btn.disabled = true; btn.textContent = '${isEs ? 'Escaneando...' : 'Scanning...'}'; }
 
-    // Scan columns for all tabs sequentially
+    // Scan columns for non-ignored tabs only
     var chain = Promise.resolve();
     wizState.tabs.forEach(function(tab) {
+      if (tab.ignored) return;
       chain = chain.then(function() {
         return api('/scan-columns', 'POST', { tabId: tab.id }).then(function(r) {
           if (r.columns) tab.columns = r.columns;
@@ -882,24 +883,32 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     location.reload();
   };
 
-  // ── Step 3: Columns rendering ──
+  // ── Step 3: Columns rendering (only non-ignored tabs) ──
+  function getVisibleTabs() {
+    return (wizState.tabs || []).filter(function(t) { return !t.ignored; });
+  }
+
   function renderWizCols() {
     var navEl = document.getElementById('ki-wiz-col-tab-nav');
     var listEl = document.getElementById('ki-wiz-cols-list');
     if (!navEl || !listEl) return;
 
-    if (!wizState.tabs || wizState.tabs.length === 0) {
+    var visible = getVisibleTabs();
+    if (visible.length === 0) {
       navEl.innerHTML = '';
       listEl.innerHTML = '<p class="ki-empty-note">${t('no_cols', lang)}</p>';
       return;
     }
 
-    // Tab navigation
+    // Clamp activeTabIdx to visible range
+    if (wizState.activeTabIdx >= visible.length) wizState.activeTabIdx = 0;
+
+    // Tab navigation (only non-ignored)
     var navHtml = '';
-    for (var i = 0; i < wizState.tabs.length; i++) {
+    for (var i = 0; i < visible.length; i++) {
       var active = i === wizState.activeTabIdx ? ' ki-wiz-col-tab-active' : '';
       navHtml += '<button type="button" class="act-btn act-btn-config act-btn--compact ki-wiz-col-tab-btn' + active + '" onclick="kiWizSelectColTab(' + i + ')">'
-        + esc(wizState.tabs[i].tabName || wizState.tabs[i].tab_name || 'Tab ' + (i + 1)) + '</button>';
+        + esc(visible[i].tabName || visible[i].tab_name || 'Tab ' + (i + 1)) + '</button>';
     }
     navEl.innerHTML = navHtml;
 
@@ -909,16 +918,23 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
   function renderColsForActiveTab(listEl) {
     if (!listEl) listEl = document.getElementById('ki-wiz-cols-list');
     if (!listEl) return;
-    var tab = wizState.tabs[wizState.activeTabIdx];
+    var visible = getVisibleTabs();
+    var tab = visible[wizState.activeTabIdx];
     if (!tab || !tab.columns || tab.columns.length === 0) {
       listEl.innerHTML = '<p class="ki-empty-note">${t('no_cols', lang)}</p>';
       return;
     }
+    // Filter out ignored columns
+    var cols = tab.columns.filter(function(c) { return !c.ignored; });
+    if (cols.length === 0) {
+      listEl.innerHTML = '<p class="ki-empty-note">${t('no_cols', lang)}</p>';
+      return;
+    }
     var html = '';
-    for (var j = 0; j < tab.columns.length; j++) {
-      var col = tab.columns[j];
-      var colIgnored = !!(col.ignored);
-      html += '<div class="ki-wiz-col-row' + (colIgnored ? ' ki-wiz-row-ignored' : '') + '">'
+    for (var j = 0; j < cols.length; j++) {
+      var col = cols[j];
+      var colIgnored = false;
+      html += '<div class="ki-wiz-col-row">'
         + '<span class="ki-wiz-col-name">' + esc(col.columnName || col.column_name || '') + '</span>'
         + '<input type="text" class="wizard-input ki-wiz-col-desc" placeholder="${t('col_desc', lang)}"'
         + ' value="' + esc(col.description || '') + '"'
@@ -944,8 +960,9 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
   };
 
   window.kiWizRefreshCols = function() {
-    if (!wizState.tabs || wizState.tabs.length === 0) return;
-    var tab = wizState.tabs[wizState.activeTabIdx];
+    var visible = getVisibleTabs();
+    if (visible.length === 0) return;
+    var tab = visible[wizState.activeTabIdx];
     if (!tab) return;
     var refreshBtn = document.querySelector('[onclick="kiWizRefreshCols()"]');
     if (refreshBtn) refreshBtn.classList.add('ki-refreshing');
@@ -1029,13 +1046,20 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
         if (r.error) { toast(r.error, 'error'); return; }
         setCooldown('ki-cd-' + id);
         toast('${isEs ? 'Entrenado: ' : 'Trained: '}' + r.chunks + ' ${isEs ? 'datos' : 'data points'}');
-        updateStatsFooter();
-        location.reload();
+        updateStatsFooter(r.chunks);
+        // Update status dot in-place
+        var row = document.querySelector('[data-item-id="' + id + '"]');
+        if (row) {
+          var estado = row.querySelector('.ki-status-row');
+          if (estado) estado.innerHTML = '<span class="ki-dot ki-dot-processing"></span>${isEs ? 'Procesando' : 'Processing'}';
+        }
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
-  function updateStatsFooter() {
+  var lastTrainChunks = 0;
+  function updateStatsFooter(chunks) {
+    if (chunks) lastTrainChunks += chunks;
     var footer = document.getElementById('ki-stats-footer');
     if (!footer) return;
     var now = new Date();
@@ -1045,7 +1069,8 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     var hh = ('0' + now.getHours()).slice(-2);
     var mi = ('0' + now.getMinutes()).slice(-2);
     var items = document.querySelectorAll('.ki-row');
-    footer.textContent = '${isEs ? 'Último entrenamiento' : 'Last training'}: ' + dd + '/' + mm + '/' + yy + ' ' + hh + ':' + mi + ' ${isEs ? 'sobre' : 'across'} ' + items.length + ' ${isEs ? 'conocimientos' : 'knowledge items'}.';
+    var datosText = lastTrainChunks > 0 ? (' ${isEs ? 'para un total de' : 'for a total of'} ' + lastTrainChunks + ' ${isEs ? 'datos' : 'data points'}.') : '.';
+    footer.textContent = '${isEs ? 'Último entrenamiento' : 'Last training'}: ' + dd + '/' + mm + '/' + yy + ' ' + hh + ':' + mi + ' ${isEs ? 'sobre' : 'across'} ' + items.length + ' ${isEs ? 'conocimientos' : 'knowledge items'}' + datosText;
   }
 
   window.kiBulkVectorize = function() {

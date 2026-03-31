@@ -624,6 +624,15 @@ export class KnowledgePgStore {
     }))
   }
 
+  /** Toggle searchability of all chunks belonging to an item's documents */
+  async setItemChunksSearchable(itemId: string, searchable: boolean): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_chunks SET has_embedding = CASE WHEN $2 THEN (embedding IS NOT NULL) ELSE false END
+       WHERE document_id IN (SELECT id FROM knowledge_documents WHERE source_ref = $1)`,
+      [itemId, searchable],
+    )
+  }
+
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
     const embStr = `[${embedding.join(',')}]`
     await this.db.query(
