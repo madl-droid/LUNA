@@ -32,14 +32,20 @@ export type {
 } from './types.js'
 export { toExtractedContent } from './types.js'
 
-// ─── Extractores registrados ────────────────
-// Se importan dinámicamente para no cargar todo al inicio.
-// Cada fase del refactor va conectando el extractor real.
+// ─── Extractores migrados ───────────────────
+import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
 
-// Placeholder: se usa el extractor legacy de knowledge hasta que se migre
-async function legacyExtract(input: Buffer, fileName: string, registry?: Registry): Promise<ExtractedContent> {
+// ─── Legacy fallback para extractores aún no migrados ────
+async function legacyExtract(input: Buffer, fileName: string, mimeType: string, registry?: Registry): Promise<ExtractedContent> {
   const { extractContent: legacyExtractContent } = await import('../modules/knowledge/extractors/index.js')
-  return legacyExtractContent(input, fileName, resolveMimeType(fileName), registry)
+  return legacyExtractContent(input, fileName, mimeType, registry)
+}
+
+// Mapa de extractores migrados por MIME type
+const MIGRATED_EXTRACTORS: Record<string, (input: Buffer, fileName: string, registry?: Registry) => Promise<ExtractedContent>> = {
+  'text/markdown': extractMarkdown,
+  'text/plain': extractPlainText,
+  'application/json': extractJSON,
 }
 
 // ─── MIME types soportados ──────────────────
@@ -150,8 +156,12 @@ export async function extractContent(
   const resolvedMime = mimeType ?? resolveMimeType(fileName)
 
   try {
-    // Por ahora delega al legacy — cada fase va reemplazando
-    return await legacyExtract(input, fileName, registry)
+    // Usar extractor migrado si existe, sino legacy
+    const migrated = MIGRATED_EXTRACTORS[resolvedMime]
+    if (migrated) {
+      return await migrated(input, fileName, registry)
+    }
+    return await legacyExtract(input, fileName, resolvedMime, registry)
   } catch (err) {
     logger.error({ fileName, mimeType: resolvedMime, err }, 'Extraction failed, falling back to plain text')
     const text = input.toString('utf-8')
