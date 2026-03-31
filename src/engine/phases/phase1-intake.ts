@@ -148,6 +148,7 @@ export async function phase1Intake(
     message.channelName,
     agentId,
     sessionWindowMs,
+    message.threadId,
   )
 
   // 11b. Detect campaign (needs session for round number)
@@ -446,10 +447,47 @@ async function loadOrCreateSession(
   channel: string,
   agentId: string,
   reopenWindowMs: number,
+  threadId?: string,
 ): Promise<SessionInfo> {
   const cutoff = new Date(Date.now() - reopenWindowMs)
 
-  if (contactId) {
+  // For channels that provide a threadId (Gmail), look up session by thread first.
+  // This ensures all emails in the same thread share one session, regardless of timing.
+  if (threadId) {
+    try {
+      const result = await db.query(
+        `SELECT s.id, s.contact_id, s.agent_id, s.channel_name, s.started_at, s.last_activity_at,
+                s.message_count, ss.summary_text AS compressed_summary
+         FROM sessions s
+         LEFT JOIN LATERAL (
+           SELECT summary_text FROM session_summaries
+           WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+         ) ss ON true
+         WHERE s.thread_id = $1 AND s.last_activity_at > $2
+         ORDER BY s.last_activity_at DESC
+         LIMIT 1`,
+        [threadId, cutoff],
+      )
+
+      if (result.rows.length > 0) {
+        const row = result.rows[0]!
+        return {
+          id: row.id,
+          contactId: row.contact_id,
+          agentId: row.agent_id ?? agentId,
+          channel: row.channel_name,
+          startedAt: row.started_at,
+          lastActivityAt: row.last_activity_at,
+          messageCount: row.message_count,
+          compressedSummary: row.compressed_summary ?? null,
+          isNew: false,
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, threadId, channel }, 'Failed to load session by thread_id')
+    }
+  } else if (contactId) {
+    // Standard lookup: most recent session for this contact within the reopen window
     try {
       const result = await db.query(
         `SELECT s.id, s.contact_id, s.agent_id, s.channel_name, s.started_at, s.last_activity_at,
@@ -489,12 +527,12 @@ async function loadOrCreateSession(
 
   try {
     await db.query(
-      `INSERT INTO sessions (id, contact_id, channel_contact_id, channel_name, agent_id, started_at, last_activity_at, message_count)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, 0)`,
-      [sessionId, contactId, channelContactId, channel, agentId, now],
+      `INSERT INTO sessions (id, contact_id, channel_contact_id, channel_name, agent_id, started_at, last_activity_at, message_count, thread_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, 0, $7)`,
+      [sessionId, contactId, channelContactId, channel, agentId, now, threadId ?? null],
     )
   } catch (err) {
-    logger.error({ err, sessionId, channelContactId, channel }, 'Failed to create session in DB — cannot proceed without persisted session')
+    logger.error({ err, sessionId, channelContactId, channel, threadId }, 'Failed to create session in DB — cannot proceed without persisted session')
     throw err
   }
 

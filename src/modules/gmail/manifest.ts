@@ -270,6 +270,7 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
       text: fullContent,
     },
     attachments: attachmentMetas,
+    threadId: msg.threadId || undefined, // bind email to its Gmail thread → one thread = one session
     raw: msg,
   })
 

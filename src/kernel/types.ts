@@ -76,6 +76,8 @@ export interface IncomingHookPayload {
   resolvedPhone?: string
   /** Display name from the channel (e.g. WhatsApp pushName) */
   senderName?: string
+  /** Thread/conversation ID (Gmail only). Binds all emails in a thread to one session. */
+  threadId?: string
   timestamp: Date
   content: { type: string; text?: string; mediaUrl?: string; caption?: string }
   attachments?: Array<{

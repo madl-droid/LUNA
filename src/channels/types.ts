@@ -27,6 +27,8 @@ export interface IncomingMessage {
   resolvedPhone?: string
   /** Display name from the channel (e.g. WhatsApp pushName). Used for auto-registration. */
   senderName?: string
+  /** Thread/conversation identifier (Gmail only). Used to bind all emails in a thread to one session. */
+  threadId?: string
   timestamp: Date
   content: MessageContent
   attachments?: AttachmentMeta[]
