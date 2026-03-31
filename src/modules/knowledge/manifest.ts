@@ -990,12 +990,8 @@ function createApiRoutes(): ApiRoute[] {
             } catch { /* public API also failed */ }
           }
           // For web URLs, PDFs, YouTube — just allow (we'll verify on content load)
-          if (extracted.type === 'web' || extracted.type === 'pdf' || extracted.type === 'youtube') {
-            jsonResponse(res, 200, { accessible: true })
-            return
-          }
-          // Both OAuth and public API failed
-          jsonResponse(res, 200, { accessible: false, error: 'No se puede acceder. Verifica que el documento esté compartido como "Cualquier persona con el enlace" o con la cuenta de servicio de LUNA.' })
+          // Cannot verify via OAuth or public API — allow with warning (verified on content load)
+          jsonResponse(res, 200, { accessible: true, warning: 'No se pudo verificar acceso. Asegúrate de que el documento esté compartido.' })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err), accessible: false })
         }
