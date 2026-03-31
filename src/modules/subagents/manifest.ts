@@ -227,13 +227,18 @@ const manifest: ModuleManifest = {
       const types = await repo.listTypes(db)
       const usage: SubagentUsageSummary = await repo.getUsageSummary(db, 'day')
 
-      // Fetch available tools for the selector
-      let availableTools: Array<{ name: string; description: string }> = []
+      // Fetch available tools for the selector (with displayName + sourceModule for grouping)
+      let availableTools: Array<{ name: string; displayName: string; description: string; group: string }> = []
       try {
-        interface ToolCatalogEntry { name: string; description: string }
-        const toolsRegistry = registry.getOptional<{ getCatalog(): ToolCatalogEntry[] }>('tools:registry')
+        interface ToolDef { name: string; displayName: string; description: string; category: string; sourceModule: string }
+        const toolsRegistry = registry.getOptional<{ getEnabledToolDefinitions(): ToolDef[] }>('tools:registry')
         if (toolsRegistry) {
-          availableTools = toolsRegistry.getCatalog().map(t => ({ name: t.name, description: t.description }))
+          availableTools = toolsRegistry.getEnabledToolDefinitions().map(t => ({
+            name: t.name,
+            displayName: t.displayName || t.name,
+            description: t.description,
+            group: t.sourceModule || t.category || 'general',
+          }))
         }
       } catch { /* tools module not available */ }
 
