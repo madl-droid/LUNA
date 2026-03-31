@@ -34,6 +34,7 @@ export { toExtractedContent } from './types.js'
 export { extractSheets } from './sheets.js'
 export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable } from './slides.js'
 export { extractImage, extractImageWithVision } from './image.js'
+export { extractWeb, extractWebAsContent } from './web.js'
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
