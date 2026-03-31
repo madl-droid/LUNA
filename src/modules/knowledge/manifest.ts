@@ -996,8 +996,6 @@ function createApiRoutes(): ApiRoute[] {
           }
           // Both OAuth and public API failed
           jsonResponse(res, 200, { accessible: false, error: 'No se puede acceder. Verifica que el documento esté compartido como "Cualquier persona con el enlace" o con la cuenta de servicio de LUNA.' })
-          // No way to verify — allow with warning
-          jsonResponse(res, 200, { accessible: true, warning: 'Google Apps no conectado. No se pudo verificar acceso.' })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err), accessible: false })
         }
