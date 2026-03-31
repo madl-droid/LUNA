@@ -267,6 +267,12 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
     parts.push(`[Para buscar más artículos por keyword, incluye { type: "api_call", tool: "freshdesk_search", params: { term: "keyword" } } en el plan]`)
   }
 
+  // Buffer summary — compressed older turns from this session (Phase 3 inline compression)
+  if (ctx.bufferSummary) {
+    parts.push(`[Contexto anterior de la sesión (comprimido):]`)
+    parts.push(escapeForPrompt(ctx.bufferSummary, 600))
+  }
+
   // History (last 3-5 messages for context) — FIX: SEC-2.2 — escape history
   if (ctx.history.length > 0) {
     parts.push(`[Historial reciente:]`)
@@ -437,6 +443,12 @@ export async function buildProactiveEvaluatorPrompt(
       const due = c.dueAt ? ` (due: ${c.dueAt.toISOString().split('T')[0]})` : ''
       parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)}${due}`)
     }
+  }
+
+  // Buffer summary — compressed older turns from this session (Phase 3 inline compression)
+  if (ctx.bufferSummary) {
+    parts.push(`[Prior session context (compressed):]`)
+    parts.push(escapeForPrompt(ctx.bufferSummary, 600))
   }
 
   // Recent history — FIX: SEC-2.2 — escape history

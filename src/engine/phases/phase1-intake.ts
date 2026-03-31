@@ -161,12 +161,14 @@ export async function phase1Intake(
     commitmentsResult,
     summariesResult,
     leadStatusResult,
+    bufferSummaryResult,
   ] = await Promise.allSettled([
     loadHistory(memoryManager, db, session.id, historyTurns),
     contact?.id && memoryManager ? loadContactMemory(memoryManager, agentId, contact.id) : Promise.resolve(null),
     contact?.id && memoryManager ? memoryManager.getPendingCommitments(agentId, contact.id) : Promise.resolve([]),
     contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', 3) : Promise.resolve([]),
     contact?.id && memoryManager ? memoryManager.getLeadStatus(contact.id, agentId) : Promise.resolve(null),
+    memoryManager ? memoryManager.getBufferSummary(session.id) : Promise.resolve(null),
   ])
 
   const history = historyResult.status === 'fulfilled' ? historyResult.value : []
@@ -174,6 +176,7 @@ export async function phase1Intake(
   const pendingCommitments = commitmentsResult.status === 'fulfilled' ? commitmentsResult.value : []
   const relevantSummaries = summariesResult.status === 'fulfilled' ? summariesResult.value : []
   const leadStatus = leadStatusResult.status === 'fulfilled' ? leadStatusResult.value : null
+  const bufferSummary = bufferSummaryResult.status === 'fulfilled' ? bufferSummaryResult.value : null
 
   // Invalidate context cache (new message = new context)
   if (contact?.id && memoryManager) {
@@ -205,6 +208,7 @@ export async function phase1Intake(
     knowledgeInjection,
     freshdeskMatches,
     history,
+    bufferSummary,
     contactMemory,
     pendingCommitments,
     relevantSummaries,

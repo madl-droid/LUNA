@@ -295,6 +295,7 @@ async function buildProactiveContext(
     knowledgeInjection: null,
     freshdeskMatches: [],
     history,
+    bufferSummary: null, // proactive pipelines don't load buffer summary
     contactMemory,
     pendingCommitments,
     relevantSummaries: [],

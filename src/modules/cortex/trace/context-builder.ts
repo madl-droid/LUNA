@@ -126,6 +126,7 @@ export async function buildSimContext(
     freshdeskMatches: [],
     assignmentRules: null,
     history,
+    bufferSummary: null, // trace simulations don't load buffer summary
     contactMemory,
     pendingCommitments,
     relevantSummaries,

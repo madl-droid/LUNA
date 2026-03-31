@@ -18,6 +18,7 @@ import type {
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { StoredMessage } from '../../modules/memory/types.js'
 import { detectOutputInjection, detectSensitiveData } from '../utils/injection-detector.js'
+import { checkAndCompressBuffer } from '../buffer-compressor.js'
 import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { markFarewell, setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
@@ -131,6 +132,14 @@ export async function phase5Validate(
     updateLeadQualification(ctx, registry, db, memoryManager),
     updateSession(ctx, db),
   ])
+
+  // 5bis. Inline buffer compression — fire-and-forget, never blocks the pipeline
+  // Only touches Redis buffer; PG messages remain intact for nightly batch summaries.
+  if (memoryManager) {
+    checkAndCompressBuffer(ctx.session.id, memoryManager, config).catch(err =>
+      logger.warn({ err, sessionId: ctx.session.id, traceId: ctx.traceId }, 'Inline buffer compression failed'),
+    )
+  }
 
   // 5b. Record objection data in contact memory (fire-and-forget)
   if (evaluation.objectionType && ctx.contactId && memoryManager) {

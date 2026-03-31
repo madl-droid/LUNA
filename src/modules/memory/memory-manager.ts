@@ -94,6 +94,36 @@ export class MemoryManager {
     return count >= this.redis.getConfig().MEMORY_COMPRESSION_THRESHOLD
   }
 
+  async getMessageCount(sessionId: string): Promise<number> {
+    return await this.redis.getMessageCount(sessionId)
+  }
+
+  getCompressionConfig(): { threshold: number; keepRecent: number } {
+    const cfg = this.redis.getConfig()
+    return {
+      threshold: cfg.MEMORY_COMPRESSION_THRESHOLD,
+      keepRecent: cfg.MEMORY_COMPRESSION_KEEP_RECENT,
+    }
+  }
+
+  // ─── Buffer summary (inline compression) ───
+
+  async getBufferSummary(sessionId: string): Promise<string | null> {
+    return await this.redis.getBufferSummary(sessionId)
+  }
+
+  async setBufferSummary(sessionId: string, summary: string): Promise<void> {
+    await this.redis.setBufferSummary(sessionId, summary)
+  }
+
+  async getOldestMessages(sessionId: string, count: number): Promise<import('./types.js').StoredMessage[]> {
+    return await this.redis.getOldestMessages(sessionId, count)
+  }
+
+  async trimOldestMessages(sessionId: string, keepCount: number): Promise<void> {
+    await this.redis.trimOldestMessages(sessionId, keepCount)
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     await this.redis.deleteSession(sessionId)
   }

@@ -158,6 +158,11 @@ export interface ContextBundle {
   // History
   history: HistoryMessage[]
 
+  // Buffer summary — running compressed summary of older turns in this session (Phase 3)
+  // Loaded from Redis; null if session is new or hasn't been compressed yet.
+  // PG messages are never touched by inline compression.
+  bufferSummary: string | null
+
   // Memory v3 — from memory:manager service
   contactMemory: import('../modules/memory/types.js').ContactMemory | null
   pendingCommitments: import('../modules/memory/types.js').Commitment[]

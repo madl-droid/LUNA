@@ -421,6 +421,12 @@ Adapta tu respuesta al contexto de esta campaña.`)
     }
   }
 
+  // Buffer summary — compressed older turns from this session (Phase 3 inline compression)
+  if (ctx.bufferSummary) {
+    userParts.push(`\n[Contexto anterior de la sesión (comprimido):]`)
+    userParts.push(escapeDataForPrompt(ctx.bufferSummary.substring(0, 600)))
+  }
+
   // Conversation history (3-5 messages) — FIX: SEC-2.6 — escape history
   if (ctx.history.length > 0) {
     userParts.push(`\n[Historial reciente:]`)
