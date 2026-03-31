@@ -33,12 +33,14 @@ export type {
 export { toExtractedContent } from './types.js'
 export { extractSheets } from './sheets.js'
 export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable } from './slides.js'
+export { extractImage, extractImageWithVision } from './image.js'
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
 import { extractDocx } from './docx.js'
 import { extractXlsx } from './sheets.js'
 import { extractPDF } from './pdf.js'
+import { extractImageWithVision } from './image.js'
 
 // ─── Legacy fallback para extractores aún no migrados ────
 async function legacyExtract(input: Buffer, fileName: string, mimeType: string, registry?: Registry): Promise<ExtractedContent> {
@@ -168,6 +170,18 @@ export async function extractContent(
   const resolvedMime = mimeType ?? resolveMimeType(fileName)
 
   try {
+    // Imágenes: extractor especial (vision con LLM si hay registry)
+    if (IMAGE_TYPES.has(resolvedMime)) {
+      if (!registry) {
+        return {
+          text: `[Imagen: ${fileName}]`,
+          sections: [{ title: fileName, content: `[Imagen sin procesar: ${fileName}]` }],
+          metadata: { sizeBytes: input.length, originalName: fileName, extractorUsed: 'none' },
+        }
+      }
+      return await extractImageWithVision(input, fileName, registry)
+    }
+
     // Usar extractor migrado si existe, sino legacy
     const migrated = MIGRATED_EXTRACTORS[resolvedMime]
     if (migrated) {
