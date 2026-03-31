@@ -39,7 +39,7 @@ const labels: Record<Lang, Record<string, string>> = {
     subagentCount: 'subagentes',
     activeCount: 'activos',
     usageTitle: 'Metricas de uso',
-    usagePeriod: 'Periodo',
+    usagePeriod: 'PERIODO',
     usageHour: 'Ultima hora',
     usageDay: 'Ultimo dia',
     usageWeek: 'Ultima semana',
@@ -47,13 +47,12 @@ const labels: Record<Lang, Record<string, string>> = {
     usageExecs: 'Ejecuciones',
     usageTokens: 'Tokens',
     usageCost: 'Costo',
-    usageErrors: 'Errores',
-    usageAvgIter: 'Iter. prom.',
-    usageAvgTime: 'Tiempo prom.',
     usageSuccess: 'Exito',
+    usageAvgTime: 'Tiempo prom.',
     noUsage: 'Sin datos de uso en este periodo.',
     allTools: 'Todas las herramientas',
     sortOrder: 'Orden',
+    mockLabel: 'Datos de ejemplo',
   },
   en: {
     title: 'Subagents',
@@ -89,7 +88,7 @@ const labels: Record<Lang, Record<string, string>> = {
     subagentCount: 'subagents',
     activeCount: 'active',
     usageTitle: 'Usage metrics',
-    usagePeriod: 'Period',
+    usagePeriod: 'PERIOD',
     usageHour: 'Last hour',
     usageDay: 'Last day',
     usageWeek: 'Last week',
@@ -97,13 +96,12 @@ const labels: Record<Lang, Record<string, string>> = {
     usageExecs: 'Executions',
     usageTokens: 'Tokens',
     usageCost: 'Cost',
-    usageErrors: 'Errors',
-    usageAvgIter: 'Avg iter.',
-    usageAvgTime: 'Avg time',
     usageSuccess: 'Success',
+    usageAvgTime: 'Avg time',
     noUsage: 'No usage data for this period.',
     allTools: 'All tools',
     sortOrder: 'Order',
+    mockLabel: 'Sample data',
   },
 }
 
@@ -115,51 +113,49 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
+  return String(n)
+}
+
 function renderStyles(): string {
   return `<style>
-/* Subagents — scoped styles (.sa-) */
+/* Subagents — scoped layout styles (.sa-) */
 .sa-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px }
 .sa-header-left { display:flex; align-items:center; gap:10px }
 .sa-counter { font-size:13px; color:var(--on-surface-dim) }
-.sa-btn-new { font-size:13px; padding:7px 16px; border-radius:0.5rem }
 
 .sa-form-wrap { display:none; margin-bottom:16px }
-.sa-form-body { padding:20px }
-
 .sa-row-top { display:flex; align-items:flex-start; gap:16px; margin-bottom:16px }
-.sa-row-top-field { flex:1 }
+.sa-row-top-field { flex:1; min-width:0 }
 .sa-row-toggle { display:flex; align-items:center; gap:8px; padding-top:20px }
 .sa-label { font-size:12px; font-weight:600; text-transform:uppercase; color:var(--on-surface-dim); display:block; margin-bottom:4px }
 .sa-toggle-label { font-size:12px; font-weight:500; color:var(--on-surface-variant) }
 
-.sa-input { width:100%; padding:9px 12px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; background:var(--surface-container-lowest) }
-.sa-textarea { width:100%; padding:9px 12px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; resize:vertical; font-family:inherit; background:var(--surface-container-lowest) }
+.sa-input { width:100%; padding:9px 12px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; background:var(--surface-container-lowest); color:var(--on-surface) }
+.sa-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-focus) }
+.sa-textarea { width:100%; padding:9px 12px; border:1px solid var(--outline-variant); border-radius:0.5rem; font-size:14px; resize:vertical; font-family:inherit; background:var(--surface-container-lowest); color:var(--on-surface) }
+.sa-textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-focus) }
+.sa-input-sm { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; background:var(--surface-container-lowest); color:var(--on-surface) }
+.sa-input-sm:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-focus) }
 
 .sa-field-group { margin-bottom:16px }
-
 .sa-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px }
 .sa-section { background:var(--surface-container-low); border-radius:0.5rem; padding:14px }
 .sa-section-title { font-size:11px; font-weight:600; text-transform:uppercase; color:var(--on-surface-dim); margin-bottom:8px }
-.sa-select { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; background:var(--surface-container-lowest); margin-bottom:8px }
-.sa-input-sm { width:100%; padding:8px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:13px; background:var(--surface-container-lowest) }
 .sa-help { font-size:10px; color:var(--on-surface-dim); margin-top:4px }
 
 .sa-tools-grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px }
 .sa-tool-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:12px; font-size:11px; cursor:pointer; border:1px solid var(--outline-variant); background:var(--surface-container-lowest); transition:all 0.15s ease; user-select:none }
-.sa-tool-chip.selected { background:var(--primary); color:var(--on-primary); border-color:var(--primary) }
+.sa-tool-chip.selected { background:var(--primary); color:var(--on-primary,#fff); border-color:var(--primary) }
 .sa-tool-chip:hover { border-color:var(--primary) }
 
 .sa-toggles-row { display:flex; gap:20px; flex-wrap:wrap }
 .sa-toggle-item { display:flex; align-items:center; gap:8px }
-
 .sa-form-footer { display:flex; gap:8px; justify-content:flex-end; padding-top:12px; border-top:1px solid var(--outline-variant) }
-.sa-btn-form { font-size:13px; padding:7px 16px; border-radius:0.5rem }
 
-.sa-list { display:flex; flex-direction:column; gap:var(--space-md) }
-
-.sa-card { background:var(--surface-container-lowest); border:1px solid var(--outline-variant); border-radius:0.5rem; padding:var(--section-gap); transition:box-shadow 0.2s ease }
-.sa-card:hover { box-shadow:var(--shadow-float) }
-.sa-card-disabled { opacity:0.55 }
+.sa-list { display:flex; flex-direction:column; gap:10px }
 .sa-card-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px }
 .sa-card-body { flex:1; min-width:0 }
 .sa-card-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px }
@@ -167,9 +163,8 @@ function renderStyles(): string {
 .sa-card-slug { font-size:12px; color:var(--on-surface-dim); font-family:monospace }
 .sa-card-meta { font-size:12px; color:var(--on-surface-dim); margin-bottom:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap }
 .sa-card-desc { font-size:12px; color:var(--on-surface-variant); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:500px }
-.sa-card-actions { display:flex; gap:4px; flex-shrink:0 }
-.sa-btn-card { font-size:12px; padding:5px 10px; border-radius:6px }
-.sa-btn-delete { font-size:12px; padding:5px 10px; border-radius:6px; color:var(--error) }
+.sa-card-actions { display:flex; gap:4px; flex-shrink:0; align-items:center }
+.sa-card-disabled { opacity:0.55 }
 
 .sa-badge-model { background:rgba(0,122,255,0.1); color:var(--info); font-size:10px }
 .sa-badge-tokens { background:rgba(88,86,214,0.1); color:#5856d6; font-size:10px }
@@ -181,22 +176,13 @@ function renderStyles(): string {
 .sa-empty-icon { font-size:32px; margin-bottom:8px }
 .sa-empty-text { color:var(--on-surface-dim); font-size:14px }
 
-/* Usage metrics panel */
-.sa-usage-panel { margin-top:20px }
-.sa-usage-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px }
-.sa-usage-title { font-weight:600; font-size:14px }
-.sa-usage-period { padding:6px 10px; border:1px solid var(--outline-variant); border-radius:6px; font-size:12px; background:var(--surface-container-lowest) }
-
-.sa-usage-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:10px; margin-bottom:16px }
-.sa-usage-stat { background:var(--surface-container-low); border-radius:0.5rem; padding:12px; text-align:center }
-.sa-usage-stat-value { font-size:20px; font-weight:700; color:var(--on-surface) }
-.sa-usage-stat-label { font-size:10px; text-transform:uppercase; color:var(--on-surface-dim); margin-top:2px }
-
-.sa-usage-table { width:100%; border-collapse:collapse; font-size:12px }
-.sa-usage-table th { text-align:left; padding:8px 10px; font-size:10px; text-transform:uppercase; color:var(--on-surface-dim); border-bottom:1px solid var(--outline-variant) }
-.sa-usage-table td { padding:8px 10px; border-bottom:1px solid var(--outline-variant) }
-.sa-usage-table tr:last-child td { border-bottom:none }
-.sa-usage-empty { text-align:center; padding:20px; color:var(--on-surface-dim); font-size:13px }
+/* Usage metrics */
+.sa-usage-panel { margin-top:24px }
+.sa-usage-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:16px }
+.sa-usage-stat { background:var(--surface-container-low); border-radius:0.75rem; padding:16px 12px; text-align:center }
+.sa-usage-stat-value { font-size:22px; font-weight:700; color:var(--on-surface) }
+.sa-usage-stat-label { font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim); margin-top:4px }
+.sa-mock-badge { display:inline-block; font-size:10px; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.12); color:var(--warning); font-weight:600; margin-left:8px; vertical-align:middle }
 
 @media (max-width: 768px) {
   .sa-grid { grid-template-columns:1fr }
@@ -207,12 +193,6 @@ function renderStyles(): string {
 </style>`
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
-  return String(n)
-}
-
 export function renderSubagentsSection(
   types: SubagentTypeRow[],
   usage: SubagentUsageSummary,
@@ -221,7 +201,6 @@ export function renderSubagentsSection(
 ): string {
   const activeCount = types.filter(t => t.enabled).length
 
-  // --- Subagent cards ---
   const cards = types.length === 0
     ? `<div class="sa-empty">
         <div class="sa-empty-icon">&#129302;</div>
@@ -232,7 +211,7 @@ export function renderSubagentsSection(
           ? l('allTools', lang)
           : `${t.allowedTools.length} tools`
         return `
-      <div class="sa-card${!t.enabled ? ' sa-card-disabled' : ''}" data-sa-id="${esc(t.id)}">
+      <div class="panel${!t.enabled ? ' sa-card-disabled' : ''}" data-sa-id="${esc(t.id)}" style="padding:var(--section-gap)">
         <div class="sa-card-row">
           <div class="sa-card-body">
             <div class="sa-card-title-row">
@@ -250,34 +229,39 @@ export function renderSubagentsSection(
             ${t.description ? `<div class="sa-card-desc" title="${esc(t.description)}">${esc(t.description)}</div>` : ''}
           </div>
           <div class="sa-card-actions">
-            <button type="button" class="wa-btn sa-btn-card" onclick="saEdit('${esc(t.id)}')">${l('edit', lang)}</button>
-            <button type="button" class="wa-btn sa-btn-delete" onclick="saDelete('${esc(t.id)}')">${l('delete', lang)}</button>
+            <button type="button" class="act-btn act-btn-config act-btn--compact" onclick="saEdit('${esc(t.id)}')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              ${l('edit', lang)}
+            </button>
+            <button type="button" class="act-btn act-btn-remove act-btn--compact" onclick="saDelete('${esc(t.id)}')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+              ${l('delete', lang)}
+            </button>
           </div>
         </div>
       </div>`
       }).join('')
 
-  // --- Usage metrics ---
-  const usageHtml = renderUsagePanel(usage, lang)
-
   return `
     ${renderStyles()}
 
-    <!-- Header with counter and new button -->
+    <!-- Header -->
     <div class="sa-header">
       <div class="sa-header-left">
         <span class="sa-counter">${types.length} ${l('subagentCount', lang)} · ${activeCount} ${l('activeCount', lang)}</span>
       </div>
-      <button type="button" class="wa-btn wa-btn-connect sa-btn-new" onclick="saShowForm()">+ ${l('newSubagent', lang)}</button>
+      <button type="button" class="act-btn act-btn-add" onclick="saShowForm()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        ${l('newSubagent', lang)}
+      </button>
     </div>
 
     <!-- Create/Edit form -->
     <div id="sa-form" class="sa-form-wrap">
       <div class="panel">
-        <div class="panel-body sa-form-body">
+        <div class="panel-body" style="padding:20px">
           <input type="hidden" id="sa-edit-id" value="">
 
-          <!-- Row 1: Slug + Name + Enabled -->
           <div class="sa-row-top">
             <div class="sa-row-top-field">
               <label class="sa-label">${l('slug', lang)}</label>
@@ -294,17 +278,15 @@ export function renderSubagentsSection(
             </div>
           </div>
 
-          <!-- Description -->
           <div class="sa-field-group">
             <label class="sa-label">${l('description', lang)}</label>
             <textarea id="sa-description" rows="2" placeholder="${l('descPlaceholder', lang)}" class="sa-textarea"></textarea>
           </div>
 
-          <!-- 2-column grid: Model config | Options -->
           <div class="sa-grid">
             <div class="sa-section">
               <div class="sa-section-title">${l('modelTier', lang)}</div>
-              <select id="sa-model-tier" class="sa-select">
+              <select id="sa-model-tier" class="js-custom-select" style="width:100%;margin-bottom:8px">
                 <option value="normal">${l('modelNormal', lang)}</option>
                 <option value="complex">${l('modelComplex', lang)}</option>
               </select>
@@ -338,7 +320,6 @@ export function renderSubagentsSection(
             </div>
           </div>
 
-          <!-- Tools selection -->
           <div class="sa-field-group">
             <label class="sa-label">${l('tools', lang)}</label>
             <div class="sa-help" style="margin-bottom:6px">${l('toolsHelp', lang)}</div>
@@ -347,16 +328,17 @@ export function renderSubagentsSection(
             </div>
           </div>
 
-          <!-- System prompt -->
           <div class="sa-field-group">
             <label class="sa-label">${l('systemPrompt', lang)}</label>
             <textarea id="sa-system-prompt" rows="4" placeholder="${l('promptPlaceholder', lang)}" class="sa-textarea" style="font-family:monospace; font-size:12px"></textarea>
           </div>
 
-          <!-- Form buttons -->
           <div class="sa-form-footer">
-            <button type="button" class="wa-btn sa-btn-form" onclick="saHideForm()">${l('cancel', lang)}</button>
-            <button type="button" class="wa-btn wa-btn-connect sa-btn-form" onclick="saSave()">${l('save', lang)}</button>
+            <button type="button" class="act-btn act-btn-config" onclick="saHideForm()">${l('cancel', lang)}</button>
+            <button type="button" class="act-btn act-btn-add" onclick="saSave()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              ${l('save', lang)}
+            </button>
           </div>
         </div>
       </div>
@@ -366,80 +348,104 @@ export function renderSubagentsSection(
     <div id="sa-list" class="sa-list">${cards}</div>
 
     <!-- Usage metrics -->
-    ${usageHtml}
+    ${renderUsagePanel(usage, lang)}
 
     ${renderScript(lang)}`
 }
 
 function renderUsagePanel(usage: SubagentUsageSummary, lang: Lang): string {
   const hasData = usage.totalExecutions > 0
+
+  // Mock data for empty state
+  const mock = {
+    totalExecutions: 24,
+    successRate: 91,
+    totalTokens: 48200,
+    avgDurationMs: 3180,
+    totalCostUsd: 0.048,
+  }
+
+  const d = hasData ? {
+    totalExecutions: usage.totalExecutions,
+    successRate: usage.totalExecutions > 0
+      ? Math.round(((usage.totalExecutions - usage.totalErrors) / usage.totalExecutions) * 100)
+      : 0,
+    totalTokens: usage.totalTokens,
+    avgDurationMs: usage.avgDurationMs,
+    totalCostUsd: usage.totalCostUsd,
+  } : mock
+
+  const mockBadge = !hasData ? `<span class="sa-mock-badge">${l('mockLabel', lang)}</span>` : ''
+
+  const statsHtml = `
+    <div class="sa-usage-grid">
+      <div class="sa-usage-stat">
+        <div class="sa-usage-stat-value">${d.totalExecutions}</div>
+        <div class="sa-usage-stat-label">${l('usageExecs', lang)}</div>
+      </div>
+      <div class="sa-usage-stat">
+        <div class="sa-usage-stat-value">${d.successRate}%</div>
+        <div class="sa-usage-stat-label">${l('usageSuccess', lang)}</div>
+      </div>
+      <div class="sa-usage-stat">
+        <div class="sa-usage-stat-value">${formatNumber(d.totalTokens)}</div>
+        <div class="sa-usage-stat-label">${l('usageTokens', lang)}</div>
+      </div>
+      <div class="sa-usage-stat">
+        <div class="sa-usage-stat-value">${(d.avgDurationMs / 1000).toFixed(1)}s</div>
+        <div class="sa-usage-stat-label">${l('usageAvgTime', lang)}</div>
+      </div>
+      <div class="sa-usage-stat">
+        <div class="sa-usage-stat-value">$${d.totalCostUsd.toFixed(3)}</div>
+        <div class="sa-usage-stat-label">${l('usageCost', lang)}</div>
+      </div>
+    </div>`
+
   const bySubagent = Object.entries(usage.bySubagent)
+  const tableHtml = hasData && bySubagent.length > 0 ? `
+    <div class="users-table-scroll">
+      <table class="users-table">
+        <thead class="users-table-head"><tr>
+          <th>Subagent</th>
+          <th>${l('usageExecs', lang)}</th>
+          <th>${l('usageSuccess', lang)}</th>
+          <th>${l('usageTokens', lang)}</th>
+          <th>${l('usageAvgTime', lang)}</th>
+          <th>${l('usageCost', lang)}</th>
+        </tr></thead>
+        <tbody>
+          ${bySubagent.map(([slug, s]) => `<tr>
+            <td><strong>${esc(s.name)}</strong> <span style="color:var(--on-surface-dim);font-size:10px;font-family:monospace">${esc(slug)}</span></td>
+            <td>${s.executions}</td>
+            <td>${s.successRate}%</td>
+            <td>${formatNumber(s.tokens)}</td>
+            <td>${(s.avgDurationMs / 1000).toFixed(1)}s</td>
+            <td>$${s.costUsd.toFixed(3)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : ''
 
   return `
     <div class="sa-usage-panel">
-      <div class="sa-usage-header">
-        <span class="sa-usage-title">${l('usageTitle', lang)}</span>
-        <select id="sa-usage-period" class="sa-usage-period" onchange="saLoadUsage()">
-          <option value="hour">${l('usageHour', lang)}</option>
-          <option value="day" selected>${l('usageDay', lang)}</option>
-          <option value="week">${l('usageWeek', lang)}</option>
-          <option value="month">${l('usageMonth', lang)}</option>
-        </select>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <span class="filter-label">${l('usageTitle', lang)}${mockBadge}</span>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">${l('usagePeriod', lang)}</span>
+          <select id="sa-usage-period" class="js-custom-select" onchange="saLoadUsage()">
+            <option value="hour">${l('usageHour', lang)}</option>
+            <option value="day" selected>${l('usageDay', lang)}</option>
+            <option value="week">${l('usageWeek', lang)}</option>
+            <option value="month">${l('usageMonth', lang)}</option>
+          </select>
+        </div>
       </div>
 
       <div id="sa-usage-content">
-        ${hasData ? `
-          <div class="sa-usage-grid">
-            <div class="sa-usage-stat">
-              <div class="sa-usage-stat-value">${usage.totalExecutions}</div>
-              <div class="sa-usage-stat-label">${l('usageExecs', lang)}</div>
-            </div>
-            <div class="sa-usage-stat">
-              <div class="sa-usage-stat-value">${formatNumber(usage.totalTokens)}</div>
-              <div class="sa-usage-stat-label">${l('usageTokens', lang)}</div>
-            </div>
-            <div class="sa-usage-stat">
-              <div class="sa-usage-stat-value">$${usage.totalCostUsd.toFixed(3)}</div>
-              <div class="sa-usage-stat-label">${l('usageCost', lang)}</div>
-            </div>
-            <div class="sa-usage-stat">
-              <div class="sa-usage-stat-value">${usage.totalErrors}</div>
-              <div class="sa-usage-stat-label">${l('usageErrors', lang)}</div>
-            </div>
-            <div class="sa-usage-stat">
-              <div class="sa-usage-stat-value">${usage.avgIterations}</div>
-              <div class="sa-usage-stat-label">${l('usageAvgIter', lang)}</div>
-            </div>
-            <div class="sa-usage-stat">
-              <div class="sa-usage-stat-value">${(usage.avgDurationMs / 1000).toFixed(1)}s</div>
-              <div class="sa-usage-stat-label">${l('usageAvgTime', lang)}</div>
-            </div>
-          </div>
-
-          ${bySubagent.length > 0 ? `
-          <table class="sa-usage-table">
-            <thead><tr>
-              <th>Subagent</th>
-              <th>${l('usageExecs', lang)}</th>
-              <th>${l('usageTokens', lang)}</th>
-              <th>${l('usageCost', lang)}</th>
-              <th>${l('usageSuccess', lang)}</th>
-              <th>${l('usageAvgIter', lang)}</th>
-              <th>${l('usageAvgTime', lang)}</th>
-            </tr></thead>
-            <tbody>
-              ${bySubagent.map(([slug, s]) => `<tr>
-                <td><strong>${esc(s.name)}</strong> <span style="color:var(--on-surface-dim); font-size:10px">${esc(slug)}</span></td>
-                <td>${s.executions}</td>
-                <td>${formatNumber(s.tokens)}</td>
-                <td>$${s.costUsd.toFixed(3)}</td>
-                <td>${s.successRate}%</td>
-                <td>${s.avgIterations}</td>
-                <td>${(s.avgDurationMs / 1000).toFixed(1)}s</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>` : ''}
-        ` : `<div class="sa-usage-empty">${l('noUsage', lang)}</div>`}
+        ${statsHtml}
+        ${tableHtml}
       </div>
     </div>`
 }
@@ -450,43 +456,40 @@ function renderScript(lang: Lang): string {
   const API = '/console/api/subagents'
   const L = ${JSON.stringify(labels[lang])}
 
-  // --- Tool chip toggle ---
   window.saToggleTool = function(el) {
     el.classList.toggle('selected')
   }
 
   function getSelectedTools() {
-    const chips = document.querySelectorAll('#sa-tools-grid .sa-tool-chip.selected')
-    return Array.from(chips).map(function(c) { return c.getAttribute('data-tool') })
+    return Array.from(document.querySelectorAll('#sa-tools-grid .sa-tool-chip.selected'))
+      .map(function(c) { return c.getAttribute('data-tool') })
   }
 
   function setSelectedTools(tools) {
     document.querySelectorAll('#sa-tools-grid .sa-tool-chip').forEach(function(c) {
-      if (tools.includes(c.getAttribute('data-tool'))) {
-        c.classList.add('selected')
-      } else {
-        c.classList.remove('selected')
-      }
+      c.classList.toggle('selected', tools.includes(c.getAttribute('data-tool')))
     })
   }
 
-  // --- Form show/hide ---
   window.saShowForm = function() {
-    document.getElementById('sa-form').style.display = 'block'
+    var f = document.getElementById('sa-form')
+    f.style.display = 'block'
     document.getElementById('sa-edit-id').value = ''
     document.getElementById('sa-slug').value = ''
     document.getElementById('sa-slug').disabled = false
     document.getElementById('sa-name').value = ''
     document.getElementById('sa-description').value = ''
     document.getElementById('sa-enabled').checked = true
-    document.getElementById('sa-model-tier').value = 'normal'
     document.getElementById('sa-token-budget').value = '100000'
     document.getElementById('sa-sort-order').value = '0'
     document.getElementById('sa-verify-result').checked = true
     document.getElementById('sa-can-spawn').checked = false
     document.getElementById('sa-system-prompt').value = ''
     setSelectedTools([])
-    document.getElementById('sa-form').scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // Reset custom select for model-tier
+    var sel = document.getElementById('sa-model-tier')
+    if (sel) { sel.value = 'normal'; sel.dispatchEvent(new Event('change')) }
+    f.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   window.saHideForm = function() {
@@ -499,22 +502,24 @@ function renderScript(lang: Lang): string {
       var data = await res.json()
       var t = data.type
       if (!t) return
-
-      document.getElementById('sa-form').style.display = 'block'
+      var f = document.getElementById('sa-form')
+      f.style.display = 'block'
       document.getElementById('sa-edit-id').value = t.id
       document.getElementById('sa-slug').value = t.slug
       document.getElementById('sa-slug').disabled = true
       document.getElementById('sa-name').value = t.name
       document.getElementById('sa-description').value = t.description || ''
       document.getElementById('sa-enabled').checked = t.enabled
-      document.getElementById('sa-model-tier').value = t.modelTier
       document.getElementById('sa-token-budget').value = String(t.tokenBudget)
       document.getElementById('sa-sort-order').value = String(t.sortOrder || 0)
       document.getElementById('sa-verify-result').checked = t.verifyResult
       document.getElementById('sa-can-spawn').checked = t.canSpawnChildren
       document.getElementById('sa-system-prompt').value = t.systemPrompt || ''
       setSelectedTools(t.allowedTools || [])
-      document.getElementById('sa-form').scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // Sync custom select for model-tier
+      var sel = document.getElementById('sa-model-tier')
+      if (sel) { sel.value = t.modelTier; sel.dispatchEvent(new Event('change')) }
+      f.scrollIntoView({ behavior: 'smooth', block: 'start' })
     } catch(e) {
       console.error('Failed to load subagent', e)
     }
@@ -526,18 +531,9 @@ function renderScript(lang: Lang): string {
     var name = document.getElementById('sa-name').value.trim()
     var tokenBudget = parseInt(document.getElementById('sa-token-budget').value, 10)
 
-    if (!name) {
-      alert(L.name + ' is required')
-      return
-    }
-    if (!editId && !slug) {
-      alert(L.slug + ' is required')
-      return
-    }
-    if (tokenBudget < 5000) {
-      alert('Token budget minimum: 5,000')
-      return
-    }
+    if (!name) { alert(L.name + ' is required'); return }
+    if (!editId && !slug) { alert(L.slug + ' is required'); return }
+    if (tokenBudget < 5000) { alert('Token budget minimum: 5,000'); return }
 
     var body = {
       name: name,
@@ -553,7 +549,7 @@ function renderScript(lang: Lang): string {
     }
 
     try {
-      let res
+      var res
       if (editId) {
         body.id = editId
         res = await fetch(API + '/type', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
@@ -561,7 +557,7 @@ function renderScript(lang: Lang): string {
         body.slug = slug
         res = await fetch(API + '/type', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
       }
-      if (!res.ok) { const err = await res.text(); alert('Error: ' + err); return }
+      if (!res.ok) { var err = await res.text(); alert('Error: ' + err); return }
       location.reload()
     } catch(e) {
       alert('Error: ' + e.message)
@@ -571,51 +567,55 @@ function renderScript(lang: Lang): string {
   window.saDelete = async function(id) {
     if (!confirm(L.deleteConfirm)) return
     try {
-      const res = await fetch(API + '/type?id=' + encodeURIComponent(id), { method: 'DELETE' })
-      if (!res.ok) { const err = await res.text(); alert('Error: ' + err); return }
+      var res = await fetch(API + '/type?id=' + encodeURIComponent(id), { method: 'DELETE' })
+      if (!res.ok) { var err = await res.text(); alert('Error: ' + err); return }
       location.reload()
     } catch(e) {
       alert('Error: ' + e.message)
     }
   }
 
-  // --- Usage metrics ---
   window.saLoadUsage = async function() {
     var period = document.getElementById('sa-usage-period').value
     try {
       var res = await fetch(API + '/usage?period=' + period)
       var data = await res.json()
       var container = document.getElementById('sa-usage-content')
+      var hasData = data.totalExecutions > 0
 
-      if (data.totalExecutions === 0) {
-        container.innerHTML = '<div class="sa-usage-empty">' + L.noUsage + '</div>'
-        return
-      }
+      var mock = { totalExecutions:24, successRate:91, totalTokens:48200, avgDurationMs:3180, totalCostUsd:0.048 }
+      var d = hasData ? {
+        totalExecutions: data.totalExecutions,
+        successRate: data.totalExecutions > 0 ? Math.round(((data.totalExecutions - data.totalErrors) / data.totalExecutions) * 100) : 0,
+        totalTokens: data.totalTokens,
+        avgDurationMs: data.avgDurationMs,
+        totalCostUsd: data.totalCostUsd,
+      } : mock
 
-      var statsHtml = '<div class="sa-usage-grid">' +
-        stat(data.totalExecutions, L.usageExecs) +
-        stat(fmtNum(data.totalTokens), L.usageTokens) +
-        stat('$' + data.totalCostUsd.toFixed(3), L.usageCost) +
-        stat(data.totalErrors, L.usageErrors) +
-        stat(data.avgIterations, L.usageAvgIter) +
-        stat((data.avgDurationMs / 1000).toFixed(1) + 's', L.usageAvgTime) +
+      var html = '<div class="sa-usage-grid">' +
+        stat(d.totalExecutions, L.usageExecs) +
+        stat(d.successRate + '%', L.usageSuccess) +
+        stat(fmtNum(d.totalTokens), L.usageTokens) +
+        stat((d.avgDurationMs / 1000).toFixed(1) + 's', L.usageAvgTime) +
+        stat('$' + d.totalCostUsd.toFixed(3), L.usageCost) +
       '</div>'
 
       var entries = Object.entries(data.bySubagent || {})
-      if (entries.length > 0) {
-        statsHtml += '<table class="sa-usage-table"><thead><tr>' +
-          '<th>Subagent</th><th>' + L.usageExecs + '</th><th>' + L.usageTokens + '</th><th>' + L.usageCost + '</th><th>' + L.usageSuccess + '</th><th>' + L.usageAvgIter + '</th><th>' + L.usageAvgTime + '</th>' +
+      if (hasData && entries.length > 0) {
+        html += '<div class="users-table-scroll"><table class="users-table"><thead class="users-table-head"><tr>' +
+          '<th>Subagent</th><th>' + L.usageExecs + '</th><th>' + L.usageSuccess + '</th><th>' + L.usageTokens + '</th><th>' + L.usageAvgTime + '</th><th>' + L.usageCost + '</th>' +
           '</tr></thead><tbody>'
         for (var i = 0; i < entries.length; i++) {
           var slug = entries[i][0]
           var s = entries[i][1]
-          statsHtml += '<tr><td><strong>' + esc(s.name) + '</strong> <span style="color:var(--on-surface-dim);font-size:10px">' + esc(slug) + '</span></td>' +
-            '<td>' + s.executions + '</td><td>' + fmtNum(s.tokens) + '</td><td>$' + s.costUsd.toFixed(3) + '</td><td>' + s.successRate + '%</td><td>' + s.avgIterations + '</td><td>' + (s.avgDurationMs / 1000).toFixed(1) + 's</td></tr>'
+          var sr = s.executions > 0 ? Math.round(((s.executions - (s.errors||0)) / s.executions) * 100) : s.successRate
+          html += '<tr><td><strong>' + esc(s.name) + '</strong> <span style="color:var(--on-surface-dim);font-size:10px;font-family:monospace">' + esc(slug) + '</span></td>' +
+            '<td>' + s.executions + '</td><td>' + sr + '%</td><td>' + fmtNum(s.tokens) + '</td><td>' + (s.avgDurationMs/1000).toFixed(1) + 's</td><td>$' + s.costUsd.toFixed(3) + '</td></tr>'
         }
-        statsHtml += '</tbody></table>'
+        html += '</tbody></table></div>'
       }
 
-      container.innerHTML = statsHtml
+      container.innerHTML = html
     } catch(e) {
       console.error('Failed to load usage', e)
     }
@@ -632,7 +632,7 @@ function renderScript(lang: Lang): string {
   }
 
   function esc(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
 })()
 </script>`
