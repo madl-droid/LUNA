@@ -37,6 +37,7 @@ export { extractSheets } from './sheets.js'
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
 import { extractDocx } from './docx.js'
 import { extractXlsx } from './sheets.js'
+import { extractPDF } from './pdf.js'
 
 // ─── Legacy fallback para extractores aún no migrados ────
 async function legacyExtract(input: Buffer, fileName: string, mimeType: string, registry?: Registry): Promise<ExtractedContent> {
@@ -55,6 +56,7 @@ const MIGRATED_EXTRACTORS: Record<string, (input: Buffer, fileName: string, regi
   'application/vnd.ms-excel': extractXlsx,
   'text/csv': extractXlsx,
   'application/vnd.oasis.opendocument.spreadsheet': extractXlsx,
+  'application/pdf': extractPDF,
 }
 
 // ─── MIME types soportados ──────────────────
