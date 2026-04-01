@@ -399,9 +399,11 @@ const manifest: ModuleManifest = {
       schedulePrecloseFollowup(base.from, config, registry)
     }
 
-    batcher = new MessageBatcher(config.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
+    if (config.WHATSAPP_BATCH_ENABLED) {
+      batcher = new MessageBatcher(config.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
+    }
 
-    // Register message handler: incoming messages → batcher
+    // Register message handler: incoming messages → batcher (if enabled) or direct dispatch
     adapter.onMessage(async (msg) => {
       const incoming: IncomingMessage = {
         id: msg.id,
@@ -417,7 +419,7 @@ const manifest: ModuleManifest = {
       if (batcher) {
         batcher.add(incoming)
       } else {
-        await registry.runHook('message:incoming', incoming)
+        await dispatchBatch([incoming])
       }
     })
 
@@ -432,8 +434,17 @@ const manifest: ModuleManifest = {
       const fresh = registry.getConfig<WhatsAppFullConfig>('whatsapp')
       // Update mutable references so all closures see the new values
       Object.assign(config, fresh)
-      // Update batcher wait time
-      if (batcher) batcher.updateWaitSeconds(fresh.WHATSAPP_BATCH_WAIT_SECONDS)
+      // Update batcher: create/destroy based on toggle, update wait time
+      if (fresh.WHATSAPP_BATCH_ENABLED && !batcher) {
+        batcher = new MessageBatcher(fresh.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
+        manifestLogger.info('Message batcher enabled')
+      } else if (!fresh.WHATSAPP_BATCH_ENABLED && batcher) {
+        batcher.clearAll()
+        batcher = null
+        manifestLogger.info('Message batcher disabled')
+      } else if (batcher) {
+        batcher.updateWaitSeconds(fresh.WHATSAPP_BATCH_WAIT_SECONDS)
+      }
       manifestLogger.info('WhatsApp config hot-reloaded')
     })
 
