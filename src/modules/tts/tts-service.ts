@@ -42,13 +42,24 @@ export class TTSService {
   }
 
   shouldAutoTTS(channel: string, inputContentType: string): boolean {
+    return this.shouldAutoTTSWithMultiplier(channel, inputContentType, 1.0)
+  }
+
+  /**
+   * Determine whether to respond with audio, applying a per-contact preference multiplier.
+   * @param multiplier 0.0-2.0 — values >1 boost audio probability, <1 dampen it
+   */
+  shouldAutoTTSWithMultiplier(channel: string, inputContentType: string, multiplier: number): boolean {
     if (!this.isEnabledForChannel(channel)) return false
     if (!this.config.TTS_AUTO_FOR_AUDIO_INPUT) return false
 
-    // Frequency-based probability: 0 = never, 100 = always
-    const freq = inputContentType === 'audio'
+    // Base frequency from config: 0 = never, 100 = always
+    const baseFreq = inputContentType === 'audio'
       ? this.config.TTS_AUDIO_TO_AUDIO_FREQ
       : this.config.TTS_TEXT_TO_AUDIO_FREQ
+
+    // Apply per-contact preference multiplier (capped at 100)
+    const freq = Math.min(100, baseFreq * multiplier)
     if (freq <= 0) return false
     if (freq >= 100) return true
     return Math.random() * 100 < freq

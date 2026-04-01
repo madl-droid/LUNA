@@ -27,6 +27,8 @@ export interface HookMap {
   'message:before_respond': [BeforeRespondPayload, void]
   'message:response_ready': [ResponseReadyPayload, void]
   'message:send':           [SendPayload, void]
+  'channel:ack':            [ChannelSignalPayload, void]
+  'channel:read':           [ChannelReadPayload, void]
   'channel:composing':      [ChannelComposingPayload, void]
   'channel:send_complete':  [ChannelSendCompletePayload, void]
   'message:sent':           [SentPayload, void]
@@ -133,9 +135,29 @@ export interface SendPayload {
   correlationId?: string
 }
 
+/** Signal: delivery acknowledgement (message received by agent) */
+export interface ChannelSignalPayload {
+  channel: string
+  to: string
+  /** Channel-specific message keys for ACK (e.g. Baileys msg key) */
+  messageKeys?: unknown[]
+  correlationId?: string
+}
+
+/** Signal: read receipt (message seen by agent) */
+export interface ChannelReadPayload {
+  channel: string
+  to: string
+  /** Channel-specific message keys to mark as read */
+  messageKeys?: unknown[]
+  correlationId?: string
+}
+
 export interface ChannelComposingPayload {
   channel: string
   to: string
+  /** 'composing' = typing text, 'recording' = recording audio */
+  mode?: 'composing' | 'recording'
   correlationId?: string
 }
 

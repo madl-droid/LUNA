@@ -203,6 +203,20 @@ async function processMessageInner(
       attachments: ctx.attachmentMeta.length,
     }, 'Phase 1 done')
 
+    // ═══ SIGNAL: ACK (delivery confirmation) — after Phase 1 ═══
+    // Resolve send target for group messages
+    const rawMsgSignal = message.raw as Record<string, Record<string, string>> | undefined
+    const signalGroupJid = rawMsgSignal?.key?.remoteJid
+    const signalTo = signalGroupJid?.endsWith('@g.us') ? signalGroupJid : message.from
+    const messageKeys = message.raw ? [{ remoteJid: rawMsgSignal?.key?.remoteJid, id: message.channelMessageId, fromMe: false }] : undefined
+
+    registry.runHook('channel:ack', {
+      channel: message.channelName,
+      to: signalTo,
+      messageKeys,
+      correlationId: traceId,
+    }).catch(() => {})
+
     // ═══ TEST MODE GATE ═══
     // Check DEBUG_ADMIN_ONLY from config_store (runtime, not just env)
     const adminOnly = await isAdminOnlyActive(registry)
@@ -257,6 +271,14 @@ async function processMessageInner(
         replanAttempts: 0, subagentIterationsUsed: 0,
       }
     }
+
+    // ═══ SIGNAL: READ (mark as read) — before Phase 2 ═══
+    registry.runHook('channel:read', {
+      channel: message.channelName,
+      to: signalTo,
+      messageKeys,
+      correlationId: traceId,
+    }).catch(() => {})
 
     // ═══ PHASE 2: Evaluate Situation ═══
     const p2Start = Date.now()
@@ -335,6 +357,15 @@ async function processMessageInner(
 
     // Resolve checkpoint ID (INSERT ~1-2ms, ran concurrently with aviso timer setup above)
     if (checkpointPromise) checkpointId = await checkpointPromise || undefined
+
+    // ═══ SIGNAL: COMPOSING/RECORDING — before Phase 3 ═══
+    // Mode is conditional on the expected response format from Phase 1
+    registry.runHook('channel:composing', {
+      channel: message.channelName,
+      to: signalTo,
+      mode: ctx.responseFormat === 'audio' ? 'recording' : 'composing',
+      correlationId: traceId,
+    }).catch(() => {})
 
     const p3Start = Date.now()
     const phase3Opts: Phase3Options = {

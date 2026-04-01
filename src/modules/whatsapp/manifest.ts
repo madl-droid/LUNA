@@ -301,11 +301,30 @@ const manifest: ModuleManifest = {
       })
     })
 
-    // Presence: show "typing..." when engine is composing
+    // Signal: ACK (delivery confirmation) — no-op for WhatsApp (Baileys handles delivery automatically)
+    registry.addHook('whatsapp', 'channel:ack', async (payload) => {
+      if (payload.channel !== 'whatsapp') return
+      // Baileys sends delivery receipts automatically, no action needed
+    })
+
+    // Signal: READ (mark as read / blue ticks)
+    registry.addHook('whatsapp', 'channel:read', async (payload) => {
+      if (payload.channel !== 'whatsapp') return
+      if (!adapter) return
+      if (payload.messageKeys && Array.isArray(payload.messageKeys)) {
+        await adapter.markRead(payload.messageKeys as Array<{ remoteJid: string; id: string; fromMe: boolean }>)
+      }
+    })
+
+    // Presence: show "typing..." or "recording..." when engine is composing
     registry.addHook('whatsapp', 'channel:composing', async (payload) => {
       if (payload.channel !== 'whatsapp') return
       if (!adapter) return
-      await adapter.getPresenceManager().sendComposing(payload.to)
+      if (payload.mode === 'recording') {
+        await adapter.getPresenceManager().sendRecording(payload.to)
+      } else {
+        await adapter.getPresenceManager().sendComposing(payload.to)
+      }
     })
 
     // Presence: clear typing after all messages sent

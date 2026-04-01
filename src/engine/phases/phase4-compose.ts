@@ -15,6 +15,7 @@ import { buildCompositorPrompt } from '../prompts/compositor.js'
 import { callLLM, callLLMWithFallback } from '../utils/llm-client.js'
 import { loadFallback } from '../fallbacks/fallback-loader.js'
 import { formatForChannel } from '../utils/message-formatter.js'
+import { getAudioPreferenceMultiplier } from '../utils/audio-preference.js'
 import { isComplexPlan } from './phase3-execute.js'
 
 const logger = pino({ name: 'engine:phase4' })
@@ -92,14 +93,33 @@ export async function phase4Compose(
   let audioBuffer: Buffer | undefined
   let audioDurationSeconds: number | undefined
   let outputFormat: 'text' | 'audio' = 'text'
+  let ttsFailed = false
 
   if (registry) {
     const ttsService = registry.getOptional<{
       shouldAutoTTS(channel: string, inputType: string): boolean
+      shouldAutoTTSWithMultiplier(channel: string, inputType: string, multiplier: number): boolean
       synthesize(text: string): Promise<{ audioBuffer: Buffer; durationSeconds: number } | null>
+      isEnabledForChannel(channel: string): boolean
     }>('tts:service')
 
-    if (ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType)) {
+    // Decide whether to attempt TTS:
+    // - 'audio' (explicit request like "mandame un audio") → always attempt
+    // - 'auto' (audio input, let ratio decide) → use shouldAutoTTS probability × contact preference
+    // - 'text' (explicit text request or default) → never attempt
+    let shouldTTS = false
+    if (ctx.responseFormat === 'audio') {
+      shouldTTS = ttsService?.isEnabledForChannel(ctx.message.channelName) ?? false
+    } else if (ctx.responseFormat === 'auto' && ttsService) {
+      // Apply per-contact audio preference multiplier to the ratio
+      const redis = registry.getRedis()
+      const prefMultiplier = ctx.contactId
+        ? await getAudioPreferenceMultiplier(redis, ctx.contactId).catch(() => 1.0)
+        : 1.0
+      shouldTTS = ttsService.shouldAutoTTSWithMultiplier(ctx.message.channelName, ctx.messageType, prefMultiplier)
+    }
+
+    if (shouldTTS && ttsService) {
       try {
         const ttsResult = await ttsService.synthesize(responseText)
         if (ttsResult) {
@@ -107,8 +127,11 @@ export async function phase4Compose(
           audioDurationSeconds = ttsResult.durationSeconds
           outputFormat = 'audio'
           logger.info({ traceId: ctx.traceId, durationSeconds: ttsResult.durationSeconds }, 'TTS synthesis complete')
+        } else {
+          ttsFailed = true
         }
       } catch (err) {
+        ttsFailed = true
         logger.warn({ err, traceId: ctx.traceId }, 'TTS synthesis failed, falling back to text')
       }
     }
@@ -130,6 +153,7 @@ export async function phase4Compose(
     audioDurationSeconds,
     outputFormat,
     rawResponse,
+    ttsFailed,
   }
 }
 

@@ -28,6 +28,39 @@ export const ERROR_FALLBACK_MESSAGES: Record<string, string[]> = {
   ],
 }
 
+/** TTS failure fallback messages — sent before the text response when audio was expected but failed. */
+export const TTS_FAILURE_MESSAGES: Record<string, string[]> = {
+  '': [
+    'No pude grabar el audio, te respondo por mensaje:',
+    'No me funcionó el audio, te escribo:',
+  ],
+  'casual': [
+    'No me funcionó el micrófono 🎤 te respondo por mensaje:',
+    'No pude enviarte el audio, te escribo:',
+    'Se me trabó el audio 😅 te mando el mensaje:',
+  ],
+  'formal': [
+    'No fue posible generar el audio. Le respondo por escrito:',
+    'Disculpe, no pude enviar la nota de voz. Le respondo por mensaje:',
+  ],
+  'express': [
+    'No pude con el audio, te escribo:',
+    'Audio falló, va por texto:',
+  ],
+}
+
+/**
+ * Pick a random TTS failure fallback message for a given tone.
+ */
+export function pickTTSFailureFallback(tone: string): string {
+  const toneMsgs = TTS_FAILURE_MESSAGES[tone]
+  if (toneMsgs && toneMsgs.length > 0) {
+    return toneMsgs[Math.floor(Math.random() * toneMsgs.length)]!
+  }
+  const generic = TTS_FAILURE_MESSAGES['']!
+  return generic[Math.floor(Math.random() * generic.length)]!
+}
+
 /**
  * Pick a random error fallback message for a given tone.
  * Cascade: tone-specific → neutral → hardcoded last resort.

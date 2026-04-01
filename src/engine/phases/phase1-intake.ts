@@ -26,6 +26,8 @@ import { normalizeText, detectMessageType } from '../utils/normalizer.js'
 import { detectInputInjection } from '../utils/injection-detector.js'
 import { searchKnowledge } from '../utils/rag-local.js'
 import { classifyAttachments } from '../attachments/classifier.js'
+import { determineResponseFormat } from '../utils/response-format-detector.js'
+import { recordInputType } from '../utils/audio-preference.js'
 import { processAttachments, buildFallbackMessages } from '../attachments/processor.js'
 import type { ChannelAttachmentConfig, AttachmentEngineConfig } from '../attachments/types.js'
 import { searchFreshdeskIndex } from '../../tools/freshdesk/freshdesk-rag.js'
@@ -267,6 +269,11 @@ export async function phase1Intake(
     }
   } catch { /* hitl module not active */ }
 
+  // Record input type for audio preference learning (fire-and-forget)
+  if (contact?.id) {
+    recordInputType(redis, contact.id, messageType).catch(() => {})
+  }
+
   const durationMs = Date.now() - startMs
   logger.info({
     traceId, durationMs, userType,
@@ -304,7 +311,11 @@ export async function phase1Intake(
     attachmentMeta,
     assignmentRules,
     attachmentContext, // populated here in Phase 1 (parallel with context loading)
-    responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
+    responseFormat: (() => {
+      const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${message.channelName}`)
+      const chType = channelSvc?.get()?.channelType ?? 'async'
+      return determineResponseFormat(normalizedText, messageType, message.channelName, chType)
+    })(),
     possibleInjection,
     hitlPendingContext,
   }
