@@ -7,6 +7,13 @@ const t = (key: string, lang: Lang): string => labels[lang]?.[key] ?? labels.es[
 
 const labels: Record<Lang, Record<string, string>> = {
   es: {
+    sec_webhook: 'URL del Webhook',
+    sec_webhook_info: 'Copia esta URL y pégala en Medilink (Configuración → Webhooks). También configura las claves pública y privada en los campos de arriba.',
+    webhook_step1: 'En Medilink, ir a <strong>Configuración → Integraciones → Webhooks</strong>',
+    webhook_step2: 'Crear un nuevo webhook con esta URL:',
+    webhook_step3: 'En el campo <strong>Token público</strong>, pegar el valor de <strong>Webhook clave pública</strong> de arriba.',
+    webhook_step4: 'En el campo <strong>Clave privada / Secret</strong>, pegar el valor de <strong>Webhook clave privada</strong> de arriba.',
+    webhook_step5: 'Activar los eventos: <strong>cita:creada</strong>, <strong>cita:modificada</strong>, <strong>cita:eliminada</strong>.',
     sec_professionals: 'Profesionales y Prestaciones',
     sec_professionals_info: 'Marca qué profesionales atienden valoraciones (pacientes nuevos) y qué prestaciones realiza cada uno. Esto se usa para filtrar disponibilidad al agendar por WhatsApp.',
     col_professional: 'Profesional',
@@ -37,6 +44,13 @@ const labels: Record<Lang, Record<string, string>> = {
     col_use_llm: 'Personalizar con IA',
   },
   en: {
+    sec_webhook: 'Webhook URL',
+    sec_webhook_info: 'Copy this URL and paste it in Medilink (Settings → Webhooks). Also configure the public and private keys in the fields above.',
+    webhook_step1: 'In Medilink, go to <strong>Settings → Integrations → Webhooks</strong>',
+    webhook_step2: 'Create a new webhook with this URL:',
+    webhook_step3: 'In the <strong>Public token</strong> field, paste the value from <strong>Webhook public key</strong> above.',
+    webhook_step4: 'In the <strong>Private key / Secret</strong> field, paste the value from <strong>Webhook private key</strong> above.',
+    webhook_step5: 'Enable events: <strong>cita:creada</strong>, <strong>cita:modificada</strong>, <strong>cita:eliminada</strong>.',
     sec_professionals: 'Professionals & Treatments',
     sec_professionals_info: 'Mark which professionals handle evaluations (new patients) and which treatments each one performs. This filters availability when scheduling via WhatsApp.',
     col_professional: 'Professional',
@@ -87,7 +101,39 @@ export interface MedilinkConsoleData {
 }
 
 export function renderMedilinkConsole(data: MedilinkConsoleData, lang: Lang): string {
-  return renderProfessionalSection(data, lang) + renderFollowUpSection(data, lang)
+  return renderWebhookPanel(lang) + renderProfessionalSection(data, lang) + renderFollowUpSection(data, lang)
+}
+
+// ─── Webhook URL panel ───────────────────
+
+function renderWebhookPanel(lang: Lang): string {
+  const COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
+  const webhookPath = '/console/api/medilink/webhook'
+  return `
+<div class="panel">
+  <div class="panel-header">${esc(t('sec_webhook', lang))}</div>
+  <div class="panel-body">
+    <p style="margin:0 0 14px">${t('sec_webhook_info', lang)}</p>
+    <ol class="wizard-steps" style="margin:0 0 4px;padding-left:20px;line-height:2">
+      <li>${t('webhook_step1', lang)}</li>
+      <li>${t('webhook_step2', lang)}
+        <div class="wizard-uri-box" style="margin:6px 0">
+          <code class="wizard-uri" id="ml-webhook-url">${esc(webhookPath)}</code>
+          <button type="button" class="wizard-copy-icon" onclick="copyWizardUri(this)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${COPY_ICON}</button>
+        </div>
+        <script>
+          (function(){
+            var el = document.getElementById('ml-webhook-url');
+            if (el) el.textContent = location.origin + '${webhookPath}';
+          })();
+        </script>
+      </li>
+      <li>${t('webhook_step3', lang)}</li>
+      <li>${t('webhook_step4', lang)}</li>
+      <li>${t('webhook_step5', lang)}</li>
+    </ol>
+  </div>
+</div>`
 }
 
 // ─── Professional-Treatment mapping ─────
