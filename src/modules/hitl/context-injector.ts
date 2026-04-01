@@ -28,7 +28,8 @@ export async function getPendingContext(
       + `Summary: ${data.summary}\n`
       + `If the client asks about it, acknowledge naturally that you are waiting for a response from the team.`
     )
-  } catch {
+  } catch (err) {
+    logger.warn({ err, key }, 'Failed to parse HITL pending context from Redis')
     return null
   }
 }

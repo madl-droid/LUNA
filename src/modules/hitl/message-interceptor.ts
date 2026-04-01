@@ -5,7 +5,7 @@ import type { Registry } from '../../kernel/registry.js'
 import type { HitlConfig, HumanReplyIntent } from './types.js'
 import { TicketStore } from './ticket-store.js'
 import { resolveTicket } from './resolver.js'
-import { getHandoffAction, activateHandoff, getShareableContact, formatContactForHuman } from './handoff.js'
+import { getHandoffAction, activateHandoff, deactivateHandoff, getShareableContact, formatContactForHuman } from './handoff.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'hitl:interceptor' })
@@ -109,7 +109,6 @@ export function registerInterceptor(
     if (!ticket || !ticket.handoffActive) return
 
     // Deactivate handoff
-    const { deactivateHandoff } = await import('./handoff.js')
     await deactivateHandoff(ticket.requesterChannel, ticket.requesterSenderId, redis)
     await ticketStore.clearHandoff(ticket.id)
 

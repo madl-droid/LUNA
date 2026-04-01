@@ -660,6 +660,7 @@ export class UsersDb {
       metadata: row.metadata ?? {},
       isActive: row.is_active,
       source: row.source,
+      supervisorId: row.supervisor_id ?? null,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     }
