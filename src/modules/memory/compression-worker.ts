@@ -123,13 +123,22 @@ export class CompressionWorker {
       return
     }
 
-    // Step 1: Archive
+    // Step 1: Archive (idempotent — check if already archived)
     if (!currentStatus || currentStatus === 'queued') {
       await this.updateStatus(sessionId, 'archiving')
-      await archiveSessionLegal(
-        this.db, sessionId, contactId, channel,
-        startedAt, closedAt, messages, attachments,
+
+      const existingArchive = await this.db.query(
+        `SELECT id FROM session_archives WHERE session_id = $1 LIMIT 1`,
+        [sessionId],
       )
+      if (existingArchive.rows.length === 0) {
+        await archiveSessionLegal(
+          this.db, sessionId, contactId, channel,
+          startedAt, closedAt, messages, attachments,
+        )
+      } else {
+        logger.info({ sessionId }, 'Archive already exists, skipping')
+      }
     }
 
     // Step 2: Summarize
@@ -147,19 +156,30 @@ export class CompressionWorker {
     if (!currentStatus || ['queued', 'archiving', 'summarizing'].includes(currentStatus)) {
       await this.updateStatus(sessionId, 'embedding')
 
-      const interactionTitle = await this.getInteractionTitle(sessionId)
-      const chunks = chunkSession(sessionId, contactId, messages, attachments, interactionTitle)
+      // Check if chunks already exist (idempotency for retries)
+      const existingChunks = await this.db.query(
+        `SELECT COUNT(*)::int AS cnt FROM session_memory_chunks WHERE session_id = $1`,
+        [sessionId],
+      )
+      const alreadyChunked = (existingChunks.rows[0]?.cnt ?? 0) > 0
 
-      if (chunks.length > 0) {
-        const embeddingService = this.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
-        if (embeddingService) {
-          const result = await embedSessionChunks(this.db, embeddingService, chunks)
-          logger.info({ sessionId, ...result }, 'Session chunks embedded')
-        } else {
-          // Persist chunks without embeddings — nightly batch will catch them
-          await this.persistChunksWithoutEmbeddings(chunks)
-          logger.warn({ sessionId, chunks: chunks.length }, 'Embedding service unavailable, chunks persisted without embeddings')
+      if (!alreadyChunked) {
+        const interactionTitle = await this.getInteractionTitle(sessionId)
+        const chunks = chunkSession(sessionId, contactId, messages, attachments, interactionTitle)
+
+        if (chunks.length > 0) {
+          const embeddingService = this.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
+          if (embeddingService) {
+            const result = await embedSessionChunks(this.db, embeddingService, chunks)
+            logger.info({ sessionId, ...result }, 'Session chunks embedded')
+          } else {
+            // Persist chunks without embeddings — nightly batch will catch them
+            await this.persistChunksWithoutEmbeddings(chunks)
+            logger.warn({ sessionId, chunks: chunks.length }, 'Embedding service unavailable, chunks persisted without embeddings')
+          }
         }
+      } else {
+        logger.info({ sessionId }, 'Chunks already exist, skipping re-chunking')
       }
     }
 
@@ -218,7 +238,7 @@ export class CompressionWorker {
       ),
       this.db.query(
         `SELECT id, session_id, filename, mime_type, category, category_label,
-                extracted_text, llm_text, file_path, metadata
+                extracted_text, llm_text, file_path
          FROM attachment_extractions WHERE session_id = $1`,
         [sessionId],
       ),
@@ -266,7 +286,7 @@ export class CompressionWorker {
       extractedText: r.extracted_text as string | null,
       llmText: r.llm_text as string | null,
       filePath: r.file_path as string | null,
-      metadata: r.metadata as Record<string, unknown> | null,
+      metadata: null,
     }))
 
     return { messages, attachments, startedAt, closedAt }

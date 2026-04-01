@@ -186,27 +186,19 @@ async function searchVector(
 // ═══════════════════════════════════════════
 
 async function enrichWithAdjacent(db: Pool, results: MemorySearchResult[]): Promise<void> {
-  const chunkIds = results.flatMap(r => {
-    // Get all unique chunk IDs we need to fetch
-    return [r.chunkId]
-  })
-
-  if (chunkIds.length === 0) return
+  if (results.length === 0) return
 
   try {
     // For each result, load prev and next chunks
     for (const result of results) {
-      const adjResult = await db.query<{
-        id: string; content: string | null; chunk_index: number;
-      }>(
+      const adjResult = await db.query(
         `SELECT id, content, chunk_index
          FROM session_memory_chunks
-         WHERE (prev_chunk_id = $1 OR next_chunk_id = $1 OR id IN (
-           SELECT prev_chunk_id FROM session_memory_chunks WHERE id = $1
+         WHERE id IN (
+           SELECT prev_chunk_id FROM session_memory_chunks WHERE id = $1 AND prev_chunk_id IS NOT NULL
            UNION
-           SELECT next_chunk_id FROM session_memory_chunks WHERE id = $1
-         ))
-         AND id != $1
+           SELECT next_chunk_id FROM session_memory_chunks WHERE id = $1 AND next_chunk_id IS NOT NULL
+         )
          ORDER BY chunk_index`,
         [result.chunkId],
       )

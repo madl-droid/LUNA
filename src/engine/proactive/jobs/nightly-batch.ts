@@ -254,6 +254,7 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
        FROM sessions
        WHERE compression_status IS NULL
          AND status = 'closed'
+         AND contact_id IS NOT NULL
          AND last_activity_at < NOW() - INTERVAL '24 hours'
        ORDER BY last_activity_at ASC
        LIMIT $1`,

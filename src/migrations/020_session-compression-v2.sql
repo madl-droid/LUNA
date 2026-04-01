@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS session_memory_chunks (
 CREATE INDEX IF NOT EXISTS idx_smc_session ON session_memory_chunks(session_id);
 CREATE INDEX IF NOT EXISTS idx_smc_contact ON session_memory_chunks(contact_id);
 CREATE INDEX IF NOT EXISTS idx_smc_source ON session_memory_chunks(source_id);
-CREATE INDEX IF NOT EXISTS idx_smc_embedding ON session_memory_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_smc_embedding ON session_memory_chunks USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_smc_tsv ON session_memory_chunks USING gin(tsv);
 
 -- ═══════════════════════════════════════════
