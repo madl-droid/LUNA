@@ -7,6 +7,7 @@ import type pino from 'pino'
 import type { VectorizeJobData, EmbeddingStatus } from './types.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { EmbeddingService } from './embedding-service.js'
+import { generateDescription } from './description-generator.js'
 
 const QUEUE_NAME = 'knowledge-vectorize'
 const BULK_LOCK_KEY = 'knowledge:vectorize:bulk_lock'
@@ -15,6 +16,14 @@ const BULK_LOCK_TTL_S = 30 * 60       // 30 minutes
 const BULK_COOLDOWN_TTL_S = 3600      // 1 hour
 const BATCH_SIZE = 50
 
+interface RegistryLike {
+  callHook(hook: 'llm:chat', payload: {
+    task: string; system: string
+    messages: Array<{ role: 'user'; content: string }>
+    maxTokens: number; temperature: number
+  }): Promise<{ text?: string } | null>
+}
+
 export class VectorizeWorker {
   private readonly queue: Queue<VectorizeJobData>
   private readonly worker: Worker<VectorizeJobData>
@@ -22,16 +31,19 @@ export class VectorizeWorker {
   private readonly pgStore: KnowledgePgStore
   private readonly embeddingService: EmbeddingService
   private readonly log: pino.Logger
+  private readonly registry: RegistryLike | null
 
   constructor(
     redis: Redis,
     pgStore: KnowledgePgStore,
     embeddingService: EmbeddingService,
     logger: pino.Logger,
+    registry?: RegistryLike,
   ) {
     this.redis = redis
     this.pgStore = pgStore
     this.embeddingService = embeddingService
+    this.registry = registry ?? null
     this.log = logger.child({ component: 'vectorize-worker' })
 
     // BullMQ requires dedicated Redis connections with maxRetriesPerRequest: null
@@ -94,6 +106,9 @@ export class VectorizeWorker {
         await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
         return
       }
+
+      // Generate LLM description (before embedding, using chunk content)
+      await this.generateDocumentDescription(documentId)
 
       const startMs = Date.now()
       await this.embedChunks(chunks)
@@ -255,6 +270,56 @@ export class VectorizeWorker {
       this.log.info({ documentId, itemId: doc.sourceRef, status }, '[EMBED] Parent item status updated')
     } catch (err) {
       this.log.warn({ err, documentId }, '[EMBED] Failed to update parent item status (non-fatal)')
+    }
+  }
+
+  // ─── LLM description generation ────────────────────────
+
+  /**
+   * Generate an LLM description for a document using its chunk content.
+   * Runs after chunking, before embedding. Non-fatal: if it fails, embedding continues.
+   */
+  private async generateDocumentDescription(documentId: string): Promise<void> {
+    if (!this.registry) {
+      this.log.debug({ documentId }, '[DESC-GEN] No registry available, skipping description generation')
+      return
+    }
+
+    try {
+      const doc = await this.pgStore.getDocument(documentId)
+      if (!doc) return
+
+      // Get full chunk data with section + index for sample selection
+      const chunkSamples = await this.pgStore.getDocumentChunkSamples(documentId)
+      if (chunkSamples.length === 0) return
+
+      const result = await generateDescription(
+        doc.title,
+        doc.description,
+        chunkSamples,
+        this.registry,
+        this.log,
+      )
+
+      if (result) {
+        // Update document with LLM description + keywords
+        await this.pgStore.updateDocumentLlmDescription(documentId, result.description, result.keywords)
+
+        // Also update parent knowledge_item if exists
+        if (doc.sourceRef) {
+          await this.pgStore.updateItemLlmDescription(doc.sourceRef, result.description, result.keywords)
+        }
+
+        this.log.info({
+          documentId,
+          title: doc.title,
+          llmDescLength: result.description.length,
+          keywords: result.keywords.length,
+        }, '[DESC-GEN] Document description updated')
+      }
+    } catch (err) {
+      // Non-fatal: description generation failure should not block embedding
+      this.log.warn({ err, documentId }, '[DESC-GEN] Failed to generate description (non-fatal)')
     }
   }
 

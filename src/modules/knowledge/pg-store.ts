@@ -1372,6 +1372,62 @@ export class KnowledgePgStore {
       reason: `Consultado ${r.hit_count} veces — considerar promover a core`,
     }))
   }
+
+  // ─── LLM description management ────────────────
+
+  async updateDocumentLlmDescription(
+    documentId: string,
+    llmDescription: string,
+    keywords: string[],
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_documents
+       SET llm_description = $2, keywords = $3, updated_at = now()
+       WHERE id = $1`,
+      [documentId, llmDescription, keywords],
+    )
+  }
+
+  async updateItemLlmDescription(
+    itemId: string,
+    llmDescription: string,
+    keywords: string[],
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_items
+       SET llm_description = $2, keywords = $3, updated_at = now()
+       WHERE id = $1`,
+      [itemId, llmDescription, keywords],
+    )
+  }
+
+  async getDocumentChunkSamples(documentId: string): Promise<Array<{
+    content: string; section: string | null; contentType: string
+    chunkIndex: number; chunkTotal: number
+  }>> {
+    const totalRes = await this.db.query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM knowledge_chunks WHERE document_id = $1`,
+      [documentId],
+    )
+    const total = totalRes.rows[0]?.cnt ?? 0
+
+    const res = await this.db.query<{
+      content: string; section: string | null; content_type: string; chunk_index: number
+    }>(
+      `SELECT content, section, COALESCE(content_type, 'text') AS content_type, chunk_index
+       FROM knowledge_chunks WHERE document_id = $1
+       ORDER BY chunk_index ASC`,
+      [documentId],
+    )
+
+    return res.rows.map(r => ({
+      content: r.content,
+      section: r.section,
+      contentType: r.content_type,
+      chunkIndex: r.chunk_index,
+      chunkTotal: total,
+    }))
+  }
 }
 
 // ─── Row mappers ─────────────────────────────
@@ -1380,6 +1436,8 @@ interface KnowledgeDocumentRow {
   id: string
   title: string
   description: string
+  llm_description: string | null
+  keywords: string[] | null
   is_core: boolean
   source_type: string
   source_ref: string | null
@@ -1401,6 +1459,8 @@ function mapDocRow(r: KnowledgeDocumentRow): KnowledgeDocument {
     id: r.id,
     title: r.title,
     description: r.description,
+    llmDescription: r.llm_description ?? null,
+    keywords: r.keywords ?? [],
     isCore: r.is_core,
     sourceType: r.source_type as DocumentSourceType,
     sourceRef: r.source_ref,
