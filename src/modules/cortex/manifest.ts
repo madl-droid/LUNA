@@ -388,7 +388,7 @@ const manifest: ModuleManifest = {
           path: 'notifications',
           handler: async (req, res) => {
             const query = parseQuery(req)
-            const limit = Math.min(parseInt(query.get('limit') ?? '30', 10), 100)
+            const limit = Math.min(parseInt(query.get('limit') ?? '30', 10) || 30, 100)
             const [notifications, unreadCount] = await Promise.all([
               notifStore.listRecent(db, limit),
               notifStore.countUnread(db),
@@ -401,7 +401,7 @@ const manifest: ModuleManifest = {
           path: 'notifications/read',
           handler: async (req, res) => {
             const body = await parseBody<{ id: string }>(req)
-            if (!body.id) { jsonResponse(res, 400, { error: 'id required' }); return }
+            if (!body?.id) { jsonResponse(res, 400, { error: 'id required' }); return }
             await notifStore.markRead(db, body.id)
             jsonResponse(res, 200, { ok: true })
           },

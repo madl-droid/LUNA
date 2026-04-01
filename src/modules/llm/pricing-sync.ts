@@ -87,7 +87,7 @@ export function startPricingCheck(registry: Registry): ReturnType<typeof setInte
 }
 
 async function checkPricing(registry: Registry): Promise<void> {
-  const day = new Date().getDate()
+  const day = new Date().getUTCDate()
   if (day !== 1 && day !== 16) return
 
   try {

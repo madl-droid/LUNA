@@ -1154,7 +1154,7 @@
         notifList.innerHTML = '<div class="dropdown-empty">' + (isEs ? 'Sin notificaciones' : 'No notifications') + '</div>'
         if (notifDot) notifDot.classList.remove('active')
         if (notifCount) notifCount.classList.remove('active')
-        if (markAllBtn) markAllBtn.style.display = 'none'
+        if (markAllBtn) markAllBtn.style.display = ''
         return
       }
 
@@ -1166,7 +1166,7 @@
       } else if (notifCount) {
         notifCount.classList.remove('active')
       }
-      if (markAllBtn) markAllBtn.style.display = hasUnread ? '' : 'none'
+      if (markAllBtn) markAllBtn.style.display = hasUnread ? 'block' : ''
 
       notifList.innerHTML = all.map(function (n) {
         var iconSvg = severityToIcon(n.severity || n.type)

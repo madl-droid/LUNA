@@ -306,7 +306,7 @@ function renderHeader(opts: PageOptions): string {
           <span class="header-notif-count" id="notif-count"></span>
         </button>
         <div class="header-dropdown" id="notif-panel">
-          <div class="dropdown-header" style="display:flex;justify-content:space-between;align-items:center">${i18n('notif', opts.lang)}<button id="notif-mark-all" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:0.75rem;padding:0;display:none">${opts.lang === 'es' ? 'Marcar todo leído' : 'Mark all read'}</button></div>
+          <div class="dropdown-header notif-header">${i18n('notif', opts.lang)}<button id="notif-mark-all" class="notif-mark-all">${opts.lang === 'es' ? 'Marcar todo leído' : 'Mark all read'}</button></div>
           <div class="dropdown-body" id="notif-list">
             <div class="dropdown-empty">${i18n('noNotif', opts.lang)}</div>
           </div>
