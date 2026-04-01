@@ -36,6 +36,96 @@ async function checkSuperAdmin(registry: Registry, cookieHeader: string | undefi
   } catch { return false }
 }
 
+/**
+ * Purge all data tables, media files, and Redis.
+ * Preserves: config_store, kernel_modules, user_list_config, schema_migrations,
+ * and (optionally) super admin user + their contacts/credentials.
+ */
+async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: boolean }): Promise<void> {
+  const db = registry.getDb()
+
+  // All data tables to truncate (order matters for CASCADE but we use CASCADE anyway)
+  const tables = [
+    // Engine core
+    'messages', 'sessions', 'session_summaries', 'session_summaries_v2', 'summary_chunks',
+    'session_archives', 'session_memory_chunks', 'conversation_archives',
+    'contacts', 'contact_channels', 'agent_contacts',
+    'campaigns', 'commitments', 'pipeline_logs', 'ack_messages',
+    // Memory v3
+    'agents', 'companies', 'system_state',
+    // Knowledge
+    'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+    'knowledge_categories', 'knowledge_faqs', 'knowledge_gaps',
+    'knowledge_sync_sources', 'knowledge_api_connectors', 'knowledge_web_sources',
+    'knowledge_items', 'knowledge_item_tabs', 'knowledge_item_columns',
+    // Cortex / Trace
+    'trace_scenarios', 'trace_runs', 'trace_results', 'task_checkpoints',
+    'cortex_pulse_events',
+    // Subagents
+    'subagent_types', 'subagent_usage',
+    // HITL
+    'hitl_tickets', 'hitl_ticket_log', 'hitl_rules',
+    // LLM
+    'llm_usage', 'llm_daily_stats', 'llm_descriptions',
+    // Attachments
+    'attachment_extractions',
+    // Tools / Prompts
+    'tools', 'tool_access_rules', 'tool_executions',
+    'prompt_slots',
+    // Scheduled tasks
+    'scheduled_tasks', 'scheduled_task_executions',
+    // Channels
+    'voice_calls', 'voice_call_transcripts',
+    'email_state', 'email_threads',
+    'google_chat_spaces', 'google_chat_events',
+    'whatsapp_auth_state',
+    'twilio_call_metadata',
+    // Google
+    'google_oauth_tokens',
+    // Medilink
+    'medilink_audit_log', 'medilink_edit_requests', 'medilink_follow_ups',
+    'medilink_professional_treatments', 'medilink_user_type_rules',
+    'medilink_followup_templates', 'medilink_webhook_log',
+    // Proactive
+    'proactive_outreach_log', 'daily_reports',
+  ]
+
+  for (const t of tables) {
+    try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
+  }
+
+  // Users: either full wipe or preserve super admin
+  if (opts.preserveSuperAdmin) {
+    await db.query(`DELETE FROM user_contacts WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
+      .catch(() => {})
+    await db.query(`DELETE FROM user_lists WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
+      .catch(() => {})
+    await db.query(`DELETE FROM user_credentials WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
+      .catch(() => {})
+    await db.query(`DELETE FROM users WHERE source != 'setup_wizard'`)
+      .catch(() => {})
+  } else {
+    for (const t of ['user_contacts', 'user_lists', 'user_credentials', 'users']) {
+      try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* ignore */ }
+    }
+  }
+
+  // Flush Redis
+  await registry.getRedis().flushdb()
+
+  // Delete media files (but keep the directory)
+  const mediaDir = path.resolve(process.cwd(), 'instance', 'knowledge', 'media')
+  try {
+    const files = fs.readdirSync(mediaDir)
+    for (const f of files) {
+      const filePath = path.join(mediaDir, f)
+      try { fs.rmSync(filePath, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  } catch { /* directory may not exist */ }
+
+  logger.info({ preserveSuperAdmin: opts.preserveSuperAdmin }, 'Full data purge completed')
+}
+
 /** Gate a debug API endpoint: requires test mode + super admin. Returns true if blocked. */
 async function guardDebugEndpoint(req: http.IncomingMessage, res: http.ServerResponse, registry: Registry): Promise<boolean> {
   const db = registry.getDb()
@@ -1782,29 +1872,9 @@ export function createApiRoutes(): ApiRoute[] {
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
           if (await guardDebugEndpoint(req, res, registry)) return
-          const db = registry.getDb()
 
-          const tables = [
-            'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
-            'pipeline_logs', 'daily_reports', 'ack_messages',
-            'contacts', 'contact_channels', 'agent_contacts', 'companies',
-            'attachment_extractions',
-            'tools', 'tool_access_rules', 'tool_executions',
-            'prompt_slots', 'campaigns',
-            'llm_usage', 'llm_daily_stats',
-            'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
-            'knowledge_faqs', 'knowledge_sync_sources', 'knowledge_gaps',
-            'knowledge_api_connectors', 'knowledge_web_sources', 'knowledge_categories',
-            'scheduled_tasks', 'scheduled_task_executions',
-            'voice_calls', 'voice_call_transcripts',
-            'email_state', 'email_threads',
-            'google_chat_spaces',
-          ]
-          for (const t of tables) {
-            try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
-          }
-          await registry.getRedis().flushdb()
-          logger.info('All memory cleared (debug panel) — config_store, users preserved')
+          await purgeAllData(registry, { preserveSuperAdmin: true })
+          logger.info('All memory cleared (debug panel) — config_store, super admin preserved')
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           logger.error({ err }, 'Failed to clear memory')
