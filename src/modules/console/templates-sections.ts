@@ -2179,7 +2179,8 @@ function renderDashboardSection(data: SectionData): string {
       <a class="dash-card-link" href="/console/llm?lang=${lang}">${isEs ? 'Ver detalle' : 'Full Report'}</a>
     </div>
     <div class="dash-card-subtitle">${isEs ? 'Eficiencia por modelo' : 'Efficiency per model'}</div>
-    ${models.map(m => `<div class="dash-token-row">
+    ${models.length > 0
+      ? models.map(m => `<div class="dash-token-row">
       <div class="dash-token-icon ts-dash-token-icon">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
       </div>
@@ -2191,7 +2192,8 @@ function renderDashboardSection(data: SectionData): string {
         <div class="dash-token-bar-label">${esc(m.tokens)} tokens</div>
         <div class="dash-token-bar-track"><div class="dash-token-bar-fill" style="width:${m.pct}%"></div></div>
       </div>
-    </div>`).join('')}
+    </div>`).join('')
+      : `<p style="font-size:13px;color:var(--on-surface-dim);margin:12px 0">${isEs ? 'Sin datos aún' : 'No data yet'}</p>`}
   </div>
 
   <div class="dash-card">
@@ -2200,12 +2202,14 @@ function renderDashboardSection(data: SectionData): string {
     </div>
     <div class="dash-card-subtitle">${isEs ? 'Satisfaccion del cliente por canal' : 'Customer satisfaction per node'}</div>
     <div class="dash-quality-grid">
-      ${quality.map(q => `<div class="dash-quality-card">
+      ${quality.length > 0
+        ? quality.map(q => `<div class="dash-quality-card">
         <div class="dash-quality-channel">${esc(q.channel)}</div>
         <span class="dash-quality-score">${q.score}</span>
         <span class="dash-quality-status ${qualityClass(q.status)}">${esc(q.status)}</span>
         <div class="dash-quality-stars">${stars(q.stars)}</div>
-      </div>`).join('')}
+      </div>`).join('')
+        : `<p style="font-size:13px;color:var(--on-surface-dim);margin:12px 0">${isEs ? 'Sin datos aún' : 'No data yet'}</p>`}
     </div>
   </div>
 </div>`

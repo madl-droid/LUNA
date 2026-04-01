@@ -1390,13 +1390,14 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             'whatsapp': 'WhatsApp', 'gmail': 'Gmail', 'google-chat': 'Google Chat',
             'twilio-voice': 'Twilio Voice', 'telegram': 'Telegram',
           }
-          const [contacts30, contactsPrev30, sessions24h, channels30, cost30, costPrev30] = await Promise.all([
+          const [contacts30, contactsPrev30, sessions24h, channels30, cost30, costPrev30, modelsData] = await Promise.all([
             db.query(`SELECT COUNT(*)::int AS c FROM contacts WHERE created_at > now() - interval '30 days'`),
             db.query(`SELECT COUNT(*)::int AS c FROM contacts WHERE created_at > now() - interval '60 days' AND created_at <= now() - interval '30 days'`),
             db.query(`SELECT COUNT(*)::int AS c FROM sessions WHERE last_activity_at > now() - interval '24 hours'`),
             db.query(`SELECT channel_name, COUNT(*)::int AS sessions, COUNT(DISTINCT contact_id)::int AS contacts FROM sessions WHERE started_at > now() - interval '30 days' GROUP BY channel_name ORDER BY sessions DESC LIMIT 6`),
             db.query(`SELECT COALESCE(SUM(cost_usd), 0)::float AS c FROM llm_usage WHERE created_at > now() - interval '30 days'`).catch(() => ({ rows: [{ c: 0 }] })),
             db.query(`SELECT COALESCE(SUM(cost_usd), 0)::float AS c FROM llm_usage WHERE created_at > now() - interval '60 days' AND created_at <= now() - interval '30 days'`).catch(() => ({ rows: [{ c: 0 }] })),
+            db.query(`SELECT model, COALESCE(SUM(input_tokens + output_tokens), 0)::bigint AS total_tokens FROM llm_usage WHERE created_at > now() - interval '30 days' GROUP BY model ORDER BY total_tokens DESC LIMIT 4`).catch(() => ({ rows: [] })),
           ])
           const totalContacts = contacts30.rows[0]?.c ?? 0
           const prevContacts = contactsPrev30.rows[0]?.c ?? 0
@@ -1410,7 +1411,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             contacts: Number(r['contacts']),
             sessions: Number(r['sessions']),
           }))
-          sectionData.dashboardData = { totalContacts, contactsChange, activeSessions, llmCost, costChange, channels }
+          // Models breakdown from llm_usage
+          const modelRows = (modelsData.rows as Array<Record<string, unknown>>)
+          const maxTokens = Math.max(...modelRows.map(r => Number(r['total_tokens'])), 1)
+          const models = modelRows.map(r => {
+            const total = Number(r['total_tokens'])
+            const name = String(r['model'])
+            const desc = name.includes('claude') ? 'Anthropic' : (name.includes('gemini') || name.includes('google')) ? 'Google' : ''
+            const fmt = total >= 1_000_000 ? (total / 1_000_000).toFixed(1) + 'M' : total >= 1000 ? Math.round(total / 1000) + 'k' : String(total)
+            return { name, desc, tokens: fmt, pct: Math.round(total / maxTokens * 100) }
+          })
+          sectionData.dashboardData = { totalContacts, contactsChange, activeSessions, llmCost, costChange, channels, models, totalSourceContacts: totalContacts }
         } catch { /* use zero fallbacks */ }
       }
 
