@@ -1305,27 +1305,8 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           }
           sectionData.agenteContent = renderSection('knowledge', sectionData) ?? `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de conocimiento no disponible.' : 'Knowledge module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'memory') {
-          // Only show basic memory fields (active conversations + basic retention)
-          const memoryBasicKeys = new Set([
-            '_div_sessions', 'MEMORY_SESSION_REOPEN_WINDOW_HOURS', 'LLM_PROMPT_CACHE_ENABLED',
-            'MEMORY_BUFFER_TURNS_INSTANT', 'MEMORY_BUFFER_TURNS_ASYNC', 'MEMORY_BUFFER_TURNS_VOICE',
-            'MEMORY_CONTEXT_SUMMARIES_INSTANT', 'MEMORY_CONTEXT_SUMMARIES_ASYNC', 'MEMORY_CONTEXT_SUMMARIES_VOICE',
-            '_div_compression', 'MEMORY_COMPRESSION_THRESHOLD', 'MEMORY_COMPRESSION_KEEP_RECENT',
-            'MEMORY_COMPRESSION_MODEL', 'MEMORY_EMBEDDING_MODEL',
-            '_div_retention', 'MEMORY_SUMMARY_RETENTION_DAYS', 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS',
-            'MEMORY_ARCHIVE_RETENTION_YEARS', 'MEMORY_MEDIA_RETENTION_MONTHS',
-            'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', 'MEMORY_PURGE_MERGED_SUMMARIES',
-            '_div_crons', 'MEMORY_BATCH_COMPRESS_CRON', 'MEMORY_BATCH_EMBEDDINGS_CRON',
-            'MEMORY_BATCH_MERGE_CRON',
-            'MEMORY_BATCH_MEDIA_PURGE_CRON', 'MEMORY_BATCH_LOGS_PURGE_CRON', 'MEMORY_BATCH_ARCHIVE_PURGE_CRON',
-          ])
-          const memoryMod = data.moduleStates.find(m => m.name === 'memory')
-          if (memoryMod?.active && memoryMod.console?.fields?.length) {
-            const basicMod = { ...memoryMod, console: { ...memoryMod.console, fields: memoryMod.console.fields.filter((f: { key: string }) => memoryBasicKeys.has(f.key)) } }
-            sectionData.agenteContent = renderModulePanels([basicMod], data.config, lang, 'memory')
-          } else {
-            sectionData.agenteContent = `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
-          }
+          sectionData.agenteContent = renderSection('memory', sectionData) ??
+            `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'identity') {
           sectionData.agenteContent = renderSection('identity', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
