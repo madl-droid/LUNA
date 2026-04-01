@@ -32,9 +32,17 @@ export async function runAttachmentMigration(db: Pool): Promise<void> {
         injection_risk BOOLEAN DEFAULT false,
         source_ref TEXT,
         file_path TEXT,
+        metadata JSONB,
         created_at TIMESTAMPTZ DEFAULT now()
       )
     `)
+    // Add columns for existing tables (idempotent)
+    await db.query(`ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS metadata JSONB`)
+    await db.query(`ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS content_hash TEXT`)
+    await db.query(`ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS knowledge_match_id UUID`)
+    await db.query(`ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS is_valuable BOOLEAN DEFAULT false`)
+    await db.query(`ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS value_confidence REAL`)
+    await db.query(`ALTER TABLE attachment_extractions ADD COLUMN IF NOT EXISTS value_signals TEXT[]`)
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ae_session ON attachment_extractions(session_id)`)
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ae_contact ON attachment_extractions(contact_id)`)
     logger.info('Attachment extractions table migration complete')

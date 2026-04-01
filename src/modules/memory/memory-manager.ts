@@ -31,13 +31,11 @@ export interface MemoryConfig {
   MEMORY_COMPRESSION_KEEP_RECENT: number
   MEMORY_COMPRESSION_MODEL?: string
   MEMORY_EMBEDDING_MODEL?: string
-  MEMORY_MAX_CONTACT_MEMORY_WORDS?: number
   MEMORY_SUMMARY_RETENTION_DAYS?: number
   MEMORY_ARCHIVE_RETENTION_YEARS?: number
   MEMORY_PIPELINE_LOGS_RETENTION_DAYS?: number
   MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS?: boolean
   MEMORY_PURGE_MERGED_SUMMARIES?: boolean
-  MEMORY_RECOMPRESSION_INTERVAL_DAYS?: number
 }
 
 export class MemoryManager {
@@ -248,6 +246,28 @@ export class MemoryManager {
     startedAt: Date,
     closedAt: Date,
   ): Promise<string> {
+    // Archive session BEFORE any deletes (legal backup)
+    try {
+      const messages = await this.pg.getSessionMessages(sessionId)
+      if (messages.length > 0) {
+        await this.pg.archiveSession({
+          sessionId,
+          agentId,
+          contactId,
+          channelIdentifier,
+          channelType: null,
+          contactSnapshot: {},
+          messages,
+          messageCount: messages.length,
+          interactionStartedAt: startedAt,
+          interactionClosedAt: closedAt,
+        })
+        logger.info({ sessionId, messageCount: messages.length }, 'Session archived before compression')
+      }
+    } catch (archiveErr) {
+      logger.warn({ err: archiveErr, sessionId }, 'Archive before compression failed (non-fatal)')
+    }
+
     // Save summary to warm tier
     const summaryId = await this.pg.saveSessionSummary({
       sessionId,

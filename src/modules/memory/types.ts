@@ -237,6 +237,74 @@ export interface HybridSearchResult {
 }
 
 // ═══════════════════════════════════════════
+// Session archives — Legal backup (v2)
+// ═══════════════════════════════════════════
+
+export interface SessionArchive {
+  id: string
+  sessionId: string
+  contactId: string
+  channel: string
+  startedAt: Date
+  closedAt: Date
+  messageCount: number
+  messagesJson: StoredMessage[]
+  attachmentsMeta: AttachmentArchiveMeta[] | null
+}
+
+export interface AttachmentArchiveMeta {
+  filename: string
+  category: string
+  mimeType: string
+  filePath: string | null
+  extractionId: string
+}
+
+// ═══════════════════════════════════════════
+// Session summaries v2 — LLM-generated
+// ═══════════════════════════════════════════
+
+export interface SessionSummaryV2 {
+  id: string
+  sessionId: string
+  contactId: string
+  title: string
+  description: string
+  fullSummary: string
+  modelUsed: string | null
+  tokensUsed: number | null
+}
+
+// ═══════════════════════════════════════════
+// Session memory chunks — Long-term multimodal memory
+// ═══════════════════════════════════════════
+
+export interface SessionMemoryChunk {
+  id: string
+  sessionId: string
+  contactId: string
+  sourceId: string
+  sourceType: string
+  contentType: string
+  chunkIndex: number
+  chunkTotal: number
+  prevChunkId: string | null
+  nextChunkId: string | null
+  content: string | null
+  mediaRef: string | null
+  mimeType: string | null
+  extraMetadata: Record<string, unknown> | null
+  hasEmbedding: boolean
+  embedding: number[] | null
+}
+
+// ═══════════════════════════════════════════
+// Compression status tracking
+// ═══════════════════════════════════════════
+
+export type CompressionStatus = 'queued' | 'archiving' | 'summarizing' | 'embedding' | 'cleaning' | 'done' | 'failed'
+
+// ═══════════════════════════════════════════
 // Compression result
 // ═══════════════════════════════════════════
 

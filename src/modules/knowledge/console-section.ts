@@ -51,6 +51,7 @@ const t = (key: string, lang: Lang): string => {
     status_processing: { es: 'Procesando', en: 'Processing' },
     status_done: { es: 'Entrenado', en: 'Trained' },
     status_failed: { es: 'Error', en: 'Failed' },
+    status_pending_review: { es: 'Por revisar', en: 'Pending Review' },
     chunks: { es: 'chunks', en: 'chunks' },
     content_loaded: { es: 'Contenido cargado', en: 'Content loaded' },
     not_loaded: { es: 'Sin cargar', en: 'Not loaded' },
@@ -78,7 +79,7 @@ export function renderKnowledgeSection(
   config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string; debugMode?: boolean; syncFrequency?: string },
 ): string {
   let html = ''
-  const hasPending = items.some(i => i.active && i.embeddingStatus !== 'done')
+  const hasPending = items.some(i => i.active && i.embeddingStatus !== 'done' && i.embeddingStatus !== 'pending_review')
   const isProduction = !config?.debugMode // cooldown only when debugging OFF
   const syncFrequency = config?.syncFrequency ?? '24h'
   const syncOptions: { value: string; label: string }[] = [

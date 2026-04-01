@@ -80,6 +80,7 @@ export type AttachmentStatus =
   | 'disabled_by_channel'
   | 'unsupported_type'
   | 'needs_subagent'
+  | 'knowledge_match'
 
 /**
  * Category label = category name. Used for context injection: [documents], [images], etc.
@@ -124,6 +125,18 @@ export interface ProcessedAttachment {
   llmEnriched: boolean
   /** Disk path for stored binary (images) — for re-consultation */
   filePath: string | null
+  /** Extra metadata (duration, hasAudio, etc.) — for downstream chunking */
+  metadata: Record<string, unknown> | null
+  /** SHA-256 hex of the raw buffer — for dedup against knowledge */
+  contentHash: string | null
+  /** Knowledge document ID if this file already exists in knowledge */
+  knowledgeMatch: string | null
+  /** Whether this attachment is potentially valuable for knowledge base */
+  isValuable: boolean
+  /** Confidence score of value evaluation (0-1) */
+  valueConfidence: number
+  /** Signal names that triggered the value evaluation */
+  valueSignals: string[]
 }
 
 /** URL extraction result */
