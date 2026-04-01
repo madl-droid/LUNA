@@ -134,7 +134,7 @@ export function registerInterceptor(
  * Classify the human's reply intent using simple heuristics.
  * Falls back to LLM only for ambiguous cases.
  */
-async function classifyReplyIntent(text: string, registry: Registry): Promise<HumanReplyIntent> {
+async function classifyReplyIntent(text: string, _registry: Registry): Promise<HumanReplyIntent> {
   const lower = text.toLowerCase().trim()
 
   // Handoff keywords (Spanish + English)

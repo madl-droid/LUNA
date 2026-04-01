@@ -138,7 +138,8 @@ export async function getSupervisorChain(
 
     if (supRows.length > 0) {
       // Pick best channel for supervisor
-      const bestContact = supRows.reduce((best, row) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bestContact = supRows.reduce((best: any, row: any) => {
         const prio = CHANNEL_PRIORITY[row.channel as string] ?? 99
         const bestPrio = CHANNEL_PRIORITY[best.channel as string] ?? 99
         return prio < bestPrio ? row : best

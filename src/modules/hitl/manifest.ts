@@ -107,12 +107,12 @@ const manifest: ModuleManifest = {
         method: 'POST',
         path: 'rules',
         handler: async (req, res) => {
-          const body = await parseBody<{ name: string; condition: string; targetRole: string; requestType?: string; urgency?: string; handoff?: boolean }>(req)
+          const body = await parseBody<Record<string, unknown>>(req)
           if (!body?.name || !body?.condition || !body?.targetRole) {
             jsonResponse(res, 400, { ok: false, error: 'Missing required fields' })
             return
           }
-          const rule = await rulesStore.create(body)
+          const rule = await rulesStore.create(body as unknown as import('./types.js').CreateRuleInput)
           jsonResponse(res, 201, { ok: true, rule })
         },
       },

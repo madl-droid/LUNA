@@ -44,6 +44,7 @@ src/
     freshdesk/       — integración Freshdesk Knowledge Base: búsqueda y sync de artículos (ver CLAUDE.md)
     cortex/          — sistema nervioso: monitoreo, alertas, Reflex (ver CLAUDE.md)
     subagents/       — subagentes especializados: CRUD, system subagents, web-researcher, verificación iterativa (3 retries), spawn, métricas (ver CLAUDE.md)
+    hitl/            — Human-in-the-Loop: consulta humana y escalamiento unificado (ver CLAUDE.md)
   tools/
     freight/         — tool de estimación de flete (ver src/tools/freight/CLAUDE.md)
     freshdesk/       — tools de Freshdesk KB: búsqueda, artículos, sync (ver src/tools/freshdesk/CLAUDE.md)
@@ -190,6 +191,7 @@ Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.
 012_task-checkpoints.sql     — task_checkpoints table for resumable pipeline execution
 013_subagents-v1.sql         — subagent_types (CRUD), subagent_usage (métricas)
 018_subagents-v2.sql         — is_system, google_search_grounding, seed web-researcher
+023_hitl-v1.sql              — hitl_tickets, hitl_ticket_log, hitl_rules, users.supervisor_id
 019_attachment-dual-results.sql — llm_text, category_label, file_path en attachment_extractions
 020_session-compression-v2.sql — session_archives, session_summaries_v2, session_memory_chunks, compression tracking
 021_knowledge-optimization.sql — attachment dedup (content_hash, knowledge_match_id), value evaluation, full_video_embed
@@ -274,6 +276,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/freshdesk/CLAUDE.md` — wrapper modular de tools Freshdesk KB
 - `src/modules/cortex/CLAUDE.md` — sistema nervioso: monitoreo, alertas, Reflex, Pulse, Trace (simulación y testing)
 - `src/modules/subagents/CLAUDE.md` — subagentes especializados (CRUD, system subagents, web-researcher, verificación iterativa 3 retries, spawn, métricas)
+- `src/modules/hitl/CLAUDE.md` — Human-in-the-Loop (consulta humana, escalamiento, supervisor chain, handoff por canal)
 - `src/tools/freshdesk/CLAUDE.md` — Freshdesk Knowledge Base (búsqueda, artículos, sync semanal)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `src/engine/checkpoints/CLAUDE.md` — checkpoints para pipelines resumibles

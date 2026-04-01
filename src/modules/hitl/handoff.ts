@@ -2,7 +2,6 @@
 
 import type { Redis } from 'ioredis'
 import type { Pool } from 'pg'
-import type { Registry } from '../../kernel/registry.js'
 import type { HitlTicket } from './types.js'
 import pino from 'pino'
 
