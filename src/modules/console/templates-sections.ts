@@ -1515,7 +1515,7 @@ function renderIdentitySection(data: SectionData): string {
   })();
   </script>`
 
-  // --- Condensed Voice (TTS) panel for column 2 ---
+  // --- Condensed Agent voice panel for column 2 ---
   // TTS uses the general Google AI API key (same as Gemini LLM)
   const ttsHasApiKey = !!(cfg['GOOGLE_AI_API_KEY'])
   const ttsEnabled = (cfg['TTS_ENABLED'] ?? 'true') === 'true'
@@ -1588,7 +1588,7 @@ function renderIdentitySection(data: SectionData): string {
 
     voicePanelHtml = `<div class="panel collapsed u-mt-md">
       <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}<span class="ts-tts-dot${dotCls}"></span></span>
+        <span class="panel-title">${isEs ? 'Voz del agente' : 'Agent voice'}<span class="ts-tts-dot${dotCls}"></span></span>
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body">
@@ -1596,7 +1596,7 @@ function renderIdentitySection(data: SectionData): string {
 
         <div class="toggle-field">
           <div>
-            <span class="field-label">${isEs ? 'Permitir enviar audios' : 'Allow sending audio'}</span>
+            <span class="field-label">${isEs ? 'Permitir uso de voz' : 'Allow voice usage'}</span>
             <p class="ts-tts-hint">${isEs ? 'Actívalo también en los ajustes del canal donde quieras enviar audios' : 'Also enable it in the channel settings where you want to send audio'}</p>
           </div>
           <label class="toggle toggle-sm">
@@ -1779,7 +1779,7 @@ function renderIdentitySection(data: SectionData): string {
 }
 
 // ═══════════════════════════════════════════
-// Voice (TTS) section — agent voice settings
+// Agent voice section — agent voice settings
 // ═══════════════════════════════════════════
 
 function renderVoiceTTSSection(data: SectionData): string {
@@ -1790,8 +1790,8 @@ function renderVoiceTTSSection(data: SectionData): string {
 
   if (!ttsActive) {
     const msg = isEs
-      ? 'El modulo de voz (TTS) no esta activado. Activalo desde <a href="/console/modules">Modulos</a>.'
-      : 'The voice (TTS) module is not active. Activate it from <a href="/console/modules">Modules</a>.'
+      ? 'La voz del agente no esta activada. Activa "Permitir uso de voz" en la pestaña de Voz del agente.'
+      : 'Agent voice is not active. Enable "Allow voice usage" in the Agent voice tab.'
     return `<div class="panel"><div class="panel-body panel-body-flat">
       <div class="panel-info module-inactive-notice">${msg}</div>
     </div></div>`
