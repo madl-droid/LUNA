@@ -214,10 +214,9 @@ async function processMessageInner(
     }, 'Phase 1 done')
 
     // ═══ SIGNAL: ACK (delivery confirmation) — after Phase 1 ═══
-    // Resolve send target for group messages
+    // Resolve send target — use remoteJid from raw message (preserves correct JID suffix: @lid, @s.whatsapp.net, @g.us)
     const rawMsgSignal = message.raw as Record<string, Record<string, string>> | undefined
-    const signalGroupJid = rawMsgSignal?.key?.remoteJid
-    const signalTo = signalGroupJid?.endsWith('@g.us') ? signalGroupJid : message.from
+    const signalTo = rawMsgSignal?.key?.remoteJid ?? message.from
     const messageKeys = message.raw
       ? [{
           remoteJid: rawMsgSignal?.key?.remoteJid,

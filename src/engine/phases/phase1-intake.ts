@@ -313,8 +313,8 @@ export async function phase1Intake(
     attachmentContext, // populated here in Phase 1 (parallel with context loading)
     responseFormat: (() => {
       const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${message.channelName}`)
-      const chType = channelSvc?.get()?.channelType ?? 'async'
-      return determineResponseFormat(normalizedText, messageType, message.channelName, chType)
+      const cc = channelSvc?.get()
+      return determineResponseFormat(normalizedText, messageType, message.channelName, cc?.channelType ?? 'async', cc?.ttsEnabled ?? false)
     })(),
     possibleInjection,
     hitlPendingContext,

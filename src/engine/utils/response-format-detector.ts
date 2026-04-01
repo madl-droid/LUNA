@@ -62,14 +62,19 @@ export function determineResponseFormat(
   inputType: string,
   _channelName: string,
   channelType: string,
+  ttsEnabled = false,
 ): 'audio' | 'text' | 'auto' {
   // 1. Explicit user request overrides everything
   const explicit = detectExplicitFormat(text)
   if (explicit) return explicit
 
-  // 2. Audio input on instant channels → auto (let ratio decide)
+  // 2. Audio input on instant channels → auto (let ratio decide via TTS_AUDIO_TO_AUDIO_FREQ)
   if (inputType === 'audio' && channelType === 'instant') return 'auto'
 
-  // 3. Default: text (async channels, non-audio input, etc.)
+  // 3. When TTS is enabled for this channel, text input also gets 'auto'
+  //    so TTS_TEXT_TO_AUDIO_FREQ ratio (e.g. 5-10%) is actually consulted in Phase 4
+  if (ttsEnabled && channelType === 'instant') return 'auto'
+
+  // 4. Default: text (async channels, TTS disabled, etc.)
   return 'text'
 }

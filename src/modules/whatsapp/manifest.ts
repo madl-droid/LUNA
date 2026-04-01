@@ -551,6 +551,7 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     typingDelayMaxMs: 3000,
     channelType: 'instant',
     supportsTypingIndicator: true,
+    ttsEnabled: cfg.WHATSAPP_FORMAT_AUDIO_ENABLED,
     antiSpamMaxPerWindow: 5,
     antiSpamWindowMs: 60000,
     floodThreshold: 20,

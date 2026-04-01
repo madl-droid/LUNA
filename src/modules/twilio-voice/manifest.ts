@@ -679,6 +679,7 @@ const manifest: ModuleManifest = {
           typingDelayMaxMs: 0,
           channelType: 'voice',
           supportsTypingIndicator: false, // voice has no typing indicator
+          ttsEnabled: false, // voice uses Gemini Live, not TTS pipeline
           antiSpamMaxPerWindow: 0,
           antiSpamWindowMs: 0,
           floodThreshold: 0, // no batching/flood for voice

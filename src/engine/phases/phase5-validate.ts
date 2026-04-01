@@ -88,13 +88,24 @@ export async function phase5Validate(
   const styleP5 = channelSvcP5?.get()?.avisoStyle ?? ''
   const toneP5 = styleP5 === 'dynamic' ? 'casual' : styleP5
 
-  if (composed.outputFormat === 'audio' && composed.audioBuffer) {
+  if (composed.outputFormat === 'audio' && composed.audioChunks && composed.audioChunks.length > 0) {
+    // Multi-chunk audio: send each voice note with delay between them
+    deliveryResult = await sendAudioChunks(ctx, composed.audioChunks, registry)
+
+    // If audio send failed, send natural fallback + text
+    if (!deliveryResult.sent) {
+      logger.warn({ traceId: ctx.traceId }, 'Audio chunk send failed, falling through to text with TTS fallback')
+      const fallbackMsg = pickTTSFailureFallback(toneP5)
+      await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
+      deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+    }
+  } else if (composed.outputFormat === 'audio' && composed.audioBuffer) {
+    // Backward compat: single audio buffer
     deliveryResult = await sendAudioMessage(ctx, {
       audioBuffer: composed.audioBuffer,
       durationSeconds: composed.audioDurationSeconds ?? 0,
     }, registry)
 
-    // If audio send failed, send natural fallback + text
     if (!deliveryResult.sent) {
       logger.warn({ traceId: ctx.traceId }, 'Audio send failed, falling through to text with TTS fallback')
       const fallbackMsg = pickTTSFailureFallback(toneP5)
@@ -405,6 +416,67 @@ async function sendAudioMessage(
     logger.error({ err, traceId: ctx.traceId }, 'Failed to send audio message after retries')
     return { sent: false, error: String(err) }
   }
+}
+
+async function sendAudioChunks(
+  ctx: ContextBundle,
+  chunks: Array<{ audioBuffer: Buffer; durationSeconds: number }>,
+  registry: Registry,
+): Promise<DeliveryResult> {
+  let sendTo = ctx.message.from
+  const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
+  if (rawMsg?.key?.remoteJid?.endsWith('@g.us')) {
+    sendTo = rawMsg.key.remoteJid
+  }
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]!
+
+    // Show "recording" indicator before each chunk
+    await registry.runHook('channel:composing', {
+      channel: ctx.message.channelName,
+      to: sendTo,
+      mode: 'recording',
+      correlationId: ctx.traceId,
+    }).catch(() => {})
+
+    // Delay between chunks (not before first) — reuse typing delay calculator
+    if (i > 0) {
+      const delay = calculateTypingDelay('x'.repeat(50), 50, 800, 3000)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+
+    try {
+      await sendWithRetry(
+        () => registry.runHook('message:send', {
+          channel: ctx.message.channelName,
+          to: sendTo,
+          content: {
+            type: 'audio',
+            audioBuffer: chunk.audioBuffer,
+            audioDurationSeconds: chunk.durationSeconds,
+            ptt: true,
+          },
+          correlationId: ctx.traceId,
+        }),
+        ctx.traceId,
+        `audio-chunk-${i}`,
+      )
+    } catch (err) {
+      logger.error({ err, traceId: ctx.traceId, chunk: i }, 'Failed to send audio chunk after retries')
+      return { sent: false, error: String(err) }
+    }
+  }
+
+  // Clear presence after all chunks sent
+  await registry.runHook('channel:send_complete', {
+    channel: ctx.message.channelName,
+    to: sendTo,
+    messageCount: chunks.length,
+    correlationId: ctx.traceId,
+  }).catch(() => {})
+
+  return { sent: true, channelMessageId: undefined }
 }
 
 async function sendMessages(

@@ -613,29 +613,46 @@ export class BaileysAdapter {
 
   private async applyPrivacySettings(): Promise<void> {
     if (!this.socket) return
-    const settings: Record<string, string> = {}
+    // Baileys 7.x exposes individual privacy update methods (not a single updatePrivacySettings)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sock = this.socket as any
+    const applied: string[] = []
 
-    // PRIVACY_LAST_SEEN is now a boolean: true = show, false = hide
-    if (!this.config.WHATSAPP_PRIVACY_LAST_SEEN) {
-      settings.lastSeen = 'none'
-    }
-    if (this.config.WHATSAPP_PRIVACY_PROFILE_PIC) {
-      settings.profilePicture = this.config.WHATSAPP_PRIVACY_PROFILE_PIC
-    }
-    if (this.config.WHATSAPP_PRIVACY_STATUS) {
-      settings.status = this.config.WHATSAPP_PRIVACY_STATUS
-    }
-    if (!this.config.WHATSAPP_PRIVACY_READ_RECEIPTS) {
-      settings.readreceipts = 'none'
-    }
-
-    if (Object.keys(settings).length === 0) return
-
+    // Read receipts — MUST call this for readMessages() to send blue ticks.
+    // Baileys internally checks fetchPrivacySettings().readreceipts === 'all'.
     try {
-      await (this.socket as unknown as { updatePrivacySettings(s: Record<string, string>): Promise<void> }).updatePrivacySettings(settings)
-      logger.info({ settings: Object.keys(settings) }, 'Privacy settings applied')
-    } catch (err) {
-      logger.warn({ err }, 'updatePrivacySettings failed (may not be supported in this Baileys version)')
+      if (sock.updateReadReceiptsPrivacy) {
+        await sock.updateReadReceiptsPrivacy(this.config.WHATSAPP_PRIVACY_READ_RECEIPTS ? 'all' : 'none')
+        applied.push('readreceipts')
+      }
+    } catch (err) { logger.warn({ err }, 'Failed to update read receipts privacy') }
+
+    // Last seen
+    try {
+      if (sock.updateLastSeenPrivacy) {
+        await sock.updateLastSeenPrivacy(this.config.WHATSAPP_PRIVACY_LAST_SEEN ? 'all' : 'none')
+        applied.push('lastSeen')
+      }
+    } catch (err) { logger.warn({ err }, 'Failed to update last seen privacy') }
+
+    // Profile picture
+    try {
+      if (sock.updateProfilePicturePrivacy) {
+        await sock.updateProfilePicturePrivacy(this.config.WHATSAPP_PRIVACY_PROFILE_PIC || 'all')
+        applied.push('profilePicture')
+      }
+    } catch (err) { logger.warn({ err }, 'Failed to update profile picture privacy') }
+
+    // Status
+    try {
+      if (sock.updateStatusPrivacy) {
+        await sock.updateStatusPrivacy(this.config.WHATSAPP_PRIVACY_STATUS || 'all')
+        applied.push('status')
+      }
+    } catch (err) { logger.warn({ err }, 'Failed to update status privacy') }
+
+    if (applied.length > 0) {
+      logger.info({ applied }, 'Privacy settings applied via individual Baileys APIs')
     }
   }
 }
