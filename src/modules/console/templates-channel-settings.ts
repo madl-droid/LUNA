@@ -157,6 +157,15 @@ function renderStatusBar(channel: ModuleInfo, data: SectionData, _channelName: s
     ? `channelDisconnect('${esc(channelId)}', '${lang}')`
     : `channelConnect('${esc(channelId)}', '${lang}')`
 
+  // WhatsApp-specific extra buttons (visible via JS polling)
+  const waExtras = channelId === 'whatsapp' && !connected
+    ? `<button class="act-btn act-btn-config act-btn--compact" id="wa-force-retry" style="display:none" onclick="waForceRetry('${lang}')">${lang === 'es' ? 'Reintentar ahora' : 'Retry now'}</button>`
+      + `<button class="act-btn act-btn-remove act-btn--compact" id="wa-disconnect-creds" style="display:none" onclick="channelDisconnect('whatsapp','${lang}')">${lang === 'es' ? 'Desconectar' : 'Disconnect'}</button>`
+    : ''
+  const retryInfo = channelId === 'whatsapp' && !connected
+    ? `<span id="wa-retry-info" class="chs-bar-retry" style="display:none"></span>`
+    : ''
+
   // Reuse ch-card-icon for consistent icon styling across cards and config
   return `<div class="chs-status-bar" data-status="${iconStatus}">
     <div class="ch-card-icon">${icon}</div>
@@ -164,10 +173,14 @@ function renderStatusBar(channel: ModuleInfo, data: SectionData, _channelName: s
       <div class="chs-bar-status">
         <span class="chs-bar-dot ${iconStatus}"></span>
         ${esc(statusLabel)}
+        ${retryInfo}
       </div>
       ${connectionInfo ? `<div class="chs-bar-detail">${esc(connectionInfo)}</div>` : ''}
     </div>
-    <button class="act-btn ${connected ? 'act-btn-remove' : 'act-btn-add'}" onclick="${btnAction}">${btnLabel}</button>
+    <div class="chs-bar-actions">
+      ${waExtras}
+      <button class="act-btn ${connected ? 'act-btn-remove' : 'act-btn-add'}" onclick="${btnAction}">${btnLabel}</button>
+    </div>
   </div>`
 }
 

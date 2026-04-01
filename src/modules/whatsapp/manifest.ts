@@ -39,7 +39,22 @@ const apiRoutes: ApiRoute[] = [
           qrDataUrl = await QRCode.toDataURL(state.qr, { width: 300, margin: 2, color: { dark: '#1a1a1a', light: '#ffffff' } })
         } catch { /* ignore */ }
       }
-      jsonResponse(res, 200, { status: state.status, qrDataUrl, lastDisconnectReason: state.lastDisconnectReason, connectedNumber: state.connectedNumber, moduleEnabled })
+      const { hasAuthCreds: checkCreds } = await import('./pg-auth-state.js')
+      let hasCreds = false
+      try {
+        const pool = _registry?.getDb()
+        if (pool) hasCreds = await checkCreds(pool, adapter.instanceId)
+      } catch { /* ignore */ }
+      jsonResponse(res, 200, {
+        status: state.status,
+        qrDataUrl,
+        lastDisconnectReason: state.lastDisconnectReason,
+        connectedNumber: state.connectedNumber,
+        moduleEnabled,
+        hasCreds,
+        reconnectAttempt: state.reconnectAttempt,
+        nextRetryAt: state.nextRetryAt,
+      })
     },
   },
   {
@@ -71,6 +86,22 @@ const apiRoutes: ApiRoute[] = [
         jsonResponse(res, 200, { ok: true, status: 'disconnected' })
       } catch (err) {
         jsonResponse(res, 500, { error: 'Failed to disconnect: ' + String(err) })
+      }
+    },
+  },
+  {
+    method: 'POST',
+    path: 'force-reconnect',
+    handler: async (_req, res) => {
+      if (!adapter) {
+        jsonResponse(res, 400, { error: 'WhatsApp adapter not initialized' })
+        return
+      }
+      try {
+        await adapter.forceReconnect()
+        jsonResponse(res, 200, { ok: true, status: adapter.getState().status })
+      } catch (err) {
+        jsonResponse(res, 500, { error: 'Failed to reconnect: ' + String(err) })
       }
     },
   },
@@ -408,8 +439,16 @@ const manifest: ModuleManifest = {
     // Expose adapter as service for other modules
     registry.provide('whatsapp:adapter', adapter)
 
-    // Auto-connect
-    await adapter.initialize()
+    // Auto-connect only if we have saved credentials (previous session).
+    // If no creds, wait for user to click Connect in the wizard to avoid
+    // generating QR codes that nobody will scan (wastes connection attempts).
+    const { hasAuthCreds } = await import('./pg-auth-state.js')
+    if (await hasAuthCreds(db, adapter.instanceId)) {
+      manifestLogger.info('Saved credentials found, auto-connecting')
+      await adapter.initialize()
+    } else {
+      manifestLogger.info('No saved credentials, waiting for user to connect via wizard')
+    }
   },
 
   async stop() {

@@ -145,6 +145,12 @@ export async function usePostgresAuthState(
 }
 
 /** Delete all auth data for an instance (used on explicit disconnect/logout) */
+export async function hasAuthCreds(pool: Pool, instanceId: string): Promise<boolean> {
+  await ensureTables(pool)
+  const { rows } = await pool.query('SELECT 1 FROM wa_auth_creds WHERE instance_id = $1 LIMIT 1', [instanceId])
+  return rows.length > 0
+}
+
 export async function clearAuthState(pool: Pool, instanceId: string): Promise<void> {
   const client = await pool.connect()
   try {

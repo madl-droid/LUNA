@@ -1886,6 +1886,15 @@ select.wizard-input option:checked {
 .chs-status-bar .act-btn,
 .chs-status-bar .ch-btn-action { flex-shrink: 0; }
 
+.chs-bar-actions { display: flex; gap: var(--space-sm); align-items: center; flex-shrink: 0; }
+
+.chs-bar-retry {
+  font-size: 0.78rem;
+  color: var(--on-surface-dim);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
 /* ── Config sections ── */
 .chs-section {
   margin-bottom: var(--section-gap);

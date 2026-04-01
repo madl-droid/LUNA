@@ -20,6 +20,8 @@ export interface BaileysState {
   qr: string | null
   lastDisconnectReason: string | null
   connectedNumber: string | null
+  reconnectAttempt: number
+  nextRetryAt: number | null
 }
 
 export interface WhatsAppConfig {
@@ -91,8 +93,9 @@ export class BaileysAdapter {
   private messageHandlers: MessageHandler[] = []
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  /** Fixed reconnection schedule: attempt index → delay in ms */
-  private static readonly RECONNECT_SCHEDULE_MS = [30_000, 60_000, 300_000, 600_000, 1_800_000, 1_800_000, 3_600_000, 3_600_000, 7_200_000, 10_800_000]
+  /** Fixed reconnection schedule (WhatsApp Web style): 5s → 10s → 30s → 1m → 3m → 5m → 10m → 15m → 30m → 60m */
+  private static readonly RECONNECT_SCHEDULE_MS = [5_000, 10_000, 30_000, 60_000, 180_000, 300_000, 600_000, 900_000, 1_800_000, 3_600_000]
+  private _nextRetryAt: number | null = null
   private _status: BaileysStatus = 'disconnected'
   private _qr: string | null = null
   private _lastDisconnectReason: string | null = null
@@ -102,7 +105,7 @@ export class BaileysAdapter {
   private jidTypeMap = new Map<string, '@s.whatsapp.net' | '@lid'>()
   private config: WhatsAppConfig
   private pool: Pool
-  private instanceId: string
+  readonly instanceId: string
   private callbacks: AdapterCallbacks
   private getAgentName: () => string
 
@@ -120,6 +123,8 @@ export class BaileysAdapter {
       qr: this._qr,
       lastDisconnectReason: this._lastDisconnectReason,
       connectedNumber: this._connectedNumber,
+      reconnectAttempt: this.reconnectAttempts,
+      nextRetryAt: this._nextRetryAt,
     }
   }
 
@@ -179,19 +184,31 @@ export class BaileysAdapter {
 
         const shouldReconnect = this._autoReconnect && reason !== DisconnectReason.loggedOut
 
+        // If logged out (401), clear stale credentials so next connect starts fresh with QR
+        if (reason === DisconnectReason.loggedOut) {
+          logger.warn('Session logged out (401), clearing auth state for fresh QR on next connect')
+          clearAuthState(this.pool, this.instanceId).catch(e => logger.error({ err: e }, 'Failed to clear auth state after logout'))
+        }
+
         const maxAttempts = BaileysAdapter.RECONNECT_SCHEDULE_MS.length
         if (shouldReconnect && this.reconnectAttempts < maxAttempts) {
           const delay = BaileysAdapter.RECONNECT_SCHEDULE_MS[this.reconnectAttempts]!
           this.reconnectAttempts++
+          this._nextRetryAt = Date.now() + delay
           logger.warn({ attempt: this.reconnectAttempts, delayMs: delay, reason }, 'WhatsApp disconnected, reconnecting...')
-          this.reconnectTimer = setTimeout(() => this.initialize(), delay)
+          this.reconnectTimer = setTimeout(() => {
+            this._nextRetryAt = null
+            this.initialize()
+          }, delay)
         } else {
+          this._nextRetryAt = null
           logger.error({ reason }, 'WhatsApp disconnected permanently')
         }
       }
 
       if (connection === 'open') {
         this.reconnectAttempts = 0
+        this._nextRetryAt = null
         this._qr = null
         this._status = 'connected'
         this._lastDisconnectReason = null
@@ -291,6 +308,17 @@ export class BaileysAdapter {
     this._qr = null
     this._connectedNumber = null
     logger.info('Baileys adapter shut down')
+  }
+
+  async forceReconnect(): Promise<void> {
+    logger.info('Force reconnect requested')
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this._nextRetryAt = null
+    this.reconnectAttempts = 0
+    await this.initialize()
   }
 
   async disconnect(): Promise<void> {

@@ -1698,7 +1698,6 @@
   var _waCountdownInterval = null
   var _waQrExpiry = 0
   var _waLastQrUrl = '' // Track last QR to detect changes
-  var _waIsFirstQr = true // First QR lasts 60s, subsequent ones 20s (Baileys default)
 
   window.wizardGoToWa = function (pageIdx, lang) {
     chWizardGoTo(pageIdx)
@@ -1734,7 +1733,6 @@
     if (_chConnectPoll) { clearInterval(_chConnectPoll); _chConnectPoll = null }
     if (_waCountdownInterval) { clearInterval(_waCountdownInterval); _waCountdownInterval = null }
     _waLastQrUrl = ''
-    _waIsFirstQr = true
 
     qrArea.innerHTML = '<div style="color:var(--on-surface-dim)">' + (isEs ? 'Generando codigo QR...' : 'Generating QR code...') + '</div>'
     if (countdownEl) countdownEl.textContent = ''
@@ -1758,10 +1756,7 @@
                   _waLastQrUrl = data.qrDataUrl
                   qrArea.innerHTML = '<div class="wa-qr-container"><img src="' + data.qrDataUrl + '" alt="QR" class="wa-qr-img"></div>'
                   if (statusEl) statusEl.textContent = isEs ? 'Escanea este codigo con WhatsApp' : 'Scan this code with WhatsApp'
-                  // Baileys: first QR = 60s, subsequent = 20s
-                  var qrDuration = _waIsFirstQr ? 60 : 20
-                  _waIsFirstQr = false
-                  startWaCountdown(qrDuration, countdownEl, isEs)
+                  startWaCountdown(20, countdownEl, isEs)
                 }
               } else if (data.status === 'connecting') {
                 if (statusEl) statusEl.textContent = isEs ? 'Conectando...' : 'Connecting...'
@@ -1848,6 +1843,72 @@
         if (errEl) { errEl.textContent = isEs ? 'Error al guardar' : 'Save error'; errEl.style.display = 'block' }
       })
   }
+
+  // ── WhatsApp: force reconnect + retry status polling ──
+  window.waForceRetry = function (lang) {
+    var btn = document.getElementById('wa-force-retry')
+    if (btn) { btn.disabled = true; btn.textContent = '...' }
+    fetch('/console/api/whatsapp/force-reconnect', { method: 'POST' })
+      .then(function () { window.location.reload() })
+      .catch(function () { window.location.reload() })
+  }
+
+  // Poll WhatsApp retry status on channel settings page (when disconnected)
+  ;(function () {
+    var retryInfo = document.getElementById('wa-retry-info')
+    var retryBtn = document.getElementById('wa-force-retry')
+    var disconnectCredsBtn = document.getElementById('wa-disconnect-creds')
+    if (!retryInfo && !retryBtn && !disconnectCredsBtn) return
+    var isEs = (document.documentElement.lang || 'es') === 'es'
+
+    function formatRetryDelay(ms) {
+      var s = Math.ceil(ms / 1000)
+      if (s < 60) return s + 's'
+      var m = Math.ceil(s / 60)
+      return m + (isEs ? ' min' : ' min')
+    }
+
+    function pollRetryStatus() {
+      fetch('/console/api/whatsapp/status')
+        .then(function (r) { return r.json() })
+        .then(function (data) {
+          // Show disconnect button whenever there are saved credentials
+          if (disconnectCredsBtn) {
+            disconnectCredsBtn.style.display = data.hasCreds ? '' : 'none'
+          }
+
+          if (data.status === 'connected') {
+            window.location.reload()
+            return
+          }
+          if (data.status === 'qr_ready' || data.status === 'connecting') {
+            if (retryInfo) { retryInfo.textContent = isEs ? '— reconectando...' : '— reconnecting...'; retryInfo.style.display = '' }
+            if (retryBtn) retryBtn.style.display = 'none'
+            return
+          }
+          if (data.nextRetryAt) {
+            var remaining = data.nextRetryAt - Date.now()
+            if (remaining > 0) {
+              if (retryInfo) { retryInfo.textContent = (isEs ? '— reintento en ' : '— retry in ') + formatRetryDelay(remaining); retryInfo.style.display = '' }
+              if (retryBtn) retryBtn.style.display = ''
+            } else {
+              if (retryInfo) { retryInfo.textContent = isEs ? '— reconectando...' : '— reconnecting...'; retryInfo.style.display = '' }
+              if (retryBtn) retryBtn.style.display = 'none'
+            }
+          } else if (data.reconnectAttempt >= 10) {
+            if (retryInfo) { retryInfo.textContent = isEs ? '— reconexion agotada' : '— reconnection exhausted'; retryInfo.style.display = '' }
+            if (retryBtn) retryBtn.style.display = ''
+          } else {
+            if (retryInfo) retryInfo.style.display = 'none'
+            if (retryBtn) retryBtn.style.display = ''
+          }
+        })
+        .catch(function () {})
+    }
+
+    pollRetryStatus()
+    setInterval(pollRetryStatus, 5000)
+  })()
 
   // Disconnect channel — confirm then call the channel's disconnect API
   window.channelDisconnect = function (channelId, lang) {

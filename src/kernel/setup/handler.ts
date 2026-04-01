@@ -362,6 +362,18 @@ async function finalizeSetup(ctx: WizardContext, state: SetupState, token: strin
 
   logger.info('Finalizing setup wizard...')
 
+  // 0. Clear all channel credentials for a fresh start
+  const channelCleanup = [
+    'DELETE FROM wa_auth_creds',
+    'DELETE FROM wa_auth_keys',
+    'DELETE FROM google_oauth_tokens',
+    `DELETE FROM config_store WHERE key IN ('GOOGLE_CHAT_WEBHOOK_TOKEN', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'WHATSAPP_CONNECTION_STATUS', 'WHATSAPP_CONNECTED_NUMBER')`,
+  ]
+  for (const sql of channelCleanup) {
+    try { await pool.query(sql) } catch { /* tables may not exist on first setup */ }
+  }
+  logger.info('Cleared all channel credentials for fresh setup')
+
   // 1. Create tables (DDL — outside transaction, idempotent)
   const ddlClient = await pool.connect()
   try {
