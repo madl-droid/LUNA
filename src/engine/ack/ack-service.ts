@@ -16,7 +16,7 @@ const ACK_TIMEOUT_MS = 3000
  * Generate a contextual ACK message.
  * 1. Try LLM (fast, cheap model with 3s timeout)
  * 2. If LLM fails → pick from DB pool
- * 3. If DB pool empty → pick from in-memory defaults by tone
+ * 3. If DB pool empty → pick from in-memory defaults
  * 4. Last resort → "Un momento..."
  */
 export async function generateAck(
@@ -30,18 +30,14 @@ export async function generateAck(
     }>('llm:gateway')
 
     if (gateway) {
-      const toneDesc = ctx.tone === 'formal' ? 'formal y profesional'
-        : ctx.tone === 'casual' ? 'casual y amigable'
-        : 'neutro y amable'
-
       let system = ''
       const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
       if (promptsSvc) {
-        system = await promptsSvc.getSystemPrompt('ack-system', { toneDescription: toneDesc })
+        system = await promptsSvc.getSystemPrompt('ack-system')
       }
       if (!system) {
         // Minimal fallback — full prompt lives in instance/prompts/system/ack-system.md
-        system = `Genera un aviso breve (máximo 15 palabras) de que estás procesando la solicitud. Tono ${toneDesc}. Solo el mensaje, nada más.`
+        system = 'Genera un aviso breve (máximo 15 palabras) de que estás procesando la solicitud. Tono natural. Solo el mensaje.'
       }
 
       const userMessage = [
@@ -62,7 +58,7 @@ export async function generateAck(
 
       const text = result.text.trim()
       if (text) {
-        logger.debug({ text, tone: ctx.tone }, 'LLM ACK generated')
+        logger.debug({ text }, 'LLM ACK generated')
         return text
       }
     }
@@ -70,32 +66,25 @@ export async function generateAck(
     logger.debug({ err }, 'LLM ACK failed, falling back to predefined pool')
   }
 
-  // Fallback: DB pool, then in-memory defaults by tone
-  return getDefaultAck(registry, ctx.tone)
+  // Fallback: DB pool, then in-memory defaults
+  return getDefaultAck(registry)
 }
 
 /**
  * Get a predefined ACK message from the DB pool or in-memory defaults.
- * @param tone - The tone to match (casual, formal, express, etc.)
  */
-export async function getDefaultAck(
-  registry: Registry,
-  tone: string,
-): Promise<string> {
-  // Try DB pool first (ack_messages table has a 'tone' column matching avisoStyle values)
+export async function getDefaultAck(registry: Registry): Promise<string> {
   try {
     const db = registry.getDb()
     const { rows } = await db.query<{ text: string }>(
-      `SELECT text FROM ack_messages WHERE active = true AND (tone = $1 OR tone = '') ORDER BY random() LIMIT 1`,
-      [tone],
+      `SELECT text FROM ack_messages WHERE active = true ORDER BY random() LIMIT 1`,
     )
     if (rows[0]?.text) return rows[0].text
   } catch {
-    logger.debug({ tone }, 'ACK DB query failed or table missing, using in-memory defaults')
+    logger.debug('ACK DB query failed or table missing, using in-memory defaults')
   }
 
-  // In-memory defaults by tone
-  return pickDefaultAck(tone)
+  return pickDefaultAck()
 }
 
 /**
