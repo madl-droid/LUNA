@@ -2138,6 +2138,131 @@ export function renderDatabaseViewer(data: SectionData): string {
 </div>`
 }
 
+// ═══════════════════════════════════════════
+// Memory section — tabbed: working / mid-term / advanced
+// ═══════════════════════════════════════════
+
+function renderMemorySection(data: SectionData): string {
+  const lang = data.lang
+
+  function itip(key: string, text: string): string {
+    return ` <span class="info-wrap"><button class="info-btn">i</button><div class="info-tooltip" id="info-${key}">${text}</div></span>`
+  }
+
+  function numF(key: string, label: string, info: string): string {
+    const v = cv(data, key)
+    return `<div class="field">
+      <div class="field-left"><span class="field-label">${esc(label)}</span>${itip(key, esc(info))}</div>
+      <input type="text" inputmode="numeric" name="${key}" value="${esc(v)}" data-original="${esc(v)}">
+    </div>`
+  }
+
+  function hourSel(key: string, label: string, info: string): string {
+    const v = cv(data, key) || '0'
+    const opts = Array.from({ length: 24 }, (_, i) => {
+      const h = String(i).padStart(2, '0')
+      return `<option value="${i}"${String(i) === v ? ' selected' : ''}>${h}:00</option>`
+    }).join('')
+    return `<div class="field">
+      <div class="field-left"><span class="field-label">${esc(label)}</span>${itip(key, esc(info))}</div>
+      <select class="js-custom-select" name="${key}" data-original="${esc(v)}">${opts}</select>
+    </div>`
+  }
+
+  function selF(key: string, label: string, info: string, options: Array<{ value: string; label: string }>): string {
+    const v = cv(data, key)
+    const opts = options.map(o => `<option value="${esc(o.value)}"${o.value === v ? ' selected' : ''}>${esc(o.label)}</option>`).join('')
+    return `<div class="field">
+      <div class="field-left"><span class="field-label">${esc(label)}</span>${itip(key, esc(info))}</div>
+      <select class="js-custom-select" name="${key}" data-original="${esc(v)}">${opts}</select>
+    </div>`
+  }
+
+  function smBool(key: string, label: string, info: string): string {
+    const checked = cv(data, key) === 'true'
+    const orig = cv(data, key) || 'false'
+    return `<div class="toggle-field">
+      <span class="field-label">${esc(label)}</span>${itip(key, esc(info))}
+      <label class="toggle toggle-sm"><input type="checkbox" name="${key}" value="true"${checked ? ' checked' : ''} data-original="${esc(orig)}"><span class="toggle-slider"></span></label>
+      <input type="hidden" name="${key}" value="${checked ? 'true' : 'false'}" data-original="${esc(orig)}">
+    </div>`
+  }
+
+  function row2(a: string, b: string): string {
+    return `<div class="chs-field-row">${a}${b}</div>`
+  }
+
+  function div(label: string): string {
+    return `<div class="field-divider"><span class="field-divider-label">${esc(label)}</span></div>`
+  }
+
+  const l = (es: string, en: string) => lang === 'es' ? es : en
+
+  const tab1 = `
+    ${div(l('Historial de conversación', 'Conversation history'))}
+    ${row2(
+      numF('MEMORY_BUFFER_TURNS_INSTANT', l('Historial canales instantáneos', 'Instant channel history'), l('Turnos de conversación que se cargan en canales instantáneos (WhatsApp, Google Chat)', 'Conversation turns loaded for instant channels (WhatsApp, Google Chat)')),
+      numF('MEMORY_BUFFER_TURNS_ASYNC', l('Historial canales asíncronos', 'Async channel history'), l('Turnos de conversación que se cargan en canales asíncronos (Gmail)', 'Conversation turns loaded for async channels (Gmail)'))
+    )}
+    ${row2(
+      numF('MEMORY_BUFFER_TURNS_VOICE', l('Historial canales de voz', 'Voice channel history'), l('Turnos de conversación que se cargan en canales de voz (Twilio)', 'Conversation turns loaded for voice channels (Twilio)')),
+      numF('MEMORY_CONTEXT_SUMMARIES_INSTANT', l('Interacciones previas (instantáneo)', 'Past interactions (instant)'), l('Resúmenes de interacciones anteriores inyectados en canales instantáneos', 'Past interaction summaries injected for instant channels'))
+    )}
+    ${row2(
+      numF('MEMORY_CONTEXT_SUMMARIES_ASYNC', l('Interacciones previas (asíncrono)', 'Past interactions (async)'), l('Resúmenes de interacciones anteriores inyectados en canales asíncronos', 'Past interaction summaries injected for async channels')),
+      numF('MEMORY_CONTEXT_SUMMARIES_VOICE', l('Interacciones previas (voz)', 'Past interactions (voice)'), l('Resúmenes de interacciones anteriores inyectados en canales de voz', 'Past interaction summaries injected for voice channels'))
+    )}
+    ${div(l('Compresión', 'Compression'))}
+    ${row2(
+      numF('MEMORY_COMPRESSION_THRESHOLD', l('Umbral de compresión', 'Compression threshold'), l('Cantidad mínima de mensajes en una sesión para activar compresión automática', 'Minimum messages in a session to trigger automatic compression')),
+      numF('MEMORY_COMPRESSION_KEEP_RECENT', l('Mensajes recientes a conservar', 'Recent messages to keep'), l('Mensajes que se mantienen sin comprimir para contexto inmediato', 'Messages kept uncompressed for immediate context'))
+    )}
+  `
+
+  const tab2 = `
+    ${row2(
+      numF('MEMORY_SUMMARY_RETENTION_DAYS', l('Resúmenes de interacciones (días)', 'Interaction summaries (days)'), l('Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', 'Days before deleting session summaries. Maximum 730 days (2 years).')),
+      numF('MEMORY_PIPELINE_LOGS_RETENTION_DAYS', l('Registros del sistema (días)', 'System logs (days)'), l('Días antes de eliminar registros de procesamiento interno', 'Days before deleting internal processing logs'))
+    )}
+    ${numF('MEMORY_MEDIA_RETENTION_MONTHS', l('Almacenamiento de media (meses)', 'Media storage (months)'), l('Meses de retención de imágenes y archivos en disco. Máximo 24 meses.', 'Months to retain images and media files on disk. Maximum 24 months.'))}
+  `
+
+  const archiveOpts = [
+    { value: '0', label: l('Desactivado', 'Disabled') },
+    { value: '1', label: l('1 año', '1 year') },
+    { value: '2', label: l('2 años', '2 years') },
+    { value: '5', label: l('5 años', '5 years') },
+    { value: '10', label: l('10 años', '10 years') },
+    { value: '999', label: l('Vitalicio', 'Lifetime') },
+  ]
+
+  const tab3 = `
+    ${row2(
+      selF('MEMORY_ARCHIVE_RETENTION_YEARS', l('Duración del backup legal', 'Legal backup duration'), l('Retención de conversaciones completas para cumplimiento legal. "Desactivado" no guarda backups.', 'Retention of full conversations for legal compliance. "Disabled" skips backups.'), archiveOpts),
+      numF('MEMORY_SESSION_REOPEN_WINDOW_HOURS', l('Ventana de reapertura (h)', 'Session reopen window (h)'), l('Horas en que un nuevo mensaje reactiva la sesión anterior. Máximo 12h.', 'Hours a new message reactivates the previous session. Max 12h.'))
+    )}
+    ${div(l('Tareas nocturnas', 'Nightly tasks'))}
+    ${row2(
+      hourSel('MEMORY_BATCH_COMPRESS_HOUR', l('Compresión nocturna', 'Nightly compression'), l('Hora UTC para comprimir sesiones inactivas. Los embeddings se generan automáticamente 30 minutos después.', 'UTC hour to compress inactive sessions. Embeddings are generated automatically 30 minutes later.')),
+      hourSel('MEMORY_BATCH_PURGE_HOUR', l('Purga de datos', 'Data purge'), l('Hora UTC para purgar media expirada, logs del pipeline y archivos legales expirados según sus ventanas de retención.', 'UTC hour to purge expired media, pipeline logs and legal archives according to their retention windows.'))
+    )}
+    ${smBool('LLM_PROMPT_CACHE_ENABLED', l('Cache de prompts', 'Prompt cache'), l('Cachea el system prompt y el historial para reducir costos en conversaciones largas', 'Caches the system prompt and history to reduce costs in long conversations'))}
+  `
+
+  return `<div class="panel">
+    <div class="panel-body">
+      <div class="chs-tabs">
+        <button type="button" class="chs-tab active" data-tab="mem-working">${l('Memoria de trabajo', 'Working memory')}</button>
+        <button type="button" class="chs-tab" data-tab="mem-midterm">${l('Mediano plazo', 'Mid-term')}</button>
+        <button type="button" class="chs-tab" data-tab="mem-advanced">${l('Avanzado', 'Advanced')}</button>
+      </div>
+      <div class="chs-tab-content active" data-tab-content="mem-working">${tab1}</div>
+      <div class="chs-tab-content" data-tab-content="mem-midterm">${tab2}</div>
+      <div class="chs-tab-content" data-tab-content="mem-advanced">${tab3}</div>
+    </div>
+  </div>`
+}
+
 export function renderSection(section: string, data: SectionData): string | null {
   switch (section) {
     case 'dashboard': return renderDashboardSection(data)
@@ -2150,6 +2275,7 @@ export function renderSection(section: string, data: SectionData): string | null
     case 'engine-metrics': return renderEngineMetricsSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)
+    case 'memory': return renderMemorySection(data)
     case 'knowledge': return renderKnowledgeItemsSection(data)
     case 'contacts': return renderUsersSection(data)
     case 'agente': return data.agenteContent || `<div class="panel"><div class="panel-body"><p>Select a tab.</p></div></div>`

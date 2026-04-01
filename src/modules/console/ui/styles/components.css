@@ -1967,6 +1967,9 @@ select.wizard-input option:checked {
 
 .chs-field-row .chs-field { margin-bottom: 0; }
 
+/* When .field (config style) is a direct grid child, reset adjacent-sibling padding so columns align */
+.chs-field-row > .field { padding-top: 10px; }
+
 /* Compact toggle for grid layouts */
 .chs-toggle-compact {
   padding: 8px 10px;

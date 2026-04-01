@@ -44,25 +44,29 @@ const manifest: ModuleManifest = {
     MEMORY_CONTEXT_SUMMARIES_ASYNC: numEnv(5),
     MEMORY_CONTEXT_SUMMARIES_VOICE: numEnv(2),
 
-    // Compression and models
+    // Compression model (backend-only — UI uses LLM_COMPRESS from /agente/advanced)
     MEMORY_COMPRESSION_MODEL: z.string().default('claude-haiku-4-5-20251001'),
-    MEMORY_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+    // Embedding model (backend-only — always Google Gemini Embedding 2 via knowledge:embedding-service)
+    MEMORY_EMBEDDING_MODEL: z.string().default('text-embedding-004'),
 
     // Retention and purge
     MEMORY_SUMMARY_RETENTION_DAYS: numEnv(120),
     MEMORY_ARCHIVE_RETENTION_YEARS: numEnv(2),
     MEMORY_PIPELINE_LOGS_RETENTION_DAYS: numEnv(90),
     MEMORY_MEDIA_RETENTION_MONTHS: numEnv(6),
+    // backend-only: messages are always purged after compression
     MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolEnv(true),
-    MEMORY_PURGE_MERGED_SUMMARIES: boolEnv(false),
 
     // Prompt cache (shared with LLM module)
     LLM_PROMPT_CACHE_ENABLED: boolEnv(true),
 
-    // Batch crons
+    // Batch task hours (UTC) — cron expressions are derived from these at runtime
+    MEMORY_BATCH_COMPRESS_HOUR: numEnv(2),   // compression + embeddings (30 min later)
+    MEMORY_BATCH_PURGE_HOUR: numEnv(5),      // media purge + logs purge + archive purge
+
+    // Batch crons (backend-only — derived from HOUR fields above)
     MEMORY_BATCH_COMPRESS_CRON: z.string().default('0 2 * * *'),
     MEMORY_BATCH_EMBEDDINGS_CRON: z.string().default('30 2 * * *'),
-    MEMORY_BATCH_MERGE_CRON: z.string().default('0 3 * * *'),
     MEMORY_BATCH_MEDIA_PURGE_CRON: z.string().default('0 5 1 */6 *'),
     MEMORY_BATCH_LOGS_PURGE_CRON: z.string().default('0 5 * * 0'),
     MEMORY_BATCH_ARCHIVE_PURGE_CRON: z.string().default('0 5 1 * *'),
@@ -78,76 +82,39 @@ const manifest: ModuleManifest = {
     group: 'data',
     icon: '&#128190;',
     fields: [
-      // ── Sesiones ──
-      { key: '_div_sessions', type: 'divider', label: { es: 'Sesiones', en: 'Sessions' } },
-      {
-        key: 'MEMORY_SESSION_REOPEN_WINDOW_HOURS',
-        type: 'number',
-        label: { es: 'Ventana de reapertura (h)', en: 'Session reopen window (h)' },
-        info: { es: 'Horas en que un nuevo mensaje reactiva la sesion anterior en vez de abrir una nueva. Maximo 12h.', en: 'Hours in which a new message reactivates the previous session instead of opening a new one. Max 12h.' },
-        width: 'half',
-        min: 1,
-        max: 12,
-      },
-      {
-        key: 'LLM_PROMPT_CACHE_ENABLED',
-        type: 'boolean',
-        label: { es: 'Cache de prompts', en: 'Prompt cache' },
-        info: { es: 'Cachea el system prompt y el historial para reducir costos en conversaciones largas', en: 'Caches the system prompt and history to reduce costs in long conversations' },
-      },
-      { key: 'MEMORY_BUFFER_TURNS_INSTANT', type: 'number', label: { es: 'Historial canales instantáneos', en: 'Instant channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales instantáneos (WhatsApp, Google Chat)', en: 'Conversation turns loaded for instant channels (WhatsApp, Google Chat)' }, width: 'half', min: 5, max: 50 },
-      { key: 'MEMORY_BUFFER_TURNS_ASYNC', type: 'number', label: { es: 'Historial canales asíncronos', en: 'Async channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales asíncronos (Gmail)', en: 'Conversation turns loaded for async channels (Gmail)' }, width: 'half', min: 5, max: 50 },
-      { key: 'MEMORY_BUFFER_TURNS_VOICE', type: 'number', label: { es: 'Historial canales de voz', en: 'Voice channel history' }, info: { es: 'Turnos de conversacion que se cargan en canales de voz (Twilio)', en: 'Conversation turns loaded for voice channels (Twilio)' }, width: 'half', min: 3, max: 20 },
-      { key: 'MEMORY_CONTEXT_SUMMARIES_INSTANT', type: 'number', label: { es: 'Interacciones previas (instantáneo)', en: 'Past interactions (instant)' }, info: { es: 'Resumenes de interacciones anteriores inyectados en canales instantáneos (WhatsApp, Google Chat)', en: 'Past interaction summaries injected for instant channels (WhatsApp, Google Chat)' }, width: 'half', min: 0, max: 10 },
-      { key: 'MEMORY_CONTEXT_SUMMARIES_ASYNC', type: 'number', label: { es: 'Interacciones previas (asíncrono)', en: 'Past interactions (async)' }, info: { es: 'Resumenes de interacciones anteriores inyectados en canales asíncronos (Gmail)', en: 'Past interaction summaries injected for async channels (Gmail)' }, width: 'half', min: 0, max: 10 },
-      { key: 'MEMORY_CONTEXT_SUMMARIES_VOICE', type: 'number', label: { es: 'Interacciones previas (voz)', en: 'Past interactions (voice)' }, info: { es: 'Resumenes de interacciones anteriores inyectados en canales de voz (Twilio)', en: 'Past interaction summaries injected for voice channels (Twilio)' }, width: 'half', min: 0, max: 10 },
-
-      // ── Compresion ──
-      { key: '_div_compression', type: 'divider', label: { es: 'Compresion de memoria', en: 'Memory compression' } },
-      { key: 'MEMORY_COMPRESSION_THRESHOLD', type: 'number', label: { es: 'Umbral de compresion', en: 'Compression threshold' }, info: { es: 'Cantidad minima de mensajes en una sesion para activar compresion automatica', en: 'Minimum messages in a session to trigger automatic compression' }, width: 'half' },
+      // Tab: Memoria de trabajo
+      { key: 'MEMORY_BUFFER_TURNS_INSTANT', type: 'number', label: { es: 'Historial canales instantáneos', en: 'Instant channel history' }, info: { es: 'Turnos de conversación que se cargan en canales instantáneos (WhatsApp, Google Chat)', en: 'Conversation turns loaded for instant channels (WhatsApp, Google Chat)' }, width: 'half', min: 5, max: 50 },
+      { key: 'MEMORY_BUFFER_TURNS_ASYNC', type: 'number', label: { es: 'Historial canales asíncronos', en: 'Async channel history' }, info: { es: 'Turnos de conversación que se cargan en canales asíncronos (Gmail)', en: 'Conversation turns loaded for async channels (Gmail)' }, width: 'half', min: 5, max: 50 },
+      { key: 'MEMORY_BUFFER_TURNS_VOICE', type: 'number', label: { es: 'Historial canales de voz', en: 'Voice channel history' }, info: { es: 'Turnos de conversación que se cargan en canales de voz (Twilio)', en: 'Conversation turns loaded for voice channels (Twilio)' }, width: 'half', min: 3, max: 20 },
+      { key: 'MEMORY_CONTEXT_SUMMARIES_INSTANT', type: 'number', label: { es: 'Interacciones previas (instantáneo)', en: 'Past interactions (instant)' }, info: { es: 'Resúmenes de interacciones anteriores inyectados en canales instantáneos', en: 'Past interaction summaries injected for instant channels' }, width: 'half', min: 0, max: 10 },
+      { key: 'MEMORY_CONTEXT_SUMMARIES_ASYNC', type: 'number', label: { es: 'Interacciones previas (asíncrono)', en: 'Past interactions (async)' }, info: { es: 'Resúmenes de interacciones anteriores inyectados en canales asíncronos', en: 'Past interaction summaries injected for async channels' }, width: 'half', min: 0, max: 10 },
+      { key: 'MEMORY_CONTEXT_SUMMARIES_VOICE', type: 'number', label: { es: 'Interacciones previas (voz)', en: 'Past interactions (voice)' }, info: { es: 'Resúmenes de interacciones anteriores inyectados en canales de voz', en: 'Past interaction summaries injected for voice channels' }, width: 'half', min: 0, max: 10 },
+      { key: 'MEMORY_COMPRESSION_THRESHOLD', type: 'number', label: { es: 'Umbral de compresión', en: 'Compression threshold' }, info: { es: 'Cantidad mínima de mensajes en una sesión para activar compresión automática', en: 'Minimum messages in a session to trigger automatic compression' }, width: 'half' },
       { key: 'MEMORY_COMPRESSION_KEEP_RECENT', type: 'number', label: { es: 'Mensajes recientes a conservar', en: 'Recent messages to keep' }, info: { es: 'Mensajes que se mantienen sin comprimir para contexto inmediato', en: 'Messages kept uncompressed for immediate context' }, width: 'half' },
-      { key: 'MEMORY_COMPRESSION_MODEL', type: 'text', label: { es: 'Modelo de compresion', en: 'Compression model' }, info: { es: 'Modelo LLM usado para resumir sesiones. Usa un modelo rapido y economico.', en: 'LLM model used to summarize sessions. Use a fast, cost-effective model.' }, width: 'half' },
-      { key: 'MEMORY_EMBEDDING_MODEL', type: 'text', label: { es: 'Modelo de embeddings', en: 'Embedding model' }, info: { es: 'Modelo para generar vectores de busqueda semantica', en: 'Model for generating semantic search vectors' }, width: 'half' },
-
-      // ── Retencion ──
-      { key: '_div_retention', type: 'divider', label: { es: 'Retencion de datos', en: 'Data retention' } },
-      { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resumenes de interacciones (dias)', en: 'Interaction summaries (days)' }, info: { es: 'Dias antes de eliminar resumenes de sesion. Maximo 730 dias (2 anos).', en: 'Days before deleting session summaries. Maximum 730 days (2 years).' }, width: 'half', min: 30, max: 730 },
-      { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Registros del sistema (dias)', en: 'System logs (days)' }, info: { es: 'Dias antes de eliminar registros de procesamiento interno', en: 'Days before deleting internal processing logs' }, width: 'half' },
+      // Tab: Mediano plazo
+      { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resúmenes de interacciones (días)', en: 'Interaction summaries (days)' }, info: { es: 'Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', en: 'Days before deleting session summaries. Maximum 730 days (2 years).' }, width: 'half', min: 30, max: 730 },
+      { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Registros del sistema (días)', en: 'System logs (days)' }, info: { es: 'Días antes de eliminar registros de procesamiento interno', en: 'Days before deleting internal processing logs' }, width: 'half' },
+      { key: 'MEMORY_MEDIA_RETENTION_MONTHS', type: 'number', label: { es: 'Almacenamiento de media (meses)', en: 'Media storage (months)' }, info: { es: 'Meses de retención de imágenes y archivos en disco. Máximo 24 meses (2 años).', en: 'Months to retain images and media files on disk. Maximum 24 months (2 years).' }, width: 'half', min: 1, max: 24 },
+      // Tab: Avanzado
       {
         key: 'MEMORY_ARCHIVE_RETENTION_YEARS',
         type: 'select',
-        label: { es: 'Duracion del backup legal', en: 'Legal backup duration' },
-        info: { es: 'Tiempo de retencion de conversaciones completas para cumplimiento legal. "Desactivado" no guarda backups.', en: 'Retention time for full conversations for legal compliance. "Disabled" skips backups.' },
+        label: { es: 'Duración del backup legal', en: 'Legal backup duration' },
+        info: { es: 'Tiempo de retención de conversaciones completas para cumplimiento legal. "Desactivado" no guarda backups.', en: 'Retention time for full conversations for legal compliance. "Disabled" skips backups.' },
         width: 'half',
         options: [
           { value: '0', label: { es: 'Desactivado', en: 'Disabled' } },
-          { value: '1', label: { es: '1 ano', en: '1 year' } },
-          { value: '2', label: { es: '2 anos', en: '2 years' } },
-          { value: '5', label: { es: '5 anos', en: '5 years' } },
-          { value: '10', label: { es: '10 anos', en: '10 years' } },
+          { value: '1', label: { es: '1 año', en: '1 year' } },
+          { value: '2', label: { es: '2 años', en: '2 years' } },
+          { value: '5', label: { es: '5 años', en: '5 years' } },
+          { value: '10', label: { es: '10 años', en: '10 years' } },
           { value: '999', label: { es: 'Vitalicio', en: 'Lifetime' } },
         ],
       },
-      {
-        key: 'MEMORY_MEDIA_RETENTION_MONTHS',
-        type: 'number',
-        label: { es: 'Almacenamiento de media (meses)', en: 'Media storage (months)' },
-        info: { es: 'Meses de retencion de imagenes y archivos en disco. Maximo 24 meses (2 anos). Default 6 meses.', en: 'Months to retain images and media files on disk. Maximum 24 months (2 years). Default 6 months.' },
-        width: 'half',
-        min: 1,
-        max: 24,
-      },
-      { key: 'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', type: 'boolean', label: { es: 'Borrar mensajes tras comprimir', en: 'Purge messages after compress' }, info: { es: 'Eliminar mensajes originales una vez generado el resumen', en: 'Delete original messages once summary is generated' } },
-      { key: 'MEMORY_PURGE_MERGED_SUMMARIES', type: 'boolean', label: { es: 'Borrar resumenes fusionados', en: 'Purge merged summaries' }, info: { es: 'Eliminar resumenes intermedios ya integrados en la memoria permanente', en: 'Delete intermediate summaries already integrated into permanent memory' } },
-
-      // ── Tareas programadas ──
-      { key: '_div_crons', type: 'divider', label: { es: 'Tareas programadas', en: 'Scheduled tasks' } },
-      { key: 'MEMORY_BATCH_COMPRESS_CRON', type: 'text', label: { es: 'Compresion nocturna', en: 'Nightly compression' }, info: { es: 'Horario cron (UTC) para comprimir sesiones inactivas', en: 'Cron schedule (UTC) for compressing inactive sessions' }, width: 'half' },
-      { key: 'MEMORY_BATCH_EMBEDDINGS_CRON', type: 'text', label: { es: 'Generacion de embeddings', en: 'Embedding generation' }, info: { es: 'Horario cron para generar vectores de busqueda', en: 'Cron schedule for generating search vectors' }, width: 'half' },
-      { key: 'MEMORY_BATCH_MERGE_CRON', type: 'text', label: { es: 'Fusion de resumenes', en: 'Summary merge' }, info: { es: 'Horario cron para fusionar resumenes en memoria permanente', en: 'Cron schedule for merging summaries into permanent memory' }, width: 'half' },
-      { key: 'MEMORY_BATCH_MEDIA_PURGE_CRON', type: 'text', label: { es: 'Purga de media', en: 'Media purge' }, info: { es: 'Horario cron para eliminar archivos media expirados del disco', en: 'Cron schedule for deleting expired media files from disk' }, width: 'half' },
-      { key: 'MEMORY_BATCH_LOGS_PURGE_CRON', type: 'text', label: { es: 'Purga de logs', en: 'Logs purge' }, info: { es: 'Horario cron para eliminar logs de pipeline expirados', en: 'Cron schedule for deleting expired pipeline logs' }, width: 'half' },
-      { key: 'MEMORY_BATCH_ARCHIVE_PURGE_CRON', type: 'text', label: { es: 'Purga de archivos', en: 'Archive purge' }, info: { es: 'Horario cron para eliminar archivos legales expirados', en: 'Cron schedule for deleting expired legal archives' }, width: 'half' },
+      { key: 'MEMORY_SESSION_REOPEN_WINDOW_HOURS', type: 'number', label: { es: 'Ventana de reapertura (h)', en: 'Session reopen window (h)' }, info: { es: 'Horas en que un nuevo mensaje reactiva la sesión anterior. Máximo 12h.', en: 'Hours a new message reactivates the previous session. Max 12h.' }, width: 'half', min: 1, max: 12 },
+      { key: 'MEMORY_BATCH_COMPRESS_HOUR', type: 'number', label: { es: 'Compresión nocturna', en: 'Nightly compression' }, info: { es: 'Hora UTC para comprimir sesiones inactivas y generar embeddings (30 min después)', en: 'UTC hour to compress inactive sessions and generate embeddings (30 min later)' }, width: 'half', min: 0, max: 23 },
+      { key: 'MEMORY_BATCH_PURGE_HOUR', type: 'number', label: { es: 'Purga de datos', en: 'Data purge' }, info: { es: 'Hora UTC para purgar media expirada, logs del pipeline y archivos legales', en: 'UTC hour to purge expired media, pipeline logs and legal archives' }, width: 'half', min: 0, max: 23 },
+      { key: 'LLM_PROMPT_CACHE_ENABLED', type: 'boolean', label: { es: 'Cache de prompts', en: 'Prompt cache' }, info: { es: 'Cachea el system prompt y el historial para reducir costos en conversaciones largas', en: 'Caches the system prompt and history to reduce costs in long conversations' } },
     ],
   },
 
@@ -165,13 +132,14 @@ const manifest: ModuleManifest = {
       MEMORY_PIPELINE_LOGS_RETENTION_DAYS: number
       MEMORY_MEDIA_RETENTION_MONTHS: number
       MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolean
-      MEMORY_PURGE_MERGED_SUMMARIES: boolean
       MEMORY_BUFFER_TURNS_INSTANT: number
       MEMORY_BUFFER_TURNS_ASYNC: number
       MEMORY_BUFFER_TURNS_VOICE: number
       MEMORY_CONTEXT_SUMMARIES_INSTANT: number
       MEMORY_CONTEXT_SUMMARIES_ASYNC: number
       MEMORY_CONTEXT_SUMMARIES_VOICE: number
+      MEMORY_BATCH_COMPRESS_HOUR: number
+      MEMORY_BATCH_PURGE_HOUR: number
     }>('memory')
 
     manager = new MemoryManager(registry.getDb(), registry.getRedis(), config)
