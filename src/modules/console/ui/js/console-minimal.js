@@ -1695,8 +1695,6 @@
   }
 
   // WhatsApp: navigate to QR step — auto-triggers QR generation on last step
-  var _waCountdownInterval = null
-  var _waQrExpiry = 0
   var _waLastQrUrl = '' // Track last QR to detect changes
 
   window.wizardGoToWa = function (pageIdx, lang) {
@@ -1707,19 +1705,17 @@
     }
   }
 
-  function startWaCountdown(seconds, countdownEl, isEs) {
-    _waQrExpiry = seconds
-    if (_waCountdownInterval) clearInterval(_waCountdownInterval)
-    _waCountdownInterval = setInterval(function () {
-      _waQrExpiry--
-      if (countdownEl) {
-        if (_waQrExpiry > 0) {
-          countdownEl.textContent = (isEs ? 'El codigo expira en ' : 'Code expires in ') + _waQrExpiry + 's'
-        } else {
-          countdownEl.textContent = isEs ? 'Actualizando codigo...' : 'Refreshing code...'
-        }
-      }
-    }, 1000)
+  // Track when last QR was received to show a subtle "refreshing" hint
+  var _waLastQrTime = 0
+
+  function updateWaCountdown(countdownEl, isEs) {
+    if (!countdownEl) return
+    var elapsed = Math.floor((Date.now() - _waLastQrTime) / 1000)
+    if (elapsed < 18) {
+      countdownEl.textContent = ''
+    } else {
+      countdownEl.textContent = isEs ? 'Actualizando codigo...' : 'Refreshing code...'
+    }
   }
 
   function startWhatsAppQRAuto(lang) {
@@ -1731,8 +1727,8 @@
 
     // Reset state
     if (_chConnectPoll) { clearInterval(_chConnectPoll); _chConnectPoll = null }
-    if (_waCountdownInterval) { clearInterval(_waCountdownInterval); _waCountdownInterval = null }
     _waLastQrUrl = ''
+    _waLastQrTime = 0
 
     qrArea.innerHTML = '<div style="color:var(--on-surface-dim)">' + (isEs ? 'Generando codigo QR...' : 'Generating QR code...') + '</div>'
     if (countdownEl) countdownEl.textContent = ''
@@ -1745,19 +1741,20 @@
             .then(function (data) {
               if (data.status === 'connected') {
                 clearInterval(_chConnectPoll); _chConnectPoll = null
-                if (_waCountdownInterval) { clearInterval(_waCountdownInterval); _waCountdownInterval = null }
                 qrArea.innerHTML = '<div style="color:var(--success);font-weight:600;font-size:18px">&#10003; ' + (isEs ? 'Conectado exitosamente' : 'Connected successfully') + '</div>'
                 if (statusEl) statusEl.textContent = data.connectedNumber ? (isEs ? 'Numero: ' : 'Number: ') + data.connectedNumber : ''
                 if (countdownEl) countdownEl.textContent = ''
                 setTimeout(function () { closeConnectModal(); window.location.reload() }, 2000)
               } else if (data.qrDataUrl) {
-                // Only reset countdown when QR actually changes (new image from Baileys)
+                // Update QR image when it changes; show "refreshing" hint when stale
                 if (data.qrDataUrl !== _waLastQrUrl) {
                   _waLastQrUrl = data.qrDataUrl
+                  _waLastQrTime = Date.now()
                   qrArea.innerHTML = '<div class="wa-qr-container"><img src="' + data.qrDataUrl + '" alt="QR" class="wa-qr-img"></div>'
                   if (statusEl) statusEl.textContent = isEs ? 'Escanea este codigo con WhatsApp' : 'Scan this code with WhatsApp'
-                  startWaCountdown(20, countdownEl, isEs)
+                  if (countdownEl) countdownEl.textContent = ''
                 }
+                updateWaCountdown(countdownEl, isEs)
               } else if (data.status === 'connecting') {
                 if (statusEl) statusEl.textContent = isEs ? 'Conectando...' : 'Connecting...'
               }
