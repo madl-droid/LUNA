@@ -216,12 +216,22 @@ function createApiRoutes(): ApiRoute[] {
       path: 'templates',
       handler: async (req, res) => {
         if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        // Accept both: single template { touchType, ... } and bulk { templates: [...] }
         const body = await parseBody<{
-          touchType: string; templateText?: string; llmInstructions?: string
+          templates?: Array<{ touchType: string; templateText?: string; useLlm?: boolean; channel?: string }>
+          touchType?: string; templateText?: string; llmInstructions?: string
           useLlm?: boolean; channel?: string; voiceScript?: string
         }>(req)
-        if (!body.touchType) { jsonResponse(res, 400, { error: 'Missing touchType' }); return }
-        await pgStore.upsertTemplate(_registry.getDb(), body.touchType as any, body)
+        const db = _registry.getDb()
+        if (body.templates && Array.isArray(body.templates)) {
+          for (const tmpl of body.templates) {
+            if (tmpl.touchType) await pgStore.upsertTemplate(db, tmpl.touchType as any, tmpl)
+          }
+        } else if (body.touchType) {
+          await pgStore.upsertTemplate(db, body.touchType as any, body)
+        } else {
+          jsonResponse(res, 400, { error: 'Missing touchType or templates array' }); return
+        }
         jsonResponse(res, 200, { ok: true })
       },
     },
@@ -245,16 +255,49 @@ function createApiRoutes(): ApiRoute[] {
       path: 'scheduling-rules',
       handler: async (req, res) => {
         if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        // Accept both old format { professionalTreatments, userTypeRules } and
+        // console UI format { profRules: [{medilinkProfessionalId, medilinkTreatmentId}], valoracionProfIds: number[] }
         const body = await parseBody<{
+          profRules?: Array<{ medilinkProfessionalId: number; medilinkTreatmentId: number }>
+          valoracionProfIds?: number[]
           professionalTreatments?: Array<{ professionalId: number; treatmentId: number; professionalName: string; treatmentName: string }>
           userTypeRules?: Array<{ userType: string; treatmentId: number; treatmentName: string; allowed: boolean; notes?: string }>
         }>(req)
         const db = _registry.getDb()
-        if (body.professionalTreatments) {
-          await pgStore.setProfessionalTreatments(db, body.professionalTreatments)
-        }
-        if (body.userTypeRules) {
-          await pgStore.setUserTypeRules(db, body.userTypeRules)
+
+        if (body.profRules !== undefined) {
+          // Console UI format: look up names from cache
+          const refs = cache ? { professionals: cache.getProfessionals(), treatments: cache.getTreatments() } : { professionals: [], treatments: [] }
+          const profMap = new Map(refs.professionals.map(p => [p.id, `${p.nombre} ${p.apellidos}`]))
+          const treatMap = new Map(refs.treatments.map(t => [t.id, t.nombre]))
+
+          const professionalTreatments = (body.profRules ?? []).map(r => ({
+            professionalId: r.medilinkProfessionalId,
+            treatmentId: r.medilinkTreatmentId,
+            professionalName: profMap.get(r.medilinkProfessionalId) ?? String(r.medilinkProfessionalId),
+            treatmentName: treatMap.get(r.medilinkTreatmentId) ?? String(r.medilinkTreatmentId),
+          }))
+          await pgStore.setProfessionalTreatments(db, professionalTreatments)
+
+          // Map valoracionProfIds → userTypeRules for 'nuevo' user type
+          // Each profRule whose professionalId is in valoracionProfIds gets a 'nuevo' allowed rule
+          const valoracionSet = new Set(body.valoracionProfIds ?? [])
+          const userTypeRules = (body.profRules ?? [])
+            .filter(r => valoracionSet.has(r.medilinkProfessionalId))
+            .map(r => ({
+              userType: 'nuevo',
+              treatmentId: r.medilinkTreatmentId,
+              treatmentName: treatMap.get(r.medilinkTreatmentId) ?? String(r.medilinkTreatmentId),
+              allowed: true,
+            }))
+          await pgStore.setUserTypeRules(db, userTypeRules)
+        } else {
+          if (body.professionalTreatments) {
+            await pgStore.setProfessionalTreatments(db, body.professionalTreatments)
+          }
+          if (body.userTypeRules) {
+            await pgStore.setUserTypeRules(db, body.userTypeRules)
+          }
         }
         jsonResponse(res, 200, { ok: true })
       },
@@ -287,7 +330,7 @@ const manifest: ModuleManifest = {
   type: 'provider',
   removable: true,
   activateByDefault: false,
-  depends: ['tools', 'memory', 'scheduled-tasks'],
+  depends: [],
 
   configSchema: z.object({
     MEDILINK_API_TOKEN: z.string().default(''),
