@@ -194,6 +194,7 @@ export async function processAttachments(
           sourceRef: att.id,
           llmEnriched: false,
           filePath: null,
+          metadata: null,
         }
         persistOneAttachment(failed, sessionId, messageId, channelName, db).catch(e =>
           logger.warn({ e, filename: att.filename }, 'Failed to persist failed attachment'),
@@ -274,6 +275,7 @@ async function processOneAttachment(
       sourceRef: att.id,
       llmEnriched: false,
       filePath: null,
+      metadata: null,
     }
   }
 
@@ -302,6 +304,7 @@ async function processOneAttachment(
       sourceRef: att.id,
       llmEnriched: false,
       filePath: null,
+      metadata: null,
     }
   }
 
@@ -325,6 +328,7 @@ async function processOneAttachment(
   let llmText: string | null = null
   let llmEnriched = false
   let filePath: string | null = null
+  let metadata: Record<string, unknown> | null = null
 
   if (mimeCategory === 'image') {
     // Image: code extraction → metadata only, LLM → vision description
@@ -340,6 +344,7 @@ async function processOneAttachment(
   } else if (mimeCategory === 'video') {
     // Video: code extraction → format/duration, LLM → multimodal description + transcription
     const videoResult = await extractVideo(data, att.filename, att.mimeType)
+    metadata = { duration: videoResult.durationSeconds, hasAudio: videoResult.hasAudio }
     const enriched = await enrichWithLLM(videoResult, registry)
     if (enriched.kind === 'video' && enriched.llmEnrichment) {
       const parts: string[] = []
@@ -377,6 +382,7 @@ async function processOneAttachment(
       sourceRef: att.id,
       llmEnriched,
       filePath,
+      metadata,
     }
   }
 
@@ -453,6 +459,7 @@ async function processOneAttachment(
     sourceRef: att.id,
     llmEnriched,
     filePath,
+    metadata,
   }
 }
 
@@ -464,6 +471,17 @@ async function processAudio(
   registry: Registry,
 ): Promise<ProcessedAttachment> {
   const categoryLabel = CATEGORY_LABEL_MAP.audio
+
+  // Extract audio metadata (duration) for downstream chunking
+  let audioMetadata: Record<string, unknown> | null = null
+  try {
+    const { extractAudio } = await import('../../extractors/audio.js')
+    const audioResult = await extractAudio(data, att.filename, att.mimeType)
+    audioMetadata = { duration: audioResult.durationSeconds }
+  } catch {
+    // Non-fatal: duration metadata is optional
+  }
+
   const transcription = await transcribeAudio(data, att.mimeType, registry)
 
   if (!transcription) {
@@ -486,6 +504,7 @@ async function processAudio(
       sourceRef: att.id,
       llmEnriched: false,
       filePath: null,
+      metadata: audioMetadata,
     }
   }
 
@@ -512,6 +531,7 @@ async function processAudio(
     sourceRef: att.id,
     llmEnriched: true, // STT is LLM-powered
     filePath: null,
+    metadata: audioMetadata,
   }
 }
 
@@ -585,8 +605,8 @@ async function persistOneAttachment(
 
   await db.query(
     `INSERT INTO attachment_extractions
-     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref, file_path)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref, file_path, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      ON CONFLICT DO NOTHING`,
     [
       att.id,
@@ -606,6 +626,7 @@ async function persistOneAttachment(
       att.injectionRisk,
       att.sourceRef,
       att.filePath,
+      att.metadata ? JSON.stringify(att.metadata) : null,
     ],
   )
 }

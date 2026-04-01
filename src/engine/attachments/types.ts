@@ -124,6 +124,8 @@ export interface ProcessedAttachment {
   llmEnriched: boolean
   /** Disk path for stored binary (images) — for re-consultation */
   filePath: string | null
+  /** Extra metadata (duration, hasAudio, etc.) — for downstream chunking */
+  metadata: Record<string, unknown> | null
 }
 
 /** URL extraction result */

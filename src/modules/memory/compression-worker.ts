@@ -238,7 +238,7 @@ export class CompressionWorker {
       ),
       this.db.query(
         `SELECT id, session_id, filename, mime_type, category, category_label,
-                extracted_text, llm_text, file_path
+                extracted_text, llm_text, file_path, metadata
          FROM attachment_extractions WHERE session_id = $1`,
         [sessionId],
       ),
@@ -286,7 +286,7 @@ export class CompressionWorker {
       extractedText: r.extracted_text as string | null,
       llmText: r.llm_text as string | null,
       filePath: r.file_path as string | null,
-      metadata: null,
+      metadata: r.metadata as Record<string, unknown> | null,
     }))
 
     return { messages, attachments, startedAt, closedAt }
