@@ -228,7 +228,7 @@ Tu respuesta será convertida a nota de voz (audio). Escribe como si hablaras en
     }
   }
 
-  // Campaign context (from lead-scoring:match-campaign via Phase 1)
+  // Campaign context (from marketing-data:match-campaign via Phase 1)
   if (ctx.campaign) {
     const ctxLine = ctx.campaign.promptContext
       ? `\nContexto: ${ctx.campaign.promptContext}`

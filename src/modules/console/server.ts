@@ -1359,6 +1359,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           if (!sectionData.herramientasContent) {
             sectionData.herramientasContent = notAvailable('calificacion')
           }
+        } else if (herramientasSubpage === 'marketing-data') {
+          try {
+            const renderFn = registry.getOptional<(lang: string) => string>('marketing-data:renderSection')
+            if (renderFn) {
+              sectionData.herramientasContent = renderFn(lang)
+            }
+          } catch (err) { logger.error({ err }, 'Failed to render marketing-data section') }
+          if (!sectionData.herramientasContent) {
+            sectionData.herramientasContent = notAvailable('marketing data')
+          }
         } else if (herramientasSubpage === 'freight') {
           const freightMod = data.moduleStates.find(m => m.name === 'freight')
           if (freightMod?.active) {
@@ -2212,7 +2222,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/tts-preview — generate TTS preview audio
+    // POST /console/api/console/tts-preview — generate TTS preview audio via Gemini TTS
     {
       method: 'POST',
       path: 'tts-preview',
@@ -2220,51 +2230,76 @@ export function createApiRoutes(): ApiRoute[] {
         try {
           const body = await parseBody<{
             voiceName: string
-            languageCode: string
-            speakingRate: number
-            pitch: number
             text: string
           }>(req)
           if (!body?.voiceName || !body?.text) {
             jsonResponse(res, 400, { error: 'voiceName and text required' })
             return
           }
-          // Get TTS API key from config store
+          // Get Google AI API key from config store (same key as Gemini LLM)
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()!
           const config = await configStore.getAll(registry.getDb())
-          const apiKey = config['TTS_GOOGLE_API_KEY'] || config['GOOGLE_AI_API_KEY']
+          const apiKey = config['GOOGLE_AI_API_KEY']
           if (!apiKey) {
-            jsonResponse(res, 400, { error: 'TTS API key not configured' })
+            jsonResponse(res, 400, { error: 'Google AI API key not configured' })
             return
           }
-          const ttsResponse = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+          const ttsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              input: { text: body.text.substring(0, 500) },
-              voice: {
-                languageCode: body.languageCode || 'es-US',
-                name: body.voiceName,
-              },
-              audioConfig: {
-                audioEncoding: 'MP3',
-                speakingRate: body.speakingRate || 1.0,
-                pitch: body.pitch || 0.0,
-                sampleRateHertz: 24000,
+              contents: [{ role: 'user', parts: [{ text: body.text.substring(0, 500) }] }],
+              generationConfig: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: body.voiceName },
+                  },
+                },
               },
             }),
           })
           if (!ttsResponse.ok) {
             const errText = await ttsResponse.text()
             logger.error({ status: ttsResponse.status, body: errText }, 'TTS preview API error')
-            jsonResponse(res, 502, { error: 'Google TTS API error' })
+            jsonResponse(res, 502, { error: 'Gemini TTS API error' })
             return
           }
-          const data = await ttsResponse.json() as { audioContent: string }
-          const audioBuffer = Buffer.from(data.audioContent, 'base64')
+          const data = await ttsResponse.json() as {
+            candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }>
+          }
+          const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
+          if (!base64Audio) {
+            logger.error('TTS preview: no audio data in Gemini response')
+            jsonResponse(res, 502, { error: 'No audio data in response' })
+            return
+          }
+          const pcmBuffer = Buffer.from(base64Audio, 'base64')
+          // Convert raw PCM (16-bit LE, mono, 24kHz) to WAV for browser playback
+          const sampleRate = 24000
+          const channels = 1
+          const bitsPerSample = 16
+          const byteRate = sampleRate * channels * (bitsPerSample / 8)
+          const blockAlign = channels * (bitsPerSample / 8)
+          const dataSize = pcmBuffer.length
+          const header = Buffer.alloc(44)
+          header.write('RIFF', 0)
+          header.writeUInt32LE(36 + dataSize, 4)
+          header.write('WAVE', 8)
+          header.write('fmt ', 12)
+          header.writeUInt32LE(16, 16)
+          header.writeUInt16LE(1, 20)
+          header.writeUInt16LE(channels, 22)
+          header.writeUInt32LE(sampleRate, 24)
+          header.writeUInt32LE(byteRate, 28)
+          header.writeUInt16LE(blockAlign, 32)
+          header.writeUInt16LE(bitsPerSample, 34)
+          header.write('data', 36)
+          header.writeUInt32LE(dataSize, 40)
+          const audioBuffer = Buffer.concat([header, pcmBuffer])
           res.writeHead(200, {
-            'Content-Type': 'audio/mpeg',
+            'Content-Type': 'audio/wav',
             'Content-Length': String(audioBuffer.length),
           })
           res.end(audioBuffer)

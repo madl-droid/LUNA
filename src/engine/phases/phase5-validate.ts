@@ -172,7 +172,7 @@ export async function phase5Validate(
   // 5c. Record campaign match (fire-and-forget)
   if (ctx.campaign && ctx.contactId) {
     type CQ = { recordMatch(contactId: string, campaignId: string, sessionId: string | null, channel: string | null, score: number | null): Promise<void> }
-    const cq = registry.getOptional<CQ>('lead-scoring:campaign-queries')
+    const cq = registry.getOptional<CQ>('marketing-data:campaign-queries')
     if (cq) {
       cq.recordMatch(
         ctx.contactId,

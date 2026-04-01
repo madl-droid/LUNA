@@ -60,7 +60,7 @@ const FIXED_SECTIONS: FixedSection[] = [
 // IDs of fixed sections (used to avoid duplicates with dynamic modules)
 // Also include channel section IDs that have custom renderers but aren't in the sidebar anymore
 // Include old section IDs + modules that are now inside the unified "agente" page
-const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics', 'freshdesk', 'modules', 'tts', 'subagents'])
+const FIXED_IDS = new Set([...FIXED_SECTIONS.map(s => s.id), 'gmail', 'whatsapp', 'email', 'users', 'llm', 'pipeline', 'infra', 'knowledge', 'memory', 'prompts', 'engine', 'tools', 'lead-scoring', 'marketing-data', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'model-scanner', 'engine-metrics', 'freshdesk', 'modules', 'tts', 'subagents'])
 
 // Override colored emoji icons from module manifests with monochrome SVGs
 export const ICON_OVERRIDES: Record<string, string> = {
@@ -82,6 +82,7 @@ export const ICON_OVERRIDES: Record<string, string> = {
   'freight': svgIcon('<rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>'),
   'medilink': svgIcon('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
   'freshdesk': svgIcon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8"/><path d="M8 11h6"/>'),
+  'marketing-data': svgIcon('<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>'),
   'tts': svgIcon('<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'),
   'cortex': svgIcon('<circle cx="12" cy="12" r="2.5"/><circle cx="5" cy="6" r="1.5"/><circle cx="19" cy="6" r="1.5"/><circle cx="5" cy="18" r="1.5"/><circle cx="19" cy="18" r="1.5"/><line x1="7" y1="7" x2="10" y2="10"/><line x1="14" y1="10" x2="17" y2="7"/><line x1="7" y1="17" x2="10" y2="14"/><line x1="14" y1="14" x2="17" y2="17"/>'),
   'subagents': svgIcon('<circle cx="12" cy="8" r="3"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 11v3"/><path d="M8 16l4-2 4 2"/>'),
@@ -401,7 +402,7 @@ function renderSidebar(opts: PageOptions): string {
   // 2. Add dynamic modules (only if not already a fixed section)
   //    Skip channel modules — managed from Canales tab
   //    Skip agent-group modules that go into Herramientas submenu (not sidebar)
-  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'freshdesk'])
+  const HERRAMIENTAS_FIXED = new Set(['tools', 'lead-scoring', 'marketing-data', 'freight', 'medilink', 'scheduled-tasks', 'google-apps', 'freshdesk'])
   for (const mod of dynModules) {
     if (FIXED_IDS.has(mod.name)) continue
     if (!mod.active) continue
@@ -492,6 +493,7 @@ function renderSidebar(opts: PageOptions): string {
         const herramientasIcons: Record<string, string> = {
           'tools': svgIcon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'),
           'lead-scoring': ICONS.scoring,
+          'marketing-data': svgIcon('<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>'),
           'freight': svgIcon('<rect x="1" y="6" width="22" height="12" rx="2"/><path d="M1 10h22"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>'),
           'medilink': svgIcon('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),
           'scheduled-tasks': svgIcon('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'),
@@ -505,6 +507,7 @@ function renderSidebar(opts: PageOptions): string {
         // Fixed herramientas tabs — only show if module is active
         const allFixedTabs = [
           { id: 'lead-scoring', key: 'sec_herramientas_lead_scoring' },
+          { id: 'marketing-data', key: 'sec_herramientas_marketing_data' },
           { id: 'freight', key: 'sec_herramientas_freight' },
           { id: 'medilink', key: 'sec_herramientas_medilink' },
           { id: 'scheduled-tasks', key: 'sec_herramientas_scheduled_tasks' },

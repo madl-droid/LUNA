@@ -3,7 +3,7 @@
 Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) simultaneamente. Deteccion de tipo de cliente, objectives per-framework, flujo directo. Extraccion natural por LLM, scoring por codigo, UI en console.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios, campaign init
+- `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios
 - `types.ts` — FrameworkType, ClientType, FrameworkObjective, FrameworkConfig, QualifyingConfig (multi-framework), ExtractionResult, generateKeyFromName()
 - `frameworks.ts` — presets CHAMP, SPIN, CHAMP+Gov con stages, criterios, disqualify reasons, essentialQuestions
 - `scoring-engine.ts` — motor de scoring: resolveFramework(), calculateScore(), buildQualificationSummary(), directo status
@@ -11,9 +11,9 @@ Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) 
 - `extract-tool.ts` — tool `extract_qualification`: prompt caching, client type detection, conversation buffer, dynamic tool description
 - `pg-queries.ts` — queries: listar leads, detalle, actualizar score, recalcular batch, stats (con directo status)
 - `templates.ts` — SSR HTML: framework cards con toggle+objetivo, criterios per-framework, comportamiento
-- `campaign-types.ts` — tipos de campanas
-- `campaign-queries.ts` — CRUD campanas, tags, contact-campaign history, stats
-- `campaign-matcher.ts` — fuse.js fuzzy matching
+- `campaign-types.ts` — tipos de campanas (legacy, ver marketing-data module)
+- `campaign-queries.ts` — CRUD campanas (legacy, ver marketing-data module)
+- `campaign-matcher.ts` — fuse.js fuzzy matching (legacy, ver marketing-data module)
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true
@@ -23,9 +23,7 @@ Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) 
 ## Servicios registrados
 - `lead-scoring:config` — instancia de ConfigStore
 - `lead-scoring:queries` — instancia de LeadQueries
-- `lead-scoring:campaign-queries` — instancia de CampaignQueries
-- `lead-scoring:match-campaign` — funcion de matching de campanas
-- `lead-scoring:reload-campaigns` — recarga indice del matcher
+- Campanas movidas al modulo `marketing-data` (servicios: `marketing-data:campaign-queries`, `marketing-data:match-campaign`, `marketing-data:reload-campaigns`)
 
 ## Multi-framework
 - `frameworks[]` en config: cada uno con type, enabled, objective, stages, criteria, essentialQuestions
@@ -54,7 +52,7 @@ Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) 
 - `GET /frameworks` — listar presets con estado actual
 - `POST /recalculate` — recalcular scores batch
 - `GET /stats`, `GET /leads`, `GET /lead`, `PUT /lead-status`, `POST /disqualify`
-- Campanas: CRUD + tags + stats (sin cambios)
+- Campanas: movidas al modulo `marketing-data`
 
 ## Integracion con evaluator/compositor
 - Evaluator: recibe `buildQualificationSummary()` en ingles (score, stage, missing, known, essential questions)

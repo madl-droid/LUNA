@@ -708,7 +708,7 @@ async function loadOrCreateSession(
 }
 
 /**
- * Detect campaign via lead-scoring:match-campaign service.
+ * Detect campaign via marketing-data:match-campaign service.
  * Matches keyword against text with channel/round filtering.
  */
 function detectCampaign(
@@ -721,7 +721,7 @@ function detectCampaign(
     campaignId: string; visibleId: number; name: string; keyword: string; promptContext: string; score: number
   } | null
 
-  const matchFn = registry.getOptional<MatchFn>('lead-scoring:match-campaign')
+  const matchFn = registry.getOptional<MatchFn>('marketing-data:match-campaign')
   if (!matchFn) return null
 
   // Get channel type from channel-config service

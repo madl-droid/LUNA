@@ -1,5 +1,8 @@
 // LUNA — TTS Service
-// Calls Google Cloud TTS API to synthesize text to OGG_OPUS audio.
+// Calls Google Gemini AI Studio TTS API to synthesize text to WAV audio.
+// TODO: Gemini TTS outputs raw PCM (16-bit LE, mono, 24kHz). We prepend a WAV header.
+// For WhatsApp voice notes, OGG_OPUS would be ideal but requires ffmpeg for conversion.
+// WAV works as a fallback — the engine/WhatsApp adapter may need to handle conversion.
 
 import pino from 'pino'
 
@@ -7,10 +10,7 @@ const logger = pino({ name: 'tts:service' })
 
 export interface TTSConfig {
   TTS_GOOGLE_API_KEY: string
-  TTS_VOICE_LANGUAGE: string
   TTS_VOICE_NAME: string
-  TTS_SPEAKING_RATE: string
-  TTS_PITCH: string
   TTS_MAX_CHARS: number
   TTS_ENABLED_CHANNELS: string
   TTS_AUTO_FOR_AUDIO_INPUT: boolean
@@ -24,7 +24,29 @@ export interface SynthesizeResult {
   durationSeconds: number
 }
 
-const TTS_API_URL = 'https://texttospeech.googleapis.com/v1/text:synthesize'
+const GEMINI_TTS_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent'
+
+/** Convert raw PCM data to WAV by prepending a 44-byte RIFF header */
+function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8)
+  const blockAlign = channels * (bitsPerSample / 8)
+  const dataSize = pcmBuffer.length
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + dataSize, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(channels, 22)
+  header.writeUInt32LE(sampleRate, 24)
+  header.writeUInt32LE(byteRate, 28)
+  header.writeUInt16LE(blockAlign, 32)
+  header.writeUInt16LE(bitsPerSample, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(dataSize, 40)
+  return Buffer.concat([header, pcmBuffer])
+}
 
 export class TTSService {
   private config: TTSConfig
@@ -78,35 +100,44 @@ export class TTSService {
     const truncated = text.substring(0, maxChars)
 
     try {
-      const response = await fetch(`${TTS_API_URL}?key=${this.config.TTS_GOOGLE_API_KEY}`, {
+      const response = await fetch(`${GEMINI_TTS_API_URL}?key=${this.config.TTS_GOOGLE_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          input: { text: truncated },
-          voice: {
-            languageCode: this.config.TTS_VOICE_LANGUAGE,
-            name: this.config.TTS_VOICE_NAME,
-          },
-          audioConfig: {
-            audioEncoding: 'OGG_OPUS',
-            speakingRate: parseFloat(this.config.TTS_SPEAKING_RATE) || 1.0,
-            pitch: parseFloat(this.config.TTS_PITCH) || 0.0,
-            sampleRateHertz: 48000,
+          contents: [{ role: 'user', parts: [{ text: truncated }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: this.config.TTS_VOICE_NAME || 'Kore' },
+              },
+            },
           },
         }),
       })
 
       if (!response.ok) {
         const errorText = await response.text()
-        logger.error({ status: response.status, body: errorText }, 'Google TTS API error')
+        logger.error({ status: response.status, body: errorText }, 'Gemini TTS API error')
         return null
       }
 
-      const data = await response.json() as { audioContent: string }
-      const audioBuffer = Buffer.from(data.audioContent, 'base64')
+      const data = await response.json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }>
+      }
+      const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
+      if (!base64Audio) {
+        logger.error({ data }, 'Gemini TTS: no audio data in response')
+        return null
+      }
 
-      // Estimate duration: OGG_OPUS at ~24kbps average
-      const durationSeconds = Math.max(1, Math.round(audioBuffer.length / 3000))
+      const pcmBuffer = Buffer.from(base64Audio, 'base64')
+      // Convert raw PCM to WAV (16-bit LE, mono, 24kHz)
+      // TODO: For WhatsApp voice notes, OGG_OPUS is preferred. Consider adding ffmpeg conversion.
+      const audioBuffer = pcmToWav(pcmBuffer)
+
+      // Estimate duration from PCM: 24000 samples/sec * 2 bytes/sample * 1 channel = 48000 bytes/sec
+      const durationSeconds = Math.max(1, Math.round(pcmBuffer.length / 48000))
 
       logger.info({ textLength: truncated.length, audioBytes: audioBuffer.length, durationSeconds }, 'TTS synthesis complete')
 

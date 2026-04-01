@@ -1394,9 +1394,7 @@ function renderIdentitySection(data: SectionData): string {
     const ttsAudioFreq = cfg['TTS_AUDIO_TO_AUDIO_FREQ'] || '80'
     const ttsTextFreq = cfg['TTS_TEXT_TO_AUDIO_FREQ'] || '10'
     const ttsMaxDur = cfg['TTS_MAX_DURATION'] || '2'
-    const ttsSpeakRate = cfg['TTS_SPEAKING_RATE'] || '1.0'
-    const ttsPitch = cfg['TTS_PITCH'] || '0.0'
-    const ttsVoice = cfg['TTS_VOICE_NAME'] || 'es-US-Studio-B'
+    const ttsVoice = cfg['TTS_VOICE_NAME'] || 'Kore'
 
     const ttsFreqOpts = Array.from({ length: 11 }, (_, i) => i * 10)
     const ttsAudioFreqSel = ttsFreqOpts.map(v =>
@@ -1416,24 +1414,38 @@ function renderIdentitySection(data: SectionData): string {
       `<option value="${d.value}" ${d.value === ttsMaxDur ? 'selected' : ''}>${d.label}</option>`
     ).join('')
 
-    // Condensed voice list (top voices only)
+    // Gemini TTS voices (auto-detect language)
     const ttsVoices = [
-      { value: 'es-US-Studio-B', label: 'ES (US) Studio B (M)' },
-      { value: 'es-US-Studio-F', label: 'ES (US) Studio F (F)' },
-      { value: 'es-ES-Neural2-A', label: 'ES (ES) Neural2 A (M)' },
-      { value: 'es-ES-Neural2-B', label: 'ES (ES) Neural2 B (F)' },
-      { value: 'en-US-Studio-M', label: 'EN (US) Studio M (M)' },
-      { value: 'en-US-Studio-O', label: 'EN (US) Studio O (F)' },
-      { value: 'en-GB-Studio-B', label: 'EN (GB) Studio B (M)' },
-      { value: 'en-GB-Studio-C', label: 'EN (GB) Studio C (F)' },
-      { value: 'pt-BR-Neural2-A', label: 'PT (BR) Neural2 A (F)' },
-      { value: 'pt-BR-Neural2-B', label: 'PT (BR) Neural2 B (M)' },
-      { value: 'fr-FR-Neural2-A', label: 'FR Neural2 A (F)' },
-      { value: 'fr-FR-Neural2-B', label: 'FR Neural2 B (M)' },
-      { value: 'de-DE-Neural2-B', label: 'DE Neural2 B (M)' },
-      { value: 'de-DE-Neural2-C', label: 'DE Neural2 C (F)' },
-      { value: 'it-IT-Neural2-A', label: 'IT Neural2 A (F)' },
-      { value: 'it-IT-Neural2-C', label: 'IT Neural2 C (M)' },
+      { value: 'Kore', label: 'Kore' },
+      { value: 'Puck', label: 'Puck' },
+      { value: 'Charon', label: 'Charon' },
+      { value: 'Zephyr', label: 'Zephyr' },
+      { value: 'Fenrir', label: 'Fenrir' },
+      { value: 'Leda', label: 'Leda' },
+      { value: 'Aoede', label: 'Aoede' },
+      { value: 'Orus', label: 'Orus' },
+      { value: 'Callirrhoe', label: 'Callirrhoe' },
+      { value: 'Autonoe', label: 'Autonoe' },
+      { value: 'Enceladus', label: 'Enceladus' },
+      { value: 'Iapetus', label: 'Iapetus' },
+      { value: 'Umbriel', label: 'Umbriel' },
+      { value: 'Algieba', label: 'Algieba' },
+      { value: 'Despina', label: 'Despina' },
+      { value: 'Erinome', label: 'Erinome' },
+      { value: 'Algenib', label: 'Algenib' },
+      { value: 'Rasalgethi', label: 'Rasalgethi' },
+      { value: 'Laomedeia', label: 'Laomedeia' },
+      { value: 'Achernar', label: 'Achernar' },
+      { value: 'Alnilam', label: 'Alnilam' },
+      { value: 'Schedar', label: 'Schedar' },
+      { value: 'Gacrux', label: 'Gacrux' },
+      { value: 'Pulcherrima', label: 'Pulcherrima' },
+      { value: 'Achird', label: 'Achird' },
+      { value: 'Zubenelgenubi', label: 'Zubenelgenubi' },
+      { value: 'Vindemiatrix', label: 'Vindemiatrix' },
+      { value: 'Sadachbia', label: 'Sadachbia' },
+      { value: 'Sadaltager', label: 'Sadaltager' },
+      { value: 'Sulafat', label: 'Sulafat' },
     ]
     const ttsHasCustom = !ttsVoices.some(v => v.value === ttsVoice)
     const ttsCustomOpt = ttsHasCustom ? `<option value="${esc(ttsVoice)}" selected>${esc(ttsVoice)} (custom)</option>` : ''
@@ -1485,22 +1497,6 @@ function renderIdentitySection(data: SectionData): string {
         <div class="ts-tts-field-compact">
           <label class="ts-tts-label-compact">${isEs ? 'Voz' : 'Voice'}</label>
           <select name="TTS_VOICE_NAME" data-original="${esc(ttsVoice)}" class="ts-tts-select-compact js-custom-select" id="id-tts-voice-select">${ttsCustomOpt}${ttsVoiceOpts}</select>
-        </div>
-        <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Velocidad' : 'Speed'}</label>
-          <div class="ts-tts-range-wrap-compact">
-            <input type="range" id="id-tts-rate" name="TTS_SPEAKING_RATE" min="0.25" max="4.0" step="0.25" value="${esc(ttsSpeakRate)}"
-              data-original="${esc(ttsSpeakRate)}" oninput="document.getElementById('id-tts-rate-val').textContent=this.value+'x'" class="range-primary">
-            <span id="id-tts-rate-val" class="ts-tts-range-value-compact">${esc(ttsSpeakRate)}x</span>
-          </div>
-        </div>
-        <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Tono' : 'Pitch'}</label>
-          <div class="ts-tts-range-wrap-compact">
-            <input type="range" id="id-tts-pitch" name="TTS_PITCH" min="-20.0" max="20.0" step="0.5" value="${esc(ttsPitch)}"
-              data-original="${esc(ttsPitch)}" oninput="document.getElementById('id-tts-pitch-val').textContent=this.value" class="range-primary">
-            <span id="id-tts-pitch-val" class="ts-tts-range-value-compact">${esc(ttsPitch)}</span>
-          </div>
         </div>
         <div class="ts-tts-preview-area-compact">
           <button type="button" id="id-tts-preview-btn" class="act-btn act-btn-add act-btn--compact" onclick="idTtsPreview()"
@@ -1597,8 +1593,6 @@ function renderIdentitySection(data: SectionData): string {
     var status = document.getElementById('id-tts-preview-status');
     var audio = document.getElementById('id-tts-preview-audio');
     var voiceSel = document.getElementById('id-tts-voice-select');
-    var rateInput = document.getElementById('id-tts-rate');
-    var pitchInput = document.getElementById('id-tts-pitch');
     if (!btn || !voiceSel) return;
 
     btn.disabled = true;
@@ -1606,7 +1600,6 @@ function renderIdentitySection(data: SectionData): string {
     audio.style.display = 'none';
 
     var voiceName = voiceSel.value;
-    var langCode = voiceName.substring(0, voiceName.lastIndexOf('-', voiceName.lastIndexOf('-') - 1));
 
     try {
       var res = await fetch('/console/api/console/tts-preview', {
@@ -1614,9 +1607,6 @@ function renderIdentitySection(data: SectionData): string {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           voiceName: voiceName,
-          languageCode: langCode,
-          speakingRate: parseFloat(rateInput.value) || 1.0,
-          pitch: parseFloat(pitchInput.value) || 0.0,
           text: ${JSON.stringify(isEs
             ? 'Hola, soy tu agente de inteligencia artificial. Asi es como suena mi voz.'
             : 'Hello, I am your AI agent. This is how my voice sounds.')}
@@ -1667,7 +1657,7 @@ function renderVoiceTTSSection(data: SectionData): string {
     </div></div>`
   }
 
-  const hasApiKey = !!(cfg['TTS_GOOGLE_API_KEY'])
+  const hasApiKey = !!(cfg['GOOGLE_AI_API_KEY'])
 
   // --- Frequency controls ---
   // Audio-to-audio frequency (default 80%)
@@ -1695,77 +1685,42 @@ function renderVoiceTTSSection(data: SectionData): string {
     `<option value="${d.value}" ${d.value === maxDurationVal ? 'selected' : ''}>${d.label}</option>`
   ).join('')
 
-  // --- Speaking rate (Google Cloud TTS: 0.25 to 4.0) ---
-  const speakingRate = cfg['TTS_SPEAKING_RATE'] || '1.0'
-
-  // --- Pitch ---
-  // Not available in the context but we keep existing config
-  // Google Cloud TTS pitch for non-Vertex: -20.0 to 20.0
-
   // --- Voice selection ---
-  // Google Cloud TTS voices (most common Studio & Standard voices)
+  // Gemini AI Studio TTS voices (auto-detect language)
   const voices = [
-    // Spanish
-    { value: 'es-US-Studio-B', label: 'Español (US) - Studio B (Male)' },
-    { value: 'es-US-Studio-F', label: 'Español (US) - Studio F (Female)' },
-    { value: 'es-US-Standard-A', label: 'Español (US) - Standard A (Male)' },
-    { value: 'es-US-Standard-B', label: 'Español (US) - Standard B (Male)' },
-    { value: 'es-US-Standard-C', label: 'Español (US) - Standard C (Female)' },
-    { value: 'es-US-Neural2-A', label: 'Español (US) - Neural2 A (Male)' },
-    { value: 'es-US-Neural2-B', label: 'Español (US) - Neural2 B (Male)' },
-    { value: 'es-US-Neural2-C', label: 'Español (US) - Neural2 C (Female)' },
-    { value: 'es-US-News-D', label: 'Español (US) - News D (Male)' },
-    { value: 'es-US-News-E', label: 'Español (US) - News E (Female)' },
-    { value: 'es-US-Wavenet-B', label: 'Español (US) - Wavenet B (Male)' },
-    { value: 'es-US-Wavenet-C', label: 'Español (US) - Wavenet C (Female)' },
-    { value: 'es-ES-Standard-A', label: 'Español (ES) - Standard A (Male)' },
-    { value: 'es-ES-Standard-B', label: 'Español (ES) - Standard B (Female)' },
-    { value: 'es-ES-Neural2-A', label: 'Español (ES) - Neural2 A (Male)' },
-    { value: 'es-ES-Neural2-B', label: 'Español (ES) - Neural2 B (Female)' },
-    { value: 'es-ES-Wavenet-B', label: 'Español (ES) - Wavenet B (Male)' },
-    { value: 'es-ES-Wavenet-C', label: 'Español (ES) - Wavenet C (Female)' },
-    // English
-    { value: 'en-US-Studio-M', label: 'English (US) - Studio M (Male)' },
-    { value: 'en-US-Studio-O', label: 'English (US) - Studio O (Female)' },
-    { value: 'en-US-Studio-Q', label: 'English (US) - Studio Q (Male)' },
-    { value: 'en-US-Neural2-A', label: 'English (US) - Neural2 A (Male)' },
-    { value: 'en-US-Neural2-C', label: 'English (US) - Neural2 C (Female)' },
-    { value: 'en-US-Neural2-D', label: 'English (US) - Neural2 D (Male)' },
-    { value: 'en-US-Neural2-F', label: 'English (US) - Neural2 F (Female)' },
-    { value: 'en-US-Wavenet-D', label: 'English (US) - Wavenet D (Male)' },
-    { value: 'en-US-Wavenet-F', label: 'English (US) - Wavenet F (Female)' },
-    { value: 'en-GB-Studio-B', label: 'English (GB) - Studio B (Male)' },
-    { value: 'en-GB-Studio-C', label: 'English (GB) - Studio C (Female)' },
-    { value: 'en-GB-Neural2-A', label: 'English (GB) - Neural2 A (Female)' },
-    { value: 'en-GB-Neural2-B', label: 'English (GB) - Neural2 B (Male)' },
-    // Portuguese
-    { value: 'pt-BR-Standard-A', label: 'Português (BR) - Standard A (Female)' },
-    { value: 'pt-BR-Standard-B', label: 'Português (BR) - Standard B (Male)' },
-    { value: 'pt-BR-Neural2-A', label: 'Português (BR) - Neural2 A (Female)' },
-    { value: 'pt-BR-Neural2-B', label: 'Português (BR) - Neural2 B (Male)' },
-    { value: 'pt-BR-Wavenet-A', label: 'Português (BR) - Wavenet A (Female)' },
-    { value: 'pt-BR-Wavenet-B', label: 'Português (BR) - Wavenet B (Male)' },
-    // French
-    { value: 'fr-FR-Standard-A', label: 'Français (FR) - Standard A (Female)' },
-    { value: 'fr-FR-Standard-B', label: 'Français (FR) - Standard B (Male)' },
-    { value: 'fr-FR-Neural2-A', label: 'Français (FR) - Neural2 A (Female)' },
-    { value: 'fr-FR-Neural2-B', label: 'Français (FR) - Neural2 B (Male)' },
-    { value: 'fr-FR-Wavenet-A', label: 'Français (FR) - Wavenet A (Female)' },
-    // German
-    { value: 'de-DE-Standard-A', label: 'Deutsch (DE) - Standard A (Female)' },
-    { value: 'de-DE-Standard-B', label: 'Deutsch (DE) - Standard B (Male)' },
-    { value: 'de-DE-Neural2-B', label: 'Deutsch (DE) - Neural2 B (Male)' },
-    { value: 'de-DE-Neural2-C', label: 'Deutsch (DE) - Neural2 C (Female)' },
-    { value: 'de-DE-Wavenet-A', label: 'Deutsch (DE) - Wavenet A (Female)' },
-    // Italian
-    { value: 'it-IT-Standard-A', label: 'Italiano (IT) - Standard A (Female)' },
-    { value: 'it-IT-Standard-C', label: 'Italiano (IT) - Standard C (Male)' },
-    { value: 'it-IT-Neural2-A', label: 'Italiano (IT) - Neural2 A (Female)' },
-    { value: 'it-IT-Neural2-C', label: 'Italiano (IT) - Neural2 C (Male)' },
-    { value: 'it-IT-Wavenet-A', label: 'Italiano (IT) - Wavenet A (Female)' },
+    { value: 'Kore', label: 'Kore' },
+    { value: 'Puck', label: 'Puck' },
+    { value: 'Charon', label: 'Charon' },
+    { value: 'Zephyr', label: 'Zephyr' },
+    { value: 'Fenrir', label: 'Fenrir' },
+    { value: 'Leda', label: 'Leda' },
+    { value: 'Aoede', label: 'Aoede' },
+    { value: 'Orus', label: 'Orus' },
+    { value: 'Callirrhoe', label: 'Callirrhoe' },
+    { value: 'Autonoe', label: 'Autonoe' },
+    { value: 'Enceladus', label: 'Enceladus' },
+    { value: 'Iapetus', label: 'Iapetus' },
+    { value: 'Umbriel', label: 'Umbriel' },
+    { value: 'Algieba', label: 'Algieba' },
+    { value: 'Despina', label: 'Despina' },
+    { value: 'Erinome', label: 'Erinome' },
+    { value: 'Algenib', label: 'Algenib' },
+    { value: 'Rasalgethi', label: 'Rasalgethi' },
+    { value: 'Laomedeia', label: 'Laomedeia' },
+    { value: 'Achernar', label: 'Achernar' },
+    { value: 'Alnilam', label: 'Alnilam' },
+    { value: 'Schedar', label: 'Schedar' },
+    { value: 'Gacrux', label: 'Gacrux' },
+    { value: 'Pulcherrima', label: 'Pulcherrima' },
+    { value: 'Achird', label: 'Achird' },
+    { value: 'Zubenelgenubi', label: 'Zubenelgenubi' },
+    { value: 'Vindemiatrix', label: 'Vindemiatrix' },
+    { value: 'Sadachbia', label: 'Sadachbia' },
+    { value: 'Sadaltager', label: 'Sadaltager' },
+    { value: 'Sulafat', label: 'Sulafat' },
   ]
 
-  const currentVoice = cfg['TTS_VOICE_NAME'] || 'es-US-Studio-B'
+  const currentVoice = cfg['TTS_VOICE_NAME'] || 'Kore'
   const voiceOptions = voices.map(v =>
     `<option value="${esc(v.value)}" ${v.value === currentVoice ? 'selected' : ''}>${esc(v.label)}</option>`
   ).join('')
@@ -1777,20 +1732,6 @@ function renderVoiceTTSSection(data: SectionData): string {
   const apiKeyStatus = hasApiKey
     ? `<span class="panel-badge badge-active">${isEs ? 'API Key configurada' : 'API Key configured'}</span>`
     : `<span class="panel-badge" class="ts-badge-error">${isEs ? 'API Key no configurada' : 'API Key not configured'}</span>`
-
-  // Slider helper
-  const rangeField = (id: string, label: string, info: string, min: number, max: number, step: number, value: string, unit: string) => `
-    <div class="ts-tts-field">
-      <label class="ts-tts-label">${label}</label>
-      <div class="ts-tts-range-wrap">
-        <input type="range" id="tts-${id}" name="${id}" min="${min}" max="${max}" step="${step}" value="${esc(value)}"
-          data-original="${esc(value)}"
-          oninput="document.getElementById('tts-${id}-val').textContent=this.value+'${unit}'"
-          class="range-primary">
-        <span id="tts-${id}-val" class="ts-tts-range-value">${esc(value)}${unit}</span>
-      </div>
-      <span class="ts-tts-hint">${info}</span>
-    </div>`
 
   // Column 1: Behavior
   const behaviorCol = `<div>
@@ -1843,26 +1784,12 @@ function renderVoiceTTSSection(data: SectionData): string {
       </div>
       <div class="panel-body">
         <div class="ts-tts-field">
-          <label class="ts-tts-label">${isEs ? 'Voz' : 'Voice'}</label>
+          <label class="ts-tts-label">${isEs ? 'Voz (Gemini)' : 'Voice (Gemini)'}</label>
           <select name="TTS_VOICE_NAME" data-original="${esc(currentVoice)}" class="ts-tts-select js-custom-select" id="tts-voice-select">
             ${customOption}${voiceOptions}
           </select>
+          <span class="ts-tts-hint">${isEs ? 'Gemini detecta el idioma automaticamente' : 'Gemini auto-detects language'}</span>
         </div>
-
-        <div class="ts-tts-field">
-          <label class="ts-tts-label">API Key</label>
-          <div class="ts-tts-password-wrap">
-            <input type="password" name="TTS_GOOGLE_API_KEY" value="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              data-original="${esc(cfg['TTS_GOOGLE_API_KEY'] || '')}"
-              class="ts-tts-select input-with-icon" placeholder="AIza...">
-            <button type="button" onclick="var i=this.previousElementSibling;i.type=i.type==='password'?'text':'password'"
-              class="ts-tts-toggle-vis">&#128065;</button>
-          </div>
-        </div>
-
-        ${rangeField('TTS_SPEAKING_RATE', isEs ? 'Velocidad' : 'Speed', isEs ? '0.25 (lento) a 4.0 (rapido). Default: 1.0' : '0.25 (slow) to 4.0 (fast). Default: 1.0', 0.25, 4.0, 0.25, speakingRate, 'x')}
-
-        ${rangeField('TTS_PITCH', isEs ? 'Tono' : 'Pitch', isEs ? '-20.0 (grave) a 20.0 (agudo). Default: 0.0' : '-20.0 (low) to 20.0 (high). Default: 0.0', -20.0, 20.0, 0.5, cfg['TTS_PITCH'] || '0.0', '')}
 
         <!-- Preview button -->
         <div class="ts-tts-preview-area">
@@ -1887,15 +1814,12 @@ function renderVoiceTTSSection(data: SectionData): string {
     var status = document.getElementById('tts-preview-status');
     var audio = document.getElementById('tts-preview-audio');
     var voiceSel = document.getElementById('tts-voice-select');
-    var rateInput = document.getElementById('tts-TTS_SPEAKING_RATE');
-    var pitchInput = document.getElementById('tts-TTS_PITCH');
 
     btn.disabled = true;
     status.textContent = '${isEs ? 'Generando...' : 'Generating...'}';
     audio.style.display = 'none';
 
     var voiceName = voiceSel.value;
-    var langCode = voiceName.substring(0, voiceName.lastIndexOf('-', voiceName.lastIndexOf('-') - 1));
 
     try {
       var res = await fetch('/console/api/console/tts-preview', {
@@ -1903,9 +1827,6 @@ function renderVoiceTTSSection(data: SectionData): string {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           voiceName: voiceName,
-          languageCode: langCode,
-          speakingRate: parseFloat(rateInput.value) || 1.0,
-          pitch: parseFloat(pitchInput.value) || 0.0,
           text: ${JSON.stringify(isEs
             ? 'Hola, soy tu agente de inteligencia artificial. Asi es como suena mi voz con esta configuracion.'
             : 'Hello, I am your AI agent. This is how my voice sounds with this configuration.')}

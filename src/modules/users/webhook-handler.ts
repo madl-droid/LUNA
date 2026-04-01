@@ -316,7 +316,7 @@ async function recordCampaignMatch(
       matchScore: number | null,
     ): Promise<void>
   }
-  const cq = registry.getOptional<CQ>('lead-scoring:campaign-queries')
+  const cq = registry.getOptional<CQ>('marketing-data:campaign-queries')
   if (cq) {
     try {
       await cq.recordMatch(contactId, campaignId, null, channelName, 1.0)

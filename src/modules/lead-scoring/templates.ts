@@ -755,16 +755,16 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     var optDisabled = cr.type !== 'enum' ? 'disabled' : ''
     return '<tr data-ls-cri="' + i + '">' +
       '<td><input value="' + lsEsc(cr.key||'') + '" data-field="key" style="width:80px" readonly></td>' +
-      '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\'name\',this.value)"></td>' +
-      '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\'type\',this.value)">' +
+      '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\\'name\\',this.value)"></td>' +
+      '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\\'type\\',this.value)">' +
         '<option value="text"' + (cr.type==='text'?' selected':'') + '>' + L.type_text + '</option>' +
         '<option value="enum"' + (cr.type==='enum'?' selected':'') + '>' + L.type_list + '</option>' +
         '<option value="boolean"' + (cr.type==='boolean'?' selected':'') + '>' + L.type_boolean + '</option>' +
       '</select></td>' +
-      '<td><input value="' + optVal + '" data-field="options" placeholder="opt1,opt2" ' + optDisabled + ' onchange="lsUpdateCri(' + i + ',\'options\',this.value)"></td>' +
-      '<td><input type="number" class="ls-w-input" value="' + (cr.weight||0) + '" min="0" max="100" onchange="lsUpdateCri(' + i + ',\'weight\',parseInt(this.value)||0)"></td>' +
-      '<td style="text-align:center"><input type="checkbox"' + (cr.required?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'required\',this.checked)"></td>' +
-      '<td style="text-align:center"><input type="checkbox"' + (cr.neverAskDirectly?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'neverAskDirectly\',this.checked)"></td>' +
+      '<td><input value="' + optVal + '" data-field="options" placeholder="opt1,opt2" ' + optDisabled + ' onchange="lsUpdateCri(' + i + ',\\'options\\',this.value)"></td>' +
+      '<td><input type="number" class="ls-w-input" value="' + (cr.weight||0) + '" min="0" max="100" onchange="lsUpdateCri(' + i + ',\\'weight\\',parseInt(this.value)||0)"></td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.required?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\\'required\\',this.checked)"></td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.neverAskDirectly?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\\'neverAskDirectly\\',this.checked)"></td>' +
       '<td><button type="button" class="ls-clear-btn" onclick="lsClearCri(' + i + ')" title="Limpiar">&#10005;</button></td></tr>'
   }
 

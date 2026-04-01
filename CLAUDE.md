@@ -38,7 +38,7 @@ src/
     engine/          — wrapper del pipeline para el kernel (ver CLAUDE.md)
     knowledge/       — base de conocimiento: docs, FAQs, sync, búsqueda (ver CLAUDE.md)
     scheduled-tasks/ — tareas programadas del agente (ver CLAUDE.md)
-    tts/             — síntesis de voz: Google Cloud TTS (ver CLAUDE.md)
+    tts/             — síntesis de voz: Google Gemini AI Studio TTS (ver CLAUDE.md)
     freight/         — wrapper modular de tool de flete (ver CLAUDE.md)
     medilink/        — integración Medilink/HealthAtom: pacientes, citas, follow-up (ver CLAUDE.md)
     freshdesk/       — integración Freshdesk Knowledge Base: búsqueda y sync de artículos (ver CLAUDE.md)
@@ -269,7 +269,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/knowledge/CLAUDE.md` — base de conocimiento (docs, FAQs, sync Drive/URLs, búsqueda híbrida)
 - `src/modules/scheduled-tasks/CLAUDE.md` — tareas programadas (cron, BullMQ, ejecucion LLM)
 - `src/engine/attachments/` — subsistema de adjuntos del engine (reemplaza módulo standalone src/modules/attachments/)
-- `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Cloud TTS, OGG_OPUS, PTT voice notes)
+- `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Gemini AI Studio TTS, WAV/PCM, PTT voice notes)
 - `src/modules/freight/CLAUDE.md` — wrapper modular de la tool de flete
 - `src/tools/freight/CLAUDE.md` — estimación de flete internacional (SeaRates + DHL Express)
 - `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks)
