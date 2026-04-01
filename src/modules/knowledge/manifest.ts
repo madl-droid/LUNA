@@ -1209,7 +1209,7 @@ const manifest: ModuleManifest = {
 
     // Initialize vectorize worker (if embeddings enabled)
     if (embeddingService) {
-      vectorizeWorker = new VectorizeWorker(redis, pgStore, embeddingService, logger)
+      vectorizeWorker = new VectorizeWorker(redis, pgStore, embeddingService, logger, registry)
       knowledgeManager.setVectorizeWorker(vectorizeWorker)
       logger.info('Vectorize worker initialized')
     }

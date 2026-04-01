@@ -43,7 +43,9 @@ export interface KnowledgeCategory {
 export interface KnowledgeDocument {
   id: string
   title: string
-  description: string         // max 200 chars — breve descripción para catálogo
+  description: string         // max 200 chars — admin-provided description
+  llmDescription: string | null  // auto-generated after content extraction
+  keywords: string[]          // auto-generated keywords for improved search
   isCore: boolean             // flag separado (max 3 docs core)
   sourceType: DocumentSourceType
   sourceRef: string | null    // Drive file ID, URL, o null para upload
