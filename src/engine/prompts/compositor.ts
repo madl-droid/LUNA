@@ -11,8 +11,18 @@ import type { ConfigStore } from '../../modules/lead-scoring/config-store.js'
 
 // Minimal fallback — full formats live in instance/prompts/system/channel-format-*.md
 const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
-  whatsapp: 'FORMATO WHATSAPP: Mensajes cortos y conversacionales. Máximo 300 caracteres. Sin markdown.',
-  email: 'FORMATO EMAIL: Formato rico, tono profesional, párrafos cortos. Incluye saludo y despedida.',
+  whatsapp: 'CANAL: WhatsApp — Categoría: mensajería instantánea\nMensajes cortos y conversacionales. Máximo 300 caracteres. Sin markdown.',
+  email: 'CANAL: Email — Categoría: comunicación asíncrona\nFormato rico, tono profesional, párrafos cortos. Incluye saludo y despedida.',
+}
+
+/** Map channel names to their communication category */
+const CHANNEL_CATEGORIES: Record<string, string> = {
+  whatsapp: 'mensajería instantánea',
+  'google-chat': 'mensajería instantánea',
+  instagram: 'mensajería instantánea',
+  messenger: 'mensajería instantánea',
+  email: 'comunicación asíncrona',
+  voice: 'voz en tiempo real',
 }
 
 /**
@@ -67,7 +77,8 @@ async function buildFormatFromForm(channel: string, db: import('pg').Pool): Prom
   const ex2 = all[`${prefix}_FORMAT_EXAMPLE_2`] || ''
   const ex3 = all[`${prefix}_FORMAT_EXAMPLE_3`] || ''
 
-  const lines: string[] = [`FORMATO ${channel.toUpperCase()}:`]
+  const category = CHANNEL_CATEGORIES[channel] ?? 'mensajería instantánea'
+  const lines: string[] = [`CANAL: ${channel} — Categoría: ${category}`]
 
   // Tone
   if (tone !== 'ninguno') lines.push(`- Tono: ${tone}`)
@@ -200,11 +211,20 @@ export async function buildCompositorPrompt(
     systemParts.push(`\n--- FORMATO ---\n${channelLimit}`)
   }
 
-  // TTS voice tags: inject when response will be converted to audio
-  if (ctx.responseFormat === 'audio' && promptsService) {
-    const voiceTags = await promptsService.getSystemPrompt('tts-voice-tags')
-    if (voiceTags) {
-      systemParts.push(`\n--- VOZ Y ENTONACIÓN ---\n${voiceTags}`)
+  // Audio response signaling: tell the LLM it's generating audio content
+  if (ctx.responseFormat === 'audio') {
+    systemParts.push(`\n--- FORMATO DE RESPUESTA: AUDIO ---
+Tu respuesta será convertida a nota de voz (audio). Escribe como si hablaras en voz alta:
+- NO uses listas, viñetas, markdown ni formato visual — el contacto no las verá
+- Usa frases cortas y naturales. Habla como en una conversación telefónica
+- Puedes usar los voice tags del siguiente bloque para dar expresividad`)
+
+    // TTS voice tags
+    if (promptsService) {
+      const voiceTags = await promptsService.getSystemPrompt('tts-voice-tags')
+      if (voiceTags) {
+        systemParts.push(`\n--- VOZ Y ENTONACIÓN ---\n${voiceTags}`)
+      }
     }
   }
 

@@ -1,4 +1,6 @@
-FORMATO GOOGLE CHAT:
+CANAL: Google Chat — Categoría: mensajería instantánea
+Comportamiento: entorno empresarial, respuestas rápidas pero profesionales. Similar a un chat de trabajo.
+
 - Mensajes concisos pero completos, maximo 2000 caracteres
 - Tono profesional apropiado para entorno empresarial
 - Puedes usar formato basico: **negrita**, *cursiva*, listas con viñetas
