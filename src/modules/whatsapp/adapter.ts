@@ -674,6 +674,14 @@ export class BaileysAdapter {
 
     if (applied.length > 0) {
       logger.info({ applied }, 'Privacy settings applied via individual Baileys APIs')
+      // Force-refresh Baileys' cached privacy settings so readMessages() sees the new values.
+      // Without this, readMessages() reads stale cache and sends 'read-self' instead of 'read'.
+      try {
+        if (sock.fetchPrivacySettings) {
+          await sock.fetchPrivacySettings(true)
+          logger.info('Privacy settings cache refreshed')
+        }
+      } catch (err) { logger.warn({ err }, 'Failed to refresh privacy settings cache') }
     }
   }
 }
