@@ -1916,19 +1916,18 @@ export function createApiRoutes(): ApiRoute[] {
             return
           }
 
-          // Save current config as prefill for wizard
-          const { saveFactoryResetPrefill } = await import('../../kernel/setup/handler.js')
-          const prefillToken = await saveFactoryResetPrefill(db, redis)
+          // Real factory reset: purge ALL data (including super admin)
+          await purgeAllData(registry, { preserveSuperAdmin: false })
 
-          // Mark setup as not completed
+          // Mark setup as not completed (must be after purge since purge flushes Redis)
           await configStore.set(db, 'SETUP_COMPLETED', 'false')
 
-          // Activate the setup wizard on the running server
+          // Activate the setup wizard on the running server (no prefill — start from scratch)
           const server = registry.getOptional<import('../../kernel/server.js').Server>('kernel:server')
           if (server) server.activateSetupWizard()
 
-          logger.info({ userId }, 'Factory reset initiated — wizard activated')
-          jsonResponse(res, 200, { ok: true, prefillToken })
+          logger.info({ userId }, 'Factory reset completed — all data purged, wizard activated')
+          jsonResponse(res, 200, { ok: true })
         } catch (err) {
           logger.error({ err }, 'Failed to initiate factory reset')
           jsonResponse(res, 500, { error: 'Internal server error' })
