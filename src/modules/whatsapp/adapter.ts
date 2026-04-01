@@ -403,7 +403,7 @@ export class BaileysAdapter {
     try {
       await this.socket.readMessages(keys as Parameters<WASocket['readMessages']>[0])
     } catch (err) {
-      logger.debug({ err, keys: keys.length }, 'Failed to mark messages as read')
+      logger.warn({ err, keys: keys.length }, 'Failed to mark messages as read')
     }
   }
 
@@ -447,6 +447,19 @@ export class BaileysAdapter {
     // Strip @mention tag from text for cleaner processing
     const cleanText = isGroup ? this.stripMentionTag(text) : text
 
+    // Extract quoted message context (when user cites/replies to a previous message)
+    const contextInfo = msg.message?.extendedTextMessage?.contextInfo
+    const quotedMsg = contextInfo?.quotedMessage
+    const quotedText: string | null = quotedMsg?.conversation
+      || quotedMsg?.extendedTextMessage?.text
+      || quotedMsg?.imageMessage?.caption
+      || null
+
+    // Prefix with quoted context so the LLM knows what the user is replying to
+    const finalText = (quotedText && cleanText)
+      ? `[Citando: "${quotedText.slice(0, 300)}"]\n${cleanText}`
+      : cleanText
+
     // Build attachments array for media messages
     const attachments = this.extractAttachments(msg)
 
@@ -466,7 +479,7 @@ export class BaileysAdapter {
           : msg.message?.audioMessage ? 'audio'
           : msg.message?.documentMessage ? 'document'
           : 'text',
-        text: cleanText,
+        text: finalText,
       },
       attachments: attachments.length > 0 ? attachments : undefined,
       raw: msg,

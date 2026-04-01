@@ -451,13 +451,20 @@ async function sendMessages(
       await new Promise(resolve => setTimeout(resolve, delay))
     }
 
+    // Also quote in individual chats when the incoming message was itself a quote/reply
+    const rawIncoming = ctx.message.raw as Record<string, unknown> | undefined
+    const incomingHasQuote = !!(
+      (rawIncoming?.message as Record<string, unknown> | undefined)
+        ?.extendedTextMessage as Record<string, unknown> | undefined
+    )?.contextInfo
+
     try {
       await sendWithRetry(
         () => registry.runHook('message:send', {
           channel: ctx.message.channelName,
           to: sendTo,
           content: { type: 'text', text: part },
-          quotedRaw: (isGroupReply && i === 0) ? ctx.message.raw : undefined,
+          quotedRaw: ((isGroupReply || incomingHasQuote) && i === 0) ? ctx.message.raw : undefined,
           correlationId: ctx.traceId,
         }),
         ctx.traceId,

@@ -218,7 +218,14 @@ async function processMessageInner(
     const rawMsgSignal = message.raw as Record<string, Record<string, string>> | undefined
     const signalGroupJid = rawMsgSignal?.key?.remoteJid
     const signalTo = signalGroupJid?.endsWith('@g.us') ? signalGroupJid : message.from
-    const messageKeys = message.raw ? [{ remoteJid: rawMsgSignal?.key?.remoteJid, id: message.channelMessageId, fromMe: false }] : undefined
+    const messageKeys = message.raw
+      ? [{
+          remoteJid: rawMsgSignal?.key?.remoteJid,
+          id: message.channelMessageId,
+          fromMe: false,
+          participant: rawMsgSignal?.key?.participant ?? undefined,
+        }]
+      : undefined
 
     registry.runHook('channel:ack', {
       channel: message.channelName,

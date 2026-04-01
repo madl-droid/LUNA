@@ -19,7 +19,6 @@ export class PresenceManager {
     if (!this.socket) return
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`
     try {
-      await this.socket.presenceSubscribe(jid)
       await this.socket.sendPresenceUpdate('composing', jid)
 
       // Auto-clear after 25s (WhatsApp auto-clears at 30s)
@@ -30,7 +29,7 @@ export class PresenceManager {
       }, 25000)
       this.activePresences.set(jid, timer)
     } catch (err) {
-      logger.debug({ err, to }, 'Failed to send composing presence')
+      logger.warn({ err, to }, 'Failed to send composing presence')
     }
   }
 
@@ -38,7 +37,6 @@ export class PresenceManager {
     if (!this.socket) return
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`
     try {
-      await this.socket.presenceSubscribe(jid)
       await this.socket.sendPresenceUpdate('recording', jid)
 
       // Auto-clear after 25s (WhatsApp auto-clears at 30s)
@@ -49,7 +47,7 @@ export class PresenceManager {
       }, 25000)
       this.activePresences.set(jid, timer)
     } catch (err) {
-      logger.debug({ err, to }, 'Failed to send recording presence')
+      logger.warn({ err, to }, 'Failed to send recording presence')
     }
   }
 
