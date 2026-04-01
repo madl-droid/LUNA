@@ -50,10 +50,10 @@ const manifest: ModuleManifest = {
     MEMORY_MAX_CONTACT_MEMORY_WORDS: numEnv(2000),
 
     // Retention and purge
-    MEMORY_SUMMARY_RETENTION_DAYS: numEnv(90),
+    MEMORY_SUMMARY_RETENTION_DAYS: numEnv(120),
     MEMORY_ARCHIVE_RETENTION_YEARS: numEnv(2),
     MEMORY_PIPELINE_LOGS_RETENTION_DAYS: numEnv(90),
-    MEMORY_MEDIA_RETENTION_MONTHS: numEnv(24),
+    MEMORY_MEDIA_RETENTION_MONTHS: numEnv(3),
     MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolEnv(true),
     MEMORY_PURGE_MERGED_SUMMARIES: boolEnv(false),
     MEMORY_RECOMPRESSION_INTERVAL_DAYS: numEnv(30),
@@ -115,7 +115,7 @@ const manifest: ModuleManifest = {
 
       // ── Retencion ──
       { key: '_div_retention', type: 'divider', label: { es: 'Retencion de datos', en: 'Data retention' } },
-      { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resumenes de interacciones (dias)', en: 'Interaction summaries (days)' }, info: { es: 'Dias antes de eliminar resumenes de sesion', en: 'Days before deleting session summaries' }, width: 'half' },
+      { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resumenes de interacciones (dias)', en: 'Interaction summaries (days)' }, info: { es: 'Dias antes de eliminar resumenes de sesion. Maximo 730 dias (2 anos).', en: 'Days before deleting session summaries. Maximum 730 days (2 years).' }, width: 'half', min: 30, max: 730 },
       { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Registros del sistema (dias)', en: 'System logs (days)' }, info: { es: 'Dias antes de eliminar registros de procesamiento interno', en: 'Days before deleting internal processing logs' }, width: 'half' },
       {
         key: 'MEMORY_ARCHIVE_RETENTION_YEARS',
@@ -136,10 +136,10 @@ const manifest: ModuleManifest = {
         key: 'MEMORY_MEDIA_RETENTION_MONTHS',
         type: 'number',
         label: { es: 'Almacenamiento de archivos (meses)', en: 'File storage (months)' },
-        info: { es: 'Meses de retencion de imagenes y archivos multimedia. Maximo 120 meses (10 anos).', en: 'Months to retain images and media files. Maximum 120 months (10 years).' },
+        info: { es: 'Meses de retencion de imagenes y archivos multimedia. Maximo 24 meses (2 anos).', en: 'Months to retain images and media files. Maximum 24 months (2 years).' },
         width: 'half',
         min: 1,
-        max: 120,
+        max: 24,
       },
       { key: 'MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS', type: 'boolean', label: { es: 'Borrar mensajes tras comprimir', en: 'Purge messages after compress' }, info: { es: 'Eliminar mensajes originales una vez generado el resumen', en: 'Delete original messages once summary is generated' } },
       { key: 'MEMORY_PURGE_MERGED_SUMMARIES', type: 'boolean', label: { es: 'Borrar resumenes fusionados', en: 'Purge merged summaries' }, info: { es: 'Eliminar resumenes intermedios ya integrados en la memoria permanente', en: 'Delete intermediate summaries already integrated into permanent memory' } },
