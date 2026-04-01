@@ -13,6 +13,7 @@ const REQUIRED_DIRS = [
   'instance/fallbacks/email',
   'instance/tools',
   'instance/wa-auth',
+  'instance/system',
 ]
 
 /**

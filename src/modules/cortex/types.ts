@@ -248,7 +248,7 @@ export interface PulseConfig {
 // Dispatch
 // ═══════════════════════════════════════════
 
-export type DispatchChannel = 'whatsapp' | 'email' | 'telegram'
+export type DispatchChannel = 'whatsapp' | 'email' | 'telegram' | 'google-chat'
 
 /** Maps dispatch channels to LUNA components they depend on.
  *  If the dependent component is down, don't use that channel. */
@@ -256,4 +256,5 @@ export const CHANNEL_DEPENDENCIES: Record<DispatchChannel, string[]> = {
   whatsapp: ['whatsapp'],
   email: ['gmail'],
   telegram: [],
+  'google-chat': ['google-chat'],
 }

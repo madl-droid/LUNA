@@ -30,7 +30,7 @@ export class Evaluator {
     private readonly counters: CounterSet,
     private readonly ringBuffer: RingBuffer,
   ) {
-    this.alertManager = new AlertManager(redis, registry, config, ringBuffer)
+    this.alertManager = new AlertManager(redis, registry, config, ringBuffer, db)
   }
 
   start(): void {

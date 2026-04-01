@@ -11,6 +11,7 @@ import { LLMGateway } from './llm-gateway.js'
 import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget, TTSRequest } from './types.js'
 
 let _gateway: LLMGateway | null = null
+let _pricingTimer: ReturnType<typeof setInterval> | null = null
 
 const manifest: ModuleManifest = {
   name: 'llm',
@@ -502,9 +503,19 @@ const manifest: ModuleManifest = {
 
     // Refresh models on init (non-blocking)
     _gateway.refreshModels().catch(() => { /* logged internally */ })
+
+    // Start bi-monthly pricing check (1st & 16th of each month)
+    try {
+      const { startPricingCheck } = await import('./pricing-sync.js')
+      _pricingTimer = startPricingCheck(registry)
+    } catch { /* pricing-sync is best-effort */ }
   },
 
   async stop() {
+    if (_pricingTimer) {
+      clearInterval(_pricingTimer)
+      _pricingTimer = null
+    }
     if (_gateway) {
       _gateway.stop()
       _gateway = null

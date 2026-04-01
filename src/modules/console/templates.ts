@@ -303,9 +303,10 @@ function renderHeader(opts: PageOptions): string {
         <button class="header-icon-btn" id="btn-notifications" data-dropdown="notif-panel">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span class="header-notif-dot" id="notif-dot"></span>
+          <span class="header-notif-count" id="notif-count"></span>
         </button>
         <div class="header-dropdown" id="notif-panel">
-          <div class="dropdown-header">${i18n('notif', opts.lang)}</div>
+          <div class="dropdown-header" style="display:flex;justify-content:space-between;align-items:center">${i18n('notif', opts.lang)}<button id="notif-mark-all" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:0.75rem;padding:0;display:none">${opts.lang === 'es' ? 'Marcar todo leído' : 'Mark all read'}</button></div>
           <div class="dropdown-body" id="notif-list">
             <div class="dropdown-empty">${i18n('noNotif', opts.lang)}</div>
           </div>

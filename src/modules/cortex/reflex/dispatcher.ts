@@ -129,6 +129,9 @@ export async function sendViaChannel(
       case 'email':
         await sendEmail(message, admins, registry)
         break
+      case 'google-chat':
+        await sendGoogleChat(message, admins, registry)
+        break
     }
     logger.debug({ channel }, 'Alert dispatched')
   } catch (err) {
@@ -179,6 +182,17 @@ export async function sendEmail(message: string, admins: AdminContact[], registr
   for (const admin of emailAdmins) {
     await registry.runHook('message:send', {
       channel: 'email',
+      to: admin.senderId,
+      content: { type: 'text', text: message },
+    })
+  }
+}
+
+export async function sendGoogleChat(message: string, admins: AdminContact[], registry: Registry): Promise<void> {
+  const gcAdmins = admins.filter(a => a.channel === 'google-chat')
+  for (const admin of gcAdmins) {
+    await registry.runHook('message:send', {
+      channel: 'google-chat',
       to: admin.senderId,
       content: { type: 'text', text: message },
     })

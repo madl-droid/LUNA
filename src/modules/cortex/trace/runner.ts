@@ -12,6 +12,7 @@ import * as store from './store.js'
 import { runSingleSimulation } from './simulator.js'
 import { analyzeSimulation } from './analyst.js'
 import { synthesizeResults } from './synthesizer.js'
+import * as notifStore from '../notifications.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'cortex:trace:runner' })
@@ -254,6 +255,15 @@ async function processRun(
     synthesisModel,
     tokensInput: totalTokensIn,
     tokensOutput: totalTokensOut,
+  })
+
+  // Push notification to console bell
+  void notifStore.create(db, {
+    source: 'trace',
+    severity: 'info',
+    title: `Trace completado: ${run.variant_name || 'simulación'}`,
+    body: `${simCount} simulaciones — ${Math.round((Date.now() - startMs) / 1000)}s`,
+    metadata: { runId: run.id, simCount },
   })
 
   logger.info({
