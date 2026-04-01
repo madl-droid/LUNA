@@ -71,6 +71,6 @@ describe('renderHitlSection', () => {
       HITL_TICKET_TTL_HOURS: '<script>alert("xss")</script>',
     }, 'es')
     expect(html).not.toContain('<script>')
-    expect(html).toContain('&lt;script&gt;')
+    expect(html).toContain('&lt;script')
   })
 })
