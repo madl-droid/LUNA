@@ -342,10 +342,7 @@ const manifest: ModuleManifest = {
       if (payload.channel !== 'whatsapp') return
       if (!adapter) return
       if (payload.messageKeys && Array.isArray(payload.messageKeys)) {
-        manifestLogger.info({ keys: payload.messageKeys }, 'channel:read — calling markRead')
         await adapter.markRead(payload.messageKeys as Array<{ remoteJid: string; id: string; fromMe: boolean }>)
-      } else {
-        manifestLogger.warn({ hasKeys: !!payload.messageKeys, isArray: Array.isArray(payload.messageKeys) }, 'channel:read — messageKeys missing or invalid')
       }
     })
 

@@ -18,16 +18,18 @@ Gateway centralizado para Anthropic y Google (Gemini). Circuit breaker (por prov
 
 | Tarea | Task type | Modelo primario | Fallback |
 |-------|-----------|----------------|----------|
-| Fase 2 (evaluate) | `classify` | Sonnet | Haiku → Flash |
-| Fase 3 simple (≤2 LLM steps) | `tools` | Sonnet | Haiku → Flash |
+| Fase 2 (evaluate) | `classify` | Sonnet | Flash |
+| Fase 3 simple (≤2 LLM steps) | `tools` | Sonnet | Flash |
 | Fase 3 compleja (3+ LLM steps) | `complex` | Opus | Sonnet → Pro |
-| Fase 4 (compose) | `respond` | Gemini Flash | Flash-Lite → Haiku |
+| Fase 4 (compose) | `respond` | Gemini Flash | Flash-Lite → Sonnet |
 | Criticizer (quality gate) | `criticize` | Gemini Pro | Flash → Sonnet |
-| Leer documentos | `document_read` | Sonnet | Haiku → Flash |
+| Leer documentos | `document_read` | Sonnet | Flash |
 | Procesar multimedia | `vision` | Gemini Flash | Flash-Lite → Sonnet |
 | Búsqueda web | `web_search` | Gemini Flash+grounding | Pro → Sonnet |
-| Batch nocturno | `batch` | Sonnet | Haiku → Flash |
+| Batch nocturno | `batch` | Sonnet | Flash |
 | TTS | `tts` | Gemini Pro TTS | — |
+| Compresión de sesiones | `compress` | Haiku | Flash |
+| Mensajes ACK | `ack` | Haiku | Flash |
 
 ### Complejidad de Fase 3
 Un plan es "complejo" cuando tiene **3+ steps que requieren LLM** (subagent, web_search, code_execution).

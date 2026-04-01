@@ -397,13 +397,11 @@ export class BaileysAdapter {
    * @param keys Array of Baileys message keys ({ remoteJid, id, fromMe })
    */
   async markRead(keys: Array<{ remoteJid: string; id: string; fromMe: boolean }>): Promise<void> {
-    if (!this.socket) { logger.warn('markRead: no socket'); return }
-    if (keys.length === 0) { logger.warn('markRead: empty keys'); return }
-    if (!this.config.WHATSAPP_PRIVACY_READ_RECEIPTS) { logger.info('markRead: read receipts disabled in config'); return }
+    if (!this.socket) return
+    if (keys.length === 0) return
+    if (!this.config.WHATSAPP_PRIVACY_READ_RECEIPTS) return
     try {
-      logger.info({ keys }, 'markRead: sending readMessages')
       await this.socket.readMessages(keys as Parameters<WASocket['readMessages']>[0])
-      logger.info('markRead: readMessages succeeded')
     } catch (err) {
       logger.warn({ err, keys: keys.length }, 'Failed to mark messages as read')
     }
@@ -672,8 +670,8 @@ export class BaileysAdapter {
       // Without this, readMessages() reads stale cache and sends 'read-self' instead of 'read'.
       try {
         if (sock.fetchPrivacySettings) {
-          const cached = await sock.fetchPrivacySettings(true)
-          logger.info({ cached }, 'Privacy settings cache refreshed — Baileys will use these for readMessages()')
+          await sock.fetchPrivacySettings(true)
+          logger.info('Privacy settings cache refreshed')
         }
       } catch (err) { logger.warn({ err }, 'Failed to refresh privacy settings cache') }
     }

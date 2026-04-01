@@ -289,7 +289,6 @@ async function processMessageInner(
     }
 
     // ═══ SIGNAL: READ (mark as read) — before Phase 2 ═══
-    logger.info({ traceId, messageKeys, signalTo, hasRaw: !!message.raw }, 'Firing channel:read')
     registry.runHook('channel:read', {
       channel: message.channelName,
       to: signalTo,

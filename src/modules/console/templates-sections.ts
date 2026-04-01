@@ -581,102 +581,211 @@ export function renderInfraUnifiedSection(data: SectionData): string {
 // Agent Advanced — curated settings transferred from modules page
 // ═══════════════════════════════════════════
 
+/** Row in the model assignment table */
+function modelTaskRow(label: string, model: string, badge?: string): string {
+  return `<div class="model-task-row">
+    <span class="model-task-label">${esc(label)}</span>
+    <span class="model-task-value">${esc(model)}${badge ? `<span class="model-task-badge">${badge}</span>` : ''}</span>
+  </div>`
+}
+
+/** Read-only model assignment panel — organized by user spec, no Haiku */
+function renderAdvancedModelsContent(data: SectionData, lang: string): string {
+  const isEs = lang === 'es'
+  const scanInfo = data.lastScan
+    ? `<span class="scan-info">${t('lastScan', data.lang)}: ${esc(data.lastScan.lastScanAt)}</span>`
+    : ''
+  const scanReplacements = (data.lastScan?.replacements?.length)
+    ? data.lastScan.replacements.map(r =>
+        `<div class="scan-replacement">
+          ${esc(r.configKey)}: <s>${esc(r.oldModel)}</s> → <b>${esc(r.newModel)}</b>
+        </div>`
+      ).join('') : ''
+
+  // Criticizer mode select
+  const criticModeOptions = [
+    { value: 'disabled', label: isEs ? 'Desactivado' : 'Disabled' },
+    { value: 'complex_only', label: isEs ? 'Solo planes complejos (≥3 pasos)' : 'Complex plans only (≥3 steps)' },
+    { value: 'always', label: isEs ? 'Siempre' : 'Always' },
+  ]
+  const currentCriticMode = cv(data, 'LLM_CRITICIZER_MODE') || 'complex_only'
+  const criticModeOpts = criticModeOptions.map(o =>
+    `<option value="${o.value}" ${o.value === currentCriticMode ? 'selected' : ''}>${o.label}</option>`
+  ).join('')
+
+  return `
+  <div class="scan-bar">
+    <button type="button" class="wa-btn wa-btn-connect" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
+    ${scanInfo}
+  </div>
+  <div id="scan-replacements">${scanReplacements}</div>
+
+  <div class="model-group-header">
+    <span class="model-group-provider model-group-provider--anthropic">Anthropic</span>
+  </div>
+  <div class="model-task-list">
+    ${modelTaskRow(isEs ? 'Fase 2 — Evaluacion de intent' : 'Phase 2 — Intent evaluation', 'Claude Sonnet')}
+    ${modelTaskRow(isEs ? 'Fase 3 simple (≤2 pasos LLM)' : 'Phase 3 simple (≤2 LLM steps)', 'Claude Sonnet')}
+    ${modelTaskRow(isEs ? 'Fase 3 complejo (3+ pasos LLM)' : 'Phase 3 complex (3+ LLM steps)', 'Claude Opus')}
+    ${modelTaskRow(isEs ? 'Lectura de documentos' : 'Document reading', 'Claude Sonnet')}
+    ${modelTaskRow(isEs ? 'Batch nocturno' : 'Nightly batch', 'Claude Sonnet')}
+  </div>
+
+  <div class="model-group-header">
+    <span class="model-group-provider model-group-provider--google">Google Gemini</span>
+  </div>
+  <div class="model-task-list">
+    ${modelTaskRow(isEs ? 'Respuesta (Fase 4)' : 'Response (Phase 4)', 'Gemini Flash 2.5')}
+    ${modelTaskRow(isEs ? 'Multimedia (imagenes, video, audio)' : 'Multimedia (images, video, audio)', 'Gemini Flash 2.5')}
+    ${modelTaskRow(isEs ? 'Busqueda web' : 'Web search', 'Gemini Flash 2.5', isEs ? 'grounding nativo' : 'native grounding')}
+    ${modelTaskRow(isEs ? 'Criticizer (revisor de calidad)' : 'Criticizer (quality reviewer)', 'Gemini Pro 2.5')}
+  </div>
+
+  <div class="field">
+    <div class="field-left">
+      <span class="field-label">${isEs ? 'Modo del criticizer' : 'Criticizer mode'}</span>
+    </div>
+    <select class="js-custom-select" name="LLM_CRITICIZER_MODE" data-original="${esc(currentCriticMode)}">${criticModeOpts}</select>
+  </div>
+
+  <div class="model-group-header">
+    <span class="model-group-provider model-group-provider--external">${isEs ? 'Configurado en su modulo' : 'Configured in their module'}</span>
+  </div>
+  <div class="model-task-list">
+    ${modelTaskRow('TTS', 'Gemini Pro TTS', isEs ? 'modulo Voz' : 'Voice module')}
+    ${modelTaskRow(isEs ? 'Embeddings (knowledge)' : 'Embeddings (knowledge)', 'text-embedding-004', isEs ? 'modulo Knowledge' : 'Knowledge module')}
+    ${modelTaskRow(isEs ? 'Compresion de sesiones (interno)' : 'Session compression (internal)', 'Claude Haiku', isEs ? 'optimizado costo' : 'cost-optimized')}
+  </div>
+  <script type="application/json" id="models-data">${JSON.stringify(data.allModels ?? {})}</script>`
+}
+
 export function renderAdvancedAgentSection(data: SectionData): string {
+  const isEs = data.lang === 'es'
   let h = ''
 
-  // Panel 1: API Keys
-  const apiTitle = data.lang === 'es' ? 'API Keys' : 'API Keys'
-  const apiInfo = data.lang === 'es'
-    ? 'Claves de acceso a proveedores LLM. Los overrides permiten usar keys distintas por capacidad.'
-    : 'LLM provider access keys. Overrides allow different keys per capability.'
+  // Panel 1: API Keys (basic/advanced mode with JS toggle)
+  const currentApiMode = cv(data, 'LLM_API_MODE') || 'basic'
+  const apiModeOpts = [
+    { value: 'basic', label: isEs ? 'Basico (una key por proveedor)' : 'Basic (one key per provider)' },
+    { value: 'advanced', label: isEs ? 'Avanzado (keys por funcion)' : 'Advanced (keys per function)' },
+  ].map(o => `<option value="${o.value}" ${o.value === currentApiMode ? 'selected' : ''}>${o.label}</option>`).join('')
+
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${apiTitle}</span>
+      <span class="panel-title">API Keys</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
-      <div class="panel-info">${apiInfo}</div>
+      <div class="panel-info">${isEs
+        ? 'Claves de acceso a los proveedores LLM. El modo avanzado permite asignar keys separadas por grupo de uso (engine, multimedia, voz, knowledge).'
+        : 'LLM provider access keys. Advanced mode lets you assign separate keys per usage group (engine, multimedia, voice, knowledge).'}</div>
+
+      <div class="field-divider"><span>${isEs ? 'Modo' : 'Mode'}</span></div>
+      <div class="field">
+        <div class="field-left"><span class="field-label">${isEs ? 'Modo de API Keys' : 'API Key Mode'}</span></div>
+        <select class="js-custom-select" name="LLM_API_MODE" data-original="${esc(currentApiMode)}"
+          onchange="document.getElementById('adv-keys').style.display=this.value==='advanced'?'block':'none'"
+        >${apiModeOpts}</select>
+      </div>
+
+      <div class="field-divider"><span>${isEs ? 'Keys principales' : 'Main keys'}</span></div>
       ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang, 'f_ANTHROPIC_API_KEY', 'i_ANTHROPIC_API_KEY')}
       ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang, 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY')}
-      ${secretField('LLM_VISION_API_KEY', cv(data, 'LLM_VISION_API_KEY'), data.lang,
-        data.lang === 'es' ? 'API Key Vision (override)' : 'Vision API Key (override)',
-        data.lang === 'es' ? 'Usar API key diferente para tareas de vision' : 'Use different API key for vision tasks')}
-      ${secretField('LLM_STT_API_KEY', cv(data, 'LLM_STT_API_KEY'), data.lang,
-        data.lang === 'es' ? 'API Key STT (override)' : 'STT API Key (override)',
-        data.lang === 'es' ? 'Usar API key diferente para Speech-to-Text' : 'Use different API key for Speech-to-Text')}
-      ${secretField('KNOWLEDGE_GOOGLE_AI_API_KEY', cv(data, 'KNOWLEDGE_GOOGLE_AI_API_KEY'), data.lang,
-        data.lang === 'es' ? 'API Key Embeddings (override)' : 'Embeddings API Key (override)',
-        data.lang === 'es' ? 'API key de Google AI para embeddings de conocimiento' : 'Google AI API key for knowledge embeddings')}
+
+      <div id="adv-keys" style="display:${currentApiMode === 'advanced' ? 'block' : 'none'}">
+        <div class="field-divider"><span>Google Gemini — ${isEs ? 'por grupo' : 'by group'}</span></div>
+        ${secretField('LLM_GOOGLE_ENGINE_API_KEY', cv(data, 'LLM_GOOGLE_ENGINE_API_KEY'), data.lang,
+          'Gemini — Engine',
+          isEs ? 'Key para compose y web_search (Fase 4, busqueda web). Fallback: Google AI Key.' : 'Key for compose and web_search (Phase 4, web search). Fallback: Google AI Key.')}
+        ${secretField('LLM_GOOGLE_MULTIMEDIA_API_KEY', cv(data, 'LLM_GOOGLE_MULTIMEDIA_API_KEY'), data.lang,
+          'Gemini — Multimedia',
+          isEs ? 'Key para vision, STT, archivos multimedia. Fallback: Google AI Key.' : 'Key for vision, STT, multimedia files. Fallback: Google AI Key.')}
+        ${secretField('LLM_GOOGLE_VOICE_API_KEY', cv(data, 'LLM_GOOGLE_VOICE_API_KEY'), data.lang,
+          isEs ? 'Gemini — Voz' : 'Gemini — Voice',
+          isEs ? 'Key para TTS y Gemini Live. Fallback: Google AI Key.' : 'Key for TTS and Gemini Live. Fallback: Google AI Key.')}
+        ${secretField('LLM_GOOGLE_KNOWLEDGE_API_KEY', cv(data, 'LLM_GOOGLE_KNOWLEDGE_API_KEY'), data.lang,
+          'Gemini — Knowledge',
+          isEs ? 'Key para embeddings de conocimiento. Fallback: Google AI Key.' : 'Key for knowledge embeddings. Fallback: Google AI Key.')}
+
+        <div class="field-divider"><span>Anthropic — ${isEs ? 'por grupo' : 'by group'}</span></div>
+        ${secretField('LLM_ANTHROPIC_ENGINE_API_KEY', cv(data, 'LLM_ANTHROPIC_ENGINE_API_KEY'), data.lang,
+          'Anthropic — Engine',
+          isEs ? 'Key para classify, tools, complex, proactive. Fallback: Anthropic API Key.' : 'Key for classify, tools, complex, proactive. Fallback: Anthropic API Key.')}
+        ${secretField('LLM_ANTHROPIC_CORTEX_API_KEY', cv(data, 'LLM_ANTHROPIC_CORTEX_API_KEY'), data.lang,
+          'Anthropic — Cortex',
+          isEs ? 'Key para Pulse, Trace, Reflex. Fallback: Anthropic API Key.' : 'Key for Pulse, Trace, Reflex. Fallback: Anthropic API Key.')}
+        ${secretField('LLM_ANTHROPIC_MEMORY_API_KEY', cv(data, 'LLM_ANTHROPIC_MEMORY_API_KEY'), data.lang,
+          isEs ? 'Anthropic — Memoria' : 'Anthropic — Memory',
+          isEs ? 'Key para compresion de sesiones y batch nocturno. Fallback: Anthropic API Key.' : 'Key for session compression and nightly batch. Fallback: Anthropic API Key.')}
+      </div>
     </div>
   </div>`
 
-  // Panel 2: Models (primary + downgrade + fallback)
+  // Panel 2: Models — clean task→model display organized by spec
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${t('sec_models', data.lang)}</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
-      <div class="panel-info">${t('sec_models_info', data.lang)}</div>
-      ${renderModelsContent(data)}
+      <div class="panel-info">${isEs
+        ? 'Modelos asignados por tarea. La tabla refleja la configuracion activa del motor.'
+        : 'Models assigned per task. The table reflects the active engine configuration.'}</div>
+      ${renderAdvancedModelsContent(data, data.lang)}
     </div>
   </div>`
 
   // Panel 3: Funciones avanzadas
-  const featTitle = data.lang === 'es' ? 'Funciones avanzadas' : 'Advanced features'
-  const featInfo = data.lang === 'es'
-    ? 'Extraccion de URLs, scoring nocturno de leads, compresion de sesiones y reporte diario.'
-    : 'URL extraction, nightly lead scoring, session compression and daily report.'
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${featTitle}</span>
+      <span class="panel-title">${isEs ? 'Funciones avanzadas' : 'Advanced features'}</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
-      <div class="panel-info">${featInfo}</div>
+      <div class="panel-info">${isEs
+        ? 'Extraccion de URLs, scoring nocturno de leads, compresion de sesiones y reporte diario.'
+        : 'URL extraction, nightly lead scoring, session compression and daily report.'}</div>
       ${boolField('ATTACHMENT_URL_ENABLED', cv(data, 'ATTACHMENT_URL_ENABLED') || 'true', data.lang,
-        data.lang === 'es' ? 'Extraer contenido de URLs' : 'Extract URL content',
-        data.lang === 'es' ? 'Detectar y extraer contenido de URLs en mensajes' : 'Detect and extract content from URLs in messages')}
+        isEs ? 'Extraer contenido de URLs' : 'Extract URL content',
+        isEs ? 'Detectar y extraer contenido de URLs en mensajes' : 'Detect and extract content from URLs in messages')}
       ${boolField('NIGHTLY_SCORING_ENABLED', cv(data, 'NIGHTLY_SCORING_ENABLED') || 'true', data.lang,
-        data.lang === 'es' ? 'Scoring de leads frios' : 'Cold lead scoring',
-        data.lang === 'es' ? 'Re-evalua leads frios con LLM para decidir si vale la pena reactivarlos' : 'Re-evaluate cold leads with LLM to decide if reactivation is worthwhile')}
+        isEs ? 'Scoring de leads frios' : 'Cold lead scoring',
+        isEs ? 'Re-evalua leads frios con LLM para decidir si vale la pena reactivarlos' : 'Re-evaluate cold leads with LLM to decide if reactivation is worthwhile')}
       ${numField('NIGHTLY_SCORING_THRESHOLD', cv(data, 'NIGHTLY_SCORING_THRESHOLD'), data.lang,
-        data.lang === 'es' ? 'Threshold de reactivacion' : 'Reactivation threshold',
-        data.lang === 'es' ? 'Score minimo (0-100) para reactivar un lead frio' : 'Minimum score (0-100) to reactivate a cold lead')}
+        isEs ? 'Threshold de reactivacion' : 'Reactivation threshold',
+        isEs ? 'Score minimo (0-100) para reactivar un lead frio' : 'Minimum score (0-100) to reactivate a cold lead')}
       ${boolField('NIGHTLY_COMPRESSION_ENABLED', cv(data, 'NIGHTLY_COMPRESSION_ENABLED') || 'true', data.lang,
-        data.lang === 'es' ? 'Compresion de sesiones' : 'Session compression',
-        data.lang === 'es' ? 'Comprime sesiones con muchos mensajes a un resumen usando LLM' : 'Compress sessions with many messages into a summary using LLM')}
-      <div class="field-divider"><span>${data.lang === 'es' ? 'Reporte diario' : 'Daily report'}</span></div>
+        isEs ? 'Compresion de sesiones' : 'Session compression',
+        isEs ? 'Comprime sesiones con muchos mensajes a un resumen usando LLM' : 'Compress sessions with many messages into a summary using LLM')}
+      <div class="field-divider"><span>${isEs ? 'Reporte diario' : 'Daily report'}</span></div>
       ${boolField('NIGHTLY_REPORT_ENABLED', cv(data, 'NIGHTLY_REPORT_ENABLED') || 'true', data.lang,
-        data.lang === 'es' ? 'Reporte diario' : 'Daily report',
-        data.lang === 'es' ? 'Genera metricas del dia y las sincroniza a Google Sheets' : 'Generate daily metrics and sync them to Google Sheets')}
+        isEs ? 'Reporte diario' : 'Daily report',
+        isEs ? 'Genera metricas del dia y las sincroniza a Google Sheets' : 'Generate daily metrics and sync them to Google Sheets')}
       ${textField('NIGHTLY_REPORT_SHEET_ID', cv(data, 'NIGHTLY_REPORT_SHEET_ID'), data.lang,
         'Spreadsheet ID',
-        data.lang === 'es' ? 'ID del spreadsheet de Google donde sincronizar reportes' : 'Google spreadsheet ID for report sync')}
+        isEs ? 'ID del spreadsheet de Google donde sincronizar reportes' : 'Google spreadsheet ID for report sync')}
       ${textField('NIGHTLY_REPORT_SHEET_NAME', cv(data, 'NIGHTLY_REPORT_SHEET_NAME'), data.lang,
-        data.lang === 'es' ? 'Nombre de hoja' : 'Sheet name',
-        data.lang === 'es' ? 'Nombre de la hoja dentro del spreadsheet' : 'Sheet tab name within the spreadsheet')}
+        isEs ? 'Nombre de hoja' : 'Sheet name',
+        isEs ? 'Nombre de la hoja dentro del spreadsheet' : 'Sheet tab name within the spreadsheet')}
     </div>
   </div>`
 
-  // Panel 3: Limites
-  const limTitle = data.lang === 'es' ? 'Limites' : 'Limits'
-  const limInfo = data.lang === 'es'
-    ? 'Circuit breaker y mantenimiento automatico de conocimiento.'
-    : 'Circuit breaker and automatic knowledge maintenance.'
+  // Panel 4: Limites
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${limTitle}</span>
+      <span class="panel-title">${isEs ? 'Limites' : 'Limits'}</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
-      <div class="panel-info">${limInfo}</div>
+      <div class="panel-info">${isEs
+        ? 'Circuit breaker y mantenimiento automatico de conocimiento.'
+        : 'Circuit breaker and automatic knowledge maintenance.'}</div>
       ${numField('LLM_CB_FAILURE_THRESHOLD', cv(data, 'LLM_CB_FAILURE_THRESHOLD') || '5', data.lang,
-        data.lang === 'es' ? 'Fallos para circuit breaker' : 'Failures for circuit breaker',
-        data.lang === 'es' ? 'Cantidad de fallos en la ventana para marcar provider como DOWN (default: 5)' : 'Number of failures in window to mark provider as DOWN (default: 5)')}
+        isEs ? 'Fallos para circuit breaker' : 'Failures for circuit breaker',
+        isEs ? 'Cantidad de fallos en la ventana para marcar provider como DOWN (default: 5)' : 'Number of failures in window to mark provider as DOWN (default: 5)')}
       ${numField('KNOWLEDGE_AUTO_DOWNGRADE_DAYS', cv(data, 'KNOWLEDGE_AUTO_DOWNGRADE_DAYS') || '60', data.lang,
-        data.lang === 'es' ? 'Auto-downgrade (dias)' : 'Auto-downgrade (days)',
-        data.lang === 'es' ? 'Documentos core sin consultas en este periodo pierden el flag core automaticamente (default: 60)' : 'Core docs without hits in this period lose core flag automatically (default: 60)')}
+        isEs ? 'Auto-downgrade (dias)' : 'Auto-downgrade (days)',
+        isEs ? 'Documentos core sin consultas en este periodo pierden el flag core automaticamente (default: 60)' : 'Core docs without hits in this period lose core flag automatically (default: 60)')}
     </div>
   </div>`
 

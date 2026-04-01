@@ -19,18 +19,17 @@ const logger = pino({ name: 'llm:router' })
 // ═══════════════════════════════════════════
 
 const DEFAULT_ROUTES: TaskRoute[] = [
-  // Phase 2 evaluate: Sonnet → Haiku → Flash
+  // Phase 2 evaluate: Sonnet → Flash
   {
     task: 'classify',
     primary: {
       provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.1,
-      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
     },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
     ],
   },
-  // Phase 4 compose: Flash → Flash-Lite → Haiku
+  // Phase 4 compose: Flash → Flash-Lite → Sonnet
   {
     task: 'respond',
     primary: {
@@ -38,7 +37,7 @@ const DEFAULT_ROUTES: TaskRoute[] = [
       downgrade: { provider: 'google', model: 'gemini-2.5-flash-lite', temperature: 0.7 },
     },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.7 },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7 },
     ],
   },
   // Complex / subagent heavy: Opus → Sonnet → Pro
@@ -52,23 +51,21 @@ const DEFAULT_ROUTES: TaskRoute[] = [
       { provider: 'google', model: 'gemini-2.5-pro', temperature: 0.5 },
     ],
   },
-  // Tools / subagent: Sonnet → Haiku → Flash
+  // Tools / subagent: Sonnet → Flash
   {
     task: 'tools',
     primary: {
       provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.1,
-      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.1 },
     },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
     ],
   },
-  // Proactive: Sonnet → Haiku → Flash
+  // Proactive: Sonnet → Flash
   {
     task: 'proactive',
     primary: {
       provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7,
-      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.7 },
     },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
@@ -127,23 +124,21 @@ const DEFAULT_ROUTES: TaskRoute[] = [
       { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.3 },
     ],
   },
-  // Document read: Sonnet → Haiku → Flash (interpret/summarize extracted documents)
+  // Document read: Sonnet → Flash (interpret/summarize extracted documents)
   {
     task: 'document_read',
     primary: {
       provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.2,
-      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.2 },
     },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.2 },
     ],
   },
-  // Batch (nightly summaries/analysis): Sonnet → Haiku → Flash
+  // Batch (nightly summaries/analysis): Sonnet → Flash
   {
     task: 'batch',
     primary: {
       provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.3,
-      downgrade: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.3 },
     },
     fallbacks: [
       { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.3 },
