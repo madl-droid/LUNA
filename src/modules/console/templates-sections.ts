@@ -232,7 +232,7 @@ function renderModelsContent(data: SectionData): string {
       ).join('') : ''
 
   let h = `<div class="scan-bar">
-    <button type="button" class="wa-btn wa-btn-connect" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
+    <button type="button" class="act-btn act-btn-config" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
     ${scanInfo}
   </div>
   <div id="scan-replacements">${scanReplacements}</div>
@@ -349,7 +349,7 @@ export function renderEmailSection(data: SectionData): string {
       </div>
       <div class="status-actions">
         ${!ga.connected ? `
-        <button type="button" class="wa-btn wa-btn-connect" onclick="gmailConnect()">
+        <button type="button" class="act-btn act-btn-add" onclick="gmailConnect()">
           ${googleSvg} ${t('gmailConnectBtn', data.lang)}
         </button>` : `
         <button type="button" class="btn-danger" onclick="gmailDisconnect()">
@@ -398,7 +398,7 @@ export function renderGoogleAppsSection(data: SectionData): string {
       <div class="ts-gws-status-actions">
         <button type="button" class="btn-secondary ts-gws-btn-sm" onclick="refreshGoogleAppsStatus()">${t('googleRefreshStatus', data.lang)}</button>
         ${!ga.connected
-          ? `<button type="button" class="wa-btn wa-btn-connect ts-gws-btn-sm" onclick="googleAppsConnect()">${t('googleAppsConnectBtn', data.lang)}</button>`
+          ? `<button type="button" class="act-btn act-btn-add act-btn--sm" onclick="googleAppsConnect()">${t('googleAppsConnectBtn', data.lang)}</button>`
           : `<button type="button" class="btn-danger ts-gws-btn-sm" onclick="googleAppsDisconnect()">${t('googleAppsDisconnectBtn', data.lang)}</button>`
         }
       </div>
@@ -615,7 +615,7 @@ function renderAdvancedModelsContent(data: SectionData, lang: string): string {
 
   return `
   <div class="scan-bar">
-    <button type="button" class="wa-btn wa-btn-connect" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
+    <button type="button" class="act-btn act-btn-config" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
     ${scanInfo}
   </div>
   <div id="scan-replacements">${scanReplacements}</div>
@@ -680,7 +680,7 @@ export function renderAdvancedAgentSection(data: SectionData): string {
         ? 'Claves de acceso a los proveedores LLM. El modo avanzado permite asignar keys separadas por grupo de uso (engine, multimedia, voz, knowledge).'
         : 'LLM provider access keys. Advanced mode lets you assign separate keys per usage group (engine, multimedia, voice, knowledge).'}</div>
 
-      <div class="field-divider"><span>${isEs ? 'Modo' : 'Mode'}</span></div>
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modo' : 'Mode'}</span></div>
       <div class="field">
         <div class="field-left"><span class="field-label">${isEs ? 'Modo de API Keys' : 'API Key Mode'}</span></div>
         <select class="js-custom-select" name="LLM_API_MODE" data-original="${esc(currentApiMode)}"
@@ -688,12 +688,12 @@ export function renderAdvancedAgentSection(data: SectionData): string {
         >${apiModeOpts}</select>
       </div>
 
-      <div class="field-divider"><span>${isEs ? 'Keys principales' : 'Main keys'}</span></div>
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Keys principales' : 'Main keys'}</span></div>
       ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang, 'f_ANTHROPIC_API_KEY', 'i_ANTHROPIC_API_KEY')}
       ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang, 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY')}
 
       <div id="adv-keys" style="display:${currentApiMode === 'advanced' ? 'block' : 'none'}">
-        <div class="field-divider"><span>Google Gemini — ${isEs ? 'por grupo' : 'by group'}</span></div>
+        <div class="field-divider"><span class="field-divider-label">Google Gemini — ${isEs ? 'por grupo' : 'by group'}</span></div>
         ${secretField('LLM_GOOGLE_ENGINE_API_KEY', cv(data, 'LLM_GOOGLE_ENGINE_API_KEY'), data.lang,
           'Gemini — Engine',
           isEs ? 'Key para compose y web_search (Fase 4, busqueda web). Fallback: Google AI Key.' : 'Key for compose and web_search (Phase 4, web search). Fallback: Google AI Key.')}
@@ -707,7 +707,7 @@ export function renderAdvancedAgentSection(data: SectionData): string {
           'Gemini — Knowledge',
           isEs ? 'Key para embeddings de conocimiento. Fallback: Google AI Key.' : 'Key for knowledge embeddings. Fallback: Google AI Key.')}
 
-        <div class="field-divider"><span>Anthropic — ${isEs ? 'por grupo' : 'by group'}</span></div>
+        <div class="field-divider"><span class="field-divider-label">Anthropic — ${isEs ? 'por grupo' : 'by group'}</span></div>
         ${secretField('LLM_ANTHROPIC_ENGINE_API_KEY', cv(data, 'LLM_ANTHROPIC_ENGINE_API_KEY'), data.lang,
           'Anthropic — Engine',
           isEs ? 'Key para classify, tools, complex, proactive. Fallback: Anthropic API Key.' : 'Key for classify, tools, complex, proactive. Fallback: Anthropic API Key.')}
@@ -757,7 +757,7 @@ export function renderAdvancedAgentSection(data: SectionData): string {
       ${boolField('NIGHTLY_COMPRESSION_ENABLED', cv(data, 'NIGHTLY_COMPRESSION_ENABLED') || 'true', data.lang,
         isEs ? 'Compresion de sesiones' : 'Session compression',
         isEs ? 'Comprime sesiones con muchos mensajes a un resumen usando LLM' : 'Compress sessions with many messages into a summary using LLM')}
-      <div class="field-divider"><span>${isEs ? 'Reporte diario' : 'Daily report'}</span></div>
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Reporte diario' : 'Daily report'}</span></div>
       ${boolField('NIGHTLY_REPORT_ENABLED', cv(data, 'NIGHTLY_REPORT_ENABLED') || 'true', data.lang,
         isEs ? 'Reporte diario' : 'Daily report',
         isEs ? 'Genera metricas del dia y las sincroniza a Google Sheets' : 'Generate daily metrics and sync them to Google Sheets')}
