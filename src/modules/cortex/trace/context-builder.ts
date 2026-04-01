@@ -138,6 +138,7 @@ export async function buildSimContext(
     attachmentMeta: [],
     attachmentContext: null,
     possibleInjection: false,
+    hitlPendingContext: null,
   }
 
   return { ctx, toolCatalog }

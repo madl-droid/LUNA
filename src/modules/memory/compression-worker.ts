@@ -17,7 +17,7 @@ import { embedSessionChunks } from './session-embedder.js'
 
 const logger = pino({ name: 'memory:compression-worker' })
 
-const QUEUE_NAME = 'session:compress'
+const QUEUE_NAME = 'session-compress'
 
 export interface CompressionJobData {
   sessionId: string

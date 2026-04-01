@@ -22,6 +22,7 @@ interface RegistryLike {
     messages: Array<{ role: 'user'; content: string }>
     maxTokens: number; temperature: number
   }): Promise<{ text?: string } | null>
+  getOptional<T>(key: string): T | null
 }
 
 export class VectorizeWorker {
