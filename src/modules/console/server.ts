@@ -1290,11 +1290,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         sectionData.agenteSubpage = agenteSubpage
         // Map sub-pages to their actual section renderers
         if (agenteSubpage === 'advanced') {
-          // Inject HITL section if module is active
-          try {
-            const hitlRender = registry.getOptional<(config: Record<string, string>, lang: string) => string>('hitl:renderSection')
-            if (hitlRender) sectionData.hitlSectionHtml = hitlRender(sectionData.config, lang)
-          } catch { /* hitl module not active */ }
           sectionData.agenteContent = renderAdvancedAgentSection(sectionData)
         } else if (agenteSubpage === 'knowledge') {
           // Load knowledge items HTML via module service
@@ -1405,6 +1400,18 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
             sectionData.herramientasContent = html
           } else {
             sectionData.herramientasContent = notAvailable('Freshdesk')
+          }
+        } else if (herramientasSubpage === 'hitl') {
+          const hitlMod = data.moduleStates.find(m => m.name === 'hitl')
+          if (hitlMod?.active) {
+            let html = renderModulePanels([hitlMod], data.config, lang, 'hitl')
+            try {
+              const renderFn = registry.getOptional<(config: Record<string, string>, lang: string) => string>('hitl:renderSection')
+              if (renderFn) html += renderFn(data.config, lang)
+            } catch (err) { logger.error({ err }, 'Failed to render hitl custom section') }
+            sectionData.herramientasContent = html
+          } else {
+            sectionData.herramientasContent = notAvailable('HITL')
           }
         } else if (herramientasSubpage) {
           // Dynamic: any active agent-group module renders as module panel

@@ -40,7 +40,6 @@ export interface SectionData {
     activeModules: Array<{ name: string; displayName: { es: string; en: string } | string; type: string; tools: Array<{ name: string; displayName: string; description: string; enabled: boolean }> }>
     knowledgeCategories: Array<{ id: string; title: string; description: string }>
   }
-  hitlSectionHtml?: string
 }
 
 const GOOGLE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" class="google-icon" xmlns="http://www.w3.org/2000/svg">
@@ -680,9 +679,6 @@ export function renderAdvancedAgentSection(data: SectionData): string {
         data.lang === 'es' ? 'Documentos core sin consultas en este periodo pierden el flag core automaticamente (default: 60)' : 'Core docs without hits in this period lose core flag automatically (default: 60)')}
     </div>
   </div>`
-
-  // Panel 4: HITL (Human-in-the-Loop) — injected by hitl module if active
-  if (data.hitlSectionHtml) h += data.hitlSectionHtml
 
   return h
 }

@@ -48,6 +48,21 @@ const manifest: ModuleManifest = {
     order: 55,
     group: 'agent',
     icon: '&#9997;',
+    fields: [
+      { key: 'HITL_ENABLED', type: 'boolean', label: { es: 'HITL habilitado', en: 'HITL enabled' }, info: { es: 'Habilitar el sistema de consulta humana y escalamiento', en: 'Enable the human consultation and escalation system' } },
+      { key: 'HITL_DEFAULT_CHANNEL', type: 'select', label: { es: 'Canal preferido', en: 'Preferred channel' }, info: { es: 'Canal para contactar humanos. Auto selecciona el mejor disponible.', en: 'Channel to reach humans. Auto picks the best available.' },
+        options: [
+          { value: 'auto', label: { es: 'Automatico', en: 'Automatic' } },
+          { value: 'whatsapp', label: 'WhatsApp' },
+          { value: 'email', label: 'Email' },
+          { value: 'google-chat', label: 'Google Chat' },
+        ],
+      },
+      { key: 'HITL_TICKET_TTL_HOURS', type: 'number', label: { es: 'TTL ticket (horas)', en: 'Ticket TTL (hours)' }, info: { es: 'Tiempo maximo de espera antes de expirar', en: 'Maximum wait time before expiry' }, min: 1, max: 72 },
+      { key: 'HITL_FOLLOWUP_INTERVAL_MIN', type: 'number', label: { es: 'Intervalo follow-up (min)', en: 'Follow-up interval (min)' }, info: { es: 'Minutos entre recordatorios al humano', en: 'Minutes between reminders to human' }, min: 5, max: 120 },
+      { key: 'HITL_MAX_FOLLOWUPS', type: 'number', label: { es: 'Max follow-ups', en: 'Max follow-ups' }, info: { es: 'Recordatorios maximos antes de escalar a supervisor', en: 'Maximum reminders before escalating to supervisor' }, min: 1, max: 10 },
+      { key: 'HITL_AUTO_EXPIRE_NOTIFY', type: 'boolean', label: { es: 'Notificar al expirar', en: 'Notify on expiry' }, info: { es: 'Notificar al cliente cuando el ticket expira sin respuesta', en: 'Notify client when ticket expires without response' } },
+    ],
     apiRoutes: [], // Populated in init()
   },
 
