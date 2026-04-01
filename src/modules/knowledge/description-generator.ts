@@ -38,18 +38,20 @@ interface ChunkSample {
 
 /**
  * Select a representative sample of chunks for description generation.
- * Strategy: first chunk (intro), ~30%, ~70%, last chunk (conclusion).
- * Max 4 chunks to keep input under ~4000 tokens.
+ * Strategy: first, ~25%, ~50% (x2 for mid coverage), ~75%, last.
+ * Max 6 chunks to keep input under ~5000 tokens.
  */
 export function selectSampleChunks(chunks: ChunkSample[]): ChunkSample[] {
   if (chunks.length === 0) return []
-  if (chunks.length <= 4) return chunks
+  if (chunks.length <= 6) return chunks
 
   const indices = new Set<number>()
-  indices.add(0)                                       // first
-  indices.add(Math.floor(chunks.length * 0.3))         // ~30%
-  indices.add(Math.floor(chunks.length * 0.7))         // ~70%
-  indices.add(chunks.length - 1)                       // last
+  indices.add(0)                                       // first (intro)
+  indices.add(Math.floor(chunks.length * 0.25))        // ~25%
+  indices.add(Math.floor(chunks.length * 0.45))        // ~45% (mid-left)
+  indices.add(Math.floor(chunks.length * 0.55))        // ~55% (mid-right)
+  indices.add(Math.floor(chunks.length * 0.75))        // ~75%
+  indices.add(chunks.length - 1)                       // last (conclusion)
 
   return Array.from(indices)
     .sort((a, b) => a - b)
@@ -82,8 +84,8 @@ export async function generateDescription(
 
   const samples = selectSampleChunks(chunks)
 
-  // Build content sample (cap at ~3500 words ≈ ~4500 tokens)
-  const MAX_SAMPLE_WORDS = 3500
+  // Build content sample (cap at ~4500 words ≈ ~6000 tokens)
+  const MAX_SAMPLE_WORDS = 4500
   let wordCount = 0
   const sampleParts: string[] = []
 
