@@ -76,12 +76,26 @@ export class PromptsServiceImpl implements PromptsService {
       await this.seed()
     }
 
-    // Reload after potential seed
+    // Reload after potential seed, backfilling empty slots from .md defaults
     const all = await queries.listAll(this.db)
+    let backfilled = 0
     for (const record of all) {
-      this.cache.set(`${record.slot}:${record.variant}`, record.content)
+      let content = record.content
+      if (!content) {
+        content = await this.loadDefaultForSlot(record.slot as PromptSlot, record.variant)
+        if (content) {
+          await queries.upsert(this.db, record.slot as PromptSlot, record.variant, content, record.isGenerated).catch(() => {})
+          backfilled++
+        }
+      }
+      if (content) {
+        this.cache.set(`${record.slot}:${record.variant}`, content)
+      }
     }
 
+    if (backfilled > 0) {
+      logger.info({ backfilled }, 'Backfilled empty prompt slots from default .md files')
+    }
     logger.info({ promptCount: all.length }, 'Prompts cache loaded')
 
     // Preload Category 2 system templates
@@ -91,16 +105,24 @@ export class PromptsServiceImpl implements PromptsService {
   async getPrompt(slot: PromptSlot, variant = 'default'): Promise<string> {
     const key = `${slot}:${variant}`
     const cached = this.cache.get(key)
-    if (cached !== undefined) return cached
+    if (cached) return cached
 
     // Fallback to DB
     const record = await queries.getBySlotVariant(this.db, slot, variant)
-    if (record) {
+    if (record?.content) {
       this.cache.set(key, record.content)
       return record.content
     }
 
-    return ''
+    // Fallback to default .md file when DB content is empty
+    const defaultContent = await this.loadDefaultForSlot(slot, variant)
+    if (defaultContent) {
+      this.cache.set(key, defaultContent)
+      // Backfill DB so seed is complete
+      await queries.upsert(this.db, slot, variant, defaultContent, false).catch(() => {})
+    }
+
+    return defaultContent
   }
 
   async getCompositorPrompts(userType: string): Promise<CompositorPrompts> {
@@ -294,6 +316,17 @@ export class PromptsServiceImpl implements PromptsService {
     await queries.upsert(this.db, 'evaluator', 'default', '', true)
 
     logger.info('Prompts seeded from .md files')
+  }
+
+  /**
+   * Resolve the default .md filename for a given slot+variant.
+   * E.g. ('relationship', 'lead') → 'relationship-lead', ('job', 'default') → 'job'
+   */
+  private async loadDefaultForSlot(slot: PromptSlot, variant: string): Promise<string> {
+    // evaluator is generated, not file-backed
+    if (slot === 'evaluator') return ''
+    const name = variant === 'default' ? slot : `${slot}-${variant}`
+    return loadDefaultPrompt(name)
   }
 
   private async tryReadLegacyFile(filename: string): Promise<string> {
