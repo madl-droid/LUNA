@@ -136,7 +136,7 @@ export async function phase5Validate(
   // 5bis. Inline buffer compression — fire-and-forget, never blocks the pipeline
   // Only touches Redis buffer; PG messages remain intact for nightly batch summaries.
   if (memoryManager) {
-    checkAndCompressBuffer(ctx.session.id, memoryManager, config).catch(err =>
+    checkAndCompressBuffer(ctx.session.id, memoryManager, config, registry).catch(err =>
       logger.warn({ err, sessionId: ctx.session.id, traceId: ctx.traceId }, 'Inline buffer compression failed'),
     )
   }

@@ -293,12 +293,20 @@ export class VectorizeWorker {
       const chunkSamples = await this.pgStore.getDocumentChunkSamples(documentId)
       if (chunkSamples.length === 0) return
 
+      // Load system prompt from .md template if available
+      let descSystemPrompt: string | undefined
+      const promptsSvc = this.registry.getOptional<{ getSystemPrompt(name: string): Promise<string> }>('prompts:service')
+      if (promptsSvc) {
+        try { descSystemPrompt = await promptsSvc.getSystemPrompt('knowledge-description') || undefined } catch { /* fallback */ }
+      }
+
       const result = await generateDescription(
         doc.title,
         doc.description,
         chunkSamples,
         this.registry,
         this.log,
+        descSystemPrompt,
       )
 
       if (result) {

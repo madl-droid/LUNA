@@ -6,12 +6,16 @@
 import type { Pool } from 'pg'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
+import type { PromptsService } from '../prompts/types.js'
 import type {
   StoredMessage,
   SessionSummaryV2,
   AttachmentArchiveMeta,
 } from './types.js'
 import type { AttachmentExtraction } from './session-chunker.js'
+
+// Minimal fallback — full prompt lives in instance/prompts/system/session-summary.md
+const SESSION_SUMMARY_SYSTEM_FALLBACK = 'Eres un asistente que resume conversaciones de ventas. Genera resúmenes estructurados precisos.'
 
 const logger = pino({ name: 'memory:session-archiver' })
 
@@ -110,7 +114,7 @@ Responde SOLO con JSON válido:
 
   const llmResult = await registry.callHook('llm:chat', {
     task: 'session-summary-v2',
-    system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente. Genera resúmenes estructurados precisos.',
+    system: await loadSessionSummarySystem(registry),
     messages: [{ role: 'user' as const, content: userContent }],
     maxTokens: 2000,
     temperature: 0.3,
@@ -167,6 +171,17 @@ Responde SOLO con JSON válido:
 // ═══════════════════════════════════════════
 // Helper
 // ═══════════════════════════════════════════
+
+async function loadSessionSummarySystem(registry: Registry): Promise<string> {
+  const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+  if (!promptsSvc) return SESSION_SUMMARY_SYSTEM_FALLBACK
+  try {
+    const tmpl = await promptsSvc.getSystemPrompt('session-summary')
+    return tmpl || SESSION_SUMMARY_SYSTEM_FALLBACK
+  } catch {
+    return SESSION_SUMMARY_SYSTEM_FALLBACK
+  }
+}
 
 function parseJSON(text: string): Record<string, unknown> | null {
   try {

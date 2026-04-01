@@ -6,9 +6,14 @@
 import pino from 'pino'
 import type { MemoryManager } from '../modules/memory/memory-manager.js'
 import type { EngineConfig } from './types.js'
+import type { Registry } from '../kernel/registry.js'
+import type { PromptsService } from '../modules/prompts/types.js'
 import { callLLM } from './utils/llm-client.js'
 
 const logger = pino({ name: 'engine:buffer-compressor' })
+
+// Minimal fallback — full prompt lives in instance/prompts/system/buffer-compressor.md
+const BUFFER_COMPRESS_SYSTEM_FALLBACK = 'Eres un asistente que resume conversaciones de soporte y ventas de manera concisa. Responde SOLO con el resumen.'
 
 /**
  * Check if the session buffer exceeds the compression threshold and compress if so.
@@ -26,6 +31,7 @@ export async function checkAndCompressBuffer(
   sessionId: string,
   memoryManager: MemoryManager,
   config: EngineConfig,
+  registry?: Registry,
 ): Promise<void> {
   const { threshold, keepRecent } = memoryManager.getCompressionConfig()
   const count = await memoryManager.getMessageCount(sessionId)
@@ -56,7 +62,7 @@ export async function checkAndCompressBuffer(
       task: 'buffer_compress',
       provider: config.classifyProvider,
       model: config.classifyModel,
-      system: 'Eres un asistente que resume conversaciones de soporte y ventas de manera concisa. Responde SOLO con el resumen, sin introducción ni explicación.',
+      system: await loadBufferCompressSystem(registry),
       messages: [{ role: 'user', content: userPrompt }],
       maxTokens: 1000,
       temperature: 0.2,
@@ -70,5 +76,17 @@ export async function checkAndCompressBuffer(
   } catch (err) {
     // Don't trim on failure — better to have extra messages than lose context
     logger.warn({ err, sessionId }, 'Inline buffer compression failed — buffer not trimmed')
+  }
+}
+
+async function loadBufferCompressSystem(registry?: Registry): Promise<string> {
+  if (!registry) return BUFFER_COMPRESS_SYSTEM_FALLBACK
+  const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+  if (!promptsSvc) return BUFFER_COMPRESS_SYSTEM_FALLBACK
+  try {
+    const tmpl = await promptsSvc.getSystemPrompt('buffer-compressor')
+    return tmpl || BUFFER_COMPRESS_SYSTEM_FALLBACK
+  } catch {
+    return BUFFER_COMPRESS_SYSTEM_FALLBACK
   }
 }

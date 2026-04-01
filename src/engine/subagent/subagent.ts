@@ -130,6 +130,7 @@ export async function runSubagentV2(
         result.success,
         config,
         retryCount,
+        registry,
       )
 
       result.verification = verification
