@@ -104,6 +104,13 @@ export async function startProactiveRunner(
     logger.debug({ jobName: job.data.jobName, jobId: job.id }, 'Proactive job completed')
   })
 
+  // Read agent timezone for cron scheduling
+  let proactiveTimezone = ''
+  try {
+    const configStore = await import('../../kernel/config-store.js')
+    proactiveTimezone = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || ''
+  } catch { /* ignore */ }
+
   // Register repeatable jobs from config
   const jobs = getProactiveJobs()
 
@@ -152,7 +159,7 @@ export async function startProactiveRunner(
           runAt: new Date().toISOString(),
         },
         {
-          repeat: { pattern: cron },
+          repeat: { pattern: cron, ...(proactiveTimezone ? { tz: proactiveTimezone } : {}) },
           priority: getJobPriority(job.triggerType),
           jobId: `repeat:${job.name}`,
         },

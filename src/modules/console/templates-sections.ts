@@ -1282,6 +1282,26 @@ function renderIdentitySection(data: SectionData): string {
     PROMPT_CRITICIZER: 'criticizer',
   }
 
+  // Build identity column (right) — declared early so persona preview is available in prompts loop
+  const agentName = cfg['AGENT_NAME'] || 'Luna'
+  const agentLastName = cfg['AGENT_LAST_NAME'] || ''
+  const agentTitle = cfg['AGENT_TITLE'] || ''
+  const agentLang = cfg['AGENT_LANGUAGE'] || 'es'
+  const agentAccent = cfg['AGENT_ACCENT'] || ''
+  const agentCountry = cfg['AGENT_COUNTRY'] || ''
+  const agentTimezone = cfg['AGENT_TIMEZONE'] || ''
+  const companyName = cfg['COMPANY_NAME'] || ''
+
+  // Persona header preview (auto-prepended to identity prompt in Phase 4)
+  const personaHeaderParts: string[] = []
+  const personaFullName = [agentName, agentLastName].filter(Boolean).join(' ')
+  if (personaFullName) personaHeaderParts.push(`Tu nombre es ${personaFullName}.`)
+  if (agentTitle) personaHeaderParts.push(`Tu cargo es ${agentTitle}.`)
+  if (companyName) personaHeaderParts.push(`Trabajas en ${companyName}.`)
+  if (agentLang) personaHeaderParts.push(`Tu idioma principal es ${agentLang}.`)
+  if (agentCountry) personaHeaderParts.push(`Operas desde ${agentCountry}.`)
+  const personaHeaderText = personaHeaderParts.join(' ')
+
   // Build prompts column (left)
   let promptsHtml = ''
   let isFirstPrompt = true
@@ -1304,6 +1324,7 @@ function renderIdentitySection(data: SectionData): string {
         <span class="panel-chevron">&#9660;</span>
       </div>
       <div class="panel-body" style="padding:0">
+        ${p.key === 'PROMPT_IDENTITY' ? `<div class="ts-identity-persona-preview" id="ts-identity-persona-preview"><span class="ts-identity-persona-preview-label">${isEs ? 'Se añade automáticamente al inicio:' : 'Auto-prepended to start:'}</span>${esc(personaHeaderText)}</div>` : ''}
         <div class="code-editor code-editor--flush">
           <div class="code-editor-header">
             <div class="code-editor-header-left">
@@ -1323,14 +1344,6 @@ function renderIdentitySection(data: SectionData): string {
       </div>
     </div>`
   }
-
-  // Build identity column (right)
-  const agentName = cfg['AGENT_NAME'] || 'Luna'
-  const agentLastName = cfg['AGENT_LAST_NAME'] || ''
-  const agentLang = cfg['AGENT_LANGUAGE'] || 'es'
-  const agentAccent = cfg['AGENT_ACCENT'] || ''
-  const agentCountry = cfg['AGENT_COUNTRY'] || ''
-  const companyName = cfg['COMPANY_NAME'] || ''
 
   const langSelectHtml = langOptions.map(o =>
     `<option value="${o.value}" ${o.value === agentLang ? 'selected' : ''}>${esc(o.label)}</option>`
@@ -1357,19 +1370,28 @@ function renderIdentitySection(data: SectionData): string {
       <span class="panel-title">${isEs ? 'Identidad del agente' : 'Agent identity'}</span>
     </div>
     <div class="panel-body">
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Empresa' : 'Company'} *</span></div>
-        <input type="text" name="COMPANY_NAME" value="${esc(companyName)}" data-original="${esc(companyName)}" required></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Nombre' : 'Name'} *</span></div>
-        <input type="text" name="AGENT_NAME" value="${esc(agentName)}" data-original="${esc(agentName)}" required></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Apellido' : 'Last name'}</span></div>
-        <input type="text" name="AGENT_LAST_NAME" value="${esc(agentLastName)}" data-original="${esc(agentLastName)}"></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Cargo' : 'Title'}</span></div>
-        <input type="text" name="AGENT_TITLE" value="${esc(cfg['AGENT_TITLE'] || '')}" data-original="${esc(cfg['AGENT_TITLE'] || '')}"></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Idioma principal' : 'Main language'} *</span></div>
+      <div class="field ts-field-stack">
+        <span class="field-label">${isEs ? 'Empresa' : 'Company'} *</span>
+        <input type="text" name="COMPANY_NAME" id="ts-id-company" value="${esc(companyName)}" data-original="${esc(companyName)}" required></div>
+      <div class="field ts-field-stack">
+        <span class="field-label">${isEs ? 'Nombre' : 'First name'} *</span>
+        <input type="text" name="AGENT_NAME" id="ts-id-name" value="${esc(agentName)}" data-original="${esc(agentName)}" required></div>
+      <div class="field ts-field-stack">
+        <span class="field-label">${isEs ? 'Apellido' : 'Last name'}</span>
+        <input type="text" name="AGENT_LAST_NAME" id="ts-id-lastname" value="${esc(agentLastName)}" data-original="${esc(agentLastName)}"></div>
+      <div class="field ts-field-stack">
+        <span class="field-label">${isEs ? 'Cargo' : 'Title'}</span>
+        <input type="text" name="AGENT_TITLE" id="ts-id-title" value="${esc(agentTitle)}" data-original="${esc(agentTitle)}"></div>
+      <div class="field ts-field-stack">
+        <span class="field-label">${isEs ? 'Idioma principal' : 'Main language'} *</span>
         <select name="AGENT_LANGUAGE" data-original="${esc(agentLang)}" id="agent-language-select" class="js-custom-select">${langSelectHtml}</select></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Pa\u00eds' : 'Country'}</span></div>
-        <select name="AGENT_COUNTRY" data-original="${esc(agentCountry)}" id="agent-country-select" class="js-custom-select">${countryOptionsHtml}</select></div>
-      <div class="field"><div class="field-left"><span class="field-label">${isEs ? 'Acento' : 'Accent'}</span></div>
+      <div class="field ts-field-stack">
+        <span class="field-label">${isEs ? 'Pa\u00eds' : 'Country'} * <span class="ts-tz-badge" id="ts-tz-badge">${agentTimezone ? `(${esc(agentTimezone)})` : ''}</span></span>
+        <p class="ts-field-hint">${isEs ? 'Usado para calcular la zona horaria del sistema.' : 'Used to calculate the system timezone.'}</p>
+        <select name="AGENT_COUNTRY" data-original="${esc(agentCountry)}" id="agent-country-select" class="js-custom-select" required>${countryOptionsHtml}</select>
+        <input type="hidden" name="AGENT_TIMEZONE" id="ts-agent-timezone-input" value="${esc(agentTimezone)}" data-original="${esc(agentTimezone)}"></div>
+      <div class="field ts-field-stack">
+        <span class="field-label">${isEs ? 'Acento' : 'Accent'}</span>
         <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select" class="js-custom-select">${accentOptionsHtml}</select></div>
     </div>
   </div>
@@ -1379,11 +1401,70 @@ function renderIdentitySection(data: SectionData): string {
     var langSel = document.getElementById('agent-language-select');
     var countrySel = document.getElementById('agent-country-select');
     var accentSel = document.getElementById('agent-accent-select');
+    var tzInput = document.getElementById('ts-agent-timezone-input');
+    var tzBadge = document.getElementById('ts-tz-badge');
+    var personaPreview = document.getElementById('ts-identity-persona-preview');
     var accentMap = JSON.parse(document.getElementById('accent-map-data').textContent);
     var isEs = ${isEs ? 'true' : 'false'};
     var accentWarningMsg = ${JSON.stringify(isEs
       ? 'Si configuras un acento, el agente puede tener dificultades al responder en otros idiomas. \u00bfDeseas continuar?'
       : 'Setting an accent may cause issues when responding in other languages. Continue?')};
+
+    // IANA timezone by accent code
+    var CODE_TZ = {
+      'es-AR':'America/Argentina/Buenos_Aires','es-BO':'America/La_Paz','es-CL':'America/Santiago',
+      'es-CO':'America/Bogota','es-CR':'America/Costa_Rica','es-CU':'America/Havana',
+      'es-DO':'America/Santo_Domingo','es-EC':'America/Guayaquil','es-SV':'America/El_Salvador',
+      'es-GQ':'Africa/Malabo','es-GT':'America/Guatemala','es-HN':'America/Tegucigalpa',
+      'es-MX':'America/Mexico_City','es-NI':'America/Managua','es-PA':'America/Panama',
+      'es-PY':'America/Asuncion','es-PE':'America/Lima','es-PR':'America/Puerto_Rico',
+      'es-ES':'Europe/Madrid','es-UY':'America/Montevideo','es-VE':'America/Caracas',
+      'en-AU':'Australia/Sydney','en-CA':'America/Toronto','en-GH':'Africa/Accra',
+      'en-IN':'Asia/Kolkata','en-IE':'Europe/Dublin','en-JM':'America/Jamaica',
+      'en-KE':'Africa/Nairobi','en-NZ':'Pacific/Auckland','en-NG':'Africa/Lagos',
+      'en-PH':'Asia/Manila','en-SG':'Asia/Singapore','en-ZA':'Africa/Johannesburg',
+      'en-GB':'Europe/London','en-US':'America/New_York',
+      'pt-AO':'Africa/Luanda','pt-BR':'America/Sao_Paulo','pt-CV':'Atlantic/Cape_Verde',
+      'pt-MZ':'Africa/Maputo','pt-PT':'Europe/Lisbon',
+      'fr-BE':'Europe/Brussels','fr-CM':'Africa/Douala','fr-CA':'America/Toronto',
+      'fr-CD':'Africa/Kinshasa','fr-CI':'Africa/Abidjan','fr-FR':'Europe/Paris',
+      'fr-HT':'America/Port-au-Prince','fr-SN':'Africa/Dakar','fr-CH':'Europe/Zurich',
+      'de-AT':'Europe/Vienna','de-DE':'Europe/Berlin','de-LI':'Europe/Vaduz',
+      'de-LU':'Europe/Luxembourg','de-CH':'Europe/Zurich',
+      'it-IT':'Europe/Rome','it-CH':'Europe/Zurich','it-SM':'Europe/San_Marino'
+    };
+
+    function getTzForCountry(country, lang) {
+      var entries = accentMap[lang] || [];
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].country === country) return CODE_TZ[entries[i].code] || '';
+      }
+      return '';
+    }
+
+    function updatePersonaPreview() {
+      if (!personaPreview) return;
+      var nameEl = document.getElementById('ts-id-name');
+      var lastEl = document.getElementById('ts-id-lastname');
+      var titleEl = document.getElementById('ts-id-title');
+      var compEl = document.getElementById('ts-id-company');
+      var name = nameEl ? nameEl.value.trim() : '';
+      var last = lastEl ? lastEl.value.trim() : '';
+      var title = titleEl ? titleEl.value.trim() : '';
+      var company = compEl ? compEl.value.trim() : '';
+      var lang = langSel ? langSel.value : '';
+      var country = countrySel ? countrySel.value : '';
+      var parts = [];
+      var full = [name, last].filter(Boolean).join(' ');
+      if (full) parts.push('Tu nombre es ' + full + '.');
+      if (title) parts.push('Tu cargo es ' + title + '.');
+      if (company) parts.push('Trabajas en ' + company + '.');
+      if (lang) parts.push('Tu idioma principal es ' + lang + '.');
+      if (country) parts.push('Operas desde ' + country + '.');
+      var labelEl = personaPreview.querySelector('.ts-identity-persona-preview-label');
+      personaPreview.innerHTML = (labelEl ? labelEl.outerHTML : '') +
+        (parts.length ? parts.join(' ') : (isEs ? '(sin información de identidad)' : '(no identity info)'));
+    }
 
     if (!langSel || !countrySel || !accentSel) return;
 
@@ -1404,6 +1485,18 @@ function renderIdentitySection(data: SectionData): string {
       entries.forEach(function(a) { ah += '<option value="' + a.code + '">' + a.country + ' (' + a.code + ')</option>'; });
       accentSel.innerHTML = ah;
       accentSel.value = '';
+
+      // Reset timezone
+      if (tzInput) { tzInput.value = ''; tzInput.dispatchEvent(new Event('change', { bubbles: true })); }
+      if (tzBadge) tzBadge.textContent = '';
+      updatePersonaPreview();
+    });
+
+    countrySel.addEventListener('change', function() {
+      var tz = getTzForCountry(countrySel.value, langSel.value);
+      if (tzInput) { tzInput.value = tz; tzInput.dispatchEvent(new Event('change', { bubbles: true })); }
+      if (tzBadge) tzBadge.textContent = tz ? '(' + tz + ')' : '';
+      updatePersonaPreview();
     });
 
     accentSel.addEventListener('change', function() {
@@ -1412,6 +1505,12 @@ function renderIdentitySection(data: SectionData): string {
           accentSel.value = accentSel.getAttribute('data-original') || '';
         }
       }
+    });
+
+    // Persona preview: live update on text field changes
+    ['ts-id-name','ts-id-lastname','ts-id-title','ts-id-company'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('input', updatePersonaPreview);
     });
   })();
   </script>`

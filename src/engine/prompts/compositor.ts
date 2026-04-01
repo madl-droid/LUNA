@@ -203,6 +203,22 @@ export async function buildCompositorPrompt(
     systemParts.push(`\n--- CONTEXTO DE RELACIÓN ---\n${relationship}`)
   }
 
+  // Inject current datetime using agent timezone
+  if (registry) {
+    try {
+      const configStore = await import('../../kernel/config-store.js')
+      const db = registry.getDb()
+      const tz = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || 'UTC'
+      const now = new Date()
+      const dateStr = new Intl.DateTimeFormat('es', {
+        timeZone: tz,
+        day: '2-digit', month: '2-digit', year: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }).format(now).replace(',', '')
+      systemParts.push(`\n--- CONTEXTO TEMPORAL ---\nFecha y hora actual: ${dateStr} (${tz})`)
+    } catch { /* ignore — datetime is best-effort */ }
+  }
+
   // Channel format limits (overridable via config_store)
   const channelLimit = await getChannelLimit(ctx.message.channelName, registry)
   if (responseFormat) {

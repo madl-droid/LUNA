@@ -16,6 +16,7 @@ const QUEUE_NAME = 'luna-scheduled-tasks'
 let queue: Queue | null = null
 let worker: Worker | null = null
 const repeatJobKeys: string[] = []
+let agentTimezone = ''
 
 interface TaskJobPayload {
   taskId: string
@@ -74,6 +75,12 @@ export async function startScheduler(
     logger.debug({ taskId: job.data.taskId }, 'Scheduled task job completed')
   })
 
+  // Read agent timezone for cron scheduling
+  try {
+    const configStore = await import('../../kernel/config-store.js')
+    agentTimezone = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || ''
+  } catch { /* ignore — timezone is best-effort */ }
+
   // Load and schedule all enabled tasks
   const tasks = await store.listTasks(db)
   for (const task of tasks) {
@@ -117,7 +124,7 @@ export async function scheduleTask(task: ScheduledTask): Promise<void> {
     task.name,
     { taskId: task.id, taskName: task.name },
     {
-      repeat: { pattern: task.cron },
+      repeat: { pattern: task.cron, ...(agentTimezone ? { tz: agentTimezone } : {}) },
       jobId,
     },
   )

@@ -132,6 +132,7 @@ const manifest: ModuleManifest = {
     AGENT_TITLE: z.string().default(''),
     AGENT_LANGUAGE: z.string().default('es'),
     AGENT_COUNTRY: z.string().default(''),
+    AGENT_TIMEZONE: z.string().default(''),
     COMPANY_NAME: z.string().default(''),
     COMPANY_WEBSITES: z.string().default(''),
     AGENT_ACCENT: z.string().default(''),
