@@ -1372,6 +1372,52 @@ export class KnowledgePgStore {
       reason: `Consultado ${r.hit_count} veces — considerar promover a core`,
     }))
   }
+
+  async getDemotionSuggestions(maxDays: number): Promise<Array<{
+    documentId: string; title: string; hitCount: number;
+    lastHitAt: Date | null; createdAt: Date; reason: string;
+  }>> {
+    const res = await this.db.query<{
+      id: string; title: string; hit_count: number; last_hit_at: Date | null; created_at: Date
+    }>(
+      `SELECT id, title, hit_count, last_hit_at, created_at
+       FROM knowledge_documents
+       WHERE is_core = true
+         AND (hit_count = 0 AND created_at < NOW() - INTERVAL '1 day' * $1
+              OR last_hit_at < NOW() - INTERVAL '1 day' * $1)
+       ORDER BY hit_count ASC
+       LIMIT 20`,
+      [maxDays],
+    )
+    return res.rows.map((r: { id: string; title: string; hit_count: number; last_hit_at: Date | null; created_at: Date }) => ({
+      documentId: r.id,
+      title: r.title,
+      hitCount: r.hit_count,
+      lastHitAt: r.last_hit_at,
+      createdAt: r.created_at,
+      reason: r.hit_count === 0
+        ? `Documento core sin consultas en ${maxDays} días`
+        : `Última consulta hace más de ${maxDays} días (${r.hit_count} consultas totales)`,
+    }))
+  }
+
+  // ─── Item approve/reject (pending_review → pending/inactive) ───
+
+  async approveItem(itemId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_items SET embedding_status = 'pending', updated_at = NOW()
+       WHERE id = $1 AND embedding_status = 'pending_review'`,
+      [itemId],
+    )
+  }
+
+  async rejectItem(itemId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_items SET active = false, updated_at = NOW()
+       WHERE id = $1 AND embedding_status = 'pending_review'`,
+      [itemId],
+    )
+  }
 }
 
 // ─── Row mappers ─────────────────────────────
@@ -1562,6 +1608,7 @@ interface ItemRow {
   last_sync_checked_at: Date | null
   last_modified_time: string | null
   shareable: boolean
+  full_video_embed: boolean
   created_at: Date
   updated_at: Date
 }
@@ -1583,6 +1630,7 @@ function mapItemRow(r: ItemRow): KnowledgeItem {
     lastSyncCheckedAt: r.last_sync_checked_at ?? null,
     lastModifiedTime: r.last_modified_time ?? null,
     shareable: r.shareable ?? false,
+    fullVideoEmbed: r.full_video_embed ?? false,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }

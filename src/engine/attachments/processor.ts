@@ -40,6 +40,7 @@ import {
 import { validateInjection } from './injection-validator.js'
 import { transcribeAudio } from './audio-transcriber.js'
 import { detectUrls, extractUrls } from './url-extractor.js'
+import { evaluateValue } from './value-evaluator.js'
 
 const logger = pino({ name: 'engine:attachments' })
 
@@ -195,6 +196,9 @@ export async function processAttachments(
           llmEnriched: false,
           filePath: null,
           metadata: null,
+          contentHash: null,
+          knowledgeMatch: null,
+          isValuable: false, valueConfidence: 0, valueSignals: [],
         }
         persistOneAttachment(failed, sessionId, messageId, channelName, db).catch(e =>
           logger.warn({ e, filename: att.filename }, 'Failed to persist failed attachment'),
@@ -276,6 +280,9 @@ async function processOneAttachment(
       llmEnriched: false,
       filePath: null,
       metadata: null,
+      contentHash: null,
+      knowledgeMatch: null,
+      isValuable: false, valueConfidence: 0, valueSignals: [],
     }
   }
 
@@ -305,11 +312,45 @@ async function processOneAttachment(
       llmEnriched: false,
       filePath: null,
       metadata: null,
+      contentHash: null,
+      knowledgeMatch: null,
+      isValuable: false, valueConfidence: 0, valueSignals: [],
     }
   }
 
   // Download data via lazy loader
   const data = await att.getData()
+
+  // Dedup: check if content already exists in knowledge base
+  const contentHash = createHash('sha256').update(data).digest('hex')
+  const knowledgePgStore = registry.getOptional<{
+    getDocumentByHash(hash: string): Promise<{ id: string; title: string } | null>
+  }>('knowledge:pg-store')
+
+  if (knowledgePgStore) {
+    try {
+      const existingDoc = await knowledgePgStore.getDocumentByHash(contentHash)
+      if (existingDoc) {
+        logger.info({ filename: att.filename, knowledgeDocId: existingDoc.id, title: existingDoc.title },
+          'Attachment matches existing knowledge document — skipping extraction')
+        return {
+          id, filename: att.filename, mimeType: att.mimeType, category,
+          sizeBytes: att.size,
+          extractedText: `[Documento ya indexado en knowledge: "${existingDoc.title}"]`,
+          llmText: null, categoryLabel,
+          summary: `[${categoryLabel}] ${att.filename} — ya existe en knowledge como "${existingDoc.title}"`,
+          tokenEstimate: 0, sizeTier: 'small', cacheKey: null,
+          status: 'knowledge_match', injectionRisk: false,
+          sourceType: 'file_attachment', sourceRef: att.id,
+          llmEnriched: false, filePath: null, metadata: null,
+          contentHash, knowledgeMatch: existingDoc.id,
+          isValuable: false, valueConfidence: 0, valueSignals: [],
+        }
+      }
+    } catch (err) {
+      logger.debug({ err, filename: att.filename }, 'Knowledge dedup check failed (non-fatal)')
+    }
+  }
 
   // Audio: transcribe instead of extract
   if (category === 'audio') {
@@ -383,6 +424,9 @@ async function processOneAttachment(
       llmEnriched,
       filePath,
       metadata,
+      contentHash,
+      knowledgeMatch: null,
+      isValuable: false, valueConfidence: 0, valueSignals: [],
     }
   }
 
@@ -440,6 +484,9 @@ async function processOneAttachment(
       : `[${categoryLabel}] ${att.filename}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
   }
 
+  // Evaluate value for potential knowledge base promotion
+  const valueEval = evaluateValue(att.filename, validation.sanitizedText, category, att.mimeType)
+
   return {
     id,
     filename: att.filename,
@@ -460,6 +507,11 @@ async function processOneAttachment(
     llmEnriched,
     filePath,
     metadata,
+    contentHash,
+    knowledgeMatch: null,
+    isValuable: valueEval.isValuable,
+    valueConfidence: valueEval.confidence,
+    valueSignals: valueEval.signals,
   }
 }
 
@@ -505,6 +557,9 @@ async function processAudio(
       llmEnriched: false,
       filePath: null,
       metadata: audioMetadata,
+      contentHash: null,
+      knowledgeMatch: null,
+      isValuable: false, valueConfidence: 0, valueSignals: [],
     }
   }
 
@@ -532,6 +587,9 @@ async function processAudio(
     llmEnriched: true, // STT is LLM-powered
     filePath: null,
     metadata: audioMetadata,
+    contentHash: null,
+    knowledgeMatch: null,
+    isValuable: false, valueConfidence: 0, valueSignals: [],
   }
 }
 
@@ -605,8 +663,8 @@ async function persistOneAttachment(
 
   await db.query(
     `INSERT INTO attachment_extractions
-     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref, file_path, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+     (id, session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, llm_text, category_label, token_estimate, status, injection_risk, source_ref, file_path, metadata, content_hash, knowledge_match_id, is_valuable, value_confidence, value_signals)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
      ON CONFLICT DO NOTHING`,
     [
       att.id,
@@ -627,6 +685,11 @@ async function persistOneAttachment(
       att.sourceRef,
       att.filePath,
       att.metadata ? JSON.stringify(att.metadata) : null,
+      att.contentHash,
+      att.knowledgeMatch,
+      att.isValuable,
+      att.valueConfidence,
+      att.valueSignals.length > 0 ? `{${att.valueSignals.join(',')}}` : null,
     ],
   )
 }

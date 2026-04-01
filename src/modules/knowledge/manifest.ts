@@ -16,6 +16,7 @@ import { KnowledgeManager } from './knowledge-manager.js'
 import { EmbeddingService } from './embedding-service.js'
 import { VectorizeWorker } from './vectorize-worker.js'
 import { SyncManager } from './sync-manager.js'
+import { unifiedSearch, type MemorySearchService } from '../../engine/unified-search.js'
 import { FAQManager } from './faq-manager.js'
 import { ApiConnectorManager } from './api-connector.js'
 import { WebSourceManager } from './web-source-manager.js'
@@ -776,6 +777,38 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // PUT /console/api/knowledge/items/approve (pending_review → pending)
+    {
+      method: 'PUT',
+      path: 'items/approve',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) { jsonResponse(res, 400, { error: 'Falta id' }); return }
+          await getPgStore().approveItem(body.id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // PUT /console/api/knowledge/items/reject (pending_review → inactive)
+    {
+      method: 'PUT',
+      path: 'items/reject',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ id: string }>(req)
+          if (!body.id) { jsonResponse(res, 400, { error: 'Falta id' }); return }
+          await getPgStore().rejectItem(body.id)
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
     // POST /console/api/knowledge/items/scan-tabs
     {
       method: 'POST',
@@ -1000,14 +1033,17 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // GET /console/api/knowledge/suggestions
+    // GET /console/api/knowledge/suggestions (promotions + demotions)
     {
       method: 'GET',
       path: 'suggestions',
       handler: async (_req, res) => {
         try {
-          const suggestions = await getManager().getUpgradeSuggestions()
-          jsonResponse(res, 200, { suggestions })
+          const [promotions, demotions] = await Promise.all([
+            getManager().getUpgradeSuggestions(),
+            getPgStore().getDemotionSuggestions(30),
+          ])
+          jsonResponse(res, 200, { suggestions: promotions, demotions })
         } catch (err) {
           jsonResponse(res, 500, { error: String(err) })
         }
@@ -1203,6 +1239,13 @@ const manifest: ModuleManifest = {
     if (embeddingService) {
       registry.provide('knowledge:embedding-service', embeddingService)
     }
+
+    // Register unified search (knowledge + session memory)
+    const memorySearchSvc = registry.getOptional<MemorySearchService>('memory:search')
+    registry.provide('unified:search', {
+      search: (contactId: string, query: string, opts?: { limit?: number; hint?: string }) =>
+        unifiedSearch(knowledgeManager, memorySearchSvc, contactId, query, opts),
+    })
 
     // Register console section renderer
     registry.provide('knowledge:renderSection', async (lang: 'es' | 'en') => {
