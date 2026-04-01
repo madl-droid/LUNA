@@ -695,13 +695,15 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         }
         try {
           const db = registry.getDb()
-          await db.query('TRUNCATE user_contacts CASCADE')
-          await db.query('TRUNCATE user_lists CASCADE')
+          // Preserve super admin (source = 'setup_wizard') and their contacts
+          await db.query(`DELETE FROM user_contacts WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
+          await db.query(`DELETE FROM user_lists WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
+          await db.query(`DELETE FROM users WHERE source != 'setup_wizard'`)
           // Invalidate user cache in Redis
           const redis = registry.getRedis()
           const keys = await redis.keys('user_type:*')
           if (keys.length > 0) await redis.del(...keys)
-          logger.info('Contact bases cleared (users, user_contacts, user_lists)')
+          logger.info('Contact bases cleared — super admin preserved')
         } catch (err) {
           logger.error({ err }, 'Failed to clear contact bases')
         }
