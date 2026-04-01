@@ -2,12 +2,14 @@
 // States: triggered → resolved | escalated
 // Features: deduplication, escalation, anti-flapping
 
+import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
 import type { Registry } from '../../../kernel/registry.js'
 import type { Alert, CortexConfig, Rule, RuleCheckContext } from '../types.js'
 import { CHANNEL_DEPENDENCIES } from '../types.js'
 import { RingBuffer } from './ring-buffer.js'
 import { dispatchAlert, dispatchResolution } from './dispatcher.js'
+import * as notifStore from '../notifications.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'cortex:alerts' })
@@ -23,6 +25,7 @@ export class AlertManager {
     private readonly registry: Registry,
     private readonly config: CortexConfig,
     private readonly ringBuffer: RingBuffer,
+    private readonly db: Pool,
   ) {}
 
   /**
@@ -84,6 +87,17 @@ export class AlertManager {
 
     const failedComponents = [rule.component]
     await dispatchAlert(alert, failedComponents, this.config, this.registry, CHANNEL_DEPENDENCIES)
+
+    // Push notification to console bell
+    const sevIcon = alert.severity === 'critical' ? '🔴' : alert.severity === 'degraded' ? '🟡' : 'ℹ️'
+    void notifStore.create(this.db, {
+      source: 'reflex',
+      severity: alert.severity,
+      title: `${sevIcon} ${alert.rule}`,
+      body: alert.message,
+      metadata: { rule: rule.id, state: 'triggered' },
+    })
+
     logger.warn({ rule: rule.id, severity: rule.severity }, 'Alert triggered')
   }
 
@@ -114,6 +128,15 @@ export class AlertManager {
     if (alert.flapCount === 0) {
       await dispatchResolution(alert, this.config, this.registry, CHANNEL_DEPENDENCIES)
     }
+
+    const duration = alert.resolvedAt ? Math.round((alert.resolvedAt - alert.triggeredAt) / 1000) : 0
+    void notifStore.create(this.db, {
+      source: 'reflex',
+      severity: 'success',
+      title: `✅ Resuelto: ${ruleId}`,
+      body: `Duración: ${duration}s`,
+      metadata: { rule: ruleId, state: 'resolved' },
+    })
 
     logger.info({ rule: ruleId, flapCount: alert.flapCount }, 'Alert resolved')
   }
@@ -148,6 +171,15 @@ export class AlertManager {
 
     const failedComponents = [alert.rule.split('-')[0] ?? 'unknown']
     await dispatchAlert(escalatedAlert, failedComponents, this.config, this.registry, CHANNEL_DEPENDENCIES)
+
+    void notifStore.create(this.db, {
+      source: 'reflex',
+      severity: 'critical',
+      title: `🔺 Escalado: ${alert.rule}`,
+      body: `${Math.round(elapsed / 60000)} min sin resolver`,
+      metadata: { rule: alert.rule, state: 'escalated' },
+    })
+
     logger.warn({ rule: alert.rule, elapsed: Math.round(elapsed / 1000) }, 'Alert escalated to CRITICAL')
   }
 

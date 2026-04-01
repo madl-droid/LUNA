@@ -18,6 +18,7 @@ import { PulseScheduler } from './pulse/scheduler.js'
 import { ensurePulseTable, listReports, getReportById } from './pulse/store.js'
 import { ensureTraceTables, listScenarios, getScenario, createScenario, updateScenario, deleteScenario, listRuns, getRun, deleteRun, getResults, getResultById } from './trace/store.js'
 import { launchRun, cancelRun, isRunActive } from './trace/runner.js'
+import * as notifStore from './notifications.js'
 import { renderTraceSection } from './trace/render.js'
 import type { TraceConfig, RunRequest, ScenarioConfig } from './trace/types.js'
 import { VALID_SIM_COUNTS } from './trace/types.js'
@@ -28,6 +29,7 @@ const logger = pino({ name: 'cortex' })
 let evaluator: Evaluator | null = null
 let pulseScheduler: PulseScheduler | null = null
 let snapshotTimer: ReturnType<typeof setInterval> | null = null
+let notifCleanupTimer: ReturnType<typeof setInterval> | null = null
 
 const manifest: ModuleManifest = {
   name: 'cortex',
@@ -103,7 +105,7 @@ const manifest: ModuleManifest = {
         key: 'CORTEX_REFLEX_CHANNELS',
         type: 'text',
         label: { es: 'Canales', en: 'Channels' },
-        info: { es: 'Canales de despacho separados por coma: telegram, whatsapp, email', en: 'Dispatch channels, comma-separated: telegram, whatsapp, email' },
+        info: { es: 'Canales de despacho separados por coma: telegram, whatsapp, email, google-chat', en: 'Dispatch channels, comma-separated: telegram, whatsapp, email, google-chat' },
       },
       {
         key: 'CORTEX_TELEGRAM_BOT_TOKEN',
@@ -265,6 +267,14 @@ const manifest: ModuleManifest = {
     evaluator = new Evaluator(db, redis, registry, config, counters, ringBuffer)
     evaluator.start()
 
+    // Provide notification service for other modules (pricing-sync, etc.)
+    registry.provide('cortex:notifications', {
+      create: (input: import('./notifications.js').NotificationInput) => notifStore.create(db, input),
+    })
+
+    // Cleanup old notifications daily
+    notifCleanupTimer = setInterval(() => { void notifStore.cleanup(db, 30) }, 86_400_000)
+
     // Provide health service for other modules
     registry.provide('cortex:health', {
       check: () => checkHealth(db, redis, registry),
@@ -370,6 +380,38 @@ const manifest: ModuleManifest = {
           handler: async (_req, res) => {
             const metrics = await getMetricsSummary(redis)
             jsonResponse(res, 200, metrics)
+          },
+        },
+        // ─── Notification API routes ───
+        {
+          method: 'GET',
+          path: 'notifications',
+          handler: async (req, res) => {
+            const query = parseQuery(req)
+            const limit = Math.min(parseInt(query.get('limit') ?? '30', 10) || 30, 100)
+            const [notifications, unreadCount] = await Promise.all([
+              notifStore.listRecent(db, limit),
+              notifStore.countUnread(db),
+            ])
+            jsonResponse(res, 200, { notifications, unreadCount })
+          },
+        },
+        {
+          method: 'POST',
+          path: 'notifications/read',
+          handler: async (req, res) => {
+            const body = await parseBody<{ id: string }>(req)
+            if (!body?.id) { jsonResponse(res, 400, { error: 'id required' }); return }
+            await notifStore.markRead(db, body.id)
+            jsonResponse(res, 200, { ok: true })
+          },
+        },
+        {
+          method: 'POST',
+          path: 'notifications/read-all',
+          handler: async (_req, res) => {
+            await notifStore.markAllRead(db)
+            jsonResponse(res, 200, { ok: true })
           },
         },
         // ─── Pulse API routes ───
@@ -578,6 +620,10 @@ const manifest: ModuleManifest = {
     if (snapshotTimer) {
       clearInterval(snapshotTimer)
       snapshotTimer = null
+    }
+    if (notifCleanupTimer) {
+      clearInterval(notifCleanupTimer)
+      notifCleanupTimer = null
     }
     if (evaluator) {
       evaluator.stop()

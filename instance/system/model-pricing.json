@@ -1,0 +1,19 @@
+{
+  "version": "2026-04-01",
+  "lastChecked": "2026-04-01T00:00:00Z",
+  "models": {
+    "claude-haiku-4-5-20251001": { "inputPer1M": 0.80, "outputPer1M": 4.00, "provider": "anthropic" },
+    "claude-sonnet-4-5-20250929": { "inputPer1M": 3.00, "outputPer1M": 15.00, "provider": "anthropic" },
+    "claude-opus-4-5-20251101": { "inputPer1M": 15.00, "outputPer1M": 75.00, "provider": "anthropic" },
+    "claude-sonnet-4-6-20260214": { "inputPer1M": 3.00, "outputPer1M": 15.00, "provider": "anthropic" },
+    "claude-opus-4-6-20260210": { "inputPer1M": 5.00, "outputPer1M": 25.00, "provider": "anthropic" },
+    "gemini-2.5-flash": { "inputPer1M": 0.15, "outputPer1M": 0.60, "provider": "google" },
+    "gemini-2.5-flash-lite": { "inputPer1M": 0.075, "outputPer1M": 0.30, "provider": "google" },
+    "gemini-2.5-pro": { "inputPer1M": 1.25, "outputPer1M": 10.00, "provider": "google" },
+    "gemini-3-flash": { "inputPer1M": 0.15, "outputPer1M": 0.60, "provider": "google" },
+    "gemini-3-pro": { "inputPer1M": 1.25, "outputPer1M": 10.00, "provider": "google" },
+    "gemini-3.1-pro": { "inputPer1M": 1.25, "outputPer1M": 10.00, "provider": "google" },
+    "gemini-2.5-pro-preview-tts": { "inputPer1M": 0.00, "outputPer1M": 0.00, "provider": "google" },
+    "gemini-2.5-flash-preview-tts": { "inputPer1M": 0.00, "outputPer1M": 0.00, "provider": "google" }
+  }
+}

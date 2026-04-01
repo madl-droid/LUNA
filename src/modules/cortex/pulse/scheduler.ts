@@ -11,6 +11,7 @@ import { collectData, isQuietPeriod } from './collector.js'
 import { analyze, generateQuietReport } from './analyzer.js'
 import { formatNotification, formatQuietNotification } from './formatter.js'
 import { saveReport } from './store.js'
+import * as notifStore from '../notifications.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'cortex:pulse:scheduler' })
@@ -231,6 +232,18 @@ export class PulseScheduler {
       )
 
       this.lastReportAt = Date.now()
+
+      // Push notification to console bell
+      const healthIcon = result.report.overall_health === 'healthy' ? '🟢'
+        : result.report.overall_health === 'degraded' ? '🟡' : '🔴'
+      void notifStore.create(this.db, {
+        source: 'pulse',
+        severity: result.report.overall_health === 'healthy' ? 'info'
+          : result.report.overall_health === 'degraded' ? 'degraded' : 'critical',
+        title: `${healthIcon} Pulse — ${mode}`,
+        body: result.report.summary.slice(0, 200),
+        metadata: { reportId: id, mode, incidents: result.report.incidents.length },
+      })
 
       logger.info({
         id,

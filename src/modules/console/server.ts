@@ -2057,13 +2057,13 @@ export function createApiRoutes(): ApiRoute[] {
 
           // Inbound (client-initiated) in period — messages has no channel_name, join via sessions
           const inRes = await db.query(
-            `SELECT COUNT(DISTINCT m.session_id)::int AS inbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.role = 'user' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
+            `SELECT COUNT(DISTINCT m.session_id)::int AS inbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.sender_type = 'user' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
             [channel],
           )
 
           // Outbound (agent-initiated) in period
           const outRes = await db.query(
-            `SELECT COUNT(DISTINCT m.session_id)::int AS outbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.role = 'assistant' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
+            `SELECT COUNT(DISTINCT m.session_id)::int AS outbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.sender_type = 'agent' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
             [channel],
           )
 

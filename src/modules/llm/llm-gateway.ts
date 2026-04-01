@@ -11,6 +11,7 @@ import { TaskRouter, type ResolvedRoute } from './task-router.js'
 import { UsageTracker } from './usage-tracker.js'
 import { createAdapters } from './providers.js'
 import { sanitizePrompt, sanitizeResponse, securityPreamble } from './security.js'
+import { loadPricingFile } from './pricing-sync.js'
 import * as pgStore from './pg-store.js'
 import {
   DEFAULT_COST_TABLE,
@@ -38,6 +39,15 @@ import {
 } from './model-scanner.js'
 
 const logger = pino({ name: 'llm:gateway' })
+
+/** Load pricing file, fallback to hardcoded defaults */
+function loadPricingFileSafe(): Record<string, { inputPer1M: number; outputPer1M: number }> {
+  try {
+    return loadPricingFile()
+  } catch {
+    return { ...DEFAULT_COST_TABLE }
+  }
+}
 
 export class LLMGateway {
   private adapters: Map<LLMProviderName, ProviderAdapter>
@@ -114,8 +124,8 @@ export class LLMGateway {
     this.tpmLimits.set('anthropic', config.LLM_TPM_ANTHROPIC)
     this.tpmLimits.set('google', config.LLM_TPM_GOOGLE)
 
-    // Create usage tracker
-    this.tracker = new UsageTracker(db, redis, DEFAULT_COST_TABLE, {
+    // Create usage tracker (load pricing from file, fallback to hardcoded defaults)
+    this.tracker = new UsageTracker(db, redis, loadPricingFileSafe(), {
       enabled: config.LLM_USAGE_ENABLED === 'true',
       retentionDays: config.LLM_USAGE_RETENTION_DAYS,
       dailyBudgetUsd: config.LLM_DAILY_BUDGET_USD,

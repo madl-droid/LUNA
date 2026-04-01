@@ -1105,76 +1105,143 @@
     }
   })
 
-  // === Notification API ===
-  // Exposes window.lunaNotifications for the reflex/system to push notifications
-  // Usage:
-  //   lunaNotifications.add({ title: 'Error', text: 'LLM provider down', type: 'error' })
-  //   lunaNotifications.add({ title: 'Info', text: 'Config applied', type: 'info' })
-  //   lunaNotifications.clear()
-  //
-  // Types: 'error' | 'warning' | 'info' | 'success'
-  // Items are stored in-memory (not persisted). Max 20 items.
+  // === Notification API (server-backed) ===
+  // Polls /console/api/cortex/notifications every 30s.
+  // Local notifications (config saved, etc.) are merged with server notifications.
+  // Server notifications persist in PostgreSQL, local ones are ephemeral.
   window.lunaNotifications = (function () {
-    var items = []
-    var MAX = 20
+    var localItems = []
+    var serverItems = []
+    var unreadCount = 0
+    var MAX_LOCAL = 10
+    var POLL_MS = 30000
     var notifList = document.getElementById('notif-list')
     var notifDot = document.getElementById('notif-dot')
+    var notifCount = document.getElementById('notif-count')
+    var markAllBtn = document.getElementById('notif-mark-all')
+    var isEs = document.documentElement.lang === 'es'
+
+    var ICON_SVG = {
+      error: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+      success: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>',
+      info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+    }
+
+    function severityToIcon(sev) {
+      if (sev === 'critical' || sev === 'error') return ICON_SVG.error
+      if (sev === 'success') return ICON_SVG.success
+      return ICON_SVG.info
+    }
+
+    function formatTime(dateStr) {
+      try {
+        var d = new Date(dateStr)
+        var now = new Date()
+        var diffMs = now - d
+        if (diffMs < 60000) return isEs ? 'ahora' : 'now'
+        if (diffMs < 3600000) return Math.floor(diffMs / 60000) + 'm'
+        if (diffMs < 86400000) return Math.floor(diffMs / 3600000) + 'h'
+        return d.toLocaleDateString()
+      } catch { return '' }
+    }
 
     function render() {
       if (!notifList) return
-      if (items.length === 0) {
-        notifList.innerHTML = '<div class="dropdown-empty">' + (document.documentElement.lang === 'es' ? 'Sin notificaciones nuevas' : 'No new notifications') + '</div>'
+      // Merge: local items first, then server items
+      var all = localItems.concat(serverItems)
+
+      if (all.length === 0) {
+        notifList.innerHTML = '<div class="dropdown-empty">' + (isEs ? 'Sin notificaciones' : 'No notifications') + '</div>'
         if (notifDot) notifDot.classList.remove('active')
+        if (notifCount) notifCount.classList.remove('active')
+        if (markAllBtn) markAllBtn.style.display = ''
         return
       }
-      if (notifDot) notifDot.classList.add('active')
-      notifList.innerHTML = items.map(function (n) {
-        var iconSvg = n.type === 'error'
-          ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
-          : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
-        return '<div class="notif-item' + (n.read ? '' : ' notif-unread') + '" data-notif-idx="' + n.idx + '">'
+
+      var hasUnread = unreadCount > 0 || localItems.some(function (n) { return !n.read })
+      if (notifDot) notifDot.classList.toggle('active', hasUnread)
+      if (notifCount && unreadCount > 0) {
+        notifCount.textContent = unreadCount > 99 ? '99+' : String(unreadCount)
+        notifCount.classList.add('active')
+      } else if (notifCount) {
+        notifCount.classList.remove('active')
+      }
+      if (markAllBtn) markAllBtn.style.display = hasUnread ? 'block' : ''
+
+      notifList.innerHTML = all.map(function (n) {
+        var iconSvg = severityToIcon(n.severity || n.type)
+        var isUnread = n.server ? !n.read : !n.read
+        return '<div class="notif-item' + (isUnread ? ' notif-unread' : '') + '">'
           + '<div class="notif-icon">' + iconSvg + '</div>'
           + '<div class="notif-content">'
           + '<div class="notif-title">' + escHtml(n.title) + '</div>'
-          + (n.text ? '<div class="notif-text">' + escHtml(n.text) + '</div>' : '')
-          + '<div class="notif-time">' + escHtml(n.time || '') + '</div>'
+          + (n.body || n.text ? '<div class="notif-text">' + escHtml(n.body || n.text) + '</div>' : '')
+          + '<div class="notif-time">' + escHtml(n.time || formatTime(n.created_at) || '') + '</div>'
           + '</div></div>'
       }).join('')
     }
 
+    // Local notification (ephemeral — config saved, etc.)
     function add(opts) {
       var now = new Date()
-      items.unshift({
+      localItems.unshift({
         title: opts.title || '',
         text: opts.text || '',
         type: opts.type || 'info',
+        severity: opts.type || 'info',
         time: now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0'),
-        read: false,
-        idx: Date.now()
+        read: false
       })
-      if (items.length > MAX) items = items.slice(0, MAX)
+      if (localItems.length > MAX_LOCAL) localItems = localItems.slice(0, MAX_LOCAL)
       render()
     }
 
-    function clear() {
-      items = []
-      render()
-    }
+    function clear() { localItems = []; render() }
 
     function markAllRead() {
-      items.forEach(function (n) { n.read = true })
-      render()
+      localItems.forEach(function (n) { n.read = true })
+      // Mark server notifications read
+      fetch('/console/api/cortex/notifications/read-all', { method: 'POST' })
+        .then(function () { unreadCount = 0; serverItems.forEach(function (n) { n.read = true }); render() })
+        .catch(function () {})
     }
 
+    // Poll server for notifications
+    function poll() {
+      fetch('/console/api/cortex/notifications?limit=20')
+        .then(function (r) { return r.ok ? r.json() : null })
+        .then(function (data) {
+          if (!data) return
+          serverItems = (data.notifications || []).map(function (n) {
+            n.server = true; return n
+          })
+          unreadCount = data.unreadCount || 0
+          render()
+        })
+        .catch(function () {})
+    }
+
+    // Initial poll + periodic
+    poll()
+    setInterval(poll, POLL_MS)
+
     render()
-    return { add: add, clear: clear, markAllRead: markAllRead, items: items }
+    return { add: add, clear: clear, markAllRead: markAllRead, poll: poll }
   })()
 
   // Mark notifications read when opening the panel
   var notifBtn = document.getElementById('btn-notifications')
   if (notifBtn) {
     notifBtn.addEventListener('click', function () {
-      setTimeout(function () { window.lunaNotifications.markAllRead() }, 300)
+      setTimeout(function () { window.lunaNotifications.markAllRead() }, 500)
+    })
+  }
+  // Also wire the "Mark all read" button
+  var markAllBtn2 = document.getElementById('notif-mark-all')
+  if (markAllBtn2) {
+    markAllBtn2.addEventListener('click', function (e) {
+      e.stopPropagation()
+      window.lunaNotifications.markAllRead()
     })
   }
 

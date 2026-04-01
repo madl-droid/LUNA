@@ -808,6 +808,10 @@ const CHANNEL_ICONS: Record<string, { svg: string; bg: string }> = {
     svg: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
     bg: 'rgba(242, 47, 70, 0.08)',
   },
+  telegram: {
+    svg: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>`,
+    bg: 'rgba(0, 136, 204, 0.08)',
+  },
 }
 
 const CHANNEL_DESCRIPTIONS: Record<string, Record<string, string>> = {
@@ -827,6 +831,10 @@ const CHANNEL_DESCRIPTIONS: Record<string, Record<string, string>> = {
     es: 'Llamadas de voz con IA conversacional en tiempo real usando Twilio y Gemini Live. Atiende llamadas entrantes y realiza llamadas salientes con sintesis de voz natural.',
     en: 'Real-time conversational AI voice calls using Twilio and Gemini Live. Handles incoming calls and makes outbound calls with natural voice synthesis.',
   },
+  telegram: {
+    es: 'Mensajeria instantanea via Telegram Bot API. Permite al agente interactuar con usuarios y grupos a traves de un bot, con soporte para texto, multimedia y comandos.',
+    en: 'Instant messaging via Telegram Bot API. Allows the agent to interact with users and groups through a bot, with support for text, media and commands.',
+  },
 }
 
 function buildChannelCards(data: SectionData): ChannelCard[] {
@@ -839,6 +847,7 @@ function buildChannelCards(data: SectionData): ChannelCard[] {
     { id: 'gmail', moduleName: 'gmail', sectionId: 'email', defaultType: 'async' },
     { id: 'google-chat', moduleName: 'google-chat', sectionId: 'google-chat', defaultType: 'instant' },
     { id: 'twilio-voice', moduleName: 'twilio-voice', sectionId: 'twilio-voice', defaultType: 'voice' },
+    { id: 'telegram', moduleName: 'telegram', sectionId: 'telegram', defaultType: 'instant' },
   ]
 
   const googleAppsActive = modules.some(m => m.name === 'google-apps' && m.active)
@@ -912,7 +921,7 @@ const GEAR_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
 
 // ─── Channels marked as "coming soon" — toggle disabled, no settings link ───
 // To enable a channel when it's ready, remove its ID from this set.
-const COMING_SOON_CHANNELS: ReadonlySet<string> = new Set(['google-chat', 'twilio-voice'])
+const COMING_SOON_CHANNELS: ReadonlySet<string> = new Set(['google-chat', 'twilio-voice', 'telegram'])
 void COMING_SOON_CHANNELS // used on line 985
 
 // Helper: renders a single metric cell with label + hover tooltip
