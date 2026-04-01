@@ -258,7 +258,7 @@ export async function registerMedilinkTools(
 
       try {
         const patient = await api.createPatient({
-          nombres: input.first_name as string,
+          nombre: input.first_name as string,
           apellidos: input.last_name as string,
           rut: input.document_number as string,
           celular: input.phone as string,
@@ -270,7 +270,7 @@ export async function registerMedilinkTools(
           contactId: ctx.contactId, agentId,
           medilinkPatientId: String(patient.id),
           action: 'create_patient', targetType: 'patient', targetId: String(patient.id),
-          detail: { nombres: patient.nombres, apellidos: patient.apellidos },
+          detail: { nombre: patient.nombre, apellidos: patient.apellidos },
           verificationLevel: 'document_verified',
           result: 'success',
         })
@@ -282,7 +282,7 @@ export async function registerMedilinkTools(
           success: true,
           data: {
             patientId: patient.id,
-            name: `${patient.nombres} ${patient.apellidos}`,
+            name: `${patient.nombre} ${patient.apellidos}`,
             message: 'Paciente registrado y vinculado exitosamente',
           },
         }
@@ -553,20 +553,19 @@ export async function registerMedilinkTools(
           branchId = defaultBranch.id
         }
 
-        // Find a chair (first available)
-        const chairs = ref.chairs.filter((c) => c.id_sucursal === branchId)
-        const chairId = chairs[0]?.id
-        if (!chairId) return { success: false, error: 'No hay sillones disponibles en esta sucursal' }
+        // Find a chair — /sillones does not return id_sucursal, use first available
+        const chairId = ref.chairs[0]?.id
+        if (!chairId) return { success: false, error: 'No hay sillones disponibles' }
 
-        // Resolve default status
+        // Resolve default status from config (MEDILINK_DEFAULT_STATUS_ID required)
         const config = registry.getConfig<{ MEDILINK_DEFAULT_STATUS_ID: string; MEDILINK_DEFAULT_DURATION_MIN: number }>('medilink')
-        const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10) || ref.statuses[0]?.id
-        if (!statusId) return { success: false, error: 'No hay estado de cita configurado' }
+        const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10)
+        if (!statusId) return { success: false, error: 'No hay estado de cita configurado — revisar MEDILINK_DEFAULT_STATUS_ID' }
 
-        const duration = (input.duration_minutes as number) ?? treatment.duracion ?? config.MEDILINK_DEFAULT_DURATION_MIN
+        const duration = (input.duration_minutes as number) ?? config.MEDILINK_DEFAULT_DURATION_MIN
 
         const appointment = await api.createAppointment({
-          id_profesional: prof.id,
+          id_dentista: prof.id,
           id_sucursal: branchId,
           id_estado: statusId,
           id_sillon: chairId,
@@ -600,7 +599,7 @@ export async function registerMedilinkTools(
             appointmentId: appointment.id,
             fecha: appointment.fecha,
             hora: appointment.hora_inicio,
-            profesional: appointment.nombre_profesional,
+            profesional: appointment.nombre_dentista,
             tratamiento: appointment.nombre_tratamiento,
             sucursal: appointment.nombre_sucursal,
             message: 'Cita agendada exitosamente',
@@ -697,7 +696,7 @@ export async function registerMedilinkTools(
               fecha: updated.fecha,
               hora_inicio: updated.hora_inicio,
               nombre_paciente: updated.nombre_paciente,
-              nombre_profesional: updated.nombre_profesional,
+              nombre_profesional: updated.nombre_dentista,
               nombre_tratamiento: updated.nombre_tratamiento,
               nombre_sucursal: updated.nombre_sucursal,
             },
@@ -727,8 +726,8 @@ export async function registerMedilinkTools(
             appointmentId: updated.id,
             fecha: updated.fecha,
             hora: updated.hora_inicio,
-            profesional: updated.nombre_profesional,
-            message: `Cita reagendada al ${updated.fecha} a las ${updated.hora_inicio} con ${updated.nombre_profesional}`,
+            profesional: updated.nombre_dentista,
+            message: `Cita reagendada al ${updated.fecha} a las ${updated.hora_inicio} con ${updated.nombre_dentista}`,
           },
         }
       } catch (err) {
@@ -755,7 +754,7 @@ export async function registerMedilinkTools(
           field: {
             type: 'string',
             description: 'Campo a cambiar',
-            enum: ['celular', 'email', 'direccion', 'nombres', 'apellidos'],
+            enum: ['celular', 'email', 'direccion', 'nombre', 'apellidos'],
           },
           new_value: { type: 'string', description: 'Nuevo valor para el campo' },
           reason: { type: 'string', description: 'Razón del cambio (opcional)' },
@@ -804,7 +803,7 @@ export async function registerMedilinkTools(
             to: '', // Resolved by users module
             content: {
               type: 'text',
-              text: `📋 Solicitud de cambio de datos:\nPaciente: ${patient.nombres} ${patient.apellidos}\nCampo: ${field}\nAnterior: ${oldValue}\nNuevo: ${input.new_value}\n\nResponde APROBAR o RECHAZAR`,
+              text: `📋 Solicitud de cambio de datos:\nPaciente: ${patient.nombre} ${patient.apellidos}\nCampo: ${field}\nAnterior: ${oldValue}\nNuevo: ${input.new_value}\n\nResponde APROBAR o RECHAZAR`,
             },
           })
         } catch {
@@ -864,5 +863,63 @@ export async function registerMedilinkTools(
     },
   })
 
-  logger.info('11 Medilink tools registered')
+  // ═══════════════════════════════════════
+  // 12. GET MY FILES (PHOTOS, DOCS)
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-get-my-files',
+      displayName: 'Ver mis archivos y documentos',
+      description: 'Lista los archivos del paciente (fotos clínicas, consentimientos, documentos). Devuelve URLs temporales para descargar. Requiere verificación con documento.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: { type: 'object', properties: {} },
+    },
+    handler: async (_input, ctx) => {
+      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
+
+      let secCtx = await security.resolveContext(ctx.contactId, agentId)
+      secCtx = await security.tryAutoLink(secCtx)
+
+      const access = security.canAccess(secCtx, 'evolutions')
+      if (!access.allowed) {
+        return { success: false, error: 'Necesitas verificar tu identidad primero' }
+      }
+
+      try {
+        const files = await api.getPatientFiles(secCtx.medilinkPatientId!)
+        // Filter out deleted files
+        const active = files.filter((f) => f.estado === 1)
+
+        await pgStore.logAudit(ctx.db, {
+          contactId: ctx.contactId, agentId,
+          medilinkPatientId: String(secCtx.medilinkPatientId),
+          action: 'view_patient', targetType: 'files',
+          detail: { count: active.length },
+          verificationLevel: secCtx.verificationLevel,
+          result: 'success',
+        })
+
+        return {
+          success: true,
+          data: {
+            files: active.map((f) => ({
+              id: f.id,
+              nombre: f.nombre,
+              titulo: f.titulo,
+              fecha: f.fecha_creacion,
+              url: f.urls.original,
+              thumbnail: f.urls.tmb,
+            })),
+          },
+        }
+      } catch (err) {
+        logger.error({ err }, 'get-my-files failed')
+        return { success: false, error: 'Error al consultar archivos' }
+      }
+    },
+  })
+
+  logger.info('12 Medilink tools registered')
 }

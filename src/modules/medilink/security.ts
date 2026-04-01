@@ -242,7 +242,7 @@ export class SecurityService {
         hora_inicio: apt.hora_inicio,
         hora_fin: apt.hora_fin,
         duracion: apt.duracion,
-        profesional: apt.nombre_profesional,
+        profesional: apt.nombre_dentista,
         tratamiento: apt.nombre_tratamiento,
         sucursal: apt.nombre_sucursal,
         estado: apt.estado_cita,
@@ -267,7 +267,8 @@ export class SecurityService {
     return {
       id: evo.id,
       atencion: evo.nombre_atencion,
-      profesional: evo.nombre_profesional,
+      tratamiento: evo.nombre_tratamiento,
+      profesional: evo.nombre_dentista,
       fecha: evo.fecha,
       habilitado: evo.habilitado,
       // NEVER include evo.datos — these are clinical notes

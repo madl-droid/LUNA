@@ -9,6 +9,7 @@ import type {
   MedilinkProfessional, MedilinkBranch, MedilinkChair,
   MedilinkTreatment, MedilinkAppointmentStatus,
   MedilinkAgendaItem, MedilinkPatientArchive, MedilinkEvolution,
+  MedilinkTreatmentPlan, MedilinkAdditionalField,
 } from './types.js'
 import { RateLimiter } from './rate-limiter.js'
 
@@ -269,11 +270,9 @@ export class MedilinkApiClient {
     return this.fetchAll<MedilinkTreatment>('/tratamientos', { priority: priority ?? 'low' })
   }
 
-  async getAppointmentStatuses(_priority?: RequestPriority): Promise<MedilinkAppointmentStatus[]> {
-    // /estados-de-cita does not exist in this API version.
-    // Status is embedded in each appointment as 'estado_cita' string.
-    logger.debug('getAppointmentStatuses called — endpoint not available, returning []')
-    return []
+  async getAppointmentStatuses(priority?: RequestPriority): Promise<MedilinkAppointmentStatus[]> {
+    // Endpoint real: /citas/estados (no /estados-de-cita)
+    return this.fetchAll<MedilinkAppointmentStatus>('/citas/estados', { priority: priority ?? 'low' })
   }
 
   // ─── Agenda / Availability ─────────────
@@ -302,6 +301,30 @@ export class MedilinkApiClient {
 
   async getPatientFiles(patientId: number, priority?: RequestPriority): Promise<MedilinkPatientArchive[]> {
     return this.fetchAll<MedilinkPatientArchive>(`/pacientes/${patientId}/archivos`, { priority: priority ?? 'medium' })
+  }
+
+  // ─── Treatment plans (atenciones) ──────
+
+  async getPatientTreatmentPlans(patientId: number, priority?: RequestPriority): Promise<MedilinkTreatmentPlan[]> {
+    return this.fetchAll<MedilinkTreatmentPlan>(`/pacientes/${patientId}/atenciones`, { priority: priority ?? 'medium' })
+  }
+
+  // ─── Additional fields (v1 only) ──────
+
+  async getPatientAdditionalFields(patientId: number, priority?: RequestPriority): Promise<MedilinkAdditionalField[]> {
+    // /adicionales only works on /api/v1 — build v1 URL explicitly
+    const v1Base = this.baseUrl.replace(/\/api\/v\d+/, '/api/v1')
+    const url = `${v1Base}/pacientes/${patientId}/adicionales`
+    try {
+      const res = await this.request<MedilinkAdditionalField[]>('GET', '', {
+        fullUrl: url,
+        priority: priority ?? 'low',
+      })
+      return Array.isArray(res.data) ? res.data : []
+    } catch (err) {
+      logger.warn({ err: (err as Error).message, patientId }, 'Failed to fetch additional fields (v1 only)')
+      return []
+    }
   }
 
   // ─── Health check ──────────────────────

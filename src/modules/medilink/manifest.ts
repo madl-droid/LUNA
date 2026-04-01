@@ -435,7 +435,7 @@ const manifest: ModuleManifest = {
               fecha: apt.fecha,
               hora_inicio: apt.hora_inicio,
               nombre_paciente: apt.nombre_paciente,
-              nombre_profesional: apt.nombre_profesional,
+              nombre_profesional: apt.nombre_dentista,
               nombre_tratamiento: apt.nombre_tratamiento,
               nombre_sucursal: apt.nombre_sucursal,
             },

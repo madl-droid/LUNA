@@ -207,7 +207,12 @@ export interface MedilinkPatientArchive {
   id: number
   nombre: string
   titulo: string | null
+  observaciones: string | null
   fecha_creacion: string
+  id_paciente: number
+  id_tratamiento: number
+  estado: number
+  fecha_eliminacion: string | null
   /** Signed S3 URLs — expire after ~1 hour. Use urls.original to download. */
   urls: {
     original: string
@@ -216,12 +221,50 @@ export interface MedilinkPatientArchive {
   }
 }
 
+// ─── Campos adicionales (solo /api/v1) ──
+
+export interface MedilinkAdditionalField {
+  nombre: string
+  codigo: string
+  tipo: string
+  tipo_interno: string
+  valor: unknown
+  fecha_asociado: string | null
+  id_usuario_asociador: number | null
+}
+
 // ─── Estado de Cita (Appointment Status) ─
 
 export interface MedilinkAppointmentStatus {
   id: number
   nombre: string
   color: string | null
+  /** 1 = cancellation/annulment state, 0 = active state */
+  anulacion: number
+  reservado: number | null
+  links?: { self: string }
+}
+
+// ─── Atencion / Plan de tratamiento ─────
+
+export interface MedilinkTreatmentPlan {
+  id: number
+  nombre: string
+  id_tipo: number
+  nombre_tipo: string
+  fecha: string
+  finalizado: boolean
+  bloqueado: boolean
+  id_paciente: number
+  id_profesional: number
+  id_sucursal: number
+  total: number
+  abonado: number
+  abono_libre: number
+  deuda: number
+  asignado_realizado: number
+  asignado_sin_realizar: number
+  total_realizado: number
   links?: { self: string }
 }
 
@@ -229,11 +272,13 @@ export interface MedilinkAppointmentStatus {
 
 export interface MedilinkEvolution {
   id: number
+  id_atencion: number
+  nombre_atencion: string
   id_tratamiento: number
   nombre_tratamiento: string
   id_paciente: number
   nombre_paciente: string
-  /** API uses 'id_dentista', not 'id_profesional' */
+  /** v1 uses 'id_dentista'; v5 uses 'id_profesional' */
   id_dentista: number
   nombre_dentista: string
   id_sucursal: number
@@ -434,8 +479,7 @@ export interface ReferenceData {
   branches: MedilinkBranch[]
   professionals: MedilinkProfessional[]
   treatments: MedilinkTreatment[]
-  /** Always empty — /estados-de-cita endpoint does not exist in this API.
-   *  Status comes embedded in each appointment as 'estado_cita'. */
+  /** From /citas/estados — includes 'anulacion' flag for cancellation states */
   statuses: MedilinkAppointmentStatus[]
   chairs: MedilinkChair[]
   loadedAt: Date

@@ -156,33 +156,29 @@ export class MedilinkCache {
     return slots
   }
 
-  /** Process raw agenda response into clean availability slots */
-  private processAgendaResponse(raw: MedilinkAgendaRaw, branchId: number): AvailabilitySlot[] {
+  /**
+   * Process agenda items array into clean availability slots.
+   * Free slots = items where id_paciente is null (no patient booked).
+   */
+  private processAgendaResponse(items: MedilinkAgendaItem[], branchId: number): AvailabilitySlot[] {
     const slots: AvailabilitySlot[] = []
     const branch = (this.refData?.branches ?? []).find((b) => b.id === branchId)
 
-    for (const [date, hours] of Object.entries(raw)) {
-      for (const [time, chairs] of Object.entries(hours as Record<string, Record<string, unknown>>)) {
-        for (const [chairName, availability] of Object.entries(chairs)) {
-          // Only include truly available slots (value === true)
-          if (availability !== true) continue
+    for (const item of items) {
+      // Only include free slots (no patient booked)
+      if (item.id_paciente !== null) continue
 
-          // Skip "Sobrecupo" chairs (overbooking)
-          if (chairName.toLowerCase().includes('sobrecupo')) continue
-
-          slots.push({
-            date,
-            time,
-            professionalId: 0, // Resolved from context
-            professionalName: '',
-            branchId,
-            branchName: branch?.nombre ?? '',
-            chairId: chairName,
-            chairName,
-            durationMinutes: this.config.MEDILINK_DEFAULT_DURATION_MIN,
-          })
-        }
-      }
+      slots.push({
+        date: item.fecha,
+        time: item.hora_inicio,
+        professionalId: item.id_dentista,
+        professionalName: item.nombre_dentista,
+        branchId,
+        branchName: branch?.nombre ?? '',
+        chairId: String(item.id_recurso),
+        chairName: String(item.id_recurso),
+        durationMinutes: item.duracion,
+      })
     }
 
     return slots
