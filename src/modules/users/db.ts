@@ -377,7 +377,7 @@ export class UsersDb {
     )
   }
 
-  async updateUser(id: string, updates: { displayName?: string; metadata?: Record<string, unknown>; listType?: string }): Promise<User | null> {
+  async updateUser(id: string, updates: { displayName?: string; metadata?: Record<string, unknown>; listType?: string; supervisorId?: string | null }): Promise<User | null> {
     const sets: string[] = ['updated_at = NOW()']
     const values: unknown[] = []
     let idx = 1
@@ -393,6 +393,10 @@ export class UsersDb {
     if (updates.listType !== undefined) {
       sets.push(`list_type = $${idx++}`)
       values.push(updates.listType)
+    }
+    if (updates.supervisorId !== undefined) {
+      sets.push(`supervisor_id = $${idx++}`)
+      values.push(updates.supervisorId)
     }
 
     values.push(id)

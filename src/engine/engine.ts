@@ -58,6 +58,14 @@ export function initEngine(reg: Registry): void {
 
   // Register hook listener for incoming messages
   registry.addHook('engine', 'message:incoming', async (payload, _correlationId) => {
+    // HITL: skip if message was consumed by HITL interceptor
+    const hitlConsumed = await registry.getRedis().get(`hitl:consumed:${payload.id}`)
+    if (hitlConsumed) return
+
+    // HITL: skip if full handoff is active for this contact+channel (human has control)
+    const hitlHandoff = await registry.getRedis().get(`hitl:handoff:${payload.channelName}:${payload.from}`)
+    if (hitlHandoff) return
+
     const message: IncomingMessage = {
       id: payload.id,
       channelName: payload.channelName as IncomingMessage['channelName'],
