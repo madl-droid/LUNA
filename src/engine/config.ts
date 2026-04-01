@@ -107,8 +107,8 @@ export function loadEngineConfig(): EngineConfig {
 
     // Session — MEMORY_SESSION_REOPEN_WINDOW_HOURS (hours, set from console) takes precedence over SESSION_REOPEN_WINDOW_MS (ms, legacy)
     sessionReopenWindowMs: envInt('MEMORY_SESSION_REOPEN_WINDOW_HOURS', 0) > 0
-      ? envInt('MEMORY_SESSION_REOPEN_WINDOW_HOURS', 12) * 60 * 60 * 1000
-      : envInt('SESSION_REOPEN_WINDOW_MS', 43200000), // default 12h
+      ? envInt('MEMORY_SESSION_REOPEN_WINDOW_HOURS', 1) * 60 * 60 * 1000
+      : envInt('SESSION_REOPEN_WINDOW_MS', 3600000), // default 1h
 
     // Attachments
     attachmentEnabled: envBool('ATTACHMENT_ENABLED', true),

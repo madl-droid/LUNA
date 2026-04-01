@@ -3813,11 +3813,17 @@ select.wizard-input option:checked {
   font-size: 12px;
   color: var(--on-surface-dim);
 }
+.ts-tts-preview-status.has-error {
+  color: var(--error);
+}
 
 .ts-tts-preview-status-compact {
   font-size: 11px;
   color: var(--on-surface-dim);
   margin-left: 6px;
+}
+.ts-tts-preview-status-compact.has-error {
+  color: var(--error);
 }
 
 .ts-tts-body-compact {

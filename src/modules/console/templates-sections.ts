@@ -1629,8 +1629,10 @@ function renderIdentitySection(data: SectionData): string {
       audio.style.display = 'block';
       audio.play();
       status.textContent = '';
+      status.classList.remove('has-error');
     } catch(e) {
       status.textContent = ${JSON.stringify(isEs ? 'Error' : 'Error')} + ': ' + e.message;
+      status.classList.add('has-error');
     } finally {
       btn.disabled = false;
     }
@@ -1916,8 +1918,10 @@ function renderVoiceTTSSection(data: SectionData): string {
       audio.style.display = 'block';
       audio.play();
       status.textContent = '';
+      status.classList.remove('has-error');
     } catch(e) {
       status.textContent = '${isEs ? 'Error al generar preview' : 'Preview generation error'}: ' + e.message;
+      status.classList.add('has-error');
     } finally {
       btn.disabled = false;
     }

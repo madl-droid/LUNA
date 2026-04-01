@@ -30,7 +30,7 @@ const manifest: ModuleManifest = {
     MEMORY_BUFFER_MESSAGE_COUNT: numEnv(50),
     MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN: numEnv(30),
     MEMORY_SESSION_MAX_TTL_HOURS: numEnv(24),
-    MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnv(12),
+    MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnv(1),
     MEMORY_COMPRESSION_THRESHOLD: numEnv(30),
     MEMORY_COMPRESSION_KEEP_RECENT: numEnv(10),
 
@@ -84,10 +84,10 @@ const manifest: ModuleManifest = {
         key: 'MEMORY_SESSION_REOPEN_WINDOW_HOURS',
         type: 'number',
         label: { es: 'Ventana de reapertura (h)', en: 'Session reopen window (h)' },
-        info: { es: 'Horas en que un nuevo mensaje reactiva la sesion anterior en vez de abrir una nueva. Maximo 24h.', en: 'Hours in which a new message reactivates the previous session instead of opening a new one. Max 24h.' },
+        info: { es: 'Horas en que un nuevo mensaje reactiva la sesion anterior en vez de abrir una nueva. Maximo 12h.', en: 'Hours in which a new message reactivates the previous session instead of opening a new one. Max 12h.' },
         width: 'half',
         min: 1,
-        max: 24,
+        max: 12,
       },
       {
         key: 'LLM_PROMPT_CACHE_ENABLED',
