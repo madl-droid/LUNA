@@ -271,6 +271,8 @@ export interface CompositorOutput {
   audioDurationSeconds?: number
   outputFormat: 'text' | 'audio'
   rawResponse?: string
+  /** True when TTS was attempted but failed (triggers natural fallback message) */
+  ttsFailed?: boolean
 }
 
 // ═══════════════════════════════════════════

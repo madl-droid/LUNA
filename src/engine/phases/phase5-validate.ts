@@ -23,7 +23,7 @@ import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { markFarewell, setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
 import { loadProactiveConfig } from '../proactive/proactive-config.js'
-import { pickErrorFallback } from '../fallbacks/error-defaults.js'
+import { pickErrorFallback, pickTTSFailureFallback } from '../fallbacks/error-defaults.js'
 
 const logger = pino({ name: 'engine:phase5' })
 
@@ -83,17 +83,30 @@ export async function phase5Validate(
   // 4. Send response (Phase 4 already formatted + TTS'd)
   let deliveryResult: DeliveryResult
 
+  // Resolve tone once for fallback messages
+  const channelSvcP5 = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
+  const styleP5 = channelSvcP5?.get()?.avisoStyle ?? ''
+  const toneP5 = styleP5 === 'dynamic' ? 'casual' : styleP5
+
   if (composed.outputFormat === 'audio' && composed.audioBuffer) {
     deliveryResult = await sendAudioMessage(ctx, {
       audioBuffer: composed.audioBuffer,
       durationSeconds: composed.audioDurationSeconds ?? 0,
     }, registry)
 
-    // If audio failed, fall through to text
+    // If audio send failed, send natural fallback + text
     if (!deliveryResult.sent) {
-      logger.warn({ traceId: ctx.traceId }, 'Audio send failed, falling through to text')
+      logger.warn({ traceId: ctx.traceId }, 'Audio send failed, falling through to text with TTS fallback')
+      const fallbackMsg = pickTTSFailureFallback(toneP5)
+      await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
       deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
     }
+  } else if (composed.ttsFailed && ctx.responseFormat === 'audio') {
+    // TTS synthesis failed but user explicitly asked for audio — send natural fallback + text
+    logger.info({ traceId: ctx.traceId }, 'TTS failed on explicit audio request, sending fallback + text')
+    const fallbackMsg = pickTTSFailureFallback(toneP5)
+    await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
+    deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
   } else {
     deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
   }
@@ -359,6 +372,7 @@ async function sendAudioMessage(
   await registry.runHook('channel:composing', {
     channel: ctx.message.channelName,
     to: sendTo,
+    mode: 'recording',
     correlationId: ctx.traceId,
   }).catch(() => {})
 
@@ -417,6 +431,7 @@ async function sendMessages(
   await registry.runHook('channel:composing', {
     channel: ctx.message.channelName,
     to: sendTo,
+    mode: 'composing',
     correlationId: ctx.traceId,
   }).catch(() => {})
 
@@ -428,6 +443,7 @@ async function sendMessages(
       await registry.runHook('channel:composing', {
         channel: ctx.message.channelName,
         to: sendTo,
+        mode: 'composing',
         correlationId: ctx.traceId,
       }).catch(() => {})
 

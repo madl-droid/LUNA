@@ -357,6 +357,22 @@ export class BaileysAdapter {
     this.messageHandlers.push(handler)
   }
 
+  /**
+   * Mark messages as read (sends blue ticks).
+   * Respects WHATSAPP_PRIVACY_READ_RECEIPTS config.
+   * @param keys Array of Baileys message keys ({ remoteJid, id, fromMe })
+   */
+  async markRead(keys: Array<{ remoteJid: string; id: string; fromMe: boolean }>): Promise<void> {
+    if (!this.socket) return
+    if (keys.length === 0) return
+    if (!this.config.WHATSAPP_PRIVACY_READ_RECEIPTS) return
+    try {
+      await this.socket.readMessages(keys as Parameters<WASocket['readMessages']>[0])
+    } catch (err) {
+      logger.debug({ err, keys: keys.length }, 'Failed to mark messages as read')
+    }
+  }
+
   getPresenceManager(): PresenceManager {
     return this.presenceManager
   }
