@@ -21,6 +21,8 @@ const CB_COOLDOWN_MS = 5 * 60 * 1000
 const RATE_LIMIT_RPM = 5000
 
 export class EmbeddingService {
+  private static instanceCount = 0
+
   private readonly apiKey: string
   private readonly log: pino.Logger
 
@@ -33,8 +35,13 @@ export class EmbeddingService {
   private lastRefill: number = Date.now()
 
   constructor(apiKey: string, logger: pino.Logger) {
+    EmbeddingService.instanceCount++
     this.apiKey = apiKey
     this.log = logger.child({ component: 'embedding-service' })
+
+    if (EmbeddingService.instanceCount > 1) {
+      this.log.warn('Multiple EmbeddingService instances detected — rate limiting may not work correctly')
+    }
 
     if (!apiKey) {
       this.log.warn('No API key provided — embeddings disabled')

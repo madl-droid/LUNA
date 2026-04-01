@@ -3,6 +3,8 @@
 // Idempotente: usa fecha como flag. Config desde engine:nightly-config service.
 // Usa taskPool para concurrencia configurable con retries + exponential backoff.
 
+import { readdir, stat, unlink } from 'node:fs/promises'
+import { join } from 'node:path'
 import pino from 'pino'
 import type { ProactiveJobContext } from '../../types.js'
 import type { PromptsService } from '../../../modules/prompts/types.js'
@@ -89,6 +91,15 @@ export async function runNightlyBatch(ctx: ProactiveJobContext): Promise<void> {
 
     // 5. Embed summary chunks that are missing embeddings (safety net)
     await embedSummaryChunks(ctx)
+
+    // 6. Purge old pipeline logs
+    await purgeOldLogs(ctx)
+
+    // 7. Purge old legal archives
+    await purgeOldArchives(ctx)
+
+    // 8. Purge expired media files from disk
+    await purgeOldMedia(ctx)
 
     // Mark as completed
     await ctx.redis.set(redisKey, '1', 'EX', 86400)
@@ -678,6 +689,98 @@ async function embedSummaryChunks(ctx: ProactiveJobContext): Promise<void> {
     }, 'Straggler chunk embedding complete')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Chunk embedding failed')
+  }
+}
+
+// ─── 6. Purge Old Pipeline Logs ──────────────
+
+async function purgeOldLogs(ctx: ProactiveJobContext): Promise<void> {
+  const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
+  if (!memoryManager) return
+
+  try {
+    const purged = await memoryManager.purgeOldPipelineLogs()
+    if (purged > 0) {
+      logger.info({ traceId: ctx.traceId, purged }, 'Purged old pipeline logs')
+    }
+  } catch (err) {
+    logger.error({ err, traceId: ctx.traceId }, 'Pipeline logs purge failed')
+  }
+}
+
+// ─── 7. Purge Old Legal Archives ─────────────
+
+async function purgeOldArchives(ctx: ProactiveJobContext): Promise<void> {
+  const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
+  if (!memoryManager) return
+
+  try {
+    const purged = await memoryManager.purgeOldArchives()
+    if (purged > 0) {
+      logger.info({ traceId: ctx.traceId, purged }, 'Purged old conversation archives')
+    }
+
+    // Also purge session_archives (v2) using the same retention
+    const config = ctx.registry.getConfig<{ MEMORY_ARCHIVE_RETENTION_YEARS: number }>('memory')
+    const years = config.MEMORY_ARCHIVE_RETENTION_YEARS
+    if (years > 0 && years < 999) {
+      const result = await ctx.db.query(
+        `DELETE FROM session_archives WHERE created_at < now() - interval '1 year' * $1`,
+        [years],
+      )
+      const v2Purged = result.rowCount ?? 0
+      if (v2Purged > 0) {
+        logger.info({ traceId: ctx.traceId, purged: v2Purged }, 'Purged old session archives (v2)')
+      }
+    }
+  } catch (err) {
+    logger.error({ err, traceId: ctx.traceId }, 'Archive purge failed')
+  }
+}
+
+// ─── 8. Purge Expired Media Files ────────────
+
+const MEDIA_DIR = 'instance/knowledge/media'
+
+async function purgeOldMedia(ctx: ProactiveJobContext): Promise<void> {
+  let retentionMonths: number
+  try {
+    const config = ctx.registry.getConfig<{ MEMORY_MEDIA_RETENTION_MONTHS: number }>('memory')
+    retentionMonths = config.MEMORY_MEDIA_RETENTION_MONTHS
+  } catch {
+    retentionMonths = 6
+  }
+
+  const cutoff = Date.now() - retentionMonths * 30 * 24 * 60 * 60 * 1000
+
+  try {
+    let files: string[]
+    try {
+      files = await readdir(MEDIA_DIR)
+    } catch {
+      // Directory doesn't exist yet
+      return
+    }
+
+    let deleted = 0
+    for (const file of files) {
+      try {
+        const filePath = join(MEDIA_DIR, file)
+        const fileStat = await stat(filePath)
+        if (fileStat.mtimeMs < cutoff) {
+          await unlink(filePath)
+          deleted++
+        }
+      } catch {
+        // Skip files that can't be stat'd or deleted
+      }
+    }
+
+    if (deleted > 0) {
+      logger.info({ traceId: ctx.traceId, deleted, retentionMonths }, 'Purged expired media files')
+    }
+  } catch (err) {
+    logger.error({ err, traceId: ctx.traceId }, 'Media purge failed')
   }
 }
 

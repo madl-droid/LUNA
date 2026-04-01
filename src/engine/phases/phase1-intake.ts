@@ -213,6 +213,16 @@ export async function phase1Intake(
           continue
         }
 
+        // Knowledge match: document already indexed — tell evaluator
+        if (att.status === 'knowledge_match') {
+          history.push({
+            role: 'user',
+            content: `[Documento conocido] El usuario envió "${att.filename}" que ya está en la base de conocimiento. ${att.summary ?? ''} Puedes consultar la base de conocimiento para más detalle.`,
+            timestamp: new Date(),
+          })
+          continue
+        }
+
         if (att.status !== 'processed' || !att.extractedText) continue
 
         let injectedContent: string

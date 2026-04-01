@@ -192,6 +192,7 @@ Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.
 018_subagents-v2.sql         — is_system, google_search_grounding, seed web-researcher
 019_attachment-dual-results.sql — llm_text, category_label, file_path en attachment_extractions
 020_session-compression-v2.sql — session_archives, session_summaries_v2, session_memory_chunks, compression tracking
+021_knowledge-optimization.sql — attachment dedup (content_hash, knowledge_match_id), value evaluation, full_video_embed
 ```
 
 ### Cómo agregar una nueva migración

@@ -12,7 +12,7 @@ export type FAQSourceType = 'manual' | 'sheets' | 'file'
 
 export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web'
 
-export type EmbeddingStatus = 'pending' | 'processing' | 'done' | 'failed'
+export type EmbeddingStatus = 'pending' | 'processing' | 'done' | 'failed' | 'pending_review'
 
 // Frecuencias en milisegundos
 export const SYNC_FREQUENCY_MS: Record<SyncFrequency, number> = {
@@ -43,9 +43,7 @@ export interface KnowledgeCategory {
 export interface KnowledgeDocument {
   id: string
   title: string
-  description: string         // max 200 chars — admin-provided description
-  llmDescription: string | null  // auto-generated after content extraction
-  keywords: string[]          // auto-generated keywords for improved search
+  description: string         // max 200 chars — breve descripción para catálogo
   isCore: boolean             // flag separado (max 3 docs core)
   sourceType: DocumentSourceType
   sourceRef: string | null    // Drive file ID, URL, o null para upload
@@ -342,6 +340,7 @@ export interface KnowledgeItem {
   lastSyncCheckedAt: Date | null   // last Drive modifiedTime check
   lastModifiedTime: string | null  // last known Drive modifiedTime
   shareable: boolean              // agent can share the source URL with users
+  fullVideoEmbed: boolean         // download + embed full video segments (YouTube only)
   createdAt: Date
   updatedAt: Date
   tabs?: KnowledgeItemTab[]
