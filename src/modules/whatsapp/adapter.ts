@@ -611,9 +611,17 @@ export class BaileysAdapter {
     return attachments
   }
 
-  /** Re-apply privacy settings to WhatsApp server. Called on connect and on config hot-reload. */
+  /** Re-apply privacy + presence settings to WhatsApp server. Called on connect and on config hot-reload. */
   async reapplyPrivacySettings(): Promise<void> {
-    return this.applyPrivacySettings()
+    await this.applyPrivacySettings()
+    // Update online/offline presence (markOnlineOnConnect only applies at socket creation)
+    if (this.socket) {
+      try {
+        await this.socket.sendPresenceUpdate(this.config.WHATSAPP_MARK_ONLINE ? 'available' : 'unavailable')
+      } catch (err) {
+        logger.warn({ err }, 'Failed to update online presence')
+      }
+    }
   }
 
   private async applyPrivacySettings(): Promise<void> {
@@ -655,6 +663,14 @@ export class BaileysAdapter {
         applied.push('status')
       }
     } catch (err) { logger.warn({ err }, 'Failed to update status privacy') }
+
+    // Online visibility (who can see when you're online)
+    try {
+      if (sock.updateOnlinePrivacy) {
+        await sock.updateOnlinePrivacy(this.config.WHATSAPP_MARK_ONLINE ? 'all' : 'none')
+        applied.push('online')
+      }
+    } catch (err) { logger.warn({ err }, 'Failed to update online privacy') }
 
     if (applied.length > 0) {
       logger.info({ applied }, 'Privacy settings applied via individual Baileys APIs')
