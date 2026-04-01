@@ -256,9 +256,15 @@ function writeEnvFile(filePath: string, values: Record<string, string>): void {
   }
 
   for (const [key, value] of Object.entries(values)) {
-    const regex = new RegExp(`^${key}=.*$`, 'm')
-    if (regex.test(content)) {
-      content = content.replace(regex, `${key}=${value}`)
+    // Multi-line values cannot be represented safely in .env format — skip them.
+    // DB (config_store) is the primary store; .env is a single-line fallback backup.
+    if (value.includes('\n') || value.includes('\r')) continue
+
+    // Remove existing entry (including any leftover continuation lines) before writing.
+    // The regex replaces KEY=... and any following non-KEY lines as a block.
+    const blockRegex = new RegExp(`^${key}=.*(?:\\n(?![A-Za-z_][A-Za-z0-9_]*=)[^\\n]*)*`, 'm')
+    if (blockRegex.test(content)) {
+      content = content.replace(blockRegex, `${key}=${value}`)
     } else {
       content += `\n${key}=${value}`
     }
