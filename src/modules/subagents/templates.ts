@@ -568,7 +568,7 @@ export function renderSubagentsSection(
         const modelLabel = t.modelTier === 'complex' ? 'Complejo' : 'Normal'
 
         return `
-      <div class="panel${!t.enabled ? ' sa-card-disabled' : ''}" data-sa-id="${esc(t.id)}" style="padding:var(--panel-padding)">
+      <div class="panel${!t.enabled ? ' sa-card-disabled' : ''}" data-sa-id="${esc(t.id)}" ${t.isSystem ? 'data-sa-system="1"' : ''} style="padding:var(--panel-padding)">
         <!-- Card preview — horizontal layout -->
         <div class="sa-card-row">
           <div class="sa-card-main">
@@ -837,7 +837,7 @@ function renderScript(lang: Lang): string {
       var editBtn = card.querySelector('.sa-edit-btn')
       var delBtn = card.querySelector('.sa-delete-btn')
       if (editBtn) editBtn.style.display = checked ? '' : 'none'
-      if (delBtn) delBtn.style.display = checked ? 'none' : ''
+      if (delBtn && !card.dataset.saSystem) delBtn.style.display = checked ? 'none' : ''
     } catch(e) { alert('Error: ' + e.message) }
   }
 

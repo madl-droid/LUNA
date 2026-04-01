@@ -39,7 +39,9 @@ export function renderModulePanels(modules: ModuleInfo[], config: Record<string,
     const title = mod.console?.title ? (mod.console.title[lang] || mod.console.title.es || mod.name) : mod.name
     const info = mod.console?.info ? (mod.console.info[lang] || mod.console.info.es || '') : ''
     const isActive = mod.active
-    const canToggle = mod.removable !== false && !filterName
+    // Core agent modules that must always stay active — no toggle
+    const ALWAYS_ACTIVE = new Set(['knowledge', 'memory', 'subagents'])
+    const canToggle = mod.removable !== false && !filterName && !ALWAYS_ACTIVE.has(mod.name)
 
     h += `<div class="module-panel">
       <div class="module-panel-header">
