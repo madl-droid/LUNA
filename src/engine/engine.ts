@@ -3,6 +3,7 @@
 // Conecta las 5 fases y expone la API pública del engine.
 
 import pino from 'pino'
+import { logChannelMessage } from '../kernel/extreme-logger.js'
 import type { Registry } from '../kernel/registry.js'
 import type { IncomingMessage } from '../channels/types.js'
 import type { PipelineResult, EngineConfig, ContextBundle, ReplanContext } from './types.js'
@@ -128,6 +129,15 @@ export function initEngine(reg: Registry): void {
  * Protected by pipeline semaphore (global concurrency) and contact lock (per-contact serialization).
  */
 export async function processMessage(message: IncomingMessage): Promise<PipelineResult> {
+  // Extreme logging: inbound message
+  logChannelMessage({
+    channel: message.channelName,
+    direction: 'inbound',
+    contactId: message.from,
+    messageType: message.content.type,
+    textPreview: message.content.text ?? message.content.caption,
+  }).catch(() => {})
+
   const totalStart = Date.now()
   const db = registry.getDb()
   const redis = registry.getRedis()
@@ -494,6 +504,16 @@ async function processMessageInner(
         subagentIterations: subagentIterationsUsed || null,
       }).catch(err => logger.warn({ err, traceId }, 'Failed to save pipeline log'))
     }
+
+    // Extreme logging: outbound response
+    logChannelMessage({
+      channel: message.channelName,
+      direction: 'outbound',
+      contactId: message.from,
+      messageType: 'text',
+      textPreview: composed.responseText,
+      metadata: { traceId, totalDurationMs, sent: delivery.sent },
+    }).catch(() => {})
 
     return {
       traceId,

@@ -5,6 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import pino from 'pino'
+import { logExternalApi } from '../../kernel/extreme-logger.js'
 import type {
   ProviderAdapter,
   LLMProviderName,
@@ -179,6 +180,13 @@ export class AnthropicAdapter implements ProviderAdapter {
       const cacheReadTokens = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : undefined
       const cacheCreationTokens = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : undefined
 
+      const durationMs = Date.now() - start
+      logExternalApi({
+        provider: 'anthropic', endpoint: '/messages', method: 'POST',
+        durationMs, status: 200, model: msg.model,
+        tokensIn: msg.usage.input_tokens, tokensOut: msg.usage.output_tokens,
+      }).catch(() => {})
+
       return {
         text,
         provider: 'anthropic',
@@ -186,7 +194,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         inputTokens: msg.usage.input_tokens,
         outputTokens: msg.usage.output_tokens,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        durationMs: Date.now() - start,
+        durationMs,
         fromFallback: false,
         attempt: 0,
         cacheReadTokens: cacheReadTokens as number | undefined,
@@ -497,14 +505,22 @@ export class GoogleAdapter implements ProviderAdapter {
         ? usageMeta.cachedContentTokenCount
         : undefined
 
+      const durationMs = Date.now() - start
+      const inTokens = response.usageMetadata?.promptTokenCount ?? 0
+      const outTokens = response.usageMetadata?.candidatesTokenCount ?? 0
+      logExternalApi({
+        provider: 'google', endpoint: '/generateContent', method: 'POST',
+        durationMs, status: 200, model, tokensIn: inTokens, tokensOut: outTokens,
+      }).catch(() => {})
+
       return {
         text: response.text(),
         provider: 'google',
         model,
-        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
-        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+        inputTokens: inTokens,
+        outputTokens: outTokens,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        durationMs: Date.now() - start,
+        durationMs,
         fromFallback: false,
         attempt: 0,
         cacheReadTokens,
