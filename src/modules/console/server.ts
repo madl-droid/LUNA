@@ -1401,6 +1401,18 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           } else {
             sectionData.herramientasContent = notAvailable('Freshdesk')
           }
+        } else if (herramientasSubpage === 'hitl') {
+          const hitlMod = data.moduleStates.find(m => m.name === 'hitl')
+          if (hitlMod?.active) {
+            let html = renderModulePanels([hitlMod], data.config, lang, 'hitl')
+            try {
+              const renderFn = registry.getOptional<(config: Record<string, string>, lang: string) => string>('hitl:renderSection')
+              if (renderFn) html += renderFn(data.config, lang)
+            } catch (err) { logger.error({ err }, 'Failed to render hitl custom section') }
+            sectionData.herramientasContent = html
+          } else {
+            sectionData.herramientasContent = notAvailable('HITL')
+          }
         } else if (herramientasSubpage) {
           // Dynamic: any active agent-group module renders as module panel
           const dynMod = data.moduleStates.find(m => m.name === herramientasSubpage)

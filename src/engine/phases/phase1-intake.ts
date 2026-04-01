@@ -258,6 +258,15 @@ export async function phase1Intake(
     logger.warn({ err, traceId }, 'Attachment processing in Phase 1 failed — evaluator will see metadata only')
   }
 
+  // Load HITL pending context (if hitl module is active)
+  let hitlPendingContext: string | null = null
+  try {
+    const hitlCtx = registry.getOptional<{ getPending(channel: string, senderId: string): Promise<string | null> }>('hitl:context')
+    if (hitlCtx) {
+      hitlPendingContext = await hitlCtx.getPending(message.channelName, message.from)
+    }
+  } catch { /* hitl module not active */ }
+
   const durationMs = Date.now() - startMs
   logger.info({
     traceId, durationMs, userType,
@@ -266,6 +275,7 @@ export async function phase1Intake(
     commitments: pendingCommitments.length,
     summaries: relevantSummaries.length,
     attachments: attachmentMeta.length,
+    hitlPending: !!hitlPendingContext,
   }, 'Phase 1 complete')
 
   return {
@@ -296,6 +306,7 @@ export async function phase1Intake(
     attachmentContext, // populated here in Phase 1 (parallel with context loading)
     responseFormat: messageType === 'audio' && message.channelName === 'whatsapp' ? 'audio' : 'text',
     possibleInjection,
+    hitlPendingContext,
   }
 }
 

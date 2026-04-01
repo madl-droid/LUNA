@@ -46,6 +46,7 @@ export interface User {
   metadata: Record<string, unknown>
   isActive: boolean
   source: string
+  supervisorId: string | null
   createdAt: Date
   updatedAt: Date
 }

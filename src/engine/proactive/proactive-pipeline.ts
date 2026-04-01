@@ -308,6 +308,7 @@ async function buildProactiveContext(
     attachmentContext: null,
     responseFormat: 'text',
     possibleInjection: false,
+    hitlPendingContext: null,
     isProactive: true,
     proactiveTrigger: {
       type: candidate.triggerType,
