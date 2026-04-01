@@ -155,10 +155,15 @@ export class BaileysAdapter {
     this.socket = makeWASocket({
       version,
       auth: state,
-      logger: pino({ level: 'silent' }) as never,
+      logger: pino({ level: 'warn', name: 'baileys' }) as never,
       markOnlineOnConnect: this.config.WHATSAPP_MARK_ONLINE,
       generateHighQualityLinkPreview: false,
       syncFullHistory: false,
+      getMessage: async (_key) => {
+        // Required by Baileys 7.x for message retransmission.
+        // We don't keep a message store, so return undefined.
+        return undefined
+      },
     })
 
     this.socket.ev.on('creds.update', saveCreds)
@@ -234,6 +239,7 @@ export class BaileysAdapter {
     })
 
     this.socket.ev.on('messages.upsert', async (upsert: BaileysEventMap['messages.upsert']) => {
+      logger.info({ type: upsert.type, count: upsert.messages.length }, 'messages.upsert event received')
       // 'notify' = real-time messages, 'append' = history/missed messages (during downtime)
       const missedEnabled = this.config.WHATSAPP_MISSED_MSG_ENABLED ?? true
       const missedWindowMin = this.config.WHATSAPP_MISSED_MSG_WINDOW_MIN ?? 15

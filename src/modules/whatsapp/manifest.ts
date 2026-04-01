@@ -408,6 +408,7 @@ const manifest: ModuleManifest = {
         channelName: msg.channelName as IncomingMessage['channelName'],
         channelMessageId: msg.channelMessageId,
         from: msg.from,
+        resolvedPhone: msg.resolvedPhone,
         senderName: msg.senderName,
         timestamp: msg.timestamp,
         content: { ...msg.content, type: (msg.content.type || 'text') as IncomingMessage['content']['type'] },
