@@ -9,22 +9,10 @@ import type { PromptsService } from '../../modules/prompts/types.js'
 import { escapeDataForPrompt, escapeHistory, wrapUserContent } from '../utils/prompt-escape.js'
 import type { ConfigStore } from '../../modules/lead-scoring/config-store.js'
 
-// Default channel format instructions (overridable via config_store)
+// Minimal fallback — full formats live in instance/prompts/system/channel-format-*.md
 const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
-  whatsapp: `FORMATO WHATSAPP:
-- Máximo 300 caracteres por mensaje
-- Usa lenguaje conversacional, informal pero profesional
-- Puedes usar emojis con moderación (1-2 por mensaje)
-- NO uses markdown, HTML ni formato rico
-- Si necesitas más espacio, el sistema dividirá en burbujas automáticamente
-- Sé directo, sin rodeos`,
-
-  email: `FORMATO EMAIL:
-- Sin límite de longitud, pero sé conciso
-- Puedes usar formato rico (negritas, listas)
-- Incluye saludo y despedida profesional
-- Tono más formal que WhatsApp
-- Usa párrafos cortos`,
+  whatsapp: 'FORMATO WHATSAPP: Mensajes cortos y conversacionales. Máximo 300 caracteres. Sin markdown.',
+  email: 'FORMATO EMAIL: Formato rico, tono profesional, párrafos cortos. Incluye saludo y despedida.',
 }
 
 /**

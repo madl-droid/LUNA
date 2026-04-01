@@ -1,3 +1,4 @@
+Los puntos 1-5 del sistema ya verifican: respuesta correcta, formato de canal, guardrails, integración de tools y seguridad.
 Puntos adicionales de auto-revisión antes de enviar tu respuesta:
 
 6. **¿El tono es cálido y consultivo?** — Venta consultiva, no agresiva. No suenes como robot ni como vendedor insistente.

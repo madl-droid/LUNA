@@ -9,25 +9,12 @@ import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 import type { KnowledgeManager } from '../../modules/knowledge/knowledge-manager.js'
 import { escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
-// Fallback used when no custom prompt and prompts:service not available
-const SUBAGENT_SYSTEM_FALLBACK = `Eres un agente de ejecución. Tu trabajo es completar una tarea específica usando las herramientas disponibles.
+// Minimal fallback — full prompt lives in instance/prompts/system/subagent-system.md
+const SUBAGENT_SYSTEM_FALLBACK = `Eres un agente de ejecución. Completa la tarea con las herramientas disponibles.
+Responde en JSON: {"status":"done|partial|failed","result":{},"summary":"..."}`
 
-Reglas:
-- Ejecuta SOLO la tarea indicada, nada más
-- Usa las herramientas disponibles para resolver la tarea
-- Si no puedes completar la tarea, responde con un resumen de lo que lograste
-- Sé eficiente: usa el mínimo de pasos necesarios
-- NO generes respuestas conversacionales, solo ejecuta y reporta resultados
-- Responde en JSON cuando no uses tools: {"status": "done|partial|failed", "result": {...}, "summary": "..."}`
-
-// Spawn instructions appended when subagent can create children
-const SPAWN_INSTRUCTIONS = `
-
-IMPORTANTE sobre spawn_subagent:
-- SOLO usa spawn_subagent si la tarea es DEMASIADO COMPLEJA o LARGA para completarla tú mismo
-- Para tareas simples o de pocos pasos, resuélvelas directamente con tus tools
-- El sub-subagente NO puede crear más hijos, así que asegúrate de darle una tarea que pueda resolver solo
-- Divide el trabajo solo cuando genuinamente necesites paralelizar o separar responsabilidades`
+// Minimal fallback — full instructions live in instance/prompts/system/spawn-instructions.md
+const SPAWN_INSTRUCTIONS_FALLBACK = `\nIMPORTANTE: Solo usa spawn_subagent si la tarea es demasiado compleja para resolverla tú mismo.`
 
 /**
  * Build the subagent prompt for a specific execution step.
@@ -63,7 +50,9 @@ export async function buildSubagentPrompt(
 
   // Append spawn instructions if this subagent can spawn children
   if (catalogEntry?.canSpawnChildren) {
-    system += SPAWN_INSTRUCTIONS
+    const svcForSpawn = registry?.getOptional<PromptsService>('prompts:service') ?? null
+    const spawnInstr = svcForSpawn ? await svcForSpawn.getSystemPrompt('spawn-instructions') : ''
+    system += spawnInstr || SPAWN_INSTRUCTIONS_FALLBACK
   }
 
   // ── User message ──
