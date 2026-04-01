@@ -1290,6 +1290,11 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         sectionData.agenteSubpage = agenteSubpage
         // Map sub-pages to their actual section renderers
         if (agenteSubpage === 'advanced') {
+          // Inject HITL section if module is active
+          try {
+            const hitlRender = registry.getOptional<(config: Record<string, string>, lang: string) => string>('hitl:renderSection')
+            if (hitlRender) sectionData.hitlSectionHtml = hitlRender(sectionData.config, lang)
+          } catch { /* hitl module not active */ }
           sectionData.agenteContent = renderAdvancedAgentSection(sectionData)
         } else if (agenteSubpage === 'knowledge') {
           // Load knowledge items HTML via module service
