@@ -17,6 +17,8 @@ import { registerMedilinkTools } from './tools.js'
 import { FollowUpScheduler } from './follow-up-scheduler.js'
 import { runMigrations } from './pg-store.js'
 import * as pgStore from './pg-store.js'
+import { renderMedilinkConsole } from './templates.js'
+import type { MedilinkConsoleData } from './templates.js'
 import type { MedilinkConfig } from './types.js'
 
 const logger = pino({ name: 'medilink' })
@@ -294,7 +296,7 @@ const manifest: ModuleManifest = {
     MEDILINK_WEBHOOK_PRIVATE_KEY: z.string().default(''),
     MEDILINK_RATE_LIMIT_RPM: numEnvMin(1, 20),
     MEDILINK_API_TIMEOUT_MS: numEnv(15000),
-    MEDILINK_AVAILABILITY_CACHE_TTL_MS: numEnv(600000),
+    MEDILINK_AVAILABILITY_CACHE_TTL_MS: numEnv(3600000),
     MEDILINK_REFERENCE_REFRESH_DAYS: numEnv(30),
     MEDILINK_DEFAULT_BRANCH_ID: z.string().default(''),
     MEDILINK_DEFAULT_DURATION_MIN: numEnvMin(5, 30),
@@ -407,7 +409,44 @@ const manifest: ModuleManifest = {
     // Register agent tools
     await registerMedilinkTools(registry, apiClient, cache, security)
 
-    // Register webhook listeners for follow-ups
+    // Provide renderSection for console: professionals + follow-up templates
+    registry.provide('medilink:renderSection', async (lang: 'es' | 'en') => {
+      const refData = await cache!.getReferenceData()
+      const profRules = await pgStore.getProfessionalTreatments(db)
+      const userTypeRules = await pgStore.getUserTypeRules(db)
+      const templates = await pgStore.getTemplates(db)
+      const consoleData: MedilinkConsoleData = {
+        professionals: refData.professionals,
+        treatments: refData.treatments,
+        profRules,
+        userTypeRules,
+        templates,
+      }
+      return renderMedilinkConsole(consoleData, lang)
+    })
+
+    // Register webhook listeners for cache warm + follow-ups
+    if (webhookHandler) {
+      // Proactively warm availability cache after cita changes
+      const warmCacheForCita = async (citaId: number) => {
+        try {
+          const apt = await apiClient!.getAppointment(citaId, 'high')
+          // Warm cache for the affected date/branch
+          void cache!.refreshAvailability(apt.id_sucursal, apt.fecha, apt.id_dentista)
+        } catch { /* invalidation already happened, warm is best-effort */ }
+      }
+
+      webhookHandler.on('cita', 'created', async (payload) => {
+        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+      })
+      webhookHandler.on('cita', 'modified', async (payload) => {
+        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+      })
+      webhookHandler.on('cita', 'deleted', async (payload) => {
+        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+      })
+    }
+
     if (followUpScheduler && webhookHandler) {
       webhookHandler.on('cita', 'created', async (payload) => {
         // External appointment creation → create follow-up sequence

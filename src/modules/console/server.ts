@@ -1505,9 +1505,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           }
         } else if (herramientasSubpage === 'medilink') {
           const medilinkMod = data.moduleStates.find(m => m.name === 'medilink')
-          sectionData.herramientasContent = medilinkMod?.active && medilinkMod.console?.fields?.length
-            ? renderModulePanels([medilinkMod], data.config, lang, 'medilink')
-            : notAvailable('medilink')
+          if (medilinkMod?.active && medilinkMod.console?.fields?.length) {
+            let html = renderModulePanels([medilinkMod], data.config, lang, 'medilink')
+            try {
+              const renderFn = registry.getOptional<(lang: string) => Promise<string>>('medilink:renderSection')
+              if (renderFn) html += await renderFn(lang)
+            } catch (err) { logger.error({ err }, 'Failed to render medilink custom section') }
+            sectionData.herramientasContent = html
+          } else {
+            sectionData.herramientasContent = notAvailable('medilink')
+          }
         } else if (herramientasSubpage === 'scheduled-tasks') {
           try {
             const renderFn = registry.getOptional<(lang: string) => Promise<string>>('scheduled-tasks:renderSection')

@@ -249,6 +249,25 @@ export class MedilinkCache {
     }
   }
 
+  /**
+   * Proactively refresh availability cache for a specific date/branch.
+   * Called after webhook invalidation to keep cache warm.
+   */
+  async refreshAvailability(branchId: number, date: string, professionalId?: number): Promise<void> {
+    try {
+      const items = await this.api.getAgenda(branchId, date, professionalId)
+      const slots = this.processAgendaResponse(items, branchId)
+
+      const cacheKey = `${AVAIL_PREFIX}${branchId}:${date}:${professionalId ?? 'all'}:default`
+      if (await isCacheEnabled()) {
+        await this.redis.set(cacheKey, JSON.stringify(slots), 'PX', this.config.MEDILINK_AVAILABILITY_CACHE_TTL_MS)
+      }
+      logger.debug({ branchId, date, professionalId, slots: slots.length }, 'Availability cache refreshed proactively')
+    } catch (err) {
+      logger.warn({ err: (err as Error).message, branchId, date }, 'Failed to proactively refresh availability cache')
+    }
+  }
+
   // ─── Stats ─────────────────────────────
 
   getStats(): {
