@@ -1,9 +1,9 @@
 // LUNA — TTS Service
-// Calls Google Gemini AI Studio TTS API to synthesize text to WAV audio.
-// TODO: Gemini TTS outputs raw PCM (16-bit LE, mono, 24kHz). We prepend a WAV header.
-// For WhatsApp voice notes, OGG_OPUS would be ideal but requires ffmpeg for conversion.
-// WAV works as a fallback — the engine/WhatsApp adapter may need to handle conversion.
+// Calls Google Gemini AI Studio TTS API to synthesize text to OGG/Opus audio.
+// Flow: Gemini TTS → raw PCM (16-bit LE, mono, 24kHz) → WAV header → ffmpeg → OGG/Opus.
+// Falls back to WAV if ffmpeg is not available.
 
+import { spawn } from 'node:child_process'
 import pino from 'pino'
 
 const logger = pino({ name: 'tts:service' })
@@ -100,17 +100,17 @@ export class TTSService {
     return Math.random() * 100 < freq
   }
 
+  /**
+   * Synthesize a single text segment into audio.
+   * NOTE: Does NOT cap text length — callers (synthesizeChunks) are responsible for capping/chunking.
+   * For direct use, cap text before calling.
+   */
   async synthesize(text: string): Promise<SynthesizeResult | null> {
     if (!this.config.TTS_GOOGLE_API_KEY) {
       logger.warn('TTS API key not configured')
       return null
     }
-
-    // Duration limit: ~700 chars per minute of spoken audio
-    const durationMinutes = parseFloat(this.config.TTS_MAX_DURATION) || 2
-    const durationChars = Math.round(durationMinutes * 700)
-    const maxChars = Math.min(this.config.TTS_MAX_CHARS, durationChars)
-    const truncated = text.substring(0, maxChars)
+    if (!text || text.trim().length === 0) return null
 
     try {
       const temperature = this.config.TTS_TEMPERATURE ?? 1.2
@@ -119,7 +119,7 @@ export class TTSService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: truncated }] }],
+          contents: [{ role: 'user', parts: [{ text }] }],
           generationConfig: {
             responseModalities: ['AUDIO'],
             temperature,
@@ -149,14 +149,21 @@ export class TTSService {
       }
 
       const pcmBuffer = Buffer.from(base64Audio, 'base64')
-      // Convert raw PCM to WAV (16-bit LE, mono, 24kHz)
-      // TODO: For WhatsApp voice notes, OGG_OPUS is preferred. Consider adding ffmpeg conversion.
-      const audioBuffer = pcmToWav(pcmBuffer)
+      const wavBuffer = pcmToWav(pcmBuffer)
+
+      // Convert WAV → OGG/Opus via ffmpeg (required for WhatsApp voice notes)
+      let audioBuffer: Buffer
+      try {
+        audioBuffer = await wavToOggOpus(wavBuffer)
+      } catch (err) {
+        logger.warn({ err }, 'ffmpeg OGG/Opus conversion failed, using WAV fallback')
+        audioBuffer = wavBuffer
+      }
 
       // Estimate duration from PCM: 24000 samples/sec * 2 bytes/sample * 1 channel = 48000 bytes/sec
       const durationSeconds = Math.max(1, Math.round(pcmBuffer.length / 48000))
 
-      logger.info({ textLength: truncated.length, audioBytes: audioBuffer.length, durationSeconds }, 'TTS synthesis complete')
+      logger.info({ textLength: text.length, audioBytes: audioBuffer.length, durationSeconds }, 'TTS synthesis complete')
 
       return { audioBuffer, durationSeconds }
     } catch (err) {
@@ -164,4 +171,122 @@ export class TTSService {
       return null
     }
   }
+
+  /**
+   * Split text into chunks and synthesize each separately.
+   * Uses TTS_MAX_DURATION to cap total text, then splits into ~900-char chunks.
+   * Max 2 chunks to avoid flooding the chat with voice notes.
+   */
+  async synthesizeChunks(text: string): Promise<SynthesizeResult[]> {
+    if (!this.config.TTS_GOOGLE_API_KEY) {
+      logger.warn('TTS API key not configured')
+      return []
+    }
+    if (!text || text.trim().length === 0) return []
+
+    // Cap total text by duration (~700 chars/min)
+    const durationMinutes = parseFloat(this.config.TTS_MAX_DURATION) || 2
+    const durationChars = Math.round(durationMinutes * 700)
+    const maxChars = Math.min(this.config.TTS_MAX_CHARS, durationChars)
+    const capped = text.substring(0, maxChars)
+
+    // Split into chunks (~900 chars by sentence boundaries, max 2)
+    const CHUNK_SIZE = 900
+    const MAX_CHUNKS = 2
+    const chunks = splitTextIntoChunks(capped, CHUNK_SIZE).slice(0, MAX_CHUNKS)
+
+    logger.info({ totalChars: capped.length, chunks: chunks.length }, 'TTS chunking')
+
+    // Synthesize each chunk sequentially (avoid hammering the API)
+    const results: SynthesizeResult[] = []
+    for (const chunk of chunks) {
+      const result = await this.synthesize(chunk)
+      if (result) results.push(result)
+    }
+    return results
+  }
+}
+
+// ─── Audio conversion ──────────────────────────────
+
+const FFMPEG_TIMEOUT_MS = 15_000
+
+/** Convert WAV buffer to OGG/Opus via ffmpeg (stdin→stdout, no temp files) */
+async function wavToOggOpus(wavBuffer: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const proc = spawn('ffmpeg', [
+      '-i', 'pipe:0',
+      '-c:a', 'libopus',
+      '-b:a', '48k',
+      '-application', 'voip',
+      '-f', 'ogg',
+      'pipe:1',
+    ], { stdio: ['pipe', 'pipe', 'pipe'] })
+
+    const outChunks: Buffer[] = []
+    const errChunks: Buffer[] = []
+    proc.stdout.on('data', (chunk: Buffer) => outChunks.push(chunk))
+    proc.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk))
+
+    // Timeout: kill ffmpeg if it hangs
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        proc.kill('SIGKILL')
+        reject(new Error('ffmpeg timed out after 15s'))
+      }
+    }, FFMPEG_TIMEOUT_MS)
+
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (settled) return
+      settled = true
+      if (code === 0) {
+        resolve(Buffer.concat(outChunks))
+      } else {
+        const stderr = Buffer.concat(errChunks).toString('utf-8').slice(-500)
+        reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`))
+      }
+    })
+    proc.on('error', (err) => {
+      clearTimeout(timer)
+      if (!settled) { settled = true; reject(err) }
+    })
+
+    proc.stdin.write(wavBuffer)
+    proc.stdin.end()
+  })
+}
+
+// ─── Text chunking ──────────────────────────────
+
+/** Split text into chunks of approximately maxChars, breaking at sentence boundaries */
+function splitTextIntoChunks(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text]
+
+  const chunks: string[] = []
+  let remaining = text
+
+  while (remaining.length > 0 && chunks.length < 5) {
+    if (remaining.length <= maxChars) {
+      chunks.push(remaining)
+      break
+    }
+
+    // Find the last sentence boundary within maxChars
+    const slice = remaining.substring(0, maxChars)
+    const lastPeriod = Math.max(
+      slice.lastIndexOf('. '),
+      slice.lastIndexOf('? '),
+      slice.lastIndexOf('! '),
+      slice.lastIndexOf('\n'),
+    )
+
+    const breakAt = lastPeriod > maxChars * 0.5 ? lastPeriod + 1 : maxChars
+    chunks.push(remaining.substring(0, breakAt).trim())
+    remaining = remaining.substring(breakAt).trim()
+  }
+
+  return chunks.filter(c => c.length > 0)
 }

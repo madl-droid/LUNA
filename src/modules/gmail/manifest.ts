@@ -1300,6 +1300,7 @@ const manifest: ModuleManifest = {
           typingDelayMaxMs: 0,
           channelType: 'async',
           supportsTypingIndicator: false,
+          ttsEnabled: false,
           antiSpamMaxPerWindow: 0,
           antiSpamWindowMs: 0,
           floodThreshold: 0,

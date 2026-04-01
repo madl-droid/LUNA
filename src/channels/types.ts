@@ -125,6 +125,10 @@ export interface ChannelRuntimeConfig {
   /** Anti-spam window size in ms */
   antiSpamWindowMs: number
 
+  // ── TTS (audio responses) ──
+  /** Whether TTS audio responses are enabled for this channel */
+  ttsEnabled: boolean
+
   // ── Anti-flooding (inbound — groups rapid user messages) ──
   /** Threshold to trigger immediate flush of batch (0 = disabled) */
   floodThreshold: number

@@ -807,6 +807,7 @@ function buildChannelConfig(cfg: GoogleChatConfig): import('../../channels/types
     // Google Chat API does NOT support typing indicators for bots/apps.
     // Verified: no endpoint exists in chat.googleapis.com v1 for bot typing state.
     supportsTypingIndicator: false,
+    ttsEnabled: false,
     antiSpamMaxPerWindow: cfg.GOOGLE_CHAT_ANTISPAM_MAX,
     antiSpamWindowMs: cfg.GOOGLE_CHAT_ANTISPAM_WINDOW_MS,
     floodThreshold: 20,

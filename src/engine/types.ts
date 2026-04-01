@@ -272,6 +272,8 @@ export interface CompositorOutput {
   formattedParts: string[]
   audioBuffer?: Buffer
   audioDurationSeconds?: number
+  /** Multiple audio chunks for sequential voice notes (used when response > 900 chars) */
+  audioChunks?: Array<{ audioBuffer: Buffer; durationSeconds: number }>
   outputFormat: 'text' | 'audio'
   rawResponse?: string
   /** True when TTS was attempted but failed (triggers natural fallback message) */
