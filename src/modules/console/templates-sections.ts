@@ -2157,6 +2157,18 @@ function renderMemorySection(data: SectionData): string {
     </div>`
   }
 
+  // Duration field: unit displayed inside the input (e.g. "24 horas")
+  function durF(key: string, label: string, unit: string, info: string): string {
+    const v = cv(data, key)
+    return `<div class="field">
+      <div class="field-left"><span class="field-label">${esc(label)}</span>${itip(key, esc(info))}</div>
+      <div class="field-duration">
+        <input type="text" inputmode="numeric" name="${key}" value="${esc(v)}" data-original="${esc(v)}">
+        <span class="field-duration-unit">${esc(unit)}</span>
+      </div>
+    </div>`
+  }
+
   function hourSel(key: string, label: string, info: string): string {
     const v = cv(data, key) || '0'
     const opts = Array.from({ length: 24 }, (_, i) => {
@@ -2190,10 +2202,6 @@ function renderMemorySection(data: SectionData): string {
 
   function row2(a: string, b: string): string {
     return `<div class="chs-field-row">${a}${b}</div>`
-  }
-
-  function row3(a: string, b: string, c: string): string {
-    return `<div class="chs-field-row chs-field-row-3">${a}${b}${c}</div>`
   }
 
   function sdiv(label: string): string {
@@ -2245,14 +2253,14 @@ function renderMemorySection(data: SectionData): string {
     )}
   `)
 
-  // ── Panel 2: Memoria de mediano plazo ──
+  // ── Panel 2: Memoria de mediano plazo (collapsed) ──
   const p2 = panel(l('Memoria de mediano plazo', 'Mid-term memory'), `
-    ${numF('MEMORY_SUMMARY_RETENTION_DAYS', l('Resúmenes de interacciones (días)', 'Interaction summaries (days)'), l('Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', 'Days before deleting session summaries. Maximum 730 days (2 years).'))}
-    ${numF('MEMORY_PIPELINE_LOGS_RETENTION_DAYS', l('Registros del sistema (días)', 'System logs (days)'), l('Días antes de eliminar registros de procesamiento interno del pipeline', 'Days before deleting internal pipeline processing logs'))}
-    ${numF('MEMORY_MEDIA_RETENTION_MONTHS', l('Almacenamiento de media (meses)', 'Media storage (months)'), l('Meses de retención de imágenes y archivos en disco. Máximo 24 meses.', 'Months to retain images and media files on disk. Maximum 24 months.'))}
-  `)
+    ${durF('MEMORY_SUMMARY_RETENTION_DAYS', l('Resúmenes de interacciones', 'Interaction summaries'), l('días', 'days'), l('Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', 'Days before deleting session summaries. Maximum 730 days (2 years).'))}
+    ${durF('MEMORY_PIPELINE_LOGS_RETENTION_DAYS', l('Registros del sistema', 'System logs'), l('días', 'days'), l('Días antes de eliminar registros de procesamiento interno del pipeline', 'Days before deleting internal pipeline processing logs'))}
+    ${durF('MEMORY_MEDIA_RETENTION_MONTHS', l('Almacenamiento de media', 'Media storage'), l('meses', 'months'), l('Meses de retención de imágenes y archivos en disco. Máximo 24 meses.', 'Months to retain images and media files on disk. Maximum 24 months.'))}
+  `, true)
 
-  // ── Panel 3: Avanzado (collapsed) ──
+  // ── Panel 3: Avanzado (collapsed) — grid uniforme 3-col ──
   const archiveOpts = [
     { value: '0', label: l('Desactivado', 'Disabled') },
     { value: '1', label: l('1 año', '1 year') },
@@ -2263,15 +2271,13 @@ function renderMemorySection(data: SectionData): string {
   ]
 
   const p3 = panel(l('Avanzado', 'Advanced'), `
-    ${row3(
-      selF('MEMORY_ARCHIVE_RETENTION_YEARS', l('Duración del backup legal', 'Legal backup duration'), l('Retención de conversaciones completas para cumplimiento legal. "Desactivado" no guarda backups.', 'Retention of full conversations for legal compliance. "Disabled" skips backups.'), archiveOpts),
-      hourSel('MEMORY_BATCH_COMPRESS_HOUR', l('Compresión nocturna', 'Nightly compression'), l('Hora UTC para comprimir sesiones inactivas. Los embeddings se generan automáticamente 30 minutos después.', 'UTC hour to compress inactive sessions. Embeddings are generated automatically 30 minutes later.')),
-      hourSel('MEMORY_BATCH_PURGE_HOUR', l('Purga de datos', 'Data purge'), l('Hora UTC para purgar media expirada, logs del pipeline y archivos legales expirados según sus ventanas de retención.', 'UTC hour to purge expired media, pipeline logs and legal archives according to their retention windows.'))
-    )}
-    ${row2(
-      numF('MEMORY_SESSION_REOPEN_WINDOW_HOURS', l('Ventana de reapertura (h)', 'Session reopen window (h)'), l('Horas en que un nuevo mensaje reactiva la sesión anterior en vez de abrir una nueva. Máximo 12h.', 'Hours a new message reactivates the previous session instead of opening a new one. Max 12h.')),
-      smBool('LLM_PROMPT_CACHE_ENABLED', l('Cache de prompts', 'Prompt cache'), l('Cachea el system prompt y el historial para reducir costos en conversaciones largas', 'Caches the system prompt and history to reduce costs in long conversations'))
-    )}
+    <div class="chs-field-row chs-field-row-3">
+      ${selF('MEMORY_ARCHIVE_RETENTION_YEARS', l('Duración del backup legal', 'Legal backup duration'), l('Retención de conversaciones completas para cumplimiento legal. "Desactivado" no guarda backups.', 'Retention of full conversations for legal compliance. "Disabled" skips backups.'), archiveOpts)}
+      ${hourSel('MEMORY_BATCH_COMPRESS_HOUR', l('Compresión nocturna', 'Nightly compression'), l('Hora UTC para comprimir sesiones inactivas. Los embeddings se generan automáticamente 30 minutos después.', 'UTC hour to compress inactive sessions. Embeddings are generated automatically 30 minutes later.'))}
+      ${hourSel('MEMORY_BATCH_PURGE_HOUR', l('Purga de datos', 'Data purge'), l('Hora UTC para purgar media expirada, logs del pipeline y archivos legales expirados según sus ventanas de retención.', 'UTC hour to purge expired media, pipeline logs and legal archives according to their retention windows.'))}
+      ${durF('MEMORY_SESSION_REOPEN_WINDOW_HOURS', l('Ventana de reapertura', 'Session reopen window'), l('horas', 'hours'), l('Horas en que un nuevo mensaje reactiva la sesión anterior en vez de abrir una nueva. Máximo 12h.', 'Hours a new message reactivates the previous session instead of opening a new one. Max 12h.'))}
+      ${smBool('LLM_PROMPT_CACHE_ENABLED', l('Cache de prompts', 'Prompt cache'), l('Cachea el system prompt y el historial para reducir costos en conversaciones largas', 'Caches the system prompt and history to reduce costs in long conversations'))}
+    </div>
   `, true)
 
   return p1 + p2 + p3
