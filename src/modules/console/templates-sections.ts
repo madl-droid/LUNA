@@ -23,6 +23,18 @@ export interface SectionData {
   agenteContent?: string
   herramientasSubpage?: string
   herramientasContent?: string
+  dashboardData?: {
+    totalContacts: number
+    contactsChange: number
+    activeSessions: number
+    llmCost: number
+    costChange: number
+    channels: Array<{ name: string; contacts: number; sessions: number }>
+    sources?: Array<{ name: string; pct: number; color: string }>
+    totalSourceContacts?: number
+    models?: Array<{ name: string; desc: string; tokens: string; pct: number }>
+    quality?: Array<{ channel: string; score: number; status: string; stars: number }>
+  }
   usersData?: {
     configs: Array<{
       listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
@@ -2006,46 +2018,34 @@ function renderDashboardSection(data: SectionData): string {
   const isEs = lang === 'es'
 
   // Data from server (with fallbacks for mock display)
-  const dashData = (data as unknown as Record<string, unknown>).dashboardData as Record<string, unknown> | undefined
-  const totalContacts = Number(dashData?.totalContacts ?? 240)
-  const contactsChange = Number(dashData?.contactsChange ?? 12.4)
-  const activeSessions = Number(dashData?.activeSessions ?? 42)
-  const llmCost = Number(dashData?.llmCost ?? 1250)
-  const costChange = Number(dashData?.costChange ?? -5)
-  const avgRating = Number(dashData?.avgRating ?? 4.8)
+  const dashData = data.dashboardData
+  const totalContacts = dashData?.totalContacts ?? 0
+  const contactsChange = dashData?.contactsChange ?? 0
+  const activeSessions = dashData?.activeSessions ?? 0
+  const llmCost = dashData?.llmCost ?? 0
+  const costChange = dashData?.costChange ?? 0
+  const avgRating = 0
 
   // Channel breakdown data
-  const channels = (dashData?.channels as Array<{ name: string; contacts: number; sessions: number }>) || [
-    { name: 'WhatsApp', contacts: 820, sessions: 420 },
-    { name: 'Gmail', contacts: 520, sessions: 370 },
-    { name: 'Google Chat', contacts: 280, sessions: 140 },
-    { name: 'Twilio Calls', contacts: 130, sessions: 80 },
-  ]
+  const channels = dashData?.channels?.length
+    ? dashData.channels
+    : [] as Array<{ name: string; contacts: number; sessions: number }>
   const maxChannelTotal = Math.max(...channels.map(c => c.contacts + c.sessions), 1)
 
   // Contact sources
-  const sources = (dashData?.sources as Array<{ name: string; pct: number; color: string }>) || [
+  const sources = dashData?.sources ?? [
     { name: isEs ? 'Organico' : 'Organic', pct: 40, color: 'var(--primary)' },
     { name: 'Referrals', pct: 25, color: '#FFB800' },
     { name: 'Ads', pct: 20, color: 'var(--info)' },
     { name: 'Social', pct: 15, color: 'var(--surface-container-high)' },
   ]
-  const totalSourceContacts = Number(dashData?.totalSourceContacts ?? 2800)
+  const totalSourceContacts = dashData?.totalSourceContacts ?? 0
 
   // LLM token usage
-  const models = (dashData?.models as Array<{ name: string; desc: string; tokens: string; pct: number }>) || [
-    { name: 'Claude Sonnet', desc: 'Primary', tokens: '1.2M', pct: 85 },
-    { name: 'Claude Haiku', desc: 'Compression', tokens: '840k', pct: 60 },
-    { name: 'Gemini Flash', desc: 'Fallback', tokens: '320k', pct: 23 },
-  ]
+  const models = dashData?.models ?? [] as Array<{ name: string; desc: string; tokens: string; pct: number }>
 
   // Quality per channel
-  const quality = (dashData?.quality as Array<{ channel: string; score: number; status: string; stars: number }>) || [
-    { channel: 'WHATSAPP', score: 4.9, status: isEs ? 'Optimo' : 'Optimal', stars: 5 },
-    { channel: 'GMAIL', score: 4.2, status: isEs ? 'Estable' : 'Stable', stars: 4 },
-    { channel: 'GOOGLE CHAT', score: 4.7, status: isEs ? 'Excelente' : 'Excellent', stars: 5 },
-    { channel: 'TWILIO CALLS', score: 3.8, status: isEs ? 'Atención' : 'Warning', stars: 4 },
-  ]
+  const quality = dashData?.quality ?? [] as Array<{ channel: string; score: number; status: string; stars: number }>
 
   // Stars helper
   function stars(count: number, max = 5): string {

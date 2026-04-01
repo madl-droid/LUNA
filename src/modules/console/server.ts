@@ -1382,6 +1382,38 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         moduleStates: data.moduleStates,
       }
 
+      // Dashboard: load real metrics from DB
+      if (section === 'dashboard') {
+        try {
+          const db = registry.getDb()
+          const CHANNEL_DISPLAY: Record<string, string> = {
+            'whatsapp': 'WhatsApp', 'gmail': 'Gmail', 'google-chat': 'Google Chat',
+            'twilio-voice': 'Twilio Voice', 'telegram': 'Telegram',
+          }
+          const [contacts30, contactsPrev30, sessions24h, channels30, cost30, costPrev30] = await Promise.all([
+            db.query(`SELECT COUNT(*)::int AS c FROM contacts WHERE created_at > now() - interval '30 days'`),
+            db.query(`SELECT COUNT(*)::int AS c FROM contacts WHERE created_at > now() - interval '60 days' AND created_at <= now() - interval '30 days'`),
+            db.query(`SELECT COUNT(*)::int AS c FROM sessions WHERE last_activity_at > now() - interval '24 hours'`),
+            db.query(`SELECT channel_name, COUNT(*)::int AS sessions, COUNT(DISTINCT contact_id)::int AS contacts FROM sessions WHERE started_at > now() - interval '30 days' GROUP BY channel_name ORDER BY sessions DESC LIMIT 6`),
+            db.query(`SELECT COALESCE(SUM(cost_usd), 0)::float AS c FROM llm_usage WHERE created_at > now() - interval '30 days'`).catch(() => ({ rows: [{ c: 0 }] })),
+            db.query(`SELECT COALESCE(SUM(cost_usd), 0)::float AS c FROM llm_usage WHERE created_at > now() - interval '60 days' AND created_at <= now() - interval '30 days'`).catch(() => ({ rows: [{ c: 0 }] })),
+          ])
+          const totalContacts = contacts30.rows[0]?.c ?? 0
+          const prevContacts = contactsPrev30.rows[0]?.c ?? 0
+          const contactsChange = prevContacts > 0 ? Math.round((totalContacts - prevContacts) / prevContacts * 100) : 0
+          const activeSessions = sessions24h.rows[0]?.c ?? 0
+          const llmCost = Math.round((Number(cost30.rows[0]?.c ?? 0)) * 100) / 100
+          const prevCost = Number(costPrev30.rows[0]?.c ?? 0)
+          const costChange = prevCost > 0 ? Math.round((llmCost - prevCost) / prevCost * 100) : 0
+          const channels = channels30.rows.map((r: Record<string, unknown>) => ({
+            name: CHANNEL_DISPLAY[String(r['channel_name'])] ?? String(r['channel_name']),
+            contacts: Number(r['contacts']),
+            sessions: Number(r['sessions']),
+          }))
+          sectionData.dashboardData = { totalContacts, contactsChange, activeSessions, llmCost, costChange, channels }
+        } catch { /* use zero fallbacks */ }
+      }
+
       // Scheduled tasks: render via module service (needs lang)
       if (section === 'scheduled-tasks') {
         try {
@@ -2063,13 +2095,13 @@ export function createApiRoutes(): ApiRoute[] {
 
           // Inbound (client-initiated) in period — messages has no channel_name, join via sessions
           const inRes = await db.query(
-            `SELECT COUNT(DISTINCT m.session_id)::int AS inbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.sender_type = 'user' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
+            `SELECT COUNT(DISTINCT m.session_id)::int AS inbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.role = 'user' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
             [channel],
           )
 
           // Outbound (agent-initiated) in period
           const outRes = await db.query(
-            `SELECT COUNT(DISTINCT m.session_id)::int AS outbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.sender_type = 'agent' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
+            `SELECT COUNT(DISTINCT m.session_id)::int AS outbound FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.channel_name = $1 AND m.role = 'assistant' AND m.${whereTime} AND s.${whereTime.replace(/created_at/g, 'started_at')}`,
             [channel],
           )
 
