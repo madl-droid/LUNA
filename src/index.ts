@@ -9,6 +9,7 @@ import { loadModules } from './kernel/loader.js'
 import { Server } from './kernel/server.js'
 import { kernelConfig } from './kernel/config.js'
 import { initCacheFlag } from './kernel/cache-flag.js'
+import { initExtremeLogger } from './kernel/extreme-logger.js'
 import { isSetupCompleted } from './kernel/setup/detect.js'
 import { createSetupHandler } from './kernel/setup/handler.js'
 import { ensureInstanceDirs } from './kernel/bootstrap.js'
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
 
   const db = await createPool()
   initCacheFlag(db)
+  initExtremeLogger(db)
   const redis = await createRedis()
 
   // Check if setup wizard is needed (fresh install)

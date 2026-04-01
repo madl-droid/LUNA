@@ -8,6 +8,7 @@ import { kernelConfig } from './config.js'
 import type { Registry } from './registry.js'
 import type { ApiRoute } from './types.js'
 import { getSessionToken, validateSession } from './setup/auth.js'
+import { logHttpRequest } from './extreme-logger.js'
 import { createLoginHandler } from './setup/login.js'
 import { isSetupCompleted } from './setup/detect.js'
 import { createSetupHandler } from './setup/handler.js'
@@ -68,6 +69,22 @@ export class Server {
     const loginHandler = createLoginHandler(this.registry.getDb(), this.registry.getRedis())
 
     this.httpServer = http.createServer(async (req, res) => {
+      const reqStart = Date.now()
+      // Log HTTP request after response finishes
+      res.on('finish', () => {
+        const url = req.url ?? '/'
+        // Skip static assets and health checks from logging
+        if (!url.startsWith('/console/static/') && url !== '/health') {
+          logHttpRequest({
+            method: req.method ?? 'GET',
+            url,
+            status: res.statusCode,
+            durationMs: Date.now() - reqStart,
+            ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.socket.remoteAddress,
+            userAgent: req.headers['user-agent'],
+          }).catch(() => {})
+        }
+      })
       // FIX: K-5 — Security headers en todas las respuestas
       res.setHeader('X-Content-Type-Options', 'nosniff')
       res.setHeader('X-Frame-Options', 'DENY')
