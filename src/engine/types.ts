@@ -187,6 +187,9 @@ export interface ContextBundle {
 
   // Injection flag from basic regex check
   possibleInjection: boolean
+
+  // HITL — pending ticket context (from hitl:context service)
+  hitlPendingContext: string | null
 }
 
 // ═══════════════════════════════════════════

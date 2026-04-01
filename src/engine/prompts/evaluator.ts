@@ -136,6 +136,17 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
     system += `\n{ "type": "api_call", "tool": "web_explore", "params": { "url": "https://youtube.com/..." } }`
   }
 
+  // Inject HITL rules (if hitl module is active and has enabled rules)
+  if (registry) {
+    try {
+      const hitlRules = registry.getOptional<{ getRulesForEvaluator(): Promise<string> }>('hitl:rules')
+      if (hitlRules) {
+        const rulesText = await hitlRules.getRulesForEvaluator()
+        if (rulesText) system += `\n\n${rulesText}`
+      }
+    } catch { /* hitl module not active */ }
+  }
+
   // Build user message with context
   const parts: string[] = []
 
@@ -340,6 +351,11 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
       parts.push(`- [${att.index}] ${att.type}: ${att.name ?? 'sin nombre'} (${sizeMb}, ${att.mime ?? 'mime desconocido'})`)
     }
     parts.push(`[Para procesar un adjunto, incluye { type: "process_attachment", params: { index: N } } en el plan]`)
+  }
+
+  // HITL pending context (active human consultation for this contact)
+  if (ctx.hitlPendingContext) {
+    parts.push(ctx.hitlPendingContext)
   }
 
   // Injection warning
