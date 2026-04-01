@@ -585,6 +585,9 @@ function schedulePrecloseFollowup(
   config: WhatsAppFullConfig,
   registry: Registry,
 ): void {
+  // Respect the PRECLOSE_ENABLED toggle
+  if (!config.WHATSAPP_PRECLOSE_ENABLED) return
+
   const existing = precloseTimers.get(contactId)
   if (existing) clearTimeout(existing)
 

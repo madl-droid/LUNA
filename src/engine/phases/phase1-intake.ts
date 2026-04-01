@@ -680,6 +680,43 @@ async function loadOrCreateSession(
     }
   }
 
+  // Fallback: lookup by channel_contact_id when contactId is unknown (e.g. LID not yet mapped to contact after restart)
+  if (!contactId && !threadId) {
+    try {
+      const result = await db.query(
+        `SELECT s.id, s.contact_id, s.agent_id, s.channel_name, s.started_at, s.last_activity_at,
+                s.message_count, ss.summary_text AS compressed_summary
+         FROM sessions s
+         LEFT JOIN LATERAL (
+           SELECT summary_text FROM session_summaries
+           WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+         ) ss ON true
+         WHERE s.channel_contact_id = $1 AND s.channel_name = $2 AND s.last_activity_at > $3
+         ORDER BY s.last_activity_at DESC
+         LIMIT 1`,
+        [channelContactId, channel, cutoff],
+      )
+
+      if (result.rows.length > 0) {
+        const row = result.rows[0]!
+        logger.info({ channelContactId, channel, sessionId: row.id }, 'Reopened session via channel_contact_id fallback')
+        return {
+          id: row.id,
+          contactId: row.contact_id,
+          agentId: row.agent_id ?? agentId,
+          channel: row.channel_name,
+          startedAt: row.started_at,
+          lastActivityAt: row.last_activity_at,
+          messageCount: row.message_count,
+          compressedSummary: row.compressed_summary ?? null,
+          isNew: false,
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, channelContactId, channel }, 'Failed to load session by channel_contact_id')
+    }
+  }
+
   const sessionId = randomUUID()
   const now = new Date()
 
