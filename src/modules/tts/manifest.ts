@@ -110,6 +110,15 @@ const manifest: ModuleManifest = {
     service = new TTSService(ttsConfig)
     registry.provide('tts:service', service)
 
+    // Hot-reload: update service config when console applies changes
+    registry.addHook('tts', 'console:config_applied', async () => {
+      if (!service) return
+      const fresh = registry.getConfig<typeof config>('tts')
+      const freshApiKey = await configStore.get(pool, 'GOOGLE_AI_API_KEY').catch(() => '') ?? ''
+      service.updateConfig({ ...fresh, TTS_GOOGLE_API_KEY: freshApiKey })
+      logger.info('TTS service hot-reloaded')
+    })
+
     logger.info('TTS module initialized')
   },
 

@@ -52,7 +52,7 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSa
 }
 
 export class TTSService {
-  private config: TTSConfig
+  config: TTSConfig
   private enabledChannels: Set<string>
 
   constructor(config: TTSConfig) {
@@ -60,6 +60,16 @@ export class TTSService {
     this.enabledChannels = new Set(
       config.TTS_ENABLED_CHANNELS.split(',').map(c => c.trim()).filter(Boolean),
     )
+  }
+
+  /** Hot-reload: update config in place without recreating the service instance */
+  updateConfig(fresh: Partial<TTSConfig>): void {
+    Object.assign(this.config, fresh)
+    if (fresh.TTS_ENABLED_CHANNELS !== undefined) {
+      this.enabledChannels = new Set(
+        this.config.TTS_ENABLED_CHANNELS.split(',').map(c => c.trim()).filter(Boolean),
+      )
+    }
   }
 
   isEnabledForChannel(channel: string): boolean {
