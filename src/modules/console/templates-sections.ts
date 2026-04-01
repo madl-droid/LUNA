@@ -1167,10 +1167,30 @@ function renderIdentitySection(data: SectionData): string {
 
   // Prompt fields
   const prompts = [
-    { key: 'PROMPT_IDENTITY', label: isEs ? 'Identidad' : 'Identity', title: 'IDENTITY PROMPT' },
-    { key: 'PROMPT_JOB', label: isEs ? 'Descripcion del trabajo' : 'Job description', title: 'JOB DESCRIPTION PROMPT' },
-    { key: 'PROMPT_GUARDRAILS', label: isEs ? 'Reglas' : 'Rules', title: 'RULES PROMPT' },
-    { key: 'PROMPT_CRITICIZER', label: isEs ? 'Checklist de calidad' : 'Quality checklist', title: 'QUALITY CHECKLIST PROMPT' },
+    {
+      key: 'PROMPT_IDENTITY', label: isEs ? 'Identidad' : 'Identity', title: 'IDENTITY PROMPT',
+      info: isEs
+        ? 'Personalidad, tono y características del agente. Define quién es y cómo se expresa.'
+        : 'Agent personality, tone and traits. Defines who it is and how it expresses itself.',
+    },
+    {
+      key: 'PROMPT_JOB', label: isEs ? 'Descripcion del trabajo' : 'Job description', title: 'JOB DESCRIPTION PROMPT',
+      info: isEs
+        ? 'Misión, objetivos y responsabilidades del agente. Define qué hace y cómo lo hace.'
+        : 'Agent mission, objectives and responsibilities. Defines what it does and how.',
+    },
+    {
+      key: 'PROMPT_GUARDRAILS', label: isEs ? 'Reglas' : 'Rules', title: 'RULES PROMPT',
+      info: isEs
+        ? 'Restricciones que el agente siempre debe respetar, sin excepciones. Límites éticos y operativos.'
+        : 'Constraints the agent must always follow, without exception. Ethical and operational limits.',
+    },
+    {
+      key: 'PROMPT_CRITICIZER', label: isEs ? 'Checklist de calidad' : 'Quality checklist', title: 'QUALITY CHECKLIST PROMPT',
+      info: isEs
+        ? 'Puntos adicionales que el agente revisa antes de enviar cada respuesta. Se suma al checklist base del sistema.'
+        : 'Additional points the agent checks before sending each response. Added on top of the system base checklist.',
+    },
   ]
 
   // Language → accent mapping (BCP-47 code → country label)
@@ -1275,7 +1295,13 @@ function renderIdentitySection(data: SectionData): string {
     isFirstPrompt = false
     promptsHtml += `<div class="panel ${collapsedCls} u-mb-sm" data-slot="${esc(slot)}">
       <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${esc(p.label)}</span>
+        <span class="panel-title">
+          ${esc(p.label)}
+          <span class="info-wrap" onclick="event.stopPropagation()">
+            <button class="info-btn">i</button>
+            <div class="info-tooltip">${esc(p.info)}</div>
+          </span>
+        </span>
         <button type="button" class="act-btn prompt-edit-btn ts-prompt-edit-btn" onclick="event.stopPropagation();promptEdit(this)">${isEs ? 'Editar' : 'Edit'}</button>
         <span class="panel-chevron">&#9660;</span>
       </div>
@@ -1292,9 +1318,9 @@ function renderIdentitySection(data: SectionData): string {
             </div>
             <span class="code-editor-pos" data-ce-pos="${esc(p.key)}">LN 1, COL 1</span>
           </div>
-          <div class="code-editor-body" style="min-height:160px;max-height:350px">
+          <div class="code-editor-body" style="min-height:420px;max-height:620px">
             <div class="code-editor-lines" data-ce-lines="${esc(p.key)}">${lineNums}</div>
-            <textarea class="code-editor-textarea" name="${esc(p.key)}" data-original="${esc(value)}" data-ce-key="${esc(p.key)}" style="min-height:160px" readonly>${esc(value)}</textarea>
+            <textarea class="code-editor-textarea" name="${esc(p.key)}" data-original="${esc(value)}" data-ce-key="${esc(p.key)}" style="min-height:420px" readonly>${esc(value)}</textarea>
           </div>
         </div>
       </div>
@@ -1483,7 +1509,7 @@ function renderIdentitySection(data: SectionData): string {
       <div class="panel-body ts-tts-body-compact">
         <div class="ts-tts-field-compact" style="margin-bottom:12px">
           <label class="ts-tts-label-compact" style="font-weight:600">${isEs ? 'Activar TTS' : 'Enable TTS'}</label>
-          <label class="toggle-switch" style="margin-left:auto">
+          <label class="toggle toggle-sm" style="margin-left:auto">
             <input type="hidden" name="TTS_ENABLED" value="${ttsEnabled ? 'true' : 'false'}" data-original="${ttsEnabled ? 'true' : 'false'}">
             <input type="checkbox" name="TTS_ENABLED" value="true" data-original="${ttsEnabled ? 'true' : 'false'}" ${ttsEnabled ? 'checked' : ''}
               onchange="this.previousElementSibling.value=this.checked?'true':'false'">

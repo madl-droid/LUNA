@@ -1370,7 +1370,8 @@ select.wizard-input option:checked {
   border-radius: 0.5rem;
   box-shadow: var(--shadow-float, 0 4px 24px rgba(0,0,0,0.12));
   z-index: 200;
-  overflow: hidden;
+  overflow-y: auto;
+  max-height: 280px;
   animation: dropdownIn 0.12s ease;
   padding: 4px 0;
 }
