@@ -21,6 +21,31 @@ import pino from 'pino'
 
 const logger = pino({ name: 'console' })
 
+/** Check if a userId corresponds to the super admin (source = 'setup_wizard') */
+async function checkSuperAdmin(registry: Registry, cookieHeader: string | undefined): Promise<boolean> {
+  try {
+    const { getSessionToken, validateSession } = await import('../../kernel/setup/auth.js')
+    const token = getSessionToken(cookieHeader)
+    const userId = token ? await validateSession(registry.getRedis(), token) : null
+    if (!userId) return false
+    const result = await registry.getDb().query(
+      `SELECT source FROM users WHERE id = $1 AND is_active = true LIMIT 1`,
+      [userId],
+    )
+    return result.rows[0]?.source === 'setup_wizard'
+  } catch { return false }
+}
+
+/** Gate a debug API endpoint: requires test mode + super admin. Returns true if blocked. */
+async function guardDebugEndpoint(req: http.IncomingMessage, res: http.ServerResponse, registry: Registry): Promise<boolean> {
+  const db = registry.getDb()
+  const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
+  if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return true }
+  const isSA = await checkSuperAdmin(registry, req.headers['cookie'])
+  if (!isSA) { jsonResponse(res, 403, { error: 'Super admin required' }); return true }
+  return false
+}
+
 // Read package.json version once at import time
 let packageJsonVersion = 'dev'
 try {
@@ -609,6 +634,17 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         for (const [k, v] of Object.entries(body)) {
           if (!k.startsWith('_')) updates[k] = v
         }
+        // Guard debug config keys: only super admin can toggle debug settings
+        const debugKeys = ['DEBUG_CACHE_ENABLED', 'DEBUG_EXTREME_LOG', 'DEBUG_ADMIN_ONLY', 'ENGINE_TEST_MODE']
+        const hasDebugKeys = Object.keys(updates).some(k => debugKeys.includes(k))
+        if (hasDebugKeys) {
+          const isSA = await checkSuperAdmin(registry, req.headers['cookie'])
+          if (!isSA) {
+            res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
+            res.end()
+            return true
+          }
+        }
         // Save first, then apply
         try {
           if (Object.keys(updates).length > 0) {
@@ -650,9 +686,15 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       }
 
       if (localUrl === '/reset-contacts') {
+        // Super admin gate
+        const isSA = await checkSuperAdmin(registry, req.headers['cookie'])
+        if (!isSA) {
+          res.writeHead(302, { Location: `/console/${section}?flash=error&lang=${lang}` })
+          res.end()
+          return true
+        }
         try {
           const db = registry.getDb()
-          await db.query('TRUNCATE users CASCADE')
           await db.query('TRUNCATE user_contacts CASCADE')
           await db.query('TRUNCATE user_lists CASCADE')
           // Invalidate user cache in Redis
@@ -1493,6 +1535,9 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         } catch { /* users module not available */ }
       }
 
+      // Resolve super admin status for debug panel visibility
+      const isSuperAdmin = await checkSuperAdmin(registry, req.headers['cookie'])
+
       const html = pageLayout({
         section: sidebarSection,
         content,
@@ -1510,6 +1555,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         debugCacheEnabled: data.config.DEBUG_CACHE_ENABLED !== 'false',
         debugExtremeLog: data.config.DEBUG_EXTREME_LOG === 'true',
         debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
+        isSuperAdmin,
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
         agenteSubpage: agenteSubpage ?? undefined,
@@ -1703,19 +1749,16 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/clear-cache — flush Redis (test mode only)
+    // POST /console/api/console/clear-cache — flush Redis (test mode + super admin only)
     {
       method: 'POST',
       path: 'clear-cache',
-      handler: async (_req, res) => {
+      handler: async (req, res) => {
         try {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
-          // Gate behind test mode
-          const db = registry.getDb()
-          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
-          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
 
           await registry.getRedis().flushdb()
           logger.info('Redis cache flushed (debug panel)')
@@ -1727,18 +1770,17 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/clear-memory — truncate all except config + users (test mode only)
+    // POST /console/api/console/clear-memory — truncate all data tables (test mode + super admin only)
     {
       method: 'POST',
       path: 'clear-memory',
-      handler: async (_req, res) => {
+      handler: async (req, res) => {
         try {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
           const db = registry.getDb()
-          const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
-          if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return }
 
           const tables = [
             'messages', 'sessions', 'session_summaries', 'commitments', 'conversation_archives',
@@ -1769,7 +1811,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/factory-reset — verify admin password, prefill wizard, mark SETUP_COMPLETED=false
+    // POST /console/api/console/factory-reset — real factory reset (super admin only)
     {
       method: 'POST',
       path: 'factory-reset',
@@ -1778,6 +1820,9 @@ export function createApiRoutes(): ApiRoute[] {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          // Super admin gate (no test-mode requirement for factory reset)
+          const isSA = await checkSuperAdmin(registry, req.headers['cookie'])
+          if (!isSA) { jsonResponse(res, 403, { error: 'Super admin required' }); return }
           const db = registry.getDb()
           const redis = registry.getRedis()
 
@@ -1973,7 +2018,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/db-viewer-auth — verify admin password for database viewer access
+    // POST /console/api/console/db-viewer-auth — verify admin password for database viewer access (super admin only)
     {
       method: 'POST',
       path: 'db-viewer-auth',
@@ -1982,12 +2027,9 @@ export function createApiRoutes(): ApiRoute[] {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
           const db = registry.getDb()
           const redis = registry.getRedis()
-
-          // Test mode gate
-          const testMode = await configStore.get(db, 'ENGINE_TEST_MODE')
-          if (testMode !== 'true') { jsonResponse(res, 403, { error: 'Debug mode not active' }); return }
 
           // Parse password
           const body = await parseBody<{ password?: string }>(req)
@@ -2028,12 +2070,9 @@ export function createApiRoutes(): ApiRoute[] {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
           const db = registry.getDb()
           const redis = registry.getRedis()
-
-          // Test mode gate
-          const testMode = await configStore.get(db, 'ENGINE_TEST_MODE')
-          if (testMode !== 'true') { jsonResponse(res, 403, { error: 'Debug mode not active' }); return }
 
           // Session + db-viewer auth gate
           const { getSessionToken, validateSession } = await import('../../kernel/setup/auth.js')
@@ -2077,12 +2116,9 @@ export function createApiRoutes(): ApiRoute[] {
           const { getRegistryRef } = await import('./manifest-ref.js')
           const registry = getRegistryRef()
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
           const db = registry.getDb()
           const redis = registry.getRedis()
-
-          // Test mode gate
-          const testMode = await configStore.get(db, 'ENGINE_TEST_MODE')
-          if (testMode !== 'true') { jsonResponse(res, 403, { error: 'Debug mode not active' }); return }
 
           // Session + db-viewer auth gate
           const { getSessionToken, validateSession } = await import('../../kernel/setup/auth.js')
