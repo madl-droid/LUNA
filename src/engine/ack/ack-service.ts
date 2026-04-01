@@ -40,16 +40,8 @@ export async function generateAck(
         system = await promptsSvc.getSystemPrompt('ack-system', { toneDescription: toneDesc })
       }
       if (!system) {
-        system = [
-          'Eres un asistente. El usuario envió un mensaje y estás procesando la respuesta.',
-          'Genera un aviso breve (máximo 15 palabras) indicando que estás trabajando en su solicitud.',
-          'Reglas:',
-          '- NO reveles qué estás haciendo internamente (no mencionar APIs, búsquedas, bases de datos)',
-          `- Usa un tono ${toneDesc} y natural`,
-          '- Si tienes el nombre del contacto, úsalo naturalmente (no forzado)',
-          '- NO uses signos de exclamación excesivos',
-          '- Responde SOLO con el mensaje de aviso, nada más',
-        ].join('\n')
+        // Minimal fallback — full prompt lives in instance/prompts/system/ack-system.md
+        system = `Genera un aviso breve (máximo 15 palabras) de que estás procesando la solicitud. Tono ${toneDesc}. Solo el mensaje, nada más.`
       }
 
       const userMessage = [

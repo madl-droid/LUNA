@@ -2,6 +2,7 @@
 // Takes curated data package, calls LLM, returns structured PulseReport.
 
 import type { Registry } from '../../../kernel/registry.js'
+import type { PromptsService } from '../../prompts/types.js'
 import type {
   PulseConfig,
   PulseDataPackage,
@@ -13,22 +14,8 @@ import pino from 'pino'
 
 const logger = pino({ name: 'cortex:pulse:analyzer' })
 
-const SYSTEM_PROMPT = `Eres un ingeniero de sistemas analizando métricas de un agente de IA que atiende leads por WhatsApp y Email.
-Tu trabajo es identificar problemas, diagnosticar causas raíz, y recomendar soluciones prácticas.
-
-Responde SOLO con JSON válido siguiendo el schema proporcionado.
-No incluyas markdown, backticks, ni texto fuera del JSON.
-
-Para cada incidente, proporciona:
-- what: qué pasó (1 oración)
-- impact: cuántos mensajes/leads se afectaron
-- root_cause: causa raíz más probable
-- immediate_fix: qué hacer ahora
-- long_term_fix: qué hacer para que no se repita
-
-Las recomendaciones deben ser accionables y específicas.
-No recomiendes "monitorear más" — ya se está monitoreando.
-Recomienda cambios concretos con valores específicos.`
+// Minimal fallback — full prompt lives in instance/prompts/system/cortex-pulse-analyzer.md
+const SYSTEM_PROMPT_FALLBACK = `Eres un ingeniero de sistemas analizando métricas de un agente de IA. Responde SOLO con JSON válido siguiendo el schema proporcionado.`
 
 export interface AnalysisResult {
   report: PulseReport
@@ -67,7 +54,7 @@ export async function analyze(
   try {
     const result = await registry.callHook('llm:chat', {
       task,
-      system: SYSTEM_PROMPT,
+      system: await loadPulseAnalyzerSystem(registry),
       messages: [{ role: 'user', content: userMessage }],
       maxTokens: 4096,
       temperature: 0.1,
@@ -249,5 +236,16 @@ function buildMetricsSummary(data: PulseDataPackage): PulseMetricsSummary {
     error_rate: errorRate,
     fallback_rate: fallbackRate,
     uptime_percent: '99.9%',
+  }
+}
+
+async function loadPulseAnalyzerSystem(registry: Registry): Promise<string> {
+  const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+  if (!promptsSvc) return SYSTEM_PROMPT_FALLBACK
+  try {
+    const tmpl = await promptsSvc.getSystemPrompt('cortex-pulse-analyzer')
+    return tmpl || SYSTEM_PROMPT_FALLBACK
+  } catch {
+    return SYSTEM_PROMPT_FALLBACK
   }
 }

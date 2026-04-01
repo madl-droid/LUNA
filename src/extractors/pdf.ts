@@ -5,6 +5,7 @@
 // Escaneado: OCR via LLM vision (Gemini). Flag isScanned.
 
 import type { Registry } from '../kernel/registry.js'
+import type { PromptsService } from '../modules/prompts/types.js'
 import type { ExtractedContent, ExtractedSection } from './types.js'
 import { isImplicitTitle, MAX_FILE_SIZE } from './utils.js'
 import pino from 'pino'
@@ -13,6 +14,9 @@ const logger = pino({ name: 'extractors:pdf' })
 
 const MIN_TEXT_PER_PAGE = 50  // chars: debajo de esto la página es imagen/scan
 const MAX_VISION_PAGES = 6   // máximo de páginas para vision OCR
+
+// Minimal fallback — full prompt lives in instance/prompts/system/pdf-ocr.md
+const PDF_OCR_SYSTEM_FALLBACK = 'Eres un OCR. Extrae TODO el texto visible de esta imagen. Responde SOLO con el texto extraído.'
 
 // ═══════════════════════════════════════════
 // Función principal
@@ -170,6 +174,16 @@ async function extractScannedPdf(parser: any, pages: number[], fileName: string,
     return [{ title: 'PDF escaneado', content: `[PDF escaneado: ${fileName}. LLM no disponible para OCR.]` }]
   }
 
+  // Load OCR system prompt from .md template
+  let ocrSystem = PDF_OCR_SYSTEM_FALLBACK
+  const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+  if (promptsSvc) {
+    try {
+      const tmpl = await promptsSvc.getSystemPrompt('pdf-ocr')
+      if (tmpl) ocrSystem = tmpl
+    } catch { /* fallback */ }
+  }
+
   const sections: ExtractedSection[] = []
   const pagesToProcess = pages.slice(0, MAX_VISION_PAGES)
 
@@ -188,7 +202,7 @@ async function extractScannedPdf(parser: any, pages: number[], fileName: string,
         try {
           const visionResult = await registry.callHook('llm:chat', {
             task: 'extractor-pdf-ocr',
-            system: 'Eres un OCR. Extrae TODO el texto visible de esta imagen de un documento PDF. Incluye tablas, gráficos, encabezados, números. Responde SOLO con el texto extraído, manteniendo la estructura original.',
+            system: ocrSystem,
             messages: [{
               role: 'user' as const,
               content: [

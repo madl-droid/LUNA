@@ -79,6 +79,7 @@ export async function generateDescription(
   chunks: ChunkSample[],
   llm: LLMService,
   logger: pino.Logger,
+  systemPrompt?: string,
 ): Promise<GeneratedDescription | null> {
   if (chunks.length === 0) return null
 
@@ -130,7 +131,7 @@ Reglas:
   try {
     const result = await llm.callHook('llm:chat', {
       task: 'knowledge-description',
-      system: 'Eres un bibliotecario experto que cataloga documentos. Generas descripciones precisas y keywords útiles para búsqueda.',
+      system: systemPrompt || 'Eres un bibliotecario experto que cataloga documentos. Generas descripciones precisas y keywords útiles para búsqueda.',
       messages: [{ role: 'user' as const, content: userContent }],
       maxTokens: 500,
       temperature: 0.2,

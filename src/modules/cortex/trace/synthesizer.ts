@@ -2,6 +2,7 @@
 // Only runs when sim_count > 1. Uses extended thinking for strategic insights.
 
 import type { Registry } from '../../../kernel/registry.js'
+import type { PromptsService } from '../../prompts/types.js'
 import type { TraceConfig, RunSummary } from './types.js'
 import pino from 'pino'
 
@@ -29,7 +30,7 @@ export async function synthesizeResults(
   const model = modelOverride ?? config.CORTEX_TRACE_ANALYSIS_MODEL
   const maxTokens = config.CORTEX_TRACE_MAX_TOKENS_ANALYSIS
 
-  const system = buildSynthesizerPrompt(adminContext, summary)
+  const system = await buildSynthesizerSystemPrompt(adminContext, summary, registry)
   const userMessage = buildSynthesizerUserMessage(analyses, summary)
 
   const llmResult = await registry.callHook('llm:chat', {
@@ -61,26 +62,21 @@ export async function synthesizeResults(
 
 // ─── Prompt builders ─────────────────────
 
-function buildSynthesizerPrompt(adminContext: string, summary: RunSummary): string {
-  return `Eres un analista senior de QA para un agente de IA conversacional.
-El administrador ejecutó ${summary.total_simulations} simulaciones del pipeline con estas instrucciones:
+// Minimal fallback — full prompt lives in instance/prompts/system/cortex-trace-synthesizer.md
+const SYNTHESIZER_SYSTEM_FALLBACK = `Eres un analista senior de QA. Revisa los análisis y produce un informe ejecutivo con patrones, problemas y recomendaciones. Score 0-10.`
 
-"${adminContext}"
-
-Cada simulación fue analizada individualmente. Tu trabajo es revisar TODOS los análisis
-y producir un informe ejecutivo que identifique patrones y dé recomendaciones accionables.
-
-Tu informe debe incluir:
-
-1. **Resumen general**: ¿El agente se comporta consistentemente? ¿Pasa o falla?
-2. **Patrones detectados**: ¿Hay intenciones que falla repetidamente? ¿Tools mal seleccionadas?
-3. **Variabilidad**: ¿Las respuestas son consistentes o hay mucha dispersión entre simulaciones?
-4. **Tools de escritura**: ¿La selección y params de tools write es consistente y correcta?
-5. **Problemas recurrentes**: Lista si hay, con frecuencia (N de ${summary.total_simulations}).
-6. **Recomendaciones**: Qué cambiar en prompts, tools, o configuración. Sé específico.
-7. **Score general**: 0-10 con justificación.
-
-Sé directo. El admin necesita decisiones, no prosa.`
+async function buildSynthesizerSystemPrompt(adminContext: string, summary: RunSummary, registry: Registry): Promise<string> {
+  const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
+  if (promptsSvc) {
+    try {
+      const tmpl = await promptsSvc.getSystemPrompt('cortex-trace-synthesizer', {
+        adminContext,
+        totalSimulations: String(summary.total_simulations),
+      })
+      if (tmpl) return tmpl
+    } catch { /* fallback */ }
+  }
+  return SYNTHESIZER_SYSTEM_FALLBACK + `\n\n${summary.total_simulations} simulaciones. Instrucciones: "${adminContext}"`
 }
 
 function buildSynthesizerUserMessage(analyses: string[], summary: RunSummary): string {

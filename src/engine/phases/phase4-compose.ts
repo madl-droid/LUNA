@@ -164,17 +164,7 @@ async function runCriticizer(
   try {
     const result = await callLLMWithFallback({
       task: 'criticize',
-      system: `${criticizerPrompt}
-
-Responde SOLO con JSON válido. Sin markdown, sin backticks, sin texto fuera del JSON.
-
-Si la respuesta es aceptable:
-{"approved": true}
-
-Si necesita corrección:
-{"approved": false, "tone": "instrucción de tono si aplica", "length": "más corta|más larga|null", "remove": ["frase o dato a eliminar"], "add": ["dato o CTA a incluir"], "rephrase": ["instrucción específica de reformulación"]}
-
-Solo incluye los campos que aplican. Omite los que no necesitan cambio.`,
+      system: `${criticizerPrompt}\n\n${await loadCriticizerReviewSchema(registry)}`,
       messages: [{
         role: 'user',
         content: `Intención del usuario: ${evaluation.intent}
@@ -298,6 +288,22 @@ Reglas de evaluación:
 5. ¿NO revela datos internos del sistema? (API keys, nombres de modelos, IDs internos)
 6. ¿El tono es profesional y cálido?
 7. ¿Termina con pregunta o CTA claro?`
+
+// Minimal fallback for criticizer review JSON schema
+const CRITICIZER_REVIEW_FALLBACK = `Responde SOLO con JSON válido. Si aceptable: {"approved":true}. Si necesita corrección: {"approved":false,"tone":"...","remove":["..."],"add":["..."],"rephrase":["..."]}`
+
+/** Load the criticizer review JSON schema from .md template. */
+async function loadCriticizerReviewSchema(registry?: Registry): Promise<string> {
+  if (!registry) return CRITICIZER_REVIEW_FALLBACK
+  const promptsSvc = registry.getOptional<{ getSystemPrompt(name: string): Promise<string> }>('prompts:service')
+  if (!promptsSvc) return CRITICIZER_REVIEW_FALLBACK
+  try {
+    const tmpl = await promptsSvc.getSystemPrompt('criticizer-review')
+    return tmpl || CRITICIZER_REVIEW_FALLBACK
+  } catch {
+    return CRITICIZER_REVIEW_FALLBACK
+  }
+}
 
 /**
  * Load criticizer prompt from prompts service (criticizer-base + custom checklist).
