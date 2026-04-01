@@ -247,12 +247,13 @@ function renderStyles(): string {
 .sa-card-name-row { display:flex; align-items:baseline; gap:8px; margin-bottom:1px }
 .sa-card-name { font-weight:700; font-size:14px; color:var(--on-surface) }
 .sa-card-slug { font-size:11px; color:var(--on-surface-dim); font-family:monospace }
-.sa-system-badge { display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:var(--radius-pill); background:rgba(147,51,234,0.1); color:#7c3aed; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em }
+.sa-system-badge { display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:var(--radius-pill); background:rgba(255,94,14,0.1); color:var(--primary); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em }
 .sa-card-desc { font-size:12px; color:var(--on-surface-variant); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px }
 /* Meta area — chips + action buttons, all same height and gap */
 .sa-card-meta { display:flex; align-items:center; gap:6px; flex-shrink:0 }
 .sa-meta-item { display:inline-flex; align-items:center; gap:3px; position:relative }
-.sa-badge-model { padding:4px 10px; border-radius:var(--radius-pill); font-size:11px; font-weight:600; white-space:nowrap; background:rgba(0,122,255,0.1); color:var(--info) }
+.sa-badge-model { font-size:11px; font-weight:600; white-space:nowrap; color:var(--info) }
+.sa-badge-model.sa-badge-model--complex { color:var(--primary) }
 .sa-stat-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 9px; border-radius:var(--radius-pill); background:var(--surface-container-low); font-size:11px; font-weight:600; color:var(--on-surface-dim); white-space:nowrap }
 .sa-verify-chip { background:var(--surface-container-low); color:var(--on-surface-dim) }
 .sa-verify-chip.sa-verify-active { background:rgba(52,199,89,0.1); color:var(--success) }
@@ -574,14 +575,14 @@ export function renderSubagentsSection(
             <div class="sa-card-name-row">
               <span class="sa-card-name">${esc(t.name)}</span>
               <span class="sa-card-slug">${esc(t.slug)}</span>
-              ${t.isSystem ? `<span class="sa-system-badge">&#128274; ${l('systemBadge', lang)}</span>` : ''}
+              ${t.isSystem ? `<span class="sa-system-badge">${l('systemBadge', lang)}</span>` : ''}
             </div>
             ${t.description ? `<div class="sa-card-desc">${esc(t.description)}</div>` : ''}
           </div>
           <!-- Meta — all chips + edit/delete, uniform height/gap -->
           <div class="sa-card-meta">
             <div class="sa-meta-item">
-              <span class="sa-badge-model">${esc(modelLabel)}</span>
+              <span class="sa-badge-model${t.modelTier === 'complex' ? ' sa-badge-model--complex' : ''}">${esc(modelLabel)}</span>
               <button class="info-btn" type="button">i</button>
               <span class="info-tooltip info-flip">${esc(l('modelHelp', lang))}</span>
             </div>
@@ -593,14 +594,6 @@ export function renderSubagentsSection(
               <button class="info-btn" type="button">i</button>
               <span class="info-tooltip info-flip">${esc(l('verifyHelp', lang))}</span>
             </div>
-            ${t.googleSearchGrounding ? `<div class="sa-meta-item">
-              <span class="sa-stat-chip sa-verify-chip sa-verify-active">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                ${esc(l('googleGrounding', lang))}
-              </span>
-              <button class="info-btn" type="button">i</button>
-              <span class="info-tooltip info-flip">${esc(l('googleGroundingHelp', lang))}</span>
-            </div>` : ''}
             <div class="sa-meta-item">
               <span class="sa-stat-chip">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
