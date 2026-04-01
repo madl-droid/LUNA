@@ -6,7 +6,7 @@
   background: var(--surface-container-lowest);
   border-radius: var(--radius-sm);
   margin-bottom: var(--panel-gap);
-  overflow: hidden;
+  overflow: visible;
   box-shadow: var(--shadow-subtle);
   transition: box-shadow 0.2s ease;
 }
@@ -3701,6 +3701,20 @@ select.wizard-input option:checked {
   background: rgba(255, 59, 48, 0.12);
   color: var(--error);
 }
+
+/* TTS status dot (inline in panel title) */
+.ts-tts-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--on-surface-dim);
+  display: inline-block;
+  flex-shrink: 0;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.ts-tts-dot.dot-active { background: var(--success, #34c759); }
+.ts-tts-dot.dot-error  { background: var(--error, #ff3b30); }
 
 /* TTS fields — standardized to design system spacing */
 .ts-tts-field {

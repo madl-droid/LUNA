@@ -6,7 +6,7 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { boolEnv, numEnv } from '../../kernel/config-helpers.js'
+import { boolEnv, numEnv, floatEnv } from '../../kernel/config-helpers.js'
 import * as configStore from '../../kernel/config-store.js'
 import { TTSService } from './tts-service.js'
 
@@ -35,6 +35,9 @@ const manifest: ModuleManifest = {
     TTS_AUDIO_TO_AUDIO_FREQ: numEnv(80),
     TTS_TEXT_TO_AUDIO_FREQ: numEnv(10),
     TTS_MAX_DURATION: z.string().default('2'),
+    TTS_VOICE_STYLES: boolEnv(false),
+    TTS_TEMPERATURE: floatEnv(1.2),
+    TTS_SPEAKING_RATE: floatEnv(1.5),
   }),
 
   console: {
@@ -85,6 +88,9 @@ const manifest: ModuleManifest = {
       TTS_AUDIO_TO_AUDIO_FREQ: number
       TTS_TEXT_TO_AUDIO_FREQ: number
       TTS_MAX_DURATION: string
+      TTS_VOICE_STYLES: boolean
+      TTS_TEMPERATURE: number
+      TTS_SPEAKING_RATE: number
     }>('tts')
 
     if (!config.TTS_ENABLED) {

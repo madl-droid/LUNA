@@ -1289,8 +1289,6 @@ function renderIdentitySection(data: SectionData): string {
   for (const p of prompts) {
     const value = cfg[p.key] || ''
     const slot = SLOT_MAP[p.key] || ''
-    const lines = (value || ' ').split('\n')
-    const lineNums = lines.map((_: string, i: number) => `<span class="code-editor-line-num">${i + 1}</span>`).join('')
     const collapsedCls = isFirstPrompt ? '' : 'collapsed'
     isFirstPrompt = false
     promptsHtml += `<div class="panel ${collapsedCls} u-mb-sm" data-slot="${esc(slot)}">
@@ -1319,7 +1317,6 @@ function renderIdentitySection(data: SectionData): string {
             <span class="code-editor-pos" data-ce-pos="${esc(p.key)}">LN 1, COL 1</span>
           </div>
           <div class="code-editor-body" style="min-height:420px;max-height:620px">
-            <div class="code-editor-lines" data-ce-lines="${esc(p.key)}">${lineNums}</div>
             <textarea class="code-editor-textarea" name="${esc(p.key)}" data-original="${esc(value)}" data-ce-key="${esc(p.key)}" style="min-height:420px" readonly>${esc(value)}</textarea>
           </div>
         </div>
@@ -1430,6 +1427,9 @@ function renderIdentitySection(data: SectionData): string {
     const ttsTextFreq = cfg['TTS_TEXT_TO_AUDIO_FREQ'] || '10'
     const ttsMaxDur = cfg['TTS_MAX_DURATION'] || '2'
     const ttsVoice = cfg['TTS_VOICE_NAME'] || 'Kore'
+    const ttsVoiceStyles = (cfg['TTS_VOICE_STYLES'] ?? 'false') === 'true'
+    const ttsTemperature = cfg['TTS_TEMPERATURE'] || '1.2'
+    const ttsSpeakingRate = cfg['TTS_SPEAKING_RATE'] || '1.5'
 
     const ttsFreqOpts = Array.from({ length: 11 }, (_, i) => i * 10)
     const ttsAudioFreqSel = ttsFreqOpts.map(v =>
@@ -1450,94 +1450,100 @@ function renderIdentitySection(data: SectionData): string {
     ).join('')
 
     // Gemini TTS voices (auto-detect language)
-    const ttsVoices = [
-      { value: 'Kore', label: 'Kore' },
-      { value: 'Puck', label: 'Puck' },
-      { value: 'Charon', label: 'Charon' },
-      { value: 'Zephyr', label: 'Zephyr' },
-      { value: 'Fenrir', label: 'Fenrir' },
-      { value: 'Leda', label: 'Leda' },
-      { value: 'Aoede', label: 'Aoede' },
-      { value: 'Orus', label: 'Orus' },
-      { value: 'Callirrhoe', label: 'Callirrhoe' },
-      { value: 'Autonoe', label: 'Autonoe' },
-      { value: 'Enceladus', label: 'Enceladus' },
-      { value: 'Iapetus', label: 'Iapetus' },
-      { value: 'Umbriel', label: 'Umbriel' },
-      { value: 'Algieba', label: 'Algieba' },
-      { value: 'Despina', label: 'Despina' },
-      { value: 'Erinome', label: 'Erinome' },
-      { value: 'Algenib', label: 'Algenib' },
-      { value: 'Rasalgethi', label: 'Rasalgethi' },
-      { value: 'Laomedeia', label: 'Laomedeia' },
-      { value: 'Achernar', label: 'Achernar' },
-      { value: 'Alnilam', label: 'Alnilam' },
-      { value: 'Schedar', label: 'Schedar' },
-      { value: 'Gacrux', label: 'Gacrux' },
-      { value: 'Pulcherrima', label: 'Pulcherrima' },
-      { value: 'Achird', label: 'Achird' },
-      { value: 'Zubenelgenubi', label: 'Zubenelgenubi' },
-      { value: 'Vindemiatrix', label: 'Vindemiatrix' },
-      { value: 'Sadachbia', label: 'Sadachbia' },
-      { value: 'Sadaltager', label: 'Sadaltager' },
-      { value: 'Sulafat', label: 'Sulafat' },
+    const ttsVoiceList = [
+      'Kore','Puck','Charon','Zephyr','Fenrir','Leda','Aoede','Orus',
+      'Callirrhoe','Autonoe','Enceladus','Iapetus','Umbriel','Algieba',
+      'Despina','Erinome','Algenib','Rasalgethi','Laomedeia','Achernar',
+      'Alnilam','Schedar','Gacrux','Pulcherrima','Achird','Zubenelgenubi',
+      'Vindemiatrix','Sadachbia','Sadaltager','Sulafat',
     ]
-    const ttsHasCustom = !ttsVoices.some(v => v.value === ttsVoice)
+    const ttsHasCustom = !ttsVoiceList.includes(ttsVoice)
     const ttsCustomOpt = ttsHasCustom ? `<option value="${esc(ttsVoice)}" selected>${esc(ttsVoice)} (custom)</option>` : ''
-    const ttsVoiceOpts = ttsVoices.map(v =>
-      `<option value="${esc(v.value)}" ${v.value === ttsVoice ? 'selected' : ''}>${esc(v.label)}</option>`
+    const ttsVoiceOpts = ttsVoiceList.map(v =>
+      `<option value="${esc(v)}" ${v === ttsVoice ? 'selected' : ''}>${esc(v)}</option>`
     ).join('')
 
-    const ttsStatusBadge = !ttsEnabled
-      ? `<span class="panel-badge">${isEs ? 'Desactivado' : 'Disabled'}</span>`
-      : ttsHasApiKey
-        ? `<span class="panel-badge badge-active">${isEs ? 'Activo' : 'Active'}</span>`
-        : `<span class="panel-badge ts-badge-error">${isEs ? 'Sin API Key de Google' : 'No Google API Key'}</span>`
+    // Dot status indicator
+    const dotCls = !ttsEnabled ? '' : ttsHasApiKey ? ' dot-active' : ' dot-error'
 
     const ttsNoKeyMsg = !ttsHasApiKey
-      ? `<div class="panel-info module-inactive-notice" style="margin-bottom:8px">${isEs
-          ? 'Se necesita una API Key de Google AI para TTS. Config\u00farala en <a href="/console/llm">LLM \u2192 API Keys</a>.'
+      ? `<div class="panel-info module-inactive-notice" style="margin-bottom:12px">${isEs
+          ? 'Se necesita una API Key de Google AI para TTS. Conf\u00edgurala en <a href="/console/llm">LLM \u2192 API Keys</a>.'
           : 'A Google AI API Key is needed for TTS. Configure it in <a href="/console/llm">LLM \u2192 API Keys</a>.'}</div>`
       : ''
 
+    // Local helper for info tooltip (TTS panel only)
+    const tip = (key: string, text: string) =>
+      `<span class="info-wrap"><button class="info-btn" onclick="event.stopPropagation()">i</button><div class="info-tooltip" id="tts-tip-${key}">${esc(text)}</div></span>`
+
+    // Local helpers for standard field rows
+    const selRow = (name: string, label: string, opts: string, orig: string) =>
+      `<div class="field"><div class="field-left"><span class="field-label">${label}</span></div>` +
+      `<select class="js-custom-select" name="${esc(name)}" data-original="${esc(orig)}">${opts}</select></div>`
+
+    const rangeRow = (name: string, label: string, val: string) =>
+      `<div class="field"><div class="field-left"><span class="field-label">${label}</span></div>` +
+      `<div class="ts-tts-range-wrap">` +
+      `<input type="range" class="range-primary" name="${esc(name)}" min="0" max="2" step="0.1" value="${esc(val)}" data-original="${esc(val)}" oninput="this.nextElementSibling.textContent=parseFloat(this.value).toFixed(1)">` +
+      `<span class="ts-tts-range-value">${esc(val)}</span></div></div>`
+
     voicePanelHtml = `<div class="panel collapsed u-mt-md">
       <div class="panel-header" onclick="togglePanel(this)">
-        <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}</span>
-        ${ttsStatusBadge}
+        <span class="panel-title">${isEs ? 'Voz (TTS)' : 'Voice (TTS)'}<span class="ts-tts-dot${dotCls}"></span></span>
         <span class="panel-chevron">&#9660;</span>
       </div>
-      <div class="panel-body ts-tts-body-compact">
-        <div class="ts-tts-field-compact" style="margin-bottom:12px">
-          <label class="ts-tts-label-compact" style="font-weight:600">${isEs ? 'Activar TTS' : 'Enable TTS'}</label>
-          <label class="toggle toggle-sm" style="margin-left:auto">
+      <div class="panel-body">
+        ${ttsNoKeyMsg}
+
+        <div class="toggle-field">
+          <div>
+            <span class="field-label">${isEs ? 'Permitir enviar audios' : 'Allow sending audio'}</span>
+            <p class="ts-tts-hint">${isEs ? 'Actívalo también en los ajustes del canal donde quieras enviar audios' : 'Also enable it in the channel settings where you want to send audio'}</p>
+          </div>
+          <label class="toggle toggle-sm">
             <input type="hidden" name="TTS_ENABLED" value="${ttsEnabled ? 'true' : 'false'}" data-original="${ttsEnabled ? 'true' : 'false'}">
             <input type="checkbox" name="TTS_ENABLED" value="true" data-original="${ttsEnabled ? 'true' : 'false'}" ${ttsEnabled ? 'checked' : ''}
               onchange="this.previousElementSibling.value=this.checked?'true':'false'">
             <span class="toggle-slider"></span>
           </label>
         </div>
-        ${ttsNoKeyMsg}
-        <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Audio \u2192 Audio' : 'Audio \u2192 Audio'}</label>
-          <select name="TTS_AUDIO_TO_AUDIO_FREQ" data-original="${esc(ttsAudioFreq)}" class="ts-tts-select-compact js-custom-select">${ttsAudioFreqSel}</select>
+
+        <div class="field-divider"><span class="field-divider-label">${isEs ? 'Ratio de respuesta texto-audio' : 'Text-to-audio response ratio'}</span>${tip('ratio', isEs ? 'Probabilidad de que el agente responda en formato de audio. 0% = nunca, 100% = siempre.' : 'Probability of the agent responding in audio format. 0% = never, 100% = always.')}</div>
+        <div class="chs-field-row">
+          ${selRow('TTS_AUDIO_TO_AUDIO_FREQ', isEs ? 'Audio \u2192 Audio' : 'Audio \u2192 Audio', ttsAudioFreqSel, ttsAudioFreq)}
+          ${selRow('TTS_TEXT_TO_AUDIO_FREQ', isEs ? 'Texto \u2192 Audio' : 'Text \u2192 Audio', ttsTextFreqSel, ttsTextFreq)}
         </div>
-        <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Texto \u2192 Audio' : 'Text \u2192 Audio'}</label>
-          <select name="TTS_TEXT_TO_AUDIO_FREQ" data-original="${esc(ttsTextFreq)}" class="ts-tts-select-compact js-custom-select">${ttsTextFreqSel}</select>
+
+        <div class="field-divider"><span class="field-divider-label">${isEs ? 'Naturalidad de voz' : 'Voice naturalness'}</span>${tip('natural', isEs ? 'Controla cómo suena la voz generada: duración máxima por fragmento, variación expresiva y velocidad al hablar.' : 'Controls how the generated voice sounds: max duration per fragment, expressive variation, and speaking speed.')}</div>
+        <div class="chs-field-row">
+          <div class="toggle-field">
+            <span class="field-label">${isEs ? 'Estilos de voz' : 'Voice styles'}</span>
+            <label class="toggle toggle-sm">
+              <input type="hidden" name="TTS_VOICE_STYLES" value="${ttsVoiceStyles ? 'true' : 'false'}" data-original="${ttsVoiceStyles ? 'true' : 'false'}">
+              <input type="checkbox" name="TTS_VOICE_STYLES" value="true" data-original="${ttsVoiceStyles ? 'true' : 'false'}" ${ttsVoiceStyles ? 'checked' : ''}
+                onchange="this.previousElementSibling.value=this.checked?'true':'false'">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          ${selRow('TTS_MAX_DURATION', isEs ? 'Duración máx.' : 'Max duration', ttsDurSel, ttsMaxDur)}
         </div>
-        <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Duracion max' : 'Max duration'}</label>
-          <select name="TTS_MAX_DURATION" data-original="${esc(ttsMaxDur)}" class="ts-tts-select-compact js-custom-select">${ttsDurSel}</select>
+        <div class="chs-field-row">
+          ${rangeRow('TTS_TEMPERATURE', isEs ? 'Variación' : 'Variation', ttsTemperature)}
+          ${rangeRow('TTS_SPEAKING_RATE', isEs ? 'Velocidad' : 'Speed', ttsSpeakingRate)}
         </div>
-        <div class="ts-tts-field-compact">
-          <label class="ts-tts-label-compact">${isEs ? 'Voz' : 'Voice'}</label>
-          <select name="TTS_VOICE_NAME" data-original="${esc(ttsVoice)}" class="ts-tts-select-compact js-custom-select" id="id-tts-voice-select">${ttsCustomOpt}${ttsVoiceOpts}</select>
+
+        <div style="border-top:1px solid var(--outline-variant);margin:16px 0 12px"></div>
+
+        <div class="chs-field-row" style="align-items:flex-end">
+          ${selRow('TTS_VOICE_NAME', isEs ? 'Voz' : 'Voice', `${ttsCustomOpt}${ttsVoiceOpts}`, ttsVoice).replace('name="TTS_VOICE_NAME"', 'name="TTS_VOICE_NAME" id="id-tts-voice-select"')}
+          <div class="field" style="justify-content:flex-end">
+            <button type="button" id="id-tts-preview-btn" class="act-btn act-btn-add act-btn--compact" onclick="idTtsPreview()"
+              ${!ttsHasApiKey ? 'disabled' : ''}>
+              &#9654; ${isEs ? 'Previsualizar ajustes' : 'Preview settings'}
+            </button>
+          </div>
         </div>
-        <div class="ts-tts-preview-area-compact">
-          <button type="button" id="id-tts-preview-btn" class="act-btn act-btn-add act-btn--compact" onclick="idTtsPreview()"
-            ${!ttsHasApiKey ? 'disabled' : ''}>
-            &#9654; ${isEs ? 'Previsualizar' : 'Preview'}
-          </button>
+        <div style="margin-top:8px">
           <span id="id-tts-preview-status" class="ts-tts-preview-status-compact"></span>
           <audio id="id-tts-preview-audio" style="width:100%;display:none;margin-top:6px" controls></audio>
         </div>

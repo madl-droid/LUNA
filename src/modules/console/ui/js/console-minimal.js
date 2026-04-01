@@ -88,6 +88,13 @@
         d.classList.remove('open')
       })
     })
+
+    // Close on scroll (position:fixed stays at original coords otherwise)
+    window.addEventListener('scroll', function () {
+      document.querySelectorAll('.custom-select.open').forEach(function (d) {
+        d.classList.remove('open')
+      })
+    }, { passive: true })
   }
 
   // Init on load and after any dynamic content

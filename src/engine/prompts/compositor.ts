@@ -72,7 +72,7 @@ async function buildFormatFromForm(channel: string, db: import('pg').Pool): Prom
   const typosTypes = all[`${prefix}_FORMAT_TYPOS_TYPES`] || ''
   const openingSigns = all[`${prefix}_FORMAT_OPENING_SIGNS`] || 'nunca'
   const audioEnabled = all[`${prefix}_FORMAT_AUDIO_ENABLED`] === 'true'
-  const voiceStyles = all[`${prefix}_FORMAT_VOICE_STYLES`] === 'true'
+  const voiceStyles = all[`${prefix}_FORMAT_VOICE_STYLES`] === 'true' || all['TTS_VOICE_STYLES'] === 'true'
   const ex1 = all[`${prefix}_FORMAT_EXAMPLE_1`] || ''
   const ex2 = all[`${prefix}_FORMAT_EXAMPLE_2`] || ''
   const ex3 = all[`${prefix}_FORMAT_EXAMPLE_3`] || ''

@@ -17,6 +17,9 @@ export interface TTSConfig {
   TTS_AUDIO_TO_AUDIO_FREQ: number
   TTS_TEXT_TO_AUDIO_FREQ: number
   TTS_MAX_DURATION: string
+  TTS_VOICE_STYLES?: boolean
+  TTS_TEMPERATURE?: number
+  TTS_SPEAKING_RATE?: number
 }
 
 export interface SynthesizeResult {
@@ -100,6 +103,8 @@ export class TTSService {
     const truncated = text.substring(0, maxChars)
 
     try {
+      const temperature = this.config.TTS_TEMPERATURE ?? 1.2
+      const speakingRate = this.config.TTS_SPEAKING_RATE ?? 1.5
       const response = await fetch(`${GEMINI_TTS_API_URL}?key=${this.config.TTS_GOOGLE_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,10 +112,12 @@ export class TTSService {
           contents: [{ role: 'user', parts: [{ text: truncated }] }],
           generationConfig: {
             responseModalities: ['AUDIO'],
+            temperature,
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: { voiceName: this.config.TTS_VOICE_NAME || 'Kore' },
               },
+              speakingRate,
             },
           },
         }),
