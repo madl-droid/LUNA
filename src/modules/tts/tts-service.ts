@@ -100,17 +100,17 @@ export class TTSService {
     return Math.random() * 100 < freq
   }
 
+  /**
+   * Synthesize a single text segment into audio.
+   * NOTE: Does NOT cap text length — callers (synthesizeChunks) are responsible for capping/chunking.
+   * For direct use, cap text before calling.
+   */
   async synthesize(text: string): Promise<SynthesizeResult | null> {
     if (!this.config.TTS_GOOGLE_API_KEY) {
       logger.warn('TTS API key not configured')
       return null
     }
-
-    // Duration limit: ~700 chars per minute of spoken audio
-    const durationMinutes = parseFloat(this.config.TTS_MAX_DURATION) || 2
-    const durationChars = Math.round(durationMinutes * 700)
-    const maxChars = Math.min(this.config.TTS_MAX_CHARS, durationChars)
-    const truncated = text.substring(0, maxChars)
+    if (!text || text.trim().length === 0) return null
 
     try {
       const temperature = this.config.TTS_TEMPERATURE ?? 1.2
@@ -119,7 +119,7 @@ export class TTSService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: truncated }] }],
+          contents: [{ role: 'user', parts: [{ text }] }],
           generationConfig: {
             responseModalities: ['AUDIO'],
             temperature,
@@ -163,7 +163,7 @@ export class TTSService {
       // Estimate duration from PCM: 24000 samples/sec * 2 bytes/sample * 1 channel = 48000 bytes/sec
       const durationSeconds = Math.max(1, Math.round(pcmBuffer.length / 48000))
 
-      logger.info({ textLength: truncated.length, audioBytes: audioBuffer.length, durationSeconds }, 'TTS synthesis complete')
+      logger.info({ textLength: text.length, audioBytes: audioBuffer.length, durationSeconds }, 'TTS synthesis complete')
 
       return { audioBuffer, durationSeconds }
     } catch (err) {
@@ -182,8 +182,9 @@ export class TTSService {
       logger.warn('TTS API key not configured')
       return []
     }
+    if (!text || text.trim().length === 0) return []
 
-    // Cap total text by duration (same logic as synthesize)
+    // Cap total text by duration (~700 chars/min)
     const durationMinutes = parseFloat(this.config.TTS_MAX_DURATION) || 2
     const durationChars = Math.round(durationMinutes * 700)
     const maxChars = Math.min(this.config.TTS_MAX_CHARS, durationChars)
@@ -208,9 +209,12 @@ export class TTSService {
 
 // ─── Audio conversion ──────────────────────────────
 
+const FFMPEG_TIMEOUT_MS = 15_000
+
 /** Convert WAV buffer to OGG/Opus via ffmpeg (stdin→stdout, no temp files) */
 async function wavToOggOpus(wavBuffer: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    let settled = false
     const proc = spawn('ffmpeg', [
       '-i', 'pipe:0',
       '-c:a', 'libopus',
@@ -220,14 +224,35 @@ async function wavToOggOpus(wavBuffer: Buffer): Promise<Buffer> {
       'pipe:1',
     ], { stdio: ['pipe', 'pipe', 'pipe'] })
 
-    const chunks: Buffer[] = []
-    proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+    const outChunks: Buffer[] = []
+    const errChunks: Buffer[] = []
+    proc.stdout.on('data', (chunk: Buffer) => outChunks.push(chunk))
+    proc.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk))
+
+    // Timeout: kill ffmpeg if it hangs
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        proc.kill('SIGKILL')
+        reject(new Error('ffmpeg timed out after 15s'))
+      }
+    }, FFMPEG_TIMEOUT_MS)
 
     proc.on('close', (code) => {
-      if (code === 0) resolve(Buffer.concat(chunks))
-      else reject(new Error(`ffmpeg exited with code ${code}`))
+      clearTimeout(timer)
+      if (settled) return
+      settled = true
+      if (code === 0) {
+        resolve(Buffer.concat(outChunks))
+      } else {
+        const stderr = Buffer.concat(errChunks).toString('utf-8').slice(-500)
+        reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`))
+      }
     })
-    proc.on('error', (err) => reject(err))
+    proc.on('error', (err) => {
+      clearTimeout(timer)
+      if (!settled) { settled = true; reject(err) }
+    })
 
     proc.stdin.write(wavBuffer)
     proc.stdin.end()

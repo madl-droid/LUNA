@@ -116,7 +116,7 @@ export async function phase4Compose(
   if (config.criticizerMode !== 'disabled' && responseText && !rawResponse?.startsWith('FALLBACK')) {
     const shouldCriticize = config.criticizerMode === 'always' || isComplexPlan(evaluation)
     if (shouldCriticize) {
-      responseText = await runCriticizer(responseText, baseSystem, userMessage, ctx, evaluation, config, registry)
+      responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config, registry)
     }
   }
 
