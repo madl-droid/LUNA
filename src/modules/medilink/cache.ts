@@ -9,7 +9,7 @@ import type {
   MedilinkConfig, ReferenceData,
   MedilinkBranch, MedilinkProfessional, MedilinkTreatment,
   MedilinkAppointmentStatus, MedilinkChair,
-  MedilinkAgendaRaw, AvailabilitySlot,
+  MedilinkAgendaItem, AvailabilitySlot,
 } from './types.js'
 
 const logger = pino({ name: 'medilink:cache' })
@@ -144,8 +144,8 @@ export class MedilinkCache {
     }
 
     // Fetch from API
-    const raw = await this.api.getAgenda(branchId, date, professionalId, durationMinutes)
-    const slots = this.processAgendaResponse(raw, branchId)
+    const items = await this.api.getAgenda(branchId, date, professionalId, durationMinutes)
+    const slots = this.processAgendaResponse(items, branchId)
 
     // Cache with TTL (skip if cache disabled)
     if (cacheOn) {

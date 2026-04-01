@@ -8,7 +8,7 @@ import type {
   MedilinkAppointment, MedilinkAppointmentCreate, MedilinkAppointmentUpdate,
   MedilinkProfessional, MedilinkBranch, MedilinkChair,
   MedilinkTreatment, MedilinkAppointmentStatus,
-  MedilinkAgendaRaw, MedilinkEvolution,
+  MedilinkAgendaItem, MedilinkPatientArchive, MedilinkEvolution,
 } from './types.js'
 import { RateLimiter } from './rate-limiter.js'
 
@@ -25,14 +25,17 @@ export class MedilinkApiClient {
   private rateLimiter: RateLimiter
 
   constructor(config: MedilinkConfig, rateLimiter: RateLimiter) {
-    this.baseUrl = config.MEDILINK_BASE_URL.replace(/\/+$/, '')
+    // Append /api/v1 only if not already present
+    const base = config.MEDILINK_BASE_URL.replace(/\/+$/, '')
+    this.baseUrl = base.endsWith('/api/v1') ? base : `${base}/api/v1`
     this.token = config.MEDILINK_API_TOKEN
     this.timeoutMs = config.MEDILINK_API_TIMEOUT_MS
     this.rateLimiter = rateLimiter
   }
 
   updateConfig(config: MedilinkConfig): void {
-    this.baseUrl = config.MEDILINK_BASE_URL.replace(/\/+$/, '')
+    const base = config.MEDILINK_BASE_URL.replace(/\/+$/, '')
+    this.baseUrl = base.endsWith('/api/v1') ? base : `${base}/api/v1`
     this.token = config.MEDILINK_API_TOKEN
     this.timeoutMs = config.MEDILINK_API_TIMEOUT_MS
   }
@@ -250,7 +253,8 @@ export class MedilinkApiClient {
   // ─── Reference data ────────────────────
 
   async getProfessionals(priority?: RequestPriority): Promise<MedilinkProfessional[]> {
-    return this.fetchAll<MedilinkProfessional>('/profesionales', { priority: priority ?? 'low' })
+    // API uses /dentistas, not /profesionales
+    return this.fetchAll<MedilinkProfessional>('/dentistas', { priority: priority ?? 'low' })
   }
 
   async getBranches(priority?: RequestPriority): Promise<MedilinkBranch[]> {
@@ -265,8 +269,11 @@ export class MedilinkApiClient {
     return this.fetchAll<MedilinkTreatment>('/tratamientos', { priority: priority ?? 'low' })
   }
 
-  async getAppointmentStatuses(priority?: RequestPriority): Promise<MedilinkAppointmentStatus[]> {
-    return this.fetchAll<MedilinkAppointmentStatus>('/estados-de-cita', { priority: priority ?? 'low' })
+  async getAppointmentStatuses(_priority?: RequestPriority): Promise<MedilinkAppointmentStatus[]> {
+    // /estados-de-cita does not exist in this API version.
+    // Status is embedded in each appointment as 'estado_cita' string.
+    logger.debug('getAppointmentStatuses called — endpoint not available, returning []')
+    return []
   }
 
   // ─── Agenda / Availability ─────────────
@@ -276,19 +283,25 @@ export class MedilinkApiClient {
     date: string,
     professionalId?: number,
     durationMinutes?: number,
-  ): Promise<MedilinkAgendaRaw> {
+  ): Promise<MedilinkAgendaItem[]> {
     const filter: MedilinkFilter = {
       id_sucursal: { eq: branchId },
       fecha: { eq: date },
     }
-    if (professionalId) filter['id_profesional'] = { eq: professionalId }
+    // API uses id_dentista, not id_profesional
+    if (professionalId) filter['id_dentista'] = { eq: professionalId }
     if (durationMinutes) filter['duracion'] = { eq: durationMinutes }
 
-    const res = await this.request<MedilinkAgendaRaw>('GET', '/agendas', {
+    // /agendas returns an array directly, not paginated
+    const res = await this.request<MedilinkAgendaItem[]>('GET', '/agendas', {
       filter,
       priority: 'high',
     })
-    return res.data
+    return Array.isArray(res.data) ? res.data : []
+  }
+
+  async getPatientFiles(patientId: number, priority?: RequestPriority): Promise<MedilinkPatientArchive[]> {
+    return this.fetchAll<MedilinkPatientArchive>(`/pacientes/${patientId}/archivos`, { priority: priority ?? 'medium' })
   }
 
   // ─── Health check ──────────────────────
