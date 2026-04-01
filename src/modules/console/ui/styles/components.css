@@ -4310,6 +4310,7 @@ select.wizard-input option:checked {
 .ki-dot-processing { background:var(--info, #3b82f6); }
 .ki-dot-done { background:var(--success, #22c55e); }
 .ki-dot-failed { background:var(--error, #ef4444); }
+.ki-dot-pending_review { background:var(--warning, #f59e0b); outline:2px solid var(--warning, #f59e0b); outline-offset:1px; opacity:0.7; }
 .ki-chunks { font-size:11px; color:var(--on-surface-dim); margin-left:2px; }
 
 /* Icon-only action buttons */

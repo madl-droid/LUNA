@@ -24,6 +24,7 @@ interface KnowledgeResult {
   score: number
   type: 'chunk' | 'faq'
   documentId?: string
+  faqId?: string
   fileUrl?: string
 }
 
@@ -90,6 +91,7 @@ export async function unifiedSearch(
       type: kr.type,
       metadata: {
         documentId: kr.documentId ?? null,
+        faqId: kr.faqId ?? null,
         fileUrl: kr.fileUrl ?? null,
       },
     })

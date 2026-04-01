@@ -1208,6 +1208,7 @@ export class KnowledgePgStore {
     embeddingStatus?: EmbeddingStatus
     chunkCount?: number
     shareable?: boolean
+    fullVideoEmbed?: boolean
   }): Promise<void> {
     const sets: string[] = []
     const params: unknown[] = []
@@ -1223,6 +1224,7 @@ export class KnowledgePgStore {
     if (updates.embeddingStatus !== undefined) { sets.push(`embedding_status = $${idx++}`); params.push(updates.embeddingStatus) }
     if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
     if (updates.shareable !== undefined) { sets.push(`shareable = $${idx++}`); params.push(updates.shareable) }
+    if (updates.fullVideoEmbed !== undefined) { sets.push(`full_video_embed = $${idx++}`); params.push(updates.fullVideoEmbed) }
 
     if (sets.length === 0) return
     sets.push(`updated_at = now()`)
