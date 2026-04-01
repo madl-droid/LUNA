@@ -63,7 +63,17 @@
         document.querySelectorAll('.custom-select.open').forEach(function (d) {
           if (d !== wrap) d.classList.remove('open')
         })
+        var opening = !wrap.classList.contains('open')
         wrap.classList.toggle('open')
+        // Use position:fixed so the panel escapes overflow:hidden ancestors
+        if (opening) {
+          var rect = wrap.getBoundingClientRect()
+          panel.style.position = 'fixed'
+          panel.style.top = (rect.bottom + 4) + 'px'
+          panel.style.left = rect.left + 'px'
+          panel.style.minWidth = rect.width + 'px'
+          panel.style.zIndex = '9999'
+        }
       })
 
       sel.parentNode.insertBefore(wrap, sel)

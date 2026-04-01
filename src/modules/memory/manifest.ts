@@ -62,7 +62,7 @@ const manifest: ModuleManifest = {
 
     // Batch task hours (UTC) — cron expressions are derived from these at runtime
     MEMORY_BATCH_COMPRESS_HOUR: numEnv(2),   // compression + embeddings (30 min later)
-    MEMORY_BATCH_PURGE_HOUR: numEnv(5),      // media purge + logs purge + archive purge
+    MEMORY_BATCH_PURGE_HOUR: numEnv(4),      // media purge + logs purge + archive purge
 
     // Batch crons (backend-only — derived from HOUR fields above)
     MEMORY_BATCH_COMPRESS_CRON: z.string().default('0 2 * * *'),

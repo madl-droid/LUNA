@@ -2192,41 +2192,67 @@ function renderMemorySection(data: SectionData): string {
     return `<div class="chs-field-row">${a}${b}</div>`
   }
 
-  function div(label: string): string {
+  function row3(a: string, b: string, c: string): string {
+    return `<div class="chs-field-row chs-field-row-3">${a}${b}${c}</div>`
+  }
+
+  function sdiv(label: string): string {
     return `<div class="field-divider"><span class="field-divider-label">${esc(label)}</span></div>`
+  }
+
+  function panel(title: string, body: string, collapsed = false): string {
+    return `<div class="panel${collapsed ? ' collapsed' : ''}">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${esc(title)}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">${body}</div>
+    </div>`
   }
 
   const l = (es: string, en: string) => lang === 'es' ? es : en
 
-  const tab1 = `
-    ${div(l('Historial de conversación', 'Conversation history'))}
+  const TURNS_INFO = l(
+    'Un turno es el intercambio completo entre usuario y agente (un mensaje + su respuesta). Define cuántos turnos recientes se cargan en el contexto activo de la conversación.',
+    'A turn is the complete exchange between user and agent (one message + its response). Defines how many recent turns are loaded into the active conversation context.'
+  )
+  const PAST_INFO = l(
+    'Número de conversaciones previas resumidas que se inyectan como contexto. Permite al agente recordar interacciones de sesiones anteriores con este contacto.',
+    'Number of previous summarized conversations injected as context. Allows the agent to remember past session interactions with this contact.'
+  )
+
+  // ── Panel 1: Memoria de trabajo ──
+  const p1 = panel(l('Memoria de trabajo', 'Working memory'), `
+    ${sdiv(l('Canales instantáneos', 'Instant channels'))}
     ${row2(
-      numF('MEMORY_BUFFER_TURNS_INSTANT', l('Historial canales instantáneos', 'Instant channel history'), l('Turnos de conversación que se cargan en canales instantáneos (WhatsApp, Google Chat)', 'Conversation turns loaded for instant channels (WhatsApp, Google Chat)')),
-      numF('MEMORY_BUFFER_TURNS_ASYNC', l('Historial canales asíncronos', 'Async channel history'), l('Turnos de conversación que se cargan en canales asíncronos (Gmail)', 'Conversation turns loaded for async channels (Gmail)'))
+      numF('MEMORY_BUFFER_TURNS_INSTANT', l('Turnos en memoria', 'Turns in memory'), TURNS_INFO),
+      numF('MEMORY_CONTEXT_SUMMARIES_INSTANT', l('Conversaciones pasadas en memoria', 'Past conversations in memory'), PAST_INFO)
     )}
+    ${sdiv(l('Canales asíncronos', 'Async channels'))}
     ${row2(
-      numF('MEMORY_BUFFER_TURNS_VOICE', l('Historial canales de voz', 'Voice channel history'), l('Turnos de conversación que se cargan en canales de voz (Twilio)', 'Conversation turns loaded for voice channels (Twilio)')),
-      numF('MEMORY_CONTEXT_SUMMARIES_INSTANT', l('Interacciones previas (instantáneo)', 'Past interactions (instant)'), l('Resúmenes de interacciones anteriores inyectados en canales instantáneos', 'Past interaction summaries injected for instant channels'))
+      numF('MEMORY_BUFFER_TURNS_ASYNC', l('Turnos en memoria', 'Turns in memory'), TURNS_INFO),
+      numF('MEMORY_CONTEXT_SUMMARIES_ASYNC', l('Conversaciones pasadas en memoria', 'Past conversations in memory'), PAST_INFO)
     )}
+    ${sdiv(l('Canales de voz', 'Voice channels'))}
     ${row2(
-      numF('MEMORY_CONTEXT_SUMMARIES_ASYNC', l('Interacciones previas (asíncrono)', 'Past interactions (async)'), l('Resúmenes de interacciones anteriores inyectados en canales asíncronos', 'Past interaction summaries injected for async channels')),
-      numF('MEMORY_CONTEXT_SUMMARIES_VOICE', l('Interacciones previas (voz)', 'Past interactions (voice)'), l('Resúmenes de interacciones anteriores inyectados en canales de voz', 'Past interaction summaries injected for voice channels'))
+      numF('MEMORY_BUFFER_TURNS_VOICE', l('Turnos en memoria', 'Turns in memory'), TURNS_INFO),
+      numF('MEMORY_CONTEXT_SUMMARIES_VOICE', l('Conversaciones pasadas en memoria', 'Past conversations in memory'), PAST_INFO)
     )}
-    ${div(l('Compresión', 'Compression'))}
+    ${sdiv(l('Compresión de memoria', 'Memory compression'))}
     ${row2(
       numF('MEMORY_COMPRESSION_THRESHOLD', l('Umbral de compresión', 'Compression threshold'), l('Cantidad mínima de mensajes en una sesión para activar compresión automática', 'Minimum messages in a session to trigger automatic compression')),
-      numF('MEMORY_COMPRESSION_KEEP_RECENT', l('Mensajes recientes a conservar', 'Recent messages to keep'), l('Mensajes que se mantienen sin comprimir para contexto inmediato', 'Messages kept uncompressed for immediate context'))
+      numF('MEMORY_COMPRESSION_KEEP_RECENT', l('Mensajes recientes a conservar', 'Recent messages to keep'), l('Mensajes que se mantienen sin comprimir para contexto inmediato al comprimir una sesión', 'Messages kept uncompressed for immediate context when a session is compressed'))
     )}
-  `
+  `)
 
-  const tab2 = `
-    ${row2(
-      numF('MEMORY_SUMMARY_RETENTION_DAYS', l('Resúmenes de interacciones (días)', 'Interaction summaries (days)'), l('Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', 'Days before deleting session summaries. Maximum 730 days (2 years).')),
-      numF('MEMORY_PIPELINE_LOGS_RETENTION_DAYS', l('Registros del sistema (días)', 'System logs (days)'), l('Días antes de eliminar registros de procesamiento interno', 'Days before deleting internal processing logs'))
-    )}
+  // ── Panel 2: Memoria de mediano plazo ──
+  const p2 = panel(l('Memoria de mediano plazo', 'Mid-term memory'), `
+    ${numF('MEMORY_SUMMARY_RETENTION_DAYS', l('Resúmenes de interacciones (días)', 'Interaction summaries (days)'), l('Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', 'Days before deleting session summaries. Maximum 730 days (2 years).'))}
+    ${numF('MEMORY_PIPELINE_LOGS_RETENTION_DAYS', l('Registros del sistema (días)', 'System logs (days)'), l('Días antes de eliminar registros de procesamiento interno del pipeline', 'Days before deleting internal pipeline processing logs'))}
     ${numF('MEMORY_MEDIA_RETENTION_MONTHS', l('Almacenamiento de media (meses)', 'Media storage (months)'), l('Meses de retención de imágenes y archivos en disco. Máximo 24 meses.', 'Months to retain images and media files on disk. Maximum 24 months.'))}
-  `
+  `)
 
+  // ── Panel 3: Avanzado (collapsed) ──
   const archiveOpts = [
     { value: '0', label: l('Desactivado', 'Disabled') },
     { value: '1', label: l('1 año', '1 year') },
@@ -2236,31 +2262,19 @@ function renderMemorySection(data: SectionData): string {
     { value: '999', label: l('Vitalicio', 'Lifetime') },
   ]
 
-  const tab3 = `
-    ${row2(
+  const p3 = panel(l('Avanzado', 'Advanced'), `
+    ${row3(
       selF('MEMORY_ARCHIVE_RETENTION_YEARS', l('Duración del backup legal', 'Legal backup duration'), l('Retención de conversaciones completas para cumplimiento legal. "Desactivado" no guarda backups.', 'Retention of full conversations for legal compliance. "Disabled" skips backups.'), archiveOpts),
-      numF('MEMORY_SESSION_REOPEN_WINDOW_HOURS', l('Ventana de reapertura (h)', 'Session reopen window (h)'), l('Horas en que un nuevo mensaje reactiva la sesión anterior. Máximo 12h.', 'Hours a new message reactivates the previous session. Max 12h.'))
-    )}
-    ${div(l('Tareas nocturnas', 'Nightly tasks'))}
-    ${row2(
       hourSel('MEMORY_BATCH_COMPRESS_HOUR', l('Compresión nocturna', 'Nightly compression'), l('Hora UTC para comprimir sesiones inactivas. Los embeddings se generan automáticamente 30 minutos después.', 'UTC hour to compress inactive sessions. Embeddings are generated automatically 30 minutes later.')),
       hourSel('MEMORY_BATCH_PURGE_HOUR', l('Purga de datos', 'Data purge'), l('Hora UTC para purgar media expirada, logs del pipeline y archivos legales expirados según sus ventanas de retención.', 'UTC hour to purge expired media, pipeline logs and legal archives according to their retention windows.'))
     )}
-    ${smBool('LLM_PROMPT_CACHE_ENABLED', l('Cache de prompts', 'Prompt cache'), l('Cachea el system prompt y el historial para reducir costos en conversaciones largas', 'Caches the system prompt and history to reduce costs in long conversations'))}
-  `
+    ${row2(
+      numF('MEMORY_SESSION_REOPEN_WINDOW_HOURS', l('Ventana de reapertura (h)', 'Session reopen window (h)'), l('Horas en que un nuevo mensaje reactiva la sesión anterior en vez de abrir una nueva. Máximo 12h.', 'Hours a new message reactivates the previous session instead of opening a new one. Max 12h.')),
+      smBool('LLM_PROMPT_CACHE_ENABLED', l('Cache de prompts', 'Prompt cache'), l('Cachea el system prompt y el historial para reducir costos en conversaciones largas', 'Caches the system prompt and history to reduce costs in long conversations'))
+    )}
+  `, true)
 
-  return `<div class="panel">
-    <div class="panel-body">
-      <div class="chs-tabs">
-        <button type="button" class="chs-tab active" data-tab="mem-working">${l('Memoria de trabajo', 'Working memory')}</button>
-        <button type="button" class="chs-tab" data-tab="mem-midterm">${l('Mediano plazo', 'Mid-term')}</button>
-        <button type="button" class="chs-tab" data-tab="mem-advanced">${l('Avanzado', 'Advanced')}</button>
-      </div>
-      <div class="chs-tab-content active" data-tab-content="mem-working">${tab1}</div>
-      <div class="chs-tab-content" data-tab-content="mem-midterm">${tab2}</div>
-      <div class="chs-tab-content" data-tab-content="mem-advanced">${tab3}</div>
-    </div>
-  </div>`
+  return p1 + p2 + p3
 }
 
 export function renderSection(section: string, data: SectionData): string | null {
