@@ -73,7 +73,7 @@ export class Server {
       res.setHeader('X-Frame-Options', 'DENY')
       res.setHeader('X-XSS-Protection', '0')
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
-      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;")
+      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob:;")
 
       const url = req.url ?? '/'
       const method = req.method ?? 'GET'
