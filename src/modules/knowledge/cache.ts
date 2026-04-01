@@ -5,6 +5,7 @@
 import type { Redis } from 'ioredis'
 import pino from 'pino'
 import type { KnowledgeInjection } from './types.js'
+import { isCacheEnabled } from '../../kernel/cache-flag.js'
 
 const logger = pino({ name: 'knowledge:cache' })
 
@@ -26,6 +27,7 @@ export class KnowledgeCache {
    * TTL 5 min — short because core docs/categories/connectors rarely change.
    */
   async setInjection(injection: KnowledgeInjection): Promise<void> {
+    if (!await isCacheEnabled()) return
     try {
       const INJECTION_TTL = 300 // 5 min
       await this.redis.set(KEY_INJECTION, JSON.stringify(injection), 'EX', INJECTION_TTL)
@@ -39,6 +41,7 @@ export class KnowledgeCache {
    * Get cached KnowledgeInjection or null if expired/missing.
    */
   async getInjection(): Promise<KnowledgeInjection | null> {
+    if (!await isCacheEnabled()) return null
     try {
       const data = await this.redis.get(KEY_INJECTION)
       if (!data) return null
@@ -52,6 +55,7 @@ export class KnowledgeCache {
    * Set core content hash for staleness detection.
    */
   async setCoreHash(hash: string): Promise<void> {
+    if (!await isCacheEnabled()) return
     try {
       await this.redis.set(KEY_CORE_HASH, hash, 'EX', this.ttlSeconds)
     } catch (err) {
@@ -63,6 +67,7 @@ export class KnowledgeCache {
    * Check if core content is stale (hash missing or expired).
    */
   async isStale(): Promise<boolean> {
+    if (!await isCacheEnabled()) return true
     try {
       const exists = await this.redis.exists(KEY_CORE_HASH)
       return exists === 0

@@ -6,6 +6,7 @@ import type { Registry } from '../../kernel/registry.js'
 import type { UserResolution, UnregisteredBehavior } from './types.js'
 import type { UserCache } from './cache.js'
 import type { UsersDb } from './db.js'
+import { isCacheEnabled } from '../../kernel/cache-flag.js'
 
 const logger = pino({ name: 'users:resolver' })
 
@@ -194,13 +195,3 @@ function mapLegacyBehavior(raw: string): UnregisteredBehavior {
 }
 
 /** Check if debug cache is enabled (default true). Reads from config_store via registry DB. */
-async function isCacheEnabled(): Promise<boolean> {
-  if (!_registry) return true
-  try {
-    const db = _registry.getDb()
-    const result = await db.query(`SELECT value FROM config_store WHERE key = 'DEBUG_CACHE_ENABLED'`)
-    return result.rows[0]?.value !== 'false'
-  } catch {
-    return true
-  }
-}

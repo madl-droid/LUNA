@@ -3,6 +3,7 @@
 
 import pino from 'pino'
 import type { Redis } from 'ioredis'
+import { isCacheEnabled } from '../../kernel/cache-flag.js'
 import type { MedilinkApiClient } from './api-client.js'
 import type {
   MedilinkConfig, ReferenceData,
@@ -50,9 +51,11 @@ export class MedilinkCache {
 
     this.refData = { branches, professionals, treatments, statuses, chairs, loadedAt: new Date() }
 
-    // Store in Redis for persistence across restarts
-    const ttlS = this.config.MEDILINK_REFERENCE_REFRESH_DAYS * 24 * 3600
-    await this.redis.set(REF_KEY, JSON.stringify(this.refData), 'EX', ttlS)
+    // Store in Redis for persistence across restarts (skip if cache disabled)
+    if (await isCacheEnabled()) {
+      const ttlS = this.config.MEDILINK_REFERENCE_REFRESH_DAYS * 24 * 3600
+      await this.redis.set(REF_KEY, JSON.stringify(this.refData), 'EX', ttlS)
+    }
 
     logger.info({
       branches: branches.length,
@@ -66,8 +69,8 @@ export class MedilinkCache {
   async getReferenceData(): Promise<ReferenceData> {
     if (this.refData) return this.refData
 
-    // Try Redis
-    const cached = await this.redis.get(REF_KEY)
+    // Try Redis (skip if cache disabled)
+    const cached = await isCacheEnabled() ? await this.redis.get(REF_KEY) : null
     if (cached) {
       this.refData = JSON.parse(cached) as ReferenceData
       this.refData.loadedAt = new Date(this.refData.loadedAt)
@@ -131,19 +134,24 @@ export class MedilinkCache {
   ): Promise<AvailabilitySlot[]> {
     const cacheKey = `${AVAIL_PREFIX}${branchId}:${date}:${professionalId ?? 'all'}:${durationMinutes ?? 'default'}`
 
-    // Check Redis cache
-    const cached = await this.redis.get(cacheKey)
-    if (cached) {
-      return JSON.parse(cached) as AvailabilitySlot[]
+    // Check Redis cache (skip if cache disabled)
+    const cacheOn = await isCacheEnabled()
+    if (cacheOn) {
+      const cached = await this.redis.get(cacheKey)
+      if (cached) {
+        return JSON.parse(cached) as AvailabilitySlot[]
+      }
     }
 
     // Fetch from API
     const raw = await this.api.getAgenda(branchId, date, professionalId, durationMinutes)
     const slots = this.processAgendaResponse(raw, branchId)
 
-    // Cache with TTL
-    const ttlMs = this.config.MEDILINK_AVAILABILITY_CACHE_TTL_MS
-    await this.redis.set(cacheKey, JSON.stringify(slots), 'PX', ttlMs)
+    // Cache with TTL (skip if cache disabled)
+    if (cacheOn) {
+      const ttlMs = this.config.MEDILINK_AVAILABILITY_CACHE_TTL_MS
+      await this.redis.set(cacheKey, JSON.stringify(slots), 'PX', ttlMs)
+    }
 
     return slots
   }
@@ -210,10 +218,12 @@ export class MedilinkCache {
   // ─── Patient cache (short TTL) ─────────
 
   async cachePatient(patientId: number, data: Record<string, unknown>): Promise<void> {
+    if (!await isCacheEnabled()) return
     await this.redis.set(`${PATIENT_PREFIX}${patientId}`, JSON.stringify(data), 'EX', PATIENT_TTL_S)
   }
 
   async getCachedPatient(patientId: number): Promise<Record<string, unknown> | null> {
+    if (!await isCacheEnabled()) return null
     const cached = await this.redis.get(`${PATIENT_PREFIX}${patientId}`)
     return cached ? JSON.parse(cached) as Record<string, unknown> : null
   }

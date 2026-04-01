@@ -8,6 +8,7 @@ import { Registry } from './kernel/registry.js'
 import { loadModules } from './kernel/loader.js'
 import { Server } from './kernel/server.js'
 import { kernelConfig } from './kernel/config.js'
+import { initCacheFlag } from './kernel/cache-flag.js'
 import { isSetupCompleted } from './kernel/setup/detect.js'
 import { createSetupHandler } from './kernel/setup/handler.js'
 import { ensureInstanceDirs } from './kernel/bootstrap.js'
@@ -70,6 +71,7 @@ async function main(): Promise<void> {
   await ensureInstanceDirs()
 
   const db = await createPool()
+  initCacheFlag(db)
   const redis = await createRedis()
 
   // Check if setup wizard is needed (fresh install)
