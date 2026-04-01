@@ -287,14 +287,6 @@ Adapta tu respuesta al contexto de esta campaña.`)
     systemParts.push(`\n--- CHECKLIST DE CALIDAD ---\n${criticizer}`)
   }
 
-  // Bryan Tracy objection handler: inject when intent is objection-related
-  if (evaluation.intent === 'objection' || evaluation.intent.startsWith('objection_')) {
-    const objHandler = promptsService ? await promptsService.getSystemPrompt('objection-handler') : ''
-    if (objHandler) {
-      systemParts.push(`\n--- MANEJO DE OBJECIONES ---\n${objHandler}`)
-    }
-  }
-
   // Build user message with resolved data
   const userParts: string[] = []
 
@@ -302,22 +294,18 @@ Adapta tu respuesta al contexto de esta campaña.`)
   userParts.push(`[Intención detectada: ${evaluation.intent}${evaluation.subIntent ? ` (${evaluation.subIntent})` : ''}]`)
   userParts.push(`[Emoción: ${evaluation.emotion}]`)
 
-  // Bryan Tracy objection routing
+  // Bryan Tracy objection step hint (framework is in job.md, this just signals which step to prioritize)
   if (evaluation.objectionType) {
     const stepNames: Record<number, string> = {
-      1: 'ESCUCHAR — reconoce la objeción completa antes de responder',
-      2: 'PAUSAR — breve reconocimiento sin contraargumentar',
-      3: 'CLARIFICAR — profundiza con preguntas antes de responder',
-      4: 'EMPATIZAR — normaliza con prueba social',
-      5: 'RESPONDER — reencuadra con valor, historia o prueba',
-      6: 'CONFIRMAR — verifica si la objeción se resolvió',
+      1: 'ESCUCHAR — deja que termine, demuestra que entendiste',
+      2: 'PAUSAR — reconoce sin contraargumentar',
+      3: 'CLARIFICAR — profundiza con preguntas',
+      4: 'EMPATIZAR — normaliza con prueba social (feel-felt-found)',
+      5: 'RESPONDER — reencuadra con valor concreto',
+      6: 'CONFIRMAR — verifica si se resolvió la duda',
     }
     const stepDesc = evaluation.objectionStep ? stepNames[evaluation.objectionStep] ?? '' : ''
-    userParts.push(`[OBJECIÓN DETECTADA: tipo=${evaluation.objectionType}]`)
-    if (stepDesc) {
-      userParts.push(`[PASO BRYAN TRACY RECOMENDADO: ${evaluation.objectionStep} — ${stepDesc}]`)
-    }
-    userParts.push(`[Usa el script de "${evaluation.objectionType}" del framework de objeciones. Aplica el paso indicado.]`)
+    userParts.push(`[OBJECIÓN: tipo=${evaluation.objectionType}${stepDesc ? `, paso recomendado=${evaluation.objectionStep} (${stepDesc})` : ''}]`)
   }
 
   if (!evaluation.onScope) {
