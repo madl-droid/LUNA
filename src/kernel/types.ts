@@ -64,6 +64,13 @@ export interface HookMap {
   'call:connected':         [CallConnectedPayload, void]
   'call:ended':             [CallEndedPayload, void]
   'call:transcript':        [CallTranscriptPayload, void]
+
+  // HITL (Human-in-the-Loop)
+  'hitl:ticket_created':    [HitlTicketCreatedPayload, void]
+  'hitl:ticket_resolved':   [HitlTicketResolvedPayload, void]
+  'hitl:ticket_expired':    [HitlTicketExpiredPayload, void]
+  'hitl:ticket_escalated':  [HitlTicketEscalatedPayload, void]
+  'hitl:handoff_return':    [HitlHandoffReturnPayload, void]
 }
 
 // Hook payload types
@@ -267,6 +274,38 @@ export interface CallTranscriptPayload {
   speaker: 'caller' | 'agent' | 'system'
   text: string
   timestampMs: number
+}
+
+// HITL hook payloads
+export interface HitlTicketCreatedPayload {
+  ticketId: string
+  targetRole: string
+  requestType: string
+  urgency: string
+}
+
+export interface HitlTicketResolvedPayload {
+  ticketId: string
+  resolutionText: string
+  resolvedBy: string
+}
+
+export interface HitlTicketExpiredPayload {
+  ticketId: string
+  requestType: string
+}
+
+export interface HitlTicketEscalatedPayload {
+  ticketId: string
+  fromUserId: string
+  toUserId: string
+  level: number
+}
+
+export interface HitlHandoffReturnPayload {
+  channel: string
+  senderId: string
+  ticketId: string
 }
 
 // ═══════════════════════════════════════════
