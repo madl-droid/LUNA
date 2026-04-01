@@ -611,6 +611,11 @@ export class BaileysAdapter {
     return attachments
   }
 
+  /** Re-apply privacy settings to WhatsApp server. Called on connect and on config hot-reload. */
+  async reapplyPrivacySettings(): Promise<void> {
+    return this.applyPrivacySettings()
+  }
+
   private async applyPrivacySettings(): Promise<void> {
     if (!this.socket) return
     // Baileys 7.x exposes individual privacy update methods (not a single updatePrivacySettings)

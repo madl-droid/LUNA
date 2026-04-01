@@ -433,6 +433,12 @@ const manifest: ModuleManifest = {
       const fresh = registry.getConfig<WhatsAppFullConfig>('whatsapp')
       // Update mutable references so all closures see the new values
       Object.assign(config, fresh)
+      // Re-apply privacy settings on WhatsApp server (e.g. read receipts toggle)
+      if (adapter) {
+        adapter.reapplyPrivacySettings().catch(err =>
+          manifestLogger.warn({ err }, 'Failed to re-apply privacy settings after config change'),
+        )
+      }
       // Update batcher: create/destroy based on toggle, update wait time
       if (fresh.WHATSAPP_BATCH_ENABLED && !batcher) {
         batcher = new MessageBatcher(fresh.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
