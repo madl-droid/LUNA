@@ -106,7 +106,12 @@ export class EmbeddingService {
     if (!this.isAvailable()) return null
     if (data.length === 0) return null
 
-    const SUPPORTED = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']
+    const SUPPORTED = [
+      'application/pdf',
+      'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+      'video/mp4', 'video/webm', 'video/mpeg',
+      'audio/ogg', 'audio/mpeg', 'audio/mp4',
+    ]
     if (!SUPPORTED.includes(mimeType)) {
       this.log.debug({ mimeType }, '[EMBED] Unsupported MIME for multimodal embedding')
       return null

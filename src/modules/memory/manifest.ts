@@ -7,8 +7,11 @@ import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { numEnv, boolEnv } from '../../kernel/config-helpers.js'
 import { MemoryManager } from './memory-manager.js'
+import { CompressionWorker } from './compression-worker.js'
+import { searchSessionMemory } from './memory-search.js'
 
 let manager: MemoryManager | null = null
+let compressionWorker: CompressionWorker | null = null
 
 const manifest: ModuleManifest = {
   name: 'memory',
@@ -194,6 +197,19 @@ const manifest: ModuleManifest = {
       }),
     })
 
+    // Compression worker (BullMQ queue for session compression v2)
+    compressionWorker = new CompressionWorker(registry.getDb(), registry.getRedis(), registry)
+    registry.provide('memory:compression-worker', compressionWorker)
+
+    // Memory search service (long-term memory via session_memory_chunks)
+    const db = registry.getDb()
+    registry.provide('memory:search', {
+      search: async (contactId: string, query: string, limit?: number) => {
+        const embeddingService = registry.getOptional<{ generateEmbedding(text: string): Promise<number[] | null> }>('knowledge:embedding-service')
+        return searchSessionMemory(db, embeddingService, contactId, query, limit)
+      },
+    })
+
     // Cross-session summaries limit per channel category — read by Phase 1
     registry.provide('memory:context-summaries', {
       get: () => ({
@@ -205,6 +221,10 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    if (compressionWorker) {
+      await compressionWorker.stop()
+      compressionWorker = null
+    }
     if (manager) {
       await manager.shutdown()
       manager = null

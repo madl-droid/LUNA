@@ -230,7 +230,11 @@ Evalúa este lead frío. Responde SOLO con JSON:
   }
 }
 
-// ─── 2. Compress Old Sessions ─────────────────
+// ─── 2. Compress Old Sessions (v2 — queue-based) ─────────────────
+
+interface CompressionWorkerService {
+  enqueue(data: { sessionId: string; contactId: string; channel: string; triggerType: 'reopen_expired' | 'nightly_batch' }): Promise<void>
+}
 
 async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
   const config = getNightlyConfig(ctx)
@@ -239,136 +243,124 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
     return
   }
 
-  const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
-  if (!memoryManager) {
-    logger.debug({ traceId: ctx.traceId }, 'memory:manager not available, skipping compression')
-    return
-  }
-
-  const embeddingService = ctx.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
-
-  logger.info({ traceId: ctx.traceId, batchSize: config.compressionBatchSize }, 'Compressing old sessions')
+  logger.info({ traceId: ctx.traceId, batchSize: config.compressionBatchSize }, 'Compressing old sessions (v2 queue)')
 
   try {
-    const sessions = await memoryManager.getSessionsForCompression(getAgentId(ctx))
-    const batch = sessions.slice(0, config.compressionBatchSize)
+    // Find sessions with no compression_status that closed >24h ago (safety net)
+    const result = await ctx.db.query<{
+      id: string; contact_id: string; channel_name: string;
+    }>(
+      `SELECT id, contact_id, channel_name
+       FROM sessions
+       WHERE compression_status IS NULL
+         AND status = 'closed'
+         AND last_activity_at < NOW() - INTERVAL '24 hours'
+       ORDER BY last_activity_at ASC
+       LIMIT $1`,
+      [config.compressionBatchSize],
+    )
 
-    if (batch.length === 0) {
+    if (result.rows.length === 0) {
       logger.info({ traceId: ctx.traceId }, 'No sessions need compression')
       return
     }
 
-    let chunksEmbedded = 0
+    // Try to use compression worker queue
+    const compressionWorker = ctx.registry.getOptional<CompressionWorkerService>('memory:compression-worker')
 
-    const poolResult = await taskPool({
-      items: batch,
-      concurrency: config.concurrency,
-      maxRetries: config.maxRetries,
-      label: 'nightly-compression',
-      worker: async (session) => {
-        const messages = await memoryManager.getSessionMessages(session.sessionId)
-        if (messages.length < config.compressionMinMessages) return
-
-        const conversationText = messages
-          .map(m => `[${m.role === 'assistant' ? 'Agente' : 'Usuario'}]: ${m.contentText || m.content?.text || ''}`)
-          .join('\n')
-
-        const batchLlm = getBatchModel(ctx)
-        const compressPromptsSvc = ctx.registry.getOptional<PromptsService>('prompts:service')
-        let compressUserContent = ''
-        if (compressPromptsSvc) {
-          compressUserContent = await compressPromptsSvc.getSystemPrompt('session-compression', {
-            conversationText: conversationText.slice(0, 15000),
+    if (compressionWorker) {
+      let enqueued = 0
+      for (const row of result.rows) {
+        try {
+          await compressionWorker.enqueue({
+            sessionId: row.id,
+            contactId: row.contact_id,
+            channel: row.channel_name ?? 'unknown',
+            triggerType: 'nightly_batch',
           })
+          enqueued++
+        } catch (err) {
+          logger.warn({ err, sessionId: row.id, traceId: ctx.traceId }, 'Failed to enqueue compression job')
         }
-        if (!compressUserContent) {
-          compressUserContent = `Resume esta conversación en menos de 500 palabras. Mantén:
-- Datos BANT extraídos (presupuesto, autoridad, necesidad, timing)
-- Compromisos hechos por el agente
-- Preferencias del contacto
-- Objeciones o dudas planteadas
-- Resultado de la conversación
+      }
 
-Responde SOLO con JSON:
-{ "summary": "resumen de la conversación", "keyFacts": [{"fact": "dato clave", "confidence": 0.9}], "structuredData": {} }
+      logger.info({
+        traceId: ctx.traceId,
+        eligible: result.rows.length,
+        enqueued,
+      }, 'Session compression jobs enqueued (v2)')
+    } else {
+      // Fallback: use legacy compressSession if compression worker not available
+      const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
+      if (!memoryManager) {
+        logger.debug({ traceId: ctx.traceId }, 'Neither compression worker nor memory:manager available')
+        return
+      }
 
-Conversación:
-${conversationText.slice(0, 15000)}`
-        }
+      const embeddingService = ctx.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
+      let compressed = 0
 
-        const llmResult = await ctx.registry.callHook('llm:chat', {
-          task: 'nightly-compress',
-          provider: batchLlm.provider,
-          model: batchLlm.model,
-          system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente. Extrae la información clave.',
-          messages: [{
-            role: 'user' as const,
-            content: compressUserContent,
-          }],
-          maxTokens: 1500,
-          temperature: 0.3,
-        })
+      interface LegacySessionRow { id: string; contact_id: string; channel_name: string | null }
 
-        if (!llmResult?.text) return
-        const parsed = parseJSON(llmResult.text)
-        if (!parsed?.summary) return
+      const poolResult = await taskPool({
+        items: result.rows as LegacySessionRow[],
+        concurrency: config.concurrency,
+        maxRetries: config.maxRetries,
+        label: 'nightly-compression-legacy',
+        worker: async (row) => {
+          const messages = await memoryManager.getSessionMessages(row.id)
+          if (messages.length < config.compressionMinMessages) return
 
-        const summaryId = await memoryManager.compressSession(
-          session.sessionId,
-          getAgentId(ctx),
-          session.contactId,
-          session.channelIdentifier ?? null,
-          {
-            summary: parsed.summary as string,
-            keyFacts: Array.isArray(parsed.keyFacts)
-              ? (parsed.keyFacts as Array<Record<string, unknown>>).map(kf => ({
-                  fact: String(kf.fact ?? ''),
-                  source: 'nightly-compression',
-                  confidence: typeof kf.confidence === 'number' ? kf.confidence : 0.8,
-                }))
-              : [],
-            structuredData: (parsed.structuredData ?? {}) as Record<string, unknown>,
-            originalCount: messages.length,
-            keptRecentCount: 0,
-            modelUsed: llmResult.model ?? batchLlm.model ?? 'unknown',
-            tokensUsed: (llmResult.inputTokens ?? 0) + (llmResult.outputTokens ?? 0),
-          },
-          session.startedAt,
-          session.lastMessageAt,
-        )
+          const conversationText = messages
+            .map(m => `[${m.role === 'assistant' ? 'Agente' : 'Usuario'}]: ${m.contentText || m.content?.text || ''}`)
+            .join('\n')
 
-        // Embed chunks inline — right after successful compression
-        if (embeddingService) {
-          try {
+          const batchLlm = getBatchModel(ctx)
+          const llmResult = await ctx.registry.callHook('llm:chat', {
+            task: 'nightly-compress',
+            provider: batchLlm.provider,
+            model: batchLlm.model,
+            system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente.',
+            messages: [{ role: 'user' as const, content: `Resume esta conversación:\n${conversationText.slice(0, 15000)}\n\nResponde SOLO con JSON: { "summary": "...", "keyFacts": [{"fact": "...", "confidence": 0.9}], "structuredData": {} }` }],
+            maxTokens: 1500,
+            temperature: 0.3,
+          })
+
+          if (!llmResult?.text) return
+          const parsed = parseJSON(llmResult.text)
+          if (!parsed?.summary) return
+
+          const summaryId = await memoryManager.compressSession(
+            row.id, getAgentId(ctx), row.contact_id, row.channel_name ?? null,
+            {
+              summary: parsed.summary as string,
+              keyFacts: Array.isArray(parsed.keyFacts) ? (parsed.keyFacts as Array<Record<string, unknown>>).map(kf => ({ fact: String(kf.fact ?? ''), source: 'nightly-compression', confidence: typeof kf.confidence === 'number' ? kf.confidence : 0.8 })) : [],
+              structuredData: (parsed.structuredData ?? {}) as Record<string, unknown>,
+              originalCount: messages.length, keptRecentCount: 0,
+              modelUsed: llmResult.model ?? batchLlm.model ?? 'unknown',
+              tokensUsed: (llmResult.inputTokens ?? 0) + (llmResult.outputTokens ?? 0),
+            },
+            new Date(), new Date(),
+          )
+
+          // Inline embedding
+          if (embeddingService) {
             const chunks = await memoryManager.getChunksBySummary(summaryId)
             if (chunks.length > 0) {
               const texts = chunks.map(c => c.chunkText)
               const embeddings = await embeddingService.generateBatchEmbeddings(texts)
               for (let j = 0; j < chunks.length; j++) {
                 const emb = embeddings[j]
-                if (emb) {
-                  await memoryManager.updateChunkEmbedding(chunks[j]!.id, emb)
-                  chunksEmbedded++
-                }
+                if (emb) await memoryManager.updateChunkEmbedding(chunks[j]!.id, emb)
               }
             }
-          } catch (embedErr) {
-            // Non-fatal: embedSummaryChunks (step 5) will catch stragglers
-            logger.warn({ err: embedErr, sessionId: session.sessionId, traceId: ctx.traceId }, 'Inline chunk embedding failed, will retry in step 5')
           }
-        }
+          compressed++
+        },
+      })
 
-        logger.debug({ sessionId: session.sessionId, messages: messages.length }, 'Session compressed')
-      },
-    })
-
-    logger.info({
-      traceId: ctx.traceId,
-      eligible: batch.length,
-      compressed: poolResult.succeeded,
-      failed: poolResult.failed,
-      chunksEmbedded,
-    }, 'Session compression complete')
+      logger.info({ traceId: ctx.traceId, eligible: result.rows.length, compressed, failed: poolResult.failed }, 'Legacy compression complete')
+    }
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Session compression failed')
   }

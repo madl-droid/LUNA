@@ -248,6 +248,28 @@ export class MemoryManager {
     startedAt: Date,
     closedAt: Date,
   ): Promise<string> {
+    // Archive session BEFORE any deletes (legal backup)
+    try {
+      const messages = await this.pg.getSessionMessages(sessionId)
+      if (messages.length > 0) {
+        await this.pg.archiveSession({
+          sessionId,
+          agentId,
+          contactId,
+          channelIdentifier,
+          channelType: null,
+          contactSnapshot: {},
+          messages,
+          messageCount: messages.length,
+          interactionStartedAt: startedAt,
+          interactionClosedAt: closedAt,
+        })
+        logger.info({ sessionId, messageCount: messages.length }, 'Session archived before compression')
+      }
+    } catch (archiveErr) {
+      logger.warn({ err: archiveErr, sessionId }, 'Archive before compression failed (non-fatal)')
+    }
+
     // Save summary to warm tier
     const summaryId = await this.pg.saveSessionSummary({
       sessionId,
