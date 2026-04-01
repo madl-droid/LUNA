@@ -112,6 +112,9 @@ export interface KnowledgeInjectionItem {
   categoryTitle?: string
   shareable?: boolean
   sourceUrl?: string
+  liveQueryEnabled?: boolean
+  sourceId?: string
+  sourceType?: string
 }
 
 export interface KnowledgeInjection {

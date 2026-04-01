@@ -1116,11 +1116,12 @@ export class KnowledgePgStore {
     sourceType: KnowledgeSourceType
     sourceUrl: string
     sourceId: string
+    liveQueryEnabled?: boolean
   }): Promise<string> {
     const res = await this.db.query<{ id: string }>(
-      `INSERT INTO knowledge_items (title, description, category_id, source_type, source_url, source_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [data.title, data.description, data.categoryId, data.sourceType, data.sourceUrl, data.sourceId],
+      `INSERT INTO knowledge_items (title, description, category_id, source_type, source_url, source_id, live_query_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [data.title, data.description, data.categoryId, data.sourceType, data.sourceUrl, data.sourceId, data.liveQueryEnabled ?? false],
     )
     return res.rows[0]!.id
   }
@@ -1209,6 +1210,7 @@ export class KnowledgePgStore {
     chunkCount?: number
     shareable?: boolean
     fullVideoEmbed?: boolean
+    liveQueryEnabled?: boolean
   }): Promise<void> {
     const sets: string[] = []
     const params: unknown[] = []
@@ -1225,6 +1227,7 @@ export class KnowledgePgStore {
     if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
     if (updates.shareable !== undefined) { sets.push(`shareable = $${idx++}`); params.push(updates.shareable) }
     if (updates.fullVideoEmbed !== undefined) { sets.push(`full_video_embed = $${idx++}`); params.push(updates.fullVideoEmbed) }
+    if (updates.liveQueryEnabled !== undefined) { sets.push(`live_query_enabled = $${idx++}`); params.push(updates.liveQueryEnabled) }
 
     if (sets.length === 0) return
     sets.push(`updated_at = now()`)
@@ -1255,9 +1258,9 @@ export class KnowledgePgStore {
   }
 
   /** Return active items for Phase 1 injection — lightweight, no tabs/columns */
-  async listActiveItemsForInjection(): Promise<Pick<KnowledgeItem, 'id' | 'title' | 'description' | 'categoryId' | 'shareable' | 'sourceUrl'>[]> {
-    const res = await this.db.query<{ id: string; title: string; description: string; category_id: string | null; shareable: boolean; source_url: string }>(
-      `SELECT id, title, description, category_id, shareable, source_url
+  async listActiveItemsForInjection(): Promise<Pick<KnowledgeItem, 'id' | 'title' | 'description' | 'categoryId' | 'shareable' | 'sourceUrl' | 'liveQueryEnabled' | 'sourceId' | 'sourceType'>[]> {
+    const res = await this.db.query<{ id: string; title: string; description: string; category_id: string | null; shareable: boolean; source_url: string; live_query_enabled: boolean; source_id: string; source_type: string }>(
+      `SELECT id, title, description, category_id, shareable, source_url, live_query_enabled, source_id, source_type
        FROM knowledge_items
        WHERE active = true
        ORDER BY title`,
@@ -1269,6 +1272,9 @@ export class KnowledgePgStore {
       categoryId: row.category_id,
       shareable: row.shareable ?? false,
       sourceUrl: row.source_url,
+      liveQueryEnabled: row.live_query_enabled ?? false,
+      sourceId: row.source_id,
+      sourceType: row.source_type as import('./types.js').KnowledgeSourceType,
     }))
   }
 
@@ -1671,6 +1677,7 @@ interface ItemRow {
   last_modified_time: string | null
   shareable: boolean
   full_video_embed: boolean
+  live_query_enabled: boolean
   created_at: Date
   updated_at: Date
 }
@@ -1693,6 +1700,7 @@ function mapItemRow(r: ItemRow): KnowledgeItem {
     lastModifiedTime: r.last_modified_time ?? null,
     shareable: r.shareable ?? false,
     fullVideoEmbed: r.full_video_embed ?? false,
+    liveQueryEnabled: r.live_query_enabled ?? false,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }

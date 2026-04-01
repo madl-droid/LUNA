@@ -241,7 +241,7 @@ export class KnowledgeManager {
     // Build category title lookup
     const catTitleById = new Map(categories.map(c => [c.id, c.title]))
 
-    // Map items to injection format (include shareable URL if flagged)
+    // Map items to injection format (include shareable URL and live query info if flagged)
     const injectionItems: KnowledgeInjectionItem[] = activeItems.map(item => ({
       id: item.id,
       title: item.title,
@@ -250,6 +250,9 @@ export class KnowledgeManager {
       categoryTitle: item.categoryId ? catTitleById.get(item.categoryId) : undefined,
       shareable: item.shareable ?? false,
       sourceUrl: item.shareable ? item.sourceUrl : undefined,
+      liveQueryEnabled: item.liveQueryEnabled ?? false,
+      sourceId: item.liveQueryEnabled ? item.sourceId : undefined,
+      sourceType: item.liveQueryEnabled ? item.sourceType : undefined,
     }))
 
     const injection: KnowledgeInjection = {

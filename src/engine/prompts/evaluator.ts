@@ -16,6 +16,14 @@ RESPONDE EXCLUSIVAMENTE en JSON válido. Sin texto adicional.
 const TOOL_CATALOG_HEADER = `\nTools disponibles (solo usar las listadas):`
 const TOOL_CATALOG_COMPACT_HEADER = `\nTools disponibles (catálogo resumido — pide definición completa si la necesitas):`
 
+/** Maps KnowledgeItem sourceType to the Google API tool that can query it live */
+const LIVE_QUERY_TOOL: Record<string, string> = {
+  sheets: 'sheets-read',
+  docs:   'docs-read',
+  slides: 'slides-read',
+  drive:  'drive-list-files',
+}
+
 /**
  * Build the evaluator prompt for Phase 2.
  */
@@ -218,14 +226,20 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
         parts.push(`  Categoría "${catTitle}":`)
         for (const item of items) {
           const desc = item.description ? ` — ${item.description}` : ''
-          parts.push(`    - ${item.title}${desc}`)
+          const liveTag = item.liveQueryEnabled && item.sourceId && item.sourceType
+            ? ` [CONSULTA_VIVA: ${LIVE_QUERY_TOOL[item.sourceType] ?? item.sourceType}, id=${item.sourceId}]`
+            : ''
+          parts.push(`    - ${item.title}${desc}${liveTag}`)
         }
       }
       if (noCategory.length > 0) {
         parts.push(`  Sin categoría:`)
         for (const item of noCategory) {
           const desc = item.description ? ` — ${item.description}` : ''
-          parts.push(`    - ${item.title}${desc}`)
+          const liveTag = item.liveQueryEnabled && item.sourceId && item.sourceType
+            ? ` [CONSULTA_VIVA: ${LIVE_QUERY_TOOL[item.sourceType] ?? item.sourceType}, id=${item.sourceId}]`
+            : ''
+          parts.push(`    - ${item.title}${desc}${liveTag}`)
         }
       }
     } else {
@@ -251,7 +265,12 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
         parts.push(`- ${a.title}: ${a.description}`)
       }
     }
-    parts.push(`[Para buscar en el conocimiento usa search_knowledge con search_query; agrega search_hint con el nombre de categoría para priorizar resultados]`)
+    parts.push(`[Estrategia de búsqueda en conocimiento:
+- Por defecto: usa search_knowledge para responder desde los embeddings indexados.
+- Items marcados [CONSULTA_VIVA: tool, id=X]: pueden consultarse en tiempo real con esa tool y ese id.
+- Cuándo considerar CONSULTA_VIVA (señal, no obligación): si el historial muestra que ya se intentó responder este tema en un turno anterior pero el contacto insiste, reformula o pide más detalle/especificidad (ej: pide un enlace exacto, un SKU específico, un valor puntual), es un indicador de que la búsqueda por embeddings puede haber sido insuficiente. En ese caso, agrega un paso con la tool CONSULTA_VIVA del item más relacionado con el tema, usando el id del catálogo.
+- NUNCA uses CONSULTA_VIVA como primer paso si no hay historial previo sobre el tema.
+- Para identificar el item: cruza el tema de la conversación con el catálogo — el item con [CONSULTA_VIVA] cuyo título/descripción más coincida con lo que se está hablando es el candidato.]`)
   }
 
   // Assignment rules — injected for leads/unregistered so LLM can classify contacts

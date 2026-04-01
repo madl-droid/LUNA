@@ -221,6 +221,9 @@ export interface KnowledgeInjectionItem {
   categoryTitle?: string
   shareable?: boolean
   sourceUrl?: string
+  liveQueryEnabled?: boolean
+  sourceId?: string             // Google resource ID for live API calls
+  sourceType?: KnowledgeSourceType
 }
 
 export interface KnowledgeInjection {
@@ -343,6 +346,7 @@ export interface KnowledgeItem {
   lastModifiedTime: string | null  // last known Drive modifiedTime
   shareable: boolean              // agent can share the source URL with users
   fullVideoEmbed: boolean         // download + embed full video segments (YouTube only)
+  liveQueryEnabled: boolean       // agent can query this resource live via Google API (sheets-read, docs-read, etc.)
   createdAt: Date
   updatedAt: Date
   tabs?: KnowledgeItemTab[]

@@ -322,9 +322,12 @@ Adapta tu respuesta al contexto de esta campaña.`)
     for (const result of execution.results) {
       if (result.success && result.data) {
         // Special formatting for search_knowledge results
-        if (result.tool === 'search_knowledge' && isKnowledgeResultArray(result.data)) {
+        // Tool returns { results: KnowledgeMatch[], count: number } — unwrap before type-check
+        const rawKnowledge = result.data as { results?: unknown } | null
+        const knowledgeArr = Array.isArray(rawKnowledge?.results) ? rawKnowledge.results : result.data
+        if (result.tool === 'search_knowledge' && isKnowledgeResultArray(knowledgeArr)) {
           userParts.push(`- Conocimiento encontrado:`)
-          for (const match of result.data) {
+          for (const match of knowledgeArr) {
             const source = match.source ? ` [fuente: ${escapeDataForPrompt(match.source, 100)}]` : ''
             const fileLink = match.fileUrl ? ` [archivo: ${escapeDataForPrompt(match.fileUrl, 300)}]` : ''
             userParts.push(`  ${escapeDataForPrompt(match.content, 2000)}${source}${fileLink}`)

@@ -114,7 +114,7 @@ export class KnowledgeItemManager {
     private cache: KnowledgeCache,
     private config: KnowledgeConfig,
     private registry: Registry,
-    private knowledgeManager: KnowledgeManager,
+    _knowledgeManager: KnowledgeManager,  // kept for API compatibility
   ) {}
 
   setVectorizeWorker(worker: VectorizeWorker): void {
@@ -234,6 +234,11 @@ export class KnowledgeItemManager {
       return (await this.pgStore.getItem(existing.id))!
     }
 
+    // Auto-enable live query for Google API source types — access control is
+    // handled by the Google resource's own sharing permissions
+    const LIVE_QUERY_TYPES: KnowledgeSourceType[] = ['sheets', 'docs', 'slides', 'drive']
+    const liveQueryEnabled = LIVE_QUERY_TYPES.includes(extracted.type)
+
     const id = await this.pgStore.insertItem({
       title: data.title,
       description: data.description,
@@ -241,6 +246,7 @@ export class KnowledgeItemManager {
       sourceType: extracted.type,
       sourceUrl: data.sourceUrl,
       sourceId: extracted.id,
+      liveQueryEnabled,
     })
 
     // Invalidate injection cache so evaluator sees the new item
@@ -548,6 +554,7 @@ export class KnowledgeItemManager {
       const docTitle = `${item.title} — ${tab.tabName}`
       totalChunks += await this.persistSmartChunks(item, docTitle, 'text/csv', chunks, {
         description: tab.description || `Tab ${tab.tabName} de ${item.title}`,
+        fileUrl: item.sourceUrl,
       })
     }
 
@@ -563,7 +570,9 @@ export class KnowledgeItemManager {
 
     // Smart chunk: split by headings with word overlap
     const chunks = chunkDocs(doc.body)
-    return this.persistSmartChunks(item, doc.title || item.title, 'text/plain', chunks)
+    return this.persistSmartChunks(item, doc.title || item.title, 'text/plain', chunks, {
+      fileUrl: item.sourceUrl,
+    })
   }
 
   private async loadSlidesContent(item: KnowledgeItem): Promise<number> {
@@ -610,11 +619,15 @@ export class KnowledgeItemManager {
     // Fallback: if no individual slides, treat as single text document
     if (slideData.length === 0 && slideText.trim()) {
       const chunks = chunkDocs(slideText)
-      return this.persistSmartChunks(item, item.title, 'text/plain', chunks)
+      return this.persistSmartChunks(item, item.title, 'text/plain', chunks, {
+        fileUrl: item.sourceUrl,
+      })
     }
 
     const chunks = chunkSlides(slideData)
-    return this.persistSmartChunks(item, item.title, 'application/vnd.google-apps.presentation', chunks)
+    return this.persistSmartChunks(item, item.title, 'application/vnd.google-apps.presentation', chunks, {
+      fileUrl: item.sourceUrl,
+    })
   }
 
   private async loadDriveContent(item: KnowledgeItem): Promise<number> {
@@ -677,13 +690,13 @@ export class KnowledgeItemManager {
           if (parts.length > 0) textParts.push(parts.join(' | '))
         }
         if (textParts.length === 0) continue
-        const buf = Buffer.from(textParts.join('\n'), 'utf-8')
-        const doc = await this.knowledgeManager.addDocument(buf, `${file.name} — ${sheet.title}.txt`, {
-          sourceType: 'drive', sourceRef: item.id,
+        const chunks = chunkSheets(headers, data.values.slice(1).map(row =>
+          headers.map((_, i) => row[i]?.trim() ?? ''),
+        ).filter(r => r.some(v => v)))
+        totalChunks += await this.persistSmartChunks(item, `${file.name} — ${sheet.title}`, 'text/csv', chunks, {
           description: `${file.name} — ${sheet.title}`,
-          categoryIds: item.categoryId ? [item.categoryId] : [],
+          fileUrl: file.webViewLink,
         })
-        totalChunks += doc.chunkCount
       }
       return totalChunks
 
