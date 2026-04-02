@@ -48,58 +48,56 @@ export interface MedilinkResponse<T> {
 export interface MedilinkPatient {
   id: number
   rut: string | null
-  nombres: string
+  /** API uses 'nombre' (singular), not 'nombres' */
+  nombre: string
   apellidos: string
   nombre_social: string | null
   fecha_nacimiento: string | null
-  genero: string | null
+  /** API field: 'sexo' (string) — not 'genero' */
+  sexo: string | null
   telefono: string | null
   celular: string | null
   email: string | null
   direccion: string | null
   ciudad: string | null
   comuna: string | null
-  pais: string | null
-  prevision: string | null
   observaciones: string | null
-  fecha_creacion: string
-  fecha_actualizacion: string
-  campos_adicionales?: Record<string, unknown>
+  tipo_documento: string | null
+  numero_ficha: string | null
+  habilitado: boolean
   links?: { self: string }
 }
 
 export interface MedilinkPatientCreate {
   rut?: string
-  nombres: string
+  /** API field: 'nombre' (singular) */
+  nombre: string
   apellidos: string
   nombre_social?: string
   fecha_nacimiento?: string
-  genero?: string
+  sexo?: string
   telefono?: string
   celular?: string
   email?: string
   direccion?: string
   ciudad?: string
   comuna?: string
-  pais?: string
-  prevision?: string
   observaciones?: string
 }
 
 export interface MedilinkPatientUpdate {
-  nombres?: string
+  /** API field: 'nombre' (singular) */
+  nombre?: string
   apellidos?: string
   nombre_social?: string
   fecha_nacimiento?: string
-  genero?: string
+  sexo?: string
   telefono?: string
   celular?: string
   email?: string
   direccion?: string
   ciudad?: string
   comuna?: string
-  pais?: string
-  prevision?: string
   observaciones?: string
 }
 
@@ -118,18 +116,21 @@ export interface MedilinkAppointment {
   hora_inicio: string
   hora_fin: string
   duracion: number
-  id_profesional: number
-  nombre_profesional: string
+  /** API uses 'id_dentista', not 'id_profesional' */
+  id_dentista: number
+  nombre_dentista: string
   id_sucursal: number
   nombre_sucursal: string
   id_sillon: number
+  nombre_sillon: string | null
   comentarios: string | null
-  fecha_actualizacion: string
+  motivo_atencion: string | null
   links?: { self: string }
 }
 
 export interface MedilinkAppointmentCreate {
-  id_profesional: number
+  /** API uses 'id_dentista', not 'id_profesional' */
+  id_dentista: number
   id_sucursal: number
   id_estado: number
   id_sillon: number
@@ -147,7 +148,8 @@ export interface MedilinkAppointmentUpdate {
   comentarios?: string
   fecha?: string
   hora_inicio?: string
-  id_profesional?: number
+  /** API uses 'id_dentista', not 'id_profesional' */
+  id_dentista?: number
   id_sillon?: number
 }
 
@@ -186,8 +188,7 @@ export interface MedilinkBranch {
 export interface MedilinkChair {
   id: number
   nombre: string
-  id_sucursal: number
-  nombre_sucursal: string
+  /** Note: /sillones API does NOT return id_sucursal or nombre_sucursal */
   links?: { self: string }
 }
 
@@ -196,9 +197,40 @@ export interface MedilinkChair {
 export interface MedilinkTreatment {
   id: number
   nombre: string
-  duracion: number | null
-  precio: number | null
+  /** Note: /tratamientos API does NOT return duracion or precio in list response */
   links?: { self: string }
+}
+
+// ─── Archivo de paciente ─────────────────
+
+export interface MedilinkPatientArchive {
+  id: number
+  nombre: string
+  titulo: string | null
+  observaciones: string | null
+  fecha_creacion: string
+  id_paciente: number
+  id_tratamiento: number
+  estado: number
+  fecha_eliminacion: string | null
+  /** Signed S3 URLs — expire after ~1 hour. Use urls.original to download. */
+  urls: {
+    original: string
+    med?: string
+    tmb?: string
+  }
+}
+
+// ─── Campos adicionales (solo /api/v1) ──
+
+export interface MedilinkAdditionalField {
+  nombre: string
+  codigo: string
+  tipo: string
+  tipo_interno: string
+  valor: unknown
+  fecha_asociado: string | null
+  id_usuario_asociador: number | null
 }
 
 // ─── Estado de Cita (Appointment Status) ─
@@ -207,6 +239,32 @@ export interface MedilinkAppointmentStatus {
   id: number
   nombre: string
   color: string | null
+  /** 1 = cancellation/annulment state, 0 = active state */
+  anulacion: number
+  reservado: number | null
+  links?: { self: string }
+}
+
+// ─── Atencion / Plan de tratamiento ─────
+
+export interface MedilinkTreatmentPlan {
+  id: number
+  nombre: string
+  id_tipo: number
+  nombre_tipo: string
+  fecha: string
+  finalizado: boolean
+  bloqueado: boolean
+  id_paciente: number
+  id_profesional: number
+  id_sucursal: number
+  total: number
+  abonado: number
+  abono_libre: number
+  deuda: number
+  asignado_realizado: number
+  asignado_sin_realizar: number
+  total_realizado: number
   links?: { self: string }
 }
 
@@ -216,31 +274,44 @@ export interface MedilinkEvolution {
   id: number
   id_atencion: number
   nombre_atencion: string
+  id_tratamiento: number
+  nombre_tratamiento: string
   id_paciente: number
   nombre_paciente: string
-  id_profesional: number
-  nombre_profesional: string
+  /** v1 uses 'id_dentista'; v5 uses 'id_profesional' */
+  id_dentista: number
+  nombre_dentista: string
+  id_sucursal: number
+  nombre_sucursal: string
   fecha: string
+  fecha_registro: string | null
+  /** SECURITY: clinical notes — NEVER expose to agent or patient */
   datos: string | null
   habilitado: boolean
 }
 
 // ─── Agenda / Disponibilidad ─────────────
 
-/** Raw agenda response: date → time → chair → availability */
-export type MedilinkAgendaRaw = Record<string, Record<string, Record<string, boolean | MedilinkAgendaBlock>>>
-
-export interface MedilinkAgendaBlock {
-  tipo: string
-  comentario: string | null
-  bloque: string | null
-  duracion_total: number
-  inicio: string
-  fin: string
-  id_cita?: number
-  id_paciente?: number
-  nombre_paciente?: string
+/**
+ * Single agenda item from /agendas.
+ * Free slots have id_paciente === null.
+ * Booked slots have id_paciente set.
+ */
+export interface MedilinkAgendaItem {
+  id_paciente: number | null
+  nombre_paciente: string | null
+  hora_inicio: string
+  hora_fin: string
+  duracion: number
+  /** API uses 'id_dentista', not 'id_profesional' */
+  id_dentista: number
+  nombre_dentista: string
+  fecha: string
+  id_recurso: number
 }
+
+/** Raw agenda response is an array of MedilinkAgendaItem */
+export type MedilinkAgendaRaw = MedilinkAgendaItem[]
 
 /** Cleaned/processed availability slot for agent consumption */
 export interface AvailabilitySlot {
@@ -408,6 +479,7 @@ export interface ReferenceData {
   branches: MedilinkBranch[]
   professionals: MedilinkProfessional[]
   treatments: MedilinkTreatment[]
+  /** From /citas/estados — includes 'anulacion' flag for cancellation states */
   statuses: MedilinkAppointmentStatus[]
   chairs: MedilinkChair[]
   loadedAt: Date

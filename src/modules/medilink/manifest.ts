@@ -17,6 +17,8 @@ import { registerMedilinkTools } from './tools.js'
 import { FollowUpScheduler } from './follow-up-scheduler.js'
 import { runMigrations } from './pg-store.js'
 import * as pgStore from './pg-store.js'
+import { renderMedilinkConsole } from './templates.js'
+import type { MedilinkConsoleData } from './templates.js'
 import type { MedilinkConfig } from './types.js'
 
 const logger = pino({ name: 'medilink' })
@@ -214,12 +216,22 @@ function createApiRoutes(): ApiRoute[] {
       path: 'templates',
       handler: async (req, res) => {
         if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        // Accept both: single template { touchType, ... } and bulk { templates: [...] }
         const body = await parseBody<{
-          touchType: string; templateText?: string; llmInstructions?: string
+          templates?: Array<{ touchType: string; templateText?: string; useLlm?: boolean; channel?: string }>
+          touchType?: string; templateText?: string; llmInstructions?: string
           useLlm?: boolean; channel?: string; voiceScript?: string
         }>(req)
-        if (!body.touchType) { jsonResponse(res, 400, { error: 'Missing touchType' }); return }
-        await pgStore.upsertTemplate(_registry.getDb(), body.touchType as any, body)
+        const db = _registry.getDb()
+        if (body.templates && Array.isArray(body.templates)) {
+          for (const tmpl of body.templates) {
+            if (tmpl.touchType) await pgStore.upsertTemplate(db, tmpl.touchType as any, tmpl)
+          }
+        } else if (body.touchType) {
+          await pgStore.upsertTemplate(db, body.touchType as any, body)
+        } else {
+          jsonResponse(res, 400, { error: 'Missing touchType or templates array' }); return
+        }
         jsonResponse(res, 200, { ok: true })
       },
     },
@@ -243,16 +255,49 @@ function createApiRoutes(): ApiRoute[] {
       path: 'scheduling-rules',
       handler: async (req, res) => {
         if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        // Accept both old format { professionalTreatments, userTypeRules } and
+        // console UI format { profRules: [{medilinkProfessionalId, medilinkTreatmentId}], valoracionProfIds: number[] }
         const body = await parseBody<{
+          profRules?: Array<{ medilinkProfessionalId: number; medilinkTreatmentId: number }>
+          valoracionProfIds?: number[]
           professionalTreatments?: Array<{ professionalId: number; treatmentId: number; professionalName: string; treatmentName: string }>
           userTypeRules?: Array<{ userType: string; treatmentId: number; treatmentName: string; allowed: boolean; notes?: string }>
         }>(req)
         const db = _registry.getDb()
-        if (body.professionalTreatments) {
-          await pgStore.setProfessionalTreatments(db, body.professionalTreatments)
-        }
-        if (body.userTypeRules) {
-          await pgStore.setUserTypeRules(db, body.userTypeRules)
+
+        if (body.profRules !== undefined) {
+          // Console UI format: look up names from cache
+          const refs = cache ? { professionals: cache.getProfessionals(), treatments: cache.getTreatments() } : { professionals: [], treatments: [] }
+          const profMap = new Map(refs.professionals.map(p => [p.id, `${p.nombre} ${p.apellidos}`]))
+          const treatMap = new Map(refs.treatments.map(t => [t.id, t.nombre]))
+
+          const professionalTreatments = (body.profRules ?? []).map(r => ({
+            professionalId: r.medilinkProfessionalId,
+            treatmentId: r.medilinkTreatmentId,
+            professionalName: profMap.get(r.medilinkProfessionalId) ?? String(r.medilinkProfessionalId),
+            treatmentName: treatMap.get(r.medilinkTreatmentId) ?? String(r.medilinkTreatmentId),
+          }))
+          await pgStore.setProfessionalTreatments(db, professionalTreatments)
+
+          // Map valoracionProfIds → userTypeRules for 'nuevo' user type
+          // Each profRule whose professionalId is in valoracionProfIds gets a 'nuevo' allowed rule
+          const valoracionSet = new Set(body.valoracionProfIds ?? [])
+          const userTypeRules = (body.profRules ?? [])
+            .filter(r => valoracionSet.has(r.medilinkProfessionalId))
+            .map(r => ({
+              userType: 'nuevo',
+              treatmentId: r.medilinkTreatmentId,
+              treatmentName: treatMap.get(r.medilinkTreatmentId) ?? String(r.medilinkTreatmentId),
+              allowed: true,
+            }))
+          await pgStore.setUserTypeRules(db, userTypeRules)
+        } else {
+          if (body.professionalTreatments) {
+            await pgStore.setProfessionalTreatments(db, body.professionalTreatments)
+          }
+          if (body.userTypeRules) {
+            await pgStore.setUserTypeRules(db, body.userTypeRules)
+          }
         }
         jsonResponse(res, 200, { ok: true })
       },
@@ -285,7 +330,7 @@ const manifest: ModuleManifest = {
   type: 'provider',
   removable: true,
   activateByDefault: false,
-  depends: ['tools', 'memory', 'scheduled-tasks'],
+  depends: [],
 
   configSchema: z.object({
     MEDILINK_API_TOKEN: z.string().default(''),
@@ -294,7 +339,7 @@ const manifest: ModuleManifest = {
     MEDILINK_WEBHOOK_PRIVATE_KEY: z.string().default(''),
     MEDILINK_RATE_LIMIT_RPM: numEnvMin(1, 20),
     MEDILINK_API_TIMEOUT_MS: numEnv(15000),
-    MEDILINK_AVAILABILITY_CACHE_TTL_MS: numEnv(600000),
+    MEDILINK_AVAILABILITY_CACHE_TTL_MS: numEnv(1200000),
     MEDILINK_REFERENCE_REFRESH_DAYS: numEnv(30),
     MEDILINK_DEFAULT_BRANCH_ID: z.string().default(''),
     MEDILINK_DEFAULT_DURATION_MIN: numEnvMin(5, 30),
@@ -407,7 +452,44 @@ const manifest: ModuleManifest = {
     // Register agent tools
     await registerMedilinkTools(registry, apiClient, cache, security)
 
-    // Register webhook listeners for follow-ups
+    // Provide renderSection for console: professionals + follow-up templates
+    registry.provide('medilink:renderSection', async (lang: 'es' | 'en') => {
+      const refData = await cache!.getReferenceData()
+      const profRules = await pgStore.getProfessionalTreatments(db)
+      const userTypeRules = await pgStore.getUserTypeRules(db)
+      const templates = await pgStore.getTemplates(db)
+      const consoleData: MedilinkConsoleData = {
+        professionals: refData.professionals,
+        treatments: refData.treatments,
+        profRules,
+        userTypeRules,
+        templates,
+      }
+      return renderMedilinkConsole(consoleData, lang)
+    })
+
+    // Register webhook listeners for cache warm + follow-ups
+    if (webhookHandler) {
+      // Proactively warm availability cache after cita changes
+      const warmCacheForCita = async (citaId: number) => {
+        try {
+          const apt = await apiClient!.getAppointment(citaId, 'high')
+          // Warm cache for the affected date/branch
+          void cache!.refreshAvailability(apt.id_sucursal, apt.fecha, apt.id_dentista)
+        } catch { /* invalidation already happened, warm is best-effort */ }
+      }
+
+      webhookHandler.on('cita', 'created', async (payload) => {
+        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+      })
+      webhookHandler.on('cita', 'modified', async (payload) => {
+        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+      })
+      webhookHandler.on('cita', 'deleted', async (payload) => {
+        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+      })
+    }
+
     if (followUpScheduler && webhookHandler) {
       webhookHandler.on('cita', 'created', async (payload) => {
         // External appointment creation → create follow-up sequence
@@ -435,7 +517,7 @@ const manifest: ModuleManifest = {
               fecha: apt.fecha,
               hora_inicio: apt.hora_inicio,
               nombre_paciente: apt.nombre_paciente,
-              nombre_profesional: apt.nombre_profesional,
+              nombre_profesional: apt.nombre_dentista,
               nombre_tratamiento: apt.nombre_tratamiento,
               nombre_sucursal: apt.nombre_sucursal,
             },
