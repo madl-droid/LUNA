@@ -213,13 +213,13 @@ const manifest: ModuleManifest = {
       // Row 2: 2-column numbers
       { key: 'WHATSAPP_FORMAT_MAX_SENTENCES', type: 'number', label: { es: 'Max oraciones por parrafo', en: 'Max sentences per paragraph' }, min: 1, max: 10, width: 'half', tab: 'format' },
       { key: 'WHATSAPP_FORMAT_MAX_PARAGRAPHS', type: 'number', label: { es: 'Max parrafos por respuesta', en: 'Max paragraphs per response' }, min: 1, max: 10, width: 'half', tab: 'format' },
-      // Row 3: Signos de apertura (always visible)
-      { key: 'WHATSAPP_FORMAT_OPENING_SIGNS', type: 'select', label: { es: 'Signos de apertura', en: 'Opening signs' }, info: { es: 'Controla el uso de signos ¿ ¡ en preguntas y exclamaciones', en: 'Controls usage of opening ¿ ¡ in questions and exclamations' }, tab: 'format', options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'final', label: { es: 'Al final', en: 'At end' } }, { value: 'ambos', label: { es: 'Al inicio y al final', en: 'Start and end' } }] },
-      // Row 4: Typo settings (conditional on typos toggle)
+      // Row 3: Signos de apertura + Intensidad (conditional on typos toggle, same row)
+      { key: 'WHATSAPP_FORMAT_OPENING_SIGNS', type: 'select', label: { es: 'Signos de apertura', en: 'Opening signs' }, info: { es: 'Controla el uso de signos ¿ ¡ en preguntas y exclamaciones', en: 'Controls usage of opening ¿ ¡ in questions and exclamations' }, tab: 'format', width: 'half', visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' }, options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'final', label: { es: 'Al final', en: 'At end' } }, { value: 'ambos', label: { es: 'Al inicio y al final', en: 'Start and end' } }] },
       { key: 'WHATSAPP_FORMAT_TYPOS_INTENSITY', type: 'number', label: { es: 'Intensidad de errores', en: 'Typo intensity' }, tab: 'format', width: 'half', min: 0.1, max: 1, step: 0.1, fieldType: 'volume' as never, visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' } },
-      { key: 'WHATSAPP_FORMAT_TYPOS_TYPES', type: 'tags', label: { es: 'Tipos de errores', en: 'Typo types' }, tab: 'format', width: 'half', separator: ',', options: [{ value: 'tildes', label: { es: 'Tildes', en: 'Accents' } }, { value: 'invertidas', label: { es: 'Invertidas', en: 'Swapped' } }, { value: 'doble_letra', label: { es: 'Doble letra', en: 'Double letter' } }], visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' } },
-      // Row 5: Additional instructions (always visible)
-      { key: 'FORMAT_INSTRUCTIONS_WHATSAPP', type: 'textarea', label: { es: 'Instrucciones adicionales', en: 'Additional instructions' }, info: { es: 'Instrucciones extra de formato y ejemplos de respuesta', en: 'Extra format instructions and response examples' }, rows: 8, tab: 'format', fieldType: 'code-editor' as never },
+      // Row 4: Tipos de errores (full-width, centered chips, conditional)
+      { key: 'WHATSAPP_FORMAT_TYPOS_TYPES', type: 'tags', label: { es: 'Tipos de errores', en: 'Typo types' }, tab: 'format', separator: ',', options: [{ value: 'tildes', label: { es: 'Tildes', en: 'Accents' } }, { value: 'invertidas', label: { es: 'Invertidas', en: 'Swapped' } }, { value: 'doble_letra', label: { es: 'Doble letra', en: 'Double letter' } }], visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' } },
+      // Row 5: Additional instructions (always visible, extra space above)
+      { key: 'FORMAT_INSTRUCTIONS_WHATSAPP', type: 'textarea', label: { es: 'Instrucciones adicionales', en: 'Additional instructions' }, info: { es: 'Instrucciones extra de formato y ejemplos de respuesta', en: 'Extra format instructions and response examples' }, rows: 8, tab: 'format', fieldType: 'code-editor' as never, spaceBefore: true },
 
       // ═══ TAB: Adjuntos ═══
       { key: '_tab_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' }, tab: 'attachments' },

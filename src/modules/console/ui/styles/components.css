@@ -884,6 +884,9 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+.field-tag-options--centered {
+  justify-content: center;
+}
 
 .field-tag-option {
   display: inline-flex;

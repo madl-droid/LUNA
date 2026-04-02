@@ -423,7 +423,9 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
 
 function renderSingleField(f: ConsoleField, val: string, lang: Lang, vw?: { attrs: string; hidden: boolean }): string {
   const va = vw ?? { attrs: '', hidden: false }
-  return `<div class="chs-field"${va.attrs}${va.hidden ? ' style="display:none"' : ''}>
+  const spaceBefore = !!f.spaceBefore
+  const styleStr = [va.hidden ? 'display:none' : '', spaceBefore ? 'margin-top:16px' : ''].filter(Boolean).join(';')
+  return `<div class="chs-field"${va.attrs}${styleStr ? ` style="${styleStr}"` : ''}>
     ${renderConsoleField(f, val, lang)}
   </div>`
 }

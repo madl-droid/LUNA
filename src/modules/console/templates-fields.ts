@@ -122,7 +122,7 @@ export function readonlyField(_key: string, value: string, label: string): strin
     <span class="field-readonly">${esc(value)}</span></div>`
 }
 
-export function tagsField(key: string, value: string, lang: Lang, label: string, separator = ',', tip = '', options?: Array<{ value: string; label: string | { es: string; en: string } }>): string {
+export function tagsField(key: string, value: string, lang: Lang, label: string, separator = ',', tip = '', options?: Array<{ value: string; label: string | { es: string; en: string } }>, centered = false): string {
   const tags = value ? value.split(separator).map(t => t.trim()).filter(Boolean) : []
 
   // If predefined options are provided, render as selectable chips (no free-text input)
@@ -133,9 +133,10 @@ export function tagsField(key: string, value: string, lang: Lang, label: string,
       const active = selectedSet.has(o.value) ? ' field-tag-option--active' : ''
       return `<button type="button" class="field-tag-option${active}" data-tag-option="${esc(key)}" data-tag-value="${esc(o.value)}">${esc(optLabel)}</button>`
     }).join('')
+    const optionsClass = `field-tag-options${centered ? ' field-tag-options--centered' : ''}`
     return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
       <div class="field-tags-wrap">
-        <div class="field-tag-options" data-tags-for="${esc(key)}">${chipsHtml}</div>
+        <div class="${optionsClass}" data-tags-for="${esc(key)}">${chipsHtml}</div>
         <input type="hidden" name="${esc(key)}" value="${esc(value)}" data-original="${esc(value)}" data-separator="${esc(separator)}">
       </div>
     </div>`
@@ -240,8 +241,11 @@ export function renderConsoleField(field: ConsoleField, value: string, lang: Lan
     case 'readonly':
       return `<div class="field"><div class="field-left"><span class="field-label">${esc(label)}</span>${tip}</div>
         <span class="field-readonly">${esc(value)}</span></div>`
-    case 'tags':
-      return tagsField(field.key, value, lang, label, field.separator, tip, field.options)
+    case 'tags': {
+      const w = (field as unknown as Record<string, unknown>).width as string | undefined
+      const centeredChips = !w || (w !== 'half' && w !== 'quarter' && w !== 'third')
+      return tagsField(field.key, value, lang, label, field.separator, tip, field.options, centeredChips)
+    }
     case 'duration': return durationField(field.key, value, lang, label, field.unit || 'ms', info, lang)
     case 'secret':
       return `<div class="field">${fieldLeft(field.key, label, info, lang)}

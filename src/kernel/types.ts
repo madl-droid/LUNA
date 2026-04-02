@@ -422,6 +422,8 @@ export interface ConsoleField {
   grid?: string
   /** Field type hint for custom rendering (e.g. 'volume' for volume selector) */
   fieldType?: string
+  /** Extra margin-top above this field (useful for visual separation before important fields) */
+  spaceBefore?: boolean
   /** Conditional visibility: show field only when another field has a specific value */
   visibleWhen?: { key: string; value: string }
 }
