@@ -75,6 +75,13 @@ const manifest: ModuleManifest = {
         label: { es: 'Responder audio con audio', en: 'Reply audio with audio' },
         info: { es: 'Si el usuario envia nota de voz, responder con nota de voz', en: 'If user sends voice note, reply with voice note' },
       },
+      {
+        key: 'TTS_SPEAKING_RATE',
+        type: 'number',
+        label: { es: 'Velocidad de habla', en: 'Speaking rate' },
+        info: { es: 'Multiplicador de velocidad: 0.5 = muy lento, 1.0 = normal, 1.5 = rápido, 2.0 = muy rápido', en: 'Speed multiplier: 0.5 = very slow, 1.0 = normal, 1.5 = fast, 2.0 = very fast' },
+        width: 'half',
+      },
     ],
   },
 

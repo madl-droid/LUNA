@@ -114,12 +114,13 @@ export class TTSService {
 
     try {
       const temperature = this.config.TTS_TEMPERATURE ?? 1.2
-      const speakingRate = this.config.TTS_SPEAKING_RATE ?? 1.5
+      const rateTag = speakingRateToTag(this.config.TTS_SPEAKING_RATE ?? 1.0)
+      const textToSynthesize = rateTag ? `${rateTag} ${text}` : text
       const response = await fetch(`${GEMINI_TTS_API_URL}?key=${this.config.TTS_GOOGLE_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text }] }],
+          contents: [{ role: 'user', parts: [{ text: textToSynthesize }] }],
           generationConfig: {
             responseModalities: ['AUDIO'],
             temperature,
@@ -127,7 +128,6 @@ export class TTSService {
               voiceConfig: {
                 prebuiltVoiceConfig: { voiceName: this.config.TTS_VOICE_NAME || 'Kore' },
               },
-              speakingRate,
             },
           },
         }),
@@ -257,6 +257,28 @@ async function wavToOggOpus(wavBuffer: Buffer): Promise<Buffer> {
     proc.stdin.write(wavBuffer)
     proc.stdin.end()
   })
+}
+
+// ─── Speaking rate → style tag ──────────────────────────────
+
+/**
+ * Convert a numeric speaking rate multiplier to a Gemini TTS bracket style tag.
+ * Gemini TTS does not accept speakingRate as an API field; instead, bracket tags
+ * embedded in the text act as style cues the model honors.
+ *
+ * Mapping (mirrors the 0.25–2.0 range of the old Cloud TTS speakingRate):
+ *   ≤ 0.6   → [extremely slow]
+ *   0.6–0.85 → [slow]
+ *   0.85–1.15 → (normal, no tag)
+ *   1.15–1.5  → [fast]
+ *   > 1.5    → [extremely fast]
+ */
+function speakingRateToTag(rate: number): string {
+  if (rate <= 0.6) return '[extremely slow]'
+  if (rate <= 0.85) return '[slow]'
+  if (rate <= 1.15) return ''
+  if (rate <= 1.5) return '[fast]'
+  return '[extremely fast]'
 }
 
 // ─── Text chunking ──────────────────────────────
