@@ -368,7 +368,7 @@ function renderFilters(lang: Lang): string {
     <div class="ls-filters">
       <div class="ls-filter-group">
         <span class="ls-filter-label">${l('filter_period', lang)}</span>
-        <select class="ls-filter-select" id="ls-filter-period" onchange="lsApplyFilters()">
+        <select class="ls-filter-select js-custom-select" id="ls-filter-period" onchange="lsApplyFilters()">
           ${periodOpts}
         </select>
       </div>
@@ -386,7 +386,7 @@ function renderFilters(lang: Lang): string {
       </div>
       <div class="ls-filter-group">
         <span class="ls-filter-label">${l('filter_qualification', lang)}</span>
-        <select class="ls-filter-select" id="ls-filter-qual" onchange="lsApplyFilters()">
+        <select class="ls-filter-select js-custom-select" id="ls-filter-qual" onchange="lsApplyFilters()">
           ${qualOpts}
         </select>
       </div>

@@ -23,6 +23,18 @@ export interface SectionData {
   agenteContent?: string
   herramientasSubpage?: string
   herramientasContent?: string
+  dashboardData?: {
+    totalContacts: number
+    contactsChange: number
+    activeSessions: number
+    llmCost: number
+    costChange: number
+    channels: Array<{ name: string; contacts: number; sessions: number }>
+    sources?: Array<{ name: string; pct: number; color: string }>
+    totalSourceContacts?: number
+    models?: Array<{ name: string; desc: string; tokens: string; pct: number }>
+    quality?: Array<{ channel: string; score: number; status: string; stars: number }>
+  }
   usersData?: {
     configs: Array<{
       listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
@@ -2242,46 +2254,34 @@ function renderDashboardSection(data: SectionData): string {
   const isEs = lang === 'es'
 
   // Data from server (with fallbacks for mock display)
-  const dashData = (data as unknown as Record<string, unknown>).dashboardData as Record<string, unknown> | undefined
-  const totalContacts = Number(dashData?.totalContacts ?? 240)
-  const contactsChange = Number(dashData?.contactsChange ?? 12.4)
-  const activeSessions = Number(dashData?.activeSessions ?? 42)
-  const llmCost = Number(dashData?.llmCost ?? 1250)
-  const costChange = Number(dashData?.costChange ?? -5)
-  const avgRating = Number(dashData?.avgRating ?? 4.8)
+  const dashData = data.dashboardData
+  const totalContacts = dashData?.totalContacts ?? 0
+  const contactsChange = dashData?.contactsChange ?? 0
+  const activeSessions = dashData?.activeSessions ?? 0
+  const llmCost = dashData?.llmCost ?? 0
+  const costChange = dashData?.costChange ?? 0
+  const avgRating = 0
 
   // Channel breakdown data
-  const channels = (dashData?.channels as Array<{ name: string; contacts: number; sessions: number }>) || [
-    { name: 'WhatsApp', contacts: 820, sessions: 420 },
-    { name: 'Gmail', contacts: 520, sessions: 370 },
-    { name: 'Google Chat', contacts: 280, sessions: 140 },
-    { name: 'Twilio Calls', contacts: 130, sessions: 80 },
-  ]
+  const channels = dashData?.channels?.length
+    ? dashData.channels
+    : [] as Array<{ name: string; contacts: number; sessions: number }>
   const maxChannelTotal = Math.max(...channels.map(c => c.contacts + c.sessions), 1)
 
   // Contact sources
-  const sources = (dashData?.sources as Array<{ name: string; pct: number; color: string }>) || [
+  const sources = dashData?.sources ?? [
     { name: isEs ? 'Organico' : 'Organic', pct: 40, color: 'var(--primary)' },
     { name: 'Referrals', pct: 25, color: '#FFB800' },
     { name: 'Ads', pct: 20, color: 'var(--info)' },
     { name: 'Social', pct: 15, color: 'var(--surface-container-high)' },
   ]
-  const totalSourceContacts = Number(dashData?.totalSourceContacts ?? 2800)
+  const totalSourceContacts = dashData?.totalSourceContacts ?? 0
 
   // LLM token usage
-  const models = (dashData?.models as Array<{ name: string; desc: string; tokens: string; pct: number }>) || [
-    { name: 'Claude Sonnet', desc: 'Primary', tokens: '1.2M', pct: 85 },
-    { name: 'Claude Haiku', desc: 'Compression', tokens: '840k', pct: 60 },
-    { name: 'Gemini Flash', desc: 'Fallback', tokens: '320k', pct: 23 },
-  ]
+  const models = dashData?.models ?? [] as Array<{ name: string; desc: string; tokens: string; pct: number }>
 
   // Quality per channel
-  const quality = (dashData?.quality as Array<{ channel: string; score: number; status: string; stars: number }>) || [
-    { channel: 'WHATSAPP', score: 4.9, status: isEs ? 'Optimo' : 'Optimal', stars: 5 },
-    { channel: 'GMAIL', score: 4.2, status: isEs ? 'Estable' : 'Stable', stars: 4 },
-    { channel: 'GOOGLE CHAT', score: 4.7, status: isEs ? 'Excelente' : 'Excellent', stars: 5 },
-    { channel: 'TWILIO CALLS', score: 3.8, status: isEs ? 'Atención' : 'Warning', stars: 4 },
-  ]
+  const quality = dashData?.quality ?? [] as Array<{ channel: string; score: number; status: string; stars: number }>
 
   // Stars helper
   function stars(count: number, max = 5): string {
@@ -2415,7 +2415,8 @@ function renderDashboardSection(data: SectionData): string {
       <a class="dash-card-link" href="/console/llm?lang=${lang}">${isEs ? 'Ver detalle' : 'Full Report'}</a>
     </div>
     <div class="dash-card-subtitle">${isEs ? 'Eficiencia por modelo' : 'Efficiency per model'}</div>
-    ${models.map(m => `<div class="dash-token-row">
+    ${models.length > 0
+      ? models.map(m => `<div class="dash-token-row">
       <div class="dash-token-icon ts-dash-token-icon">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
       </div>
@@ -2427,7 +2428,8 @@ function renderDashboardSection(data: SectionData): string {
         <div class="dash-token-bar-label">${esc(m.tokens)} tokens</div>
         <div class="dash-token-bar-track"><div class="dash-token-bar-fill" style="width:${m.pct}%"></div></div>
       </div>
-    </div>`).join('')}
+    </div>`).join('')
+      : `<p style="font-size:13px;color:var(--on-surface-dim);margin:12px 0">${isEs ? 'Sin datos aún' : 'No data yet'}</p>`}
   </div>
 
   <div class="dash-card">
@@ -2436,12 +2438,14 @@ function renderDashboardSection(data: SectionData): string {
     </div>
     <div class="dash-card-subtitle">${isEs ? 'Satisfaccion del cliente por canal' : 'Customer satisfaction per node'}</div>
     <div class="dash-quality-grid">
-      ${quality.map(q => `<div class="dash-quality-card">
+      ${quality.length > 0
+        ? quality.map(q => `<div class="dash-quality-card">
         <div class="dash-quality-channel">${esc(q.channel)}</div>
         <span class="dash-quality-score">${q.score}</span>
         <span class="dash-quality-status ${qualityClass(q.status)}">${esc(q.status)}</span>
         <div class="dash-quality-stars">${stars(q.stars)}</div>
-      </div>`).join('')}
+      </div>`).join('')
+        : `<p style="font-size:13px;color:var(--on-surface-dim);margin:12px 0">${isEs ? 'Sin datos aún' : 'No data yet'}</p>`}
     </div>
   </div>
 </div>`
