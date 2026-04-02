@@ -254,10 +254,21 @@ export function renderConsoleField(field: ConsoleField, value: string, lang: Lan
         <input type="hidden" name="${field.key}" value="${checked ? 'true' : 'false'}" data-original="${esc(value)}">
       </div>`
     }
-    case 'number':
+    case 'number': {
+      if ((field as unknown as Record<string, unknown>).fieldType === 'volume') {
+        return volumeField(field.key, value, label, {
+          min: field.min ?? 0,
+          max: field.max ?? 1,
+          step: field.step ?? 0.1,
+          unit: field.unit,
+          info,
+          lang,
+        })
+      }
       return field.unit
         ? durationField(field.key, value, lang, label, field.unit, info, lang)
         : directField(field.key, value, label, 'number', info, lang)
+    }
     case 'select': {
       const opts = field.options ?? []
       const optionsHtml = opts.map(o => {

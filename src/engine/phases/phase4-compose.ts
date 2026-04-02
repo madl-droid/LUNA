@@ -136,12 +136,15 @@ export async function phase4Compose(
     logger.info({ traceId: ctx.traceId, voiceMarkerOverride, shouldTTS }, 'VOICE marker override')
   }
 
-  // ═══ [VOICE] marker can override shouldTTS (only if audio is enabled for the channel) ═══
+  // ═══ [VOICE] marker can override shouldTTS ═══
+  // When the LLM wrote [VOICE], it means the format prompt had audio instructions → audio is enabled in DB.
+  // We only require the TTS service to be active for this channel. We skip the channelTtsEnabled registry
+  // check because it may be stale after an instantApply toggle (registry config updates only on hot-reload).
   if (voiceMarkerOverride) {
-    const channelSvc = registry?.getOptional<{ get(): { ttsEnabled?: boolean } }>(`channel-config:${ctx.message.channelName}`)
-    const channelTtsEnabled = channelSvc?.get()?.ttsEnabled ?? false
-    if (channelTtsEnabled && ttsService?.isEnabledForChannel(ctx.message.channelName)) {
+    if (ttsService?.isEnabledForChannel(ctx.message.channelName)) {
       shouldTTS = true
+    } else {
+      logger.warn({ traceId: ctx.traceId, channel: ctx.message.channelName }, 'VOICE marker found but TTS not enabled for channel — sending text')
     }
   }
 
