@@ -224,6 +224,42 @@ export async function phase5Validate(
 
 // ─── Validation ──────────────────────────────
 
+// Patterns that indicate the LLM leaked tool-call syntax into the response text
+const TOOL_CALL_PATTERNS: RegExp[] = [
+  // JSON-style: [TOOL_CALL: name] or [TOOL_CALL: name]\n{...}
+  /\[TOOL_CALL:\s*[^\]]+\](\s*\{[\s\S]*?\})?/g,
+  // XML-style Anthropic function calls
+  /<function_calls>[\s\S]*?<\/function_calls>/g,
+  // Markdown code block containing a tool invocation
+  /```(?:json|xml|tool)?\s*\n?\s*\{[\s\S]*?"tool"[\s\S]*?\}\s*```/g,
+  // tool_use JSON blocks
+  /\{"type"\s*:\s*"tool_use"[\s\S]*?\}/g,
+]
+
+function detectToolCallLeakage(text: string): string[] {
+  const issues: string[] = []
+  for (const pattern of TOOL_CALL_PATTERNS) {
+    if (pattern.test(text)) {
+      issues.push('tool_call_leakage: response contains tool invocation syntax')
+      break
+    }
+    // Reset lastIndex after test()
+    pattern.lastIndex = 0
+  }
+  return issues
+}
+
+function sanitizeToolCallLeakage(text: string): string {
+  let sanitized = text
+  for (const pattern of TOOL_CALL_PATTERNS) {
+    pattern.lastIndex = 0
+    sanitized = sanitized.replace(pattern, '')
+  }
+  // Clean up any leftover blank lines caused by removal
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n').trim()
+  return sanitized
+}
+
 function validateOutput(text: string): ValidationResult {
   const issues: string[] = []
 
@@ -233,11 +269,18 @@ function validateOutput(text: string): ValidationResult {
   const sensitiveIssues = detectSensitiveData(text)
   issues.push(...sensitiveIssues)
 
+  const toolCallIssues = detectToolCallLeakage(text)
+  issues.push(...toolCallIssues)
+
   if (issues.length === 0) {
     return { passed: true, issues: [], sanitizedText: text }
   }
 
   let sanitized = text
+  // Strip tool call syntax first (before other replacements)
+  if (toolCallIssues.length > 0) {
+    sanitized = sanitizeToolCallLeakage(sanitized)
+  }
   // Anthropic API keys
   sanitized = sanitized.replace(/sk-ant-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
   // Google API keys

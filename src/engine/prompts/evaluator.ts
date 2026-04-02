@@ -39,6 +39,10 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
   let system = svc ? await svc.getSystemPrompt('evaluator-system') : ''
   if (!system) system = EVALUATOR_SYSTEM_FALLBACK
 
+  // Inject today's ISO date so date-resolution rules in the prompt work correctly
+  const todayISO = new Date().toISOString().split('T')[0] ?? ''
+  system = system.replace(/\{TODAY\}/g, todayISO)
+
   // Inject job + guardrails so the evaluator knows the agent's mission and rules
   if (svc) {
     const prompts = await svc.getCompositorPrompts(ctx.userType)
