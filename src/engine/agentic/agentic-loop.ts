@@ -130,11 +130,18 @@ export async function runAgenticLoop(
         partialText = llmResult.text
       }
 
-      // Execute all tool calls from this turn
+      // Execute all tool calls from this turn.
+      // Invariant: toolExecutor is non-null here because we only send tools to the LLM
+      // when toolExecutor != null (effectiveTools is empty otherwise), so the LLM
+      // can only produce tool_calls when we have an executor to handle them.
+      if (!toolExecutor) {
+        logger.warn({ traceId: ctx.traceId, turns }, 'LLM returned tool calls but no tool executor — treating as text response')
+        break
+      }
       const toolResults = await executeToolCalls(
         llmResult.toolCalls,
         ctx,
-        toolExecutor!, // non-null because effectiveTools.length > 0
+        toolExecutor,
         dedupCache,
         loopDetector,
         toolCallsLog,

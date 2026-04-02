@@ -14,7 +14,13 @@ type CachedResult = { data: unknown; success: boolean; error?: string; durationM
  * Skips caching for write operations (tools that have side effects).
  */
 export class ToolDedupCache {
-  /** Set of tool names that should never be cached (write operations). */
+  /**
+   * Set of tool names that should never be cached (write operations / side-effects).
+   *
+   * MANTENIMIENTO: Agregar aquí cualquier tool nueva que tenga side-effects
+   * (escribe datos, manda mensajes, crea recursos, etc.). Si no se agrega,
+   * el cache podría devolver un resultado anterior y evitar que la acción se ejecute.
+   */
   private static readonly WRITE_TOOLS: ReadonlySet<string> = new Set([
     'create_commitment',
     'send_email',
@@ -71,6 +77,3 @@ export class ToolDedupCache {
     return this.cache.size
   }
 }
-
-// Re-export ToolCallLog for consumers that import from this module
-export type { ToolCallLog }
