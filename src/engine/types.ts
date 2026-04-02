@@ -3,6 +3,14 @@
 
 import type { ChannelName, IncomingMessage, MessageContent } from '../channels/types.js'
 
+// --- Agentic types (v2.0) ---
+export type {
+  AgenticResult,
+  AgenticConfig,
+  EffortLevel,
+  ToolCallLog,
+} from './agentic/types.js'
+
 // ═══════════════════════════════════════════
 // User resolution (S02 interface)
 // ═══════════════════════════════════════════
@@ -317,6 +325,21 @@ export interface PipelineResult {
   skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}`
   replanAttempts: number
   subagentIterationsUsed: number
+  // --- Agentic fields (v2.0) ---
+  agenticResult?: import('./agentic/types.js').AgenticResult
+  effortLevel?: import('./agentic/types.js').EffortLevel
+  /** Which engine mode produced this result. Defaults to 'legacy' when absent. */
+  engineMode?: 'agentic' | 'legacy'
+}
+
+// ═══════════════════════════════════════════
+// Agentic pipeline options (v2.0)
+// ═══════════════════════════════════════════
+
+export interface AgenticPipelineOptions {
+  engineMode?: 'agentic' | 'legacy'
+  forceEffort?: import('./agentic/types.js').EffortLevel
+  isProactive?: boolean
 }
 
 // ═══════════════════════════════════════════
@@ -664,4 +687,29 @@ export interface EngineConfig {
   checkpointResumeWindowMs: number
   /** Days after which completed/failed checkpoints are purged */
   checkpointCleanupDays: number
+
+  // --- Agentic engine config (v2.0) ---
+  /** 'agentic' (default) uses the new agentic loop; 'legacy' uses Phases 2-4 */
+  engineMode: 'agentic' | 'legacy'
+  /** Max tool-calling turns before forcing a text response */
+  agenticMaxTurns: number
+  /** Enable effort routing: classify complexity to route to cheaper/capable model */
+  effortRoutingEnabled: boolean
+  /** Enable tool call deduplication within a single pipeline run */
+  toolDedupEnabled: boolean
+  /** Enable graduated loop detection (warn → block → circuit break) */
+  loopDetectionEnabled: boolean
+  /** Feed tool errors back to LLM as context instead of crashing the loop */
+  errorAsContextEnabled: boolean
+  /** Recover partial text if loop times out or hits turn limit */
+  partialRecoveryEnabled: boolean
+  /** Model for low-effort messages (greetings, acks) */
+  lowEffortModel: string
+  lowEffortProvider: LLMProvider
+  /** Model for medium-effort messages (questions, single tool) */
+  mediumEffortModel: string
+  mediumEffortProvider: LLMProvider
+  /** Model for high-effort messages (objections, multi-step) */
+  highEffortModel: string
+  highEffortProvider: LLMProvider
 }

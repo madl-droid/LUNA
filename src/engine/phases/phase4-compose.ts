@@ -1,3 +1,9 @@
+/**
+ * Phase 4: Compose — generate final response via LLM after Phase 3 tool execution.
+ *
+ * @deprecated Use the agentic loop (ENGINE_MODE=agentic). This phase is kept
+ * for legacy fallback only (ENGINE_MODE=legacy). Planned removal in v3.0.
+ */
 // LUNA Engine — Phase 4: Compose Response (v2)
 // LLM compositor + retries + channel formatting + TTS.
 // El LLM NO tiene tools. Solo recibe datos y escribe.
