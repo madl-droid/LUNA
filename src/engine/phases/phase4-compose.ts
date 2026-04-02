@@ -64,6 +64,14 @@ export async function phase4Compose(
     }
   }
 
+  logger.info({
+    traceId: ctx.traceId,
+    responseFormat: ctx.responseFormat,
+    shouldTTS,
+    ttsServiceAvailable: !!ttsService,
+    voiceMarkerOverride: false, // will be updated later if marker found
+  }, 'TTS decision')
+
   // Build the compositor prompt
   const { system, userMessage: baseUserMessage } = await buildCompositorPrompt(
     ctx,
@@ -122,6 +130,10 @@ export async function phase4Compose(
       responseText = responseText.replace(/\[VOICE\]/gi, '').trim()
       voiceMarkerOverride = true
     }
+  }
+
+  if (voiceMarkerOverride) {
+    logger.info({ traceId: ctx.traceId, voiceMarkerOverride, shouldTTS }, 'VOICE marker override')
   }
 
   // ═══ [VOICE] marker can override shouldTTS (only if audio is enabled for the channel) ═══

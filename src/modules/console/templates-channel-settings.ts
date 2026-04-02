@@ -303,21 +303,19 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
         const qv = config[qf.key] ?? ''
         const qvw = visibleWhenAttrs(qf, config)
         if (qf.type === 'boolean') {
-          const iconHtml = qf.icon ?? ''
-          const descText = qf.description?.[lang] ?? qf.info?.[lang] ?? ''
           const label = qf.label[lang] ?? qf.label.es ?? qf.key
           const checked = qv === 'true' || qv === '1'
-          html += `<div class="chs-toggle-row chs-toggle-compact"${qvw.attrs}${qvw.hidden ? ' style="display:none"' : ''}>
-            ${iconHtml ? `<div class="chs-toggle-icon">${iconHtml}</div>` : ''}
-            <div class="chs-toggle-text">
-              <div class="chs-toggle-title">${esc(label)}</div>
-              ${descText ? `<div class="chs-toggle-desc">${esc(descText)}</div>` : ''}
+          const infoText = qf.info?.[lang] ?? ''
+          const tip = infoText ? ` <span class="info-btn" tabindex="0">&#9432;<span class="info-tooltip">${esc(infoText)}</span></span>` : ''
+          html += `<div class="chs-field"${qvw.attrs}${qvw.hidden ? ' style="display:none"' : ''}>
+            <div class="chs-field-label">${esc(label)}${tip}</div>
+            <div style="margin-top:6px">
+              <input type="hidden" name="${qf.key}" value="false">
+              <label class="toggle toggle-sm">
+                <input type="checkbox" name="${qf.key}" value="true" ${checked ? 'checked' : ''} data-original="${checked ? 'true' : 'false'}" onchange="instantApply(this)">
+                <span class="toggle-slider"></span>
+              </label>
             </div>
-            <input type="hidden" name="${qf.key}" value="false">
-            <label class="toggle toggle-sm">
-              <input type="checkbox" name="${qf.key}" value="true" ${checked ? 'checked' : ''} data-original="${checked ? 'true' : 'false'}" onchange="instantApply(this)">
-              <span class="toggle-slider"></span>
-            </label>
           </div>`
         } else {
           html += renderSingleField(qf, qv, lang, qvw)
@@ -402,7 +400,12 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
       const val2 = config[f2.key] ?? ''
       const vw2 = visibleWhenAttrs(f2, config)
       const rowHidden = vw.hidden && vw2.hidden
-      html += `<div class="chs-field-row"${rowHidden ? ' style="display:none"' : ''}>`
+      // If both fields share the same visibleWhen, apply it to the row wrapper too
+      const sameVW = f.visibleWhen && f2.visibleWhen
+        && f.visibleWhen.key === f2.visibleWhen.key
+        && f.visibleWhen.value === f2.visibleWhen.value
+      const rowVWAttrs = sameVW ? vw.attrs : ''
+      html += `<div class="chs-field-row"${rowVWAttrs}${rowHidden ? ' style="display:none"' : ''}>`
       html += renderSingleField(f, val, lang, vw)
       html += renderSingleField(f2, val2, lang, vw2)
       html += '</div>'
