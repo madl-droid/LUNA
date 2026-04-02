@@ -9,13 +9,14 @@
 // - buildContextLayers() from context-builder.ts
 // - buildAccentSection() from accent.ts
 // - loadSkillCatalog()/buildSkillCatalogSection() from skills.ts
-// - getChannelLimit() logic reused from compositor.ts (inline via helper)
+// - getChannelLimit() imported from compositor.ts (not duplicated)
 
 import type { ContextBundle, ToolCatalogEntry, ProactiveTrigger } from '../types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
-import { loadSystemPrompt } from '../../modules/prompts/template-loader.js'
+import { loadSystemPrompt, renderTemplate } from '../../modules/prompts/template-loader.js'
+import { getChannelLimit } from './compositor.js'
 import { buildContextLayers } from './context-builder.js'
 import { buildAccentSection } from './accent.js'
 import { loadSkillCatalog, buildSkillCatalogSection } from './skills.js'
@@ -26,18 +27,6 @@ export interface AgenticPromptOptions {
   isProactive?: boolean
   proactiveTrigger?: ProactiveTrigger
   subagentCatalog?: SubagentCatalogEntry[]
-}
-
-// ─── Maps ─────────────────────────────────────────────────────────────────────
-
-/** Map channel names to their communication category */
-const CHANNEL_CATEGORIES: Record<string, string> = {
-  whatsapp: 'mensajería instantánea',
-  'google-chat': 'mensajería instantánea',
-  instagram: 'mensajería instantánea',
-  messenger: 'mensajería instantánea',
-  email: 'comunicación asíncrona',
-  voice: 'voz en tiempo real',
 }
 
 // ─── Main builder ─────────────────────────────────────────────────────────────
@@ -111,17 +100,17 @@ export async function buildAgenticPrompt(
     : 'agentic-system'
   const agenticInstructions = await loadSystemPrompt(agenticInstructionsTemplate)
   if (agenticInstructions) {
-    let instructions = agenticInstructions
-    if (isProactive && proactiveTrigger) {
-      instructions = instructions
-        .replace(/\{triggerType\}/g, proactiveTrigger.type)
-        .replace(/\{reason\}/g, proactiveTrigger.reason)
-    }
+    const instructions = (isProactive && proactiveTrigger)
+      ? renderTemplate(agenticInstructions, {
+          triggerType: proactiveTrigger.type,
+          reason: proactiveTrigger.reason,
+        })
+      : agenticInstructions
     systemParts.push(`<agentic_instructions>\n${instructions}\n</agentic_instructions>`)
   }
 
   // ── Section 8: <channel_format> ───────────────────────────────────────────
-  const channelFormat = await getChannelFormat(ctx.message.channelName, registry)
+  const channelFormat = await getChannelLimit(ctx.message.channelName, registry)
   if (channelFormat) {
     systemParts.push(`<channel_format>\n${channelFormat}\n</channel_format>`)
   }
@@ -160,8 +149,10 @@ export async function buildAgenticPrompt(
   }
 
   // ── Section 13: <knowledge_catalog> ──────────────────────────────────────
-  // Only include here if knowledgeInjection is absent (it will be in the user message otherwise)
-  if (!ctx.knowledgeInjection && ctx.knowledgeMatches.length === 0) {
+  // Show categories/core-docs catalog in system prompt when knowledgeInjection exists.
+  // The detailed matched items are injected in the user message via buildContextLayers().
+  // This gives the LLM a high-level map of available knowledge before reading the specifics.
+  if (ctx.knowledgeInjection) {
     const knowledgeMeta = buildKnowledgeCatalogSection(ctx)
     if (knowledgeMeta) {
       systemParts.push(`<knowledge_catalog>\n${knowledgeMeta}\n</knowledge_catalog>`)
@@ -184,101 +175,6 @@ export async function buildAgenticPrompt(
 }
 
 // ─── System section builders ──────────────────────────────────────────────────
-
-/**
- * Get channel format instructions.
- * Priority: 1) config_store form fields, 2) system template, 3) minimal hardcoded default.
- * Reuses the same logic as compositor.ts's getChannelLimit + buildFormatFromForm.
- */
-async function getChannelFormat(channel: string, registry: Registry): Promise<string> {
-  try {
-    const db = registry.getDb()
-    const built = await buildFormatFromForm(channel, db)
-    if (built) return built
-  } catch { /* fallback */ }
-
-  const svc = registry.getOptional<PromptsService>('prompts:service')
-  if (svc) {
-    const tmpl = await svc.getSystemPrompt(`channel-format-${channel}`)
-    if (tmpl) return tmpl
-  }
-
-  return `CANAL: ${channel.toUpperCase()} — ${CHANNEL_CATEGORIES[channel] ?? 'mensajería instantánea'}`
-}
-
-/** Build format prompt from config_store form fields (reused from compositor.ts) */
-async function buildFormatFromForm(channel: string, db: import('pg').Pool): Promise<string | null> {
-  const configStore = await import('../../kernel/config-store.js')
-  const prefix = channel.toUpperCase()
-  const all = await configStore.getAll(db)
-
-  const tone = all[`${prefix}_FORMAT_TONE`] || 'directo'
-  const maxSentences = all[`${prefix}_FORMAT_MAX_SENTENCES`] || '2'
-  const maxParagraphs = all[`${prefix}_FORMAT_MAX_PARAGRAPHS`] || '2'
-  const emojiLevel = all[`${prefix}_FORMAT_EMOJI_LEVEL`] || 'bajo'
-  const openingSigns = all[`${prefix}_FORMAT_OPENING_SIGNS`] || 'nunca'
-  const typosEnabled = all[`${prefix}_FORMAT_TYPOS_ENABLED`] === 'true'
-  const typosIntensity = all[`${prefix}_FORMAT_TYPOS_INTENSITY`] || '0.3'
-  const typosTypes = all[`${prefix}_FORMAT_TYPOS_TYPES`] || ''
-  const audioEnabled = all[`${prefix}_FORMAT_AUDIO_ENABLED`] === 'true'
-  const additionalInstructions = all[`FORMAT_INSTRUCTIONS_${prefix}`] || ''
-
-  const category = CHANNEL_CATEGORIES[channel] ?? 'mensajería instantánea'
-  const lines: string[] = []
-
-  lines.push(`FORMATO DE RESPUESTA — ${category.toUpperCase()}`)
-  lines.push(`- REGLA CLAVE: Se breve y ${tone}. Es un canal de mensajería, no es email — los mensajes largos no se leen.`)
-  lines.push(`- Escribe tu respuesta con saltos de párrafo naturales (doble enter entre ideas). Cada párrafo se enviará como un mensaje separado. Usa entre 1 y ${maxParagraphs} párrafos según la situación:`)
-  lines.push(`  - Saludos o respuestas cortas: un solo mensaje`)
-  lines.push(`  - Respuestas con mucha información: ${maxParagraphs} (máximo absoluto)`)
-  lines.push(`- MÁXIMO 1-${maxSentences} oraciones por párrafo.`)
-  lines.push(`- Un párrafo = UNA idea. Si cambias de tema, nuevo párrafo.`)
-  lines.push(`- PROHIBIDO: párrafos largos. Si se ve largo, está largo.`)
-  lines.push(`- NO uses markdown ni formato especial, solo texto plano (es WhatsApp)`)
-  lines.push(`- NUNCA uses asteriscos (*) en tus mensajes.`)
-  lines.push(`- Emojis: ${emojiLevel}`)
-
-  if (openingSigns === 'nunca') {
-    lines.push(`- REGLA CRÍTICA de puntuación: los signos de exclamación e interrogación se usan SOLO al final, NUNCA al inicio.`)
-    lines.push(`  Correcto: "Que bueno" "Como estas" "Perfecto, te mando la info"`)
-  } else if (openingSigns === 'final') {
-    lines.push(`- REGLA CRÍTICA de puntuación: usa signos de exclamación e interrogación SOLO al final.`)
-    lines.push(`  Correcto: "Que bueno!" "Como estas?" "Perfecto, te mando la info!"`)
-  } else if (openingSigns === 'ambos') {
-    lines.push(`- REGLA CRÍTICA de puntuación: usa signos de apertura Y cierre.`)
-    lines.push(`  Correcto: "¡Que bueno!" "¿Como estas?" "¡Perfecto!"`)
-  }
-
-  lines.push('')
-  lines.push('Arquitectura de mensajes de venta:')
-  lines.push('- Respuesta directa y corta a lo que preguntó')
-  lines.push('- Link, video o recurso relevante (si aplica)')
-  lines.push('- UNA pregunta que avance la conversación')
-
-  if (typosEnabled) {
-    lines.push('')
-    lines.push('Naturalidad y errores (canal casual):')
-    lines.push(`- Temperatura de typos: ${typosIntensity}`)
-    const types = typosTypes.split(',').map(t => t.trim().toLowerCase())
-    if (types.includes('tildes')) lines.push(`  - Tildes omitidas ocasionalmente`)
-    if (types.includes('invertidas')) lines.push(`  - Letras invertidas ocasionales`)
-    if (types.includes('doble_letra')) lines.push(`  - Doble letra accidental`)
-  }
-
-  if (audioEnabled) {
-    lines.push('')
-    lines.push('Notas de voz: cuando veas [RESPONDER CON AUDIO], escribe como si hablaras.')
-    lines.push('- Usa frases cortas y naturales.')
-    lines.push('- Evita listas, números de teléfono, URLs (no se entienden en audio).')
-  }
-
-  if (additionalInstructions.trim()) {
-    lines.push('')
-    lines.push(additionalInstructions.trim())
-  }
-
-  return lines.join('\n')
-}
 
 function buildVoiceSection(): string {
   return `Tu respuesta será convertida a nota de voz (audio). Escribe como si hablaras en voz alta:
@@ -361,8 +257,7 @@ function buildGoogleUrlHints(toolNames: string[]): string {
 }
 
 function buildKnowledgeCatalogSection(ctx: ContextBundle): string {
-  // This is shown when knowledge wasn't injected via knowledgeInjection
-  // (it may still be in knowledgeMatches legacy fallback handled in user message)
+  // Caller guarantees ctx.knowledgeInjection is present.
   if (!ctx.knowledgeInjection) return ''
   const inj = ctx.knowledgeInjection
   const lines: string[] = []
