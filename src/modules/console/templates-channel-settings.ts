@@ -448,12 +448,6 @@ function renderPeriodFilter(_channelId: string, lang: Lang): string {
 }
 
 // ── Budget card ──
-// NOTE: Budget/spend metrics are placeholders. The actual data will come from the reporting
-// system (not yet built). Variables to connect later:
-//   - CHANNEL_BUDGET_{channelId}: monthly budget in USD (0 = no budget)
-//   - channel_spend_total: total spend for current period (from reporting module)
-//   - channel_spend_per_interaction: avg cost per interaction (from reporting module)
-// When reporting module is built, replace the mock data with real API calls.
 
 function renderBudgetCard(channelId: string, lang: Lang, config: Record<string, string>): string {
   const budgetKey = 'CHANNEL_BUDGET_' + channelId.toUpperCase().replace(/-/g, '_')
@@ -463,60 +457,94 @@ function renderBudgetCard(channelId: string, lang: Lang, config: Record<string, 
   const totalLabel = lang === 'es' ? 'Gasto total' : 'Total spend'
   const avgLabel = lang === 'es' ? 'Gasto promedio por interaccion' : 'Avg cost per interaction'
   const addBudgetLabel = lang === 'es' ? 'Agregar presupuesto' : 'Add budget'
+  const pencilSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>'
+  const editLabel = lang === 'es' ? 'Editar' : 'Edit'
 
-  // TODO: Replace mock spend data with real data from reporting module
-  // Variables: channel_spend_total, channel_spend_per_interaction (from reporting API)
-  const spent = 0 // placeholder until reporting module is built
-  const avgCost = 0 // placeholder
-
-  if (budget > 0) {
-    const pct = Math.min((spent / budget) * 100, 100)
-    const overBudget = spent > budget
-    const overPct = overBudget ? Math.round(((spent - budget) / budget) * 100) : 0
-    const barColor = overBudget ? 'var(--error)' : 'var(--success)'
-    const overLabel = overBudget
-      ? (lang === 'es' ? `${overPct}% sobre presupuesto` : `${overPct}% over budget`)
-      : ''
-
-    const pencilSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>'
-    const editLabel = lang === 'es' ? 'Editar' : 'Edit'
-    return `<div class="chs-card chs-budget-card">
-      <div class="chs-budget-header">
+  const cardInner = budget > 0
+    ? `<div class="chs-budget-header">
         <div class="chs-activity-title">${budgetLabel}</div>
         <button class="chs-budget-edit-btn" onclick="openBudgetModal('${esc(channelId)}', '${lang}', ${budget})">${pencilSvg} ${editLabel}</button>
       </div>
       <div class="chs-budget-row">
         <span>${totalLabel}</span>
-        <span class="chs-budget-val ${overBudget ? 'chs-budget-over' : ''}">$${spent.toFixed(2)} / $${budget}</span>
+        <span class="chs-budget-val" id="chs-spend-total">--</span>
       </div>
       <div class="chs-budget-bar">
-        <div class="chs-budget-bar-fill" style="width:${pct}%;background:${barColor}"></div>
-        ${overBudget ? `<div class="chs-budget-bar-over" style="width:${Math.min(overPct, 100)}%;background:var(--error);opacity:0.3"></div>` : ''}
+        <div class="chs-budget-bar-fill" id="chs-spend-bar" style="width:0%;background:var(--success)"></div>
       </div>
-      ${overLabel ? `<div class="chs-budget-warning">${overLabel}</div>` : ''}
+      <div class="chs-budget-warning" id="chs-spend-warning" style="display:none"></div>
       <div class="chs-budget-row u-mt-md">
         <span>${avgLabel}</span>
-        <span class="chs-budget-val">$${avgCost.toFixed(2)}</span>
+        <span class="chs-budget-val" id="chs-spend-avg">--</span>
+      </div>`
+    : `<div class="chs-activity-title">${budgetLabel}</div>
+      <div class="chs-budget-row">
+        <span>${totalLabel}</span>
+        <span class="chs-budget-val" id="chs-spend-total">--</span>
       </div>
-    </div>`
-  }
+      <div class="chs-budget-bar">
+        <div class="chs-budget-bar-fill" style="width:0%;background:var(--on-surface-dim)"></div>
+      </div>
+      <div class="chs-budget-row u-mt-md">
+        <span>${avgLabel}</span>
+        <span class="chs-budget-val" id="chs-spend-avg">--</span>
+      </div>
+      <button class="chs-budget-add-btn" onclick="openBudgetModal('${esc(channelId)}', '${lang}', 0)">${addBudgetLabel}</button>`
 
-  // Default: no budget set — show zero with option to add
-  return `<div class="chs-card chs-budget-card">
-    <div class="chs-activity-title">${budgetLabel}</div>
-    <div class="chs-budget-row">
-      <span>${totalLabel}</span>
-      <span class="chs-budget-val">$0.00</span>
-    </div>
-    <div class="chs-budget-bar">
-      <div class="chs-budget-bar-fill" style="width:0%;background:var(--on-surface-dim)"></div>
-    </div>
-    <div class="chs-budget-row u-mt-md">
-      <span>${avgLabel}</span>
-      <span class="chs-budget-val">$0.00</span>
-    </div>
-    <button class="chs-budget-add-btn" onclick="openBudgetModal('${esc(channelId)}', '${lang}', 0)">${addBudgetLabel}</button>
-  </div>`
+  return `<div class="chs-card chs-budget-card" id="chs-budget" data-channel="${esc(channelId)}" data-budget="${budget}">
+    ${cardInner}
+  </div>
+  <script>
+  (function(){
+    var card = document.getElementById('chs-budget');
+    var sel = document.getElementById('chs-period');
+    if (!card) return;
+    var ch = card.getAttribute('data-channel');
+    var budget = parseInt(card.getAttribute('data-budget') || '0', 10);
+    function load(period) {
+      fetch('/console/api/console/channel-spend?channel=' + ch + '&period=' + period)
+        .then(function(r){ return r.json() })
+        .then(function(d){
+          var spent = d.total_spend || 0;
+          var avg = d.avg_cost || 0;
+          var totalEl = document.getElementById('chs-spend-total');
+          var avgEl = document.getElementById('chs-spend-avg');
+          var barEl = document.getElementById('chs-spend-bar');
+          var warnEl = document.getElementById('chs-spend-warning');
+          if (totalEl) {
+            totalEl.textContent = budget > 0 ? '$' + spent.toFixed(2) + ' / $' + budget : '$' + spent.toFixed(2);
+            if (budget > 0 && spent > budget) totalEl.classList.add('chs-budget-over');
+            else totalEl.classList.remove('chs-budget-over');
+          }
+          if (avgEl) avgEl.textContent = '$' + avg.toFixed(4);
+          if (barEl && budget > 0) {
+            var pct = Math.min((spent / budget) * 100, 100);
+            var over = spent > budget;
+            barEl.style.width = pct + '%';
+            barEl.style.background = over ? 'var(--error)' : 'var(--success)';
+          }
+          if (warnEl && budget > 0 && spent > budget) {
+            var overPct = Math.round(((spent - budget) / budget) * 100);
+            warnEl.textContent = ${lang === 'es' ? "overPct + '% sobre presupuesto'" : "overPct + '% over budget'"};
+            warnEl.style.display = '';
+          } else if (warnEl) {
+            warnEl.style.display = 'none';
+          }
+        }).catch(function(){
+          var totalEl = document.getElementById('chs-spend-total');
+          var avgEl = document.getElementById('chs-spend-avg');
+          if (totalEl) totalEl.textContent = '$0.00';
+          if (avgEl) avgEl.textContent = '$0.00';
+        });
+    }
+    if (sel) {
+      sel.addEventListener('change', function(){ load(this.value); });
+      load(sel.value);
+    } else {
+      load('month');
+    }
+  })();
+  </script>`
 }
 
 // ── Tip card ──

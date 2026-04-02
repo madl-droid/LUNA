@@ -2168,6 +2168,62 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // GET /console/api/console/channel-spend?channel=whatsapp&period=month
+    {
+      method: 'GET',
+      path: 'channel-spend',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+
+          const query = parseQuery(req)
+          const channel = query.get('channel') || ''
+          const period = query.get('period') || 'month'
+
+          const VALID_SINCE: Record<string, string> = {
+            'today':  "date_trunc('day', now())",
+            'week':   "date_trunc('week', now())",
+            'month':  "date_trunc('month', now())",
+            '7d':     "now() - interval '7 days'",
+            '30d':    "now() - interval '30 days'",
+            '90d':    "now() - interval '90 days'",
+          }
+          const since = VALID_SINCE[period]
+          if (!since) { jsonResponse(res, 400, { error: 'Invalid period' }); return }
+          if (!channel) { jsonResponse(res, 400, { error: 'channel required' }); return }
+
+          const db = registry.getDb()
+          const spendRes = await db.query<{ total_spend: string; avg_cost: string; interactions: string }>(
+            `SELECT
+               COALESCE(SUM(pl.estimated_cost), 0)::numeric(10,6)                   AS total_spend,
+               CASE WHEN COUNT(pl.id) > 0
+                    THEN (SUM(pl.estimated_cost) / COUNT(pl.id))::numeric(10,6)
+                    ELSE 0 END                                                        AS avg_cost,
+               COUNT(pl.id)::int                                                     AS interactions
+             FROM pipeline_logs pl
+             JOIN sessions s ON s.id = pl.session_id
+             WHERE s.channel_name = $1
+               AND pl.created_at >= ${since}`,
+            [channel],
+          )
+
+          const row = spendRes.rows[0]
+          jsonResponse(res, 200, {
+            channel,
+            period,
+            total_spend: parseFloat(row?.total_spend ?? '0'),
+            avg_cost: parseFloat(row?.avg_cost ?? '0'),
+            interactions: row?.interactions ?? 0,
+          })
+        } catch (err) {
+          logger.warn({ err }, 'channel-spend query failed')
+          jsonResponse(res, 200, { channel: '', period: 'month', total_spend: 0, avg_cost: 0, interactions: 0 })
+        }
+      },
+    },
+
     // POST /console/api/console/db-viewer-auth — verify admin password for database viewer access (super admin only)
     {
       method: 'POST',

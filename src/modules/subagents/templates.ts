@@ -686,26 +686,15 @@ function renderTop3(entries: Array<{ name: string; slug: string; executions: num
 }
 
 function renderUsagePanel(usage: SubagentUsageSummary, lang: Lang): string {
-  const hasData = usage.totalExecutions > 0
-  const mockTop3 = [
-    { name: 'Investigador', slug: 'researcher', executions: 12 },
-    { name: 'Analista', slug: 'data-analyst', executions: 8 },
-    { name: 'Redactor', slug: 'writer', executions: 4 },
-  ]
-  const mockStats = { totalExecutions: 24, avgDurationMs: 3180, totalCostUsd: 0.048 }
-  const top3Entries = hasData
-    ? Object.entries(usage.bySubagent)
-        .map(([slug, s]) => ({ name: s.name, slug, executions: s.executions }))
-        .sort((a, b) => b.executions - a.executions)
-    : mockTop3
-  const stats = hasData ? usage : { ...usage, ...mockStats }
-  const mockBadge = !hasData ? `<span class="sa-mock-badge">${l('mockLabel', lang)}</span>` : ''
+  const top3Entries = Object.entries(usage.bySubagent)
+    .map(([slug, s]) => ({ name: s.name, slug, executions: s.executions }))
+    .sort((a, b) => b.executions - a.executions)
 
   return `
     <div class="sa-usage-panel">
       <div class="filter-bar">
         <div class="filter-group">
-          <span class="filter-label">${l('usageTitle', lang)}${mockBadge}</span>
+          <span class="filter-label">${l('usageTitle', lang)}</span>
         </div>
         <div class="filter-group">
           <span class="filter-label">${l('usagePeriod', lang)}</span>
@@ -724,15 +713,15 @@ function renderUsagePanel(usage: SubagentUsageSummary, lang: Lang): string {
             <div id="sa-top3-rows">${renderTop3(top3Entries, lang)}</div>
           </div>
           <div class="panel sa-usage-stat">
-            <div class="sa-usage-stat-value">${stats.totalExecutions}</div>
+            <div class="sa-usage-stat-value">${usage.totalExecutions}</div>
             <div class="sa-usage-stat-label">${l('usageExecs', lang)}</div>
           </div>
           <div class="panel sa-usage-stat">
-            <div class="sa-usage-stat-value">${(stats.avgDurationMs / 1000).toFixed(1)}s</div>
+            <div class="sa-usage-stat-value">${(usage.avgDurationMs / 1000).toFixed(1)}s</div>
             <div class="sa-usage-stat-label">${l('usageAvgTime', lang)}</div>
           </div>
           <div class="panel sa-usage-stat">
-            <div class="sa-usage-stat-value">$${stats.totalCostUsd.toFixed(3)}</div>
+            <div class="sa-usage-stat-value">$${usage.totalCostUsd.toFixed(3)}</div>
             <div class="sa-usage-stat-label">${l('usageCost', lang)}</div>
           </div>
         </div>
@@ -975,14 +964,9 @@ function renderScript(lang: Lang): string {
     try {
       var res = await fetch(API + '/usage?period=' + period)
       var data = await res.json()
-      var hasData = data.totalExecutions > 0
-      var mock = { totalExecutions:24, avgDurationMs:3180, totalCostUsd:0.048 }
-      var d = hasData ? data : mock
-      var top3 = hasData
-        ? Object.entries(data.bySubagent || {})
-            .map(function(e) { return { name: e[1].name, slug: e[0], executions: e[1].executions } })
-            .sort(function(a,b) { return b.executions - a.executions }).slice(0,3)
-        : [{name:'Investigador',slug:'researcher',executions:12},{name:'Analista',slug:'data-analyst',executions:8},{name:'Redactor',slug:'writer',executions:4}]
+      var top3 = Object.entries(data.bySubagent || {})
+        .map(function(e) { return { name: e[1].name, slug: e[0], executions: e[1].executions } })
+        .sort(function(a,b) { return b.executions - a.executions }).slice(0,3)
       var top3Html = top3.length === 0
         ? '<p style="font-size:13px;color:var(--on-surface-dim);margin:0">' + L.noUsage + '</p>'
         : top3.map(function(e,i) {
@@ -991,9 +975,9 @@ function renderScript(lang: Lang): string {
       document.getElementById('sa-usage-content').innerHTML =
         '<div class="sa-metrics-grid">' +
           '<div class="panel sa-top3-card"><div class="sa-top3-title">' + L.usageTop3 + '</div>' + top3Html + '</div>' +
-          stat(d.totalExecutions, L.usageExecs) +
-          stat((d.avgDurationMs/1000).toFixed(1)+'s', L.usageAvgTime) +
-          stat('$'+d.totalCostUsd.toFixed(3), L.usageCost) +
+          stat(data.totalExecutions || 0, L.usageExecs) +
+          stat(((data.avgDurationMs || 0)/1000).toFixed(1)+'s', L.usageAvgTime) +
+          stat('$'+(data.totalCostUsd || 0).toFixed(3), L.usageCost) +
         '</div>'
     } catch(e) { console.error('Failed to load usage', e) }
   }
