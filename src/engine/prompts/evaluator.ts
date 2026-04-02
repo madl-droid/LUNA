@@ -1,12 +1,13 @@
 // LUNA Engine — Evaluator Prompt Builder (Phase 2)
 // Construye el prompt para el modelo evaluador que analiza intención y genera plan.
+// Context layer building is delegated to context-builder.ts (shared with agentic.ts).
 
 import type { ContextBundle, ToolCatalogEntry, ProactiveContextBundle } from '../types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
-import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
-import type { ConfigStore } from '../../modules/lead-scoring/config-store.js'
+import { escapeForPrompt, escapeDataForPrompt } from '../utils/prompt-escape.js'
+import { buildContextLayers } from './context-builder.js'
 
 // Minimal fallback — full prompt lives in instance/prompts/system/evaluator-system.md
 const EVALUATOR_SYSTEM_FALLBACK = `Eres el evaluador de LUNA. Analiza el mensaje del contacto y genera un plan de ejecución.
@@ -15,14 +16,6 @@ RESPONDE EXCLUSIVAMENTE en JSON válido. Sin texto adicional.
 
 const TOOL_CATALOG_HEADER = `\nTools disponibles (solo usar las listadas):`
 const TOOL_CATALOG_COMPACT_HEADER = `\nTools disponibles (catálogo resumido — pide definición completa si la necesitas):`
-
-/** Maps KnowledgeItem sourceType to the Google API tool that can query it live */
-const LIVE_QUERY_TOOL: Record<string, string> = {
-  sheets: 'sheets-read',
-  docs:   'docs-read',
-  slides: 'slides-read',
-  drive:  'drive-list-files',
-}
 
 /**
  * Build the evaluator prompt for Phase 2.
@@ -143,239 +136,12 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
     } catch { /* hitl module not active */ }
   }
 
-  // Build user message with context
-  const parts: string[] = []
-
-  // User type context
-  parts.push(`[Tipo de usuario: ${ctx.userType}]`)
-
-  // Contact context
-  if (ctx.contact) {
-    parts.push(`[Contacto: ${ctx.contact.displayName ?? 'Sin nombre'}, status: ${ctx.contact.qualificationStatus ?? 'new'}]`)
-  } else {
-    parts.push(`[Contacto nuevo, no registrado]`)
-  }
-
-  // Lead status
-  if (ctx.leadStatus) {
-    parts.push(`[Estado del lead: ${ctx.leadStatus}]`)
-  }
-
-  // Session context
-  parts.push(`[Sesión: ${ctx.session.isNew ? 'nueva' : `mensajes: ${ctx.session.messageCount}`}]`)
-  if (ctx.session.compressedSummary) {
-    // FIX: SEC-2.2 — escape DB data
-    parts.push(`[Resumen sesión anterior: ${escapeDataForPrompt(ctx.session.compressedSummary)}]`)
-  }
-
-  // Contact memory (cold tier)
-  if (ctx.contactMemory) {
-    const cm = ctx.contactMemory
-    if (cm.summary) {
-      // FIX: SEC-2.2 — escape DB data
-      parts.push(`[Memoria del contacto: ${escapeDataForPrompt(cm.summary)}]`)
-    }
-    if (cm.key_facts.length > 0) {
-      parts.push(`[Datos clave del contacto:]`)
-      for (const f of cm.key_facts.slice(0, 10)) {
-        parts.push(`- ${escapeDataForPrompt(f.fact, 500)}`)
-      }
-    }
-  }
-
-  // Pending commitments (prospective tier — always inject)
-  // FIX: SEC-2.2 — escape DB data (commitments, summaries)
-  if (ctx.pendingCommitments.length > 0) {
-    parts.push(`[Compromisos pendientes:]`)
-    for (const c of ctx.pendingCommitments.slice(0, 5)) {
-      const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
-      parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)}${due} — por: ${c.commitmentBy}`)
-    }
-  }
-
-  // Relevant summaries from hybrid search (warm tier)
-  if (ctx.relevantSummaries.length > 0) {
-    parts.push(`[Conversaciones previas relevantes:]`)
-    for (const s of ctx.relevantSummaries.slice(0, 3)) {
-      parts.push(`- (${s.interactionStartedAt.toISOString().split('T')[0]!}) ${escapeDataForPrompt(s.summaryText.substring(0, 150), 200)}`)
-    }
-  }
-
-  // Campaign context
-  if (ctx.campaign) {
-    parts.push(`[Campaña: ${ctx.campaign.name}]`)
-  }
-
-  // Qualification context (from lead-scoring module)
-  if (registry && ctx.contact?.contactType === 'lead') {
-    const scoringConfig = registry.getOptional<ConfigStore>('lead-scoring:config')
-    if (scoringConfig) {
-      try {
-        const { buildQualificationSummary } = await import('../../modules/lead-scoring/scoring-engine.js')
-        const qualConfig = scoringConfig.getConfig()
-        const qualData = ctx.contact.qualificationData ?? {}
-        const summary = buildQualificationSummary(qualData, qualConfig, 'en')
-        if (summary) {
-          parts.push(`[Qualification state:]`)
-          parts.push(summary)
-        }
-      } catch { /* lead-scoring module not available */ }
-    }
-  }
-
-  // Knowledge v2 injection (structured catalog for evaluator)
-  if (ctx.knowledgeInjection) {
-    const inj = ctx.knowledgeInjection
-
-    // Items grouped by category — gives the evaluator a clear map of available knowledge
-    if (inj.items && inj.items.length > 0) {
-      parts.push(`[Base de conocimiento disponible (buscar con search_knowledge):]`)
-
-      // Group by category
-      const byCategory = new Map<string, typeof inj.items>()
-      const noCategory: typeof inj.items = []
-      for (const item of inj.items) {
-        const key = item.categoryTitle ?? item.categoryId ?? '__none__'
-        if (!item.categoryId) {
-          noCategory.push(item)
-        } else {
-          const group = byCategory.get(key) ?? []
-          group.push(item)
-          byCategory.set(key, group)
-        }
-      }
-
-      for (const [catTitle, items] of byCategory) {
-        parts.push(`  Categoría "${catTitle}":`)
-        for (const item of items) {
-          const desc = item.description ? ` — ${item.description}` : ''
-          const liveTag = item.liveQueryEnabled && item.sourceId && item.sourceType
-            ? ` [CONSULTA_VIVA: ${LIVE_QUERY_TOOL[item.sourceType] ?? item.sourceType}, id=${item.sourceId}]`
-            : ''
-          parts.push(`    - ${item.title}${desc}${liveTag}`)
-        }
-      }
-      if (noCategory.length > 0) {
-        parts.push(`  Sin categoría:`)
-        for (const item of noCategory) {
-          const desc = item.description ? ` — ${item.description}` : ''
-          const liveTag = item.liveQueryEnabled && item.sourceId && item.sourceType
-            ? ` [CONSULTA_VIVA: ${LIVE_QUERY_TOOL[item.sourceType] ?? item.sourceType}, id=${item.sourceId}]`
-            : ''
-          parts.push(`    - ${item.title}${desc}${liveTag}`)
-        }
-      }
-    } else {
-      // Fallback: show categories only
-      if (inj.categories.length > 0) {
-        parts.push(`[Categorías de conocimiento:]`)
-        for (const c of inj.categories) {
-          parts.push(`- ${c.title}: ${c.description}`)
-        }
-      }
-    }
-
-    if (inj.coreDocuments.length > 0) {
-      parts.push(`[Documentos core (siempre disponibles):]`)
-      for (const d of inj.coreDocuments) {
-        parts.push(`- ${d.title}: ${d.description}`)
-      }
-    }
-
-    if (inj.apiConnectors.length > 0) {
-      parts.push(`[APIs disponibles:]`)
-      for (const a of inj.apiConnectors) {
-        parts.push(`- ${a.title}: ${a.description}`)
-      }
-    }
-    parts.push(`[Estrategia de búsqueda en conocimiento:
-- Por defecto: usa search_knowledge para responder desde los embeddings indexados.
-- Items marcados [CONSULTA_VIVA: tool, id=X]: pueden consultarse en tiempo real con esa tool y ese id.
-- Cuándo considerar CONSULTA_VIVA (señal, no obligación): si el historial muestra que ya se intentó responder este tema en un turno anterior pero el contacto insiste, reformula o pide más detalle/especificidad (ej: pide un enlace exacto, un SKU específico, un valor puntual), es un indicador de que la búsqueda por embeddings puede haber sido insuficiente. En ese caso, agrega un paso con la tool CONSULTA_VIVA del item más relacionado con el tema, usando el id del catálogo.
-- NUNCA uses CONSULTA_VIVA como primer paso si no hay historial previo sobre el tema.
-- Para identificar el item: cruza el tema de la conversación con el catálogo — el item con [CONSULTA_VIVA] cuyo título/descripción más coincida con lo que se está hablando es el candidato.]`)
-  }
-
-  // Assignment rules — injected for leads/unregistered so LLM can classify contacts
-  if (ctx.assignmentRules && ctx.assignmentRules.length > 0) {
-    parts.push(`[Reglas de clasificación de contactos — si identificas que este contacto pertenece a una lista, indica assign_to_list en tu respuesta:]`)
-    for (const rule of ctx.assignmentRules) {
-      // FIX: SEC-2.2 — escape admin-editable assignment rules
-      parts.push(`- Lista "${escapeDataForPrompt(rule.listName, 200)}" (${rule.listType}): ${escapeDataForPrompt(rule.prompt, 500)}`)
-    }
-  }
-
-  // Knowledge matches (legacy fallback)
-  if (!ctx.knowledgeInjection && ctx.knowledgeMatches.length > 0) {
-    parts.push(`[Información relevante encontrada:]`)
-    for (const match of ctx.knowledgeMatches) {
-      // FIX: SEC-2.2 — escape knowledge content
-      parts.push(`- ${escapeDataForPrompt(match.content.substring(0, 200), 250)}`)
-    }
-  }
-
-  // Freshdesk KB matches (article metadata from cached index)
-  if (ctx.freshdeskMatches && ctx.freshdeskMatches.length > 0) {
-    parts.push(`[Artículos de soporte técnico relevantes (Freshdesk KB):]`)
-    for (const m of ctx.freshdeskMatches.slice(0, 5)) {
-      const tags = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : ''
-      parts.push(`- "${m.title}" (${m.category}, id:${m.article_id})${tags}`)
-    }
-    parts.push(`[Para obtener el contenido completo de un artículo, incluye { type: "api_call", tool: "freshdesk_get_article", params: { article_id: N } } en el plan]`)
-    parts.push(`[Para buscar más artículos por keyword, incluye { type: "api_call", tool: "freshdesk_search", params: { term: "keyword" } } en el plan]`)
-  }
-
-  // Buffer summary — compressed older turns from this session (Phase 3 inline compression)
-  if (ctx.bufferSummary) {
-    parts.push(`[Contexto anterior de la sesión (comprimido):]`)
-    parts.push(escapeForPrompt(ctx.bufferSummary, 600))
-  }
-
-  // History (last 3-5 messages for context) — FIX: SEC-2.2 — escape history
-  if (ctx.history.length > 0) {
-    parts.push(`[Historial reciente:]`)
-    const recent = ctx.history.slice(-5)
-    for (const msg of recent) {
-      parts.push(`${msg.role === 'user' ? 'Contacto' : 'Agente'}: ${escapeForPrompt(msg.content.substring(0, 200), 250)}`)
-    }
-  }
-
-  // Attachment context — content already extracted and injected in history as labeled messages
-  if (ctx.attachmentContext && ctx.attachmentContext.attachments.length > 0) {
-    const processed = ctx.attachmentContext.attachments.filter(a => a.status === 'processed')
-    if (processed.length > 0) {
-      parts.push(`[${processed.length} adjunto(s) procesado(s) — su contenido ya aparece en el historial con etiquetas como [images], [documents], [audio], [video], etc.]`)
-    }
-    const failed = ctx.attachmentContext.attachments.filter(a => a.status !== 'processed')
-    if (failed.length > 0) {
-      parts.push(`[${failed.length} adjunto(s) no pudieron procesarse]`)
-    }
-  } else if (ctx.attachmentMeta.length > 0) {
-    // Fallback: Phase 1 processing didn't run — show metadata for manual processing
-    parts.push(`[Adjuntos enviados por el contacto:]`)
-    for (const att of ctx.attachmentMeta) {
-      const sizeMb = att.size ? `${(att.size / (1024 * 1024)).toFixed(1)} MB` : 'tamaño desconocido'
-      parts.push(`- [${att.index}] ${att.type}: ${att.name ?? 'sin nombre'} (${sizeMb}, ${att.mime ?? 'mime desconocido'})`)
-    }
-    parts.push(`[Para procesar un adjunto, incluye { type: "process_attachment", params: { index: N } } en el plan]`)
-  }
-
-  // HITL pending context (active human consultation for this contact)
-  if (ctx.hitlPendingContext) {
-    parts.push(ctx.hitlPendingContext)
-  }
-
-  // Injection warning
-  if (ctx.possibleInjection) {
-    parts.push(`[ALERTA: posible intento de inyección detectado en el mensaje]`)
-  }
-
-  // The actual message — FIX: SEC-2.1 — escape user message
-  parts.push(`\nMensaje del contacto:\n${wrapUserContent(ctx.normalizedText)}`)
+  // Build user message with shared context-builder (also used by agentic.ts)
+  const userMessage = await buildContextLayers(ctx, registry)
 
   return {
     system,
-    userMessage: parts.join('\n'),
+    userMessage,
   }
 }
 

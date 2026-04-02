@@ -260,6 +260,11 @@ export class PromptsServiceImpl implements PromptsService {
     return listTemplates()
   }
 
+  async listSkills(userType?: string): Promise<import('./types.js').SkillDefinition[]> {
+    const { loadSkillCatalog } = await import('../../engine/prompts/skills.js')
+    return loadSkillCatalog(this.registry, userType ?? 'lead')
+  }
+
   // ─── Seed (from .md files, zero hardcoded text) ─────────────
 
   private async seed(): Promise<void> {
