@@ -637,6 +637,38 @@ export class LLMGateway {
     return retryable.some(pattern => msg.includes(pattern))
   }
 
+  /**
+   * Hot-reload API keys, mode, rate limits, timeouts and routing config.
+   * Safe to call while the gateway is in use — does NOT reset circuit breaker state.
+   * Called automatically via console:config_applied hook.
+   */
+  updateConfig(config: LLMModuleConfig): void {
+    // Reload API keys and re-init adapters with fresh keys
+    this.apiKeys.clear()
+    this.loadApiKeys(config)
+    this.initAdapters()
+
+    // Update router: API key mode + per-task routes
+    this.router.setApiMode(config.LLM_API_MODE === 'advanced' ? 'advanced' : 'basic')
+    this.router.loadFromConfig(config)
+
+    // Update retry config
+    this.retryMax = config.LLM_RETRY_MAX
+    this.retryBackoffMs = config.LLM_RETRY_BACKOFF_MS
+
+    // Update provider timeouts
+    this.providerTimeouts.set('anthropic', config.LLM_TIMEOUT_ANTHROPIC_MS)
+    this.providerTimeouts.set('google', config.LLM_TIMEOUT_GOOGLE_MS)
+
+    // Update rate limits
+    this.rpmLimits.set('anthropic', config.LLM_RPM_ANTHROPIC)
+    this.rpmLimits.set('google', config.LLM_RPM_GOOGLE)
+    this.tpmLimits.set('anthropic', config.LLM_TPM_ANTHROPIC)
+    this.tpmLimits.set('google', config.LLM_TPM_GOOGLE)
+
+    logger.info({ mode: config.LLM_API_MODE }, 'LLM gateway config hot-reloaded')
+  }
+
   private loadApiKeys(config: LLMModuleConfig): void {
     // Default provider keys
     if (config.ANTHROPIC_API_KEY) this.apiKeys.set('ANTHROPIC_API_KEY', config.ANTHROPIC_API_KEY)

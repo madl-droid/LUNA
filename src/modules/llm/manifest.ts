@@ -501,6 +501,12 @@ const manifest: ModuleManifest = {
       return { models: models.map(m => ({ id: m.id, displayName: m.displayName, family: m.family })) }
     })
 
+    // Hot-reload API keys, mode and limits when console saves config
+    registry.addHook('llm', 'console:config_applied', async () => {
+      const fresh = registry.getConfig<LLMModuleConfig>('llm')
+      _gateway?.updateConfig(fresh)
+    })
+
     // Refresh models on init (non-blocking)
     _gateway.refreshModels().catch(() => { /* logged internally */ })
 
