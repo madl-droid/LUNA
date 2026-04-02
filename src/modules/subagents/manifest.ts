@@ -2,10 +2,12 @@
 // CRUD de tipos de subagent + métricas de uso.
 // Console bajo grupo "agent". Expone subagents:catalog al engine.
 
+import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { Pool } from 'pg'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
+import { boolEnv } from '../../kernel/config-helpers.js'
 import * as repo from './repository.js'
 import { createCatalogService } from './service.js'
 import { renderSubagentsSection } from './templates.js'
@@ -203,6 +205,10 @@ const manifest: ModuleManifest = {
   activateByDefault: true,
   depends: ['llm'],
 
+  configSchema: z.object({
+    SUBAGENT_FRESH_CONTEXT: boolEnv(true),
+  }),
+
   console: {
     title: { es: 'Subagentes', en: 'Subagents' },
     info: {
@@ -260,7 +266,12 @@ const manifest: ModuleManifest = {
         }
       } catch { /* knowledge module not available */ }
 
-      return renderSubagentsSection(types, usage, lang, availableTools, availableKnowledgeCategories)
+      // Read fresh context config
+      interface SubagentsConf { SUBAGENT_FRESH_CONTEXT: boolean }
+      const subConfig = registry.getConfig<SubagentsConf>('subagents')
+      const freshContext = subConfig?.SUBAGENT_FRESH_CONTEXT ?? true
+
+      return renderSubagentsSection(types, usage, lang, availableTools, availableKnowledgeCategories, freshContext)
     })
   },
 

@@ -712,4 +712,18 @@ export interface EngineConfig {
   /** Model for high-effort messages (objections, multi-step) */
   highEffortModel: string
   highEffortProvider: LLMProvider
+  /** Default effort level when effort routing is disabled or unclassifiable */
+  effortDefault: 'low' | 'medium' | 'high'
+  /** Loop detector: number of identical calls before warning the LLM */
+  loopWarnThreshold: number
+  /** Loop detector: number of identical calls before blocking the tool */
+  loopBlockThreshold: number
+  /** Loop detector: number of identical calls before forcing text response (circuit break) */
+  loopCircuitThreshold: number
+  /** Execution queue: max reactive (incoming message) pipelines in parallel */
+  executionQueueReactiveConcurrency: number
+  /** Execution queue: max proactive (follow-up/reminder) pipelines in parallel */
+  executionQueueProactiveConcurrency: number
+  /** Execution queue: max background (nightly/cache) pipelines in parallel */
+  executionQueueBackgroundConcurrency: number
 }

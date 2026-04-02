@@ -552,8 +552,34 @@ export function renderSubagentsSection(
   lang: Lang,
   availableTools: AvailableTool[] = [],
   availableKnowledgeCategories: AvailableCategory[] = [],
+  freshContext = true,
 ): string {
   const activeCount = types.filter(t => t.enabled).length
+
+  // Global settings panel (fresh context toggle)
+  const freshContextVal = freshContext ? 'true' : 'false'
+  const isEs = lang === 'es'
+  const globalSettingsHtml = `<div class="panel u-mb-sm">
+    <div class="panel-header ts-panel-header-static">
+      <span class="panel-title">${isEs ? 'Configuracion global' : 'Global settings'}</span>
+    </div>
+    <div class="panel-body">
+      <div class="field">
+        <div class="toggle-row">
+          <div>
+            <span class="field-label">${isEs ? 'Contexto limpio para subagentes' : 'Fresh context for subagents'}</span>
+            <p class="ts-field-hint">${isEs
+              ? 'Los subagentes reciben solo el contexto minimo necesario, no el historial completo del padre. Reduce consumo de tokens y mejora el enfoque.'
+              : 'Subagents receive only the minimum necessary context, not the full parent history. Reduces token usage and improves focus.'}</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" name="SUBAGENT_FRESH_CONTEXT" value="true" data-original="${freshContextVal}" ${freshContext ? 'checked' : ''} onchange="this.value = this.checked ? 'true' : 'false'">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>`
 
   const cards = types.length === 0
     ? `<div class="sa-empty">
@@ -646,6 +672,8 @@ export function renderSubagentsSection(
 
   return `
     ${renderStyles()}
+
+    ${globalSettingsHtml}
 
     <div class="sa-header">
       <span class="sa-counter">${types.length} ${l('subagentCount', lang)} · ${activeCount} ${l('activeCount', lang)}</span>

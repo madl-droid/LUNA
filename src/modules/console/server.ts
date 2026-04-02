@@ -1514,6 +1514,23 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           sectionData.agenteContent = renderSection('memory', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de memoria no disponible.' : 'Memory module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'identity') {
+          // Load skills from filesystem for readonly display
+          try {
+            const skillsDir = path.join(process.cwd(), 'instance', 'prompts', 'system', 'skills')
+            const skillFiles = fs.readdirSync(skillsDir).filter(f => f.endsWith('.md'))
+            sectionData.skills = skillFiles.map(file => {
+              const content = fs.readFileSync(path.join(skillsDir, file), 'utf-8')
+              const descMatch = content.match(/<!--\s*description:\s*(.+?)\s*-->/)
+              const userTypesMatch = content.match(/<!--\s*userTypes:\s*(.+?)\s*-->/)
+              const patternsMatch = content.match(/<!--\s*triggerPatterns:\s*(.+?)\s*-->/)
+              return {
+                name: file.replace(/\.md$/, ''),
+                description: descMatch?.[1]?.trim() ?? '',
+                userTypes: userTypesMatch?.[1]?.trim() ?? 'all',
+                triggerPatterns: patternsMatch?.[1]?.trim() ?? '',
+              }
+            })
+          } catch { /* skills dir not accessible */ }
           sectionData.agenteContent = renderSection('identity', sectionData) ??
             `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? 'Modulo de prompts no disponible.' : 'Prompts module not available.'}</p></div></div>`
         } else if (agenteSubpage === 'subagents') {
@@ -1535,6 +1552,19 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         const notAvailable = (name: string) => `<div class="panel"><div class="panel-body"><p>${lang === 'es' ? `Modulo de ${name} no disponible.` : `${name} module not available.`}</p></div></div>`
 
         if (herramientasSubpage === 'tools') {
+          // Load per-tool descriptions for two-tier editing
+          try {
+            interface ToolDef { name: string; sourceModule: string; shortDescription?: string; detailedGuidance?: string }
+            const toolsReg = registry.getOptional<{ getEnabledToolDefinitions(): ToolDef[] }>('tools:registry')
+            if (toolsReg) {
+              sectionData.toolDescriptions = toolsReg.getEnabledToolDefinitions().map(t => ({
+                name: t.name,
+                sourceModule: t.sourceModule,
+                shortDescription: t.shortDescription ?? '',
+                detailedGuidance: t.detailedGuidance ?? '',
+              }))
+            }
+          } catch { /* tools module not available */ }
           sectionData.herramientasContent = renderSection('tools-cards', sectionData) ?? notAvailable('herramientas')
         } else if (herramientasSubpage === 'lead-scoring') {
           try {

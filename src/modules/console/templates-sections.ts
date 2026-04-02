@@ -35,6 +35,8 @@ export interface SectionData {
     models?: Array<{ name: string; desc: string; tokens: string; pct: number }>
     quality?: Array<{ channel: string; score: number; status: string; stars: number }>
   }
+  toolDescriptions?: Array<{ name: string; sourceModule: string; shortDescription: string; detailedGuidance: string }>
+  skills?: Array<{ name: string; description: string; userTypes: string; triggerPatterns: string }>
   usersData?: {
     configs: Array<{
       listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
@@ -928,6 +930,161 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
   </div>`
 
+  // Panel 5: Motor Agentico (v2)
+  const engineMode = cv(data, 'ENGINE_MODE') || 'agentic'
+  const effortDefault = cv(data, 'AGENTIC_EFFORT_DEFAULT') || 'medium'
+  const criticizerMode = cv(data, 'LLM_CRITICIZER_MODE') || 'complex_only'
+
+  const engineModeOpts = [
+    { v: 'agentic', l: 'Agentic Loop (v2)' },
+    { v: 'legacy', l: 'Pipeline Legacy (v1)' },
+  ]
+  const effortOpts = [
+    { v: 'low', l: isEs ? 'Bajo (rapido)' : 'Low (fast)' },
+    { v: 'medium', l: isEs ? 'Medio (balanceado)' : 'Medium (balanced)' },
+    { v: 'high', l: isEs ? 'Alto (potente)' : 'High (powerful)' },
+  ]
+  const criticizerOpts = [
+    { v: 'disabled', l: isEs ? 'Desactivado' : 'Disabled' },
+    { v: 'complex_only', l: isEs ? 'Solo mensajes complejos (recomendado)' : 'Complex messages only (recommended)' },
+    { v: 'always', l: isEs ? 'Siempre' : 'Always' },
+  ]
+
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${isEs ? 'Motor Agentico (v2)' : 'Agentic Engine (v2)'}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${isEs
+        ? 'Configuracion del loop agentico v2: modo, esfuerzo, protecciones, recuperacion, modelos y cola de ejecucion.'
+        : 'Agentic loop v2 configuration: mode, effort, safeguards, recovery, models and execution queue.'}</div>
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modo y Esfuerzo' : 'Mode & Effort'}</span></div>
+      <div class="fields-row">
+        <div class="field">
+          <span class="field-label">${isEs ? 'Modo del motor' : 'Engine mode'}</span>
+          <span class="field-info">${isEs ? 'Agentico usa loop nativo con herramientas (v2). Legacy usa pipeline de 5 fases (v1, deprecado).' : 'Agentic uses native tool loop (v2). Legacy uses 5-phase pipeline (v1, deprecated).'}</span>
+          <select name="ENGINE_MODE" data-original="${esc(engineMode)}" class="js-custom-select">
+            ${engineModeOpts.map(o => `<option value="${esc(o.v)}"${o.v === engineMode ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <span class="field-label">${isEs ? 'Nivel de esfuerzo por defecto' : 'Default effort level'}</span>
+          <span class="field-info">${isEs ? 'Usado cuando el enrutamiento por esfuerzo esta desactivado o no puede clasificar el mensaje.' : 'Used when effort routing is disabled or cannot classify the message.'}</span>
+          <select name="AGENTIC_EFFORT_DEFAULT" data-original="${esc(effortDefault)}" class="js-custom-select">
+            ${effortOpts.map(o => `<option value="${esc(o.v)}"${o.v === effortDefault ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${boolField('ENGINE_EFFORT_ROUTING', cv(data, 'ENGINE_EFFORT_ROUTING') || 'true', data.lang,
+        isEs ? 'Enrutamiento por esfuerzo' : 'Effort routing',
+        isEs ? 'Clasifica mensajes por complejidad para usar el modelo mas apropiado y optimizar costos.' : 'Classifies messages by complexity to use the most appropriate model and optimize costs.')}
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Protecciones del Loop' : 'Loop Safeguards'}</span></div>
+      ${boolField('ENGINE_TOOL_DEDUP', cv(data, 'ENGINE_TOOL_DEDUP') || 'true', data.lang,
+        isEs ? 'Cache de herramientas (dedup)' : 'Tool call deduplication',
+        isEs ? 'Evita llamadas duplicadas a la misma herramienta con los mismos parametros en un pipeline.' : 'Prevents duplicate calls to the same tool with the same parameters within a pipeline.')}
+      ${boolField('ENGINE_LOOP_DETECTION', cv(data, 'ENGINE_LOOP_DETECTION') || 'true', data.lang,
+        isEs ? 'Deteccion de loops' : 'Loop detection',
+        isEs ? 'Detecta y previene loops infinitos de herramientas con respuesta graduada: advertencia → bloqueo → corte.' : 'Detects and prevents infinite tool loops with graduated response: warn → block → circuit break.')}
+      <div class="fields-row">
+        ${numField('AGENTIC_LOOP_WARN_THRESHOLD', cv(data, 'AGENTIC_LOOP_WARN_THRESHOLD') || '3', data.lang,
+          isEs ? 'Umbral advertencia' : 'Warn threshold',
+          isEs ? 'Llamadas identicas antes de advertir al LLM.' : 'Identical calls before warning the LLM.')}
+        ${numField('AGENTIC_LOOP_BLOCK_THRESHOLD', cv(data, 'AGENTIC_LOOP_BLOCK_THRESHOLD') || '5', data.lang,
+          isEs ? 'Umbral bloqueo' : 'Block threshold',
+          isEs ? 'Llamadas identicas antes de bloquear la herramienta.' : 'Identical calls before blocking the tool.')}
+        ${numField('AGENTIC_LOOP_CIRCUIT_THRESHOLD', cv(data, 'AGENTIC_LOOP_CIRCUIT_THRESHOLD') || '8', data.lang,
+          isEs ? 'Umbral corte (circuit)' : 'Circuit break threshold',
+          isEs ? 'Llamadas identicas antes de forzar respuesta de texto sin herramientas.' : 'Identical calls before forcing text response without tools.')}
+      </div>
+      ${boolField('ENGINE_ERROR_AS_CONTEXT', cv(data, 'ENGINE_ERROR_AS_CONTEXT') || 'true', data.lang,
+        isEs ? 'Errores como contexto' : 'Errors as context',
+        isEs ? 'Envia errores de herramientas al LLM para que decida que hacer en vez de fallar silenciosamente.' : 'Feeds tool errors to the LLM so it can decide how to proceed instead of failing silently.')}
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Recuperacion' : 'Recovery'}</span></div>
+      ${boolField('ENGINE_PARTIAL_RECOVERY', cv(data, 'ENGINE_PARTIAL_RECOVERY') || 'true', data.lang,
+        isEs ? 'Recuperacion parcial' : 'Partial recovery',
+        isEs ? 'Si el loop alcanza el timeout o limite de turnos pero ya genero texto, envia ese texto parcial.' : 'If the loop times out or hits the turn limit but already generated text, send that partial text.')}
+      <div class="field">
+        <span class="field-label">${isEs ? 'Verificador de calidad' : 'Quality checker'}</span>
+        <span class="field-info">${isEs ? 'Controla cuando el verificador revisa la respuesta antes de enviarla.' : 'Controls when the quality checker reviews the response before sending.'}</span>
+        <select name="LLM_CRITICIZER_MODE" data-original="${esc(criticizerMode)}" class="js-custom-select">
+          ${criticizerOpts.map(o => `<option value="${esc(o.v)}"${o.v === criticizerMode ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modelos por Esfuerzo' : 'Models by Effort'}</span></div>
+      ${modelDropdown(
+        'LLM_LOW_EFFORT',
+        cv(data, 'LLM_LOW_EFFORT_PROVIDER') || 'anthropic',
+        cv(data, 'LLM_LOW_EFFORT_MODEL') || 'claude-haiku-4-5-20251001',
+        data.allModels ?? {},
+        data.lang,
+        isEs ? 'Modelo bajo esfuerzo' : 'Low effort model',
+        isEs ? 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.' : 'Model for simple messages: greetings, confirmations, direct questions.',
+      )}
+      ${modelDropdown(
+        'LLM_MEDIUM_EFFORT',
+        cv(data, 'LLM_MEDIUM_EFFORT_PROVIDER') || 'anthropic',
+        cv(data, 'LLM_MEDIUM_EFFORT_MODEL') || 'claude-sonnet-4-6',
+        data.allModels ?? {},
+        data.lang,
+        isEs ? 'Modelo medio esfuerzo' : 'Medium effort model',
+        isEs ? 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.' : 'Model for medium complexity messages: contextual queries, follow-ups.',
+      )}
+      ${modelDropdown(
+        'LLM_HIGH_EFFORT',
+        cv(data, 'LLM_HIGH_EFFORT_PROVIDER') || 'anthropic',
+        cv(data, 'LLM_HIGH_EFFORT_MODEL') || 'claude-sonnet-4-6',
+        data.allModels ?? {},
+        data.lang,
+        isEs ? 'Modelo alto esfuerzo' : 'High effort model',
+        isEs ? 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.' : 'Model for complex messages: multiple tools, objections, deep reasoning.',
+      )}
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Cola de Ejecucion' : 'Execution Queue'}</span></div>
+      <div class="fields-row">
+        ${numField('EXECUTION_QUEUE_REACTIVE_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_REACTIVE_CONCURRENCY') || '8', data.lang,
+          isEs ? 'Concurrencia reactiva' : 'Reactive concurrency',
+          isEs ? 'Mensajes entrantes procesados en paralelo (maxima prioridad).' : 'Incoming messages processed in parallel (highest priority).')}
+        ${numField('EXECUTION_QUEUE_PROACTIVE_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_PROACTIVE_CONCURRENCY') || '3', data.lang,
+          isEs ? 'Concurrencia proactiva' : 'Proactive concurrency',
+          isEs ? 'Follow-ups y recordatorios procesados en paralelo.' : 'Follow-ups and reminders processed in parallel.')}
+        ${numField('EXECUTION_QUEUE_BACKGROUND_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_BACKGROUND_CONCURRENCY') || '2', data.lang,
+          isEs ? 'Concurrencia background' : 'Background concurrency',
+          isEs ? 'Tareas de fondo (nightly, cache) procesadas en paralelo.' : 'Background tasks (nightly, cache) processed in parallel.')}
+      </div>
+    </div>
+  </div>`
+
+  // Panel 6: Proactive Settings (config lives in instance/proactive.json)
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${isEs ? 'Configuracion Proactiva' : 'Proactive Settings'}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${isEs
+        ? 'Los ajustes proactivos (cooldown adaptativo, recuperacion de huerfanos, guardia de conversacion) se configuran en <code>instance/proactive.json</code>. Edita ese archivo para cambiar umbrales de cooldown, ventanas de follow-up y limites de mensajes por dia.'
+        : 'Proactive settings (adaptive cooldown, orphan recovery, conversation guard) are configured in <code>instance/proactive.json</code>. Edit that file to change cooldown thresholds, follow-up windows and daily message limits.'}</div>
+      <div class="field">
+        <span class="field-label">${isEs ? 'Archivo de configuracion' : 'Config file'}</span>
+        <code style="display:block;padding:6px 10px;background:var(--surface-variant);border-radius:6px;font-size:12px">instance/proactive.json</code>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <span class="field-label">${isEs ? 'Claves principales' : 'Main keys'}</span>
+        <ul style="font-size:12px;color:var(--on-surface-dim);margin:4px 0;padding-left:18px;line-height:1.8">
+          <li><code>cooldown.afterSentMinutes</code> — ${isEs ? 'minutos de espera despues de enviar un mensaje proactivo' : 'minutes to wait after sending a proactive message'}</li>
+          <li><code>cooldown.afterNoActionMinutes</code> — ${isEs ? 'cooldown si el contacto no respondio' : 'cooldown if contact did not respond'}</li>
+          <li><code>orphan.enabled</code> — ${isEs ? 'detecta mensajes sin respuesta y los reprocesa' : 'detects unanswered messages and reprocesses them'}</li>
+          <li><code>conversationGuard.enabled</code> — ${isEs ? 'suprime mensajes si el contacto se despidio' : 'suppresses messages if contact said goodbye'}</li>
+        </ul>
+      </div>
+    </div>
+  </div>`
+
   return h
 }
 
@@ -1392,7 +1549,45 @@ function renderToolsCardsSection(data: SectionData): string {
     </div>
   </div>`
 
-  return cardsHtml + globalParams + `
+  // Two-tier descriptions panel (per individual tool, editable)
+  let descPanel = ''
+  if (data.toolDescriptions && data.toolDescriptions.length > 0) {
+    const rows = data.toolDescriptions.map(td => {
+      const shortVal = esc(td.shortDescription)
+      const guidanceVal = esc(td.detailedGuidance)
+      const toolId = esc(td.name)
+      return `<div class="panel-body" style="border-bottom:1px solid var(--surface-variant);padding:10px 16px">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:600;color:var(--on-surface)">${esc(td.name)}</span>
+          <span style="font-size:11px;color:var(--on-surface-dim)">${esc(td.sourceModule)}</span>
+        </div>
+        <div class="field" style="margin-bottom:6px">
+          <span class="field-label" style="font-size:11px">${isEs ? 'Descripcion corta (IA)' : 'Short description (AI)'}</span>
+          <span class="field-info" style="font-size:11px">${isEs ? '1 linea que el modelo ve al seleccionar herramientas. Vacio = auto-generado.' : '1-line the model sees when selecting tools. Empty = auto-generated.'}</span>
+          <input type="text" id="td-short-${toolId}" value="${shortVal}" placeholder="${isEs ? 'Auto-generado de la descripcion...' : 'Auto-generated from description...'}" style="font-size:12px">
+        </div>
+        <div class="field">
+          <span class="field-label" style="font-size:11px">${isEs ? 'Guia detallada' : 'Detailed guidance'}</span>
+          <span class="field-info" style="font-size:11px">${isEs ? 'Instrucciones completas inyectadas al invocar la herramienta.' : 'Full instructions injected when the tool is invoked.'}</span>
+          <textarea id="td-guidance-${toolId}" rows="2" placeholder="${isEs ? 'Instrucciones especificas...' : 'Specific instructions...'}" style="font-size:12px">${guidanceVal}</textarea>
+        </div>
+        <button class="act-btn" type="button" onclick="saveToolDescriptions('${toolId}')" style="font-size:11px;padding:3px 10px">${isEs ? 'Guardar' : 'Save'}</button>
+      </div>`
+    }).join('')
+
+    descPanel = `<div class="panel" style="margin-top:12px">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${isEs ? 'Descripciones para IA (por herramienta)' : 'AI Descriptions (per tool)'}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body" style="padding:8px 16px">
+        <p class="panel-info">${isEs ? 'Descripcion corta: 1 linea que el LLM ve al decidir que herramienta usar. Guia detallada: instrucciones completas inyectadas al invocarla. Dejar vacios para usar valores por defecto del codigo.' : 'Short description: 1-line the LLM sees when deciding which tool to use. Detailed guidance: full instructions injected on invocation. Leave empty to use code defaults.'}</p>
+      </div>
+      ${rows}
+    </div>`
+  }
+
+  return cardsHtml + globalParams + descPanel + `
   <script>
   function toggleToolModule(name, enabled) {
     fetch('/console/modules/toggle', {
@@ -1400,6 +1595,23 @@ function renderToolsCardsSection(data: SectionData): string {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'module=' + encodeURIComponent(name) + '&action=' + (enabled ? 'activate' : 'deactivate') + '&_redirect=/console/herramientas'
     }).then(function() { location.reload() }).catch(function() { alert('Error') })
+  }
+  function saveToolDescriptions(toolName) {
+    var shortEl = document.getElementById('td-short-' + toolName)
+    var guidanceEl = document.getElementById('td-guidance-' + toolName)
+    if (!shortEl || !guidanceEl) return
+    fetch('/console/api/tools/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        toolName: toolName,
+        shortDescription: shortEl.value || null,
+        detailedGuidance: guidanceEl.value || null
+      })
+    }).then(function(r) {
+      if (r.ok) { shortEl.style.borderColor = 'var(--success)'; setTimeout(function(){ shortEl.style.borderColor = ''; }, 1500) }
+      else { alert('Error saving') }
+    }).catch(function() { alert('Error') })
   }
   </script>`
 }
@@ -1641,6 +1853,12 @@ function renderIdentitySection(data: SectionData): string {
       <div class="field ts-field-stack">
         <span class="field-label">${isEs ? 'Acento' : 'Accent'}</span>
         <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select" class="js-custom-select">${accentOptionsHtml}</select></div>
+      <div class="field ts-field-stack" id="ts-accent-prompt-field" style="${agentAccent ? '' : 'display:none'}">
+        <span class="field-label">${isEs ? 'Instrucciones de acento' : 'Accent instructions'}</span>
+        <p class="ts-field-hint">${isEs
+          ? 'Personaliza como suena el agente: modismos, expresiones y tono regional. Se inyecta en el contexto del LLM cuando el acento esta activo.'
+          : 'Customize how the agent sounds: idioms, expressions and regional tone. Injected into LLM context when accent is active.'}</p>
+        <textarea name="AGENT_ACCENT_PROMPT" data-original="${esc(cfg['AGENT_ACCENT_PROMPT'] || '')}" rows="4" placeholder="${isEs ? 'Describe como debe sonar el agente: modismos, expresiones, tono...' : 'Describe how the agent should sound: idioms, expressions, tone...'}">${esc(cfg['AGENT_ACCENT_PROMPT'] || '')}</textarea></div>
     </div>
   </div>
   <script type="application/json" id="accent-map-data">${JSON.stringify(ACCENT_MAP)}</script>
@@ -1751,7 +1969,13 @@ function renderIdentitySection(data: SectionData): string {
       if (accentSel.value && accentSel.value !== accentSel.getAttribute('data-original')) {
         if (!confirm(accentWarningMsg)) {
           accentSel.value = accentSel.getAttribute('data-original') || '';
+          return;
         }
+      }
+      // Show/hide accent prompt textarea based on accent selection
+      var accentPromptField = document.getElementById('ts-accent-prompt-field');
+      if (accentPromptField) {
+        accentPromptField.style.display = accentSel.value ? '' : 'none';
       }
     });
 
@@ -2018,10 +2242,40 @@ function renderIdentitySection(data: SectionData): string {
 })();
 </script>` : ''
 
+  // Skills readonly section
+  let skillsPanel = ''
+  if (data.skills && data.skills.length > 0) {
+    const skillRows = data.skills.map(s => {
+      const utLabel = s.userTypes === 'all' || !s.userTypes ? (isEs ? 'Todos' : 'All') : s.userTypes
+      return `<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--surface-variant)">
+        <div style="flex:1">
+          <span style="font-size:13px;font-weight:600;color:var(--on-surface)">${esc(s.name)}</span>
+          <p style="font-size:12px;color:var(--on-surface-dim);margin:2px 0 0">${esc(s.description)}</p>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <span style="font-size:11px;color:var(--on-surface-dim)">${isEs ? 'Tipos de usuario: ' : 'User types: '}<strong>${esc(utLabel)}</strong></span>
+        </div>
+      </div>`
+    }).join('')
+    skillsPanel = `<div class="panel" style="margin-top:12px">
+      <div class="panel-header" onclick="togglePanel(this)">
+        <span class="panel-title">${isEs ? 'Habilidades del Agente' : 'Agent Skills'}</span>
+        <span class="panel-chevron">&#9660;</span>
+      </div>
+      <div class="panel-body">
+        <p class="panel-info">${isEs
+          ? 'Las habilidades son protocolos de interaccion especializados. Se gestionan como archivos .md en <code>instance/prompts/system/skills/</code>.'
+          : 'Skills are specialized interaction protocols. Managed as .md files in <code>instance/prompts/system/skills/</code>.'}</p>
+        ${skillRows}
+      </div>
+    </div>`
+  }
+
   return `<div class="ts-identity-layout">
     <div>${promptsHtml}</div>
     <div>${identityHtml}${voicePanelHtml}</div>
   </div>
+  ${skillsPanel}
   ${promptEditScript}
   ${idTtsPreviewScript}`
 }

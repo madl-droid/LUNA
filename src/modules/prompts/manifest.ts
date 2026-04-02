@@ -240,10 +240,20 @@ const manifest: ModuleManifest = {
         type: 'text',
         label: { es: 'Acento / Locale', en: 'Accent / Locale' },
         info: {
-          es: 'Código BCP-47 (ej: es-MX, es-ES, en-US, pt-BR). Usado para voz (TTS/STT) y regionalismos.',
-          en: 'BCP-47 code (e.g. es-MX, es-ES, en-US, pt-BR). Used for voice (TTS/STT) and regional expressions.',
+          es: 'Codigo BCP-47 del acento regional (ej: es-MX, es-CO, en-US). Gestionado desde la pagina Identidad donde puedes elegirlo con un selector por idioma.',
+          en: 'BCP-47 regional accent code (e.g. es-MX, es-CO, en-US). Managed from the Identity page where you can select it by language.',
         },
         width: 'half',
+      },
+      {
+        key: 'AGENT_ACCENT_PROMPT',
+        type: 'textarea',
+        label: { es: 'Instrucciones de acento', en: 'Accent instructions' },
+        info: {
+          es: 'Instrucciones de acento personalizadas. Se inyectan en el contexto del LLM cuando el acento esta activo. Gestionado desde la pagina Identidad.',
+          en: 'Custom accent instructions. Injected into LLM context when accent is active. Managed from the Identity page.',
+        },
+        rows: 4,
       },
       { key: '_divider_prompts', type: 'divider', label: { es: 'Prompts del agente', en: 'Agent prompts' } },
       {
