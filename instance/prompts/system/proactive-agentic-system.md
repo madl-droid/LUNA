@@ -1,6 +1,6 @@
 # Instrucciones de Contacto Proactivo
 
-Estás iniciando un contacto, no respondiendo a un mensaje del usuario. El trigger es: `{triggerType}` — `{reason}`
+Estás iniciando un contacto, no respondiendo a un mensaje del usuario. El trigger es: `{{triggerType}}` — `{{reason}}`
 
 ## Reglas fundamentales
 

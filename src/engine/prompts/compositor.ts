@@ -28,8 +28,9 @@ const CHANNEL_CATEGORIES: Record<string, string> = {
 /**
  * Get channel format instructions.
  * Priority: 1) config_store override, 2) system template, 3) hardcoded defaults.
+ * Exported so agentic.ts can reuse without reimplementing.
  */
-async function getChannelLimit(channel: string, registry?: Registry): Promise<string> {
+export async function getChannelLimit(channel: string, registry?: Registry): Promise<string> {
   if (registry) {
     try {
       const db = registry.getDb()
@@ -49,7 +50,7 @@ async function getChannelLimit(channel: string, registry?: Registry): Promise<st
 }
 
 /** Build format prompt dynamically from form fields stored in config_store */
-async function buildFormatFromForm(channel: string, db: import('pg').Pool): Promise<string | null> {
+export async function buildFormatFromForm(channel: string, db: import('pg').Pool): Promise<string | null> {
   const configStore = await import('../../kernel/config-store.js')
   const prefix = channel.toUpperCase()
   const all = await configStore.getAll(db)
