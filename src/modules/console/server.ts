@@ -129,8 +129,15 @@ async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: bool
 /** Gate a debug API endpoint: requires test mode + super admin. Returns true if blocked. */
 async function guardDebugEndpoint(req: http.IncomingMessage, res: http.ServerResponse, registry: Registry): Promise<boolean> {
   const db = registry.getDb()
+  // Read ENGINE_TEST_MODE using DB > .env cascade (same as fetchSectionData)
+  // so that values set in .env but not yet written to config_store are honoured.
   const tmResult = await db.query(`SELECT value FROM config_store WHERE key = 'ENGINE_TEST_MODE'`)
-  if (tmResult.rows[0]?.value !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return true }
+  let testMode = tmResult.rows[0]?.value as string | undefined
+  if (!testMode) {
+    const envValues = parseEnvFile(findEnvFile())
+    testMode = envValues['ENGINE_TEST_MODE']
+  }
+  if (testMode !== 'true') { jsonResponse(res, 403, { error: 'Test mode not active' }); return true }
   const isSA = await checkSuperAdmin(registry, req.headers['cookie'])
   if (!isSA) { jsonResponse(res, 403, { error: 'Super admin required' }); return true }
   return false
