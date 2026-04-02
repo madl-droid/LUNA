@@ -7,7 +7,7 @@ Provider de gestion clinica: pacientes, citas, disponibilidad, seguimiento autom
 - `types.ts` — interfaces API (Patient, Appointment, Professional, Evolution, Archive, TreatmentPlan), config, internas
 - `api-client.ts` — HTTP client con rate limiting, retry, paginacion por cursor. Base: `/api/v1`
 - `rate-limiter.ts` — token bucket con cola de 3 prioridades (high/medium/low), Redis sliding window
-- `cache.ts` — Redis + in-memory para datos de referencia (30d TTL) y disponibilidad (10min TTL)
+- `cache.ts` — Redis + in-memory para datos de referencia (30d TTL) y disponibilidad (20min TTL, warm via webhooks)
 - `webhook-handler.ts` — receptor webhooks Medilink: HMAC verify, dispatch a listeners
 - `security.ts` — **CRITICO**: verificacion identidad, control acceso, filtrado datos, audit
 - `tools.ts` — 12 herramientas del agente (disponibilidad, pacientes, citas, pagos, evoluciones, archivos, execute-followup)
