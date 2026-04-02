@@ -1,11 +1,12 @@
 // LUNA Engine — Proactive Guards
-// 7 guardas de protección ejecutadas en orden antes de cada job proactivo.
-// Orden: idempotencia → horario laboral → contact lock → outreach dedup → cooldown → rate limit → conversation guard
+// 8 guardas de protección ejecutadas en orden antes de cada job proactivo.
+// Orden: idempotencia → horario laboral → contact lock → outreach dedup → cooldown → rate limit → conversation guard → goodbye suppressor
 
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
 import pino from 'pino'
 import type { ProactiveConfig, ProactiveCandidate } from '../types.js'
+import { shouldSuppressProactive } from './conversation-guard.js'
 
 const logger = pino({ name: 'engine:proactive:guards' })
 
@@ -36,6 +37,7 @@ export async function runGuards(
     () => guardCooldown(candidate, redis, config),
     () => guardRateLimit(candidate, redis, config),
     () => guardConversation(candidate, redis, config),
+    () => guardGoodbyeSuppressor(candidate, db, redis, config),
   ]
 
   for (const guard of guards) {
@@ -246,6 +248,48 @@ export async function setContactLock(contactId: string, redis: Redis, ttlMs: num
  */
 export async function clearContactLock(contactId: string, redis: Redis): Promise<void> {
   await redis.del(`contact:active:${contactId}`)
+}
+
+// ─── 8. Goodbye Suppressor ──────────────────
+// Pattern-based: checks recent message content for goodbye signals.
+// Complements guard #7 (farewell flag) which relies on engine marking.
+// Skipped for commitment follow-ups (skip_for_commitments=true).
+
+async function guardGoodbyeSuppressor(
+  candidate: ProactiveCandidate,
+  db: Pool,
+  redis: Redis,
+  config: ProactiveConfig,
+): Promise<GuardResult> {
+  const guardConfig = config.conversation_guard
+  if (guardConfig?.enabled === false) return PASS
+
+  // Skip for commitment follow-ups when configured
+  const skipForCommitments = guardConfig?.skip_for_commitments ?? true
+  if (skipForCommitments && candidate.triggerType === 'commitment') return PASS
+  if (candidate.isOverdue) return PASS
+
+  const cacheTtlHours = guardConfig?.cache_ttl_hours ?? 6
+
+  const result = await shouldSuppressProactive(
+    db,
+    redis,
+    candidate.contactId,
+    candidate.channel,
+    cacheTtlHours,
+  )
+
+  if (result.suppress) {
+    const requeueDelayMs = cacheTtlHours * 60 * 60 * 1000
+    return {
+      passed: false,
+      blockedBy: 'goodbye_suppressor',
+      requeue: true,
+      requeueDelayMs,
+    }
+  }
+
+  return PASS
 }
 
 // ─── Helpers ────────────────────────────────

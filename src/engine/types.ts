@@ -362,6 +362,7 @@ export type ProactiveTriggerType =
   | 'reactivation'
   | 'cache_refresh'
   | 'nightly_batch'
+  | 'orphan_recovery'
 
 export interface ProactiveJob {
   name: string
@@ -426,6 +427,24 @@ export interface ProactiveConfig {
     max_proactive_per_day_per_contact: number
     cooldown_minutes: number
     conversation_guard_hours: number
+  }
+  smart_cooldown?: {
+    enabled: boolean
+    after_sent_minutes: number
+    after_no_action_minutes: number
+    after_error_minutes: number
+    max_backoff_hours: number
+  }
+  orphan_recovery?: {
+    enabled: boolean
+    interval_minutes: number
+    lookback_minutes: number
+    max_per_run: number
+  }
+  conversation_guard?: {
+    enabled: boolean
+    cache_ttl_hours: number
+    skip_for_commitments: boolean
   }
 }
 

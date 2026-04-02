@@ -12,6 +12,8 @@ export interface ToolDefinition {
   name: string                     // único, kebab-case: 'calendar-check'
   displayName: string              // 'Verificar Disponibilidad'
   description: string              // 1 línea para catálogo del evaluador
+  shortDescription?: string        // 1-line for LLM declarations (token-efficient); auto-generated if not set
+  detailedGuidance?: string        // Full guidance injected on tool invocation (context-rich)
   category: string                 // 'calendar', 'sheets', 'media', 'internal'
   sourceModule: string             // nombre del módulo que la registró
   parameters: ToolParameterSchema  // JSON Schema del input
@@ -46,7 +48,7 @@ export interface ToolSettings {
 
 export interface ToolCatalogEntry {
   name: string
-  description: string
+  description: string        // shortDescription when available, else description
   category: string
 }
 

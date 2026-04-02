@@ -11,6 +11,7 @@ import type { Registry } from '../../kernel/registry.js'
 import type { EngineConfig, ProactiveJobContext, ProactiveConfig } from '../types.js'
 import { loadProactiveConfig } from './proactive-config.js'
 import { getProactiveJobs } from './triggers.js'
+import { isInCooldown, updateCooldownState } from './smart-cooldown.js'
 
 const logger = pino({ name: 'engine:proactive' })
 
@@ -74,6 +75,18 @@ export async function startProactiveRunner(
         return
       }
 
+      // Orphan recovery has no per-contact cooldown (it processes multiple contacts)
+      // Smart cooldown is applied per-contact inside each job handler.
+      // For the runner level, we apply smart cooldown to batch-type jobs only.
+      const isBatchJob = ['follow_up', 'reminder', 'reactivation', 'cache_refresh', 'nightly_batch', 'orphan_recovery'].includes(job.data.triggerType)
+      if (!isBatchJob && proactiveConfig.smart_cooldown?.enabled) {
+        const inCooldown = await isInCooldown(redis, 'batch', job.data.triggerType)
+        if (inCooldown) {
+          logger.debug({ jobName: job.data.jobName }, 'Smart cooldown active — skipping job run')
+          return
+        }
+      }
+
       const ctx: ProactiveJobContext = {
         db,
         redis,
@@ -84,7 +97,19 @@ export async function startProactiveRunner(
         runAt: new Date(job.data.runAt),
       }
 
-      await jobDef.handler(ctx)
+      let outcome: 'sent' | 'no_action' | 'error' = 'no_action'
+      try {
+        await jobDef.handler(ctx)
+        outcome = 'no_action' // default; individual jobs set per-contact cooldown
+      } catch (err) {
+        outcome = 'error'
+        throw err
+      } finally {
+        // Update batch-level cooldown for non-batch jobs
+        if (!isBatchJob && proactiveConfig.smart_cooldown?.enabled) {
+          await updateCooldownState(redis, 'batch', job.data.triggerType, outcome, proactiveConfig)
+        }
+      }
     },
     {
       connection,
@@ -218,6 +243,7 @@ function isJobEnabled(
     case 'reactivation': return proactiveConfig.reactivation.enabled
     case 'cache_refresh': return true
     case 'nightly_batch': return engineConfig.batchEnabled
+    case 'orphan_recovery': return proactiveConfig.orphan_recovery?.enabled ?? true
     default: return false
   }
 }
@@ -233,6 +259,7 @@ function getJobInterval(
     case 'follow_up': return proactiveConfig.follow_up.scan_interval_minutes * 60 * 1000
     case 'reminder': return proactiveConfig.reminders.scan_interval_minutes * 60 * 1000
     case 'commitment': return proactiveConfig.commitments.scan_interval_minutes * 60 * 1000
+    case 'orphan_recovery': return (proactiveConfig.orphan_recovery?.interval_minutes ?? 5) * 60 * 1000
     default: return job.intervalMs ?? null
   }
 }
@@ -241,6 +268,7 @@ function getJobPriority(triggerType: string): number {
   // Lower number = higher priority in BullMQ
   switch (triggerType) {
     case 'commitment': return 2     // commitments are time-sensitive
+    case 'orphan_recovery': return 2 // orphans need prompt recovery
     case 'reminder': return 3       // reminders are important
     case 'follow_up': return 5      // standard proactive
     case 'reactivation': return 8   // low priority
