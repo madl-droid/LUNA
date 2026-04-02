@@ -46,6 +46,74 @@ interface RetryContext {
 }
 
 /**
+ * Build a minimal context for subagent execution.
+ * Keeps identity and permissions but strips history, knowledge matches,
+ * buffer summary, and relevant summaries to prevent context bloat.
+ * The subagent gets a clean slate focused on its specific task.
+ */
+function buildSubagentContext(parentCtx: ContextBundle, taskDescription: string): ContextBundle {
+  return {
+    // Original message — keep for traceId and channel info
+    message: parentCtx.message,
+    traceId: parentCtx.traceId,
+
+    // Identity — keep all
+    userType: parentCtx.userType,
+    userPermissions: parentCtx.userPermissions,
+    contactId: parentCtx.contactId,
+    agentId: parentCtx.agentId,
+
+    // Contact & session — keep for identity context
+    contact: parentCtx.contact,
+    session: parentCtx.session,
+    isNewContact: parentCtx.isNewContact,
+
+    // Campaign — keep (may be relevant to subagent task)
+    campaign: parentCtx.campaign,
+
+    // RAG and knowledge — STRIP (subagent searches its own if needed)
+    knowledgeMatches: [],
+    knowledgeInjection: null,
+    freshdeskMatches: [],
+
+    // Assignment rules — STRIP
+    assignmentRules: null,
+
+    // History — STRIP (clean slate)
+    history: [],
+
+    // Buffer summary — STRIP
+    bufferSummary: null,
+
+    // Memory — STRIP (subagent can use tools to query memory if needed)
+    contactMemory: null,
+    pendingCommitments: [],
+    relevantSummaries: [],
+    leadStatus: parentCtx.leadStatus,
+
+    // Sheets — STRIP
+    sheetsData: null,
+
+    // Normalized text — replace with task description
+    normalizedText: taskDescription,
+    messageType: 'text',
+
+    // Response format — always text for subagents
+    responseFormat: 'text',
+
+    // Attachments — STRIP (subagent doesn't process parent's attachments)
+    attachmentMeta: [],
+    attachmentContext: null,
+
+    // Injection — inherit from parent
+    possibleInjection: parentCtx.possibleInjection,
+
+    // HITL — STRIP
+    hitlPendingContext: null,
+  }
+}
+
+/**
  * Resolve the run config for a subagent execution.
  * Maps catalog entry + engine config → SubagentRunConfig.
  */
@@ -115,8 +183,12 @@ export async function runSubagentV2(
     ? toolDefs.filter(t => entry.allowedTools.includes(t.name))
     : toolDefs
 
-  // Run the main loop (first attempt)
-  let result = await runSubagentLoop(ctx, step, filteredTools, config, runConfig, registry)
+  // Build minimal context for subagent (clean slate)
+  const taskDescription = step.description ?? 'Execute task'
+  const subagentCtx = buildSubagentContext(ctx, taskDescription)
+
+  // Run the main loop (first attempt) with minimal context
+  let result = await runSubagentLoop(subagentCtx, step, filteredTools, config, runConfig, registry)
 
   // ── Iterative verification (max MAX_VERIFY_RETRIES retries with conversation continuity) ──
   if (entry.verifyResult && result.success) {
@@ -164,7 +236,7 @@ export async function runSubagentV2(
       }, 'Verifier requested retry — continuing conversation')
 
       const retryResult = await runSubagentLoop(
-        ctx, step, filteredTools, config, runConfig, registry,
+        subagentCtx, step, filteredTools, config, runConfig, registry,
         {
           previousMessages: result.conversationHistory ?? [],
           previousResult: result.data,
@@ -514,6 +586,8 @@ async function handleSpawnSubagent(
     params: { tools: childToolDefs.map(t => t.name) },
   }
 
+  // ctx is already minimal (came from buildSubagentContext in runSubagentV2),
+  // so child subagents automatically get a clean context too.
   return runSubagentV2(ctx, childStep, childToolDefs, config, registry, true)
 }
 
