@@ -45,7 +45,7 @@ function envProvider(key: string, fallback: LLMProvider): LLMProvider {
 export function loadEngineConfig(): EngineConfig {
   return {
     // LLM models
-    classifyModel: env('LLM_CLASSIFY_MODEL', 'claude-haiku-4-5-20251001'),
+    classifyModel: env('LLM_CLASSIFY_MODEL', 'claude-sonnet-4-6'),
     classifyProvider: envProvider('LLM_CLASSIFY_PROVIDER', 'anthropic'),
     respondModel: env('LLM_RESPOND_MODEL', 'claude-sonnet-4-6'),
     respondProvider: envProvider('LLM_RESPOND_PROVIDER', 'anthropic'),

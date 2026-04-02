@@ -469,6 +469,24 @@ export interface UserTypeRule {
   createdAt: Date
 }
 
+// ─── Professional categories ─────────────
+
+/** User-defined category group for professionals (e.g. "Implantología", "Ortodoncia") */
+export interface ProfessionalCategory {
+  id: number
+  name: string
+  description: string | null
+  color: string
+  sortOrder: number
+  createdAt: Date
+}
+
+/** Many-to-many: which categories a professional belongs to */
+export interface ProfCategoryAssignment {
+  medilinkProfessionalId: number
+  categoryId: number
+}
+
 // ─── Rate limiter ────────────────────────
 
 export type RequestPriority = 'high' | 'medium' | 'low'

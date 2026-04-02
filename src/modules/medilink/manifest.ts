@@ -303,6 +303,75 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // ── Professional categories ──
+    {
+      method: 'GET',
+      path: 'categories',
+      handler: async (_req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const categories = await pgStore.getProfessionalCategories(_registry.getDb())
+        jsonResponse(res, 200, { categories })
+      },
+    },
+    {
+      method: 'POST',
+      path: 'categories',
+      handler: async (req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const body = await parseBody<{ name: string; description?: string | null; color?: string; sortOrder?: number }>(req)
+        if (!body.name?.trim()) { jsonResponse(res, 400, { error: 'Missing name' }); return }
+        const category = await pgStore.upsertProfessionalCategory(_registry.getDb(), body)
+        jsonResponse(res, 200, { ok: true, category })
+      },
+    },
+    {
+      method: 'PUT',
+      path: 'categories/:id',
+      handler: async (req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const url = new URL(req.url ?? '', 'http://localhost')
+        const segments = url.pathname.split('/')
+        const id = parseInt(segments[segments.length - 1] ?? '0', 10)
+        if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
+        const body = await parseBody<{ name?: string; description?: string | null; color?: string; sortOrder?: number }>(req)
+        const category = await pgStore.upsertProfessionalCategory(_registry.getDb(), { id, name: body.name ?? '', ...body })
+        jsonResponse(res, 200, { ok: true, category })
+      },
+    },
+    {
+      method: 'DELETE',
+      path: 'categories/:id',
+      handler: async (req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const url = new URL(req.url ?? '', 'http://localhost')
+        const segments = url.pathname.split('/')
+        const id = parseInt(segments[segments.length - 1] ?? '0', 10)
+        if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
+        await pgStore.deleteProfessionalCategory(_registry.getDb(), id)
+        jsonResponse(res, 200, { ok: true })
+      },
+    },
+    {
+      method: 'GET',
+      path: 'category-assignments',
+      handler: async (_req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const assignments = await pgStore.getProfessionalCategoryAssignments(_registry.getDb())
+        jsonResponse(res, 200, { assignments })
+      },
+    },
+    {
+      method: 'PUT',
+      path: 'category-assignments',
+      handler: async (req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const body = await parseBody<{ assignments: Array<{ medilinkProfessionalId: number; categoryId: number }> }>(req)
+        if (!Array.isArray(body.assignments)) { jsonResponse(res, 400, { error: 'Missing assignments array' }); return }
+        await pgStore.setProfessionalCategoryAssignments(_registry.getDb(), body.assignments)
+        jsonResponse(res, 200, { ok: true })
+      },
+    },
+
     // ── Webhook log ──
     {
       method: 'GET',
@@ -455,15 +524,21 @@ const manifest: ModuleManifest = {
     // Provide renderSection for console: professionals + follow-up templates
     registry.provide('medilink:renderSection', async (lang: 'es' | 'en') => {
       const refData = await cache!.getReferenceData()
-      const profRules = await pgStore.getProfessionalTreatments(db)
-      const userTypeRules = await pgStore.getUserTypeRules(db)
-      const templates = await pgStore.getTemplates(db)
+      const [profRules, userTypeRules, templates, categories, categoryAssignments] = await Promise.all([
+        pgStore.getProfessionalTreatments(db),
+        pgStore.getUserTypeRules(db),
+        pgStore.getTemplates(db),
+        pgStore.getProfessionalCategories(db),
+        pgStore.getProfessionalCategoryAssignments(db),
+      ])
       const consoleData: MedilinkConsoleData = {
         professionals: refData.professionals,
         treatments: refData.treatments,
         profRules,
         userTypeRules,
         templates,
+        categories,
+        categoryAssignments,
       }
       return renderMedilinkConsole(consoleData, lang)
     })
