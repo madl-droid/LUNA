@@ -163,5 +163,18 @@ export function loadEngineConfig(): EngineConfig {
     mediumEffortProvider:    envProvider('LLM_MEDIUM_EFFORT_PROVIDER', 'anthropic'),
     highEffortModel:         env('LLM_HIGH_EFFORT_MODEL', 'claude-sonnet-4-6'),
     highEffortProvider:      envProvider('LLM_HIGH_EFFORT_PROVIDER', 'anthropic'),
+
+    // Effort default
+    effortDefault: (env('AGENTIC_EFFORT_DEFAULT', 'medium')) as 'low' | 'medium' | 'high',
+
+    // Loop detection thresholds (graduated: warn → block → circuit break)
+    loopWarnThreshold:    envInt('AGENTIC_LOOP_WARN_THRESHOLD', 3),
+    loopBlockThreshold:   envInt('AGENTIC_LOOP_BLOCK_THRESHOLD', 5),
+    loopCircuitThreshold: envInt('AGENTIC_LOOP_CIRCUIT_THRESHOLD', 8),
+
+    // Execution queue lane concurrencies
+    executionQueueReactiveConcurrency:   envInt('EXECUTION_QUEUE_REACTIVE_CONCURRENCY', 8),
+    executionQueueProactiveConcurrency:  envInt('EXECUTION_QUEUE_PROACTIVE_CONCURRENCY', 3),
+    executionQueueBackgroundConcurrency: envInt('EXECUTION_QUEUE_BACKGROUND_CONCURRENCY', 2),
   }
 }

@@ -100,6 +100,24 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 - `POST /reset-db` — truncar + flush (testing)
 - `GET /engine-metrics` — métricas del engine con periodo
 
+## Motor Agentico (v2) — `/console/agente/advanced` Panel 5
+- `ENGINE_MODE` — select (agentic|legacy)
+- `ENGINE_AGENTIC_MAX_TURNS` — max tool-calling turns per message
+- `AGENTIC_EFFORT_DEFAULT` — default effort level when routing disabled
+- `ENGINE_EFFORT_ROUTING` — enable/disable complexity-based effort routing
+- Protecciones: `ENGINE_TOOL_DEDUP`, `ENGINE_LOOP_DETECTION`, `AGENTIC_LOOP_WARN_THRESHOLD`, `AGENTIC_LOOP_BLOCK_THRESHOLD`, `AGENTIC_LOOP_CIRCUIT_THRESHOLD`, `ENGINE_ERROR_AS_CONTEXT`
+- Recuperacion: `ENGINE_PARTIAL_RECOVERY`, `LLM_CRITICIZER_MODE` (disabled|complex_only|always)
+- Modelos por esfuerzo: `LLM_LOW/MEDIUM/HIGH_EFFORT_MODEL` + `LLM_LOW/MEDIUM/HIGH_EFFORT_PROVIDER`
+- Cola: `EXECUTION_QUEUE_REACTIVE/PROACTIVE/BACKGROUND_CONCURRENCY`
+
+## Subagente Contexto Fresco — `/console/agente/subagents`
+- `SUBAGENT_FRESH_CONTEXT` toggle — panel de configuracion global al inicio de la pagina
+- Persiste via configSchema del modulo subagents
+
+## Identidad y Acento — `/console/agente/identity`
+- `AGENT_ACCENT` — select dinamico por idioma con ACCENT_MAP (BCP-47), ya implementado con timezone auto-detect
+- `AGENT_ACCENT_PROMPT` textarea — instrucciones custom de acento, visible solo cuando acento != neutro
+
 ## Patrones
 - HTTP nativo de Node.js. NO agregar Express/Fastify.
 - Config read: DB (config-store, AES-256-GCM encrypted) > .env > defaults.

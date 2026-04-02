@@ -928,6 +928,135 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
   </div>`
 
+  // Panel 5: Motor Agentico (v2)
+  const engineMode = cv(data, 'ENGINE_MODE') || 'agentic'
+  const effortDefault = cv(data, 'AGENTIC_EFFORT_DEFAULT') || 'medium'
+  const criticizerMode = cv(data, 'LLM_CRITICIZER_MODE') || 'complex_only'
+
+  const engineModeOpts = [
+    { v: 'agentic', l: 'Agentic Loop (v2)' },
+    { v: 'legacy', l: 'Pipeline Legacy (v1)' },
+  ]
+  const effortOpts = [
+    { v: 'low', l: isEs ? 'Bajo (rapido)' : 'Low (fast)' },
+    { v: 'medium', l: isEs ? 'Medio (balanceado)' : 'Medium (balanced)' },
+    { v: 'high', l: isEs ? 'Alto (potente)' : 'High (powerful)' },
+  ]
+  const criticizerOpts = [
+    { v: 'disabled', l: isEs ? 'Desactivado' : 'Disabled' },
+    { v: 'complex_only', l: isEs ? 'Solo mensajes complejos (recomendado)' : 'Complex messages only (recommended)' },
+    { v: 'always', l: isEs ? 'Siempre' : 'Always' },
+  ]
+
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${isEs ? 'Motor Agentico (v2)' : 'Agentic Engine (v2)'}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${isEs
+        ? 'Configuracion del loop agentico v2: modo, esfuerzo, protecciones, recuperacion, modelos y cola de ejecucion.'
+        : 'Agentic loop v2 configuration: mode, effort, safeguards, recovery, models and execution queue.'}</div>
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modo y Esfuerzo' : 'Mode & Effort'}</span></div>
+      <div class="fields-row">
+        <div class="field">
+          <span class="field-label">${isEs ? 'Modo del motor' : 'Engine mode'}</span>
+          <span class="field-info">${isEs ? 'Agentico usa loop nativo con herramientas (v2). Legacy usa pipeline de 5 fases (v1, deprecado).' : 'Agentic uses native tool loop (v2). Legacy uses 5-phase pipeline (v1, deprecated).'}</span>
+          <select name="ENGINE_MODE" data-original="${esc(engineMode)}" class="js-custom-select">
+            ${engineModeOpts.map(o => `<option value="${esc(o.v)}"${o.v === engineMode ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <span class="field-label">${isEs ? 'Nivel de esfuerzo por defecto' : 'Default effort level'}</span>
+          <span class="field-info">${isEs ? 'Usado cuando el enrutamiento por esfuerzo esta desactivado o no puede clasificar el mensaje.' : 'Used when effort routing is disabled or cannot classify the message.'}</span>
+          <select name="AGENTIC_EFFORT_DEFAULT" data-original="${esc(effortDefault)}" class="js-custom-select">
+            ${effortOpts.map(o => `<option value="${esc(o.v)}"${o.v === effortDefault ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${boolField('ENGINE_EFFORT_ROUTING', cv(data, 'ENGINE_EFFORT_ROUTING') || 'true', data.lang,
+        isEs ? 'Enrutamiento por esfuerzo' : 'Effort routing',
+        isEs ? 'Clasifica mensajes por complejidad para usar el modelo mas apropiado y optimizar costos.' : 'Classifies messages by complexity to use the most appropriate model and optimize costs.')}
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Protecciones del Loop' : 'Loop Safeguards'}</span></div>
+      ${boolField('ENGINE_TOOL_DEDUP', cv(data, 'ENGINE_TOOL_DEDUP') || 'true', data.lang,
+        isEs ? 'Cache de herramientas (dedup)' : 'Tool call deduplication',
+        isEs ? 'Evita llamadas duplicadas a la misma herramienta con los mismos parametros en un pipeline.' : 'Prevents duplicate calls to the same tool with the same parameters within a pipeline.')}
+      ${boolField('ENGINE_LOOP_DETECTION', cv(data, 'ENGINE_LOOP_DETECTION') || 'true', data.lang,
+        isEs ? 'Deteccion de loops' : 'Loop detection',
+        isEs ? 'Detecta y previene loops infinitos de herramientas con respuesta graduada: advertencia → bloqueo → corte.' : 'Detects and prevents infinite tool loops with graduated response: warn → block → circuit break.')}
+      <div class="fields-row">
+        ${numField('AGENTIC_LOOP_WARN_THRESHOLD', cv(data, 'AGENTIC_LOOP_WARN_THRESHOLD') || '3', data.lang,
+          isEs ? 'Umbral advertencia' : 'Warn threshold',
+          isEs ? 'Llamadas identicas antes de advertir al LLM.' : 'Identical calls before warning the LLM.')}
+        ${numField('AGENTIC_LOOP_BLOCK_THRESHOLD', cv(data, 'AGENTIC_LOOP_BLOCK_THRESHOLD') || '5', data.lang,
+          isEs ? 'Umbral bloqueo' : 'Block threshold',
+          isEs ? 'Llamadas identicas antes de bloquear la herramienta.' : 'Identical calls before blocking the tool.')}
+        ${numField('AGENTIC_LOOP_CIRCUIT_THRESHOLD', cv(data, 'AGENTIC_LOOP_CIRCUIT_THRESHOLD') || '8', data.lang,
+          isEs ? 'Umbral corte (circuit)' : 'Circuit break threshold',
+          isEs ? 'Llamadas identicas antes de forzar respuesta de texto sin herramientas.' : 'Identical calls before forcing text response without tools.')}
+      </div>
+      ${boolField('ENGINE_ERROR_AS_CONTEXT', cv(data, 'ENGINE_ERROR_AS_CONTEXT') || 'true', data.lang,
+        isEs ? 'Errores como contexto' : 'Errors as context',
+        isEs ? 'Envia errores de herramientas al LLM para que decida que hacer en vez de fallar silenciosamente.' : 'Feeds tool errors to the LLM so it can decide how to proceed instead of failing silently.')}
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Recuperacion' : 'Recovery'}</span></div>
+      ${boolField('ENGINE_PARTIAL_RECOVERY', cv(data, 'ENGINE_PARTIAL_RECOVERY') || 'true', data.lang,
+        isEs ? 'Recuperacion parcial' : 'Partial recovery',
+        isEs ? 'Si el loop alcanza el timeout o limite de turnos pero ya genero texto, envia ese texto parcial.' : 'If the loop times out or hits the turn limit but already generated text, send that partial text.')}
+      <div class="field">
+        <span class="field-label">${isEs ? 'Verificador de calidad' : 'Quality checker'}</span>
+        <span class="field-info">${isEs ? 'Controla cuando el verificador revisa la respuesta antes de enviarla.' : 'Controls when the quality checker reviews the response before sending.'}</span>
+        <select name="LLM_CRITICIZER_MODE" data-original="${esc(criticizerMode)}" class="js-custom-select">
+          ${criticizerOpts.map(o => `<option value="${esc(o.v)}"${o.v === criticizerMode ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modelos por Esfuerzo' : 'Models by Effort'}</span></div>
+      ${modelDropdown(
+        'LLM_LOW_EFFORT',
+        cv(data, 'LLM_LOW_EFFORT_PROVIDER') || 'anthropic',
+        cv(data, 'LLM_LOW_EFFORT_MODEL') || 'claude-haiku-4-5-20251001',
+        data.allModels ?? {},
+        data.lang,
+        isEs ? 'Modelo bajo esfuerzo' : 'Low effort model',
+        isEs ? 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.' : 'Model for simple messages: greetings, confirmations, direct questions.',
+      )}
+      ${modelDropdown(
+        'LLM_MEDIUM_EFFORT',
+        cv(data, 'LLM_MEDIUM_EFFORT_PROVIDER') || 'anthropic',
+        cv(data, 'LLM_MEDIUM_EFFORT_MODEL') || 'claude-sonnet-4-6',
+        data.allModels ?? {},
+        data.lang,
+        isEs ? 'Modelo medio esfuerzo' : 'Medium effort model',
+        isEs ? 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.' : 'Model for medium complexity messages: contextual queries, follow-ups.',
+      )}
+      ${modelDropdown(
+        'LLM_HIGH_EFFORT',
+        cv(data, 'LLM_HIGH_EFFORT_PROVIDER') || 'anthropic',
+        cv(data, 'LLM_HIGH_EFFORT_MODEL') || 'claude-sonnet-4-6',
+        data.allModels ?? {},
+        data.lang,
+        isEs ? 'Modelo alto esfuerzo' : 'High effort model',
+        isEs ? 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.' : 'Model for complex messages: multiple tools, objections, deep reasoning.',
+      )}
+
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Cola de Ejecucion' : 'Execution Queue'}</span></div>
+      <div class="fields-row">
+        ${numField('EXECUTION_QUEUE_REACTIVE_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_REACTIVE_CONCURRENCY') || '8', data.lang,
+          isEs ? 'Concurrencia reactiva' : 'Reactive concurrency',
+          isEs ? 'Mensajes entrantes procesados en paralelo (maxima prioridad).' : 'Incoming messages processed in parallel (highest priority).')}
+        ${numField('EXECUTION_QUEUE_PROACTIVE_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_PROACTIVE_CONCURRENCY') || '3', data.lang,
+          isEs ? 'Concurrencia proactiva' : 'Proactive concurrency',
+          isEs ? 'Follow-ups y recordatorios procesados en paralelo.' : 'Follow-ups and reminders processed in parallel.')}
+        ${numField('EXECUTION_QUEUE_BACKGROUND_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_BACKGROUND_CONCURRENCY') || '2', data.lang,
+          isEs ? 'Concurrencia background' : 'Background concurrency',
+          isEs ? 'Tareas de fondo (nightly, cache) procesadas en paralelo.' : 'Background tasks (nightly, cache) processed in parallel.')}
+      </div>
+    </div>
+  </div>`
+
   return h
 }
 
@@ -1641,6 +1770,12 @@ function renderIdentitySection(data: SectionData): string {
       <div class="field ts-field-stack">
         <span class="field-label">${isEs ? 'Acento' : 'Accent'}</span>
         <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select" class="js-custom-select">${accentOptionsHtml}</select></div>
+      <div class="field ts-field-stack" id="ts-accent-prompt-field" style="${agentAccent ? '' : 'display:none'}">
+        <span class="field-label">${isEs ? 'Instrucciones de acento' : 'Accent instructions'}</span>
+        <p class="ts-field-hint">${isEs
+          ? 'Personaliza como suena el agente: modismos, expresiones y tono regional. Se inyecta en el contexto del LLM cuando el acento esta activo.'
+          : 'Customize how the agent sounds: idioms, expressions and regional tone. Injected into LLM context when accent is active.'}</p>
+        <textarea name="AGENT_ACCENT_PROMPT" data-original="${esc(cfg['AGENT_ACCENT_PROMPT'] || '')}" rows="4" placeholder="${isEs ? 'Describe como debe sonar el agente: modismos, expresiones, tono...' : 'Describe how the agent should sound: idioms, expressions, tone...'}">${esc(cfg['AGENT_ACCENT_PROMPT'] || '')}</textarea></div>
     </div>
   </div>
   <script type="application/json" id="accent-map-data">${JSON.stringify(ACCENT_MAP)}</script>
@@ -1751,7 +1886,13 @@ function renderIdentitySection(data: SectionData): string {
       if (accentSel.value && accentSel.value !== accentSel.getAttribute('data-original')) {
         if (!confirm(accentWarningMsg)) {
           accentSel.value = accentSel.getAttribute('data-original') || '';
+          return;
         }
+      }
+      // Show/hide accent prompt textarea based on accent selection
+      var accentPromptField = document.getElementById('ts-accent-prompt-field');
+      if (accentPromptField) {
+        accentPromptField.style.display = accentSel.value ? '' : 'none';
       }
     });
 

@@ -47,6 +47,29 @@ interface EngineModuleConfig {
   NIGHTLY_REPORT_SHEET_NAME: string
   NIGHTLY_CONCURRENCY: number
   NIGHTLY_MAX_RETRIES: number
+  // Agentic engine (v2)
+  ENGINE_MODE: string
+  ENGINE_AGENTIC_MAX_TURNS: number
+  AGENTIC_EFFORT_DEFAULT: string
+  ENGINE_EFFORT_ROUTING: boolean
+  ENGINE_TOOL_DEDUP: boolean
+  ENGINE_LOOP_DETECTION: boolean
+  AGENTIC_LOOP_WARN_THRESHOLD: number
+  AGENTIC_LOOP_BLOCK_THRESHOLD: number
+  AGENTIC_LOOP_CIRCUIT_THRESHOLD: number
+  ENGINE_ERROR_AS_CONTEXT: boolean
+  ENGINE_PARTIAL_RECOVERY: boolean
+  LLM_CRITICIZER_MODE: string
+  LLM_LOW_EFFORT_MODEL: string
+  LLM_LOW_EFFORT_PROVIDER: string
+  LLM_MEDIUM_EFFORT_MODEL: string
+  LLM_MEDIUM_EFFORT_PROVIDER: string
+  LLM_HIGH_EFFORT_MODEL: string
+  LLM_HIGH_EFFORT_PROVIDER: string
+  // Execution queue lanes
+  EXECUTION_QUEUE_REACTIVE_CONCURRENCY: number
+  EXECUTION_QUEUE_PROACTIVE_CONCURRENCY: number
+  EXECUTION_QUEUE_BACKGROUND_CONCURRENCY: number
 }
 
 const manifest: ModuleManifest = {
@@ -92,6 +115,29 @@ const manifest: ModuleManifest = {
     NIGHTLY_REPORT_SHEET_NAME: z.string().default('Daily Report'),
     NIGHTLY_CONCURRENCY: numEnvMin(1, 5),
     NIGHTLY_MAX_RETRIES: numEnvMin(0, 2),
+    // Agentic engine (v2)
+    ENGINE_MODE: z.string().default('agentic'),
+    ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
+    AGENTIC_EFFORT_DEFAULT: z.string().default('medium'),
+    ENGINE_EFFORT_ROUTING: boolEnv(true),
+    ENGINE_TOOL_DEDUP: boolEnv(true),
+    ENGINE_LOOP_DETECTION: boolEnv(true),
+    AGENTIC_LOOP_WARN_THRESHOLD: numEnvMin(2, 3),
+    AGENTIC_LOOP_BLOCK_THRESHOLD: numEnvMin(3, 5),
+    AGENTIC_LOOP_CIRCUIT_THRESHOLD: numEnvMin(4, 8),
+    ENGINE_ERROR_AS_CONTEXT: boolEnv(true),
+    ENGINE_PARTIAL_RECOVERY: boolEnv(true),
+    LLM_CRITICIZER_MODE: z.string().default('complex_only'),
+    LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+    LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
+    LLM_MEDIUM_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
+    LLM_MEDIUM_EFFORT_PROVIDER: z.string().default('anthropic'),
+    LLM_HIGH_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
+    LLM_HIGH_EFFORT_PROVIDER: z.string().default('anthropic'),
+    // Execution queue lanes
+    EXECUTION_QUEUE_REACTIVE_CONCURRENCY: numEnvMin(1, 8),
+    EXECUTION_QUEUE_PROACTIVE_CONCURRENCY: numEnvMin(1, 3),
+    EXECUTION_QUEUE_BACKGROUND_CONCURRENCY: numEnvMin(1, 2),
   }),
 
   console: {
@@ -350,6 +396,224 @@ const manifest: ModuleManifest = {
         min: 0,
         max: 5,
         width: 'half',
+      },
+
+      // ── Agentic Engine ──
+      { key: '_div_agentic', type: 'divider', label: { es: 'Motor Agentico (v2)', en: 'Agentic Engine (v2)' } },
+      {
+        key: 'ENGINE_MODE',
+        type: 'select',
+        label: { es: 'Modo del motor', en: 'Engine mode' },
+        info: {
+          es: 'Agentico usa un loop nativo con herramientas (v2). Legacy usa el pipeline de 5 fases (v1, deprecado).',
+          en: 'Agentic uses a native tool loop (v2). Legacy uses the 5-phase pipeline (v1, deprecated).',
+        },
+        options: [
+          { value: 'agentic', label: 'Agentic Loop (v2)' },
+          { value: 'legacy', label: 'Pipeline Legacy (v1)' },
+        ],
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_AGENTIC_MAX_TURNS',
+        type: 'number',
+        label: { es: 'Turnos maximos de herramientas', en: 'Max tool turns' },
+        info: {
+          es: 'Maximo de iteraciones de tool-use por mensaje antes de forzar una respuesta de texto.',
+          en: 'Maximum tool-use iterations per message before forcing a text response.',
+        },
+        min: 1,
+        max: 30,
+        width: 'half',
+      },
+      {
+        key: 'AGENTIC_EFFORT_DEFAULT',
+        type: 'select',
+        label: { es: 'Nivel de esfuerzo por defecto', en: 'Default effort level' },
+        info: {
+          es: 'Nivel usado cuando el enrutamiento por esfuerzo esta desactivado o no puede clasificar el mensaje.',
+          en: 'Level used when effort routing is disabled or cannot classify the message.',
+        },
+        options: [
+          { value: 'low', label: { es: 'Bajo (rapido, economico)', en: 'Low (fast, cheap)' } },
+          { value: 'medium', label: { es: 'Medio (balanceado)', en: 'Medium (balanced)' } },
+          { value: 'high', label: { es: 'Alto (completo, potente)', en: 'High (thorough, powerful)' } },
+        ],
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_EFFORT_ROUTING',
+        type: 'boolean',
+        label: { es: 'Enrutamiento por esfuerzo', en: 'Effort routing' },
+        info: {
+          es: 'Clasifica mensajes por complejidad para usar el modelo mas apropiado y optimizar costos.',
+          en: 'Classifies messages by complexity to use the most appropriate model and optimize costs.',
+        },
+      },
+
+      // ── Loop Detection ──
+      { key: '_div_loop', type: 'divider', label: { es: 'Protecciones del Loop', en: 'Loop Safeguards' } },
+      {
+        key: 'ENGINE_TOOL_DEDUP',
+        type: 'boolean',
+        label: { es: 'Cache de herramientas (dedup)', en: 'Tool call deduplication' },
+        info: {
+          es: 'Evita llamadas duplicadas a la misma herramienta con los mismos parametros en un pipeline.',
+          en: 'Prevents duplicate calls to the same tool with the same parameters within a pipeline.',
+        },
+      },
+      {
+        key: 'ENGINE_LOOP_DETECTION',
+        type: 'boolean',
+        label: { es: 'Deteccion de loops', en: 'Loop detection' },
+        info: {
+          es: 'Detecta y previene loops infinitos de herramientas con respuesta graduada.',
+          en: 'Detects and prevents infinite tool loops with graduated response.',
+        },
+      },
+      {
+        key: 'AGENTIC_LOOP_WARN_THRESHOLD',
+        type: 'number',
+        label: { es: 'Umbral de advertencia', en: 'Warning threshold' },
+        info: {
+          es: 'Llamadas identicas antes de advertir al LLM del posible loop.',
+          en: 'Identical calls before warning the LLM of a possible loop.',
+        },
+        min: 2,
+        max: 10,
+        width: 'third',
+      },
+      {
+        key: 'AGENTIC_LOOP_BLOCK_THRESHOLD',
+        type: 'number',
+        label: { es: 'Umbral de bloqueo', en: 'Block threshold' },
+        info: {
+          es: 'Llamadas identicas antes de bloquear la herramienta.',
+          en: 'Identical calls before blocking the tool.',
+        },
+        min: 3,
+        max: 15,
+        width: 'third',
+      },
+      {
+        key: 'AGENTIC_LOOP_CIRCUIT_THRESHOLD',
+        type: 'number',
+        label: { es: 'Umbral de corte (circuit)', en: 'Circuit break threshold' },
+        info: {
+          es: 'Llamadas identicas antes de forzar una respuesta de texto sin herramientas.',
+          en: 'Identical calls before forcing a text response without tools.',
+        },
+        min: 4,
+        max: 20,
+        width: 'third',
+      },
+      {
+        key: 'ENGINE_ERROR_AS_CONTEXT',
+        type: 'boolean',
+        label: { es: 'Errores como contexto', en: 'Errors as context' },
+        info: {
+          es: 'Envia errores de herramientas al LLM para que decida que hacer en vez de fallar silenciosamente.',
+          en: 'Feeds tool errors to the LLM so it can decide how to proceed instead of failing silently.',
+        },
+      },
+
+      // ── Recovery ──
+      { key: '_div_recovery', type: 'divider', label: { es: 'Recuperacion', en: 'Recovery' } },
+      {
+        key: 'ENGINE_PARTIAL_RECOVERY',
+        type: 'boolean',
+        label: { es: 'Recuperacion parcial', en: 'Partial recovery' },
+        info: {
+          es: 'Si el loop alcanza el timeout o el limite de turnos pero ya genero texto, envia ese texto parcial.',
+          en: 'If the loop times out or hits the turn limit but already generated text, send that partial text.',
+        },
+      },
+      {
+        key: 'LLM_CRITICIZER_MODE',
+        type: 'select',
+        label: { es: 'Modo del verificador de calidad', en: 'Quality checker mode' },
+        info: {
+          es: 'Controla cuando se activa el verificador de calidad antes de enviar la respuesta.',
+          en: 'Controls when the quality checker activates before sending the response.',
+        },
+        options: [
+          { value: 'disabled', label: { es: 'Desactivado', en: 'Disabled' } },
+          { value: 'complex_only', label: { es: 'Solo mensajes complejos (recomendado)', en: 'Complex messages only (recommended)' } },
+          { value: 'always', label: { es: 'Siempre', en: 'Always' } },
+        ],
+        width: 'half',
+      },
+
+      // ── Models by Effort ──
+      { key: '_div_effort_models', type: 'divider', label: { es: 'Modelos por Esfuerzo', en: 'Models by Effort' } },
+      {
+        key: 'LLM_LOW_EFFORT_MODEL',
+        type: 'model-select',
+        label: { es: 'Modelo bajo esfuerzo', en: 'Low effort model' },
+        info: {
+          es: 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.',
+          en: 'Model for simple messages: greetings, confirmations, direct questions.',
+        },
+        width: 'half',
+      },
+      {
+        key: 'LLM_MEDIUM_EFFORT_MODEL',
+        type: 'model-select',
+        label: { es: 'Modelo medio esfuerzo', en: 'Medium effort model' },
+        info: {
+          es: 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.',
+          en: 'Model for medium complexity messages: contextual queries, follow-ups.',
+        },
+        width: 'half',
+      },
+      {
+        key: 'LLM_HIGH_EFFORT_MODEL',
+        type: 'model-select',
+        label: { es: 'Modelo alto esfuerzo', en: 'High effort model' },
+        info: {
+          es: 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.',
+          en: 'Model for complex messages: multiple tools, objections, deep reasoning.',
+        },
+        width: 'half',
+      },
+
+      // ── Execution Queue ──
+      { key: '_div_queue', type: 'divider', label: { es: 'Cola de Ejecucion', en: 'Execution Queue' } },
+      {
+        key: 'EXECUTION_QUEUE_REACTIVE_CONCURRENCY',
+        type: 'number',
+        label: { es: 'Concurrencia reactiva', en: 'Reactive concurrency' },
+        info: {
+          es: 'Mensajes entrantes procesados en paralelo (maxima prioridad).',
+          en: 'Incoming messages processed in parallel (highest priority).',
+        },
+        min: 1,
+        max: 20,
+        width: 'third',
+      },
+      {
+        key: 'EXECUTION_QUEUE_PROACTIVE_CONCURRENCY',
+        type: 'number',
+        label: { es: 'Concurrencia proactiva', en: 'Proactive concurrency' },
+        info: {
+          es: 'Follow-ups y recordatorios procesados en paralelo.',
+          en: 'Follow-ups and reminders processed in parallel.',
+        },
+        min: 1,
+        max: 10,
+        width: 'third',
+      },
+      {
+        key: 'EXECUTION_QUEUE_BACKGROUND_CONCURRENCY',
+        type: 'number',
+        label: { es: 'Concurrencia background', en: 'Background concurrency' },
+        info: {
+          es: 'Tareas de fondo (nightly, cache) procesadas en paralelo.',
+          en: 'Background tasks (nightly, cache) processed in parallel.',
+        },
+        min: 1,
+        max: 5,
+        width: 'third',
       },
     ],
     apiRoutes: [
