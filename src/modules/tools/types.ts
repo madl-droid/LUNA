@@ -40,6 +40,8 @@ export interface ToolSettings {
   enabled: boolean        // si se envía al contexto del LLM o no
   maxRetries: number      // default 2, configurable por tool
   maxUsesPerLoop: number  // default 3, cuántas veces puede usarse en un loop
+  shortDescription?: string   // user-edited override for LLM declarations
+  detailedGuidance?: string   // user-edited override for tool invocation context
 }
 
 // ═══════════════════════════════════════════

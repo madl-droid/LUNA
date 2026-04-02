@@ -64,6 +64,11 @@ export class PgStore {
     const client = await this.pool.connect()
     try {
       await client.query(CREATE_TABLES_SQL)
+      // Add two-tier description columns if they don't exist yet (idempotent)
+      await client.query(`
+        ALTER TABLE tools ADD COLUMN IF NOT EXISTS short_description TEXT;
+        ALTER TABLE tools ADD COLUMN IF NOT EXISTS detailed_guidance TEXT;
+      `)
       logger.info('PostgreSQL tools tables ensured')
     } finally {
       client.release()
@@ -77,23 +82,27 @@ export class PgStore {
     category: string,
     sourceModule: string,
     parameters: ToolParameterSchema,
+    shortDescription?: string,
+    detailedGuidance?: string,
   ): Promise<void> {
     await this.pool.query(
-      `INSERT INTO tools (name, display_name, description, category, source_module, parameters)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO tools (name, display_name, description, category, source_module, parameters, short_description, detailed_guidance)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (name) DO UPDATE SET
          display_name = EXCLUDED.display_name,
          description = EXCLUDED.description,
          category = EXCLUDED.category,
          parameters = EXCLUDED.parameters,
+         short_description = COALESCE(tools.short_description, EXCLUDED.short_description),
+         detailed_guidance = COALESCE(tools.detailed_guidance, EXCLUDED.detailed_guidance),
          updated_at = NOW()`,
-      [name, displayName, description, category, sourceModule, JSON.stringify(parameters)],
+      [name, displayName, description, category, sourceModule, JSON.stringify(parameters), shortDescription ?? null, detailedGuidance ?? null],
     )
   }
 
   async getToolSettings(name: string): Promise<ToolSettings | null> {
     const result = await this.pool.query(
-      `SELECT name, enabled, max_retries, max_uses_per_loop
+      `SELECT name, enabled, max_retries, max_uses_per_loop, short_description, detailed_guidance
        FROM tools WHERE name = $1`,
       [name],
     )
@@ -104,6 +113,8 @@ export class PgStore {
       enabled: row.enabled,
       maxRetries: row.max_retries,
       maxUsesPerLoop: row.max_uses_per_loop,
+      shortDescription: row.short_description ?? undefined,
+      detailedGuidance: row.detailed_guidance ?? undefined,
     }
   }
 
@@ -134,7 +145,7 @@ export class PgStore {
 
   async updateToolSettings(
     name: string,
-    updates: { enabled?: boolean; maxRetries?: number; maxUsesPerLoop?: number },
+    updates: { enabled?: boolean; maxRetries?: number; maxUsesPerLoop?: number; shortDescription?: string | null; detailedGuidance?: string | null },
   ): Promise<void> {
     const sets: string[] = []
     const values: unknown[] = []
@@ -151,6 +162,14 @@ export class PgStore {
     if (updates.maxUsesPerLoop !== undefined) {
       sets.push(`max_uses_per_loop = $${idx++}`)
       values.push(updates.maxUsesPerLoop)
+    }
+    if ('shortDescription' in updates) {
+      sets.push(`short_description = $${idx++}`)
+      values.push(updates.shortDescription ?? null)
+    }
+    if ('detailedGuidance' in updates) {
+      sets.push(`detailed_guidance = $${idx++}`)
+      values.push(updates.detailedGuidance ?? null)
     }
 
     if (sets.length === 0) return

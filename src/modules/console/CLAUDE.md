@@ -117,6 +117,21 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 ## Identidad y Acento — `/console/agente/identity`
 - `AGENT_ACCENT` — select dinamico por idioma con ACCENT_MAP (BCP-47), ya implementado con timezone auto-detect
 - `AGENT_ACCENT_PROMPT` textarea — instrucciones custom de acento, visible solo cuando acento != neutro
+- Skills readonly — panel al final de la pagina, cargado desde `instance/prompts/system/skills/*.md` en server.ts
+  - Muestra nombre, descripcion y tipos de usuario por skill; no se editan desde console (solo archivos .md)
+  - `SectionData.skills` poblado en server.ts en el bloque `agenteSubpage === 'identity'`
+
+## Herramientas — `/console/herramientas/tools`
+- Panel "Descripciones para IA (por herramienta)" — edita shortDescription y detailedGuidance por tool
+- Los campos NO usan el save bar — tienen botones individuales que hacen PUT a `/console/api/tools/settings`
+- Persistencia: columnas `short_description` y `detailed_guidance` en la tabla `tools` (DB)
+- COALESCE en upsertTool: el restart NO sobreescribe valores editados por el usuario
+- `SectionData.toolDescriptions` poblado en server.ts con `toolsReg.getEnabledToolDefinitions()`
+
+## Proactivo — `/console/agente/advanced` Panel 6
+- Panel informativo readonly apuntando a `instance/proactive.json`
+- Documenta las claves principales (cooldown, orphan, conversationGuard)
+- La config proactiva no esta en config_store — vive en el archivo JSON
 
 ## Patrones
 - HTTP nativo de Node.js. NO agregar Express/Fastify.

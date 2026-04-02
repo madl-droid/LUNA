@@ -63,7 +63,8 @@ export class ToolRegistry {
       definition.shortDescription = firstSentence ?? definition.description
     }
 
-    // Persistir definición en DB (no toca enabled/maxRetries/maxUsesPerLoop)
+    // Persistir definición en DB (no toca enabled/maxRetries/maxUsesPerLoop).
+    // COALESCE in pg-store ensures user-edited shortDescription/detailedGuidance are not overwritten.
     await this.pgStore.upsertTool(
       name,
       definition.displayName,
@@ -71,15 +72,21 @@ export class ToolRegistry {
       definition.category,
       definition.sourceModule,
       definition.parameters,
+      definition.shortDescription,
+      definition.detailedGuidance,
     )
 
-    // Cargar settings de DB (puede tener enabled=false configurado desde console)
+    // Cargar settings de DB (puede tener enabled=false y description overrides desde console)
     const settings = await this.pgStore.getToolSettings(name) ?? {
       toolName: name,
       enabled: true,
       maxRetries: 2,
       maxUsesPerLoop: 3,
     }
+
+    // Apply DB-stored description overrides back to in-memory definition
+    if (settings.shortDescription) definition.shortDescription = settings.shortDescription
+    if (settings.detailedGuidance) definition.detailedGuidance = settings.detailedGuidance
 
     // Guardar en Map
     this.tools.set(name, { definition, handler, settings })
@@ -290,7 +297,7 @@ export class ToolRegistry {
 
   async updateToolSettings(
     name: string,
-    updates: { enabled?: boolean; maxRetries?: number; maxUsesPerLoop?: number },
+    updates: { enabled?: boolean; maxRetries?: number; maxUsesPerLoop?: number; shortDescription?: string | null; detailedGuidance?: string | null },
   ): Promise<void> {
     await this.pgStore.updateToolSettings(name, updates)
 
@@ -300,6 +307,13 @@ export class ToolRegistry {
       if (updates.enabled !== undefined) entry.settings.enabled = updates.enabled
       if (updates.maxRetries !== undefined) entry.settings.maxRetries = updates.maxRetries
       if (updates.maxUsesPerLoop !== undefined) entry.settings.maxUsesPerLoop = updates.maxUsesPerLoop
+      // Apply description overrides to in-memory definition for immediate effect
+      if ('shortDescription' in updates) {
+        entry.definition.shortDescription = updates.shortDescription ?? entry.definition.description.split(/[.!?]/)[0]?.trim() ?? entry.definition.description
+      }
+      if ('detailedGuidance' in updates) {
+        entry.definition.detailedGuidance = updates.detailedGuidance ?? undefined
+      }
     }
 
     logger.info({ toolName: name, updates }, 'Tool settings updated')
