@@ -33,26 +33,56 @@
 
       function buildOptions() {
         panel.innerHTML = ''
-        for (var i = 0; i < sel.options.length; i++) {
-          var opt = sel.options[i]
-          var item = document.createElement('button')
-          item.type = 'button'
-          item.className = 'custom-select-option' + (opt.selected ? ' selected' : '')
-          item.textContent = opt.textContent
-          item.setAttribute('data-value', opt.value)
-          item.addEventListener('click', (function (val) {
-            return function () {
-              sel.value = val
-              sel.dispatchEvent(new Event('change'))
-              wrap.classList.remove('open')
-              updateLabel()
-              // Update selected class
-              panel.querySelectorAll('.custom-select-option').forEach(function (o) {
-                o.classList.toggle('selected', o.getAttribute('data-value') === val)
-              })
-            }
-          })(opt.value))
-          panel.appendChild(item)
+        var groups = sel.querySelectorAll('optgroup')
+        if (groups.length > 0) {
+          // Optgroup mode: show group headers as separators
+          groups.forEach(function (grp) {
+            var hd = document.createElement('div')
+            hd.className = 'custom-select-optgroup'
+            hd.textContent = grp.getAttribute('label') || ''
+            panel.appendChild(hd)
+            grp.querySelectorAll('option').forEach(function (opt) {
+              var item = document.createElement('button')
+              item.type = 'button'
+              item.className = 'custom-select-option' + (opt.selected ? ' selected' : '')
+              item.textContent = opt.textContent
+              item.setAttribute('data-value', opt.value)
+              item.addEventListener('click', (function (val) {
+                return function () {
+                  sel.value = val
+                  sel.dispatchEvent(new Event('change'))
+                  wrap.classList.remove('open')
+                  updateLabel()
+                  panel.querySelectorAll('.custom-select-option').forEach(function (o) {
+                    o.classList.toggle('selected', o.getAttribute('data-value') === val)
+                  })
+                }
+              })(opt.value))
+              panel.appendChild(item)
+            })
+          })
+        } else {
+          for (var i = 0; i < sel.options.length; i++) {
+            var opt = sel.options[i]
+            var item = document.createElement('button')
+            item.type = 'button'
+            item.className = 'custom-select-option' + (opt.selected ? ' selected' : '')
+            item.textContent = opt.textContent
+            item.setAttribute('data-value', opt.value)
+            item.addEventListener('click', (function (val) {
+              return function () {
+                sel.value = val
+                sel.dispatchEvent(new Event('change'))
+                wrap.classList.remove('open')
+                updateLabel()
+                // Update selected class
+                panel.querySelectorAll('.custom-select-option').forEach(function (o) {
+                  o.classList.toggle('selected', o.getAttribute('data-value') === val)
+                })
+              }
+            })(opt.value))
+            panel.appendChild(item)
+          }
         }
       }
       buildOptions()
@@ -480,6 +510,7 @@
   // === Model dropdown provider switch ===
   var modelsDataEl = document.getElementById('models-data')
   var modelsData = modelsDataEl ? JSON.parse(modelsDataEl.textContent || '{}') : {}
+  window._modelsData = modelsData
 
   var MODEL_NAMES = {
     'claude-haiku-4-5-20251001': 'Haiku 4.5',
@@ -491,11 +522,15 @@
     'claude-opus-4-20250514': 'Opus 4',
     'claude-opus-4-1-20250805': 'Opus 4.1',
     'gemini-2.5-flash': 'Flash 2.5',
+    'gemini-2.5-flash-lite': 'Flash-Lite 2.5',
+    'gemini-2.5-flash-preview-05-20': 'Flash 2.5 Preview',
     'gemini-2.5-pro': 'Pro 2.5',
+    'gemini-2.5-pro-preview-05-06': 'Pro 2.5 Preview',
     'gemini-2.0-flash': 'Flash 2.0',
     'gemini-1.5-pro': 'Pro 1.5',
     'gemini-1.5-flash': 'Flash 1.5',
   }
+  window._modelNames = MODEL_NAMES
 
   document.addEventListener('change', function (e) {
     var el = e.target
@@ -503,13 +538,106 @@
     if (!prefix) return
     var provider = el.value
     var modelKey = provider === 'google' ? 'gemini' : provider
-    var models = modelsData[modelKey] || []
+    var models = (window._modelsData || modelsData)[modelKey] || []
     var modelSelect = document.querySelector('[data-model-select="' + prefix + '"]')
     if (!modelSelect) return
     modelSelect.innerHTML = models.map(function (m) {
       return '<option value="' + m + '">' + (MODEL_NAMES[m] || m) + '</option>'
     }).join('')
     checkDirty()
+  })
+
+  // === API Key Mode segment toggle ===
+  window.setApiKeyMode = function (mode) {
+    var input = document.getElementById('api-mode-input')
+    if (input) {
+      input.value = mode
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    document.querySelectorAll('.seg-btn').forEach(function (btn) {
+      btn.classList.toggle('seg-btn--active', btn.getAttribute('data-mode') === mode)
+    })
+    var advGroups = document.querySelectorAll('.adv-group-keys')
+    advGroups.forEach(function (el) {
+      el.style.display = mode === 'advanced' ? 'block' : 'none'
+    })
+  }
+
+  // === Model table — refresh custom select widget ===
+  function refreshCustomSelect(sel) {
+    var wrapper = sel.parentNode
+    while (wrapper && !wrapper.classList.contains('custom-select')) {
+      wrapper = wrapper.parentNode
+    }
+    if (wrapper && wrapper.parentNode) {
+      wrapper.parentNode.insertBefore(sel, wrapper)
+      wrapper.remove()
+    }
+    sel.removeAttribute('data-custom-init')
+    sel.style.display = ''
+    if (window.initCustomSelects) window.initCustomSelects()
+  }
+
+  // === Model table — primary select change (update hidden inputs + filter downgrade) ===
+  document.addEventListener('change', function (e) {
+    var sel = e.target
+    if (!sel.classList || !sel.classList.contains('mt-primary-sel')) return
+    var val = sel.value // "provider:model"
+    var colonIdx = val.indexOf(':')
+    if (colonIdx < 0) return
+    var provider = val.substring(0, colonIdx)
+    var model = val.substring(colonIdx + 1)
+    var task = sel.getAttribute('data-task')
+    if (!task) return
+    var taskKey = task.toUpperCase()
+    var row = sel.closest ? sel.closest('.mt-row') : null
+    if (!row) return
+
+    // Update primary hidden inputs
+    var provInput = row.querySelector('input[name="LLM_' + taskKey + '_PROVIDER"]')
+    var modInput = row.querySelector('input[name="LLM_' + taskKey + '_MODEL"]')
+    if (provInput) provInput.value = provider
+    if (modInput) modInput.value = model
+
+    // Filter downgrade select to same provider
+    var dgSel = row.querySelector('.mt-dg-sel')
+    if (!dgSel) return
+    var data = window._modelsData || {}
+    var models = provider === 'google' ? (data.gemini || []) : (data.anthropic || [])
+    var names = window._modelNames || {}
+    var newOpts = '<option value="">—</option>' + models.map(function (m) {
+      return '<option value="' + provider + ':' + m + '">' + (names[m] || m) + '</option>'
+    }).join('')
+    dgSel.innerHTML = newOpts
+    dgSel.value = ''
+
+    // Reset downgrade hidden inputs
+    var dgProvInput = row.querySelector('input[name="LLM_' + taskKey + '_DOWNGRADE_PROVIDER"]')
+    var dgModInput = row.querySelector('input[name="LLM_' + taskKey + '_DOWNGRADE_MODEL"]')
+    if (dgProvInput) dgProvInput.value = ''
+    if (dgModInput) dgModInput.value = ''
+
+    refreshCustomSelect(dgSel)
+    checkDirty()
+  })
+
+  // === Model table — downgrade select change (update hidden inputs) ===
+  document.addEventListener('change', function (e) {
+    var sel = e.target
+    if (!sel.classList || !sel.classList.contains('mt-dg-sel')) return
+    var val = sel.value // "provider:model" or ""
+    var task = sel.getAttribute('data-task')
+    if (!task) return
+    var taskKey = task.toUpperCase()
+    var row = sel.closest ? sel.closest('.mt-row') : null
+    if (!row) return
+    var colonIdx = val ? val.indexOf(':') : -1
+    var provider = colonIdx >= 0 ? val.substring(0, colonIdx) : ''
+    var model = colonIdx >= 0 ? val.substring(colonIdx + 1) : ''
+    var dgProvInput = row.querySelector('input[name="LLM_' + taskKey + '_DOWNGRADE_PROVIDER"]')
+    var dgModInput = row.querySelector('input[name="LLM_' + taskKey + '_DOWNGRADE_MODEL"]')
+    if (dgProvInput) dgProvInput.value = provider
+    if (dgModInput) dgModInput.value = model
   })
 
   // === WhatsApp polling (only on /console/whatsapp) ===
@@ -577,7 +705,7 @@
           // Refresh models data for dropdowns
           fetch('/console/api/llm/scanner/models')
             .then(function (r) { return r.json() })
-            .then(function (d) { if (d.models) modelsData = d.models })
+            .then(function (d) { if (d.models) { modelsData = d.models; window._modelsData = d.models } })
             .catch(function () {})
         } else {
           showToast('Scan failed', 'error')

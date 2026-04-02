@@ -269,14 +269,50 @@ export class TaskRouter {
       }
     }
 
-    // Parse per-task downgrade targets (separate provider/model keys)
+    // Parse per-task primary model overrides (from advanced console table)
     const cfg = config as unknown as Record<string, string | undefined>
+    const primaryOverrides: Array<{ task: LLMTask; providerKey: string; modelKey: string }> = [
+      { task: 'classify', providerKey: 'LLM_CLASSIFY_PROVIDER', modelKey: 'LLM_CLASSIFY_MODEL' },
+      { task: 'respond', providerKey: 'LLM_RESPOND_PROVIDER', modelKey: 'LLM_RESPOND_MODEL' },
+      { task: 'complex', providerKey: 'LLM_COMPLEX_PROVIDER', modelKey: 'LLM_COMPLEX_MODEL' },
+      { task: 'tools', providerKey: 'LLM_TOOLS_PROVIDER', modelKey: 'LLM_TOOLS_MODEL' },
+      { task: 'proactive', providerKey: 'LLM_PROACTIVE_PROVIDER', modelKey: 'LLM_PROACTIVE_MODEL' },
+      { task: 'criticize', providerKey: 'LLM_CRITICIZE_PROVIDER', modelKey: 'LLM_CRITICIZE_MODEL' },
+      { task: 'document_read', providerKey: 'LLM_DOCUMENT_READ_PROVIDER', modelKey: 'LLM_DOCUMENT_READ_MODEL' },
+      { task: 'batch', providerKey: 'LLM_BATCH_PROVIDER', modelKey: 'LLM_BATCH_MODEL' },
+      { task: 'vision', providerKey: 'LLM_VISION_PROVIDER', modelKey: 'LLM_VISION_MODEL' },
+      { task: 'web_search', providerKey: 'LLM_WEB_SEARCH_PROVIDER', modelKey: 'LLM_WEB_SEARCH_MODEL' },
+    ]
+
+    for (const { task, providerKey, modelKey } of primaryOverrides) {
+      const provider = cfg[providerKey]
+      const model = cfg[modelKey]
+      if (provider && model) {
+        const existing = this.routes.get(task)
+        if (existing) {
+          existing.primary = {
+            ...existing.primary,
+            provider: provider as LLMProviderName,
+            model,
+          }
+          const warning = this.validateRoute(task, existing)
+          if (warning) logger.warn({ task, provider }, warning)
+        }
+      }
+    }
+
+    // Parse per-task downgrade targets (separate provider/model keys)
     const downgradeTasks: Array<{ task: LLMTask; providerKey: string; modelKey: string }> = [
       { task: 'classify', providerKey: 'LLM_CLASSIFY_DOWNGRADE_PROVIDER', modelKey: 'LLM_CLASSIFY_DOWNGRADE_MODEL' },
       { task: 'respond', providerKey: 'LLM_RESPOND_DOWNGRADE_PROVIDER', modelKey: 'LLM_RESPOND_DOWNGRADE_MODEL' },
       { task: 'complex', providerKey: 'LLM_COMPLEX_DOWNGRADE_PROVIDER', modelKey: 'LLM_COMPLEX_DOWNGRADE_MODEL' },
       { task: 'tools', providerKey: 'LLM_TOOLS_DOWNGRADE_PROVIDER', modelKey: 'LLM_TOOLS_DOWNGRADE_MODEL' },
       { task: 'proactive', providerKey: 'LLM_PROACTIVE_DOWNGRADE_PROVIDER', modelKey: 'LLM_PROACTIVE_DOWNGRADE_MODEL' },
+      { task: 'criticize', providerKey: 'LLM_CRITICIZE_DOWNGRADE_PROVIDER', modelKey: 'LLM_CRITICIZE_DOWNGRADE_MODEL' },
+      { task: 'document_read', providerKey: 'LLM_DOCUMENT_READ_DOWNGRADE_PROVIDER', modelKey: 'LLM_DOCUMENT_READ_DOWNGRADE_MODEL' },
+      { task: 'batch', providerKey: 'LLM_BATCH_DOWNGRADE_PROVIDER', modelKey: 'LLM_BATCH_DOWNGRADE_MODEL' },
+      { task: 'vision', providerKey: 'LLM_VISION_DOWNGRADE_PROVIDER', modelKey: 'LLM_VISION_DOWNGRADE_MODEL' },
+      { task: 'web_search', providerKey: 'LLM_WEB_SEARCH_DOWNGRADE_PROVIDER', modelKey: 'LLM_WEB_SEARCH_DOWNGRADE_MODEL' },
     ]
 
     for (const { task, providerKey, modelKey } of downgradeTasks) {

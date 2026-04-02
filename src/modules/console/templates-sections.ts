@@ -578,84 +578,206 @@ export function renderInfraUnifiedSection(data: SectionData): string {
 }
 
 // ═══════════════════════════════════════════
-// Agent Advanced — curated settings transferred from modules page
+// Agent Advanced — API Keys + Model Assignment Table
 // ═══════════════════════════════════════════
 
-/** Row in the model assignment table */
-function modelTaskRow(label: string, model: string, badge?: string): string {
-  return `<div class="model-task-row">
-    <span class="model-task-label">${esc(label)}</span>
-    <span class="model-task-value">${esc(model)}${badge ? `<span class="model-task-badge">${badge}</span>` : ''}</span>
+/** Short display name for a model id */
+const MODEL_SHORT: Record<string, string> = {
+  'claude-haiku-4-5-20251001': 'Haiku 4.5',
+  'claude-sonnet-4-5-20250929': 'Sonnet 4.5',
+  'claude-sonnet-4-6': 'Sonnet 4.6',
+  'claude-opus-4-5-20251101': 'Opus 4.5',
+  'claude-opus-4-6': 'Opus 4.6',
+  'gemini-2.5-flash': 'Flash 2.5',
+  'gemini-2.5-flash-lite': 'Flash-Lite 2.5',
+  'gemini-2.5-flash-preview-05-20': 'Flash 2.5 Preview',
+  'gemini-2.5-pro': 'Pro 2.5',
+  'gemini-2.5-pro-preview-05-06': 'Pro 2.5 Preview',
+  'gemini-2.0-flash': 'Flash 2.0',
+  'gemini-1.5-pro': 'Pro 1.5',
+  'gemini-1.5-flash': 'Flash 1.5',
+}
+
+function mShort(id: string): string {
+  return MODEL_SHORT[id] ?? id
+}
+
+/** Known models as fallback when scanner hasn't run yet */
+const DEFAULT_ANTHROPIC_MODELS = [
+  'claude-opus-4-5-20251101',
+  'claude-sonnet-4-5-20250929',
+  'claude-haiku-4-5-20251001',
+]
+const DEFAULT_GOOGLE_MODELS = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+]
+
+/** Resolve current primary provider+model for a task (config override → default) */
+function resolveTaskPrimary(config: Record<string, string>, task: string, defProv: string, defModel: string): [string, string] {
+  const k = task.toUpperCase()
+  return [config[`LLM_${k}_PROVIDER`] || defProv, config[`LLM_${k}_MODEL`] || defModel]
+}
+
+/** Resolve current downgrade provider+model for a task */
+function resolveTaskDg(config: Record<string, string>, task: string, defProv: string, defModel: string): [string, string] {
+  const k = task.toUpperCase()
+  return [config[`LLM_${k}_DOWNGRADE_PROVIDER`] || defProv, config[`LLM_${k}_DOWNGRADE_MODEL`] || defModel]
+}
+
+/** Build a row in the model assignment table */
+function mtRow(
+  task: string, label: string,
+  primaryProvider: string, primaryModel: string,
+  dgProvider: string, dgModel: string,
+  fbProvider: string, fbModel: string,
+  anthropicModels: string[], googleModels: string[],
+): string {
+  const taskKey = task.toUpperCase()
+  const primaryVal = `${primaryProvider}:${primaryModel}`
+  const dgVal = dgModel ? `${dgProvider}:${dgModel}` : ''
+
+  // Primary: combined optgroup select (Anthropic + Google)
+  const anthOpts = anthropicModels.map(m =>
+    `<option value="anthropic:${esc(m)}" ${`anthropic:${m}` === primaryVal ? 'selected' : ''}>${esc(mShort(m))}</option>`
+  ).join('')
+  const gooOpts = googleModels.map(m =>
+    `<option value="google:${esc(m)}" ${`google:${m}` === primaryVal ? 'selected' : ''}>${esc(mShort(m))}</option>`
+  ).join('')
+
+  // Downgrade: filtered to same provider as primary
+  const dgModels = primaryProvider === 'google' ? googleModels : anthropicModels
+  const dgOpts = ['<option value="">—</option>',
+    ...dgModels.map(m => {
+      const v = `${primaryProvider}:${m}`
+      return `<option value="${esc(v)}" ${v === dgVal ? 'selected' : ''}>${esc(mShort(m))}</option>`
+    }),
+  ].join('')
+
+  // Fallback pill
+  const fbClass = fbProvider === 'google' ? 'mt-fb-google' : 'mt-fb-anthropic'
+  const fbLabel = fbProvider === 'google' ? 'G' : 'A'
+
+  return `<div class="mt-row" data-task="${task}">
+    <span class="mt-task">${esc(label)}</span>
+    <span class="mt-primary">
+      <select class="js-custom-select mt-primary-sel" data-task="${task}" data-original="${esc(primaryVal)}">
+        <optgroup label="Anthropic">${anthOpts}</optgroup>
+        <optgroup label="Google Gemini">${gooOpts}</optgroup>
+      </select>
+      <input type="hidden" name="LLM_${taskKey}_PROVIDER" value="${esc(primaryProvider)}" data-original="${esc(primaryProvider)}">
+      <input type="hidden" name="LLM_${taskKey}_MODEL" value="${esc(primaryModel)}" data-original="${esc(primaryModel)}">
+    </span>
+    <span class="mt-dg">
+      <select class="js-custom-select mt-dg-sel" data-task="${task}" data-original="${esc(dgVal)}">
+        ${dgOpts}
+      </select>
+      <input type="hidden" name="LLM_${taskKey}_DOWNGRADE_PROVIDER" value="${esc(dgProvider)}" data-original="${esc(dgProvider)}">
+      <input type="hidden" name="LLM_${taskKey}_DOWNGRADE_MODEL" value="${esc(dgModel)}" data-original="${esc(dgModel)}">
+    </span>
+    <span class="mt-fb">
+      <span class="mt-fb-pill ${fbClass}"><span class="mt-fb-badge">${fbLabel}</span>${esc(mShort(fbModel))}</span>
+    </span>
   </div>`
 }
 
-/** Read-only model assignment panel — organized by user spec, no Haiku */
-function renderAdvancedModelsContent(data: SectionData, lang: string): string {
+/** Model assignment table + scan bar */
+function renderModelsTable(data: SectionData, lang: string): string {
   const isEs = lang === 'es'
-  const scanInfo = data.lastScan
-    ? `<span class="scan-info">${t('lastScan', data.lang)}: ${esc(data.lastScan.lastScanAt)}</span>`
-    : ''
-  const scanReplacements = (data.lastScan?.replacements?.length)
-    ? data.lastScan.replacements.map(r =>
-        `<div class="scan-replacement">
-          ${esc(r.configKey)}: <s>${esc(r.oldModel)}</s> → <b>${esc(r.newModel)}</b>
-        </div>`
-      ).join('') : ''
+  const cfg = data.config
 
-  // Criticizer mode select
+  const anthropicModels = data.allModels?.anthropic?.length ? data.allModels.anthropic : DEFAULT_ANTHROPIC_MODELS
+  const googleModels = data.allModels?.gemini?.length ? data.allModels.gemini : DEFAULT_GOOGLE_MODELS
+
+  const scanInfo = data.lastScan
+    ? `<span class="scan-info">${isEs ? 'Último scan' : 'Last scan'}: ${esc(data.lastScan.lastScanAt)}</span>`
+    : `<span class="scan-info">${isEs ? 'Sin escaneo aún' : 'No scan yet'}</span>`
+
+  const scanReplacements = (data.lastScan?.replacements?.length)
+    ? `<div id="scan-replacements">` + data.lastScan.replacements.map(r =>
+        `<div class="scan-replacement">${esc(r.configKey)}: <s>${esc(r.oldModel)}</s> → <b>${esc(r.newModel)}</b></div>`
+      ).join('') + '</div>'
+    : '<div id="scan-replacements"></div>'
+
+  // Task definitions: task id, label es, label en, default primary, default downgrade, cross-api fallback
+  const TASKS: Array<[string, string, string, string, string, string, string, string, string]> = [
+    // [task, labelEs, labelEn, defPrimProv, defPrimModel, defDgProv, defDgModel, fbProv, fbModel]
+    ['classify',    'Evaluación de intent',      'Intent evaluation',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+    ['respond',     'Respuesta (Fase 4)',         'Response (Phase 4)',       'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
+    ['complex',     'Tarea compleja / subagente', 'Complex / subagent task', 'anthropic', 'claude-opus-4-5-20251101',   'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-2.5-pro'],
+    ['tools',       'Ejecución de tools',         'Tool execution',          'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+    ['proactive',   'Mensaje proactivo',          'Proactive message',       'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+    ['criticize',   'Criticizer (gate de calidad)','Criticizer (quality gate)','google',  'gemini-2.5-pro',             'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-5-20250929'],
+    ['document_read','Lectura de documentos',     'Document reading',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+    ['batch',       'Batch nocturno',             'Nightly batch',           'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+    ['vision',      'Multimedia / Visión',        'Multimedia / Vision',     'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
+    ['web_search',  'Búsqueda web',               'Web search',              'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-5-20250929'],
+  ]
+
+  const rows = TASKS.map(([task, lEs, lEn, dPP, dPM, dDP, dDM, fbP, fbM]) => {
+    const [pP, pM] = resolveTaskPrimary(cfg, task, dPP, dPM)
+    const [dgP, dgM] = resolveTaskDg(cfg, task, dDP, dDM)
+    return mtRow(task, isEs ? lEs : lEn, pP, pM, dgP, dgM, fbP, fbM, anthropicModels, googleModels)
+  }).join('')
+
+  // Criticizer mode
   const criticModeOptions = [
     { value: 'disabled', label: isEs ? 'Desactivado' : 'Disabled' },
     { value: 'complex_only', label: isEs ? 'Solo planes complejos (≥3 pasos)' : 'Complex plans only (≥3 steps)' },
     { value: 'always', label: isEs ? 'Siempre' : 'Always' },
   ]
-  const currentCriticMode = cv(data, 'LLM_CRITICIZER_MODE') || 'complex_only'
-  const criticModeOpts = criticModeOptions.map(o =>
+  const currentCriticMode = cfg['LLM_CRITICIZER_MODE'] || 'complex_only'
+  const criticOpts = criticModeOptions.map(o =>
     `<option value="${o.value}" ${o.value === currentCriticMode ? 'selected' : ''}>${o.label}</option>`
   ).join('')
 
   return `
   <div class="scan-bar">
-    <button type="button" class="act-btn act-btn-config" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
+    <button type="button" class="act-btn act-btn-config" onclick="triggerScan()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      ${isEs ? 'Escanear modelos' : 'Scan models'}
+    </button>
     ${scanInfo}
   </div>
-  <div id="scan-replacements">${scanReplacements}</div>
+  ${scanReplacements}
 
-  <div class="model-group-header">
-    <span class="model-group-provider model-group-provider--anthropic">Anthropic</span>
-  </div>
-  <div class="model-task-list">
-    ${modelTaskRow(isEs ? 'Fase 2 — Evaluacion de intent' : 'Phase 2 — Intent evaluation', 'Claude Sonnet')}
-    ${modelTaskRow(isEs ? 'Fase 3 simple (≤2 pasos LLM)' : 'Phase 3 simple (≤2 LLM steps)', 'Claude Sonnet')}
-    ${modelTaskRow(isEs ? 'Fase 3 complejo (3+ pasos LLM)' : 'Phase 3 complex (3+ LLM steps)', 'Claude Opus')}
-    ${modelTaskRow(isEs ? 'Lectura de documentos' : 'Document reading', 'Claude Sonnet')}
-    ${modelTaskRow(isEs ? 'Batch nocturno' : 'Nightly batch', 'Claude Sonnet')}
-  </div>
-
-  <div class="model-group-header">
-    <span class="model-group-provider model-group-provider--google">Google Gemini</span>
-  </div>
-  <div class="model-task-list">
-    ${modelTaskRow(isEs ? 'Respuesta (Fase 4)' : 'Response (Phase 4)', 'Gemini Flash 2.5')}
-    ${modelTaskRow(isEs ? 'Multimedia (imagenes, video, audio)' : 'Multimedia (images, video, audio)', 'Gemini Flash 2.5')}
-    ${modelTaskRow(isEs ? 'Busqueda web' : 'Web search', 'Gemini Flash 2.5', isEs ? 'grounding nativo' : 'native grounding')}
-    ${modelTaskRow(isEs ? 'Criticizer (revisor de calidad)' : 'Criticizer (quality reviewer)', 'Gemini Pro 2.5')}
+  <div class="mt-table">
+    <div class="mt-head">
+      <span class="mt-col-task">${isEs ? 'Tarea' : 'Task'}</span>
+      <span class="mt-col-primary">${isEs ? 'Modelo principal' : 'Primary model'}</span>
+      <span class="mt-col-dg">${isEs ? 'Downgrade' : 'Downgrade'}</span>
+      <span class="mt-col-fb">${isEs ? 'Fallback' : 'Fallback'}</span>
+    </div>
+    ${rows}
   </div>
 
+  <div class="mt-fixed-rows">
+    <div class="mt-fixed-label">${isEs ? 'Modelos fijos (no editables)' : 'Fixed models (not editable)'}</div>
+    <div class="mt-fixed-row">
+      <span class="mt-fixed-task">TTS</span>
+      <span class="mt-fixed-model"><span class="mt-fb-pill mt-fb-google"><span class="mt-fb-badge">G</span>Gemini TTS</span></span>
+      <span class="mt-fixed-note">${isEs ? 'Módulo Voz — configurable en canal de voz' : 'Voice module — configurable in voice channel'}</span>
+    </div>
+    <div class="mt-fixed-row">
+      <span class="mt-fixed-task">${isEs ? 'Embeddings' : 'Embeddings'}</span>
+      <span class="mt-fixed-model"><span class="mt-fb-pill mt-fb-google"><span class="mt-fb-badge">G</span>Embedding 2</span></span>
+      <span class="mt-fixed-note">gemini-embedding-2-preview · ${isEs ? 'Módulo Knowledge' : 'Knowledge module'}</span>
+    </div>
+  </div>
+
+  <div class="field-divider"><span class="field-divider-label">${isEs ? 'Criticizer' : 'Criticizer'}</span></div>
   <div class="field">
     <div class="field-left">
-      <span class="field-label">${isEs ? 'Modo del criticizer' : 'Criticizer mode'}</span>
+      <span class="field-label">${isEs ? 'Activación del criticizer' : 'Criticizer activation'}</span>
+      <span class="field-info">${isEs
+        ? 'Gemini Pro revisa la respuesta antes de enviarla. Si encuentra problemas Flash regenera.'
+        : 'Gemini Pro reviews the response before sending. If issues found Flash regenerates.'}</span>
     </div>
-    <select class="js-custom-select" name="LLM_CRITICIZER_MODE" data-original="${esc(currentCriticMode)}">${criticModeOpts}</select>
+    <select class="js-custom-select" name="LLM_CRITICIZER_MODE" data-original="${esc(currentCriticMode)}">${criticOpts}</select>
   </div>
 
-  <div class="model-group-header">
-    <span class="model-group-provider model-group-provider--external">${isEs ? 'Configurado en su modulo' : 'Configured in their module'}</span>
-  </div>
-  <div class="model-task-list">
-    ${modelTaskRow('TTS', 'Gemini Pro TTS', isEs ? 'modulo Voz' : 'Voice module')}
-    ${modelTaskRow(isEs ? 'Embeddings (knowledge)' : 'Embeddings (knowledge)', 'text-embedding-004', isEs ? 'modulo Knowledge' : 'Knowledge module')}
-    ${modelTaskRow(isEs ? 'Compresion de sesiones (interno)' : 'Session compression (internal)', 'Claude Haiku', isEs ? 'optimizado costo' : 'cost-optimized')}
-  </div>
   <script type="application/json" id="models-data">${JSON.stringify(data.allModels ?? {})}</script>`
 }
 
@@ -663,75 +785,80 @@ export function renderAdvancedAgentSection(data: SectionData): string {
   const isEs = data.lang === 'es'
   let h = ''
 
-  // Panel 1: API Keys (basic/advanced mode with JS toggle)
+  // Panel 1: API Keys — segment toggle (General | Por función) + 2-column layout
   const currentApiMode = cv(data, 'LLM_API_MODE') || 'basic'
-  const apiModeOpts = [
-    { value: 'basic', label: isEs ? 'Basico (una key por proveedor)' : 'Basic (one key per provider)' },
-    { value: 'advanced', label: isEs ? 'Avanzado (keys por funcion)' : 'Advanced (keys per function)' },
-  ].map(o => `<option value="${o.value}" ${o.value === currentApiMode ? 'selected' : ''}>${o.label}</option>`).join('')
+  const isAdvanced = currentApiMode === 'advanced'
 
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">API Keys</span>
+      <span class="panel-title">API Keys — LLM</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
-      <div class="panel-info">${isEs
-        ? 'Claves de acceso a los proveedores LLM. El modo avanzado permite asignar keys separadas por grupo de uso (engine, multimedia, voz, knowledge).'
-        : 'LLM provider access keys. Advanced mode lets you assign separate keys per usage group (engine, multimedia, voice, knowledge).'}</div>
-
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modo' : 'Mode'}</span></div>
-      <div class="field">
-        <div class="field-left"><span class="field-label">${isEs ? 'Modo de API Keys' : 'API Key Mode'}</span></div>
-        <select class="js-custom-select" name="LLM_API_MODE" data-original="${esc(currentApiMode)}"
-          onchange="document.getElementById('adv-keys').style.display=this.value==='advanced'?'block':'none'"
-        >${apiModeOpts}</select>
+      <div class="api-mode-row">
+        <span class="api-mode-question">${isEs ? '¿Cómo quieres gestionar tus API keys?' : 'How do you want to manage your API keys?'}</span>
+        <div class="seg-ctrl">
+          <button type="button" class="seg-btn${!isAdvanced ? ' seg-btn--active' : ''}" data-mode="basic" onclick="setApiKeyMode('basic')">${isEs ? 'General' : 'General'}</button>
+          <button type="button" class="seg-btn${isAdvanced ? ' seg-btn--active' : ''}" data-mode="advanced" onclick="setApiKeyMode('advanced')">${isEs ? 'Por función' : 'By function'}</button>
+        </div>
+        <input type="hidden" name="LLM_API_MODE" id="api-mode-input" value="${esc(currentApiMode)}" data-original="${esc(currentApiMode)}">
       </div>
 
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Keys principales' : 'Main keys'}</span></div>
-      ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang, 'f_ANTHROPIC_API_KEY', 'i_ANTHROPIC_API_KEY')}
-      ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang, 'f_GOOGLE_AI_API_KEY', 'i_GOOGLE_AI_API_KEY')}
-
-      <div id="adv-keys" style="display:${currentApiMode === 'advanced' ? 'block' : 'none'}">
-        <div class="field-divider"><span class="field-divider-label">Google Gemini — ${isEs ? 'por grupo' : 'by group'}</span></div>
-        ${secretField('LLM_GOOGLE_ENGINE_API_KEY', cv(data, 'LLM_GOOGLE_ENGINE_API_KEY'), data.lang,
-          'Gemini — Engine',
-          isEs ? 'Key para compose y web_search (Fase 4, busqueda web). Fallback: Google AI Key.' : 'Key for compose and web_search (Phase 4, web search). Fallback: Google AI Key.')}
-        ${secretField('LLM_GOOGLE_MULTIMEDIA_API_KEY', cv(data, 'LLM_GOOGLE_MULTIMEDIA_API_KEY'), data.lang,
-          'Gemini — Multimedia',
-          isEs ? 'Key para vision, STT, archivos multimedia. Fallback: Google AI Key.' : 'Key for vision, STT, multimedia files. Fallback: Google AI Key.')}
-        ${secretField('LLM_GOOGLE_VOICE_API_KEY', cv(data, 'LLM_GOOGLE_VOICE_API_KEY'), data.lang,
-          isEs ? 'Gemini — Voz' : 'Gemini — Voice',
-          isEs ? 'Key para TTS y Gemini Live. Fallback: Google AI Key.' : 'Key for TTS and Gemini Live. Fallback: Google AI Key.')}
-        ${secretField('LLM_GOOGLE_KNOWLEDGE_API_KEY', cv(data, 'LLM_GOOGLE_KNOWLEDGE_API_KEY'), data.lang,
-          'Gemini — Knowledge',
-          isEs ? 'Key para embeddings de conocimiento. Fallback: Google AI Key.' : 'Key for knowledge embeddings. Fallback: Google AI Key.')}
-
-        <div class="field-divider"><span class="field-divider-label">Anthropic — ${isEs ? 'por grupo' : 'by group'}</span></div>
-        ${secretField('LLM_ANTHROPIC_ENGINE_API_KEY', cv(data, 'LLM_ANTHROPIC_ENGINE_API_KEY'), data.lang,
-          'Anthropic — Engine',
-          isEs ? 'Key para classify, tools, complex, proactive. Fallback: Anthropic API Key.' : 'Key for classify, tools, complex, proactive. Fallback: Anthropic API Key.')}
-        ${secretField('LLM_ANTHROPIC_CORTEX_API_KEY', cv(data, 'LLM_ANTHROPIC_CORTEX_API_KEY'), data.lang,
-          'Anthropic — Cortex',
-          isEs ? 'Key para Pulse, Trace, Reflex. Fallback: Anthropic API Key.' : 'Key for Pulse, Trace, Reflex. Fallback: Anthropic API Key.')}
-        ${secretField('LLM_ANTHROPIC_MEMORY_API_KEY', cv(data, 'LLM_ANTHROPIC_MEMORY_API_KEY'), data.lang,
-          isEs ? 'Anthropic — Memoria' : 'Anthropic — Memory',
-          isEs ? 'Key para compresion de sesiones y batch nocturno. Fallback: Anthropic API Key.' : 'Key for session compression and nightly batch. Fallback: Anthropic API Key.')}
+      <div class="api-key-cols">
+        <div class="api-key-col">
+          <div class="api-key-col-hd api-key-col-hd--anthropic">Anthropic</div>
+          ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang,
+            isEs ? 'API Key principal' : 'Main API Key',
+            isEs ? 'Key principal de Anthropic. Usada para todas las llamadas si no hay key por grupo.' : 'Main Anthropic key. Used for all calls if no per-group key is set.')}
+          <div class="adv-group-keys" id="adv-anthropic" style="display:${isAdvanced ? 'block' : 'none'}">
+            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso' : 'Per usage group'}</div>
+            ${secretField('LLM_ANTHROPIC_ENGINE_API_KEY', cv(data, 'LLM_ANTHROPIC_ENGINE_API_KEY'), data.lang,
+              'Engine',
+              isEs ? 'classify · tools · complex · proactive — Fallback: key principal' : 'classify · tools · complex · proactive — Fallback: main key')}
+            ${secretField('LLM_ANTHROPIC_CORTEX_API_KEY', cv(data, 'LLM_ANTHROPIC_CORTEX_API_KEY'), data.lang,
+              'Cortex',
+              isEs ? 'Pulse · Trace · Reflex — Fallback: key principal' : 'Pulse · Trace · Reflex — Fallback: main key')}
+            ${secretField('LLM_ANTHROPIC_MEMORY_API_KEY', cv(data, 'LLM_ANTHROPIC_MEMORY_API_KEY'), data.lang,
+              isEs ? 'Memoria' : 'Memory',
+              isEs ? 'compress · batch nocturno — Fallback: key principal' : 'compress · nightly batch — Fallback: main key')}
+          </div>
+        </div>
+        <div class="api-key-col">
+          <div class="api-key-col-hd api-key-col-hd--google">Google Gemini</div>
+          ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang,
+            isEs ? 'API Key principal' : 'Main API Key',
+            isEs ? 'Key principal de Google AI. Usada para todas las llamadas si no hay key por grupo.' : 'Main Google AI key. Used for all calls if no per-group key is set.')}
+          <div class="adv-group-keys" id="adv-google" style="display:${isAdvanced ? 'block' : 'none'}">
+            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso' : 'Per usage group'}</div>
+            ${secretField('LLM_GOOGLE_ENGINE_API_KEY', cv(data, 'LLM_GOOGLE_ENGINE_API_KEY'), data.lang,
+              'Multimedia / Voz',
+              isEs ? 'respond · web_search · vision · TTS — Fallback: key principal' : 'respond · web_search · vision · TTS — Fallback: main key')}
+            ${secretField('LLM_GOOGLE_MULTIMEDIA_API_KEY', cv(data, 'LLM_GOOGLE_MULTIMEDIA_API_KEY'), data.lang,
+              'Multimedia',
+              isEs ? 'vision · STT · archivos — Fallback: key principal' : 'vision · STT · files — Fallback: main key')}
+            ${secretField('LLM_GOOGLE_VOICE_API_KEY', cv(data, 'LLM_GOOGLE_VOICE_API_KEY'), data.lang,
+              isEs ? 'Voz' : 'Voice',
+              isEs ? 'TTS · Gemini Live — Fallback: key principal' : 'TTS · Gemini Live — Fallback: main key')}
+            ${secretField('LLM_GOOGLE_KNOWLEDGE_API_KEY', cv(data, 'LLM_GOOGLE_KNOWLEDGE_API_KEY'), data.lang,
+              'Knowledge',
+              isEs ? 'embeddings · knowledge — Fallback: key principal' : 'embeddings · knowledge — Fallback: main key')}
+          </div>
+        </div>
       </div>
     </div>
   </div>`
 
-  // Panel 2: Models — clean task→model display organized by spec
+  // Panel 2: Models — interactive assignment table
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${t('sec_models', data.lang)}</span>
+      <span class="panel-title">${isEs ? 'Uso de modelos' : 'Model assignment'}</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
       <div class="panel-info">${isEs
-        ? 'Modelos asignados por tarea. La tabla refleja la configuracion activa del motor.'
-        : 'Models assigned per task. The table reflects the active engine configuration.'}</div>
-      ${renderAdvancedModelsContent(data, data.lang)}
+        ? 'Asigna qué modelo usa cada tarea del motor. Principal es el modelo activo; Downgrade se activa si el circuit breaker del principal salta; Fallback cambia de proveedor.'
+        : 'Assign which model each engine task uses. Primary is the active model; Downgrade activates if the primary circuit breaker trips; Fallback switches provider.'}</div>
+      ${renderModelsTable(data, data.lang)}
     </div>
   </div>`
 

@@ -94,6 +94,28 @@ const manifest: ModuleManifest = {
     // Criticizer mode (quality gate — Pro reviews, Flash regenerates)
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
 
+    // Task routing — per-task primary model overrides (set via advanced console table)
+    LLM_CLASSIFY_PROVIDER: z.string().default(''),
+    LLM_CLASSIFY_MODEL: z.string().default(''),
+    LLM_RESPOND_PROVIDER: z.string().default(''),
+    LLM_RESPOND_MODEL: z.string().default(''),
+    LLM_COMPLEX_PROVIDER: z.string().default(''),
+    LLM_COMPLEX_MODEL: z.string().default(''),
+    LLM_TOOLS_PROVIDER: z.string().default(''),
+    LLM_TOOLS_MODEL: z.string().default(''),
+    LLM_PROACTIVE_PROVIDER: z.string().default(''),
+    LLM_PROACTIVE_MODEL: z.string().default(''),
+    LLM_CRITICIZE_PROVIDER: z.string().default(''),
+    LLM_CRITICIZE_MODEL: z.string().default(''),
+    LLM_DOCUMENT_READ_PROVIDER: z.string().default(''),
+    LLM_DOCUMENT_READ_MODEL: z.string().default(''),
+    LLM_BATCH_PROVIDER: z.string().default(''),
+    LLM_BATCH_MODEL: z.string().default(''),
+    LLM_VISION_PROVIDER: z.string().default(''),
+    LLM_VISION_MODEL: z.string().default(''),
+    LLM_WEB_SEARCH_PROVIDER: z.string().default(''),
+    LLM_WEB_SEARCH_MODEL: z.string().default(''),
+
     // Task routing — downgrade targets (provider + model per task)
     LLM_CLASSIFY_DOWNGRADE_PROVIDER: z.string().default(''),
     LLM_CLASSIFY_DOWNGRADE_MODEL: z.string().default(''),
@@ -105,6 +127,16 @@ const manifest: ModuleManifest = {
     LLM_TOOLS_DOWNGRADE_MODEL: z.string().default(''),
     LLM_PROACTIVE_DOWNGRADE_PROVIDER: z.string().default(''),
     LLM_PROACTIVE_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_CRITICIZE_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_CRITICIZE_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_DOCUMENT_READ_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_DOCUMENT_READ_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_BATCH_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_BATCH_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_VISION_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_VISION_DOWNGRADE_MODEL: z.string().default(''),
+    LLM_WEB_SEARCH_DOWNGRADE_PROVIDER: z.string().default(''),
+    LLM_WEB_SEARCH_DOWNGRADE_MODEL: z.string().default(''),
 
     // Fallback chain order (comma-separated)
     LLM_FALLBACK_CHAIN: z.string().default('anthropic,google'),
