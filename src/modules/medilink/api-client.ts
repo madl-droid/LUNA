@@ -9,7 +9,7 @@ import type {
   MedilinkProfessional, MedilinkBranch, MedilinkChair,
   MedilinkTreatment, MedilinkAppointmentStatus,
   MedilinkAgendaItem, MedilinkPatientArchive, MedilinkEvolution,
-  MedilinkTreatmentPlan, MedilinkAdditionalField,
+  MedilinkTreatmentPlan, MedilinkAdditionalField, MedilinkPrestacion,
 } from './types.js'
 import { RateLimiter } from './rate-limiter.js'
 
@@ -268,6 +268,10 @@ export class MedilinkApiClient {
 
   async getTreatments(priority?: RequestPriority): Promise<MedilinkTreatment[]> {
     return this.fetchAll<MedilinkTreatment>('/tratamientos', { priority: priority ?? 'low' })
+  }
+
+  async getPrestaciones(priority?: RequestPriority): Promise<MedilinkPrestacion[]> {
+    return this.fetchAll<MedilinkPrestacion>('/prestaciones', { priority: priority ?? 'low' })
   }
 
   async getAppointmentStatuses(priority?: RequestPriority): Promise<MedilinkAppointmentStatus[]> {

@@ -201,6 +201,22 @@ export interface MedilinkTreatment {
   links?: { self: string }
 }
 
+// ─── Prestacion (Service catalog from /prestaciones) ─
+export interface MedilinkPrestacion {
+  id: number
+  nombre: string
+  id_categoria: number
+  nombre_categoria: string
+  habilitado: boolean
+  codigo: string | null
+}
+
+/** Unique category derived from /prestaciones */
+export interface MedilinkCategory {
+  id: number
+  nombre: string
+}
+
 // ─── Archivo de paciente ─────────────────
 
 export interface MedilinkPatientArchive {
@@ -469,22 +485,13 @@ export interface UserTypeRule {
   createdAt: Date
 }
 
-// ─── Professional categories ─────────────
+// ─── Professional categories (using Medilink native categories) ──
 
-/** User-defined category group for professionals (e.g. "Implantología", "Ortodoncia") */
-export interface ProfessionalCategory {
-  id: number
-  name: string
-  description: string | null
-  color: string
-  sortOrder: number
-  createdAt: Date
-}
-
-/** Many-to-many: which categories a professional belongs to */
+/** Many-to-many: which Medilink categories a professional is assigned to */
 export interface ProfCategoryAssignment {
   medilinkProfessionalId: number
-  categoryId: number
+  medilinkCategoryId: number
+  categoryName: string
 }
 
 // ─── Rate limiter ────────────────────────
@@ -497,6 +504,10 @@ export interface ReferenceData {
   branches: MedilinkBranch[]
   professionals: MedilinkProfessional[]
   treatments: MedilinkTreatment[]
+  /** Full service catalog from /prestaciones */
+  prestaciones: MedilinkPrestacion[]
+  /** Unique categories derived from prestaciones */
+  categories: MedilinkCategory[]
   /** From /citas/estados — includes 'anulacion' flag for cancellation states */
   statuses: MedilinkAppointmentStatus[]
   chairs: MedilinkChair[]

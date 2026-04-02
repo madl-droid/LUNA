@@ -306,53 +306,6 @@ function createApiRoutes(): ApiRoute[] {
     // ── Professional categories ──
     {
       method: 'GET',
-      path: 'categories',
-      handler: async (_req, res) => {
-        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-        const categories = await pgStore.getProfessionalCategories(_registry.getDb())
-        jsonResponse(res, 200, { categories })
-      },
-    },
-    {
-      method: 'POST',
-      path: 'categories',
-      handler: async (req, res) => {
-        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-        const body = await parseBody<{ name: string; description?: string | null; color?: string; sortOrder?: number }>(req)
-        if (!body.name?.trim()) { jsonResponse(res, 400, { error: 'Missing name' }); return }
-        const category = await pgStore.upsertProfessionalCategory(_registry.getDb(), body)
-        jsonResponse(res, 200, { ok: true, category })
-      },
-    },
-    {
-      method: 'PUT',
-      path: 'categories/:id',
-      handler: async (req, res) => {
-        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-        const url = new URL(req.url ?? '', 'http://localhost')
-        const segments = url.pathname.split('/')
-        const id = parseInt(segments[segments.length - 1] ?? '0', 10)
-        if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
-        const body = await parseBody<{ name?: string; description?: string | null; color?: string; sortOrder?: number }>(req)
-        const category = await pgStore.upsertProfessionalCategory(_registry.getDb(), { id, name: body.name ?? '', ...body })
-        jsonResponse(res, 200, { ok: true, category })
-      },
-    },
-    {
-      method: 'DELETE',
-      path: 'categories/:id',
-      handler: async (req, res) => {
-        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-        const url = new URL(req.url ?? '', 'http://localhost')
-        const segments = url.pathname.split('/')
-        const id = parseInt(segments[segments.length - 1] ?? '0', 10)
-        if (!id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
-        await pgStore.deleteProfessionalCategory(_registry.getDb(), id)
-        jsonResponse(res, 200, { ok: true })
-      },
-    },
-    {
-      method: 'GET',
       path: 'category-assignments',
       handler: async (_req, res) => {
         if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
@@ -365,9 +318,47 @@ function createApiRoutes(): ApiRoute[] {
       path: 'category-assignments',
       handler: async (req, res) => {
         if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
-        const body = await parseBody<{ assignments: Array<{ medilinkProfessionalId: number; categoryId: number }> }>(req)
+        const body = await parseBody<{ assignments: Array<{ medilinkProfessionalId: number; medilinkCategoryId: number; categoryName: string }> }>(req)
         if (!Array.isArray(body.assignments)) { jsonResponse(res, 400, { error: 'Missing assignments array' }); return }
         await pgStore.setProfessionalCategoryAssignments(_registry.getDb(), body.assignments)
+        jsonResponse(res, 200, { ok: true })
+      },
+    },
+
+    // ── Scheduling defaults ──
+    {
+      method: 'GET',
+      path: 'defaults',
+      handler: async (_req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const configStore = await import('../../kernel/config-store.js')
+        const db = _registry.getDb()
+        const [profId, valorId] = await Promise.all([
+          configStore.get(db, 'MEDILINK_DEFAULT_PROFESSIONAL_ID').catch(() => ''),
+          configStore.get(db, 'MEDILINK_DEFAULT_VALORACION_ID').catch(() => '13'),
+        ])
+        jsonResponse(res, 200, {
+          defaultProfessionalId: profId ? parseInt(profId, 10) : null,
+          defaultValoracionId: valorId ? parseInt(valorId, 10) : 13,
+        })
+      },
+    },
+    {
+      method: 'PUT',
+      path: 'defaults',
+      handler: async (req, res) => {
+        if (!_registry) { jsonResponse(res, 503, { error: 'Not initialized' }); return }
+        const body = await parseBody<{ defaultProfessionalId?: number | null; defaultValoracionId?: number | null }>(req)
+        const configStore = await import('../../kernel/config-store.js')
+        const db = _registry.getDb()
+        await Promise.all([
+          body.defaultProfessionalId != null
+            ? configStore.set(db, 'MEDILINK_DEFAULT_PROFESSIONAL_ID', String(body.defaultProfessionalId))
+            : configStore.set(db, 'MEDILINK_DEFAULT_PROFESSIONAL_ID', '').catch(() => {}),
+          body.defaultValoracionId != null
+            ? configStore.set(db, 'MEDILINK_DEFAULT_VALORACION_ID', String(body.defaultValoracionId))
+            : configStore.set(db, 'MEDILINK_DEFAULT_VALORACION_ID', '').catch(() => {}),
+        ])
         jsonResponse(res, 200, { ok: true })
       },
     },
@@ -524,12 +515,14 @@ const manifest: ModuleManifest = {
     // Provide renderSection for console: professionals + follow-up templates
     registry.provide('medilink:renderSection', async (lang: 'es' | 'en') => {
       const refData = await cache!.getReferenceData()
-      const [profRules, userTypeRules, templates, categories, categoryAssignments] = await Promise.all([
+      const configStore = await import('../../kernel/config-store.js')
+      const [profRules, userTypeRules, templates, categoryAssignments, profIdStr, valorIdStr] = await Promise.all([
         pgStore.getProfessionalTreatments(db),
         pgStore.getUserTypeRules(db),
         pgStore.getTemplates(db),
-        pgStore.getProfessionalCategories(db),
         pgStore.getProfessionalCategoryAssignments(db),
+        configStore.get(db, 'MEDILINK_DEFAULT_PROFESSIONAL_ID').catch(() => ''),
+        configStore.get(db, 'MEDILINK_DEFAULT_VALORACION_ID').catch(() => '13'),
       ])
       const consoleData: MedilinkConsoleData = {
         professionals: refData.professionals,
@@ -537,8 +530,10 @@ const manifest: ModuleManifest = {
         profRules,
         userTypeRules,
         templates,
-        categories,
+        categories: refData.categories,
         categoryAssignments,
+        defaultProfessionalId: profIdStr ? parseInt(profIdStr, 10) : null,
+        defaultValoracionId: valorIdStr ? parseInt(valorIdStr, 10) : 13,
       }
       return renderMedilinkConsole(consoleData, lang)
     })

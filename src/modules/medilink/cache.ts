@@ -10,6 +10,7 @@ import type {
   MedilinkBranch, MedilinkProfessional, MedilinkTreatment,
   MedilinkAppointmentStatus, MedilinkChair,
   MedilinkAgendaItem, AvailabilitySlot,
+  MedilinkPrestacion, MedilinkCategory,
 } from './types.js'
 
 const logger = pino({ name: 'medilink:cache' })
@@ -41,15 +42,29 @@ export class MedilinkCache {
   // ─── Reference data ────────────────────
 
   async refreshReferenceData(): Promise<void> {
-    const [branches, professionals, treatments, statuses, chairs] = await Promise.all([
+    const [branches, professionals, prestaciones, statuses, chairs] = await Promise.all([
       this.api.getBranches('low'),
       this.api.getProfessionals('low'),
-      this.api.getTreatments('low'),
+      this.api.getPrestaciones('low'),
       this.api.getAppointmentStatuses('low'),
       this.api.getChairs('low'),
     ])
 
-    this.refData = { branches, professionals, treatments, statuses, chairs, loadedAt: new Date() }
+    // Derive treatments list (backward compat) from enabled prestaciones
+    const treatments = prestaciones
+      .filter(p => p.habilitado)
+      .map(p => ({ id: p.id, nombre: p.nombre }))
+
+    // Derive unique categories from prestaciones
+    const catMap = new Map<number, string>()
+    for (const p of prestaciones) {
+      if (!catMap.has(p.id_categoria)) catMap.set(p.id_categoria, p.nombre_categoria)
+    }
+    const categories: MedilinkCategory[] = Array.from(catMap.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.id - b.id)
+
+    this.refData = { branches, professionals, treatments, prestaciones, categories, statuses, chairs, loadedAt: new Date() }
 
     // Store in Redis for persistence across restarts (skip if cache disabled)
     if (await isCacheEnabled()) {
@@ -60,7 +75,8 @@ export class MedilinkCache {
     logger.info({
       branches: branches.length,
       professionals: professionals.length,
-      treatments: treatments.length,
+      prestaciones: prestaciones.length,
+      categories: categories.length,
       statuses: statuses.length,
       chairs: chairs.length,
     }, 'Reference data refreshed')
@@ -87,6 +103,11 @@ export class MedilinkCache {
   getTreatments(): MedilinkTreatment[] { return this.refData?.treatments ?? [] }
   getStatuses(): MedilinkAppointmentStatus[] { return this.refData?.statuses ?? [] }
   getChairs(): MedilinkChair[] { return this.refData?.chairs ?? [] }
+  getPrestaciones(): MedilinkPrestacion[] { return this.refData?.prestaciones ?? [] }
+  getCategories(): MedilinkCategory[] { return this.refData?.categories ?? [] }
+  findPrestacionById(id: number): MedilinkPrestacion | undefined {
+    return (this.refData?.prestaciones ?? []).find(p => p.id === id)
+  }
 
   /** Get only active/enabled professionals */
   getActiveProfessionals(): MedilinkProfessional[] {
@@ -276,6 +297,8 @@ export class MedilinkCache {
     branches: number
     professionals: number
     treatments: number
+    prestaciones: number
+    categories: number
     statuses: number
     chairs: number
   } {
@@ -285,6 +308,8 @@ export class MedilinkCache {
       branches: this.refData?.branches.length ?? 0,
       professionals: this.refData?.professionals.length ?? 0,
       treatments: this.refData?.treatments.length ?? 0,
+      prestaciones: this.refData?.prestaciones.length ?? 0,
+      categories: this.refData?.categories.length ?? 0,
       statuses: this.refData?.statuses.length ?? 0,
       chairs: this.refData?.chairs.length ?? 0,
     }

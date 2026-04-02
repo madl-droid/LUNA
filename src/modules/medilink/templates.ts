@@ -91,8 +91,8 @@ interface Treatment { id: number; nombre: string }
 interface ProfTreatmentRule { medilinkProfessionalId: number; medilinkTreatmentId: number }
 interface UserTypeRule { userType: string; medilinkTreatmentId: number; allowed: boolean }
 interface FollowUpTemplate { touchType: string; templateText: string; useLlm: boolean; channel: string }
-interface ProfCategory { id: number; name: string; description: string | null; color: string; sortOrder: number }
-interface ProfCategoryAssignment { medilinkProfessionalId: number; categoryId: number }
+interface MedilinkCategory { id: number; nombre: string }
+interface ProfCategoryAssignment { medilinkProfessionalId: number; medilinkCategoryId: number; categoryName: string }
 
 export interface MedilinkConsoleData {
   professionals: Professional[]
@@ -100,12 +100,14 @@ export interface MedilinkConsoleData {
   profRules: ProfTreatmentRule[]
   userTypeRules: UserTypeRule[]
   templates: FollowUpTemplate[]
-  categories: ProfCategory[]
+  categories: MedilinkCategory[]
   categoryAssignments: ProfCategoryAssignment[]
+  defaultProfessionalId: number | null
+  defaultValoracionId: number | null
 }
 
 export function renderMedilinkConsole(data: MedilinkConsoleData, lang: Lang): string {
-  return renderWebhookPanel(lang) + renderCategoriesSection(data, lang) + renderProfessionalSection(data, lang) + renderFollowUpSection(data, lang)
+  return renderWebhookPanel(lang) + renderSchedulingDefaults(data, lang) + renderCategoriesSection(data, lang) + renderProfessionalSection(data, lang) + renderFollowUpSection(data, lang)
 }
 
 // ─── Webhook URL panel ───────────────────
@@ -140,122 +142,143 @@ function renderWebhookPanel(lang: Lang): string {
 </div>`
 }
 
+// ─── Scheduling defaults ─────────────────
+
+function renderSchedulingDefaults(data: MedilinkConsoleData, lang: Lang): string {
+  const isEs = lang === 'es'
+  const activeProfessionals = data.professionals.filter(p => p.habilitado)
+
+  let profOptions = `<option value="">${isEs ? '— Sin profesional por defecto —' : '— No default professional —'}</option>`
+  for (const p of activeProfessionals) {
+    const sel = data.defaultProfessionalId === p.id ? 'selected' : ''
+    profOptions += `<option value="${p.id}" ${sel}>${esc(`${p.nombre} ${p.apellidos}`)} (ID ${p.id})</option>`
+  }
+
+  let tratOptions = `<option value="">${isEs ? '— Sin valoración por defecto —' : '— No default valoración —'}</option>`
+  for (const t of data.treatments) {
+    const sel = data.defaultValoracionId === t.id ? 'selected' : ''
+    tratOptions += `<option value="${t.id}" ${sel}>${esc(t.nombre)} (ID ${t.id})</option>`
+  }
+
+  return `
+<div class="panel" style="margin-top:1.5rem">
+  <div class="panel-header"><h3>${isEs ? 'Configuración de agendamiento' : 'Scheduling configuration'}</h3></div>
+  <div class="panel-body">
+    <p class="panel-info">${isEs
+      ? 'Define el profesional y la prestación de valoración por defecto para nuevos pacientes.'
+      : 'Set the default professional and valuation service for new patients.'}</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div>
+        <label style="display:block;font-weight:600;margin-bottom:0.25rem;font-size:0.875rem">${isEs ? 'Profesional por defecto' : 'Default professional'}</label>
+        <select id="ml-default-professional" style="width:100%;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.85rem">
+          ${profOptions}
+        </select>
+        <p style="font-size:0.75rem;color:#888;margin:4px 0 0">${isEs ? 'Se usa como fallback si falla la asignación automática' : 'Used as fallback if auto-assignment fails'}</p>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;margin-bottom:0.25rem;font-size:0.875rem">${isEs ? 'Prestación de valoración (nuevos pacientes)' : 'Valuation service (new patients)'}</label>
+        <select id="ml-default-valoracion" style="width:100%;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.85rem">
+          ${tratOptions}
+        </select>
+        <p style="font-size:0.75rem;color:#888;margin:4px 0 0">${isEs ? 'Prestación que se registra en citas de nuevos pacientes (ej: Valoración - Otros)' : 'Service recorded for new patient appointments (e.g. Valoración - Otros)'}</p>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <button class="btn btn-primary" id="ml-save-defaults" onclick="saveMedilinkDefaults()">${isEs ? 'Guardar' : 'Save'}</button>
+    </div>
+  </div>
+</div>
+<script>
+function saveMedilinkDefaults() {
+  var btn = document.getElementById('ml-save-defaults');
+  btn.disabled = true; btn.textContent = '${isEs ? 'Guardando…' : 'Saving…'}';
+  var profId = document.getElementById('ml-default-professional').value;
+  var valorId = document.getElementById('ml-default-valoracion').value;
+  fetch('/console/api/medilink/defaults', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defaultProfessionalId: profId ? parseInt(profId) : null, defaultValoracionId: valorId ? parseInt(valorId) : null })
+  }).then(function(r) {
+    if (r.ok) { btn.textContent = '${isEs ? 'Guardado ✓' : 'Saved ✓'}'; setTimeout(function() { btn.textContent = '${isEs ? 'Guardar' : 'Save'}'; btn.disabled = false; }, 2000); }
+    else { btn.textContent = '${isEs ? 'Error' : 'Error'}'; btn.disabled = false; }
+  });
+}
+</script>`
+}
+
 // ─── Professional Categories ─────────────
 
 function renderCategoriesSection(data: MedilinkConsoleData, lang: Lang): string {
   const isEs = lang === 'es'
   const activeProfessionals = data.professionals.filter(p => p.habilitado)
 
+  if (activeProfessionals.length === 0 || data.categories.length === 0) {
+    return `
+<div class="panel" style="margin-top:1.5rem">
+  <div class="panel-header"><h3>${isEs ? 'Categorías de Prestaciones' : 'Service Categories'}</h3></div>
+  <div class="panel-body"><p class="panel-info">${isEs ? 'No hay profesionales o categorías de prestaciones cargadas. Verifica la conexión con Medilink.' : 'No professionals or service categories loaded. Check the Medilink connection.'}</p></div>
+</div>`
+  }
+
   // Build assignment lookup: professionalId → Set<categoryId>
   const assignMap = new Map<number, Set<number>>()
   for (const a of data.categoryAssignments) {
     if (!assignMap.has(a.medilinkProfessionalId)) assignMap.set(a.medilinkProfessionalId, new Set())
-    assignMap.get(a.medilinkProfessionalId)!.add(a.categoryId)
+    assignMap.get(a.medilinkProfessionalId)!.add(a.medilinkCategoryId)
   }
 
   let h = `
 <div class="panel" style="margin-top:1.5rem">
-  <div class="panel-header"><h3>${isEs ? 'Categorías de Profesionales' : 'Professional Categories'}</h3></div>
+  <div class="panel-header"><h3>${isEs ? 'Categorías de Prestaciones por Profesional' : 'Service Categories per Professional'}</h3></div>
   <div class="panel-body">
     <p class="panel-info">${isEs
-      ? 'Define categorías de prestaciones y asígnalas a cada profesional. Se usan para filtrar reagendamientos: solo se ofrecen profesionales con la misma combinación de categorías que el original.'
-      : 'Define service categories and assign them to each professional. Used for rescheduling: only professionals with the same category combination as the original are offered.'}</p>
-
-    <!-- Category management -->
-    <div style="margin-bottom:1.5rem">
-      <strong style="display:block;margin-bottom:0.5rem">${isEs ? 'Categorías definidas' : 'Defined categories'}</strong>
-      <div id="ml-categories-list" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">`
-
-  for (const cat of data.categories) {
-    h += `<div class="ml-cat-chip" data-id="${cat.id}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:${esc(cat.color)}22;border:1px solid ${esc(cat.color)};font-size:0.82rem">
-      <span class="ml-cat-dot" style="width:8px;height:8px;border-radius:50%;background:${esc(cat.color)};flex-shrink:0"></span>
-      <span class="ml-cat-name">${esc(cat.name)}</span>
-      <button type="button" onclick="deleteMedilinkCategory(${cat.id})" style="background:none;border:none;cursor:pointer;font-size:0.75rem;color:#888;padding:0;line-height:1" title="${isEs ? 'Eliminar' : 'Delete'}">✕</button>
-    </div>`
-  }
-
-  h += `</div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <input type="text" id="ml-new-cat-name" placeholder="${isEs ? 'Nueva categoría…' : 'New category…'}" style="padding:5px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.85rem;flex:1;min-width:160px">
-        <input type="color" id="ml-new-cat-color" value="#6366f1" title="${isEs ? 'Color' : 'Color'}" style="width:36px;height:32px;padding:2px;border:1px solid #ddd;border-radius:6px;cursor:pointer">
-        <input type="text" id="ml-new-cat-desc" placeholder="${isEs ? 'Descripción (opcional)' : 'Description (optional)'}" style="padding:5px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.85rem;flex:2;min-width:160px">
-        <button type="button" class="btn btn-secondary" onclick="addMedilinkCategory()" style="white-space:nowrap">${isEs ? '+ Agregar' : '+ Add'}</button>
-      </div>
-    </div>`
-
-  if (activeProfessionals.length > 0 && data.categories.length > 0) {
-    h += `
-    <!-- Assignment matrix -->
+      ? 'Marca qué categorías de prestaciones puede atender cada profesional. Se usa para filtrar reagendamientos: solo se ofrecen profesionales con las mismas categorías que el original.'
+      : 'Mark which service categories each professional can handle. Used for rescheduling: only professionals with the same categories as the original are offered.'}</p>
     <div id="ml-category-assignments" style="overflow-x:auto">
       <table class="data-table" style="width:100%;font-size:0.85rem">
         <thead><tr>
           <th style="min-width:160px">${isEs ? 'Profesional' : 'Professional'}</th>
-          <th style="min-width:60px;text-align:center;color:#888;font-size:0.75rem">ID</th>`
+          <th style="min-width:50px;text-align:center;color:#888;font-size:0.75rem">ID</th>`
 
-    for (const cat of data.categories) {
-      h += `<th style="min-width:70px;text-align:center;font-size:0.75rem">
-        <span style="display:inline-block;padding:2px 6px;border-radius:10px;background:${esc(cat.color)}22;border:1px solid ${esc(cat.color)}">${esc(cat.name)}</span>
-      </th>`
-    }
-
-    h += `</tr></thead><tbody>`
-
-    for (const prof of activeProfessionals) {
-      const profCats = assignMap.get(prof.id) ?? new Set<number>()
-      h += `<tr>
-        <td><strong>${esc(prof.nombre)} ${esc(prof.apellidos)}</strong><br><span style="color:#888;font-size:0.75rem">${esc(prof.especialidad ?? '-')}</span></td>
-        <td style="text-align:center;color:#aaa;font-size:0.75rem">${prof.id}</td>`
-
-      for (const cat of data.categories) {
-        const checked = profCats.has(cat.id) ? 'checked' : ''
-        h += `<td style="text-align:center">
-          <input type="checkbox" class="ml-cat-assign" data-prof-id="${prof.id}" data-cat-id="${cat.id}" ${checked}>
-        </td>`
-      }
-      h += '</tr>'
-    }
-
-    h += `</tbody></table></div>
-    <div style="margin-top:1rem;text-align:right">
-      <button class="btn btn-primary" id="ml-save-categories" onclick="saveMedilinkCategories()">${isEs ? 'Guardar categorías' : 'Save categories'}</button>
-    </div>`
-  } else if (data.categories.length === 0) {
-    h += `<p style="color:#888;font-size:0.85rem;margin-top:0.5rem">${isEs ? 'Agrega categorías arriba para asignarlas a los profesionales.' : 'Add categories above to assign them to professionals.'}</p>`
+  for (const cat of data.categories) {
+    h += `<th style="min-width:80px;text-align:center;font-size:0.75rem;writing-mode:vertical-lr;transform:rotate(180deg);height:90px">${esc(cat.nombre)}</th>`
   }
 
-  h += `
+  h += `</tr></thead><tbody>`
+
+  for (const prof of activeProfessionals) {
+    const profCats = assignMap.get(prof.id) ?? new Set<number>()
+    h += `<tr>
+      <td><strong>${esc(prof.nombre)} ${esc(prof.apellidos)}</strong><br><span style="color:#888;font-size:0.75rem">${esc(prof.especialidad ?? '-')}</span></td>
+      <td style="text-align:center;color:#aaa;font-size:0.75rem">${prof.id}</td>`
+
+    for (const cat of data.categories) {
+      const checked = profCats.has(cat.id) ? 'checked' : ''
+      h += `<td style="text-align:center">
+        <input type="checkbox" class="ml-cat-assign" data-prof-id="${prof.id}" data-cat-id="${cat.id}" data-cat-name="${esc(cat.nombre)}" ${checked}>
+      </td>`
+    }
+    h += '</tr>'
+  }
+
+  h += `</tbody></table></div>
+    <div style="margin-top:1rem;text-align:right">
+      <button class="btn btn-primary" id="ml-save-categories" onclick="saveMedilinkCategories()">${isEs ? 'Guardar categorías' : 'Save categories'}</button>
+    </div>
   </div>
 </div>
-
 <script>
-function addMedilinkCategory() {
-  var name = document.getElementById('ml-new-cat-name').value.trim();
-  if (!name) return;
-  var color = document.getElementById('ml-new-cat-color').value;
-  var desc = document.getElementById('ml-new-cat-desc').value.trim();
-  fetch('/console/api/medilink/categories', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name, color: color, description: desc || null })
-  }).then(function(r) {
-    if (r.ok) { location.reload(); }
-    else { alert('${isEs ? 'Error al crear categoría' : 'Error creating category'}'); }
-  });
-}
-
-function deleteMedilinkCategory(id) {
-  if (!confirm('${isEs ? '¿Eliminar esta categoría? Se desasignará de todos los profesionales.' : 'Delete this category? It will be unassigned from all professionals.'}')) return;
-  fetch('/console/api/medilink/categories/' + id, { method: 'DELETE' })
-    .then(function(r) { if (r.ok) location.reload(); });
-}
-
 function saveMedilinkCategories() {
   var btn = document.getElementById('ml-save-categories');
   if (!btn) return;
   btn.disabled = true; btn.textContent = '${isEs ? 'Guardando…' : 'Saving…'}';
   var assignments = [];
   document.querySelectorAll('.ml-cat-assign:checked').forEach(function(el) {
-    assignments.push({ medilinkProfessionalId: parseInt(el.dataset.profId), categoryId: parseInt(el.dataset.catId) });
+    assignments.push({
+      medilinkProfessionalId: parseInt(el.dataset.profId),
+      medilinkCategoryId: parseInt(el.dataset.catId),
+      categoryName: el.dataset.catName || ''
+    });
   });
   fetch('/console/api/medilink/category-assignments', {
     method: 'PUT',

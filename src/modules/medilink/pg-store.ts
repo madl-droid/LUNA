@@ -8,7 +8,7 @@ import type {
   EditRequest, EditRequestStatus,
   FollowUp, FollowUpTouchType, FollowUpStatus, FollowUpTemplate,
   ProfessionalTreatmentRule, UserTypeRule,
-  ProfessionalCategory, ProfCategoryAssignment,
+  ProfCategoryAssignment,
   WebhookLogEntry, WebhookEntity, WebhookAction, WebhookPayload,
 } from './types.js'
 
@@ -603,55 +603,12 @@ export async function logWebhook(
 
 // ─── Professional categories ──────────────
 
-export async function getProfessionalCategories(db: Pool): Promise<ProfessionalCategory[]> {
-  const result = await db.query(
-    'SELECT * FROM medilink_professional_categories ORDER BY sort_order ASC, name ASC',
-  )
-  return result.rows.map((r: Record<string, unknown>) => ({
-    id: r.id as number,
-    name: r.name as string,
-    description: r.description as string | null,
-    color: r.color as string,
-    sortOrder: r.sort_order as number,
-    createdAt: new Date(r.created_at as string),
-  }))
-}
-
-export async function upsertProfessionalCategory(
-  db: Pool,
-  category: { id?: number; name: string; description?: string | null; color?: string; sortOrder?: number },
-): Promise<ProfessionalCategory> {
-  let result
-  if (category.id) {
-    result = await db.query(
-      `UPDATE medilink_professional_categories
-       SET name=$2, description=$3, color=$4, sort_order=$5
-       WHERE id=$1
-       RETURNING *`,
-      [category.id, category.name, category.description ?? null, category.color ?? '#6366f1', category.sortOrder ?? 0],
-    )
-  } else {
-    result = await db.query(
-      `INSERT INTO medilink_professional_categories (name, description, color, sort_order)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (name) DO UPDATE SET description=EXCLUDED.description, color=EXCLUDED.color, sort_order=EXCLUDED.sort_order
-       RETURNING *`,
-      [category.name, category.description ?? null, category.color ?? '#6366f1', category.sortOrder ?? 0],
-    )
-  }
-  const r = result.rows[0] as Record<string, unknown>
-  return { id: r.id as number, name: r.name as string, description: r.description as string | null, color: r.color as string, sortOrder: r.sort_order as number, createdAt: new Date(r.created_at as string) }
-}
-
-export async function deleteProfessionalCategory(db: Pool, id: number): Promise<void> {
-  await db.query('DELETE FROM medilink_professional_categories WHERE id=$1', [id])
-}
-
 export async function getProfessionalCategoryAssignments(db: Pool): Promise<ProfCategoryAssignment[]> {
-  const result = await db.query('SELECT medilink_professional_id, category_id FROM medilink_professional_category_assignments')
+  const result = await db.query('SELECT medilink_professional_id, medilink_category_id, category_name FROM medilink_professional_category_assignments')
   return result.rows.map((r: Record<string, unknown>) => ({
     medilinkProfessionalId: r.medilink_professional_id as number,
-    categoryId: r.category_id as number,
+    medilinkCategoryId: r.medilink_category_id as number,
+    categoryName: r.category_name as string,
   }))
 }
 
@@ -662,9 +619,9 @@ export async function setProfessionalCategoryAssignments(
   await db.query('DELETE FROM medilink_professional_category_assignments')
   for (const a of assignments) {
     await db.query(
-      `INSERT INTO medilink_professional_category_assignments (medilink_professional_id, category_id)
-       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [a.medilinkProfessionalId, a.categoryId],
+      `INSERT INTO medilink_professional_category_assignments (medilink_professional_id, medilink_category_id, category_name)
+       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [a.medilinkProfessionalId, a.medilinkCategoryId, a.categoryName],
     )
   }
 }
@@ -679,19 +636,19 @@ export async function getProfessionalsWithMatchingCategories(
 ): Promise<number[]> {
   // Get original professional's categories
   const orig = await db.query(
-    'SELECT category_id FROM medilink_professional_category_assignments WHERE medilink_professional_id=$1',
+    'SELECT medilink_category_id FROM medilink_professional_category_assignments WHERE medilink_professional_id=$1',
     [professionalId],
   )
-  const origCats = (orig.rows as Array<Record<string, unknown>>).map(r => r.category_id as number)
+  const origCats = (orig.rows as Array<Record<string, unknown>>).map(r => r.medilink_category_id as number)
   if (origCats.length === 0) return [] // no categories defined — no filter
 
   // Find professionals that have ALL of the original categories (superset allowed)
   const result = await db.query(
     `SELECT medilink_professional_id
      FROM medilink_professional_category_assignments
-     WHERE category_id = ANY($1::int[])
+     WHERE medilink_category_id = ANY($1::int[])
      GROUP BY medilink_professional_id
-     HAVING COUNT(DISTINCT category_id) = $2`,
+     HAVING COUNT(DISTINCT medilink_category_id) = $2`,
     [origCats, origCats.length],
   )
   return (result.rows as Array<Record<string, unknown>>).map(r => r.medilink_professional_id as number)
