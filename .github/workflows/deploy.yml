@@ -53,7 +53,7 @@ jobs:
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             cd /docker/luna-production
           else
-            cd /docker/luna-staging
+            cd /docker/lab
           fi
           docker compose pull app
           docker compose up -d app
