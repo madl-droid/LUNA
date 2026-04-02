@@ -59,6 +59,13 @@ export async function findOrphanMessages(
           AND m2.created_at > m.created_at
           AND m2.created_at <= m.created_at + ($2 || ' minutes')::interval
       )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pipeline_logs pl
+        WHERE pl.session_id = m.session_id
+          AND pl.created_at > m.created_at
+          AND pl.created_at > now() - interval '5 minutes'
+      )
     ORDER BY m.created_at ASC
     LIMIT $3
   `
