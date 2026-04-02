@@ -34,6 +34,22 @@ CREATE TABLE IF NOT EXISTS user_credentials (
 );
 `
 
+async function seedDefaultAgent(pool: Pool): Promise<void> {
+  try {
+    const result = await pool.query<{ id: string }>(
+      `INSERT INTO agents (slug, name, description, config_path)
+       VALUES ('luna', 'LUNA', 'Agente principal', 'instance/config.json')
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING id`,
+    )
+    if (result.rowCount && result.rowCount > 0) {
+      logger.info({ agentId: result.rows[0]?.id }, 'Default agent seeded')
+    }
+  } catch {
+    // agents table may not exist yet in very early migrations — safe to skip
+  }
+}
+
 export async function createPool(): Promise<Pool> {
   const pool = new Pool({
     host: kernelConfig.db.host,
@@ -62,6 +78,9 @@ export async function createPool(): Promise<Pool> {
 
   // Run domain migrations (contacts, sessions, agents, etc.)
   await runMigrations(pool)
+
+  // Seed default agent if missing — survives factory resets
+  await seedDefaultAgent(pool)
 
   // Wrap pool.query to instrument SQL logging
   const originalQuery = pool.query.bind(pool)
