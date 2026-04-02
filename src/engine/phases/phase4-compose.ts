@@ -23,14 +23,8 @@ const logger = pino({ name: 'engine:phase4' })
 /**
  * Execute Phase 4: Compose the response with LLM, format for channel, optional TTS.
  */
-/** Dynamic oral style modifier — injected on top of whatever format/tone the compositor already has */
-const ORAL_PROMPT_MODIFIER = `\n\n--- MODO VOZ ---
-Esta respuesta será convertida a nota de voz. Adapta tu escritura al formato oral:
-- Frases cortas y naturales, como si hablaras por teléfono
-- NO uses listas, viñetas, numeración, markdown ni formato visual
-- NO incluyas URLs, emails ni caracteres especiales
-- Convierte cualquier dato tabular en frases habladas
-- Mantén el mismo tono y personalidad que ya tienes configurados`
+/** Audio instruction injected into user message when response will be TTS */
+const AUDIO_USER_INJECTION = `\n\n[RESPONDER CON AUDIO] Tu respuesta se enviará como nota de voz. Escribe pensando en que se va a escuchar, no leer. Frases cortas y naturales, sin listas ni markdown. Si necesitas compartir datos técnicos (precios, links), menciona que los enviarás por escrito.`
 
 /** Type for TTS service consumed from registry */
 type TTSServiceLike = {
@@ -71,7 +65,7 @@ export async function phase4Compose(
   }
 
   // Build the compositor prompt
-  const { system: baseSystem, userMessage } = await buildCompositorPrompt(
+  const { system, userMessage: baseUserMessage } = await buildCompositorPrompt(
     ctx,
     evaluation,
     execution,
@@ -79,8 +73,8 @@ export async function phase4Compose(
     registry,
   )
 
-  // Inject oral modifier when response will be audio (dynamic — builds on current prompt/tone)
-  const system = shouldTTS ? baseSystem + ORAL_PROMPT_MODIFIER : baseSystem
+  // Inject audio instruction into user message when response will be TTS
+  const userMessage = shouldTTS ? baseUserMessage + AUDIO_USER_INJECTION : baseUserMessage
 
   // ═══ LLM call with retries per provider ═══
   let responseText: string | null = null
@@ -117,6 +111,25 @@ export async function phase4Compose(
     const shouldCriticize = config.criticizerMode === 'always' || isComplexPlan(evaluation)
     if (shouldCriticize) {
       responseText = await runCriticizer(responseText, system, userMessage, ctx, evaluation, config, registry)
+    }
+  }
+
+  // ═══ Detect [VOICE] marker from LLM output (explicit audio request from user, relayed by LLM) ═══
+  let voiceMarkerOverride = false
+  if (responseText) {
+    const hadVoiceMarker = /\[VOICE\]/i.test(responseText)
+    if (hadVoiceMarker) {
+      responseText = responseText.replace(/\[VOICE\]/gi, '').trim()
+      voiceMarkerOverride = true
+    }
+  }
+
+  // ═══ [VOICE] marker can override shouldTTS (only if audio is enabled for the channel) ═══
+  if (voiceMarkerOverride) {
+    const channelSvc = registry?.getOptional<{ get(): { ttsEnabled?: boolean } }>(`channel-config:${ctx.message.channelName}`)
+    const channelTtsEnabled = channelSvc?.get()?.ttsEnabled ?? false
+    if (channelTtsEnabled && ttsService?.isEnabledForChannel(ctx.message.channelName)) {
+      shouldTTS = true
     }
   }
 

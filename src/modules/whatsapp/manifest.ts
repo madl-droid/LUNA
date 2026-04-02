@@ -153,21 +153,16 @@ const manifest: ModuleManifest = {
     WHATSAPP_ATT_SPREADSHEETS: boolEnv(true),
     WHATSAPP_ATT_TEXT: boolEnv(true),
     // Response format
-    WHATSAPP_FORMAT_ADVANCED: boolEnv(false),
     FORMAT_INSTRUCTIONS_WHATSAPP: z.string().default(''),
-    WHATSAPP_FORMAT_TONE: z.string().default('ninguno'),
+    WHATSAPP_FORMAT_TONE: z.string().default('directo'),
     WHATSAPP_FORMAT_MAX_SENTENCES: numEnv(2),
     WHATSAPP_FORMAT_MAX_PARAGRAPHS: numEnv(2),
     WHATSAPP_FORMAT_EMOJI_LEVEL: z.string().default('bajo'),
     WHATSAPP_FORMAT_TYPOS_ENABLED: boolEnv(false),
-    WHATSAPP_FORMAT_TYPOS_INTENSITY: z.string().default('0'),
+    WHATSAPP_FORMAT_TYPOS_INTENSITY: z.string().default('0.3'),
     WHATSAPP_FORMAT_TYPOS_TYPES: z.string().default(''),
     WHATSAPP_FORMAT_OPENING_SIGNS: z.string().default('nunca'),
     WHATSAPP_FORMAT_AUDIO_ENABLED: boolEnv(false),
-    WHATSAPP_FORMAT_VOICE_STYLES: boolEnv(false),
-    WHATSAPP_FORMAT_EXAMPLE_1: z.string().default(''),
-    WHATSAPP_FORMAT_EXAMPLE_2: z.string().default(''),
-    WHATSAPP_FORMAT_EXAMPLE_3: z.string().default(''),
   }),
 
   console: {
@@ -210,21 +205,21 @@ const manifest: ModuleManifest = {
 
       // ═══ TAB: Formato de respuesta ═══
       { key: '_tab_format', type: 'divider', label: { es: 'Formato de respuesta', en: 'Response format' }, tab: 'format' },
-      { key: 'WHATSAPP_FORMAT_ADVANCED', type: 'boolean', label: { es: 'Prompting avanzado', en: 'Advanced prompting' }, info: { es: 'Activa el editor de texto para personalizar el prompt de formato manualmente', en: 'Enable text editor to manually customize the format prompt' }, tab: 'format' },
-      { key: 'FORMAT_INSTRUCTIONS_WHATSAPP', type: 'textarea', label: { es: 'Instrucciones de formato', en: 'Format instructions' }, rows: 12, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'true' }, fieldType: 'code-editor' as never },
-      // Form fields (hidden when advanced prompting is ON)
-      { key: 'WHATSAPP_FORMAT_TONE', type: 'select', label: { es: 'Tono', en: 'Tone' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' }, options: [{ value: 'formal', label: 'Formal' }, { value: 'informal', label: 'Informal' }, { value: 'amigable', label: { es: 'Amigable', en: 'Friendly' } }, { value: 'directo', label: { es: 'Directo', en: 'Direct' } }, { value: 'conversador', label: { es: 'Conversador', en: 'Conversational' } }, { value: 'ninguno', label: { es: 'Ninguno (el modelo decide)', en: 'None (model decides)' } }] },
-      { key: 'WHATSAPP_FORMAT_MAX_SENTENCES', type: 'number', label: { es: 'Max oraciones por parrafo', en: 'Max sentences per paragraph' }, min: 1, max: 10, width: 'half', tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_MAX_PARAGRAPHS', type: 'number', label: { es: 'Max parrafos por respuesta', en: 'Max paragraphs per response' }, min: 1, max: 10, width: 'half', tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_EMOJI_LEVEL', type: 'select', label: { es: 'Uso de emojis', en: 'Emoji usage' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' }, options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'bajo', label: { es: 'Bajo', en: 'Low' } }, { value: 'moderado', label: { es: 'Moderado', en: 'Moderate' } }, { value: 'alto', label: { es: 'Alto', en: 'High' } }] },
-      { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', type: 'boolean', label: { es: 'Errores de escritura', en: 'Typos' }, info: { es: 'Introduce errores de escritura para mayor naturalidad', en: 'Introduce typos for more natural conversation' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_TYPOS_INTENSITY', type: 'text', label: { es: 'Intensidad de errores', en: 'Typo intensity' }, info: { es: 'De 0 (bajo) a 1 (alto), con 1 decimal', en: 'From 0 (low) to 1 (high), with 1 decimal' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_TYPOS_TYPES', type: 'text', label: { es: 'Tipos de errores', en: 'Typo types' }, info: { es: 'Separados por coma: tildes,invertidas,doble_letra', en: 'Comma-separated: tildes,inverted,double_letter' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_OPENING_SIGNS', type: 'select', label: { es: 'Signos de apertura', en: 'Opening signs' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' }, options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'inicio', label: { es: 'Al inicio', en: 'At start' } }, { value: 'ambos', label: { es: 'Al inicio y final', en: 'Start and end' } }] },
-      { key: 'WHATSAPP_FORMAT_AUDIO_ENABLED', type: 'boolean', label: { es: 'Enviar audios', en: 'Send audio' }, info: { es: 'Permite al agente enviar mensajes como notas de voz', en: 'Allow agent to send messages as voice notes' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_EXAMPLE_1', type: 'text', label: { es: 'Ejemplo de respuesta 1', en: 'Response example 1' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_EXAMPLE_2', type: 'text', label: { es: 'Ejemplo de respuesta 2', en: 'Response example 2' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
-      { key: 'WHATSAPP_FORMAT_EXAMPLE_3', type: 'text', label: { es: 'Ejemplo de respuesta 3', en: 'Response example 3' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_ADVANCED', value: 'false' } },
+      // Row 1: 4-column grid
+      { key: 'WHATSAPP_FORMAT_TONE', type: 'select', label: { es: 'Tono', en: 'Tone' }, tab: 'format', width: 'quarter', options: [{ value: 'formal', label: 'Formal' }, { value: 'informal', label: 'Informal' }, { value: 'amigable', label: { es: 'Amigable', en: 'Friendly' } }, { value: 'directo', label: { es: 'Directo', en: 'Direct' } }, { value: 'conversador', label: { es: 'Conversador', en: 'Conversational' } }, { value: 'ninguno', label: { es: 'Ninguno (el modelo decide)', en: 'None (model decides)' } }] },
+      { key: 'WHATSAPP_FORMAT_EMOJI_LEVEL', type: 'select', label: { es: 'Uso de emojis', en: 'Emoji usage' }, tab: 'format', width: 'quarter', options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'bajo', label: { es: 'Bajo', en: 'Low' } }, { value: 'moderado', label: { es: 'Moderado', en: 'Moderate' } }, { value: 'alto', label: { es: 'Alto', en: 'High' } }] },
+      { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', type: 'boolean', label: { es: 'Errores de escritura', en: 'Typos' }, info: { es: 'Introduce errores de escritura para mayor naturalidad', en: 'Introduce typos for more natural conversation' }, tab: 'format', width: 'quarter' },
+      { key: 'WHATSAPP_FORMAT_AUDIO_ENABLED', type: 'boolean', label: { es: 'Enviar audios', en: 'Send audio' }, info: { es: 'Permite al agente enviar mensajes como notas de voz', en: 'Allow agent to send messages as voice notes' }, tab: 'format', width: 'quarter' },
+      // Row 2: 2-column numbers
+      { key: 'WHATSAPP_FORMAT_MAX_SENTENCES', type: 'number', label: { es: 'Max oraciones por parrafo', en: 'Max sentences per paragraph' }, min: 1, max: 10, width: 'half', tab: 'format' },
+      { key: 'WHATSAPP_FORMAT_MAX_PARAGRAPHS', type: 'number', label: { es: 'Max parrafos por respuesta', en: 'Max paragraphs per response' }, min: 1, max: 10, width: 'half', tab: 'format' },
+      // Row 3: Typo settings (conditional)
+      { key: '_divider_typos', type: 'divider', label: { es: 'Errores de escritura', en: 'Typo settings' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' } },
+      { key: 'WHATSAPP_FORMAT_TYPOS_INTENSITY', type: 'select', label: { es: 'Intensidad', en: 'Intensity' }, tab: 'format', width: 'half', visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' }, options: [{ value: '0.1', label: '0.1' }, { value: '0.2', label: '0.2' }, { value: '0.3', label: '0.3' }, { value: '0.4', label: '0.4' }, { value: '0.5', label: '0.5' }, { value: '0.6', label: '0.6' }, { value: '0.7', label: '0.7' }, { value: '0.8', label: '0.8' }, { value: '0.9', label: '0.9' }, { value: '1.0', label: '1.0' }] },
+      { key: 'WHATSAPP_FORMAT_OPENING_SIGNS', type: 'select', label: { es: 'Signos de apertura', en: 'Opening signs' }, tab: 'format', width: 'half', visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' }, options: [{ value: 'nunca', label: { es: 'Nunca', en: 'Never' } }, { value: 'final', label: { es: 'Al final', en: 'At end' } }, { value: 'ambos', label: { es: 'Al inicio y al final', en: 'Start and end' } }] },
+      { key: 'WHATSAPP_FORMAT_TYPOS_TYPES', type: 'text', label: { es: 'Tipos de errores', en: 'Typo types' }, info: { es: 'Opciones: tildes, invertidas, doble_letra (separadas por coma)', en: 'Options: tildes, inverted, double_letter (comma-separated)' }, tab: 'format', visibleWhen: { key: 'WHATSAPP_FORMAT_TYPOS_ENABLED', value: 'true' } },
+      // Row 4: Additional instructions (always visible)
+      { key: 'FORMAT_INSTRUCTIONS_WHATSAPP', type: 'textarea', label: { es: 'Instrucciones adicionales', en: 'Additional instructions' }, info: { es: 'Instrucciones extra de formato y ejemplos de respuesta', en: 'Extra format instructions and response examples' }, rows: 8, tab: 'format', fieldType: 'code-editor' as never },
 
       // ═══ TAB: Adjuntos ═══
       { key: '_tab_attachments', type: 'divider', label: { es: 'Adjuntos', en: 'Attachments' }, tab: 'attachments' },
@@ -514,7 +509,6 @@ interface WhatsAppFullConfig {
   WHATSAPP_ATT_SPREADSHEETS: boolean
   WHATSAPP_ATT_TEXT: boolean
   // Response format
-  WHATSAPP_FORMAT_ADVANCED: boolean
   FORMAT_INSTRUCTIONS_WHATSAPP: string
   WHATSAPP_FORMAT_TONE: string
   WHATSAPP_FORMAT_MAX_SENTENCES: number
@@ -525,10 +519,6 @@ interface WhatsAppFullConfig {
   WHATSAPP_FORMAT_TYPOS_TYPES: string
   WHATSAPP_FORMAT_OPENING_SIGNS: string
   WHATSAPP_FORMAT_AUDIO_ENABLED: boolean
-  WHATSAPP_FORMAT_VOICE_STYLES: boolean
-  WHATSAPP_FORMAT_EXAMPLE_1: string
-  WHATSAPP_FORMAT_EXAMPLE_2: string
-  WHATSAPP_FORMAT_EXAMPLE_3: string
 }
 
 /**

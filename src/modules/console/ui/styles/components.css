@@ -2056,6 +2056,12 @@ select.wizard-input option:checked {
   gap: 12px;
 }
 
+/* Quarter-width field groups (4 columns) */
+.chs-field-row-4 {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
 .chs-field-row .chs-field { margin-bottom: 0; }
 
 /* When .field (config style) is a direct grid child, reset adjacent-sibling padding so columns align */
@@ -2078,6 +2084,7 @@ select.wizard-input option:checked {
 
 @media (max-width: 768px) {
   .chs-field-row-3 { grid-template-columns: 1fr; }
+  .chs-field-row-4 { grid-template-columns: 1fr 1fr; }
 }
 
 /* ── Toggle rows (boolean fields) ── */

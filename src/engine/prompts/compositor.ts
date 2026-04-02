@@ -32,20 +32,10 @@ const CHANNEL_CATEGORIES: Record<string, string> = {
 async function getChannelLimit(channel: string, registry?: Registry): Promise<string> {
   if (registry) {
     try {
-      const configStore = await import('../../kernel/config-store.js')
       const db = registry.getDb()
-      // Check if advanced prompting is ON
-      const advancedKey = `${channel.toUpperCase()}_FORMAT_ADVANCED`
-      const isAdvanced = await configStore.get(db, advancedKey)
-      if (isAdvanced === 'true') {
-        // 1a. Advanced mode: use custom override directly
-        const custom = await configStore.get(db, `FORMAT_INSTRUCTIONS_${channel.toUpperCase()}`)
-        if (custom) return custom
-      } else {
-        // 1b. Form mode: build prompt from form fields
-        const built = await buildFormatFromForm(channel, db)
-        if (built) return built
-      }
+      // Build prompt from form fields in config_store
+      const built = await buildFormatFromForm(channel, db)
+      if (built) return built
     } catch { /* fallback */ }
   }
   // 2. Try system template
@@ -63,56 +53,87 @@ async function buildFormatFromForm(channel: string, db: import('pg').Pool): Prom
   const configStore = await import('../../kernel/config-store.js')
   const prefix = channel.toUpperCase()
   const all = await configStore.getAll(db)
-  const tone = all[`${prefix}_FORMAT_TONE`] || 'ninguno'
+
+  const tone = all[`${prefix}_FORMAT_TONE`] || 'directo'
   const maxSentences = all[`${prefix}_FORMAT_MAX_SENTENCES`] || '2'
   const maxParagraphs = all[`${prefix}_FORMAT_MAX_PARAGRAPHS`] || '2'
   const emojiLevel = all[`${prefix}_FORMAT_EMOJI_LEVEL`] || 'bajo'
-  const typosEnabled = all[`${prefix}_FORMAT_TYPOS_ENABLED`] === 'true'
-  const typosIntensity = all[`${prefix}_FORMAT_TYPOS_INTENSITY`] || '0'
-  const typosTypes = all[`${prefix}_FORMAT_TYPOS_TYPES`] || ''
   const openingSigns = all[`${prefix}_FORMAT_OPENING_SIGNS`] || 'nunca'
+  const typosEnabled = all[`${prefix}_FORMAT_TYPOS_ENABLED`] === 'true'
+  const typosIntensity = all[`${prefix}_FORMAT_TYPOS_INTENSITY`] || '0.3'
+  const typosTypes = all[`${prefix}_FORMAT_TYPOS_TYPES`] || ''
   const audioEnabled = all[`${prefix}_FORMAT_AUDIO_ENABLED`] === 'true'
-  const voiceStyles = all[`${prefix}_FORMAT_VOICE_STYLES`] === 'true' || all['TTS_VOICE_STYLES'] === 'true'
-  const ex1 = all[`${prefix}_FORMAT_EXAMPLE_1`] || ''
-  const ex2 = all[`${prefix}_FORMAT_EXAMPLE_2`] || ''
-  const ex3 = all[`${prefix}_FORMAT_EXAMPLE_3`] || ''
+  const additionalInstructions = all[`FORMAT_INSTRUCTIONS_${prefix}`] || ''
 
   const category = CHANNEL_CATEGORIES[channel] ?? 'mensajería instantánea'
-  const lines: string[] = [`CANAL: ${channel} — Categoría: ${category}`]
+  const lines: string[] = []
 
-  // Tone
-  if (tone !== 'ninguno') lines.push(`- Tono: ${tone}`)
+  // --- Core format ---
+  lines.push(`FORMATO DE RESPUESTA — ${category.toUpperCase()}`)
+  lines.push(`- REGLA CLAVE: Se breve y ${tone}. Es un canal de mensajería, no es email — los mensajes largos no se leen.`)
+  lines.push(`- Escribe tu respuesta con saltos de párrafo naturales (doble enter entre ideas). Cada párrafo se enviará como un mensaje separado. Usa entre 1 y ${maxParagraphs} párrafos según la situación:`)
+  lines.push(`  - Saludos o respuestas cortas: un solo mensaje`)
+  lines.push(`  - Respuestas con mucha información: ${maxParagraphs} (máximo absoluto)`)
+  lines.push(`- MÁXIMO 1-${maxSentences} oraciones por párrafo.`)
+  lines.push(`- Un párrafo = UNA idea. Si cambias de tema, nuevo párrafo.`)
+  lines.push(`- PROHIBIDO: párrafos largos. Si se ve largo, está largo.`)
+  lines.push(`- NO uses markdown ni formato especial, solo texto plano (es WhatsApp)`)
+  lines.push(`- NUNCA uses asteriscos (*) en tus mensajes. En WhatsApp los asteriscos activan negritas no deseadas. Si quieres enfatizar algo, escríbelo en mayúsculas o reescribe la frase para que sea clara sin formato.`)
+  lines.push(`- Emojis: ${emojiLevel}, repito el uso de emojis es ${emojiLevel}`)
 
-  // Structure
-  lines.push(`- Maximo ${maxSentences} oraciones por parrafo`)
-  lines.push(`- Maximo ${maxParagraphs} parrafos por respuesta`)
+  // --- Opening signs ---
+  if (openingSigns === 'nunca') {
+    lines.push(`- REGLA CRÍTICA de puntuación: los signos de exclamación e interrogación se usan SOLO al final, NUNCA al inicio.`)
+    lines.push(`  Correcto: "Que bueno" "Como estas" "Perfecto, te mando la info"`)
+    lines.push(`  Incorrecto: "¡Qué bueno!" "¿Cómo estás?" "¡Perfecto!"`)
+  } else if (openingSigns === 'final') {
+    lines.push(`- REGLA CRÍTICA de puntuación: usa signos de exclamación e interrogación SOLO al final.`)
+    lines.push(`  Correcto: "Que bueno!" "Como estas?" "Perfecto, te mando la info!"`)
+    lines.push(`  Incorrecto: "¡Qué bueno!" "¿Cómo estás?"`)
+  } else if (openingSigns === 'ambos') {
+    lines.push(`- REGLA CRÍTICA de puntuación: usa signos de apertura Y cierre en preguntas y exclamaciones.`)
+    lines.push(`  Correcto: "¡Que bueno!" "¿Como estas?" "¡Perfecto, te mando la info!"`)
+    lines.push(`  Incorrecto: "Qué bueno!" "Cómo estás?"`)
+  }
 
-  // Emoji
-  const emojiMap: Record<string, string> = { nunca: 'No uses emojis', bajo: 'Usa emojis con moderacion (1-2 por mensaje)', moderado: 'Usa emojis moderadamente', alto: 'Usa emojis libremente' }
-  lines.push(`- ${emojiMap[emojiLevel] || emojiMap.bajo}`)
+  // --- Sales message architecture ---
+  lines.push('')
+  lines.push('Arquitectura de mensajes de venta:')
+  lines.push('- Respuesta directa y corta a lo que preguntó')
+  lines.push('- Link, video o recurso relevante (si aplica)')
+  lines.push('- UNA pregunta que avance la conversación')
 
-  // Opening signs
-  if (openingSigns === 'inicio') lines.push('- Usa signos de apertura al inicio de preguntas y exclamaciones (¿ ¡)')
-  else if (openingSigns === 'ambos') lines.push('- Usa signos de apertura y cierre en preguntas y exclamaciones (¿...? ¡...!)')
-  else lines.push('- No uses signos de apertura (¿ ¡), solo cierra con ? y !')
-
-  // Typos
+  // --- Typos section (conditional) ---
   if (typosEnabled) {
-    lines.push(`- Introduce errores de escritura sutiles para sonar mas natural (intensidad: ${typosIntensity})`)
-    if (typosTypes) lines.push(`  Tipos: ${typosTypes}`)
+    lines.push('')
+    lines.push('Naturalidad y errores (canal casual):')
+    lines.push(`- Temperatura de typos: ${typosIntensity} — introduce errores tipográficos menores de forma ocasional, como escribirías rápido en el celular.`)
+    lines.push(`- Errores que puedes cometer:`)
+    const types = typosTypes.split(',').map(t => t.trim().toLowerCase())
+    if (types.includes('tildes')) lines.push(`  - Tildes omitidas: "información" → "informacion", "más" → "mas", "está" → "esta"`)
+    if (types.includes('invertidas')) lines.push(`  - Letras invertidas ocasionales: "que" → "qeu", "pero" → "preo"`)
+    if (types.includes('doble_letra')) lines.push(`  - Doble letra accidental: "hola" → "holaa", "dale" → "dalee"`)
+    lines.push(`- Mantén estos errores sutiles y ocasionales — no todos los mensajes deben tener typos`)
+    lines.push(`- Los typos deben sentirse como escritura rápida genuina, no como errores gramaticales graves`)
   }
 
-  // Audio
+  // --- Audio section (conditional — only when audio enabled) ---
   if (audioEnabled) {
-    lines.push('- Puedes responder con notas de voz cuando sea apropiado')
-    if (voiceStyles) lines.push('- Varia el estilo de voz segun el contexto (energetico, calmado, empatico)')
+    lines.push('')
+    lines.push('Notas de voz (cuando aplica):')
+    lines.push('A veces tu respuesta se enviará como nota de voz. Cuando veas la indicación "[RESPONDER CON AUDIO]" en el mensaje, escribe tu respuesta pensando en que se va a ESCUCHAR, no leer:')
+    lines.push('- Usa frases cortas y naturales, como si hablaras en una llamada.')
+    lines.push('- Evita listas largas, números de teléfono, direcciones de correo o URLs (no se entienden bien en audio).')
+    lines.push('- Si necesitas compartir datos específicos (precios, emails, links), mejor envíalos como texto en un mensaje aparte mencionando que lo enviarás por escrito.')
+    lines.push('- Mantén tu respuesta concisa: las notas de voz largas cansan al oyente.')
+    lines.push('- Si el cliente te pide explícitamente que respondas con audio, voz o nota de voz, agrega [VOICE] al INICIO de tu respuesta (antes de cualquier texto). Esto activa la respuesta por audio. Solo hazlo cuando el cliente lo pida expresamente.')
+    lines.push('- Nunca menciones el "sistema de transcripción" ni hagas comentarios técnicos sobre el audio.')
   }
 
-  // Examples
-  const examples = [ex1, ex2, ex3].filter(Boolean)
-  if (examples.length > 0) {
-    lines.push('- Ejemplos del estilo esperado:')
-    examples.forEach((ex, i) => lines.push(`  ${i + 1}. "${ex}"`))
+  // --- Additional instructions (user-provided) ---
+  if (additionalInstructions.trim()) {
+    lines.push('')
+    lines.push(additionalInstructions.trim())
   }
 
   return lines.join('\n')

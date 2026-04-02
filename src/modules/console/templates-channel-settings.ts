@@ -290,6 +290,44 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
     const val = config[f.key] ?? ''
     const vw = visibleWhenAttrs(f, config)
 
+    // Quarter-width fields — group consecutive quarter fields into 4-column grid rows
+    if (f.width === 'quarter') {
+      const quarterFields: ConsoleField[] = [f]
+      while (i + quarterFields.length < fields.length) {
+        const next = fields[i + quarterFields.length]!
+        if (next.width === 'quarter') quarterFields.push(next)
+        else break
+      }
+      html += '<div class="chs-field-row chs-field-row-4">'
+      for (const qf of quarterFields) {
+        const qv = config[qf.key] ?? ''
+        const qvw = visibleWhenAttrs(qf, config)
+        if (qf.type === 'boolean') {
+          const iconHtml = qf.icon ?? ''
+          const descText = qf.description?.[lang] ?? qf.info?.[lang] ?? ''
+          const label = qf.label[lang] ?? qf.label.es ?? qf.key
+          const checked = qv === 'true' || qv === '1'
+          html += `<div class="chs-toggle-row chs-toggle-compact"${qvw.attrs}${qvw.hidden ? ' style="display:none"' : ''}>
+            ${iconHtml ? `<div class="chs-toggle-icon">${iconHtml}</div>` : ''}
+            <div class="chs-toggle-text">
+              <div class="chs-toggle-title">${esc(label)}</div>
+              ${descText ? `<div class="chs-toggle-desc">${esc(descText)}</div>` : ''}
+            </div>
+            <input type="hidden" name="${qf.key}" value="false">
+            <label class="toggle toggle-sm">
+              <input type="checkbox" name="${qf.key}" value="true" ${checked ? 'checked' : ''} data-original="${checked ? 'true' : 'false'}" onchange="instantApply(this)">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>`
+        } else {
+          html += renderSingleField(qf, qv, lang, qvw)
+        }
+      }
+      html += '</div>'
+      i += quarterFields.length
+      continue
+    }
+
     // Boolean fields with width: 'third' — group into 3-column grid rows
     if (f.type === 'boolean' && f.width === 'third') {
       // Collect consecutive 'third' boolean fields

@@ -408,8 +408,8 @@ export interface ConsoleField {
   rows?: number
 
   // ── Layout hints for channel settings pages ──
-  /** Field width: 'half' = 50% (side-by-side pairs), 'third' = 33% (3 per row), 'full' = 100% (default) */
-  width?: 'half' | 'third' | 'full'
+  /** Field width: 'quarter' = 25% (4 per row), 'half' = 50% (side-by-side pairs), 'third' = 33% (3 per row), 'full' = 100% (default) */
+  width?: 'quarter' | 'half' | 'third' | 'full'
   /** Icon HTML for boolean toggle rows (SVG string) */
   icon?: string
   /** Description below label for boolean toggle rows (bilingüe) */
