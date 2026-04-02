@@ -260,13 +260,13 @@ const leadsWaiting: Rule = {
       // Count contacts with pending messages older than 5 minutes
       const result = await ctx.db.query(
         `SELECT COUNT(*) as cnt FROM messages
-         WHERE direction = 'incoming'
+         WHERE role = 'user'
          AND created_at > NOW() - INTERVAL '1 hour'
          AND created_at < NOW() - INTERVAL '5 minutes'
          AND NOT EXISTS (
            SELECT 1 FROM messages m2
            WHERE m2.contact_id = messages.contact_id
-           AND m2.direction = 'outgoing'
+           AND m2.role = 'assistant'
            AND m2.created_at > messages.created_at
          )`,
       )
@@ -280,13 +280,13 @@ const leadsWaiting: Rule = {
     try {
       const result = await ctx.db.query(
         `SELECT COUNT(*) as cnt FROM messages
-         WHERE direction = 'incoming'
+         WHERE role = 'user'
          AND created_at > NOW() - INTERVAL '1 hour'
          AND created_at < NOW() - INTERVAL '5 minutes'
          AND NOT EXISTS (
            SELECT 1 FROM messages m2
            WHERE m2.contact_id = messages.contact_id
-           AND m2.direction = 'outgoing'
+           AND m2.role = 'assistant'
            AND m2.created_at > messages.created_at
          )`,
       )

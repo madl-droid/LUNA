@@ -895,7 +895,7 @@ async function initCheckpoints(): Promise<void> {
       // Idempotency check: skip if a response was already sent for this message
       try {
         const alreadySent = await db.query(
-          `SELECT 1 FROM messages WHERE reply_to_message_id = $1 AND direction = 'outbound' LIMIT 1`,
+          `SELECT 1 FROM messages WHERE reply_to_message_id = $1 AND role = 'assistant' LIMIT 1`,
           [cp.messageId],
         )
         if (alreadySent.rows.length > 0) {
