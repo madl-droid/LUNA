@@ -122,8 +122,8 @@ const manifest: ModuleManifest = {
 
   configSchema: z.object({
     // Aviso de proceso (ack message when response is slow)
-    WHATSAPP_AVISO_TRIGGER_MS: numEnv(3000),
-    WHATSAPP_AVISO_HOLD_MS: numEnv(2000),
+    WHATSAPP_AVISO_TRIGGER_MS: numEnv(1),   // stored as minutes, converted to ms in buildChannelConfig
+    WHATSAPP_AVISO_HOLD_MS: numEnv(1),      // stored as minutes, converted to ms in buildChannelConfig
     WHATSAPP_AVISO_MESSAGE: z.string().default('Un momento, estoy revisando eso...'),
     // Socket tuning
     WHATSAPP_MARK_ONLINE: boolEnv(true),
@@ -196,8 +196,8 @@ const manifest: ModuleManifest = {
       { key: 'WHATSAPP_BATCH_WAIT_SECONDS', type: 'number', label: { es: 'Tiempo de agrupado', en: 'Grouping time' }, info: { es: 'Segundos para acumular mensajes antes de procesar (10-90, multiplos de 10)', en: 'Seconds to collect messages before processing (10-90, multiples of 10)' }, min: 10, max: 90, step: 10, unit: 'segundos', width: 'half', tab: 'behavior', fieldType: 'volume' },
       { key: 'WHATSAPP_MISSED_MSG_WINDOW_MIN', type: 'select', label: { es: 'Frecuencia busqueda mensajes', en: 'Missed messages frequency' }, info: { es: 'Ventana para procesar mensajes perdidos', en: 'Window to process missed messages' }, width: 'half', tab: 'behavior', options: [{ value: '5', label: '5 min' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' }, { value: '60', label: '60 min' }] },
       { key: 'WHATSAPP_PRECLOSE_FOLLOWUP_HOURS', type: 'number', label: { es: 'Tiempo follow-up pre-cierre', en: 'Pre-close follow-up time' }, info: { es: 'Horas antes del cierre para enviar recordatorio (max: timeout sesion - 2h)', en: 'Hours before close to send reminder (max: session timeout - 2h)' }, min: 0, max: 22, unit: 'horas', width: 'half', tab: 'behavior' },
-      { key: 'WHATSAPP_AVISO_TRIGGER_MS', type: 'number', label: { es: 'Tiempo para ACK', en: 'Time to ACK' }, info: { es: 'Minutos de espera antes de enviar mensaje de espera', en: 'Minutes to wait before sending wait message' }, min: 60000, max: 1800000, step: 60000, unit: 'minutos', width: 'half', tab: 'behavior', fieldType: 'volume' },
-      { key: 'WHATSAPP_AVISO_HOLD_MS', type: 'number', label: { es: 'Tiempo post-ACK', en: 'Post-ACK time' }, info: { es: 'Minutos de pausa despues del ACK antes de enviar respuesta real', en: 'Minutes to pause after ACK before sending real response' }, min: 60000, max: 600000, step: 60000, unit: 'minutos', width: 'half', tab: 'behavior', fieldType: 'volume' },
+      { key: 'WHATSAPP_AVISO_TRIGGER_MS', type: 'number', label: { es: 'Tiempo para ACK', en: 'Time to ACK' }, info: { es: 'Minutos de espera antes de enviar mensaje de espera', en: 'Minutes to wait before sending wait message' }, min: 1, max: 30, step: 1, unit: 'min', width: 'half', tab: 'behavior', fieldType: 'volume' },
+      { key: 'WHATSAPP_AVISO_HOLD_MS', type: 'number', label: { es: 'Tiempo post-ACK', en: 'Post-ACK time' }, info: { es: 'Minutos de pausa despues del ACK antes de enviar respuesta real', en: 'Minutes to pause after ACK before sending real response' }, min: 1, max: 10, step: 1, unit: 'min', width: 'half', tab: 'behavior', fieldType: 'volume' },
       // Pre-close message
       { key: 'WHATSAPP_PRECLOSE_MESSAGE', type: 'text', label: { es: 'Mensaje pre-cierre', en: 'Pre-close message' }, info: { es: 'Texto del recordatorio antes de cerrar la sesion', en: 'Reminder text before closing session' }, tab: 'behavior' },
       // ACK config
@@ -534,8 +534,8 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
   return {
     rateLimitHour: 0,
     rateLimitDay: 200,
-    avisoTriggerMs: cfg.WHATSAPP_AVISO_TRIGGER_MS,
-    avisoHoldMs: cfg.WHATSAPP_AVISO_HOLD_MS,
+    avisoTriggerMs: cfg.WHATSAPP_AVISO_TRIGGER_MS * 60000,   // field stores minutes → convert to ms
+    avisoHoldMs: cfg.WHATSAPP_AVISO_HOLD_MS * 60000,         // field stores minutes → convert to ms
     avisoMessages: cfg.WHATSAPP_AVISO_MESSAGE ? [cfg.WHATSAPP_AVISO_MESSAGE] : [],
     avisoStyle: 'casual' as import('../../channels/types.js').AvisoStyle,
     sessionTimeoutMs: cfg.WHATSAPP_SESSION_TIMEOUT_HOURS * 3600000,
