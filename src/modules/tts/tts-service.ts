@@ -174,8 +174,10 @@ export class TTSService {
 
   /**
    * Split text into chunks and synthesize each separately.
-   * Uses TTS_MAX_DURATION to cap total text, then splits into ~900-char chunks.
-   * Max 2 chunks to avoid flooding the chat with voice notes.
+   * Uses TTS_MAX_DURATION to cap total text. Sends as a single audio when the
+   * content fits within the max duration; only splits by structural boundaries
+   * (double-newlines → newlines → sentences) when content genuinely exceeds the limit.
+   * Max 4 chunks as a safety cap.
    */
   async synthesizeChunks(text: string): Promise<SynthesizeResult[]> {
     if (!this.config.TTS_GOOGLE_API_KEY) {
@@ -190,10 +192,12 @@ export class TTSService {
     const maxChars = Math.min(this.config.TTS_MAX_CHARS, durationChars)
     const capped = text.substring(0, maxChars)
 
-    // Split into chunks (~900 chars by sentence boundaries, max 2)
-    const CHUNK_SIZE = 900
-    const MAX_CHUNKS = 2
-    const chunks = splitTextIntoChunks(capped, CHUNK_SIZE).slice(0, MAX_CHUNKS)
+    // Single-audio threshold = full cap; multi-chunk size = half the cap.
+    // If the text fits in one audio, send it as-is. Only split by structural
+    // boundaries (paragraphs → lines → sentences) when it truly exceeds the limit.
+    const multiChunkSize = Math.max(300, Math.round(maxChars / 2))
+    const MAX_CHUNKS = 4
+    const chunks = splitTextIntoStructuralChunks(capped, maxChars, multiChunkSize).slice(0, MAX_CHUNKS)
 
     logger.info({ totalChars: capped.length, chunks: chunks.length }, 'TTS chunking')
 
@@ -283,29 +287,58 @@ function speakingRateToTag(rate: number): string {
 
 // ─── Text chunking ──────────────────────────────
 
-/** Split text into chunks of approximately maxChars, breaking at sentence boundaries */
-function splitTextIntoChunks(text: string, maxChars: number): string[] {
-  if (text.length <= maxChars) return [text]
+/**
+ * Split text into audio chunks using a two-level strategy:
+ *
+ * Level 1 — Single audio (happy path):
+ *   If text.length <= singleChunkMax, return [text] with no splitting at all.
+ *   This is the common case: a response that fits within the max duration is
+ *   sent as one natural-sounding voice note.
+ *
+ * Level 2 — Structural split (only when needed):
+ *   When the text exceeds singleChunkMax, split at structural boundaries in
+ *   descending priority order:
+ *     1. Double newline  (\n\n) — paragraph break, strongest natural pause
+ *     2. Single newline  (\n)   — line break, change of idea
+ *     3. Sentence end    (. ? ! … followed by space) — semantic closure
+ *     4. Comma           (, )   — last resort for very long run-on segments
+ *   If no boundary is found in the first 50% of the chunk window, cuts hard
+ *   at multiChunkSize to avoid infinite loops.
+ */
+function splitTextIntoStructuralChunks(
+  text: string,
+  singleChunkMax: number,
+  multiChunkSize: number,
+): string[] {
+  // Level 1: fits in one audio — no split needed
+  if (text.length <= singleChunkMax) return [text]
 
+  // Level 2: structural split
+  const SEPARATORS = ['\n\n', '\n', '. ', '? ', '! ', '… ', ', ']
   const chunks: string[] = []
-  let remaining = text
+  let remaining = text.trim()
 
-  while (remaining.length > 0 && chunks.length < 5) {
-    if (remaining.length <= maxChars) {
+  while (remaining.length > 0 && chunks.length < 10) {
+    if (remaining.length <= multiChunkSize) {
       chunks.push(remaining)
       break
     }
 
-    // Find the last sentence boundary within maxChars
-    const slice = remaining.substring(0, maxChars)
-    const lastPeriod = Math.max(
-      slice.lastIndexOf('. '),
-      slice.lastIndexOf('? '),
-      slice.lastIndexOf('! '),
-      slice.lastIndexOf('\n'),
-    )
+    const window = remaining.substring(0, multiChunkSize)
+    let breakAt = -1
 
-    const breakAt = lastPeriod > maxChars * 0.5 ? lastPeriod + 1 : maxChars
+    for (const sep of SEPARATORS) {
+      const idx = window.lastIndexOf(sep)
+      // Only use this boundary if it's past 50% of the window (avoids tiny first chunks)
+      if (idx > multiChunkSize * 0.5) {
+        breakAt = idx + sep.length
+        break
+      }
+    }
+
+    // No boundary found in the window — hard cut
+    if (breakAt === -1) breakAt = multiChunkSize
+
     chunks.push(remaining.substring(0, breakAt).trim())
     remaining = remaining.substring(breakAt).trim()
   }

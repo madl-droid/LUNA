@@ -24,7 +24,7 @@ const logger = pino({ name: 'engine:phase4' })
  * Execute Phase 4: Compose the response with LLM, format for channel, optional TTS.
  */
 /** Audio instruction injected into user message when response will be TTS */
-const AUDIO_USER_INJECTION = `\n\n[RESPONDER CON AUDIO] Tu respuesta se enviará como nota de voz. Escribe pensando en que se va a escuchar, no leer. Frases cortas y naturales, sin listas ni markdown. Si necesitas compartir datos técnicos (precios, links), menciona que los enviarás por escrito.`
+const AUDIO_USER_INJECTION = `\n\n[RESPONDER CON AUDIO] Tu respuesta se enviará como nota de voz. Escribe pensando en que se va a escuchar, no leer. Frases cortas y naturales, sin listas ni markdown. Incluye todos los datos relevantes (precios, pasos, información) directamente en el audio. Si hay URLs o links, no los leas — describe a dónde llevan en su lugar.`
 
 /** Type for TTS service consumed from registry */
 type TTSServiceLike = {
