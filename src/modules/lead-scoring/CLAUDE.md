@@ -11,9 +11,6 @@ Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) 
 - `extract-tool.ts` — tool `extract_qualification`: prompt caching, client type detection, conversation buffer, dynamic tool description
 - `pg-queries.ts` — queries: listar leads, detalle, actualizar score, recalcular batch, stats (con directo status)
 - `templates.ts` — SSR HTML: framework cards con toggle+objetivo, criterios per-framework, comportamiento
-- `campaign-types.ts` — tipos de campanas (legacy, ver marketing-data module)
-- `campaign-queries.ts` — CRUD campanas (legacy, ver marketing-data module)
-- `campaign-matcher.ts` — fuse.js fuzzy matching (legacy, ver marketing-data module)
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true

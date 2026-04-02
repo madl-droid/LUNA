@@ -365,24 +365,20 @@ async function processMessageInner(
     const actionType = mapStepToAction(evaluation.executionPlan?.[0]?.type ?? 'respond_only')
 
     avisoTimer = avisoConfig.triggerMs > 0
-      ? setTimeout(async () => {
-          // Don't send ACK if pipeline already completed successfully
-          if (pipelineState.completed) return
+      ? setTimeout(() => {
+          void (async () => {
+            // Don't send ACK if pipeline already completed successfully
+            if (pipelineState.completed) return
 
-          // If pipeline failed, send error fallback instead of processing ACK
-          if (pipelineState.failed) {
-            try {
+            // If pipeline failed, send error fallback instead of processing ACK
+            if (pipelineState.failed) {
               const errorMsg = pickErrorFallback(channelTone)
               await sendAviso(ctx, errorMsg, registry)
-            } catch (err) {
-              logger.warn({ err, traceId }, 'Failed to send error fallback via aviso')
+              return
             }
-            return
-          }
 
-          // Normal ACK: pipeline is still processing
-          avisoSentAt = Date.now()
-          try {
+            // Normal ACK: pipeline is still processing
+            avisoSentAt = Date.now()
             const ackMsg = await generateAck({
               contactName: ctx.contact?.displayName ?? '',
               userMessage: (ctx.normalizedText ?? ctx.message.content.text ?? '').slice(0, 200),
@@ -390,9 +386,9 @@ async function processMessageInner(
               tone: channelTone,
             }, registry)
             await sendAviso(ctx, ackMsg, registry)
-          } catch (err) {
+          })().catch(err => {
             logger.warn({ err, traceId }, 'Failed to send aviso de proceso')
-          }
+          })
         }, avisoConfig.triggerMs)
       : null
 

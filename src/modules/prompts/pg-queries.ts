@@ -89,5 +89,5 @@ export async function getBySlot(pool: Pool, slot: PromptSlot): Promise<PromptRec
   }))
 }
 
-// Campaign management has been moved to the lead-scoring module.
-// See: src/modules/lead-scoring/campaign-queries.ts
+// Campaign management has been moved to the marketing-data module.
+// See: src/modules/marketing-data/campaign-queries.ts

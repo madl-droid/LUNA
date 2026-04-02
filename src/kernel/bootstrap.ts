@@ -21,13 +21,10 @@ const REQUIRED_DIRS = [
  * Safe to call on every boot — uses recursive mkdir.
  */
 export async function ensureInstanceDirs(): Promise<void> {
-  let created = 0
   for (const dir of REQUIRED_DIRS) {
     const absPath = path.resolve(dir)
     try {
       await fs.mkdir(absPath, { recursive: true })
-      // Check if we actually created it (stat would have thrown before mkdir)
-      created++
     } catch {
       // Should not happen with recursive: true, but log just in case
       logger.warn({ dir: absPath }, 'Could not create instance directory')

@@ -128,7 +128,7 @@ async function handleEstimateFreight(
   input: Record<string, unknown>,
   config: FreightConfig,
   secrets: FreightSecrets,
-  carrierBuffers: CarrierBuffers,
+  carrierBuffers?: Partial<CarrierBuffers>,
 ): Promise<FreightEstimateResult> {
   // 1. Validate input
   const parsed = inputSchema.safeParse(input)
@@ -219,9 +219,9 @@ async function handleEstimateFreight(
     if (result.status === 'fulfilled') {
       const { carrierId, estimates } = result.value
       for (const est of estimates) {
-        // Apply per-carrier buffer: price / (1 - buffer)
-        const buffer = carrierBuffers[carrierId] ?? config.buffer_percentage
-        const bufferedPrice = buffer < 1 ? est.price_usd / (1 - buffer) : est.price_usd
+        // Apply per-carrier buffer as a simple markup percentage.
+        const buffer = carrierBuffers?.[carrierId as keyof CarrierBuffers] ?? config.buffer_percentage
+        const bufferedPrice = est.price_usd * (1 + Math.max(buffer, 0))
         allEstimates.push({
           carrier: carrierId,
           service_name: est.service_name,

@@ -5,19 +5,25 @@
 export { extractXlsx } from '../../../extractors/sheets.js'
 
 import type { FAQImportRow } from '../types.js'
+import { readSpreadsheetSheets } from '../../../extractors/sheets.js'
 
 /**
  * Parse an Excel/CSV file as FAQ import data.
  * Expects columns: question, answer, variants (optional), category (optional), active (optional)
  */
 export async function parseFAQsFromXlsx(input: Buffer): Promise<FAQImportRow[]> {
-  const XLSX = await import('xlsx')
-
-  const workbook = XLSX.read(input, { type: 'buffer' })
-  const firstSheet = workbook.Sheets[workbook.SheetNames[0]!]
+  const [firstSheet] = await readSpreadsheetSheets(input, 'faq-import.xlsx')
   if (!firstSheet) return []
 
-  const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' }) as Record<string, unknown>[]
+  const rows = firstSheet.rows.map((row) => {
+    const entry: Record<string, unknown> = {}
+    for (let i = 0; i < firstSheet.headers.length; i++) {
+      const header = firstSheet.headers[i]?.trim()
+      if (!header) continue
+      entry[header] = row[i] ?? ''
+    }
+    return entry
+  })
   const faqs: FAQImportRow[] = []
 
   for (const row of rows) {

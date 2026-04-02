@@ -207,8 +207,12 @@ export class FAQManager {
   // ─── Private ───────────────────────────────
 
   private invalidateSearch(): void {
-    this.searchEngine.invalidateQueryCache()
-    this.cache.invalidate().catch(() => {})
+    void this.searchEngine.invalidateQueryCache().catch(err => {
+      logger.warn({ err }, 'Failed to invalidate knowledge search cache')
+    })
+    void this.cache.invalidate().catch(err => {
+      logger.warn({ err }, 'Failed to invalidate knowledge cache')
+    })
   }
 }
 
