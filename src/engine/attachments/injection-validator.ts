@@ -2,7 +2,7 @@
 // Validates external content (documents, URLs) before injecting into pipeline context.
 // Extends the base injection-detector patterns with document-specific checks.
 
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { detectInputInjection } from '../utils/injection-detector.js'
 import type { InjectionValidationResult } from './types.js'
 

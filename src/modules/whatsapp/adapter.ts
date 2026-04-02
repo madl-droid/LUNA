@@ -4,7 +4,6 @@
 
 import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } from '@whiskeysockets/baileys'
 import type { WASocket, BaileysEventMap } from '@whiskeysockets/baileys'
-import { Boom } from '@hapi/boom'
 import { v4 as uuidv4 } from 'uuid'
 import type { Pool } from 'pg'
 import pino from 'pino'
@@ -12,6 +11,17 @@ import { usePostgresAuthState, clearAuthState } from './pg-auth-state.js'
 import { PresenceManager } from './presence-manager.js'
 
 const logger = pino({ name: 'whatsapp:adapter' })
+
+function getDisconnectStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const candidate = error as {
+    output?: { statusCode?: unknown }
+    statusCode?: unknown
+    data?: { statusCode?: unknown }
+  }
+  const statusCode = candidate.output?.statusCode ?? candidate.statusCode ?? candidate.data?.statusCode
+  return typeof statusCode === 'number' ? statusCode : undefined
+}
 
 export type BaileysStatus = 'disconnected' | 'connecting' | 'connected' | 'qr_ready'
 
@@ -181,7 +191,7 @@ export class BaileysAdapter {
 
       if (connection === 'close') {
         this._qr = null
-        const reason = (lastDisconnect?.error as Boom)?.output?.statusCode
+        const reason = getDisconnectStatusCode(lastDisconnect?.error)
         this._lastDisconnectReason = DisconnectReason[reason as number] ?? String(reason)
         this._status = 'disconnected'
         this._connectedNumber = null
@@ -203,7 +213,9 @@ export class BaileysAdapter {
           logger.warn({ attempt: this.reconnectAttempts, delayMs: delay, reason }, 'WhatsApp disconnected, reconnecting...')
           this.reconnectTimer = setTimeout(() => {
             this._nextRetryAt = null
-            this.initialize()
+            void this.initialize().catch(err => {
+              logger.error({ err, attempt: this.reconnectAttempts }, 'WhatsApp reconnect attempt failed')
+            })
           }, delay)
         } else {
           this._nextRetryAt = null

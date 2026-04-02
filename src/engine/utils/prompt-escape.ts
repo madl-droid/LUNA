@@ -39,7 +39,7 @@ export function wrapUserContent(text: string, label = 'USER_MESSAGE'): string {
 }
 
 /** Escapa datos estructurados (de DB, tools, etc.) para inyección en prompt */
-export function escapeDataForPrompt(data: string, maxLength = 6000): string {
+export function escapeDataForPrompt(data: string, maxLength = 3000): string {
   return escapeForPrompt(data, maxLength)
 }
 

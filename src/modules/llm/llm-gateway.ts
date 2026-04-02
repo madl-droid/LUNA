@@ -86,7 +86,9 @@ export class LLMGateway {
     this.breakers = new CircuitBreakerManager(cbConfig)
     this.breakers.onRecovery = (provider) => {
       if (this.registry) {
-        this.registry.runHook('llm:provider_up', { provider })
+        void this.registry.runHook('llm:provider_up', { provider }).catch(err => {
+          logger.warn({ err, provider }, 'Failed to emit llm:provider_up hook')
+        })
       }
     }
 
@@ -384,7 +386,9 @@ export class LLMGateway {
   resetCircuitBreaker(provider: LLMProviderName): void {
     this.breakers.get(provider).reset()
     if (this.registry) {
-      this.registry.runHook('llm:provider_up', { provider })
+      void this.registry.runHook('llm:provider_up', { provider }).catch(err => {
+        logger.warn({ err, provider }, 'Failed to emit llm:provider_up hook')
+      })
     }
   }
 

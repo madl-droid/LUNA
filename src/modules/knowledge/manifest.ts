@@ -26,6 +26,13 @@ import type { ToolRegistry } from '../tools/tool-registry.js'
 
 const logger = pino({ name: 'knowledge' })
 
+interface LLMConfigForKnowledge {
+  GOOGLE_AI_API_KEY?: string
+  KNOWLEDGE_EMBEDDING_API_SEPARATE?: boolean
+  KNOWLEDGE_GOOGLE_AI_API_KEY?: string
+  LLM_GOOGLE_KNOWLEDGE_API_KEY?: string
+}
+
 let _registry: Registry | null = null
 let pgStore: KnowledgePgStore | null = null
 let knowledgeManager: KnowledgeManager | null = null
@@ -36,6 +43,28 @@ let webSourceManager: WebSourceManager | null = null
 let itemManager: KnowledgeItemManager | null = null
 let vectorizeWorker: VectorizeWorker | null = null
 let downgradeTimer: ReturnType<typeof setInterval> | null = null
+
+function resolveKnowledgeGoogleApiKey(registry: Registry, config: KnowledgeConfig): string {
+  if (config.KNOWLEDGE_GOOGLE_AI_API_KEY) return config.KNOWLEDGE_GOOGLE_AI_API_KEY
+
+  const llmConfig = registry.getConfig<LLMConfigForKnowledge>('llm')
+  if (llmConfig.KNOWLEDGE_EMBEDDING_API_SEPARATE && llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY) {
+    return llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY
+  }
+
+  return llmConfig.LLM_GOOGLE_KNOWLEDGE_API_KEY
+    ?? llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY
+    ?? llmConfig.GOOGLE_AI_API_KEY
+    ?? ''
+}
+
+function resolveKnowledgeConfig(registry: Registry): KnowledgeConfig {
+  const config = registry.getConfig<KnowledgeConfig>('knowledge')
+  return {
+    ...config,
+    KNOWLEDGE_GOOGLE_AI_API_KEY: resolveKnowledgeGoogleApiKey(registry, config),
+  }
+}
 
 // ═══════════════════════════════════════════
 // Helper to guard initialized state
@@ -976,8 +1005,7 @@ function createApiRoutes(): ApiRoute[] {
             }
           }
           // Fallback: verify via public API with API key (works for "Anyone with the link" docs)
-          const cfg = _registry?.getConfig<{ KNOWLEDGE_GOOGLE_AI_API_KEY: string }>('knowledge')
-          const apiKey = cfg?.KNOWLEDGE_GOOGLE_AI_API_KEY
+          const apiKey = _registry ? resolveKnowledgeConfig(_registry).KNOWLEDGE_GOOGLE_AI_API_KEY : ''
           if (apiKey && (extracted.type === 'sheets' || extracted.type === 'docs' || extracted.type === 'slides')) {
             try {
               const apiBase = extracted.type === 'sheets'
@@ -1095,7 +1123,7 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_FAQ_SOURCE: z.string().default('manual'),
     KNOWLEDGE_SYNC_ENABLED: boolEnv(true),
     KNOWLEDGE_SYNC_FREQUENCY: z.string().default('24h'),
-    KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(process.env['GOOGLE_AI_API_KEY'] ?? ''),
+    KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(''),
     KNOWLEDGE_EMBEDDING_ENABLED: boolEnv(true),
     KNOWLEDGE_VECTORIZE_CONCURRENCY: numEnvMin(1, 2),
     KNOWLEDGE_MAX_WEB_SOURCES: numEnvMin(1, 5),
@@ -1178,7 +1206,7 @@ const manifest: ModuleManifest = {
 
   async init(registry: Registry) {
     _registry = registry
-    const config = registry.getConfig<KnowledgeConfig>('knowledge')
+    const config = resolveKnowledgeConfig(registry)
     const db = registry.getDb()
     const redis = registry.getRedis()
 

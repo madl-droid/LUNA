@@ -17,10 +17,10 @@ src/modules/lead-scoring/
 ├── config-store.ts       — lee/escribe instance/qualifying.json
 ├── extract-tool.ts       — tool extract_qualification (LLM extraction)
 ├── pg-queries.ts         — CRUD de leads en agent_contacts
-├── campaign-queries.ts   — CRUD de campañas, tags, estadísticas
-├── campaign-matcher.ts   — fuzzy matching con fuse.js
 ├── templates.ts          — UI SSR para la console
 ```
+
+La gestión de campañas fue movida al módulo `src/modules/marketing-data/`.
 
 ## Frameworks disponibles
 
