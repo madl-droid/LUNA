@@ -11,6 +11,15 @@ index.ts              — re-exports públicos
 types.ts              — todos los types (ContextBundle v4, proactive types, LLM types)
 responder.ts          — responder legacy (bridge)
 
+agentic/
+  types.ts            — AgenticConfig, AgenticResult, EffortLevel, ToolCallLog, LoopDetectorResult
+  effort-router.ts    — clasificador de complejidad determinístico (sin LLM, <5ms)
+  tool-dedup-cache.ts — caché de dedup per-pipeline para tool calls idénticos
+  tool-loop-detector.ts — anti-loop: generic repeat, no-progress, ping-pong detection
+  agentic-loop.ts     — THE CORE: LLM + tool calling loop (reemplaza Phases 2+3+4)
+  post-processor.ts   — criticizer (smart mode) + channel formatting + TTS → CompositorOutput
+  index.ts            — exports públicos
+
 concurrency/
   index.ts            — re-exports
   pipeline-semaphore.ts — semáforo global de pipelines (capa 1)
@@ -87,6 +96,47 @@ utils/
   rag-local.ts          — RAG local con fuse.js sobre archivos en instance/knowledge/
 
   (mocks/ eliminado — Phase 2, Phase 3 y subagent usan tools:registry del módulo tools)
+```
+
+## Agentic Loop (v2 — reemplaza Phases 2+3+4)
+
+Nuevo en v2.0.0. Cuando `ENGINE_MODE=agentic` (default), las Phases 2+3+4 son reemplazadas por un único loop agentico donde el LLM llama tools nativamente y compone la respuesta en la misma conversación.
+
+### Cómo funciona el loop agentico
+
+1. **Effort Router**: `classifyEffort(ctx)` clasifica el mensaje como low/medium/high (determinístico, <5ms)
+2. **System Prompt**: ensamblado por prompt builder (identity + job + guardrails + tools + knowledge + historial)
+3. **Loop**: `runAgenticLoop(ctx, systemPrompt, tools, config, registry)`:
+   - Llama `callLLMWithFallback()` con system prompt + mensajes + tool definitions
+   - Si LLM retorna solo texto → listo, retorna como respuesta final
+   - Si LLM retorna tool_calls → ejecuta via `ToolRegistry.executeTool()`, retorna resultados
+   - Protecciones: dedup cache (omite llamadas idénticas), loop detector (graduado: warn → block → circuit break)
+   - Ejecución paralela de tools via `StepSemaphore`
+   - Límite de turns → fuerza respuesta texto final
+4. **Post-processor**: `postProcess(result, ctx, config, registry)`:
+   - Criticizer (solo para effort=high o 3+ tool calls)
+   - `formatForChannel()` → split WA/Chat, HTML para email
+   - TTS si se requiere respuesta de audio
+   - Retorna `CompositorOutput` (mismo tipo que Phase 4)
+
+### Conexión al pipeline
+
+- **Input**: ContextBundle de Phase 1 (sin cambios)
+- **Output**: CompositorOutput → alimenta Phase 5 (validate + send)
+- Phase 1 permanece igual. Phase 5 con adaptaciones menores.
+- Phases 2, 3, 4 se mantienen detrás de `ENGINE_MODE=legacy`.
+
+### Ruta de ejecución de tools
+
+```
+LLM produce tool_calls
+  → loop detector pre-check (allow/block/circuit_break)
+  → dedup cache check (hit → retorna cacheado)
+  → registry.getOptional<ToolRegistry>('tools:registry')
+  → toolRegistry.executeTool(name, input, context)
+  → dedup cache store
+  → loop detector post-check (registra llamada, detecta patrones)
+  → resultados retornados al LLM como siguiente user message
 ```
 
 ## Concurrencia (4 capas)
