@@ -42,14 +42,54 @@ await toolRegistry.registerTool({
 })
 ```
 
+## Sistema de two-tier descriptions (v2)
+
+`ToolDefinition` ahora soporta dos niveles de descripción:
+
+```typescript
+interface ToolDefinition {
+  description: string         // descripción completa (para catálogo interno, DB)
+  shortDescription?: string   // 1 línea para declaraciones LLM (token-efficient)
+  detailedGuidance?: string   // guía extendida inyectada en tool_result por el agentic loop
+}
+```
+
+### Cómo funciona
+- **Declaración al LLM**: `toAnthropicTools()` / `toGeminiTools()` usan `shortDescription ?? description`
+- **Catálogo** (`getCatalog()`): usa `shortDescription ?? description` para el campo description
+- **Auto-generación**: si un tool se registra sin `shortDescription`, se auto-genera desde la primera oración de `description`
+- **Guidance**: Instance 1 (agentic loop) consume `getToolGuidance(name)` para inyectar contexto detallado en `tool_result`
+
+### Registro con two-tier
+```typescript
+await toolRegistry.registerTool({
+  definition: {
+    name: 'calendar-check',
+    displayName: 'Verificar Disponibilidad',
+    description: 'Verifica disponibilidad en el calendario para agendar citas. Retorna slots disponibles por fecha.',
+    shortDescription: 'Verifica disponibilidad en el calendario',  // optional — auto-generado si omitido
+    detailedGuidance: 'Devuelve un array de slots disponibles. Cada slot tiene start/end ISO 8601. Interpretar en timezone del contacto. Si array vacío = no hay disponibilidad.',
+    category: 'calendar',
+    sourceModule: 'google-apps',
+    parameters: { ... }
+  },
+  handler: async (input, ctx) => ({ success: true, data: slots }),
+})
+```
+
+### API nuevo en ToolRegistry
+- `getToolGuidance(name: string): string | null` — retorna `detailedGuidance` o null
+
 ## Patrones
 - `upsertTool()` actualiza metadata pero NUNCA sobreescribe enabled/maxRetries/maxUsesPerLoop (controlados por console)
 - Ejecución log es fire-and-forget (no bloquea pipeline)
 - Access rules: deny-list por contact_type. Sin regla = permitido.
 - Tool converter: las 3 providers usan JSON Schema; la diferencia es el wrapping (input_schema vs function.parameters vs parameters)
+- Backward compatibility: tools sin `shortDescription` hacen fallback a `description` — no hay breaking change
 
 ## Trampas
 - PIPELINE_MAX_TOOL_CALLS_PER_TURN se comparte con el config del pipeline — declarado en este módulo para que sea configurable desde console
 - Los módulos que registran tools deben listar 'tools' en depends[] para garantizar orden de init
 - Al desactivar un módulo, sus tools desaparecen del catálogo pero persisten en DB (re-aparecen al reactivar)
 - **Helpers HTTP y config**: usa `jsonResponse`, `parseBody`, `parseQuery` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.
+- `shortDescription` se auto-genera en `registerTool()` si no se proporciona — esto modifica el objeto `definition` in-place

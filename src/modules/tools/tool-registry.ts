@@ -57,6 +57,12 @@ export class ToolRegistry {
       logger.warn({ toolName: name }, 'Tool already registered, overwriting')
     }
 
+    // Auto-generate shortDescription from first sentence of description if not provided
+    if (!definition.shortDescription) {
+      const firstSentence = definition.description.split(/[.!?]/)[0]?.trim()
+      definition.shortDescription = firstSentence ?? definition.description
+    }
+
     // Persistir definición en DB (no toca enabled/maxRetries/maxUsesPerLoop)
     await this.pgStore.upsertTool(
       name,
@@ -113,11 +119,19 @@ export class ToolRegistry {
       if (contactType && !this.isToolAllowed(entry.definition.name, contactType)) continue
       catalog.push({
         name: entry.definition.name,
-        description: entry.definition.description,
+        description: entry.definition.shortDescription ?? entry.definition.description,
         category: entry.definition.category,
       })
     }
     return catalog
+  }
+
+  /**
+   * Get the detailed guidance for a tool (injected into tool_result by the agentic post-processor).
+   * Returns null if no detailed guidance was registered.
+   */
+  getToolGuidance(name: string): string | null {
+    return this.tools.get(name)?.definition.detailedGuidance ?? null
   }
 
   getEnabledToolDefinitions(contactType?: string): ToolDefinition[] {

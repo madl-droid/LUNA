@@ -69,5 +69,23 @@
     "max_proactive_per_day_per_contact": 3,
     "cooldown_minutes": 60,
     "conversation_guard_hours": 4
+  },
+  "smart_cooldown": {
+    "enabled": true,
+    "after_sent_minutes": 30,
+    "after_no_action_minutes": 60,
+    "after_error_minutes": 10,
+    "max_backoff_hours": 24
+  },
+  "orphan_recovery": {
+    "enabled": true,
+    "interval_minutes": 5,
+    "lookback_minutes": 30,
+    "max_per_run": 10
+  },
+  "conversation_guard": {
+    "enabled": true,
+    "cache_ttl_hours": 6,
+    "skip_for_commitments": true
   }
 }
