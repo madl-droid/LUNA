@@ -6,7 +6,7 @@ import pino from 'pino'
 import { logChannelMessage } from '../kernel/extreme-logger.js'
 import type { Registry } from '../kernel/registry.js'
 import type { IncomingMessage } from '../channels/types.js'
-import type { PipelineResult, EngineConfig, ContextBundle, ReplanContext } from './types.js'
+import type { PipelineResult, EngineConfig, ContextBundle, ReplanContext, LLMToolDef } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
 import { phase1Intake } from './phases/phase1-intake.js'
@@ -22,6 +22,10 @@ import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
 import type { Phase3Options } from './phases/phase3-execute.js'
+// --- Agentic imports (v2.0) ---
+import { classifyEffort, runAgenticLoop, postProcess } from './agentic/index.js'
+import { buildAgenticPrompt } from './prompts/agentic.js'
+import type { AgenticConfig, AgenticResult, EffortLevel } from './agentic/types.js'
 
 const logger = pino({ name: 'engine' })
 
@@ -163,6 +167,7 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       phase4DurationMs: 0, phase5DurationMs: 0,
       totalDurationMs: Date.now() - totalStart,
       replanAttempts: 0, subagentIterationsUsed: 0,
+      engineMode: 'legacy',
     }
   }
 
@@ -246,6 +251,7 @@ async function processMessageInner(
         phase4DurationMs: 0, phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         replanAttempts: 0, subagentIterationsUsed: 0,
+        engineMode: 'legacy',
       }
     }
 
@@ -285,6 +291,7 @@ async function processMessageInner(
         phase4DurationMs: 0, phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         replanAttempts: 0, subagentIterationsUsed: 0,
+        engineMode: 'legacy',
       }
     }
 
@@ -295,6 +302,24 @@ async function processMessageInner(
       messageKeys,
       correlationId: traceId,
     }).catch(() => {})
+
+    // ═══ AGENTIC BRANCH (v2.0) ═══
+    // When ENGINE_MODE=agentic (default), skip legacy Phase 2→3→4 entirely.
+    // Phases 2+3+4 are replaced by a single agentic loop.
+    if (engineConfig.engineMode === 'agentic') {
+      // Send composing signal before the agentic loop
+      registry.runHook('channel:composing', {
+        channel: message.channelName,
+        to: signalTo,
+        mode: ctx.responseFormat === 'audio' ? 'recording' : 'composing',
+        correlationId: traceId,
+      }).catch(() => {})
+
+      const result = await runAgenticPipeline(ctx, engineConfig, registry, db, redis, totalStart, phase1DurationMs)
+      pipelineState.completed = true
+      if (avisoTimer) clearTimeout(avisoTimer)
+      return result
+    }
 
     // ═══ PHASE 2: Evaluate Situation ═══
     const p2Start = Date.now()
@@ -536,6 +561,7 @@ async function processMessageInner(
       deliveryResult: delivery,
       replanAttempts,
       subagentIterationsUsed,
+      engineMode: 'legacy',
     }
   } catch (err) {
     pipelineState.failed = true
@@ -586,7 +612,165 @@ async function processMessageInner(
       error: String(err),
       replanAttempts: 0,
       subagentIterationsUsed: 0,
+      engineMode: 'legacy',
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Agentic pipeline (v2.0) — replaces Phases 2+3+4
+// ═══════════════════════════════════════════════════════════
+
+/** Minimal ToolRegistry interface to avoid importing the full class */
+interface ToolRegistryLike {
+  getCatalog(contactType?: string): import('./types.js').ToolCatalogEntry[]
+  getEnabledToolDefinitions(contactType?: string): import('./types.js').ToolDefinition[]
+}
+
+/** Select model/provider based on effort level */
+function getModelForEffort(
+  effort: EffortLevel,
+  config: EngineConfig,
+): { model: string; provider: import('./types.js').LLMProvider } {
+  switch (effort) {
+    case 'low':
+      return { model: config.lowEffortModel, provider: config.lowEffortProvider }
+    case 'high':
+      return { model: config.highEffortModel, provider: config.highEffortProvider }
+    default:
+      return { model: config.mediumEffortModel, provider: config.mediumEffortProvider }
+  }
+}
+
+/** Convert ToolDefinition[] → LLMToolDef[] (parameters → inputSchema rename) */
+function toLLMToolDefs(defs: import('./types.js').ToolDefinition[]): LLMToolDef[] {
+  return defs.map(d => ({ name: d.name, description: d.description, inputSchema: d.parameters }))
+}
+
+/**
+ * Run the agentic pipeline for a reactive message.
+ * Phase 1 → effort classification → agentic loop → post-process → Phase 5.
+ * Called from processMessageInner() when ENGINE_MODE=agentic (default).
+ */
+async function runAgenticPipeline(
+  ctx: ContextBundle,
+  config: EngineConfig,
+  reg: Registry,
+  db: import('pg').Pool,
+  redis: import('ioredis').Redis,
+  totalStart: number,
+  phase1DurationMs: number,
+): Promise<PipelineResult> {
+  const log = logger.child({ traceId: ctx.traceId, pipeline: 'agentic' })
+
+  // 1. Classify effort level (deterministic, <5ms)
+  const effortLevel: EffortLevel = config.effortRoutingEnabled
+    ? classifyEffort(ctx)
+    : 'medium'
+  log.info({ effortLevel }, 'effort classified')
+
+  // 2. Select model based on effort
+  const modelConfig = getModelForEffort(effortLevel, config)
+
+  // 3. Get tool catalog + definitions from registry
+  const toolRegistry = reg.getOptional<ToolRegistryLike>('tools:registry')
+  const toolCatalog = toolRegistry?.getCatalog(ctx.userType) ?? []
+  const toolDefs = toolRegistry?.getEnabledToolDefinitions(ctx.userType) ?? []
+  const llmToolDefs: LLMToolDef[] = toLLMToolDefs(toolDefs)
+
+  // 4. Build system prompt
+  const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, reg, { isProactive: false })
+  const systemPrompt = agenticPrompt.system
+
+  // 5. Build agentic config
+  const agenticConfig: AgenticConfig = {
+    maxToolTurns: config.agenticMaxTurns,
+    maxConcurrentTools: config.maxConcurrentSteps,
+    effort: effortLevel,
+    model: modelConfig.model,
+    provider: modelConfig.provider,
+    fallbackModel: config.fallbackRespondModel,
+    fallbackProvider: config.fallbackRespondProvider,
+    temperature: config.temperatureRespond,
+    maxOutputTokens: config.maxOutputTokens,
+    criticizerMode: config.criticizerMode,
+  }
+
+  // 6. Run the agentic loop
+  const agenticResult: AgenticResult = await runAgenticLoop(
+    ctx,
+    systemPrompt,
+    llmToolDefs,
+    agenticConfig,
+    reg,
+  )
+  log.info({
+    turns: agenticResult.turns,
+    toolCalls: agenticResult.toolCallsLog.length,
+    effortUsed: agenticResult.effortUsed,
+  }, 'agentic loop complete')
+
+  // 7. Post-process (criticizer, formatting, TTS)
+  const compositorOutput = await postProcess(agenticResult, ctx, config, reg)
+
+  // 8. Phase 5: validate, send, persist
+  const p5Start = Date.now()
+  const delivery = await phase5Validate(ctx, compositorOutput, null, reg, db, redis, config)
+  const phase5DurationMs = Date.now() - p5Start
+
+  const totalDurationMs = Date.now() - totalStart
+
+  log.info({
+    phase: 5,
+    durationMs: phase5DurationMs,
+    sent: delivery.sent,
+    totalDurationMs,
+  }, 'Agentic pipeline complete')
+
+  // 9. Pipeline log (fire-and-forget)
+  const memMgr = reg.getOptional<import('../modules/memory/memory-manager.js').MemoryManager>('memory:manager')
+  if (memMgr) {
+    memMgr.savePipelineLog({
+      messageId: ctx.message.id,
+      agentId: ctx.agentId,
+      contactId: ctx.contactId ?? null,
+      sessionId: ctx.session.id,
+      phase1Ms: phase1DurationMs,
+      phase2Ms: 0,
+      phase3Ms: 0,
+      phase4Ms: 0,
+      phase5Ms: phase5DurationMs,
+      totalMs: totalDurationMs,
+      toolsCalled: agenticResult.toolsUsed,
+    }).catch(err => log.warn({ err }, 'Failed to save pipeline log'))
+  }
+
+  // 10. Extreme logging: outbound
+  logChannelMessage({
+    channel: ctx.message.channelName,
+    direction: 'outbound',
+    contactId: ctx.message.from,
+    messageType: 'text',
+    textPreview: compositorOutput.responseText,
+    metadata: { traceId: ctx.traceId, totalDurationMs, sent: delivery.sent, engineMode: 'agentic' },
+  }).catch(() => {})
+
+  return {
+    traceId: ctx.traceId,
+    success: delivery.sent,
+    phase1DurationMs,
+    phase2DurationMs: 0,
+    phase3DurationMs: 0,
+    phase4DurationMs: 0,
+    phase5DurationMs,
+    totalDurationMs,
+    responseText: compositorOutput.responseText,
+    deliveryResult: delivery,
+    replanAttempts: 0,
+    subagentIterationsUsed: 0,
+    agenticResult,
+    effortLevel,
+    engineMode: 'agentic',
   }
 }
 

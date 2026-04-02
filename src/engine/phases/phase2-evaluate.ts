@@ -1,3 +1,9 @@
+/**
+ * Phase 2: Evaluate — intent classification + execution plan via LLM.
+ *
+ * @deprecated Use the agentic loop (ENGINE_MODE=agentic). This phase is kept
+ * for legacy fallback only (ENGINE_MODE=legacy). Planned removal in v3.0.
+ */
 // LUNA Engine — Phase 2: Evaluate Situation
 // 1 llamada LLM (modelo evaluador). Target: <2s.
 // Analiza intención, emoción, riesgo, genera plan de ejecución.

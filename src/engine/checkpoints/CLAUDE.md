@@ -35,3 +35,6 @@ Cuando Phase 2 genera un plan de ejecución multi-step, los checkpoints persiste
 - `ENGINE_CHECKPOINT_ENABLED` (default: true)
 - `ENGINE_CHECKPOINT_RESUME_WINDOW_MS` (default: 300000 / 5min)
 - `ENGINE_CHECKPOINT_CLEANUP_DAYS` (default: 7)
+
+## Nota v2.0: legacy mode only
+Los checkpoints son para la pipeline legacy (Phases 2+3+4). En `ENGINE_MODE=agentic` (default) no se crean checkpoints porque el agentic loop completa en un solo pass. La lógica de checkpoints en `engine.ts` sólo se activa en el branch legacy.

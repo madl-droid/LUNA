@@ -46,11 +46,15 @@ const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
 
 /**
  * Execute Phase 5: Validate, send pre-formatted output, persist.
+ *
+ * @param evaluation - EvaluatorOutput from legacy Phase 2, or null in agentic mode.
+ *   When null, intent/emotion metadata is omitted from persistence and guard signals
+ *   use safe fallback behaviour (farewell not detected, objection not recorded).
  */
 export async function phase5Validate(
   ctx: ContextBundle,
   composed: CompositorOutput,
-  evaluation: EvaluatorOutput,
+  evaluation: EvaluatorOutput | null,
   registry: Registry,
   db: Pool,
   redis: Redis,
@@ -149,7 +153,7 @@ export async function phase5Validate(
   // 5. Post-send operations (parallel — all are independent)
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
   await Promise.all([
-    persistMessages(ctx, responseText, evaluation, db, memoryManager),
+    persistMessages(ctx, responseText, evaluation ?? null, db, memoryManager),
     updateLeadQualification(ctx, registry, db, memoryManager),
     updateSession(ctx, db),
   ])
@@ -162,8 +166,8 @@ export async function phase5Validate(
     )
   }
 
-  // 5b. Record objection data in contact memory (fire-and-forget)
-  if (evaluation.objectionType && ctx.contactId && memoryManager) {
+  // 5b. Record objection data in contact memory (fire-and-forget, legacy only)
+  if (evaluation?.objectionType && ctx.contactId && memoryManager) {
     const stepLabel = evaluation.objectionStep ? ` (paso ${evaluation.objectionStep})` : ''
     memoryManager.applyFactCorrection(
       ctx.agentId ?? 'default',
@@ -194,7 +198,9 @@ export async function phase5Validate(
 
   // 6. Proactive guard signals
   if (deliveryResult.sent && ctx.contactId) {
-    if (evaluation.intent === 'farewell') {
+    // In agentic mode, evaluation is null — farewell detection is skipped
+    // (agentic mode does not classify intent in a separate phase)
+    if (evaluation?.intent === 'farewell') {
       markFarewell(ctx.contactId, redis).catch(() => {})
     }
 
@@ -605,7 +611,7 @@ async function sendMessages(
 async function persistMessages(
   ctx: ContextBundle,
   responseText: string,
-  evaluation: EvaluatorOutput,
+  evaluation: EvaluatorOutput | null,
   db: Pool,
   memoryManager: MemoryManager | null,
 ): Promise<void> {
@@ -623,8 +629,8 @@ async function persistMessages(
       role: 'user',
       contentText: ctx.normalizedText,
       contentType: (ctx.messageType as StoredMessage['contentType']) ?? 'text',
-      intent: evaluation.intent,
-      emotion: evaluation.emotion,
+      intent: evaluation?.intent,
+      emotion: evaluation?.emotion,
       createdAt: ctx.message.timestamp,
     }
 
@@ -639,7 +645,7 @@ async function persistMessages(
       role: 'assistant',
       contentText: responseText,
       contentType: 'text',
-      intent: evaluation.intent,
+      intent: evaluation?.intent,
       createdAt: now,
     }
 
@@ -675,7 +681,7 @@ async function persistMessages(
       [
         randomUUID(), ctx.session.id, ctx.message.channelName,
         'agent', ctx.agentId,
-        JSON.stringify({ type: 'text', text: responseText, intent: evaluation.intent }),
+        JSON.stringify({ type: 'text', text: responseText, intent: evaluation?.intent }),
         now,
       ],
     )

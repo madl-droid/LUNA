@@ -1,3 +1,9 @@
+/**
+ * Phase 3: Execute — run tools based on the Phase 2 evaluation plan.
+ *
+ * @deprecated Use the agentic loop (ENGINE_MODE=agentic). This phase is kept
+ * for legacy fallback only (ENGINE_MODE=legacy). Planned removal in v3.0.
+ */
 // LUNA Engine — Phase 3: Execute Plan (v2)
 // Router que lee el plan y ejecuta cada paso por tipo.
 // Concurrencia controlada via StepSemaphore. Soporta process_attachment.

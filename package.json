@@ -1,6 +1,6 @@
 {
   "name": "luna",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -8,7 +8,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "migrate": "tsx scripts/migrate.ts",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "version:bump": "node scripts/version-bump.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

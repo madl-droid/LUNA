@@ -1,3 +1,9 @@
+/**
+ * Evaluator prompt builder — generates the system prompt for Phase 2 (Evaluate).
+ *
+ * @deprecated Use buildAgenticPrompt() from ./agentic.ts. This prompt builder
+ * is kept for legacy fallback only (ENGINE_MODE=legacy). Planned removal in v3.0.
+ */
 // LUNA Engine — Evaluator Prompt Builder (Phase 2)
 // Construye el prompt para el modelo evaluador que analiza intención y genera plan.
 // Context layer building is delegated to context-builder.ts (shared with agentic.ts).
