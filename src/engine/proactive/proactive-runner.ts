@@ -11,7 +11,8 @@ import type { Registry } from '../../kernel/registry.js'
 import type { EngineConfig, ProactiveJobContext, ProactiveConfig } from '../types.js'
 import { loadProactiveConfig } from './proactive-config.js'
 import { getProactiveJobs } from './triggers.js'
-import { isInCooldown, updateCooldownState } from './smart-cooldown.js'
+import { get as configStoreGet } from '../../kernel/config-store.js'
+// smart-cooldown is used by individual job handlers (follow-up, commitment-check, etc.)
 
 const logger = pino({ name: 'engine:proactive' })
 
@@ -75,17 +76,9 @@ export async function startProactiveRunner(
         return
       }
 
-      // Orphan recovery has no per-contact cooldown (it processes multiple contacts)
-      // Smart cooldown is applied per-contact inside each job handler.
-      // For the runner level, we apply smart cooldown to batch-type jobs only.
-      const isBatchJob = ['follow_up', 'reminder', 'reactivation', 'cache_refresh', 'nightly_batch', 'orphan_recovery'].includes(job.data.triggerType)
-      if (!isBatchJob && proactiveConfig.smart_cooldown?.enabled) {
-        const inCooldown = await isInCooldown(redis, 'batch', job.data.triggerType)
-        if (inCooldown) {
-          logger.debug({ jobName: job.data.jobName }, 'Smart cooldown active — skipping job run')
-          return
-        }
-      }
+      // Smart cooldown is applied per-contact inside each individual job handler
+      // (follow-up.ts, commitment-check.ts, etc.) — not at the runner level.
+      // All jobs here are batch-type: they scan and process multiple contacts per run.
 
       const ctx: ProactiveJobContext = {
         db,
@@ -97,19 +90,7 @@ export async function startProactiveRunner(
         runAt: new Date(job.data.runAt),
       }
 
-      let outcome: 'sent' | 'no_action' | 'error' = 'no_action'
-      try {
-        await jobDef.handler(ctx)
-        outcome = 'no_action' // default; individual jobs set per-contact cooldown
-      } catch (err) {
-        outcome = 'error'
-        throw err
-      } finally {
-        // Update batch-level cooldown for non-batch jobs
-        if (!isBatchJob && proactiveConfig.smart_cooldown?.enabled) {
-          await updateCooldownState(redis, 'batch', job.data.triggerType, outcome, proactiveConfig)
-        }
-      }
+      await jobDef.handler(ctx)
     },
     {
       connection,
@@ -132,8 +113,7 @@ export async function startProactiveRunner(
   // Read agent timezone for cron scheduling
   let proactiveTimezone = ''
   try {
-    const configStore = await import('../../kernel/config-store.js')
-    proactiveTimezone = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || ''
+    proactiveTimezone = (await configStoreGet(db, 'AGENT_TIMEZONE').catch(() => '')) || ''
   } catch { /* ignore */ }
 
   // Register repeatable jobs from config

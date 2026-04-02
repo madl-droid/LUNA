@@ -24,7 +24,9 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 ### Orphan Recovery (`orphan-recovery.ts`)
 - Detecta mensajes de usuario sin respuesta del agente (grace period: 5 min)
 - Query: `messages` + `sessions`, sender_type='user', sin agente en 5min
+- Excluye mensajes cuyo pipeline fue recientemente procesado (`pipeline_logs.created_at > msg.created_at AND > now()-5min`)
 - Re-despacha via `registry.runHook('message:incoming', ...)` con IncomingMessage sintético
+- Logs de re-dispatch a `proactive_outreach_log` con `trigger_type='orphan_recovery'` (requiere migration 029)
 - Job: `orphan-recovery`, cada 5 min (configurable), prioridad 2 (igual que commitment)
 - Config: `orphan_recovery.{enabled, interval_minutes, lookback_minutes, max_per_run}`
 
@@ -59,5 +61,6 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 - `guardConversation` (#7) usa `conversation:farewell:{id}` set por `markFarewell()` en Phase 5
 - `guardGoodbyeSuppressor` (#8) usa `suppress:{id}:{channel}` detectado por pattern matching
 - Orphan recovery usa `sender_type` (no `role`) — la tabla `messages` usa 'user'/'agent'
-- Smart cooldown en `proactive-runner.ts` aplica solo a batch jobs — per-contact lo manejan los job handlers
+- Smart cooldown es per-contact y lo aplican los job handlers individualmente (follow-up, commitment, etc.) — el runner no lo aplica a nivel batch
 - `isJobEnabled()` y `getJobInterval()` deben ser actualizados cuando se agrega un nuevo triggerType
+- Orphan recovery: `proactive_outreach_log.trigger_type` requiere migration 029 para aceptar `'orphan_recovery'`

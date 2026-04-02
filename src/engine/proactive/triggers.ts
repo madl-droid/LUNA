@@ -32,13 +32,35 @@ async function runOrphanRecovery(ctx: ProactiveJobContext): Promise<void> {
 
   logger.info({ count: orphans.length, lookbackMinutes }, 'Orphan recovery: found orphan messages')
 
-  let redispatched = 0
+  const redispatched: typeof orphans = []
   for (const orphan of orphans) {
     const ok = await redispatchOrphan(orphan, ctx.registry)
-    if (ok) redispatched++
+    if (ok) redispatched.push(orphan)
   }
 
-  logger.info({ found: orphans.length, redispatched }, 'Orphan recovery complete')
+  logger.info({ found: orphans.length, redispatched: redispatched.length }, 'Orphan recovery complete')
+
+  // Log each successfully redispatched orphan to proactive_outreach_log for dedup tracking
+  for (const orphan of redispatched) {
+    try {
+      await ctx.db.query(
+        `INSERT INTO proactive_outreach_log
+           (contact_id, trigger_type, trigger_id, channel, action_taken, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT DO NOTHING`,
+        [
+          orphan.contactId,
+          'orphan_recovery',
+          orphan.messageId,
+          orphan.channel,
+          'sent',
+          JSON.stringify({ sessionId: orphan.sessionId, originalMessageId: orphan.messageId }),
+        ],
+      )
+    } catch (err) {
+      logger.warn({ err, contactId: orphan.contactId }, 'Failed to log orphan recovery to outreach log')
+    }
+  }
 }
 
 /**
