@@ -39,9 +39,28 @@ export async function buildEvaluatorPrompt(ctx: ContextBundle, toolCatalog: Tool
   let system = svc ? await svc.getSystemPrompt('evaluator-system') : ''
   if (!system) system = EVALUATOR_SYSTEM_FALLBACK
 
-  // Inject today's ISO date so date-resolution rules in the prompt work correctly
-  const todayISO = new Date().toISOString().split('T')[0] ?? ''
-  system = system.replace(/\{TODAY\}/g, todayISO)
+  // Inject current date/time using agent timezone (same source as compositor)
+  // so the evaluator can resolve relative dates ("next tuesday") to ISO dates correctly
+  {
+    try {
+      const configStore = await import('../../kernel/config-store.js')
+      const db = registry?.getDb()
+      const tz = db ? ((await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || 'UTC') : 'UTC'
+      const now = new Date()
+      // YYYY-MM-DD in agent's local timezone
+      const todayLocal = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(now) // en-CA gives YYYY-MM-DD
+      // Full readable datetime for context
+      const dateStr = new Intl.DateTimeFormat('es', {
+        timeZone: tz,
+        weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }).format(now).replace(',', '')
+      system = system.replace(/\{TODAY\}/g, todayLocal ?? '')
+      system += `\n\n--- CONTEXTO TEMPORAL ---\nFecha y hora actual: ${dateStr} (${tz})\nHoy en ISO: ${todayLocal}`
+    } catch { /* best-effort — leave {TODAY} unreplaced if fails */ }
+  }
 
   // Inject job + guardrails so the evaluator knows the agent's mission and rules
   if (svc) {
