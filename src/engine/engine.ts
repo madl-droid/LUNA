@@ -493,11 +493,11 @@ async function processMessageInner(
 
     // Pipeline log (fire-and-forget via memory:manager)
     const memMgr = registry.getOptional<import('../modules/memory/memory-manager.js').MemoryManager>('memory:manager')
-    if (memMgr && ctx.contactId) {
+    if (memMgr) {
       memMgr.savePipelineLog({
         messageId: ctx.message.id,
         agentId: ctx.agentId,
-        contactId: ctx.contactId,
+        contactId: ctx.contactId ?? null,
         sessionId: ctx.session.id,
         phase1Ms: phase1DurationMs,
         phase2Ms: phase2DurationMs,

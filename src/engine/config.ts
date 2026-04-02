@@ -47,13 +47,13 @@ export function loadEngineConfig(): EngineConfig {
     // LLM models
     classifyModel: env('LLM_CLASSIFY_MODEL', 'claude-haiku-4-5-20251001'),
     classifyProvider: envProvider('LLM_CLASSIFY_PROVIDER', 'anthropic'),
-    respondModel: env('LLM_RESPOND_MODEL', 'claude-sonnet-4-5-20250929'),
+    respondModel: env('LLM_RESPOND_MODEL', 'claude-sonnet-4-6'),
     respondProvider: envProvider('LLM_RESPOND_PROVIDER', 'anthropic'),
-    complexModel: env('LLM_COMPLEX_MODEL', 'claude-opus-4-5-20251101'),
+    complexModel: env('LLM_COMPLEX_MODEL', 'claude-opus-4-6'),
     complexProvider: envProvider('LLM_COMPLEX_PROVIDER', 'anthropic'),
     toolsModel: env('LLM_TOOLS_MODEL', 'claude-haiku-4-5-20251001'),
     toolsProvider: envProvider('LLM_TOOLS_PROVIDER', 'anthropic'),
-    proactiveModel: env('LLM_PROACTIVE_MODEL', 'claude-sonnet-4-5-20250929'),
+    proactiveModel: env('LLM_PROACTIVE_MODEL', 'claude-sonnet-4-6'),
     proactiveProvider: envProvider('LLM_PROACTIVE_PROVIDER', 'anthropic'),
 
     // Fallbacks

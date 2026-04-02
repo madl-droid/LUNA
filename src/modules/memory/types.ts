@@ -325,7 +325,7 @@ export interface CompressionResult {
 export interface PipelineLogEntry {
   messageId?: string | null
   agentId: string
-  contactId: string
+  contactId?: string | null
   sessionId?: string | null
   phase1Ms?: number | null
   phase2Ms?: number | null
