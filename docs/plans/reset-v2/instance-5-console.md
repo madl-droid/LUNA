@@ -36,7 +36,7 @@ Read ALL of these completely before writing any code:
 - `/docker/luna-repo/docs/plans/reset-v2/overview.md` -- overall architecture
 - `/docker/luna-repo/docs/plans/reset-v2/reuse-inventory.md` -- what to reuse
 - `/docker/luna-repo/src/modules/console/CLAUDE.md` -- console module documentation
-- `/docker/luna-repo/src/modules/console/manifest.ts` -- console module lifecycle
+- `/docker/luna-repo/src/modules/console/manifest.ts` -- console module lifecycle (HUGE, 9000+ lines)
 - `/docker/luna-repo/src/modules/console/server.ts` -- SSR router, page rendering, POST handlers
 - `/docker/luna-repo/src/modules/console/templates.ts` -- layout HTML, sidebar, save bar
 - `/docker/luna-repo/src/modules/console/templates-i18n.ts` -- i18n dictionary (210+ keys/lang)
@@ -47,9 +47,11 @@ Read ALL of these completely before writing any code:
 - `/docker/luna-repo/src/modules/prompts/manifest.ts` -- identity/accent console fields (lines 130-323)
 - `/docker/luna-repo/src/modules/subagents/manifest.ts` -- subagent console config + renderSection service
 - `/docker/luna-repo/src/modules/tools/manifest.ts` -- tools console fields
-- `/docker/luna-repo/src/modules/tools/types.ts` -- ToolDefinition, ToolSettings
+- `/docker/luna-repo/src/modules/tools/types.ts` -- ToolDefinition, ToolSettings (two-tier from Instance 3)
 - `/docker/luna-repo/src/engine/config.ts` -- EngineConfig, loadEngineConfig() with all env key names
 - `/docker/luna-repo/src/engine/types.ts` -- EngineConfig type, ProactiveConfig type
+- `/docker/luna-repo/src/engine/prompts/skills.ts` -- skills system from Instance 2
+- `/docker/luna-repo/src/modules/prompts/prompts-service.ts` -- accent, skills service
 
 ---
 
@@ -73,12 +75,14 @@ These rules are **non-negotiable**. Violating them will cause the work to be rej
 
 - **DO NOT** add npm dependencies
 - **DO NOT** create a SPA or add client-side frameworks
+- **DO NOT** create new CSS files -- use existing ones
 - **DO NOT** create new API endpoints unless strictly necessary (manifest fields + existing save flow handle most cases)
 - **DO NOT** create new DB tables
 - **DO NOT** modify kernel files
 - **DO NOT** change the sidebar order or structure
 - **DO NOT** duplicate HTTP helpers -- use `jsonResponse`, `parseBody`, `parseQuery` from `kernel/http-helpers.js`
 - **DO NOT** modify `templates-fields.ts` unless adding a genuinely new field type (unlikely)
+- **DO NOT** install new npm packages for the console
 
 ---
 
@@ -149,15 +153,17 @@ Also add corresponding TS interface fields to `EngineModuleConfig`.
 
 In `src/modules/engine/manifest.ts` `console.fields[]`, add AFTER existing fields:
 
+**Section: "Motor del Agente" / "Agent Engine"**
+
 ```typescript
-// ── Agentic Engine ──
+// -- Agentic Engine --
 { key: '_div_agentic', type: 'divider', label: { es: 'Motor Agentico', en: 'Agentic Engine' } },
 {
   key: 'ENGINE_MODE',
   type: 'select',
   label: { es: 'Modo del motor', en: 'Engine Mode' },
   info: {
-    es: 'El modo agentico usa un loop con herramientas nativas. Legacy usa el pipeline de 5 fases.',
+    es: 'Agentic usa loop nativo con tools. Legacy usa pipeline de 5 fases.',
     en: 'Agentic mode uses a native tool loop. Legacy uses the 5-phase pipeline.',
   },
   options: [
@@ -171,15 +177,15 @@ In `src/modules/engine/manifest.ts` `console.fields[]`, add AFTER existing field
   type: 'number',
   label: { es: 'Turnos max de herramientas', en: 'Max tool turns' },
   info: {
-    es: 'Maximo de ciclos de llamadas a herramientas por mensaje.',
-    en: 'Maximum tool call cycles per message.',
+    es: 'Maximo de iteraciones tool-use por mensaje. Minimo 3, maximo 30.',
+    en: 'Maximum tool call cycles per message. Minimum 3, maximum 30.',
   },
-  min: 1, max: 20, width: 'half',
+  min: 3, max: 30, width: 'half',
 },
 {
   key: 'AGENTIC_EFFORT_DEFAULT',
   type: 'select',
-  label: { es: 'Nivel de esfuerzo', en: 'Effort level' },
+  label: { es: 'Nivel de esfuerzo por defecto', en: 'Default effort level' },
   info: {
     es: 'Controla la profundidad de razonamiento. Bajo=rapido, Alto=completo.',
     en: 'Controls reasoning depth. Low=fast, High=thorough.',
@@ -191,15 +197,33 @@ In `src/modules/engine/manifest.ts` `console.fields[]`, add AFTER existing field
   ],
   width: 'half',
 },
+```
 
-// ── Protections ──
-{ key: '_div_agentic_protections', type: 'divider', label: { es: 'Protecciones', en: 'Protections' } },
+**Section: "Enrutamiento por Esfuerzo" / "Effort Routing"**
+
+```typescript
+{
+  key: 'ENGINE_EFFORT_ROUTING',
+  type: 'boolean',
+  label: { es: 'Enrutamiento por esfuerzo', en: 'Effort routing' },
+  info: {
+    es: 'Clasifica mensajes por complejidad para optimizar costos. Cada nivel usa un modelo distinto.',
+    en: 'Classifies messages by complexity to optimize costs. Each level uses a different model.',
+  },
+},
+```
+
+**Section: "Protecciones" / "Safeguards"**
+
+```typescript
+// -- Protections --
+{ key: '_div_agentic_protections', type: 'divider', label: { es: 'Protecciones', en: 'Safeguards' } },
 {
   key: 'AGENTIC_TOOL_DEDUP_ENABLED',
   type: 'boolean',
-  label: { es: 'Cache de herramientas duplicadas', en: 'Tool dedup cache' },
+  label: { es: 'Cache de herramientas', en: 'Tool cache' },
   info: {
-    es: 'Evita llamadas repetidas a la misma herramienta con los mismos parametros.',
+    es: 'Evita llamadas duplicadas a la misma herramienta con los mismos parametros.',
     en: 'Prevents repeated calls to the same tool with the same parameters.',
   },
 },
@@ -208,8 +232,8 @@ In `src/modules/engine/manifest.ts` `console.fields[]`, add AFTER existing field
   type: 'boolean',
   label: { es: 'Deteccion de loops', en: 'Loop detection' },
   info: {
-    es: 'Detecta cuando el agente entra en un loop de herramientas y lo detiene.',
-    en: 'Detects when the agent enters a tool loop and stops it.',
+    es: 'Detecta y previene loops infinitos de herramientas.',
+    en: 'Detects and prevents infinite tool loops.',
   },
 },
 {
@@ -242,15 +266,28 @@ In `src/modules/engine/manifest.ts` `console.fields[]`, add AFTER existing field
   },
   min: 5, max: 20, width: 'third',
 },
+{
+  key: 'AGENTIC_ERROR_AS_CONTEXT',
+  type: 'boolean',
+  label: { es: 'Errores como contexto', en: 'Errors as context' },
+  info: {
+    es: 'Envia errores de herramientas al LLM para que decida que hacer.',
+    en: 'Sends tool errors to the LLM so it can decide what to do.',
+  },
+},
+```
 
-// ── Recovery ──
+**Section: "Recuperacion" / "Recovery"**
+
+```typescript
+// -- Recovery --
 { key: '_div_agentic_recovery', type: 'divider', label: { es: 'Recuperacion', en: 'Recovery' } },
 {
   key: 'AGENTIC_PARTIAL_RECOVERY_ENABLED',
   type: 'boolean',
-  label: { es: 'Recuperacion de texto parcial', en: 'Partial text recovery' },
+  label: { es: 'Recuperacion parcial', en: 'Partial recovery' },
   info: {
-    es: 'Si el LLM excede el timeout pero ya genero texto, usa ese texto parcial.',
+    es: 'Si hay timeout, envia texto parcial generado en vez de error.',
     en: 'If the LLM exceeds timeout but already generated text, use that partial text.',
   },
 },
@@ -263,9 +300,52 @@ In `src/modules/engine/manifest.ts` `console.fields[]`, add AFTER existing field
     en: 'Reviews complex responses before sending. Only activates when needed.',
   },
 },
+```
 
-// ── Execution Queue ──
-{ key: '_div_exec_queue', type: 'divider', label: { es: 'Cola de ejecucion', en: 'Execution Queue' } },
+**Section: "Modelos por Esfuerzo" / "Models by Effort"**
+
+```typescript
+// -- Models by Effort --
+{ key: '_div_effort_models', type: 'divider', label: { es: 'Modelos por Esfuerzo', en: 'Models by Effort' } },
+{
+  key: 'LLM_LOW_EFFORT_MODEL',
+  type: 'model-select',
+  label: { es: 'Modelo bajo esfuerzo', en: 'Low effort model' },
+  info: {
+    es: 'Modelo para mensajes simples (saludos, confirmaciones, preguntas directas).',
+    en: 'Model for simple messages (greetings, confirmations, direct questions).',
+  },
+  width: 'half',
+},
+{
+  key: 'LLM_MEDIUM_EFFORT_MODEL',
+  type: 'model-select',
+  label: { es: 'Modelo medio esfuerzo', en: 'Medium effort model' },
+  info: {
+    es: 'Modelo para mensajes de complejidad media (consultas con contexto, seguimientos).',
+    en: 'Model for medium complexity messages (contextual queries, follow-ups).',
+  },
+  width: 'half',
+},
+{
+  key: 'LLM_HIGH_EFFORT_MODEL',
+  type: 'model-select',
+  label: { es: 'Modelo alto esfuerzo', en: 'High effort model' },
+  info: {
+    es: 'Modelo para mensajes complejos (multiples herramientas, razonamiento profundo).',
+    en: 'Model for complex messages (multiple tools, deep reasoning).',
+  },
+  width: 'half',
+},
+```
+
+(Include corresponding provider selects for each model if the `model-select` field type requires an associated provider field.)
+
+**Section: "Cola de Ejecucion" / "Execution Queue"**
+
+```typescript
+// -- Execution Queue --
+{ key: '_div_exec_queue', type: 'divider', label: { es: 'Cola de Ejecucion', en: 'Execution Queue' } },
 {
   key: 'EXECUTION_QUEUE_REACTIVE_CONCURRENCY',
   type: 'number',
@@ -298,7 +378,7 @@ In `src/modules/engine/manifest.ts` `console.fields[]`, add AFTER existing field
 },
 ```
 
-#### 1c. Update renderAdvancedAgentSection (if using custom renderer)
+#### 1c. Update renderAdvancedAgentSection (custom renderer)
 
 If the engine fields above render via `renderModulePanels()` automatically, no change needed in `templates-sections.ts`. But if `renderAdvancedAgentSection` is a custom renderer that hardcodes fields (which it does -- it uses `secretField`, `numField`, `boolField` directly), then:
 
@@ -327,7 +407,8 @@ h += `<div class="panel">
     ${/* ENGINE_MODE select */}
     ${/* AGENTIC_MAX_TOOL_TURNS number */}
     ${/* AGENTIC_EFFORT_DEFAULT select */}
-    ...
+    ${/* ENGINE_EFFORT_ROUTING boolean */}
+    ...sub-sections for Safeguards, Recovery, Models by Effort, Execution Queue...
   </div>
 </div>`
 ```
@@ -344,7 +425,7 @@ Check `templates-fields.ts` for how select fields render -- use the same CSS str
 
 ---
 
-### Step 2: Update Subagent Console — Fresh Context Option
+### Step 2: Update Subagent Console -- Fresh Context Option
 
 **File:** `src/modules/subagents/manifest.ts`
 **File:** `src/modules/subagents/templates.ts` (if custom render exists)
@@ -411,12 +492,22 @@ It calls the custom renderer directly and ignores manifest fields. So the field 
 - At the top of `renderSubagentsSection()`, add a small panel with the fresh context toggle BEFORE the subagent cards.
 - The toggle should be a standard `<label class="toggle">` with a hidden input `name="SUBAGENT_FRESH_CONTEXT"`.
 - Since this is inside a custom renderer but needs to participate in the form save, ensure the field uses the same `name` and `data-original` pattern as other fields.
+- Show info text explaining that subagents now get clean context, not the full parent history.
 
 **Alternative:** Modify `server.ts` to render manifest fields FIRST, then the custom section. This is cleaner but requires touching the console server routing.
 
+#### 2d. Show subagent usage stats if available
+
+If Instance 4 created the `subagent_usage` table and it has data, consider adding a readonly stats panel showing:
+- Total subagent invocations
+- Breakdown by subagent type
+- Average execution time
+
+This is a nice-to-have, not a requirement.
+
 ---
 
-### Step 3: Update Identity Page — Accent Configuration
+### Step 3: Update Identity Page -- Accent Configuration
 
 **File:** `src/modules/prompts/manifest.ts` (verify existing fields)
 **File:** `src/modules/console/templates-sections.ts` (`renderIdentitySection`)
@@ -435,7 +526,7 @@ And in console.fields (lines 238-247):
   key: 'AGENT_ACCENT',
   type: 'text',
   label: { es: 'Acento / Locale', en: 'Accent / Locale' },
-  info: { es: 'Código BCP-47 (ej: es-MX, es-ES, en-US, pt-BR)...', en: '...' },
+  info: { es: 'Codigo BCP-47 (ej: es-MX, es-ES, en-US, pt-BR)...', en: '...' },
   width: 'half',
 },
 ```
@@ -453,24 +544,39 @@ Instance 2 (Prompts) may have ALREADY updated the accent system. Check what chan
 
 **If Instance 2 only added the config keys but not the UI:** Update the console:
 
-1. **Change `AGENT_ACCENT` from text to dynamic select** in the `renderIdentitySection` custom renderer. The ACCENT_MAP is already defined (lines 1444-1510). Ensure it renders as a `<select>` with option groups by language, where each option value is the BCP-47 code and the label is the country name. Add an empty option `''` for "Sin acento / No accent" and a `'custom'` option for "Personalizado / Custom".
-
-2. **Add `AGENT_ACCENT_PROMPT` textarea** that appears when accent is set to 'custom' or is non-empty. This is the custom accent instructions field.
+1. **Change `AGENT_ACCENT` from text to select** in the `renderIdentitySection` custom renderer. The options should include regional accents:
 
 ```typescript
-// In renderIdentitySection, after the accent select:
+options: [
+  { value: '', label: { es: 'Sin acento', en: 'No accent' } },
+  { value: 'colombiano', label: { es: 'Colombiano', en: 'Colombian' } },
+  { value: 'mexicano', label: { es: 'Mexicano', en: 'Mexican' } },
+  { value: 'argentino', label: { es: 'Argentino', en: 'Argentine' } },
+  { value: 'espanol', label: { es: 'Espanol (Espana)', en: 'Spanish (Spain)' } },
+  { value: 'chileno', label: { es: 'Chileno', en: 'Chilean' } },
+  { value: 'personalizado', label: { es: 'Personalizado', en: 'Custom' } },
+]
+```
+
+   The ACCENT_MAP is already defined (lines 1444-1510). Ensure it renders as a `<select>` with option groups by language, where each option value is the accent identifier and the label is the country/region name. Add an empty option `''` for "Sin acento / No accent" and a `'personalizado'` option for "Personalizado / Custom".
+
+2. **Add `AGENT_ACCENT_PROMPT` textarea** that appears when accent is set (not 'ninguno'/empty). This is the custom accent instructions field:
+
+```typescript
 {
   key: 'AGENT_ACCENT_PROMPT',
   type: 'textarea',
   label: { es: 'Instrucciones de acento', en: 'Accent instructions' },
   info: {
-    es: 'Instrucciones personalizadas para el acento. Se inyectan en el contexto del LLM cuando el acento esta activo.',
+    es: 'Personaliza las instrucciones del acento. Se inyectan en el contexto del LLM cuando el acento esta activo.',
     en: 'Custom accent instructions. Injected into LLM context when accent is active.',
   },
   placeholder: 'Describe como debe sonar el agente: modismos, expresiones, tono...',
   rows: 4,
 }
 ```
+
+   Default content should be loaded from the corresponding accent prompt file (e.g., `instance/prompts/skills/` or wherever Instance 2 placed accent prompt templates).
 
 #### 3c. Verify existing identity fields are intact
 
@@ -488,13 +594,64 @@ The following fields MUST still work after changes:
 
 ---
 
-### Step 4: Update Tools Page — Two-Tier Descriptions
+### Step 4: Add Skills Section to Console
+
+**Check if Instance 2 created a skills system with a console interface.**
+
+Skills management should be accessible to users. Two placement options:
+a) Add to `/console/agente/` as a new sub-page "skills" (preferred if many skills)
+b) Add as a section within `/console/agente/identity` (acceptable if few skills)
+
+#### 4a. If skills are file-based (`.md` files in `instance/prompts/skills/`)
+
+Add a readonly informational section:
+- List all available skills from the skills directory
+- Show skill name and description
+- Show skill status (enabled/disabled)
+- Show skill file content in a readonly textarea
+- Link or note explaining that skills are managed via files
+- For each skill, show which user types it is available to
+
+```typescript
+// Example readonly skill display
+{
+  key: '_div_skills', type: 'divider', label: { es: 'Habilidades del Agente', en: 'Agent Skills' },
+},
+{
+  key: '_skills_info', type: 'readonly',
+  label: { es: 'Habilidades disponibles', en: 'Available skills' },
+  info: {
+    es: 'Las habilidades se gestionan como archivos .md en instance/prompts/skills/',
+    en: 'Skills are managed as .md files in instance/prompts/skills/',
+  },
+}
+```
+
+#### 4b. If Instance 2 added a skills table or API
+
+Add a full skills management section:
+- Show skill name, description, active status
+- Allow toggling skills on/off per user type
+- Allow editing skill content if the API supports it
+
+#### 4c. If adding a new sub-page
+
+If a new `/console/agente/skills` sub-page is created, add it to the sidebar navigation:
+- Use existing sidebar patterns -- check how other items are added in the manifest's console.fields configuration
+- Match the URL pattern of other agente sub-pages
+- Use an appropriate icon from the existing icon set
+
+**This step should be scoped based on what Instance 2 actually implemented.** If skills have no DB/API backing yet, a readonly informational section is sufficient.
+
+---
+
+### Step 5: Update Tools Page -- Two-Tier Descriptions
 
 **File:** `src/modules/tools/types.ts` (verify shortDescription + detailedGuidance fields)
 **File:** `src/modules/tools/manifest.ts` (add console fields or API for editing)
 **File:** `src/modules/console/templates-sections.ts` (`renderToolsCardsSection`)
 
-#### 4a. Understand current tools page
+#### 5a. Understand current tools page
 
 The tools page at `/console/herramientas/tools` renders:
 1. **Tool cards grid** -- each registered tool as a card with icon, title, description, toggle, config button
@@ -502,7 +659,7 @@ The tools page at `/console/herramientas/tools` renders:
 
 Individual tool configuration goes to `/console/herramientas/{moduleName}` which renders the module's manifest fields.
 
-#### 4b. Check Instance 3 changes to tool types
+#### 5b. Check Instance 3 changes to tool types
 
 Instance 3 should have added to `ToolDefinition`:
 ```typescript
@@ -516,7 +673,7 @@ shortDescription?: string    // editable override
 detailedGuidance?: string    // editable override
 ```
 
-#### 4c. Add editing for two-tier descriptions
+#### 5c. Add editing for two-tier descriptions
 
 The two-tier descriptions need to be editable per-tool. Two approaches:
 
@@ -525,7 +682,6 @@ The two-tier descriptions need to be editable per-tool. Two approaches:
 // PUT /console/api/tools/descriptions
 { toolName: string, shortDescription?: string, detailedGuidance?: string }
 ```
-
 Then add inline editing in the tool cards or a detail modal.
 
 **Approach B (expand tool card):** When clicking the config icon on a tool card, show an expanded view with:
@@ -538,18 +694,14 @@ The existing tool settings API (`PUT /console/api/tools/settings`) could be exte
 
 1. **Check** if Instance 3 already extended the `PUT /console/api/tools/settings` handler to accept description fields.
 
-2. **Modify `renderToolsCardsSection`** to add description fields to each tool card, either:
-   - As expandable sections within each card (click to expand), OR
-   - As a detail panel that opens when clicking the config icon
+2. **Modify `renderToolsCardsSection`** to add description fields to each tool card:
 
-3. The fields should show:
-   - Current `description` (readonly -- comes from code registration)
-   - `shortDescription` (editable text input -- override for AI tool selection)
-   - `detailedGuidance` (editable textarea -- detailed instructions when tool is used)
-
-4. Save via JS: on blur or on save button, POST/PUT to `/console/api/tools/settings` with the new fields.
-
-**Implementation detail for tool cards:**
+For each tool, show:
+- Current `description` (readonly -- comes from code registration)
+- `shortDescription` (editable text input -- override for AI tool selection)
+- `detailedGuidance` (editable textarea -- detailed instructions when tool is used)
+- Category, enabled status (existing)
+- Access rules per user type (existing)
 
 ```typescript
 // Inside each tool card, after the description div:
@@ -573,6 +725,8 @@ cardsHtml += `
     </div>
   </div>`
 ```
+
+3. Save via JS: on blur or on save button, POST/PUT to `/console/api/tools/settings` with the new fields.
 
 **NOTE:** The tools page currently renders tool cards from MODULE data (module states), not from the ToolRegistry. The description fields are per-TOOL (from ToolRegistry), not per-module. This means the two-tier descriptions need to be fetched from the tools API, not from module states.
 
@@ -601,12 +755,12 @@ if (herramientasSubpage === 'tools') {
 
 ---
 
-### Step 5: Add Proactive Settings to Console
+### Step 6: Update Proactive Settings in Console
 
 **File:** `src/modules/engine/manifest.ts` (add proactive fields to console section)
 **File:** `src/modules/console/templates-sections.ts` (if custom renderer needed)
 
-#### 5a. Check current proactive console exposure
+#### 6a. Check current proactive console exposure
 
 Proactive config currently lives in `instance/proactive.json` (loaded by `proactive-config.ts`). Check if:
 - Instance 3 moved any proactive settings to `config_store` / env vars
@@ -617,11 +771,11 @@ Proactive config currently lives in `instance/proactive.json` (loaded by `proact
 - Add a `readonly` field showing current proactive.json status
 - Add a link/note explaining that proactive config is in `instance/proactive.json`
 
-**If Instance 3/4 moved settings to config_store:** Add console fields:
+**If Instance 3/4 moved settings to config_store:** Add console fields for:
 
+**Smart Cooldown:**
 ```typescript
-// Smart cooldown
-{ key: '_div_proactive_smart', type: 'divider', label: { es: 'Cooldown inteligente', en: 'Smart Cooldown' } },
+{ key: '_div_proactive_smart', type: 'divider', label: { es: 'Cooldown Inteligente', en: 'Smart Cooldown' } },
 {
   key: 'PROACTIVE_SMART_COOLDOWN_ENABLED',
   type: 'boolean',
@@ -631,9 +785,12 @@ Proactive config currently lives in `instance/proactive.json` (loaded by `proact
     en: 'Automatically adjusts wait time between proactive messages based on contact response.',
   },
 },
+// Include after_sent_minutes, after_no_action_minutes if available as config keys
+```
 
-// Orphan recovery
-{ key: '_div_proactive_orphan', type: 'divider', label: { es: 'Recuperacion de huerfanos', en: 'Orphan Recovery' } },
+**Orphan Recovery:**
+```typescript
+{ key: '_div_proactive_orphan', type: 'divider', label: { es: 'Recuperacion de Huerfanos', en: 'Orphan Recovery' } },
 {
   key: 'PROACTIVE_ORPHAN_RECOVERY_ENABLED',
   type: 'boolean',
@@ -649,8 +806,10 @@ Proactive config currently lives in `instance/proactive.json` (loaded by `proact
   label: { es: 'Intervalo de escaneo (min)', en: 'Scan interval (min)' },
   min: 1, max: 60, width: 'half',
 },
+```
 
-// Conversation guard
+**Conversation Guard:**
+```typescript
 {
   key: 'PROACTIVE_CONVERSATION_GUARD_ENABLED',
   type: 'boolean',
@@ -671,43 +830,101 @@ Check the sidebar for an existing proactive section. If none exists, add to the 
 
 ---
 
-### Step 6: Skills Management (OPTIONAL)
+### Step 7: Update Console Sidebar if Needed
 
-**Check if Instance 2 created a skills system with a console interface.**
+If new pages were added (like skills), add them to the sidebar navigation.
 
-If skills are `.md` files in `instance/prompts/skills/`:
-- Add a readonly list showing available skills
-- Show which skills are currently active
-- This is informational only -- skills are managed via files, not console
+Use existing sidebar patterns:
+- Check how other items are added in the manifest's console.fields configuration
+- Match the URL and icon patterns of other agente sub-pages
+- Use the existing sidebar structure in `templates.ts`
+- If only sections were added to existing pages (no new pages), skip this step entirely
 
-If Instance 2 added a skills table or API:
-- Add a skills management page or section
-- Show skill name, description, active status
-- Allow toggling skills on/off per user type
-
-**This step is OPTIONAL for v2.0.0.** If skills have no DB/API backing yet, skip this step entirely.
+**IMPORTANT:** The sidebar is defined in `templates.ts`. Changes should be minimal and follow the existing pattern exactly. Do NOT reorganize existing items.
 
 ---
 
-### Step 7: Verification and Testing
+### Step 8: Ensure Hot-Reload Works
+
+All new settings should react to `console:config_applied` hook.
+
+For each module with new config fields:
+1. Verify the module listens to `console:config_applied` in its `init()` hooks
+2. Verify the handler reloads config from `config_store`
+3. Test that changing ENGINE_MODE from console takes effect without restart
+4. Test that changing effort routing toggle takes effect immediately
+5. Test that changing loop detection thresholds takes effect immediately
+
+The existing pattern in most modules:
+```typescript
+hooks: {
+  'console:config_applied': async () => {
+    const config = registry.getConfig<MyConfig>('my-module')
+    // Re-read from config_store and update in-memory state
+  }
+}
+```
+
+Verify this pattern exists for the engine module and any other modules with new console fields.
+
+---
+
+### Step 9: Update Console CLAUDE.md
+
+**File:** `src/modules/console/CLAUDE.md`
+
+Add documentation for the new console sections:
+
+```markdown
+## Agentic Engine Settings (Panel in /console/agente/advanced)
+- ENGINE_MODE, AGENTIC_MAX_TOOL_TURNS, AGENTIC_EFFORT_DEFAULT
+- Effort routing toggle (ENGINE_EFFORT_ROUTING)
+- Loop detection thresholds (warn, block, circuit)
+- Tool dedup, errors as context, partial recovery, criticizer smart mode
+- Models by effort (low, medium, high)
+- Execution queue lane concurrencies (reactive, proactive, background)
+
+## Subagent Fresh Context (/console/agente/subagents)
+- SUBAGENT_FRESH_CONTEXT toggle at top of subagents page
+
+## Accent Configuration (/console/agente/identity)
+- AGENT_ACCENT select with regional accent options
+- AGENT_ACCENT_PROMPT textarea for custom accent instructions
+
+## Skills Management
+- Skills list (readonly or editable depending on Instance 2 implementation)
+- Skill enable/disable per user type
+
+## Tool Two-Tier Descriptions (/console/herramientas/tools)
+- shortDescription and detailedGuidance editable per tool
+- Saved via PUT /console/api/tools/settings
+
+## Proactive Settings (if exposed)
+- Smart cooldown, orphan recovery, conversation guard toggles
+```
+
+---
+
+### Step 10: Verification and Testing
 
 After all changes:
 
-#### 7a. TypeScript compilation
+#### 10a. TypeScript compilation
 ```bash
 docker run --rm -v /docker/luna-repo:/app -w /app node:22-alpine npx tsc --noEmit
 ```
 Fix ALL type errors before proceeding.
 
-#### 7b. Verify all console pages render
+#### 10b. Verify all console pages render
 
 Check these URLs render without errors:
-- `/console/agente/advanced` -- should show new Agentic Engine panel
+- `/console/agente/advanced` -- should show new Agentic Engine panel with all sections
 - `/console/agente/subagents` -- should show fresh context toggle
-- `/console/agente/identity` -- should show accent select (not text input)
-- `/console/herramientas/tools` -- should show tool cards with description fields
+- `/console/agente/identity` -- should show accent select (not text input) and accent prompt textarea
+- `/console/herramientas/tools` -- should show tool cards with two-tier description fields
+- `/console/agente/skills` -- should show skills list (if new page was created)
 
-#### 7c. Verify form save works
+#### 10c. Verify form save works
 
 For each new field:
 1. Change the value in the form
@@ -715,20 +932,20 @@ For each new field:
 3. Verify the value persists after page refresh
 4. Verify `config_store` has the new value
 
-#### 7d. Verify hot-reload
+#### 10d. Verify hot-reload
 
 1. Change ENGINE_MODE in the console
 2. Verify `console:config_applied` hook fires
-3. Verify the engine picks up the new value
+3. Verify the engine picks up the new value without restart
 
-#### 7e. Verify i18n
+#### 10e. Verify i18n
 
 For each new field:
 1. Switch console language to `es` -- all labels/info in Spanish
 2. Switch to `en` -- all labels/info in English
 3. No missing translations
 
-#### 7f. Verify no regressions
+#### 10f. Verify no regressions
 
 - Existing API Keys panel still works
 - Existing Models table still works
@@ -740,66 +957,50 @@ For each new field:
 
 ---
 
-### Step 8: Update Console CLAUDE.md
-
-**File:** `src/modules/console/CLAUDE.md`
-
-Add documentation for the new console sections:
-
-```markdown
-## Agentic Engine Settings (Panel in /console/agente/advanced)
-- ENGINE_MODE, AGENTIC_MAX_TOOL_TURNS, AGENTIC_EFFORT_DEFAULT
-- Loop detection thresholds (warn, block, circuit)
-- Tool dedup, partial recovery, criticizer smart mode
-- Execution queue lane concurrencies
-
-## Subagent Fresh Context (/console/agente/subagents)
-- SUBAGENT_FRESH_CONTEXT toggle at top of subagents page
-
-## Tool Two-Tier Descriptions (/console/herramientas/tools)
-- shortDescription and detailedGuidance editable per tool
-- Saved via PUT /console/api/tools/settings
-```
-
----
-
 ## Files Modified Summary
 
 | File | Action | What |
 |------|--------|------|
-| `src/modules/engine/manifest.ts` | MODIFY | Add agentic + execution queue + proactive console fields to configSchema and console.fields |
-| `src/modules/console/templates-sections.ts` | MODIFY | Update `renderAdvancedAgentSection` with new panels (Agentic Engine, Protections, Recovery, Execution Queue), update `renderToolsCardsSection` for two-tier descriptions, verify `renderIdentitySection` accent UI |
+| `src/modules/engine/manifest.ts` | MODIFY | Add agentic + execution queue + proactive + effort models console fields to configSchema and console.fields |
+| `src/modules/console/templates-sections.ts` | MODIFY | Update `renderAdvancedAgentSection` with new panels (Agentic Engine, Safeguards, Recovery, Models by Effort, Execution Queue), update `renderToolsCardsSection` for two-tier descriptions, verify `renderIdentitySection` accent UI |
 | `src/modules/console/server.ts` | MODIFY | Pass tool descriptions data to tools renderer, possibly adjust subagents rendering |
-| `src/modules/console/templates-sections.ts` | MODIFY | Add `toolDescriptions` to SectionData interface |
 | `src/modules/subagents/manifest.ts` | MODIFY | Add configSchema with SUBAGENT_FRESH_CONTEXT, add console.fields entry |
 | `src/modules/subagents/templates.ts` | MODIFY | Add fresh context toggle panel to custom renderer |
-| `src/modules/prompts/manifest.ts` | MODIFY (if needed) | Verify accent fields are correct, add AGENT_ACCENT_PROMPT textarea if missing |
+| `src/modules/prompts/manifest.ts` | MODIFY (if needed) | Verify accent fields are correct, add AGENT_ACCENT_PROMPT textarea if missing, update AGENT_ACCENT to select type |
 | `src/modules/tools/manifest.ts` | MODIFY (if needed) | Extend settings API to accept shortDescription + detailedGuidance |
 | `src/modules/tools/tool-registry.ts` | MODIFY (if needed) | Extend `updateToolSettings` to persist description fields |
 | `src/modules/tools/pg-store.ts` | MODIFY (if needed) | Add columns for shortDescription + detailedGuidance if not already added by Instance 3 |
+| `src/modules/scheduled-tasks/manifest.ts` | MODIFY (if needed) | Add proactive settings fields if proactive config is in this module |
 | `src/modules/console/CLAUDE.md` | MODIFY | Document new console sections |
 | `src/modules/console/templates-i18n.ts` | MODIFY (if needed) | Add new i18n keys for shared labels |
+
+**Key architectural insight:** In LUNA, console fields are defined in each MODULE's `manifest.ts` via the `console.fields` array. So engine settings go in engine module, tool settings go in tools module, etc. The console module just renders them. However, pages with custom renderers (advanced, identity, tools, subagents) bypass the manifest field auto-rendering, so new fields must be added to the custom renderers directly OR the routing must be changed to render manifest fields alongside custom content.
 
 ---
 
 ## Acceptance Criteria
 
-1. All console pages render without errors (no 500s, no blank pages)
-2. New agentic engine fields visible at `/console/agente/advanced` in a collapsible panel
-3. ENGINE_MODE select switches between 'agentic' and 'legacy' and saves correctly
-4. Agentic loop thresholds (warn/block/circuit) visible and editable with min/max validation
-5. Execution queue concurrency fields (reactive/proactive/background) visible and editable
-6. SUBAGENT_FRESH_CONTEXT toggle visible at `/console/agente/subagents`
-7. Accent selection works at `/console/agente/identity` (select dropdown, not text input)
-8. AGENT_ACCENT_PROMPT textarea visible for custom accent instructions
-9. Tool shortDescription and detailedGuidance editable per tool at `/console/herramientas/tools`
-10. All new fields save to config_store and persist across page refreshes
-11. `console:config_applied` hook fires when config is saved
-12. All labels have ES and EN translations -- no untranslated strings
-13. No JavaScript errors in browser console
-14. Existing console functionality is NOT broken (API keys, models, identity, tool toggles, subagent CRUD)
-15. Layout follows existing design patterns (responsive, mobile-friendly)
-16. TypeScript compiles without errors (`npx tsc --noEmit`)
+1. All files compile with `npx tsc --noEmit`
+2. All console pages render without errors (no 500s, no blank pages)
+3. Console shows ENGINE_MODE toggle with agentic/legacy options
+4. Console shows effort routing toggle
+5. Console shows effort model configuration (low/medium/high model selects)
+6. Console shows agentic loop safeguards (tool dedup, loop detection with thresholds, errors as context)
+7. Console shows recovery settings (partial recovery, criticizer)
+8. Console shows execution queue concurrency settings (reactive/proactive/background lanes)
+9. Console shows accent configuration on identity page (select dropdown, not text input)
+10. Console shows accent prompt textarea for custom instructions
+11. Console shows skills management (at minimum a readonly list)
+12. Console shows two-tier tool description fields (shortDescription + detailedGuidance)
+13. Console shows proactive improvements settings (smart cooldown, orphan recovery, conversation guard)
+14. Subagent page shows fresh context toggle
+15. All new settings save to config_store and persist across page refreshes
+16. Hot-reload works for all new settings (`console:config_applied` hook fires)
+17. All labels have ES and EN translations -- no untranslated strings
+18. No new CSS files created
+19. No new npm packages installed
+20. Existing console pages and functionality not broken
+21. Layout follows existing design patterns (responsive, mobile-friendly)
 
 ---
 
@@ -811,5 +1012,7 @@ Add documentation for the new console sections:
 | Use custom renderer panels (not manifest auto-render) for advanced page | renderAdvancedAgentSection is already a custom renderer; consistency |
 | Add configSchema to subagents module for SUBAGENT_FRESH_CONTEXT | Cleaner than raw config_store access; follows module pattern |
 | Extend existing tools settings API for descriptions | Avoids new API endpoints; follows existing CRUD pattern |
+| Accent field changed from text to select | Better UX, prevents typos, maps to known accent prompts |
 | Proactive settings scope depends on Instance 3/4 | If still in proactive.json, add readonly info; if in config_store, add full fields |
-| Skills management is optional | Can be managed via .md files initially; console exposure is nice-to-have |
+| Skills management is scoped to Instance 2 implementation | Can be managed via .md files initially; console exposure depth depends on backend |
+| Models by effort as model-select fields | Reuses existing model-select field type, consistent with main model selection UX |
