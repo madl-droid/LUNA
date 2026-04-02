@@ -110,8 +110,8 @@ async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: bool
     }
   }
 
-  // Flush Redis
-  await registry.getRedis().flushdb()
+  // Flush Redis (preserve session keys so the current user stays logged in)
+  await flushRedisExceptSessions(registry.getRedis())
 
   // Delete media files (but keep the directory)
   const mediaDir = path.resolve(process.cwd(), 'instance', 'knowledge', 'media')
@@ -124,6 +124,22 @@ async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: bool
   } catch { /* directory may not exist */ }
 
   logger.info({ preserveSuperAdmin: opts.preserveSuperAdmin }, 'Full data purge completed')
+}
+
+/**
+ * Flush Redis cache while preserving active console sessions (keys with prefix "session:").
+ * Using flushdb() would log out the current user mid-operation, causing subsequent
+ * requests (e.g. clear-memory right after clear-cache) to return 401.
+ */
+async function flushRedisExceptSessions(redis: import('ioredis').Redis): Promise<void> {
+  const SESSION_PREFIX = 'session:'
+  let cursor = '0'
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, 'COUNT', 200)
+    cursor = nextCursor
+    const toDelete = keys.filter((k: string) => !k.startsWith(SESSION_PREFIX))
+    if (toDelete.length > 0) await redis.del(...(toDelete as [string, ...string[]]))
+  } while (cursor !== '0')
 }
 
 /** Gate a debug API endpoint: requires test mode + super admin. Returns true if blocked. */
@@ -1915,8 +1931,8 @@ export function createApiRoutes(): ApiRoute[] {
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
           if (await guardDebugEndpoint(req, res, registry)) return
 
-          await registry.getRedis().flushdb()
-          logger.info('Redis cache flushed (debug panel)')
+          await flushRedisExceptSessions(registry.getRedis())
+          logger.info('Redis cache flushed (debug panel) — sessions preserved')
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           logger.error({ err }, 'Failed to clear cache')
