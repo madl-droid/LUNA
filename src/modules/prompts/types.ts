@@ -2,6 +2,20 @@
 
 export type PromptSlot = 'identity' | 'job' | 'guardrails' | 'relationship' | 'evaluator' | 'criticizer'
 
+/** A behavioral skill/protocol that the agent can apply to specific interaction patterns */
+export interface SkillDefinition {
+  /** Unique skill identifier (matches the .md filename without extension) */
+  name: string
+  /** Short description shown in the catalog stub within the system prompt */
+  description: string
+  /** Absolute path to the full .md instructions file */
+  file: string
+  /** User types that can trigger this skill. Empty array = available to all user types */
+  userTypes: string[]
+  /** Optional regex patterns that suggest this skill might be relevant */
+  triggerPatterns?: string[]
+}
+
 export interface PromptRecord {
   id: string
   slot: PromptSlot
@@ -43,4 +57,6 @@ export interface PromptsService {
   clearSystemPromptCache(): void
   /** List available system prompt template names. */
   listSystemPrompts(): Promise<string[]>
+  /** List available skills from instance/prompts/system/skills/ */
+  listSkills(userType?: string): Promise<SkillDefinition[]>
 }
