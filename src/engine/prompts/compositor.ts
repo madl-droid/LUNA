@@ -197,6 +197,9 @@ export async function buildCompositorPrompt(
     guardrails = await loadFile(join(knowledgeDir, 'guardrails.md'))
   }
 
+  // Optional skills document — specific interaction protocols (e.g. scheduling flow, channel scripts)
+  const skills = await loadFile(join(knowledgeDir, 'skills.md'))
+
   const responseFormat = await loadFile(join(knowledgeDir, 'response-format.md'))
 
   // Build system prompt
@@ -218,6 +221,10 @@ export async function buildCompositorPrompt(
 
   if (guardrails) {
     systemParts.push(`\n--- REGLAS ---\n${guardrails}`)
+  }
+
+  if (skills) {
+    systemParts.push(`\n--- HABILIDADES Y PROTOCOLOS ---\n${skills}`)
   }
 
   if (relationship) {
