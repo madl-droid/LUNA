@@ -52,16 +52,21 @@ function createApiRoutes(): ApiRoute[] {
             enabled?: boolean
             maxRetries?: number
             maxUsesPerLoop?: number
+            shortDescription?: string | null
+            detailedGuidance?: string | null
           }>(req)
           if (!body.toolName) {
             jsonResponse(res, 400, { error: 'Missing toolName' })
             return
           }
-          await getRegistry().updateToolSettings(body.toolName, {
+          const updates: { enabled?: boolean; maxRetries?: number; maxUsesPerLoop?: number; shortDescription?: string | null; detailedGuidance?: string | null } = {
             enabled: body.enabled,
             maxRetries: body.maxRetries,
             maxUsesPerLoop: body.maxUsesPerLoop,
-          })
+          }
+          if ('shortDescription' in body) updates.shortDescription = body.shortDescription
+          if ('detailedGuidance' in body) updates.detailedGuidance = body.detailedGuidance
+          await getRegistry().updateToolSettings(body.toolName, updates)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
