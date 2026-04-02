@@ -306,7 +306,7 @@ function renderFieldGroup(fields: ConsoleField[], config: Record<string, string>
           const label = qf.label[lang] ?? qf.label.es ?? qf.key
           const checked = qv === 'true' || qv === '1'
           const infoText = qf.info?.[lang] ?? ''
-          const tip = infoText ? ` <span class="info-btn" tabindex="0">&#9432;<span class="info-tooltip">${esc(infoText)}</span></span>` : ''
+          const tip = infoText ? ` <span class="info-wrap"><button class="info-btn">i</button><div class="info-tooltip">${esc(infoText)}</div></span>` : ''
           html += `<div class="chs-field"${qvw.attrs}${qvw.hidden ? ' style="display:none"' : ''}>
             <div class="chs-field-label">${esc(label)}${tip}</div>
             <div style="margin-top:6px">
