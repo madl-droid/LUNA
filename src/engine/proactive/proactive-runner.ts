@@ -11,6 +11,8 @@ import type { Registry } from '../../kernel/registry.js'
 import type { EngineConfig, ProactiveJobContext, ProactiveConfig } from '../types.js'
 import { loadProactiveConfig } from './proactive-config.js'
 import { getProactiveJobs } from './triggers.js'
+import { get as configStoreGet } from '../../kernel/config-store.js'
+// smart-cooldown is used by individual job handlers (follow-up, commitment-check, etc.)
 
 const logger = pino({ name: 'engine:proactive' })
 
@@ -74,6 +76,10 @@ export async function startProactiveRunner(
         return
       }
 
+      // Smart cooldown is applied per-contact inside each individual job handler
+      // (follow-up.ts, commitment-check.ts, etc.) — not at the runner level.
+      // All jobs here are batch-type: they scan and process multiple contacts per run.
+
       const ctx: ProactiveJobContext = {
         db,
         redis,
@@ -107,8 +113,7 @@ export async function startProactiveRunner(
   // Read agent timezone for cron scheduling
   let proactiveTimezone = ''
   try {
-    const configStore = await import('../../kernel/config-store.js')
-    proactiveTimezone = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || ''
+    proactiveTimezone = (await configStoreGet(db, 'AGENT_TIMEZONE').catch(() => '')) || ''
   } catch { /* ignore */ }
 
   // Register repeatable jobs from config
@@ -218,6 +223,7 @@ function isJobEnabled(
     case 'reactivation': return proactiveConfig.reactivation.enabled
     case 'cache_refresh': return true
     case 'nightly_batch': return engineConfig.batchEnabled
+    case 'orphan_recovery': return proactiveConfig.orphan_recovery?.enabled ?? true
     default: return false
   }
 }
@@ -233,6 +239,7 @@ function getJobInterval(
     case 'follow_up': return proactiveConfig.follow_up.scan_interval_minutes * 60 * 1000
     case 'reminder': return proactiveConfig.reminders.scan_interval_minutes * 60 * 1000
     case 'commitment': return proactiveConfig.commitments.scan_interval_minutes * 60 * 1000
+    case 'orphan_recovery': return (proactiveConfig.orphan_recovery?.interval_minutes ?? 5) * 60 * 1000
     default: return job.intervalMs ?? null
   }
 }
@@ -241,6 +248,7 @@ function getJobPriority(triggerType: string): number {
   // Lower number = higher priority in BullMQ
   switch (triggerType) {
     case 'commitment': return 2     // commitments are time-sensitive
+    case 'orphan_recovery': return 2 // orphans need prompt recovery
     case 'reminder': return 3       // reminders are important
     case 'follow_up': return 5      // standard proactive
     case 'reactivation': return 8   // low priority

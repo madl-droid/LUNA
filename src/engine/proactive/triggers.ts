@@ -2,13 +2,66 @@
 // Definición de triggers para flujos proactivos.
 // Intervals/crons are overridden by proactive.json config in proactive-runner.
 
-import type { ProactiveJob } from '../types.js'
+import type { ProactiveJob, ProactiveJobContext } from '../types.js'
 import { runFollowUp } from './jobs/follow-up.js'
 import { runReminder } from './jobs/reminder.js'
 import { runCommitmentCheck } from './jobs/commitment-check.js'
 import { runReactivation } from './jobs/reactivation.js'
 import { runCacheRefresh } from './jobs/cache-refresh.js'
 import { runNightlyBatch } from './jobs/nightly-batch.js'
+import { findOrphanMessages, redispatchOrphan } from './orphan-recovery.js'
+import pino from 'pino'
+
+const logger = pino({ name: 'engine:proactive:orphan-job' })
+
+/**
+ * Orphan recovery job: find unanswered messages and re-dispatch them.
+ * Runs every N minutes (configurable via proactive.json orphan_recovery.interval_minutes).
+ */
+async function runOrphanRecovery(ctx: ProactiveJobContext): Promise<void> {
+  const orConfig = ctx.proactiveConfig.orphan_recovery
+  const lookbackMinutes = orConfig?.lookback_minutes ?? 30
+  const maxPerRun = orConfig?.max_per_run ?? 10
+
+  const orphans = await findOrphanMessages(ctx.db, lookbackMinutes, maxPerRun)
+
+  if (orphans.length === 0) {
+    logger.debug('Orphan recovery: no orphan messages found')
+    return
+  }
+
+  logger.info({ count: orphans.length, lookbackMinutes }, 'Orphan recovery: found orphan messages')
+
+  const redispatched: typeof orphans = []
+  for (const orphan of orphans) {
+    const ok = await redispatchOrphan(orphan, ctx.registry)
+    if (ok) redispatched.push(orphan)
+  }
+
+  logger.info({ found: orphans.length, redispatched: redispatched.length }, 'Orphan recovery complete')
+
+  // Log each successfully redispatched orphan to proactive_outreach_log for dedup tracking
+  for (const orphan of redispatched) {
+    try {
+      await ctx.db.query(
+        `INSERT INTO proactive_outreach_log
+           (contact_id, trigger_type, trigger_id, channel, action_taken, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT DO NOTHING`,
+        [
+          orphan.contactId,
+          'orphan_recovery',
+          orphan.messageId,
+          orphan.channel,
+          'sent',
+          JSON.stringify({ sessionId: orphan.sessionId, originalMessageId: orphan.messageId }),
+        ],
+      )
+    } catch (err) {
+      logger.warn({ err, contactId: orphan.contactId }, 'Failed to log orphan recovery to outreach log')
+    }
+  }
+}
 
 /**
  * Get all proactive job definitions.
@@ -51,6 +104,12 @@ export function getProactiveJobs(): ProactiveJob[] {
       triggerType: 'nightly_batch',
       cron: '0 2 * * *',  // daily at 2 AM
       handler: runNightlyBatch,
+    },
+    {
+      name: 'orphan-recovery',
+      triggerType: 'orphan_recovery',
+      intervalMs: 5 * 60 * 1000,  // default: every 5 min (overridden by config)
+      handler: runOrphanRecovery,
     },
   ]
 }

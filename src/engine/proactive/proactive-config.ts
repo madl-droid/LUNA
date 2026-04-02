@@ -18,6 +18,9 @@ const DEFAULT_CONFIG: ProactiveConfig = {
   commitments: { enabled: false, scan_interval_minutes: 5, max_attempts: 5, generic_auto_cancel_hours: 24, commitment_types: [] },
   reactivation: { enabled: false, cron: '0 9 * * 1-5', days_inactive: 7, max_attempts: 2, max_per_run: 20 },
   guards: { max_proactive_per_day_per_contact: 3, cooldown_minutes: 60, conversation_guard_hours: 4 },
+  smart_cooldown: { enabled: true, after_sent_minutes: 30, after_no_action_minutes: 60, after_error_minutes: 10, max_backoff_hours: 24 },
+  orphan_recovery: { enabled: true, interval_minutes: 5, lookback_minutes: 30, max_per_run: 10 },
+  conversation_guard: { enabled: true, cache_ttl_hours: 6, skip_for_commitments: true },
 }
 
 let cached: ProactiveConfig | null = null
@@ -77,6 +80,24 @@ export function loadProactiveConfig(): ProactiveConfig {
           ? parsed.guards as Record<string, unknown>
           : {}),
       } as ProactiveConfig['guards'],
+      smart_cooldown: {
+        ...DEFAULT_CONFIG.smart_cooldown!,
+        ...(typeof parsed.smart_cooldown === 'object' && parsed.smart_cooldown !== null
+          ? parsed.smart_cooldown as Record<string, unknown>
+          : {}),
+      } as ProactiveConfig['smart_cooldown'],
+      orphan_recovery: {
+        ...DEFAULT_CONFIG.orphan_recovery!,
+        ...(typeof parsed.orphan_recovery === 'object' && parsed.orphan_recovery !== null
+          ? parsed.orphan_recovery as Record<string, unknown>
+          : {}),
+      } as ProactiveConfig['orphan_recovery'],
+      conversation_guard: {
+        ...DEFAULT_CONFIG.conversation_guard!,
+        ...(typeof parsed.conversation_guard === 'object' && parsed.conversation_guard !== null
+          ? parsed.conversation_guard as Record<string, unknown>
+          : {}),
+      } as ProactiveConfig['conversation_guard'],
     }
 
     // Validate commitment_types array

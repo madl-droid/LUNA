@@ -10,7 +10,7 @@ import type {
 export function toAnthropicTools(tools: ToolDefinition[]): AnthropicToolDef[] {
   return tools.map((tool) => ({
     name: tool.name,
-    description: tool.description,
+    description: tool.shortDescription ?? tool.description,
     input_schema: {
       type: 'object' as const,
       properties: tool.parameters.properties,
@@ -22,7 +22,7 @@ export function toAnthropicTools(tools: ToolDefinition[]): AnthropicToolDef[] {
 export function toGeminiTools(tools: ToolDefinition[]): GeminiToolDef[] {
   return tools.map((tool) => ({
     name: tool.name,
-    description: tool.description,
+    description: tool.shortDescription ?? tool.description,
     parameters: {
       type: 'object' as const,
       properties: tool.parameters.properties,
