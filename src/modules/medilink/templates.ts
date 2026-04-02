@@ -107,7 +107,7 @@ export interface MedilinkConsoleData {
 }
 
 export function renderMedilinkConsole(data: MedilinkConsoleData, lang: Lang): string {
-  return renderWebhookPanel(lang) + renderSchedulingDefaults(data, lang) + renderCategoriesSection(data, lang) + renderProfessionalSection(data, lang) + renderFollowUpSection(data, lang)
+  return renderWebhookPanel(lang) + renderSchedulingDefaults(data, lang) + renderCategoriesSection(data, lang) + renderFollowUpSection(data, lang)
 }
 
 // ─── Webhook URL panel ───────────────────
