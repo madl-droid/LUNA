@@ -148,5 +148,20 @@ export function loadEngineConfig(): EngineConfig {
     checkpointEnabled: envBool('ENGINE_CHECKPOINT_ENABLED', true),
     checkpointResumeWindowMs: envInt('ENGINE_CHECKPOINT_RESUME_WINDOW_MS', 300000), // 5 min
     checkpointCleanupDays: envInt('ENGINE_CHECKPOINT_CLEANUP_DAYS', 7),
+
+    // --- Agentic engine config (v2.0) ---
+    engineMode:              (env('ENGINE_MODE', 'agentic')) as 'agentic' | 'legacy',
+    agenticMaxTurns:         envInt('ENGINE_AGENTIC_MAX_TURNS', 15),
+    effortRoutingEnabled:    envBool('ENGINE_EFFORT_ROUTING', true),
+    toolDedupEnabled:        envBool('ENGINE_TOOL_DEDUP', true),
+    loopDetectionEnabled:    envBool('ENGINE_LOOP_DETECTION', true),
+    errorAsContextEnabled:   envBool('ENGINE_ERROR_AS_CONTEXT', true),
+    partialRecoveryEnabled:  envBool('ENGINE_PARTIAL_RECOVERY', true),
+    lowEffortModel:          env('LLM_LOW_EFFORT_MODEL', 'claude-haiku-4-5-20251001'),
+    lowEffortProvider:       envProvider('LLM_LOW_EFFORT_PROVIDER', 'anthropic'),
+    mediumEffortModel:       env('LLM_MEDIUM_EFFORT_MODEL', 'claude-sonnet-4-6'),
+    mediumEffortProvider:    envProvider('LLM_MEDIUM_EFFORT_PROVIDER', 'anthropic'),
+    highEffortModel:         env('LLM_HIGH_EFFORT_MODEL', 'claude-sonnet-4-6'),
+    highEffortProvider:      envProvider('LLM_HIGH_EFFORT_PROVIDER', 'anthropic'),
   }
 }

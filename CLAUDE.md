@@ -12,7 +12,9 @@ Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada m�
 - Kernel (src/kernel/): registry, loader, hooks, config, server HTTP — ver `src/kernel/CLAUDE.md`
 - Módulos (src/modules/): descubiertos automáticamente por loader — ver CLAUDE.md de cada módulo
 - Engine (src/engine/): pipeline de procesamiento de mensajes — ver `src/engine/CLAUDE.md`
-- Pipeline de 5 pasos (solo 2 usan LLM): ver `docs/architecture/pipeline.md`
+- Pipeline dual-mode (v2.0): `ENGINE_MODE=agentic` (default) usa agentic loop; `ENGINE_MODE=legacy` usa pipeline 5 fases
+- Agentic mode: Phase 1 → effort router → agentic loop → post-process → Phase 5
+- Legacy mode: Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 (deprecated, fallback only)
 - Tabla de modelos y fallback chain: ver `docs/architecture/pipeline.md`
 - Lead status (máquina de estados): ver `docs/architecture/lead-status.md`
 - Fallback chain: Anthropic → Google. Circuit breaker: 5 fallas en 10 min → provider DOWN 5 min.
@@ -49,6 +51,9 @@ src/
     freight/         — tool de estimación de flete (ver src/tools/freight/CLAUDE.md)
     freshdesk/       — tools de Freshdesk KB: búsqueda, artículos, sync (ver src/tools/freshdesk/CLAUDE.md)
   engine/            — pipeline de procesamiento (ver src/engine/CLAUDE.md)
+    agentic/         — agentic loop (v2.0): effort router, dedup, loop detector, post-processor
+    concurrency/     — execution queue con priority lanes (reactive > proactive > background)
+    prompts/         — prompt builders: agentic.ts, context-builder.ts, skills.ts, accent.ts
     attachments/     — subsistema de adjuntos del engine (types, processor, url-extractor, injection-validator, audio-transcriber, tools)
   migrations/        — SQL migrations numeradas (auto-ejecutadas por kernel/migrator.ts)
   index.ts           — entry point: crea kernel, carga módulos, inicia server

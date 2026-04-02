@@ -54,6 +54,9 @@
 - `DB_PASSWORD` — password PostgreSQL (requerido, sin default)
 - `NODE_ENV` — development | staging | production | test
 - `BUILD_VERSION` — inyectado en build de Docker
+- `ENGINE_MODE` — `agentic` (default v2.0) | `legacy` (pipeline 5 fases, fallback)
+- `ENGINE_AGENTIC_MAX_TURNS` — max turns del loop agentico (default: 15)
+- `LLM_LOW_EFFORT_MODEL` / `LLM_MEDIUM_EFFORT_MODEL` / `LLM_HIGH_EFFORT_MODEL` — modelos por nivel de esfuerzo
 - Ver `deploy/.env.example` para lista completa
 
 ## Trampas

@@ -2,8 +2,6 @@
 // Per-pipeline in-memory cache that prevents identical tool calls within a single run.
 // Lifecycle: create at loop start, discard after loop ends. No Redis, no persistence.
 
-import type { ToolCallLog } from './types.js'
-
 /** Cached result shape (mirrors what executeTool returns, minus metadata) */
 type CachedResult = { data: unknown; success: boolean; error?: string; durationMs: number }
 
