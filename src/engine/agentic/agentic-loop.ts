@@ -6,9 +6,14 @@ import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type {
   ContextBundle,
+  EngineConfig,
   LLMToolDef,
 } from '../types.js'
 import type { AgenticConfig, AgenticResult, ToolCallLog } from './types.js'
+import {
+  executeRunSubagentTool,
+  RUN_SUBAGENT_TOOL_NAME,
+} from './subagent-delegation.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { StepSemaphore } from '../concurrency/step-semaphore.js'
 import { ToolDedupCache } from './tool-dedup-cache.js'
@@ -48,6 +53,7 @@ export async function runAgenticLoop(
   toolDefinitions: LLMToolDef[],
   config: AgenticConfig,
   registry: Registry,
+  engineConfig: EngineConfig,
 ): Promise<AgenticResult> {
   // ── 5.1 Initialize state ──
   const startMs = Date.now()
@@ -61,7 +67,7 @@ export async function runAgenticLoop(
   // ── 5.2 Get tool executor from registry ──
   const toolExecutor = registry.getOptional<ToolExecutor>('tools:registry')
   // If no tool executor, clear tool definitions — LLM will respond text-only
-  const effectiveTools = toolExecutor ? toolDefinitions : []
+  const effectiveTools = toolDefinitions.filter(tool => toolExecutor || tool.name === RUN_SUBAGENT_TOOL_NAME)
 
   logger.info({
     traceId: ctx.traceId,
@@ -142,10 +148,12 @@ export async function runAgenticLoop(
         llmResult.toolCalls,
         ctx,
         toolExecutor,
+        registry,
         dedupCache,
         loopDetector,
         toolCallsLog,
         config,
+        engineConfig,
       )
 
       // Append assistant message (with tool calls) and user message (with results)
@@ -224,10 +232,12 @@ async function executeToolCalls(
   toolCalls: Array<{ name: string; input: Record<string, unknown> }>,
   ctx: ContextBundle,
   toolExecutor: ToolExecutor,
+  registry: Registry,
   dedupCache: ToolDedupCache,
   loopDetector: ToolLoopDetector,
   toolCallsLog: ToolCallLog[],
   config: AgenticConfig,
+  engineConfig: EngineConfig,
 ): Promise<Array<{ name: string; success: boolean; data: unknown; error?: string }>> {
   const semaphore = new StepSemaphore(config.maxConcurrentTools)
 
@@ -275,16 +285,28 @@ async function executeToolCalls(
           return { name: toolCall.name, success: cached.success, data: cached.data, error: cached.error }
         }
 
-        // 3. Execute via tool registry
+        // 3. Execute via tool registry or internal meta-tool
         let result: { toolName: string; success: boolean; data?: unknown; error?: string; durationMs: number; retries: number }
         try {
-          result = await toolExecutor.executeTool(toolCall.name, toolCall.input, {
-            contactId: ctx.contactId,
-            agentId: ctx.agentId,
-            traceId: ctx.traceId,
-            messageId: ctx.message.id,
-            contactType: ctx.contact?.contactType ?? null,
-          })
+          if (toolCall.name === RUN_SUBAGENT_TOOL_NAME) {
+            const subagentResult = await executeRunSubagentTool(ctx, toolCall.input, engineConfig, registry)
+            result = {
+              toolName: toolCall.name,
+              success: subagentResult.success,
+              data: subagentResult.data,
+              error: subagentResult.error,
+              durationMs: subagentResult.durationMs,
+              retries: 0,
+            }
+          } else {
+            result = await toolExecutor.executeTool(toolCall.name, toolCall.input, {
+              contactId: ctx.contactId,
+              agentId: ctx.agentId,
+              traceId: ctx.traceId,
+              messageId: ctx.message.id,
+              contactType: ctx.contact?.contactType ?? null,
+            })
+          }
         } catch (err) {
           // Tool execution threw — treat as error result, don't crash the loop
           const errorMsg = String(err)

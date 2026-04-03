@@ -26,6 +26,11 @@ import { phase5Validate } from '../phases/phase5-validate.js'
 import { runGuards, setCooldown, incrementProactiveCount } from './guards.js'
 // --- Agentic imports (v2.0) ---
 import { classifyEffort, runAgenticLoop, postProcess } from '../agentic/index.js'
+import {
+  buildRunSubagentToolDef,
+  filterAgenticTools,
+  getAgenticSubagentCatalog,
+} from '../agentic/subagent-delegation.js'
 import { buildAgenticPrompt } from '../prompts/agentic.js'
 import { updateCooldownState } from './smart-cooldown.js'
 import { shouldSuppressProactive } from './conversation-guard.js'
@@ -288,14 +293,20 @@ async function runProactiveAgentic(
 
   // Get tools
   const toolRegistry = registry.getOptional<ToolRegistryLike>('tools:registry')
-  const toolCatalog = toolRegistry?.getCatalog(ctx.userType) ?? []
-  const toolDefs = toolRegistry?.getEnabledToolDefinitions(ctx.userType) ?? []
+  const subagentCatalog = getAgenticSubagentCatalog(ctx, registry)
+  const toolCatalog = filterAgenticTools(toolRegistry?.getCatalog(ctx.userType) ?? [], subagentCatalog)
+  const toolDefs = filterAgenticTools(toolRegistry?.getEnabledToolDefinitions(ctx.userType) ?? [], subagentCatalog)
   const llmToolDefs = toolDefs.map(d => ({ name: d.name, description: d.description, inputSchema: d.parameters }))
+  const runSubagentTool = buildRunSubagentToolDef(subagentCatalog)
+  if (runSubagentTool) {
+    llmToolDefs.push(runSubagentTool)
+  }
 
   // Build prompt with proactive context
   const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, registry, {
     isProactive: true,
     proactiveTrigger: ctx.proactiveTrigger,
+    subagentCatalog,
   })
 
   // Agentic config — lower limits for proactive
@@ -313,7 +324,14 @@ async function runProactiveAgentic(
   }
 
   // Run agentic loop
-  const agenticResult = await runAgenticLoop(ctx, agenticPrompt.system, llmToolDefs, agenticConfig, registry)
+  const agenticResult = await runAgenticLoop(
+    ctx,
+    agenticPrompt.system,
+    llmToolDefs,
+    agenticConfig,
+    registry,
+    engineConfig,
+  )
   log.info({ turns: agenticResult.turns, stopReason: agenticResult.effortUsed }, 'Proactive agentic loop complete')
 
   // NO_ACTION check: if response is the sentinel, treat as no_action

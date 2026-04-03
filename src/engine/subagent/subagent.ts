@@ -51,7 +51,27 @@ interface RetryContext {
  * buffer summary, and relevant summaries to prevent context bloat.
  * The subagent gets a clean slate focused on its specific task.
  */
-function buildSubagentContext(parentCtx: ContextBundle, taskDescription: string): ContextBundle {
+function buildSubagentContext(
+  parentCtx: ContextBundle,
+  taskDescription: string,
+  freshContext: boolean,
+): ContextBundle {
+  if (!freshContext) {
+    return {
+      ...parentCtx,
+      knowledgeMatches: [...parentCtx.knowledgeMatches],
+      freshdeskMatches: [...parentCtx.freshdeskMatches],
+      assignmentRules: parentCtx.assignmentRules ? [...parentCtx.assignmentRules] : null,
+      history: [...parentCtx.history],
+      pendingCommitments: [...parentCtx.pendingCommitments],
+      relevantSummaries: [...parentCtx.relevantSummaries],
+      attachmentMeta: [...parentCtx.attachmentMeta],
+      normalizedText: taskDescription,
+      messageType: 'text',
+      responseFormat: 'text',
+    }
+  }
+
   return {
     // Original message — keep for traceId and channel info
     message: parentCtx.message,
@@ -183,9 +203,15 @@ export async function runSubagentV2(
     ? toolDefs.filter(t => entry.allowedTools.includes(t.name))
     : toolDefs
 
-  // Build minimal context for subagent (clean slate)
+  interface SubagentModuleConfig {
+    SUBAGENT_FRESH_CONTEXT: boolean
+  }
+  const subagentModuleConfig = registry.getConfig<SubagentModuleConfig>('subagents')
+  const freshContext = subagentModuleConfig.SUBAGENT_FRESH_CONTEXT ?? true
+
+  // Build subagent context according to console toggle
   const taskDescription = step.description ?? 'Execute task'
-  const subagentCtx = buildSubagentContext(ctx, taskDescription)
+  const subagentCtx = buildSubagentContext(ctx, taskDescription, freshContext)
 
   // Run the main loop (first attempt) with minimal context
   let result = await runSubagentLoop(subagentCtx, step, filteredTools, config, runConfig, registry)

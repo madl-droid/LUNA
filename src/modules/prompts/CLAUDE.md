@@ -59,8 +59,8 @@ const skills = await svc.listSkills(userType)  // delega a loadSkillCatalog()
 
 ## Sistema de acento (v2 — reset instance 2)
 
-`src/engine/prompts/accent.ts` — buildAccentSection(registry)
-- Lee AGENT_ACCENT y AGENT_ACCENT_PROMPT del registry config del módulo prompts
+`src/engine/prompts/accent.ts` — helper legacy
+- No inyecta una sección separada; el acento vive dentro de `identity` via `PromptsService`
 - Retorna sección `<accent>...</accent>` o string vacío si no hay acento configurado
 
 ## Agentic prompt builder (v2 — reset instance 2)

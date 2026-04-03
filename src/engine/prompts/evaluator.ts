@@ -283,12 +283,6 @@ export async function buildProactiveEvaluatorPrompt(
  * Used to bypass the web-researcher subagent for owned domains.
  */
 function getCompanyWebsites(registry?: Registry): string[] {
-  if (!registry) return []
-  try {
-    const promptsConfig = registry.getConfig<{ COMPANY_WEBSITES?: string }>('prompts')
-    const raw = promptsConfig?.COMPANY_WEBSITES ?? ''
-    return raw.split(',').map(u => u.trim()).filter(Boolean)
-  } catch {
-    return []
-  }
+  void registry
+  return []
 }

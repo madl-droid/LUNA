@@ -245,16 +245,6 @@ const manifest: ModuleManifest = {
         },
         width: 'half',
       },
-      {
-        key: 'AGENT_ACCENT_PROMPT',
-        type: 'textarea',
-        label: { es: 'Instrucciones de acento', en: 'Accent instructions' },
-        info: {
-          es: 'Instrucciones de acento personalizadas. Se inyectan en el contexto del LLM cuando el acento esta activo. Gestionado desde la pagina Identidad.',
-          en: 'Custom accent instructions. Injected into LLM context when accent is active. Managed from the Identity page.',
-        },
-        rows: 4,
-      },
       { key: '_divider_prompts', type: 'divider', label: { es: 'Prompts del agente', en: 'Agent prompts' } },
       {
         key: 'PROMPT_IDENTITY',

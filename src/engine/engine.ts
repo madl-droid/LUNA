@@ -24,6 +24,11 @@ import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
 import type { Phase3Options } from './phases/phase3-execute.js'
 // --- Agentic imports (v2.0) ---
 import { classifyEffort, runAgenticLoop, postProcess } from './agentic/index.js'
+import {
+  buildRunSubagentToolDef,
+  filterAgenticTools,
+  getAgenticSubagentCatalog,
+} from './agentic/subagent-delegation.js'
 import { buildAgenticPrompt } from './prompts/agentic.js'
 import type { AgenticConfig, AgenticResult, EffortLevel } from './agentic/types.js'
 
@@ -670,12 +675,20 @@ async function runAgenticPipeline(
 
   // 3. Get tool catalog + definitions from registry
   const toolRegistry = reg.getOptional<ToolRegistryLike>('tools:registry')
-  const toolCatalog = toolRegistry?.getCatalog(ctx.userType) ?? []
-  const toolDefs = toolRegistry?.getEnabledToolDefinitions(ctx.userType) ?? []
+  const subagentCatalog = getAgenticSubagentCatalog(ctx, reg)
+  const toolCatalog = filterAgenticTools(toolRegistry?.getCatalog(ctx.userType) ?? [], subagentCatalog)
+  const toolDefs = filterAgenticTools(toolRegistry?.getEnabledToolDefinitions(ctx.userType) ?? [], subagentCatalog)
   const llmToolDefs: LLMToolDef[] = toLLMToolDefs(toolDefs)
+  const runSubagentTool = buildRunSubagentToolDef(subagentCatalog)
+  if (runSubagentTool) {
+    llmToolDefs.push(runSubagentTool)
+  }
 
   // 4. Build system prompt
-  const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, reg, { isProactive: false })
+  const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, reg, {
+    isProactive: false,
+    subagentCatalog,
+  })
   const systemPrompt = agenticPrompt.system
 
   // 5. Build agentic config
@@ -699,6 +712,7 @@ async function runAgenticPipeline(
     llmToolDefs,
     agenticConfig,
     reg,
+    config,
   )
   log.info({
     turns: agenticResult.turns,
