@@ -30,6 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_commitments_events
 CREATE INDEX IF NOT EXISTS idx_pipeline_logs_created
   ON pipeline_logs (created_at DESC);
 
+-- Core tables (always exist via migrations)
 ALTER TABLE sessions DROP COLUMN IF EXISTS agent_id CASCADE;
 ALTER TABLE messages DROP COLUMN IF EXISTS agent_id CASCADE;
 ALTER TABLE session_summaries DROP COLUMN IF EXISTS agent_id CASCADE;
@@ -37,10 +38,21 @@ ALTER TABLE commitments DROP COLUMN IF EXISTS agent_id CASCADE;
 ALTER TABLE conversation_archives DROP COLUMN IF EXISTS agent_id CASCADE;
 ALTER TABLE pipeline_logs DROP COLUMN IF EXISTS agent_id CASCADE;
 ALTER TABLE agent_contacts DROP COLUMN IF EXISTS agent_id CASCADE;
-ALTER TABLE voice_calls DROP COLUMN IF EXISTS agent_id CASCADE;
-ALTER TABLE hitl_tickets DROP COLUMN IF EXISTS agent_id CASCADE;
-ALTER TABLE medilink_audit_log DROP COLUMN IF EXISTS agent_id CASCADE;
-ALTER TABLE medilink_edit_requests DROP COLUMN IF EXISTS agent_id CASCADE;
-ALTER TABLE medilink_follow_ups DROP COLUMN IF EXISTS agent_id CASCADE;
+
+-- Runtime-created tables (may not exist yet — safe drop via DO block)
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOR tbl IN SELECT unnest(ARRAY[
+    'voice_calls', 'hitl_tickets',
+    'medilink_audit_log', 'medilink_edit_requests', 'medilink_follow_ups'
+  ])
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = tbl) THEN
+      EXECUTE format('ALTER TABLE %I DROP COLUMN IF EXISTS agent_id CASCADE', tbl);
+    END IF;
+  END LOOP;
+END $$;
 
 COMMIT;
