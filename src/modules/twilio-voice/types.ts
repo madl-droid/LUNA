@@ -295,7 +295,6 @@ export interface VoiceCallRow {
   from_number: string
   to_number: string
   status: CallStatus
-  agent_id: string | null
   contact_id: string | null
   started_at: Date
   connected_at: Date | null

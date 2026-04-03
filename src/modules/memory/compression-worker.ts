@@ -230,7 +230,7 @@ export class CompressionWorker {
   }> {
     const [msgResult, attResult, sessionResult] = await Promise.all([
       this.db.query(
-        `SELECT id, session_id, agent_id, role, content_text, content_type, created_at,
+        `SELECT id, session_id, role, content_text, content_type, created_at,
                 media_path, media_mime, media_analysis, intent, emotion,
                 tokens_used, latency_ms, model_used, token_count, metadata
          FROM messages WHERE session_id = $1 ORDER BY created_at ASC`,

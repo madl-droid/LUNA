@@ -21,7 +21,6 @@ export async function runMigrations(db: Pool): Promise<void> {
     CREATE TABLE IF NOT EXISTS medilink_audit_log (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       contact_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT 'default',
       medilink_patient_id TEXT,
       action TEXT NOT NULL,
       target_type TEXT NOT NULL,
@@ -45,7 +44,6 @@ export async function runMigrations(db: Pool): Promise<void> {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       medilink_patient_id TEXT NOT NULL,
       contact_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT 'default',
       requested_changes JSONB NOT NULL,
       reason TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
@@ -63,7 +61,6 @@ export async function runMigrations(db: Pool): Promise<void> {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       medilink_appointment_id TEXT NOT NULL,
       contact_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT 'default',
       appointment_date TIMESTAMPTZ NOT NULL,
       touch_type TEXT NOT NULL,
       channel TEXT NOT NULL,

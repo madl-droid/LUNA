@@ -18,7 +18,6 @@ export async function createTables(db: Pool): Promise<void> {
       to_number TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'initiated'
         CHECK (status IN ('initiated', 'ringing', 'connecting', 'active', 'completed', 'failed', 'no-answer', 'busy')),
-      agent_id TEXT,
       contact_id TEXT,
       started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       connected_at TIMESTAMPTZ,

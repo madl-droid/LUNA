@@ -65,7 +65,7 @@ export class PgStore {
 
   async getSessionMessages(sessionId: string, limit = 100): Promise<StoredMessage[]> {
     const result = await this.pool.query(
-      `SELECT id, session_id, agent_id, role, content_text, content_type, created_at,
+      `SELECT id, session_id, role, content_text, content_type, created_at,
               media_path, media_mime, media_analysis,
               intent, emotion, tokens_used, latency_ms, model_used, token_count, metadata
        FROM messages
