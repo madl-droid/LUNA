@@ -7,7 +7,6 @@
 // - loadSystemPrompt() from template-loader.ts
 // - escapeForPrompt/escapeDataForPrompt/wrapUserContent from prompt-escape.ts
 // - buildContextLayers() from context-builder.ts
-// - buildAccentSection() from accent.ts
 // - loadSkillCatalog()/buildSkillCatalogSection() from skills.ts
 // - getChannelLimit() imported from compositor.ts (not duplicated)
 
@@ -32,7 +31,7 @@ export interface AgenticPromptOptions {
 // ─── Main builder ─────────────────────────────────────────────────────────────
 
 /**
- * Build the complete agentic prompt: system prompt (14 sections) + user message.
+ * Build the complete agentic prompt: system prompt (13 sections) + user message.
  *
  * System sections (in order):
  *  1. <security>          — non-overridable security rules
@@ -136,7 +135,7 @@ export async function buildAgenticPrompt(
 
   // ── Section 11: <tools> ───────────────────────────────────────────────────
   const allowedTools = filterToolsByPermissions(toolCatalog, ctx)
-  const toolsSection = buildToolsSection(allowedTools, subagentCatalog, registry)
+  const toolsSection = buildToolsSection(allowedTools, subagentCatalog)
   if (toolsSection) {
     systemParts.push(`<tools>\n${toolsSection}\n</tools>`)
   }
@@ -191,7 +190,6 @@ function buildVoiceSection(): string {
 function buildToolsSection(
   tools: ToolCatalogEntry[],
   subagentCatalog: SubagentCatalogEntry[] | undefined,
-  registry: Registry,
 ): string {
   if (tools.length === 0 && (!subagentCatalog || subagentCatalog.length === 0)) return ''
 
@@ -224,16 +222,6 @@ function buildToolsSection(
   if (googleHints) {
     lines.push('')
     lines.push(googleHints)
-  }
-
-  // Company websites (bypass web-researcher)
-  const companyWebsites = getCompanyWebsites(registry)
-  if (companyWebsites.length > 0) {
-    lines.push('')
-    lines.push('Sitios web de la empresa (usar web_explore directo, NO web-researcher):')
-    for (const url of companyWebsites) {
-      lines.push(`- ${url}`)
-    }
   }
 
   return lines.join('\n')
@@ -353,12 +341,3 @@ function filterToolsByPermissions(
   return catalog.filter(t => ctx.userPermissions.tools.includes(t.name))
 }
 
-function getCompanyWebsites(registry: Registry): string[] {
-  try {
-    const cfg = registry.getConfig<{ COMPANY_WEBSITES?: string }>('prompts')
-    const raw = cfg?.COMPANY_WEBSITES ?? ''
-    return raw.split(',').map(u => u.trim()).filter(Boolean)
-  } catch {
-    return []
-  }
-}

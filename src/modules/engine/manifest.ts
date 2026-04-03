@@ -50,7 +50,6 @@ interface EngineModuleConfig {
   // Agentic engine (v2)
   ENGINE_MODE: string
   ENGINE_AGENTIC_MAX_TURNS: number
-  AGENTIC_EFFORT_DEFAULT: string
   ENGINE_EFFORT_ROUTING: boolean
   ENGINE_TOOL_DEDUP: boolean
   ENGINE_LOOP_DETECTION: boolean
@@ -118,7 +117,6 @@ const manifest: ModuleManifest = {
     // Agentic engine (v2)
     ENGINE_MODE: z.string().default('agentic'),
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
-    AGENTIC_EFFORT_DEFAULT: z.string().default('medium'),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
     ENGINE_TOOL_DEDUP: boolEnv(true),
     ENGINE_LOOP_DETECTION: boolEnv(true),
@@ -424,21 +422,6 @@ const manifest: ModuleManifest = {
         },
         min: 1,
         max: 30,
-        width: 'half',
-      },
-      {
-        key: 'AGENTIC_EFFORT_DEFAULT',
-        type: 'select',
-        label: { es: 'Nivel de esfuerzo por defecto', en: 'Default effort level' },
-        info: {
-          es: 'Nivel usado cuando el enrutamiento por esfuerzo esta desactivado o no puede clasificar el mensaje.',
-          en: 'Level used when effort routing is disabled or cannot classify the message.',
-        },
-        options: [
-          { value: 'low', label: { es: 'Bajo (rapido, economico)', en: 'Low (fast, cheap)' } },
-          { value: 'medium', label: { es: 'Medio (balanceado)', en: 'Medium (balanced)' } },
-          { value: 'high', label: { es: 'Alto (completo, potente)', en: 'High (thorough, powerful)' } },
-        ],
         width: 'half',
       },
       {

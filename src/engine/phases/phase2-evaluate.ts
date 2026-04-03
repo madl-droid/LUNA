@@ -11,19 +11,14 @@
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { ContextBundle, EvaluatorOutput, ExecutionStep, EngineConfig, ProactiveContextBundle, ReplanContext } from '../types.js'
+import { filterAgenticTools, getAgenticSubagentCatalog } from '../agentic/subagent-delegation.js'
 import { buildEvaluatorPrompt, buildProactiveEvaluatorPrompt } from '../prompts/evaluator.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import type { ToolCatalogEntry } from '../types.js'
-import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 
 // Interface for reading tool catalog from tools:registry service
 interface ToolRegistryReader {
   getCatalog(contactType?: string): ToolCatalogEntry[]
-}
-
-// Interface for reading subagent catalog from subagents:catalog service
-interface SubagentCatalogReader {
-  getEnabledTypes(): SubagentCatalogEntry[]
 }
 
 const logger = pino({ name: 'engine:phase2' })
@@ -74,11 +69,8 @@ export async function phase2Evaluate(
 
   // Build prompt — use real tool catalog from tools:registry when available
   const toolsRegistry = registry?.getOptional<ToolRegistryReader>('tools:registry')
-  const toolCatalog = toolsRegistry?.getCatalog() ?? []
-
-  // Get enabled subagent types from subagents:catalog
-  const subagentCatalog = registry?.getOptional<SubagentCatalogReader>('subagents:catalog')
-  const subagentTypes = subagentCatalog?.getEnabledTypes() ?? []
+  const subagentTypes = registry ? getAgenticSubagentCatalog(ctx, registry) : []
+  const toolCatalog = filterAgenticTools(toolsRegistry?.getCatalog() ?? [], subagentTypes)
 
   let { system, userMessage } = proactive
     ? await buildProactiveEvaluatorPrompt(ctx, toolCatalog, registry)
