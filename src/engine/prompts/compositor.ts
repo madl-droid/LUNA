@@ -80,7 +80,14 @@ export async function buildFormatFromForm(channel: string, db: import('pg').Pool
   lines.push(`- PROHIBIDO: párrafos largos. Si se ve largo, está largo.`)
   lines.push(`- NO uses markdown ni formato especial, solo texto plano (es WhatsApp)`)
   lines.push(`- NUNCA uses asteriscos (*) en tus mensajes. En WhatsApp los asteriscos activan negritas no deseadas. Si quieres enfatizar algo, escríbelo en mayúsculas o reescribe la frase para que sea clara sin formato.`)
-  lines.push(`- Emojis: ${emojiLevel}, repito el uso de emojis es ${emojiLevel}`)
+  // Emoji instructions — explicit per level
+  const emojiInstructions: Record<string, string> = {
+    nunca: 'NUNCA uses emojis. Ni uno solo. Cero emojis en toda la respuesta.',
+    bajo: 'Usa emojis con moderación: 1-2 por mensaje como máximo. Solo cuando aporten calidez (👋 al saludar, ✅ al confirmar). No al inicio de cada frase.',
+    moderado: 'Usa emojis con frecuencia moderada: 2-4 por mensaje. Úsalos para dar calidez y hacer el mensaje más visual.',
+    alto: 'Usa emojis libremente: 3-5+ por mensaje. Los emojis son parte natural de tu estilo de comunicación.',
+  }
+  lines.push(`- ${emojiInstructions[emojiLevel] ?? emojiInstructions.bajo}`)
 
   // --- Opening signs ---
   if (openingSigns === 'nunca') {
