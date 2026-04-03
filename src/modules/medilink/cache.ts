@@ -180,14 +180,26 @@ export class MedilinkCache {
   /**
    * Process agenda items array into clean availability slots.
    * Free slots = items where id_paciente is null (no patient booked).
+   * Filters by allowed chairs (excludes sobreagendamiento).
    */
   private processAgendaResponse(items: MedilinkAgendaItem[], branchId: number): AvailabilitySlot[] {
     const slots: AvailabilitySlot[] = []
     const branch = (this.refData?.branches ?? []).find((b) => b.id === branchId)
 
+    // Parse allowed chair IDs from config (CSV like "1,2")
+    const allowedChairs = this.config.MEDILINK_ALLOWED_CHAIRS
+      ? this.config.MEDILINK_ALLOWED_CHAIRS.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+      : []
+
     for (const item of items) {
       // Only include free slots — API returns 0 (or null) when no patient is booked
       if (item.id_paciente != null && item.id_paciente !== 0) continue
+
+      // Filter by allowed chairs (skip sobreagendamiento)
+      if (allowedChairs.length > 0 && !allowedChairs.includes(item.id_recurso)) continue
+
+      // Resolve chair name from reference data
+      const chair = (this.refData?.chairs ?? []).find(c => c.id === item.id_recurso)
 
       slots.push({
         date: item.fecha,
@@ -197,9 +209,13 @@ export class MedilinkCache {
         branchId,
         branchName: branch?.nombre ?? '',
         chairId: String(item.id_recurso),
-        chairName: String(item.id_recurso),
+        chairName: chair?.nombre ?? String(item.id_recurso),
         durationMinutes: item.duracion,
       })
+    }
+
+    if (items.length > 0 && slots.length === 0 && allowedChairs.length > 0) {
+      logger.warn({ branchId, allowedChairs, totalItems: items.length }, 'Chair filter removed ALL slots — check MEDILINK_ALLOWED_CHAIRS config')
     }
 
     return slots

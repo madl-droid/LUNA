@@ -28,6 +28,7 @@ export interface MedilinkConfig {
   MEDILINK_HEALTH_CHECK_INTERVAL_MS: number
   // FIX: ML-1 — Public URL for voice call webhooks
   MEDILINK_PUBLIC_URL: string
+  MEDILINK_ALLOWED_CHAIRS: string
 }
 
 // ─── API response envelope ───────────────
@@ -376,7 +377,8 @@ export interface WebhookLogEntry {
 
 export type AuditAction =
   | 'view_patient' | 'view_appointments' | 'view_payments'
-  | 'view_evolutions' | 'create_patient' | 'create_appointment'
+  | 'view_evolutions' | 'view_treatment_plans' | 'search_patient'
+  | 'create_patient' | 'create_appointment'
   | 'reschedule_appointment' | 'edit_request'
   | 'edit_approved' | 'edit_rejected'
   | 'identity_check' | 'access_denied'
