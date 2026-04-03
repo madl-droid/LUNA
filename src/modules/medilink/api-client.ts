@@ -255,15 +255,18 @@ export class MedilinkApiClient {
 
   async getProfessionals(priority?: RequestPriority): Promise<MedilinkProfessional[]> {
     // API uses /dentistas, not /profesionales
-    return this.fetchAll<MedilinkProfessional>('/dentistas', { priority: priority ?? 'low' })
+    const raw = await this.fetchAll<Record<string, unknown>>('/dentistas', { priority: priority ?? 'low' })
+    return raw.map(this.mapProfessional)
   }
 
   async getBranches(priority?: RequestPriority): Promise<MedilinkBranch[]> {
-    return this.fetchAll<MedilinkBranch>('/sucursales', { priority: priority ?? 'low' })
+    const raw = await this.fetchAll<Record<string, unknown>>('/sucursales', { priority: priority ?? 'low' })
+    return raw.map(this.mapBranch)
   }
 
   async getChairs(priority?: RequestPriority): Promise<MedilinkChair[]> {
-    return this.fetchAll<MedilinkChair>('/sillones', { priority: priority ?? 'low' })
+    const raw = await this.fetchAll<Record<string, unknown>>('/sillones', { priority: priority ?? 'low' })
+    return raw.map(this.mapChair)
   }
 
   async getTreatments(priority?: RequestPriority): Promise<MedilinkTreatment[]> {
@@ -271,12 +274,14 @@ export class MedilinkApiClient {
   }
 
   async getPrestaciones(priority?: RequestPriority): Promise<MedilinkPrestacion[]> {
-    return this.fetchAll<MedilinkPrestacion>('/prestaciones', { priority: priority ?? 'low' })
+    const raw = await this.fetchAll<Record<string, unknown>>('/prestaciones', { priority: priority ?? 'low' })
+    return raw.map(this.mapPrestacion)
   }
 
   async getAppointmentStatuses(priority?: RequestPriority): Promise<MedilinkAppointmentStatus[]> {
     // Endpoint real: /citas/estados (no /estados-de-cita)
-    return this.fetchAll<MedilinkAppointmentStatus>('/citas/estados', { priority: priority ?? 'low' })
+    const raw = await this.fetchAll<Record<string, unknown>>('/citas/estados', { priority: priority ?? 'low' })
+    return raw.map(this.mapStatus)
   }
 
   // ─── Agenda / Availability ─────────────
@@ -339,6 +344,69 @@ export class MedilinkApiClient {
       return true
     } catch {
       return false
+    }
+  }
+
+  // ─── Data mappers (strip raw API fields the agent doesn't need) ──
+
+  /** Strip PII and internal fields from /dentistas response */
+  private mapProfessional(raw: Record<string, unknown>): MedilinkProfessional {
+    return {
+      id: raw['id'] as number,
+      rut: null,           // strip — PII
+      nombre: raw['nombre'] as string,
+      apellidos: raw['apellidos'] as string,
+      celular: null,       // strip — not needed by agent
+      telefono: null,      // strip — not needed by agent
+      email: null,         // strip — PII
+      id_especialidad: (raw['id_especialidad'] as number | null) ?? null,
+      especialidad: (raw['especialidad'] as string | null) ?? null,
+      agenda_online: Boolean(raw['agenda_online']),
+      intervalo: (raw['intervalo'] as number | null) ?? null,
+      habilitado: Boolean(raw['habilitado']),  // API returns 1/0, normalize to boolean
+    }
+  }
+
+  /** Strip pricing and internal fields from /prestaciones response */
+  private mapPrestacion(raw: Record<string, unknown>): MedilinkPrestacion {
+    return {
+      id: raw['id'] as number,
+      nombre: raw['nombre'] as string,
+      codigo: (raw['codigo'] as string | null) ?? null,
+      id_categoria: raw['id_categoria'] as number,
+      nombre_categoria: raw['nombre_categoria'] as string,
+      habilitado: Boolean(raw['habilitado']),  // API returns 1/0
+    }
+  }
+
+  /** Strip color and internal flags from /citas/estados response */
+  private mapStatus(raw: Record<string, unknown>): MedilinkAppointmentStatus {
+    return {
+      id: raw['id'] as number,
+      nombre: raw['nombre'] as string,
+      color: null,                             // strip — UI only
+      anulacion: raw['anulacion'] as number,
+      reservado: null,                         // strip — internal
+    }
+  }
+
+  /** Strip internal fields from /sucursales response */
+  private mapBranch(raw: Record<string, unknown>): MedilinkBranch {
+    return {
+      id: raw['id'] as number,
+      nombre: raw['nombre'] as string,
+      direccion: (raw['direccion'] as string | null) ?? null,
+      ciudad: (raw['ciudad'] as string | null) ?? null,
+      telefono: (raw['telefono'] as string | null) ?? null,
+      email: null,  // strip
+    }
+  }
+
+  /** Strip links from /sillones response */
+  private mapChair(raw: Record<string, unknown>): MedilinkChair {
+    return {
+      id: raw['id'] as number,
+      nombre: raw['nombre'] as string,
     }
   }
 
