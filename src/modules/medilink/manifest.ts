@@ -417,6 +417,7 @@ const manifest: ModuleManifest = {
     MEDILINK_HEALTH_CHECK_INTERVAL_MS: numEnv(21600000),
     // FIX: ML-1 — Public URL for voice call webhooks (no localhost)
     MEDILINK_PUBLIC_URL: z.string().default(''),
+    MEDILINK_ALLOWED_CHAIRS: z.string().default('1,2'),
   }),
 
   console: {
@@ -441,6 +442,7 @@ const manifest: ModuleManifest = {
       { key: 'MEDILINK_DEFAULT_BRANCH_ID', type: 'text', label: { es: 'Sucursal por defecto (ID)', en: 'Default branch (ID)' }, info: { es: 'ID de la sucursal/sede que se usa por defecto al agendar citas', en: 'Default branch/location ID used when scheduling appointments' }, width: 'half' },
       { key: 'MEDILINK_DEFAULT_DURATION_MIN', type: 'number', label: { es: 'Duración cita (min)', en: 'Appointment duration (min)' }, info: { es: 'Duración por defecto de las citas en minutos', en: 'Default appointment duration in minutes' }, min: 5, step: 5, unit: 'min', width: 'half' },
       { key: 'MEDILINK_DEFAULT_STATUS_ID', type: 'text', label: { es: 'Estado para nuevas citas (ID)', en: 'Status for new appointments (ID)' }, info: { es: 'ID del estado que se asigna a las citas recién creadas', en: 'Status ID assigned to newly created appointments' } },
+      { key: 'MEDILINK_ALLOWED_CHAIRS', type: 'text', label: { es: 'Sillones permitidos (IDs)', en: 'Allowed chairs (IDs)' }, info: { es: 'IDs de sillones separados por coma. Solo estos se muestran en disponibilidad (excluye sobreagendamiento). Vacío = todos.', en: 'Comma-separated chair IDs. Only these show in availability (excludes overbooking). Empty = all.' } },
 
       // ── Rate Limiting ──
       { key: '_div_rate', type: 'divider', label: { es: 'Rate Limiting', en: 'Rate Limiting' } },

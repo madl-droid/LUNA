@@ -1,5 +1,8 @@
 // LUNA — Module: medilink
 // Agent tools registration — these are the capabilities the AI agent gets
+// 11 tools: check-availability, get-professionals, search-patient, get-patient-info,
+//           get-my-appointments, get-my-payments, get-patient-treatments, get-prestaciones,
+//           create-patient, create-appointment, reschedule-appointment
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
@@ -58,7 +61,7 @@ export async function registerMedilinkTools(
     definition: {
       name: 'medilink-check-availability',
       displayName: 'Ver disponibilidad de agenda',
-      description: 'Consulta horarios disponibles en la clínica. Puede filtrar por sucursal, profesional, tipo de tratamiento y fecha. Retorna los slots disponibles sin datos de pacientes.',
+      description: 'Consulta horarios disponibles en la clínica para una fecha. Filtra automáticamente por profesionales habilitados para el tipo de prestación. Retorna solo slots libres.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: {
@@ -66,9 +69,7 @@ export async function registerMedilinkTools(
         properties: {
           date: { type: 'string', description: 'Fecha a consultar (YYYY-MM-DD). Si no se especifica, usa hoy.' },
           professional_name: { type: 'string', description: 'Nombre del profesional (parcial OK)' },
-          branch_name: { type: 'string', description: 'Nombre de la sucursal (parcial OK)' },
-          treatment_name: { type: 'string', description: 'Tipo de tratamiento para filtrar profesionales que lo realizan' },
-          duration_minutes: { type: 'number', description: 'Duración del turno en minutos (default: 30)' },
+          treatment_name: { type: 'string', description: 'Tipo de tratamiento/prestación para filtrar profesionales que lo realizan' },
         },
       },
     },
@@ -76,17 +77,10 @@ export async function registerMedilinkTools(
       try {
         const ref = await cache.getReferenceData()
 
-        // Resolve branch
-        let branchId: number | undefined
-        if (input.branch_name) {
-          const branch = cache.findBranchByName(input.branch_name as string)
-          if (!branch) return { success: false, error: `No se encontró la sucursal "${input.branch_name}"` }
-          branchId = branch.id
-        } else {
-          const defaultBranch = cache.getDefaultBranch()
-          if (defaultBranch) branchId = defaultBranch.id
-        }
-        if (!branchId) return { success: false, error: 'No se pudo determinar la sucursal. Especifica una.' }
+        // Resolve branch (always default — single sede)
+        const defaultBranch = cache.getDefaultBranch()
+        if (!defaultBranch) return { success: false, error: 'No hay sucursal configurada' }
+        const branchId = defaultBranch.id
 
         // Resolve professional
         let professionalId: number | undefined
@@ -96,39 +90,55 @@ export async function registerMedilinkTools(
           professionalId = prof.id
         }
 
-        // If treatment specified, find compatible professionals
+        // If treatment specified, find compatible professionals via category assignments
         if (input.treatment_name && !professionalId) {
           const treatment = cache.findTreatmentByName(input.treatment_name as string)
-          if (!treatment) return { success: false, error: `No se encontró el tratamiento "${input.treatment_name}"` }
+          if (!treatment) return { success: false, error: `No se encontró la prestación "${input.treatment_name}"` }
 
-          const rules = await pgStore.getProfessionalTreatments(registry.getDb())
-          const compatibleProfIds = rules
-            .filter((r) => r.medilinkTreatmentId === treatment.id)
-            .map((r) => r.medilinkProfessionalId)
+          // Find the category of this treatment from prestaciones
+          const prestacion = (ref.prestaciones ?? []).find(p => p.id === treatment.id)
+          if (prestacion) {
+            const catAssignments = await pgStore.getProfessionalCategoryAssignments(registry.getDb())
+            const compatibleProfIds = catAssignments
+              .filter(a => a.medilinkCategoryId === prestacion.id_categoria)
+              .map(a => a.medilinkProfessionalId)
 
-          if (compatibleProfIds.length > 0) {
-            // Return availability for all compatible professionals
-            const allSlots = []
-            for (const pId of compatibleProfIds) {
-              const prof = ref.professionals.find((p) => p.id === pId && p.habilitado)
-              if (!prof) continue
-              const date = (input.date as string) ?? new Date().toISOString().split('T')[0]!
-              const slots = await cache.getAvailability(branchId, date, pId, input.duration_minutes as number | undefined)
-              allSlots.push(...slots.map((s) => ({ ...s, professionalId: pId, professionalName: `${prof.nombre} ${prof.apellidos}` })))
+            if (compatibleProfIds.length > 0) {
+              const allSlots = []
+              for (const pId of compatibleProfIds) {
+                const prof = ref.professionals.find(p => p.id === pId && p.habilitado)
+                if (!prof) continue
+                const date = (input.date as string) ?? new Date().toISOString().split('T')[0]!
+                const slots = await cache.getAvailability(branchId, date, pId)
+                allSlots.push(...slots.map(s => ({
+                  fecha: s.date,
+                  hora: s.time,
+                  profesional: s.professionalName,
+                  duracion: s.durationMinutes,
+                })))
+              }
+              return { success: true, data: { slots: allSlots, fecha: input.date, sucursal: defaultBranch.nombre } }
             }
-            return { success: true, data: { slots: allSlots, date: input.date, branch: ref.branches.find((b) => b.id === branchId)?.nombre } }
           }
         }
 
         const date = (input.date as string) ?? new Date().toISOString().split('T')[0]!
-        const slots = await cache.getAvailability(branchId, date, professionalId, input.duration_minutes as number | undefined)
+        const slots = await cache.getAvailability(branchId, date, professionalId)
+
+        // Clean output — agent doesn't need internal IDs
+        const cleanSlots = slots.map(s => ({
+          fecha: s.date,
+          hora: s.time,
+          profesional: s.professionalName,
+          duracion: s.durationMinutes,
+        }))
+
         return {
           success: true,
           data: {
-            slots,
-            date,
-            branch: ref.branches.find((b) => b.id === branchId)?.nombre,
-            professional: professionalId ? ref.professionals.find((p) => p.id === professionalId) : undefined,
+            slots: cleanSlots,
+            fecha: date,
+            sucursal: defaultBranch.nombre,
           },
         }
       } catch (err) {
@@ -146,7 +156,7 @@ export async function registerMedilinkTools(
     definition: {
       name: 'medilink-get-professionals',
       displayName: 'Listar profesionales',
-      description: 'Lista los profesionales de la clínica con sus especialidades. Solo muestra profesionales activos. No requiere verificación.',
+      description: 'Lista los profesionales activos de la clínica con sus especialidades.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: {
@@ -169,7 +179,6 @@ export async function registerMedilinkTools(
             id: p.id,
             nombre: `${p.nombre} ${p.apellidos}`,
             especialidad: p.especialidad,
-            agenda_online: p.agenda_online,
           })),
         }
       } catch {
@@ -179,116 +188,122 @@ export async function registerMedilinkTools(
   })
 
   // ═══════════════════════════════════════
-  // 3. VERIFY IDENTITY
+  // 3. SEARCH PATIENT (auto by contact phone)
   // ═══════════════════════════════════════
 
   await toolRegistry.registerTool({
     definition: {
-      name: 'medilink-verify-identity',
-      displayName: 'Verificar identidad del paciente',
-      description: 'Verifica la identidad del paciente con su número de documento (RUT/cédula). Necesario para acceder a información detallada como montos de deuda o solicitar cambios de datos.',
+      name: 'medilink-search-patient',
+      displayName: 'Buscar paciente',
+      description: 'Busca automáticamente si el contacto actual ya es paciente registrado (por su número de teléfono). Si encuentra un match único, lo vincula automáticamente. No requiere parámetros.',
       category: 'medilink',
       sourceModule: 'medilink',
-      parameters: {
-        type: 'object',
-        properties: {
-          document_number: { type: 'string', description: 'Número de documento del paciente (RUT, cédula, etc.)' },
-        },
-        required: ['document_number'],
-      },
+      parameters: { type: 'object', properties: {} },
     },
-    handler: async (input, ctx) => {
+    handler: async (_input, ctx) => {
+      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
+
+      try {
+        const secCtx = await security.resolveContext(ctx.contactId, agentId)
+
+        // If already linked, return the linked patient info
+        if (secCtx.medilinkPatientId) {
+          const patient = await api.getPatient(secCtx.medilinkPatientId, 'high')
+          await pgStore.logAudit(ctx.db, {
+            contactId: ctx.contactId, agentId,
+            medilinkPatientId: String(secCtx.medilinkPatientId),
+            action: 'search_patient', targetType: 'patient', targetId: String(secCtx.medilinkPatientId),
+            detail: { method: 'already_linked' },
+            verificationLevel: secCtx.verificationLevel,
+            result: 'success',
+          })
+          return {
+            success: true,
+            data: { found: true, already_linked: true, patient: security.filterPatientSearch(patient) },
+          }
+        }
+
+        // Search by phone
+        const phone = secCtx.contactPhone
+        if (!phone) return { success: true, data: { found: false, reason: 'no_phone' } }
+
+        const patients = await api.findPatientByPhone(phone)
+
+        await pgStore.logAudit(ctx.db, {
+          contactId: ctx.contactId, agentId,
+          action: 'search_patient', targetType: 'patient',
+          detail: { method: 'phone', phoneLast4: phone.slice(-4), results: patients.length },
+          result: 'success',
+        })
+
+        if (patients.length === 1) {
+          // Auto-link unique match
+          const patient = patients[0]!
+          const updatedCtx = await security.tryAutoLink(secCtx)
+          return {
+            success: true,
+            data: {
+              found: true,
+              patient: security.filterPatientSearch(patient),
+              linked: updatedCtx.medilinkPatientId === patient.id,
+            },
+          }
+        }
+
+        if (patients.length > 1) {
+          return { success: true, data: { found: false, reason: 'multiple_matches', count: patients.length } }
+        }
+
+        return { success: true, data: { found: false, reason: 'not_found' } }
+      } catch (err) {
+        logger.error({ err }, 'search-patient failed')
+        return { success: false, error: 'Error al buscar paciente' }
+      }
+    },
+  })
+
+  // ═══════════════════════════════════════
+  // 4. GET PATIENT INFO (linked patient basic data)
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-get-patient-info',
+      displayName: 'Ver datos del paciente',
+      description: 'Muestra los datos básicos del paciente vinculado: nombre, teléfono, email. No muestra datos clínicos ni documento.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: { type: 'object', properties: {} },
+    },
+    handler: async (_input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
       let secCtx = await security.resolveContext(ctx.contactId, agentId)
       secCtx = await security.tryAutoLink(secCtx)
 
-      const result = await security.verifyByDocument(secCtx, input.document_number as string)
-      if (result.success) {
-        return { success: true, data: { verified: true, message: 'Identidad verificada correctamente' } }
-      }
-      return { success: false, error: result.error }
-    },
-  })
-
-  // ═══════════════════════════════════════
-  // 4. CREATE PATIENT
-  // ═══════════════════════════════════════
-
-  await toolRegistry.registerTool({
-    definition: {
-      name: 'medilink-create-patient',
-      displayName: 'Registrar paciente nuevo',
-      description: 'Registra un nuevo paciente en el sistema Medilink. El teléfono del paciente debe coincidir con el número desde el que escribe.',
-      category: 'medilink',
-      sourceModule: 'medilink',
-      parameters: {
-        type: 'object',
-        properties: {
-          first_name: { type: 'string', description: 'Nombres del paciente' },
-          last_name: { type: 'string', description: 'Apellidos del paciente' },
-          document_number: { type: 'string', description: 'Número de documento (RUT/cédula)' },
-          phone: { type: 'string', description: 'Teléfono celular' },
-          email: { type: 'string', description: 'Email (opcional)' },
-          birth_date: { type: 'string', description: 'Fecha de nacimiento YYYY-MM-DD (opcional)' },
-        },
-        required: ['first_name', 'last_name', 'document_number', 'phone'],
-      },
-    },
-    handler: async (input, ctx) => {
-      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
-
-      const secCtx = await security.resolveContext(ctx.contactId, agentId)
-
-      // Verify phone matches contact
-      const inputPhone = (input.phone as string).replace(/[^0-9+]/g, '')
-      if (!secCtx.contactPhone.includes(inputPhone) && !inputPhone.includes(secCtx.contactPhone)) {
-        await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
-          action: 'create_patient', targetType: 'patient',
-          detail: { reason: 'phone_mismatch', inputPhone, contactPhone: secCtx.contactPhone },
-          result: 'denied',
-        })
-        return { success: false, error: 'El teléfono proporcionado no coincide con el número desde el que escribes' }
-      }
-
-      if (secCtx.medilinkPatientId) {
-        return { success: false, error: 'Ya tienes un paciente vinculado en el sistema' }
+      const access = security.canAccess(secCtx, 'patient_info')
+      if (!access.allowed) {
+        return { success: false, error: access.reason === 'No patient linked'
+          ? 'No encontramos un paciente vinculado a tu número.'
+          : 'Necesitas verificar tu identidad primero' }
       }
 
       try {
-        const patient = await api.createPatient({
-          nombre: input.first_name as string,
-          apellidos: input.last_name as string,
-          rut: input.document_number as string,
-          celular: input.phone as string,
-          email: input.email as string | undefined,
-          fecha_nacimiento: input.birth_date as string | undefined,
-        })
+        const patient = await api.getPatient(secCtx.medilinkPatientId!, 'high')
 
         await pgStore.logAudit(ctx.db, {
           contactId: ctx.contactId, agentId,
-          medilinkPatientId: String(patient.id),
-          action: 'create_patient', targetType: 'patient', targetId: String(patient.id),
-          detail: { nombre: patient.nombre, apellidos: patient.apellidos },
-          verificationLevel: 'document_verified',
+          medilinkPatientId: String(secCtx.medilinkPatientId),
+          action: 'view_patient', targetType: 'patient', targetId: String(secCtx.medilinkPatientId),
+          detail: {},
+          verificationLevel: secCtx.verificationLevel,
           result: 'success',
         })
 
-        // Auto-verify since they provided document
-        await security.verifyByDocument(secCtx, input.document_number as string)
-
-        return {
-          success: true,
-          data: {
-            patientId: patient.id,
-            name: `${patient.nombre} ${patient.apellidos}`,
-            message: 'Paciente registrado y vinculado exitosamente',
-          },
-        }
+        return { success: true, data: security.filterPatientBasic(patient) }
       } catch (err) {
-        logger.error({ err }, 'create-patient failed')
-        return { success: false, error: 'Error al registrar paciente: ' + String(err) }
+        logger.error({ err }, 'get-patient-info failed')
+        return { success: false, error: 'Error al consultar datos del paciente' }
       }
     },
   })
@@ -301,7 +316,7 @@ export async function registerMedilinkTools(
     definition: {
       name: 'medilink-get-my-appointments',
       displayName: 'Ver mis citas',
-      description: 'Muestra las citas del paciente. Con verificación básica (teléfono) muestra fechas y horas. Con verificación completa (documento) muestra detalles como profesional, tratamiento y estado.',
+      description: 'Muestra las citas del paciente vinculado. Retorna fecha, hora, profesional, tratamiento y estado.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: {
@@ -319,13 +334,6 @@ export async function registerMedilinkTools(
 
       const access = security.canAccess(secCtx, 'appointments')
       if (!access.allowed) {
-        await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
-          action: 'view_appointments', targetType: 'appointment',
-          detail: { reason: access.reason },
-          verificationLevel: secCtx.verificationLevel,
-          result: 'denied',
-        })
         return { success: false, error: access.reason === 'No patient linked'
           ? 'No encontramos un paciente vinculado a tu número. ¿Ya eres paciente? Puedo buscarte por tu documento.'
           : 'Necesitas verificar tu identidad primero' }
@@ -334,14 +342,13 @@ export async function registerMedilinkTools(
       try {
         const appointments = await api.getPatientAppointments(secCtx.medilinkPatientId!, 'high')
 
-        // Filter: only future unless include_past
         let filtered = appointments
         if (!input.include_past) {
           const today = new Date().toISOString().split('T')[0]!
           filtered = appointments.filter((a) => a.fecha >= today)
         }
 
-        // CRITICAL: verify every appointment belongs to this patient
+        // Verify ownership and filter data
         const safe = filtered.filter((a) => security.ownsAppointment(secCtx, a))
         const mapped = safe.map((a) => security.filterAppointment(secCtx, a))
 
@@ -354,7 +361,7 @@ export async function registerMedilinkTools(
           result: 'success',
         })
 
-        return { success: true, data: { appointments: mapped, level: secCtx.verificationLevel } }
+        return { success: true, data: { appointments: mapped } }
       } catch (err) {
         logger.error({ err }, 'get-my-appointments failed')
         return { success: false, error: 'Error al consultar citas' }
@@ -369,8 +376,8 @@ export async function registerMedilinkTools(
   await toolRegistry.registerTool({
     definition: {
       name: 'medilink-get-my-payments',
-      displayName: 'Ver mis pagos pendientes',
-      description: 'Consulta los pagos y deudas pendientes del paciente. Con verificación básica muestra solo si tiene deudas (sí/no). Para ver montos requiere re-verificar con documento.',
+      displayName: 'Ver pagos pendientes',
+      description: 'Consulta los pagos y deudas pendientes del paciente. Con verificación básica muestra solo si tiene deudas (sí/no). Para montos requiere verificación con documento.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: { type: 'object', properties: {} },
@@ -383,14 +390,6 @@ export async function registerMedilinkTools(
 
       const access = security.canAccess(secCtx, 'payments')
       if (!access.allowed) {
-        await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
-          action: 'view_payments', targetType: 'payment',
-          detail: { reason: access.reason },
-          verificationLevel: secCtx.verificationLevel,
-          result: 'denied',
-        })
-
         if (access.reason === 'Document verification required for debt details') {
           return { success: false, error: 'Para ver los montos de deuda necesito verificar tu identidad. ¿Puedes proporcionarme tu número de documento?' }
         }
@@ -419,81 +418,213 @@ export async function registerMedilinkTools(
   })
 
   // ═══════════════════════════════════════
-  // 7. GET MY EVOLUTIONS
+  // 7. GET PATIENT TREATMENT PLANS
   // ═══════════════════════════════════════
 
   await toolRegistry.registerTool({
     definition: {
-      name: 'medilink-get-my-evolutions',
-      displayName: 'Ver mis procedimientos',
-      description: 'Lista los procedimientos/evoluciones realizados y pendientes del paciente. Muestra nombre, fecha, profesional y estado. NO muestra notas clínicas.',
+      name: 'medilink-get-treatment-plans',
+      displayName: 'Ver planes de tratamiento',
+      description: 'Muestra los planes de tratamiento (atenciones) del paciente con estado, deuda pendiente y total. Usado para saber tratamientos activos y saldos.',
       category: 'medilink',
       sourceModule: 'medilink',
-      parameters: { type: 'object', properties: {} },
+      parameters: {
+        type: 'object',
+        properties: {
+          active_only: { type: 'boolean', description: 'Solo mostrar tratamientos activos (default: true)' },
+        },
+      },
     },
-    handler: async (_input, ctx) => {
+    handler: async (input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
       let secCtx = await security.resolveContext(ctx.contactId, agentId)
       secCtx = await security.tryAutoLink(secCtx)
 
-      const access = security.canAccess(secCtx, 'evolutions')
+      const access = security.canAccess(secCtx, 'treatment_plans')
       if (!access.allowed) {
-        await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
-          action: 'view_evolutions', targetType: 'evolution',
-          detail: { reason: access.reason },
-          verificationLevel: secCtx.verificationLevel,
-          result: 'denied',
-        })
-        return { success: false, error: 'Necesitas verificar tu identidad primero' }
+        return { success: false, error: access.reason === 'No patient linked'
+          ? 'No encontramos un paciente vinculado a tu número.'
+          : 'Necesitas verificar tu identidad primero' }
       }
 
       try {
-        const evolutions = await api.getPatientEvolutions(secCtx.medilinkPatientId!, 'high')
-        // SECURITY: strip clinical notes, only return metadata
-        const safe = evolutions.map((e) => security.filterEvolution(e))
+        const plans = await api.getPatientTreatmentPlans(secCtx.medilinkPatientId!, 'high')
+
+        const activeOnly = input.active_only !== false // default true
+        const filtered = activeOnly ? plans.filter(p => !p.finalizado) : plans
+        const clean = filtered.map(p => security.filterTreatmentPlan(p))
 
         await pgStore.logAudit(ctx.db, {
           contactId: ctx.contactId, agentId,
           medilinkPatientId: String(secCtx.medilinkPatientId),
-          action: 'view_evolutions', targetType: 'evolution',
-          detail: { count: safe.length },
+          action: 'view_treatment_plans', targetType: 'treatment_plan',
+          detail: { count: clean.length, activeOnly },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',
         })
 
-        return { success: true, data: { evolutions: safe } }
+        return { success: true, data: { plans: clean } }
       } catch (err) {
-        logger.error({ err }, 'get-my-evolutions failed')
-        return { success: false, error: 'Error al consultar procedimientos' }
+        logger.error({ err }, 'get-treatment-plans failed')
+        return { success: false, error: 'Error al consultar planes de tratamiento' }
       }
     },
   })
 
   // ═══════════════════════════════════════
-  // 8. CREATE APPOINTMENT
+  // 8. GET PRESTACIONES (catalog for semantic matching)
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-get-prestaciones',
+      displayName: 'Ver catálogo de prestaciones',
+      description: 'Retorna el catálogo de prestaciones/servicios disponibles en la clínica con su categoría. Usado para identificar qué prestación corresponde a lo que el paciente solicita.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: {
+        type: 'object',
+        properties: {
+          category_name: { type: 'string', description: 'Filtrar por nombre de categoría (parcial OK)' },
+        },
+      },
+    },
+    handler: async (input) => {
+      try {
+        await cache.getReferenceData()
+        let prestaciones = cache.getPrestaciones().filter(p => p.habilitado)
+
+        if (input.category_name) {
+          const lower = (input.category_name as string).toLowerCase()
+          prestaciones = prestaciones.filter(p => p.nombre_categoria?.toLowerCase().includes(lower))
+        }
+
+        return {
+          success: true,
+          data: {
+            prestaciones: prestaciones.map(p => ({
+              id: p.id,
+              nombre: p.nombre,
+              categoria: p.nombre_categoria,
+              id_categoria: p.id_categoria,
+            })),
+          },
+        }
+      } catch (err) {
+        logger.error({ err }, 'get-prestaciones failed')
+        return { success: false, error: 'Error al consultar prestaciones' }
+      }
+    },
+  })
+
+  // ═══════════════════════════════════════
+  // 9. CREATE PATIENT
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-create-patient',
+      displayName: 'Registrar paciente nuevo',
+      description: 'Registra un nuevo paciente en el sistema. El teléfono debe coincidir con el del contacto. Si no tiene email usar sin@correo.com.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: {
+        type: 'object',
+        properties: {
+          first_name: { type: 'string', description: 'Nombres del paciente' },
+          last_name: { type: 'string', description: 'Apellidos del paciente' },
+          document_type: { type: 'string', description: 'Tipo de documento: cedula, cedula_extranjeria, pasaporte, tarjeta_identidad' },
+          document_number: { type: 'string', description: 'Número de documento (sin puntos ni guiones)' },
+          phone: { type: 'string', description: 'Teléfono celular' },
+          email: { type: 'string', description: 'Email (si no tiene, enviar sin@correo.com)' },
+        },
+        required: ['first_name', 'last_name', 'document_number', 'phone'],
+      },
+    },
+    handler: async (input, ctx) => {
+      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
+
+      const secCtx = await security.resolveContext(ctx.contactId, agentId)
+
+      // Verify phone matches contact
+      const inputPhone = (input.phone as string).replace(/[^0-9+]/g, '')
+      if (!secCtx.contactPhone.includes(inputPhone) && !inputPhone.includes(secCtx.contactPhone)) {
+        await pgStore.logAudit(ctx.db, {
+          contactId: ctx.contactId, agentId,
+          action: 'create_patient', targetType: 'patient',
+          detail: { reason: 'phone_mismatch' },
+          result: 'denied',
+        })
+        return { success: false, error: 'El teléfono proporcionado no coincide con el número desde el que escribes' }
+      }
+
+      if (secCtx.medilinkPatientId) {
+        return { success: false, error: 'Ya tienes un paciente vinculado en el sistema' }
+      }
+
+      try {
+        // Normalize document number — remove dots, hyphens, spaces
+        const docNumber = (input.document_number as string).replace(/[.\-\s]/g, '')
+        // Default email if not provided
+        const email = (input.email as string) || 'sin@correo.com'
+
+        const patient = await api.createPatient({
+          nombre: input.first_name as string,
+          apellidos: input.last_name as string,
+          rut: docNumber,
+          celular: input.phone as string,
+          email,
+        })
+
+        await pgStore.logAudit(ctx.db, {
+          contactId: ctx.contactId, agentId,
+          medilinkPatientId: String(patient.id),
+          action: 'create_patient', targetType: 'patient', targetId: String(patient.id),
+          detail: { nombre: patient.nombre, apellidos: patient.apellidos },
+          verificationLevel: 'document_verified',
+          result: 'success',
+        })
+
+        // Auto-link and verify
+        await security.verifyByDocument(secCtx, docNumber)
+
+        return {
+          success: true,
+          data: {
+            patientId: patient.id,
+            name: `${patient.nombre} ${patient.apellidos}`,
+            message: 'Paciente registrado y vinculado exitosamente',
+          },
+        }
+      } catch (err) {
+        logger.error({ err }, 'create-patient failed')
+        return { success: false, error: 'Error al registrar paciente: ' + String(err) }
+      }
+    },
+  })
+
+  // ═══════════════════════════════════════
+  // 10. CREATE APPOINTMENT
   // ═══════════════════════════════════════
 
   await toolRegistry.registerTool({
     definition: {
       name: 'medilink-create-appointment',
       displayName: 'Agendar cita',
-      description: 'Agenda una nueva cita para el paciente. Requiere profesional, tratamiento, fecha y hora. Valida disponibilidad, reglas de agendamiento y crea secuencia de seguimiento.',
+      description: 'Agenda una nueva cita. Requiere profesional, prestación, fecha y hora. Re-verifica disponibilidad automáticamente si el cache tiene más de 20 minutos. Para pacientes nuevos (leads) usa la prestación por defecto.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: {
         type: 'object',
         properties: {
           professional_name: { type: 'string', description: 'Nombre del profesional' },
-          treatment_name: { type: 'string', description: 'Tipo de tratamiento' },
+          treatment_name: { type: 'string', description: 'Nombre de la prestación (para leads, el sistema usa la default automáticamente)' },
           date: { type: 'string', description: 'Fecha (YYYY-MM-DD)' },
           time: { type: 'string', description: 'Hora (HH:MM)' },
-          branch_name: { type: 'string', description: 'Sucursal (opcional, usa default si no se especifica)' },
-          notes: { type: 'string', description: 'Notas/comentarios para la cita (opcional)' },
-          duration_minutes: { type: 'number', description: 'Duración en minutos (opcional, usa default)' },
+          notes: { type: 'string', description: 'Notas para la cita (opcional)' },
         },
-        required: ['professional_name', 'treatment_name', 'date', 'time'],
+        required: ['professional_name', 'date', 'time'],
       },
     },
     handler: async (input, ctx) => {
@@ -504,81 +635,108 @@ export async function registerMedilinkTools(
 
       const access = security.canAccess(secCtx, 'appointments')
       if (!access.allowed) {
-        return { success: false, error: 'Necesitas verificar tu identidad primero para agendar' }
+        return { success: false, error: 'Necesitas estar vinculado como paciente para agendar' }
       }
 
       try {
         const ref = await cache.getReferenceData()
+        const config = registry.getConfig<{
+          MEDILINK_DEFAULT_STATUS_ID: string
+          MEDILINK_DEFAULT_DURATION_MIN: number
+          MEDILINK_DEFAULT_BRANCH_ID: string
+        }>('medilink')
 
         // Resolve professional
         const prof = cache.findProfessionalByName(input.professional_name as string)
         if (!prof) return { success: false, error: `No se encontró al profesional "${input.professional_name}"` }
 
-        // Resolve treatment
-        const treatment = cache.findTreatmentByName(input.treatment_name as string)
-        if (!treatment) return { success: false, error: `No se encontró el tratamiento "${input.treatment_name}"` }
+        // Resolve treatment — for leads/new patients, use default valoración
+        let treatment = input.treatment_name ? cache.findTreatmentByName(input.treatment_name as string) : null
+        const isLead = ctx.contactType === 'nuevo' || !ctx.contactType
 
-        // Check scheduling rules: professional can do this treatment?
-        const profRules = await pgStore.getProfessionalTreatments(ctx.db)
-        if (profRules.length > 0) {
-          const allowed = profRules.some((r) =>
-            r.medilinkProfessionalId === prof.id && r.medilinkTreatmentId === treatment.id,
+        if (!treatment && isLead) {
+          // Use default valoración treatment from config_store
+          const defaultValId = await registry.getDb().query(
+            `SELECT value FROM config_store WHERE key = 'MEDILINK_DEFAULT_VALORACION_ID'`,
           )
-          if (!allowed) {
-            return { success: false, error: `El profesional ${prof.nombre} ${prof.apellidos} no realiza el tratamiento ${treatment.nombre}` }
-          }
+          const valId = parseInt(defaultValId.rows[0]?.value ?? '13', 10)
+          treatment = (ref.treatments ?? []).find(t => t.id === valId) ?? null
         }
 
-        // Check user type rules
-        const userTypeRules = await pgStore.getUserTypeRules(ctx.db)
-        if (userTypeRules.length > 0) {
-          const contactType = ctx.contactType ?? 'nuevo'
-          const rule = userTypeRules.find((r) =>
-            r.userType === contactType && r.medilinkTreatmentId === treatment.id,
-          )
-          if (rule && !rule.allowed) {
-            return { success: false, error: `Este tipo de tratamiento no está disponible para tu tipo de paciente. ${rule.notes ?? ''}` }
+        if (!treatment) return { success: false, error: 'No se pudo determinar la prestación. Especifica el tipo de tratamiento.' }
+
+        // Check category-based scheduling rules
+        const prestacion = (ref.prestaciones ?? []).find(p => p.id === treatment!.id)
+        if (prestacion) {
+          const catAssignments = await pgStore.getProfessionalCategoryAssignments(registry.getDb())
+          if (catAssignments.length > 0) {
+            const allowed = catAssignments.some(a =>
+              a.medilinkProfessionalId === prof.id && a.medilinkCategoryId === prestacion.id_categoria,
+            )
+            if (!allowed) {
+              return { success: false, error: `El profesional ${prof.nombre} ${prof.apellidos} no realiza prestaciones de la categoría ${prestacion.nombre_categoria}` }
+            }
           }
         }
 
         // Resolve branch
-        let branchId: number
-        if (input.branch_name) {
-          const branch = cache.findBranchByName(input.branch_name as string)
-          if (!branch) return { success: false, error: `No se encontró la sucursal "${input.branch_name}"` }
-          branchId = branch.id
-        } else {
-          const defaultBranch = cache.getDefaultBranch()
-          if (!defaultBranch) return { success: false, error: 'No hay sucursal configurada por defecto' }
-          branchId = defaultBranch.id
+        const defaultBranch = cache.getDefaultBranch()
+        if (!defaultBranch) return { success: false, error: 'No hay sucursal configurada' }
+
+        // Re-verify availability (cache handles TTL — force refresh if stale)
+        const freshSlots = await cache.getAvailability(defaultBranch.id, input.date as string, prof.id)
+        const requestedTime = input.time as string
+        const slotAvailable = freshSlots.some(s => s.time === requestedTime && s.professionalId === prof.id)
+        if (!slotAvailable) {
+          return { success: false, error: `El horario ${requestedTime} del ${input.date} ya no está disponible con ${prof.nombre} ${prof.apellidos}. Consulta disponibilidad de nuevo.` }
         }
 
-        // Find a chair — /sillones does not return id_sucursal, use first available
+        // Find a chair
         const chairId = ref.chairs[0]?.id
         if (!chairId) return { success: false, error: 'No hay sillones disponibles' }
 
-        // Resolve default status from config (MEDILINK_DEFAULT_STATUS_ID required)
-        const config = registry.getConfig<{ MEDILINK_DEFAULT_STATUS_ID: string; MEDILINK_DEFAULT_DURATION_MIN: number }>('medilink')
         const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10)
         if (!statusId) return { success: false, error: 'No hay estado de cita configurado — revisar MEDILINK_DEFAULT_STATUS_ID' }
 
-        const duration = (input.duration_minutes as number) ?? config.MEDILINK_DEFAULT_DURATION_MIN
-
         const appointment = await api.createAppointment({
           id_dentista: prof.id,
-          id_sucursal: branchId,
+          id_sucursal: defaultBranch.id,
           id_estado: statusId,
           id_sillon: chairId,
           id_paciente: secCtx.medilinkPatientId!,
           id_tratamiento: treatment.id,
           fecha: input.date as string,
-          hora_inicio: input.time as string,
-          duracion: duration,
+          hora_inicio: requestedTime,
+          duracion: config.MEDILINK_DEFAULT_DURATION_MIN,
           comentario: input.notes as string | undefined,
         })
 
         // Invalidate availability cache
-        await cache.invalidateAvailability(branchId, prof.id)
+        await cache.invalidateAvailability(defaultBranch.id, prof.id)
+
+        // Schedule follow-ups
+        const followupScheduler = registry.getOptional<{
+          scheduleSequence(params: {
+            appointmentId: string; contactId: string; agentId: string
+            appointment: { fecha: string; hora_inicio: string; nombre_paciente: string; nombre_profesional: string; nombre_tratamiento: string; nombre_sucursal: string }
+          }): Promise<void>
+        }>('medilink:followup')
+
+        if (followupScheduler) {
+          await followupScheduler.scheduleSequence({
+            appointmentId: String(appointment.id),
+            contactId: ctx.contactId,
+            agentId,
+            appointment: {
+              fecha: appointment.fecha,
+              hora_inicio: appointment.hora_inicio,
+              nombre_paciente: appointment.nombre_paciente,
+              nombre_profesional: appointment.nombre_dentista,
+              nombre_tratamiento: appointment.nombre_tratamiento,
+              nombre_sucursal: appointment.nombre_sucursal,
+            },
+          }).catch(err => logger.warn({ err, appointmentId: appointment.id }, 'Failed to schedule follow-ups'))
+        }
 
         await pgStore.logAudit(ctx.db, {
           contactId: ctx.contactId, agentId,
@@ -587,7 +745,7 @@ export async function registerMedilinkTools(
           detail: {
             professional: `${prof.nombre} ${prof.apellidos}`,
             treatment: treatment.nombre,
-            date: input.date, time: input.time, duration,
+            date: input.date, time: requestedTime,
           },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',
@@ -596,13 +754,12 @@ export async function registerMedilinkTools(
         return {
           success: true,
           data: {
-            appointmentId: appointment.id,
             fecha: appointment.fecha,
             hora: appointment.hora_inicio,
             profesional: appointment.nombre_dentista,
             tratamiento: appointment.nombre_tratamiento,
             sucursal: appointment.nombre_sucursal,
-            message: 'Cita agendada exitosamente',
+            mensaje: 'Cita agendada exitosamente',
           },
         }
       } catch (err) {
@@ -613,22 +770,23 @@ export async function registerMedilinkTools(
   })
 
   // ═══════════════════════════════════════
-  // 9. RESCHEDULE APPOINTMENT
+  // 11. RESCHEDULE APPOINTMENT
   // ═══════════════════════════════════════
 
   await toolRegistry.registerTool({
     definition: {
       name: 'medilink-reschedule-appointment',
       displayName: 'Reagendar cita',
-      description: 'Reagenda una cita existente a nueva fecha/hora. Mantiene el mismo profesional obligatoriamente. Cancela los seguimientos anteriores y crea nuevos.',
+      description: 'Reagenda una cita existente. Prefiere el mismo profesional pero permite otros con las mismas categorías habilitadas. Cancela seguimientos anteriores y crea nuevos.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'number', description: 'ID de la cita a reagendar (obtenido de medilink-get-my-appointments)' },
+          appointment_id: { type: 'number', description: 'ID de la cita a reagendar' },
           new_date: { type: 'string', description: 'Nueva fecha (YYYY-MM-DD)' },
           new_time: { type: 'string', description: 'Nueva hora (HH:MM)' },
+          new_professional_name: { type: 'string', description: 'Nuevo profesional (opcional, mantiene el mismo si no se especifica)' },
         },
         required: ['appointment_id', 'new_date', 'new_time'],
       },
@@ -645,10 +803,9 @@ export async function registerMedilinkTools(
       }
 
       try {
-        // Fetch the existing appointment
         const existing = await api.getAppointment(input.appointment_id as number, 'high')
 
-        // CRITICAL: verify ownership
+        // Verify ownership
         if (!security.ownsAppointment(secCtx, existing)) {
           await pgStore.logAudit(ctx.db, {
             contactId: ctx.contactId, agentId,
@@ -661,29 +818,43 @@ export async function registerMedilinkTools(
           return { success: false, error: 'No tienes permiso para reagendar esta cita' }
         }
 
-        // Update keeping same professional
-        const updated = await api.updateAppointment(existing.id, {
+        // If changing professional, validate category compatibility
+        let newProfId = existing.id_dentista
+        if (input.new_professional_name) {
+          const newProf = cache.findProfessionalByName(input.new_professional_name as string)
+          if (!newProf) return { success: false, error: `No se encontró al profesional "${input.new_professional_name}"` }
+
+          // Check category compatibility with original professional
+          const catAssignments = await pgStore.getProfessionalCategoryAssignments(ctx.db)
+          if (catAssignments.length > 0) {
+            const origCats = new Set(catAssignments.filter(a => a.medilinkProfessionalId === existing.id_dentista).map(a => a.medilinkCategoryId))
+            const newCats = new Set(catAssignments.filter(a => a.medilinkProfessionalId === newProf.id).map(a => a.medilinkCategoryId))
+            const origHasAll = [...origCats].every(c => newCats.has(c))
+            if (!origHasAll) {
+              return { success: false, error: `El profesional ${newProf.nombre} ${newProf.apellidos} no tiene las mismas categorías habilitadas que el profesional original` }
+            }
+          }
+          newProfId = newProf.id
+        }
+
+        // Update appointment
+        const updateData: Record<string, unknown> = {
           fecha: input.new_date as string,
           hora_inicio: input.new_time as string,
-        })
+        }
+        if (newProfId !== existing.id_dentista) {
+          updateData.id_dentista = newProfId
+        }
 
-        // Cancel old follow-ups
-        const cancelledJobIds = await pgStore.cancelFollowUpsForAppointment(ctx.db, String(existing.id))
+        const updated = await api.updateAppointment(existing.id, updateData as import('./types.js').MedilinkAppointmentUpdate)
 
-        // FIX: ML-4 — Schedule new follow-ups for the rescheduled appointment
+        // Cancel old follow-ups and schedule new ones
+        await pgStore.cancelFollowUpsForAppointment(ctx.db, String(existing.id))
+
         const followupScheduler = registry.getOptional<{
           scheduleSequence(params: {
-            appointmentId: string
-            contactId: string
-            agentId: string
-            appointment: {
-              fecha: string
-              hora_inicio: string
-              nombre_paciente: string
-              nombre_profesional: string
-              nombre_tratamiento: string
-              nombre_sucursal: string
-            }
+            appointmentId: string; contactId: string; agentId: string
+            appointment: { fecha: string; hora_inicio: string; nombre_paciente: string; nombre_profesional: string; nombre_tratamiento: string; nombre_sucursal: string }
           }): Promise<void>
         }>('medilink:followup')
 
@@ -713,8 +884,7 @@ export async function registerMedilinkTools(
           detail: {
             oldDate: existing.fecha, oldTime: existing.hora_inicio,
             newDate: input.new_date, newTime: input.new_time,
-            cancelledFollowUps: cancelledJobIds.length,
-            newFollowUpsScheduled: !!followupScheduler,
+            professionalChanged: newProfId !== existing.id_dentista,
           },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',
@@ -723,11 +893,10 @@ export async function registerMedilinkTools(
         return {
           success: true,
           data: {
-            appointmentId: updated.id,
             fecha: updated.fecha,
             hora: updated.hora_inicio,
             profesional: updated.nombre_dentista,
-            message: `Cita reagendada al ${updated.fecha} a las ${updated.hora_inicio} con ${updated.nombre_dentista}`,
+            mensaje: `Cita reagendada al ${updated.fecha} a las ${updated.hora_inicio} con ${updated.nombre_dentista}`,
           },
         }
       } catch (err) {
@@ -737,189 +906,5 @@ export async function registerMedilinkTools(
     },
   })
 
-  // ═══════════════════════════════════════
-  // 10. REQUEST PATIENT EDIT
-  // ═══════════════════════════════════════
-
-  await toolRegistry.registerTool({
-    definition: {
-      name: 'medilink-request-patient-edit',
-      displayName: 'Solicitar cambio de datos',
-      description: 'Solicita un cambio en los datos del paciente (teléfono, email, dirección, nombre). Requiere verificación con documento. El cambio necesita aprobación de un administrador.',
-      category: 'medilink',
-      sourceModule: 'medilink',
-      parameters: {
-        type: 'object',
-        properties: {
-          field: {
-            type: 'string',
-            description: 'Campo a cambiar',
-            enum: ['celular', 'email', 'direccion', 'nombre', 'apellidos'],
-          },
-          new_value: { type: 'string', description: 'Nuevo valor para el campo' },
-          reason: { type: 'string', description: 'Razón del cambio (opcional)' },
-        },
-        required: ['field', 'new_value'],
-      },
-    },
-    handler: async (input, ctx) => {
-      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
-
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
-      secCtx = await security.tryAutoLink(secCtx)
-
-      const access = security.canAccess(secCtx, 'edit')
-      if (!access.allowed) {
-        return { success: false, error: 'Necesitas verificar tu identidad con documento para solicitar cambios' }
-      }
-
-      try {
-        // Get current patient data for the "old" value
-        const patient = await api.getPatient(secCtx.medilinkPatientId!, 'high')
-        const field = input.field as string
-        const oldValue = String((patient as unknown as Record<string, unknown>)[field] ?? '')
-
-        const requestId = await pgStore.createEditRequest(ctx.db, {
-          medilinkPatientId: String(secCtx.medilinkPatientId),
-          contactId: ctx.contactId,
-          agentId,
-          requestedChanges: { [field]: { old: oldValue, new: input.new_value as string } },
-          reason: input.reason as string | undefined,
-        })
-
-        await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
-          medilinkPatientId: String(secCtx.medilinkPatientId),
-          action: 'edit_request', targetType: 'patient', targetId: String(secCtx.medilinkPatientId),
-          detail: { field, oldValue, newValue: input.new_value, requestId },
-          verificationLevel: secCtx.verificationLevel,
-          result: 'pending',
-        })
-
-        // Notify admins
-        try {
-          await registry.runHook('message:send', {
-            channel: 'whatsapp',
-            to: '', // Resolved by users module
-            content: {
-              type: 'text',
-              text: `📋 Solicitud de cambio de datos:\nPaciente: ${patient.nombre} ${patient.apellidos}\nCampo: ${field}\nAnterior: ${oldValue}\nNuevo: ${input.new_value}\n\nResponde APROBAR o RECHAZAR`,
-            },
-          })
-        } catch {
-          // Notification failure is not critical
-          logger.warn('Failed to notify admins about edit request')
-        }
-
-        return {
-          success: true,
-          data: {
-            requestId,
-            message: 'Tu solicitud de cambio ha sido registrada y será revisada por un administrador.',
-          },
-        }
-      } catch (err) {
-        logger.error({ err }, 'request-patient-edit failed')
-        return { success: false, error: 'Error al crear solicitud de cambio' }
-      }
-    },
-  })
-
-  // ═══════════════════════════════════════
-  // 11. EXECUTE FOLLOW-UP (INTERNAL — called by scheduled-tasks)
-  // ═══════════════════════════════════════
-
-  await toolRegistry.registerTool({
-    definition: {
-      name: 'medilink-execute-followup',
-      displayName: 'Ejecutar seguimiento de cita',
-      description: 'Internal: ejecuta un toque de seguimiento de cita Medilink. Llamado automáticamente por tareas programadas.',
-      category: 'medilink',
-      sourceModule: 'medilink',
-      parameters: {
-        type: 'object',
-        properties: {
-          followUpId: { type: 'string', description: 'ID del follow-up a ejecutar' },
-        },
-        required: ['followUpId'],
-      },
-    },
-    handler: async (input) => {
-      try {
-        const followUpScheduler = registry.getOptional<{
-          executeFollowUp(followUpId: string): Promise<string>
-        }>('medilink:followup')
-
-        if (!followUpScheduler) {
-          return { success: false, error: 'Follow-up scheduler not available' }
-        }
-
-        const result = await followUpScheduler.executeFollowUp(input.followUpId as string)
-        return { success: true, data: { result } }
-      } catch (err) {
-        logger.error({ err, followUpId: input.followUpId }, 'execute-followup failed')
-        return { success: false, error: 'Error ejecutando seguimiento' }
-      }
-    },
-  })
-
-  // ═══════════════════════════════════════
-  // 12. GET MY FILES (PHOTOS, DOCS)
-  // ═══════════════════════════════════════
-
-  await toolRegistry.registerTool({
-    definition: {
-      name: 'medilink-get-my-files',
-      displayName: 'Ver mis archivos y documentos',
-      description: 'Lista los archivos del paciente (fotos clínicas, consentimientos, documentos). Devuelve URLs temporales para descargar. Requiere verificación con documento.',
-      category: 'medilink',
-      sourceModule: 'medilink',
-      parameters: { type: 'object', properties: {} },
-    },
-    handler: async (_input, ctx) => {
-      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
-
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
-      secCtx = await security.tryAutoLink(secCtx)
-
-      const access = security.canAccess(secCtx, 'evolutions')
-      if (!access.allowed) {
-        return { success: false, error: 'Necesitas verificar tu identidad primero' }
-      }
-
-      try {
-        const files = await api.getPatientFiles(secCtx.medilinkPatientId!)
-        // Filter out deleted files
-        const active = files.filter((f) => f.estado === 1)
-
-        await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
-          medilinkPatientId: String(secCtx.medilinkPatientId),
-          action: 'view_patient', targetType: 'files',
-          detail: { count: active.length },
-          verificationLevel: secCtx.verificationLevel,
-          result: 'success',
-        })
-
-        return {
-          success: true,
-          data: {
-            files: active.map((f) => ({
-              id: f.id,
-              nombre: f.nombre,
-              titulo: f.titulo,
-              fecha: f.fecha_creacion,
-              url: f.urls.original,
-              thumbnail: f.urls.tmb,
-            })),
-          },
-        }
-      } catch (err) {
-        logger.error({ err }, 'get-my-files failed')
-        return { success: false, error: 'Error al consultar archivos' }
-      }
-    },
-  })
-
-  logger.info('12 Medilink tools registered')
+  logger.info('11 Medilink tools registered')
 }

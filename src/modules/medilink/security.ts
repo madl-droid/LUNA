@@ -209,6 +209,12 @@ export class SecurityService {
         }
         return { allowed: true }
 
+      case 'patient_info':
+      case 'treatment_plans':
+        return ctx.verificationLevel !== 'unverified'
+          ? { allowed: true }
+          : { allowed: false, reason: 'Identity not verified' }
+
       case 'edit':
         return ctx.verificationLevel === 'document_verified'
           ? { allowed: true }
@@ -299,6 +305,49 @@ export class SecurityService {
         monto: p.monto_pago,
         fecha: p.fecha_creacion ?? p.fecha_vencimiento,
       })),
+    }
+  }
+
+  /**
+   * Filter patient data to only basic safe fields (no clinical, no PII like document).
+   * Used by get-patient-info tool.
+   */
+  filterPatientBasic(patient: import('./types.js').MedilinkPatient): Record<string, unknown> {
+    return {
+      id: patient.id,
+      nombre: patient.nombre,
+      apellidos: patient.apellidos,
+      nombre_social: patient.nombre_social,
+      celular: patient.celular,
+      email: patient.email,
+      // Excluded: rut, direccion, ciudad, comuna, observaciones, fecha_nacimiento, sexo, numero_ficha
+    }
+  }
+
+  /**
+   * Filter patient for search results — absolute minimum (no contact info).
+   */
+  filterPatientSearch(patient: import('./types.js').MedilinkPatient): Record<string, unknown> {
+    return {
+      id: patient.id,
+      nombre: patient.nombre,
+      apellidos: patient.apellidos,
+    }
+  }
+
+  /**
+   * Filter treatment plan — only administrative/financial fields, no clinical detail.
+   */
+  filterTreatmentPlan(plan: import('./types.js').MedilinkTreatmentPlan): Record<string, unknown> {
+    return {
+      id: plan.id,
+      nombre: plan.nombre,
+      tipo: plan.nombre_tipo,
+      fecha: plan.fecha,
+      finalizado: plan.finalizado,
+      deuda: plan.deuda,
+      total: plan.total,
+      abonado: plan.abonado,
     }
   }
 

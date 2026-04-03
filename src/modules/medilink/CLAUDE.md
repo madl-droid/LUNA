@@ -10,7 +10,7 @@ Provider de gestion clinica: pacientes, citas, disponibilidad, seguimiento autom
 - `cache.ts` — Redis + in-memory para datos de referencia (30d TTL) y disponibilidad (20min TTL, warm via webhooks)
 - `webhook-handler.ts` — receptor webhooks Medilink: HMAC verify, dispatch a listeners
 - `security.ts` — **CRITICO**: verificacion identidad, control acceso, filtrado datos, audit
-- `tools.ts` — 12 herramientas del agente (disponibilidad, pacientes, citas, pagos, evoluciones, archivos, execute-followup)
+- `tools.ts` — 11 herramientas del agente (search, info, disponibilidad, profesionales, prestaciones, citas, pagos, tratamientos, crear paciente, agendar, reagendar)
 - `follow-up-scheduler.ts` — secuencia 9 toques, delega a scheduled-tasks (NO crea su propio BullMQ)
 - `pg-store.ts` — migraciones (7 tablas) y queries SQL
 
@@ -53,7 +53,25 @@ Base: `MEDILINK_BASE_URL` + `/api/v1` (se agrega automaticamente si falta)
 2. **Aislamiento**: cada tool solo accede datos del paciente vinculado al contacto
 3. **Audit trail**: cada acceso se logea ANTES de retornar datos
 
-**NUNCA exponer**: `evo.datos` (notas clinicas). SI exponer: lista de evoluciones (nombre, fecha, estado).
+**NUNCA exponer**: `evo.datos` (notas clinicas), archivos clinicos, info de un paciente a otro.
+
+## Tools del agente (11)
+- `medilink-search-patient` — busca auto por telefono del contacto
+- `medilink-get-patient-info` — datos basicos del paciente vinculado (nombre, tel, email)
+- `medilink-check-availability` — slots libres (filtra sillones permitidos, excluye sobreagendamiento)
+- `medilink-get-professionals` — profesionales activos
+- `medilink-get-prestaciones` — catalogo de prestaciones habilitadas
+- `medilink-get-my-appointments` — citas del paciente
+- `medilink-get-my-payments` — pagos/deudas
+- `medilink-get-treatment-plans` — planes de tratamiento activos
+- `medilink-create-patient` — registrar paciente nuevo
+- `medilink-create-appointment` — agendar (re-verifica si cache >20min, usa prestacion default para leads)
+- `medilink-reschedule-appointment` — reagendar (valida categorias compatibles)
+
+Tools ELIMINADAS: verify-identity, request-patient-edit, execute-followup, get-my-evolutions, get-my-files
+
+## Config extra
+- `MEDILINK_ALLOWED_CHAIRS` — CSV de IDs de sillon permitidos (default "1,2"). Excluye sobreagendamiento de disponibilidad.
 
 ## Follow-up (9 toques)
 Touch 0 (inmediato) -> Touch 1 (llamada 7d antes) -> Fallback A (WhatsApp) -> Fallback B (2da llamada) -> Touch 3 (instrucciones 24h) -> Touch 4 (recordatorio 3h) -> No-show 1 -> No-show 2 -> Reactivacion
