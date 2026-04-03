@@ -335,11 +335,11 @@ function createApiRoutes(): ApiRoute[] {
         const db = _registry.getDb()
         const [profId, valorId] = await Promise.all([
           configStore.get(db, 'MEDILINK_DEFAULT_PROFESSIONAL_ID').catch(() => ''),
-          configStore.get(db, 'MEDILINK_DEFAULT_VALORACION_ID').catch(() => '34'),
+          configStore.get(db, 'MEDILINK_DEFAULT_VALORACION_ID').catch(() => '13'),
         ])
         jsonResponse(res, 200, {
           defaultProfessionalId: profId ? parseInt(profId, 10) : null,
-          defaultValoracionId: valorId ? parseInt(valorId, 10) : 34,  // 34 = "Valoración - Armonización facial"
+          defaultValoracionId: valorId ? parseInt(valorId, 10) :13,  // 13 = "Valoración - Otros"
         })
       },
     },
@@ -403,7 +403,7 @@ const manifest: ModuleManifest = {
     MEDILINK_REFERENCE_REFRESH_DAYS: numEnv(30),
     MEDILINK_DEFAULT_BRANCH_ID: z.string().default(''),
     MEDILINK_DEFAULT_DURATION_MIN: numEnvMin(5, 30),
-    MEDILINK_DEFAULT_STATUS_ID: z.string().default('13'),  // 13 = "Agenda Online" — citas creadas via chatbot
+    MEDILINK_DEFAULT_STATUS_ID: z.string().default('7'),  // 7 = "No confirmado" — estado inicial para citas creadas via chatbot
     MEDILINK_FOLLOWUP_ENABLED: boolEnv(true),
     MEDILINK_FOLLOWUP_TOUCH1_DAYS_BEFORE: numEnv(7),
     MEDILINK_FOLLOWUP_FALLBACK_A_HOURS: numEnv(3),
@@ -524,7 +524,7 @@ const manifest: ModuleManifest = {
         pgStore.getTemplates(db),
         pgStore.getProfessionalCategoryAssignments(db),
         configStore.get(db, 'MEDILINK_DEFAULT_PROFESSIONAL_ID').catch(() => ''),
-        configStore.get(db, 'MEDILINK_DEFAULT_VALORACION_ID').catch(() => '34'),
+        configStore.get(db, 'MEDILINK_DEFAULT_VALORACION_ID').catch(() => '13'),
       ])
       const consoleData: MedilinkConsoleData = {
         professionals: refData.professionals,
@@ -535,7 +535,7 @@ const manifest: ModuleManifest = {
         categories: refData.categories,
         categoryAssignments,
         defaultProfessionalId: profIdStr ? parseInt(profIdStr, 10) : null,
-        defaultValoracionId: valorIdStr ? parseInt(valorIdStr, 10) : 34,  // 34 = "Valoración - Armonización facial"
+        defaultValoracionId: valorIdStr ? parseInt(valorIdStr, 10) :13,  // 13 = "Valoración - Otros"
       }
       return renderMedilinkConsole(consoleData, lang)
     })

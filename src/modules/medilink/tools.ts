@@ -659,7 +659,7 @@ export async function registerMedilinkTools(
           const defaultValId = await registry.getDb().query(
             `SELECT value FROM config_store WHERE key = 'MEDILINK_DEFAULT_VALORACION_ID'`,
           )
-          const valId = parseInt(defaultValId.rows[0]?.value ?? '34', 10)  // 34 = "Valoración - Armonización facial" default
+          const valId = parseInt(defaultValId.rows[0]?.value ?? '13', 10)  // 13 = "Valoración - Otros" default
           treatment = (ref.treatments ?? []).find(t => t.id === valId) ?? null
         }
 
