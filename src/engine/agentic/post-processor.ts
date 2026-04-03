@@ -129,8 +129,9 @@ export async function postProcess(
 // ── Internal helpers ──
 
 /**
- * Run the criticizer: ask a fast model to review and optionally improve the response.
- * Asks a fast model to review and optionally improve the agentic loop response.
+ * Run the criticizer: two-step process.
+ * Step 1 — Reviewer LLM: evaluates the response and returns detailed feedback or "APPROVED".
+ * Step 2 — Rewriter LLM (only if feedback): takes original response + feedback and produces a clean improved response.
  * Returns improved text, or null if the original is fine.
  */
 async function runCriticizer(
@@ -139,7 +140,27 @@ async function runCriticizer(
   config: EngineConfig,
   registry: Registry,
 ): Promise<string | null> {
-  // Load criticizer prompt from prompts:service if available
+  // Step 1: Get feedback from reviewer
+  const feedback = await getReviewFeedback(responseText, ctx, config, registry)
+  if (!feedback) return null // APPROVED — original is fine
+
+  logger.debug({ traceId: ctx.traceId, feedbackLength: feedback.length }, 'Criticizer has feedback — rewriting')
+
+  // Step 2: Rewrite using feedback
+  const improved = await rewriteWithFeedback(responseText, feedback, ctx, config)
+  return improved
+}
+
+/**
+ * Step 1: Ask the reviewer LLM to evaluate the response.
+ * Returns feedback text if improvements are needed, or null if APPROVED.
+ */
+async function getReviewFeedback(
+  responseText: string,
+  ctx: ContextBundle,
+  config: EngineConfig,
+  registry: Registry,
+): Promise<string | null> {
   const promptsService = registry.getOptional<{
     getPrompt(slot: string, variant?: string): Promise<string>
   }>('prompts:service')
@@ -148,17 +169,19 @@ async function runCriticizer(
     ? await promptsService.getPrompt('criticizer').catch(() => null)
     : null
 
-  const system = criticizerPrompt || `You are a quality reviewer for a sales agent's response. Review the response for:
-1. Accuracy — does it answer the question?
+  const system = criticizerPrompt || `You are a quality reviewer for a sales agent's response. Evaluate it for:
+1. Accuracy — does it correctly answer the question?
 2. Tone — is it professional and warm?
 3. Completeness — is anything missing?
 4. Brevity — is it unnecessarily long?
 
-If the response is good, reply with exactly: APPROVED
-If it needs changes, reply with the improved response directly (no explanation, no preamble).`
+If the response is good as-is, reply with exactly: APPROVED
+
+If improvements are needed, explain clearly what should be changed and why.
+Do NOT rewrite the response — only provide your feedback.`
 
   const result = await callLLM({
-    task: 'criticizer',
+    task: 'criticizer-review',
     provider: config.classifyProvider,
     model: config.classifyModel,
     system,
@@ -168,13 +191,55 @@ If it needs changes, reply with the improved response directly (no explanation, 
         content: `User message: ${ctx.normalizedText.slice(0, 500)}\n\nAgent response to review:\n${responseText}`,
       },
     ],
-    maxTokens: config.maxOutputTokens,
+    maxTokens: 1024,
     temperature: 0.2,
   })
 
-  const critText = result.text.trim()
-  if (critText === 'APPROVED' || critText.length < 10) {
-    return null // Original is fine
+  const feedback = result.text.trim()
+  if (feedback.toUpperCase().startsWith('APPROVED') || feedback.length < 10) {
+    return null
   }
-  return critText
+  return feedback
+}
+
+/**
+ * Step 2: Rewrite the original response incorporating the reviewer's feedback.
+ * Returns a clean improved response — no analysis, no preamble.
+ */
+async function rewriteWithFeedback(
+  originalResponse: string,
+  feedback: string,
+  ctx: ContextBundle,
+  config: EngineConfig,
+): Promise<string> {
+  const system = `You are a response editor for a sales agent. You receive the agent's original response and feedback from a quality reviewer. Your job is to rewrite the response incorporating the feedback.
+
+Rules:
+- Return ONLY the improved response text
+- No explanation, no preamble, no labels, no headers
+- Keep the same language as the original response
+- Preserve the original intent and information — only improve what the feedback indicates`
+
+  const result = await callLLM({
+    task: 'criticizer-rewrite',
+    provider: config.classifyProvider,
+    model: config.classifyModel,
+    system,
+    messages: [
+      {
+        role: 'user',
+        content: `Original response:\n${originalResponse}\n\nReviewer feedback:\n${feedback}\n\nRewrite the response incorporating this feedback. Return ONLY the improved response.`,
+      },
+    ],
+    maxTokens: config.maxOutputTokens,
+    temperature: 0.3,
+  })
+
+  const rewritten = result.text.trim()
+  // Safety fallback: if rewriter returns something suspiciously short or empty, keep original
+  if (rewritten.length < 10) {
+    logger.warn({ traceId: ctx.traceId }, 'Criticizer rewriter returned empty/short text — keeping original')
+    return originalResponse
+  }
+  return rewritten
 }
