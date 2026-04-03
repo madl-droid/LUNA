@@ -55,6 +55,8 @@ export async function runAgenticLoop(
   config: AgenticConfig,
   registry: Registry,
   engineConfig: EngineConfig,
+  /** Full user message with context layers (history, memory, contact info, etc.) */
+  userMessage?: string,
 ): Promise<AgenticResult> {
   // ── 5.1 Initialize state ──
   const startMs = Date.now()
@@ -80,12 +82,11 @@ export async function runAgenticLoop(
   }, 'Agentic loop starting')
 
   // ── 5.3 Build initial messages array ──
-  // The user message is ctx.normalizedText.
-  // Attachment context is already injected into history by Phase 1.
-  // The system prompt (built by Instance 2) includes conversation history from ctx.history.
-  // The agentic loop only needs the current message as the user turn.
+  // The user message includes full context layers (contact info, history, memory, knowledge, etc.)
+  // built by buildContextLayers() in the prompt builder, plus the actual user message.
+  // Falls back to raw normalizedText if userMessage is not provided (backwards compat).
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-    { role: 'user', content: ctx.normalizedText },
+    { role: 'user', content: userMessage ?? ctx.normalizedText },
   ]
 
   // ── 5.4 Main loop ──
