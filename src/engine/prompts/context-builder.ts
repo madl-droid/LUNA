@@ -10,6 +10,28 @@ import type { Registry } from '../../kernel/registry.js'
 import type { ConfigStore } from '../../modules/lead-scoring/config-store.js'
 import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 
+/**
+ * Formats a timestamp as a short relative label for prompt injection.
+ * Examples: "09:41", "ayer 14:23", "hace 3 días"
+ */
+function relativeTime(ts: Date, now = new Date()): string {
+  const diffMs = now.getTime() - ts.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffH = Math.floor(diffMs / 3600000)
+  const diffD = Math.floor(diffMs / 86400000)
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const hhmm = `${pad(ts.getHours())}:${pad(ts.getMinutes())}`
+
+  if (diffMin < 2) return 'ahora'
+  if (diffH < 1) return `hace ${diffMin} min`
+  if (diffH < 6) return `hace ${diffH}h`
+  if (diffD < 1) return hhmm                       // mismo día → solo hora
+  if (diffD < 2) return `ayer ${hhmm}`
+  if (diffD < 7) return `hace ${diffD} días`
+  return `${ts.toLocaleDateString('es', { day: 'numeric', month: 'short' })} ${hhmm}`
+}
+
 /** Maps KnowledgeItem sourceType to the Google API tool that can query it live */
 const LIVE_QUERY_TOOL: Record<string, string> = {
   sheets: 'sheets-read',
@@ -228,9 +250,11 @@ export async function buildContextLayers(
   if (ctx.history.length > 0) {
     parts.push(`[Historial reciente:]`)
     const recent = ctx.history.slice(-5)
+    const now = new Date()
     for (const msg of recent) {
       const label = msg.role === 'user' ? 'Contacto' : 'Agente'
-      parts.push(`${label}: ${escapeForPrompt(msg.content.substring(0, 200), 250)}`)
+      const ts = msg.timestamp ? ` [${relativeTime(msg.timestamp, now)}]` : ''
+      parts.push(`${label}${ts}: ${escapeForPrompt(msg.content.substring(0, 200), 250)}`)
     }
   }
 
@@ -265,7 +289,8 @@ export async function buildContextLayers(
 
   // ── 19. The actual user message ──────────────────────────────────────────
   if (includeUserMessage && !isProactive) {
-    parts.push(`\nMensaje del contacto:\n${wrapUserContent(ctx.normalizedText, userMessageLabel)}`)
+    const msgTs = ctx.message.timestamp ? ` [${relativeTime(ctx.message.timestamp)}]` : ''
+    parts.push(`\nMensaje del contacto${msgTs}:\n${wrapUserContent(ctx.normalizedText, userMessageLabel)}`)
   }
 
   return parts.join('\n')
