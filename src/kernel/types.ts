@@ -46,7 +46,7 @@ export interface HookMap {
 
   // Contactos
   'contact:new':            [{ contactId: string; channel: string }, void]
-  'contact:status_changed': [{ contactId: string; agentId?: string; from: string; to: string }, void]
+  'contact:status_changed': [{ contactId: string; from: string; to: string }, void]
 
   // Usuarios (users module)
   'user:resolved':          [{ senderId: string; channel: string; userType: string; listName: string }, void]
@@ -264,7 +264,6 @@ export interface CallHookPayload {
   direction: 'inbound' | 'outbound'
   from: string
   to: string
-  agentId?: string
   contactId?: string
 }
 
@@ -274,7 +273,6 @@ export interface CallConnectedPayload {
   direction: 'inbound' | 'outbound'
   from: string
   to: string
-  agentId?: string
   contactId?: string
   connectedAt: Date
 }
@@ -285,7 +283,6 @@ export interface CallEndedPayload {
   direction: 'inbound' | 'outbound'
   from: string
   to: string
-  agentId?: string
   contactId?: string
   durationSeconds: number
   endReason: string

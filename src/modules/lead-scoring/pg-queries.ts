@@ -9,16 +9,7 @@ import type { LeadSummary, LeadDetail, QualificationStatus, StatusMetric } from 
 const logger = pino({ name: 'lead-scoring:db' })
 
 export class LeadQueries {
-  private agentId: string
-
-  constructor(private db: Pool, agentId: string = 'luna') {
-    this.agentId = agentId
-  }
-
-  /** Subquery to resolve agent UUID from slug */
-  private get agentSubquery(): string {
-    return `(SELECT id FROM agents WHERE slug = '${this.agentId}' LIMIT 1)`
-  }
+  constructor(private db: Pool) {}
 
   /**
    * List leads with optional filters and pagination.
@@ -77,7 +68,7 @@ export class LeadQueries {
     const countQuery = `
       SELECT COUNT(DISTINCT c.id) AS total
       FROM contacts c
-      JOIN agent_contacts ac ON ac.contact_id = c.id AND ac.agent_id = ${this.agentSubquery}
+      JOIN agent_contacts ac ON ac.contact_id = c.id
       LEFT JOIN contact_channels ch ON ch.contact_id = c.id AND ch.is_primary = true
       ${whereClause}
     `
@@ -103,7 +94,7 @@ export class LeadQueries {
         lc.campaign_name AS latest_campaign_name,
         lc.campaign_visible_id AS latest_campaign_visible_id
       FROM contacts c
-      JOIN agent_contacts ac ON ac.contact_id = c.id AND ac.agent_id = ${this.agentSubquery}
+      JOIN agent_contacts ac ON ac.contact_id = c.id
       LEFT JOIN contact_channels ch ON ch.contact_id = c.id AND ch.is_primary = true
       LEFT JOIN (
         SELECT contact_id,
@@ -178,7 +169,7 @@ export class LeadQueries {
           lc.campaign_name AS latest_campaign_name,
           lc.campaign_visible_id AS latest_campaign_visible_id
         FROM contacts c
-        LEFT JOIN agent_contacts ac ON ac.contact_id = c.id AND ac.agent_id = ${this.agentSubquery}
+        LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
         LEFT JOIN (
           SELECT contact_id,
                  MAX(last_activity_at) AS last_activity_at,
@@ -272,12 +263,11 @@ export class LeadQueries {
       params.push(status)
     }
 
-    params.push(this.agentId, contactId)
+    params.push(contactId)
     await this.db.query(
       `UPDATE agent_contacts
        SET ${setClauses.join(', ')}, updated_at = NOW()
-       WHERE agent_id = (SELECT id FROM agents WHERE slug = $${idx} LIMIT 1)
-         AND contact_id = $${idx + 1}`,
+       WHERE contact_id = $${idx}`,
       params,
     )
   }
@@ -297,7 +287,6 @@ export class LeadQueries {
        FROM agent_contacts ac
        JOIN contacts c ON c.id = ac.contact_id
        WHERE c.contact_type = 'lead'
-         AND ac.agent_id = ${this.agentSubquery}
          AND ac.lead_status NOT IN ('blocked', 'converted', 'directo')`,
     )
 
@@ -326,8 +315,7 @@ export class LeadQueries {
            SET qualification_score = $1,
                lead_status = COALESCE($2, lead_status),
                updated_at = NOW()
-           WHERE agent_id = ${this.agentSubquery}
-             AND contact_id = $3`,
+           WHERE contact_id = $3`,
           [u.score, u.status, u.contactId],
         )
         updated++
@@ -354,7 +342,6 @@ export class LeadQueries {
        FROM agent_contacts ac
        JOIN contacts c ON c.id = ac.contact_id
        WHERE c.contact_type = 'lead'
-         AND ac.agent_id = ${this.agentSubquery}
        GROUP BY ac.lead_status`,
     )
 
@@ -379,7 +366,6 @@ export class LeadQueries {
 
     const conditions: string[] = [
       "c.contact_type = 'lead'",
-      `ac.agent_id = ${this.agentSubquery}`,
     ]
     const params: unknown[] = []
     let paramIdx = 1
@@ -460,8 +446,7 @@ export class LeadQueries {
        SET qualification_data = COALESCE(qualification_data, '{}'::jsonb) || $1::jsonb,
            lead_status = $2,
            updated_at = NOW()
-       WHERE agent_id = ${this.agentSubquery}
-         AND contact_id = $3`,
+       WHERE contact_id = $3`,
       [JSON.stringify({ _disqualified: reasonKey }), targetStatus, contactId],
     )
   }

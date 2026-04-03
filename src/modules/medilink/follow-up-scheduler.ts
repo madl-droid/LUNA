@@ -72,7 +72,6 @@ export class FollowUpScheduler {
   async scheduleSequence(params: {
     appointmentId: string
     contactId: string
-    agentId: string
     appointment: {
       fecha: string
       hora_inicio: string
@@ -95,7 +94,7 @@ export class FollowUpScheduler {
       return
     }
 
-    const { appointmentId, contactId, agentId, appointment } = params
+    const { appointmentId, contactId, appointment } = params
     const appointmentDate = new Date(`${appointment.fecha}T${appointment.hora_inicio}`)
 
     if (isNaN(appointmentDate.getTime())) {
@@ -147,7 +146,6 @@ export class FollowUpScheduler {
       const followUpId = await pgStore.createFollowUp(this.db, {
         medilinkAppointmentId: appointmentId,
         contactId,
-        agentId,
         appointmentDate,
         touchType: touch.type,
         channel: touch.channel,

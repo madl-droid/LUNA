@@ -78,8 +78,8 @@ Tools ELIMINADAS: verify-identity, request-patient-edit, execute-followup, get-m
 4. Ninguno → usa `MEDILINK_DEFAULT_PROFESSIONAL_ID` (flujo lead)
 
 ## Working Memory (working-memory.ts)
-Clase generica `WorkingMemory(redis, namespace, agentId, ttlS=6h)` — reutilizable por cualquier modulo.
-Clave Redis: `wmem:{namespace}:{agentId}:{contactId}:{field}`. TTL: 6 horas.
+Clase generica `WorkingMemory(redis, namespace, ttlS=6h)` — reutilizable por cualquier modulo.
+Clave Redis: `wmem:{namespace}:{contactId}:{field}`. TTL: 6 horas.
 
 Campos que medilink escribe automaticamente:
 - `patient_id` — al buscar/crear/vincular paciente
@@ -88,7 +88,7 @@ Campos que medilink escribe automaticamente:
 
 **Para usar en otro modulo:**
 ```typescript
-const wmem = new WorkingMemory(redis, 'mi-modulo', agentId)
+const wmem = new WorkingMemory(redis, 'mi-modulo')
 await wmem.set(contactId, 'mi-campo', valor)
 await wmem.get<Tipo>(contactId, 'mi-campo')
 await wmem.del(contactId, 'mi-campo')

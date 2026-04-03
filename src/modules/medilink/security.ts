@@ -30,7 +30,7 @@ export class SecurityService {
    * Resolve a contact's security context: who they are in Medilink, verification level.
    * This is called at the start of every tool that accesses patient data.
    */
-  async resolveContext(contactId: string, agentId: string): Promise<SecurityContext> {
+  async resolveContext(contactId: string): Promise<SecurityContext> {
     // Get medilink data + phone from contact_channels in one query
     const result = await this.db.query(
       `SELECT
@@ -40,8 +40,8 @@ export class SecurityService {
           ORDER BY is_primary DESC NULLS LAST, last_used_at DESC NULLS LAST
           LIMIT 1) AS channel_identifier
        FROM agent_contacts ac
-       WHERE ac.contact_id = $1 AND ac.agent_id = $2`,
-      [contactId, agentId],
+       WHERE ac.contact_id = $1`,
+      [contactId],
     )
 
     const row = result.rows[0]
@@ -53,7 +53,6 @@ export class SecurityService {
     return {
       contactId,
       contactPhone: phone,
-      agentId,
       medilinkPatientId: agentData.medilink_patient_id ? Number(agentData.medilink_patient_id) : null,
       verificationLevel: (agentData.medilink_verified as VerificationLevel) ?? 'unverified',
     }
@@ -73,11 +72,10 @@ export class SecurityService {
 
       if (patients.length === 1 && this.config.MEDILINK_AUTO_LINK_SINGLE_MATCH) {
         const patient = patients[0]!
-        await this.linkContactToPatient(ctx.contactId, ctx.agentId, patient.id, 'phone_matched')
+        await this.linkContactToPatient(ctx.contactId, patient.id, 'phone_matched')
 
         await pgStore.logAudit(this.db, {
           contactId: ctx.contactId,
-          agentId: ctx.agentId,
           medilinkPatientId: String(patient.id),
           action: 'identity_check',
           targetType: 'patient',
@@ -115,7 +113,6 @@ export class SecurityService {
       if (patients.length === 0) {
         await pgStore.logAudit(this.db, {
           contactId: ctx.contactId,
-          agentId: ctx.agentId,
           action: 'identity_check',
           targetType: 'identity',
           detail: { method: 'document', documentNumber, result: 'not_found' },
@@ -130,7 +127,6 @@ export class SecurityService {
       if (ctx.medilinkPatientId && ctx.medilinkPatientId !== patient.id) {
         await pgStore.logAudit(this.db, {
           contactId: ctx.contactId,
-          agentId: ctx.agentId,
           medilinkPatientId: String(ctx.medilinkPatientId),
           action: 'identity_check',
           targetType: 'identity',
@@ -153,9 +149,9 @@ export class SecurityService {
               WHERE contact_id = ac.contact_id
               ORDER BY is_primary DESC NULLS LAST LIMIT 1) AS existing_phone
            FROM agent_contacts ac
-           WHERE ac.agent_id = $1 AND ac.agent_data->>'medilink_patient_id' = $2
-           AND ac.contact_id != $3`,
-          [ctx.agentId, String(patient.id), ctx.contactId],
+           WHERE ac.agent_data->>'medilink_patient_id' = $1
+           AND ac.contact_id != $2`,
+          [String(patient.id), ctx.contactId],
         )
         if (existing.rows.length > 0) {
           const existingRaw = (existing.rows[0]?.existing_phone ?? '') as string
@@ -166,7 +162,6 @@ export class SecurityService {
             // Truly different person — escalate
             await pgStore.logAudit(this.db, {
               contactId: ctx.contactId,
-              agentId: ctx.agentId,
               action: 'identity_check',
               targetType: 'identity',
               detail: { method: 'document', documentNumber, result: 'already_claimed_different_phone' },
@@ -183,11 +178,10 @@ export class SecurityService {
         }
       }
 
-      await this.linkContactToPatient(ctx.contactId, ctx.agentId, patient.id, 'document_verified')
+      await this.linkContactToPatient(ctx.contactId, patient.id, 'document_verified')
 
       await pgStore.logAudit(this.db, {
         contactId: ctx.contactId,
-        agentId: ctx.agentId,
         medilinkPatientId: String(patient.id),
         action: 'identity_check',
         targetType: 'patient',
@@ -388,14 +382,13 @@ export class SecurityService {
 
   async linkContactToPatient(
     contactId: string,
-    agentId: string,
     patientId: number,
     level: VerificationLevel,
   ): Promise<void> {
     await this.db.query(
       `UPDATE agent_contacts
        SET agent_data = agent_data || $1::jsonb
-       WHERE contact_id = $2 AND agent_id = $3`,
+       WHERE contact_id = $2`,
       [
         JSON.stringify({
           medilink_patient_id: String(patientId),
@@ -403,7 +396,6 @@ export class SecurityService {
           medilink_verified_at: new Date().toISOString(),
         }),
         contactId,
-        agentId,
       ],
     )
     logger.info({ contactId, patientId, level }, 'Contact linked to Medilink patient')
@@ -413,12 +405,12 @@ export class SecurityService {
    * Mark contact as a new lead (no Medilink record found by phone).
    * Prevents repeated auto-link attempts on every message.
    */
-  async setLeadFlag(contactId: string, agentId: string): Promise<void> {
+  async setLeadFlag(contactId: string): Promise<void> {
     await this.db.query(
       `UPDATE agent_contacts
        SET agent_data = agent_data || '{"medilink_is_lead": true}'::jsonb
-       WHERE contact_id = $1 AND agent_id = $2`,
-      [contactId, agentId],
+       WHERE contact_id = $1`,
+      [contactId],
     )
   }
 }
