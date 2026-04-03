@@ -20,6 +20,10 @@ export interface TTSConfig {
   TTS_VOICE_STYLES?: boolean
   TTS_TEMPERATURE?: number
   TTS_SPEAKING_RATE?: number
+  /** Accent style prompt injected as system instruction for TTS (from AGENT_ACCENT_PROMPT) */
+  TTS_ACCENT_STYLE?: string
+  /** Voice instructions from identity config (custom speaking style) */
+  TTS_VOICE_INSTRUCTIONS?: string
 }
 
 export interface SynthesizeResult {
@@ -116,21 +120,33 @@ export class TTSService {
       const temperature = this.config.TTS_TEMPERATURE ?? 1.2
       const rateTag = speakingRateToTag(this.config.TTS_SPEAKING_RATE ?? 1.0)
       const textToSynthesize = rateTag ? `${rateTag} ${text}` : text
+
+      // Build request body with optional system instruction for accent/voice style
+      const requestBody: Record<string, unknown> = {
+        contents: [{ role: 'user', parts: [{ text: textToSynthesize }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          temperature,
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: this.config.TTS_VOICE_NAME || 'Kore' },
+            },
+          },
+        },
+      }
+
+      // Inject accent + voice instructions as system instruction
+      const styleParts: string[] = []
+      if (this.config.TTS_ACCENT_STYLE) styleParts.push(this.config.TTS_ACCENT_STYLE)
+      if (this.config.TTS_VOICE_INSTRUCTIONS) styleParts.push(this.config.TTS_VOICE_INSTRUCTIONS)
+      if (styleParts.length > 0) {
+        requestBody.systemInstruction = { parts: [{ text: styleParts.join('\n') }] }
+      }
+
       const response = await fetch(`${GEMINI_TTS_API_URL}?key=${this.config.TTS_GOOGLE_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: textToSynthesize }] }],
-          generationConfig: {
-            responseModalities: ['AUDIO'],
-            temperature,
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: this.config.TTS_VOICE_NAME || 'Kore' },
-              },
-            },
-          },
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {

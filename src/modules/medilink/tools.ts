@@ -239,12 +239,17 @@ export async function registerMedilinkTools(
     definition: {
       name: 'medilink-search-patient',
       displayName: 'Buscar paciente',
-      description: 'Busca automáticamente si el contacto actual ya es paciente registrado (por su número de teléfono). Si encuentra un match único, lo vincula automáticamente. No requiere parámetros.',
+      description: 'Busca si el contacto ya es paciente registrado. Sin parámetros: busca automáticamente por teléfono. Con document_number: busca por número de documento/cédula. Si encuentra un match único, lo vincula automáticamente.',
       category: 'medilink',
       sourceModule: 'medilink',
-      parameters: { type: 'object', properties: {} },
+      parameters: {
+        type: 'object',
+        properties: {
+          document_number: { type: 'string', description: 'Número de documento/cédula para buscar manualmente (sin puntos ni guiones). Usar cuando el contacto dice que ya es paciente pero no se encontró por teléfono.' },
+        },
+      },
     },
-    handler: async (_input, ctx) => {
+    handler: async (input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
       try {
@@ -268,7 +273,35 @@ export async function registerMedilinkTools(
           }
         }
 
-        // Search by phone
+        // Manual search by document number (when user provides cédula/RUT)
+        const docNumber = input.document_number as string | undefined
+        if (docNumber) {
+          const cleanDoc = docNumber.replace(/[.\-\s]/g, '')
+          const patients = await api.findPatientByDocument(cleanDoc)
+
+          await pgStore.logAudit(ctx.db, {
+            contactId: ctx.contactId, agentId,
+            action: 'search_patient', targetType: 'patient',
+            detail: { method: 'document', docLast4: cleanDoc.slice(-4), results: patients.length },
+            result: 'success',
+          })
+
+          if (patients.length === 1) {
+            const patient = patients[0]!
+            await security.linkContactToPatient(ctx.contactId, agentId, patient.id, 'document_verified')
+            await wmem.set(ctx.contactId, ML.PATIENT_ID, patient.id)
+            return {
+              success: true,
+              data: { found: true, patient: security.filterPatientSearch(patient), linked: true, method: 'document' },
+            }
+          }
+          if (patients.length > 1) {
+            return { success: true, data: { found: false, reason: 'multiple_matches', count: patients.length, method: 'document' } }
+          }
+          return { success: true, data: { found: false, reason: 'not_found', method: 'document' } }
+        }
+
+        // Auto-search by phone (default — no params)
         const phone = secCtx.contactPhone
         if (!phone) return { success: true, data: { found: false, reason: 'no_phone' } }
 

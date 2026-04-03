@@ -113,7 +113,16 @@ const manifest: ModuleManifest = {
       logger.warn('TTS module active but no API key configured (set GOOGLE_AI_API_KEY in LLM settings)')
     }
 
-    const ttsConfig = { ...config, TTS_GOOGLE_API_KEY: apiKey }
+    // Load accent style and voice instructions from config_store (set by prompts module)
+    const accentStyle = await configStore.get(pool, 'AGENT_ACCENT_PROMPT').catch(() => '') ?? ''
+    const voiceInstructions = await configStore.get(pool, 'TTS_VOICE_INSTRUCTIONS').catch(() => '') ?? ''
+
+    const ttsConfig = {
+      ...config,
+      TTS_GOOGLE_API_KEY: apiKey,
+      TTS_ACCENT_STYLE: accentStyle,
+      TTS_VOICE_INSTRUCTIONS: voiceInstructions,
+    }
     service = new TTSService(ttsConfig)
     registry.provide('tts:service', service)
 
