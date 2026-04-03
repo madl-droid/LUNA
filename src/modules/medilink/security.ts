@@ -31,17 +31,24 @@ export class SecurityService {
    * This is called at the start of every tool that accesses patient data.
    */
   async resolveContext(contactId: string, agentId: string): Promise<SecurityContext> {
-    // Get contact's phone and stored medilink data from agent_contacts
+    // Get medilink data + phone from contact_channels in one query
     const result = await this.db.query(
-      `SELECT contact_id, agent_data
-       FROM agent_contacts
-       WHERE contact_id = $1 AND agent_id = $2`,
+      `SELECT
+         ac.agent_data,
+         (SELECT channel_identifier FROM contact_channels
+          WHERE contact_id = $1
+          ORDER BY is_primary DESC NULLS LAST, last_used_at DESC NULLS LAST
+          LIMIT 1) AS channel_identifier
+       FROM agent_contacts ac
+       WHERE ac.contact_id = $1 AND ac.agent_id = $2`,
       [contactId, agentId],
     )
 
     const row = result.rows[0]
     const agentData = (row?.agent_data ?? {}) as Record<string, unknown>
-    const phone = this.extractPhoneFromContactId(contactId)
+    // channel_identifier is e.g. "573155524620@s.whatsapp.net" or just "573155524620"
+    const rawIdentifier = (row?.channel_identifier ?? '') as string
+    const phone = rawIdentifier.replace(/@.*$/, '').replace(/[^0-9+]/g, '')
 
     return {
       contactId,
@@ -376,10 +383,16 @@ export class SecurityService {
     logger.info({ contactId, patientId, level }, 'Contact linked to Medilink patient')
   }
 
-  // ─── Helpers ───────────────────────────
-
-  private extractPhoneFromContactId(contactId: string): string {
-    // contactId format is typically "phone@s.whatsapp.net" or just phone
-    return contactId.replace(/@.*$/, '').replace(/[^0-9+]/g, '')
+  /**
+   * Mark contact as a new lead (no Medilink record found by phone).
+   * Prevents repeated auto-link attempts on every message.
+   */
+  async setLeadFlag(contactId: string, agentId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE agent_contacts
+       SET agent_data = agent_data || '{"medilink_is_lead": true}'::jsonb
+       WHERE contact_id = $1 AND agent_id = $2`,
+      [contactId, agentId],
+    )
   }
 }

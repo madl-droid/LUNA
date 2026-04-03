@@ -80,6 +80,15 @@ export async function buildContextLayers(
     parts.push(`[Contacto nuevo, no registrado]`)
   }
 
+  // ── 2b. Medilink patient status ─────────────────────────────────────────
+  if (registry && ctx.contactId) {
+    const getMedilinkContext = registry.getOptional<(contactId: string, agentId: string) => Promise<string | null>>('medilink:get_context_line')
+    if (getMedilinkContext) {
+      const medilinkLine = await getMedilinkContext(ctx.contactId, ctx.agentId).catch(() => null)
+      if (medilinkLine) parts.push(medilinkLine)
+    }
+  }
+
   // ── 3. Lead status ──────────────────────────────────────────────────────
   if (ctx.leadStatus) {
     parts.push(`[Estado del lead: ${ctx.leadStatus}]`)

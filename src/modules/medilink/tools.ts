@@ -692,6 +692,35 @@ export async function registerMedilinkTools(
           },
         }
       } catch (err) {
+        // If document already exists in Medilink, find by doc and link instead of failing
+        const isDocDuplicate = err instanceof Error && (
+          (err as import('./api-client.js').MedilinkApiError).status === 422 ||
+          (err as import('./api-client.js').MedilinkApiError).status === 409 ||
+          (err as import('./api-client.js').MedilinkApiError).status === 400
+        ) && /rut|documento|duplicado|ya exist/i.test((err as import('./api-client.js').MedilinkApiError).body ?? '')
+
+        if (isDocDuplicate && ctx.contactId) {
+          try {
+            const docNumber = (input.document_number as string).replace(/[.\-\s]/g, '')
+            const patients = await api.findPatientByDocument(docNumber)
+            if (patients.length === 1) {
+              const existing = patients[0]!
+              await security.linkContactToPatient(ctx.contactId, agentId, existing.id, 'document_verified')
+              await wmem.set(ctx.contactId, ML.PATIENT_ID, existing.id)
+              return {
+                success: true,
+                data: {
+                  patientId: existing.id,
+                  name: `${existing.nombre} ${existing.apellidos}`,
+                  message: 'Ya tenías ficha en el sistema — vinculado exitosamente',
+                },
+              }
+            }
+          } catch (innerErr) {
+            logger.warn({ innerErr }, 'create-patient doc-fallback failed')
+          }
+        }
+
         logger.error({ err }, 'create-patient failed')
         return { success: false, error: 'Error al registrar paciente: ' + String(err) }
       }

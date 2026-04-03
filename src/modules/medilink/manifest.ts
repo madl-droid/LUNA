@@ -514,6 +514,54 @@ const manifest: ModuleManifest = {
     // Register agent tools
     await registerMedilinkTools(registry, apiClient, cache, security)
 
+    const sec = security! // security is always set here (initialized just above)
+
+    // ── Auto-link service ──────────────────────────────────────────────────
+    // Called by engine intake on every message (no-op if already linked).
+    // Searches Medilink by phone; links if single match, marks as lead otherwise.
+    registry.provide('medilink:auto_link', async (contactId: string, agentId: string): Promise<void> => {
+      try {
+        const secCtx = await sec.resolveContext(contactId, agentId)
+        if (secCtx.medilinkPatientId) return // already linked — skip
+        // Skip if already determined to be a lead (avoids repeated API calls)
+        const existing = await db.query(
+          `SELECT agent_data->>'medilink_is_lead' AS is_lead FROM agent_contacts WHERE contact_id = $1 AND agent_id = $2`,
+          [contactId, agentId],
+        )
+        if (existing.rows[0]?.is_lead === 'true') return
+
+        const linked = await sec.tryAutoLink(secCtx)
+        if (!linked.medilinkPatientId) {
+          // No match or multiple results — mark as lead so we don't retry every message
+          await sec.setLeadFlag(contactId, agentId)
+        }
+      } catch (err) {
+        logger.warn({ err, contactId }, 'medilink:auto_link failed')
+      }
+    })
+
+    // ── Context line service ───────────────────────────────────────────────
+    // Returns a single context string for the LLM describing the patient status.
+    registry.provide('medilink:get_context_line', async (contactId: string, agentId: string): Promise<string | null> => {
+      try {
+        const result = await db.query(
+          `SELECT agent_data FROM agent_contacts WHERE contact_id = $1 AND agent_id = $2`,
+          [contactId, agentId],
+        )
+        const agentData = (result.rows[0]?.agent_data ?? {}) as Record<string, unknown>
+        if (agentData.medilink_patient_id) {
+          const level = (agentData.medilink_verified as string) ?? 'phone_matched'
+          return `[Medilink: paciente registrado vinculado (ID ${agentData.medilink_patient_id}, verificación: ${level}) — usar ID directamente al agendar]`
+        }
+        if (agentData.medilink_is_lead === true) {
+          return `[Medilink: lead nuevo — no tiene ficha en el sistema, debe registrarse antes de agendar]`
+        }
+        return null
+      } catch {
+        return null
+      }
+    })
+
     // Provide renderSection for console: professionals + follow-up templates
     registry.provide('medilink:renderSection', async (lang: 'es' | 'en') => {
       const refData = await cache!.getReferenceData()
