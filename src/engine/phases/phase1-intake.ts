@@ -160,6 +160,17 @@ export async function phase1Intake(
     }
   }
 
+  // 10c. Medilink auto-link: identify if contact is existing patient or new lead
+  // Runs synchronously so LLM gets the status in this same message.
+  if (contact?.id) {
+    const medilinkAutoLink = registry.getOptional<(contactId: string, agentId: string) => Promise<void>>('medilink:auto_link')
+    if (medilinkAutoLink) {
+      await medilinkAutoLink(contact.id, agentId).catch((err: unknown) => {
+        logger.warn({ err, traceId }, 'medilink:auto_link failed — continuing without patient status')
+      })
+    }
+  }
+
   // 11. Load or create session (channel-specific timeout if available)
   const sessionWindowMs = getChannelSessionTimeout(registry, message.channelName, config.sessionReopenWindowMs)
   const session = await loadOrCreateSession(
