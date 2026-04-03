@@ -143,6 +143,7 @@ export async function persistToMemory(
   registry: Registry,
   _db: Pool,
   contactId: string,
+  startedAt: Date,
   transcript: TranscriptEntry[],
   _summary: string | null,
 ): Promise<void> {
@@ -171,19 +172,20 @@ export async function persistToMemory(
       const sessionId = `voice-${Date.now()}`
       let counter = 0
 
-      // Save significant turns (skip very short utterances)
+      // Save significant caller/agent turns only. Internal system notes are not conversational memory.
       for (const entry of transcript) {
-        if (entry.text.length < 5) continue
-        const createdAt = new Date(Date.now() - Math.max(0, transcript[0]?.timestampMs ?? 0) + entry.timestampMs)
+        if (entry.speaker === 'system' || entry.text.length < 5) continue
+        const createdAt = new Date(startedAt.getTime() + entry.timestampMs)
+        const isCaller = entry.speaker === 'caller'
         await memMgr.saveMessage({
           id: `${sessionId}-${counter++}`,
           contactId,
           sessionId,
           channelName: 'voice',
-          senderType: entry.speaker === 'caller' ? 'user' : 'agent',
-          senderId: entry.speaker === 'caller' ? contactId : 'assistant',
+          senderType: isCaller ? 'user' : 'agent',
+          senderId: isCaller ? contactId : 'assistant',
           content: { type: 'text', text: entry.text },
-          role: entry.speaker === 'caller' ? 'user' : 'assistant',
+          role: isCaller ? 'user' : 'assistant',
           contentText: entry.text,
           contentType: 'text',
           createdAt,
