@@ -500,7 +500,7 @@ async function findOrCreateSession(
 
   try {
     const result = await db.query(
-      `SELECT s.id, s.contact_id, s.agent_id, s.channel_name, s.started_at, s.last_activity_at,
+      `SELECT s.id, s.contact_id, s.channel_name, s.started_at, s.last_activity_at,
               s.message_count, ss.summary_text AS compressed_summary
        FROM sessions s
        LEFT JOIN LATERAL (
