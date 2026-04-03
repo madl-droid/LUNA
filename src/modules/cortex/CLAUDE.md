@@ -24,7 +24,7 @@ Módulo con tres features: **Reflex** (alertas tiempo real, 0 LLM), **Pulse** (a
 - `trace/store.ts` — 3 tablas: scenarios, runs, results (PostgreSQL CRUD)
 - `trace/context-builder.ts` — construye ContextBundle desde DB real (read-only) o sintético
 - `trace/tool-sandbox.ts` — clasificación read/write de tools + ejecución híbrida
-- `trace/simulator.ts` — ejecuta 1 simulación: Shadow Phase 2+3+4
+- `trace/simulator.ts` — ejecuta 1 simulación: Shadow Agentic Loop
 - `trace/analyst.ts` — LLM Analyst: analiza cada simulación individual
 - `trace/synthesizer.ts` — LLM Synthesizer: análisis agregado de N simulaciones
 - `trace/runner.ts` — orquestador con semáforo de concurrencia

@@ -24,7 +24,7 @@ concurrency/
   index.ts            — re-exports
   pipeline-semaphore.ts — semáforo global de pipelines (capa 1)
   contact-lock.ts     — serialización per-contacto (capa 2)
-  step-semaphore.ts   — concurrencia de steps en Phase 3 (capa 3)
+  step-semaphore.ts   — concurrencia de tool calls paralelos (capa 3)
 
 checkpoints/
   types.ts            — TaskCheckpoint, Phase1Snapshot, CheckpointStatus
@@ -95,7 +95,7 @@ utils/
   message-formatter.ts  — formato per-canal (WA bubbles ≤300 chars, HTML email, etc.)
   rag-local.ts          — RAG local con fuse.js sobre archivos en instance/knowledge/
 
-  (mocks/ eliminado — Phase 2, Phase 3 y subagent usan tools:registry del módulo tools)
+  (mocks/ eliminado — agentic loop y subagent usan tools:registry del módulo tools)
 ```
 
 ## Agentic Loop (v2)
@@ -117,7 +117,7 @@ Las Phases 2+3+4 legacy fueron eliminadas. El engine usa exclusivamente el agent
    - Criticizer (solo para effort=high o 3+ tool calls)
    - `formatForChannel()` → split WA/Chat, HTML para email
    - TTS si se requiere respuesta de audio
-   - Retorna `CompositorOutput` (mismo tipo que Phase 4)
+   - Retorna `CompositorOutput`
 
 ### Conexión al pipeline
 
@@ -144,7 +144,7 @@ Doc completo: `docs/architecture/concurrency.md`
 
 1. **Pipeline Semaphore** (global): max N pipelines simultáneos, cola FIFO, backpressure si cola llena
 2. **Contact Lock** (per-contacto): serializa mensajes del mismo contacto, evita race conditions
-3. **Step Semaphore** (Phase 3): max N steps en paralelo dentro de un pipeline
+3. **Step Semaphore**: max N tool calls en paralelo dentro de un pipeline
 4. **Resource pools** (DB pool, LLM circuit breaker): ya existentes en kernel y módulo LLM
 
 Nota: el Redis contact lock (`contact:active:{id}`) en proactive/guards.ts es **separado** del ContactLock in-memory. Uno protege reactivo, otro protege proactivo vs reactivo.
@@ -192,9 +192,8 @@ Configurable desde consola y .env. Persiste al reinicio.
 
 - users:resolve es opcional — fallback: todos son "lead" si módulo users no está activo
 - memory:manager es opcional — fallback a SQL directo
-- Attachment processing en Phase 3, no Phase 1 (Phase 1 solo metadata)
 - Proactive config se cachea en Phase 5 (no relee archivo en cada mensaje)
-- tools:registry del módulo tools se usa en Phase 2 (catálogo), Phase 3 (ejecución) y subagent (ejecución). Si tools module no está activo, el catálogo estará vacío y la ejecución falla explícitamente.
+- tools:registry del módulo tools se usa en el agentic loop (catálogo + ejecución) y subagent. Si tools module no está activo, el catálogo estará vacío y la ejecución falla explícitamente.
 - Contact lock in-memory auto-expira con session TTL
 - Redis contact lock (proactive) es independiente del ContactLock in-memory (reactivo)
 - ACK service es opcional — si falla, el pipeline continúa sin enviar ACK

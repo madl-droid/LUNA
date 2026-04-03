@@ -130,7 +130,7 @@ export async function postProcess(
 
 /**
  * Run the criticizer: ask a fast model to review and optionally improve the response.
- * Reuses the pattern from phase4-compose.ts but as a focused function.
+ * Asks a fast model to review and optionally improve the agentic loop response.
  * Returns improved text, or null if the original is fine.
  */
 async function runCriticizer(
