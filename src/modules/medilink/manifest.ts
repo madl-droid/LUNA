@@ -554,7 +554,7 @@ const manifest: ModuleManifest = {
           return `[Medilink: paciente registrado vinculado (ID ${agentData.medilink_patient_id}, verificación: ${level}) — usar ID directamente al agendar]`
         }
         if (agentData.medilink_is_lead === true) {
-          return `[Medilink: lead nuevo — no tiene ficha en el sistema, debe registrarse antes de agendar]`
+          return `[Medilink: lead nuevo — no está registrado en el sistema, debe registrarse antes de agendar]`
         }
         return null
       } catch {
