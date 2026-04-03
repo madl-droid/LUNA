@@ -49,7 +49,6 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
       // Build commitment data directly from the query row (avoids N+1 re-fetch)
       const commitmentData: import('../../../modules/memory/types.js').Commitment = {
         id: row.id,
-        agentId: 'luna',
         contactId: row.contact_id,
         commitmentBy: 'agent',
         description: row.description,

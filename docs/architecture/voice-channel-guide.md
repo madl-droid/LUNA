@@ -173,11 +173,10 @@ El voice engine NO procesa mensajes individuales. Carga todo el contexto al inic
 ```typescript
 async function preloadContext(registry, db, phone, direction, config) {
   // Cargar en paralelo (similar a Phase 1 pero ligero):
-  const [contact, prompts, tools, agentId] = await Promise.allSettled([
+  const [contact, prompts, tools] = await Promise.allSettled([
     loadContact(db, phone),
     loadPrompts(registry),      // via prompts:service
     loadTools(registry),        // via tools:registry
-    loadAgentId(db),
   ])
 
   // Si hay contacto, cargar memoria
@@ -193,7 +192,7 @@ async function preloadContext(registry, db, phone, direction, config) {
   return {
     systemInstruction: buildSystemInstruction(prompts, contact, memory, config),
     tools: [...toolDeclarations, endCallTool],
-    contactId, agentId,
+    contactId,
   }
 }
 ```
@@ -290,7 +289,7 @@ async handleToolCall(streamSid, toolCallId, toolName, args) {
   // Tools normales via registry
   const toolRegistry = registry.getOptional('tools:registry')
   const result = await toolRegistry.executeTool(toolName, args, {
-    contactId, agentId, channel: 'voice',
+    contactId, channel: 'voice',
   })
   llmClient.sendToolResponse(toolCallId, toolName, result)
 }
@@ -301,7 +300,7 @@ async handleToolCall(streamSid, toolCallId, toolName, args) {
 ### Hooks que el canal EMITE:
 ```typescript
 // Al conectar la llamada
-registry.runHook('call:connected', { callId, callSid, direction, from, to, agentId, contactId })
+registry.runHook('call:connected', { callId, callSid, direction, from, to, contactId })
 
 // Al terminar la llamada
 registry.runHook('call:ended', { callId, callSid, direction, durationSeconds, endReason })

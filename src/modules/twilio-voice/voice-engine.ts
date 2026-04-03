@@ -30,17 +30,15 @@ export async function preloadContext(
   const startMs = Date.now()
 
   // Parallel context loading (similar to Phase 1 but minimal)
-  const [contactResult, promptsResult, toolsResult, agentResult] = await Promise.allSettled([
+  const [contactResult, promptsResult, toolsResult] = await Promise.allSettled([
     loadContact(db, phoneNumber),
     loadPrompts(registry),
     loadTools(registry),
-    loadAgentId(db),
   ])
 
   const contact = contactResult.status === 'fulfilled' ? contactResult.value : null
   const prompts = promptsResult.status === 'fulfilled' ? promptsResult.value : null
   const tools = toolsResult.status === 'fulfilled' ? toolsResult.value : { tools: [], declarations: [] }
-  const agentId = agentResult.status === 'fulfilled' ? agentResult.value : 'default'
 
   // Load memory if contact exists
   let contactMemory: string | null = null
@@ -102,7 +100,6 @@ export async function preloadContext(
     contactMemory,
     pendingCommitments,
     recentSummaries,
-    agentId,
     systemInstruction,
     tools: allDeclarations,
   }
@@ -146,7 +143,6 @@ export async function persistToMemory(
   registry: Registry,
   _db: Pool,
   contactId: string,
-  agentId: string,
   transcript: TranscriptEntry[],
   _summary: string | null,
 ): Promise<void> {
@@ -156,29 +152,41 @@ export async function persistToMemory(
     // Save key turns as messages via memory:manager (if available)
     const memMgr = registry.getOptional<{
       saveMessage: (msg: {
-        agentId: string
+        id: string
         contactId: string
         sessionId: string
+        channelName: string
+        senderType: 'user' | 'agent'
+        senderId: string
+        content: { type: string; text?: string }
         role: string
-        content: string
-        channel: string
+        contentText: string
+        contentType: 'text'
+        createdAt: Date
       }) => Promise<void>
     }>('memory:manager')
 
     if (memMgr) {
       // Create a pseudo-session for this call
       const sessionId = `voice-${Date.now()}`
+      let counter = 0
 
       // Save significant turns (skip very short utterances)
       for (const entry of transcript) {
         if (entry.text.length < 5) continue
+        const createdAt = new Date(Date.now() - Math.max(0, transcript[0]?.timestampMs ?? 0) + entry.timestampMs)
         await memMgr.saveMessage({
-          agentId,
+          id: `${sessionId}-${counter++}`,
           contactId,
           sessionId,
+          channelName: 'voice',
+          senderType: entry.speaker === 'caller' ? 'user' : 'agent',
+          senderId: entry.speaker === 'caller' ? contactId : 'assistant',
+          content: { type: 'text', text: entry.text },
           role: entry.speaker === 'caller' ? 'user' : 'assistant',
-          content: entry.text,
-          channel: 'voice',
+          contentText: entry.text,
+          contentType: 'text',
+          createdAt,
         }).catch(() => {}) // fire-and-forget
       }
     }
@@ -282,7 +290,6 @@ async function loadContact(db: Pool, phoneNumber: string): Promise<ContactInfo |
      FROM contacts c
      JOIN contact_channels cc ON cc.contact_id = c.id
      LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
-       AND ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
      WHERE cc.channel_type = 'voice'
        AND (cc.channel_identifier = $1 OR cc.channel_identifier = $2)
      LIMIT 1`,
@@ -337,13 +344,6 @@ async function loadTools(registry: Registry): Promise<{
   }))
 
   return { tools: available.map(t => t.definition), declarations }
-}
-
-async function loadAgentId(db: Pool): Promise<string> {
-  const result = await db.query<{ id: string }>(
-    `SELECT id FROM agents WHERE is_default = true LIMIT 1`,
-  )
-  return result.rows[0]?.id ?? 'default'
 }
 
 async function loadContactMemory(registry: Registry, contactId: string): Promise<string | null> {

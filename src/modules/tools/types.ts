@@ -76,7 +76,6 @@ export interface ToolExecutionContext {
   messageId?: string
   contactId?: string
   contactType?: string
-  agentId?: string
   correlationId: string
   db: Pool
   redis: Redis

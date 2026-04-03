@@ -24,7 +24,6 @@ function rowToTicket(r: any): HitlTicket {
     requesterContactId: r.requester_contact_id,
     requesterChannel: r.requester_channel,
     requesterSenderId: r.requester_sender_id,
-    agentId: r.agent_id,
     sessionId: r.session_id,
     correlationId: r.correlation_id,
     requestType: r.request_type,
@@ -80,15 +79,15 @@ export class TicketStore {
     const { rows } = await this.db.query(
       `INSERT INTO hitl_tickets (
         requester_contact_id, requester_channel, requester_sender_id,
-        agent_id, session_id, correlation_id,
+        session_id, correlation_id,
         request_type, request_summary, request_context, urgency,
         assigned_user_id, assigned_channel, assigned_sender_id,
         target_role, handoff_mode, expires_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       RETURNING *`,
       [
         input.requesterContactId, input.requesterChannel, input.requesterSenderId,
-        input.agentId ?? null, input.sessionId ?? null, input.correlationId ?? null,
+        input.sessionId ?? null, input.correlationId ?? null,
         input.requestType, input.requestSummary, JSON.stringify(input.requestContext ?? {}),
         input.urgency ?? 'normal',
         input.assignedUserId ?? null, input.assignedChannel ?? null, input.assignedSenderId ?? null,

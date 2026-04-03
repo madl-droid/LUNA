@@ -308,13 +308,11 @@ async function handleExtraction(
   const db = ctx.db
 
   // Load existing qualification data from agent_contacts
-  const agentSlug = ctx.agentId ?? 'luna'
   const contactRow = await db.query(
     `SELECT ac.qualification_data, ac.lead_status, ac.qualification_score
      FROM agent_contacts ac
-     WHERE ac.contact_id = $1
-       AND ac.agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
-    [contactId, agentSlug],
+     WHERE ac.contact_id = $1`,
+    [contactId],
   )
 
   if (contactRow.rows.length === 0) {
@@ -334,7 +332,7 @@ async function handleExtraction(
   // Multi-framework: detect client type first if unknown
   const clientType = existingData['_client_type'] as ClientType | undefined
   if (!clientType && active.length > 1) {
-    const detection = await handleClientTypeDetection(messageText, contactId, agentSlug, existingData, currentStatus, config, db, registry)
+    const detection = await handleClientTypeDetection(messageText, contactId, existingData, currentStatus, config, db, registry)
     if (!detection.success) return detection
     // If client type was detected, update existingData in memory so resolveFramework works
     const detectedType = (detection.data as Record<string, unknown> | undefined)?.clientTypeDetected
@@ -396,9 +394,9 @@ async function handleExtraction(
       await client.query('BEGIN')
       const freshRow = await client.query(
         `SELECT qualification_data, lead_status FROM agent_contacts
-         WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)
+         WHERE contact_id = $1
          FOR UPDATE`,
-        [contactId, agentSlug],
+        [contactId],
       )
       const freshData = (freshRow.rows[0]?.qualification_data as Record<string, unknown>) ?? {}
       const freshStatus = (freshRow.rows[0]?.lead_status as QualificationStatus) ?? currentStatus
@@ -423,14 +421,12 @@ async function handleExtraction(
              qualification_score = $2,
              lead_status = COALESCE($3, lead_status),
              updated_at = NOW()
-         WHERE contact_id = $4
-           AND agent_id = (SELECT id FROM agents WHERE slug = $5 LIMIT 1)`,
+         WHERE contact_id = $4`,
         [
           JSON.stringify(mergedData),
           scoreResult.totalScore,
           newStatus,
           contactId,
-          agentSlug,
         ],
       )
       await client.query('COMMIT')
@@ -480,7 +476,6 @@ async function handleExtraction(
 async function handleClientTypeDetection(
   messageText: string,
   contactId: string,
-  agentSlug: string,
   _existingData: Record<string, unknown>,
   currentStatus: QualificationStatus,
   config: QualifyingConfig,
@@ -521,9 +516,9 @@ async function handleClientTypeDetection(
       await client.query('BEGIN')
       const freshRow = await client.query(
         `SELECT qualification_data, lead_status FROM agent_contacts
-         WHERE contact_id = $1 AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)
+         WHERE contact_id = $1
          FOR UPDATE`,
-        [contactId, agentSlug],
+        [contactId],
       )
       const freshData = (freshRow.rows[0]?.qualification_data as Record<string, unknown>) ?? {}
       freshData['_client_type'] = parsed.clientTypeDetected
@@ -531,9 +526,8 @@ async function handleClientTypeDetection(
       await client.query(
         `UPDATE agent_contacts
          SET qualification_data = $1, updated_at = NOW()
-         WHERE contact_id = $2
-           AND agent_id = (SELECT id FROM agents WHERE slug = $3 LIMIT 1)`,
-        [JSON.stringify(freshData), contactId, agentSlug],
+         WHERE contact_id = $2`,
+        [JSON.stringify(freshData), contactId],
       )
       await client.query('COMMIT')
     } catch (txErr) {

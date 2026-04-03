@@ -82,9 +82,9 @@ export async function buildContextLayers(
 
   // ── 2b. Medilink patient status ─────────────────────────────────────────
   if (registry && ctx.contactId) {
-    const getMedilinkContext = registry.getOptional<(contactId: string, agentId: string) => Promise<string | null>>('medilink:get_context_line')
+    const getMedilinkContext = registry.getOptional<(contactId: string) => Promise<string | null>>('medilink:get_context_line')
     if (getMedilinkContext) {
-      const medilinkLine = await getMedilinkContext(ctx.contactId, ctx.agentId).catch(() => null)
+      const medilinkLine = await getMedilinkContext(ctx.contactId).catch(() => null)
       if (medilinkLine) parts.push(medilinkLine)
     }
   }

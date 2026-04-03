@@ -123,7 +123,6 @@ function createApiRoutes(): ApiRoute[] {
             await apiClient.updatePatient(parseInt(result.medilinkPatientId, 10), update)
             await pgStore.logAudit(db, {
               contactId: result.contactId,
-              agentId: result.agentId,
               medilinkPatientId: result.medilinkPatientId,
               action: 'edit_approved',
               targetType: 'patient',
@@ -152,7 +151,6 @@ function createApiRoutes(): ApiRoute[] {
         if (!result) { jsonResponse(res, 404, { error: 'Request not found or already resolved' }); return }
         await pgStore.logAudit(db, {
           contactId: result.contactId,
-          agentId: result.agentId,
           medilinkPatientId: result.medilinkPatientId,
           action: 'edit_rejected',
           targetType: 'patient',
@@ -519,21 +517,21 @@ const manifest: ModuleManifest = {
     // ── Auto-link service ──────────────────────────────────────────────────
     // Called by engine intake on every message (no-op if already linked).
     // Searches Medilink by phone; links if single match, marks as lead otherwise.
-    registry.provide('medilink:auto_link', async (contactId: string, agentId: string): Promise<void> => {
+    registry.provide('medilink:auto_link', async (contactId: string): Promise<void> => {
       try {
-        const secCtx = await sec.resolveContext(contactId, agentId)
+        const secCtx = await sec.resolveContext(contactId)
         if (secCtx.medilinkPatientId) return // already linked — skip
         // Skip if already determined to be a lead (avoids repeated API calls)
         const existing = await db.query(
-          `SELECT agent_data->>'medilink_is_lead' AS is_lead FROM agent_contacts WHERE contact_id = $1 AND agent_id = $2`,
-          [contactId, agentId],
+          `SELECT agent_data->>'medilink_is_lead' AS is_lead FROM agent_contacts WHERE contact_id = $1`,
+          [contactId],
         )
         if (existing.rows[0]?.is_lead === 'true') return
 
         const linked = await sec.tryAutoLink(secCtx)
         if (!linked.medilinkPatientId) {
           // No match or multiple results — mark as lead so we don't retry every message
-          await sec.setLeadFlag(contactId, agentId)
+          await sec.setLeadFlag(contactId)
         }
       } catch (err) {
         logger.warn({ err, contactId }, 'medilink:auto_link failed')
@@ -542,11 +540,11 @@ const manifest: ModuleManifest = {
 
     // ── Context line service ───────────────────────────────────────────────
     // Returns a single context string for the LLM describing the patient status.
-    registry.provide('medilink:get_context_line', async (contactId: string, agentId: string): Promise<string | null> => {
+    registry.provide('medilink:get_context_line', async (contactId: string): Promise<string | null> => {
       try {
         const result = await db.query(
-          `SELECT agent_data FROM agent_contacts WHERE contact_id = $1 AND agent_id = $2`,
-          [contactId, agentId],
+          `SELECT agent_data FROM agent_contacts WHERE contact_id = $1`,
+          [contactId],
         )
         const agentData = (result.rows[0]?.agent_data ?? {}) as Record<string, unknown>
         if (agentData.medilink_patient_id) {
@@ -622,7 +620,7 @@ const manifest: ModuleManifest = {
 
           // Find linked contact for this patient
           const contactResult = await db.query(
-            `SELECT contact_id, agent_id FROM agent_contacts
+            `SELECT contact_id FROM agent_contacts
              WHERE agent_data->>'medilink_patient_id' = $1 LIMIT 1`,
             [String(apt.id_paciente)],
           )
@@ -632,7 +630,6 @@ const manifest: ModuleManifest = {
           await followUpScheduler!.scheduleSequence({
             appointmentId: String(citaId),
             contactId: row.contact_id as string,
-            agentId: row.agent_id as string,
             appointment: {
               fecha: apt.fecha,
               hora_inicio: apt.hora_inicio,

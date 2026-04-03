@@ -21,7 +21,6 @@ export async function runMigrations(db: Pool): Promise<void> {
     CREATE TABLE IF NOT EXISTS medilink_audit_log (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       contact_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT 'default',
       medilink_patient_id TEXT,
       action TEXT NOT NULL,
       target_type TEXT NOT NULL,
@@ -45,7 +44,6 @@ export async function runMigrations(db: Pool): Promise<void> {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       medilink_patient_id TEXT NOT NULL,
       contact_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT 'default',
       requested_changes JSONB NOT NULL,
       reason TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
@@ -63,7 +61,6 @@ export async function runMigrations(db: Pool): Promise<void> {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       medilink_appointment_id TEXT NOT NULL,
       contact_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT 'default',
       appointment_date TIMESTAMPTZ NOT NULL,
       touch_type TEXT NOT NULL,
       channel TEXT NOT NULL,
@@ -214,7 +211,6 @@ export async function logAudit(
   db: Pool,
   entry: {
     contactId: string
-    agentId: string
     medilinkPatientId?: string | null
     action: AuditAction
     targetType: string
@@ -227,10 +223,10 @@ export async function logAudit(
   try {
     await db.query(
       `INSERT INTO medilink_audit_log
-        (contact_id, agent_id, medilink_patient_id, action, target_type, target_id, detail, verification_level, result)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        (contact_id, medilink_patient_id, action, target_type, target_id, detail, verification_level, result)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
-        entry.contactId, entry.agentId, entry.medilinkPatientId ?? null,
+        entry.contactId, entry.medilinkPatientId ?? null,
         entry.action, entry.targetType, entry.targetId ?? null,
         JSON.stringify(entry.detail ?? {}), entry.verificationLevel ?? null, entry.result,
       ],
@@ -289,7 +285,6 @@ function mapAuditRow(row: Record<string, unknown>): AuditEntry {
   return {
     id: row.id as string,
     contactId: row.contact_id as string,
-    agentId: row.agent_id as string,
     medilinkPatientId: row.medilink_patient_id as string | null,
     action: row.action as AuditAction,
     targetType: row.target_type as string,
@@ -308,17 +303,16 @@ export async function createEditRequest(
   req: {
     medilinkPatientId: string
     contactId: string
-    agentId: string
     requestedChanges: Record<string, { old: string | null; new: string }>
     reason?: string
   },
 ): Promise<string> {
   const result = await db.query(
     `INSERT INTO medilink_edit_requests
-      (medilink_patient_id, contact_id, agent_id, requested_changes, reason)
-     VALUES ($1, $2, $3, $4, $5)
+      (medilink_patient_id, contact_id, requested_changes, reason)
+     VALUES ($1, $2, $3, $4)
      RETURNING id`,
-    [req.medilinkPatientId, req.contactId, req.agentId, JSON.stringify(req.requestedChanges), req.reason ?? null],
+    [req.medilinkPatientId, req.contactId, JSON.stringify(req.requestedChanges), req.reason ?? null],
   )
   return result.rows[0]!.id as string
 }
@@ -374,7 +368,6 @@ function mapEditRequestRow(row: Record<string, unknown>): EditRequest {
     id: row.id as string,
     medilinkPatientId: row.medilink_patient_id as string,
     contactId: row.contact_id as string,
-    agentId: row.agent_id as string,
     requestedChanges: (row.requested_changes ?? {}) as Record<string, { old: string | null; new: string }>,
     reason: row.reason as string | null,
     status: row.status as EditRequestStatus,
@@ -392,7 +385,6 @@ export async function createFollowUp(
   fu: {
     medilinkAppointmentId: string
     contactId: string
-    agentId: string
     appointmentDate: Date
     touchType: FollowUpTouchType
     channel: 'whatsapp' | 'voice'
@@ -403,11 +395,11 @@ export async function createFollowUp(
 ): Promise<string> {
   const result = await db.query(
     `INSERT INTO medilink_follow_ups
-      (medilink_appointment_id, contact_id, agent_id, appointment_date, touch_type, channel, scheduled_at, bullmq_job_id, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      (medilink_appointment_id, contact_id, appointment_date, touch_type, channel, scheduled_at, bullmq_job_id, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id`,
     [
-      fu.medilinkAppointmentId, fu.contactId, fu.agentId,
+      fu.medilinkAppointmentId, fu.contactId,
       fu.appointmentDate.toISOString(), fu.touchType, fu.channel,
       fu.scheduledAt.toISOString(), fu.bullmqJobId ?? null,
       JSON.stringify(fu.metadata ?? {}),
@@ -462,7 +454,6 @@ function mapFollowUpRow(row: Record<string, unknown>): FollowUp {
     id: row.id as string,
     medilinkAppointmentId: row.medilink_appointment_id as string,
     contactId: row.contact_id as string,
-    agentId: row.agent_id as string,
     appointmentDate: new Date(row.appointment_date as string),
     touchType: row.touch_type as FollowUpTouchType,
     channel: row.channel as 'whatsapp' | 'voice',

@@ -81,7 +81,6 @@ export interface ActiveCall {
   from: string
   to: string
   status: CallStatus
-  agentId: string | null
   contactId: string | null
   startedAt: Date
   connectedAt: Date | null
@@ -107,7 +106,6 @@ export interface PreloadedContext {
   contactMemory: string | null
   pendingCommitments: string[]
   recentSummaries: string[]
-  agentId: string
   systemInstruction: string
   tools: GeminiToolDeclaration[]
 }
@@ -297,7 +295,6 @@ export interface VoiceCallRow {
   from_number: string
   to_number: string
   status: CallStatus
-  agent_id: string | null
   contact_id: string | null
   started_at: Date
   connected_at: Date | null
@@ -324,7 +321,6 @@ export interface VoiceCallTranscriptRow {
 
 export interface InitiateCallRequest {
   to: string
-  agentId?: string
   context?: string
 }
 

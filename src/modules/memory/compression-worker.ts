@@ -230,7 +230,7 @@ export class CompressionWorker {
   }> {
     const [msgResult, attResult, sessionResult] = await Promise.all([
       this.db.query(
-        `SELECT id, session_id, agent_id, role, content_text, content_type, created_at,
+        `SELECT id, session_id, role, content_text, content_type, created_at,
                 media_path, media_mime, media_analysis, intent, emotion,
                 tokens_used, latency_ms, model_used, token_count, metadata
          FROM messages WHERE session_id = $1 ORDER BY created_at ASC`,
@@ -255,7 +255,6 @@ export class CompressionWorker {
     const messages: StoredMessage[] = msgResult.rows.map((r: Record<string, unknown>) => ({
       id: r.id as string,
       sessionId: r.session_id as string,
-      agentId: r.agent_id as string,
       channelName: '',
       senderType: (r.role === 'assistant' ? 'agent' : 'user') as 'user' | 'agent',
       senderId: '',

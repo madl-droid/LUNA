@@ -18,7 +18,6 @@ export async function createTables(db: Pool): Promise<void> {
       to_number TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'initiated'
         CHECK (status IN ('initiated', 'ringing', 'connecting', 'active', 'completed', 'failed', 'no-answer', 'busy')),
-      agent_id TEXT,
       contact_id TEXT,
       started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       connected_at TIMESTAMPTZ,
@@ -71,14 +70,13 @@ export async function insertCall(
   direction: CallDirection,
   from: string,
   to: string,
-  agentId: string | null,
   geminiVoice: string,
 ): Promise<string> {
   const result = await db.query<{ id: string }>(
-    `INSERT INTO voice_calls (call_sid, direction, from_number, to_number, agent_id, gemini_voice)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO voice_calls (call_sid, direction, from_number, to_number, gemini_voice)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING id`,
-    [callSid, direction, from, to, agentId, geminiVoice],
+    [callSid, direction, from, to, geminiVoice],
   )
   return result.rows[0]!.id
 }

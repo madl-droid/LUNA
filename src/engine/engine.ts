@@ -485,7 +485,6 @@ async function runAgenticPipeline(
   if (memMgr) {
     memMgr.savePipelineLog({
       messageId: ctx.message.id,
-      agentId: ctx.agentId,
       contactId: ctx.contactId ?? null,
       sessionId: ctx.session.id,
       phase1Ms: phase1DurationMs,

@@ -130,43 +130,42 @@ export class MemoryManager {
   // Agent-Contact — Cold tier
   // ═══════════════════════════════════════════
 
-  async getAgentContact(agentId: string, contactId: string): Promise<AgentContact | null> {
-    return await this.pg.getAgentContact(agentId, contactId)
+  async getAgentContact(contactId: string): Promise<AgentContact | null> {
+    return await this.pg.getAgentContact(contactId)
   }
 
-  async ensureAgentContact(agentId: string, contactId: string): Promise<AgentContact> {
-    return await this.pg.ensureAgentContact(agentId, contactId)
+  async ensureAgentContact(contactId: string): Promise<AgentContact> {
+    return await this.pg.ensureAgentContact(contactId)
   }
 
-  async updateContactMemory(agentId: string, contactId: string, memory: ContactMemory): Promise<void> {
-    await this.pg.updateContactMemory(agentId, contactId, memory)
+  async updateContactMemory(contactId: string, memory: ContactMemory): Promise<void> {
+    await this.pg.updateContactMemory(contactId, memory)
   }
 
   async updateLeadStatus(
-    agentId: string,
     contactId: string,
     status: string,
     qualificationData?: Record<string, unknown>,
     qualificationScore?: number,
   ): Promise<void> {
-    await this.pg.updateLeadStatus(agentId, contactId, status, qualificationData, qualificationScore)
+    await this.pg.updateLeadStatus(contactId, status, qualificationData, qualificationScore)
     // Invalidate cache
-    await this.redis.invalidateLeadStatus(contactId, agentId)
+    await this.redis.invalidateLeadStatus(contactId)
   }
 
   // ═══════════════════════════════════════════
   // Lead status (cached)
   // ═══════════════════════════════════════════
 
-  async getLeadStatus(contactId: string, agentId: string): Promise<string | null> {
+  async getLeadStatus(contactId: string): Promise<string | null> {
     // Try Redis first
-    const cached = await this.redis.getLeadStatus(contactId, agentId)
+    const cached = await this.redis.getLeadStatus(contactId)
     if (cached) return cached
 
     // Fallback to PG
-    const ac = await this.pg.getAgentContact(agentId, contactId)
+    const ac = await this.pg.getAgentContact(contactId)
     if (ac) {
-      await this.redis.setLeadStatus(contactId, agentId, ac.leadStatus)
+      await this.redis.setLeadStatus(contactId, ac.leadStatus)
       return ac.leadStatus
     }
     return null
@@ -239,7 +238,6 @@ export class MemoryManager {
 
   async compressSession(
     sessionId: string,
-    agentId: string,
     contactId: string,
     channelIdentifier: string | null,
     compression: CompressionResult,
@@ -252,7 +250,6 @@ export class MemoryManager {
       if (messages.length > 0) {
         await this.pg.archiveSession({
           sessionId,
-          agentId,
           contactId,
           channelIdentifier,
           channelType: null,
@@ -271,7 +268,6 @@ export class MemoryManager {
     // Save summary to warm tier
     const summaryId = await this.pg.saveSessionSummary({
       sessionId,
-      agentId,
       contactId,
       channelIdentifier,
       summaryText: compression.summary,
@@ -343,14 +339,13 @@ export class MemoryManager {
   // ═══════════════════════════════════════════
 
   async mergeToContactMemory(
-    agentId: string,
     contactId: string,
     mergedMemory: ContactMemory,
     summaryIds: string[],
   ): Promise<void> {
-    await this.pg.updateContactMemory(agentId, contactId, mergedMemory)
+    await this.pg.updateContactMemory(contactId, mergedMemory)
     await this.pg.markSummariesMerged(summaryIds)
-    logger.info({ agentId, contactId, mergedSummaries: summaryIds.length }, 'Contact memory updated')
+    logger.info({ contactId, mergedSummaries: summaryIds.length }, 'Contact memory updated')
   }
 
   // ═══════════════════════════════════════════
@@ -358,11 +353,10 @@ export class MemoryManager {
   // ═══════════════════════════════════════════
 
   async applyFactCorrection(
-    agentId: string,
     contactId: string,
     correction: FactCorrection,
   ): Promise<void> {
-    const ac = await this.pg.getAgentContact(agentId, contactId)
+    const ac = await this.pg.getAgentContact(contactId)
     if (!ac) return
 
     const memory = ac.contactMemory
@@ -386,8 +380,8 @@ export class MemoryManager {
       })
     }
 
-    await this.pg.updateContactMemory(agentId, contactId, memory)
-    logger.info({ agentId, contactId, correction: correction.newFact }, 'Fact correction applied')
+    await this.pg.updateContactMemory(contactId, memory)
+    logger.info({ contactId, correction: correction.newFact }, 'Fact correction applied')
   }
 
   // ═══════════════════════════════════════════
@@ -398,24 +392,20 @@ export class MemoryManager {
     return await this.pg.saveCommitment(commitment)
   }
 
-  async getPendingCommitments(agentId: string, contactId: string): Promise<Commitment[]> {
-    return await this.pg.getPendingCommitments(agentId, contactId)
+  async getPendingCommitments(contactId: string): Promise<Commitment[]> {
+    return await this.pg.getPendingCommitments(contactId)
   }
 
-  async getRecentCompletedCommitments(agentId: string, contactId: string, limit = 5): Promise<Commitment[]> {
-    return await this.pg.getRecentCompletedCommitments(agentId, contactId, limit)
+  async getRecentCompletedCommitments(contactId: string, limit = 5): Promise<Commitment[]> {
+    return await this.pg.getRecentCompletedCommitments(contactId, limit)
   }
 
   async updateCommitmentStatus(commitmentId: string, status: CommitmentStatus, actionTaken?: string): Promise<void> {
     await this.pg.updateCommitmentStatus(commitmentId, status, actionTaken)
   }
 
-  async getOverdueCommitments(agentId: string): Promise<Commitment[]> {
-    return await this.pg.getOverdueCommitments(agentId)
-  }
-
-  async getCrossAgentCommitments(contactId: string, excludeAgentId: string): Promise<Commitment[]> {
-    return await this.pg.getCrossAgentCommitments(contactId, excludeAgentId)
+  async getOverdueCommitments(): Promise<Commitment[]> {
+    return await this.pg.getOverdueCommitments()
   }
 
   // ═══════════════════════════════════════════
@@ -441,23 +431,19 @@ export class MemoryManager {
   // Agent resolution
   // ═══════════════════════════════════════════
 
-  async resolveAgentId(slug: string): Promise<string | null> {
-    return await this.pg.resolveAgentId(slug)
-  }
-
   // ═══════════════════════════════════════════
   // Batch helpers (for nightly jobs)
   // ═══════════════════════════════════════════
 
-  async getSessionsForCompression(agentId: string): Promise<Array<{
+  async getSessionsForCompression(): Promise<Array<{
     sessionId: string; contactId: string; channelIdentifier: string | null;
     messageCount: number; startedAt: Date; lastMessageAt: Date;
   }>> {
-    return await this.pg.getSessionsForCompression(agentId, this.config.MEMORY_COMPRESSION_THRESHOLD)
+    return await this.pg.getSessionsForCompression(this.config.MEMORY_COMPRESSION_THRESHOLD)
   }
 
-  async getUnmergedSummaries(agentId: string, contactId: string): Promise<SessionSummary[]> {
-    return await this.pg.getUnmergedSummaries(agentId, contactId)
+  async getUnmergedSummaries(contactId: string): Promise<SessionSummary[]> {
+    return await this.pg.getUnmergedSummaries(contactId)
   }
 
   async getSummariesWithoutEmbeddings(limit?: number): Promise<Array<{ id: string; summaryText: string }>> {
@@ -496,7 +482,7 @@ export class MemoryManager {
   // Context cache
   // ═══════════════════════════════════════════
 
-  async invalidateContext(contactId: string, agentId: string): Promise<void> {
-    await this.redis.invalidateContext(contactId, agentId)
+  async invalidateContext(contactId: string): Promise<void> {
+    await this.redis.invalidateContext(contactId)
   }
 }

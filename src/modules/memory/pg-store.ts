@@ -33,16 +33,15 @@ export class PgStore {
     try {
       await this.pool.query(
         `INSERT INTO messages (
-          id, session_id, agent_id, role, content_text, content_type, created_at,
+          id, session_id, role, content_text, content_type, created_at,
           media_path, media_mime, media_analysis,
           intent, emotion, tokens_used, latency_ms, model_used, token_count, metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (id) DO NOTHING`,
         [
           message.id,
           message.sessionId,
-          message.agentId,
           message.role,
           message.contentText,
           message.contentType ?? 'text',
@@ -66,7 +65,7 @@ export class PgStore {
 
   async getSessionMessages(sessionId: string, limit = 100): Promise<StoredMessage[]> {
     const result = await this.pool.query(
-      `SELECT id, session_id, agent_id, role, content_text, content_type, created_at,
+      `SELECT id, session_id, role, content_text, content_type, created_at,
               media_path, media_mime, media_analysis,
               intent, emotion, tokens_used, latency_ms, model_used, token_count, metadata
        FROM messages
@@ -79,7 +78,6 @@ export class PgStore {
     return result.rows.map((row: DbRow) => ({
       id: row.id,
       sessionId: row.session_id,
-      agentId: row.agent_id ?? '',
       channelName: '',
       senderType: row.role === 'assistant' ? 'agent' as const : 'user' as const,
       senderId: '',
@@ -105,42 +103,41 @@ export class PgStore {
   // Agent-Contact — Cold tier relationship
   // ═══════════════════════════════════════════
 
-  async getAgentContact(agentId: string, contactId: string): Promise<AgentContact | null> {
+  async getAgentContact(contactId: string): Promise<AgentContact | null> {
     try {
       const result = await this.pool.query(
-        `SELECT id, agent_id, contact_id, lead_status, qualification_data, qualification_score,
+        `SELECT id, contact_id, lead_status, qualification_data, qualification_score,
                 agent_data, assigned_to, assigned_at, follow_up_count, last_follow_up_at,
                 next_follow_up_at, source_campaign, source_channel, contact_memory,
                 created_at, updated_at
          FROM agent_contacts
-         WHERE agent_id = $1 AND contact_id = $2`,
-        [agentId, contactId],
+         WHERE contact_id = $1`,
+        [contactId],
       )
       if (result.rows.length === 0) return null
       return this.mapAgentContactRow(result.rows[0]!)
     } catch (err) {
-      logger.warn({ err, agentId, contactId }, 'Failed to get agent_contact')
+      logger.warn({ err, contactId }, 'Failed to get agent_contact')
       return null
     }
   }
 
-  async ensureAgentContact(agentId: string, contactId: string): Promise<AgentContact> {
+  async ensureAgentContact(contactId: string): Promise<AgentContact> {
     try {
       await this.pool.query(
-        `INSERT INTO agent_contacts (agent_id, contact_id)
-         VALUES ($1, $2)
-         ON CONFLICT (agent_id, contact_id) DO NOTHING`,
-        [agentId, contactId],
+        `INSERT INTO agent_contacts (contact_id)
+         VALUES ($1)
+         ON CONFLICT (contact_id) DO NOTHING`,
+        [contactId],
       )
     } catch (err) {
-      logger.warn({ err, agentId, contactId }, 'Failed to ensure agent_contact')
+      logger.warn({ err, contactId }, 'Failed to ensure agent_contact')
     }
-    const ac = await this.getAgentContact(agentId, contactId)
+    const ac = await this.getAgentContact(contactId)
     if (!ac) {
       // Fallback in-memory default
       return {
         id: '',
-        agentId,
         contactId,
         leadStatus: 'unknown',
         qualificationData: {},
@@ -155,30 +152,29 @@ export class PgStore {
     return ac
   }
 
-  async updateContactMemory(agentId: string, contactId: string, memory: ContactMemory): Promise<void> {
+  async updateContactMemory(contactId: string, memory: ContactMemory): Promise<void> {
     try {
       await this.pool.query(
         `UPDATE agent_contacts
          SET contact_memory = $1
-         WHERE agent_id = $2 AND contact_id = $3`,
-        [JSON.stringify(memory), agentId, contactId],
+         WHERE contact_id = $2`,
+        [JSON.stringify(memory), contactId],
       )
     } catch (err) {
-      logger.error({ err, agentId, contactId }, 'Failed to update contact_memory')
+      logger.error({ err, contactId }, 'Failed to update contact_memory')
     }
   }
 
   async updateLeadStatus(
-    agentId: string,
     contactId: string,
     status: string,
     qualificationData?: Record<string, unknown>,
     qualificationScore?: number,
   ): Promise<void> {
     try {
-      const setClauses = ['lead_status = $3']
-      const params: unknown[] = [agentId, contactId, status]
-      let idx = 4
+      const setClauses = ['lead_status = $2']
+      const params: unknown[] = [contactId, status]
+      let idx = 3
 
       if (qualificationData !== undefined) {
         setClauses.push(`qualification_data = $${idx++}`)
@@ -190,11 +186,11 @@ export class PgStore {
       }
 
       await this.pool.query(
-        `UPDATE agent_contacts SET ${setClauses.join(', ')} WHERE agent_id = $1 AND contact_id = $2`,
+        `UPDATE agent_contacts SET ${setClauses.join(', ')} WHERE contact_id = $1`,
         params,
       )
     } catch (err) {
-      logger.error({ err, agentId, contactId, status }, 'Failed to update lead status')
+      logger.error({ err, contactId, status }, 'Failed to update lead status')
     }
   }
 
@@ -205,16 +201,14 @@ export class PgStore {
   async saveSessionSummary(summary: Omit<SessionSummary, 'id' | 'createdAt' | 'mergedToMemoryAt'>): Promise<string> {
     const result = await this.pool.query(
       `INSERT INTO session_summaries (
-        session_id, agent_id, contact_id, channel_identifier,
-        summary_text, summary_language, key_facts, structured_data,
-        original_message_count, model_used, compression_tokens,
-        interaction_started_at, interaction_closed_at
+        session_id, contact_id, channel_identifier, summary_text,
+        summary_language, key_facts, structured_data, original_message_count,
+        model_used, compression_tokens, interaction_started_at, interaction_closed_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING id`,
       [
         summary.sessionId,
-        summary.agentId,
         summary.contactId,
         summary.channelIdentifier ?? null,
         summary.summaryText,
@@ -321,18 +315,18 @@ export class PgStore {
     }
   }
 
-  async getUnmergedSummaries(agentId: string, contactId: string): Promise<SessionSummary[]> {
+  async getUnmergedSummaries(contactId: string): Promise<SessionSummary[]> {
     try {
       const result = await this.pool.query(
         `SELECT *
          FROM session_summaries
-         WHERE agent_id = $1 AND contact_id = $2 AND merged_to_memory_at IS NULL
+         WHERE contact_id = $1 AND merged_to_memory_at IS NULL
          ORDER BY interaction_started_at ASC`,
-        [agentId, contactId],
+        [contactId],
       )
       return result.rows.map((row: DbRow) => this.mapSessionSummaryRow(row))
     } catch (err) {
-      logger.warn({ err, agentId, contactId }, 'Failed to get unmerged summaries')
+      logger.warn({ err, contactId }, 'Failed to get unmerged summaries')
       return []
     }
   }
@@ -523,15 +517,15 @@ export class PgStore {
   async saveCommitment(commitment: Omit<Commitment, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'>): Promise<string> {
     const result = await this.pool.query(
       `INSERT INTO commitments (
-        agent_id, contact_id, session_id, commitment_by, description, category,
+        contact_id, session_id, commitment_by, description, category,
         priority, commitment_type, due_at, scheduled_at, event_starts_at, event_ends_at,
         external_id, external_provider, assigned_to, status, parent_id, sort_order,
         requires_tool, auto_cancel_at, created_via, metadata
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING id`,
       [
-        commitment.agentId, commitment.contactId, commitment.sessionId ?? null,
+        commitment.contactId, commitment.sessionId ?? null,
         commitment.commitmentBy, commitment.description, commitment.category ?? null,
         commitment.priority, commitment.commitmentType,
         commitment.dueAt ?? null, commitment.scheduledAt ?? null,
@@ -547,11 +541,11 @@ export class PgStore {
     return result.rows[0]!.id as string
   }
 
-  async getPendingCommitments(agentId: string, contactId: string): Promise<Commitment[]> {
+  async getPendingCommitments(contactId: string): Promise<Commitment[]> {
     try {
       const result = await this.pool.query(
         `SELECT * FROM commitments
-         WHERE agent_id = $1 AND contact_id = $2
+         WHERE contact_id = $1
            AND status IN ('pending', 'in_progress', 'waiting')
          ORDER BY CASE priority
            WHEN 'urgent' THEN 0
@@ -559,27 +553,27 @@ export class PgStore {
            WHEN 'normal' THEN 2
            WHEN 'low' THEN 3
          END, due_at ASC NULLS LAST`,
-        [agentId, contactId],
+        [contactId],
       )
       return result.rows.map((row: DbRow) => this.mapCommitmentRow(row))
     } catch (err) {
-      logger.warn({ err, agentId, contactId }, 'Failed to get pending commitments')
+      logger.warn({ err, contactId }, 'Failed to get pending commitments')
       return []
     }
   }
 
-  async getRecentCompletedCommitments(agentId: string, contactId: string, limit = 5): Promise<Commitment[]> {
+  async getRecentCompletedCommitments(contactId: string, limit = 5): Promise<Commitment[]> {
     try {
       const result = await this.pool.query(
         `SELECT * FROM commitments
-         WHERE agent_id = $1 AND contact_id = $2 AND status = 'done'
+         WHERE contact_id = $1 AND status = 'done'
          ORDER BY completed_at DESC
-         LIMIT $3`,
-        [agentId, contactId, limit],
+         LIMIT $2`,
+        [contactId, limit],
       )
       return result.rows.map((row: DbRow) => this.mapCommitmentRow(row))
     } catch (err) {
-      logger.warn({ err, agentId, contactId }, 'Failed to get completed commitments')
+      logger.warn({ err, contactId }, 'Failed to get completed commitments')
       return []
     }
   }
@@ -605,35 +599,17 @@ export class PgStore {
     }
   }
 
-  async getOverdueCommitments(agentId: string): Promise<Commitment[]> {
+  async getOverdueCommitments(): Promise<Commitment[]> {
     try {
       const result = await this.pool.query(
         `SELECT * FROM commitments
-         WHERE agent_id = $1
-           AND status IN ('pending', 'in_progress')
+         WHERE status IN ('pending', 'in_progress')
            AND due_at IS NOT NULL AND due_at < now()
          ORDER BY due_at ASC`,
-        [agentId],
       )
       return result.rows.map((row: DbRow) => this.mapCommitmentRow(row))
     } catch (err) {
-      logger.warn({ err, agentId }, 'Failed to get overdue commitments')
-      return []
-    }
-  }
-
-  async getCrossAgentCommitments(contactId: string, excludeAgentId: string): Promise<Commitment[]> {
-    try {
-      const result = await this.pool.query(
-        `SELECT * FROM commitments
-         WHERE contact_id = $1 AND agent_id != $2
-           AND status IN ('pending', 'in_progress', 'waiting')
-         ORDER BY due_at ASC NULLS LAST`,
-        [contactId, excludeAgentId],
-      )
-      return result.rows.map((row: DbRow) => this.mapCommitmentRow(row))
-    } catch (err) {
-      logger.warn({ err, contactId }, 'Failed to get cross-agent commitments')
+      logger.warn({ err }, 'Failed to get overdue commitments')
       return []
     }
   }
@@ -645,15 +621,13 @@ export class PgStore {
   async archiveSession(archive: Omit<ConversationArchive, 'id' | 'archivedAt'>): Promise<string> {
     const result = await this.pool.query(
       `INSERT INTO conversation_archives (
-        session_id, contact_id, agent_id, channel_identifier, channel_type,
-        contact_snapshot, messages, message_count,
-        interaction_started_at, interaction_closed_at
+        session_id, contact_id, channel_identifier, channel_type, contact_snapshot,
+        messages, message_count, interaction_started_at, interaction_closed_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id`,
       [
-        archive.sessionId, archive.contactId, archive.agentId,
-        archive.channelIdentifier ?? null, archive.channelType ?? null,
+        archive.sessionId, archive.contactId, archive.channelIdentifier ?? null, archive.channelType ?? null,
         JSON.stringify(archive.contactSnapshot), JSON.stringify(archive.messages),
         archive.messageCount,
         archive.interactionStartedAt, archive.interactionClosedAt,
@@ -670,17 +644,17 @@ export class PgStore {
     try {
       await this.pool.query(
         `INSERT INTO pipeline_logs (
-          message_id, agent_id, contact_id, session_id,
-          phase1_ms, phase2_ms, phase2_result, phase3_ms, phase3_result,
+          message_id, contact_id, session_id, phase1_ms,
+          phase2_ms, phase2_result, phase3_ms, phase3_result,
           phase4_ms, phase5_ms, total_ms,
           tokens_input, tokens_output, estimated_cost,
           models_used, tools_called, had_subagent, had_fallback, error,
           replan_attempts, subagent_iterations
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
         [
-          entry.messageId ?? null, entry.agentId, entry.contactId ?? null, entry.sessionId ?? null,
-          entry.phase1Ms ?? null, entry.phase2Ms ?? null,
+          entry.messageId ?? null, entry.contactId ?? null, entry.sessionId ?? null, entry.phase1Ms ?? null,
+          entry.phase2Ms ?? null,
           entry.phase2Result ? JSON.stringify(entry.phase2Result) : null,
           entry.phase3Ms ?? null,
           entry.phase3Result ? JSON.stringify(entry.phase3Result) : null,
@@ -701,24 +675,11 @@ export class PgStore {
   // Agent resolution helper
   // ═══════════════════════════════════════════
 
-  async resolveAgentId(slug: string): Promise<string | null> {
-    try {
-      const result = await this.pool.query(
-        `SELECT id FROM agents WHERE slug = $1 AND status = 'active' LIMIT 1`,
-        [slug],
-      )
-      return result.rows[0]?.id ?? null
-    } catch (err) {
-      logger.warn({ err, slug }, 'Failed to resolve agent ID')
-      return null
-    }
-  }
-
   // ═══════════════════════════════════════════
   // Batch operations (for nightly jobs)
   // ═══════════════════════════════════════════
 
-  async getSessionsForCompression(agentId: string, threshold: number, limit: number = 20): Promise<Array<{
+  async getSessionsForCompression(threshold: number, limit: number = 20): Promise<Array<{
     sessionId: string
     contactId: string
     channelIdentifier: string | null
@@ -734,16 +695,15 @@ export class PgStore {
                 s.started_at,
                 COALESCE(s.last_message_at, s.last_activity_at) AS last_message_at
          FROM sessions s
-         WHERE s.agent_id = $1
-           AND s.message_count >= $2
+         WHERE s.message_count >= $1
            AND COALESCE(s.status, 'active') = 'active'
            AND s.contact_id IS NOT NULL
            AND NOT EXISTS (
              SELECT 1 FROM session_summaries ss WHERE ss.session_id = s.id
            )
          ORDER BY s.last_activity_at ASC
-         LIMIT $3`,
-        [agentId, threshold, limit],
+         LIMIT $2`,
+        [threshold, limit],
       )
       return result.rows.map((row: DbRow) => ({
         sessionId: row.session_id,
@@ -754,7 +714,7 @@ export class PgStore {
         lastMessageAt: row.last_message_at,
       }))
     } catch (err) {
-      logger.warn({ err, agentId }, 'Failed to get sessions for compression')
+      logger.warn({ err }, 'Failed to get sessions for compression')
       return []
     }
   }
@@ -820,7 +780,6 @@ export class PgStore {
   private mapAgentContactRow(row: Record<string, unknown>): AgentContact {
     return {
       id: row.id as string,
-      agentId: row.agent_id as string,
       contactId: row.contact_id as string,
       leadStatus: row.lead_status as AgentContact['leadStatus'],
       qualificationData: (row.qualification_data ?? {}) as Record<string, unknown>,
@@ -845,7 +804,6 @@ export class PgStore {
     return {
       id: row.id as string,
       sessionId: row.session_id as string,
-      agentId: row.agent_id as string,
       contactId: row.contact_id as string,
       channelIdentifier: row.channel_identifier as string | null,
       summaryText: row.summary_text as string,
@@ -865,7 +823,6 @@ export class PgStore {
   private mapCommitmentRow(row: Record<string, unknown>): Commitment {
     return {
       id: row.id as string,
-      agentId: row.agent_id as string,
       contactId: row.contact_id as string,
       sessionId: row.session_id as string | null,
       commitmentBy: row.commitment_by as 'agent' | 'contact',

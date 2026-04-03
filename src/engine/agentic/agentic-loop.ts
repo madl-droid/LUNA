@@ -30,7 +30,6 @@ interface ToolExecutor {
     input: Record<string, unknown>,
     context: {
       contactId?: string | null
-      agentId?: string
       traceId?: string
       messageId?: string
       contactType?: string | null
@@ -313,7 +312,6 @@ async function executeToolCalls(
           } else {
             result = await toolExecutor.executeTool(toolCall.name, toolCall.input, {
               contactId: ctx.contactId,
-              agentId: ctx.agentId,
               traceId: ctx.traceId,
               messageId: ctx.message.id,
               contactType: ctx.contact?.contactType ?? null,

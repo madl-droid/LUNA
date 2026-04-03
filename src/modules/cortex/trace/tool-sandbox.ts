@@ -32,7 +32,6 @@ export function classifyTool(
 
 interface SandboxContext {
   contactId?: string
-  agentId?: string
   traceId?: string
 }
 

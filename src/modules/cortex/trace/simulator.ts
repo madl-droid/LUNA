@@ -235,7 +235,7 @@ async function shadowAgentic(
       // Execute in sandbox (read tools execute real, write tools dry-run)
       const sandboxResult = await executeSandboxToolCall(
         registry, tc.name, tc.input,
-        { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId },
+        { contactId: ctx.contactId ?? undefined, traceId: ctx.traceId },
         toolMode,
       )
       toolResults.push(sandboxResult)

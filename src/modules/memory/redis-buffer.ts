@@ -55,7 +55,6 @@ export class RedisBuffer {
     return {
       sessionId: sid,
       contactId: data.contactId ?? '',
-      agentId: data.agentId ?? '',
       channelName: data.channelName ?? '',
       startedAt: new Date(data.startedAt ?? 0),
       lastActivityAt: new Date(data.lastActivityAt ?? 0),
@@ -72,7 +71,6 @@ export class RedisBuffer {
     await this.redis.hset(key, {
       sessionId: meta.sessionId,
       contactId: meta.contactId,
-      agentId: meta.agentId,
       channelName: meta.channelName,
       startedAt: meta.startedAt.toISOString(),
       lastActivityAt: meta.lastActivityAt.toISOString(),
@@ -128,28 +126,28 @@ export class RedisBuffer {
 
   // ═══════════════════════════════════════════
   // Lead status cache (NEW — v3)
-  // key: lead_status:{contactId}:{agentId}
+  // key: lead_status:{contactId}
   // ═══════════════════════════════════════════
 
-  async getLeadStatus(contactId: string, agentId: string): Promise<string | null> {
+  async getLeadStatus(contactId: string): Promise<string | null> {
     try {
-      return await this.redis.get(`lead_status:${contactId}:${agentId}`)
+      return await this.redis.get(`lead_status:${contactId}`)
     } catch {
       return null
     }
   }
 
-  async setLeadStatus(contactId: string, agentId: string, status: string): Promise<void> {
+  async setLeadStatus(contactId: string, status: string): Promise<void> {
     try {
-      await this.redis.set(`lead_status:${contactId}:${agentId}`, status, 'EX', 43200) // 12h
+      await this.redis.set(`lead_status:${contactId}`, status, 'EX', 43200) // 12h
     } catch (err) {
-      logger.warn({ err, contactId, agentId }, 'Failed to cache lead status')
+      logger.warn({ err, contactId }, 'Failed to cache lead status')
     }
   }
 
-  async invalidateLeadStatus(contactId: string, agentId: string): Promise<void> {
+  async invalidateLeadStatus(contactId: string): Promise<void> {
     try {
-      await this.redis.del(`lead_status:${contactId}:${agentId}`)
+      await this.redis.del(`lead_status:${contactId}`)
     } catch {
       // ignore
     }
@@ -157,29 +155,29 @@ export class RedisBuffer {
 
   // ═══════════════════════════════════════════
   // Context bundle cache (NEW — v3)
-  // key: context:{contactId}:{agentId}
+  // key: context:{contactId}
   // Short TTL (5min) — invalidated on new message
   // ═══════════════════════════════════════════
 
-  async getCachedContext(contactId: string, agentId: string): Promise<string | null> {
+  async getCachedContext(contactId: string): Promise<string | null> {
     try {
-      return await this.redis.get(`context:${contactId}:${agentId}`)
+      return await this.redis.get(`context:${contactId}`)
     } catch {
       return null
     }
   }
 
-  async setCachedContext(contactId: string, agentId: string, contextJson: string): Promise<void> {
+  async setCachedContext(contactId: string, contextJson: string): Promise<void> {
     try {
-      await this.redis.set(`context:${contactId}:${agentId}`, contextJson, 'EX', 300) // 5min
+      await this.redis.set(`context:${contactId}`, contextJson, 'EX', 300) // 5min
     } catch (err) {
-      logger.warn({ err, contactId, agentId }, 'Failed to cache context')
+      logger.warn({ err, contactId }, 'Failed to cache context')
     }
   }
 
-  async invalidateContext(contactId: string, agentId: string): Promise<void> {
+  async invalidateContext(contactId: string): Promise<void> {
     try {
-      await this.redis.del(`context:${contactId}:${agentId}`)
+      await this.redis.del(`context:${contactId}`)
     } catch {
       // ignore
     }

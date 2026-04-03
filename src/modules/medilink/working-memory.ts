@@ -4,7 +4,7 @@
 // Each module instantiates with its own namespace — no cross-module coupling.
 //
 // Usage (any module with access to ctx.redis):
-//   const wmem = new WorkingMemory(redis, 'medilink', agentId)
+//   const wmem = new WorkingMemory(redis, 'medilink')
 //   await wmem.set(contactId, 'pending_reschedule_id', 456)
 //   await wmem.get<number>(contactId, 'pending_reschedule_id')  // → 456
 //   await wmem.del(contactId, 'pending_reschedule_id')
@@ -19,14 +19,13 @@ export class WorkingMemory {
   constructor(
     private readonly redis: Redis,
     private readonly namespace: string,
-    private readonly agentId: string,
     ttlS: number = DEFAULT_TTL_S,
   ) {
     this.ttlS = ttlS
   }
 
   private key(contactId: string, field: string): string {
-    return `wmem:${this.namespace}:${this.agentId}:${contactId}:${field}`
+    return `wmem:${this.namespace}:${contactId}:${field}`
   }
 
   async get<T>(contactId: string, field: string): Promise<T | null> {

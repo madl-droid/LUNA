@@ -386,7 +386,6 @@ export type AuditAction =
 export interface AuditEntry {
   id: string
   contactId: string
-  agentId: string
   medilinkPatientId: string | null
   action: AuditAction
   targetType: string
@@ -405,7 +404,6 @@ export interface EditRequest {
   id: string
   medilinkPatientId: string
   contactId: string
-  agentId: string
   requestedChanges: Record<string, { old: string | null; new: string }>
   reason: string | null
   status: EditRequestStatus
@@ -430,7 +428,6 @@ export interface FollowUp {
   id: string
   medilinkAppointmentId: string
   contactId: string
-  agentId: string
   appointmentDate: Date
   touchType: FollowUpTouchType
   channel: 'whatsapp' | 'voice'
@@ -461,7 +458,6 @@ export type VerificationLevel = 'unverified' | 'phone_matched' | 'document_verif
 export interface SecurityContext {
   contactId: string
   contactPhone: string
-  agentId: string
   medilinkPatientId: number | null
   verificationLevel: VerificationLevel
 }
