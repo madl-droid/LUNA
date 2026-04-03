@@ -931,14 +931,9 @@ export function renderAdvancedAgentSection(data: SectionData): string {
   </div>`
 
   // Panel 5: Motor Agentico (v2)
-  const engineMode = cv(data, 'ENGINE_MODE') || 'agentic'
   const effortDefault = cv(data, 'AGENTIC_EFFORT_DEFAULT') || 'medium'
   const criticizerMode = cv(data, 'LLM_CRITICIZER_MODE') || 'complex_only'
 
-  const engineModeOpts = [
-    { v: 'agentic', l: 'Agentic Loop (v2)' },
-    { v: 'legacy', l: 'Pipeline Legacy (v1)' },
-  ]
   const effortOpts = [
     { v: 'low', l: isEs ? 'Bajo (rapido)' : 'Low (fast)' },
     { v: 'medium', l: isEs ? 'Medio (balanceado)' : 'Medium (balanced)' },
@@ -957,18 +952,11 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
     <div class="panel-body">
       <div class="panel-info">${isEs
-        ? 'Configuracion del loop agentico v2: modo, esfuerzo, protecciones, recuperacion, modelos y cola de ejecucion.'
-        : 'Agentic loop v2 configuration: mode, effort, safeguards, recovery, models and execution queue.'}</div>
+        ? 'Configuracion del loop agentico v2: esfuerzo, protecciones, recuperacion, modelos y cola de ejecucion.'
+        : 'Agentic loop v2 configuration: effort, safeguards, recovery, models and execution queue.'}</div>
 
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modo y Esfuerzo' : 'Mode & Effort'}</span></div>
+      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Esfuerzo' : 'Effort'}</span></div>
       <div class="fields-row">
-        <div class="field">
-          <span class="field-label">${isEs ? 'Modo del motor' : 'Engine mode'}</span>
-          <span class="field-info">${isEs ? 'Agentico usa loop nativo con herramientas (v2). Legacy usa pipeline de 5 fases (v1, deprecado).' : 'Agentic uses native tool loop (v2). Legacy uses 5-phase pipeline (v1, deprecated).'}</span>
-          <select name="ENGINE_MODE" data-original="${esc(engineMode)}" class="js-custom-select">
-            ${engineModeOpts.map(o => `<option value="${esc(o.v)}"${o.v === engineMode ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
-          </select>
-        </div>
         <div class="field">
           <span class="field-label">${isEs ? 'Nivel de esfuerzo por defecto' : 'Default effort level'}</span>
           <span class="field-info">${isEs ? 'Usado cuando el enrutamiento por esfuerzo esta desactivado o no puede clasificar el mensaje.' : 'Used when effort routing is disabled or cannot classify the message.'}</span>

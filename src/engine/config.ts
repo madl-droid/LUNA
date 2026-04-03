@@ -150,7 +150,6 @@ export function loadEngineConfig(): EngineConfig {
     checkpointCleanupDays: envInt('ENGINE_CHECKPOINT_CLEANUP_DAYS', 7),
 
     // --- Agentic engine config (v2.0) ---
-    engineMode:              (env('ENGINE_MODE', 'agentic')) as 'agentic' | 'legacy',
     agenticMaxTurns:         envInt('ENGINE_AGENTIC_MAX_TURNS', 15),
     effortRoutingEnabled:    envBool('ENGINE_EFFORT_ROUTING', true),
     toolDedupEnabled:        envBool('ENGINE_TOOL_DEDUP', true),

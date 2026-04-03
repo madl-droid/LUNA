@@ -34,9 +34,6 @@ checkpoints/
 
 phases/
   phase1-intake.ts    — normalización + context loading via memory:manager + users:resolve (<200ms)
-  phase2-evaluate.ts  — evaluación con LLM (reactivo + proactivo, NO_ACTION)
-  phase3-execute.ts   — ejecución del plan (router, memory lookup, process_attachment, step semaphore)
-  phase4-compose.ts   — composición de respuesta (LLM con retries) + formato canal + TTS
   phase5-validate.ts  — validación + envío + persistencia + commitment auto-detect
 
 attachments/
@@ -98,9 +95,9 @@ utils/
   (mocks/ eliminado — Phase 2, Phase 3 y subagent usan tools:registry del módulo tools)
 ```
 
-## Agentic Loop (v2 — reemplaza Phases 2+3+4)
+## Agentic Loop (v2)
 
-Nuevo en v2.0.0. Cuando `ENGINE_MODE=agentic` (default), las Phases 2+3+4 son reemplazadas por un único loop agentico donde el LLM llama tools nativamente y compone la respuesta en la misma conversación.
+Las Phases 2+3+4 legacy fueron eliminadas. El engine usa exclusivamente el agentic loop donde el LLM llama tools nativamente y compone la respuesta en la misma conversación.
 
 ### Cómo funciona el loop agentico
 
@@ -121,10 +118,9 @@ Nuevo en v2.0.0. Cuando `ENGINE_MODE=agentic` (default), las Phases 2+3+4 son re
 
 ### Conexión al pipeline
 
-- **Input**: ContextBundle de Phase 1 (sin cambios)
+- **Input**: ContextBundle de Phase 1
 - **Output**: CompositorOutput → alimenta Phase 5 (validate + send)
-- Phase 1 permanece igual. Phase 5 con adaptaciones menores.
-- Phases 2, 3, 4 se mantienen detrás de `ENGINE_MODE=legacy`.
+- Phase 1 y Phase 5 permanecen iguales.
 
 ### Ruta de ejecución de tools
 
@@ -160,14 +156,12 @@ Configurable desde consola y .env. Persiste al reinicio.
 1. Semaphore acquire → Contact lock → `processMessageInner()`
 2. Phase 1: normalize, user type via `users:resolve`, classify attachments (metadata only) → ContextBundle v4
 3. Test mode gate: si testMode && !admin → return silencioso
-4. Phase 2: LLM evaluator → intent, plan (puede incluir process_attachment steps)
-5. Phase 3: execute plan steps con step semaphore (process_attachment = heavy processing)
-6. Phase 4: LLM compositor (retries + fallback) → formato canal → TTS → CompositorOutput
-7. Phase 5: validate, send (pre-formatted), persist, proactive signals
+4. Agentic loop: effort router → system prompt → while(tool_calls) { execute tools } → post-process → CompositorOutput
+5. Phase 5: validate, send (pre-formatted), persist, proactive signals
 
 ## Adjuntos (procesamiento en Phase 1)
 
-- **Phase 1**: `classifyAttachments()` + `processAttachmentsInPhase1()` en paralelo con context loading
+- **Phase 1**: `classifyAttachments()` + `processAttachmentsInPhase1()` en paralelo con context loading — resultados inyectados en `ctx.history`
   - Descarga, extrae texto (extractores globales), enriquece con LLM (vision/STT/multimodal)
   - Resultado dual: `extractedText` (code, para embeddings) + `llmText` (LLM, para conversación)
   - Inyecta cada adjunto como mensaje en `ctx.history` con etiqueta `[category]`:
@@ -181,23 +175,13 @@ Configurable desde consola y .env. Persiste al reinicio.
   - Herencia: ENGINE_EXTRACTION_CAPABILITIES × CHANNEL_PLATFORM_CAPABILITIES × admin toggles
   - Imágenes: binario guardado en `instance/knowledge/media/` para re-consulta
   - Persiste ambos resultados en `attachment_extractions` (code + LLM)
-- **Phase 2**: evaluador ve contenido de adjuntos ya en el historial (NO necesita planear `process_attachment`)
-- **Phase 3**: `executeProcessAttachment()` se mantiene como fallback si Phase 1 no procesó
-- **Phase 4**: compositor tiene contexto completo desde el historial
-
-## Phase 4: Retries + Formato + TTS
-
-- LLM con retry por provider (configurable ENGINE_COMPOSE_RETRIES_PER_PROVIDER)
-- Primary (retry) → Fallback provider (retry) → Template de archivo
-- `formatForChannel()` → split WA, HTML email, etc.
-- TTS si `responseFormat === 'audio'`
-- Output: CompositorOutput con `formattedParts`, `audioBuffer?`, `outputFormat`
+- Agentic loop ve el contenido de adjuntos en el historial (inyectado por Phase 1)
 
 ## Proactivo
 
 - BullMQ runner con 6 tipos de job: follow-up, reminder, commitment-check, reactivation, nightly-batch, cache-refresh
 - 7 guardas de protección antes de cada job (business hours, cooldown, max per day, conversation guard, Redis contact lock, etc.)
-- Pipeline simplificado: Phase 1 minimal → reusa Phases 2-5 con `ProactiveContextBundle`
+- Pipeline simplificado: Phase 1 minimal → agentic loop → Phase 5 con `ProactiveContextBundle`
 - `NO_ACTION` es el default seguro — si LLM falla, no se envía nada
 - Commitment auto-detector escanea respuestas del agente en Phase 5
 

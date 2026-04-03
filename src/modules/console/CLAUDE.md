@@ -101,7 +101,6 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 - `GET /engine-metrics` — métricas del engine con periodo
 
 ## Motor Agentico (v2) — `/console/agente/advanced` Panel 5
-- `ENGINE_MODE` — select (agentic|legacy)
 - `ENGINE_AGENTIC_MAX_TURNS` — max tool-calling turns per message
 - `AGENTIC_EFFORT_DEFAULT` — default effort level when routing disabled
 - `ENGINE_EFFORT_ROUTING` — enable/disable complexity-based effort routing
