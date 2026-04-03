@@ -35,8 +35,6 @@ import type { FreshdeskMatch } from '../../tools/freshdesk/types.js'
 
 const logger = pino({ name: 'engine:phase1' })
 
-const DEFAULT_AGENT_ID = 'luna'
-
 /**
  * Execute Phase 1: Intake + Context Loading.
  * Returns a fully populated ContextBundle.
@@ -73,9 +71,6 @@ export async function phase1Intake(
 
   // 3. Detect possible prompt injection
   const possibleInjection = detectInputInjection(normalizedText)
-
-  // 5. Resolve agent ID
-  const agentId = await resolveAgentId(memoryManager)
 
   // 5b. Classify attachments (metadata for evaluator context)
   const attachmentMeta: AttachmentMetadata[] = config.attachmentEnabled
@@ -163,9 +158,9 @@ export async function phase1Intake(
   // 10c. Medilink auto-link: identify if contact is existing patient or new lead
   // Runs synchronously so LLM gets the status in this same message.
   if (contact?.id) {
-    const medilinkAutoLink = registry.getOptional<(contactId: string, agentId: string) => Promise<void>>('medilink:auto_link')
+    const medilinkAutoLink = registry.getOptional<(contactId: string) => Promise<void>>('medilink:auto_link')
     if (medilinkAutoLink) {
-      await medilinkAutoLink(contact.id, agentId).catch((err: unknown) => {
+      await medilinkAutoLink(contact.id).catch((err: unknown) => {
         logger.warn({ err, traceId }, 'medilink:auto_link failed — continuing without patient status')
       })
     }
@@ -178,7 +173,6 @@ export async function phase1Intake(
     contact?.id ?? null,
     message.from,
     message.channelName,
-    agentId,
     sessionWindowMs,
     message.threadId,
   )
@@ -202,10 +196,10 @@ export async function phase1Intake(
     bufferSummaryResult,
   ] = await Promise.allSettled([
     loadHistory(memoryManager, db, session.id, historyTurns),
-    contact?.id && memoryManager ? loadContactMemory(memoryManager, agentId, contact.id) : Promise.resolve(null),
-    contact?.id && memoryManager ? memoryManager.getPendingCommitments(agentId, contact.id) : Promise.resolve([]),
+    contact?.id && memoryManager ? loadContactMemory(memoryManager, contact.id) : Promise.resolve(null),
+    contact?.id && memoryManager ? memoryManager.getPendingCommitments(contact.id) : Promise.resolve([]),
     contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', getContextSummariesLimit(registry, message.channelName)) : Promise.resolve([]),
-    contact?.id && memoryManager ? memoryManager.getLeadStatus(contact.id, agentId) : Promise.resolve(null),
+    contact?.id && memoryManager ? memoryManager.getLeadStatus(contact.id) : Promise.resolve(null),
     memoryManager ? memoryManager.getBufferSummary(session.id) : Promise.resolve(null),
   ])
 
@@ -218,7 +212,7 @@ export async function phase1Intake(
 
   // Invalidate context cache (new message = new context)
   if (contact?.id && memoryManager) {
-    memoryManager.invalidateContext(contact.id, agentId).catch(() => {})
+    memoryManager.invalidateContext(contact.id).catch(() => {})
   }
 
   // 16. Await attachment processing (ran in parallel with steps 6-15)
@@ -320,7 +314,6 @@ export async function phase1Intake(
     userType,
     userPermissions,
     contactId: contact?.id ?? null,
-    agentId,
     contact,
     session,
     isNewContact: !contact,
@@ -414,26 +407,15 @@ async function processAttachmentsInPhase1(
 
 // ─── Helpers ──────────────────────────────
 
-async function resolveAgentId(memoryManager: MemoryManager | null): Promise<string> {
-  if (!memoryManager) return DEFAULT_AGENT_ID
-  try {
-    const id = await memoryManager.resolveAgentId(DEFAULT_AGENT_ID)
-    return id ?? DEFAULT_AGENT_ID
-  } catch {
-    return DEFAULT_AGENT_ID
-  }
-}
-
 async function loadContactMemory(
   memoryManager: MemoryManager,
-  agentId: string,
   contactId: string,
 ): Promise<ContactMemory | null> {
   try {
-    const ac = await memoryManager.getAgentContact(agentId, contactId)
+    const ac = await memoryManager.getAgentContact(contactId)
     return ac?.contactMemory ?? null
   } catch (err) {
-    logger.warn({ err, agentId, contactId }, 'Failed to load contact memory')
+    logger.warn({ err, contactId }, 'Failed to load contact memory')
     return null
   }
 }
@@ -554,10 +536,9 @@ async function findContact(
               COALESCE(ac.qualification_data, '{}') AS qualification_data,
               c.created_at,
               cc.channel_identifier, cc.channel_type, cc.id AS cc_id
-       FROM contacts c
+      FROM contacts c
        JOIN contact_channels cc ON cc.contact_id = c.id
        LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
-         AND ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
        WHERE cc.channel_identifier = $1 AND cc.channel_type = $2
        LIMIT 1`
 
@@ -688,7 +669,6 @@ async function loadOrCreateSession(
   contactId: string | null,
   channelContactId: string,
   channel: string,
-  agentId: string,
   reopenWindowMs: number,
   threadId?: string,
 ): Promise<SessionInfo> {
@@ -717,7 +697,6 @@ async function loadOrCreateSession(
         return {
           id: row.id,
           contactId: row.contact_id,
-          agentId: row.agent_id ?? agentId,
           channel: row.channel_name,
           startedAt: row.started_at,
           lastActivityAt: row.last_activity_at,
@@ -751,7 +730,6 @@ async function loadOrCreateSession(
         return {
           id: row.id,
           contactId: row.contact_id,
-          agentId: row.agent_id ?? agentId,
           channel: row.channel_name,
           startedAt: row.started_at,
           lastActivityAt: row.last_activity_at,
@@ -788,7 +766,6 @@ async function loadOrCreateSession(
         return {
           id: row.id,
           contactId: row.contact_id,
-          agentId: row.agent_id ?? agentId,
           channel: row.channel_name,
           startedAt: row.started_at,
           lastActivityAt: row.last_activity_at,
@@ -807,9 +784,9 @@ async function loadOrCreateSession(
 
   try {
     await db.query(
-      `INSERT INTO sessions (id, contact_id, channel_contact_id, channel_name, agent_id, started_at, last_activity_at, message_count, thread_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, 0, $7)`,
-      [sessionId, contactId, channelContactId, channel, agentId, now, threadId ?? null],
+      `INSERT INTO sessions (id, contact_id, channel_contact_id, channel_name, started_at, last_activity_at, message_count, thread_id)
+       VALUES ($1, $2, $3, $4, $5, $5, 0, $6)`,
+      [sessionId, contactId, channelContactId, channel, now, threadId ?? null],
     )
   } catch (err) {
     logger.error({ err, sessionId, channelContactId, channel, threadId }, 'Failed to create session in DB — cannot proceed without persisted session')
@@ -819,7 +796,6 @@ async function loadOrCreateSession(
   return {
     id: sessionId,
     contactId: contactId ?? channelContactId,
-    agentId,
     channel: channel as ContactInfo['channel'],
     startedAt: now,
     lastActivityAt: now,

@@ -45,11 +45,6 @@ const DEFAULTS: NightlyConfig = {
   maxRetries: 2,
 }
 
-// FIX: E-30 — Use agent slug from config instead of hardcoded 'luna'
-function getAgentId(ctx: ProactiveJobContext): string {
-  return ctx.engineConfig.agentSlug
-}
-
 /** Get batch LLM model/provider from engine config (proactive task routing) */
 function getBatchModel(ctx: ProactiveJobContext): { provider?: string; model?: string } {
   return { provider: ctx.engineConfig.proactiveProvider, model: ctx.engineConfig.proactiveModel }
@@ -122,17 +117,15 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
   logger.info({ traceId: ctx.traceId, batchSize: config.scoringBatchSize }, 'Scoring cold leads')
 
   try {
-    const agentSlug = getAgentId(ctx)
     const result = await ctx.db.query(
       `SELECT c.id, c.display_name, ac.qualification_data, ac.qualification_score
        FROM contacts c
        JOIN agent_contacts ac ON ac.contact_id = c.id
-         AND ac.agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)
        WHERE c.contact_type = 'lead'
          AND ac.lead_status = 'cold'
        ORDER BY ac.updated_at DESC
        LIMIT $1`,
-      [config.scoringBatchSize, agentSlug],
+      [config.scoringBatchSize],
     )
 
     if (result.rows.length === 0) {
@@ -206,20 +199,18 @@ Evalúa este lead frío. Responde SOLO con JSON:
 
         await ctx.db.query(
           `UPDATE agent_contacts SET qualification_score = $1, updated_at = NOW()
-           WHERE contact_id = $2 AND agent_id = (SELECT id FROM agents WHERE slug = $3 LIMIT 1)`,
-          [newScore, row.id, agentSlug],
+           WHERE contact_id = $2`,
+          [newScore, row.id],
         )
 
         if (newScore >= config.scoringThreshold && parsed.recommend_reactivation) {
           await ctx.db.query(
             `UPDATE agent_contacts SET lead_status = 'qualifying', updated_at = NOW()
-             WHERE contact_id = $1 AND lead_status = 'cold'
-               AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
-            [row.id, agentSlug],
+             WHERE contact_id = $1 AND lead_status = 'cold'`,
+            [row.id],
           )
           await ctx.registry.runHook('contact:status_changed', {
             contactId: row.id,
-            agentId: getAgentId(ctx),
             from: 'cold',
             to: 'qualifying',
           })
@@ -343,7 +334,7 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
           if (!parsed?.summary) return
 
           const summaryId = await memoryManager.compressSession(
-            row.id, getAgentId(ctx), row.contact_id, row.channel_name ?? null,
+            row.id, row.contact_id, row.channel_name ?? null,
             {
               summary: parsed.summary as string,
               keyFacts: Array.isArray(parsed.keyFacts) ? (parsed.keyFacts as Array<Record<string, unknown>>).map(kf => ({ fact: String(kf.fact ?? ''), source: 'nightly-compression', confidence: typeof kf.confidence === 'number' ? kf.confidence : 0.8 })) : [],

@@ -13,7 +13,6 @@ export interface CommitmentInput {
   type: string
   description: string
   contactId: string
-  agentId: string
   sessionId?: string
   dueWithinHours?: number
 }
@@ -75,7 +74,6 @@ function buildKnownCommitment(
   const autoCancelAt = new Date(dueAt.getTime() + typeConfig.auto_cancel_hours * 60 * 60 * 1000)
 
   const commitment: Omit<Commitment, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'> = {
-    agentId: input.agentId,
     contactId: input.contactId,
     sessionId: input.sessionId ?? null,
     commitmentBy: 'agent',
@@ -116,7 +114,6 @@ function buildGenericCommitment(
   const autoCancelAt = new Date(dueAt.getTime() + autoCancelHours * 60 * 60 * 1000)
 
   const commitment: Omit<Commitment, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'> = {
-    agentId: input.agentId,
     contactId: input.contactId,
     sessionId: input.sessionId ?? null,
     commitmentBy: 'agent',

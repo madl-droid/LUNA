@@ -170,7 +170,6 @@ export async function phase5Validate(
   if (evaluation?.objectionType && ctx.contactId && memoryManager) {
     const stepLabel = evaluation.objectionStep ? ` (paso ${evaluation.objectionStep})` : ''
     memoryManager.applyFactCorrection(
-      ctx.agentId ?? 'default',
       ctx.contactId,
       {
         oldFact: `Objeción activa: ${evaluation.objectionType}`,
@@ -210,7 +209,7 @@ export async function phase5Validate(
 
       const proactiveConfig = getProactiveConfig()
       detectCommitments(
-        responseText, ctx.contactId, ctx.agentId, ctx.session.id,
+        responseText, ctx.contactId, ctx.session.id,
         registry, config, proactiveConfig,
       ).catch(() => {})
     }
@@ -621,7 +620,6 @@ async function persistMessages(
     const incomingMsg: StoredMessage = {
       id: ctx.message.id,
       sessionId: ctx.session.id,
-      agentId: ctx.agentId,
       channelName: ctx.message.channelName,
       senderType: 'user',
       senderId: ctx.message.from,
@@ -637,10 +635,9 @@ async function persistMessages(
     const outgoingMsg: StoredMessage = {
       id: randomUUID(),
       sessionId: ctx.session.id,
-      agentId: ctx.agentId,
       channelName: ctx.message.channelName,
       senderType: 'agent',
-      senderId: ctx.agentId,
+      senderId: 'assistant',
       content: { type: 'text', text: responseText },
       role: 'assistant',
       contentText: responseText,
@@ -680,7 +677,7 @@ async function persistMessages(
        ON CONFLICT (id) DO NOTHING`,
       [
         randomUUID(), ctx.session.id, ctx.message.channelName,
-        'agent', ctx.agentId,
+        'agent', 'assistant',
         JSON.stringify({ type: 'text', text: responseText, intent: evaluation?.intent }),
         now,
       ],
@@ -717,18 +714,16 @@ async function updateLeadQualification(
   if (currentStatus === 'new') {
     try {
       if (memoryManager) {
-        await memoryManager.updateLeadStatus(ctx.agentId, ctx.contactId, 'qualifying')
+        await memoryManager.updateLeadStatus(ctx.contactId, 'qualifying')
       } else {
         await db.query(
           `UPDATE agent_contacts SET lead_status = 'qualifying', updated_at = NOW()
-           WHERE contact_id = $1 AND lead_status = 'new'
-             AND agent_id = (SELECT id FROM agents WHERE slug = $2 LIMIT 1)`,
-          [ctx.contactId, ctx.agentId],
+           WHERE contact_id = $1 AND lead_status = 'new'`,
+          [ctx.contactId],
         )
       }
       await registry.runHook('contact:status_changed', {
         contactId: ctx.contactId,
-        agentId: ctx.agentId,
         from: 'new',
         to: 'qualifying',
       })

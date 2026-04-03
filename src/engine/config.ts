@@ -138,9 +138,6 @@ export function loadEngineConfig(): EngineConfig {
     // FIX: E-1 — Pipeline global timeout (2 minutes default)
     pipelineTimeoutMs: envInt('ENGINE_PIPELINE_TIMEOUT_MS', 120000),
 
-    // FIX: E-30 — Agent slug (fallback 'luna' for backward compat)
-    agentSlug: env('AGENT_SLUG', 'luna'),
-
     // Criticizer (quality gate): disabled | complex_only | always
     criticizerMode: env('LLM_CRITICIZER_MODE', 'complex_only') as 'disabled' | 'complex_only' | 'always',
 

@@ -73,7 +73,6 @@ export interface ContactInfo {
 export interface SessionInfo {
   id: string
   contactId: string
-  agentId: string
   channel: ChannelName
   startedAt: Date
   lastActivityAt: Date
@@ -142,9 +141,6 @@ export interface ContextBundle {
   userType: UserType
   userPermissions: UserPermissions
   contactId: string | null
-
-  // Agent (resolved from config or DB)
-  agentId: string
 
   // Contact & session
   contact: ContactInfo | null
@@ -671,9 +667,6 @@ export interface EngineConfig {
 
   // FIX: E-1 — Pipeline global timeout
   pipelineTimeoutMs: number
-
-  // FIX: E-30 — Agent slug (no hardcoding 'luna')
-  agentSlug: string
 
   // Criticizer (quality gate): 'disabled' | 'complex_only' | 'always'
   criticizerMode: 'disabled' | 'complex_only' | 'always'
