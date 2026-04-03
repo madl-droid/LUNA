@@ -155,7 +155,28 @@ export async function phase1Intake(
     }
   }
 
-  // 10c. Medilink auto-link: identify if contact is existing patient or new lead
+  // 10c. Ensure agent_contacts row exists (required for medilink linkage, lead scoring, etc.)
+  if (contact?.id && memoryManager) {
+    try {
+      await memoryManager.ensureAgentContact(contact.id)
+    } catch (err) {
+      logger.warn({ err, traceId, contactId: contact.id }, 'ensureAgentContact failed — continuing')
+    }
+  }
+
+  // 10d. If existing contact has no phone but we resolved one, backfill it
+  if (contact?.id && message.resolvedPhone) {
+    try {
+      await db.query(
+        `UPDATE contacts SET phone = $1 WHERE id = $2 AND (phone IS NULL OR phone = '')`,
+        [message.resolvedPhone, contact.id],
+      )
+    } catch (err) {
+      logger.warn({ err, traceId, contactId: contact.id }, 'Failed to backfill contact phone')
+    }
+  }
+
+  // 10e. Medilink auto-link: identify if contact is existing patient or new lead
   // Runs synchronously so LLM gets the status in this same message.
   if (contact?.id) {
     const medilinkAutoLink = registry.getOptional<(contactId: string) => Promise<void>>('medilink:auto_link')
@@ -607,9 +628,9 @@ async function autoCreateContact(
 
   try {
     await db.query(
-      `INSERT INTO contacts (id, display_name, contact_type, created_at)
-       VALUES ($1, $2, 'lead', $3)`,
-      [contactId, displayName ?? null, now],
+      `INSERT INTO contacts (id, display_name, contact_type, phone, created_at)
+       VALUES ($1, $2, 'lead', $3, $4)`,
+      [contactId, displayName ?? null, resolvedPhone ?? null, now],
     )
 
     await db.query(
