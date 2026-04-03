@@ -265,7 +265,7 @@ const leadsWaiting: Rule = {
          AND created_at < NOW() - INTERVAL '5 minutes'
          AND NOT EXISTS (
            SELECT 1 FROM messages m2
-           WHERE m2.contact_id = messages.contact_id
+           WHERE m2.session_id = messages.session_id
            AND m2.role = 'assistant'
            AND m2.created_at > messages.created_at
          )`,
@@ -285,7 +285,7 @@ const leadsWaiting: Rule = {
          AND created_at < NOW() - INTERVAL '5 minutes'
          AND NOT EXISTS (
            SELECT 1 FROM messages m2
-           WHERE m2.contact_id = messages.contact_id
+           WHERE m2.session_id = messages.session_id
            AND m2.role = 'assistant'
            AND m2.created_at > messages.created_at
          )`,
