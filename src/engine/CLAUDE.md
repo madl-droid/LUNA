@@ -57,8 +57,11 @@ fallbacks/
   fallback-loader.ts  — carga templates de fallback per-channel con cascade (canal → genérico)
 
 prompts/
-  evaluator.ts        — prompt builder fase 2 (reactivo + proactivo)
-  compositor.ts       — prompt builder fase 4
+  agentic.ts          — prompt builder para el agentic loop (reemplaza evaluator + compositor)
+  context-builder.ts  — shared context layers (identity, job, knowledge, history, etc.)
+  channel-format.ts   — getChannelLimit(), buildFormatFromForm()
+  accent.ts           — buildAccentSection() from config_store
+  skills.ts           — loadSkillCatalog(), buildSkillCatalogSection()
   subagent.ts         — prompt builder para subagent mini-loop
 
 subagent/

@@ -72,8 +72,8 @@ Módulo con tres features: **Reflex** (alertas tiempo real, 0 LLM), **Pulse** (a
 - **Entrega**: mismos canales que Reflex (Telegram, WhatsApp, email).
 
 ## Trace — Simulación y testing
-- **Shadow Pipeline**: NO usa processMessage(). Importa buildEvaluatorPrompt + buildCompositorPrompt directamente.
-- **Tool sandbox**: tools read se ejecutan real (datos fieles), tools write son dry-run (seguras).
+- **Shadow Agentic Loop**: NO usa processMessage(). Usa buildAgenticPrompt + callLLMWithFallback con tools en sandbox.
+- **Tool sandbox**: tools read se ejecutan real (datos fieles), tools write son dry-run (seguras). `executeSandboxToolCall()` para agentic loop.
 - **Prompt overrides**: per-request via Proxy de registry (NUNCA toca prompt_slots global).
 - **Analyst + Synthesizer**: LLM con thinking analiza cada simulación y genera reporte agregado.
 - **3 tablas**: trace_scenarios, trace_runs, trace_results (migration 010).
@@ -87,7 +87,7 @@ Módulo con tres features: **Reflex** (alertas tiempo real, 0 LLM), **Pulse** (a
 - Pulse NO envía reportes vacíos al LLM — usa `isQuietPeriod()`.
 - `dispatch-bridge.ts` NO aplica silence window — reportes Pulse siempre se entregan.
 - API routes se populan en init() mutando manifest.console.apiRoutes.
-- Trace simulator NUNCA llama processMessage() — usa prompt builders directamente.
+- Trace simulator NUNCA llama processMessage() — usa buildAgenticPrompt + callLLMWithFallback con tool sandbox.
 - Tool sandbox clasifica por regex de nombre: search_*/get_* = execute, send_*/create_* = dry-run.
 - Prompt overrides son per-request (Proxy), NUNCA modifican prompt_slots en DB.
 - Si Trace está disabled, sus tablas NO se crean y las API routes retornan 400.

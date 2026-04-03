@@ -161,6 +161,39 @@ export async function executeSandboxPlan(
   return { stepResults, sandboxResults, partialData }
 }
 
+// ═══════════════════════════════════════════
+// Direct tool call execution (for agentic loop)
+// ═══════════════════════════════════════════
+
+/**
+ * Execute a single tool call in sandbox mode (read tools real, write tools dry-run).
+ * Used by the shadow agentic loop which gets tool_calls from the LLM directly
+ * (no execution plan).
+ */
+export async function executeSandboxToolCall(
+  registry: Registry,
+  toolName: string,
+  params: Record<string, unknown>,
+  ctx: SandboxContext,
+  toolMode?: Record<string, 'execute' | 'dry-run'>,
+): Promise<SandboxToolResult> {
+  const mode = classifyTool(toolName, toolMode)
+
+  if (mode === 'execute') {
+    return executeReal(registry, toolName, params, ctx)
+  }
+
+  // Dry-run: return synthetic success without executing
+  return {
+    tool: toolName,
+    mode: 'dry-run',
+    params,
+    success: true,
+    data: { _dryRun: true, wouldHaveCalled: toolName, withParams: params },
+    durationMs: 0,
+  }
+}
+
 // ─── Internal ─────────────────────────────
 
 async function executeReal(
