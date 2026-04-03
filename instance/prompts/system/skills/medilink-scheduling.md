@@ -1,6 +1,5 @@
 <!-- description: Protocolo completo de agendamiento de citas en la clínica — leads nuevos y pacientes conocidos -->
 <!-- userTypes: lead,unknown -->
-<!-- triggerPatterns: valoracion,valoración,cita,agendar,agenda,disponibilidad,procedimiento,tratamiento,quiero ir,quiero pasar,me puedes atender,tienen espacio,tienen agenda,horario -->
 
 # Habilidad: Agendamiento de Citas Médicas
 
