@@ -218,7 +218,7 @@ async function runProactiveAgentic(
     criticizerMode: engineConfig.criticizerMode,
   }
 
-  // Run agentic loop
+  // Run agentic loop (pass full user message with context layers)
   const agenticResult = await runAgenticLoop(
     ctx,
     agenticPrompt.system,
@@ -226,6 +226,7 @@ async function runProactiveAgentic(
     agenticConfig,
     registry,
     engineConfig,
+    agenticPrompt.userMessage,
   )
   log.info({ turns: agenticResult.turns, stopReason: agenticResult.effortUsed }, 'Proactive agentic loop complete')
 

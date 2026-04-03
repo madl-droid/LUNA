@@ -421,7 +421,7 @@ async function runAgenticPipeline(
     llmToolDefs.push(skillReadTool)
   }
 
-  // 4. Build system prompt
+  // 4. Build system prompt + user message (with full context layers)
   const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, reg, {
     isProactive: false,
     subagentCatalog,
@@ -442,7 +442,7 @@ async function runAgenticPipeline(
     criticizerMode: config.criticizerMode,
   }
 
-  // 6. Run the agentic loop
+  // 6. Run the agentic loop (pass full user message with context layers)
   const agenticResult: AgenticResult = await runAgenticLoop(
     ctx,
     systemPrompt,
@@ -450,6 +450,7 @@ async function runAgenticPipeline(
     agenticConfig,
     reg,
     config,
+    agenticPrompt.userMessage,
   )
   log.info({
     turns: agenticResult.turns,
