@@ -85,7 +85,6 @@ export async function registerCreateCommitmentTool(
           type: String(input.type ?? 'action'),
           description: String(input.description ?? ''),
           contactId: ctx.contactId,
-          agentId: 'luna',
           dueWithinHours: typeof input.due_within_hours === 'number' ? input.due_within_hours : undefined,
         },
         proactiveConfig,

@@ -83,7 +83,6 @@ export async function buildSimContext(
   session = {
     id: crypto.randomUUID(),
     contactId: contact?.id ?? crypto.randomUUID(),
-    agentId: await getAgentId(db),
     channel: message.channel,
     startedAt: new Date(),
     lastActivityAt: new Date(),
@@ -116,7 +115,6 @@ export async function buildSimContext(
     userType,
     userPermissions: SIM_PERMISSIONS,
     contactId: contact?.id ?? null,
-    agentId: session.agentId,
     contact,
     session,
     isNewContact: !contact,
@@ -206,11 +204,3 @@ async function loadContactData(db: Pool, contactId: string): Promise<ContactData
   return { contact, history, contactMemory, leadStatus }
 }
 
-async function getAgentId(db: Pool): Promise<string> {
-  try {
-    const { rows } = await db.query(`SELECT id FROM agents LIMIT 1`)
-    const row = rows[0] as { id: string } | undefined
-    if (row) return row.id
-  } catch { /* fallback */ }
-  return crypto.randomUUID()
-}

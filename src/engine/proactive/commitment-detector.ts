@@ -24,7 +24,6 @@ const DETECTOR_SYSTEM_FALLBACK = `You are a commitment detector. Respond in JSON
 export async function detectCommitments(
   responseText: string,
   contactId: string,
-  agentId: string,
   sessionId: string,
   registry: Registry,
   engineConfig: EngineConfig,
@@ -39,7 +38,7 @@ export async function detectCommitments(
   // Check if any commitments were already created by the tool in this session
   // (don't double-detect what the evaluator already handled)
   try {
-    const existing = await memMgr.getPendingCommitments(agentId, contactId)
+    const existing = await memMgr.getPendingCommitments(contactId)
     // If a commitment was created in the last 30 seconds, the tool handled it
     const recentCutoff = Date.now() - 30_000
     const recentlyCreated = existing.some(c => c.createdVia === 'tool' && c.createdAt.getTime() > recentCutoff)
@@ -93,7 +92,6 @@ export async function detectCommitments(
           type: detected.type,
           description: detected.description,
           contactId,
-          agentId,
           sessionId,
           dueWithinHours: detected.due_within_hours ?? undefined,
         },

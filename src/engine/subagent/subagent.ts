@@ -81,7 +81,6 @@ function buildSubagentContext(
     userType: parentCtx.userType,
     userPermissions: parentCtx.userPermissions,
     contactId: parentCtx.contactId,
-    agentId: parentCtx.agentId,
 
     // Contact & session — keep for identity context
     contact: parentCtx.contact,
@@ -504,7 +503,6 @@ async function runSubagentLoop(
 
           const toolResult = await toolsRegistry.executeTool(toolCall.name, toolCall.input, {
             contactId: ctx.contactId,
-            agentId: ctx.agentId,
             traceId: ctx.traceId,
           })
           lastData = toolResult.data

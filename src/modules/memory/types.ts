@@ -12,7 +12,6 @@ export type ContentType = 'text' | 'image' | 'audio' | 'document' | 'location' |
 export interface StoredMessage {
   id: string
   sessionId: string
-  agentId: string
   // Legacy fields (dual-write period)
   channelName: string
   senderType: SenderType
@@ -49,7 +48,6 @@ export interface MessageContent {
 export interface SessionMeta {
   sessionId: string
   contactId: string
-  agentId: string
   channelName: string
   startedAt: Date
   lastActivityAt: Date
@@ -65,7 +63,6 @@ export interface SessionMeta {
 export interface SessionSummary {
   id: string
   sessionId: string
-  agentId: string
   contactId: string
   channelIdentifier?: string | null
   summaryText: string
@@ -129,7 +126,6 @@ export type LeadStatus =
 
 export interface AgentContact {
   id: string
-  agentId: string
   contactId: string
   leadStatus: LeadStatus
   qualificationData: Record<string, unknown>
@@ -157,7 +153,6 @@ export type CommitmentPriority = 'low' | 'normal' | 'high' | 'urgent'
 
 export interface Commitment {
   id: string
-  agentId: string
   contactId: string
   sessionId?: string | null
   commitmentBy: 'agent' | 'contact'
@@ -200,7 +195,6 @@ export interface ConversationArchive {
   id: string
   sessionId: string
   contactId: string
-  agentId: string
   channelIdentifier?: string | null
   channelType?: string | null
   contactSnapshot: Record<string, unknown>
@@ -324,7 +318,6 @@ export interface CompressionResult {
 
 export interface PipelineLogEntry {
   messageId?: string | null
-  agentId: string
   contactId?: string | null
   sessionId?: string | null
   phase1Ms?: number | null

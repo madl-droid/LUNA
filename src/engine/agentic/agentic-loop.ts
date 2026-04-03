@@ -313,7 +313,6 @@ async function executeToolCalls(
           } else {
             result = await toolExecutor.executeTool(toolCall.name, toolCall.input, {
               contactId: ctx.contactId,
-              agentId: ctx.agentId,
               traceId: ctx.traceId,
               messageId: ctx.message.id,
               contactType: ctx.contact?.contactType ?? null,

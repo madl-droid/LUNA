@@ -299,7 +299,6 @@ async function runProactiveAgentic(
   if (memMgr && candidate.contactId) {
     memMgr.savePipelineLog({
       messageId: traceId,
-      agentId: ctx.agentId,
       contactId: candidate.contactId,
       sessionId: ctx.session.id,
       phase1Ms: phase1DurationMs,
@@ -333,8 +332,6 @@ async function buildProactiveContext(
   traceId: string,
 ): Promise<ProactiveContextBundle> {
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
-  // FIX: E-30 — Use agent slug from config instead of hardcoded 'luna'
-  const agentId = config.agentSlug
 
   // Load contact info
   const contactResult = await db.query(
@@ -347,10 +344,9 @@ async function buildProactiveContext(
      FROM contacts c
      JOIN contact_channels cc ON cc.contact_id = c.id
      LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
-       AND ac.agent_id = (SELECT id FROM agents WHERE slug = $3 LIMIT 1)
      WHERE c.id = $1 AND cc.channel_type = $2
      LIMIT 1`,
-    [candidate.contactId, candidate.channel, agentId],
+    [candidate.contactId, candidate.channel],
   )
 
   // FIX: E-29 — Guard against deleted contact (no non-null assertion)
@@ -373,9 +369,9 @@ async function buildProactiveContext(
   // Load history + memory in parallel
   const [historyResult, memoryResult, commitmentsResult, leadStatusResult] = await Promise.allSettled([
     loadRecentHistory(memoryManager, db, candidate.contactId, candidate.channel, 5),
-    memoryManager ? loadContactMemory(memoryManager, agentId, candidate.contactId) : Promise.resolve(null),
-    memoryManager ? memoryManager.getPendingCommitments(agentId, candidate.contactId) : Promise.resolve([]),
-    memoryManager ? memoryManager.getLeadStatus(candidate.contactId, agentId) : Promise.resolve(null),
+    memoryManager ? loadContactMemory(memoryManager, candidate.contactId) : Promise.resolve(null),
+    memoryManager ? memoryManager.getPendingCommitments(candidate.contactId) : Promise.resolve([]),
+    memoryManager ? memoryManager.getLeadStatus(candidate.contactId) : Promise.resolve(null),
   ])
 
   const history = historyResult.status === 'fulfilled' ? historyResult.value : []
@@ -384,7 +380,7 @@ async function buildProactiveContext(
   const leadStatus = leadStatusResult.status === 'fulfilled' ? leadStatusResult.value : null
 
   // Find or create session
-  const session = await findOrCreateSession(db, candidate.contactId, candidate.channelContactId, candidate.channel, agentId, config.sessionReopenWindowMs)
+  const session = await findOrCreateSession(db, candidate.contactId, candidate.channelContactId, candidate.channel, config.sessionReopenWindowMs)
 
   // Build synthetic incoming message for pipeline compat
   const syntheticMessage: IncomingMessage = {
@@ -402,7 +398,6 @@ async function buildProactiveContext(
     userType: 'lead',
     userPermissions: { tools: [], skills: [], subagents: false, canReceiveProactive: true, knowledgeCategories: [] },
     contactId: candidate.contactId,
-    agentId,
     contact,
     session,
     isNewContact: false,
@@ -484,11 +479,10 @@ async function loadRecentHistory(
 
 async function loadContactMemory(
   memoryManager: MemoryManager,
-  agentId: string,
   contactId: string,
 ): Promise<import('../../modules/memory/types.js').ContactMemory | null> {
   try {
-    const ac = await memoryManager.getAgentContact(agentId, contactId)
+    const ac = await memoryManager.getAgentContact(contactId)
     return ac?.contactMemory ?? null
   } catch {
     return null
@@ -500,7 +494,6 @@ async function findOrCreateSession(
   contactId: string,
   channelContactId: string,
   channel: string,
-  agentId: string,
   reopenWindowMs: number,
 ): Promise<ContextBundle['session']> {
   const cutoff = new Date(Date.now() - reopenWindowMs)
@@ -522,7 +515,7 @@ async function findOrCreateSession(
     if (result.rows.length > 0) {
       const row = result.rows[0]!
       return {
-        id: row.id, contactId: row.contact_id, agentId: row.agent_id ?? agentId,
+        id: row.id, contactId: row.contact_id,
         channel: row.channel_name, startedAt: row.started_at, lastActivityAt: row.last_activity_at,
         messageCount: row.message_count, compressedSummary: row.compressed_summary ?? null, isNew: false,
       }
@@ -534,14 +527,14 @@ async function findOrCreateSession(
 
   try {
     await db.query(
-      `INSERT INTO sessions (id, contact_id, channel_contact_id, channel_name, agent_id, started_at, last_activity_at, message_count)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, 0)`,
-      [sessionId, contactId, channelContactId, channel, agentId, now],
+      `INSERT INTO sessions (id, contact_id, channel_contact_id, channel_name, started_at, last_activity_at, message_count)
+       VALUES ($1, $2, $3, $4, $5, $5, 0)`,
+      [sessionId, contactId, channelContactId, channel, now],
     )
   } catch { /* session table might not exist */ }
 
   return {
-    id: sessionId, contactId, agentId,
+    id: sessionId, contactId,
     channel: channel as ContextBundle['session']['channel'],
     startedAt: now, lastActivityAt: now,
     messageCount: 0, compressedSummary: null, isNew: true,
