@@ -18,7 +18,7 @@ import { loadSystemPrompt, renderTemplate } from '../../modules/prompts/template
 import { getChannelLimit } from './channel-format.js'
 import { buildContextLayers } from './context-builder.js'
 import { buildAccentSection } from './accent.js'
-import { loadSkillCatalog, buildSkillCatalogSection, loadSkillDetail } from './skills.js'
+import { loadSkillCatalog, buildSkillCatalogSection, filterSkillsByTools } from './skills.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,28 +141,14 @@ export async function buildAgenticPrompt(
   }
 
   // ── Section 12: <skills> ──────────────────────────────────────────────────
-  // Like CLAUDE.md auto-injection: if the current message/recent history matches
-  // a skill's trigger patterns, inject the FULL skill content (not just the stub).
+  // Catalog only — full content is fetched on-demand by the agent via the skill_read tool.
+  // Skills are filtered to those relevant to the active tool set.
   const skills = await loadSkillCatalog(registry, ctx.userType)
-
-  const msgText = (ctx.message?.content?.text ?? '').toLowerCase()
-  const recentHistText = ctx.history.slice(-4).map(m => m.content).join(' ').toLowerCase()
-  const searchText = `${msgText} ${recentHistText}`
-
-  const injectedSkills: string[] = []
-  for (const skill of skills) {
-    if (skill.triggerPatterns?.some(p => searchText.includes(p.toLowerCase()))) {
-      const detail = await loadSkillDetail(skill.name)
-      if (detail) injectedSkills.push(detail)
-    }
-  }
-  if (injectedSkills.length > 0) {
-    systemParts.push(`<active_skills>\n${injectedSkills.join('\n\n---\n\n')}\n</active_skills>`)
-  }
-
-  const skillsSection = buildSkillCatalogSection(skills)
-  if (skillsSection) {
-    systemParts.push(skillsSection)
+  const activeToolNames = new Set(allowedTools.map((t: { name: string }) => t.name))
+  const filteredSkills = filterSkillsByTools(skills, activeToolNames)
+  const stubSection = buildSkillCatalogSection(filteredSkills)
+  if (stubSection) {
+    systemParts.push(stubSection)
   }
 
   // ── Section 13: <knowledge_catalog> ──────────────────────────────────────
