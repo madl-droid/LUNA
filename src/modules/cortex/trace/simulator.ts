@@ -1,24 +1,24 @@
-// cortex/trace/simulator.ts — Executes one full simulation (Shadow Phase 2+3+4)
-// Imports the same prompt builders as the real engine, calls LLM directly.
+// cortex/trace/simulator.ts — Executes one full simulation via Shadow Agentic Loop
+// Uses buildAgenticPrompt() + callLLMWithFallback() — mirrors the real engine pipeline.
 // NEVER touches processMessage(). NEVER sends real messages.
 
 import type { Pool } from 'pg'
 import type { Registry } from '../../../kernel/registry.js'
 import type {
-  ContextBundle, EvaluatorOutput, ExecutionOutput, ExecutionStep,
-  HistoryMessage, ToolCatalogEntry,
+  ContextBundle, HistoryMessage, ToolCatalogEntry, LLMToolDef, ToolDefinition,
 } from '../../../engine/types.js'
-import { buildEvaluatorPrompt } from '../../../engine/prompts/evaluator.js'
-import { buildCompositorPrompt } from '../../../engine/prompts/compositor.js'
+import { buildAgenticPrompt } from '../../../engine/prompts/agentic.js'
+import { callLLMWithFallback } from '../../../engine/utils/llm-client.js'
 import { buildSimContext } from './context-builder.js'
-import { executeSandboxPlan } from './tool-sandbox.js'
+import { executeSandboxToolCall } from './tool-sandbox.js'
 import { insertResult } from './store.js'
-import type { ScenarioConfig, PromptOverrides, ResultRow, TraceConfig } from './types.js'
+import type { ScenarioConfig, PromptOverrides, ResultRow, TraceConfig, SandboxToolResult } from './types.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'cortex:trace:simulator' })
 
-const KNOWLEDGE_DIR = 'instance/knowledge'
+/** Max agentic tool-calling turns per simulation message (safety limit) */
+const MAX_AGENTIC_TURNS = 8
 
 export interface SimulationConfig {
   runId: string
@@ -65,63 +65,43 @@ export async function runSingleSimulation(
       // ── Build context ──
       const { ctx, toolCatalog } = await buildSimContext(db, registry, msg, accumulatedHistory)
 
-      // ── Shadow Phase 2: Evaluate ──
-      const phase2Start = Date.now()
-      const { evaluatorOutput, p2TokensIn, p2TokensOut } = await shadowPhase2(
+      // ── Shadow Agentic Loop ──
+      const agenticStart = Date.now()
+      const agenticResult = await shadowAgentic(
         registry, ctx, toolCatalog, mergedOverrides, config,
+        msg.toolMode, msg.mockToolResults,
       )
-      const phase2Ms = Date.now() - phase2Start
-
-      // ── Shadow Phase 3: Execute (hybrid sandbox) ──
-      const phase3Start = Date.now()
-      const { executionOutput, sandboxResults } = await shadowPhase3(
-        registry, evaluatorOutput.executionPlan, ctx, msg.toolMode, msg.mockToolResults,
-      )
-      const phase3Ms = Date.now() - phase3Start
-
-      // ── Shadow Phase 4: Compose ──
-      const phase4Start = Date.now()
-      const { responseText, p4TokensIn, p4TokensOut } = await shadowPhase4(
-        registry, ctx, evaluatorOutput, executionOutput, mergedOverrides, config,
-      )
-      const phase4Ms = Date.now() - phase4Start
+      const agenticMs = Date.now() - agenticStart
 
       const totalMs = Date.now() - start
-      const tokensIn = p2TokensIn + p4TokensIn
-      const tokensOut = p2TokensOut + p4TokensOut
-      totalTokensInput += tokensIn
-      totalTokensOutput += tokensOut
+      totalTokensInput += agenticResult.tokensIn
+      totalTokensOutput += agenticResult.tokensOut
 
-      // ── Persist result ──
+      // ── Persist result (map to existing schema) ──
       resultId = await insertResult(db, {
         runId: config.runId,
         simIndex: config.simIndex,
         messageIndex: msgIdx,
         messageText: msg.text,
-        intent: evaluatorOutput.intent,
-        emotion: evaluatorOutput.emotion,
-        toolsPlanned: evaluatorOutput.toolsNeeded,
-        executionPlan: evaluatorOutput.executionPlan,
-        injectionRisk: evaluatorOutput.injectionRisk,
-        onScope: evaluatorOutput.onScope,
-        toolsExecuted: sandboxResults,
-        responseText,
-        phase2Ms,
-        phase3Ms,
-        phase4Ms,
+        // Agentic doesn't produce a separate evaluation — map what we can
+        toolsPlanned: agenticResult.toolsUsed,
+        toolsExecuted: agenticResult.toolResults,
+        responseText: agenticResult.responseText,
+        // Timing: total for the agentic loop, no separate phases
+        phase4Ms: agenticMs,
         totalMs,
-        tokensInput: tokensIn,
-        tokensOutput: tokensOut,
-        rawPhase2: evaluatorOutput,
-        rawPhase4: responseText,
+        tokensInput: agenticResult.tokensIn,
+        tokensOutput: agenticResult.tokensOut,
+        rawPhase2: { toolsUsed: agenticResult.toolsUsed, turns: agenticResult.turns },
+        rawPhase4: agenticResult.responseText,
       })
 
       // ── Multi-turn: accumulate history ──
       accumulatedHistory = [
         ...accumulatedHistory,
         { role: 'user' as const, content: msg.text, timestamp: new Date() },
-        ...(responseText
-          ? [{ role: 'assistant' as const, content: responseText, timestamp: new Date() }]
+        ...(agenticResult.responseText
+          ? [{ role: 'assistant' as const, content: agenticResult.responseText, timestamp: new Date() }]
           : []),
       ]
 
@@ -151,142 +131,143 @@ export async function runSingleSimulation(
 }
 
 // ═══════════════════════════════════════════
-// Shadow Phase 2: Evaluate
+// Shadow Agentic Loop
 // ═══════════════════════════════════════════
 
-async function shadowPhase2(
+interface ShadowAgenticResult {
+  responseText: string
+  toolsUsed: string[]
+  toolResults: SandboxToolResult[]
+  turns: number
+  tokensIn: number
+  tokensOut: number
+}
+
+/** Minimal ToolRegistry interface */
+interface ToolRegistryLike {
+  getEnabledToolDefinitions(contactType?: string): ToolDefinition[]
+}
+
+async function shadowAgentic(
   registry: Registry,
   ctx: ContextBundle,
   toolCatalog: ToolCatalogEntry[],
   promptOverrides: PromptOverrides | undefined,
   config: SimulationConfig,
-): Promise<{ evaluatorOutput: EvaluatorOutput; p2TokensIn: number; p2TokensOut: number }> {
-  // Build prompt using the same builder as the real engine
-  // If there are prompt overrides, we create a wrapper registry that returns overridden prompts
-  const regForPrompts = promptOverrides
-    ? createOverrideRegistry(registry, promptOverrides)
-    : registry
-
-  const { system, userMessage } = await buildEvaluatorPrompt(ctx, toolCatalog, regForPrompts)
-
-  const model = config.modelOverride ?? config.traceConfig.CORTEX_TRACE_MODEL
-  const maxTokens = config.traceConfig.CORTEX_TRACE_MAX_TOKENS_PHASE2
-
-  // Call LLM via hook
-  const llmResult = await registry.callHook('llm:chat', {
-    task: 'trace-evaluate',
-    system,
-    messages: [{ role: 'user', content: userMessage }],
-    maxTokens,
-    temperature: 0.1,
-    jsonMode: true,
-    model,
-  }) as { text: string; inputTokens?: number; outputTokens?: number } | null
-
-  if (!llmResult?.text) {
-    throw new Error('LLM returned empty response for Phase 2 evaluation')
-  }
-
-  // Parse JSON response (same as real Phase 2)
-  const cleaned = llmResult.text.replace(/```json\s*/g, '').replace(/```/g, '').trim()
-  const parsed = JSON.parse(cleaned) as EvaluatorOutput
-
-  // Ensure defaults
-  const evaluatorOutput: EvaluatorOutput = {
-    intent: parsed.intent ?? 'unknown',
-    emotion: parsed.emotion ?? 'neutral',
-    injectionRisk: parsed.injectionRisk ?? false,
-    onScope: parsed.onScope ?? true,
-    executionPlan: parsed.executionPlan ?? [{ type: 'respond_only' }],
-    toolsNeeded: parsed.toolsNeeded ?? [],
-    needsAcknowledgment: parsed.needsAcknowledgment ?? false,
-    searchQuery: parsed.searchQuery,
-    searchHint: parsed.searchHint,
-    subIntent: parsed.subIntent,
-    objectionType: parsed.objectionType,
-    objectionStep: parsed.objectionStep,
-    rawResponse: llmResult.text,
-  }
-
-  return {
-    evaluatorOutput,
-    p2TokensIn: llmResult.inputTokens ?? 0,
-    p2TokensOut: llmResult.outputTokens ?? 0,
-  }
-}
-
-// ═══════════════════════════════════════════
-// Shadow Phase 3: Execute (hybrid sandbox)
-// ═══════════════════════════════════════════
-
-async function shadowPhase3(
-  registry: Registry,
-  plan: ExecutionStep[],
-  ctx: ContextBundle,
   toolMode?: Record<string, 'execute' | 'dry-run'>,
   mockResults?: Array<{ tool: string; success: boolean; data?: unknown }>,
-): Promise<{
-  executionOutput: ExecutionOutput
-  sandboxResults: import('./types.js').SandboxToolResult[]
-}> {
-  const { stepResults, sandboxResults, partialData } = await executeSandboxPlan(
-    registry,
-    plan,
-    { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId },
-    toolMode,
-    mockResults,
-  )
-
-  const executionOutput: ExecutionOutput = {
-    results: stepResults,
-    allSucceeded: stepResults.every(r => r.success),
-    partialData,
-  }
-
-  return { executionOutput, sandboxResults }
-}
-
-// ═══════════════════════════════════════════
-// Shadow Phase 4: Compose
-// ═══════════════════════════════════════════
-
-async function shadowPhase4(
-  registry: Registry,
-  ctx: ContextBundle,
-  evaluation: EvaluatorOutput,
-  execution: ExecutionOutput,
-  promptOverrides: PromptOverrides | undefined,
-  config: SimulationConfig,
-): Promise<{ responseText: string; p4TokensIn: number; p4TokensOut: number }> {
+): Promise<ShadowAgenticResult> {
   const regForPrompts = promptOverrides
     ? createOverrideRegistry(registry, promptOverrides)
     : registry
 
-  const { system, userMessage } = await buildCompositorPrompt(
-    ctx, evaluation, execution, KNOWLEDGE_DIR, regForPrompts,
-  )
+  // 1. Build system prompt (same builder as the real engine)
+  const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, regForPrompts, {
+    isProactive: false,
+  })
+
+  // 2. Get tool definitions for LLM
+  const toolsReg = registry.getOptional<ToolRegistryLike>('tools:registry')
+  const toolDefs = toolsReg?.getEnabledToolDefinitions(ctx.userType) ?? []
+  const llmToolDefs: LLMToolDef[] = toolDefs.map(d => ({
+    name: d.name, description: d.description, inputSchema: d.parameters,
+  }))
+
+  // 3. Initialize conversation
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    { role: 'user', content: ctx.normalizedText },
+  ]
 
   const model = config.modelOverride ?? config.traceConfig.CORTEX_TRACE_MODEL
   const maxTokens = config.traceConfig.CORTEX_TRACE_MAX_TOKENS_PHASE4
+  let tokensIn = 0
+  let tokensOut = 0
+  const toolsUsed: string[] = []
+  const toolResults: SandboxToolResult[] = []
+  let responseText = ''
+  let turns = 0
 
-  const llmResult = await registry.callHook('llm:chat', {
-    task: 'trace-compose',
-    system,
-    messages: [{ role: 'user', content: userMessage }],
-    maxTokens,
-    temperature: 0.3,
-    model,
-  }) as { text: string; inputTokens?: number; outputTokens?: number } | null
+  // 4. Agentic loop (mirror real engine, but with sandbox tool execution)
+  for (let turn = 0; turn < MAX_AGENTIC_TURNS; turn++) {
+    turns++
 
-  if (!llmResult?.text) {
-    throw new Error('LLM returned empty response for Phase 4 composition')
+    const llmResult = await callLLMWithFallback(
+      {
+        task: 'trace-agentic',
+        provider: 'anthropic',
+        model,
+        system: agenticPrompt.system,
+        messages,
+        maxTokens,
+        temperature: 0.3,
+        tools: llmToolDefs.length > 0 ? llmToolDefs : undefined,
+      },
+      'google',
+      config.traceConfig.CORTEX_TRACE_MODEL,
+    )
+
+    tokensIn += llmResult.inputTokens
+    tokensOut += llmResult.outputTokens
+
+    // Text-only response → done
+    if (!llmResult.toolCalls || llmResult.toolCalls.length === 0) {
+      responseText = llmResult.text
+      break
+    }
+
+    // Execute tool calls in sandbox
+    const turnToolResults: Array<{ name: string; success: boolean; data: unknown; error?: string }> = []
+    for (const tc of llmResult.toolCalls) {
+      toolsUsed.push(tc.name)
+
+      // Check for mock results first
+      const mock = mockResults?.find(m => m.tool === tc.name)
+      if (mock) {
+        const sandboxResult: SandboxToolResult = {
+          tool: tc.name, mode: 'dry-run', params: tc.input,
+          success: mock.success, data: mock.data, durationMs: 0,
+        }
+        toolResults.push(sandboxResult)
+        turnToolResults.push({ name: tc.name, success: mock.success, data: mock.data })
+        continue
+      }
+
+      // Execute in sandbox (read tools execute real, write tools dry-run)
+      const sandboxResult = await executeSandboxToolCall(
+        registry, tc.name, tc.input,
+        { contactId: ctx.contactId ?? undefined, agentId: ctx.agentId, traceId: ctx.traceId },
+        toolMode,
+      )
+      toolResults.push(sandboxResult)
+      turnToolResults.push({
+        name: tc.name,
+        success: sandboxResult.success,
+        data: sandboxResult.data,
+        error: sandboxResult.error,
+      })
+    }
+
+    // Append to conversation (same format as real agentic loop)
+    const assistantParts: string[] = []
+    if (llmResult.text) assistantParts.push(llmResult.text)
+    for (const tc of llmResult.toolCalls) {
+      assistantParts.push(`[Tool call: ${tc.name}(${JSON.stringify(tc.input).slice(0, 500)})]`)
+    }
+    messages.push({ role: 'assistant', content: assistantParts.join('\n') })
+
+    const resultParts: string[] = ['Tool results:']
+    for (const r of turnToolResults) {
+      if (r.success) {
+        const dataStr = typeof r.data === 'string' ? r.data : JSON.stringify(r.data)
+        resultParts.push(`[${r.name}]: ${(dataStr ?? '(no data)').slice(0, 3000)}`)
+      } else {
+        resultParts.push(`[${r.name}]: ERROR — ${r.error ?? 'Unknown error'}`)
+      }
+    }
+    messages.push({ role: 'user', content: resultParts.join('\n\n') })
   }
 
-  return {
-    responseText: llmResult.text.trim(),
-    p4TokensIn: llmResult.inputTokens ?? 0,
-    p4TokensOut: llmResult.outputTokens ?? 0,
-  }
+  return { responseText, toolsUsed, toolResults, turns, tokensIn, tokensOut }
 }
 
 // ═══════════════════════════════════════════
@@ -299,7 +280,6 @@ async function shadowPhase4(
  * NEVER modifies global state — overrides are per-simulation.
  */
 function createOverrideRegistry(registry: Registry, overrides: PromptOverrides): Registry {
-  // We create a Proxy that intercepts getOptional('prompts:service')
   return new Proxy(registry, {
     get(target, prop, receiver) {
       if (prop === 'getOptional') {
@@ -307,7 +287,6 @@ function createOverrideRegistry(registry: Registry, overrides: PromptOverrides):
           if (name === 'prompts:service') {
             const realService = target.getOptional<Record<string, unknown>>(name)
             if (!realService) return null
-            // Return a proxy of the prompts service that overrides specific methods
             return createPromptServiceProxy(realService, overrides)
           }
           return target.getOptional(name)
@@ -324,7 +303,6 @@ function createPromptServiceProxy(
 ): Record<string, unknown> {
   return new Proxy(realService, {
     get(target, prop, receiver) {
-      // Override getCompositorPrompts to merge our overrides
       if (prop === 'getCompositorPrompts') {
         return async (userType: string) => {
           const real = await (target.getCompositorPrompts as (ut: string) => Promise<Record<string, string>>)(userType)
@@ -337,7 +315,6 @@ function createPromptServiceProxy(
           }
         }
       }
-      // Override getPrompt for individual slot reads
       if (prop === 'getPrompt') {
         return async (slot: string, variant: string) => {
           const overrideMap: Record<string, string | undefined> = {
