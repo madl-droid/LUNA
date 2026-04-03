@@ -665,6 +665,7 @@ export async function registerMedilinkTools(
           nombre: input.first_name as string,
           apellidos: input.last_name as string,
           rut: docNumber,
+          tipo_documento: 1,  // 1 = documento genérico (cédula, CE, etc.), 0 = RUT chileno con validación
           celular: input.phone as string,
           email,
         })

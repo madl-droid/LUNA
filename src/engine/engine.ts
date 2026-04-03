@@ -480,6 +480,54 @@ async function runAgenticPipeline(
     totalDurationMs,
   }, 'Agentic pipeline complete')
 
+  // 8b. Auto-HITL: if response promises human escalation but request_human_help was never called
+  if (delivery.sent && ctx.contactId) {
+    const hitlAlreadyCalled = agenticResult.toolCallsLog.some(t => t.name === 'request_human_help' && t.success)
+    if (!hitlAlreadyCalled) {
+      const text = compositorOutput.responseText.toLowerCase()
+      const escalationPhrases = [
+        'alguien del equipo',
+        'un miembro del equipo',
+        'el equipo te',
+        'el equipo se',
+        'nuestro equipo',
+        'te contactar',
+        'se comunicar',
+        'se pondr',
+        'nos comunicaremos',
+        'te escribir',
+        'te llamar',
+        'comunique el equipo',
+        'contacte el equipo',
+      ]
+      const matchedPhrase = escalationPhrases.find(p => text.includes(p))
+      if (matchedPhrase) {
+        log.info({ traceId: ctx.traceId, matchedPhrase }, 'Auto-HITL: response promises human contact but tool was not called')
+        try {
+          type ToolRegistry = { executeTool(name: string, input: Record<string, unknown>, ctx: Record<string, unknown>): Promise<unknown> }
+          const toolsRegistry = reg.getOptional<ToolRegistry>('tools:registry')
+          if (toolsRegistry) {
+            await toolsRegistry.executeTool('request_human_help', {
+              target_role: 'admin',
+              request_type: 'escalation',
+              summary: `El agente prometió contacto humano ("${matchedPhrase}") pero no creó ticket HITL. Respuesta enviada al cliente. Requiere seguimiento manual.`,
+              urgency: 'high',
+              context: compositorOutput.responseText.slice(0, 500),
+            }, {
+              contactId: ctx.contactId,
+              channelName: ctx.message.channelName,
+              senderId: ctx.message.from,
+              sessionId: ctx.session.id,
+            })
+            log.info({ traceId: ctx.traceId }, 'Auto-HITL ticket created')
+          }
+        } catch (err) {
+          log.warn({ err, traceId: ctx.traceId }, 'Auto-HITL ticket creation failed')
+        }
+      }
+    }
+  }
+
   // 9. Pipeline log (fire-and-forget)
   const memMgr = reg.getOptional<import('../modules/memory/memory-manager.js').MemoryManager>('memory:manager')
   if (memMgr) {
