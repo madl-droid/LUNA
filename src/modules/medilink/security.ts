@@ -31,14 +31,17 @@ export class SecurityService {
    * This is called at the start of every tool that accesses patient data.
    */
   async resolveContext(contactId: string): Promise<SecurityContext> {
-    // Get medilink data + phone from contact_channels in one query
+    // Get medilink data + phone from contacts.phone (preferred) or contact_channels fallback
     const result = await this.db.query(
       `SELECT
          ac.agent_data,
-         (SELECT channel_identifier FROM contact_channels
-          WHERE contact_id = $1
-          ORDER BY is_primary DESC NULLS LAST, last_used_at DESC NULLS LAST
-          LIMIT 1) AS channel_identifier
+         COALESCE(
+           NULLIF((SELECT phone FROM contacts WHERE id = $1), ''),
+           (SELECT channel_identifier FROM contact_channels
+            WHERE contact_id = $1
+            ORDER BY is_primary DESC NULLS LAST, last_used_at DESC NULLS LAST
+            LIMIT 1)
+         ) AS phone_or_identifier
        FROM agent_contacts ac
        WHERE ac.contact_id = $1`,
       [contactId],
@@ -46,8 +49,8 @@ export class SecurityService {
 
     const row = result.rows[0]
     const agentData = (row?.agent_data ?? {}) as Record<string, unknown>
-    // channel_identifier is e.g. "573155524620@s.whatsapp.net" or just "573155524620"
-    const rawIdentifier = (row?.channel_identifier ?? '') as string
+    // phone_or_identifier is e.g. "573155524620", "573155524620@s.whatsapp.net", or a LID
+    const rawIdentifier = (row?.phone_or_identifier ?? '') as string
     const phone = rawIdentifier.replace(/@.*$/, '').replace(/[^0-9+]/g, '')
 
     return {

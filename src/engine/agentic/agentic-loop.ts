@@ -19,6 +19,7 @@ import { callLLMWithFallback } from '../utils/llm-client.js'
 import { StepSemaphore } from '../concurrency/step-semaphore.js'
 import { ToolDedupCache } from './tool-dedup-cache.js'
 import { ToolLoopDetector } from './tool-loop-detector.js'
+import { ToolResultCache } from './tool-result-cache.js'
 
 const logger = pino({ name: 'engine:agentic' })
 
@@ -61,6 +62,12 @@ export async function runAgenticLoop(
   const startMs = Date.now()
   const dedupCache = new ToolDedupCache()
   const loopDetector = new ToolLoopDetector()
+  // Persistent cross-turn tool result cache (Redis-backed, graceful degradation)
+  let toolResultCache: ToolResultCache | null = null
+  try {
+    const redis = registry.getRedis()
+    toolResultCache = new ToolResultCache(redis)
+  } catch { /* Redis not available — cache disabled */ }
   const toolCallsLog: ToolCallLog[] = []
   let totalTokens = 0
   let turns = 0
@@ -156,6 +163,19 @@ export async function runAgenticLoop(
         config,
         engineConfig,
       )
+
+      // Record results in persistent cross-turn cache (fire-and-forget)
+      // Use index-based matching since toolResults and toolCalls are in the same order
+      if (toolResultCache && ctx.contactId) {
+        for (let i = 0; i < toolResults.length; i++) {
+          const tr = toolResults[i]!
+          const tc = llmResult.toolCalls[i]
+          toolResultCache.record(ctx.contactId, tr.name,
+            tc?.input ?? {},
+            { success: tr.success, data: tr.data, error: tr.error },
+          ).catch(() => {/* already logged inside */})
+        }
+      }
 
       // Append assistant message (with tool calls) and user message (with results)
       messages.push({

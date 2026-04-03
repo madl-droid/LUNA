@@ -9,6 +9,7 @@ import type { ContextBundle } from '../types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { ConfigStore } from '../../modules/lead-scoring/config-store.js'
 import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
+import { ToolResultCache } from '../agentic/tool-result-cache.js'
 
 /**
  * Formats a timestamp as a short relative label for prompt injection.
@@ -87,6 +88,21 @@ export async function buildContextLayers(
       const medilinkLine = await getMedilinkContext(ctx.contactId).catch(() => null)
       if (medilinkLine) parts.push(medilinkLine)
     }
+  }
+
+  // ── 2c. Recent tool results from previous turns ────────────────────────
+  if (registry && ctx.contactId) {
+    try {
+      const redis = registry.getRedis()
+      const toolCache = new ToolResultCache(redis)
+      const recent = await toolCache.getRecent(ctx.contactId)
+      if (recent.length > 0) {
+        const lines = recent.map(r =>
+          `- ${r.tool}${r.success ? ' OK' : ' ERROR'}: ${r.summary}`
+        ).join('\n')
+        parts.push(`[Herramientas usadas recientemente en esta sesion]\n${lines}`)
+      }
+    } catch { /* Redis unavailable — skip tool cache context */ }
   }
 
   // ── 3. Lead status ──────────────────────────────────────────────────────
