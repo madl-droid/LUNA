@@ -9,14 +9,14 @@
 // - buildContextLayers() from context-builder.ts
 // - buildAccentSection() from accent.ts
 // - loadSkillCatalog()/buildSkillCatalogSection() from skills.ts
-// - getChannelLimit() imported from compositor.ts (not duplicated)
+// - getChannelLimit() imported from channel-format.ts (not duplicated)
 
 import type { ContextBundle, ToolCatalogEntry, ProactiveTrigger } from '../types.js'
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 import { loadSystemPrompt, renderTemplate } from '../../modules/prompts/template-loader.js'
-import { getChannelLimit } from './compositor.js'
+import { getChannelLimit } from './channel-format.js'
 import { buildContextLayers } from './context-builder.js'
 import { buildAccentSection } from './accent.js'
 import { loadSkillCatalog, buildSkillCatalogSection } from './skills.js'
