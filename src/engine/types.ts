@@ -322,7 +322,6 @@ export interface PipelineResult {
   responseText?: string
   deliveryResult?: DeliveryResult
   error?: string
-  engineMode?: string
   skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}`
   replanAttempts: number
   subagentIterationsUsed: number
