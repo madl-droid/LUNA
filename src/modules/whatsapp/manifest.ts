@@ -548,7 +548,7 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     channelType: 'instant',
     supportsTypingIndicator: true,
     ttsEnabled: cfg.WHATSAPP_FORMAT_AUDIO_ENABLED,
-    antiSpamMaxPerWindow: 5,
+    antiSpamMaxPerWindow: 25,
     antiSpamWindowMs: 60000,
     floodThreshold: 20,
     historyTurns: 0, // placeholder — overridden in channel-config service get() with memory:buffer-turns

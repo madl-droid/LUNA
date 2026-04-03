@@ -71,6 +71,8 @@ export interface MedilinkPatient {
 
 export interface MedilinkPatientCreate {
   rut?: string
+  /** 0 = RUT chileno (con validación), 1 = documento genérico (cédula, CE, pasaporte) */
+  tipo_documento?: number
   /** API field: 'nombre' (singular) */
   nombre: string
   apellidos: string
