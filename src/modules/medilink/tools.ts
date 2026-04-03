@@ -659,7 +659,7 @@ export async function registerMedilinkTools(
           const defaultValId = await registry.getDb().query(
             `SELECT value FROM config_store WHERE key = 'MEDILINK_DEFAULT_VALORACION_ID'`,
           )
-          const valId = parseInt(defaultValId.rows[0]?.value ?? '13', 10)
+          const valId = parseInt(defaultValId.rows[0]?.value ?? '34', 10)  // 34 = "Valoración - Armonización facial" default
           treatment = (ref.treatments ?? []).find(t => t.id === valId) ?? null
         }
 
@@ -686,14 +686,14 @@ export async function registerMedilinkTools(
         // Re-verify availability (cache handles TTL — force refresh if stale)
         const freshSlots = await cache.getAvailability(defaultBranch.id, input.date as string, prof.id)
         const requestedTime = input.time as string
-        const slotAvailable = freshSlots.some(s => s.time === requestedTime && s.professionalId === prof.id)
-        if (!slotAvailable) {
+        const matchingSlot = freshSlots.find(s => s.time === requestedTime && s.professionalId === prof.id)
+        if (!matchingSlot) {
           return { success: false, error: `El horario ${requestedTime} del ${input.date} ya no está disponible con ${prof.nombre} ${prof.apellidos}. Consulta disponibilidad de nuevo.` }
         }
 
-        // Find a chair
-        const chairId = ref.chairs[0]?.id
-        if (!chairId) return { success: false, error: 'No hay sillones disponibles' }
+        // Use the slot's id_recurso as id_sillon — comes from agenda availability data
+        const chairId = parseInt(matchingSlot.chairId, 10)
+        if (!chairId) return { success: false, error: 'No se pudo determinar el sillón del slot disponible' }
 
         const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10)
         if (!statusId) return { success: false, error: 'No hay estado de cita configurado — revisar MEDILINK_DEFAULT_STATUS_ID' }
