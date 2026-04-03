@@ -200,7 +200,5 @@ async function loadContactData(db: Pool, contactId: string): Promise<ContactData
 
   const contactMemory = (row.contact_memory as ContextBundle['contactMemory']) ?? null
   const leadStatus = (row.lead_status as string) ?? null
-
   return { contact, history, contactMemory, leadStatus }
 }
-
