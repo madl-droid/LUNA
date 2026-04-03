@@ -23,10 +23,16 @@ export async function registerGoogleTools(
     calendar?: CalendarService
   },
   enabledServices: Set<GoogleServiceName>,
+  oauthConnected = false,
 ): Promise<void> {
   const toolRegistry = registry.getOptional<ToolRegistry>('tools:registry')
   if (!toolRegistry) {
     logger.warn('Tools module not available — skipping tool registration')
+    return
+  }
+
+  if (!oauthConnected) {
+    logger.info('Google OAuth not connected — skipping tool registration (tools would fail without auth)')
     return
   }
 

@@ -22,6 +22,15 @@ const logger = pino({ name: 'google-apps' })
 
 let oauthManager: OAuthManager | null = null
 let _registry: Registry | null = null
+let _services: {
+  drive?: DriveService
+  sheets?: SheetsService
+  docs?: DocsService
+  slides?: SlidesService
+  calendar?: CalendarService
+} = {}
+let _enabledSet: Set<GoogleServiceName> = new Set()
+let _toolsRegistered = false
 
 /** Build the shared OAuth redirect URI from the request */
 function getRedirectUri(req: import('node:http').IncomingMessage): string {
@@ -176,6 +185,13 @@ const apiRoutes: ApiRoute[] = [
         const redirectUri = getRedirectUri(req)
         await oauthManager.handleAuthCallback(code, redirectUri)
 
+        // Register tools now that OAuth is connected
+        if (!_toolsRegistered && _registry && oauthManager.isConnected()) {
+          _toolsRegistered = true
+          await registerGoogleTools(_registry, _services, _enabledSet, true)
+          logger.info('Google tools registered after OAuth connect')
+        }
+
         const email = oauthManager.getState().email ?? ''
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end(oauthCallbackPage({
@@ -207,6 +223,14 @@ const apiRoutes: ApiRoute[] = [
         }
         const redirectUri = getRedirectUri(req)
         await oauthManager.handleAuthCallback(code, redirectUri)
+
+        // Register tools now that OAuth is connected
+        if (!_toolsRegistered && _registry && oauthManager.isConnected()) {
+          _toolsRegistered = true
+          await registerGoogleTools(_registry, _services, _enabledSet, true)
+          logger.info('Google tools registered after OAuth connect')
+        }
+
         jsonResponse(res, 200, { ok: true, state: oauthManager.getState() })
       } catch (err) {
         jsonResponse(res, 500, { error: 'Auth callback failed: ' + String(err) })
@@ -340,49 +364,45 @@ const manifest: ModuleManifest = {
 
     // Inicializar servicios según los habilitados
     const enabledList = parseEnabledServices(config.GOOGLE_ENABLED_SERVICES)
-    const enabledSet = new Set<GoogleServiceName>(enabledList as GoogleServiceName[])
+    _enabledSet = new Set<GoogleServiceName>(enabledList as GoogleServiceName[])
     const authClient = oauthManager.getClient()
 
-    const services: {
-      drive?: DriveService
-      sheets?: SheetsService
-      docs?: DocsService
-      slides?: SlidesService
-      calendar?: CalendarService
-    } = {}
+    _services = {}
 
-    if (enabledSet.has('drive')) {
-      services.drive = new DriveService(authClient, config)
-      registry.provide('google:drive', services.drive)
+    if (_enabledSet.has('drive')) {
+      _services.drive = new DriveService(authClient, config)
+      registry.provide('google:drive', _services.drive)
       logger.info('Drive service enabled')
     }
 
-    if (enabledSet.has('sheets')) {
-      services.sheets = new SheetsService(authClient, config)
-      registry.provide('google:sheets', services.sheets)
+    if (_enabledSet.has('sheets')) {
+      _services.sheets = new SheetsService(authClient, config)
+      registry.provide('google:sheets', _services.sheets)
       logger.info('Sheets service enabled')
     }
 
-    if (enabledSet.has('docs')) {
-      services.docs = new DocsService(authClient)
-      registry.provide('google:docs', services.docs)
+    if (_enabledSet.has('docs')) {
+      _services.docs = new DocsService(authClient)
+      registry.provide('google:docs', _services.docs)
       logger.info('Docs service enabled')
     }
 
-    if (enabledSet.has('slides')) {
-      services.slides = new SlidesService(authClient)
-      registry.provide('google:slides', services.slides)
+    if (_enabledSet.has('slides')) {
+      _services.slides = new SlidesService(authClient)
+      registry.provide('google:slides', _services.slides)
       logger.info('Slides service enabled')
     }
 
-    if (enabledSet.has('calendar')) {
-      services.calendar = new CalendarService(authClient, config)
-      registry.provide('google:calendar', services.calendar)
+    if (_enabledSet.has('calendar')) {
+      _services.calendar = new CalendarService(authClient, config)
+      registry.provide('google:calendar', _services.calendar)
       logger.info('Calendar service enabled')
     }
 
-    // Registrar tools si el módulo tools está disponible
-    await registerGoogleTools(registry, services, enabledSet)
+    // Registrar tools solo si OAuth está conectado (sin auth las tools fallarían)
+    const oauthConnected = oauthManager?.isConnected() ?? false
+    _toolsRegistered = oauthConnected
+    await registerGoogleTools(registry, _services, _enabledSet, oauthConnected)
 
     logger.info(
       { email: oauthManager.getState().email, services: enabledList },
@@ -396,6 +416,9 @@ const manifest: ModuleManifest = {
       oauthManager = null
     }
     _registry = null
+    _services = {}
+    _enabledSet = new Set()
+    _toolsRegistered = false
   },
 }
 
