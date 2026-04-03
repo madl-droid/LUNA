@@ -186,8 +186,8 @@ export class MedilinkCache {
     const branch = (this.refData?.branches ?? []).find((b) => b.id === branchId)
 
     for (const item of items) {
-      // Only include free slots (no patient booked)
-      if (item.id_paciente !== null) continue
+      // Only include free slots — API returns 0 (or null) when no patient is booked
+      if (item.id_paciente != null && item.id_paciente !== 0) continue
 
       slots.push({
         date: item.fecha,
