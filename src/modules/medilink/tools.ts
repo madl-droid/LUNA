@@ -10,6 +10,7 @@ import type { MedilinkApiClient } from './api-client.js'
 import type { MedilinkCache } from './cache.js'
 import type { SecurityService } from './security.js'
 import * as pgStore from './pg-store.js'
+import { WorkingMemory, ML, type AppointmentSnapshot } from './working-memory.js'
 
 const logger = pino({ name: 'medilink:tools' })
 
@@ -52,6 +53,8 @@ export async function registerMedilinkTools(
   }
 
   const agentId = 'default'
+  const redis = registry.getRedis()
+  const wmem = new WorkingMemory(redis, 'medilink', agentId)
 
   // ═══════════════════════════════════════
   // 1. CHECK AVAILABILITY (PUBLIC)
@@ -61,19 +64,20 @@ export async function registerMedilinkTools(
     definition: {
       name: 'medilink-check-availability',
       displayName: 'Ver disponibilidad de agenda',
-      description: 'Consulta horarios disponibles en la clínica para una fecha. Filtra automáticamente por profesionales habilitados para el tipo de prestación. Retorna solo slots libres.',
+      description: 'Consulta horarios disponibles en la clínica para una fecha. Filtra automáticamente por profesionales habilitados para el tipo de prestación. Para reagendamiento, pasa appointment_id y el sistema filtra solo profesionales con las mismas categorías del original. Retorna solo slots libres.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: {
         type: 'object',
         properties: {
           date: { type: 'string', description: 'Fecha a consultar (YYYY-MM-DD). Si no se especifica, usa hoy.' },
+          appointment_id: { type: 'number', description: 'ID de la cita a reagendar. El sistema filtra automáticamente profesionales con categorías compatibles.' },
           professional_name: { type: 'string', description: 'Nombre del profesional (parcial OK)' },
           treatment_name: { type: 'string', description: 'Tipo de tratamiento/prestación para filtrar profesionales que lo realizan' },
         },
       },
     },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       try {
         const ref = await cache.getReferenceData()
 
@@ -81,6 +85,49 @@ export async function registerMedilinkTools(
         const defaultBranch = cache.getDefaultBranch()
         if (!defaultBranch) return { success: false, error: 'No hay sucursal configurada' }
         const branchId = defaultBranch.id
+
+        const date = (input.date as string) ?? new Date().toISOString().split('T')[0]!
+
+        // RESCHEDULING: resolve appointment_id from param or working memory
+        let rescheduleAppointmentId = input.appointment_id as number | undefined
+        if (!rescheduleAppointmentId && ctx.contactId) {
+          const pending = await wmem.get<number>(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
+          if (pending) rescheduleAppointmentId = pending
+        }
+
+        if (rescheduleAppointmentId) {
+          // Store in working memory so reschedule-appointment can read it later
+          if (ctx.contactId) await wmem.set(ctx.contactId, ML.PENDING_RESCHEDULE_ID, rescheduleAppointmentId)
+
+          const existing = await api.getAppointment(rescheduleAppointmentId, 'medium')
+          const catAssignments = await pgStore.getProfessionalCategoryAssignments(registry.getDb())
+          const origCats = catAssignments
+            .filter(a => a.medilinkProfessionalId === existing.id_dentista)
+            .map(a => a.medilinkCategoryId)
+
+          // Find all professionals with the same categories as the original
+          const compatibleProfIds = origCats.length > 0
+            ? catAssignments
+                .filter(a => origCats.every(c => catAssignments.some(x => x.medilinkProfessionalId === a.medilinkProfessionalId && x.medilinkCategoryId === c)))
+                .map(a => a.medilinkProfessionalId)
+                .filter((id, i, arr) => arr.indexOf(id) === i)  // dedupe
+            : [existing.id_dentista]  // no category rules — keep same professional only
+
+          const allSlots = []
+          for (const pId of compatibleProfIds) {
+            const prof = ref.professionals.find(p => p.id === pId && p.habilitado)
+            if (!prof) continue
+            const slots = await cache.getAvailability(branchId, date, pId)
+            allSlots.push(...slots.map(s => ({
+              fecha: s.date,
+              hora: s.time,
+              profesional: s.professionalName,
+              mismo_profesional: pId === existing.id_dentista,
+              duracion: s.durationMinutes,
+            })))
+          }
+          return { success: true, data: { slots: allSlots, fecha: date, sucursal: defaultBranch.nombre } }
+        }
 
         // Resolve professional
         let professionalId: number | undefined
@@ -95,7 +142,6 @@ export async function registerMedilinkTools(
           const treatment = cache.findTreatmentByName(input.treatment_name as string)
           if (!treatment) return { success: false, error: `No se encontró la prestación "${input.treatment_name}"` }
 
-          // Find the category of this treatment from prestaciones
           const prestacion = (ref.prestaciones ?? []).find(p => p.id === treatment.id)
           if (prestacion) {
             const catAssignments = await pgStore.getProfessionalCategoryAssignments(registry.getDb())
@@ -108,7 +154,6 @@ export async function registerMedilinkTools(
               for (const pId of compatibleProfIds) {
                 const prof = ref.professionals.find(p => p.id === pId && p.habilitado)
                 if (!prof) continue
-                const date = (input.date as string) ?? new Date().toISOString().split('T')[0]!
                 const slots = await cache.getAvailability(branchId, date, pId)
                 allSlots.push(...slots.map(s => ({
                   fecha: s.date,
@@ -117,15 +162,21 @@ export async function registerMedilinkTools(
                   duracion: s.durationMinutes,
                 })))
               }
-              return { success: true, data: { slots: allSlots, fecha: input.date, sucursal: defaultBranch.nombre } }
+              return { success: true, data: { slots: allSlots, fecha: date, sucursal: defaultBranch.nombre } }
             }
           }
         }
 
-        const date = (input.date as string) ?? new Date().toISOString().split('T')[0]!
-        const slots = await cache.getAvailability(branchId, date, professionalId)
+        // No professional or treatment specified — use default professional (lead flow)
+        if (!professionalId) {
+          const defaultProfRow = await registry.getDb().query(
+            `SELECT value FROM config_store WHERE key = 'MEDILINK_DEFAULT_PROFESSIONAL_ID'`,
+          )
+          const defaultProfId = parseInt(defaultProfRow.rows[0]?.value ?? '0', 10)
+          if (defaultProfId) professionalId = defaultProfId
+        }
 
-        // Clean output — agent doesn't need internal IDs
+        const slots = await cache.getAvailability(branchId, date, professionalId)
         const cleanSlots = slots.map(s => ({
           fecha: s.date,
           hora: s.time,
@@ -133,14 +184,7 @@ export async function registerMedilinkTools(
           duracion: s.durationMinutes,
         }))
 
-        return {
-          success: true,
-          data: {
-            slots: cleanSlots,
-            fecha: date,
-            sucursal: defaultBranch.nombre,
-          },
-        }
+        return { success: true, data: { slots: cleanSlots, fecha: date, sucursal: defaultBranch.nombre } }
       } catch (err) {
         logger.error({ err }, 'check-availability failed')
         return { success: false, error: 'Error al consultar disponibilidad' }
@@ -209,6 +253,7 @@ export async function registerMedilinkTools(
         // If already linked, return the linked patient info
         if (secCtx.medilinkPatientId) {
           const patient = await api.getPatient(secCtx.medilinkPatientId, 'high')
+          await wmem.set(ctx.contactId, ML.PATIENT_ID, secCtx.medilinkPatientId)
           await pgStore.logAudit(ctx.db, {
             contactId: ctx.contactId, agentId,
             medilinkPatientId: String(secCtx.medilinkPatientId),
@@ -240,6 +285,9 @@ export async function registerMedilinkTools(
           // Auto-link unique match
           const patient = patients[0]!
           const updatedCtx = await security.tryAutoLink(secCtx)
+          if (updatedCtx.medilinkPatientId) {
+            await wmem.set(ctx.contactId, ML.PATIENT_ID, updatedCtx.medilinkPatientId)
+          }
           return {
             success: true,
             data: {
@@ -351,6 +399,18 @@ export async function registerMedilinkTools(
         // Verify ownership and filter data
         const safe = filtered.filter((a) => security.ownsAppointment(secCtx, a))
         const mapped = safe.map((a) => security.filterAppointment(secCtx, a))
+
+        // Save to working memory — raw IDs needed for rescheduling across turns
+        await wmem.set(ctx.contactId, ML.PATIENT_ID, secCtx.medilinkPatientId!)
+        await wmem.set<AppointmentSnapshot[]>(ctx.contactId, ML.APPOINTMENTS, safe.map(a => ({
+          id: a.id,
+          date: a.fecha,
+          time: a.hora_inicio,
+          professionalId: a.id_dentista,
+          professionalName: a.nombre_dentista ?? '',
+          treatmentId: a.id_tratamiento,
+          treatmentName: a.nombre_tratamiento ?? '',
+        })))
 
         await pgStore.logAudit(ctx.db, {
           contactId: ctx.contactId, agentId,
@@ -588,6 +648,7 @@ export async function registerMedilinkTools(
 
         // Auto-link and verify
         await security.verifyByDocument(secCtx, docNumber)
+        await wmem.set(ctx.contactId, ML.PATIENT_ID, patient.id)
 
         return {
           success: true,
@@ -618,13 +679,13 @@ export async function registerMedilinkTools(
       parameters: {
         type: 'object',
         properties: {
-          professional_name: { type: 'string', description: 'Nombre del profesional' },
+          professional_name: { type: 'string', description: 'Nombre del profesional (opcional para leads — el sistema asigna el predeterminado automáticamente)' },
           treatment_name: { type: 'string', description: 'Nombre de la prestación (para leads, el sistema usa la default automáticamente)' },
           date: { type: 'string', description: 'Fecha (YYYY-MM-DD)' },
           time: { type: 'string', description: 'Hora (HH:MM)' },
           notes: { type: 'string', description: 'Notas para la cita (opcional)' },
         },
-        required: ['professional_name', 'date', 'time'],
+        required: ['date', 'time'],
       },
     },
     handler: async (input, ctx) => {
@@ -646,13 +707,20 @@ export async function registerMedilinkTools(
           MEDILINK_DEFAULT_BRANCH_ID: string
         }>('medilink')
 
-        // Resolve professional
-        const prof = cache.findProfessionalByName(input.professional_name as string)
-        if (!prof) return { success: false, error: `No se encontró al profesional "${input.professional_name}"` }
-
         // Resolve treatment — for leads/new patients, use default valoración
         let treatment = input.treatment_name ? cache.findTreatmentByName(input.treatment_name as string) : null
         const isLead = ctx.contactType === 'nuevo' || !ctx.contactType
+
+        // Resolve professional — for leads, fall back to MEDILINK_DEFAULT_PROFESSIONAL_ID
+        let prof = input.professional_name ? cache.findProfessionalByName(input.professional_name as string) : null
+        if (!prof && isLead) {
+          const defaultProfRow = await registry.getDb().query(
+            `SELECT value FROM config_store WHERE key = 'MEDILINK_DEFAULT_PROFESSIONAL_ID'`,
+          )
+          const defaultProfId = parseInt(defaultProfRow.rows[0]?.value ?? '0', 10)
+          if (defaultProfId) prof = ref.professionals.find(p => p.id === defaultProfId) ?? null
+        }
+        if (!prof) return { success: false, error: `No se pudo determinar el profesional. Especifica el nombre o configura MEDILINK_DEFAULT_PROFESSIONAL_ID.` }
 
         if (!treatment && isLead) {
           // Use default valoración treatment from config_store
@@ -783,12 +851,12 @@ export async function registerMedilinkTools(
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'number', description: 'ID de la cita a reagendar' },
+          appointment_id: { type: 'number', description: 'ID de la cita a reagendar (opcional — el sistema lo obtiene de la memoria de trabajo si no se especifica)' },
           new_date: { type: 'string', description: 'Nueva fecha (YYYY-MM-DD)' },
           new_time: { type: 'string', description: 'Nueva hora (HH:MM)' },
           new_professional_name: { type: 'string', description: 'Nuevo profesional (opcional, mantiene el mismo si no se especifica)' },
         },
-        required: ['appointment_id', 'new_date', 'new_time'],
+        required: ['new_date', 'new_time'],
       },
     },
     handler: async (input, ctx) => {
@@ -803,14 +871,22 @@ export async function registerMedilinkTools(
       }
 
       try {
-        const existing = await api.getAppointment(input.appointment_id as number, 'high')
+        // Resolve appointment_id from param or working memory
+        let appointmentId = input.appointment_id as number | undefined
+        if (!appointmentId && ctx.contactId) {
+          const pending = await wmem.get<number>(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
+          if (pending) appointmentId = pending
+        }
+        if (!appointmentId) return { success: false, error: 'No se especificó la cita a reagendar.' }
+
+        const existing = await api.getAppointment(appointmentId, 'high')
 
         // Verify ownership
         if (!security.ownsAppointment(secCtx, existing)) {
           await pgStore.logAudit(ctx.db, {
             contactId: ctx.contactId, agentId,
             action: 'reschedule_appointment', targetType: 'appointment',
-            targetId: String(input.appointment_id),
+            targetId: String(appointmentId),
             detail: { reason: 'not_owner' },
             verificationLevel: secCtx.verificationLevel,
             result: 'denied',
@@ -876,6 +952,9 @@ export async function registerMedilinkTools(
 
         // Invalidate availability cache
         await cache.invalidateAvailability()
+
+        // Clear pending reschedule from working memory
+        if (ctx.contactId) await wmem.del(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
 
         await pgStore.logAudit(ctx.db, {
           contactId: ctx.contactId, agentId,

@@ -275,7 +275,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/tts/CLAUDE.md` — síntesis de voz (Google Gemini AI Studio TTS, WAV/PCM, PTT voice notes)
 - `src/modules/freight/CLAUDE.md` — wrapper modular de la tool de flete
 - `src/tools/freight/CLAUDE.md` — estimación de flete internacional (SeaRates + DHL Express)
-- `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks)
+- `src/modules/medilink/CLAUDE.md` — integración Medilink/HealthAtom (pacientes, citas, disponibilidad, follow-up, webhooks, working memory)
 - `src/modules/freshdesk/CLAUDE.md` — wrapper modular de tools Freshdesk KB
 - `src/modules/cortex/CLAUDE.md` — sistema nervioso: monitoreo, alertas, Reflex, Pulse, Trace (simulación y testing)
 - `src/modules/subagents/CLAUDE.md` — subagentes especializados (CRUD, system subagents, web-researcher, verificación iterativa 3 retries, spawn, métricas)

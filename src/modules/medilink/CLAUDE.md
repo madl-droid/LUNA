@@ -11,6 +11,7 @@ Provider de gestion clinica: pacientes, citas, disponibilidad, seguimiento autom
 - `webhook-handler.ts` — receptor webhooks Medilink: HMAC verify, dispatch a listeners
 - `security.ts` — **CRITICO**: verificacion identidad, control acceso, filtrado datos, audit
 - `tools.ts` — 11 herramientas del agente (search, info, disponibilidad, profesionales, prestaciones, citas, pagos, tratamientos, crear paciente, agendar, reagendar)
+- `working-memory.ts` — memoria de trabajo Redis por contacto (TTL 6h). Clase generica `WorkingMemory` reutilizable por otros modulos
 - `follow-up-scheduler.ts` — secuencia 9 toques, delega a scheduled-tasks (NO crea su propio BullMQ)
 - `pg-store.ts` — migraciones (7 tablas) y queries SQL
 
@@ -56,22 +57,48 @@ Base: `MEDILINK_BASE_URL` + `/api/v1` (se agrega automaticamente si falta)
 **NUNCA exponer**: `evo.datos` (notas clinicas), archivos clinicos, info de un paciente a otro.
 
 ## Tools del agente (11)
-- `medilink-search-patient` — busca auto por telefono del contacto
+- `medilink-search-patient` — busca auto por telefono; guarda patient_id en working memory
 - `medilink-get-patient-info` — datos basicos del paciente vinculado (nombre, tel, email)
-- `medilink-check-availability` — slots libres (filtra sillones permitidos, excluye sobreagendamiento)
+- `medilink-check-availability` — slots libres con logica de filtrado por contexto (ver abajo)
 - `medilink-get-professionals` — profesionales activos
 - `medilink-get-prestaciones` — catalogo de prestaciones habilitadas
-- `medilink-get-my-appointments` — citas del paciente
+- `medilink-get-my-appointments` — citas del paciente; guarda snapshots en working memory
 - `medilink-get-my-payments` — pagos/deudas
 - `medilink-get-treatment-plans` — planes de tratamiento activos
-- `medilink-create-patient` — registrar paciente nuevo
-- `medilink-create-appointment` — agendar (re-verifica si cache >20min, usa prestacion default para leads)
-- `medilink-reschedule-appointment` — reagendar (valida categorias compatibles)
+- `medilink-create-patient` — registrar paciente nuevo; guarda patient_id en working memory
+- `medilink-create-appointment` — agendar (professional y prestacion opcionales para leads — usa defaults del config)
+- `medilink-reschedule-appointment` — reagendar; lee appointment_id de working memory si no se pasa
 
 Tools ELIMINADAS: verify-identity, request-patient-edit, execute-followup, get-my-evolutions, get-my-files
 
+## Logica de check-availability (prioridad de filtrado)
+1. `appointment_id` presente (o en working memory) → filtra por categorias del profesional original
+2. `treatment_name` presente → filtra por categoria del tratamiento
+3. `professional_name` presente → filtra por ese profesional
+4. Ninguno → usa `MEDILINK_DEFAULT_PROFESSIONAL_ID` (flujo lead)
+
+## Working Memory (working-memory.ts)
+Clase generica `WorkingMemory(redis, namespace, agentId, ttlS=6h)` — reutilizable por cualquier modulo.
+Clave Redis: `wmem:{namespace}:{agentId}:{contactId}:{field}`. TTL: 6 horas.
+
+Campos que medilink escribe automaticamente:
+- `patient_id` — al buscar/crear/vincular paciente
+- `appointments` — al llamar get-my-appointments (snapshots con IDs internos)
+- `pending_reschedule_id` — al llamar check-availability con appointment_id
+
+**Para usar en otro modulo:**
+```typescript
+const wmem = new WorkingMemory(redis, 'mi-modulo', agentId)
+await wmem.set(contactId, 'mi-campo', valor)
+await wmem.get<Tipo>(contactId, 'mi-campo')
+await wmem.del(contactId, 'mi-campo')
+```
+Cuando se use en 2+ modulos, mover `working-memory.ts` a `src/kernel/`.
+
 ## Config extra
 - `MEDILINK_ALLOWED_CHAIRS` — CSV de IDs de sillon permitidos (default "1,2"). Excluye sobreagendamiento de disponibilidad.
+- `MEDILINK_DEFAULT_PROFESSIONAL_ID` — profesional asignado automaticamente a leads (configurable en consola).
+- `MEDILINK_DEFAULT_VALORACION_ID` — prestacion por defecto para leads (configurable en consola).
 
 ## Follow-up (9 toques)
 Touch 0 (inmediato) -> Touch 1 (llamada 7d antes) -> Fallback A (WhatsApp) -> Fallback B (2da llamada) -> Touch 3 (instrucciones 24h) -> Touch 4 (recordatorio 3h) -> No-show 1 -> No-show 2 -> Reactivacion
