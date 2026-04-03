@@ -350,6 +350,7 @@ export class CallManager {
         this.registry,
         this.db,
         call.preloadedContext.contactId,
+        call.startedAt,
         call.transcript,
         summary,
       ).catch(() => {})
