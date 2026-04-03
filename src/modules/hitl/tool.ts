@@ -81,7 +81,6 @@ export async function registerHitlTool(
       const contactId = (ctx.contactId as string) ?? 'unknown'
       const channelName = (ctx.channelName as string) ?? 'unknown'
       const senderId = (ctx.senderId as string) ?? contactId
-      const agentId = (ctx.agentId as string) ?? null
       const sessionId = (ctx.sessionId as string) ?? null
       const correlationId = (ctx.correlationId as string) ?? null
 
@@ -112,7 +111,6 @@ export async function registerHitlTool(
         requesterContactId: contactId,
         requesterChannel: channelName,
         requesterSenderId: senderId,
-        agentId: agentId ?? undefined,
         sessionId: sessionId ?? undefined,
         correlationId: correlationId ?? undefined,
         requestType: params.request_type,

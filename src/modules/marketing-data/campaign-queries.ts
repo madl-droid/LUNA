@@ -403,7 +403,6 @@ export class CampaignQueries {
       SELECT lc.campaign_id, COUNT(*) AS conversions
       FROM last_campaign lc
       JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
-        AND ac.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
       WHERE ac.lead_status = 'converted'
       GROUP BY lc.campaign_id
     `)
@@ -428,7 +427,6 @@ export class CampaignQueries {
           AND id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS entries,
         (SELECT COUNT(*) FROM contacts c2
           JOIN agent_contacts ac2 ON ac2.contact_id = c2.id
-            AND ac2.agent_id = (SELECT id FROM agents WHERE slug = 'luna' LIMIT 1)
           WHERE c2.contact_type = 'lead'
             AND ac2.lead_status = 'converted'
             AND c2.id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS conversions

@@ -24,7 +24,6 @@ export interface HitlTicket {
   requesterContactId: string
   requesterChannel: string
   requesterSenderId: string
-  agentId: string | null
   sessionId: string | null
   correlationId: string | null
   // Request
@@ -73,7 +72,6 @@ export interface CreateTicketInput {
   requesterContactId: string
   requesterChannel: string
   requesterSenderId: string
-  agentId?: string
   sessionId?: string
   correlationId?: string
   requestType: RequestType

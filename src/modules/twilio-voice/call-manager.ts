@@ -72,7 +72,7 @@ export class CallManager {
     }
 
     // Insert call record in DB
-    const callId = await pgStore.insertCall(this.db, callSid, 'inbound', from, to, null, this.config.VOICE_GEMINI_VOICE)
+    const callId = await pgStore.insertCall(this.db, callSid, 'inbound', from, to, this.config.VOICE_GEMINI_VOICE)
 
     // Start pre-loading context in background (will be ready by the time media stream connects)
     const contextPromise = preloadContext(this.registry, this.db, from, 'inbound', this.config)
@@ -113,7 +113,7 @@ export class CallManager {
 
     const { callSid } = await this.twilioAdapter.makeCall(to, twimlUrl, statusCallbackUrl)
     const callId = await pgStore.insertCall(
-      this.db, callSid, 'outbound', this.config.TWILIO_PHONE_NUMBER, to, null, this.config.VOICE_GEMINI_VOICE,
+      this.db, callSid, 'outbound', this.config.TWILIO_PHONE_NUMBER, to, this.config.VOICE_GEMINI_VOICE,
     )
 
     this.callSidToStream.set(callSid, '')
@@ -152,7 +152,6 @@ export class CallManager {
       from: '',
       to: '',
       status: 'active',
-      agentId: context.agentId,
       contactId: context.contactId,
       startedAt: new Date(),
       connectedAt: new Date(),
@@ -175,7 +174,6 @@ export class CallManager {
       direction,
       from: call.from,
       to: call.to,
-      agentId: context.agentId,
       contactId: context.contactId ?? undefined,
       connectedAt: new Date(),
     }).catch(() => {})
@@ -352,7 +350,6 @@ export class CallManager {
         this.registry,
         this.db,
         call.preloadedContext.contactId,
-        call.preloadedContext.agentId,
         call.transcript,
         summary,
       ).catch(() => {})
@@ -372,7 +369,6 @@ export class CallManager {
       direction: call.direction,
       from: call.from,
       to: call.to,
-      agentId: call.agentId ?? undefined,
       contactId: call.contactId ?? undefined,
       durationSeconds: Math.round((Date.now() - call.startedAt.getTime()) / 1000),
       endReason: reason,
@@ -464,7 +460,6 @@ export class CallManager {
     try {
       const result = await toolRegistry.executeTool(toolName, args, {
         contactId: call.contactId ?? undefined,
-        agentId: call.agentId ?? undefined,
         channel: 'voice',
       })
 

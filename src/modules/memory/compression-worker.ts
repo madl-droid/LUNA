@@ -255,7 +255,6 @@ export class CompressionWorker {
     const messages: StoredMessage[] = msgResult.rows.map((r: Record<string, unknown>) => ({
       id: r.id as string,
       sessionId: r.session_id as string,
-      agentId: r.agent_id as string,
       channelName: '',
       senderType: (r.role === 'assistant' ? 'agent' : 'user') as 'user' | 'agent',
       senderId: '',

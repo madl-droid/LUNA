@@ -30,7 +30,6 @@ interface ToolExecutor {
     input: Record<string, unknown>,
     context: {
       contactId?: string | null
-      agentId?: string
       traceId?: string
       messageId?: string
       contactType?: string | null

@@ -52,9 +52,8 @@ export async function registerMedilinkTools(
     return
   }
 
-  const agentId = 'default'
   const redis = registry.getRedis()
-  const wmem = new WorkingMemory(redis, 'medilink', agentId)
+  const wmem = new WorkingMemory(redis, 'medilink')
 
   // ═══════════════════════════════════════
   // 1. CHECK AVAILABILITY (PUBLIC)
@@ -253,14 +252,14 @@ export async function registerMedilinkTools(
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
       try {
-        const secCtx = await security.resolveContext(ctx.contactId, agentId)
+        const secCtx = await security.resolveContext(ctx.contactId)
 
         // If already linked, return the linked patient info
         if (secCtx.medilinkPatientId) {
           const patient = await api.getPatient(secCtx.medilinkPatientId, 'high')
           await wmem.set(ctx.contactId, ML.PATIENT_ID, secCtx.medilinkPatientId)
           await pgStore.logAudit(ctx.db, {
-            contactId: ctx.contactId, agentId,
+            contactId: ctx.contactId,
             medilinkPatientId: String(secCtx.medilinkPatientId),
             action: 'search_patient', targetType: 'patient', targetId: String(secCtx.medilinkPatientId),
             detail: { method: 'already_linked' },
@@ -280,7 +279,7 @@ export async function registerMedilinkTools(
           const patients = await api.findPatientByDocument(cleanDoc)
 
           await pgStore.logAudit(ctx.db, {
-            contactId: ctx.contactId, agentId,
+            contactId: ctx.contactId,
             action: 'search_patient', targetType: 'patient',
             detail: { method: 'document', docLast4: cleanDoc.slice(-4), results: patients.length },
             result: 'success',
@@ -288,7 +287,7 @@ export async function registerMedilinkTools(
 
           if (patients.length === 1) {
             const patient = patients[0]!
-            await security.linkContactToPatient(ctx.contactId, agentId, patient.id, 'document_verified')
+            await security.linkContactToPatient(ctx.contactId, patient.id, 'document_verified')
             await wmem.set(ctx.contactId, ML.PATIENT_ID, patient.id)
             return {
               success: true,
@@ -308,7 +307,7 @@ export async function registerMedilinkTools(
         const patients = await api.findPatientByPhone(phone)
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           action: 'search_patient', targetType: 'patient',
           detail: { method: 'phone', phoneLast4: phone.slice(-4), results: patients.length },
           result: 'success',
@@ -359,7 +358,7 @@ export async function registerMedilinkTools(
     handler: async (_input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
+      let secCtx = await security.resolveContext(ctx.contactId)
       secCtx = await security.tryAutoLink(secCtx)
 
       const access = security.canAccess(secCtx, 'patient_info')
@@ -373,7 +372,7 @@ export async function registerMedilinkTools(
         const patient = await api.getPatient(secCtx.medilinkPatientId!, 'high')
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           medilinkPatientId: String(secCtx.medilinkPatientId),
           action: 'view_patient', targetType: 'patient', targetId: String(secCtx.medilinkPatientId),
           detail: {},
@@ -410,7 +409,7 @@ export async function registerMedilinkTools(
     handler: async (input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
+      let secCtx = await security.resolveContext(ctx.contactId)
       secCtx = await security.tryAutoLink(secCtx)
 
       const access = security.canAccess(secCtx, 'appointments')
@@ -446,7 +445,7 @@ export async function registerMedilinkTools(
         })))
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           medilinkPatientId: String(secCtx.medilinkPatientId),
           action: 'view_appointments', targetType: 'appointment',
           detail: { count: mapped.length, level: secCtx.verificationLevel },
@@ -478,7 +477,7 @@ export async function registerMedilinkTools(
     handler: async (_input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
+      let secCtx = await security.resolveContext(ctx.contactId)
       secCtx = await security.tryAutoLink(secCtx)
 
       const access = security.canAccess(secCtx, 'payments')
@@ -494,7 +493,7 @@ export async function registerMedilinkTools(
         const filtered = security.filterPayments(secCtx, payments)
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           medilinkPatientId: String(secCtx.medilinkPatientId),
           action: 'view_payments', targetType: 'payment',
           detail: { hasDebts: filtered.hasDebts, detailsShown: !!filtered.details },
@@ -531,7 +530,7 @@ export async function registerMedilinkTools(
     handler: async (input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
+      let secCtx = await security.resolveContext(ctx.contactId)
       secCtx = await security.tryAutoLink(secCtx)
 
       const access = security.canAccess(secCtx, 'treatment_plans')
@@ -549,7 +548,7 @@ export async function registerMedilinkTools(
         const clean = filtered.map(p => security.filterTreatmentPlan(p))
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           medilinkPatientId: String(secCtx.medilinkPatientId),
           action: 'view_treatment_plans', targetType: 'treatment_plan',
           detail: { count: clean.length, activeOnly },
@@ -638,13 +637,13 @@ export async function registerMedilinkTools(
     handler: async (input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
-      const secCtx = await security.resolveContext(ctx.contactId, agentId)
+      const secCtx = await security.resolveContext(ctx.contactId)
 
       // Verify phone matches contact
       const inputPhone = (input.phone as string).replace(/[^0-9+]/g, '')
       if (!secCtx.contactPhone.includes(inputPhone) && !inputPhone.includes(secCtx.contactPhone)) {
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           action: 'create_patient', targetType: 'patient',
           detail: { reason: 'phone_mismatch' },
           result: 'denied',
@@ -671,7 +670,7 @@ export async function registerMedilinkTools(
         })
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           medilinkPatientId: String(patient.id),
           action: 'create_patient', targetType: 'patient', targetId: String(patient.id),
           detail: { nombre: patient.nombre, apellidos: patient.apellidos },
@@ -705,7 +704,7 @@ export async function registerMedilinkTools(
             const patients = await api.findPatientByDocument(docNumber)
             if (patients.length === 1) {
               const existing = patients[0]!
-              await security.linkContactToPatient(ctx.contactId, agentId, existing.id, 'document_verified')
+              await security.linkContactToPatient(ctx.contactId, existing.id, 'document_verified')
               await wmem.set(ctx.contactId, ML.PATIENT_ID, existing.id)
               return {
                 success: true,
@@ -753,7 +752,7 @@ export async function registerMedilinkTools(
     handler: async (input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
+      let secCtx = await security.resolveContext(ctx.contactId)
       secCtx = await security.tryAutoLink(secCtx)
 
       const access = security.canAccess(secCtx, 'appointments')
@@ -847,7 +846,7 @@ export async function registerMedilinkTools(
         // Schedule follow-ups
         const followupScheduler = registry.getOptional<{
           scheduleSequence(params: {
-            appointmentId: string; contactId: string; agentId: string
+            appointmentId: string; contactId: string
             appointment: { fecha: string; hora_inicio: string; nombre_paciente: string; nombre_profesional: string; nombre_tratamiento: string; nombre_sucursal: string }
           }): Promise<void>
         }>('medilink:followup')
@@ -856,7 +855,6 @@ export async function registerMedilinkTools(
           await followupScheduler.scheduleSequence({
             appointmentId: String(appointment.id),
             contactId: ctx.contactId,
-            agentId,
             appointment: {
               fecha: appointment.fecha,
               hora_inicio: appointment.hora_inicio,
@@ -869,7 +867,7 @@ export async function registerMedilinkTools(
         }
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           medilinkPatientId: String(secCtx.medilinkPatientId),
           action: 'create_appointment', targetType: 'appointment', targetId: String(appointment.id),
           detail: {
@@ -924,7 +922,7 @@ export async function registerMedilinkTools(
     handler: async (input, ctx) => {
       if (!ctx.contactId) return { success: false, error: 'No contact ID' }
 
-      let secCtx = await security.resolveContext(ctx.contactId, agentId)
+      let secCtx = await security.resolveContext(ctx.contactId)
       secCtx = await security.tryAutoLink(secCtx)
 
       const access = security.canAccess(secCtx, 'appointments')
@@ -946,7 +944,7 @@ export async function registerMedilinkTools(
         // Verify ownership
         if (!security.ownsAppointment(secCtx, existing)) {
           await pgStore.logAudit(ctx.db, {
-            contactId: ctx.contactId, agentId,
+            contactId: ctx.contactId,
             action: 'reschedule_appointment', targetType: 'appointment',
             targetId: String(appointmentId),
             detail: { reason: 'not_owner' },
@@ -996,7 +994,7 @@ export async function registerMedilinkTools(
 
         const followupScheduler = registry.getOptional<{
           scheduleSequence(params: {
-            appointmentId: string; contactId: string; agentId: string
+            appointmentId: string; contactId: string
             appointment: { fecha: string; hora_inicio: string; nombre_paciente: string; nombre_profesional: string; nombre_tratamiento: string; nombre_sucursal: string }
           }): Promise<void>
         }>('medilink:followup')
@@ -1005,7 +1003,6 @@ export async function registerMedilinkTools(
           await followupScheduler.scheduleSequence({
             appointmentId: String(updated.id),
             contactId: ctx.contactId,
-            agentId,
             appointment: {
               fecha: updated.fecha,
               hora_inicio: updated.hora_inicio,
@@ -1024,7 +1021,7 @@ export async function registerMedilinkTools(
         if (ctx.contactId) await wmem.del(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
 
         await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId, agentId,
+          contactId: ctx.contactId,
           medilinkPatientId: String(secCtx.medilinkPatientId),
           action: 'reschedule_appointment', targetType: 'appointment', targetId: String(existing.id),
           detail: {
