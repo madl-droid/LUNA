@@ -108,7 +108,7 @@ export class SecurityService {
   async verifyByDocument(
     ctx: SecurityContext,
     documentNumber: string,
-  ): Promise<{ success: boolean; patientId?: number; error?: string }> {
+  ): Promise<{ success: boolean; patientId?: number; error?: string; hitl_required?: boolean; hitl_summary?: string }> {
     try {
       const patients = await this.api.findPatientByDocument(documentNumber)
 
@@ -121,12 +121,12 @@ export class SecurityService {
           detail: { method: 'document', documentNumber, result: 'not_found' },
           result: 'denied',
         })
-        return { success: false, error: 'No se encontró un paciente con ese documento' }
+        return { success: false, error: 'No te encontré en el sistema con ese documento' }
       }
 
       const patient = patients[0]!
 
-      // If already linked to a different patient, reject
+      // If already linked to a different patient, escalate
       if (ctx.medilinkPatientId && ctx.medilinkPatientId !== patient.id) {
         await pgStore.logAudit(this.db, {
           contactId: ctx.contactId,
@@ -137,28 +137,49 @@ export class SecurityService {
           detail: { method: 'document', documentNumber, result: 'mismatch', existingPatientId: ctx.medilinkPatientId },
           result: 'denied',
         })
-        return { success: false, error: 'Este número ya está vinculado a otro paciente. Contacte la clínica.' }
+        return {
+          success: false,
+          error: 'El teléfono que tienes registrado en el sistema es diferente a este, por seguridad no puedo dar datos de pacientes cuando no coincide el número',
+          hitl_required: true,
+          hitl_summary: 'Conflicto de identidad: número de WhatsApp no coincide con el registrado para el paciente',
+        }
       }
 
-      // If not yet linked, verify phone matches or link anyway with document verification
+      // If not yet linked, check if another contact already has this patient
       if (!ctx.medilinkPatientId) {
-        // Check if patient is already claimed by another contact
         const existing = await this.db.query(
-          `SELECT contact_id FROM agent_contacts
-           WHERE agent_id = $1 AND agent_data->>'medilink_patient_id' = $2
-           AND contact_id != $3`,
+          `SELECT ac.contact_id,
+             (SELECT channel_identifier FROM contact_channels
+              WHERE contact_id = ac.contact_id
+              ORDER BY is_primary DESC NULLS LAST LIMIT 1) AS existing_phone
+           FROM agent_contacts ac
+           WHERE ac.agent_id = $1 AND ac.agent_data->>'medilink_patient_id' = $2
+           AND ac.contact_id != $3`,
           [ctx.agentId, String(patient.id), ctx.contactId],
         )
         if (existing.rows.length > 0) {
-          await pgStore.logAudit(this.db, {
-            contactId: ctx.contactId,
-            agentId: ctx.agentId,
-            action: 'identity_check',
-            targetType: 'identity',
-            detail: { method: 'document', documentNumber, result: 'already_claimed' },
-            result: 'denied',
-          })
-          return { success: false, error: 'Este paciente ya está registrado desde otro número. Contacte la clínica.' }
+          const existingRaw = (existing.rows[0]?.existing_phone ?? '') as string
+          const existingPhone = existingRaw.replace(/@.*$/, '').replace(/[^0-9+]/g, '')
+          const currentPhone = ctx.contactPhone.replace(/[^0-9+]/g, '')
+
+          if (existingPhone && existingPhone !== currentPhone) {
+            // Truly different person — escalate
+            await pgStore.logAudit(this.db, {
+              contactId: ctx.contactId,
+              agentId: ctx.agentId,
+              action: 'identity_check',
+              targetType: 'identity',
+              detail: { method: 'document', documentNumber, result: 'already_claimed_different_phone' },
+              result: 'denied',
+            })
+            return {
+              success: false,
+              error: 'Hay un inconveniente con tu registro, déjame un momento',
+              hitl_required: true,
+              hitl_summary: 'Paciente ya está vinculado a otro número de WhatsApp diferente — posible duplicado de contacto',
+            }
+          }
+          // Same phone on a different contact entry — just link silently (duplicate contact)
         }
       }
 
@@ -179,7 +200,12 @@ export class SecurityService {
       return { success: true, patientId: patient.id }
     } catch (err) {
       logger.error({ err, contactId: ctx.contactId }, 'Document verification failed')
-      return { success: false, error: 'Error al verificar el documento' }
+      return {
+        success: false,
+        error: 'Hay un error cuando busco tu documento en el sistema, dame un momento',
+        hitl_required: true,
+        hitl_summary: 'Error técnico al verificar documento del paciente',
+      }
     }
   }
 

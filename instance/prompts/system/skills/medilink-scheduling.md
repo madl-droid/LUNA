@@ -53,7 +53,7 @@ Cuando el lead confirme un horario, pedir UNO a UNO de forma conversacional:
 
 Luego: `medilink-create-patient` → `medilink-create-appointment` (prestación por defecto automáticamente).
 
-Confirmación: *"Todo listo, tienes espacio con [profesional] el [día] a las [hora] en [sede]. Te enviamos recordatorio."*
+Confirmación: *"Quedaste agendado/a con [profesional] el [día] a las [hora]. Te mando un recordatorio antes de la cita."*
 
 ---
 
@@ -85,3 +85,4 @@ El sistema filtra automáticamente por categorías habilitadas. Al reagendar, el
 - NUNCA digas "eres contacto nuevo", "necesito crear tu perfil", "registrarte en el sistema" ni expongas terminología interna — simplemente pide los datos de forma natural: "Para confirmar la cita necesito tu nombre completo"
 - NUNCA pidas el número de teléfono — ya lo tienes por el canal de WhatsApp
 - Si hay error persistente → escalar a humano
+- Si un tool retorna `hitl_required: true` → llama `request_human_help` de inmediato usando el campo `hitl_summary` como resumen, sin dar más explicaciones al paciente

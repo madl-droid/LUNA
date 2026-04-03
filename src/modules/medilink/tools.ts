@@ -365,8 +365,8 @@ export async function registerMedilinkTools(
       const access = security.canAccess(secCtx, 'patient_info')
       if (!access.allowed) {
         return { success: false, error: access.reason === 'No patient linked'
-          ? 'No encontramos un paciente vinculado a tu número.'
-          : 'Necesitas verificar tu identidad primero' }
+          ? 'No te encontré en el sistema con tu número de teléfono'
+          : 'Necesito primero verificar los datos en el sistema' }
       }
 
       try {
@@ -416,8 +416,8 @@ export async function registerMedilinkTools(
       const access = security.canAccess(secCtx, 'appointments')
       if (!access.allowed) {
         return { success: false, error: access.reason === 'No patient linked'
-          ? 'No encontramos un paciente vinculado a tu número. ¿Ya eres paciente? Puedo buscarte por tu documento.'
-          : 'Necesitas verificar tu identidad primero' }
+          ? 'No te encontré en el sistema con tu número de teléfono. Si ya eres paciente, dime tu número de documento y te busco'
+          : 'Necesito primero verificar los datos en el sistema' }
       }
 
       try {
@@ -484,9 +484,9 @@ export async function registerMedilinkTools(
       const access = security.canAccess(secCtx, 'payments')
       if (!access.allowed) {
         if (access.reason === 'Document verification required for debt details') {
-          return { success: false, error: 'Para ver los montos de deuda necesito verificar tu identidad. ¿Puedes proporcionarme tu número de documento?' }
+          return { success: false, error: 'No puedo compartir información de pagos sin verificar tu identidad, por seguridad' }
         }
-        return { success: false, error: 'Necesitas verificar tu identidad primero' }
+        return { success: false, error: 'Necesito primero verificar los datos en el sistema' }
       }
 
       try {
@@ -537,8 +537,8 @@ export async function registerMedilinkTools(
       const access = security.canAccess(secCtx, 'treatment_plans')
       if (!access.allowed) {
         return { success: false, error: access.reason === 'No patient linked'
-          ? 'No encontramos un paciente vinculado a tu número.'
-          : 'Necesitas verificar tu identidad primero' }
+          ? 'No te encontré en el sistema con tu número de teléfono'
+          : 'Necesito primero verificar los datos en el sistema' }
       }
 
       try {
@@ -653,7 +653,7 @@ export async function registerMedilinkTools(
       }
 
       if (secCtx.medilinkPatientId) {
-        return { success: false, error: 'Ya tienes un paciente vinculado en el sistema' }
+        return { success: false, error: 'Ya estabas registrado en el sistema' }
       }
 
       try {
@@ -688,7 +688,7 @@ export async function registerMedilinkTools(
           data: {
             patientId: patient.id,
             name: `${patient.nombre} ${patient.apellidos}`,
-            message: 'Paciente registrado y vinculado exitosamente',
+            message: 'Registrado',
           },
         }
       } catch (err) {
@@ -712,7 +712,7 @@ export async function registerMedilinkTools(
                 data: {
                   patientId: existing.id,
                   name: `${existing.nombre} ${existing.apellidos}`,
-                  message: 'Ya tenías ficha en el sistema — vinculado exitosamente',
+                  message: 'Ya estabas registrado en el sistema',
                 },
               }
             }
@@ -758,7 +758,7 @@ export async function registerMedilinkTools(
 
       const access = security.canAccess(secCtx, 'appointments')
       if (!access.allowed) {
-        return { success: false, error: 'Necesitas estar vinculado como paciente para agendar' }
+        return { success: false, error: 'Necesito buscarte en el sistema para agendar, con los datos que tengo no te encuentro' }
       }
 
       try {
@@ -929,7 +929,7 @@ export async function registerMedilinkTools(
 
       const access = security.canAccess(secCtx, 'appointments')
       if (!access.allowed) {
-        return { success: false, error: 'Necesitas verificar tu identidad primero' }
+        return { success: false, error: 'Necesito primero verificar los datos en el sistema' }
       }
 
       try {
@@ -939,7 +939,7 @@ export async function registerMedilinkTools(
           const pending = await wmem.get<number>(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
           if (pending) appointmentId = pending
         }
-        if (!appointmentId) return { success: false, error: 'No se especificó la cita a reagendar.' }
+        if (!appointmentId) return { success: false, error: '¿Qué cita quieres reagendar?' }
 
         const existing = await api.getAppointment(appointmentId, 'high')
 
@@ -953,7 +953,12 @@ export async function registerMedilinkTools(
             verificationLevel: secCtx.verificationLevel,
             result: 'denied',
           })
-          return { success: false, error: 'No tienes permiso para reagendar esta cita' }
+          return {
+            success: false,
+            error: 'No puedo reagendar esta cita',
+            hitl_required: true,
+            hitl_summary: 'Paciente intenta reagendar una cita que no le pertenece',
+          }
         }
 
         // If changing professional, validate category compatibility
