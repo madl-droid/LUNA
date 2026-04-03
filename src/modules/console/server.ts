@@ -113,6 +113,13 @@ async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: bool
   // Flush Redis (preserve session keys so the current user stays logged in)
   await flushRedisExceptSessions(registry.getRedis())
 
+  // Re-seed default agent — must exist for session creation to work
+  await db.query(`
+    INSERT INTO agents (slug, name, description, config_path)
+    VALUES ('luna', 'LUNA', 'Agente principal de ventas', 'instance/config.json')
+    ON CONFLICT (slug) DO NOTHING
+  `).catch(() => {})
+
   // Delete media files (but keep the directory)
   const mediaDir = path.resolve(process.cwd(), 'instance', 'knowledge', 'media')
   try {
