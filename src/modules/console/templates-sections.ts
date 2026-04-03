@@ -1840,13 +1840,10 @@ function renderIdentitySection(data: SectionData): string {
         <input type="hidden" name="AGENT_TIMEZONE" id="ts-agent-timezone-input" value="${esc(agentTimezone)}" data-original="${esc(agentTimezone)}"></div>
       <div class="field ts-field-stack">
         <span class="field-label">${isEs ? 'Acento' : 'Accent'}</span>
-        <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select" class="js-custom-select">${accentOptionsHtml}</select></div>
-      <div class="field ts-field-stack" id="ts-accent-prompt-field" style="${agentAccent ? '' : 'display:none'}">
-        <span class="field-label">${isEs ? 'Instrucciones de acento' : 'Accent instructions'}</span>
         <p class="ts-field-hint">${isEs
-          ? 'Personaliza como suena el agente: modismos, expresiones y tono regional. Se inyecta en el contexto del LLM cuando el acento esta activo.'
-          : 'Customize how the agent sounds: idioms, expressions and regional tone. Injected into LLM context when accent is active.'}</p>
-        <textarea name="AGENT_ACCENT_PROMPT" data-original="${esc(cfg['AGENT_ACCENT_PROMPT'] || '')}" rows="4" placeholder="${isEs ? 'Describe como debe sonar el agente: modismos, expresiones, tono...' : 'Describe how the agent should sound: idioms, expressions, tone...'}">${esc(cfg['AGENT_ACCENT_PROMPT'] || '')}</textarea></div>
+          ? 'La seleccion activa automaticamente el perfil de acento del sistema para ese locale.'
+          : 'The selection automatically activates the system accent profile for that locale.'}</p>
+        <select name="AGENT_ACCENT" data-original="${esc(agentAccent)}" id="agent-accent-select" class="js-custom-select">${accentOptionsHtml}</select></div>
     </div>
   </div>
   <script type="application/json" id="accent-map-data">${JSON.stringify(ACCENT_MAP)}</script>
@@ -1959,11 +1956,6 @@ function renderIdentitySection(data: SectionData): string {
           accentSel.value = accentSel.getAttribute('data-original') || '';
           return;
         }
-      }
-      // Show/hide accent prompt textarea based on accent selection
-      var accentPromptField = document.getElementById('ts-accent-prompt-field');
-      if (accentPromptField) {
-        accentPromptField.style.display = accentSel.value ? '' : 'none';
       }
     });
 
