@@ -48,7 +48,6 @@ interface EngineModuleConfig {
   NIGHTLY_CONCURRENCY: number
   NIGHTLY_MAX_RETRIES: number
   // Agentic engine (v2)
-  ENGINE_MODE: string
   ENGINE_AGENTIC_MAX_TURNS: number
   AGENTIC_EFFORT_DEFAULT: string
   ENGINE_EFFORT_ROUTING: boolean
@@ -116,7 +115,6 @@ const manifest: ModuleManifest = {
     NIGHTLY_CONCURRENCY: numEnvMin(1, 5),
     NIGHTLY_MAX_RETRIES: numEnvMin(0, 2),
     // Agentic engine (v2)
-    ENGINE_MODE: z.string().default('agentic'),
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     AGENTIC_EFFORT_DEFAULT: z.string().default('medium'),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
@@ -400,20 +398,6 @@ const manifest: ModuleManifest = {
 
       // ── Agentic Engine ──
       { key: '_div_agentic', type: 'divider', label: { es: 'Motor Agentico (v2)', en: 'Agentic Engine (v2)' } },
-      {
-        key: 'ENGINE_MODE',
-        type: 'select',
-        label: { es: 'Modo del motor', en: 'Engine mode' },
-        info: {
-          es: 'Agentico usa un loop nativo con herramientas (v2). Legacy usa el pipeline de 5 fases (v1, deprecado).',
-          en: 'Agentic uses a native tool loop (v2). Legacy uses the 5-phase pipeline (v1, deprecated).',
-        },
-        options: [
-          { value: 'agentic', label: 'Agentic Loop (v2)' },
-          { value: 'legacy', label: 'Pipeline Legacy (v1)' },
-        ],
-        width: 'half',
-      },
       {
         key: 'ENGINE_AGENTIC_MAX_TURNS',
         type: 'number',

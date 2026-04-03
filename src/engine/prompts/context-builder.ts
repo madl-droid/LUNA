@@ -14,14 +14,15 @@ import { escapeForPrompt, escapeDataForPrompt, wrapUserContent } from '../utils/
  * Formats a timestamp as a short relative label for prompt injection.
  * Examples: "09:41", "ayer 14:23", "hace 3 días"
  */
-function relativeTime(ts: Date, now = new Date()): string {
-  const diffMs = now.getTime() - ts.getTime()
+function relativeTime(ts: Date | string, now = new Date()): string {
+  const d: Date = ts instanceof Date ? ts : new Date(ts)
+  const diffMs = now.getTime() - d.getTime()
   const diffMin = Math.floor(diffMs / 60000)
   const diffH = Math.floor(diffMs / 3600000)
   const diffD = Math.floor(diffMs / 86400000)
 
   const pad = (n: number) => String(n).padStart(2, '0')
-  const hhmm = `${pad(ts.getHours())}:${pad(ts.getMinutes())}`
+  const hhmm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
 
   if (diffMin < 2) return 'ahora'
   if (diffH < 1) return `hace ${diffMin} min`
@@ -29,7 +30,7 @@ function relativeTime(ts: Date, now = new Date()): string {
   if (diffD < 1) return hhmm                       // mismo día → solo hora
   if (diffD < 2) return `ayer ${hhmm}`
   if (diffD < 7) return `hace ${diffD} días`
-  return `${ts.toLocaleDateString('es', { day: 'numeric', month: 'short' })} ${hhmm}`
+  return `${d.toLocaleDateString('es', { day: 'numeric', month: 'short' })} ${hhmm}`
 }
 
 /** Maps KnowledgeItem sourceType to the Google API tool that can query it live */

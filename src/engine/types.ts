@@ -322,14 +322,13 @@ export interface PipelineResult {
   responseText?: string
   deliveryResult?: DeliveryResult
   error?: string
+  engineMode?: string
   skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}`
   replanAttempts: number
   subagentIterationsUsed: number
   // --- Agentic fields (v2.0) ---
   agenticResult?: import('./agentic/types.js').AgenticResult
   effortLevel?: import('./agentic/types.js').EffortLevel
-  /** Which engine mode produced this result. Defaults to 'legacy' when absent. */
-  engineMode?: 'agentic' | 'legacy'
 }
 
 // ═══════════════════════════════════════════
@@ -337,7 +336,6 @@ export interface PipelineResult {
 // ═══════════════════════════════════════════
 
 export interface AgenticPipelineOptions {
-  engineMode?: 'agentic' | 'legacy'
   forceEffort?: import('./agentic/types.js').EffortLevel
   isProactive?: boolean
 }
@@ -689,8 +687,6 @@ export interface EngineConfig {
   checkpointCleanupDays: number
 
   // --- Agentic engine config (v2.0) ---
-  /** 'agentic' (default) uses the new agentic loop; 'legacy' uses Phases 2-4 */
-  engineMode: 'agentic' | 'legacy'
   /** Max tool-calling turns before forcing a text response */
   agenticMaxTurns: number
   /** Enable effort routing: classify complexity to route to cheaper/capable model */

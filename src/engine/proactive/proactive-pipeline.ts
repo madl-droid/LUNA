@@ -15,13 +15,9 @@ import type {
   ContextBundle,
   EngineConfig,
   PipelineResult,
-  EvaluatorOutput,
   ProactiveConfig,
   OutreachLogEntry,
 } from '../types.js'
-import { phase2Evaluate } from '../phases/phase2-evaluate.js'
-import { phase3Execute } from '../phases/phase3-execute.js'
-import { phase4Compose } from '../phases/phase4-compose.js'
 import { phase5Validate } from '../phases/phase5-validate.js'
 import { runGuards, setCooldown, incrementProactiveCount } from './guards.js'
 // --- Agentic imports (v2.0) ---
@@ -85,121 +81,10 @@ export async function processProactive(
 
     logger.info({ traceId, phase: 1, durationMs: phase1DurationMs }, 'Proactive phase 1 done')
 
-    // ═══ AGENTIC BRANCH (v2.0) ═══
-    if (engineConfig.engineMode === 'agentic') {
-      return await runProactiveAgentic(
-        ctx, db, redis, registry, engineConfig, proactiveConfig,
-        candidate, traceId, totalStart, phase1DurationMs,
-      )
-    }
-
-    // ═══ PHASE 2: Evaluate (may return NO_ACTION) ═══
-    const p2Start = Date.now()
-    const evaluation = await phase2Evaluate(ctx, engineConfig, undefined, registry)
-    const phase2DurationMs = Date.now() - p2Start
-
-    if (evaluation.intent === 'no_action') {
-      logger.info({ traceId }, 'Proactive evaluator decided NO_ACTION')
-      await logOutreach(db, {
-        contactId: candidate.contactId,
-        triggerType: candidate.triggerType,
-        triggerId: candidate.triggerId,
-        channel: candidate.channel,
-        actionTaken: 'no_action',
-      })
-      return {
-        traceId, success: true,
-        phase1DurationMs, phase2DurationMs,
-        phase3DurationMs: 0, phase4DurationMs: 0, phase5DurationMs: 0,
-        totalDurationMs: Date.now() - totalStart,
-        evaluatorOutput: evaluation,
-        replanAttempts: 0, subagentIterationsUsed: 0,
-      }
-    }
-
-    logger.info({ traceId, phase: 2, durationMs: phase2DurationMs, intent: evaluation.intent }, 'Proactive phase 2 done')
-
-    // ═══ PHASE 3: Execute Plan ═══
-    const p3Start = Date.now()
-    const execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry)
-    const phase3DurationMs = Date.now() - p3Start
-
-    logger.info({ traceId, phase: 3, durationMs: phase3DurationMs }, 'Proactive phase 3 done')
-
-    // ═══ PHASE 4: Compose Response ═══
-    const p4Start = Date.now()
-    const composed = await phase4Compose(ctx, evaluation, execution, engineConfig, registry)
-    const phase4DurationMs = Date.now() - p4Start
-
-    logger.info({ traceId, phase: 4, durationMs: phase4DurationMs }, 'Proactive phase 4 done')
-
-    // ═══ PHASE 5: Validate + Send + Persist ═══
-    const p5Start = Date.now()
-    const delivery = await phase5Validate(ctx, composed, evaluation, registry, db, redis, engineConfig)
-    const phase5DurationMs = Date.now() - p5Start
-
-    const totalDurationMs = Date.now() - totalStart
-
-    // Post-send bookkeeping
-    if (delivery.sent) {
-      await Promise.allSettled([
-        setCooldown(candidate.contactId, redis, proactiveConfig),
-        incrementProactiveCount(candidate.contactId, redis),
-        updateCooldownState(redis, candidate.contactId, candidate.triggerType, 'sent', proactiveConfig),
-        logOutreach(db, {
-          contactId: candidate.contactId,
-          triggerType: candidate.triggerType,
-          triggerId: candidate.triggerId,
-          channel: candidate.channel,
-          actionTaken: 'sent',
-          messageId: delivery.channelMessageId,
-        }),
-        updateCommitmentIfNeeded(candidate, evaluation, registry),
-      ])
-    } else {
-      await Promise.allSettled([
-        updateCooldownState(redis, candidate.contactId, candidate.triggerType, 'error', proactiveConfig),
-        logOutreach(db, {
-          contactId: candidate.contactId,
-          triggerType: candidate.triggerType,
-          triggerId: candidate.triggerId,
-          channel: candidate.channel,
-          actionTaken: 'error',
-          metadata: { error: delivery.error },
-        }),
-      ])
-    }
-
-    logger.info({ traceId, totalDurationMs, sent: delivery.sent }, 'Proactive pipeline complete')
-
-    // Pipeline log (fire-and-forget)
-    const memMgr = registry.getOptional<MemoryManager>('memory:manager')
-    if (memMgr && candidate.contactId) {
-      memMgr.savePipelineLog({
-        messageId: traceId,
-        agentId: ctx.agentId,
-        contactId: candidate.contactId,
-        sessionId: ctx.session.id,
-        phase1Ms: phase1DurationMs,
-        phase2Ms: phase2DurationMs,
-        phase3Ms: phase3DurationMs,
-        phase4Ms: phase4DurationMs,
-        phase5Ms: phase5DurationMs,
-        totalMs: totalDurationMs,
-        toolsCalled: evaluation.toolsNeeded,
-      }).catch(() => {})
-    }
-
-    return {
-      traceId, success: delivery.sent,
-      phase1DurationMs, phase2DurationMs, phase3DurationMs, phase4DurationMs, phase5DurationMs,
-      totalDurationMs,
-      evaluatorOutput: evaluation,
-      executionOutput: execution,
-      responseText: composed.responseText,
-      deliveryResult: delivery,
-      replanAttempts: 0, subagentIterationsUsed: 0,
-    }
+    return await runProactiveAgentic(
+      ctx, db, redis, registry, engineConfig, proactiveConfig,
+      candidate, traceId, totalStart, phase1DurationMs,
+    )
   } catch (err) {
     const totalDurationMs = Date.now() - totalStart
     logger.error({ traceId, err, totalDurationMs }, 'Proactive pipeline error')
@@ -274,7 +159,6 @@ async function runProactiveAgentic(
         totalDurationMs: Date.now() - totalStart,
         error: `Blocked by conversation guard: ${guard.reason}`,
         replanAttempts: 0, subagentIterationsUsed: 0,
-        engineMode: 'agentic',
       }
     }
   }
@@ -335,7 +219,7 @@ async function runProactiveAgentic(
       phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
       phase4DurationMs: 0, phase5DurationMs: 0,
       totalDurationMs: Date.now() - totalStart,
-      agenticResult, effortLevel, engineMode: 'agentic',
+      agenticResult, effortLevel,
       replanAttempts: 0, subagentIterationsUsed: 0,
     }
   }
@@ -403,7 +287,7 @@ async function runProactiveAgentic(
     totalDurationMs,
     responseText: compositorOutput.responseText,
     deliveryResult: delivery,
-    agenticResult, effortLevel, engineMode: 'agentic',
+    agenticResult, effortLevel,
     replanAttempts: 0, subagentIterationsUsed: 0,
   }
 }
@@ -652,24 +536,3 @@ async function logOutreach(db: Pool, entry: OutreachLogEntry): Promise<void> {
   }
 }
 
-async function updateCommitmentIfNeeded(
-  candidate: ProactiveCandidate,
-  evaluation: EvaluatorOutput,
-  registry: Registry,
-): Promise<void> {
-  if (candidate.triggerType !== 'commitment' || !candidate.commitmentData) return
-
-  const memMgr = registry.getOptional<MemoryManager>('memory:manager')
-  if (!memMgr) return
-
-  const newStatus = evaluation.intent === 'cancel_commitment' ? 'cancelled' : 'done'
-  const actionTaken = evaluation.intent === 'cancel_commitment'
-    ? 'Cancelled by evaluator'
-    : `Fulfilled proactively. Intent: ${evaluation.intent}`
-
-  await memMgr.updateCommitmentStatus(
-    candidate.commitmentData.id,
-    newStatus as import('../../modules/memory/types.js').CommitmentStatus,
-    actionTaken,
-  )
-}

@@ -6,22 +6,17 @@ import pino from 'pino'
 import { logChannelMessage } from '../kernel/extreme-logger.js'
 import type { Registry } from '../kernel/registry.js'
 import type { IncomingMessage } from '../channels/types.js'
-import type { PipelineResult, EngineConfig, ContextBundle, ReplanContext, LLMToolDef } from './types.js'
+import type { PipelineResult, EngineConfig, ContextBundle, LLMToolDef } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
 import { phase1Intake } from './phases/phase1-intake.js'
-import { phase2Evaluate } from './phases/phase2-evaluate.js'
-import { phase3Execute } from './phases/phase3-execute.js'
-import { phase4Compose } from './phases/phase4-compose.js'
 import { phase5Validate } from './phases/phase5-validate.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
-import { generateAck, mapStepToAction } from './ack/ack-service.js'
 import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
-import type { Phase3Options } from './phases/phase3-execute.js'
 // --- Agentic imports (v2.0) ---
 import { classifyEffort, runAgenticLoop, postProcess } from './agentic/index.js'
 import { buildAgenticPrompt } from './prompts/agentic.js'
@@ -34,8 +29,6 @@ let registry: Registry
 let pipelineSemaphore: PipelineSemaphore
 let contactLock: ContactLock
 let checkpointMgr: CheckpointManager | null = null
-/** Temporary stash for completed steps during checkpoint resume. Keyed by messageId. */
-const pendingResumeSteps = new Map<string, import('./types.js').StepResult[]>()
 
 /**
  * Initialize the engine. Call once at startup.
@@ -167,7 +160,6 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       phase4DurationMs: 0, phase5DurationMs: 0,
       totalDurationMs: Date.now() - totalStart,
       replanAttempts: 0, subagentIterationsUsed: 0,
-      engineMode: 'legacy',
     }
   }
 
@@ -194,14 +186,7 @@ async function processMessageInner(
   redis: import('ioredis').Redis,
   totalStart: number,
 ): Promise<PipelineResult> {
-  // Check if this is a resumed message with pre-completed steps
-  const resumeSteps = pendingResumeSteps.get(message.id)
-  if (resumeSteps) pendingResumeSteps.delete(message.id)
   let traceId = ''
-  let avisoTimer: ReturnType<typeof setTimeout> | null = null
-  let checkpointId: string | undefined
-  // Shared state so the ACK timer knows if the pipeline failed or completed
-  const pipelineState = { failed: false, completed: false }
 
   try {
     // ═══ PHASE 1: Intake + Context Loading ═══
@@ -251,7 +236,6 @@ async function processMessageInner(
         phase4DurationMs: 0, phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         replanAttempts: 0, subagentIterationsUsed: 0,
-        engineMode: 'legacy',
       }
     }
 
@@ -291,11 +275,10 @@ async function processMessageInner(
         phase4DurationMs: 0, phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         replanAttempts: 0, subagentIterationsUsed: 0,
-        engineMode: 'legacy',
       }
     }
 
-    // ═══ SIGNAL: READ (mark as read) — before Phase 2 ═══
+    // ═══ SIGNAL: READ (mark as read) — before agentic loop ═══
     registry.runHook('channel:read', {
       channel: message.channelName,
       to: signalTo,
@@ -303,100 +286,7 @@ async function processMessageInner(
       correlationId: traceId,
     }).catch(() => {})
 
-    // ═══ AGENTIC BRANCH (v2.0) ═══
-    // When ENGINE_MODE=agentic (default), skip legacy Phase 2→3→4 entirely.
-    // Phases 2+3+4 are replaced by a single agentic loop.
-    if (engineConfig.engineMode === 'agentic') {
-      // Send composing signal before the agentic loop
-      registry.runHook('channel:composing', {
-        channel: message.channelName,
-        to: signalTo,
-        mode: ctx.responseFormat === 'audio' ? 'recording' : 'composing',
-        correlationId: traceId,
-      }).catch(() => {})
-
-      const result = await runAgenticPipeline(ctx, engineConfig, registry, db, redis, totalStart, phase1DurationMs)
-      pipelineState.completed = true
-      if (avisoTimer) clearTimeout(avisoTimer)
-      return result
-    }
-
-    // ═══ PHASE 2: Evaluate Situation ═══
-    const p2Start = Date.now()
-    let evaluation = await phase2Evaluate(ctx, engineConfig, undefined, registry)
-    let phase2DurationMs = Date.now() - p2Start
-
-    logger.info({
-      traceId,
-      phase: 2,
-      durationMs: phase2DurationMs,
-      intent: evaluation.intent,
-      planSteps: evaluation.executionPlan.length,
-    }, 'Phase 2 done')
-
-    // Create checkpoint for the execution plan (non-blocking, resolves before Phase 3 steps run)
-    let checkpointPromise: Promise<string> | undefined
-    if (checkpointMgr && evaluation.executionPlan.length > 0
-        && evaluation.executionPlan[0]?.type !== 'respond_only') {
-      checkpointPromise = checkpointMgr.create({
-        traceId,
-        messageId: message.id,
-        contactId: ctx.contactId,
-        channel: message.channelName,
-        messageFrom: message.from,
-        senderName: message.senderName ?? '',
-        channelMessageId: message.channelMessageId ?? '',
-        messageText: message.content.text ?? null,
-        executionPlan: evaluation.executionPlan,
-      }).catch(cpErr => {
-        logger.warn({ err: cpErr, traceId }, 'Checkpoint create failed — continuing without')
-        return ''
-      })
-    }
-
-    // ═══ PHASE 3+4: Execute + Compose (with aviso de proceso timer) ═══
-    const avisoConfig = getAvisoConfig(ctx.message.channelName)
-    let avisoSentAt: number | undefined = undefined
-
-    // Resolve tone from channel config (avisoStyle) — single source of truth
-    const channelTone = getChannelTone(ctx.message.channelName)
-
-    // Determine action type for LLM ACK context
-    const actionType = mapStepToAction(evaluation.executionPlan?.[0]?.type ?? 'respond_only')
-
-    avisoTimer = avisoConfig.triggerMs > 0
-      ? setTimeout(() => {
-          void (async () => {
-            // Don't send ACK if pipeline already completed successfully
-            if (pipelineState.completed) return
-
-            // If pipeline failed, send error fallback instead of processing ACK
-            if (pipelineState.failed) {
-              const errorMsg = pickErrorFallback(channelTone)
-              await sendAviso(ctx, errorMsg, registry)
-              return
-            }
-
-            // Normal ACK: pipeline is still processing
-            avisoSentAt = Date.now()
-            const ackMsg = await generateAck({
-              contactName: ctx.contact?.displayName ?? '',
-              userMessage: (ctx.normalizedText ?? ctx.message.content.text ?? '').slice(0, 200),
-              actionType,
-              tone: channelTone,
-            }, registry)
-            await sendAviso(ctx, ackMsg, registry)
-          })().catch(err => {
-            logger.warn({ err, traceId }, 'Failed to send aviso de proceso')
-          })
-        }, avisoConfig.triggerMs)
-      : null
-
-    // Resolve checkpoint ID (INSERT ~1-2ms, ran concurrently with aviso timer setup above)
-    if (checkpointPromise) checkpointId = await checkpointPromise || undefined
-
-    // ═══ SIGNAL: COMPOSING/RECORDING — before Phase 3 ═══
-    // Mode is conditional on the expected response format from Phase 1
+    // ═══ SIGNAL: COMPOSING/RECORDING ═══
     registry.runHook('channel:composing', {
       channel: message.channelName,
       to: signalTo,
@@ -404,172 +294,9 @@ async function processMessageInner(
       correlationId: traceId,
     }).catch(() => {})
 
-    const p3Start = Date.now()
-    const phase3Opts: Phase3Options = {
-      checkpointManager: (checkpointId && checkpointMgr) ? checkpointMgr : undefined,
-      checkpointId,
-      completedSteps: resumeSteps,
-    }
-    let execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry, phase3Opts)
-
-    // ═══ REPLANNING LOOP ═══
-    let replanAttempts = 0
-    const maxReplan = engineConfig.maxReplanAttempts
-
-    while (
-      !execution.allSucceeded &&
-      replanAttempts < maxReplan &&
-      execution.results.some(r => !r.success && r.type !== 'respond_only')
-    ) {
-      replanAttempts++
-
-      const replanCtx: ReplanContext = {
-        attempt: replanAttempts,
-        previousPlan: evaluation.executionPlan,
-        failedSteps: execution.results.filter(r => !r.success),
-        partialData: execution.partialData,
-      }
-
-      logger.info({
-        traceId,
-        replanAttempt: replanAttempts,
-        failedSteps: replanCtx.failedSteps.length,
-      }, 'Replanning — re-evaluating after failed steps')
-
-      const replanP2Start = Date.now()
-      evaluation = await phase2Evaluate(ctx, engineConfig, replanCtx, registry)
-      phase2DurationMs += Date.now() - replanP2Start
-
-      // Clear completed steps from previous plan — new plan may have different steps
-      phase3Opts.completedSteps = undefined
-
-      execution = await phase3Execute(ctx, evaluation, db, redis, engineConfig, registry, phase3Opts)
-    }
-
-    const phase3DurationMs = Date.now() - p3Start
-
-    // Collect subagent iterations from execution results
-    let subagentIterationsUsed = 0
-    for (const r of execution.results) {
-      if (r.type === 'subagent' && r.data && typeof r.data === 'object' && 'iterations' in (r.data as Record<string, unknown>)) {
-        subagentIterationsUsed += (r.data as { iterations: number }).iterations
-      }
-    }
-
-    logger.info({
-      traceId,
-      phase: 3,
-      durationMs: phase3DurationMs,
-      allSucceeded: execution.allSucceeded,
-      stepResults: execution.results.length,
-      replanAttempts,
-    }, 'Phase 3 done')
-
-    // ═══ PHASE 4: Compose Response ═══
-    const p4Start = Date.now()
-    const composed = await phase4Compose(ctx, evaluation, execution, engineConfig, registry)
-    const phase4DurationMs = Date.now() - p4Start
-
-    pipelineState.completed = true
-    if (avisoTimer) clearTimeout(avisoTimer)
-
-    logger.info({
-      traceId,
-      phase: 4,
-      durationMs: phase4DurationMs,
-      responseLength: composed.responseText.length,
-    }, 'Phase 4 done')
-
-    // Si se envió aviso de proceso, retener la respuesta el tiempo configurado
-    if (avisoSentAt !== undefined) {
-      const elapsed = Date.now() - avisoSentAt
-      const holdMs = avisoConfig.holdMs - elapsed
-      if (holdMs > 0) {
-        logger.info({ traceId, holdMs }, 'Reteniendo respuesta tras aviso de proceso')
-        await new Promise(resolve => setTimeout(resolve, holdMs))
-      }
-    }
-
-    // ═══ PHASE 5: Validate + Send ═══
-    const p5Start = Date.now()
-    const delivery = await phase5Validate(ctx, composed, evaluation, registry, db, redis, engineConfig)
-    const phase5DurationMs = Date.now() - p5Start
-
-    const totalDurationMs = Date.now() - totalStart
-
-    logger.info({
-      traceId,
-      phase: 5,
-      durationMs: phase5DurationMs,
-      sent: delivery.sent,
-      totalDurationMs,
-    }, 'Phase 5 done — pipeline complete')
-
-    // Mark checkpoint complete (awaited to prevent duplicate responses on resume)
-    if (checkpointMgr && checkpointId) {
-      await checkpointMgr.complete(checkpointId).catch(cpErr =>
-        logger.warn({ err: cpErr, traceId }, 'Failed to complete checkpoint'),
-      )
-    }
-
-    // Pipeline log (fire-and-forget via memory:manager)
-    const memMgr = registry.getOptional<import('../modules/memory/memory-manager.js').MemoryManager>('memory:manager')
-    if (memMgr) {
-      memMgr.savePipelineLog({
-        messageId: ctx.message.id,
-        agentId: ctx.agentId,
-        contactId: ctx.contactId ?? null,
-        sessionId: ctx.session.id,
-        phase1Ms: phase1DurationMs,
-        phase2Ms: phase2DurationMs,
-        phase3Ms: phase3DurationMs,
-        phase4Ms: phase4DurationMs,
-        phase5Ms: phase5DurationMs,
-        totalMs: totalDurationMs,
-        toolsCalled: evaluation.toolsNeeded,
-        replanAttempts,
-        subagentIterations: subagentIterationsUsed || null,
-      }).catch(err => logger.warn({ err, traceId }, 'Failed to save pipeline log'))
-    }
-
-    // Extreme logging: outbound response
-    logChannelMessage({
-      channel: message.channelName,
-      direction: 'outbound',
-      contactId: message.from,
-      messageType: 'text',
-      textPreview: composed.responseText,
-      metadata: { traceId, totalDurationMs, sent: delivery.sent },
-    }).catch(() => {})
-
-    return {
-      traceId,
-      success: delivery.sent,
-      phase1DurationMs,
-      phase2DurationMs,
-      phase3DurationMs,
-      phase4DurationMs,
-      phase5DurationMs,
-      totalDurationMs,
-      evaluatorOutput: evaluation,
-      executionOutput: execution,
-      responseText: composed.responseText,
-      deliveryResult: delivery,
-      replanAttempts,
-      subagentIterationsUsed,
-      engineMode: 'legacy',
-    }
+    return await runAgenticPipeline(ctx, engineConfig, registry, db, redis, totalStart, phase1DurationMs)
   } catch (err) {
-    pipelineState.failed = true
-    if (avisoTimer) clearTimeout(avisoTimer)
     const totalDurationMs = Date.now() - totalStart
-
-    // Mark checkpoint failed
-    if (checkpointMgr && checkpointId) {
-      checkpointMgr.fail(checkpointId, String(err)).catch(cpErr =>
-        logger.warn({ cpErr, traceId }, 'Failed to mark checkpoint as failed'),
-      )
-    }
 
     logger.error({
       traceId: traceId || 'unknown',
@@ -608,13 +335,12 @@ async function processMessageInner(
       error: String(err),
       replanAttempts: 0,
       subagentIterationsUsed: 0,
-      engineMode: 'legacy',
     }
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-// Agentic pipeline (v2.0) — replaces Phases 2+3+4
+// Agentic pipeline
 // ═══════════════════════════════════════════════════════════
 
 /** Minimal ToolRegistry interface to avoid importing the full class */
@@ -748,7 +474,7 @@ async function runAgenticPipeline(
     contactId: ctx.message.from,
     messageType: 'text',
     textPreview: compositorOutput.responseText,
-    metadata: { traceId: ctx.traceId, totalDurationMs, sent: delivery.sent, engineMode: 'agentic' },
+    metadata: { traceId: ctx.traceId, totalDurationMs, sent: delivery.sent },
   }).catch(() => {})
 
   return {
@@ -766,7 +492,6 @@ async function runAgenticPipeline(
     subagentIterationsUsed: 0,
     agenticResult,
     effortLevel,
-    engineMode: 'agentic',
   }
 }
 
@@ -823,23 +548,8 @@ export function getEngineStats(): {
 }
 
 /**
- * Returns per-channel aviso config from the channel's runtime config service.
- * Each channel module provides 'channel-config:{name}' via registry.
- * If the channel doesn't provide a config service, aviso is disabled.
- */
-function getAvisoConfig(channel: string): { triggerMs: number; holdMs: number } {
-  const channelSvc = registry.getOptional<{ get(): import('../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
-  if (channelSvc) {
-    const cc = channelSvc.get()
-    return { triggerMs: cc.avisoTriggerMs, holdMs: cc.avisoHoldMs }
-  }
-  // No channel-config service → aviso disabled for this channel
-  return { triggerMs: 0, holdMs: 0 }
-}
-
-/**
  * Resolve the tone/style for a channel from its runtime config (avisoStyle).
- * This is the single source of truth — ACKs and error fallbacks both use this.
+ * Used for error fallback messages.
  */
 function getChannelTone(channel: string): string {
   const channelSvc = registry.getOptional<{ get(): import('../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
@@ -849,20 +559,6 @@ function getChannelTone(channel: string): string {
     return style === 'dynamic' ? 'casual' : style
   }
   return ''
-}
-
-/**
- * Envía un aviso de proceso al canal del mensaje original.
- * Message is now LLM-generated with fallback to predefined pool.
- */
-async function sendAviso(ctx: ContextBundle, text: string, reg: Registry): Promise<void> {
-  await reg.runHook('message:send', {
-    channel: ctx.message.channelName,
-    to: ctx.message.from,
-    content: { type: 'text', text },
-    correlationId: ctx.traceId,
-  })
-  logger.info({ traceId: ctx.traceId, to: ctx.message.from, text }, 'Aviso de proceso enviado')
 }
 
 // ═══════════════════════════════════════════
@@ -928,16 +624,10 @@ async function initCheckpoints(): Promise<void> {
         }
 
         // Mark old checkpoint as failed (new pipeline run creates its own)
-        await checkpointMgr.fail(cp.id, 'Resumed: new pipeline run with completed steps')
-
-        // Stash completed steps so processMessageInner can pick them up
-        pendingResumeSteps.set(cp.messageId, cp.stepResults)
+        await checkpointMgr.fail(cp.id, 'Resumed: re-processing via agentic pipeline')
 
         // Go through full processMessage for proper concurrency/timeout control
         const result = await processMessage(resumeMessage)
-
-        // Clean up stash (in case it wasn't consumed)
-        pendingResumeSteps.delete(cp.messageId)
 
         if (!result.success) {
           logger.warn({ checkpointId: cp.id, error: result.error }, 'Checkpoint resume pipeline failed')

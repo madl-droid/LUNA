@@ -12,9 +12,7 @@ Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada m�
 - Kernel (src/kernel/): registry, loader, hooks, config, server HTTP — ver `src/kernel/CLAUDE.md`
 - Módulos (src/modules/): descubiertos automáticamente por loader — ver CLAUDE.md de cada módulo
 - Engine (src/engine/): pipeline de procesamiento de mensajes — ver `src/engine/CLAUDE.md`
-- Pipeline dual-mode (v2.0): `ENGINE_MODE=agentic` (default) usa agentic loop; `ENGINE_MODE=legacy` usa pipeline 5 fases
-- Agentic mode: Phase 1 → effort router → agentic loop → post-process → Phase 5
-- Legacy mode: Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 (deprecated, fallback only)
+- Pipeline (v2): Phase 1 → effort router → agentic loop → post-process → Phase 5
 - Tabla de modelos y fallback chain: ver `docs/architecture/pipeline.md`
 - Lead status (máquina de estados): ver `docs/architecture/lead-status.md`
 - Fallback chain: Anthropic → Google. Circuit breaker: 5 fallas en 10 min → provider DOWN 5 min.
