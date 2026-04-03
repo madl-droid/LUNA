@@ -109,7 +109,7 @@ export async function phase1Intake(
     loadSheetsCache(redis),
   ])
 
-  const contact = contactResult.status === 'fulfilled' ? contactResult.value : null
+  let contact = contactResult.status === 'fulfilled' ? contactResult.value : null
   const knowledgeMatches = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
   let knowledgeInjection = knowledgeInjectionResult.status === 'fulfilled' ? knowledgeInjectionResult.value : null
   const sheetsData = sheetsCacheResult.status === 'fulfilled' ? sheetsCacheResult.value : null
@@ -141,6 +141,24 @@ export async function phase1Intake(
   }
 
   if (contactResult.status === 'rejected') logger.warn({ err: contactResult.reason, traceId }, 'Contact lookup failed')
+
+  // 10b. Auto-create contact if not found (ensures tools always have a contactId)
+  if (!contact && !userType.startsWith('_unregistered:')) {
+    try {
+      contact = await autoCreateContact(
+        db,
+        message.from,
+        message.channelName,
+        message.senderName ?? null,
+        message.resolvedPhone ?? null,
+      )
+      if (contact) {
+        logger.info({ traceId, contactId: contact.id, channel: message.channelName }, 'Auto-created contact for new sender')
+      }
+    } catch (err) {
+      logger.warn({ err, traceId }, 'Failed to auto-create contact')
+    }
+  }
 
   // 11. Load or create session (channel-specific timeout if available)
   const sessionWindowMs = getChannelSessionTimeout(registry, message.channelName, config.sessionReopenWindowMs)
@@ -576,6 +594,62 @@ async function findContact(
     }
   } catch (err) {
     logger.warn({ err, channelContactId, channel }, 'Failed to find contact')
+    return null
+  }
+}
+
+/**
+ * Auto-create a contact + contact_channel when a new sender messages
+ * and no existing contact is found. This ensures ctx.contactId is always
+ * available for tools (medilink, memory, lead-scoring, etc.).
+ */
+async function autoCreateContact(
+  db: Pool,
+  channelContactId: string,
+  channel: string,
+  displayName: string | null,
+  resolvedPhone: string | null,
+): Promise<ContactInfo | null> {
+  const contactId = randomUUID()
+  const now = new Date()
+
+  try {
+    await db.query(
+      `INSERT INTO contacts (id, display_name, contact_type, created_at)
+       VALUES ($1, $2, 'lead', $3)`,
+      [contactId, displayName ?? null, now],
+    )
+
+    await db.query(
+      `INSERT INTO contact_channels (contact_id, channel_type, channel_identifier, is_primary)
+       VALUES ($1, $2, $3, true)
+       ON CONFLICT (channel_type, channel_identifier) DO NOTHING`,
+      [contactId, channel, channelContactId],
+    )
+
+    // If we have a resolved phone different from the LID, also create a voice channel
+    if (resolvedPhone && resolvedPhone !== channelContactId) {
+      await db.query(
+        `INSERT INTO contact_channels (contact_id, channel_type, channel_identifier, is_primary)
+         VALUES ($1, 'voice', $2, false)
+         ON CONFLICT (channel_type, channel_identifier) DO NOTHING`,
+        [contactId, resolvedPhone],
+      )
+    }
+
+    return {
+      id: contactId,
+      channelContactId,
+      channel: channel as ContactInfo['channel'],
+      displayName: displayName ?? null,
+      contactType: 'lead',
+      qualificationStatus: null,
+      qualificationScore: 0,
+      qualificationData: {},
+      createdAt: now,
+    }
+  } catch (err) {
+    logger.warn({ err, channelContactId, channel }, 'Failed to auto-create contact')
     return null
   }
 }

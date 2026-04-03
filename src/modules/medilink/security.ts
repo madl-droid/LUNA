@@ -353,7 +353,7 @@ export class SecurityService {
 
   // ─── Patient linking ───────────────────
 
-  private async linkContactToPatient(
+  async linkContactToPatient(
     contactId: string,
     agentId: string,
     patientId: number,

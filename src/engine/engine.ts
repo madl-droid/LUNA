@@ -294,10 +294,15 @@ async function processMessageInner(
     }).catch(() => {})
 
     // ═══ SIGNAL: COMPOSING/RECORDING ═══
+    // 'audio' → always recording. 'auto' with audio input → likely recording.
+    // Otherwise → composing (typing indicator).
+    const composingMode = ctx.responseFormat === 'audio'
+      || (ctx.responseFormat === 'auto' && ctx.messageType === 'audio')
+      ? 'recording' : 'composing'
     registry.runHook('channel:composing', {
       channel: message.channelName,
       to: signalTo,
-      mode: ctx.responseFormat === 'audio' ? 'recording' : 'composing',
+      mode: composingMode,
       correlationId: traceId,
     }).catch(() => {})
 
