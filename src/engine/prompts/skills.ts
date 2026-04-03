@@ -23,19 +23,19 @@ export interface SkillDefinition {
   file: string
   /** User types that can trigger this skill (empty = all user types) */
   userTypes: string[]
-  /** Optional regex patterns that suggest this skill might be relevant */
-  triggerPatterns?: string[]
+  /** Tool names required for this skill to appear (empty = always shown) */
+  requiredTools?: string[]
 }
 
 // Skill frontmatter extracted from the first comment block of a .md file.
 // Format:
 //   <!-- description: Short description here -->
 //   <!-- userTypes: lead,admin -->
-//   <!-- triggerPatterns: pattern1,pattern2 -->
+//   <!-- requiredTools: tool1,tool2 -->
 interface SkillFrontmatter {
   description: string
   userTypes: string[]
-  triggerPatterns?: string[]
+  requiredTools?: string[]
 }
 
 // ─── In-memory cache ──────────────────────────────────────────────────────────
@@ -50,15 +50,15 @@ const detailCache = new Map<string, string>()
 function parseFrontmatter(content: string): SkillFrontmatter {
   const descMatch = content.match(/<!--\s*description:\s*(.+?)\s*-->/)
   const userTypesMatch = content.match(/<!--\s*userTypes:\s*(.+?)\s*-->/)
-  const patternsMatch = content.match(/<!--\s*triggerPatterns:\s*(.+?)\s*-->/)
+  const toolsMatch = content.match(/<!--\s*requiredTools:\s*(.+?)\s*-->/)
 
   return {
     description: descMatch?.[1]?.trim() ?? '',
     userTypes: userTypesMatch?.[1]
       ? userTypesMatch[1].split(',').map(s => s.trim()).filter(Boolean)
       : [],
-    triggerPatterns: patternsMatch?.[1]
-      ? patternsMatch[1].split(',').map(s => s.trim()).filter(Boolean)
+    requiredTools: toolsMatch?.[1]
+      ? toolsMatch[1].split(',').map(s => s.trim()).filter(Boolean)
       : undefined,
   }
 }
@@ -113,7 +113,7 @@ export function buildSkillCatalogSection(skills: SkillDefinition[]): string {
   const lines: string[] = [
     '<skills>',
     'Habilidades disponibles (protocolos de interacción especializados):',
-    'Para activar una habilidad, menciona su nombre al inicio de tu razonamiento interno.',
+    'Para aplicar una habilidad, usa la herramienta skill_read para obtener sus instrucciones completas.',
   ]
 
   for (const skill of skills) {
@@ -122,6 +122,21 @@ export function buildSkillCatalogSection(skills: SkillDefinition[]): string {
 
   lines.push('</skills>')
   return lines.join('\n')
+}
+
+/**
+ * Filter skills to only those relevant to the active tool set.
+ * Skills without requiredTools always show.
+ * Skills with requiredTools show only if at least one required tool is active.
+ */
+export function filterSkillsByTools(
+  skills: SkillDefinition[],
+  activeToolNames: Set<string>,
+): SkillDefinition[] {
+  return skills.filter(s =>
+    !s.requiredTools || s.requiredTools.length === 0 ||
+    s.requiredTools.some(t => activeToolNames.has(t)),
+  )
 }
 
 /**
@@ -151,7 +166,7 @@ async function _loadCatalog(): Promise<void> {
           description: fm.description || name,
           file: filePath,
           userTypes: fm.userTypes,
-          triggerPatterns: fm.triggerPatterns,
+          requiredTools: fm.requiredTools,
         })
       } catch (err) {
         logger.warn({ file, err }, 'Failed to load skill file')

@@ -27,6 +27,8 @@ import {
   filterAgenticTools,
   getAgenticSubagentCatalog,
 } from '../agentic/subagent-delegation.js'
+import { loadSkillCatalog, filterSkillsByTools } from '../prompts/skills.js'
+import { buildSkillReadToolDef } from '../agentic/skill-delegation.js'
 import { buildAgenticPrompt } from '../prompts/agentic.js'
 import { updateCooldownState } from './smart-cooldown.js'
 import { shouldSuppressProactive } from './conversation-guard.js'
@@ -184,6 +186,15 @@ async function runProactiveAgentic(
   const runSubagentTool = buildRunSubagentToolDef(subagentCatalog)
   if (runSubagentTool) {
     llmToolDefs.push(runSubagentTool)
+  }
+
+  // Add skill_read tool if skills are available
+  const skillCatalog = await loadSkillCatalog(registry, ctx.userType)
+  const activeToolNames = new Set(toolCatalog.map((t: { name: string }) => t.name))
+  const filteredSkills = filterSkillsByTools(skillCatalog, activeToolNames)
+  const skillReadTool = buildSkillReadToolDef(filteredSkills.map((s: { name: string }) => s.name))
+  if (skillReadTool) {
+    llmToolDefs.push(skillReadTool)
   }
 
   // Build prompt with proactive context
