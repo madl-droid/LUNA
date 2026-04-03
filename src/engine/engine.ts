@@ -24,6 +24,8 @@ import {
   filterAgenticTools,
   getAgenticSubagentCatalog,
 } from './agentic/subagent-delegation.js'
+import { loadSkillCatalog, filterSkillsByTools } from './prompts/skills.js'
+import { buildSkillReadToolDef } from './agentic/skill-delegation.js'
 import { buildAgenticPrompt } from './prompts/agentic.js'
 import type { AgenticConfig, AgenticResult, EffortLevel } from './agentic/types.js'
 
@@ -408,6 +410,15 @@ async function runAgenticPipeline(
   const runSubagentTool = buildRunSubagentToolDef(subagentCatalog)
   if (runSubagentTool) {
     llmToolDefs.push(runSubagentTool)
+  }
+
+  // Add skill_read tool if skills are available
+  const skillCatalog = await loadSkillCatalog(reg, ctx.userType)
+  const activeToolNames = new Set(toolCatalog.map((t: { name: string }) => t.name))
+  const filteredSkills = filterSkillsByTools(skillCatalog, activeToolNames)
+  const skillReadTool = buildSkillReadToolDef(filteredSkills.map((s: { name: string }) => s.name))
+  if (skillReadTool) {
+    llmToolDefs.push(skillReadTool)
   }
 
   // 4. Build system prompt

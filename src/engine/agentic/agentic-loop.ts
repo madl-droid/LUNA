@@ -14,6 +14,7 @@ import {
   executeRunSubagentTool,
   RUN_SUBAGENT_TOOL_NAME,
 } from './subagent-delegation.js'
+import { SKILL_READ_TOOL_NAME, executeSkillReadTool } from './skill-delegation.js'
 import { callLLMWithFallback } from '../utils/llm-client.js'
 import { StepSemaphore } from '../concurrency/step-semaphore.js'
 import { ToolDedupCache } from './tool-dedup-cache.js'
@@ -67,7 +68,7 @@ export async function runAgenticLoop(
   // ── 5.2 Get tool executor from registry ──
   const toolExecutor = registry.getOptional<ToolExecutor>('tools:registry')
   // If no tool executor, clear tool definitions — LLM will respond text-only
-  const effectiveTools = toolDefinitions.filter(tool => toolExecutor || tool.name === RUN_SUBAGENT_TOOL_NAME)
+  const effectiveTools = toolDefinitions.filter(tool => toolExecutor || tool.name === RUN_SUBAGENT_TOOL_NAME || tool.name === SKILL_READ_TOOL_NAME)
 
   logger.info({
     traceId: ctx.traceId,
@@ -296,6 +297,16 @@ async function executeToolCalls(
               data: subagentResult.data,
               error: subagentResult.error,
               durationMs: subagentResult.durationMs,
+              retries: 0,
+            }
+          } else if (toolCall.name === SKILL_READ_TOOL_NAME) {
+            const skillResult = await executeSkillReadTool(toolCall.input)
+            result = {
+              toolName: toolCall.name,
+              success: skillResult.success,
+              data: skillResult.data,
+              error: skillResult.error,
+              durationMs: skillResult.durationMs,
               retries: 0,
             }
           } else {

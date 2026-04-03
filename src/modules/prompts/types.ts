@@ -12,8 +12,8 @@ export interface SkillDefinition {
   file: string
   /** User types that can trigger this skill. Empty array = available to all user types */
   userTypes: string[]
-  /** Optional regex patterns that suggest this skill might be relevant */
-  triggerPatterns?: string[]
+  /** Tool names required for this skill to appear (empty = always shown) */
+  requiredTools?: string[]
 }
 
 export interface PromptRecord {
