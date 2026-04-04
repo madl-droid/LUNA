@@ -1147,6 +1147,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
 
       // Resolve super admin status for debug panel visibility
       const isSuperAdmin = await checkSuperAdmin(registry, req.headers['cookie'])
+      const adminOverrideType = data.config.ADMIN_OVERRIDE_TYPE || ''
 
       const html = pageLayout({
         section: sidebarSection,
@@ -1166,6 +1167,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         debugExtremeLog: data.config.DEBUG_EXTREME_LOG === 'true',
         debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
         isSuperAdmin,
+        adminOverrideType,
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
         agenteSubpage: agenteSubpage ?? undefined,

@@ -77,3 +77,10 @@
 ### Notas para integración
 - el PR a `pruebas` debe mostrar una caída fuerte de tamaño en `templates-sections.ts` y `server.ts` acompañada por nuevos archivos de soporte
 - no incluir los untracked externos a esta pasada (`AGENTS.md` raíz y `docs/reports/S01-engine-context-plan.md`)
+
+### Actualización posterior: compatibilidad con PR #95
+- se reincorporaron al split de `console` las funciones faltantes de la PR #95 que ya vivían en `pruebas`
+- `server-helpers.ts` recuperó `purgeMemoryData()`, `purgeAgentData()` y `reseedSystemSubagents()`
+- `server-api.ts` recuperó `GET/POST admin-override` y `POST clear-agent`
+- `templates.ts`, `templates-i18n.ts` y `ui/js/console-minimal.js` recuperaron el dropdown `Admin como...` y el botón `Limpiar agente`
+- con esto, la partición estructural deja de ser destructiva frente a `pruebas` y preserva el comportamiento agregado previamente en la PR #95
