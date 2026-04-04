@@ -46,8 +46,6 @@ const manifest: ModuleManifest = {
 
     // Compression model (backend-only — UI uses LLM_COMPRESS from /agente/advanced)
     MEMORY_COMPRESSION_MODEL: z.string().default('claude-haiku-4-5-20251001'),
-    // Embedding model (backend-only — always Google Gemini Embedding 2 via knowledge:embedding-service)
-    MEMORY_EMBEDDING_MODEL: z.string().default('text-embedding-004'),
 
     // Retention and purge
     MEMORY_SUMMARY_RETENTION_DAYS: numEnv(120),
@@ -126,7 +124,6 @@ const manifest: ModuleManifest = {
       MEMORY_COMPRESSION_THRESHOLD: number
       MEMORY_COMPRESSION_KEEP_RECENT: number
       MEMORY_COMPRESSION_MODEL: string
-      MEMORY_EMBEDDING_MODEL: string
       MEMORY_SUMMARY_RETENTION_DAYS: number
       MEMORY_ARCHIVE_RETENTION_YEARS: number
       MEMORY_PIPELINE_LOGS_RETENTION_DAYS: number

@@ -4,11 +4,8 @@
 
 import type pino from 'pino'
 
-// Gemini Embedding 2 — natively multimodal (text, images, PDFs, video, audio)
-// Uses outputDimensionality=1536 to get properly normalized 1536-dim vectors
-// (model outputs 3072 by default, but pgvector index max is 2000 dims)
-const MODEL = 'gemini-embedding-2-preview'
-const DIMENSIONS = 1536
+const DEFAULT_MODEL = 'gemini-embedding-2-preview'
+const DEFAULT_DIMENSIONS = 1536
 const MAX_BATCH_SIZE = 100
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
@@ -24,6 +21,8 @@ export class EmbeddingService {
   private static instanceCount = 0
 
   private readonly apiKey: string
+  private readonly model: string
+  private readonly dimensions: number
   private readonly log: pino.Logger
 
   // Circuit breaker state
@@ -34,9 +33,11 @@ export class EmbeddingService {
   private tokens: number = RATE_LIMIT_RPM
   private lastRefill: number = Date.now()
 
-  constructor(apiKey: string, logger: pino.Logger) {
+  constructor(apiKey: string, logger: pino.Logger, model?: string, dimensions?: number) {
     EmbeddingService.instanceCount++
     this.apiKey = apiKey
+    this.model = model || DEFAULT_MODEL
+    this.dimensions = dimensions || DEFAULT_DIMENSIONS
     this.log = logger.child({ component: 'embedding-service' })
 
     if (EmbeddingService.instanceCount > 1) {
@@ -72,12 +73,12 @@ export class EmbeddingService {
 
     try {
       const body = {
-        model: `models/${MODEL}`,
+        model: `models/${this.model}`,
         content: { parts: [{ text }] },
-        outputDimensionality: DIMENSIONS,
+        outputDimensionality: this.dimensions,
       }
 
-      const res = await fetch(`${API_BASE}/${MODEL}:embedContent?key=${this.apiKey}`, {
+      const res = await fetch(`${API_BASE}/${this.model}:embedContent?key=${this.apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -134,14 +135,14 @@ export class EmbeddingService {
       this.log.info({ mimeType, sizeBytes: data.length }, '[EMBED] Sending file to multimodal embedding')
 
       const body = {
-        model: `models/${MODEL}`,
+        model: `models/${this.model}`,
         content: {
           parts: [{ inlineData: { mimeType, data: base64 } }],
         },
-        outputDimensionality: DIMENSIONS,
+        outputDimensionality: this.dimensions,
       }
 
-      const res = await fetch(`${API_BASE}/${MODEL}:embedContent?key=${this.apiKey}`, {
+      const res = await fetch(`${API_BASE}/${this.model}:embedContent?key=${this.apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -188,13 +189,13 @@ export class EmbeddingService {
     try {
       const body = {
         requests: capped.map(text => ({
-          model: `models/${MODEL}`,
+          model: `models/${this.model}`,
           content: { parts: [{ text }] },
-          outputDimensionality: DIMENSIONS,
+          outputDimensionality: this.dimensions,
         })),
       }
 
-      const res = await fetch(`${API_BASE}/${MODEL}:batchEmbedContents?key=${this.apiKey}`, {
+      const res = await fetch(`${API_BASE}/${this.model}:batchEmbedContents?key=${this.apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
