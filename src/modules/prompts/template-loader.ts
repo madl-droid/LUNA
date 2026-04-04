@@ -28,8 +28,7 @@ export async function loadSystemPrompt(name: string): Promise<string> {
     templateCache.set(name, content)
     return content
   } catch {
-    logger.warn({ name, path }, 'System prompt template not found')
-    templateCache.set(name, '') // Cache miss to avoid repeated file reads
+    logger.warn({ name, path }, 'System prompt template not found — will retry on next call')
     return ''
   }
 }
