@@ -341,7 +341,8 @@ const manifest: ModuleManifest = {
             return
           }
           const status = _gateway.getCircuitBreakerStatus()
-          jsonResponse(res, 200, { circuitBreakers: status })
+          const services = _gateway.getServiceStatus()
+          jsonResponse(res, 200, { circuitBreakers: status, services })
         },
       },
       // Reset circuit breaker

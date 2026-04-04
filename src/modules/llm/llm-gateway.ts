@@ -65,6 +65,9 @@ export class LLMGateway {
   private rpmLimits = new Map<LLMProviderName, number>()
   private tpmLimits = new Map<LLMProviderName, number>()
 
+  /** Service-level circuit breaker for specialized services (TTS, embeddings, voice) */
+  private serviceBreakers: EscalatingCBManager
+
   // Model cache (from model-scanner or listModels)
   private modelCache = new Map<LLMProviderName, ModelInfo[]>()
 
@@ -94,6 +97,7 @@ export class LLMGateway {
 
     // Escalating CB per model-target (2 fails in 30 min → 1h → 3h → 6h cooldown)
     this.targetBreakers = new EscalatingCBManager()
+    this.serviceBreakers = new EscalatingCBManager()
     this.targetBreakers.onRecovery = (targetKey) => {
       logger.info({ target: targetKey }, 'Target recovered from escalating CB')
     }
@@ -426,42 +430,70 @@ export class LLMGateway {
       throw new Error('No Google API key configured for TTS')
     }
 
+    // Check service-level circuit breaker
+    const serviceCB = this.serviceBreakers.get('service:tts')
+    if (!serviceCB.isAvailable()) {
+      throw new Error('TTS service circuit breaker is open — service temporarily unavailable')
+    }
+
     const languageCode = request.languageCode ?? 'es-US'
     const audioEncoding = request.audioEncoding ?? 'MP3'
 
-    const ttsResponse = await fetch(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { text: request.text },
-          voice: {
-            languageCode,
-            name: request.voice,
-          },
-          audioConfig: { audioEncoding },
-        }),
-      },
-    )
+    try {
+      const ttsResponse = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { text: request.text },
+            voice: {
+              languageCode,
+              name: request.voice,
+            },
+            audioConfig: { audioEncoding },
+          }),
+        },
+      )
 
-    if (!ttsResponse.ok) {
-      const errText = await ttsResponse.text()
-      throw new Error(`TTS synthesis failed: ${errText}`)
-    }
+      if (!ttsResponse.ok) {
+        const errText = await ttsResponse.text()
+        throw new Error(`TTS synthesis failed: ${errText}`)
+      }
 
-    const data = await ttsResponse.json() as { audioContent: string }
-    const mimeMap: Record<string, string> = {
-      MP3: 'audio/mp3',
-      LINEAR16: 'audio/wav',
-      OGG_OPUS: 'audio/ogg',
-    }
+      const data = await ttsResponse.json() as { audioContent: string }
+      const mimeMap: Record<string, string> = {
+        MP3: 'audio/mp3',
+        LINEAR16: 'audio/wav',
+        OGG_OPUS: 'audio/ogg',
+      }
 
-    return {
-      audioBase64: data.audioContent,
-      mimeType: mimeMap[audioEncoding] ?? 'audio/mp3',
-      voice: request.voice,
+      serviceCB.recordSuccess()
+      return {
+        audioBase64: data.audioContent,
+        mimeType: mimeMap[audioEncoding] ?? 'audio/mp3',
+        voice: request.voice,
+      }
+    } catch (err) {
+      serviceCB.recordFailure(String(err))
+      throw err
     }
+  }
+
+  /**
+   * Check if a specialized service is currently available.
+   * Used by the system to stop offering capabilities when services are down.
+   * Services: 'tts', 'embeddings', 'voice'
+   */
+  isServiceAvailable(service: string): boolean {
+    return this.serviceBreakers.get(`service:${service}`).isAvailable()
+  }
+
+  /**
+   * Get status of all service-level circuit breakers.
+   */
+  getServiceStatus(): EscalatingCBSnapshot[] {
+    return this.serviceBreakers.allSnapshots()
   }
 
   // ═══════════════════════════════════════════

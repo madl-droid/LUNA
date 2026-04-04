@@ -371,8 +371,8 @@ export class EscalatingCBManager {
   constructor(private readonly config: EscalatingCBConfig = DEFAULT_ESCALATING_CONFIG) {}
 
   /** Get or create a breaker for a provider:model target */
-  get(provider: LLMProviderName, model: string): EscalatingCircuitBreaker {
-    const key = `${provider}:${model}`
+  get(providerOrKey: LLMProviderName | string, model?: string): EscalatingCircuitBreaker {
+    const key = model ? `${providerOrKey}:${model}` : providerOrKey
     let breaker = this.breakers.get(key)
     if (!breaker) {
       breaker = new EscalatingCircuitBreaker(key, this.config)
