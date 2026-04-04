@@ -1586,6 +1586,7 @@
   })()
 
 
+
   // Factory reset: password-protected, triggers wizard with prefilled values
   ;(function () {
     var btn = document.getElementById('btn-factory-reset')
