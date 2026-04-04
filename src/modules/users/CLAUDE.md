@@ -8,7 +8,7 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 - `manifest.ts` — ModuleManifest, configSchema, init/stop, console fields, webhook table init
 - `webhook-handler.ts` — registro de contactos via webhook: auth, upsert contacto, normalización phone, verificación WhatsApp, outbound
 - `resolver.ts` — resolveUserType() con cache Redis → DB lookup → lead fallback
-- `permissions.ts` — getUserPermissions(), ensureAdminHasAccess()
+- `permissions.ts` — getUserPermissions(), ensureAdminHasAccess(). **allAccess es fuente única de verdad**: se materializa en tools=['*'], skills=['*'], subagents=true
 - `cache.ts` — UserCache: get/set/invalidate en Redis (key: user_type:{senderId}:{channel})
 - `db.ts` — UsersDb: DDL, CRUD, resolución SQL, config de listas
 - `sync/sheet-sync.ts` — Skeleton para Google Sheets (requiere módulo Google OAuth)
@@ -57,12 +57,21 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 - `user_lists` — usuarios registrados (sender_id, channel, list_type, UNIQUE constraint)
 - `user_list_config` — config por tipo de lista (permisos, sync, behavior)
 
+## Materialización de allAccess (permissions.ts)
+`getUserPermissions()` es el ÚNICO punto donde `allAccess` se materializa en flags concretos:
+1. Si `userType === 'admin'` → fuerza `allAccess = true` (defensivo, por si DB está stale)
+2. Si `allAccess === true` → materializa `tools = ['*']`, `skills = ['*']`, `subagents = true`
+3. Downstream (engine, subagent-delegation) NUNCA chequea `allAccess` — solo lee flags concretos
+
+**REGLA**: Para dar permisos totales, activar `allAccess` en la config de la lista. NO poner flags individuales.
+
 ## Trampas
 - Admin IDs se agregan desde console POR CANAL (WhatsApp=número, email=correo, etc.)
 - Máximo 5 tipos de lista (admin + 4 configurables)
 - Admin máximo 5 usuarios por instancia
 - Sheet sync solo funciona si hay módulo Google OAuth activo
 - Al cambiar permisos de una lista, llamar cache.invalidateAll()
+- **allAccess y console**: el hidden field del checkbox de subagents en console usa `(isAdmin || perms.subagents)` para que no desincronice con el checkbox visible
 - **Helpers HTTP y config**: `sync/api-handler.ts` usa `jsonResponse`, `parseBody` de `kernel/http-helpers.js`. configSchema usa `numEnv`, `boolEnv` de `kernel/config-helpers.js`. NO redefinir localmente.
 
 ## Webhook — registro externo de contactos (coworker)

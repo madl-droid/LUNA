@@ -30,6 +30,20 @@ reload(): Promise<void>  // Recarga cache desde DB
 - UI muestra badge "Sistema" y deshabilita campos protegidos
 - Seed: `web-researcher` (migración 018)
 
+## Medilink Scheduler (subagente configurable)
+- Slug: `medilink-scheduler`, `is_system = false` (editable)
+- Orquestador delgado: identifica escenario → lee skill → ejecuta
+- Tools: 8 medilink tools + `skill_read` (para consultar protocolos)
+- Skills disponibles: `medilink-lead-scheduling`, `medilink-patient-scheduling`, `medilink-rescheduling`, `medilink-cancellation`, `medilink-info`
+- Verificación habilitada, spawn deshabilitado
+- Seed: migración 032, actualizado en migración 033
+
+## skill_read en subagentes
+- Si `skill_read` está en `allowed_tools` del subagente, el loop lo registra como meta-tool
+- El prompt builder inyecta catálogo de skills (`<skills>`) + contexto datetime (`<datetime>`)
+- Ejecución: branch hard-coded en el loop (igual que `spawn_subagent`), no pasa por tools:registry
+- El catálogo se filtra por `userType` del contacto original
+
 ## Web Researcher (subagente de sistema)
 - Slug: `web-researcher`, Google Search Grounding habilitado
 - Centraliza búsqueda web: Phase 3 redirige `web_search` steps al web-researcher si está habilitado
