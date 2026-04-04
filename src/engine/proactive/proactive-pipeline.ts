@@ -314,7 +314,6 @@ async function buildProactiveContext(
     pendingCommitments,
     relevantSummaries: [],
     leadStatus,
-    sheetsData: null,
     normalizedText: '',
     messageType: 'text',
     attachmentMeta: [],

@@ -30,6 +30,9 @@ export interface UserPermissions {
   tools: string[]
   skills: string[]
   subagents: boolean
+  /** Lista de slugs de subagentes permitidos. Solo aplica si subagents=true.
+   *  undefined o [] = todos los subagentes habilitados. */
+  allowedSubagents?: string[]
   allAccess: boolean
   knowledgeCategories?: string[]
 }

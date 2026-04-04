@@ -129,7 +129,6 @@ export async function buildSimContext(
     pendingCommitments,
     relevantSummaries,
     leadStatus,
-    sheetsData: null,
     normalizedText: message.text.trim(),
     messageType: 'text',
     responseFormat: 'text',

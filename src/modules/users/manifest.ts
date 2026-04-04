@@ -135,7 +135,14 @@ const manifest: ModuleManifest = {
         if (km) knowledgeCategories = await km.pgStore.listCategories()
       } catch { /* knowledge module not available */ }
 
-      return { configs, usersByType, counts, channels, tools, activeModules, knowledgeCategories }
+      // Subagent catalog (if subagents module active)
+      let subagentTypes: Array<{ slug: string; name: string; description: string }> = []
+      try {
+        const saCatalog = registry.getOptional<{ getEnabledTypes(): Array<{ slug: string; name: string; description: string }> }>('subagents:catalog')
+        if (saCatalog) subagentTypes = saCatalog.getEnabledTypes()
+      } catch { /* subagents module not available */ }
+
+      return { configs, usersByType, counts, channels, tools, activeModules, knowledgeCategories, subagentTypes }
     })
 
     // Initialize webhook tables + auto-generate token if missing

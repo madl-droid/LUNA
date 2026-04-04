@@ -392,8 +392,8 @@ export class MemoryManager {
     return await this.pg.saveCommitment(commitment)
   }
 
-  async getPendingCommitments(contactId: string): Promise<Commitment[]> {
-    return await this.pg.getPendingCommitments(contactId)
+  async getPendingCommitments(contactId: string, limit?: number): Promise<Commitment[]> {
+    return await this.pg.getPendingCommitments(contactId, limit)
   }
 
   async getRecentCompletedCommitments(contactId: string, limit = 5): Promise<Commitment[]> {
