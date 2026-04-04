@@ -34,6 +34,7 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
        WHERE cm.status IN ('pending', 'overdue')
          AND cm.due_at IS NOT NULL
          AND cm.due_at <= now()
+         AND (cm.scheduled_at IS NULL OR cm.scheduled_at <= now())
          AND cm.attempt_count < $1
        ORDER BY
          CASE cm.status WHEN 'overdue' THEN 0 ELSE 1 END,

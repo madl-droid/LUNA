@@ -62,9 +62,18 @@ export async function registerCreateCommitmentTool(
             type: 'string',
             description: 'What was promised to the contact. Be specific.',
           },
+          category: {
+            type: 'string',
+            enum: ['followup', 'email', 'quote', 'meeting', 'delivery', 'call', 'voice', 'notification', 'send_message', 'schedule_appointment', 'reschedule'],
+            description: 'Category of the commitment. Helps classify and set default deadlines.',
+          },
           due_within_hours: {
             type: 'number',
-            description: 'Hours from now until the commitment should be fulfilled. Default depends on type.',
+            description: 'Hours from now until the commitment should be fulfilled. Default depends on type. No upper limit — use your best judgment.',
+          },
+          scheduled_at_hours: {
+            type: 'number',
+            description: 'Hours from now to schedule execution. If different from due_within_hours, the commitment will not trigger proactively until this time even if due_at has passed. Useful for respecting business hours or patient preferences.',
           },
         },
         required: ['type', 'description'],
@@ -86,6 +95,8 @@ export async function registerCreateCommitmentTool(
           description: String(input.description ?? ''),
           contactId: ctx.contactId,
           dueWithinHours: typeof input.due_within_hours === 'number' ? input.due_within_hours : undefined,
+          category: input.category ? String(input.category) : undefined,
+          scheduledAtHours: typeof input.scheduled_at_hours === 'number' ? input.scheduled_at_hours : undefined,
         },
         proactiveConfig,
         'tool',

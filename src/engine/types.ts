@@ -196,6 +196,19 @@ export interface ContextBundle {
 
   // HITL — pending ticket context (from hitl:context service)
   hitlPendingContext: string | null
+
+  // HITL — active tickets for this contact (loaded from DB)
+  activeHitlTickets: ActiveHitlTicket[]
+}
+
+export interface ActiveHitlTicket {
+  id: string
+  requestType: string
+  requestSummary: string
+  urgency: string
+  status: string
+  assignedChannel: string | null
+  createdAt: Date
 }
 
 // ═══════════════════════════════════════════

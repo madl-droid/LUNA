@@ -15,6 +15,8 @@ export interface CommitmentInput {
   contactId: string
   sessionId?: string
   dueWithinHours?: number
+  category?: string
+  scheduledAtHours?: number
 }
 
 export type ValidationResult =
@@ -59,16 +61,19 @@ function buildKnownCommitment(
 ): ValidationResult {
   const now = new Date()
 
-  // Calculate due_at: use provided hours or default from config
-  const dueHours = input.dueWithinHours
-    ? Math.min(input.dueWithinHours, typeConfig.max_due_hours)
-    : typeConfig.max_due_hours
+  // Calculate due_at: use provided hours or default from config (no cap — agent decides)
+  const dueHours = input.dueWithinHours ?? typeConfig.max_due_hours
   const dueAt = new Date(now.getTime() + dueHours * 60 * 60 * 1000)
 
   // Validate due_at is not in the past
   if (dueAt <= now) {
     return { status: 'rejected', reason: 'Calculated deadline is in the past' }
   }
+
+  // Calculate scheduled_at (if provided, delays proactive execution)
+  const scheduledAt = input.scheduledAtHours
+    ? new Date(now.getTime() + input.scheduledAtHours * 60 * 60 * 1000)
+    : null
 
   // Calculate auto_cancel_at
   const autoCancelAt = new Date(dueAt.getTime() + typeConfig.auto_cancel_hours * 60 * 60 * 1000)
@@ -78,10 +83,11 @@ function buildKnownCommitment(
     sessionId: input.sessionId ?? null,
     commitmentBy: 'agent',
     description: input.description,
-    category: typeConfig.type,
+    category: input.category ?? typeConfig.type,
     priority: 'normal',
     commitmentType: typeConfig.type,
     dueAt,
+    scheduledAt,
     status: 'pending',
     attemptCount: 0,
     sortOrder: 0,
@@ -91,7 +97,7 @@ function buildKnownCommitment(
     createdVia,
   }
 
-  logger.info({ type: typeConfig.type, dueAt, contactId: input.contactId }, 'Known commitment validated')
+  logger.info({ type: typeConfig.type, dueAt, scheduledAt, contactId: input.contactId }, 'Known commitment validated')
   return { status: 'known', commitment }
 }
 
@@ -113,15 +119,21 @@ function buildGenericCommitment(
   const autoCancelHours = config.commitments.generic_auto_cancel_hours
   const autoCancelAt = new Date(dueAt.getTime() + autoCancelHours * 60 * 60 * 1000)
 
+  // Calculate scheduled_at (if provided)
+  const scheduledAt = input.scheduledAtHours
+    ? new Date(now.getTime() + input.scheduledAtHours * 60 * 60 * 1000)
+    : null
+
   const commitment: Omit<Commitment, 'id' | 'createdAt' | 'updatedAt' | 'completedAt'> = {
     contactId: input.contactId,
     sessionId: input.sessionId ?? null,
     commitmentBy: 'agent',
     description: input.description,
-    category: 'generic',
+    category: input.category ?? 'generic',
     priority: 'normal',
     commitmentType: input.type || 'action',
     dueAt,
+    scheduledAt,
     status: 'pending',
     attemptCount: 0,
     sortOrder: 0,

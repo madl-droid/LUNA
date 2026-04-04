@@ -5,7 +5,7 @@
 import { z } from 'zod'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { numEnv, boolEnv } from '../../kernel/config-helpers.js'
+import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { MemoryManager } from './memory-manager.js'
 import { CompressionWorker } from './compression-worker.js'
 import { searchSessionMemory } from './memory-search.js'
@@ -43,6 +43,10 @@ const manifest: ModuleManifest = {
     MEMORY_CONTEXT_SUMMARIES_INSTANT: numEnv(3),
     MEMORY_CONTEXT_SUMMARIES_ASYNC: numEnv(5),
     MEMORY_CONTEXT_SUMMARIES_VOICE: numEnv(2),
+
+    // Commitments + HITL in context (how many items Phase 1 injects)
+    MEMORY_CONTEXT_COMMITMENTS_MAX: numEnvMin(0, 5),
+    MEMORY_CONTEXT_HITL_MAX: numEnvMin(0, 3),
 
     // Compression model (backend-only — UI uses LLM_COMPRESS from /agente/advanced)
     MEMORY_COMPRESSION_MODEL: z.string().default('claude-haiku-4-5-20251001'),
@@ -89,6 +93,10 @@ const manifest: ModuleManifest = {
       { key: 'MEMORY_CONTEXT_SUMMARIES_VOICE', type: 'number', label: { es: 'Interacciones previas (voz)', en: 'Past interactions (voice)' }, info: { es: 'Resúmenes de interacciones anteriores inyectados en canales de voz', en: 'Past interaction summaries injected for voice channels' }, width: 'half', min: 0, max: 10 },
       { key: 'MEMORY_COMPRESSION_THRESHOLD', type: 'number', label: { es: 'Umbral de compresión', en: 'Compression threshold' }, info: { es: 'Cantidad mínima de mensajes en una sesión para activar compresión automática', en: 'Minimum messages in a session to trigger automatic compression' }, width: 'half' },
       { key: 'MEMORY_COMPRESSION_KEEP_RECENT', type: 'number', label: { es: 'Mensajes recientes a conservar', en: 'Recent messages to keep' }, info: { es: 'Mensajes que se mantienen sin comprimir para contexto inmediato', en: 'Messages kept uncompressed for immediate context' }, width: 'half' },
+      // Tab: Compromisos en contexto
+      { key: 'divider:commitments_context', type: 'divider', label: { es: 'Compromisos en contexto', en: 'Commitments in context' } },
+      { key: 'MEMORY_CONTEXT_COMMITMENTS_MAX', type: 'number', label: { es: 'Compromisos en contexto', en: 'Commitments in context' }, info: { es: 'Cantidad máxima de compromisos pendientes que el agente ve en cada conversación. Incluye seguimientos, tareas y promesas activas.', en: 'Maximum pending commitments the agent sees in each conversation. Includes follow-ups, tasks, and active promises.' }, width: 'half', min: 0, max: 50 },
+      { key: 'MEMORY_CONTEXT_HITL_MAX', type: 'number', label: { es: 'Tickets HITL en contexto', en: 'HITL tickets in context' }, info: { es: 'Cantidad máxima de tickets de consulta humana (HITL) que el agente ve en cada conversación. Incluye escalamientos y consultas activas.', en: 'Maximum human consultation tickets (HITL) the agent sees in each conversation. Includes escalations and active consultations.' }, width: 'half', min: 0, max: 50 },
       // Tab: Mediano plazo
       { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resúmenes de interacciones (días)', en: 'Interaction summaries (days)' }, info: { es: 'Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', en: 'Days before deleting session summaries. Maximum 730 days (2 years).' }, width: 'half', min: 30, max: 730 },
       { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Registros del sistema (días)', en: 'System logs (days)' }, info: { es: 'Días antes de eliminar registros de procesamiento interno', en: 'Days before deleting internal processing logs' }, width: 'half' },
@@ -137,6 +145,8 @@ const manifest: ModuleManifest = {
       MEMORY_CONTEXT_SUMMARIES_VOICE: number
       MEMORY_BATCH_COMPRESS_HOUR: number
       MEMORY_BATCH_PURGE_HOUR: number
+      MEMORY_CONTEXT_COMMITMENTS_MAX: number
+      MEMORY_CONTEXT_HITL_MAX: number
     }>('memory')
 
     manager = new MemoryManager(registry.getDb(), registry.getRedis(), config)
@@ -173,6 +183,14 @@ const manifest: ModuleManifest = {
         instant: config.MEMORY_CONTEXT_SUMMARIES_INSTANT,
         async: config.MEMORY_CONTEXT_SUMMARIES_ASYNC,
         voice: config.MEMORY_CONTEXT_SUMMARIES_VOICE,
+      }),
+    })
+
+    // Commitments + HITL context limits — read by Phase 1
+    registry.provide('memory:context-limits', {
+      get: () => ({
+        commitmentsMax: config.MEMORY_CONTEXT_COMMITMENTS_MAX,
+        hitlMax: config.MEMORY_CONTEXT_HITL_MAX,
       }),
     })
   },

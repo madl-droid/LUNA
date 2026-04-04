@@ -130,12 +130,38 @@ export async function buildContextLayers(
     }
   }
 
-  // ── 6. Pending commitments (prospective tier) ────────────────────────────
-  if (ctx.pendingCommitments.length > 0) {
-    parts.push(`[Compromisos pendientes:]`)
-    for (const c of ctx.pendingCommitments.slice(0, 5)) {
-      const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
-      parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)}${due} — por: ${c.commitmentBy}`)
+  // ── 6. Pending commitments + HITL tickets (unified view) ──────────────────
+  {
+    const commitments = ctx.pendingCommitments
+    const hitlTickets = ctx.activeHitlTickets ?? []
+    const overdueCount = commitments.filter(c => c.status === 'overdue').length
+    const totalPending = commitments.length + hitlTickets.length
+
+    if (totalPending > 0) {
+      // Header with counts
+      const parts2: string[] = []
+      if (commitments.length > 0) {
+        parts2.push(`${commitments.length} compromiso${commitments.length > 1 ? 's' : ''}${overdueCount > 0 ? ` (${overdueCount} vencido${overdueCount > 1 ? 's' : ''})` : ''}`)
+      }
+      if (hitlTickets.length > 0) {
+        parts2.push(`${hitlTickets.length} consulta${hitlTickets.length > 1 ? 's' : ''} HITL`)
+      }
+      parts.push(`[Pendientes con este contacto: ${parts2.join(', ')}]`)
+
+      // Commitment details
+      for (const c of commitments) {
+        const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
+        const statusTag = c.status === 'overdue' ? ' ⚠ VENCIDO' : ''
+        const scheduled = c.scheduledAt ? ` [programado: ${c.scheduledAt.toISOString().split('T')[0]}]` : ''
+        parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)}${due}${scheduled}${statusTag}`)
+      }
+
+      // HITL ticket details
+      for (const t of hitlTickets) {
+        const age = relativeTime(t.createdAt)
+        const urgencyTag = t.urgency === 'critical' || t.urgency === 'high' ? ` ⚠ ${t.urgency.toUpperCase()}` : ''
+        parts.push(`- [HITL/${t.requestType}] ${escapeDataForPrompt(t.requestSummary, 500)} (${t.status}, ${age})${urgencyTag}`)
+      }
     }
   }
 
@@ -303,7 +329,9 @@ export async function buildContextLayers(
     parts.push(`[Para procesar un adjunto usa la tool query_attachment con { index: N }]`)
   }
 
-  // ── 17. HITL pending context ─────────────────────────────────────────────
+  // ── 17. HITL pending context (legacy — ticket-level context from resolver)
+  // Active tickets are now shown in section #6. This injects resolution-pending context
+  // (e.g. "hay una respuesta pendiente del equipo") from the hitl:context service.
   if (ctx.hitlPendingContext) {
     parts.push(ctx.hitlPendingContext)
   }

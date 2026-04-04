@@ -136,6 +136,7 @@ export async function buildSimContext(
     attachmentContext: null,
     possibleInjection: false,
     hitlPendingContext: null,
+    activeHitlTickets: [],
   }
 
   return { ctx, toolCatalog }

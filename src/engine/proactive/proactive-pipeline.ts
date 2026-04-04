@@ -321,6 +321,7 @@ async function buildProactiveContext(
     responseFormat: 'text',
     possibleInjection: false,
     hitlPendingContext: null,
+    activeHitlTickets: [],
     isProactive: true,
     proactiveTrigger: {
       type: candidate.triggerType,
