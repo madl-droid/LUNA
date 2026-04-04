@@ -274,6 +274,7 @@ export class SecurityService {
     if (ctx.verificationLevel === 'document_verified') {
       return {
         id: apt.id,
+        id_atencion: apt.id_atencion ?? null,
         fecha: apt.fecha,
         hora_inicio: apt.hora_inicio,
         hora_fin: apt.hora_fin,
@@ -286,9 +287,10 @@ export class SecurityService {
       }
     }
 
-    // PHONE_MATCHED: minimal info
+    // PHONE_MATCHED: minimal info (includes id_atencion for rescheduling)
     return {
       id: apt.id,
+      id_atencion: apt.id_atencion ?? null,
       fecha: apt.fecha,
       hora_inicio: apt.hora_inicio,
       hora_fin: apt.hora_fin,
