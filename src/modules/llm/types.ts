@@ -425,62 +425,14 @@ export interface LLMModuleConfig {
   LLM_DAILY_BUDGET_USD: number
   LLM_MONTHLY_BUDGET_USD: number
 
-  // Task routing (JSON strings parsed at init)
-  LLM_ROUTE_CLASSIFY: string
-  LLM_ROUTE_RESPOND: string
-  LLM_ROUTE_COMPLEX: string
-  LLM_ROUTE_TOOLS: string
-  LLM_ROUTE_PROACTIVE: string
-  LLM_ROUTE_CRITICIZE: string
-  LLM_ROUTE_DOCUMENT_READ: string
-  LLM_ROUTE_BATCH: string
-
   // Criticizer mode
   LLM_CRITICIZER_MODE: string
 
-  // Per-task primary model overrides
-  LLM_CLASSIFY_PROVIDER: string
-  LLM_CLASSIFY_MODEL: string
-  LLM_RESPOND_PROVIDER: string
-  LLM_RESPOND_MODEL: string
-  LLM_COMPLEX_PROVIDER: string
-  LLM_COMPLEX_MODEL: string
-  LLM_TOOLS_PROVIDER: string
-  LLM_TOOLS_MODEL: string
-  LLM_PROACTIVE_PROVIDER: string
-  LLM_PROACTIVE_MODEL: string
-  LLM_CRITICIZE_PROVIDER: string
-  LLM_CRITICIZE_MODEL: string
-  LLM_DOCUMENT_READ_PROVIDER: string
-  LLM_DOCUMENT_READ_MODEL: string
-  LLM_BATCH_PROVIDER: string
-  LLM_BATCH_MODEL: string
-  LLM_VISION_PROVIDER: string
-  LLM_VISION_MODEL: string
-  LLM_WEB_SEARCH_PROVIDER: string
-  LLM_WEB_SEARCH_MODEL: string
-
-  // Per-task downgrade targets
-  LLM_CLASSIFY_DOWNGRADE_PROVIDER: string
-  LLM_CLASSIFY_DOWNGRADE_MODEL: string
-  LLM_RESPOND_DOWNGRADE_PROVIDER: string
-  LLM_RESPOND_DOWNGRADE_MODEL: string
-  LLM_COMPLEX_DOWNGRADE_PROVIDER: string
-  LLM_COMPLEX_DOWNGRADE_MODEL: string
-  LLM_TOOLS_DOWNGRADE_PROVIDER: string
-  LLM_TOOLS_DOWNGRADE_MODEL: string
-  LLM_PROACTIVE_DOWNGRADE_PROVIDER: string
-  LLM_PROACTIVE_DOWNGRADE_MODEL: string
-  LLM_CRITICIZE_DOWNGRADE_PROVIDER: string
-  LLM_CRITICIZE_DOWNGRADE_MODEL: string
-  LLM_DOCUMENT_READ_DOWNGRADE_PROVIDER: string
-  LLM_DOCUMENT_READ_DOWNGRADE_MODEL: string
-  LLM_BATCH_DOWNGRADE_PROVIDER: string
-  LLM_BATCH_DOWNGRADE_MODEL: string
-  LLM_VISION_DOWNGRADE_PROVIDER: string
-  LLM_VISION_DOWNGRADE_MODEL: string
-  LLM_WEB_SEARCH_DOWNGRADE_PROVIDER: string
-  LLM_WEB_SEARCH_DOWNGRADE_MODEL: string
+  // Task routing — all fields follow pattern LLM_{TASK}_{PROVIDER|MODEL}
+  // Primary, downgrade, and fallback for each task are read dynamically
+  // by the TaskRouter via config[`LLM_${TASK}_PROVIDER`] etc.
+  // Typed as index signature — individual fields defined in configSchema.
+  [key: `LLM_${string}_PROVIDER` | `LLM_${string}_MODEL`]: string
 
   // Fallback chain order
   LLM_FALLBACK_CHAIN: string
