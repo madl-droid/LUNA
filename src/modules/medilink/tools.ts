@@ -588,8 +588,9 @@ export async function registerMedilinkTools(
         let prestaciones = cache.getPrestaciones().filter(p => p.habilitado)
 
         if (input.category_name) {
-          const lower = (input.category_name as string).toLowerCase()
-          prestaciones = prestaciones.filter(p => p.nombre_categoria?.toLowerCase().includes(lower))
+          const strip = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          const needle = strip(input.category_name as string)
+          prestaciones = prestaciones.filter(p => strip(p.nombre_categoria ?? '').includes(needle) || strip(p.nombre ?? '').includes(needle))
         }
 
         return {
@@ -825,8 +826,7 @@ export async function registerMedilinkTools(
         const chairId = parseInt(matchingSlot.chairId, 10)
         if (!chairId) return { success: false, error: 'No se pudo determinar el sillón del slot disponible' }
 
-        const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10)
-        if (!statusId) return { success: false, error: 'No hay estado de cita configurado — revisar MEDILINK_DEFAULT_STATUS_ID' }
+        const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10) || 7  // 7 = "No confirmado" (default)
 
         const appointment = await api.createAppointment({
           id_dentista: prof.id,
