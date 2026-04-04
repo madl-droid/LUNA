@@ -28,7 +28,6 @@ const logger = pino({ name: 'knowledge' })
 
 interface LLMConfigForKnowledge {
   GOOGLE_AI_API_KEY?: string
-  LLM_GOOGLE_KNOWLEDGE_API_KEY?: string
 }
 
 let _registry: Registry | null = null
@@ -44,11 +43,8 @@ let downgradeTimer: ReturnType<typeof setInterval> | null = null
 
 function resolveKnowledgeGoogleApiKey(registry: Registry, config: KnowledgeConfig): string {
   if (config.KNOWLEDGE_GOOGLE_AI_API_KEY) return config.KNOWLEDGE_GOOGLE_AI_API_KEY
-
   const llmConfig = registry.getConfig<LLMConfigForKnowledge>('llm')
-  return llmConfig.LLM_GOOGLE_KNOWLEDGE_API_KEY
-    ?? llmConfig.GOOGLE_AI_API_KEY
-    ?? ''
+  return llmConfig.GOOGLE_AI_API_KEY ?? ''
 }
 
 function resolveKnowledgeConfig(registry: Registry): KnowledgeConfig {

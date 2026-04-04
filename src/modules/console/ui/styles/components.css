@@ -667,47 +667,35 @@
 .mt-fb-anthropic .mt-fb-badge { background: var(--vendor-anthropic); color: #fff; }
 .mt-fb-google .mt-fb-badge { background: var(--vendor-google); color: #fff; }
 
-/* Fixed rows (TTS, embeddings) */
-.mt-fixed-rows {
-  background: var(--surface-container-low);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  margin-bottom: 20px;
-}
-
-.mt-fixed-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+/* Specialized rows (TTS, embeddings, voice — Google-only) */
+.mt-special-info {
+  font-size: 12px;
   color: var(--on-surface-dim);
-  margin-bottom: 8px;
+  padding: 4px 12px 8px;
 }
 
-.mt-fixed-row {
-  display: grid;
-  grid-template-columns: 1.6fr 2fr 1fr;
-  gap: 8px;
+.mt-row--special {
+  grid-template-columns: 1.6fr 1fr;
+}
+
+.mt-row--special .mt-primary {
+  display: flex;
   align-items: center;
-  padding: 5px 0;
-  font-size: 13px;
+  gap: 8px;
 }
 
-.mt-fixed-task {
-  color: var(--on-surface-variant);
-  font-weight: 500;
-}
-
-.mt-fixed-note {
-  color: var(--on-surface-dim);
+.mt-task-note {
+  display: block;
   font-size: 11px;
+  color: var(--on-surface-dim);
+  font-weight: 400;
 }
 
 /* Responsive: stack on small screens */
 @media (max-width: 640px) {
   .mt-head { display: none; }
   .mt-row { grid-template-columns: 1fr; gap: 4px; padding: 10px; }
-  .mt-fixed-row { grid-template-columns: 1fr; }
+  .mt-row--special { grid-template-columns: 1fr; }
 }
 
 /* ═══ Services list (google-apps) ═══ */

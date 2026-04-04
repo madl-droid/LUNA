@@ -62,52 +62,6 @@ export type LLMTask =
   | 'custom'
 
 // ═══════════════════════════════════════════
-// API key groups (for advanced key management)
-// ═══════════════════════════════════════════
-
-/**
- * API key capability groups for advanced key management.
- * In advanced mode, each group can have its own API key.
- * If a group key is not set, falls back to the provider's main key.
- */
-export type GeminiKeyGroup = 'engine' | 'multimedia' | 'voice' | 'knowledge'
-export type AnthropicKeyGroup = 'engine' | 'cortex' | 'memory'
-export type ApiKeyGroup = GeminiKeyGroup | AnthropicKeyGroup
-
-/**
- * Maps LLM tasks to their API key capability group.
- * Used by the gateway to select the correct API key in advanced mode.
- * The provider is already known from route resolution — only the group matters here.
- */
-export const TASK_TO_KEY_GROUP: Record<string, ApiKeyGroup | undefined> = {
-  // Gemini groups
-  respond: 'engine',
-  web_search: 'engine',
-  criticize: 'engine',
-  vision: 'multimedia',
-  stt: 'multimedia',
-  tts: 'voice',
-  embeddings: 'knowledge',
-
-  // Anthropic groups
-  classify: 'engine',
-  tools: 'engine',
-  complex: 'engine',
-  proactive: 'engine',
-  compress: 'memory',
-  batch: 'memory',
-  document_read: 'engine',
-
-  // Cortex tasks (resolved via aliases to 'complex', but need own key group)
-  'trace-evaluate': 'cortex',
-  'trace-compose': 'cortex',
-  'trace-analyze': 'cortex',
-  'trace-synthesize': 'cortex',
-  'cortex-analyze': 'cortex',
-  'cortex-pulse': 'cortex',
-}
-
-// ═══════════════════════════════════════════
 // Task routing
 // ═══════════════════════════════════════════
 
@@ -385,17 +339,6 @@ export interface LLMModuleConfig {
   // Provider API keys
   ANTHROPIC_API_KEY: string
   GOOGLE_AI_API_KEY: string
-
-  // Gemini group keys (fallback to GOOGLE_AI_API_KEY if empty)
-  LLM_GOOGLE_ENGINE_API_KEY: string
-  LLM_GOOGLE_MULTIMEDIA_API_KEY: string
-  LLM_GOOGLE_VOICE_API_KEY: string
-  LLM_GOOGLE_KNOWLEDGE_API_KEY: string
-
-  // Anthropic group keys (fallback to ANTHROPIC_API_KEY if empty)
-  LLM_ANTHROPIC_ENGINE_API_KEY: string
-  LLM_ANTHROPIC_CORTEX_API_KEY: string
-  LLM_ANTHROPIC_MEMORY_API_KEY: string
 
   // Circuit breaker
   LLM_CB_FAILURE_THRESHOLD: number

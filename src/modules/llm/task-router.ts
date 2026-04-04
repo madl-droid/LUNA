@@ -10,7 +10,6 @@ import type {
   ProviderAdapter,
   LLMModuleConfig,
 } from './types.js'
-import { TASK_TO_KEY_GROUP } from './types.js'
 
 const logger = pino({ name: 'llm:router' })
 
@@ -315,42 +314,14 @@ export class TaskRouter {
   }
 
   /**
-   * Resolve API key for a specific task, considering advanced mode group keys.
-   * Priority: explicit envVar → advanced group key → provider default key.
+   * Resolve API key for a provider. One key per provider — simple.
    */
-  private resolveApiKeyForTask(provider: LLMProviderName, task: string, envVar?: string): string | null {
-    // 1. Explicit envVar override always wins
+  private resolveApiKeyForTask(provider: LLMProviderName, _task: string, envVar?: string): string | null {
     if (envVar) {
       const key = this.apiKeys.get(envVar)
       if (key) return key
     }
-
-    // 2. Try group-specific key (if configured)
-    const groupKey = this.resolveGroupApiKey(provider, task)
-    if (groupKey) return groupKey
-
-    // 3. Fall back to provider default key
     return this.resolveApiKeyForProvider(provider)
-  }
-
-  /**
-   * Resolve the group-specific API key for a task in advanced mode.
-   * Tries the original task name first (e.g. 'trace-evaluate' → cortex),
-   * then falls back to the resolved/canonical task name.
-   * Returns null if no group key is configured (falls back to default).
-   */
-  private resolveGroupApiKey(provider: LLMProviderName, task: string): string | null {
-    // Try original task name first, then resolved alias
-    const resolvedTask = TASK_ALIASES[task] ?? task
-    const group = TASK_TO_KEY_GROUP[task] ?? TASK_TO_KEY_GROUP[resolvedTask]
-    if (!group) return null
-
-    // Build the env var name: LLM_{PROVIDER}_{GROUP}_API_KEY
-    const providerUpper = provider === 'anthropic' ? 'ANTHROPIC' : 'GOOGLE'
-    const groupUpper = group.toUpperCase()
-    const envVar = `LLM_${providerUpper}_${groupUpper}_API_KEY`
-
-    return this.apiKeys.get(envVar) ?? null
   }
 
   private resolveApiKeyForProvider(provider: LLMProviderName): string | null {

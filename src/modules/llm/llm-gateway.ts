@@ -704,20 +704,8 @@ export class LLMGateway {
   }
 
   private loadApiKeys(config: LLMModuleConfig): void {
-    // Default provider keys
     if (config.ANTHROPIC_API_KEY) this.apiKeys.set('ANTHROPIC_API_KEY', config.ANTHROPIC_API_KEY)
     if (config.GOOGLE_AI_API_KEY) this.apiKeys.set('GOOGLE_AI_API_KEY', config.GOOGLE_AI_API_KEY)
-
-    // Gemini group keys
-    if (config.LLM_GOOGLE_ENGINE_API_KEY) this.apiKeys.set('LLM_GOOGLE_ENGINE_API_KEY', config.LLM_GOOGLE_ENGINE_API_KEY)
-    if (config.LLM_GOOGLE_MULTIMEDIA_API_KEY) this.apiKeys.set('LLM_GOOGLE_MULTIMEDIA_API_KEY', config.LLM_GOOGLE_MULTIMEDIA_API_KEY)
-    if (config.LLM_GOOGLE_VOICE_API_KEY) this.apiKeys.set('LLM_GOOGLE_VOICE_API_KEY', config.LLM_GOOGLE_VOICE_API_KEY)
-    if (config.LLM_GOOGLE_KNOWLEDGE_API_KEY) this.apiKeys.set('LLM_GOOGLE_KNOWLEDGE_API_KEY', config.LLM_GOOGLE_KNOWLEDGE_API_KEY)
-
-    // Anthropic group keys
-    if (config.LLM_ANTHROPIC_ENGINE_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_ENGINE_API_KEY', config.LLM_ANTHROPIC_ENGINE_API_KEY)
-    if (config.LLM_ANTHROPIC_CORTEX_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_CORTEX_API_KEY', config.LLM_ANTHROPIC_CORTEX_API_KEY)
-    if (config.LLM_ANTHROPIC_MEMORY_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_MEMORY_API_KEY', config.LLM_ANTHROPIC_MEMORY_API_KEY)
   }
 
   private initAdapters(): void {
