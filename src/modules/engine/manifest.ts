@@ -57,6 +57,16 @@ interface EngineModuleConfig {
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
   LLM_CRITICIZER_MODE: string
+  LLM_LOW_EFFORT_MODEL: string
+  LLM_LOW_EFFORT_PROVIDER: string
+  LLM_MEDIUM_EFFORT_MODEL: string
+  LLM_MEDIUM_EFFORT_PROVIDER: string
+  LLM_HIGH_EFFORT_MODEL: string
+  LLM_HIGH_EFFORT_PROVIDER: string
+  // Business hours
+  ENGINE_BUSINESS_HOURS_START: number
+  ENGINE_BUSINESS_HOURS_END: number
+  ENGINE_BUSINESS_DAYS: string
 }
 
 const manifest: ModuleManifest = {
@@ -112,6 +122,16 @@ const manifest: ModuleManifest = {
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
+    LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+    LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
+    LLM_MEDIUM_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
+    LLM_MEDIUM_EFFORT_PROVIDER: z.string().default('anthropic'),
+    LLM_HIGH_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
+    LLM_HIGH_EFFORT_PROVIDER: z.string().default('anthropic'),
+    // Business hours for proactive contact
+    ENGINE_BUSINESS_HOURS_START: numEnvMin(0, 8),
+    ENGINE_BUSINESS_HOURS_END: numEnvMin(0, 17),
+    ENGINE_BUSINESS_DAYS: z.string().default('1,2,3,4,5'),
   }),
 
   console: {
@@ -469,6 +489,75 @@ const manifest: ModuleManifest = {
         width: 'half',
       },
 
+      // ── Models by Effort ──
+      { key: '_div_effort_models', type: 'divider', label: { es: 'Modelos por Esfuerzo', en: 'Models by Effort' } },
+      {
+        key: 'LLM_LOW_EFFORT_MODEL',
+        type: 'model-select',
+        label: { es: 'Modelo bajo esfuerzo', en: 'Low effort model' },
+        info: {
+          es: 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.',
+          en: 'Model for simple messages: greetings, confirmations, direct questions.',
+        },
+        width: 'half',
+      },
+      {
+        key: 'LLM_MEDIUM_EFFORT_MODEL',
+        type: 'model-select',
+        label: { es: 'Modelo medio esfuerzo', en: 'Medium effort model' },
+        info: {
+          es: 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.',
+          en: 'Model for medium complexity messages: contextual queries, follow-ups.',
+        },
+        width: 'half',
+      },
+      {
+        key: 'LLM_HIGH_EFFORT_MODEL',
+        type: 'model-select',
+        label: { es: 'Modelo alto esfuerzo', en: 'High effort model' },
+        info: {
+          es: 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.',
+          en: 'Model for complex messages: multiple tools, objections, deep reasoning.',
+        },
+        width: 'half',
+      },
+
+      // ── Business Hours ──
+      { key: '_div_business_hours', type: 'divider', label: { es: 'Horario laboral', en: 'Business hours' } },
+      {
+        key: 'ENGINE_BUSINESS_HOURS_START',
+        type: 'number',
+        label: { es: 'Hora de inicio', en: 'Start hour' },
+        info: {
+          es: 'Hora de inicio del horario laboral (0-23). El agente no contactará proactivamente fuera de este rango. La zona horaria se toma del país del agente (identidad), pero si el contacto tiene un país distinto se aplica su zona horaria local.',
+          en: 'Business hours start (0-23). The agent will not proactively contact outside this range. Timezone defaults from agent country (identity), but if the contact has a different country their local timezone is used.',
+        },
+        min: 0,
+        max: 23,
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_BUSINESS_HOURS_END',
+        type: 'number',
+        label: { es: 'Hora de cierre', en: 'End hour' },
+        info: {
+          es: 'Hora de fin del horario laboral (1-23). Mensajes proactivos solo se envían entre inicio y cierre.',
+          en: 'Business hours end (1-23). Proactive messages are only sent between start and end.',
+        },
+        min: 1,
+        max: 23,
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_BUSINESS_DAYS',
+        type: 'tags',
+        label: { es: 'Días laborales', en: 'Business days' },
+        info: {
+          es: 'Días de la semana habilitados (0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb). Separados por coma.',
+          en: 'Enabled weekdays (0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat). Comma-separated.',
+        },
+        separator: ',',
+      },
     ],
     apiRoutes: [
       {
@@ -591,6 +680,27 @@ const manifest: ModuleManifest = {
 
     registry.provide('engine:nightly-config', {
       get: buildNightlyConfig,
+    })
+
+    // ── Business hours config service (hot-reloadable, read by proactive guards) ──
+    const buildBusinessHoursConfig = () => {
+      // Agent timezone from prompts module config (derived from country in identity section)
+      let agentTimezone = 'America/Bogota'
+      try {
+        const promptsCfg = registry.getConfig<{ AGENT_TIMEZONE: string }>('prompts')
+        if (promptsCfg.AGENT_TIMEZONE) agentTimezone = promptsCfg.AGENT_TIMEZONE
+      } catch { /* prompts module not loaded yet — use default */ }
+      const days = attConfig.ENGINE_BUSINESS_DAYS.split(',').map(d => parseInt(d.trim(), 10)).filter(d => !isNaN(d))
+      return {
+        start: attConfig.ENGINE_BUSINESS_HOURS_START,
+        end: attConfig.ENGINE_BUSINESS_HOURS_END,
+        days: days.length > 0 ? days : [1, 2, 3, 4, 5],
+        agentTimezone,
+      }
+    }
+
+    registry.provide('engine:business-hours', {
+      get: buildBusinessHoursConfig,
     })
 
     // Hot-reload on console config change

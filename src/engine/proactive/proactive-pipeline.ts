@@ -50,7 +50,7 @@ export async function processProactive(
 
   try {
     // ═══ GUARDS ═══
-    const guardResult = await runGuards(candidate, redis, db, proactiveConfig)
+    const guardResult = await runGuards(candidate, redis, db, proactiveConfig, registry)
     if (!guardResult.passed) {
       await logOutreach(db, {
         contactId: candidate.contactId,

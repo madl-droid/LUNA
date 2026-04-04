@@ -455,6 +455,54 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
   </div>`
 
+  // Panel 6: Business Hours
+  const bhStart = cv(data, 'ENGINE_BUSINESS_HOURS_START') || '8'
+  const bhEnd = cv(data, 'ENGINE_BUSINESS_HOURS_END') || '17'
+  const bhDays = cv(data, 'ENGINE_BUSINESS_DAYS') || '1,2,3,4,5'
+
+  h += `<div class="panel">
+    <div class="panel-header" onclick="togglePanel(this)">
+      <span class="panel-title">${isEs ? 'Horario Laboral' : 'Business Hours'}</span>
+      <span class="panel-chevron">&#9660;</span>
+    </div>
+    <div class="panel-body">
+      <div class="panel-info">${isEs
+        ? 'Rango de horas permitidas para contactar clientes proactivamente. La zona horaria se toma del pais del agente (identidad). Para clientes internacionales, el sistema detecta su pais por telefono y aplica el mismo rango en su zona horaria local.'
+        : 'Allowed hours for proactive client contact. Timezone defaults from agent country (identity). For international clients, the system detects their country by phone and applies the same range in their local timezone.'}</div>
+      <div class="two-col">
+        <div class="field">
+          <div class="field-left"><span class="field-label">${isEs ? 'Hora de inicio' : 'Start hour'}</span></div>
+          <input type="text" inputmode="numeric" name="ENGINE_BUSINESS_HOURS_START" value="${esc(bhStart)}" data-original="${esc(bhStart)}" placeholder="8" style="width:80px">
+          <span style="font-size:12px;color:var(--on-surface-dim);margin-left:6px">:00</span>
+        </div>
+        <div class="field">
+          <div class="field-left"><span class="field-label">${isEs ? 'Hora de cierre' : 'End hour'}</span></div>
+          <input type="text" inputmode="numeric" name="ENGINE_BUSINESS_HOURS_END" value="${esc(bhEnd)}" data-original="${esc(bhEnd)}" placeholder="17" style="width:80px">
+          <span style="font-size:12px;color:var(--on-surface-dim);margin-left:6px">:00</span>
+        </div>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <div class="field-left"><span class="field-label">${isEs ? 'Dias laborales' : 'Business days'}</span></div>
+        <div class="bh-days" style="display:flex;gap:6px;margin-top:4px">
+          ${[
+            { d: 0, l: isEs ? 'Dom' : 'Sun' },
+            { d: 1, l: isEs ? 'Lun' : 'Mon' },
+            { d: 2, l: isEs ? 'Mar' : 'Tue' },
+            { d: 3, l: isEs ? 'Mie' : 'Wed' },
+            { d: 4, l: isEs ? 'Jue' : 'Thu' },
+            { d: 5, l: isEs ? 'Vie' : 'Fri' },
+            { d: 6, l: isEs ? 'Sab' : 'Sat' },
+          ].map(({ d, l }) => {
+            const active = bhDays.split(',').map(s => s.trim()).includes(String(d))
+            return `<button type="button" class="bh-day-btn${active ? ' bh-day-btn--active' : ''}" data-day="${d}" onclick="toggleBhDay(this)">${l}</button>`
+          }).join('')}
+        </div>
+        <input type="hidden" name="ENGINE_BUSINESS_DAYS" id="bh-days-input" value="${esc(bhDays)}" data-original="${esc(bhDays)}">
+      </div>
+    </div>
+  </div>`
+
+  // Panel 7: Proactive Settings (reference to proactive.json)
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${isEs ? 'Configuracion Proactiva' : 'Proactive Settings'}</span>
@@ -467,15 +515,6 @@ export function renderAdvancedAgentSection(data: SectionData): string {
       <div class="field">
         <span class="field-label">${isEs ? 'Archivo de configuracion' : 'Config file'}</span>
         <code style="display:block;padding:6px 10px;background:var(--surface-variant);border-radius:6px;font-size:12px">instance/proactive.json</code>
-      </div>
-      <div class="field" style="margin-top:8px">
-        <span class="field-label">${isEs ? 'Claves principales' : 'Main keys'}</span>
-        <ul style="font-size:12px;color:var(--on-surface-dim);margin:4px 0;padding-left:18px;line-height:1.8">
-          <li><code>cooldown.afterSentMinutes</code> - ${isEs ? 'minutos de espera despues de enviar un mensaje proactivo' : 'minutes to wait after sending a proactive message'}</li>
-          <li><code>cooldown.afterNoActionMinutes</code> - ${isEs ? 'cooldown si el contacto no respondio' : 'cooldown if contact did not respond'}</li>
-          <li><code>orphan.enabled</code> - ${isEs ? 'detecta mensajes sin respuesta y los reprocesa' : 'detects unanswered messages and reprocesses them'}</li>
-          <li><code>conversationGuard.enabled</code> - ${isEs ? 'suprime mensajes si el contacto se despidio' : 'suppresses messages if contact said goodbye'}</li>
-        </ul>
       </div>
     </div>
   </div>`

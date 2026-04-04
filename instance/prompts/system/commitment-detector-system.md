@@ -26,6 +26,6 @@ Timing rules for due_within_hours and scheduled_at_hours:
 - If the agent mentioned a specific time ("mañana", "el lunes", "en 2 horas"), calculate hours from now to that time.
 - If the promise implies urgency ("ahora mismo", "enseguida"), use 1-2h.
 - If routine ("le estaré contactando", "le haré seguimiento"), use 24-72h.
-- Use scheduled_at_hours to delay execution to business hours (8-17h) if the commitment would otherwise fire at night or on weekends.
+- Use scheduled_at_hours to delay execution to business hours if the commitment would otherwise fire at night or on weekends.
 - When the contact asked for time or said they'd get back, set a longer due_within_hours to give them space.
 - ALWAYS provide due_within_hours when context makes timing clear — null only when truly ambiguous.
