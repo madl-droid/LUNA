@@ -12,7 +12,7 @@ import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
 import { detectLang } from './templates-i18n.js'
 import { pageLayout, type DynamicSidebarModule, type SidebarChannelInfo } from './templates.js'
-import { renderSection, renderAdvancedAgentSection, SECTION_REDIRECTS } from './templates-sections.js'
+import { renderSection, renderAdvancedAgentSection, renderEngineMetricsSection } from './templates-sections.js'
 import type { SectionData } from './templates-sections.js'
 import type { ModuleInfo } from './templates-modules.js'
 import { renderChannelSettingsPage } from './templates-channel-settings.js'
@@ -1054,77 +1054,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
-      if (localUrl === '/users/add-contact') {
-        try {
-          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
-          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
-          if (!usersDb || !usersCache) throw new Error('Users module not available')
-
-          const userId = body['userId']
-          const channel = body['channel']
-          const senderId = body['senderId']
-          if (!userId || !channel || !senderId) throw new Error('Missing fields')
-
-          await usersDb.addContact(userId, channel, senderId)
-          await usersCache.invalidate(senderId)
-
-          logger.info({ userId, channel, senderId }, 'Contact added from console')
-        } catch (err) {
-          logger.error({ err }, 'Failed to add contact')
-        }
-        res.writeHead(302, { Location: `/console/users?flash=contact_added&lang=${lang}` })
-        res.end()
-        return true
-      }
-
-      if (localUrl === '/users/remove-contact') {
-        try {
-          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
-          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
-          if (!usersDb || !usersCache) throw new Error('Users module not available')
-
-          const contactId = body['contactId']
-          if (!contactId) throw new Error('Missing contactId')
-
-          const removed = await usersDb.removeContact(contactId)
-          if (removed) await usersCache.invalidate(removed.senderId)
-
-          logger.info({ contactId }, 'Contact removed from console')
-        } catch (err) {
-          logger.error({ err }, 'Failed to remove contact')
-        }
-        res.writeHead(302, { Location: `/console/users?flash=contact_removed&lang=${lang}` })
-        res.end()
-        return true
-      }
-
-      if (localUrl === '/users/merge') {
-        try {
-          const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
-          const usersCache = registry.getOptional<import('../users/cache.js').UserCache>('users:cache')
-          if (!usersDb || !usersCache) throw new Error('Users module not available')
-
-          const keepId = body['keepId']
-          const mergeId = body['mergeId']
-          if (!keepId || !mergeId) throw new Error('Missing keepId or mergeId')
-
-          // Get all contacts before merge for cache invalidation
-          const keepContacts = await usersDb.getContactsForUser(keepId)
-          const mergeContacts = await usersDb.getContactsForUser(mergeId)
-
-          await usersDb.mergeUsers(keepId, mergeId)
-
-          for (const c of [...keepContacts, ...mergeContacts]) await usersCache.invalidate(c.senderId)
-
-          logger.info({ keepId, mergeId }, 'Users merged from console')
-        } catch (err) {
-          logger.error({ err }, 'Failed to merge users')
-        }
-        res.writeHead(302, { Location: `/console/users?flash=users_merged&lang=${lang}` })
-        res.end()
-        return true
-      }
-
       if (localUrl === '/users/create-list') {
         try {
           const usersDb = registry.getOptional<import('../users/db.js').UsersDb>('users:db')
@@ -1374,11 +1303,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         return true
       }
 
-      // Redirect old section IDs to unified pages (skip if already a nested channel route)
-      const redirectTo = !channelSettingsId ? SECTION_REDIRECTS[section] : undefined
-      if (redirectTo) {
+      // Redirect old standalone pages to their unified agent locations
+      if (!channelSettingsId && section === 'pipeline') {
         const lang = detectLang(req)
-        res.writeHead(302, { Location: `/console/${redirectTo}?lang=${lang}` })
+        res.writeHead(302, { Location: `/console/agente/advanced?lang=${lang}` })
+        res.end()
+        return true
+      }
+      if (!channelSettingsId && section === 'engine-metrics') {
+        const lang = detectLang(req)
+        res.writeHead(302, { Location: `/console/agente/engine-metrics?lang=${lang}` })
         res.end()
         return true
       }
@@ -1510,6 +1444,8 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         // Map sub-pages to their actual section renderers
         if (agenteSubpage === 'advanced') {
           sectionData.agenteContent = renderAdvancedAgentSection(sectionData)
+        } else if (agenteSubpage === 'engine-metrics') {
+          sectionData.agenteContent = renderEngineMetricsSection(sectionData)
         } else if (agenteSubpage === 'knowledge') {
           // Load knowledge items HTML via module service
           try {

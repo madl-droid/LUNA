@@ -560,28 +560,19 @@ export interface EngineConfig {
 
   // Pipeline
   maxToolCallsPerTurn: number
-  maxConversationTurns: number
   sessionTtlMs: number
 
   // User type cache
   userTypeCacheTtlSeconds: number
 
   // Proactive
-  followupEnabled: boolean
-  followupDelayMinutes: number
-  followupMaxAttempts: number
-  followupColdAfterAttempts: number
   batchEnabled: boolean
   batchCron: string
   batchTimezone: string
 
   // Subagent defaults
-  subagentMaxIterations: number
   subagentTimeoutMs: number
   subagentMaxTokenBudget: number
-
-  // Replanning
-  maxReplanAttempts: number
 
   // API keys
   anthropicApiKey: string
@@ -644,10 +635,4 @@ export interface EngineConfig {
   /** Model for high-effort messages (objections, multi-step) */
   highEffortModel: string
   highEffortProvider: LLMProvider
-  /** Loop detector: number of identical calls before warning the LLM */
-  loopWarnThreshold: number
-  /** Loop detector: number of identical calls before blocking the tool */
-  loopBlockThreshold: number
-  /** Loop detector: number of identical calls before forcing text response (circuit break) */
-  loopCircuitThreshold: number
 }
