@@ -278,47 +278,6 @@ function renderModelsContent(data: SectionData): string {
   return h
 }
 
-// ═══════════════════════════════════════════
-// Unified Pipeline page — pipeline + follow-up + naturalidad
-// ═══════════════════════════════════════════
-
-export function renderPipelineUnifiedSection(data: SectionData): string {
-  let h = ''
-
-  // Panel 1: Pipeline limits
-  h += `<div class="panel">
-    <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${t('sec_pipeline', data.lang)}</span>
-      <span class="panel-chevron">&#9660;</span>
-    </div>
-    <div class="panel-body">
-      <div class="panel-info">${t('sec_pipeline_info', data.lang)}</div>
-      ${numField('PIPELINE_MAX_TOOL_CALLS_PER_TURN', cv(data, 'PIPELINE_MAX_TOOL_CALLS_PER_TURN'), data.lang, 'f_PIPELINE_MAX_TOOL_CALLS_PER_TURN', 'i_PIPELINE_TOOLS')}
-      ${numField('PIPELINE_MAX_CONVERSATION_TURNS', cv(data, 'PIPELINE_MAX_CONVERSATION_TURNS'), data.lang, 'f_PIPELINE_MAX_CONVERSATION_TURNS', 'i_PIPELINE_TURNS')}
-      ${numField('PIPELINE_SESSION_TTL_MS', cv(data, 'PIPELINE_SESSION_TTL_MS'), data.lang, 'f_PIPELINE_SESSION_TTL_MS', 'i_PIPELINE_TTL')}
-      ${numField('SUBAGENT_MAX_ITERATIONS', cv(data, 'SUBAGENT_MAX_ITERATIONS') || '5', data.lang, 'f_SUBAGENT_MAX_ITERATIONS', 'i_SUBAGENT_ITER')}
-      ${numField('PIPELINE_MAX_REPLAN_ATTEMPTS', cv(data, 'PIPELINE_MAX_REPLAN_ATTEMPTS') || '2', data.lang, 'f_PIPELINE_MAX_REPLAN_ATTEMPTS', 'i_PIPELINE_REPLAN')}
-    </div>
-  </div>`
-
-  // Panel 2: Follow-up
-  h += `<div class="panel">
-    <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">${t('sec_followup', data.lang)}</span>
-      <span class="panel-chevron">&#9660;</span>
-    </div>
-    <div class="panel-body">
-      <div class="panel-info">${t('sec_followup_info', data.lang)}</div>
-      ${boolField('FOLLOWUP_ENABLED', cv(data, 'FOLLOWUP_ENABLED') || 'false', data.lang, 'f_FOLLOWUP_ENABLED', 'i_FOLLOWUP_ENABLED')}
-      ${numField('FOLLOWUP_DELAY_MINUTES', cv(data, 'FOLLOWUP_DELAY_MINUTES'), data.lang, 'f_FOLLOWUP_DELAY_MINUTES', 'i_FOLLOWUP_DELAY')}
-      ${numField('FOLLOWUP_MAX_ATTEMPTS', cv(data, 'FOLLOWUP_MAX_ATTEMPTS'), data.lang, 'f_FOLLOWUP_MAX_ATTEMPTS', 'i_FOLLOWUP_MAX')}
-      ${numField('FOLLOWUP_COLD_AFTER_ATTEMPTS', cv(data, 'FOLLOWUP_COLD_AFTER_ATTEMPTS'), data.lang, 'f_FOLLOWUP_COLD_AFTER_ATTEMPTS', 'i_FOLLOWUP_COLD')}
-    </div>
-  </div>`
-
-  return h
-}
-
 export function renderLeadScoringSection(data: SectionData): string {
   if (data.leadScoringHtml) {
     return data.leadScoringHtml
@@ -719,10 +678,10 @@ function renderModelsTable(data: SectionData, lang: string): string {
   // Task definitions: task id, label es, label en, default primary, default downgrade, cross-api fallback
   const TASKS: Array<[string, string, string, string, string, string, string, string, string]> = [
     // [task, labelEs, labelEn, defPrimProv, defPrimModel, defDgProv, defDgModel, fbProv, fbModel]
-    ['classify',    'Evaluación de intent',      'Intent evaluation',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-    ['respond',     'Respuesta (Fase 4)',         'Response (Phase 4)',       'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
+    ['classify',    'Criticizer / Verificador',   'Criticizer / Verifier',    'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+    ['respond',     'Respuesta (fallback)',       'Response (fallback)',      'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
     ['complex',     'Tarea compleja / subagente', 'Complex / subagent task', 'anthropic', 'claude-opus-4-5-20251101',   'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-2.5-pro'],
-    ['tools',       'Ejecución de tools',         'Tool execution',          'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+    ['tools',       'Subagentes / Tools',         'Subagents / Tools',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
     ['proactive',   'Mensaje proactivo',          'Proactive message',       'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
     ['criticize',   'Criticizer (gate de calidad)','Criticizer (quality gate)','google',  'gemini-2.5-pro',             'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-5-20250929'],
     ['document_read','Lectura de documentos',     'Document reading',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
@@ -737,16 +696,6 @@ function renderModelsTable(data: SectionData, lang: string): string {
     return mtRow(task, isEs ? lEs : lEn, pP, pM, dgP, dgM, fbP, fbM, anthropicModels, googleModels)
   }).join('')
 
-  // Criticizer mode
-  const criticModeOptions = [
-    { value: 'disabled', label: isEs ? 'Desactivado' : 'Disabled' },
-    { value: 'complex_only', label: isEs ? 'Solo planes complejos (≥3 pasos)' : 'Complex plans only (≥3 steps)' },
-    { value: 'always', label: isEs ? 'Siempre' : 'Always' },
-  ]
-  const currentCriticMode = cfg['LLM_CRITICIZER_MODE'] || 'complex_only'
-  const criticOpts = criticModeOptions.map(o =>
-    `<option value="${o.value}" ${o.value === currentCriticMode ? 'selected' : ''}>${o.label}</option>`
-  ).join('')
 
   return `
   <div class="scan-bar">
@@ -757,6 +706,10 @@ function renderModelsTable(data: SectionData, lang: string): string {
     ${scanInfo}
   </div>
   ${scanReplacements}
+
+  <div class="panel-info" style="margin:12px 0 14px 0">${isEs
+    ? 'Estos modelos controlan subsistemas especializados como criticizer, subagentes, batch, vision y tareas proactivas. El loop agentico principal usa los modelos por esfuerzo del panel Motor Agentico.'
+    : 'These models control specialized subsystems such as criticizer, subagents, batch, vision and proactive tasks. The main agentic loop uses the effort-based models in the Agentic Engine panel.'}</div>
 
   <div class="mt-table">
     <div class="mt-head">
@@ -782,16 +735,6 @@ function renderModelsTable(data: SectionData, lang: string): string {
     </div>
   </div>
 
-  <div class="field-divider"><span class="field-divider-label">${isEs ? 'Criticizer' : 'Criticizer'}</span></div>
-  <div class="field">
-    <div class="field-left">
-      <span class="field-label">${isEs ? 'Activación del criticizer' : 'Criticizer activation'}</span>
-      <span class="field-info">${isEs
-        ? 'Gemini Pro revisa la respuesta antes de enviarla. Si encuentra problemas Flash regenera.'
-        : 'Gemini Pro reviews the response before sending. If issues found Flash regenerates.'}</span>
-    </div>
-    <select class="js-custom-select" name="LLM_CRITICIZER_MODE" data-original="${esc(currentCriticMode)}">${criticOpts}</select>
-  </div>
 
   <script type="application/json" id="models-data">${JSON.stringify(data.allModels ?? {})}</script>`
 }
@@ -800,21 +743,21 @@ export function renderAdvancedAgentSection(data: SectionData): string {
   const isEs = data.lang === 'es'
   let h = ''
 
-  // Panel 1: API Keys — segment toggle (General | Por función) + 2-column layout
+  // Panel 1: API Keys - segment toggle (General | Por funcion) + 2-column layout
   const currentApiMode = cv(data, 'LLM_API_MODE') || 'basic'
   const isAdvanced = currentApiMode === 'advanced'
 
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
-      <span class="panel-title">API Keys — LLM</span>
+      <span class="panel-title">API Keys - LLM</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
       <div class="api-mode-row">
-        <span class="api-mode-question">${isEs ? '¿Cómo quieres gestionar tus API keys?' : 'How do you want to manage your API keys?'}</span>
+        <span class="api-mode-question">${isEs ? 'Como quieres gestionar tus API keys?' : 'How do you want to manage your API keys?'}</span>
         <div class="seg-ctrl">
           <button type="button" class="seg-btn${!isAdvanced ? ' seg-btn--active' : ''}" data-mode="basic" onclick="setApiKeyMode('basic')">${isEs ? 'General' : 'General'}</button>
-          <button type="button" class="seg-btn${isAdvanced ? ' seg-btn--active' : ''}" data-mode="advanced" onclick="setApiKeyMode('advanced')">${isEs ? 'Por función' : 'By function'}</button>
+          <button type="button" class="seg-btn${isAdvanced ? ' seg-btn--active' : ''}" data-mode="advanced" onclick="setApiKeyMode('advanced')">${isEs ? 'Por funcion' : 'By function'}</button>
         </div>
         <input type="hidden" name="LLM_API_MODE" id="api-mode-input" value="${esc(currentApiMode)}" data-original="${esc(currentApiMode)}">
       </div>
@@ -829,13 +772,13 @@ export function renderAdvancedAgentSection(data: SectionData): string {
             <div class="api-key-group-divider">${isEs ? 'Por grupo de uso' : 'Per usage group'}</div>
             ${secretField('LLM_ANTHROPIC_ENGINE_API_KEY', cv(data, 'LLM_ANTHROPIC_ENGINE_API_KEY'), data.lang,
               'Engine',
-              isEs ? 'classify · tools · complex · proactive — Fallback: key principal' : 'classify · tools · complex · proactive — Fallback: main key')}
+              isEs ? 'criticizer / tools / complex / proactive - Fallback: key principal' : 'criticizer / tools / complex / proactive - Fallback: main key')}
             ${secretField('LLM_ANTHROPIC_CORTEX_API_KEY', cv(data, 'LLM_ANTHROPIC_CORTEX_API_KEY'), data.lang,
               'Cortex',
-              isEs ? 'Pulse · Trace · Reflex — Fallback: key principal' : 'Pulse · Trace · Reflex — Fallback: main key')}
+              isEs ? 'Pulse / Trace / Reflex - Fallback: key principal' : 'Pulse / Trace / Reflex - Fallback: main key')}
             ${secretField('LLM_ANTHROPIC_MEMORY_API_KEY', cv(data, 'LLM_ANTHROPIC_MEMORY_API_KEY'), data.lang,
               isEs ? 'Memoria' : 'Memory',
-              isEs ? 'compress · batch nocturno — Fallback: key principal' : 'compress · nightly batch — Fallback: main key')}
+              isEs ? 'compress / batch nocturno - Fallback: key principal' : 'compress / nightly batch - Fallback: main key')}
           </div>
         </div>
         <div class="api-key-col">
@@ -847,23 +790,22 @@ export function renderAdvancedAgentSection(data: SectionData): string {
             <div class="api-key-group-divider">${isEs ? 'Por grupo de uso' : 'Per usage group'}</div>
             ${secretField('LLM_GOOGLE_ENGINE_API_KEY', cv(data, 'LLM_GOOGLE_ENGINE_API_KEY'), data.lang,
               'Multimedia / Voz',
-              isEs ? 'respond · web_search · vision · TTS — Fallback: key principal' : 'respond · web_search · vision · TTS — Fallback: main key')}
+              isEs ? 'fallback de respuesta / web_search / vision / TTS - Fallback: key principal' : 'response fallback / web_search / vision / TTS - Fallback: main key')}
             ${secretField('LLM_GOOGLE_MULTIMEDIA_API_KEY', cv(data, 'LLM_GOOGLE_MULTIMEDIA_API_KEY'), data.lang,
               'Multimedia',
-              isEs ? 'vision · STT · archivos — Fallback: key principal' : 'vision · STT · files — Fallback: main key')}
+              isEs ? 'vision / STT / archivos - Fallback: key principal' : 'vision / STT / files - Fallback: main key')}
             ${secretField('LLM_GOOGLE_VOICE_API_KEY', cv(data, 'LLM_GOOGLE_VOICE_API_KEY'), data.lang,
               isEs ? 'Voz' : 'Voice',
-              isEs ? 'TTS · Gemini Live — Fallback: key principal' : 'TTS · Gemini Live — Fallback: main key')}
+              isEs ? 'TTS / Gemini Live - Fallback: key principal' : 'TTS / Gemini Live - Fallback: main key')}
             ${secretField('LLM_GOOGLE_KNOWLEDGE_API_KEY', cv(data, 'LLM_GOOGLE_KNOWLEDGE_API_KEY'), data.lang,
               'Knowledge',
-              isEs ? 'embeddings · knowledge — Fallback: key principal' : 'embeddings · knowledge — Fallback: main key')}
+              isEs ? 'embeddings / knowledge - Fallback: key principal' : 'embeddings / knowledge - Fallback: main key')}
           </div>
         </div>
       </div>
     </div>
   </div>`
 
-  // Panel 2: Models — interactive assignment table
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${isEs ? 'Uso de modelos' : 'Model assignment'}</span>
@@ -871,13 +813,12 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
     <div class="panel-body">
       <div class="panel-info">${isEs
-        ? 'Asigna qué modelo usa cada tarea del motor. Principal es el modelo activo; Downgrade se activa si el circuit breaker del principal salta; Fallback cambia de proveedor.'
+        ? 'Asigna que modelo usa cada tarea del motor. Principal es el modelo activo; Downgrade se activa si el circuit breaker del principal salta; Fallback cambia de proveedor.'
         : 'Assign which model each engine task uses. Primary is the active model; Downgrade activates if the primary circuit breaker trips; Fallback switches provider.'}</div>
       ${renderModelsTable(data, data.lang)}
     </div>
   </div>`
 
-  // Panel 3: Funciones avanzadas
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${isEs ? 'Funciones avanzadas' : 'Advanced features'}</span>
@@ -912,7 +853,6 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
   </div>`
 
-  // Panel 4: Limites
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${isEs ? 'Limites' : 'Limits'}</span>
@@ -931,15 +871,10 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
   </div>`
 
-  // Panel 5: Motor Agentico (v2)
-  const effortDefault = cv(data, 'AGENTIC_EFFORT_DEFAULT') || 'medium'
   const criticizerMode = cv(data, 'LLM_CRITICIZER_MODE') || 'complex_only'
-
-  const effortOpts = [
-    { v: 'low', l: isEs ? 'Bajo (rapido)' : 'Low (fast)' },
-    { v: 'medium', l: isEs ? 'Medio (balanceado)' : 'Medium (balanced)' },
-    { v: 'high', l: isEs ? 'Alto (potente)' : 'High (powerful)' },
-  ]
+  const maxTurns = cv(data, 'ENGINE_AGENTIC_MAX_TURNS') || '12'
+  const maxToolCalls = cv(data, 'PIPELINE_MAX_TOOL_CALLS_PER_TURN') || '5'
+  const sessionTtlMs = cv(data, 'PIPELINE_SESSION_TTL_MS') || '900000'
   const criticizerOpts = [
     { v: 'disabled', l: isEs ? 'Desactivado' : 'Disabled' },
     { v: 'complex_only', l: isEs ? 'Solo mensajes complejos (recomendado)' : 'Complex messages only (recommended)' },
@@ -953,49 +888,24 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
     <div class="panel-body">
       <div class="panel-info">${isEs
-        ? 'Configuracion del loop agentico v2: esfuerzo, protecciones, recuperacion, modelos y cola de ejecucion.'
-        : 'Agentic loop v2 configuration: effort, safeguards, recovery, models and execution queue.'}</div>
-
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Esfuerzo' : 'Effort'}</span></div>
+        ? 'Configuracion del loop agentico actual: limites operativos, routing por esfuerzo, verificacion de calidad y modelos por esfuerzo.'
+        : 'Current agentic loop configuration: operational limits, effort routing, quality checks and effort-based models.'}</div>
       <div class="fields-row">
-        <div class="field">
-          <span class="field-label">${isEs ? 'Nivel de esfuerzo por defecto' : 'Default effort level'}</span>
-          <span class="field-info">${isEs ? 'Usado cuando el enrutamiento por esfuerzo esta desactivado o no puede clasificar el mensaje.' : 'Used when effort routing is disabled or cannot classify the message.'}</span>
-          <select name="AGENTIC_EFFORT_DEFAULT" data-original="${esc(effortDefault)}" class="js-custom-select">
-            ${effortOpts.map(o => `<option value="${esc(o.v)}"${o.v === effortDefault ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
-          </select>
-        </div>
+        ${numField('ENGINE_AGENTIC_MAX_TURNS', maxTurns, data.lang,
+          isEs ? 'Max turnos agenticos' : 'Max agentic turns',
+          isEs ? 'Limite maximo del loop agentico antes de forzar cierre o recuperacion.' : 'Maximum agentic loop limit before forcing close or recovery.')}
+        ${numField('PIPELINE_MAX_TOOL_CALLS_PER_TURN', maxToolCalls, data.lang,
+          isEs ? 'Max herramientas por turno' : 'Max tools per turn',
+          isEs ? 'Limite operativo de herramientas que el agente puede invocar en un mismo turno.' : 'Operational limit for how many tools the agent can invoke in a single turn.')}
+      </div>
+      <div class="fields-row">
+        ${numField('PIPELINE_SESSION_TTL_MS', sessionTtlMs, data.lang,
+          isEs ? 'TTL de sesion (ms)' : 'Session TTL (ms)',
+          isEs ? 'Tiempo maximo que se mantiene el lock/sesion activa antes de expirar.' : 'Maximum time the active lock/session is kept before it expires.')}
       </div>
       ${boolField('ENGINE_EFFORT_ROUTING', cv(data, 'ENGINE_EFFORT_ROUTING') || 'true', data.lang,
         isEs ? 'Enrutamiento por esfuerzo' : 'Effort routing',
         isEs ? 'Clasifica mensajes por complejidad para usar el modelo mas apropiado y optimizar costos.' : 'Classifies messages by complexity to use the most appropriate model and optimize costs.')}
-
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Protecciones del Loop' : 'Loop Safeguards'}</span></div>
-      ${boolField('ENGINE_TOOL_DEDUP', cv(data, 'ENGINE_TOOL_DEDUP') || 'true', data.lang,
-        isEs ? 'Cache de herramientas (dedup)' : 'Tool call deduplication',
-        isEs ? 'Evita llamadas duplicadas a la misma herramienta con los mismos parametros en un pipeline.' : 'Prevents duplicate calls to the same tool with the same parameters within a pipeline.')}
-      ${boolField('ENGINE_LOOP_DETECTION', cv(data, 'ENGINE_LOOP_DETECTION') || 'true', data.lang,
-        isEs ? 'Deteccion de loops' : 'Loop detection',
-        isEs ? 'Detecta y previene loops infinitos de herramientas con respuesta graduada: advertencia → bloqueo → corte.' : 'Detects and prevents infinite tool loops with graduated response: warn → block → circuit break.')}
-      <div class="fields-row">
-        ${numField('AGENTIC_LOOP_WARN_THRESHOLD', cv(data, 'AGENTIC_LOOP_WARN_THRESHOLD') || '3', data.lang,
-          isEs ? 'Umbral advertencia' : 'Warn threshold',
-          isEs ? 'Llamadas identicas antes de advertir al LLM.' : 'Identical calls before warning the LLM.')}
-        ${numField('AGENTIC_LOOP_BLOCK_THRESHOLD', cv(data, 'AGENTIC_LOOP_BLOCK_THRESHOLD') || '5', data.lang,
-          isEs ? 'Umbral bloqueo' : 'Block threshold',
-          isEs ? 'Llamadas identicas antes de bloquear la herramienta.' : 'Identical calls before blocking the tool.')}
-        ${numField('AGENTIC_LOOP_CIRCUIT_THRESHOLD', cv(data, 'AGENTIC_LOOP_CIRCUIT_THRESHOLD') || '8', data.lang,
-          isEs ? 'Umbral corte (circuit)' : 'Circuit break threshold',
-          isEs ? 'Llamadas identicas antes de forzar respuesta de texto sin herramientas.' : 'Identical calls before forcing text response without tools.')}
-      </div>
-      ${boolField('ENGINE_ERROR_AS_CONTEXT', cv(data, 'ENGINE_ERROR_AS_CONTEXT') || 'true', data.lang,
-        isEs ? 'Errores como contexto' : 'Errors as context',
-        isEs ? 'Envia errores de herramientas al LLM para que decida que hacer en vez de fallar silenciosamente.' : 'Feeds tool errors to the LLM so it can decide how to proceed instead of failing silently.')}
-
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Recuperacion' : 'Recovery'}</span></div>
-      ${boolField('ENGINE_PARTIAL_RECOVERY', cv(data, 'ENGINE_PARTIAL_RECOVERY') || 'true', data.lang,
-        isEs ? 'Recuperacion parcial' : 'Partial recovery',
-        isEs ? 'Si el loop alcanza el timeout o limite de turnos pero ya genero texto, envia ese texto parcial.' : 'If the loop times out or hits the turn limit but already generated text, send that partial text.')}
       <div class="field">
         <span class="field-label">${isEs ? 'Verificador de calidad' : 'Quality checker'}</span>
         <span class="field-info">${isEs ? 'Controla cuando el verificador revisa la respuesta antes de enviarla.' : 'Controls when the quality checker reviews the response before sending.'}</span>
@@ -1032,23 +942,9 @@ export function renderAdvancedAgentSection(data: SectionData): string {
         isEs ? 'Modelo alto esfuerzo' : 'High effort model',
         isEs ? 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.' : 'Model for complex messages: multiple tools, objections, deep reasoning.',
       )}
-
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Cola de Ejecucion' : 'Execution Queue'}</span></div>
-      <div class="fields-row">
-        ${numField('EXECUTION_QUEUE_REACTIVE_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_REACTIVE_CONCURRENCY') || '8', data.lang,
-          isEs ? 'Concurrencia reactiva' : 'Reactive concurrency',
-          isEs ? 'Mensajes entrantes procesados en paralelo (maxima prioridad).' : 'Incoming messages processed in parallel (highest priority).')}
-        ${numField('EXECUTION_QUEUE_PROACTIVE_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_PROACTIVE_CONCURRENCY') || '3', data.lang,
-          isEs ? 'Concurrencia proactiva' : 'Proactive concurrency',
-          isEs ? 'Follow-ups y recordatorios procesados en paralelo.' : 'Follow-ups and reminders processed in parallel.')}
-        ${numField('EXECUTION_QUEUE_BACKGROUND_CONCURRENCY', cv(data, 'EXECUTION_QUEUE_BACKGROUND_CONCURRENCY') || '2', data.lang,
-          isEs ? 'Concurrencia background' : 'Background concurrency',
-          isEs ? 'Tareas de fondo (nightly, cache) procesadas en paralelo.' : 'Background tasks (nightly, cache) processed in parallel.')}
-      </div>
     </div>
   </div>`
 
-  // Panel 6: Proactive Settings (config lives in instance/proactive.json)
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${isEs ? 'Configuracion Proactiva' : 'Proactive Settings'}</span>
@@ -1065,10 +961,10 @@ export function renderAdvancedAgentSection(data: SectionData): string {
       <div class="field" style="margin-top:8px">
         <span class="field-label">${isEs ? 'Claves principales' : 'Main keys'}</span>
         <ul style="font-size:12px;color:var(--on-surface-dim);margin:4px 0;padding-left:18px;line-height:1.8">
-          <li><code>cooldown.afterSentMinutes</code> — ${isEs ? 'minutos de espera despues de enviar un mensaje proactivo' : 'minutes to wait after sending a proactive message'}</li>
-          <li><code>cooldown.afterNoActionMinutes</code> — ${isEs ? 'cooldown si el contacto no respondio' : 'cooldown if contact did not respond'}</li>
-          <li><code>orphan.enabled</code> — ${isEs ? 'detecta mensajes sin respuesta y los reprocesa' : 'detects unanswered messages and reprocesses them'}</li>
-          <li><code>conversationGuard.enabled</code> — ${isEs ? 'suprime mensajes si el contacto se despidio' : 'suppresses messages if contact said goodbye'}</li>
+          <li><code>cooldown.afterSentMinutes</code> - ${isEs ? 'minutos de espera despues de enviar un mensaje proactivo' : 'minutes to wait after sending a proactive message'}</li>
+          <li><code>cooldown.afterNoActionMinutes</code> - ${isEs ? 'cooldown si el contacto no respondio' : 'cooldown if contact did not respond'}</li>
+          <li><code>orphan.enabled</code> - ${isEs ? 'detecta mensajes sin respuesta y los reprocesa' : 'detects unanswered messages and reprocesses them'}</li>
+          <li><code>conversationGuard.enabled</code> - ${isEs ? 'suprime mensajes si el contacto se despidio' : 'suppresses messages if contact said goodbye'}</li>
         </ul>
       </div>
     </div>
@@ -1741,7 +1637,7 @@ function renderIdentitySection(data: SectionData): string {
   const agentTimezone = cfg['AGENT_TIMEZONE'] || ''
   const companyName = cfg['COMPANY_NAME'] || ''
 
-  // Persona header preview (auto-prepended to identity prompt in Phase 4)
+  // Persona header preview (auto-prepended to identity prompt in legacy response)
   const personaHeaderParts: string[] = []
   const personaFullName = [agentName, agentLastName].filter(Boolean).join(' ')
   if (personaFullName) personaHeaderParts.push(`Tu nombre es ${personaFullName}.`)
@@ -2906,7 +2802,6 @@ export function renderSection(section: string, data: SectionData): string | null
     // Unified LLM page (replaces apikeys, models, llm-limits, llm-cb)
     case 'llm': return renderLlmUnifiedSection(data)
     // Unified Pipeline page (replaces pipeline, followup, naturalidad)
-    case 'pipeline': return renderPipelineUnifiedSection(data)
     case 'engine-metrics': return renderEngineMetricsSection(data)
     case 'lead-scoring': return renderLeadScoringSection(data)
     case 'scheduled-tasks': return renderScheduledTasksSection(data)

@@ -29,9 +29,6 @@ interface EngineModuleConfig {
   ENGINE_CHECKPOINT_CLEANUP_DAYS: number
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
-  AGENTIC_LOOP_WARN_THRESHOLD: number
-  AGENTIC_LOOP_BLOCK_THRESHOLD: number
-  AGENTIC_LOOP_CIRCUIT_THRESHOLD: number
   LLM_CRITICIZER_MODE: string
   LLM_LOW_EFFORT_MODEL: string
   LLM_LOW_EFFORT_PROVIDER: string
@@ -111,29 +108,20 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
 
     // Pipeline
     maxToolCallsPerTurn: envInt('PIPELINE_MAX_TOOL_CALLS_PER_TURN', 5),
-    maxConversationTurns: envInt('PIPELINE_MAX_CONVERSATION_TURNS', 50),
     sessionTtlMs: envInt('PIPELINE_SESSION_TTL_MS', 1800000),
 
     // User type cache
     userTypeCacheTtlSeconds: envInt('USER_TYPE_CACHE_TTL_SECONDS', 43200), // 12h
 
     // Proactive
-    followupEnabled: envBool('FOLLOWUP_ENABLED', true),
-    followupDelayMinutes: envInt('FOLLOWUP_DELAY_MINUTES', 30),
-    followupMaxAttempts: envInt('FOLLOWUP_MAX_ATTEMPTS', 3),
-    followupColdAfterAttempts: envInt('FOLLOWUP_COLD_AFTER_ATTEMPTS', 3),
     batchEnabled: envBool('BATCH_ENABLED', true),
     batchCron: env('BATCH_CRON', '0 2 * * *'),
     batchTimezone: env('BATCH_TIMEZONE', 'America/Mexico_City'),
 
     // Subagent v2 — hard limits (not configurable from console, safety only)
     // User-configurable token budget lives in subagent_types table
-    subagentMaxIterations: SUBAGENT_HARD_LIMITS.HARD_MAX_ITERATIONS,
     subagentTimeoutMs: SUBAGENT_HARD_LIMITS.HARD_TIMEOUT_MS,
     subagentMaxTokenBudget: SUBAGENT_HARD_LIMITS.HARD_MAX_TOKEN_BUDGET,
-
-    // Replanning
-    maxReplanAttempts: Math.min(envInt('PIPELINE_MAX_REPLAN_ATTEMPTS', 2), 5),
 
     // API keys
     anthropicApiKey: env('ANTHROPIC_API_KEY', ''),
@@ -192,11 +180,5 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
     mediumEffortProvider:    moduleConfig.LLM_MEDIUM_EFFORT_PROVIDER as LLMProvider,
     highEffortModel:         moduleConfig.LLM_HIGH_EFFORT_MODEL,
     highEffortProvider:      moduleConfig.LLM_HIGH_EFFORT_PROVIDER as LLMProvider,
-
-
-    // Loop detection thresholds (graduated: warn → block → circuit break)
-    loopWarnThreshold:    moduleConfig.AGENTIC_LOOP_WARN_THRESHOLD,
-    loopBlockThreshold:   moduleConfig.AGENTIC_LOOP_BLOCK_THRESHOLD,
-    loopCircuitThreshold: moduleConfig.AGENTIC_LOOP_CIRCUIT_THRESHOLD,
   }
 }

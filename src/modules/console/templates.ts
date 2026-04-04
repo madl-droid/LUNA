@@ -469,6 +469,7 @@ function renderSidebar(opts: PageOptions): string {
           memory: svgIcon('<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/>'),
           identity: svgIcon('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'),
           voice: svgIcon('<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'),
+          'engine-metrics': ICONS.metrics,
           advanced: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 14h3"/><path d="M1 9h3"/><path d="M1 14h3"/>'),
           subagents: svgIcon('<circle cx="12" cy="8" r="3"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 11v3"/><path d="M8 16l4-2 4 2"/>'),
         }
@@ -477,6 +478,7 @@ function renderSidebar(opts: PageOptions): string {
           { id: 'memory', key: 'sec_agente_memory' },
           { id: 'identity', key: 'sec_agente_identity' },
           { id: 'subagents', key: 'sec_agente_subagents' },
+          { id: 'engine-metrics', key: 'sec_agente_engine_metrics' },
           { id: 'advanced', key: 'sec_agente_advanced' },
         ]
         nav += '<div class="sidebar-submenu">'
@@ -504,7 +506,7 @@ function renderSidebar(opts: PageOptions): string {
           'freshdesk': svgIcon('<path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/>'),
         }
         // Modules that belong to the "Agente" page, not herramientas
-        const AGENTE_PAGE_MODULES = new Set(['prompts', 'engine', 'tools', 'memory', 'knowledge', 'tts'])
+        const AGENTE_PAGE_MODULES = new Set(['prompts', 'engine', 'tools', 'memory', 'knowledge', 'tts', 'subagents'])
         // Build active module lookup from dynModules
         const activeModules = new Set(dynModules.filter(m => m.active).map(m => m.name))
         // Fixed herramientas tabs — only show if module is active
