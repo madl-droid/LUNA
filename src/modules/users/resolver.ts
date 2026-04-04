@@ -129,7 +129,27 @@ export async function resolveUserType(senderId: string, channel: string, fallbac
     }
   }
 
-  // 3. Cache the result (skip if cache disabled)
+  // 3. Admin override: if admin has "test as" override active, swap userType
+  if (resolution.userType === 'admin') {
+    try {
+      const overrideResult = await _registry!.getDb().query(
+        `SELECT value FROM config_store WHERE key = 'ADMIN_OVERRIDE_TYPE'`,
+      )
+      const overrideType = overrideResult.rows[0]?.value
+      if (overrideType && overrideType !== 'admin' && overrideType !== '') {
+        logger.info({ senderId, channel, originalType: 'admin', overrideType }, 'Admin override active — resolving as different type')
+        resolution = {
+          ...resolution,
+          userType: overrideType,
+          listName: overrideType === 'lead' ? 'Leads' : overrideType,
+        }
+      }
+    } catch (err) {
+      logger.debug({ err }, 'Failed to check admin override — proceeding as admin')
+    }
+  }
+
+  // 4. Cache the result (skip if cache disabled)
   if (cacheEnabled) {
     await _cache.set(senderId, channel, {
       userType: resolution.userType,
@@ -138,7 +158,7 @@ export async function resolveUserType(senderId: string, channel: string, fallbac
     })
   }
 
-  // 4. Fire hook
+  // 5. Fire hook
   try {
     await _registry.runHook('user:resolved', {
       senderId,
