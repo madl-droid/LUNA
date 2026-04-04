@@ -808,7 +808,8 @@ export function createApiRoutes(): ApiRoute[] {
             jsonResponse(res, 400, { error: 'Google AI API key not configured' })
             return
           }
-          const ttsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+          const ttsModel = config['TTS_MODEL'] || 'gemini-2.5-flash-preview-tts'
+          const ttsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${ttsModel}:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

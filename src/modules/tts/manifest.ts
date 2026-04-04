@@ -28,6 +28,7 @@ const manifest: ModuleManifest = {
 
   configSchema: z.object({
     TTS_ENABLED: boolEnv(true),
+    TTS_MODEL: z.string().default('gemini-2.5-flash-preview-tts'),
     TTS_VOICE_NAME: z.string().default('Kore'),
     TTS_MAX_CHARS: numEnv(4000),
     TTS_ENABLED_CHANNELS: z.string().default('whatsapp'),
@@ -88,6 +89,7 @@ const manifest: ModuleManifest = {
   async init(registry: Registry) {
     const config = registry.getConfig<{
       TTS_ENABLED: boolean
+      TTS_MODEL: string
       TTS_VOICE_NAME: string
       TTS_MAX_CHARS: number
       TTS_ENABLED_CHANNELS: string

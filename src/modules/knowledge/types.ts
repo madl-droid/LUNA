@@ -290,6 +290,8 @@ export interface KnowledgeConfig {
   KNOWLEDGE_MAX_API_CONNECTORS: number
   KNOWLEDGE_MAX_CATEGORIES: number
   KNOWLEDGE_MAX_CORE_DOCS: number
+  KNOWLEDGE_EMBEDDING_MODEL: string
+  KNOWLEDGE_EMBEDDING_DIMENSIONS: number
 }
 
 // ═══════════════════════════════════════════

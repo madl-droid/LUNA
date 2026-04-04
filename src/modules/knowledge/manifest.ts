@@ -1130,6 +1130,8 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_MAX_API_CONNECTORS: numEnvMin(1, 10),
     KNOWLEDGE_MAX_CATEGORIES: numEnvMin(1, 25),
     KNOWLEDGE_MAX_CORE_DOCS: numEnvMin(1, 3),
+    KNOWLEDGE_EMBEDDING_MODEL: z.string().default('gemini-embedding-2-preview'),
+    KNOWLEDGE_EMBEDDING_DIMENSIONS: numEnvMin(256, 1536),
   }),
 
   console: {
@@ -1223,7 +1225,12 @@ const manifest: ModuleManifest = {
     // Initialize embedding service (if enabled and API key provided)
     let embeddingService: EmbeddingService | null = null
     if (config.KNOWLEDGE_EMBEDDING_ENABLED && config.KNOWLEDGE_GOOGLE_AI_API_KEY) {
-      embeddingService = new EmbeddingService(config.KNOWLEDGE_GOOGLE_AI_API_KEY, logger)
+      embeddingService = new EmbeddingService(
+        config.KNOWLEDGE_GOOGLE_AI_API_KEY,
+        logger,
+        config.KNOWLEDGE_EMBEDDING_MODEL,
+        config.KNOWLEDGE_EMBEDDING_DIMENSIONS,
+      )
       logger.info('Embedding service initialized')
     } else {
       logger.info('Embeddings disabled — search will use FTS only')
