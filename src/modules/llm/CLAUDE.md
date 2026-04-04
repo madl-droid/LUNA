@@ -36,13 +36,9 @@ Un plan es "complejo" cuando tiene **3+ steps que requieren LLM** (subagent, web
 Steps determinísticos (api_call, workflow, memory_lookup, process_attachment) no cuentan.
 Threshold: `COMPLEX_PLAN_THRESHOLD = 3` en `phase3-execute.ts`.
 
-## API Key Mode: Basic vs Advanced
+## API Key Groups (unified — no basic/advanced toggle)
 
-### Basic (default)
-Una sola API key de Anthropic + una de Google AI. Se usa para todas las llamadas.
-
-### Advanced
-Keys separadas por grupo de uso. Si un grupo no tiene key, usa la principal del provider.
+Una key principal por provider + keys opcionales por grupo de uso. Si un grupo no tiene key, usa la principal.
 
 **Gemini groups:**
 - `engine` → compose, web_search (env: `LLM_GOOGLE_ENGINE_API_KEY`)
@@ -56,6 +52,7 @@ Keys separadas por grupo de uso. Si un grupo no tiene key, usa la principal del 
 - `memory` → compress, batch nocturno (env: `LLM_ANTHROPIC_MEMORY_API_KEY`)
 
 Mapeo task→grupo en `TASK_TO_KEY_GROUP` (types.ts). Resolución en `TaskRouter.resolveGroupApiKey()`.
+Group keys siempre se intentan primero si están configuradas — sin toggle de modo.
 
 ## Fallback chain de 3 niveles
 ```
@@ -95,6 +92,18 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - **Citations**: Anthropic document blocks (configurable, `LLM_CITATIONS_ENABLED`).
 - **Batch**: Anthropic Message Batches API (50% off). Gateway expone `submitBatch/getBatchStatus/getBatchResults`.
 
+## Service-level Circuit Breaker
+- TTS, embeddings, voice tienen CB independiente del provider CB
+- Usa EscalatingCBManager con keys `service:{name}` (ej: `service:tts`)
+- `isServiceAvailable(service)` permite al sistema saber si un servicio está up
+- Status expuesto en GET `/console/api/llm/circuit-breakers` → campo `services`
+
+## Task Routing — sin hardcoded
+- Todos los modelos por tarea vienen de configSchema con `.default()` — NO hay `DEFAULT_ROUTES` hardcoded
+- Cada tarea tiene: `LLM_{TASK}_PROVIDER/MODEL` (primario), `_DOWNGRADE_` (mismo provider), `_FALLBACK_` (cross-API)
+- Temperaturas por tarea definidas en `TASK_TEMPERATURES` (internal, no configurable por UI)
+- 12 tareas configurables: classify, respond, complex, tools, proactive, criticize, document_read, batch, vision, web_search, compress, ack
+
 ## Trampas
 - **API keys**: NUNCA se logean ni se incluyen en prompts.
 - **Thinking + temperature**: incompatibles en Anthropic — adapter elimina temperature automáticamente.
@@ -102,4 +111,4 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - **Budget = 0**: sin límite. Se chequea antes de cada llamada.
 - **Escalating CB es por target**: un modelo puede estar down sin afectar a otros del mismo provider.
 - **Phase 2 decide thinking/coding**: `ExecutionStep.useThinking` y `useCoding` son hints del evaluador.
-- **Advanced mode key resolution**: usa el task name original (antes de alias) para buscar grupo. Ej: `'trace-evaluate'` → grupo cortex, aunque se resuelve a ruta `'complex'`.
+- **Group key resolution**: usa el task name original (antes de alias) para buscar grupo. Ej: `'trace-evaluate'` → grupo cortex, aunque se resuelve a ruta `'complex'`.
