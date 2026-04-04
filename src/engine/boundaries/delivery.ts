@@ -17,7 +17,7 @@ import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { StoredMessage } from '../../modules/memory/types.js'
 import { checkAndCompressBuffer } from '../buffer-compressor.js'
 import { calculateTypingDelay } from '../../channels/typing-delay.js'
-import { markFarewell, setContactLock } from '../proactive/guards.js'
+import { setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
 import { loadProactiveConfig } from '../proactive/proactive-config.js'
 import { pickErrorFallback, pickTTSFailureFallback } from '../fallbacks/error-defaults.js'
@@ -29,13 +29,6 @@ const logger = pino({ name: 'engine:delivery' })
 let cachedProactiveConfig: ReturnType<typeof loadProactiveConfig> | null = null
 let proactiveConfigLoadedAt = 0
 const PROACTIVE_CONFIG_TTL_MS = 5 * 60 * 1000
-
-interface LegacyEvaluation {
-  intent?: string
-  emotion?: string
-  objectionType?: string
-  objectionStep?: number
-}
 
 function getProactiveConfig() {
   const now = Date.now()
@@ -52,14 +45,10 @@ const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
 /**
  * Execute delivery: validate, send pre-formatted output, and persist it.
  *
- * @param evaluation - Legacy evaluation metadata, or null in agentic mode.
- *   When null, intent/emotion metadata is omitted from persistence and guard signals
- *   use safe fallback behaviour (farewell not detected, objection not recorded).
  */
 export async function delivery(
   ctx: ContextBundle,
   composed: CompositorOutput,
-  evaluation: LegacyEvaluation | null,
   registry: Registry,
   db: Pool,
   redis: Redis,
@@ -101,15 +90,11 @@ export async function delivery(
   let deliveryResult: DeliveryResult
 
   // Resolve tone once for fallback messages
-  const channelSvcP5 = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
-  const styleP5 = channelSvcP5?.get()?.avisoStyle ?? ''
-  const toneP5 = styleP5 === 'dynamic' ? 'casual' : styleP5
+  const tone = resolveFallbackTone(ctx, registry)
 
   if (!validation.passed && composed.outputFormat === 'audio') {
     logger.warn({ traceId: ctx.traceId, issues: validation.issues }, 'Leakage detected in audio response, falling back to sanitized text')
-    const fallbackMsg = pickTTSFailureFallback(toneP5)
-    await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
-    deliveryResult = await sendMessages(ctx, formattedParts, registry)
+    deliveryResult = await sendFallbackAndText(ctx, formattedParts, registry, tone)
   } else if (composed.outputFormat === 'audio' && composed.audioChunks && composed.audioChunks.length > 0) {
     // Multi-chunk audio: send each voice note with delay between them
     deliveryResult = await sendAudioChunks(ctx, composed.audioChunks, registry)
@@ -117,9 +102,7 @@ export async function delivery(
     // If audio send failed, send natural fallback + text
     if (!deliveryResult.sent) {
       logger.warn({ traceId: ctx.traceId }, 'Audio chunk send failed, falling through to text with TTS fallback')
-      const fallbackMsg = pickTTSFailureFallback(toneP5)
-      await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
-      deliveryResult = await sendMessages(ctx, formattedParts, registry)
+      deliveryResult = await sendFallbackAndText(ctx, formattedParts, registry, tone)
     }
   } else if (composed.outputFormat === 'audio' && composed.audioBuffer) {
     // Backward compat: single audio buffer
@@ -130,16 +113,12 @@ export async function delivery(
 
     if (!deliveryResult.sent) {
       logger.warn({ traceId: ctx.traceId }, 'Audio send failed, falling through to text with TTS fallback')
-      const fallbackMsg = pickTTSFailureFallback(toneP5)
-      await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
-      deliveryResult = await sendMessages(ctx, formattedParts, registry)
+      deliveryResult = await sendFallbackAndText(ctx, formattedParts, registry, tone)
     }
   } else if (composed.ttsFailed && ctx.responseFormat === 'audio') {
     // TTS synthesis failed but user explicitly asked for audio — send natural fallback + text
     logger.info({ traceId: ctx.traceId }, 'TTS failed on explicit audio request, sending fallback + text')
-    const fallbackMsg = pickTTSFailureFallback(toneP5)
-    await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
-    deliveryResult = await sendMessages(ctx, formattedParts, registry)
+    deliveryResult = await sendFallbackAndText(ctx, formattedParts, registry, tone)
   } else {
     deliveryResult = await sendMessages(ctx, formattedParts, registry)
   }
@@ -171,7 +150,7 @@ export async function delivery(
   // 5. Post-send operations (parallel — all are independent)
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
   await Promise.all([
-    persistMessages(ctx, responseText, evaluation ?? null, db, memoryManager),
+    persistMessages(ctx, responseText, db, memoryManager),
     updateLeadQualification(ctx, registry, db, memoryManager),
     updateSession(ctx, db),
   ])
@@ -184,21 +163,7 @@ export async function delivery(
     )
   }
 
-  // 5b. Record objection data in contact memory (fire-and-forget, legacy only)
-  if (evaluation?.objectionType && ctx.contactId && memoryManager) {
-    const stepLabel = evaluation.objectionStep ? ` (paso ${evaluation.objectionStep})` : ''
-    memoryManager.applyFactCorrection(
-      ctx.contactId,
-      {
-        oldFact: `Objeción activa: ${evaluation.objectionType}`,
-        newFact: `Objeción activa: ${evaluation.objectionType}${stepLabel} — ${new Date().toISOString().split('T')[0]!}`,
-        source: 'objection-tracker',
-        confidence: 0.9,
-      },
-    ).catch(err => logger.warn({ err, traceId: ctx.traceId }, 'Failed to record objection data'))
-  }
-
-  // 5c. Record campaign match (fire-and-forget)
+  // 5b. Record campaign match (fire-and-forget)
   if (ctx.campaign && ctx.contactId) {
     type CQ = { recordMatch(contactId: string, campaignId: string, sessionId: string | null, channel: string | null, score: number | null): Promise<void> }
     const cq = registry.getOptional<CQ>('marketing-data:campaign-queries')
@@ -215,12 +180,6 @@ export async function delivery(
 
   // 6. Proactive guard signals
   if (deliveryResult.sent && ctx.contactId) {
-    // In agentic mode, evaluation is null — farewell detection is skipped
-    // (agentic mode does not classify intent in a separate phase)
-    if (evaluation?.intent === 'farewell') {
-      markFarewell(ctx.contactId, redis).catch(() => {})
-    }
-
     const isProactive = 'isProactive' in ctx && (ctx as Record<string, unknown>).isProactive
     if (!isProactive) {
       setContactLock(ctx.contactId, redis, config.sessionTtlMs).catch(() => {})
@@ -398,6 +357,12 @@ function resolveSendTo(ctx: ContextBundle): string {
   return ctx.message.from
 }
 
+function resolveFallbackTone(ctx: ContextBundle, registry: Registry): string {
+  const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${ctx.message.channelName}`)
+  const style = channelSvc?.get()?.avisoStyle ?? ''
+  return style === 'dynamic' ? 'casual' : style
+}
+
 // ─── Sending ──────────────────────────────
 
 async function sendAudioMessage(
@@ -504,6 +469,17 @@ async function sendAudioChunks(
   return { sent: true, channelMessageId: undefined }
 }
 
+async function sendFallbackAndText(
+  ctx: ContextBundle,
+  parts: string[],
+  registry: Registry,
+  tone: string,
+): Promise<DeliveryResult> {
+  const fallbackMsg = pickTTSFailureFallback(tone)
+  await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
+  return sendMessages(ctx, parts, registry)
+}
+
 async function sendMessages(
   ctx: ContextBundle,
   parts: string[],
@@ -586,7 +562,6 @@ async function sendMessages(
 async function persistMessages(
   ctx: ContextBundle,
   responseText: string,
-  evaluation: LegacyEvaluation | null,
   db: Pool,
   memoryManager: MemoryManager | null,
 ): Promise<void> {
@@ -603,8 +578,6 @@ async function persistMessages(
       role: 'user',
       contentText: ctx.normalizedText,
       contentType: (ctx.messageType as StoredMessage['contentType']) ?? 'text',
-      intent: evaluation?.intent,
-      emotion: evaluation?.emotion,
       createdAt: ctx.message.timestamp,
     }
 
@@ -618,7 +591,6 @@ async function persistMessages(
       role: 'assistant',
       contentText: responseText,
       contentType: 'text',
-      intent: evaluation?.intent,
       createdAt: now,
     }
 
@@ -654,7 +626,7 @@ async function persistMessages(
       [
         randomUUID(), ctx.session.id, ctx.message.channelName,
         'agent', 'assistant',
-        JSON.stringify({ type: 'text', text: responseText, intent: evaluation?.intent }),
+        JSON.stringify({ type: 'text', text: responseText }),
         now,
       ],
     )

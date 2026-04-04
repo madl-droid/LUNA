@@ -56,9 +56,6 @@ interface EngineModuleConfig {
   // Agentic engine (v2)
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
-  AGENTIC_LOOP_WARN_THRESHOLD: number
-  AGENTIC_LOOP_BLOCK_THRESHOLD: number
-  AGENTIC_LOOP_CIRCUIT_THRESHOLD: number
   LLM_CRITICIZER_MODE: string
   LLM_LOW_EFFORT_MODEL: string
   LLM_LOW_EFFORT_PROVIDER: string
@@ -120,9 +117,6 @@ const manifest: ModuleManifest = {
     // Agentic engine (v2)
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
-    AGENTIC_LOOP_WARN_THRESHOLD: numEnvMin(2, 3),
-    AGENTIC_LOOP_BLOCK_THRESHOLD: numEnvMin(3, 5),
-    AGENTIC_LOOP_CIRCUIT_THRESHOLD: numEnvMin(4, 8),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
     LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
     LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
@@ -472,44 +466,6 @@ const manifest: ModuleManifest = {
         },
       },
 
-      // ── Loop Detection ──
-      { key: '_div_loop', type: 'divider', label: { es: 'Protecciones del Loop', en: 'Loop Safeguards' } },
-      {
-        key: 'AGENTIC_LOOP_WARN_THRESHOLD',
-        type: 'number',
-        label: { es: 'Umbral de advertencia', en: 'Warning threshold' },
-        info: {
-          es: 'Llamadas identicas antes de advertir al LLM del posible loop.',
-          en: 'Identical calls before warning the LLM of a possible loop.',
-        },
-        min: 2,
-        max: 10,
-        width: 'third',
-      },
-      {
-        key: 'AGENTIC_LOOP_BLOCK_THRESHOLD',
-        type: 'number',
-        label: { es: 'Umbral de bloqueo', en: 'Block threshold' },
-        info: {
-          es: 'Llamadas identicas antes de bloquear la herramienta.',
-          en: 'Identical calls before blocking the tool.',
-        },
-        min: 3,
-        max: 15,
-        width: 'third',
-      },
-      {
-        key: 'AGENTIC_LOOP_CIRCUIT_THRESHOLD',
-        type: 'number',
-        label: { es: 'Umbral de corte (circuit)', en: 'Circuit break threshold' },
-        info: {
-          es: 'Llamadas identicas antes de forzar una respuesta de texto sin herramientas.',
-          en: 'Identical calls before forcing a text response without tools.',
-        },
-        min: 4,
-        max: 20,
-        width: 'third',
-      },
       {
         key: 'LLM_CRITICIZER_MODE',
         type: 'select',

@@ -236,13 +236,11 @@ export async function intake(
   // 16. Await attachment processing (ran in parallel with steps 6-15)
   // Inject processed attachments as labeled messages in history so evaluator sees content directly
   let attachmentContext: import('../attachments/types.js').AttachmentContext | null = null
-  const attachmentFallbackMessages: string[] = []
 
   try {
     const attResult = await attachmentProcessingPromise
     if (attResult) {
       attachmentContext = attResult
-      attachmentFallbackMessages.push(...attResult.fallbackMessages)
 
       // Inject each processed attachment as a "message" in history with [Category] label
       for (const att of attResult.attachments) {

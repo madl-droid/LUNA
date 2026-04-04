@@ -1,50 +1,65 @@
-# AUDITORIA DE SIMPLICIDAD — S01
+# AUDITORIA DE SIMPLICIDAD - S01
 
 ## Objetivo
-Reducir complejidad accidental, código muerto, duplicaciones, riesgos y costo operativo del sistema, sin romper la arquitectura modular ni las reglas del kernel.
+Convertir esta rama en una bitacora viva para simplificar el sistema modulo por modulo sin romper la arquitectura modular ni las reglas del kernel.
 
-## Norte de la auditoría
-- Código más ligero
-- Código más sólido y maduro
-- Menos bugs, huérfanos, redundancias, duplicados, excesos y huecos
-- Más unificación, seguridad y eficiencia
+## Norte de la auditoria
+- Codigo mas ligero.
+- Codigo mas solido y maduro.
+- Menos bugs, huerfanos, redundancias, duplicados, excesos y huecos.
+- Menos complejidad inutil.
+- Mas unificacion, seguridad y eficiencia.
 
 ## Reglas de trabajo
-- Avanzar módulo por módulo
-- Registrar primero hallazgos, luego decisiones, luego cambios aplicados
-- Preferir simplificación real sobre refactors cosméticos
-- No romper contratos entre módulos sin dejar nota de migración
-- Validar cada simplificación con evidencia: código, tests, métricas o riesgo removido
+- Auditar un modulo a la vez.
+- Registrar primero hallazgos, luego decisiones, luego cambios aplicados.
+- Priorizar simplificacion real sobre refactors cosmeticos.
+- No romper contratos entre modulos sin dejar nota de migracion.
+- Validar cada corte con evidencia: codigo, tests, diff, riesgo removido o mejora de comportamiento.
 
-## Orden sugerido
-1. `src/kernel`
-2. `src/engine`
-3. `src/modules/llm`
-4. `src/modules/tools`
-5. `src/modules/memory`
-6. `src/modules/knowledge`
-7. `src/modules/engine`
-8. `src/modules/console`
-9. `src/modules/whatsapp`
-10. `src/modules/gmail`
-11. `src/modules/google-chat`
-12. `src/modules/google-apps`
-13. `src/modules/lead-scoring`
-14. `src/modules/users`
-15. `src/modules/model-scanner`
-16. `src/modules/scheduled-tasks`
-17. `src/modules/twilio-voice`
+## Estados por modulo
+- `pendiente`: aun no revisado.
+- `en-analisis`: estamos leyendo y acotando problemas.
+- `en-cambios`: ya estamos aplicando simplificaciones.
+- `validado`: cambios cerrados y verificados.
+- `postergado`: detectamos trabajo util, pero no entra en esta ronda.
 
-## Checklist por módulo
-### Módulo
-- Estado: `pendiente | en análisis | en cambios | validado`
-- Dueño de la decisión:
+## Tablero de auditoria
+| Modulo | Estado | Prioridad | Nota |
+| --- | --- | --- | --- |
+| `src/kernel` | pendiente | alta | Nucleo transversal del sistema modular. |
+| `src/engine` | validado | alta | Primera ronda ya ejecutada; quedan boundaries grandes para otra pasada. |
+| `src/modules/llm` | pendiente | alta | Gateway critico para costos, fallback y resiliencia. |
+| `src/modules/tools` | pendiente | alta | Superficie amplia de ejecucion y posibles duplicaciones. |
+| `src/modules/memory` | pendiente | alta | Impacta contexto, rendimiento y consistencia. |
+| `src/modules/knowledge` | pendiente | alta | Riesgo de retrieval pesado y acoplamiento. |
+| `src/modules/engine` | pendiente | media | Wrapper del engine para kernel/config. |
+| `src/modules/console` | en-analisis | media | Auditoria activa sobre UI desconectada, hardcodes y enlaces legacy. |
+| `src/modules/whatsapp` | pendiente | media | Canal grande, sensible a errores operativos. |
+| `src/modules/gmail` | pendiente | media | Revisar duplicacion con Google Apps y solidez de envio. |
+| `src/modules/google-chat` | pendiente | media | Canal adicional para revisar consistencia. |
+| `src/modules/google-apps` | pendiente | media | Posible superficie grande de helpers y cache. |
+| `src/modules/lead-scoring` | pendiente | media | Buscar reglas duplicadas y scoring disperso. |
+| `src/modules/users` | pendiente | media | Punto central de permisos y listas. |
+| `src/modules/model-scanner` | pendiente | baja | Revisar si hay complejidad util o accidental. |
+| `src/modules/scheduled-tasks` | pendiente | media | Riesgo de cron jobs huerfanos y trabajos redundantes. |
+| `src/modules/twilio-voice` | pendiente | media | Flujo sensible por costo y complejidad de tiempo real. |
+
+## Plantilla por modulo
+Copiar este bloque cuando arranquemos una nueva auditoria:
+
+```md
+## Auditoria - `ruta/modulo`
+
+### Modulo
+- Estado:
 - Fecha:
+- Objetivo de esta pasada:
 
 ### Hallazgos
 - Complejidad innecesaria:
-- Código muerto u huérfano:
-- Duplicación o redundancia:
+- Codigo muerto u huerfano:
+- Duplicacion o redundancia:
 - Riesgos de bugs:
 - Riesgos de seguridad:
 - Ineficiencias:
@@ -58,169 +73,140 @@ Reducir complejidad accidental, código muerto, duplicaciones, riesgos y costo o
 - Postergar:
 
 ### Cambios aplicados
-- Ninguno todavía.
+- Ninguno todavia.
 
-### Verificación
+### Verificacion
 - Tests ejecutados:
 - Resultado:
 - Riesgos residuales:
-
----
+```
 
 ## Registro global
 
 ### Convenciones acordadas
-- Pendiente.
+- Un solo documento vivo para registrar hallazgos, decisiones y cambios por modulo.
+- Cada corte debe apuntar a bajar complejidad util, no solo mover codigo.
+- Antes de tocar comportamiento, dejar claro cual es la fuente de verdad de config, contratos y ownership.
 
 ### Patrones a eliminar en todo el repo
-- Pendiente.
+- Config duplicada entre manifest, runtime y utilidades locales.
+- Contratos legacy que ya no representan el flujo real.
+- Flags o opciones de consola sin efecto real en runtime.
+- Plumbing repetido entre rutas similares.
+- Helpers locales que ya existen en kernel.
 
 ### Utilidades a centralizar
-- Pendiente.
+- Pendiente de auditoria transversal.
 
 ### Deuda transversal detectada
-- Pendiente.
+- Hay documentos previos de auditoria con sesgo a sesiones puntuales; esta bitacora pasa a ser la referencia principal.
+- Hay archivos con problemas de encoding en reportes viejos; conviene normalizarlos si vuelven a tocarse.
+- Falta una linea base comun de metricas simples por modulo: tamano, tests, dependencias criticas, hotspots y contratos.
 
 ---
 
-## Auditoría — `src/engine`
+## Auditoria - `src/engine`
 
-### Módulo
+### Modulo
 - Estado: `validado`
-- Dueño de la decisión: Codex + usuario + Claude Code
-- Fecha: 2026-04-03
-
-### Contexto observado
-- `src/engine` tiene 79 archivos y ~530 KB de código.
-- El flujo real ya no es un pipeline clásico de 5 fases: hoy la ruta reactiva efectiva es `phase1 -> agentic loop -> postProcess -> phase5`.
-- Aun así, el módulo conserva tipos, config, comentarios y estructuras del pipeline legado de fases 2/3/4.
-- Faltan archivos de contexto prometidos por el repo: no existe `src/engine/AGENTS.md` y tampoco existe `src/modules/engine/AGENTS.md`.
+- Fecha: 2026-04-03 / 2026-04-04
+- Objetivo de esta pasada: cerrar la primera ronda de simplificacion util del engine y dejar una base limpia para seguir con `intake` y `delivery`.
 
 ### Hallazgos
-- `P1` Validación inefectiva en salida.
-  En `src/engine/phases/phase5-validate.ts`, la validación sanea `responseText`, pero el envío real usa `composed.formattedParts`, `composed.audioBuffer` y `composed.audioChunks`. Eso significa que una respuesta con leakage de tool calls o secretos puede ser “validada” pero igual salir al usuario sin saneamiento. Referencias: `phase5-validate.ts:67-73`, `phase5-validate.ts:95-127`, `phase5-validate.ts:153-156`.
-- `P1` Doble fuente de verdad para config del engine.
-  El módulo `src/modules/engine/manifest.ts` expone `configSchema` y console fields, pero `src/engine/config.ts` vuelve a cargar el estado mediante `getEnv()` y no desde `registry.getConfig('engine')`. Esto rompe la idea de config distribuida, duplica defaults y vuelve opaco qué valor manda realmente. Referencias: `src/engine/config.ts:4-45`, `src/engine/engine.ts:43-61`, `src/engine/engine.ts:547-564`, `src/modules/engine/manifest.ts`.
-- `P1` Flags/configs prometidas pero sin efecto real.
-  `toolDedupEnabled`, `loopDetectionEnabled`, `errorAsContextEnabled`, `partialRecoveryEnabled`, `executionQueueReactiveConcurrency`, `executionQueueProactiveConcurrency` y `executionQueueBackgroundConcurrency` existen en config/tipos/UI, pero en esta auditoría no apareció uso real de varias de esas flags dentro del loop principal. El engine instancia dedup y loop detection siempre, y las concurrencies de execution queue no aparecen conectadas en el núcleo auditado. Referencias: `src/engine/config.ts:149-172`, `src/engine/agentic/agentic-loop.ts`, búsqueda global en `src/engine/**/*.ts`.
-- `P1` Duplicación fuerte entre pipeline reactivo y proactivo.
-  `src/engine/engine.ts` y `src/engine/proactive/proactive-pipeline.ts` repiten la misma secuencia: selección de esfuerzo/modelo, carga de tool catalog, skill filtering, prompt building, armado de `AgenticConfig`, `runAgenticLoop`, `postProcess`, `phase5Validate`, pipeline log. Esto sube el costo de cambio y aumenta el riesgo de divergencia. Referencias: `engine.ts:389-525`, `proactive-pipeline.ts:127-321`.
-- `P2` `types.ts` mezcla contratos vivos con legado amplio.
-  `src/engine/types.ts` sigue exportando `EvaluatorOutput`, `ExecutionOutput`, `ExecutionStep`, `ReplanContext`, modelos legacy y varios campos de `PipelineResult` que ya no participan en el flujo reactivo principal. Eso hace más difícil entender qué parte del engine sigue viva y cuál es solo compatibilidad histórica. Referencias: `src/engine/types.ts`.
-- `P2` `phase1-intake.ts` concentra demasiadas responsabilidades.
-  Resuelve usuario, contacto, sesión, campañas, knowledge, Freshdesk, sheets cache, memoria, attachments, audio preference, auto-link externo y armado final del contexto. Es el mayor punto de acoplamiento del engine y complica pruebas, observabilidad y simplificación. Referencia principal: `src/engine/phases/phase1-intake.ts`.
-- `P2` El engine mezcla orchestration con bootstrap operativo.
-  `initEngine()` no solo inicializa el pipeline; también registra hooks, carga proactive config, registra tools proactivos, inicializa checkpoints, programa cleanup con `setInterval` y arranca el proactive runner. Es demasiado para un solo orquestador. Referencias: `src/engine/engine.ts:43-128`.
-- `P2` Checkpoints conservan semántica vieja.
-  El comentario y la estrategia de reanudación siguen hablando de steps completados y Phase 3, pero la reanudación actual solo vuelve a procesar el mensaje completo por el pipeline agentic. Eso genera ruido conceptual y puede inducir mantenimiento equivocado. Referencias: `src/engine/engine.ts:598-672`.
-- `P2` `phase5-validate.ts` mezcla demasiados concerns.
-  Validación/sanitización, rate limiting, envío de texto/audio, retries, persistencia, cambio de estado del lead, campaign logging, proactive guards y buffer compression viven juntos. Esto dificulta aislar bugs de delivery vs persistencia vs side effects. Referencia principal: `src/engine/phases/phase5-validate.ts`.
-- `P3` Superficie documental desalineada.
-  `docs/architecture/pipeline.md` todavía describe 5 pasos clásicos con classify/execute/respond, pero la implementación central ya es agentic. Esto aumenta fricción para onboarding y auditoría externa.
+- La salida validada no era exactamente la salida enviada; habia riesgo real de leakage en delivery.
+- Reactivo y proactivo repetian gran parte del mismo pipeline agentic.
+- La config del engine estaba partida entre runtime legacy y el manifest del modulo.
+- Persistian tipos, tests y nomenclatura legacy que ya no describian el flujo actual.
+- `intake` y `delivery` siguen siendo los dos focos principales de acoplamiento y peso.
 
-### Decisiones propuestas
-- Mantener:
-  `phase1` como frontera de construcción de contexto y `phase5` como frontera de entrega/persistencia.
-- Simplificar:
-  Crear un solo runner compartido para agentic reactive/proactive.
-- Unificar:
-  Una única fuente de config del engine basada en `registry.getConfig('engine')` y servicios derivados.
-- Eliminar:
-  Tipos, comentarios y campos legacy que ya no representan el flujo real.
-- Postergar:
-  Reescritura profunda de attachments hasta cerrar primero la simplificación del núcleo reactivo/proactivo.
-
-### Propuestas concretas
-- Propuesta A. Crear `runAgenticDeliveryPipeline()` reutilizable.
-  Debe encapsular: selección de esfuerzo/modelo, obtención de tools/skills/subagents, build del prompt, `runAgenticLoop`, `postProcess`, `phase5Validate` y `savePipelineLog`. Reactivo y proactivo solo aportarían contexto, guards y bookkeeping específico.
-- Propuesta B. Separar `EngineRuntimeConfig` de `EngineLegacyConfig`.
-  `src/engine/config.ts` debería dejar de leer env directo para parámetros del módulo. La config viva debe salir del registry o de un provider del módulo `engine`. Luego se puede borrar la duplicación de defaults entre `manifest.ts` y `config.ts`.
-- Propuesta C. Corregir el contrato de validación de salida.
-  `phase5Validate()` debe trabajar con una estructura mutable segura:
-  `validated = sanitizeComposedOutput(composed)` y enviar siempre el resultado saneado. Si hay audio, el texto base que alimenta TTS también debe pasar por el mismo saneamiento.
-- Propuesta D. Partir `phase1-intake` en loaders pequeños.
-  Sugerencia inicial:
-  `resolve-user.ts`, `resolve-contact.ts`, `resolve-session.ts`, `load-knowledge.ts`, `load-memory-context.ts`, `load-attachments.ts`, `build-context-bundle.ts`.
-  El objetivo no es “microarchivos por estética”, sino extraer unidades testeables y reemplazables.
-- Propuesta E. Partir `phase5-validate` por responsabilidades.
-  Separar al menos:
-  `validate-output.ts`, `send-delivery.ts`, `persist-conversation.ts`, `post-send-effects.ts`, `rate-limit.ts`.
-- Propuesta F. Reducir tipos legacy del engine.
-  Mover contratos históricos a `types-legacy.ts` o eliminarlos si no tienen consumidores reales. `PipelineResult` también debería reflejar el flujo actual sin rellenar `phase2/3/4` con ceros salvo donde sea estrictamente necesario por compatibilidad.
-- Propuesta G. Convertir bootstrap operativo en subcomponentes.
-  `initEngine()` debería coordinar inicializadores pequeños:
-  `initRuntime`, `initHooks`, `initCheckpoints`, `initProactive`, `initAttachmentTools`.
-- Propuesta H. Completar documentación local del módulo.
-  Crear `src/engine/AGENTS.md` y `src/modules/engine/AGENTS.md` con el estado real del engine agentic, no con el pipeline histórico.
-
-### Orden sugerido de ejecución
-1. Corregir el bug de saneamiento real en `phase5`.
-2. Consolidar el runner agentic compartido entre reactivo y proactivo.
-3. Unificar la fuente de config del engine.
-4. Extraer loaders de `phase1`.
-5. Extraer capas de `phase5`.
-6. Limpiar tipos/config/documentación legacy.
-
-### Verificación
-- Tests ejecutados:
-  `npm test`
-- Resultado:
-  Suite parcialmente exitosa.
-  12 archivos de test pasaron, 1 suite falló.
-  157 tests pasaron.
-  La falla actual está en `tests/engine/checkpoint-phase3.test.ts` porque importa `src/engine/phases/phase3-execute.js`, archivo que ya no existe.
-  Esto confirma una deuda concreta de legado: el suite todavía referencia el pipeline viejo de Phase 3 mientras el engine productivo ya opera sobre flujo agentic.
-- Riesgos residuales:
-  Falta verificar si algunas flags “huérfanas” sí están conectadas desde archivos no auditados aún, especialmente runners y utilidades periféricas.
-
-### Resultado de tests
-- Comando: `npm test`
-- Estado general: `FAILED`
-- Resumen:
-  `Test Files  1 failed | 12 passed (13)`
-  `Tests  157 passed (157)`
-- Falla detectada:
-  `tests/engine/checkpoint-phase3.test.ts`
-  Motivo: `Cannot find module '../../src/engine/phases/phase3-execute.js'`
-- Lectura de auditoría:
-  No parece un bug nuevo del runtime actual, sino una prueba huérfana de una arquitectura previa que ya no coincide con el engine vigente.
-
-### Preguntas abiertas para decidir contigo
-- ¿Quieres que el objetivo del engine sea un flujo agentic único y oficial, dejando el modelo “5 fases” solo como compatibilidad mínima, o prefieres preservar esa narrativa y mantener wrappers legacy?
-- En mensajes proactivos, ¿quieres que compartan exactamente el mismo runner del flujo reactivo con solo un `mode: proactive`, o te interesa mantener una variante separada por claridad operativa aunque tenga algo más de código?
-- Cuando saneemos salida antes de enviar, ¿prefieres política estricta “si hay leakage bloqueamos y regeneramos” o política pragmática “sanear y continuar”?
+### Decisiones
+- Mantener el engine como flujo predominantemente agentic.
+- Unificar reactivo y proactivo sobre un runner compartido.
+- Mover la config propia del modulo hacia `registry.getConfig('engine')`.
+- Podar contratos, flags y pruebas huerfanas cuando no tengan consumidores reales.
+- Dejar la particion profunda de `intake` y `delivery` para la siguiente pasada.
 
 ### Cambios aplicados
-- Se agregó esta auditoría al documento vivo.
+- Se saneo la salida real que viaja al usuario y se reforzo la defensa en profundidad del post-processing.
+- Se extrajo un runner agentic compartido para delivery reactivo y proactivo.
+- Se avanzo la unificacion de config del engine con el registry del modulo.
+- Se limpiaron tipos legacy, flags huerfanas y una prueba obsoleta del pipeline anterior.
+- Se renombro la frontera conceptual de `phases` a `boundaries`.
 
-### Actualización de ejecución
-- Se extrajo la sanitización compartida a `src/engine/output-sanitizer.ts`.
-- `post-processor.ts` ahora sanea texto antes de format/TTS como defensa en profundidad.
-- `phase5-validate.ts` ya sanea las `formattedParts` que realmente se envían, registra `output_leakage` y bloquea audio con leakage para caer a texto limpio.
-- Se creó `src/engine/agentic/run-agentic-delivery.ts` para compartir el runner agentic entre reactivo y proactivo.
-- `src/engine/config.ts` migró a `registry.getConfig('engine')` los campos propios del módulo engine que estaban duplicados con env vars.
-- Se limpiaron tipos y campos legacy en `src/engine/types.ts`, `src/engine/index.ts` y `src/modules/engine/manifest.ts`.
-- Se eliminó la prueba huérfana `tests/engine/checkpoint-phase3.test.ts`.
-- Se actualizó la documentación base en `src/engine/CLAUDE.md` y `docs/architecture/pipeline.md`.
+### Verificacion
+- Tests ejecutados: `npx tsc --noEmit`, `npm test`
+- Resultado: TypeScript limpio y `157` tests pasando en `12` archivos.
+- Riesgos residuales: `src/engine/boundaries/intake.ts` y `src/engine/boundaries/delivery.ts` siguen siendo el mejor siguiente corte para bajar complejidad real.
 
-### Verificación final de esta ronda
-- Tests ejecutados:
-  `npx tsc --noEmit`
-  `npm test`
-- Resultado:
-  Compilación TypeScript limpia.
-  `Test Files  12 passed (12)`
-  `Tests  157 passed (157)`
+---
+
+## Auditoria - `src/modules/console`
+
+### Modulo
+- Estado: `en-analisis`
+- Fecha: 2026-04-04
+- Objetivo de esta pasada: identificar controles de UI que no gobiernan nada real, hardcodes que pisan la configuracion, duplicaciones de parametros y acoplamientos a semantica legacy del engine.
+
+### Hallazgos
+- `P1` Toggles agentic muertos en la UI.
+  `ENGINE_TOOL_DEDUP`, `ENGINE_LOOP_DETECTION`, `ENGINE_ERROR_AS_CONTEXT` y `ENGINE_PARTIAL_RECOVERY` se renderizan en [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L974) pero no tienen consumidores reales fuera de `console`; no aparecen en `src/engine` ni en manifests activos. Hoy el usuario puede guardarlos, pero el runtime no cambia.
+- `P1` Parametros legacy del panel `pipeline` sin efecto real.
+  `PIPELINE_MAX_CONVERSATION_TURNS`, `PIPELINE_SESSION_TTL_MS` y todo el bloque `FOLLOWUP_*` aparecen en [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L296), pero en el repo solo llegan a [src/engine/config.ts](C:/Users/miged/Git/LUNA/src/engine/config.ts) y no se usan en el flujo actual. Son controles vivos en UI para comportamiento muerto o no conectado.
+- `P1` Canales reales bloqueados por hardcode de "Proximamente".
+  [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L1318) fuerza `google-chat` y `twilio-voice` a `COMING_SOON_CHANNELS`, deshabilitando toggle y acceso a settings aunque ambos modulos existen como canales funcionales con `connectionWizard` y APIs propias en [google-chat/manifest.ts](C:/Users/miged/Git/LUNA/src/modules/google-chat/manifest.ts) y [twilio-voice/manifest.ts](C:/Users/miged/Git/LUNA/src/modules/twilio-voice/manifest.ts).
+- `P1` Gmail puede quedar oculto aunque el modulo funcione.
+  [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L1247) solo muestra la card de Gmail si `google-apps` esta activo. Pero [gmail/manifest.ts](C:/Users/miged/Git/LUNA/src/modules/gmail/manifest.ts) soporta OAuth standalone y no depende del modulo `google-apps`. La UI puede esconder un canal operativo por una suposicion hardcodeada.
+- `P1` Duplicacion silenciosa de `LLM_CRITICIZER_MODE` en la misma pagina.
+  `renderAdvancedAgentSection()` pinta dos controles con el mismo `name`: uno en la tabla de modelos [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L785) y otro en el panel agentic [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L999). Luego [server.ts](C:/Users/miged/Git/LUNA/src/modules/console/server.ts#L307) colapsa `URLSearchParams` a un objeto y se queda con el ultimo valor del mismo key. Uno de los dos controles siempre queda ignorado.
+- `P2` Panel de subagentes con estado visual contradictorio.
+  En [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L4091), `allSaAccess = isAdmin || allowedSa.length === 0` marca todos los checkboxes de subagentes como seleccionados aunque `perms.subagents` este apagado. Resultado: el toggle principal puede decir "no permitido" mientras la grilla visual sugiere acceso total.
+- `P2` Deuda documental y semantica legacy visible en `console`.
+  No existe [src/modules/console/AGENTS.md](C:/Users/miged/Git/LUNA/src/modules/console/AGENTS.md) aunque el repo lo declara obligatorio. Ademas, el panel avanzado sigue hablando de `Response (Phase 4)` en [templates-sections.ts](C:/Users/miged/Git/LUNA/src/modules/console/templates-sections.ts#L723), lo que mantiene viva en la UI una narrativa vieja del engine.
+
+### Decisiones
+- Mantener por ahora la estructura SSR del modulo; el problema principal no es el render, sino el contrato entre UI y runtime.
+- Simplificar primero controles sin efecto y hardcodes que bloquean comportamiento real.
+- Unificar fuentes de verdad tomando manifests y servicios activos antes que listas hardcodeadas en templates.
+- Eliminar duplicaciones de fields con el mismo `name` dentro de una misma pagina.
+- Postergar cambios cosmeticos o de diseño hasta cerrar la coherencia funcional.
+
+### Cambios aplicados
+- Se saco de `console` la UI muerta del panel agentic: `AGENTIC_EFFORT_DEFAULT`, `ENGINE_TOOL_DEDUP`, `ENGINE_LOOP_DETECTION`, `ENGINE_ERROR_AS_CONTEXT`, `ENGINE_PARTIAL_RECOVERY`, `AGENTIC_LOOP_*` y `EXECUTION_QUEUE_*`.
+- `PIPELINE_MAX_TOOL_CALLS_PER_TURN` y `PIPELINE_SESSION_TTL_MS` quedaron visibles en `Agente > Avanzado`; el panel `pipeline` legacy se elimino.
+- Se resolvio la duplicacion de `LLM_CRITICIZER_MODE`; ahora solo existe un control real.
+- Se limpiaron labels legacy de la tabla de modelos y se agrego contexto para dejar claro que esos slots son de subsistemas especializados, no del loop principal.
+- `subagents` dejo de colarse en `Herramientas`.
+- `engine-metrics` quedo expuesto como subtab real bajo `Agente`.
+- Se elimino `SECTION_REDIRECTS` vacio y se reemplazo por redirects explicitos de compatibilidad.
+- Se removieron tres POST handlers muertos de `/console/users/*`: `add-contact`, `remove-contact` y `merge`.
+- Se limpiaron keys i18n huerfanas del modulo `console`.
+- En runtime se podaron campos muertos de `src/engine/config.ts`, `src/engine/types.ts` y `src/modules/engine/manifest.ts`, manteniendo vivos `PIPELINE_MAX_TOOL_CALLS_PER_TURN` y `PIPELINE_SESSION_TTL_MS`.
+
+### Verificacion
+- Tests ejecutados: `npx tsc --noEmit`
+- Resultado: compilacion limpia despues de la capa 1 (`console`) y de la capa 2 (`engine/runtime`).
+- Verificaciones funcionales estaticas:
+  - `subagents` ya no entra a los subtabs dinamicos de `Herramientas`.
+  - Solo queda un `name="LLM_CRITICIZER_MODE"` en `templates-sections.ts`.
+  - `PIPELINE_MAX_TOOL_CALLS_PER_TURN` sigue vivo y visible en `console`.
+  - `renderPipelineUnifiedSection()` y `case 'pipeline'` ya no existen.
+  - No quedaron referencias a `PIPELINE_MAX_CONVERSATION_TURNS`, `PIPELINE_MAX_REPLAN_ATTEMPTS`, `FOLLOWUP_*`, `AGENTIC_LOOP_*` ni `SUBAGENT_MAX_ITERATIONS` en `src/`.
 - Riesgos residuales:
-  La nomenclatura `phase1` y `phase5` sigue viva aunque el engine real ya es agentic.
-  `phase1-intake.ts` y `phase5-validate.ts` siguen demasiado grandes para la siguiente ronda de simplificación.
-  `src/engine/config.ts` todavía conserva parte de config global legacy por env vars; la unificación quedó avanzada, no completa.
+  - `parseFormBody()` sigue vivo y no se toco, pero conviene revisar su superficie cuando auditemos mas POST handlers del modulo.
+  - `src/modules/console/AGENTS.md` sigue faltando; queda como deuda documental visible.
 
-### Cierre final del engine
-- Se renombró `src/engine/phases/` a `src/engine/boundaries/`.
-- `phase1-intake.ts` pasó a `src/engine/boundaries/intake.ts` y su export ahora es `intake()`.
-- `phase5-validate.ts` pasó a `src/engine/boundaries/delivery.ts` y su export ahora es `delivery()`.
-- `PipelineResult` renombró sus timings a `intakeDurationMs` y `deliveryDurationMs`.
-- Los logs de pipeline en memoria también quedaron alineados con `intakeMs` y `deliveryMs`.
-- Se migraron a `registry.getConfig('engine')` los campos restantes del módulo: session reopen window, pipeline timeout y checkpoints.
-- El grep final sobre `src/engine/**/*.ts` ya no devuelve referencias activas a `phase1`, `phase5` o `phases/`.
+---
+
+## Proxima pasada sugerida
+1. `src/kernel`
+2. `src/modules/llm`
+3. `src/modules/tools`
+4. `src/modules/memory`
+
+## Criterio de exito de esta auditoria
+- Menos ramas condicionales sin valor.
+- Menos codigo duplicado entre modulos o flujos.
+- Menos superficie muerta o no conectada.
+- Menos carga eager innecesaria.
+- Contratos mas claros y fuentes de verdad unicas.
+- Suite de tests igual o mejor que la linea base.
