@@ -10,20 +10,18 @@ import type { Registry } from '../../kernel/registry.js'
 import type {
   ContextBundle,
   CompositorOutput,
-  EvaluatorOutput,
-  ValidationResult,
   DeliveryResult,
   EngineConfig,
 } from '../types.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { StoredMessage } from '../../modules/memory/types.js'
-import { detectOutputInjection, detectSensitiveData } from '../utils/injection-detector.js'
 import { checkAndCompressBuffer } from '../buffer-compressor.js'
 import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { markFarewell, setContactLock } from '../proactive/guards.js'
 import { detectCommitments } from '../proactive/commitment-detector.js'
 import { loadProactiveConfig } from '../proactive/proactive-config.js'
 import { pickErrorFallback, pickTTSFailureFallback } from '../fallbacks/error-defaults.js'
+import { sanitizeParts, validateOutput } from '../output-sanitizer.js'
 
 const logger = pino({ name: 'engine:phase5' })
 
@@ -31,6 +29,13 @@ const logger = pino({ name: 'engine:phase5' })
 let cachedProactiveConfig: ReturnType<typeof loadProactiveConfig> | null = null
 let proactiveConfigLoadedAt = 0
 const PROACTIVE_CONFIG_TTL_MS = 5 * 60 * 1000
+
+interface LegacyEvaluation {
+  intent?: string
+  emotion?: string
+  objectionType?: string
+  objectionStep?: number
+}
 
 function getProactiveConfig() {
   const now = Date.now()
@@ -54,7 +59,7 @@ const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
 export async function phase5Validate(
   ctx: ContextBundle,
   composed: CompositorOutput,
-  evaluation: EvaluatorOutput | null,
+  evaluation: LegacyEvaluation | null,
   registry: Registry,
   db: Pool,
   redis: Redis,
@@ -67,9 +72,17 @@ export async function phase5Validate(
   // 1. Validate output
   const validation = validateOutput(composed.responseText)
   let responseText = composed.responseText
+  let formattedParts = composed.formattedParts
   if (!validation.passed) {
     logger.warn({ traceId: ctx.traceId, issues: validation.issues }, 'Output validation issues')
     responseText = validation.sanitizedText
+    const sanitizedParts = sanitizeParts(composed.formattedParts)
+    formattedParts = sanitizedParts.parts
+    await logLeakageEvent(ctx, db, {
+      action: composed.outputFormat === 'audio' ? 'audio-blocked' : 'sanitized-text',
+      issues: [...new Set([...validation.issues, ...sanitizedParts.issues])],
+      outputFormat: composed.outputFormat,
+    }).catch(() => {})
   }
 
   // 2. Check rate limits
@@ -92,7 +105,12 @@ export async function phase5Validate(
   const styleP5 = channelSvcP5?.get()?.avisoStyle ?? ''
   const toneP5 = styleP5 === 'dynamic' ? 'casual' : styleP5
 
-  if (composed.outputFormat === 'audio' && composed.audioChunks && composed.audioChunks.length > 0) {
+  if (!validation.passed && composed.outputFormat === 'audio') {
+    logger.warn({ traceId: ctx.traceId, issues: validation.issues }, 'Leakage detected in audio response, falling back to sanitized text')
+    const fallbackMsg = pickTTSFailureFallback(toneP5)
+    await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
+    deliveryResult = await sendMessages(ctx, formattedParts, registry)
+  } else if (composed.outputFormat === 'audio' && composed.audioChunks && composed.audioChunks.length > 0) {
     // Multi-chunk audio: send each voice note with delay between them
     deliveryResult = await sendAudioChunks(ctx, composed.audioChunks, registry)
 
@@ -101,7 +119,7 @@ export async function phase5Validate(
       logger.warn({ traceId: ctx.traceId }, 'Audio chunk send failed, falling through to text with TTS fallback')
       const fallbackMsg = pickTTSFailureFallback(toneP5)
       await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
-      deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+      deliveryResult = await sendMessages(ctx, formattedParts, registry)
     }
   } else if (composed.outputFormat === 'audio' && composed.audioBuffer) {
     // Backward compat: single audio buffer
@@ -114,16 +132,16 @@ export async function phase5Validate(
       logger.warn({ traceId: ctx.traceId }, 'Audio send failed, falling through to text with TTS fallback')
       const fallbackMsg = pickTTSFailureFallback(toneP5)
       await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
-      deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+      deliveryResult = await sendMessages(ctx, formattedParts, registry)
     }
   } else if (composed.ttsFailed && ctx.responseFormat === 'audio') {
     // TTS synthesis failed but user explicitly asked for audio — send natural fallback + text
     logger.info({ traceId: ctx.traceId }, 'TTS failed on explicit audio request, sending fallback + text')
     const fallbackMsg = pickTTSFailureFallback(toneP5)
     await sendMessages(ctx, [fallbackMsg], registry).catch(() => {})
-    deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+    deliveryResult = await sendMessages(ctx, formattedParts, registry)
   } else {
-    deliveryResult = await sendMessages(ctx, composed.formattedParts, registry)
+    deliveryResult = await sendMessages(ctx, formattedParts, registry)
   }
 
   // 4b. If delivery failed after retries, send natural error fallback
@@ -221,7 +239,7 @@ export async function phase5Validate(
     durationMs,
     sent: deliveryResult.sent,
     format: composed.outputFormat,
-    parts: composed.formattedParts.length,
+    parts: formattedParts.length,
   }, 'Phase 5 complete')
 
   return deliveryResult
@@ -229,76 +247,34 @@ export async function phase5Validate(
 
 // ─── Validation ──────────────────────────────
 
-// Patterns that indicate the LLM leaked tool-call syntax into the response text
-const TOOL_CALL_PATTERNS: RegExp[] = [
-  // JSON-style: [TOOL_CALL: name] or [TOOL_CALL: name]\n{...}
-  /\[TOOL_CALL:\s*[^\]]+\](\s*\{[\s\S]*?\})?/g,
-  // XML-style Anthropic function calls
-  /<function_calls>[\s\S]*?<\/function_calls>/g,
-  // Markdown code block containing a tool invocation
-  /```(?:json|xml|tool)?\s*\n?\s*\{[\s\S]*?"tool"[\s\S]*?\}\s*```/g,
-  // tool_use JSON blocks
-  /\{"type"\s*:\s*"tool_use"[\s\S]*?\}/g,
-]
-
-function detectToolCallLeakage(text: string): string[] {
-  const issues: string[] = []
-  for (const pattern of TOOL_CALL_PATTERNS) {
-    if (pattern.test(text)) {
-      issues.push('tool_call_leakage: response contains tool invocation syntax')
-      break
-    }
-    // Reset lastIndex after test()
-    pattern.lastIndex = 0
+async function logLeakageEvent(
+  ctx: ContextBundle,
+  db: Pool,
+  details: {
+    action: 'sanitized-text' | 'audio-blocked'
+    issues: string[]
+    outputFormat: CompositorOutput['outputFormat']
+  },
+): Promise<void> {
+  try {
+    await db.query(
+      `INSERT INTO pipeline_logs (trace_id, contact_id, session_id, event_type, payload, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [
+        ctx.traceId,
+        ctx.contactId,
+        ctx.session.id,
+        'output_leakage',
+        JSON.stringify({
+          ...details,
+          channel: ctx.message.channelName,
+          responseFormat: ctx.responseFormat,
+        }),
+      ],
+    )
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Failed to log leakage event')
   }
-  return issues
-}
-
-function sanitizeToolCallLeakage(text: string): string {
-  let sanitized = text
-  for (const pattern of TOOL_CALL_PATTERNS) {
-    pattern.lastIndex = 0
-    sanitized = sanitized.replace(pattern, '')
-  }
-  // Clean up any leftover blank lines caused by removal
-  sanitized = sanitized.replace(/\n{3,}/g, '\n\n').trim()
-  return sanitized
-}
-
-function validateOutput(text: string): ValidationResult {
-  const issues: string[] = []
-
-  const injectionIssues = detectOutputInjection(text)
-  issues.push(...injectionIssues)
-
-  const sensitiveIssues = detectSensitiveData(text)
-  issues.push(...sensitiveIssues)
-
-  const toolCallIssues = detectToolCallLeakage(text)
-  issues.push(...toolCallIssues)
-
-  if (issues.length === 0) {
-    return { passed: true, issues: [], sanitizedText: text }
-  }
-
-  let sanitized = text
-  // Strip tool call syntax first (before other replacements)
-  if (toolCallIssues.length > 0) {
-    sanitized = sanitizeToolCallLeakage(sanitized)
-  }
-  // Anthropic API keys
-  sanitized = sanitized.replace(/sk-ant-[a-zA-Z0-9]{20,}/g, '[REDACTED]')
-  // Google API keys
-  sanitized = sanitized.replace(/AIza[a-zA-Z0-9_-]{35}/g, '[REDACTED]')
-  // Bearer tokens
-  sanitized = sanitized.replace(/Bearer\s+[a-zA-Z0-9._-]{20,}/g, 'Bearer [REDACTED]')
-  // Generic secrets (password=, secret=, token=)
-  sanitized = sanitized.replace(/(?:password|secret|token)\s*[:=]\s*\S{8,}/gi, (match) => {
-    const prefix = match.match(/^(?:password|secret|token)\s*[:=]\s*/i)?.[0] ?? ''
-    return `${prefix}[REDACTED]`
-  })
-
-  return { passed: false, issues, sanitizedText: sanitized }
 }
 
 // ─── Rate Limiting ──────────────────────────────
@@ -610,7 +586,7 @@ async function sendMessages(
 async function persistMessages(
   ctx: ContextBundle,
   responseText: string,
-  evaluation: EvaluatorOutput | null,
+  evaluation: LegacyEvaluation | null,
   db: Pool,
   memoryManager: MemoryManager | null,
 ): Promise<void> {

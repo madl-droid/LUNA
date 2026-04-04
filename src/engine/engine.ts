@@ -6,11 +6,10 @@ import pino from 'pino'
 import { logChannelMessage } from '../kernel/extreme-logger.js'
 import type { Registry } from '../kernel/registry.js'
 import type { IncomingMessage } from '../channels/types.js'
-import type { PipelineResult, EngineConfig, ContextBundle, LLMToolDef } from './types.js'
+import type { PipelineResult, EngineConfig, ContextBundle } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
 import { phase1Intake } from './phases/phase1-intake.js'
-import { phase5Validate } from './phases/phase5-validate.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
@@ -18,16 +17,7 @@ import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
 // --- Agentic imports (v2.0) ---
-import { classifyEffort, runAgenticLoop, postProcess } from './agentic/index.js'
-import {
-  buildRunSubagentToolDef,
-  filterAgenticTools,
-  getAgenticSubagentCatalog,
-} from './agentic/subagent-delegation.js'
-import { loadSkillCatalog, filterSkillsByTools } from './prompts/skills.js'
-import { buildSkillReadToolDef } from './agentic/skill-delegation.js'
-import { buildAgenticPrompt } from './prompts/agentic.js'
-import type { AgenticConfig, AgenticResult, EffortLevel } from './agentic/types.js'
+import { runAgenticDelivery } from './agentic/index.js'
 
 const logger = pino({ name: 'engine' })
 
@@ -44,7 +34,7 @@ export function initEngine(reg: Registry): void {
   registry = reg
 
   // Load config
-  engineConfig = loadEngineConfig()
+  engineConfig = loadEngineConfig(registry)
 
   // Initialize concurrency controls
   pipelineSemaphore = new PipelineSemaphore(engineConfig.maxConcurrentPipelines, engineConfig.maxQueueSize)
@@ -163,10 +153,9 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       traceId: 'backpressure',
       success: true,
       skipped: 'backpressure',
-      phase1DurationMs: 0, phase2DurationMs: 0, phase3DurationMs: 0,
-      phase4DurationMs: 0, phase5DurationMs: 0,
+      phase1DurationMs: 0,
+      phase5DurationMs: 0,
       totalDurationMs: Date.now() - totalStart,
-      replanAttempts: 0, subagentIterationsUsed: 0,
     }
   }
 
@@ -239,10 +228,9 @@ async function processMessageInner(
         traceId,
         success: true,
         skipped: 'test_mode',
-        phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
-        phase4DurationMs: 0, phase5DurationMs: 0,
+        phase1DurationMs,
+        phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
-        replanAttempts: 0, subagentIterationsUsed: 0,
       }
     }
 
@@ -278,10 +266,9 @@ async function processMessageInner(
         traceId,
         success: true,
         skipped: `unregistered:${behavior}`,
-        phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
-        phase4DurationMs: 0, phase5DurationMs: 0,
+        phase1DurationMs,
+        phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
-        replanAttempts: 0, subagentIterationsUsed: 0,
       }
     }
 
@@ -339,14 +326,9 @@ async function processMessageInner(
       traceId: traceId || 'unknown',
       success: false,
       phase1DurationMs: 0,
-      phase2DurationMs: 0,
-      phase3DurationMs: 0,
-      phase4DurationMs: 0,
       phase5DurationMs: 0,
       totalDurationMs,
       error: String(err),
-      replanAttempts: 0,
-      subagentIterationsUsed: 0,
     }
   }
 }
@@ -354,32 +336,6 @@ async function processMessageInner(
 // ═══════════════════════════════════════════════════════════
 // Agentic pipeline
 // ═══════════════════════════════════════════════════════════
-
-/** Minimal ToolRegistry interface to avoid importing the full class */
-interface ToolRegistryLike {
-  getCatalog(contactType?: string): import('./types.js').ToolCatalogEntry[]
-  getEnabledToolDefinitions(contactType?: string): import('./types.js').ToolDefinition[]
-}
-
-/** Select model/provider based on effort level */
-function getModelForEffort(
-  effort: EffortLevel,
-  config: EngineConfig,
-): { model: string; provider: import('./types.js').LLMProvider } {
-  switch (effort) {
-    case 'low':
-      return { model: config.lowEffortModel, provider: config.lowEffortProvider }
-    case 'high':
-      return { model: config.highEffortModel, provider: config.highEffortProvider }
-    default:
-      return { model: config.mediumEffortModel, provider: config.mediumEffortProvider }
-  }
-}
-
-/** Convert ToolDefinition[] → LLMToolDef[] (parameters → inputSchema rename) */
-function toLLMToolDefs(defs: import('./types.js').ToolDefinition[]): LLMToolDef[] {
-  return defs.map(d => ({ name: d.name, description: d.description, inputSchema: d.parameters }))
-}
 
 /**
  * Run the agentic pipeline for a reactive message.
@@ -397,94 +353,32 @@ async function runAgenticPipeline(
 ): Promise<PipelineResult> {
   const log = logger.child({ traceId: ctx.traceId, pipeline: 'agentic' })
 
-  // 1. Classify effort level (deterministic, <5ms)
-  const effortLevel: EffortLevel = config.effortRoutingEnabled
-    ? classifyEffort(ctx)
-    : 'medium'
-  log.info({ effortLevel }, 'effort classified')
-
-  // 2. Select model based on effort
-  const modelConfig = getModelForEffort(effortLevel, config)
-
-  // 3. Get tool catalog + definitions from registry
-  const toolRegistry = reg.getOptional<ToolRegistryLike>('tools:registry')
-  const subagentCatalog = getAgenticSubagentCatalog(ctx, reg)
-  const toolCatalog = filterAgenticTools(toolRegistry?.getCatalog(ctx.userType) ?? [], subagentCatalog)
-  const toolDefs = filterAgenticTools(toolRegistry?.getEnabledToolDefinitions(ctx.userType) ?? [], subagentCatalog)
-  const llmToolDefs: LLMToolDef[] = toLLMToolDefs(toolDefs)
-  const runSubagentTool = buildRunSubagentToolDef(subagentCatalog)
-  if (runSubagentTool) {
-    llmToolDefs.push(runSubagentTool)
-  }
-
-  // Add skill_read tool if skills are available
-  const skillCatalog = await loadSkillCatalog(reg, ctx.userType)
-  const activeToolNames = new Set(toolCatalog.map((t: { name: string }) => t.name))
-  const filteredSkills = filterSkillsByTools(skillCatalog, activeToolNames)
-  const skillReadTool = buildSkillReadToolDef(filteredSkills.map((s: { name: string }) => s.name))
-  if (skillReadTool) {
-    llmToolDefs.push(skillReadTool)
-  }
-
-  // 4. Build system prompt + user message (with full context layers)
-  const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, reg, {
-    isProactive: false,
-    subagentCatalog,
-  })
-  const systemPrompt = agenticPrompt.system
-
-  // 5. Build agentic config
-  const agenticConfig: AgenticConfig = {
-    maxToolTurns: config.agenticMaxTurns,
-    maxConcurrentTools: config.maxConcurrentSteps,
-    effort: effortLevel,
-    model: modelConfig.model,
-    provider: modelConfig.provider,
-    fallbackModel: config.fallbackRespondModel,
-    fallbackProvider: config.fallbackRespondProvider,
-    temperature: config.temperatureRespond,
-    maxOutputTokens: config.maxOutputTokens,
-    criticizerMode: config.criticizerMode,
-  }
-
-  // 6. Run the agentic loop (pass full user message with context layers)
-  const agenticResult: AgenticResult = await runAgenticLoop(
+  const runResult = await runAgenticDelivery({
     ctx,
-    systemPrompt,
-    llmToolDefs,
-    agenticConfig,
-    reg,
-    config,
-    agenticPrompt.userMessage,
-  )
-  log.info({
-    turns: agenticResult.turns,
-    toolCalls: agenticResult.toolCallsLog.length,
-    effortUsed: agenticResult.effortUsed,
-  }, 'agentic loop complete')
-
-  // 7. Post-process (criticizer, formatting, TTS)
-  const compositorOutput = await postProcess(agenticResult, ctx, config, reg)
-
-  // 8. Phase 5: validate, send, persist
-  const p5Start = Date.now()
-  const delivery = await phase5Validate(ctx, compositorOutput, null, reg, db, redis, config)
-  const phase5DurationMs = Date.now() - p5Start
-
-  const totalDurationMs = Date.now() - totalStart
+    mode: 'reactive',
+    registry: reg,
+    db,
+    redis,
+    engineConfig: config,
+    totalStart,
+    phase1DurationMs,
+  })
+  const { pipelineResult, agenticResult, deliveryResult, responseText } = runResult
+  const totalDurationMs = pipelineResult.totalDurationMs
+  const phase5DurationMs = pipelineResult.phase5DurationMs
 
   log.info({
     phase: 5,
     durationMs: phase5DurationMs,
-    sent: delivery.sent,
+    sent: deliveryResult?.sent,
     totalDurationMs,
   }, 'Agentic pipeline complete')
 
   // 8b. Auto-HITL: if response promises human escalation but request_human_help was never called
-  if (delivery.sent && ctx.contactId) {
+  if (deliveryResult?.sent && ctx.contactId) {
     const hitlAlreadyCalled = agenticResult.toolCallsLog.some(t => t.name === 'request_human_help' && t.success)
     if (!hitlAlreadyCalled) {
-      const text = compositorOutput.responseText.toLowerCase()
+      const text = (responseText ?? '').toLowerCase()
       const escalationPhrases = [
         'alguien del equipo',
         'un miembro del equipo',
@@ -512,7 +406,7 @@ async function runAgenticPipeline(
               request_type: 'escalation',
               summary: `El agente prometió contacto humano ("${matchedPhrase}") pero no creó ticket HITL. Respuesta enviada al cliente. Requiere seguimiento manual.`,
               urgency: 'high',
-              context: compositorOutput.responseText.slice(0, 500),
+              context: (responseText ?? '').slice(0, 500),
             }, {
               contactId: ctx.contactId,
               channelName: ctx.message.channelName,
@@ -528,49 +422,17 @@ async function runAgenticPipeline(
     }
   }
 
-  // 9. Pipeline log (fire-and-forget)
-  const memMgr = reg.getOptional<import('../modules/memory/memory-manager.js').MemoryManager>('memory:manager')
-  if (memMgr) {
-    memMgr.savePipelineLog({
-      messageId: ctx.message.id,
-      contactId: ctx.contactId ?? null,
-      sessionId: ctx.session.id,
-      phase1Ms: phase1DurationMs,
-      phase2Ms: 0,
-      phase3Ms: 0,
-      phase4Ms: 0,
-      phase5Ms: phase5DurationMs,
-      totalMs: totalDurationMs,
-      toolsCalled: agenticResult.toolsUsed,
-    }).catch(err => log.warn({ err }, 'Failed to save pipeline log'))
-  }
-
-  // 10. Extreme logging: outbound
+  // 9. Extreme logging: outbound
   logChannelMessage({
     channel: ctx.message.channelName,
     direction: 'outbound',
     contactId: ctx.message.from,
     messageType: 'text',
-    textPreview: compositorOutput.responseText,
-    metadata: { traceId: ctx.traceId, totalDurationMs, sent: delivery.sent },
+    textPreview: responseText ?? undefined,
+    metadata: { traceId: ctx.traceId, totalDurationMs, sent: deliveryResult?.sent },
   }).catch(() => {})
 
-  return {
-    traceId: ctx.traceId,
-    success: delivery.sent,
-    phase1DurationMs,
-    phase2DurationMs: 0,
-    phase3DurationMs: 0,
-    phase4DurationMs: 0,
-    phase5DurationMs,
-    totalDurationMs,
-    responseText: compositorOutput.responseText,
-    deliveryResult: delivery,
-    replanAttempts: 0,
-    subagentIterationsUsed: 0,
-    agenticResult,
-    effortLevel,
-  }
+  return pipelineResult
 }
 
 /**
@@ -594,7 +456,7 @@ export function getEngineConfig(): EngineConfig {
  */
 export function reloadEngineConfig(): void {
   const prev = engineConfig
-  engineConfig = loadEngineConfig()
+  engineConfig = loadEngineConfig(registry)
 
   // Re-init semaphore if concurrency limits changed
   if (prev.maxConcurrentPipelines !== engineConfig.maxConcurrentPipelines

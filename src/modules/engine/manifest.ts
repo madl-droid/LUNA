@@ -50,13 +50,9 @@ interface EngineModuleConfig {
   // Agentic engine (v2)
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
-  ENGINE_TOOL_DEDUP: boolean
-  ENGINE_LOOP_DETECTION: boolean
   AGENTIC_LOOP_WARN_THRESHOLD: number
   AGENTIC_LOOP_BLOCK_THRESHOLD: number
   AGENTIC_LOOP_CIRCUIT_THRESHOLD: number
-  ENGINE_ERROR_AS_CONTEXT: boolean
-  ENGINE_PARTIAL_RECOVERY: boolean
   LLM_CRITICIZER_MODE: string
   LLM_LOW_EFFORT_MODEL: string
   LLM_LOW_EFFORT_PROVIDER: string
@@ -64,10 +60,6 @@ interface EngineModuleConfig {
   LLM_MEDIUM_EFFORT_PROVIDER: string
   LLM_HIGH_EFFORT_MODEL: string
   LLM_HIGH_EFFORT_PROVIDER: string
-  // Execution queue lanes
-  EXECUTION_QUEUE_REACTIVE_CONCURRENCY: number
-  EXECUTION_QUEUE_PROACTIVE_CONCURRENCY: number
-  EXECUTION_QUEUE_BACKGROUND_CONCURRENCY: number
 }
 
 const manifest: ModuleManifest = {
@@ -116,13 +108,9 @@ const manifest: ModuleManifest = {
     // Agentic engine (v2)
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
-    ENGINE_TOOL_DEDUP: boolEnv(true),
-    ENGINE_LOOP_DETECTION: boolEnv(true),
     AGENTIC_LOOP_WARN_THRESHOLD: numEnvMin(2, 3),
     AGENTIC_LOOP_BLOCK_THRESHOLD: numEnvMin(3, 5),
     AGENTIC_LOOP_CIRCUIT_THRESHOLD: numEnvMin(4, 8),
-    ENGINE_ERROR_AS_CONTEXT: boolEnv(true),
-    ENGINE_PARTIAL_RECOVERY: boolEnv(true),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
     LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
     LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
@@ -130,10 +118,6 @@ const manifest: ModuleManifest = {
     LLM_MEDIUM_EFFORT_PROVIDER: z.string().default('anthropic'),
     LLM_HIGH_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
     LLM_HIGH_EFFORT_PROVIDER: z.string().default('anthropic'),
-    // Execution queue lanes
-    EXECUTION_QUEUE_REACTIVE_CONCURRENCY: numEnvMin(1, 8),
-    EXECUTION_QUEUE_PROACTIVE_CONCURRENCY: numEnvMin(1, 3),
-    EXECUTION_QUEUE_BACKGROUND_CONCURRENCY: numEnvMin(1, 2),
   }),
 
   console: {
@@ -421,24 +405,6 @@ const manifest: ModuleManifest = {
       // ── Loop Detection ──
       { key: '_div_loop', type: 'divider', label: { es: 'Protecciones del Loop', en: 'Loop Safeguards' } },
       {
-        key: 'ENGINE_TOOL_DEDUP',
-        type: 'boolean',
-        label: { es: 'Cache de herramientas (dedup)', en: 'Tool call deduplication' },
-        info: {
-          es: 'Evita llamadas duplicadas a la misma herramienta con los mismos parametros en un pipeline.',
-          en: 'Prevents duplicate calls to the same tool with the same parameters within a pipeline.',
-        },
-      },
-      {
-        key: 'ENGINE_LOOP_DETECTION',
-        type: 'boolean',
-        label: { es: 'Deteccion de loops', en: 'Loop detection' },
-        info: {
-          es: 'Detecta y previene loops infinitos de herramientas con respuesta graduada.',
-          en: 'Detects and prevents infinite tool loops with graduated response.',
-        },
-      },
-      {
         key: 'AGENTIC_LOOP_WARN_THRESHOLD',
         type: 'number',
         label: { es: 'Umbral de advertencia', en: 'Warning threshold' },
@@ -473,27 +439,6 @@ const manifest: ModuleManifest = {
         min: 4,
         max: 20,
         width: 'third',
-      },
-      {
-        key: 'ENGINE_ERROR_AS_CONTEXT',
-        type: 'boolean',
-        label: { es: 'Errores como contexto', en: 'Errors as context' },
-        info: {
-          es: 'Envia errores de herramientas al LLM para que decida que hacer en vez de fallar silenciosamente.',
-          en: 'Feeds tool errors to the LLM so it can decide how to proceed instead of failing silently.',
-        },
-      },
-
-      // ── Recovery ──
-      { key: '_div_recovery', type: 'divider', label: { es: 'Recuperacion', en: 'Recovery' } },
-      {
-        key: 'ENGINE_PARTIAL_RECOVERY',
-        type: 'boolean',
-        label: { es: 'Recuperacion parcial', en: 'Partial recovery' },
-        info: {
-          es: 'Si el loop alcanza el timeout o el limite de turnos pero ya genero texto, envia ese texto parcial.',
-          en: 'If the loop times out or hits the turn limit but already generated text, send that partial text.',
-        },
       },
       {
         key: 'LLM_CRITICIZER_MODE',
@@ -542,45 +487,6 @@ const manifest: ModuleManifest = {
           en: 'Model for complex messages: multiple tools, objections, deep reasoning.',
         },
         width: 'half',
-      },
-
-      // ── Execution Queue ──
-      { key: '_div_queue', type: 'divider', label: { es: 'Cola de Ejecucion', en: 'Execution Queue' } },
-      {
-        key: 'EXECUTION_QUEUE_REACTIVE_CONCURRENCY',
-        type: 'number',
-        label: { es: 'Concurrencia reactiva', en: 'Reactive concurrency' },
-        info: {
-          es: 'Mensajes entrantes procesados en paralelo (maxima prioridad).',
-          en: 'Incoming messages processed in parallel (highest priority).',
-        },
-        min: 1,
-        max: 20,
-        width: 'third',
-      },
-      {
-        key: 'EXECUTION_QUEUE_PROACTIVE_CONCURRENCY',
-        type: 'number',
-        label: { es: 'Concurrencia proactiva', en: 'Proactive concurrency' },
-        info: {
-          es: 'Follow-ups y recordatorios procesados en paralelo.',
-          en: 'Follow-ups and reminders processed in parallel.',
-        },
-        min: 1,
-        max: 10,
-        width: 'third',
-      },
-      {
-        key: 'EXECUTION_QUEUE_BACKGROUND_CONCURRENCY',
-        type: 'number',
-        label: { es: 'Concurrencia background', en: 'Background concurrency' },
-        info: {
-          es: 'Tareas de fondo (nightly, cache) procesadas en paralelo.',
-          en: 'Background tasks (nightly, cache) processed in parallel.',
-        },
-        min: 1,
-        max: 5,
-        width: 'third',
       },
     ],
     apiRoutes: [
