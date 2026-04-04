@@ -187,6 +187,12 @@ function resolveTaskDg(config: Record<string, string>, task: string, defProv: st
   return [config[`LLM_${k}_DOWNGRADE_PROVIDER`] || defProv, config[`LLM_${k}_DOWNGRADE_MODEL`] || defModel]
 }
 
+/** Resolve current fallback provider+model for a task */
+function resolveTaskFb(config: Record<string, string>, task: string, defProv: string, defModel: string): [string, string] {
+  const k = task.toUpperCase()
+  return [config[`LLM_${k}_FALLBACK_PROVIDER`] || defProv, config[`LLM_${k}_FALLBACK_MODEL`] || defModel]
+}
+
 /** Build a row in the model assignment table */
 function mtRow(
   task: string, label: string,
@@ -198,6 +204,7 @@ function mtRow(
   const taskKey = task.toUpperCase()
   const primaryVal = `${primaryProvider}:${primaryModel}`
   const dgVal = dgModel ? `${dgProvider}:${dgModel}` : ''
+  const fbVal = fbModel ? `${fbProvider}:${fbModel}` : ''
 
   // Primary: combined optgroup select (Anthropic + Google)
   const anthOpts = anthropicModels.map(m =>
@@ -216,9 +223,13 @@ function mtRow(
     }),
   ].join('')
 
-  // Fallback pill
-  const fbClass = fbProvider === 'google' ? 'mt-fb-google' : 'mt-fb-anthropic'
-  const fbLabel = fbProvider === 'google' ? 'G' : 'A'
+  // Fallback: combined optgroup select (opposite provider first)
+  const fbAnthOpts = anthropicModels.map(m =>
+    `<option value="anthropic:${esc(m)}" ${`anthropic:${m}` === fbVal ? 'selected' : ''}>${esc(mShort(m))}</option>`
+  ).join('')
+  const fbGooOpts = googleModels.map(m =>
+    `<option value="google:${esc(m)}" ${`google:${m}` === fbVal ? 'selected' : ''}>${esc(mShort(m))}</option>`
+  ).join('')
 
   return `<div class="mt-row" data-task="${task}">
     <span class="mt-task">${esc(label)}</span>
@@ -238,7 +249,13 @@ function mtRow(
       <input type="hidden" name="LLM_${taskKey}_DOWNGRADE_MODEL" value="${esc(dgModel)}" data-original="${esc(dgModel)}">
     </span>
     <span class="mt-fb">
-      <span class="mt-fb-pill ${fbClass}"><span class="mt-fb-badge">${fbLabel}</span>${esc(mShort(fbModel))}</span>
+      <select class="js-custom-select mt-fb-sel" data-task="${task}" data-original="${esc(fbVal)}">
+        <option value="">—</option>
+        <optgroup label="Anthropic">${fbAnthOpts}</optgroup>
+        <optgroup label="Google Gemini">${fbGooOpts}</optgroup>
+      </select>
+      <input type="hidden" name="LLM_${taskKey}_FALLBACK_PROVIDER" value="${esc(fbProvider)}" data-original="${esc(fbProvider)}">
+      <input type="hidden" name="LLM_${taskKey}_FALLBACK_MODEL" value="${esc(fbModel)}" data-original="${esc(fbModel)}">
     </span>
   </div>`
 }
@@ -261,26 +278,55 @@ function renderModelsTable(data: SectionData, lang: string): string {
       ).join('') + '</div>'
     : '<div id="scan-replacements"></div>'
 
-  // Task definitions: task id, label es, label en, default primary, default downgrade, cross-api fallback
-  const TASKS: Array<[string, string, string, string, string, string, string, string, string]> = [
-    // [task, labelEs, labelEn, defPrimProv, defPrimModel, defDgProv, defDgModel, fbProv, fbModel]
-    ['classify',    'Criticizer / Verificador',   'Criticizer / Verifier',    'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-    ['respond',     'Respuesta (fallback)',       'Response (fallback)',      'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
-    ['complex',     'Tarea compleja / subagente', 'Complex / subagent task', 'anthropic', 'claude-opus-4-5-20251101',   'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-2.5-pro'],
-    ['tools',       'Subagentes / Tools',         'Subagents / Tools',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-    ['proactive',   'Mensaje proactivo',          'Proactive message',       'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-    ['criticize',   'Criticizer (gate de calidad)','Criticizer (quality gate)','google',  'gemini-2.5-pro',             'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-5-20250929'],
-    ['document_read','Lectura de documentos',     'Document reading',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-    ['batch',       'Batch nocturno',             'Nightly batch',           'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-    ['vision',      'Multimedia / Visión',        'Multimedia / Vision',     'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
-    ['web_search',  'Búsqueda web',               'Web search',              'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-5-20250929'],
+  // Task definitions grouped by function
+  // [task, labelEs, labelEn, defPrimProv, defPrimModel, defDgProv, defDgModel, defFbProv, defFbModel]
+  type TaskDef = [string, string, string, string, string, string, string, string, string]
+
+  const GROUPS: Array<{ titleEs: string; titleEn: string; tasks: TaskDef[] }> = [
+    {
+      titleEs: 'Pipeline principal', titleEn: 'Main pipeline',
+      tasks: [
+        ['classify',     'Evaluador (Fase 2)',        'Evaluator (Phase 2)',      'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+        ['respond',      'Compositor (Fase 4)',       'Composer (Phase 4)',       'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
+        ['complex',      'Tarea compleja (3+ pasos)', 'Complex task (3+ steps)',  'anthropic', 'claude-opus-4-5-20251101',   'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-2.5-pro'],
+        ['tools',        'Subagentes / Tools',        'Subagents / Tools',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+        ['criticize',    'Criticizer (calidad)',      'Criticizer (quality)',     'google',    'gemini-2.5-pro',             'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-5-20250929'],
+      ],
+    },
+    {
+      titleEs: 'Multimedia', titleEn: 'Multimedia',
+      tasks: [
+        ['vision',       'Visión / Archivos',         'Vision / Files',           'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
+        ['web_search',   'Búsqueda web',              'Web search',               'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-5-20250929'],
+        ['document_read','Lectura de documentos',     'Document reading',         'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+      ],
+    },
+    {
+      titleEs: 'Comunicación automática', titleEn: 'Automatic communication',
+      tasks: [
+        ['proactive',    'Mensaje proactivo',         'Proactive message',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+        ['ack',          'ACK (confirmación rápida)', 'ACK (quick confirmation)', 'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash'],
+      ],
+    },
+    {
+      titleEs: 'Mantenimiento', titleEn: 'Maintenance',
+      tasks: [
+        ['compress',     'Compresión de sesiones',    'Session compression',      'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash'],
+        ['batch',        'Batch nocturno',            'Nightly batch',            'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+      ],
+    },
   ]
 
-  const rows = TASKS.map(([task, lEs, lEn, dPP, dPM, dDP, dDM, fbP, fbM]) => {
-    const [pP, pM] = resolveTaskPrimary(cfg, task, dPP, dPM)
-    const [dgP, dgM] = resolveTaskDg(cfg, task, dDP, dDM)
-    return mtRow(task, isEs ? lEs : lEn, pP, pM, dgP, dgM, fbP, fbM, anthropicModels, googleModels)
-  }).join('')
+  let rows = ''
+  for (const group of GROUPS) {
+    rows += `<div class="mt-group-header">${isEs ? group.titleEs : group.titleEn}</div>`
+    for (const [task, lEs, lEn, dPP, dPM, dDP, dDM, dFP, dFM] of group.tasks) {
+      const [pP, pM] = resolveTaskPrimary(cfg, task, dPP, dPM)
+      const [dgP, dgM] = resolveTaskDg(cfg, task, dDP, dDM)
+      const [fbP, fbM] = resolveTaskFb(cfg, task, dFP, dFM)
+      rows += mtRow(task, isEs ? lEs : lEn, pP, pM, dgP, dgM, fbP, fbM, anthropicModels, googleModels)
+    }
+  }
 
 
   return `
