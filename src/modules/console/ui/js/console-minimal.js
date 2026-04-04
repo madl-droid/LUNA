@@ -569,6 +569,20 @@
     })
   }
 
+  // === Business Hours day toggle ===
+  window.toggleBhDay = function (btn) {
+    btn.classList.toggle('bh-day-btn--active')
+    var input = document.getElementById('bh-days-input')
+    if (!input) return
+    var days = []
+    document.querySelectorAll('.bh-day-btn--active').forEach(function (el) {
+      days.push(el.getAttribute('data-day'))
+    })
+    days.sort()
+    input.value = days.join(',')
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
   // === Model table — refresh custom select widget ===
   function refreshCustomSelect(sel) {
     var wrapper = sel.parentNode
