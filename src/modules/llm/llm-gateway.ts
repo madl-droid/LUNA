@@ -117,7 +117,6 @@ export class LLMGateway {
 
     // Create router
     this.router = new TaskRouter(this.adapters, this.breakers, this.apiKeys)
-    this.router.setApiMode((config.LLM_API_MODE === 'advanced' ? 'advanced' : 'basic'))
     this.router.loadFromConfig(config)
 
     // FIX: LLM-1 — Cargar rate limits desde config
@@ -652,8 +651,7 @@ export class LLMGateway {
     this.loadApiKeys(config)
     this.initAdapters()
 
-    // Update router: API key mode + per-task routes
-    this.router.setApiMode(config.LLM_API_MODE === 'advanced' ? 'advanced' : 'basic')
+    // Update router: per-task routes
     this.router.loadFromConfig(config)
 
     // Update retry config
@@ -670,7 +668,7 @@ export class LLMGateway {
     this.tpmLimits.set('anthropic', config.LLM_TPM_ANTHROPIC)
     this.tpmLimits.set('google', config.LLM_TPM_GOOGLE)
 
-    logger.info({ mode: config.LLM_API_MODE }, 'LLM gateway config hot-reloaded')
+    logger.info('LLM gateway config hot-reloaded')
   }
 
   private loadApiKeys(config: LLMModuleConfig): void {
@@ -678,18 +676,13 @@ export class LLMGateway {
     if (config.ANTHROPIC_API_KEY) this.apiKeys.set('ANTHROPIC_API_KEY', config.ANTHROPIC_API_KEY)
     if (config.GOOGLE_AI_API_KEY) this.apiKeys.set('GOOGLE_AI_API_KEY', config.GOOGLE_AI_API_KEY)
 
-    // Per-capability overrides (legacy)
-    if (config.LLM_VISION_API_KEY) this.apiKeys.set('LLM_VISION_API_KEY', config.LLM_VISION_API_KEY)
-    if (config.LLM_STT_API_KEY) this.apiKeys.set('LLM_STT_API_KEY', config.LLM_STT_API_KEY)
-    if (config.LLM_IMAGE_GEN_API_KEY) this.apiKeys.set('LLM_IMAGE_GEN_API_KEY', config.LLM_IMAGE_GEN_API_KEY)
-
-    // Advanced mode: Gemini group keys
+    // Gemini group keys
     if (config.LLM_GOOGLE_ENGINE_API_KEY) this.apiKeys.set('LLM_GOOGLE_ENGINE_API_KEY', config.LLM_GOOGLE_ENGINE_API_KEY)
     if (config.LLM_GOOGLE_MULTIMEDIA_API_KEY) this.apiKeys.set('LLM_GOOGLE_MULTIMEDIA_API_KEY', config.LLM_GOOGLE_MULTIMEDIA_API_KEY)
     if (config.LLM_GOOGLE_VOICE_API_KEY) this.apiKeys.set('LLM_GOOGLE_VOICE_API_KEY', config.LLM_GOOGLE_VOICE_API_KEY)
     if (config.LLM_GOOGLE_KNOWLEDGE_API_KEY) this.apiKeys.set('LLM_GOOGLE_KNOWLEDGE_API_KEY', config.LLM_GOOGLE_KNOWLEDGE_API_KEY)
 
-    // Advanced mode: Anthropic group keys
+    // Anthropic group keys
     if (config.LLM_ANTHROPIC_ENGINE_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_ENGINE_API_KEY', config.LLM_ANTHROPIC_ENGINE_API_KEY)
     if (config.LLM_ANTHROPIC_CORTEX_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_CORTEX_API_KEY', config.LLM_ANTHROPIC_CORTEX_API_KEY)
     if (config.LLM_ANTHROPIC_MEMORY_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_MEMORY_API_KEY', config.LLM_ANTHROPIC_MEMORY_API_KEY)

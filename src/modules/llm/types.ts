@@ -87,7 +87,7 @@ export const TASK_TO_KEY_GROUP: Record<string, ApiKeyGroup | undefined> = {
   vision: 'multimedia',
   stt: 'multimedia',
   tts: 'voice',
-  // Knowledge embeddings handled separately via KNOWLEDGE_GOOGLE_AI_API_KEY
+  embeddings: 'knowledge',
 
   // Anthropic groups
   classify: 'engine',
@@ -386,21 +386,13 @@ export interface LLMModuleConfig {
   ANTHROPIC_API_KEY: string
   GOOGLE_AI_API_KEY: string
 
-  // API key mode: 'basic' (one key per provider) or 'advanced' (per-group keys)
-  LLM_API_MODE: string
-
-  // Per-capability API key overrides (legacy — kept for backward compat)
-  LLM_VISION_API_KEY: string
-  LLM_STT_API_KEY: string
-  LLM_IMAGE_GEN_API_KEY: string
-
-  // Advanced mode: Gemini group keys
+  // Gemini group keys (fallback to GOOGLE_AI_API_KEY if empty)
   LLM_GOOGLE_ENGINE_API_KEY: string
   LLM_GOOGLE_MULTIMEDIA_API_KEY: string
   LLM_GOOGLE_VOICE_API_KEY: string
   LLM_GOOGLE_KNOWLEDGE_API_KEY: string
 
-  // Advanced mode: Anthropic group keys
+  // Anthropic group keys (fallback to ANTHROPIC_API_KEY if empty)
   LLM_ANTHROPIC_ENGINE_API_KEY: string
   LLM_ANTHROPIC_CORTEX_API_KEY: string
   LLM_ANTHROPIC_MEMORY_API_KEY: string
