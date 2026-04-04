@@ -553,22 +553,6 @@
     checkDirty()
   })
 
-  // === API Key Mode segment toggle ===
-  window.setApiKeyMode = function (mode) {
-    var input = document.getElementById('api-mode-input')
-    if (input) {
-      input.value = mode
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-    }
-    document.querySelectorAll('.seg-btn').forEach(function (btn) {
-      btn.classList.toggle('seg-btn--active', btn.getAttribute('data-mode') === mode)
-    })
-    var advGroups = document.querySelectorAll('.adv-group-keys')
-    advGroups.forEach(function (el) {
-      el.style.display = mode === 'advanced' ? 'block' : 'none'
-    })
-  }
-
   // === Model table — refresh custom select widget ===
   function refreshCustomSelect(sel) {
     var wrapper = sel.parentNode

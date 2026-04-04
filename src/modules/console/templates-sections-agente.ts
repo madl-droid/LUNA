@@ -349,42 +349,30 @@ export function renderAdvancedAgentSection(data: SectionData): string {
   const isEs = data.lang === 'es'
   let h = ''
 
-  // Panel 1: API Keys - segment toggle (General | Por funcion) + 2-column layout
-  const currentApiMode = cv(data, 'LLM_API_MODE') || 'basic'
-  const isAdvanced = currentApiMode === 'advanced'
-
+  // Panel 1: API Keys - unified layout with group keys always visible
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">API Keys - LLM</span>
       <span class="panel-chevron">&#9660;</span>
     </div>
     <div class="panel-body">
-      <div class="api-mode-row">
-        <span class="api-mode-question">${isEs ? 'Como quieres gestionar tus API keys?' : 'How do you want to manage your API keys?'}</span>
-        <div class="seg-ctrl">
-          <button type="button" class="seg-btn${!isAdvanced ? ' seg-btn--active' : ''}" data-mode="basic" onclick="setApiKeyMode('basic')">${isEs ? 'General' : 'General'}</button>
-          <button type="button" class="seg-btn${isAdvanced ? ' seg-btn--active' : ''}" data-mode="advanced" onclick="setApiKeyMode('advanced')">${isEs ? 'Por funcion' : 'By function'}</button>
-        </div>
-        <input type="hidden" name="LLM_API_MODE" id="api-mode-input" value="${esc(currentApiMode)}" data-original="${esc(currentApiMode)}">
-      </div>
-
       <div class="api-key-cols">
         <div class="api-key-col">
           <div class="api-key-col-hd api-key-col-hd--anthropic">Anthropic</div>
           ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang,
             isEs ? 'API Key principal' : 'Main API Key',
             isEs ? 'Key principal de Anthropic. Usada para todas las llamadas si no hay key por grupo.' : 'Main Anthropic key. Used for all calls if no per-group key is set.')}
-          <div class="adv-group-keys" id="adv-anthropic" style="display:${isAdvanced ? 'block' : 'none'}">
-            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso' : 'Per usage group'}</div>
+          <div class="adv-group-keys">
+            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso (opcional)' : 'Per usage group (optional)'}</div>
             ${secretField('LLM_ANTHROPIC_ENGINE_API_KEY', cv(data, 'LLM_ANTHROPIC_ENGINE_API_KEY'), data.lang,
               'Engine',
-              isEs ? 'criticizer / tools / complex / proactive - Fallback: key principal' : 'criticizer / tools / complex / proactive - Fallback: main key')}
+              isEs ? 'classify / tools / complex / proactive' : 'classify / tools / complex / proactive')}
             ${secretField('LLM_ANTHROPIC_CORTEX_API_KEY', cv(data, 'LLM_ANTHROPIC_CORTEX_API_KEY'), data.lang,
               'Cortex',
-              isEs ? 'Pulse / Trace / Reflex - Fallback: key principal' : 'Pulse / Trace / Reflex - Fallback: main key')}
+              isEs ? 'Pulse / Trace / Reflex' : 'Pulse / Trace / Reflex')}
             ${secretField('LLM_ANTHROPIC_MEMORY_API_KEY', cv(data, 'LLM_ANTHROPIC_MEMORY_API_KEY'), data.lang,
               isEs ? 'Memoria' : 'Memory',
-              isEs ? 'compress / batch nocturno - Fallback: key principal' : 'compress / nightly batch - Fallback: main key')}
+              isEs ? 'compress / batch nocturno' : 'compress / nightly batch')}
           </div>
         </div>
         <div class="api-key-col">
@@ -392,20 +380,20 @@ export function renderAdvancedAgentSection(data: SectionData): string {
           ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang,
             isEs ? 'API Key principal' : 'Main API Key',
             isEs ? 'Key principal de Google AI. Usada para todas las llamadas si no hay key por grupo.' : 'Main Google AI key. Used for all calls if no per-group key is set.')}
-          <div class="adv-group-keys" id="adv-google" style="display:${isAdvanced ? 'block' : 'none'}">
-            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso' : 'Per usage group'}</div>
+          <div class="adv-group-keys">
+            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso (opcional)' : 'Per usage group (optional)'}</div>
             ${secretField('LLM_GOOGLE_ENGINE_API_KEY', cv(data, 'LLM_GOOGLE_ENGINE_API_KEY'), data.lang,
-              'Multimedia / Voz',
-              isEs ? 'fallback de respuesta / web_search / vision / TTS - Fallback: key principal' : 'response fallback / web_search / vision / TTS - Fallback: main key')}
+              'Engine',
+              isEs ? 'compose / web_search' : 'compose / web_search')}
             ${secretField('LLM_GOOGLE_MULTIMEDIA_API_KEY', cv(data, 'LLM_GOOGLE_MULTIMEDIA_API_KEY'), data.lang,
               'Multimedia',
-              isEs ? 'vision / STT / archivos - Fallback: key principal' : 'vision / STT / files - Fallback: main key')}
+              isEs ? 'vision / STT / archivos' : 'vision / STT / files')}
             ${secretField('LLM_GOOGLE_VOICE_API_KEY', cv(data, 'LLM_GOOGLE_VOICE_API_KEY'), data.lang,
               isEs ? 'Voz' : 'Voice',
-              isEs ? 'TTS / Gemini Live - Fallback: key principal' : 'TTS / Gemini Live - Fallback: main key')}
+              isEs ? 'TTS / Gemini Live' : 'TTS / Gemini Live')}
             ${secretField('LLM_GOOGLE_KNOWLEDGE_API_KEY', cv(data, 'LLM_GOOGLE_KNOWLEDGE_API_KEY'), data.lang,
               'Knowledge',
-              isEs ? 'embeddings / knowledge - Fallback: key principal' : 'embeddings / knowledge - Fallback: main key')}
+              isEs ? 'embeddings / knowledge' : 'embeddings / knowledge')}
           </div>
         </div>
       </div>

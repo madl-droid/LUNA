@@ -201,7 +201,6 @@ const TASK_ALIASES: Record<string, LLMTask> = {
 export class TaskRouter {
   private routes: Map<LLMTask, TaskRoute> = new Map()
   private fallbackChain: LLMProviderName[] = ['anthropic', 'google']
-  private apiMode: 'basic' | 'advanced' = 'basic'
 
   constructor(
     private readonly adapters: Map<LLMProviderName, ProviderAdapter>,
@@ -212,14 +211,6 @@ export class TaskRouter {
     for (const route of DEFAULT_ROUTES) {
       this.routes.set(route.task, route)
     }
-  }
-
-  /**
-   * Set the API key mode (basic or advanced).
-   */
-  setApiMode(mode: 'basic' | 'advanced'): void {
-    this.apiMode = mode
-    logger.info({ mode }, 'API key mode set')
   }
 
   /**
@@ -501,11 +492,9 @@ export class TaskRouter {
       if (key) return key
     }
 
-    // 2. In advanced mode, try group-specific key
-    if (this.apiMode === 'advanced') {
-      const groupKey = this.resolveGroupApiKey(provider, task)
-      if (groupKey) return groupKey
-    }
+    // 2. Try group-specific key (if configured)
+    const groupKey = this.resolveGroupApiKey(provider, task)
+    if (groupKey) return groupKey
 
     // 3. Fall back to provider default key
     return this.resolveApiKeyForProvider(provider)

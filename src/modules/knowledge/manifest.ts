@@ -28,8 +28,6 @@ const logger = pino({ name: 'knowledge' })
 
 interface LLMConfigForKnowledge {
   GOOGLE_AI_API_KEY?: string
-  KNOWLEDGE_EMBEDDING_API_SEPARATE?: boolean
-  KNOWLEDGE_GOOGLE_AI_API_KEY?: string
   LLM_GOOGLE_KNOWLEDGE_API_KEY?: string
 }
 
@@ -48,12 +46,7 @@ function resolveKnowledgeGoogleApiKey(registry: Registry, config: KnowledgeConfi
   if (config.KNOWLEDGE_GOOGLE_AI_API_KEY) return config.KNOWLEDGE_GOOGLE_AI_API_KEY
 
   const llmConfig = registry.getConfig<LLMConfigForKnowledge>('llm')
-  if (llmConfig.KNOWLEDGE_EMBEDDING_API_SEPARATE && llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY) {
-    return llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY
-  }
-
   return llmConfig.LLM_GOOGLE_KNOWLEDGE_API_KEY
-    ?? llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY
     ?? llmConfig.GOOGLE_AI_API_KEY
     ?? ''
 }
