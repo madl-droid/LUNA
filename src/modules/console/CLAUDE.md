@@ -1,17 +1,21 @@
 # Console — Panel de control web (SSR multi-page)
 
 Panel de configuración, monitoreo y gestión de módulos. Se monta en `/console` del servidor HTTP.
-Cada sección es una URL real (`/console/whatsapp`, `/console/llm`, `/console/pipeline`, etc.).
+Cada sección es una URL real (`/console/channels`, `/console/contacts`, `/console/agente/...`, `/console/herramientas/...`).
 El servidor genera HTML completo con datos embebidos (SSR). Formularios envían POST, el servidor redirige.
 
 ## Archivos
 - `manifest.ts` — lifecycle, registra servicio `console:requestHandler`
 - `manifest-ref.ts` — singleton para acceder al Registry desde handlers de ruta
-- `server.ts` — SSR router (GET pages, POST handlers), APIs REST, static files, redirects
+- `server.ts` — orchestrador SSR (GET pages, POST handlers, OAuth, static files)
+- `server-helpers.ts` — helpers compartidos: env/config, 404, auth, purge, form parsing
+- `server-data.ts` — carga SSR agregada (`fetchSectionData`)
+- `server-api.ts` — API routes REST del módulo console
 - `templates.ts` — layout HTML: header con hamburger, sidebar dinámico por categorías, save bar, flash
 - `templates-i18n.ts` — diccionario i18n ES/EN server-side (210 keys/lang), `t()`, `detectLang()`
 - `templates-fields.ts` — field builders: text, secret, num, bool, select, textarea, modelDropdown, divider, readonly, tags, duration
-- `templates-sections.ts` — section renderers: unified LLM (4 panels), unified Pipeline (3 panels), whatsapp, email, google-apps, engine-metrics, lead-scoring, scheduled-tasks, modules, db, redis
+- `templates-sections.ts` — dispatcher SSR + secciones compartidas (`infra`, `modules`, `debug-database`)
+- `templates-sections-*.ts` — renderers separados por dominio: agente, channels, contacts, herramientas, utils
 - `templates-modules.ts` — dynamic module panels from manifest.console.fields
 - `ui/js/console-minimal.js` — minimal client JS: hamburger drawer, WA polling, dirty tracking, model switch, toasts, Google OAuth
 - `ui/styles/*.css` — 5 CSS files (base, layout, components, whatsapp, sidebar)
@@ -22,7 +26,7 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
 - Los módulos declaran `group` e `icon` en su `manifest.console` para aparecer automáticamente
 - **Canales NO aparecen individualmente en el sidebar** — se gestionan desde `/console/channels`
 - Módulos con `group: 'channels'` se excluyen del sidebar automáticamente
-- Módulos con `group: 'agent'` que no están en HERRAMIENTAS_FIXED → van como subtab de Herramientas
+- Módulos del agente que forman parte del core (`prompts`, `engine`, `tools`, `memory`, `knowledge`, `tts`, `subagents`) NO aparecen como subtabs dinámicos de Herramientas
 - **REGLA: Herramientas SIEMPRE al final del sidebar** (order: 999)
 - **REGLA: Todo módulo DEBE tener entrada en `ICON_OVERRIDES`** (templates.ts) — no emoji
 - Orden: por campo `order` del manifest
@@ -34,7 +38,7 @@ El servidor genera HTML completo con datos embebidos (SSR). Formularios envían 
   Dashboard (0)
   Canales (10)
   Contactos (20)
-  Agente (30)        ← submenu: knowledge, memory, identity, advanced
+  Agente (30)        ← submenu: knowledge, memory, identity, subagents, engine-metrics, advanced
   Cortex (90)        ← módulo dinámico, group: 'system'
   Herramientas (999) ← SIEMPRE último, submenu: tools, lead-scoring, etc.
 ```
@@ -76,13 +80,13 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 - Extensible: agregar `.ch-card-warning` con amber para advertencias
 
 ## Páginas unificadas
-- `/console/llm` — 4 paneles colapsables: API Keys, Modelos, Límites, Circuit Breaker
-- `/console/pipeline` — 3 paneles colapsables: Pipeline, Follow-up, Naturalidad
-- URLs viejas (apikeys, models, llm-limits, llm-cb, followup, naturalidad) redirigen 302
+- `/console/llm` — página consolidada de modelos y routing especializado
+- `/console/agente/advanced` — motor agentico, límites operativos, criticizer y modelos por esfuerzo
+- No mantener redirects legacy: lo que aparece en la UI es lo que existe
 
 ## Páginas dinámicas de módulos
 - Módulos con `console.fields` y `console.group` obtienen su propia página automática
-- Ej: `/console/memory`, `/console/tools`, `/console/users`, `/console/knowledge`
+- Ej: `/console/cortex`, `/console/herramientas/{modulo}`, `/console/channels/{canal}`
 - El server intenta `renderSection()` primero, luego fallback a `renderModulePanels()`
 
 ## Tipos de campo (ConsoleField)
@@ -103,10 +107,8 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 ## Motor Agentico (v2) — `/console/agente/advanced` Panel 5
 - `ENGINE_AGENTIC_MAX_TURNS` — max tool-calling turns per message
 - `ENGINE_EFFORT_ROUTING` — enable/disable complexity-based effort routing
-- Protecciones: `ENGINE_TOOL_DEDUP`, `ENGINE_LOOP_DETECTION`, `AGENTIC_LOOP_WARN_THRESHOLD`, `AGENTIC_LOOP_BLOCK_THRESHOLD`, `AGENTIC_LOOP_CIRCUIT_THRESHOLD`, `ENGINE_ERROR_AS_CONTEXT`
-- Recuperacion: `ENGINE_PARTIAL_RECOVERY`, `LLM_CRITICIZER_MODE` (disabled|complex_only|always)
+- `LLM_CRITICIZER_MODE` (disabled|complex_only|always)
 - Modelos por esfuerzo: `LLM_LOW/MEDIUM/HIGH_EFFORT_MODEL` + `LLM_LOW/MEDIUM/HIGH_EFFORT_PROVIDER`
-- Cola: `EXECUTION_QUEUE_REACTIVE/PROACTIVE/BACKGROUND_CONCURRENCY`
 
 ## Subagente Contexto Fresco — `/console/agente/subagents`
 - `SUBAGENT_FRESH_CONTEXT` toggle — panel de configuracion global al inicio de la pagina
@@ -125,6 +127,7 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 - Persistencia: columnas `short_description` y `detailed_guidance` en la tabla `tools` (DB)
 - COALESCE en upsertTool: el restart NO sobreescribe valores editados por el usuario
 - `SectionData.toolDescriptions` poblado en server.ts con `toolsReg.getEnabledToolDefinitions()`
+- `PIPELINE_MAX_TOOL_CALLS_PER_TURN` vive aquí como owner canónico del runtime de tools
 
 ## Proactivo — `/console/agente/advanced` Panel 6
 - Panel informativo readonly apuntando a `instance/proactive.json`
@@ -145,4 +148,4 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 - CSS cached 24h en browser — usar hard refresh en dev.
 - Google auth status no se obtiene server-side (solo via API) — initial render muestra "not connected".
 - QR data URL tampoco se obtiene server-side — client JS polling lo actualiza.
-- URLs viejas (apikeys, models, etc.) redirigen a las unificadas — no rompen bookmarks.
+- No agregar redirects de compatibilidad para rutas legacy del panel.

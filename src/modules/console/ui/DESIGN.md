@@ -349,7 +349,7 @@ Dashed border container, same style across Canales and Contactos.
 - Permission checkboxes sync to hidden inputs with `data-original` for tracking
 
 ### Architecture rule
-The console NEVER uses internal API endpoints for config/CRUD operations. The save bar flow goes through `POST /console/save` (DB + .env) then `POST /console/apply` (hot-reload). User CRUD uses dedicated form POST handlers (e.g. `/console/users/add`) that redirect with flash messages.
+The console NEVER uses internal API endpoints for config/CRUD operations. The save bar flow goes through `POST /console/save` (DB + .env) then `POST /console/apply` (hot-reload). Contact CRUD uses dedicated form POST handlers (e.g. `/console/contacts/add`) that redirect with flash messages.
 
 ---
 
