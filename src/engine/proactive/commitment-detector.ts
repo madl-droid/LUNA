@@ -69,7 +69,7 @@ export async function detectCommitments(
 
     const parsed = JSON.parse(jsonStr) as {
       has_commitment: boolean
-      commitments: Array<{ type: string; description: string; due_within_hours?: number | null }>
+      commitments: Array<{ type: string; description: string; due_within_hours?: number | null; scheduled_at_hours?: number | null; category?: string | null }>
     }
 
     if (!parsed.has_commitment || !Array.isArray(parsed.commitments) || parsed.commitments.length === 0) {
@@ -85,6 +85,8 @@ export async function detectCommitments(
           contactId,
           sessionId,
           dueWithinHours: detected.due_within_hours ?? undefined,
+          scheduledAtHours: detected.scheduled_at_hours ?? undefined,
+          category: detected.category ?? undefined,
         },
         proactiveConfig,
         'auto_detect',
