@@ -4088,7 +4088,7 @@ function renderUsersSection(data: SectionData): string {
     html += `</div></div>` // end Modules panel
 
     // Tab 2: Subagents (toggle + per-subagent selection)
-    const subOrig = perms.subagents ? 'on' : ''
+    const subOrig = (isAdmin || perms.subagents) ? 'on' : ''
     const saTypes = saTypesAll
     const allowedSa = perms.allowedSubagents ?? []
     const allSaAccess = isAdmin || allowedSa.length === 0
