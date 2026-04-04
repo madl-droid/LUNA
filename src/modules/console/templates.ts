@@ -288,6 +288,10 @@ function renderHeader(opts: PageOptions): string {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             ${t('dbg_clear_memory', opts.lang)}
           </div>
+          <div class="dropdown-item dropdown-item-danger" id="btn-clear-agent">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a5 5 0 0 1 5 5v3a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z"/><path d="M12 22c-4.2 0-7-1.5-7-3v-2c0-1.5 2.8-3 7-3s7 1.5 7 3v2c0 1.5-2.8 3-7 3z"/></svg>
+            ${t('dbg_clear_agent', opts.lang)}
+          </div>
           <div class="dropdown-item dropdown-item-danger" onclick="resetContacts()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>
             ${opts.lang === 'es' ? 'Limpiar contactos' : 'Clear contacts'}
