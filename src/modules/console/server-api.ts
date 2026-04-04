@@ -2,7 +2,7 @@ import { readBody, parseBody, parseQuery, jsonResponse } from '../../kernel/http
 import type { ApiRoute } from '../../kernel/types.js'
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
-import { logger, findEnvFile, parseEnvFile, writeEnvFile, guardDebugEndpoint, flushRedisExceptSessions, purgeAllData, packageJsonVersion, checkSuperAdmin } from './server-helpers.js'
+import { logger, findEnvFile, parseEnvFile, writeEnvFile, guardDebugEndpoint, flushRedisExceptSessions, purgeAllData, purgeMemoryData, purgeAgentData, packageJsonVersion, checkSuperAdmin } from './server-helpers.js'
 
 export function createApiRoutes(): ApiRoute[] {
   return [
@@ -179,6 +179,66 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // GET /console/api/console/admin-override — get current admin override type
+    {
+      method: 'GET',
+      path: 'admin-override',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const value = await configStore.get(registry.getDb(), 'ADMIN_OVERRIDE_TYPE')
+          jsonResponse(res, 200, { overrideType: value || '' })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/admin-override — set admin override type (test mode + super admin only)
+    {
+      method: 'POST',
+      path: 'admin-override',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
+
+          const body = await parseBody<{ overrideType: string }>(req)
+          const overrideType = body.overrideType?.trim() || ''
+          const validOverrides = ['', 'admin', 'lead', 'coworker']
+          if (!validOverrides.includes(overrideType)) {
+            jsonResponse(res, 400, { error: `Invalid override type: ${overrideType}. Must be one of: ${validOverrides.join(', ')}` })
+            return
+          }
+
+          const db = registry.getDb()
+          if (overrideType === '' || overrideType === 'admin') {
+            await db.query(`DELETE FROM config_store WHERE key = 'ADMIN_OVERRIDE_TYPE'`).catch(() => {})
+          } else {
+            await configStore.set(db, 'ADMIN_OVERRIDE_TYPE', overrideType)
+          }
+
+          const redis = registry.getRedis()
+          let cursor = '0'
+          do {
+            const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'user_type:*', 'COUNT', 200)
+            cursor = nextCursor
+            if (keys.length > 0) await redis.del(...(keys as [string, ...string[]]))
+          } while (cursor !== '0')
+
+          logger.info({ overrideType: overrideType || '(cleared)' }, 'Admin override type updated')
+          jsonResponse(res, 200, { ok: true, overrideType })
+        } catch (err) {
+          logger.error({ err }, 'Failed to set admin override')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // POST /console/api/console/clear-cache — flush Redis (test mode + super admin only)
     {
       method: 'POST',
@@ -200,7 +260,7 @@ export function createApiRoutes(): ApiRoute[] {
       },
     },
 
-    // POST /console/api/console/clear-memory — truncate all data tables (test mode + super admin only)
+    // POST /console/api/console/clear-memory — purge conversation/interaction data only (test mode + super admin only)
     {
       method: 'POST',
       path: 'clear-memory',
@@ -211,11 +271,32 @@ export function createApiRoutes(): ApiRoute[] {
           if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
           if (await guardDebugEndpoint(req, res, registry)) return
 
-          await purgeAllData(registry, { preserveSuperAdmin: true })
-          logger.info('All memory cleared (debug panel) — config_store, super admin preserved')
+          await purgeMemoryData(registry, { preserveSuperAdmin: true })
+          logger.info('Memory cleared (debug panel) — agent intelligence, config_store, super admin preserved')
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           logger.error({ err }, 'Failed to clear memory')
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/clear-agent — purge agent intelligence (knowledge, subagents, tools, prompts)
+    {
+      method: 'POST',
+      path: 'clear-agent',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
+
+          await purgeAgentData(registry)
+          logger.info('Agent intelligence cleared (debug panel) — subagents re-seeded')
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          logger.error({ err }, 'Failed to clear agent data')
           jsonResponse(res, 500, { error: String(err) })
         }
       },

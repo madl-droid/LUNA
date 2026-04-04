@@ -22,6 +22,101 @@ async function checkSuperAdmin(registry: Registry, cookieHeader: string | undefi
   } catch { return false }
 }
 
+const MEMORY_TABLES = [
+  'messages', 'sessions', 'session_summaries', 'session_summaries_v2', 'summary_chunks',
+  'session_archives', 'session_memory_chunks', 'conversation_archives',
+  'contacts', 'contact_channels', 'agent_contacts',
+  'campaigns', 'commitments', 'pipeline_logs', 'ack_messages',
+  'agents', 'companies', 'system_state',
+  'trace_scenarios', 'trace_runs', 'trace_results', 'task_checkpoints', 'pulse_reports',
+  'notifications',
+  'hitl_tickets', 'hitl_ticket_log',
+  'llm_usage', 'llm_daily_stats', 'llm_descriptions',
+  'attachment_extractions',
+  'tool_executions',
+  'scheduled_task_executions',
+  'subagent_usage',
+  'voice_calls', 'voice_call_transcripts',
+  'email_state', 'email_threads',
+  'google_chat_spaces', 'google_chat_events',
+  'whatsapp_auth_state',
+  'twilio_call_metadata',
+  'google_oauth_tokens',
+  'medilink_audit_log', 'medilink_edit_requests', 'medilink_follow_ups',
+  'medilink_professional_treatments', 'medilink_user_type_rules',
+  'medilink_followup_templates', 'medilink_webhook_log',
+  'proactive_outreach_log', 'daily_reports',
+  'webhook_lead_log',
+] as const
+
+const AGENT_TABLES = [
+  'subagent_types',
+  'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
+  'knowledge_categories', 'knowledge_faqs', 'knowledge_gaps',
+  'knowledge_sync_sources', 'knowledge_api_connectors', 'knowledge_web_sources',
+  'knowledge_items', 'knowledge_item_tabs', 'knowledge_item_columns',
+  'tools', 'tool_access_rules',
+  'prompt_slots',
+  'scheduled_tasks',
+  'hitl_rules',
+  'medilink_professional_category_assignments',
+] as const
+
+async function truncateTables(db: import('pg').Pool, tables: readonly string[]): Promise<void> {
+  for (const table of tables) {
+    try { await db.query(`TRUNCATE ${table} CASCADE`) } catch { /* table may not exist */ }
+  }
+}
+
+async function reseedSystemSubagents(db: import('pg').Pool): Promise<void> {
+  const webResearcherSeed = fs.readFileSync(path.resolve(process.cwd(), 'src', 'migrations', '018_subagents-v2.sql'), 'utf8')
+  const medilinkSchedulerSeed = fs.readFileSync(path.resolve(process.cwd(), 'src', 'migrations', '032_medilink-scheduler-subagent.sql'), 'utf8')
+  await db.query(webResearcherSeed).catch(() => {})
+  await db.query(medilinkSchedulerSeed).catch(() => {})
+}
+
+async function purgeMemoryData(registry: Registry, opts: { preserveSuperAdmin: boolean }): Promise<void> {
+  const db = registry.getDb()
+  await truncateTables(db, MEMORY_TABLES)
+
+  if (opts.preserveSuperAdmin) {
+    await db.query(`DELETE FROM user_contacts WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`).catch(() => {})
+    await db.query(`DELETE FROM user_lists WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`).catch(() => {})
+    await db.query(`DELETE FROM user_credentials WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`).catch(() => {})
+    await db.query(`DELETE FROM users WHERE source != 'setup_wizard'`).catch(() => {})
+  } else {
+    for (const table of ['user_contacts', 'user_lists', 'user_credentials', 'users']) {
+      try { await db.query(`TRUNCATE ${table} CASCADE`) } catch { /* ignore */ }
+    }
+  }
+
+  await flushRedisExceptSessions(registry.getRedis())
+  await db.query(`
+    INSERT INTO agents (slug, name, description, config_path)
+    VALUES ('luna', 'LUNA', 'Agente principal de ventas', 'instance/config.json')
+    ON CONFLICT (slug) DO NOTHING
+  `).catch(() => {})
+
+  logger.info({ preserveSuperAdmin: opts.preserveSuperAdmin }, 'Memory data purged - agent intelligence preserved')
+}
+
+async function purgeAgentData(registry: Registry): Promise<void> {
+  const db = registry.getDb()
+  await truncateTables(db, AGENT_TABLES)
+  await reseedSystemSubagents(db)
+
+  const mediaDir = path.resolve(process.cwd(), 'instance', 'knowledge', 'media')
+  try {
+    const files = fs.readdirSync(mediaDir)
+    for (const file of files) {
+      const filePath = path.join(mediaDir, file)
+      try { fs.rmSync(filePath, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  } catch { /* directory may not exist */ }
+
+  logger.info('Agent data purged - subagents re-seeded, knowledge cleared')
+}
+
 /**
  * Purge all data tables, media files, and Redis.
  * Preserves: config_store, kernel_modules, user_list_config, schema_migrations,
@@ -29,56 +124,7 @@ async function checkSuperAdmin(registry: Registry, cookieHeader: string | undefi
  */
 async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: boolean }): Promise<void> {
   const db = registry.getDb()
-
-  // All data tables to truncate (order matters for CASCADE but we use CASCADE anyway)
-  const tables = [
-    // Engine core
-    'messages', 'sessions', 'session_summaries', 'session_summaries_v2', 'summary_chunks',
-    'session_archives', 'session_memory_chunks', 'conversation_archives',
-    'contacts', 'contact_channels', 'agent_contacts',
-    'campaigns', 'commitments', 'pipeline_logs', 'ack_messages',
-    // Memory v3
-    'agents', 'companies', 'system_state',
-    // Knowledge
-    'knowledge_documents', 'knowledge_document_categories', 'knowledge_chunks',
-    'knowledge_categories', 'knowledge_faqs', 'knowledge_gaps',
-    'knowledge_sync_sources', 'knowledge_api_connectors', 'knowledge_web_sources',
-    'knowledge_items', 'knowledge_item_tabs', 'knowledge_item_columns',
-    // Cortex / Trace
-    'trace_scenarios', 'trace_runs', 'trace_results', 'task_checkpoints',
-    'cortex_pulse_events',
-    // Subagents
-    'subagent_types', 'subagent_usage',
-    // HITL
-    'hitl_tickets', 'hitl_ticket_log', 'hitl_rules',
-    // LLM
-    'llm_usage', 'llm_daily_stats', 'llm_descriptions',
-    // Attachments
-    'attachment_extractions',
-    // Tools / Prompts
-    'tools', 'tool_access_rules', 'tool_executions',
-    'prompt_slots',
-    // Scheduled tasks
-    'scheduled_tasks', 'scheduled_task_executions',
-    // Channels
-    'voice_calls', 'voice_call_transcripts',
-    'email_state', 'email_threads',
-    'google_chat_spaces', 'google_chat_events',
-    'whatsapp_auth_state',
-    'twilio_call_metadata',
-    // Google
-    'google_oauth_tokens',
-    // Medilink
-    'medilink_audit_log', 'medilink_edit_requests', 'medilink_follow_ups',
-    'medilink_professional_treatments', 'medilink_user_type_rules',
-    'medilink_followup_templates', 'medilink_webhook_log',
-    // Proactive
-    'proactive_outreach_log', 'daily_reports',
-  ]
-
-  for (const t of tables) {
-    try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* table may not exist */ }
-  }
+  await truncateTables(db, [...MEMORY_TABLES, ...AGENT_TABLES])
 
   // Users: either full wipe or preserve super admin
   if (opts.preserveSuperAdmin) {
@@ -106,7 +152,8 @@ async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: bool
     ON CONFLICT (slug) DO NOTHING
   `).catch(() => {})
 
-  // Delete media files (but keep the directory)
+  await reseedSystemSubagents(db)
+
   const mediaDir = path.resolve(process.cwd(), 'instance', 'knowledge', 'media')
   try {
     const files = fs.readdirSync(mediaDir)
@@ -306,4 +353,4 @@ function parseFormBody(req: http.IncomingMessage): Promise<Record<string, string
 
 // Fetch section data server-side (no HTTP round-trips)
 
-export { logger, checkSuperAdmin, purgeAllData, flushRedisExceptSessions, guardDebugEndpoint, render404Page, findEnvFile, parseEnvFile, writeEnvFile, parseFormBody, packageJsonVersion }
+export { logger, checkSuperAdmin, purgeAllData, purgeMemoryData, purgeAgentData, reseedSystemSubagents, flushRedisExceptSessions, guardDebugEndpoint, render404Page, findEnvFile, parseEnvFile, writeEnvFile, parseFormBody, packageJsonVersion }
