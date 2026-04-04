@@ -18,21 +18,11 @@ import type {
   ProactiveConfig,
   OutreachLogEntry,
 } from '../types.js'
-import { phase5Validate } from '../phases/phase5-validate.js'
 import { runGuards, setCooldown, incrementProactiveCount } from './guards.js'
 // --- Agentic imports (v2.0) ---
-import { classifyEffort, runAgenticLoop, postProcess } from '../agentic/index.js'
-import {
-  buildRunSubagentToolDef,
-  filterAgenticTools,
-  getAgenticSubagentCatalog,
-} from '../agentic/subagent-delegation.js'
-import { loadSkillCatalog, filterSkillsByTools } from '../prompts/skills.js'
-import { buildSkillReadToolDef } from '../agentic/skill-delegation.js'
-import { buildAgenticPrompt } from '../prompts/agentic.js'
+import { classifyEffort, runAgenticDelivery } from '../agentic/index.js'
 import { updateCooldownState } from './smart-cooldown.js'
 import { shouldSuppressProactive } from './conversation-guard.js'
-import type { AgenticConfig } from '../agentic/types.js'
 
 const logger = pino({ name: 'engine:proactive-pipeline' })
 
@@ -73,11 +63,10 @@ export async function processProactive(
       return {
         traceId,
         success: false,
-        phase1DurationMs: 0, phase2DurationMs: 0, phase3DurationMs: 0,
-        phase4DurationMs: 0, phase5DurationMs: 0,
+        phase1DurationMs: 0,
+        phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         error: `Blocked by guard: ${guardResult.blockedBy}`,
-        replanAttempts: 0, subagentIterationsUsed: 0,
       }
     }
 
@@ -107,22 +96,15 @@ export async function processProactive(
 
     return {
       traceId, success: false,
-      phase1DurationMs: 0, phase2DurationMs: 0, phase3DurationMs: 0,
-      phase4DurationMs: 0, phase5DurationMs: 0,
+      phase1DurationMs: 0,
+      phase5DurationMs: 0,
       totalDurationMs,
       error: String(err),
-      replanAttempts: 0, subagentIterationsUsed: 0,
     }
   }
 }
 
 // ─── Agentic proactive pipeline (v2.0) ──────
-
-/** Minimal ToolRegistry interface (mirrors engine.ts pattern) */
-interface ToolRegistryLike {
-  getCatalog(contactType?: string): import('../types.js').ToolCatalogEntry[]
-  getEnabledToolDefinitions(contactType?: string): import('../types.js').ToolDefinition[]
-}
 
 async function runProactiveAgentic(
   ctx: ProactiveContextBundle,
@@ -161,78 +143,36 @@ async function runProactiveAgentic(
       ])
       return {
         traceId, success: false,
-        phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
-        phase4DurationMs: 0, phase5DurationMs: 0,
+        phase1DurationMs,
+        phase5DurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         error: `Blocked by conversation guard: ${guard.reason}`,
-        replanAttempts: 0, subagentIterationsUsed: 0,
       }
     }
   }
 
-  // Proactive uses low effort (fewer turns, cheaper model)
-  const effortLevel = classifyEffort(ctx) === 'high' ? 'medium' : 'low'
-  const modelConfig = {
-    model: effortLevel === 'low' ? engineConfig.lowEffortModel : engineConfig.mediumEffortModel,
-    provider: (effortLevel === 'low' ? engineConfig.lowEffortProvider : engineConfig.mediumEffortProvider),
-  }
-
-  // Get tools
-  const toolRegistry = registry.getOptional<ToolRegistryLike>('tools:registry')
-  const subagentCatalog = getAgenticSubagentCatalog(ctx, registry)
-  const toolCatalog = filterAgenticTools(toolRegistry?.getCatalog(ctx.userType) ?? [], subagentCatalog)
-  const toolDefs = filterAgenticTools(toolRegistry?.getEnabledToolDefinitions(ctx.userType) ?? [], subagentCatalog)
-  const llmToolDefs = toolDefs.map(d => ({ name: d.name, description: d.description, inputSchema: d.parameters }))
-  const runSubagentTool = buildRunSubagentToolDef(subagentCatalog)
-  if (runSubagentTool) {
-    llmToolDefs.push(runSubagentTool)
-  }
-
-  // Add skill_read tool if skills are available
-  const skillCatalog = await loadSkillCatalog(registry, ctx.userType)
-  const activeToolNames = new Set(toolCatalog.map((t: { name: string }) => t.name))
-  const filteredSkills = filterSkillsByTools(skillCatalog, activeToolNames)
-  const skillReadTool = buildSkillReadToolDef(filteredSkills.map((s: { name: string }) => s.name))
-  if (skillReadTool) {
-    llmToolDefs.push(skillReadTool)
-  }
-
-  // Build prompt with proactive context
-  const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, registry, {
-    isProactive: true,
-    proactiveTrigger: ctx.proactiveTrigger,
-    subagentCatalog,
-  })
-
-  // Agentic config — lower limits for proactive
-  const agenticConfig: AgenticConfig = {
-    maxToolTurns: Math.min(engineConfig.agenticMaxTurns, 5),
-    maxConcurrentTools: engineConfig.maxConcurrentSteps,
-    effort: effortLevel,
-    model: modelConfig.model,
-    provider: modelConfig.provider as import('../types.js').LLMProvider,
-    fallbackModel: engineConfig.fallbackRespondModel,
-    fallbackProvider: engineConfig.fallbackRespondProvider,
-    temperature: engineConfig.temperatureRespond,
-    maxOutputTokens: engineConfig.maxOutputTokens,
-    criticizerMode: engineConfig.criticizerMode,
-  }
-
-  // Run agentic loop (pass full user message with context layers)
-  const agenticResult = await runAgenticLoop(
+  const classifiedEffort = classifyEffort(ctx)
+  const effortLevel = classifiedEffort === 'high' ? 'medium' : 'low'
+  const runResult = await runAgenticDelivery({
     ctx,
-    agenticPrompt.system,
-    llmToolDefs,
-    agenticConfig,
+    mode: 'proactive',
     registry,
+    db,
+    redis,
     engineConfig,
-    agenticPrompt.userMessage,
-  )
-  log.info({ turns: agenticResult.turns, stopReason: agenticResult.effortUsed }, 'Proactive agentic loop complete')
+    totalStart,
+    phase1DurationMs,
+    effortOverride: effortLevel,
+    maxTurnsCap: 5,
+    promptOptions: {
+      isProactive: true,
+      proactiveTrigger: ctx.proactiveTrigger,
+    },
+    noActionSentinel: '[NO_ACTION]',
+  })
+  const { pipelineResult, deliveryResult, noAction } = runResult
 
-  // NO_ACTION check: if response is the sentinel, treat as no_action
-  const isNoAction = agenticResult.responseText.trim() === '[NO_ACTION]'
-  if (isNoAction) {
+  if (noAction) {
     log.info('Proactive agentic decided NO_ACTION')
     await Promise.allSettled([
       updateCooldownState(redis, candidate.contactId, candidate.triggerType, 'no_action', proactiveConfig),
@@ -244,27 +184,14 @@ async function runProactiveAgentic(
         actionTaken: 'no_action',
       }),
     ])
-    return {
-      traceId, success: true,
-      phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
-      phase4DurationMs: 0, phase5DurationMs: 0,
-      totalDurationMs: Date.now() - totalStart,
-      agenticResult, effortLevel,
-      replanAttempts: 0, subagentIterationsUsed: 0,
-    }
+    return pipelineResult
   }
 
-  // Post-process
-  const compositorOutput = await postProcess(agenticResult, ctx, engineConfig, registry)
-
-  // Phase 5
-  const p5Start = Date.now()
-  const delivery = await phase5Validate(ctx, compositorOutput, null, registry, db, redis, engineConfig)
-  const phase5DurationMs = Date.now() - p5Start
-  const totalDurationMs = Date.now() - totalStart
+  const delivery = deliveryResult
+  const totalDurationMs = pipelineResult.totalDurationMs
 
   // Post-send bookkeeping
-  if (delivery.sent) {
+  if (delivery?.sent) {
     await Promise.allSettled([
       setCooldown(candidate.contactId, redis, proactiveConfig),
       incrementProactiveCount(candidate.contactId, redis),
@@ -287,38 +214,14 @@ async function runProactiveAgentic(
         triggerId: candidate.triggerId,
         channel: candidate.channel,
         actionTaken: 'error',
-        metadata: { error: delivery.error },
+        metadata: { error: delivery?.error },
       }),
     ])
   }
 
-  log.info({ totalDurationMs, sent: delivery.sent }, 'Proactive agentic pipeline complete')
+  log.info({ totalDurationMs, sent: delivery?.sent }, 'Proactive agentic pipeline complete')
 
-  // Pipeline log (fire-and-forget)
-  const memMgr = registry.getOptional<MemoryManager>('memory:manager')
-  if (memMgr && candidate.contactId) {
-    memMgr.savePipelineLog({
-      messageId: traceId,
-      contactId: candidate.contactId,
-      sessionId: ctx.session.id,
-      phase1Ms: phase1DurationMs,
-      phase2Ms: 0, phase3Ms: 0, phase4Ms: 0,
-      phase5Ms: phase5DurationMs,
-      totalMs: totalDurationMs,
-      toolsCalled: agenticResult.toolsUsed,
-    }).catch(() => {})
-  }
-
-  return {
-    traceId, success: delivery.sent,
-    phase1DurationMs, phase2DurationMs: 0, phase3DurationMs: 0,
-    phase4DurationMs: 0, phase5DurationMs,
-    totalDurationMs,
-    responseText: compositorOutput.responseText,
-    deliveryResult: delivery,
-    agenticResult, effortLevel,
-    replanAttempts: 0, subagentIterationsUsed: 0,
-  }
+  return pipelineResult
 }
 
 // ─── Simplified Phase 1 ────────────────────

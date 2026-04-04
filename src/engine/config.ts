@@ -2,8 +2,38 @@
 // Lee configuración del engine desde env vars via kernel config helpers.
 
 import { getEnv } from '../kernel/config.js'
+import type { Registry } from '../kernel/registry.js'
 import type { EngineConfig, LLMProvider } from './types.js'
 import { SUBAGENT_HARD_LIMITS } from './subagent/types.js'
+
+interface EngineModuleConfig {
+  ENGINE_TEST_MODE: boolean
+  ENGINE_MAX_CONCURRENT_PIPELINES: number
+  ENGINE_MAX_QUEUE_SIZE: number
+  ENGINE_MAX_CONCURRENT_STEPS: number
+  ENGINE_BACKPRESSURE_MESSAGE: string
+  ENGINE_COMPOSE_RETRIES_PER_PROVIDER: number
+  ATTACHMENT_ENABLED: boolean
+  ATTACHMENT_SMALL_DOC_TOKENS: number
+  ATTACHMENT_MEDIUM_DOC_TOKENS: number
+  ATTACHMENT_SUMMARY_MAX_TOKENS: number
+  ATTACHMENT_CACHE_TTL_MS: number
+  ATTACHMENT_URL_ENABLED: boolean
+  ATTACHMENT_URL_FETCH_TIMEOUT_MS: number
+  ATTACHMENT_URL_MAX_SIZE_MB: number
+  ENGINE_AGENTIC_MAX_TURNS: number
+  ENGINE_EFFORT_ROUTING: boolean
+  AGENTIC_LOOP_WARN_THRESHOLD: number
+  AGENTIC_LOOP_BLOCK_THRESHOLD: number
+  AGENTIC_LOOP_CIRCUIT_THRESHOLD: number
+  LLM_CRITICIZER_MODE: string
+  LLM_LOW_EFFORT_MODEL: string
+  LLM_LOW_EFFORT_PROVIDER: string
+  LLM_MEDIUM_EFFORT_MODEL: string
+  LLM_MEDIUM_EFFORT_PROVIDER: string
+  LLM_HIGH_EFFORT_MODEL: string
+  LLM_HIGH_EFFORT_PROVIDER: string
+}
 
 function env(key: string, fallback: string): string {
   return getEnv(key) ?? fallback
@@ -40,9 +70,10 @@ function envProvider(key: string, fallback: LLMProvider): LLMProvider {
 }
 
 /**
- * Load engine configuration from env vars.
+ * Load engine configuration from registry for module-owned fields and env for legacy globals.
  */
-export function loadEngineConfig(): EngineConfig {
+export function loadEngineConfig(registry: Registry): EngineConfig {
+  const moduleConfig = registry.getConfig<EngineModuleConfig>('engine')
   return {
     // LLM models
     classifyModel: env('LLM_CLASSIFY_MODEL', 'claude-sonnet-4-6'),
@@ -111,35 +142,35 @@ export function loadEngineConfig(): EngineConfig {
       : envInt('SESSION_REOPEN_WINDOW_MS', 3600000), // default 1h
 
     // Attachments
-    attachmentEnabled: envBool('ATTACHMENT_ENABLED', true),
-    attachmentSmallDocTokens: envInt('ATTACHMENT_SMALL_DOC_TOKENS', 8000),
-    attachmentMediumDocTokens: envInt('ATTACHMENT_MEDIUM_DOC_TOKENS', 32000),
-    attachmentSummaryMaxTokens: envInt('ATTACHMENT_SUMMARY_MAX_TOKENS', 2000),
-    attachmentCacheTtlMs: envInt('ATTACHMENT_CACHE_TTL_MS', 3600000), // 1h
-    attachmentUrlFetchTimeoutMs: envInt('ATTACHMENT_URL_FETCH_TIMEOUT_MS', 10000),
-    attachmentUrlMaxSizeMb: envInt('ATTACHMENT_URL_MAX_SIZE_MB', 5),
-    attachmentUrlEnabled: envBool('ATTACHMENT_URL_ENABLED', true),
+    attachmentEnabled: moduleConfig.ATTACHMENT_ENABLED,
+    attachmentSmallDocTokens: moduleConfig.ATTACHMENT_SMALL_DOC_TOKENS,
+    attachmentMediumDocTokens: moduleConfig.ATTACHMENT_MEDIUM_DOC_TOKENS,
+    attachmentSummaryMaxTokens: moduleConfig.ATTACHMENT_SUMMARY_MAX_TOKENS,
+    attachmentCacheTtlMs: moduleConfig.ATTACHMENT_CACHE_TTL_MS,
+    attachmentUrlFetchTimeoutMs: moduleConfig.ATTACHMENT_URL_FETCH_TIMEOUT_MS,
+    attachmentUrlMaxSizeMb: moduleConfig.ATTACHMENT_URL_MAX_SIZE_MB,
+    attachmentUrlEnabled: moduleConfig.ATTACHMENT_URL_ENABLED,
 
     // Avisos de proceso: now fully per-channel via channel-config:{name} services
     // (legacy WA/email aviso fields removed — each channel defines its own in configSchema)
 
     // Test mode: only admins receive responses
-    testMode: envBool('ENGINE_TEST_MODE', false),
+    testMode: moduleConfig.ENGINE_TEST_MODE,
 
     // Concurrency
-    maxConcurrentPipelines: envInt('ENGINE_MAX_CONCURRENT_PIPELINES', 50),
-    maxQueueSize: envInt('ENGINE_MAX_QUEUE_SIZE', 200),
-    maxConcurrentSteps: envInt('ENGINE_MAX_CONCURRENT_STEPS', 5),
-    backpressureMessage: env('ENGINE_BACKPRESSURE_MESSAGE', 'Estamos atendiendo muchos clientes en este momento. Te responderemos pronto.'),
+    maxConcurrentPipelines: moduleConfig.ENGINE_MAX_CONCURRENT_PIPELINES,
+    maxQueueSize: moduleConfig.ENGINE_MAX_QUEUE_SIZE,
+    maxConcurrentSteps: moduleConfig.ENGINE_MAX_CONCURRENT_STEPS,
+    backpressureMessage: moduleConfig.ENGINE_BACKPRESSURE_MESSAGE,
 
     // Phase 4 retries per provider
-    composeRetriesPerProvider: envInt('ENGINE_COMPOSE_RETRIES_PER_PROVIDER', 1),
+    composeRetriesPerProvider: moduleConfig.ENGINE_COMPOSE_RETRIES_PER_PROVIDER,
 
     // FIX: E-1 — Pipeline global timeout (2 minutes default)
     pipelineTimeoutMs: envInt('ENGINE_PIPELINE_TIMEOUT_MS', 120000),
 
     // Criticizer (quality gate): disabled | complex_only | always
-    criticizerMode: env('LLM_CRITICIZER_MODE', 'complex_only') as 'disabled' | 'complex_only' | 'always',
+    criticizerMode: moduleConfig.LLM_CRITICIZER_MODE as 'disabled' | 'complex_only' | 'always',
 
     // Checkpoints (resumable pipelines)
     checkpointEnabled: envBool('ENGINE_CHECKPOINT_ENABLED', true),
@@ -147,28 +178,19 @@ export function loadEngineConfig(): EngineConfig {
     checkpointCleanupDays: envInt('ENGINE_CHECKPOINT_CLEANUP_DAYS', 7),
 
     // --- Agentic engine config (v2.0) ---
-    agenticMaxTurns:         envInt('ENGINE_AGENTIC_MAX_TURNS', 15),
-    effortRoutingEnabled:    envBool('ENGINE_EFFORT_ROUTING', true),
-    toolDedupEnabled:        envBool('ENGINE_TOOL_DEDUP', true),
-    loopDetectionEnabled:    envBool('ENGINE_LOOP_DETECTION', true),
-    errorAsContextEnabled:   envBool('ENGINE_ERROR_AS_CONTEXT', true),
-    partialRecoveryEnabled:  envBool('ENGINE_PARTIAL_RECOVERY', true),
-    lowEffortModel:          env('LLM_LOW_EFFORT_MODEL', 'claude-haiku-4-5-20251001'),
-    lowEffortProvider:       envProvider('LLM_LOW_EFFORT_PROVIDER', 'anthropic'),
-    mediumEffortModel:       env('LLM_MEDIUM_EFFORT_MODEL', 'claude-sonnet-4-6'),
-    mediumEffortProvider:    envProvider('LLM_MEDIUM_EFFORT_PROVIDER', 'anthropic'),
-    highEffortModel:         env('LLM_HIGH_EFFORT_MODEL', 'claude-sonnet-4-6'),
-    highEffortProvider:      envProvider('LLM_HIGH_EFFORT_PROVIDER', 'anthropic'),
+    agenticMaxTurns:         moduleConfig.ENGINE_AGENTIC_MAX_TURNS,
+    effortRoutingEnabled:    moduleConfig.ENGINE_EFFORT_ROUTING,
+    lowEffortModel:          moduleConfig.LLM_LOW_EFFORT_MODEL,
+    lowEffortProvider:       moduleConfig.LLM_LOW_EFFORT_PROVIDER as LLMProvider,
+    mediumEffortModel:       moduleConfig.LLM_MEDIUM_EFFORT_MODEL,
+    mediumEffortProvider:    moduleConfig.LLM_MEDIUM_EFFORT_PROVIDER as LLMProvider,
+    highEffortModel:         moduleConfig.LLM_HIGH_EFFORT_MODEL,
+    highEffortProvider:      moduleConfig.LLM_HIGH_EFFORT_PROVIDER as LLMProvider,
 
 
     // Loop detection thresholds (graduated: warn → block → circuit break)
-    loopWarnThreshold:    envInt('AGENTIC_LOOP_WARN_THRESHOLD', 3),
-    loopBlockThreshold:   envInt('AGENTIC_LOOP_BLOCK_THRESHOLD', 5),
-    loopCircuitThreshold: envInt('AGENTIC_LOOP_CIRCUIT_THRESHOLD', 8),
-
-    // Execution queue lane concurrencies
-    executionQueueReactiveConcurrency:   envInt('EXECUTION_QUEUE_REACTIVE_CONCURRENCY', 8),
-    executionQueueProactiveConcurrency:  envInt('EXECUTION_QUEUE_PROACTIVE_CONCURRENCY', 3),
-    executionQueueBackgroundConcurrency: envInt('EXECUTION_QUEUE_BACKGROUND_CONCURRENCY', 2),
+    loopWarnThreshold:    moduleConfig.AGENTIC_LOOP_WARN_THRESHOLD,
+    loopBlockThreshold:   moduleConfig.AGENTIC_LOOP_BLOCK_THRESHOLD,
+    loopCircuitThreshold: moduleConfig.AGENTIC_LOOP_CIRCUIT_THRESHOLD,
   }
 }

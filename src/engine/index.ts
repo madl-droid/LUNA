@@ -8,8 +8,6 @@ export { CheckpointManager } from './checkpoints/index.js'
 // Types
 export type {
   ContextBundle,
-  EvaluatorOutput,
-  ExecutionOutput,
   CompositorOutput,
   PipelineResult,
   DeliveryResult,

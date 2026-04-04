@@ -8,6 +8,7 @@ import type { ContextBundle, CompositorOutput, EngineConfig } from '../types.js'
 import type { AgenticResult } from './types.js'
 import { callLLM } from '../utils/llm-client.js'
 import { formatForChannel } from '../utils/message-formatter.js'
+import { validateOutput } from '../output-sanitizer.js'
 
 const logger = pino({ name: 'engine:post-processor' })
 
@@ -63,6 +64,10 @@ export async function postProcess(
   }
 
   // ── 6.3 Channel formatting ──
+  const preValidation = validateOutput(responseText)
+  if (!preValidation.passed) {
+    responseText = preValidation.sanitizedText
+  }
   const formattedParts = formatForChannel(responseText, ctx.message.channelName, registry)
 
   // ── 6.4 TTS ──

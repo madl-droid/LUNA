@@ -1,15 +1,16 @@
 # Engine — Pipeline de procesamiento de mensajes (v2)
 
-Pipeline de 5 fases con concurrencia controlada. Procesa mensajes entrantes (reactivo) y contactos salientes (proactivo).
+Engine agentic con concurrencia controlada. Procesa mensajes entrantes (reactivo) y contactos salientes (proactivo) con un runner compartido.
 
 ## Archivos
 
 ```
 engine.ts             — orquestador principal, entry point, concurrency layers
-config.ts             — carga config de env vars
+config.ts             — carga config: registry para campos del módulo + env para legado global
 index.ts              — re-exports públicos
 types.ts              — todos los types (ContextBundle v4, proactive types, LLM types)
 responder.ts          — responder legacy (bridge)
+output-sanitizer.ts   — sanitización de salida compartida (pre-TTS y pre-delivery)
 
 agentic/
   types.ts            — AgenticConfig, AgenticResult, EffortLevel, ToolCallLog, LoopDetectorResult
@@ -18,6 +19,7 @@ agentic/
   tool-loop-detector.ts — anti-loop: generic repeat, no-progress, ping-pong detection
   agentic-loop.ts     — THE CORE: LLM + tool calling loop (reemplaza Phases 2+3+4)
   post-processor.ts   — criticizer (smart mode) + channel formatting + TTS → CompositorOutput
+  run-agentic-delivery.ts — runner compartido reactive/proactive: prompt + loop + post-process + delivery
   index.ts            — exports públicos
 
 concurrency/
@@ -34,7 +36,7 @@ checkpoints/
 
 phases/
   phase1-intake.ts    — normalización + context loading via memory:manager + users:resolve (<200ms)
-  phase5-validate.ts  — validación + envío + persistencia + commitment auto-detect
+  phase5-validate.ts  — delivery boundary: sanitización final + envío + persistencia + commitment auto-detect
 
 attachments/
   types.ts            — types, constantes, MIME map, hard limits, fallback messages
