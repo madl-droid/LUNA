@@ -669,8 +669,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                     if (tm && v === 'on') tools.push(tm[1]!)
                   }
 
-                  // Subagents
+                  // Subagents toggle + allowed list
                   const subagents = up[`sub_${lt}`] === 'on'
+                  const allowedSubagents: string[] = []
+                  for (const [k, v] of Object.entries(up)) {
+                    const sm = k.match(new RegExp(`^sa_${lt}_(.+)$`))
+                    if (sm && v === 'on') allowedSubagents.push(sm[1]!)
+                  }
 
                   // Knowledge categories
                   const kCats: string[] = []
@@ -709,6 +714,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
                     tools: tools.length > 0 ? tools : existing.permissions.tools,
                     skills: existing.permissions.skills,
                     subagents,
+                    allowedSubagents,
                     allAccess: lt === 'admin',
                   }, {
                     isEnabled: up[`list_enabled_${lt}`] !== undefined ? isEnabled : existing.isEnabled,

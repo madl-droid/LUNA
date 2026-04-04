@@ -101,7 +101,12 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
 
   const skillCatalog = await loadSkillCatalog(registry, ctx.userType)
   const activeToolNames = new Set(toolCatalog.map((tool) => tool.name))
-  const filteredSkills = filterSkillsByTools(skillCatalog, activeToolNames)
+  const skillsByTools = filterSkillsByTools(skillCatalog, activeToolNames)
+  // Filter by user permissions: empty/['*'] = all, otherwise whitelist by name
+  const allowedSkills = ctx.userPermissions.skills
+  const filteredSkills = (!allowedSkills || allowedSkills.length === 0 || allowedSkills.includes('*'))
+    ? skillsByTools
+    : skillsByTools.filter(s => allowedSkills.includes(s.name))
   const skillReadTool = buildSkillReadToolDef(filteredSkills.map((skill) => skill.name))
   if (skillReadTool) llmToolDefs.push(skillReadTool)
 

@@ -25,7 +25,11 @@ export function getAgenticSubagentCatalog(
 ): SubagentCatalogEntry[] {
   if (!ctx.userPermissions.subagents) return []
   const catalog = registry.getOptional<SubagentCatalogReader>('subagents:catalog')
-  return catalog?.getEnabledTypes() ?? []
+  const all = catalog?.getEnabledTypes() ?? []
+  // Filter by allowed list: undefined/empty = all, otherwise whitelist by slug
+  const allowed = ctx.userPermissions.allowedSubagents
+  if (!allowed || allowed.length === 0) return all
+  return all.filter(sa => allowed.includes(sa.slug))
 }
 
 export function filterAgenticTools<T extends { name: string }>(
