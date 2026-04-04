@@ -142,10 +142,14 @@ export async function buildAgenticPrompt(
 
   // ── Section 12: <skills> ──────────────────────────────────────────────────
   // Catalog only — full content is fetched on-demand by the agent via the skill_read tool.
-  // Skills are filtered to those relevant to the active tool set.
+  // Skills filtered by: userType (frontmatter) → requiredTools → userPermissions.skills
   const skills = await loadSkillCatalog(registry, ctx.userType)
   const activeToolNames = new Set(allowedTools.map((t: { name: string }) => t.name))
-  const filteredSkills = filterSkillsByTools(skills, activeToolNames)
+  const skillsByTools = filterSkillsByTools(skills, activeToolNames)
+  const allowedSkills = ctx.userPermissions.skills
+  const filteredSkills = (!allowedSkills || allowedSkills.length === 0 || allowedSkills.includes('*'))
+    ? skillsByTools
+    : skillsByTools.filter(s => allowedSkills.includes(s.name))
   const stubSection = buildSkillCatalogSection(filteredSkills)
   if (stubSection) {
     systemParts.push(stubSection)
