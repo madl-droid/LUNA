@@ -236,9 +236,18 @@ export class MedilinkApiClient {
   }
 
   async createAppointment(data: MedilinkAppointmentCreate): Promise<MedilinkAppointment> {
+    // POST /citas requires v5 API (v1 rejects "sucursal médica" type)
+    // v5 uses id_profesional instead of id_dentista
+    const v5Body: Record<string, unknown> = {
+      ...data as unknown as Record<string, unknown>,
+      id_profesional: data.id_dentista,
+    }
+    delete v5Body.id_dentista
+    const v5BaseUrl = this.baseUrl.replace('/api/v1', '/api/v5')
     const res = await this.request<MedilinkAppointment>('POST', '/citas', {
-      body: data as unknown as Record<string, unknown>,
+      body: v5Body,
       priority: 'medium',
+      fullUrl: `${v5BaseUrl}/citas`,
     })
     return res.data
   }
