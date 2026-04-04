@@ -78,23 +78,23 @@ function envProvider(key: string, fallback: LLMProvider): LLMProvider {
 export function loadEngineConfig(registry: Registry): EngineConfig {
   const moduleConfig = registry.getConfig<EngineModuleConfig>('engine')
   return {
-    // LLM models
-    classifyModel: env('LLM_CLASSIFY_MODEL', 'claude-sonnet-4-6'),
+    // LLM models (defaults match LLM module configSchema — canonical source of truth)
+    classifyModel: env('LLM_CLASSIFY_MODEL', 'claude-sonnet-4-5-20250929'),
     classifyProvider: envProvider('LLM_CLASSIFY_PROVIDER', 'anthropic'),
-    respondModel: env('LLM_RESPOND_MODEL', 'claude-sonnet-4-6'),
-    respondProvider: envProvider('LLM_RESPOND_PROVIDER', 'anthropic'),
-    complexModel: env('LLM_COMPLEX_MODEL', 'claude-opus-4-6'),
+    respondModel: env('LLM_RESPOND_MODEL', 'gemini-2.5-flash'),
+    respondProvider: envProvider('LLM_RESPOND_PROVIDER', 'google'),
+    complexModel: env('LLM_COMPLEX_MODEL', 'claude-opus-4-5-20251101'),
     complexProvider: envProvider('LLM_COMPLEX_PROVIDER', 'anthropic'),
-    toolsModel: env('LLM_TOOLS_MODEL', 'claude-haiku-4-5-20251001'),
+    toolsModel: env('LLM_TOOLS_MODEL', 'claude-sonnet-4-5-20250929'),
     toolsProvider: envProvider('LLM_TOOLS_PROVIDER', 'anthropic'),
-    proactiveModel: env('LLM_PROACTIVE_MODEL', 'claude-sonnet-4-6'),
+    proactiveModel: env('LLM_PROACTIVE_MODEL', 'claude-sonnet-4-5-20250929'),
     proactiveProvider: envProvider('LLM_PROACTIVE_PROVIDER', 'anthropic'),
 
-    // Fallbacks
+    // Fallbacks (defaults match LLM module configSchema)
     fallbackClassifyModel: env('LLM_FALLBACK_CLASSIFY_MODEL', 'gemini-2.5-flash'),
     fallbackClassifyProvider: envProvider('LLM_FALLBACK_CLASSIFY_PROVIDER', 'google'),
-    fallbackRespondModel: env('LLM_FALLBACK_RESPOND_MODEL', 'gemini-2.5-flash'),
-    fallbackRespondProvider: envProvider('LLM_FALLBACK_RESPOND_PROVIDER', 'google'),
+    fallbackRespondModel: env('LLM_FALLBACK_RESPOND_MODEL', 'claude-sonnet-4-5-20250929'),
+    fallbackRespondProvider: envProvider('LLM_FALLBACK_RESPOND_PROVIDER', 'anthropic'),
     fallbackComplexModel: env('LLM_FALLBACK_COMPLEX_MODEL', 'gemini-2.5-pro'),
     fallbackComplexProvider: envProvider('LLM_FALLBACK_COMPLEX_PROVIDER', 'google'),
 
