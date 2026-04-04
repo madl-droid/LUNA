@@ -139,8 +139,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     sec_llm_limits_info: 'Controla cuantos tokens puede usar cada tarea y los timeouts de las llamadas a la API.',
     sec_llm_cb: 'Circuit Breaker',
     sec_llm_cb_info: 'Si un proveedor falla muchas veces seguidas, se desactiva temporalmente para evitar errores en cadena.',
-    sec_engine_metrics: 'Metricas Engine',
-    sec_engine_metrics_info: 'Rendimiento del engine: replanning, subagent, latencias.',
     sec_db: 'Base de Datos',
     sec_db_info: 'Conexion a PostgreSQL. Normalmente no necesitas cambiar esto — viene configurado en docker-compose.',
     sec_redis: 'Redis',
@@ -207,9 +205,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     i_LLM_CB_FAILURES: 'Cuantos errores consecutivos activan el circuit breaker.',
     i_LLM_CB_WINDOW: 'Ventana de tiempo en la que se cuentan los fallos.',
     i_LLM_CB_COOLDOWN: 'Cuanto tiempo queda desactivado el proveedor despues de activarse.',
-    i_PIPELINE_TOOLS: 'Limite de herramientas que el agente puede ejecutar en un solo turno.',
-    i_PIPELINE_TURNS: 'Maximo de turnos en una conversacion antes de cerrar sesion.',
-    i_PIPELINE_TTL: 'Tiempo maximo de sesion inactiva antes de expirar (en milisegundos).',
     // Naturalidad (per-channel acknowledgments)
     sec_naturalidad: 'Naturalidad',
     sec_naturalidad_info: 'Ajusta como se comporta el agente para que las conversaciones se sientan mas naturales y humanas. Configura avisos por canal.',
@@ -276,8 +271,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     // Unified sidebar labels (key + _info used by section header)
     sec_llm_unified: 'LLM (API Keys, Modelos, Limites)',
     sec_llm_unified_info: 'Todo sobre los proveedores de IA: claves, modelos, limites de tokens, circuit breaker.',
-    sec_pipeline_unified: 'Pipeline (Limites, Follow-up, Naturalidad)',
-    sec_pipeline_unified_info: 'Configuracion del pipeline de conversacion: limites, seguimiento automatico, avisos naturales.',
     // Sidebar category titles
     cat_channels: 'Canales',
     cat_agent: 'Agente',
@@ -485,8 +478,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     sec_llm_limits_info: 'Control how many tokens each task can use and API call timeouts.',
     sec_llm_cb: 'Circuit Breaker',
     sec_llm_cb_info: 'If a provider fails repeatedly, it gets temporarily disabled to prevent cascading errors.',
-    sec_engine_metrics: 'Engine Metrics',
-    sec_engine_metrics_info: 'Engine performance: replanning, subagent, latencies.',
     sec_db: 'Database',
     sec_db_info: 'PostgreSQL connection. Usually configured in docker-compose — no need to change.',
     sec_redis: 'Redis',
@@ -553,9 +544,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     i_LLM_CB_FAILURES: 'How many consecutive errors trigger the circuit breaker.',
     i_LLM_CB_WINDOW: 'Time window in which failures are counted.',
     i_LLM_CB_COOLDOWN: 'How long the provider stays disabled after triggering.',
-    i_PIPELINE_TOOLS: 'Limit of tools the agent can execute in a single turn.',
-    i_PIPELINE_TURNS: 'Maximum turns in a conversation before closing session.',
-    i_PIPELINE_TTL: 'Max inactive session time before expiry (milliseconds).',
     // Naturalidad (per-channel acknowledgments)
     sec_naturalidad: 'Natural Feel',
     sec_naturalidad_info: 'Tune the agent behavior so conversations feel more natural and human. Configure notices per channel.',
@@ -622,8 +610,6 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     // Unified section labels
     sec_llm_unified: 'LLM (API Keys, Models, Limits)',
     sec_llm_unified_info: 'Everything about AI providers: keys, models, token limits, circuit breaker.',
-    sec_pipeline_unified: 'Pipeline (Limits, Follow-up, Natural Feel)',
-    sec_pipeline_unified_info: 'Conversation pipeline config: limits, automatic follow-up, natural feel notices.',
     // Sidebar category titles
     cat_channels: 'Channels',
     cat_agent: 'Agent',
@@ -667,7 +653,7 @@ export const i18n: Record<Lang, Record<string, string | Record<string, string>>>
     dbg_admin_as: 'Admin as...',
     dbg_clear_cache: 'Clear cache',
     dbg_clear_memory: 'Clear memory',
-    dbg_clear_memory_desc: 'Deletes messages, sessions, contacts and logs. Keeps agent (knowledge, subagents, tools, prompts) and config.',
+    dbg_clear_memory_desc: 'Deletes messages, sessions, contacts and logs. Keeps agent intelligence (knowledge, subagents, tools, prompts) and config.',
     dbg_clear_agent: 'Clear agent',
     dbg_clear_agent_desc: 'Deletes knowledge base, subagents, tools and prompts. Re-seeds system subagents. Keeps memory and config.',
     dbg_factory_reset: 'Factory reset',
