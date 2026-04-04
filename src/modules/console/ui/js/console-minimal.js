@@ -215,13 +215,19 @@
     }
   }
 
+  function isInstantToggle(el) {
+    // Permission toggles inside .cb-config-panel are NOT instant — they require save
+    if (el.closest('.cb-config-panel')) return false
+    return el.closest('.toggle-field') || el.closest('.chs-toggle-row')
+  }
+
   function isDirty() {
     var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i]
       // Skip toggles — they apply instantly (both module toggles and channel settings toggles)
-      if (el.type === 'checkbox' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
-      if (el.type === 'hidden' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
+      if (el.type === 'checkbox' && isInstantToggle(el)) continue
+      if (el.type === 'hidden' && isInstantToggle(el)) continue
       var current = el.value
       if (current !== el.getAttribute('data-original')) return true
     }
@@ -234,8 +240,8 @@
     var inputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
     for (var i = 0; i < inputs.length; i++) {
       var el = inputs[i]
-      if (el.type === 'checkbox' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
-      if (el.type === 'hidden' && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) continue
+      if (el.type === 'checkbox' && isInstantToggle(el)) continue
+      if (el.type === 'hidden' && isInstantToggle(el)) continue
       var current = el.value
       el.classList.toggle('modified', current !== el.getAttribute('data-original'))
     }
@@ -245,13 +251,13 @@
   // Track non-toggle input/change
   document.addEventListener('input', function (e) {
     var el = e.target
-    if (el.closest && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) return
+    if (el.closest && isInstantToggle(el)) return
     if (el.hasAttribute && el.hasAttribute('data-original')) checkDirty()
   })
 
   document.addEventListener('change', function (e) {
     var el = e.target
-    if (el.closest && (el.closest('.toggle-field') || el.closest('.chs-toggle-row'))) return
+    if (el.closest && isInstantToggle(el)) return
     checkDirty()
   })
 
@@ -269,7 +275,7 @@
       var allInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
       for (var i = 0; i < allInputs.length; i++) {
         var inp = allInputs[i]
-        if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) continue
+        if (isInstantToggle(inp)) continue
         if (saveForm.contains(inp)) continue
         body.append(inp.name, inp.value)
       }
