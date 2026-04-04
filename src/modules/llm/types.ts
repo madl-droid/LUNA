@@ -87,7 +87,7 @@ export const TASK_TO_KEY_GROUP: Record<string, ApiKeyGroup | undefined> = {
   vision: 'multimedia',
   stt: 'multimedia',
   tts: 'voice',
-  // Knowledge embeddings handled separately via KNOWLEDGE_GOOGLE_AI_API_KEY
+  embeddings: 'knowledge',
 
   // Anthropic groups
   classify: 'engine',
@@ -386,21 +386,13 @@ export interface LLMModuleConfig {
   ANTHROPIC_API_KEY: string
   GOOGLE_AI_API_KEY: string
 
-  // API key mode: 'basic' (one key per provider) or 'advanced' (per-group keys)
-  LLM_API_MODE: string
-
-  // Per-capability API key overrides (legacy — kept for backward compat)
-  LLM_VISION_API_KEY: string
-  LLM_STT_API_KEY: string
-  LLM_IMAGE_GEN_API_KEY: string
-
-  // Advanced mode: Gemini group keys
+  // Gemini group keys (fallback to GOOGLE_AI_API_KEY if empty)
   LLM_GOOGLE_ENGINE_API_KEY: string
   LLM_GOOGLE_MULTIMEDIA_API_KEY: string
   LLM_GOOGLE_VOICE_API_KEY: string
   LLM_GOOGLE_KNOWLEDGE_API_KEY: string
 
-  // Advanced mode: Anthropic group keys
+  // Anthropic group keys (fallback to ANTHROPIC_API_KEY if empty)
   LLM_ANTHROPIC_ENGINE_API_KEY: string
   LLM_ANTHROPIC_CORTEX_API_KEY: string
   LLM_ANTHROPIC_MEMORY_API_KEY: string
@@ -433,62 +425,14 @@ export interface LLMModuleConfig {
   LLM_DAILY_BUDGET_USD: number
   LLM_MONTHLY_BUDGET_USD: number
 
-  // Task routing (JSON strings parsed at init)
-  LLM_ROUTE_CLASSIFY: string
-  LLM_ROUTE_RESPOND: string
-  LLM_ROUTE_COMPLEX: string
-  LLM_ROUTE_TOOLS: string
-  LLM_ROUTE_PROACTIVE: string
-  LLM_ROUTE_CRITICIZE: string
-  LLM_ROUTE_DOCUMENT_READ: string
-  LLM_ROUTE_BATCH: string
-
   // Criticizer mode
   LLM_CRITICIZER_MODE: string
 
-  // Per-task primary model overrides
-  LLM_CLASSIFY_PROVIDER: string
-  LLM_CLASSIFY_MODEL: string
-  LLM_RESPOND_PROVIDER: string
-  LLM_RESPOND_MODEL: string
-  LLM_COMPLEX_PROVIDER: string
-  LLM_COMPLEX_MODEL: string
-  LLM_TOOLS_PROVIDER: string
-  LLM_TOOLS_MODEL: string
-  LLM_PROACTIVE_PROVIDER: string
-  LLM_PROACTIVE_MODEL: string
-  LLM_CRITICIZE_PROVIDER: string
-  LLM_CRITICIZE_MODEL: string
-  LLM_DOCUMENT_READ_PROVIDER: string
-  LLM_DOCUMENT_READ_MODEL: string
-  LLM_BATCH_PROVIDER: string
-  LLM_BATCH_MODEL: string
-  LLM_VISION_PROVIDER: string
-  LLM_VISION_MODEL: string
-  LLM_WEB_SEARCH_PROVIDER: string
-  LLM_WEB_SEARCH_MODEL: string
-
-  // Per-task downgrade targets
-  LLM_CLASSIFY_DOWNGRADE_PROVIDER: string
-  LLM_CLASSIFY_DOWNGRADE_MODEL: string
-  LLM_RESPOND_DOWNGRADE_PROVIDER: string
-  LLM_RESPOND_DOWNGRADE_MODEL: string
-  LLM_COMPLEX_DOWNGRADE_PROVIDER: string
-  LLM_COMPLEX_DOWNGRADE_MODEL: string
-  LLM_TOOLS_DOWNGRADE_PROVIDER: string
-  LLM_TOOLS_DOWNGRADE_MODEL: string
-  LLM_PROACTIVE_DOWNGRADE_PROVIDER: string
-  LLM_PROACTIVE_DOWNGRADE_MODEL: string
-  LLM_CRITICIZE_DOWNGRADE_PROVIDER: string
-  LLM_CRITICIZE_DOWNGRADE_MODEL: string
-  LLM_DOCUMENT_READ_DOWNGRADE_PROVIDER: string
-  LLM_DOCUMENT_READ_DOWNGRADE_MODEL: string
-  LLM_BATCH_DOWNGRADE_PROVIDER: string
-  LLM_BATCH_DOWNGRADE_MODEL: string
-  LLM_VISION_DOWNGRADE_PROVIDER: string
-  LLM_VISION_DOWNGRADE_MODEL: string
-  LLM_WEB_SEARCH_DOWNGRADE_PROVIDER: string
-  LLM_WEB_SEARCH_DOWNGRADE_MODEL: string
+  // Task routing — all fields follow pattern LLM_{TASK}_{PROVIDER|MODEL}
+  // Primary, downgrade, and fallback for each task are read dynamically
+  // by the TaskRouter via config[`LLM_${TASK}_PROVIDER`] etc.
+  // Typed as index signature — individual fields defined in configSchema.
+  [key: `LLM_${string}_PROVIDER` | `LLM_${string}_MODEL`]: string
 
   // Fallback chain order
   LLM_FALLBACK_CHAIN: string

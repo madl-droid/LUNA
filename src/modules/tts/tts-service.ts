@@ -10,6 +10,7 @@ const logger = pino({ name: 'tts:service' })
 
 export interface TTSConfig {
   TTS_GOOGLE_API_KEY: string
+  TTS_MODEL: string
   TTS_VOICE_NAME: string
   TTS_MAX_CHARS: number
   TTS_ENABLED_CHANNELS: string
@@ -31,7 +32,7 @@ export interface SynthesizeResult {
   durationSeconds: number
 }
 
-const GEMINI_TTS_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent'
+const GEMINI_TTS_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 /** Convert raw PCM data to WAV by prepending a 44-byte RIFF header */
 function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
@@ -143,7 +144,8 @@ export class TTSService {
         requestBody.systemInstruction = { parts: [{ text: styleParts.join('\n') }] }
       }
 
-      const response = await fetch(`${GEMINI_TTS_API_URL}?key=${this.config.TTS_GOOGLE_API_KEY}`, {
+      const ttsModel = this.config.TTS_MODEL || 'gemini-2.5-flash-preview-tts'
+      const response = await fetch(`${GEMINI_TTS_API_BASE}/${ttsModel}:generateContent?key=${this.config.TTS_GOOGLE_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),

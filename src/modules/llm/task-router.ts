@@ -15,135 +15,30 @@ import { TASK_TO_KEY_GROUP } from './types.js'
 const logger = pino({ name: 'llm:router' })
 
 // ═══════════════════════════════════════════
-// Default routes (matching existing engine config)
+// Task temperature defaults (internal — not user-configurable)
 // ═══════════════════════════════════════════
 
-const DEFAULT_ROUTES: TaskRoute[] = [
-  // Phase 2 evaluate: Sonnet → Flash
-  {
-    task: 'classify',
-    primary: {
-      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.1,
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
-    ],
-  },
-  // Phase 4 compose: Flash → Flash-Lite → Sonnet
-  {
-    task: 'respond',
-    primary: {
-      provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7,
-      downgrade: { provider: 'google', model: 'gemini-2.5-flash-lite', temperature: 0.7 },
-    },
-    fallbacks: [
-      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7 },
-    ],
-  },
-  // Complex / subagent heavy: Opus → Sonnet → Pro
-  {
-    task: 'complex',
-    primary: {
-      provider: 'anthropic', model: 'claude-opus-4-5-20251101', temperature: 0.5,
-      downgrade: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.5 },
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-pro', temperature: 0.5 },
-    ],
-  },
-  // Tools / subagent: Sonnet → Flash
-  {
-    task: 'tools',
-    primary: {
-      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.1,
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.1 },
-    ],
-  },
-  // Proactive: Sonnet → Flash
-  {
-    task: 'proactive',
-    primary: {
-      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.7,
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.7 },
-    ],
-  },
-  // Vision / multimedia: Flash → Flash-Lite → Sonnet
-  {
-    task: 'vision',
-    primary: {
-      provider: 'google', model: 'gemini-2.5-flash',
-      downgrade: { provider: 'google', model: 'gemini-2.5-flash-lite' },
-    },
-    fallbacks: [
-      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
-    ],
-  },
-  // Web search: Flash+grounding → Pro → Sonnet
-  {
-    task: 'web_search',
-    primary: {
-      provider: 'google', model: 'gemini-2.5-flash',
-      downgrade: { provider: 'google', model: 'gemini-2.5-pro' },
-    },
-    fallbacks: [
-      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
-    ],
-  },
-  // Compress: Haiku → Flash (lightweight)
-  {
-    task: 'compress',
-    primary: {
-      provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.2,
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.2 },
-    ],
-  },
-  // ACK: Haiku → Flash (ultra-lightweight, 30 tokens)
-  {
-    task: 'ack',
-    primary: {
-      provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.8, maxTokens: 30,
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.8, maxTokens: 30 },
-    ],
-  },
-  // Criticize: Gemini Pro → Flash → Sonnet (quality gate — reviews response before sending)
-  {
-    task: 'criticize',
-    primary: {
-      provider: 'google', model: 'gemini-2.5-pro', temperature: 0.3,
-      downgrade: { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.3 },
-    },
-    fallbacks: [
-      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.3 },
-    ],
-  },
-  // Document read: Sonnet → Flash (interpret/summarize extracted documents)
-  {
-    task: 'document_read',
-    primary: {
-      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.2,
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.2 },
-    ],
-  },
-  // Batch (nightly summaries/analysis): Sonnet → Flash
-  {
-    task: 'batch',
-    primary: {
-      provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0.3,
-    },
-    fallbacks: [
-      { provider: 'google', model: 'gemini-2.5-flash', temperature: 0.3 },
-    ],
-  },
+const TASK_TEMPERATURES: Partial<Record<LLMTask, number>> = {
+  classify: 0.1,
+  respond: 0.7,
+  complex: 0.5,
+  tools: 0.1,
+  proactive: 0.7,
+  compress: 0.2,
+  ack: 0.8,
+  criticize: 0.3,
+  document_read: 0.2,
+  batch: 0.3,
+}
+
+const TASK_MAX_TOKENS: Partial<Record<LLMTask, number>> = {
+  ack: 30,
+}
+
+/** All tasks that can be configured via LLM_{TASK}_PROVIDER/MODEL */
+const CONFIGURABLE_TASKS: LLMTask[] = [
+  'classify', 'respond', 'complex', 'tools', 'proactive', 'criticize',
+  'document_read', 'batch', 'vision', 'web_search', 'compress', 'ack',
 ]
 
 // ═══════════════════════════════════════════
@@ -201,29 +96,16 @@ const TASK_ALIASES: Record<string, LLMTask> = {
 export class TaskRouter {
   private routes: Map<LLMTask, TaskRoute> = new Map()
   private fallbackChain: LLMProviderName[] = ['anthropic', 'google']
-  private apiMode: 'basic' | 'advanced' = 'basic'
 
   constructor(
     private readonly adapters: Map<LLMProviderName, ProviderAdapter>,
     private readonly breakers: CircuitBreakerManager,
     private readonly apiKeys: Map<string, string>, // envVar → key
-  ) {
-    // Load defaults
-    for (const route of DEFAULT_ROUTES) {
-      this.routes.set(route.task, route)
-    }
-  }
+  ) {}
 
   /**
-   * Set the API key mode (basic or advanced).
-   */
-  setApiMode(mode: 'basic' | 'advanced'): void {
-    this.apiMode = mode
-    logger.info({ mode }, 'API key mode set')
-  }
-
-  /**
-   * Load custom routes from module config (overrides defaults).
+   * Build all routes from module config. No hardcoded defaults —
+   * all defaults come from configSchema Zod `.default()` values.
    */
   loadFromConfig(config: LLMModuleConfig): void {
     // Parse fallback chain
@@ -233,100 +115,42 @@ export class TaskRouter {
       } catch { /* keep default */ }
     }
 
-    // Parse per-task routes from JSON env vars
-    const routeMap: Record<string, string | undefined> = {
-      classify: config.LLM_ROUTE_CLASSIFY,
-      respond: config.LLM_ROUTE_RESPOND,
-      complex: config.LLM_ROUTE_COMPLEX,
-      tools: config.LLM_ROUTE_TOOLS,
-      proactive: config.LLM_ROUTE_PROACTIVE,
-      criticize: config.LLM_ROUTE_CRITICIZE,
-      document_read: config.LLM_ROUTE_DOCUMENT_READ,
-      batch: config.LLM_ROUTE_BATCH,
-    }
-
-    for (const [task, json] of Object.entries(routeMap)) {
-      if (!json) continue
-      try {
-        const parsed = JSON.parse(json) as { provider: string; model: string; temperature?: number; apiKeyEnv?: string }
-        const existing = this.routes.get(task as LLMTask)
-        if (existing) {
-          existing.primary = {
-            provider: parsed.provider as LLMProviderName,
-            model: parsed.model,
-            temperature: parsed.temperature,
-            apiKeyEnv: parsed.apiKeyEnv,
-            downgrade: existing.primary.downgrade, // preserve downgrade if already set
-          }
-          // Validate the route and warn if problematic
-          const warning = this.validateRoute(task as LLMTask, existing)
-          if (warning) {
-            logger.warn({ task, provider: parsed.provider }, warning)
-          }
-        }
-      } catch (err) {
-        logger.warn({ task, err }, 'Failed to parse route config, using default')
-      }
-    }
-
-    // Parse per-task primary model overrides (from advanced console table)
     const cfg = config as unknown as Record<string, string | undefined>
-    const primaryOverrides: Array<{ task: LLMTask; providerKey: string; modelKey: string }> = [
-      { task: 'classify', providerKey: 'LLM_CLASSIFY_PROVIDER', modelKey: 'LLM_CLASSIFY_MODEL' },
-      { task: 'respond', providerKey: 'LLM_RESPOND_PROVIDER', modelKey: 'LLM_RESPOND_MODEL' },
-      { task: 'complex', providerKey: 'LLM_COMPLEX_PROVIDER', modelKey: 'LLM_COMPLEX_MODEL' },
-      { task: 'tools', providerKey: 'LLM_TOOLS_PROVIDER', modelKey: 'LLM_TOOLS_MODEL' },
-      { task: 'proactive', providerKey: 'LLM_PROACTIVE_PROVIDER', modelKey: 'LLM_PROACTIVE_MODEL' },
-      { task: 'criticize', providerKey: 'LLM_CRITICIZE_PROVIDER', modelKey: 'LLM_CRITICIZE_MODEL' },
-      { task: 'document_read', providerKey: 'LLM_DOCUMENT_READ_PROVIDER', modelKey: 'LLM_DOCUMENT_READ_MODEL' },
-      { task: 'batch', providerKey: 'LLM_BATCH_PROVIDER', modelKey: 'LLM_BATCH_MODEL' },
-      { task: 'vision', providerKey: 'LLM_VISION_PROVIDER', modelKey: 'LLM_VISION_MODEL' },
-      { task: 'web_search', providerKey: 'LLM_WEB_SEARCH_PROVIDER', modelKey: 'LLM_WEB_SEARCH_MODEL' },
-    ]
 
-    for (const { task, providerKey, modelKey } of primaryOverrides) {
-      const provider = cfg[providerKey]
-      const model = cfg[modelKey]
-      if (provider && model) {
-        const existing = this.routes.get(task)
-        if (existing) {
-          existing.primary = {
-            ...existing.primary,
-            provider: provider as LLMProviderName,
-            model,
-          }
-          const warning = this.validateRoute(task, existing)
-          if (warning) logger.warn({ task, provider }, warning)
-        }
+    // Build routes from per-task config fields
+    for (const task of CONFIGURABLE_TASKS) {
+      const upper = task.toUpperCase()
+      const provider = cfg[`LLM_${upper}_PROVIDER`] as LLMProviderName | undefined
+      const model = cfg[`LLM_${upper}_MODEL`]
+      if (!provider || !model) continue
+
+      const temperature = TASK_TEMPERATURES[task]
+      const maxTokens = TASK_MAX_TOKENS[task]
+
+      // Downgrade (optional)
+      const dgProvider = cfg[`LLM_${upper}_DOWNGRADE_PROVIDER`] as LLMProviderName | undefined
+      const dgModel = cfg[`LLM_${upper}_DOWNGRADE_MODEL`]
+      const downgrade = dgProvider && dgModel
+        ? { provider: dgProvider, model: dgModel, temperature }
+        : undefined
+
+      // Cross-API fallback (optional)
+      const fbProvider = cfg[`LLM_${upper}_FALLBACK_PROVIDER`] as LLMProviderName | undefined
+      const fbModel = cfg[`LLM_${upper}_FALLBACK_MODEL`]
+      const fallbacks = fbProvider && fbModel
+        ? [{ provider: fbProvider, model: fbModel, temperature, maxTokens }]
+        : []
+
+      const route: TaskRoute = {
+        task,
+        primary: { provider, model, temperature, maxTokens, downgrade },
+        fallbacks,
       }
-    }
 
-    // Parse per-task downgrade targets (separate provider/model keys)
-    const downgradeTasks: Array<{ task: LLMTask; providerKey: string; modelKey: string }> = [
-      { task: 'classify', providerKey: 'LLM_CLASSIFY_DOWNGRADE_PROVIDER', modelKey: 'LLM_CLASSIFY_DOWNGRADE_MODEL' },
-      { task: 'respond', providerKey: 'LLM_RESPOND_DOWNGRADE_PROVIDER', modelKey: 'LLM_RESPOND_DOWNGRADE_MODEL' },
-      { task: 'complex', providerKey: 'LLM_COMPLEX_DOWNGRADE_PROVIDER', modelKey: 'LLM_COMPLEX_DOWNGRADE_MODEL' },
-      { task: 'tools', providerKey: 'LLM_TOOLS_DOWNGRADE_PROVIDER', modelKey: 'LLM_TOOLS_DOWNGRADE_MODEL' },
-      { task: 'proactive', providerKey: 'LLM_PROACTIVE_DOWNGRADE_PROVIDER', modelKey: 'LLM_PROACTIVE_DOWNGRADE_MODEL' },
-      { task: 'criticize', providerKey: 'LLM_CRITICIZE_DOWNGRADE_PROVIDER', modelKey: 'LLM_CRITICIZE_DOWNGRADE_MODEL' },
-      { task: 'document_read', providerKey: 'LLM_DOCUMENT_READ_DOWNGRADE_PROVIDER', modelKey: 'LLM_DOCUMENT_READ_DOWNGRADE_MODEL' },
-      { task: 'batch', providerKey: 'LLM_BATCH_DOWNGRADE_PROVIDER', modelKey: 'LLM_BATCH_DOWNGRADE_MODEL' },
-      { task: 'vision', providerKey: 'LLM_VISION_DOWNGRADE_PROVIDER', modelKey: 'LLM_VISION_DOWNGRADE_MODEL' },
-      { task: 'web_search', providerKey: 'LLM_WEB_SEARCH_DOWNGRADE_PROVIDER', modelKey: 'LLM_WEB_SEARCH_DOWNGRADE_MODEL' },
-    ]
+      const warning = this.validateRoute(task, route)
+      if (warning) logger.warn({ task, provider }, warning)
 
-    for (const { task, providerKey, modelKey } of downgradeTasks) {
-      const dgProvider = cfg[providerKey]
-      const dgModel = cfg[modelKey]
-      if (dgProvider && dgModel) {
-        const existing = this.routes.get(task)
-        if (existing) {
-          existing.primary.downgrade = {
-            provider: dgProvider as LLMProviderName,
-            model: dgModel,
-          }
-        }
-      }
+      this.routes.set(task, route)
     }
   }
 
@@ -501,11 +325,9 @@ export class TaskRouter {
       if (key) return key
     }
 
-    // 2. In advanced mode, try group-specific key
-    if (this.apiMode === 'advanced') {
-      const groupKey = this.resolveGroupApiKey(provider, task)
-      if (groupKey) return groupKey
-    }
+    // 2. Try group-specific key (if configured)
+    const groupKey = this.resolveGroupApiKey(provider, task)
+    if (groupKey) return groupKey
 
     // 3. Fall back to provider default key
     return this.resolveApiKeyForProvider(provider)

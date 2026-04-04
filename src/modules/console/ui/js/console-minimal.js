@@ -553,36 +553,6 @@
     checkDirty()
   })
 
-  // === API Key Mode segment toggle ===
-  window.setApiKeyMode = function (mode) {
-    var input = document.getElementById('api-mode-input')
-    if (input) {
-      input.value = mode
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-    }
-    document.querySelectorAll('.seg-btn').forEach(function (btn) {
-      btn.classList.toggle('seg-btn--active', btn.getAttribute('data-mode') === mode)
-    })
-    var advGroups = document.querySelectorAll('.adv-group-keys')
-    advGroups.forEach(function (el) {
-      el.style.display = mode === 'advanced' ? 'block' : 'none'
-    })
-  }
-
-  // === Business Hours day toggle ===
-  window.toggleBhDay = function (btn) {
-    btn.classList.toggle('bh-day-btn--active')
-    var input = document.getElementById('bh-days-input')
-    if (!input) return
-    var days = []
-    document.querySelectorAll('.bh-day-btn--active').forEach(function (el) {
-      days.push(el.getAttribute('data-day'))
-    })
-    days.sort()
-    input.value = days.join(',')
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-  }
-
   // === Model table — refresh custom select widget ===
   function refreshCustomSelect(sel) {
     var wrapper = sel.parentNode
@@ -658,6 +628,25 @@
     var dgModInput = row.querySelector('input[name="LLM_' + taskKey + '_DOWNGRADE_MODEL"]')
     if (dgProvInput) dgProvInput.value = provider
     if (dgModInput) dgModInput.value = model
+  })
+
+  // === Model table — fallback select change (update hidden inputs) ===
+  document.addEventListener('change', function (e) {
+    var sel = e.target
+    if (!sel.classList || !sel.classList.contains('mt-fb-sel')) return
+    var val = sel.value // "provider:model" or ""
+    var task = sel.getAttribute('data-task')
+    if (!task) return
+    var taskKey = task.toUpperCase()
+    var row = sel.closest ? sel.closest('.mt-row') : null
+    if (!row) return
+    var colonIdx = val ? val.indexOf(':') : -1
+    var provider = colonIdx >= 0 ? val.substring(0, colonIdx) : ''
+    var model = colonIdx >= 0 ? val.substring(colonIdx + 1) : ''
+    var fbProvInput = row.querySelector('input[name="LLM_' + taskKey + '_FALLBACK_PROVIDER"]')
+    var fbModInput = row.querySelector('input[name="LLM_' + taskKey + '_FALLBACK_MODEL"]')
+    if (fbProvInput) fbProvInput.value = provider
+    if (fbModInput) fbModInput.value = model
   })
 
   // === WhatsApp polling (only on /console/whatsapp) ===

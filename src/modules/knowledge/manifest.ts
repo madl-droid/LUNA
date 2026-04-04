@@ -28,8 +28,6 @@ const logger = pino({ name: 'knowledge' })
 
 interface LLMConfigForKnowledge {
   GOOGLE_AI_API_KEY?: string
-  KNOWLEDGE_EMBEDDING_API_SEPARATE?: boolean
-  KNOWLEDGE_GOOGLE_AI_API_KEY?: string
   LLM_GOOGLE_KNOWLEDGE_API_KEY?: string
 }
 
@@ -48,12 +46,7 @@ function resolveKnowledgeGoogleApiKey(registry: Registry, config: KnowledgeConfi
   if (config.KNOWLEDGE_GOOGLE_AI_API_KEY) return config.KNOWLEDGE_GOOGLE_AI_API_KEY
 
   const llmConfig = registry.getConfig<LLMConfigForKnowledge>('llm')
-  if (llmConfig.KNOWLEDGE_EMBEDDING_API_SEPARATE && llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY) {
-    return llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY
-  }
-
   return llmConfig.LLM_GOOGLE_KNOWLEDGE_API_KEY
-    ?? llmConfig.KNOWLEDGE_GOOGLE_AI_API_KEY
     ?? llmConfig.GOOGLE_AI_API_KEY
     ?? ''
 }
@@ -1130,6 +1123,8 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_MAX_API_CONNECTORS: numEnvMin(1, 10),
     KNOWLEDGE_MAX_CATEGORIES: numEnvMin(1, 25),
     KNOWLEDGE_MAX_CORE_DOCS: numEnvMin(1, 3),
+    KNOWLEDGE_EMBEDDING_MODEL: z.string().default('gemini-embedding-2-preview'),
+    KNOWLEDGE_EMBEDDING_DIMENSIONS: numEnvMin(256, 1536),
   }),
 
   console: {
@@ -1223,7 +1218,12 @@ const manifest: ModuleManifest = {
     // Initialize embedding service (if enabled and API key provided)
     let embeddingService: EmbeddingService | null = null
     if (config.KNOWLEDGE_EMBEDDING_ENABLED && config.KNOWLEDGE_GOOGLE_AI_API_KEY) {
-      embeddingService = new EmbeddingService(config.KNOWLEDGE_GOOGLE_AI_API_KEY, logger)
+      embeddingService = new EmbeddingService(
+        config.KNOWLEDGE_GOOGLE_AI_API_KEY,
+        logger,
+        config.KNOWLEDGE_EMBEDDING_MODEL,
+        config.KNOWLEDGE_EMBEDDING_DIMENSIONS,
+      )
       logger.info('Embedding service initialized')
     } else {
       logger.info('Embeddings disabled — search will use FTS only')

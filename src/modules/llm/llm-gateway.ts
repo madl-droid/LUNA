@@ -65,6 +65,9 @@ export class LLMGateway {
   private rpmLimits = new Map<LLMProviderName, number>()
   private tpmLimits = new Map<LLMProviderName, number>()
 
+  /** Service-level circuit breaker for specialized services (TTS, embeddings, voice) */
+  private serviceBreakers: EscalatingCBManager
+
   // Model cache (from model-scanner or listModels)
   private modelCache = new Map<LLMProviderName, ModelInfo[]>()
 
@@ -94,6 +97,7 @@ export class LLMGateway {
 
     // Escalating CB per model-target (2 fails in 30 min → 1h → 3h → 6h cooldown)
     this.targetBreakers = new EscalatingCBManager()
+    this.serviceBreakers = new EscalatingCBManager()
     this.targetBreakers.onRecovery = (targetKey) => {
       logger.info({ target: targetKey }, 'Target recovered from escalating CB')
     }
@@ -117,7 +121,6 @@ export class LLMGateway {
 
     // Create router
     this.router = new TaskRouter(this.adapters, this.breakers, this.apiKeys)
-    this.router.setApiMode((config.LLM_API_MODE === 'advanced' ? 'advanced' : 'basic'))
     this.router.loadFromConfig(config)
 
     // FIX: LLM-1 — Cargar rate limits desde config
@@ -427,42 +430,70 @@ export class LLMGateway {
       throw new Error('No Google API key configured for TTS')
     }
 
+    // Check service-level circuit breaker
+    const serviceCB = this.serviceBreakers.get('service:tts')
+    if (!serviceCB.isAvailable()) {
+      throw new Error('TTS service circuit breaker is open — service temporarily unavailable')
+    }
+
     const languageCode = request.languageCode ?? 'es-US'
     const audioEncoding = request.audioEncoding ?? 'MP3'
 
-    const ttsResponse = await fetch(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { text: request.text },
-          voice: {
-            languageCode,
-            name: request.voice,
-          },
-          audioConfig: { audioEncoding },
-        }),
-      },
-    )
+    try {
+      const ttsResponse = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { text: request.text },
+            voice: {
+              languageCode,
+              name: request.voice,
+            },
+            audioConfig: { audioEncoding },
+          }),
+        },
+      )
 
-    if (!ttsResponse.ok) {
-      const errText = await ttsResponse.text()
-      throw new Error(`TTS synthesis failed: ${errText}`)
-    }
+      if (!ttsResponse.ok) {
+        const errText = await ttsResponse.text()
+        throw new Error(`TTS synthesis failed: ${errText}`)
+      }
 
-    const data = await ttsResponse.json() as { audioContent: string }
-    const mimeMap: Record<string, string> = {
-      MP3: 'audio/mp3',
-      LINEAR16: 'audio/wav',
-      OGG_OPUS: 'audio/ogg',
-    }
+      const data = await ttsResponse.json() as { audioContent: string }
+      const mimeMap: Record<string, string> = {
+        MP3: 'audio/mp3',
+        LINEAR16: 'audio/wav',
+        OGG_OPUS: 'audio/ogg',
+      }
 
-    return {
-      audioBase64: data.audioContent,
-      mimeType: mimeMap[audioEncoding] ?? 'audio/mp3',
-      voice: request.voice,
+      serviceCB.recordSuccess()
+      return {
+        audioBase64: data.audioContent,
+        mimeType: mimeMap[audioEncoding] ?? 'audio/mp3',
+        voice: request.voice,
+      }
+    } catch (err) {
+      serviceCB.recordFailure(String(err))
+      throw err
     }
+  }
+
+  /**
+   * Check if a specialized service is currently available.
+   * Used by the system to stop offering capabilities when services are down.
+   * Services: 'tts', 'embeddings', 'voice'
+   */
+  isServiceAvailable(service: string): boolean {
+    return this.serviceBreakers.get(`service:${service}`).isAvailable()
+  }
+
+  /**
+   * Get status of all service-level circuit breakers.
+   */
+  getServiceStatus(): EscalatingCBSnapshot[] {
+    return this.serviceBreakers.allSnapshots()
   }
 
   // ═══════════════════════════════════════════
@@ -652,8 +683,7 @@ export class LLMGateway {
     this.loadApiKeys(config)
     this.initAdapters()
 
-    // Update router: API key mode + per-task routes
-    this.router.setApiMode(config.LLM_API_MODE === 'advanced' ? 'advanced' : 'basic')
+    // Update router: per-task routes
     this.router.loadFromConfig(config)
 
     // Update retry config
@@ -670,7 +700,7 @@ export class LLMGateway {
     this.tpmLimits.set('anthropic', config.LLM_TPM_ANTHROPIC)
     this.tpmLimits.set('google', config.LLM_TPM_GOOGLE)
 
-    logger.info({ mode: config.LLM_API_MODE }, 'LLM gateway config hot-reloaded')
+    logger.info('LLM gateway config hot-reloaded')
   }
 
   private loadApiKeys(config: LLMModuleConfig): void {
@@ -678,18 +708,13 @@ export class LLMGateway {
     if (config.ANTHROPIC_API_KEY) this.apiKeys.set('ANTHROPIC_API_KEY', config.ANTHROPIC_API_KEY)
     if (config.GOOGLE_AI_API_KEY) this.apiKeys.set('GOOGLE_AI_API_KEY', config.GOOGLE_AI_API_KEY)
 
-    // Per-capability overrides (legacy)
-    if (config.LLM_VISION_API_KEY) this.apiKeys.set('LLM_VISION_API_KEY', config.LLM_VISION_API_KEY)
-    if (config.LLM_STT_API_KEY) this.apiKeys.set('LLM_STT_API_KEY', config.LLM_STT_API_KEY)
-    if (config.LLM_IMAGE_GEN_API_KEY) this.apiKeys.set('LLM_IMAGE_GEN_API_KEY', config.LLM_IMAGE_GEN_API_KEY)
-
-    // Advanced mode: Gemini group keys
+    // Gemini group keys
     if (config.LLM_GOOGLE_ENGINE_API_KEY) this.apiKeys.set('LLM_GOOGLE_ENGINE_API_KEY', config.LLM_GOOGLE_ENGINE_API_KEY)
     if (config.LLM_GOOGLE_MULTIMEDIA_API_KEY) this.apiKeys.set('LLM_GOOGLE_MULTIMEDIA_API_KEY', config.LLM_GOOGLE_MULTIMEDIA_API_KEY)
     if (config.LLM_GOOGLE_VOICE_API_KEY) this.apiKeys.set('LLM_GOOGLE_VOICE_API_KEY', config.LLM_GOOGLE_VOICE_API_KEY)
     if (config.LLM_GOOGLE_KNOWLEDGE_API_KEY) this.apiKeys.set('LLM_GOOGLE_KNOWLEDGE_API_KEY', config.LLM_GOOGLE_KNOWLEDGE_API_KEY)
 
-    // Advanced mode: Anthropic group keys
+    // Anthropic group keys
     if (config.LLM_ANTHROPIC_ENGINE_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_ENGINE_API_KEY', config.LLM_ANTHROPIC_ENGINE_API_KEY)
     if (config.LLM_ANTHROPIC_CORTEX_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_CORTEX_API_KEY', config.LLM_ANTHROPIC_CORTEX_API_KEY)
     if (config.LLM_ANTHROPIC_MEMORY_API_KEY) this.apiKeys.set('LLM_ANTHROPIC_MEMORY_API_KEY', config.LLM_ANTHROPIC_MEMORY_API_KEY)

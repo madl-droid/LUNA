@@ -30,25 +30,13 @@ const manifest: ModuleManifest = {
     ANTHROPIC_API_KEY: z.string().default(''),
     GOOGLE_AI_API_KEY: z.string().default(''),
 
-    // API key mode: basic (one key per provider) or advanced (per-group keys)
-    LLM_API_MODE: z.string().default('basic'),
-
-    // Per-capability API key overrides (legacy — kept for backward compat)
-    LLM_VISION_API_KEY: z.string().default(''),
-    LLM_STT_API_KEY: z.string().default(''),
-    LLM_IMAGE_GEN_API_KEY: z.string().default(''),
-
-    // Knowledge embeddings API key override
-    KNOWLEDGE_EMBEDDING_API_SEPARATE: boolEnv(false),
-    KNOWLEDGE_GOOGLE_AI_API_KEY: z.string().default(''),
-
-    // Advanced mode: Gemini group keys (fallback to GOOGLE_AI_API_KEY if empty)
+    // Gemini group keys (fallback to GOOGLE_AI_API_KEY if empty)
     LLM_GOOGLE_ENGINE_API_KEY: z.string().default(''),
     LLM_GOOGLE_MULTIMEDIA_API_KEY: z.string().default(''),
     LLM_GOOGLE_VOICE_API_KEY: z.string().default(''),
     LLM_GOOGLE_KNOWLEDGE_API_KEY: z.string().default(''),
 
-    // Advanced mode: Anthropic group keys (fallback to ANTHROPIC_API_KEY if empty)
+    // Anthropic group keys (fallback to ANTHROPIC_API_KEY if empty)
     LLM_ANTHROPIC_ENGINE_API_KEY: z.string().default(''),
     LLM_ANTHROPIC_CORTEX_API_KEY: z.string().default(''),
     LLM_ANTHROPIC_MEMORY_API_KEY: z.string().default(''),
@@ -81,62 +69,72 @@ const manifest: ModuleManifest = {
     LLM_DAILY_BUDGET_USD: floatEnvMin(0, 0),
     LLM_MONTHLY_BUDGET_USD: floatEnvMin(0, 0),
 
-    // Task routing — primary targets (JSON strings)
-    LLM_ROUTE_CLASSIFY: z.string().default(''),
-    LLM_ROUTE_RESPOND: z.string().default(''),
-    LLM_ROUTE_COMPLEX: z.string().default(''),
-    LLM_ROUTE_TOOLS: z.string().default(''),
-    LLM_ROUTE_PROACTIVE: z.string().default(''),
-    LLM_ROUTE_CRITICIZE: z.string().default(''),
-    LLM_ROUTE_DOCUMENT_READ: z.string().default(''),
-    LLM_ROUTE_BATCH: z.string().default(''),
-
     // Criticizer mode (quality gate — Pro reviews, Flash regenerates)
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
 
-    // Task routing — per-task primary model overrides (set via advanced console table)
-    LLM_CLASSIFY_PROVIDER: z.string().default(''),
-    LLM_CLASSIFY_MODEL: z.string().default(''),
-    LLM_RESPOND_PROVIDER: z.string().default(''),
-    LLM_RESPOND_MODEL: z.string().default(''),
-    LLM_COMPLEX_PROVIDER: z.string().default(''),
-    LLM_COMPLEX_MODEL: z.string().default(''),
-    LLM_TOOLS_PROVIDER: z.string().default(''),
-    LLM_TOOLS_MODEL: z.string().default(''),
-    LLM_PROACTIVE_PROVIDER: z.string().default(''),
-    LLM_PROACTIVE_MODEL: z.string().default(''),
-    LLM_CRITICIZE_PROVIDER: z.string().default(''),
-    LLM_CRITICIZE_MODEL: z.string().default(''),
-    LLM_DOCUMENT_READ_PROVIDER: z.string().default(''),
-    LLM_DOCUMENT_READ_MODEL: z.string().default(''),
-    LLM_BATCH_PROVIDER: z.string().default(''),
-    LLM_BATCH_MODEL: z.string().default(''),
-    LLM_VISION_PROVIDER: z.string().default(''),
-    LLM_VISION_MODEL: z.string().default(''),
-    LLM_WEB_SEARCH_PROVIDER: z.string().default(''),
-    LLM_WEB_SEARCH_MODEL: z.string().default(''),
+    // ── Task routing: primary (provider + model per task) ──
+    LLM_CLASSIFY_PROVIDER: z.string().default('anthropic'),
+    LLM_CLASSIFY_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_RESPOND_PROVIDER: z.string().default('google'),
+    LLM_RESPOND_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_COMPLEX_PROVIDER: z.string().default('anthropic'),
+    LLM_COMPLEX_MODEL: z.string().default('claude-opus-4-5-20251101'),
+    LLM_TOOLS_PROVIDER: z.string().default('anthropic'),
+    LLM_TOOLS_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_PROACTIVE_PROVIDER: z.string().default('anthropic'),
+    LLM_PROACTIVE_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_CRITICIZE_PROVIDER: z.string().default('google'),
+    LLM_CRITICIZE_MODEL: z.string().default('gemini-2.5-pro'),
+    LLM_DOCUMENT_READ_PROVIDER: z.string().default('anthropic'),
+    LLM_DOCUMENT_READ_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_BATCH_PROVIDER: z.string().default('anthropic'),
+    LLM_BATCH_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_VISION_PROVIDER: z.string().default('google'),
+    LLM_VISION_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_WEB_SEARCH_PROVIDER: z.string().default('google'),
+    LLM_WEB_SEARCH_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_COMPRESS_PROVIDER: z.string().default('anthropic'),
+    LLM_COMPRESS_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+    LLM_ACK_PROVIDER: z.string().default('anthropic'),
+    LLM_ACK_MODEL: z.string().default('claude-haiku-4-5-20251001'),
 
-    // Task routing — downgrade targets (provider + model per task)
-    LLM_CLASSIFY_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_CLASSIFY_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_RESPOND_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_RESPOND_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_COMPLEX_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_COMPLEX_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_TOOLS_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_TOOLS_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_PROACTIVE_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_PROACTIVE_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_CRITICIZE_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_CRITICIZE_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_DOCUMENT_READ_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_DOCUMENT_READ_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_BATCH_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_BATCH_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_VISION_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_VISION_DOWNGRADE_MODEL: z.string().default(''),
-    LLM_WEB_SEARCH_DOWNGRADE_PROVIDER: z.string().default(''),
-    LLM_WEB_SEARCH_DOWNGRADE_MODEL: z.string().default(''),
+    // ── Task routing: downgrade (same provider, lesser model — empty = no downgrade) ──
+    LLM_RESPOND_DOWNGRADE_PROVIDER: z.string().default('google'),
+    LLM_RESPOND_DOWNGRADE_MODEL: z.string().default('gemini-2.5-flash-lite'),
+    LLM_COMPLEX_DOWNGRADE_PROVIDER: z.string().default('anthropic'),
+    LLM_COMPLEX_DOWNGRADE_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_VISION_DOWNGRADE_PROVIDER: z.string().default('google'),
+    LLM_VISION_DOWNGRADE_MODEL: z.string().default('gemini-2.5-flash-lite'),
+    LLM_WEB_SEARCH_DOWNGRADE_PROVIDER: z.string().default('google'),
+    LLM_WEB_SEARCH_DOWNGRADE_MODEL: z.string().default('gemini-2.5-pro'),
+    LLM_CRITICIZE_DOWNGRADE_PROVIDER: z.string().default('google'),
+    LLM_CRITICIZE_DOWNGRADE_MODEL: z.string().default('gemini-2.5-flash'),
+
+    // ── Task routing: cross-API fallback (different provider) ──
+    LLM_CLASSIFY_FALLBACK_PROVIDER: z.string().default('google'),
+    LLM_CLASSIFY_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_RESPOND_FALLBACK_PROVIDER: z.string().default('anthropic'),
+    LLM_RESPOND_FALLBACK_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_COMPLEX_FALLBACK_PROVIDER: z.string().default('google'),
+    LLM_COMPLEX_FALLBACK_MODEL: z.string().default('gemini-2.5-pro'),
+    LLM_TOOLS_FALLBACK_PROVIDER: z.string().default('google'),
+    LLM_TOOLS_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_PROACTIVE_FALLBACK_PROVIDER: z.string().default('anthropic'),
+    LLM_PROACTIVE_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_CRITICIZE_FALLBACK_PROVIDER: z.string().default('anthropic'),
+    LLM_CRITICIZE_FALLBACK_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_DOCUMENT_READ_FALLBACK_PROVIDER: z.string().default('google'),
+    LLM_DOCUMENT_READ_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_BATCH_FALLBACK_PROVIDER: z.string().default('google'),
+    LLM_BATCH_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_VISION_FALLBACK_PROVIDER: z.string().default('anthropic'),
+    LLM_VISION_FALLBACK_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_WEB_SEARCH_FALLBACK_PROVIDER: z.string().default('anthropic'),
+    LLM_WEB_SEARCH_FALLBACK_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+    LLM_COMPRESS_FALLBACK_PROVIDER: z.string().default('google'),
+    LLM_COMPRESS_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_ACK_FALLBACK_PROVIDER: z.string().default('google'),
+    LLM_ACK_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
 
     // Fallback chain order (comma-separated)
     LLM_FALLBACK_CHAIN: z.string().default('anthropic,google'),
@@ -165,65 +163,30 @@ const manifest: ModuleManifest = {
       { key: 'ANTHROPIC_API_KEY', type: 'secret', label: { es: 'API Key Anthropic', en: 'Anthropic API Key' } },
       { key: 'GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Google AI', en: 'Google AI API Key' } },
 
-      // API Key mode toggle
-      { key: 'LLM_API_MODE', type: 'select', label: { es: 'Modo de API Keys', en: 'API Key Mode' },
-        info: {
-          es: 'Básico: una sola key por proveedor. Avanzado: keys separadas por grupo de uso (Engine, Multimedia, Voz, etc.). Si un grupo no tiene key, usa la principal.',
-          en: 'Basic: one key per provider. Advanced: separate keys per usage group (Engine, Multimedia, Voice, etc.). If a group has no key, falls back to the main one.',
-        },
-        options: [
-          { value: 'basic', label: { es: 'Básico', en: 'Basic' } },
-          { value: 'advanced', label: { es: 'Avanzado', en: 'Advanced' } },
-        ],
-      },
-
-      // Advanced mode — Gemini group keys
+      // Gemini group keys (optional — fallback to main key)
       { key: 'LLM_GOOGLE_ENGINE_API_KEY', type: 'secret',
         label: { es: 'Gemini — Engine', en: 'Gemini — Engine' },
-        info: { es: 'Key para llamadas del engine que usan Gemini (compose, web_search)', en: 'Key for engine calls using Gemini (compose, web_search)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+        info: { es: 'Key para compose, web_search. Si vacío, usa la principal.', en: 'Key for compose, web_search. If empty, uses main key.' } },
       { key: 'LLM_GOOGLE_MULTIMEDIA_API_KEY', type: 'secret',
         label: { es: 'Gemini — Multimedia', en: 'Gemini — Multimedia' },
-        info: { es: 'Key para lectura de multimedia (visión, STT, procesamiento de archivos)', en: 'Key for multimedia processing (vision, STT, file processing)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+        info: { es: 'Key para visión, STT, archivos. Si vacío, usa la principal.', en: 'Key for vision, STT, files. If empty, uses main key.' } },
       { key: 'LLM_GOOGLE_VOICE_API_KEY', type: 'secret',
         label: { es: 'Gemini — Voz', en: 'Gemini — Voice' },
-        info: { es: 'Key para Gemini Live y Gemini TTS', en: 'Key for Gemini Live and Gemini TTS' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+        info: { es: 'Key para Gemini Live y TTS. Si vacío, usa la principal.', en: 'Key for Gemini Live and TTS. If empty, uses main key.' } },
       { key: 'LLM_GOOGLE_KNOWLEDGE_API_KEY', type: 'secret',
         label: { es: 'Gemini — Knowledge', en: 'Gemini — Knowledge' },
-        info: { es: 'Key para embeddings y operaciones de conocimiento', en: 'Key for embeddings and knowledge operations' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+        info: { es: 'Key para embeddings y conocimiento. Si vacío, usa la principal.', en: 'Key for embeddings and knowledge. If empty, uses main key.' } },
 
-      // Advanced mode — Anthropic group keys
+      // Anthropic group keys (optional — fallback to main key)
       { key: 'LLM_ANTHROPIC_ENGINE_API_KEY', type: 'secret',
         label: { es: 'Anthropic — Engine', en: 'Anthropic — Engine' },
-        info: { es: 'Key para llamadas del engine que usan Anthropic (classify, tools)', en: 'Key for engine calls using Anthropic (classify, tools)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+        info: { es: 'Key para classify, tools, complex, proactive. Si vacío, usa la principal.', en: 'Key for classify, tools, complex, proactive. If empty, uses main key.' } },
       { key: 'LLM_ANTHROPIC_CORTEX_API_KEY', type: 'secret',
         label: { es: 'Anthropic — Cortex', en: 'Anthropic — Cortex' },
-        info: { es: 'Key para todas las llamadas del módulo Cortex (Pulse, Trace, Reflex)', en: 'Key for all Cortex module calls (Pulse, Trace, Reflex)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+        info: { es: 'Key para Pulse, Trace, Reflex. Si vacío, usa la principal.', en: 'Key for Pulse, Trace, Reflex. If empty, uses main key.' } },
       { key: 'LLM_ANTHROPIC_MEMORY_API_KEY', type: 'secret',
         label: { es: 'Anthropic — Memoria', en: 'Anthropic — Memory' },
-        info: { es: 'Key para resúmenes, compresión de memoria y batch nocturno', en: 'Key for summaries, memory compression and nightly batch' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
-
-      // Legacy per-capability overrides (hidden behind advanced mode)
-      { key: 'LLM_VISION_API_KEY', type: 'secret', label: { es: 'API Key Vision (legacy)', en: 'Vision API Key (legacy)' },
-        info: { es: 'Usar API key diferente para tareas de visión (legacy, preferir modo avanzado)', en: 'Use different API key for vision tasks (legacy, prefer advanced mode)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
-      { key: 'LLM_STT_API_KEY', type: 'secret', label: { es: 'API Key STT (legacy)', en: 'STT API Key (legacy)' },
-        info: { es: 'Usar API key diferente para Speech-to-Text (legacy, preferir modo avanzado)', en: 'Use different API key for Speech-to-Text (legacy, prefer advanced mode)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
-      { key: 'LLM_IMAGE_GEN_API_KEY', type: 'secret', label: { es: 'API Key Image Gen (legacy)', en: 'Image Gen API Key (legacy)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
-      { key: 'KNOWLEDGE_EMBEDDING_API_SEPARATE', type: 'boolean', label: { es: 'API Key de embeddings diferente', en: 'Separate embedding API Key' },
-        info: { es: 'Si se activa, usa una API key diferente para embeddings de conocimiento. Si no, usa la misma de Google AI.', en: 'If enabled, use a separate API key for knowledge embeddings. Otherwise uses the Google AI key.' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
-      { key: 'KNOWLEDGE_GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Embeddings (override)', en: 'Embeddings API Key (override)' },
-        info: { es: 'API key de Google AI para embeddings de conocimiento (text-embedding-004)', en: 'Google AI API key for knowledge embeddings (text-embedding-004)' },
-        visibleWhen: { key: 'LLM_API_MODE', value: 'advanced' } },
+        info: { es: 'Key para compresión y batch nocturno. Si vacío, usa la principal.', en: 'Key for compression and nightly batch. If empty, uses main key.' } },
 
       // Circuit breaker
       { key: 'LLM_CB_FAILURE_THRESHOLD', type: 'number', label: { es: 'Fallos para circuit breaker', en: 'Failures for circuit breaker' },
@@ -378,7 +341,8 @@ const manifest: ModuleManifest = {
             return
           }
           const status = _gateway.getCircuitBreakerStatus()
-          jsonResponse(res, 200, { circuitBreakers: status })
+          const services = _gateway.getServiceStatus()
+          jsonResponse(res, 200, { circuitBreakers: status, services })
         },
       },
       // Reset circuit breaker
