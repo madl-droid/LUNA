@@ -227,29 +227,6 @@ export interface ExecutionStep {
   subagentSlug?: string
 }
 
-export interface EvaluatorOutput {
-  intent: string
-  emotion: string
-  injectionRisk: boolean
-  onScope: boolean
-  executionPlan: ExecutionStep[]
-  toolsNeeded: string[]
-  needsAcknowledgment: boolean
-  searchQuery?: string      // v2: query for search_knowledge tool
-  searchHint?: string       // v2: category title hint for boosting
-  /** Sub-intent for granular classification (e.g. objection_price, objection_timing) */
-  subIntent?: string
-  /** Objection type when intent=objection (price, timing, competitor, need, authority, generic) */
-  objectionType?: string
-  /** Bryan Tracy step suggestion (1=listen, 2=pause, 3=clarify, 4=empathize, 5=respond, 6=confirm) */
-  objectionStep?: number
-  rawResponse?: string
-}
-
-// ═══════════════════════════════════════════
-// Phase 3 — Execution results
-// ═══════════════════════════════════════════
-
 export interface StepResult {
   stepIndex: number
   type: ExecutionPlanType
@@ -259,12 +236,6 @@ export interface StepResult {
   data?: unknown
   error?: string
   durationMs: number
-}
-
-export interface ExecutionOutput {
-  results: StepResult[]
-  allSucceeded: boolean
-  partialData: Record<string, unknown>
 }
 
 // ═══════════════════════════════════════════
@@ -308,19 +279,12 @@ export interface PipelineResult {
   traceId: string
   success: boolean
   phase1DurationMs: number
-  phase2DurationMs: number
-  phase3DurationMs: number
-  phase4DurationMs: number
   phase5DurationMs: number
   totalDurationMs: number
-  evaluatorOutput?: EvaluatorOutput
-  executionOutput?: ExecutionOutput
   responseText?: string
   deliveryResult?: DeliveryResult
   error?: string
   skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}`
-  replanAttempts: number
-  subagentIterationsUsed: number
   // --- Agentic fields (v2.0) ---
   agenticResult?: import('./agentic/types.js').AgenticResult
   effortLevel?: import('./agentic/types.js').EffortLevel
@@ -333,17 +297,6 @@ export interface PipelineResult {
 export interface AgenticPipelineOptions {
   forceEffort?: import('./agentic/types.js').EffortLevel
   isProactive?: boolean
-}
-
-// ═══════════════════════════════════════════
-// Replanning context (passed to phase2 on retry)
-// ═══════════════════════════════════════════
-
-export interface ReplanContext {
-  attempt: number
-  previousPlan: ExecutionStep[]
-  failedSteps: StepResult[]
-  partialData: Record<string, unknown>
 }
 
 // ═══════════════════════════════════════════
@@ -683,14 +636,6 @@ export interface EngineConfig {
   agenticMaxTurns: number
   /** Enable effort routing: classify complexity to route to cheaper/capable model */
   effortRoutingEnabled: boolean
-  /** Enable tool call deduplication within a single pipeline run */
-  toolDedupEnabled: boolean
-  /** Enable graduated loop detection (warn → block → circuit break) */
-  loopDetectionEnabled: boolean
-  /** Feed tool errors back to LLM as context instead of crashing the loop */
-  errorAsContextEnabled: boolean
-  /** Recover partial text if loop times out or hits turn limit */
-  partialRecoveryEnabled: boolean
   /** Model for low-effort messages (greetings, acks) */
   lowEffortModel: string
   lowEffortProvider: LLMProvider
@@ -706,10 +651,4 @@ export interface EngineConfig {
   loopBlockThreshold: number
   /** Loop detector: number of identical calls before forcing text response (circuit break) */
   loopCircuitThreshold: number
-  /** Execution queue: max reactive (incoming message) pipelines in parallel */
-  executionQueueReactiveConcurrency: number
-  /** Execution queue: max proactive (follow-up/reminder) pipelines in parallel */
-  executionQueueProactiveConcurrency: number
-  /** Execution queue: max background (nightly/cache) pipelines in parallel */
-  executionQueueBackgroundConcurrency: number
 }

@@ -1,41 +1,42 @@
 # Pipeline y Modelos LLM
 
-## Pipeline (5 pasos, solo 2 usan LLM)
-1. **Preprocess** (código): normalizar, identificar contacto, cargar contexto
-2. **Classify** (LLM barato): intención, tools necesarias, sentiment
-2.5. **Complexity Route** (código): decide si escalar modelo
-3. **Execute Tools** (código): ejecutar tools, armar contexto resuelto
-4. **Respond** (LLM potente): generar respuesta conversacional
-5. **Postprocess** (código): validar, formatear, enviar, guardar, loguear
+## Pipeline actual del engine
+
+El engine ya no opera como un pipeline clásico de 5 fases independientes. El flujo oficial es agentic y comparte el mismo núcleo para mensajes reactivos y proactivos:
+
+1. **Intake**: normalización, resolución de contacto, sesión, memoria, knowledge y contexto.
+2. **Effort router**: clasificación determinística `low | medium | high` para escoger modelo/costo.
+3. **Agentic loop**: el LLM decide, llama tools, recibe resultados y converge en una respuesta final.
+4. **Post-process**: criticizer opcional, formateo por canal y TTS si aplica.
+5. **Delivery**: sanitización final, envío, persistencia y efectos posteriores.
+
+## Principios operativos
+
+- Reactivo y proactivo usan el mismo runner compartido.
+- La sanitización de salida ocurre antes de TTS y otra vez en delivery.
+- Si hay leakage en salida de texto, se sanea y continúa con logging.
+- Si hay leakage en salida de audio/TTS, se bloquea el audio y se cae a texto saneado.
+- La configuración del módulo `engine` se carga desde `registry.getConfig('engine')` para los campos propios del módulo.
 
 ## Tabla de modelos
 
-### TIEMPO REAL — EL CONTACTO ESTÁ ESPERANDO
-| Tarea | Modelo principal | Provider | Fallback |
-|-------|-----------------|----------|----------|
-| Clasificar intención | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
-| Ejecutar tools / resolver | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
-| Generar respuesta conversacional | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
-| Tareas complejas | Claude Opus 4.5 | Anthropic | Gemini 2.5 Pro |
-| Mensajes proactivos / follow-ups | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
-| Comprimir sesión (en vivo) | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
+### Tiempo real
+| Uso | Modelo principal | Provider | Fallback |
+|-----|------------------|----------|----------|
+| Mensajes de bajo esfuerzo | Claude Haiku 4.5 | Anthropic | Gemini 2.5 Flash |
+| Mensajes de esfuerzo medio | Claude Sonnet 4.6 | Anthropic | Gemini 2.5 Flash |
+| Mensajes de alto esfuerzo | Claude Sonnet 4.6 | Anthropic | Gemini 2.5 Pro |
+| Mensajes proactivos | Claude Sonnet 4.6 | Anthropic | Gemini 2.5 Flash |
+| Post-process con TTS | Gemini TTS | Google | texto sin audio |
 
-### BATCH NOCTURNO — NADIE ESPERA, 50% DESCUENTO
-| Tarea | Modelo principal | Provider | Fallback |
-|-------|-----------------|----------|----------|
-| Scoring de leads fríos | Claude Haiku 4.5 batch | Anthropic | — |
-| Clasificar objeciones acumuladas | Claude Sonnet 4.5 batch | Anthropic | — |
-| Comprimir memoria masiva | Gemini 2.5 Flash batch | Google | Claude Haiku 4.5 |
-| Reporte diario al Sheet | Gemini 2.5 Flash batch | Google | — |
-
-### VOZ, BÚSQUEDA Y MEDIA
-| Tarea | Modelo principal | Provider | Fallback |
-|-------|-----------------|----------|----------|
-| Búsqueda web | Gemini 2.5 Flash + Grounding | Google | Anthropic web_search |
-| Script para audio / llamadas | Claude Sonnet 4.5 | Anthropic | Gemini 2.5 Flash |
-| TTS / síntesis de voz | Gemini TTS | Google | — |
-| Llamadas en vivo (V2) | Gemini Live | Google | — |
+### Batch y background
+| Uso | Modelo principal | Provider | Fallback |
+|-----|------------------|----------|----------|
+| Nightly batch liviano | Claude Haiku 4.5 batch | Anthropic | — |
+| Nightly batch complejo | Gemini 2.5 Flash batch | Google | Claude Haiku 4.5 |
 
 ## Fallback chain
+
 Anthropic → Google.
-Si un provider falla 5x en 10 min → marcarlo DOWN por 5 min (circuit breaker).
+
+Si un provider falla 5 veces en 10 minutos, se marca como `DOWN` durante 5 minutos.
