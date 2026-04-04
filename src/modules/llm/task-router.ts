@@ -82,7 +82,7 @@ const TASK_ALIASES: Record<string, LLMTask> = {
   // Document reading (attachments, tools, knowledge)
   'read_document': 'document_read',
   'summarize_document': 'document_read',
-  // Cortex tasks (route to 'complex' for Anthropic engine key group)
+  // Cortex tasks (route to 'complex')
   'cortex-analyze': 'complex',
   'cortex-pulse': 'complex',
   'cortex-trace': 'complex',
@@ -193,13 +193,10 @@ export class TaskRouter {
     const results: ResolvedRoute[] = []
     const resolvedTask = TASK_ALIASES[task] ?? task
     const route = this.routes.get(resolvedTask as LLMTask)
-    // Use original task name for key group lookup (e.g. 'trace-evaluate' → cortex group)
-    // Falls back to resolved task if original has no group mapping
-    const keyGroupTask = task
 
     // If explicit override, try that first
     if (overrideProvider && overrideModel) {
-      const key = this.resolveApiKeyForTask(overrideProvider, keyGroupTask, overrideApiKeyEnv)
+      const key = this.resolveApiKeyForTask(overrideProvider, overrideApiKeyEnv)
       if (key) {
         results.push({
           provider: overrideProvider,
@@ -214,7 +211,7 @@ export class TaskRouter {
 
     if (route) {
       // Primary target
-      const primaryKey = this.resolveApiKeyForTask(route.primary.provider, keyGroupTask, route.primary.apiKeyEnv)
+      const primaryKey = this.resolveApiKeyForTask(route.primary.provider, route.primary.apiKeyEnv)
       if (primaryKey && this.isAvailable(route.primary.provider)) {
         results.push({
           provider: route.primary.provider,
@@ -231,7 +228,7 @@ export class TaskRouter {
       // Downgrade target (same provider, lesser model)
       if (route.primary.downgrade) {
         const dg = route.primary.downgrade
-        const dgKey = this.resolveApiKeyForTask(dg.provider, keyGroupTask, dg.apiKeyEnv)
+        const dgKey = this.resolveApiKeyForTask(dg.provider, dg.apiKeyEnv)
         if (dgKey && this.isAvailable(dg.provider)) {
           results.push({
             provider: dg.provider,
@@ -249,7 +246,7 @@ export class TaskRouter {
       // Cross-API fallback targets
       for (let i = 0; i < route.fallbacks.length; i++) {
         const fb = route.fallbacks[i]!
-        const fbKey = this.resolveApiKeyForTask(fb.provider, keyGroupTask, fb.apiKeyEnv)
+        const fbKey = this.resolveApiKeyForTask(fb.provider, fb.apiKeyEnv)
         if (fbKey && this.isAvailable(fb.provider)) {
           results.push({
             provider: fb.provider,
@@ -316,7 +313,7 @@ export class TaskRouter {
   /**
    * Resolve API key for a provider. One key per provider — simple.
    */
-  private resolveApiKeyForTask(provider: LLMProviderName, _task: string, envVar?: string): string | null {
+  private resolveApiKeyForTask(provider: LLMProviderName, envVar?: string): string | null {
     if (envVar) {
       const key = this.apiKeys.get(envVar)
       if (key) return key
