@@ -541,8 +541,9 @@ export class PgStore {
     return result.rows[0]!.id as string
   }
 
-  async getPendingCommitments(contactId: string): Promise<Commitment[]> {
+  async getPendingCommitments(contactId: string, limit?: number): Promise<Commitment[]> {
     try {
+      const limitClause = limit ? ` LIMIT ${Math.max(1, Math.floor(limit))}` : ''
       const result = await this.pool.query(
         `SELECT * FROM commitments
          WHERE contact_id = $1
@@ -552,7 +553,7 @@ export class PgStore {
            WHEN 'high' THEN 1
            WHEN 'normal' THEN 2
            WHEN 'low' THEN 3
-         END, due_at ASC NULLS LAST`,
+         END, due_at ASC NULLS LAST${limitClause}`,
         [contactId],
       )
       return result.rows.map((row: DbRow) => this.mapCommitmentRow(row))

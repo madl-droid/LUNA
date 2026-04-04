@@ -27,6 +27,8 @@ export interface UserPermissions {
   tools: string[]
   skills: string[]
   subagents: boolean
+  /** Slugs de subagentes permitidos. undefined/[] = todos los habilitados. */
+  allowedSubagents?: string[]
   canReceiveProactive: boolean
   /** Knowledge category IDs this user type can access. Empty = all. */
   knowledgeCategories: string[]
@@ -175,9 +177,6 @@ export interface ContextBundle {
   pendingCommitments: import('../modules/memory/types.js').Commitment[]
   relevantSummaries: import('../modules/memory/types.js').HybridSearchResult[]
   leadStatus: string | null
-
-  // Sheets cache (from Redis)
-  sheetsData: Record<string, unknown> | null
 
   // Normalized text
   normalizedText: string

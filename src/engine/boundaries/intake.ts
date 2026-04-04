@@ -90,7 +90,6 @@ export async function intake(
     contactResult,
     knowledgeResult,
     knowledgeInjectionResult,
-    sheetsCacheResult,
   ] = await Promise.allSettled([
     findContact(db, message.from, message.channelName, message.resolvedPhone),
     // Fallback RAG — only if knowledge module not active
@@ -101,13 +100,11 @@ export async function intake(
     knowledgeManagerSvc
       ? knowledgeManagerSvc.getInjection()
       : Promise.resolve(null),
-    loadSheetsCache(redis),
   ])
 
   let contact = contactResult.status === 'fulfilled' ? contactResult.value : null
   const knowledgeMatches = knowledgeResult.status === 'fulfilled' ? knowledgeResult.value : []
   let knowledgeInjection = knowledgeInjectionResult.status === 'fulfilled' ? knowledgeInjectionResult.value : null
-  const sheetsData = sheetsCacheResult.status === 'fulfilled' ? sheetsCacheResult.value : null
   const freshdeskMatches = await freshdeskPromise
 
   // Filter knowledge categories by user permissions (empty = all access)
@@ -218,8 +215,8 @@ export async function intake(
   ] = await Promise.allSettled([
     loadHistory(memoryManager, db, session.id, historyTurns),
     contact?.id && memoryManager ? loadContactMemory(memoryManager, contact.id) : Promise.resolve(null),
-    contact?.id && memoryManager ? memoryManager.getPendingCommitments(contact.id) : Promise.resolve([]),
-    contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', getContextSummariesLimit(registry, message.channelName)) : Promise.resolve([]),
+    contact?.id && memoryManager ? memoryManager.getPendingCommitments(contact.id, 5) : Promise.resolve([]),
+    contact?.id && memoryManager && normalizedText && !session.isNew ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', getContextSummariesLimit(registry, message.channelName)) : Promise.resolve([]),
     contact?.id && memoryManager ? memoryManager.getLeadStatus(contact.id) : Promise.resolve(null),
     memoryManager ? memoryManager.getBufferSummary(session.id) : Promise.resolve(null),
   ])
@@ -348,7 +345,6 @@ export async function intake(
     pendingCommitments,
     relevantSummaries,
     leadStatus,
-    sheetsData: sheetsData, // TODO(future): evaluar si sheets cache debe cargarse aquí o bajo demanda
     normalizedText,
     messageType,
     attachmentMeta,
@@ -864,14 +860,6 @@ function detectCampaign(
   }
 }
 
-async function loadSheetsCache(redis: Redis): Promise<Record<string, unknown> | null> {
-  try {
-    const cached = await redis.get('sheets:cache')
-    return cached ? JSON.parse(cached) : null
-  } catch {
-    return null
-  }
-}
 
 /**
  * Get channel-specific session timeout from the channel config service.
