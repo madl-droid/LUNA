@@ -39,8 +39,8 @@ export async function getUserPermissions(userType: UserType): Promise<UserPermis
 
   const config = await _db.getListConfig(userType)
   if (!config) {
-    logger.warn({ userType }, 'No config found for user type, returning empty permissions')
-    return { ...EMPTY_PERMISSIONS }
+    logger.warn({ userType }, 'No config found for user type, defaulting to full access')
+    return { tools: ['*'], skills: ['*'], subagents: true, allAccess: false, knowledgeCategories: [] }
   }
 
   const perms = {
