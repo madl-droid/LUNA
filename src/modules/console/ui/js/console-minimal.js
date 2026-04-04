@@ -630,6 +630,25 @@
     if (dgModInput) dgModInput.value = model
   })
 
+  // === Model table — fallback select change (update hidden inputs) ===
+  document.addEventListener('change', function (e) {
+    var sel = e.target
+    if (!sel.classList || !sel.classList.contains('mt-fb-sel')) return
+    var val = sel.value // "provider:model" or ""
+    var task = sel.getAttribute('data-task')
+    if (!task) return
+    var taskKey = task.toUpperCase()
+    var row = sel.closest ? sel.closest('.mt-row') : null
+    if (!row) return
+    var colonIdx = val ? val.indexOf(':') : -1
+    var provider = colonIdx >= 0 ? val.substring(0, colonIdx) : ''
+    var model = colonIdx >= 0 ? val.substring(colonIdx + 1) : ''
+    var fbProvInput = row.querySelector('input[name="LLM_' + taskKey + '_FALLBACK_PROVIDER"]')
+    var fbModInput = row.querySelector('input[name="LLM_' + taskKey + '_FALLBACK_MODEL"]')
+    if (fbProvInput) fbProvInput.value = provider
+    if (fbModInput) fbModInput.value = model
+  })
+
   // === WhatsApp polling (only on /console/whatsapp) ===
   var waInner = document.getElementById('wa-inner')
   if (waInner) {
