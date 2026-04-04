@@ -243,12 +243,8 @@ export async function registerExtractionTool(
             type: 'string',
             description: 'The conversation messages to extract qualification data from (last N messages)',
           },
-          contact_id: {
-            type: 'string',
-            description: 'The contact ID to update qualification data for',
-          },
         },
-        required: ['message_text', 'contact_id'],
+        required: ['message_text'],
       },
     },
     handler: async (input, ctx) => {
@@ -298,10 +294,13 @@ async function handleExtraction(
   registry: Registry,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   const messageText = input['message_text'] as string
-  const contactId = input['contact_id'] as string
+  const contactId = ctx.contactId
 
-  if (!messageText || !contactId) {
-    return { success: false, error: 'Missing message_text or contact_id' }
+  if (!messageText) {
+    return { success: false, error: 'Missing message_text' }
+  }
+  if (!contactId) {
+    return { success: false, error: 'Missing contactId in execution context' }
   }
 
   const config = configStore.getConfig()
