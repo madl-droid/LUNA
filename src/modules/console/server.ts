@@ -1149,6 +1149,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       const isSuperAdmin = await checkSuperAdmin(registry, req.headers['cookie'])
       const adminOverrideType = data.config.ADMIN_OVERRIDE_TYPE || ''
 
+      // Read admin override type for debug panel dropdown
+      let adminOverrideType = ''
+      try {
+        const configStore = await import('../../kernel/config-store.js')
+        adminOverrideType = (await configStore.get(registry.getDb(), 'ADMIN_OVERRIDE_TYPE')) ?? ''
+      } catch { /* config_store may not be ready */ }
+
       const html = pageLayout({
         section: sidebarSection,
         content,

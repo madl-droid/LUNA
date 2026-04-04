@@ -64,7 +64,7 @@ prompts/
   channel-format.ts   — getChannelLimit(), buildFormatFromForm()
   accent.ts           — buildAccentSection() from config_store
   skills.ts           — loadSkillCatalog(), buildSkillCatalogSection()
-  subagent.ts         — prompt builder para subagent mini-loop
+  subagent.ts         — prompt builder para subagent mini-loop (incluye datetime + skills catalog)
 
 subagent/
   subagent.ts         — subagent v2: loop con verificación, spawn recursivo (1 nivel), soft/hard guardrails

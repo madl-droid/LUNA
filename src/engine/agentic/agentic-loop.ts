@@ -34,6 +34,9 @@ interface ToolExecutor {
       traceId?: string
       messageId?: string
       contactType?: string | null
+      correlationId?: string
+      db?: unknown
+      redis?: unknown
     },
   ): Promise<{ toolName: string; success: boolean; data?: unknown; error?: string; durationMs: number; retries: number }>
 }
@@ -335,6 +338,9 @@ async function executeToolCalls(
               traceId: ctx.traceId,
               messageId: ctx.message.id,
               contactType: ctx.contact?.contactType ?? null,
+              correlationId: ctx.traceId,
+              db: registry.getDb(),
+              redis: registry.getRedis(),
             })
           }
         } catch (err) {

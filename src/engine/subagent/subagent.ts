@@ -16,6 +16,8 @@ import { buildGuardrails, checkGuardrails } from './guardrails.js'
 import { verifySubagentResult } from './verifier.js'
 import { buildSubagentPrompt } from '../prompts/subagent.js'
 import { callLLM } from '../utils/llm-client.js'
+import { SKILL_READ_TOOL_NAME, executeSkillReadTool } from '../agentic/skill-delegation.js'
+import { loadSkillCatalog } from '../prompts/skills.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 
 const logger = pino({ name: 'engine:subagent' })
@@ -348,6 +350,30 @@ async function runSubagentLoop(
     })
   }
 
+  // Add skill_read meta-tool if 'skill_read' is in allowed tools
+  if (entry.allowedTools.includes(SKILL_READ_TOOL_NAME)) {
+    const skills = await loadSkillCatalog(registry, ctx.userType)
+    const skillNames = skills.map(s => s.name)
+    if (skillNames.length > 0) {
+      allTools.push({
+        name: SKILL_READ_TOOL_NAME,
+        description: 'Obtiene las instrucciones completas de una habilidad especializada. SIEMPRE lee el skill antes de actuar.',
+        inputSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            skill_name: {
+              type: 'string',
+              enum: skillNames,
+              description: 'Nombre de la habilidad cuyas instrucciones necesitas.',
+            },
+          },
+          required: ['skill_name'],
+        },
+      })
+    }
+  }
+
   let iterations = 0
   let tokensUsed = 0
   let lastData: unknown = null
@@ -479,6 +505,20 @@ async function runSubagentLoop(
             continue
           }
 
+          // Handle skill_read meta-tool
+          if (toolCall.name === SKILL_READ_TOOL_NAME) {
+            const skillResult = await executeSkillReadTool(toolCall.input as Record<string, unknown>)
+            toolResults.push(JSON.stringify({
+              tool: SKILL_READ_TOOL_NAME,
+              result: {
+                success: skillResult.success,
+                data: skillResult.data,
+                error: skillResult.error,
+              },
+            }))
+            continue
+          }
+
           // Check tool allowlist
           if (guardrails.allowedTools.length > 0 && !guardrails.allowedTools.includes(toolCall.name)) {
             toolResults.push(JSON.stringify({
@@ -501,6 +541,9 @@ async function runSubagentLoop(
           const toolResult = await toolsRegistry.executeTool(toolCall.name, toolCall.input, {
             contactId: ctx.contactId,
             traceId: ctx.traceId,
+            correlationId: ctx.traceId,
+            db: registry.getDb(),
+            redis: registry.getRedis(),
           })
           lastData = toolResult.data
           toolResults.push(JSON.stringify({
