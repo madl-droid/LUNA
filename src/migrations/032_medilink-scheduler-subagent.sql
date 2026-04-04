@@ -10,7 +10,7 @@ INSERT INTO subagent_types (
 ) VALUES (
   'medilink-scheduler',
   'Agendamiento Medilink',
-  'Maneja el flujo completo de agendamiento de citas: busca paciente, verifica disponibilidad, resuelve profesional/prestacion, y crea la cita.',
+  'SIEMPRE usa este subagente cuando el contacto quiera agendar, reagendar o consultar citas. Delega con run_subagent(subagent_slug=medilink-scheduler, task=resumen). NO intentes agendar directamente con las tools de medilink, el subagente maneja todo el flujo.',
   true,
   'normal',
   75000,
