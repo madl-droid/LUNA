@@ -1,8 +1,8 @@
 // LUNA — Module: medilink
 // Agent tools registration — these are the capabilities the AI agent gets
-// 11 tools: check-availability, get-professionals, search-patient, get-patient-info,
+// 12 tools: check-availability, get-professionals, search-patient, get-patient-info,
 //           get-my-appointments, get-my-payments, get-patient-treatments, get-prestaciones,
-//           create-patient, create-appointment, reschedule-appointment
+//           create-patient, create-appointment, reschedule-appointment, mark-pending-reschedule
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
@@ -1123,5 +1123,161 @@ export async function registerMedilinkTools(
     },
   })
 
-  logger.info('11 Medilink tools registered')
+  // ═══════════════════════════════════════
+  // 12. MARK PENDING RESCHEDULE
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-mark-pending-reschedule',
+      displayName: 'Marcar cita pendiente de reagendar',
+      description: 'Marca una cita como "Pendiente reagendar" cuando el paciente quiere reagendar pero no define una nueva fecha/hora. Cambia el estado de la cita y crea un compromiso automático de seguimiento en 4 días.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'number', description: 'ID de la cita (opcional — el sistema lo obtiene de la memoria de trabajo si no se especifica)' },
+          reason: { type: 'string', description: 'Motivo o contexto de por qué no se pudo definir nueva fecha. Ej: "El paciente necesita consultar su agenda", "Prefiere esperar resultados antes de reagendar"' },
+        },
+      },
+    },
+    handler: async (input, ctx) => {
+      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
+
+      let secCtx = await security.resolveContext(ctx.contactId)
+      secCtx = await security.tryAutoLink(secCtx)
+
+      const access = security.canAccess(secCtx, 'appointments')
+      if (!access.allowed) {
+        return { success: false, error: 'Necesito primero verificar los datos en el sistema' }
+      }
+
+      try {
+        // ── 1. Resolve the appointment ──
+        let appointmentId = input.appointment_id as number | undefined
+        if (!appointmentId && ctx.contactId) {
+          const pending = await wmem.get<number>(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
+          if (pending) appointmentId = pending
+        }
+        if (!appointmentId) return { success: false, error: '¿Qué cita quieres marcar como pendiente?' }
+
+        const existing = await api.getAppointment(appointmentId, 'high')
+
+        // Verify ownership
+        if (!security.ownsAppointment(secCtx, existing)) {
+          await pgStore.logAudit(ctx.db, {
+            contactId: ctx.contactId,
+            action: 'mark_pending_reschedule', targetType: 'appointment',
+            targetId: String(appointmentId),
+            detail: { reason: 'not_owner' },
+            verificationLevel: secCtx.verificationLevel,
+            result: 'denied',
+          })
+          return { success: false, error: 'No puedo modificar esta cita' }
+        }
+
+        // ── 2. Mark as "Pendiente reagendar" (id_estado=16) ──
+        const PENDING_RESCHEDULE_STATUS_ID = 16
+        const reasonStr = input.reason ? String(input.reason) : 'Paciente solicitó reagendar pero no definió nueva fecha'
+        const comment = `Pendiente reagendar — ${reasonStr}. Fecha original: ${existing.fecha} ${existing.hora_inicio} con ${existing.nombre_dentista}.`
+
+        await api.updateAppointment(existing.id, {
+          id_estado: PENDING_RESCHEDULE_STATUS_ID,
+          comentario: comment,
+        })
+
+        // ── 3. Create follow-up commitment (4 days = 96 hours) ──
+        let commitmentId: string | null = null
+        const FOLLOW_UP_HOURS = 96
+
+        const memMgr = registry.getOptional<{
+          saveCommitment(c: Record<string, unknown>): Promise<string>
+        }>('memory:manager')
+
+        if (memMgr) {
+          const dueAt = new Date(Date.now() + FOLLOW_UP_HOURS * 60 * 60 * 1000)
+          const autoCancelAt = new Date(dueAt.getTime() + 168 * 60 * 60 * 1000) // +7 days after due
+          try {
+            commitmentId = await memMgr.saveCommitment({
+              contactId: ctx.contactId,
+              sessionId: null,
+              commitmentBy: 'agent',
+              description: `Seguimiento de reagendamiento — cita #${existing.id} (${existing.nombre_tratamiento} con ${existing.nombre_dentista}). Contactar al paciente para definir nueva fecha.`,
+              category: 'reschedule_follow_up',
+              priority: 'normal',
+              commitmentType: 'follow_up',
+              dueAt,
+              scheduledAt: null,
+              eventStartsAt: null,
+              eventEndsAt: null,
+              externalId: String(existing.id),
+              externalProvider: 'medilink',
+              assignedTo: null,
+              status: 'pending',
+              attemptCount: 0,
+              lastAttemptAt: null,
+              nextCheckAt: dueAt,
+              blockedReason: null,
+              waitType: null,
+              actionTaken: null,
+              parentId: null,
+              sortOrder: 0,
+              watchMetadata: null,
+              reminderSent: false,
+              requiresTool: null,
+              autoCancelAt,
+              createdVia: 'tool',
+              metadata: {
+                appointmentId: existing.id,
+                originalDate: existing.fecha,
+                originalTime: existing.hora_inicio,
+                professionalName: existing.nombre_dentista,
+                treatmentName: existing.nombre_tratamiento,
+                reason: reasonStr,
+              },
+            })
+            logger.info({ commitmentId, appointmentId: existing.id, contactId: ctx.contactId }, 'Reschedule follow-up commitment created')
+          } catch (err) {
+            logger.warn({ err, appointmentId: existing.id }, 'Failed to create reschedule follow-up commitment')
+          }
+        }
+
+        // ── 4. Audit trail ──
+        await pgStore.logAudit(ctx.db, {
+          contactId: ctx.contactId,
+          medilinkPatientId: String(secCtx.medilinkPatientId),
+          action: 'mark_pending_reschedule', targetType: 'appointment', targetId: String(existing.id),
+          detail: {
+            appointmentId: existing.id,
+            previousStatus: existing.estado_cita,
+            newStatus: 'Pendiente reagendar',
+            newStatusId: PENDING_RESCHEDULE_STATUS_ID,
+            reason: reasonStr,
+            commitmentId,
+            commitmentDueHours: FOLLOW_UP_HOURS,
+          },
+          verificationLevel: secCtx.verificationLevel,
+          result: 'success',
+        })
+
+        return {
+          success: true,
+          data: {
+            appointment_id: existing.id,
+            status: 'Pendiente reagendar',
+            reason: reasonStr,
+            follow_up_commitment_id: commitmentId,
+            follow_up_in_days: Math.round(FOLLOW_UP_HOURS / 24),
+            mensaje: `La cita del ${existing.fecha} fue marcada como pendiente de reagendar. Se creó un recordatorio automático para hacer seguimiento en ${Math.round(FOLLOW_UP_HOURS / 24)} días.`,
+          },
+        }
+      } catch (err) {
+        logger.error({ err }, 'mark-pending-reschedule failed')
+        return { success: false, error: 'Error al marcar cita como pendiente: ' + String(err) }
+      }
+    },
+  })
+
+  logger.info('12 Medilink tools registered')
 }

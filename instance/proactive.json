@@ -55,6 +55,12 @@
         "max_due_hours": 24,
         "requires_tool": "calendar-create-event",
         "auto_cancel_hours": 48
+      },
+      {
+        "type": "reschedule_follow_up",
+        "max_due_hours": 120,
+        "requires_tool": null,
+        "auto_cancel_hours": 240
       }
     ]
   },
