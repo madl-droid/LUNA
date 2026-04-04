@@ -35,6 +35,12 @@ interface EngineModuleConfig {
   ATTACHMENT_URL_ENABLED: boolean
   ATTACHMENT_URL_FETCH_TIMEOUT_MS: number
   ATTACHMENT_URL_MAX_SIZE_MB: number
+  MEMORY_SESSION_REOPEN_WINDOW_HOURS: number
+  SESSION_REOPEN_WINDOW_MS: number
+  ENGINE_PIPELINE_TIMEOUT_MS: number
+  ENGINE_CHECKPOINT_ENABLED: boolean
+  ENGINE_CHECKPOINT_RESUME_WINDOW_MS: number
+  ENGINE_CHECKPOINT_CLEANUP_DAYS: number
   // Nightly batch
   NIGHTLY_SCORING_ENABLED: boolean
   NIGHTLY_SCORING_THRESHOLD: number
@@ -93,6 +99,12 @@ const manifest: ModuleManifest = {
     ATTACHMENT_URL_ENABLED: boolEnv(true),
     ATTACHMENT_URL_FETCH_TIMEOUT_MS: numEnvMin(1000, 10000),
     ATTACHMENT_URL_MAX_SIZE_MB: numEnvMin(1, 5),
+    MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnvMin(0, 1),
+    SESSION_REOPEN_WINDOW_MS: numEnvMin(60000, 3600000),
+    ENGINE_PIPELINE_TIMEOUT_MS: numEnvMin(1000, 120000),
+    ENGINE_CHECKPOINT_ENABLED: boolEnv(true),
+    ENGINE_CHECKPOINT_RESUME_WINDOW_MS: numEnvMin(1000, 300000),
+    ENGINE_CHECKPOINT_CLEANUP_DAYS: numEnvMin(1, 7),
     // Nightly batch
     NIGHTLY_SCORING_ENABLED: boolEnv(true),
     NIGHTLY_SCORING_THRESHOLD: numEnvMin(0, 40),
@@ -266,6 +278,64 @@ const manifest: ModuleManifest = {
         min: 1,
         max: 20,
         unit: 'MB',
+        width: 'half',
+      },
+
+      // ── Runtime ──
+      { key: '_div_runtime', type: 'divider', label: { es: 'Runtime', en: 'Runtime' } },
+      {
+        key: 'MEMORY_SESSION_REOPEN_WINDOW_HOURS',
+        type: 'number',
+        label: { es: 'Reapertura de sesion (horas)', en: 'Session reopen window (hours)' },
+        description: {
+          es: 'Cuantas horas puede reabrirse una sesion activa antes de crear una nueva.',
+          en: 'How many hours an active session may be reopened before creating a new one.',
+        },
+        min: 0,
+        max: 168,
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_PIPELINE_TIMEOUT_MS',
+        type: 'duration',
+        label: { es: 'Timeout global del pipeline', en: 'Global pipeline timeout' },
+        description: {
+          es: 'Tiempo maximo total antes de abortar un pipeline atascado.',
+          en: 'Maximum total time before aborting a stuck pipeline.',
+        },
+        unit: 'ms',
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_CHECKPOINT_ENABLED',
+        type: 'boolean',
+        label: { es: 'Checkpoints activos', en: 'Enable checkpoints' },
+        description: {
+          es: 'Guarda checkpoints para reanudar pipelines interrumpidos.',
+          en: 'Stores checkpoints to resume interrupted pipelines.',
+        },
+      },
+      {
+        key: 'ENGINE_CHECKPOINT_RESUME_WINDOW_MS',
+        type: 'duration',
+        label: { es: 'Ventana de reanudacion', en: 'Resume window' },
+        description: {
+          es: 'Edad maxima de checkpoints incompletos candidatos a reanudacion.',
+          en: 'Maximum age of incomplete checkpoints eligible for resume.',
+        },
+        unit: 'ms',
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_CHECKPOINT_CLEANUP_DAYS',
+        type: 'number',
+        label: { es: 'Limpieza de checkpoints (dias)', en: 'Checkpoint cleanup (days)' },
+        description: {
+          es: 'Dias antes de purgar checkpoints completados o fallidos.',
+          en: 'Days before purging completed or failed checkpoints.',
+        },
+        min: 1,
+        max: 90,
         width: 'half',
       },
 

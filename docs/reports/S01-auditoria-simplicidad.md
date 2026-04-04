@@ -215,3 +215,12 @@ Reducir complejidad accidental, código muerto, duplicaciones, riesgos y costo o
   La nomenclatura `phase1` y `phase5` sigue viva aunque el engine real ya es agentic.
   `phase1-intake.ts` y `phase5-validate.ts` siguen demasiado grandes para la siguiente ronda de simplificación.
   `src/engine/config.ts` todavía conserva parte de config global legacy por env vars; la unificación quedó avanzada, no completa.
+
+### Cierre final del engine
+- Se renombró `src/engine/phases/` a `src/engine/boundaries/`.
+- `phase1-intake.ts` pasó a `src/engine/boundaries/intake.ts` y su export ahora es `intake()`.
+- `phase5-validate.ts` pasó a `src/engine/boundaries/delivery.ts` y su export ahora es `delivery()`.
+- `PipelineResult` renombró sus timings a `intakeDurationMs` y `deliveryDurationMs`.
+- Los logs de pipeline en memoria también quedaron alineados con `intakeMs` y `deliveryMs`.
+- Se migraron a `registry.getConfig('engine')` los campos restantes del módulo: session reopen window, pipeline timeout y checkpoints.
+- El grep final sobre `src/engine/**/*.ts` ya no devuelve referencias activas a `phase1`, `phase5` o `phases/`.

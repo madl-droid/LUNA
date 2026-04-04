@@ -9,7 +9,7 @@ import type { IncomingMessage } from '../channels/types.js'
 import type { PipelineResult, EngineConfig, ContextBundle } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
-import { phase1Intake } from './phases/phase1-intake.js'
+import { intake } from './boundaries/intake.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
@@ -153,8 +153,8 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
       traceId: 'backpressure',
       success: true,
       skipped: 'backpressure',
-      phase1DurationMs: 0,
-      phase5DurationMs: 0,
+      intakeDurationMs: 0,
+      deliveryDurationMs: 0,
       totalDurationMs: Date.now() - totalStart,
     }
   }
@@ -187,14 +187,14 @@ async function processMessageInner(
   try {
     // ═══ PHASE 1: Intake + Context Loading ═══
     const p1Start = Date.now()
-    const ctx = await phase1Intake(message, db, redis, engineConfig, registry)
+    const ctx = await intake(message, db, redis, engineConfig, registry)
     traceId = ctx.traceId
-    const phase1DurationMs = Date.now() - p1Start
+    const intakeDurationMs = Date.now() - p1Start
 
     logger.info({
       traceId,
       phase: 1,
-      durationMs: phase1DurationMs,
+      durationMs: intakeDurationMs,
       userType: ctx.userType,
       attachments: ctx.attachmentMeta.length,
     }, 'Phase 1 done')
@@ -228,8 +228,8 @@ async function processMessageInner(
         traceId,
         success: true,
         skipped: 'test_mode',
-        phase1DurationMs,
-        phase5DurationMs: 0,
+        intakeDurationMs,
+        deliveryDurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
       }
     }
@@ -266,8 +266,8 @@ async function processMessageInner(
         traceId,
         success: true,
         skipped: `unregistered:${behavior}`,
-        phase1DurationMs,
-        phase5DurationMs: 0,
+        intakeDurationMs,
+        deliveryDurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
       }
     }
@@ -293,7 +293,7 @@ async function processMessageInner(
       correlationId: traceId,
     }).catch(() => {})
 
-    return await runAgenticPipeline(ctx, engineConfig, registry, db, redis, totalStart, phase1DurationMs)
+    return await runAgenticPipeline(ctx, engineConfig, registry, db, redis, totalStart, intakeDurationMs)
   } catch (err) {
     const totalDurationMs = Date.now() - totalStart
 
@@ -325,8 +325,8 @@ async function processMessageInner(
     return {
       traceId: traceId || 'unknown',
       success: false,
-      phase1DurationMs: 0,
-      phase5DurationMs: 0,
+      intakeDurationMs: 0,
+      deliveryDurationMs: 0,
       totalDurationMs,
       error: String(err),
     }
@@ -349,7 +349,7 @@ async function runAgenticPipeline(
   db: import('pg').Pool,
   redis: import('ioredis').Redis,
   totalStart: number,
-  phase1DurationMs: number,
+  intakeDurationMs: number,
 ): Promise<PipelineResult> {
   const log = logger.child({ traceId: ctx.traceId, pipeline: 'agentic' })
 
@@ -361,15 +361,15 @@ async function runAgenticPipeline(
     redis,
     engineConfig: config,
     totalStart,
-    phase1DurationMs,
+    intakeDurationMs,
   })
   const { pipelineResult, agenticResult, deliveryResult, responseText } = runResult
   const totalDurationMs = pipelineResult.totalDurationMs
-  const phase5DurationMs = pipelineResult.phase5DurationMs
+  const deliveryDurationMs = pipelineResult.deliveryDurationMs
 
   log.info({
     phase: 5,
-    durationMs: phase5DurationMs,
+    durationMs: deliveryDurationMs,
     sent: deliveryResult?.sent,
     totalDurationMs,
   }, 'Agentic pipeline complete')
