@@ -67,4 +67,6 @@ export interface AppointmentSnapshot {
   treatmentName: string
   branchId?: number
   branchName?: string
+  /** Plan de tratamiento (HealthAtom "atención") — needed for rescheduling */
+  idAtencion?: number | null
 }

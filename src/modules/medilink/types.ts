@@ -145,6 +145,8 @@ export interface MedilinkAppointmentCreate {
   hora_inicio: string
   duracion: number
   comentario?: string
+  /** Vincula con atención/plan de tratamiento existente (obligatorio si se conoce) */
+  id_atencion?: number
 }
 
 export interface MedilinkAppointmentUpdate {
