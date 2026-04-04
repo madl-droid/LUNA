@@ -260,6 +260,28 @@ function mtRow(
   </div>`
 }
 
+/** Build an editable row for a specialized Google-only model (TTS, Embeddings, Voice) */
+function renderSpecializedRow(
+  label: string, configKey: string, currentModel: string,
+  note: string, scannedGoogleModels: string[], extraModels: string[],
+): string {
+  // Merge scanned models with extra specialized models (dedup)
+  const allModels = [...new Set([...extraModels, ...scannedGoogleModels])]
+  const opts = allModels.map(m =>
+    `<option value="${esc(m)}" ${m === currentModel ? 'selected' : ''}>${esc(mShort(m) || m)}</option>`
+  ).join('')
+
+  return `<div class="mt-row mt-row--special" data-task="${configKey}">
+    <span class="mt-task">${esc(label)}<span class="mt-task-note">${esc(note)}</span></span>
+    <span class="mt-primary" style="grid-column:span 3">
+      <span class="mt-fb-pill mt-fb-google" style="margin-right:8px"><span class="mt-fb-badge">G</span>Google</span>
+      <select class="js-custom-select mt-special-sel" name="${esc(configKey)}" data-original="${esc(currentModel)}">
+        ${opts}
+      </select>
+    </span>
+  </div>`
+}
+
 /** Model assignment table + scan bar */
 function renderModelsTable(data: SectionData, lang: string): string {
   const isEs = lang === 'es'
@@ -294,11 +316,11 @@ function renderModelsTable(data: SectionData, lang: string): string {
       ],
     },
     {
-      titleEs: 'Multimedia', titleEn: 'Multimedia',
+      titleEs: 'Multimedia y datos', titleEn: 'Multimedia & data',
       tasks: [
         ['vision',       'Visión / Archivos',         'Vision / Files',           'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
-        ['web_search',   'Búsqueda web',              'Web search',               'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-5-20250929'],
         ['document_read','Lectura de documentos',     'Document reading',         'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
+        ['web_search',   'Búsqueda web',              'Web search',               'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-5-20250929'],
       ],
     },
     {
@@ -306,13 +328,13 @@ function renderModelsTable(data: SectionData, lang: string): string {
       tasks: [
         ['proactive',    'Mensaje proactivo',         'Proactive message',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
         ['ack',          'ACK (confirmación rápida)', 'ACK (quick confirmation)', 'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash'],
+        ['batch',        'Batch nocturno',            'Nightly batch',            'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
       ],
     },
     {
-      titleEs: 'Mantenimiento', titleEn: 'Maintenance',
+      titleEs: 'Mantenimiento interno', titleEn: 'Internal maintenance',
       tasks: [
         ['compress',     'Compresión de sesiones',    'Session compression',      'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash'],
-        ['batch',        'Batch nocturno',            'Nightly batch',            'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
       ],
     },
   ]
@@ -353,20 +375,17 @@ function renderModelsTable(data: SectionData, lang: string): string {
     ${rows}
   </div>
 
-  <div class="mt-fixed-rows">
-    <div class="mt-fixed-label">${isEs ? 'Modelos fijos (no editables)' : 'Fixed models (not editable)'}</div>
-    <div class="mt-fixed-row">
-      <span class="mt-fixed-task">TTS</span>
-      <span class="mt-fixed-model"><span class="mt-fb-pill mt-fb-google"><span class="mt-fb-badge">G</span>Gemini TTS</span></span>
-      <span class="mt-fixed-note">${isEs ? 'Módulo Voz — configurable en canal de voz' : 'Voice module — configurable in voice channel'}</span>
-    </div>
-    <div class="mt-fixed-row">
-      <span class="mt-fixed-task">${isEs ? 'Embeddings' : 'Embeddings'}</span>
-      <span class="mt-fixed-model"><span class="mt-fb-pill mt-fb-google"><span class="mt-fb-badge">G</span>Embedding 2</span></span>
-      <span class="mt-fixed-note">gemini-embedding-2-preview · ${isEs ? 'Módulo Knowledge' : 'Knowledge module'}</span>
-    </div>
-  </div>
-
+  <div class="mt-group-header">${isEs ? 'Servicios especializados' : 'Specialized services'}</div>
+  <div class="mt-special-info">${isEs ? 'Estos modelos son exclusivos de Google y se usan en servicios específicos.' : 'These models are Google-exclusive and used in specific services.'}</div>
+  ${renderSpecializedRow('TTS', 'TTS_MODEL', cfg['TTS_MODEL'] || 'gemini-2.5-flash-preview-tts', isEs ? 'Síntesis de voz' : 'Text to speech', googleModels, [
+    'gemini-2.5-flash-preview-tts',
+    'gemini-2.5-pro-preview-tts',
+  ])}
+  ${renderSpecializedRow(isEs ? 'Embeddings' : 'Embeddings', 'KNOWLEDGE_EMBEDDING_MODEL', cfg['KNOWLEDGE_EMBEDDING_MODEL'] || 'gemini-embedding-2-preview', isEs ? 'Vectorización de conocimiento' : 'Knowledge vectorization', googleModels, [
+    'gemini-embedding-2-preview',
+    'text-embedding-004',
+  ])}
+  ${renderSpecializedRow(isEs ? 'Voz (Live)' : 'Voice (Live)', 'VOICE_GEMINI_MODEL', cfg['VOICE_GEMINI_MODEL'] || 'gemini-2.5-flash', isEs ? 'Modelo para llamadas de voz en vivo' : 'Model for live voice calls', googleModels, [])}
 
   <script type="application/json" id="models-data">${JSON.stringify(data.allModels ?? {})}</script>`
 }
@@ -375,7 +394,7 @@ export function renderAdvancedAgentSection(data: SectionData): string {
   const isEs = data.lang === 'es'
   let h = ''
 
-  // Panel 1: API Keys - unified layout with group keys always visible
+  // Panel 1: API Keys — one per provider
   h += `<div class="panel">
     <div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">API Keys - LLM</span>
@@ -386,41 +405,14 @@ export function renderAdvancedAgentSection(data: SectionData): string {
         <div class="api-key-col">
           <div class="api-key-col-hd api-key-col-hd--anthropic">Anthropic</div>
           ${secretField('ANTHROPIC_API_KEY', cv(data, 'ANTHROPIC_API_KEY'), data.lang,
-            isEs ? 'API Key principal' : 'Main API Key',
-            isEs ? 'Key principal de Anthropic. Usada para todas las llamadas si no hay key por grupo.' : 'Main Anthropic key. Used for all calls if no per-group key is set.')}
-          <div class="adv-group-keys">
-            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso (opcional)' : 'Per usage group (optional)'}</div>
-            ${secretField('LLM_ANTHROPIC_ENGINE_API_KEY', cv(data, 'LLM_ANTHROPIC_ENGINE_API_KEY'), data.lang,
-              'Engine',
-              isEs ? 'classify / tools / complex / proactive' : 'classify / tools / complex / proactive')}
-            ${secretField('LLM_ANTHROPIC_CORTEX_API_KEY', cv(data, 'LLM_ANTHROPIC_CORTEX_API_KEY'), data.lang,
-              'Cortex',
-              isEs ? 'Pulse / Trace / Reflex' : 'Pulse / Trace / Reflex')}
-            ${secretField('LLM_ANTHROPIC_MEMORY_API_KEY', cv(data, 'LLM_ANTHROPIC_MEMORY_API_KEY'), data.lang,
-              isEs ? 'Memoria' : 'Memory',
-              isEs ? 'compress / batch nocturno' : 'compress / nightly batch')}
-          </div>
+            'API Key',
+            isEs ? 'Key de Anthropic. Usada para todas las llamadas a Claude.' : 'Anthropic key. Used for all Claude calls.')}
         </div>
         <div class="api-key-col">
           <div class="api-key-col-hd api-key-col-hd--google">Google Gemini</div>
           ${secretField('GOOGLE_AI_API_KEY', cv(data, 'GOOGLE_AI_API_KEY'), data.lang,
-            isEs ? 'API Key principal' : 'Main API Key',
-            isEs ? 'Key principal de Google AI. Usada para todas las llamadas si no hay key por grupo.' : 'Main Google AI key. Used for all calls if no per-group key is set.')}
-          <div class="adv-group-keys">
-            <div class="api-key-group-divider">${isEs ? 'Por grupo de uso (opcional)' : 'Per usage group (optional)'}</div>
-            ${secretField('LLM_GOOGLE_ENGINE_API_KEY', cv(data, 'LLM_GOOGLE_ENGINE_API_KEY'), data.lang,
-              'Engine',
-              isEs ? 'compose / web_search' : 'compose / web_search')}
-            ${secretField('LLM_GOOGLE_MULTIMEDIA_API_KEY', cv(data, 'LLM_GOOGLE_MULTIMEDIA_API_KEY'), data.lang,
-              'Multimedia',
-              isEs ? 'vision / STT / archivos' : 'vision / STT / files')}
-            ${secretField('LLM_GOOGLE_VOICE_API_KEY', cv(data, 'LLM_GOOGLE_VOICE_API_KEY'), data.lang,
-              isEs ? 'Voz' : 'Voice',
-              isEs ? 'TTS / Gemini Live' : 'TTS / Gemini Live')}
-            ${secretField('LLM_GOOGLE_KNOWLEDGE_API_KEY', cv(data, 'LLM_GOOGLE_KNOWLEDGE_API_KEY'), data.lang,
-              'Knowledge',
-              isEs ? 'embeddings / knowledge' : 'embeddings / knowledge')}
-          </div>
+            'API Key',
+            isEs ? 'Key de Google AI. Usada para todas las llamadas a Gemini, TTS y embeddings.' : 'Google AI key. Used for all Gemini, TTS and embedding calls.')}
         </div>
       </div>
     </div>

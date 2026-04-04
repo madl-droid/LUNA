@@ -8,7 +8,7 @@ Gateway centralizado para Anthropic y Google (Gemini). Circuit breaker (por prov
 - `llm-gateway.ts` — orquestador principal: routing → rate limit → budget → circuit breaker → retry → call → tracking → sanitize → batch
 - `circuit-breaker.ts` — CB legacy por provider + **EscalatingCBManager** por target (provider:model)
 - `providers.ts` — adapters normalizados: Anthropic (prompt cache, JSON prefill, thinking, code exec, citations, batch) y Google (JSON mode, thinking, grounding, code exec, implicit cache)
-- `task-router.ts` — enruta tareas a providers con 3 niveles: primary → downgrade → cross-api fallback. Soporta API key groups (basic/advanced mode).
+- `task-router.ts` — enruta tareas a providers con 3 niveles: primary → downgrade → cross-api fallback. Una key por provider.
 - `usage-tracker.ts` — tracking Redis (hot counters) + PG (persistencia). Rate limits, budget.
 - `pg-store.ts` — tablas llm_usage, llm_daily_stats. Queries de resumen y limpieza.
 - `security.ts` — detección de prompt injection, sanitización de prompts/respuestas, redacción de API keys.
@@ -36,23 +36,9 @@ Un plan es "complejo" cuando tiene **3+ steps que requieren LLM** (subagent, web
 Steps determinísticos (api_call, workflow, memory_lookup, process_attachment) no cuentan.
 Threshold: `COMPLEX_PLAN_THRESHOLD = 3` en `phase3-execute.ts`.
 
-## API Key Groups (unified — no basic/advanced toggle)
+## API Keys — una por provider
 
-Una key principal por provider + keys opcionales por grupo de uso. Si un grupo no tiene key, usa la principal.
-
-**Gemini groups:**
-- `engine` → compose, web_search (env: `LLM_GOOGLE_ENGINE_API_KEY`)
-- `multimedia` → vision, STT (env: `LLM_GOOGLE_MULTIMEDIA_API_KEY`)
-- `voice` → Gemini Live, TTS (env: `LLM_GOOGLE_VOICE_API_KEY`)
-- `knowledge` → embeddings (env: `LLM_GOOGLE_KNOWLEDGE_API_KEY`)
-
-**Anthropic groups:**
-- `engine` → classify, tools, complex, proactive (env: `LLM_ANTHROPIC_ENGINE_API_KEY`)
-- `cortex` → Pulse, Trace, Reflex (env: `LLM_ANTHROPIC_CORTEX_API_KEY`)
-- `memory` → compress, batch nocturno (env: `LLM_ANTHROPIC_MEMORY_API_KEY`)
-
-Mapeo task→grupo en `TASK_TO_KEY_GROUP` (types.ts). Resolución en `TaskRouter.resolveGroupApiKey()`.
-Group keys siempre se intentan primero si están configuradas — sin toggle de modo.
+Una sola key por provider: `ANTHROPIC_API_KEY` y `GOOGLE_AI_API_KEY`. Sin grupos ni sub-keys.
 
 ## Fallback chain de 3 niveles
 ```
@@ -111,4 +97,4 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - **Budget = 0**: sin límite. Se chequea antes de cada llamada.
 - **Escalating CB es por target**: un modelo puede estar down sin afectar a otros del mismo provider.
 - **Phase 2 decide thinking/coding**: `ExecutionStep.useThinking` y `useCoding` son hints del evaluador.
-- **Group key resolution**: usa el task name original (antes de alias) para buscar grupo. Ej: `'trace-evaluate'` → grupo cortex, aunque se resuelve a ruta `'complex'`.
+- **Task aliases**: `TASK_ALIASES` mapea nombres custom a tareas canónicas (ej: `'trace-evaluate'` → `'complex'`).

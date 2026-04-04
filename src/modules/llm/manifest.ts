@@ -30,17 +30,6 @@ const manifest: ModuleManifest = {
     ANTHROPIC_API_KEY: z.string().default(''),
     GOOGLE_AI_API_KEY: z.string().default(''),
 
-    // Gemini group keys (fallback to GOOGLE_AI_API_KEY if empty)
-    LLM_GOOGLE_ENGINE_API_KEY: z.string().default(''),
-    LLM_GOOGLE_MULTIMEDIA_API_KEY: z.string().default(''),
-    LLM_GOOGLE_VOICE_API_KEY: z.string().default(''),
-    LLM_GOOGLE_KNOWLEDGE_API_KEY: z.string().default(''),
-
-    // Anthropic group keys (fallback to ANTHROPIC_API_KEY if empty)
-    LLM_ANTHROPIC_ENGINE_API_KEY: z.string().default(''),
-    LLM_ANTHROPIC_CORTEX_API_KEY: z.string().default(''),
-    LLM_ANTHROPIC_MEMORY_API_KEY: z.string().default(''),
-
     // Circuit breaker
     LLM_CB_FAILURE_THRESHOLD: numEnvMin(1, 5),
     LLM_CB_WINDOW_MS: numEnvMin(1000, 600000),
@@ -119,7 +108,7 @@ const manifest: ModuleManifest = {
     LLM_COMPLEX_FALLBACK_MODEL: z.string().default('gemini-2.5-pro'),
     LLM_TOOLS_FALLBACK_PROVIDER: z.string().default('google'),
     LLM_TOOLS_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
-    LLM_PROACTIVE_FALLBACK_PROVIDER: z.string().default('anthropic'),
+    LLM_PROACTIVE_FALLBACK_PROVIDER: z.string().default('google'),
     LLM_PROACTIVE_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
     LLM_CRITICIZE_FALLBACK_PROVIDER: z.string().default('anthropic'),
     LLM_CRITICIZE_FALLBACK_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
@@ -162,31 +151,6 @@ const manifest: ModuleManifest = {
       // API Keys — Basic mode (always visible)
       { key: 'ANTHROPIC_API_KEY', type: 'secret', label: { es: 'API Key Anthropic', en: 'Anthropic API Key' } },
       { key: 'GOOGLE_AI_API_KEY', type: 'secret', label: { es: 'API Key Google AI', en: 'Google AI API Key' } },
-
-      // Gemini group keys (optional — fallback to main key)
-      { key: 'LLM_GOOGLE_ENGINE_API_KEY', type: 'secret',
-        label: { es: 'Gemini — Engine', en: 'Gemini — Engine' },
-        info: { es: 'Key para compose, web_search. Si vacío, usa la principal.', en: 'Key for compose, web_search. If empty, uses main key.' } },
-      { key: 'LLM_GOOGLE_MULTIMEDIA_API_KEY', type: 'secret',
-        label: { es: 'Gemini — Multimedia', en: 'Gemini — Multimedia' },
-        info: { es: 'Key para visión, STT, archivos. Si vacío, usa la principal.', en: 'Key for vision, STT, files. If empty, uses main key.' } },
-      { key: 'LLM_GOOGLE_VOICE_API_KEY', type: 'secret',
-        label: { es: 'Gemini — Voz', en: 'Gemini — Voice' },
-        info: { es: 'Key para Gemini Live y TTS. Si vacío, usa la principal.', en: 'Key for Gemini Live and TTS. If empty, uses main key.' } },
-      { key: 'LLM_GOOGLE_KNOWLEDGE_API_KEY', type: 'secret',
-        label: { es: 'Gemini — Knowledge', en: 'Gemini — Knowledge' },
-        info: { es: 'Key para embeddings y conocimiento. Si vacío, usa la principal.', en: 'Key for embeddings and knowledge. If empty, uses main key.' } },
-
-      // Anthropic group keys (optional — fallback to main key)
-      { key: 'LLM_ANTHROPIC_ENGINE_API_KEY', type: 'secret',
-        label: { es: 'Anthropic — Engine', en: 'Anthropic — Engine' },
-        info: { es: 'Key para classify, tools, complex, proactive. Si vacío, usa la principal.', en: 'Key for classify, tools, complex, proactive. If empty, uses main key.' } },
-      { key: 'LLM_ANTHROPIC_CORTEX_API_KEY', type: 'secret',
-        label: { es: 'Anthropic — Cortex', en: 'Anthropic — Cortex' },
-        info: { es: 'Key para Pulse, Trace, Reflex. Si vacío, usa la principal.', en: 'Key for Pulse, Trace, Reflex. If empty, uses main key.' } },
-      { key: 'LLM_ANTHROPIC_MEMORY_API_KEY', type: 'secret',
-        label: { es: 'Anthropic — Memoria', en: 'Anthropic — Memory' },
-        info: { es: 'Key para compresión y batch nocturno. Si vacío, usa la principal.', en: 'Key for compression and nightly batch. If empty, uses main key.' } },
 
       // Circuit breaker
       { key: 'LLM_CB_FAILURE_THRESHOLD', type: 'number', label: { es: 'Fallos para circuit breaker', en: 'Failures for circuit breaker' },
