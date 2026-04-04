@@ -23,7 +23,7 @@ import { loadProactiveConfig } from '../proactive/proactive-config.js'
 import { pickErrorFallback, pickTTSFailureFallback } from '../fallbacks/error-defaults.js'
 import { sanitizeParts, validateOutput } from '../output-sanitizer.js'
 
-const logger = pino({ name: 'engine:phase5' })
+const logger = pino({ name: 'engine:delivery' })
 
 // Cache proactive config with TTL (reloaded every 5 minutes)
 let cachedProactiveConfig: ReturnType<typeof loadProactiveConfig> | null = null
@@ -50,13 +50,13 @@ function getProactiveConfig() {
 const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
 
 /**
- * Execute Phase 5: Validate, send pre-formatted output, persist.
+ * Execute delivery: validate, send pre-formatted output, and persist it.
  *
- * @param evaluation - EvaluatorOutput from legacy Phase 2, or null in agentic mode.
+ * @param evaluation - Legacy evaluation metadata, or null in agentic mode.
  *   When null, intent/emotion metadata is omitted from persistence and guard signals
  *   use safe fallback behaviour (farewell not detected, objection not recorded).
  */
-export async function phase5Validate(
+export async function delivery(
   ctx: ContextBundle,
   composed: CompositorOutput,
   evaluation: LegacyEvaluation | null,
@@ -67,7 +67,7 @@ export async function phase5Validate(
 ): Promise<DeliveryResult> {
   const startMs = Date.now()
 
-  logger.info({ traceId: ctx.traceId }, 'Phase 5 start')
+  logger.info({ traceId: ctx.traceId }, 'Delivery start')
 
   // 1. Validate output
   const validation = validateOutput(composed.responseText)
@@ -240,7 +240,7 @@ export async function phase5Validate(
     sent: deliveryResult.sent,
     format: composed.outputFormat,
     parts: formattedParts.length,
-  }, 'Phase 5 complete')
+  }, 'Delivery complete')
 
   return deliveryResult
 }

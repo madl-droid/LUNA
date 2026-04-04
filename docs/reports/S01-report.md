@@ -18,11 +18,13 @@
 - Se avanzó la unificación de config del engine hacia `registry.getConfig('engine')`.
 - Se limpiaron flags, tipos y tests huérfanos del engine legacy.
 - Se actualizó la documentación técnica base del engine.
+- Se cerró el rename arquitectónico de `phases` a `boundaries` en el engine.
+- Se renombraron los timings públicos del pipeline a `intakeDurationMs` y `deliveryDurationMs`.
+- Se migraron a registry los campos restantes del módulo engine para session reopen window, pipeline timeout y checkpoints.
 
 ### No completado ❌
-- La nomenclatura `phase1` / `phase5` sigue viva en archivos y timings.
-- `phase1-intake.ts` y `phase5-validate.ts` todavía necesitan partición por responsabilidades.
-- La migración de config a registry no está terminada para todos los campos globales/legacy.
+- `src/engine/boundaries/intake.ts` y `src/engine/boundaries/delivery.ts` todavía necesitan partición por responsabilidades.
+- La migración de config a registry no está terminada para todos los campos globales/infra legacy.
 
 ### Archivos creados/modificados
 - `docs/reports/S01-auditoria-simplicidad.md`
@@ -33,13 +35,17 @@
 - `src/engine/agentic/run-agentic-delivery.ts`
 - `src/engine/agentic/index.ts`
 - `src/engine/agentic/post-processor.ts`
+- `src/engine/boundaries/intake.ts`
+- `src/engine/boundaries/delivery.ts`
 - `src/engine/config.ts`
 - `src/engine/engine.ts`
 - `src/engine/index.ts`
-- `src/engine/phases/phase5-validate.ts`
 - `src/engine/proactive/proactive-pipeline.ts`
 - `src/engine/types.ts`
 - `src/modules/engine/manifest.ts`
+- `src/modules/memory/types.ts`
+- `src/modules/memory/pg-store.ts`
+- `src/engine/proactive/guards.ts`
 - `tests/engine/checkpoint-phase3.test.ts` (eliminado)
 
 ### Interfaces expuestas (exports que otros consumen)
@@ -72,12 +78,11 @@
 - Existe un `AGENTS.md` sin trackear en la raíz del repo; no fue modificado.
 - Todavía no hay línea base de métricas para comparar mejoras de complejidad o rendimiento.
 - `src/engine` y `src/modules/engine` no tienen los `AGENTS.md` que el repo declara como obligatorios.
-- `phase1-intake.ts` y `phase5-validate.ts` siguen siendo focos grandes de acoplamiento.
-- Parte de la config del engine todavía se carga desde env vars legacy y no desde registry.
-- La nomenclatura de “fases” ya no refleja el engine real y conviene retirarla en una segunda iteración.
+- `src/engine/boundaries/intake.ts` y `src/engine/boundaries/delivery.ts` siguen siendo focos grandes de acoplamiento.
+- Parte de la config del engine todavía se carga desde env vars legacy de infraestructura y no desde registry.
 
 ### Notas para integración
-- La próxima sesión puede arrancar partiendo `phase1-intake.ts` y `phase5-validate.ts` en boundaries más pequeños.
+- La próxima sesión puede arrancar partiendo `src/engine/boundaries/intake.ts` y `src/engine/boundaries/delivery.ts` en boundaries más pequeños.
 - El detalle de la auditoría del engine quedó documentado en `docs/reports/S01-auditoria-simplicidad.md`.
 - La base del repo quedó verde (`tsc` + `vitest`) después de retirar el test huérfano del pipeline legacy.
-- El siguiente corte natural es completar el rename arquitectónico de `phases` a boundaries y terminar de migrar config legacy a registry.
+- El siguiente corte natural es partir los boundaries grandes y revisar si conviene unificar también el vocabulario legacy de checkpoints y observabilidad fuera del engine.

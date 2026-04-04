@@ -34,9 +34,9 @@ checkpoints/
   index.ts            — re-exports
   CLAUDE.md           — documentación del subsistema
 
-phases/
-  phase1-intake.ts    — normalización + context loading via memory:manager + users:resolve (<200ms)
-  phase5-validate.ts  — delivery boundary: sanitización final + envío + persistencia + commitment auto-detect
+boundaries/
+  intake.ts           — normalización + context loading via memory:manager + users:resolve (<200ms)
+  delivery.ts         — delivery boundary: sanitización final + envío + persistencia + commitment auto-detect
 
 attachments/
   types.ts            — types, constantes, MIME map, hard limits, fallback messages

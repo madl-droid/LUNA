@@ -21,6 +21,12 @@ interface EngineModuleConfig {
   ATTACHMENT_URL_ENABLED: boolean
   ATTACHMENT_URL_FETCH_TIMEOUT_MS: number
   ATTACHMENT_URL_MAX_SIZE_MB: number
+  MEMORY_SESSION_REOPEN_WINDOW_HOURS: number
+  SESSION_REOPEN_WINDOW_MS: number
+  ENGINE_PIPELINE_TIMEOUT_MS: number
+  ENGINE_CHECKPOINT_ENABLED: boolean
+  ENGINE_CHECKPOINT_RESUME_WINDOW_MS: number
+  ENGINE_CHECKPOINT_CLEANUP_DAYS: number
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
   AGENTIC_LOOP_WARN_THRESHOLD: number
@@ -136,10 +142,10 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
     // Knowledge
     knowledgeDir: env('KNOWLEDGE_DIR', 'instance/knowledge'),
 
-    // Session — MEMORY_SESSION_REOPEN_WINDOW_HOURS (hours, set from console) takes precedence over SESSION_REOPEN_WINDOW_MS (ms, legacy)
-    sessionReopenWindowMs: envInt('MEMORY_SESSION_REOPEN_WINDOW_HOURS', 0) > 0
-      ? envInt('MEMORY_SESSION_REOPEN_WINDOW_HOURS', 1) * 60 * 60 * 1000
-      : envInt('SESSION_REOPEN_WINDOW_MS', 3600000), // default 1h
+    // Session reopen window: prefer hours, fall back to explicit ms
+    sessionReopenWindowMs: moduleConfig.MEMORY_SESSION_REOPEN_WINDOW_HOURS > 0
+      ? moduleConfig.MEMORY_SESSION_REOPEN_WINDOW_HOURS * 60 * 60 * 1000
+      : moduleConfig.SESSION_REOPEN_WINDOW_MS,
 
     // Attachments
     attachmentEnabled: moduleConfig.ATTACHMENT_ENABLED,
@@ -167,15 +173,15 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
     composeRetriesPerProvider: moduleConfig.ENGINE_COMPOSE_RETRIES_PER_PROVIDER,
 
     // FIX: E-1 — Pipeline global timeout (2 minutes default)
-    pipelineTimeoutMs: envInt('ENGINE_PIPELINE_TIMEOUT_MS', 120000),
+    pipelineTimeoutMs: moduleConfig.ENGINE_PIPELINE_TIMEOUT_MS,
 
     // Criticizer (quality gate): disabled | complex_only | always
     criticizerMode: moduleConfig.LLM_CRITICIZER_MODE as 'disabled' | 'complex_only' | 'always',
 
     // Checkpoints (resumable pipelines)
-    checkpointEnabled: envBool('ENGINE_CHECKPOINT_ENABLED', true),
-    checkpointResumeWindowMs: envInt('ENGINE_CHECKPOINT_RESUME_WINDOW_MS', 300000), // 5 min
-    checkpointCleanupDays: envInt('ENGINE_CHECKPOINT_CLEANUP_DAYS', 7),
+    checkpointEnabled: moduleConfig.ENGINE_CHECKPOINT_ENABLED,
+    checkpointResumeWindowMs: moduleConfig.ENGINE_CHECKPOINT_RESUME_WINDOW_MS,
+    checkpointCleanupDays: moduleConfig.ENGINE_CHECKPOINT_CLEANUP_DAYS,
 
     // --- Agentic engine config (v2.0) ---
     agenticMaxTurns:         moduleConfig.ENGINE_AGENTIC_MAX_TURNS,

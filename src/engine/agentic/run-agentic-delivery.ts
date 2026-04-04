@@ -12,7 +12,7 @@ import type {
   ToolCatalogEntry,
   ToolDefinition,
 } from '../types.js'
-import { phase5Validate } from '../phases/phase5-validate.js'
+import { delivery } from '../boundaries/delivery.js'
 import { buildAgenticPrompt, type AgenticPromptOptions } from '../prompts/agentic.js'
 import { loadSkillCatalog, filterSkillsByTools } from '../prompts/skills.js'
 import { buildSkillReadToolDef } from './skill-delegation.js'
@@ -37,7 +37,7 @@ export interface AgenticDeliveryInput {
   redis: Redis
   engineConfig: EngineConfig
   totalStart: number
-  phase1DurationMs: number
+  intakeDurationMs: number
   effortOverride?: EffortLevel
   maxTurnsCap?: number
   promptOptions?: Omit<AgenticPromptOptions, 'subagentCatalog'>
@@ -79,7 +79,7 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
     redis,
     engineConfig,
     totalStart,
-    phase1DurationMs,
+    intakeDurationMs,
     effortOverride,
     maxTurnsCap,
     promptOptions,
@@ -139,8 +139,8 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
       pipelineResult: {
         traceId: ctx.traceId,
         success: true,
-        phase1DurationMs,
-        phase5DurationMs: 0,
+        intakeDurationMs,
+        deliveryDurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         agenticResult,
         effortLevel,
@@ -154,9 +154,9 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
   }
 
   const composed = await postProcess(agenticResult, ctx, engineConfig, registry)
-  const p5Start = Date.now()
-  const delivery = await phase5Validate(ctx, composed, null, registry, db, redis, engineConfig)
-  const phase5DurationMs = Date.now() - p5Start
+  const deliveryStart = Date.now()
+  const deliveryResult = await delivery(ctx, composed, null, registry, db, redis, engineConfig)
+  const deliveryDurationMs = Date.now() - deliveryStart
   const totalDurationMs = Date.now() - totalStart
 
   const memMgr = registry.getOptional<MemoryManager>('memory:manager')
@@ -165,27 +165,27 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
       messageId: input.mode === 'proactive' ? ctx.traceId : ctx.message.id,
       contactId: ctx.contactId ?? null,
       sessionId: ctx.session.id,
-      phase1Ms: phase1DurationMs,
-      phase5Ms: phase5DurationMs,
+      intakeMs: intakeDurationMs,
+      deliveryMs: deliveryDurationMs,
       totalMs: totalDurationMs,
       toolsCalled: agenticResult.toolsUsed,
     }).catch(() => {})
   }
 
   return {
-    pipelineResult: {
+      pipelineResult: {
       traceId: ctx.traceId,
-      success: delivery.sent,
-      phase1DurationMs,
-      phase5DurationMs,
+      success: deliveryResult.sent,
+      intakeDurationMs,
+      deliveryDurationMs,
       totalDurationMs,
       responseText: composed.responseText,
-      deliveryResult: delivery,
+      deliveryResult,
       agenticResult,
       effortLevel,
     },
     agenticResult,
-    deliveryResult: delivery,
+    deliveryResult,
     responseText: composed.responseText,
     effortLevel,
     noAction: false,

@@ -63,8 +63,8 @@ export async function processProactive(
       return {
         traceId,
         success: false,
-        phase1DurationMs: 0,
-        phase5DurationMs: 0,
+        intakeDurationMs: 0,
+        deliveryDurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         error: `Blocked by guard: ${guardResult.blockedBy}`,
       }
@@ -73,13 +73,13 @@ export async function processProactive(
     // ═══ SIMPLIFIED PHASE 1 ═══
     const p1Start = Date.now()
     const ctx = await buildProactiveContext(candidate, db, redis, registry, engineConfig, traceId)
-    const phase1DurationMs = Date.now() - p1Start
+    const intakeDurationMs = Date.now() - p1Start
 
-    logger.info({ traceId, phase: 1, durationMs: phase1DurationMs }, 'Proactive phase 1 done')
+    logger.info({ traceId, phase: 1, durationMs: intakeDurationMs }, 'Proactive phase 1 done')
 
     return await runProactiveAgentic(
       ctx, db, redis, registry, engineConfig, proactiveConfig,
-      candidate, traceId, totalStart, phase1DurationMs,
+      candidate, traceId, totalStart, intakeDurationMs,
     )
   } catch (err) {
     const totalDurationMs = Date.now() - totalStart
@@ -96,8 +96,8 @@ export async function processProactive(
 
     return {
       traceId, success: false,
-      phase1DurationMs: 0,
-      phase5DurationMs: 0,
+      intakeDurationMs: 0,
+      deliveryDurationMs: 0,
       totalDurationMs,
       error: String(err),
     }
@@ -116,7 +116,7 @@ async function runProactiveAgentic(
   candidate: ProactiveCandidate,
   traceId: string,
   totalStart: number,
-  phase1DurationMs: number,
+  intakeDurationMs: number,
 ): Promise<PipelineResult> {
   const log = logger.child({ traceId, pipeline: 'proactive-agentic' })
 
@@ -143,8 +143,8 @@ async function runProactiveAgentic(
       ])
       return {
         traceId, success: false,
-        phase1DurationMs,
-        phase5DurationMs: 0,
+        intakeDurationMs,
+        deliveryDurationMs: 0,
         totalDurationMs: Date.now() - totalStart,
         error: `Blocked by conversation guard: ${guard.reason}`,
       }
@@ -161,7 +161,7 @@ async function runProactiveAgentic(
     redis,
     engineConfig,
     totalStart,
-    phase1DurationMs,
+    intakeDurationMs,
     effortOverride: effortLevel,
     maxTurnsCap: 5,
     promptOptions: {
