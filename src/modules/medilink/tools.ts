@@ -442,6 +442,8 @@ export async function registerMedilinkTools(
           professionalName: a.nombre_dentista ?? '',
           treatmentId: a.id_tratamiento,
           treatmentName: a.nombre_tratamiento ?? '',
+          branchId: a.id_sucursal,
+          branchName: a.nombre_sucursal ?? '',
         })))
 
         await pgStore.logAudit(ctx.db, {
@@ -746,7 +748,7 @@ export async function registerMedilinkTools(
           treatment_name: { type: 'string', description: 'Nombre de la prestación (para leads, el sistema usa la default automáticamente)' },
           date: { type: 'string', description: 'Fecha (YYYY-MM-DD)' },
           time: { type: 'string', description: 'Hora (HH:MM)' },
-          notes: { type: 'string', description: 'Notas para la cita (opcional)' },
+          context_summary: { type: 'string', description: 'Resumen breve del contexto del paciente para el profesional: motivo de consulta, datos relevantes mencionados en la conversación (síntomas, antecedentes, expectativas). Extraer de la conversación, NO preguntar al paciente por esto.' },
         },
         required: ['date', 'time'],
       },
@@ -838,11 +840,26 @@ export async function registerMedilinkTools(
           fecha: input.date as string,
           hora_inicio: requestedTime,
           duracion: config.MEDILINK_DEFAULT_DURATION_MIN,
-          comentario: input.notes as string | undefined,
+          comentario: input.context_summary as string | undefined,
         })
 
         // Invalidate availability cache
         await cache.invalidateAvailability(defaultBranch.id, prof.id)
+
+        // Store appointment ID in working memory for potential reschedule
+        if (ctx.contactId) {
+          await wmem.set(ctx.contactId, ML.PENDING_RESCHEDULE_ID, appointment.id)
+          await wmem.set(ctx.contactId, ML.LAST_APPOINTMENT_ID, appointment.id)
+        }
+
+        // Persist branch preference on contact for future proactive suggestions
+        ctx.db.query(
+          `UPDATE contacts SET custom_data = custom_data || $1::jsonb, updated_at = now() WHERE id = $2`,
+          [JSON.stringify({
+            medilink_preferred_branch_id: appointment.id_sucursal,
+            medilink_preferred_branch_name: appointment.nombre_sucursal,
+          }), ctx.contactId],
+        ).catch(err => logger.warn({ err }, 'Failed to persist branch preference'))
 
         // Schedule follow-ups
         const followupScheduler = registry.getOptional<{
@@ -875,6 +892,7 @@ export async function registerMedilinkTools(
             professional: `${prof.nombre} ${prof.apellidos}`,
             treatment: treatment.nombre,
             date: input.date, time: requestedTime,
+            branch: appointment.nombre_sucursal,
           },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',
@@ -883,11 +901,14 @@ export async function registerMedilinkTools(
         return {
           success: true,
           data: {
+            id: appointment.id,
+            id_atencion: appointment.id_atencion ?? null,
             fecha: appointment.fecha,
             hora: appointment.hora_inicio,
             profesional: appointment.nombre_dentista,
             tratamiento: appointment.nombre_tratamiento,
             sucursal: appointment.nombre_sucursal,
+            comentarios: appointment.comentarios,
             mensaje: 'Cita agendada exitosamente',
           },
         }
@@ -916,6 +937,7 @@ export async function registerMedilinkTools(
           new_date: { type: 'string', description: 'Nueva fecha (YYYY-MM-DD)' },
           new_time: { type: 'string', description: 'Nueva hora (HH:MM)' },
           new_professional_name: { type: 'string', description: 'Nuevo profesional (opcional, mantiene el mismo si no se especifica)' },
+          reschedule_reason: { type: 'string', description: 'Motivo del reagendamiento SOLO si el paciente lo mencionó voluntariamente. NO preguntar directamente por el motivo.' },
         },
         required: ['new_date', 'new_time'],
       },
@@ -979,10 +1001,16 @@ export async function registerMedilinkTools(
           newProfId = newProf.id
         }
 
+        // Build comentarios with reschedule context
+        const reasonStr = input.reschedule_reason ? ` Motivo: ${input.reschedule_reason}` : ''
+        const rescheduleComment = `Reagendamiento — cita original: ${existing.fecha} ${existing.hora_inicio} con ${existing.nombre_dentista}.${reasonStr}`
+        const existingComments = existing.comentarios ? `${existing.comentarios} | ` : ''
+
         // Update appointment
         const updateData: Record<string, unknown> = {
           fecha: input.new_date as string,
           hora_inicio: input.new_time as string,
+          comentarios: `${existingComments}${rescheduleComment}`,
         }
         if (newProfId !== existing.id_dentista) {
           updateData.id_dentista = newProfId
@@ -1018,8 +1046,20 @@ export async function registerMedilinkTools(
         // Invalidate availability cache
         await cache.invalidateAvailability()
 
-        // Clear pending reschedule from working memory
-        if (ctx.contactId) await wmem.del(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
+        // Update working memory: set new appointment as pending (in case of another reschedule)
+        if (ctx.contactId) {
+          await wmem.set(ctx.contactId, ML.PENDING_RESCHEDULE_ID, updated.id)
+          await wmem.set(ctx.contactId, ML.LAST_APPOINTMENT_ID, updated.id)
+        }
+
+        // Persist branch preference on contact
+        ctx.db.query(
+          `UPDATE contacts SET custom_data = custom_data || $1::jsonb, updated_at = now() WHERE id = $2`,
+          [JSON.stringify({
+            medilink_preferred_branch_id: updated.id_sucursal,
+            medilink_preferred_branch_name: updated.nombre_sucursal,
+          }), ctx.contactId],
+        ).catch(err => logger.warn({ err }, 'Failed to persist branch preference'))
 
         await pgStore.logAudit(ctx.db, {
           contactId: ctx.contactId,
@@ -1029,6 +1069,8 @@ export async function registerMedilinkTools(
             oldDate: existing.fecha, oldTime: existing.hora_inicio,
             newDate: input.new_date, newTime: input.new_time,
             professionalChanged: newProfId !== existing.id_dentista,
+            rescheduleReason: input.reschedule_reason ?? null,
+            branch: updated.nombre_sucursal,
           },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',
@@ -1037,9 +1079,13 @@ export async function registerMedilinkTools(
         return {
           success: true,
           data: {
+            id: updated.id,
+            id_atencion: updated.id_atencion ?? null,
             fecha: updated.fecha,
             hora: updated.hora_inicio,
             profesional: updated.nombre_dentista,
+            sucursal: updated.nombre_sucursal,
+            comentarios: updated.comentarios,
             mensaje: `Cita reagendada al ${updated.fecha} a las ${updated.hora_inicio} con ${updated.nombre_dentista}`,
           },
         }

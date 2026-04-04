@@ -54,6 +54,7 @@ export const ML = {
   PATIENT_ID: 'patient_id',
   APPOINTMENTS: 'appointments',
   PENDING_RESCHEDULE_ID: 'pending_reschedule_id',
+  LAST_APPOINTMENT_ID: 'last_appointment_id',
 } as const
 
 export interface AppointmentSnapshot {
@@ -64,4 +65,6 @@ export interface AppointmentSnapshot {
   professionalName: string
   treatmentId: number
   treatmentName: string
+  branchId?: number
+  branchName?: string
 }
