@@ -26,6 +26,8 @@ const EMPTY_PERMISSIONS: UserPermissions = {
  * Get the permissions for a user type.
  * Reads from user_list_config in DB.
  * Admin always gets allAccess = true.
+ * allAccess materializes into tools:['*'], skills:['*'], subagents:true
+ * so downstream code only checks concrete flags, never allAccess.
  */
 export async function getUserPermissions(userType: UserType): Promise<UserPermissions> {
   if (!_db) throw new Error('Users module not initialized')
@@ -46,9 +48,17 @@ export async function getUserPermissions(userType: UserType): Promise<UserPermis
     knowledgeCategories: config.knowledgeCategories ?? [],
   }
 
-  // Admin always allAccess regardless of stored config
+  // Admin always gets allAccess — defensive, in case DB value is stale
   if (userType === 'admin') {
     perms.allAccess = true
+  }
+
+  // allAccess is the single source of truth for full permissions.
+  // Materialize into concrete flags here so no downstream code needs to check allAccess.
+  if (perms.allAccess) {
+    perms.tools = ['*']
+    perms.skills = ['*']
+    perms.subagents = true
   }
 
   return perms

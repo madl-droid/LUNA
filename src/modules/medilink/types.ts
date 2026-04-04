@@ -113,6 +113,8 @@ export interface MedilinkAppointment {
   nombre_social_paciente: string | null
   id_estado: number
   estado_cita: string
+  /** Plan de tratamiento al que pertenece la cita (HealthAtom lo llama "atención") */
+  id_atencion: number | null
   id_tratamiento: number
   nombre_tratamiento: string
   fecha: string

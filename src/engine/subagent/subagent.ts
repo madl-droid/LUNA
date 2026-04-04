@@ -110,9 +110,6 @@ function buildSubagentContext(
     relevantSummaries: [],
     leadStatus: parentCtx.leadStatus,
 
-    // Sheets — STRIP
-    sheetsData: null,
-
     // Normalized text — replace with task description
     normalizedText: taskDescription,
     messageType: 'text',

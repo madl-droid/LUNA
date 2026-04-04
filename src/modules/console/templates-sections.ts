@@ -40,7 +40,7 @@ export interface SectionData {
   usersData?: {
     configs: Array<{
       listType: string; displayName: string; description: string; isEnabled: boolean; isSystem: boolean
-      permissions: { tools: string[]; skills: string[]; subagents: boolean; allAccess: boolean }
+      permissions: { tools: string[]; skills: string[]; subagents: boolean; allowedSubagents?: string[]; allAccess: boolean }
       knowledgeCategories: string[]; assignmentEnabled: boolean; assignmentPrompt: string
       disableBehavior: string; disableTargetList: string | null
       unregisteredBehavior: string; unregisteredMessage: string | null; maxUsers: number | null
@@ -53,6 +53,7 @@ export interface SectionData {
     tools: Array<{ name: string; description: string; category?: string }>
     activeModules: Array<{ name: string; displayName: { es: string; en: string } | string; type: string; tools: Array<{ name: string; displayName: string; description: string; enabled: boolean }> }>
     knowledgeCategories: Array<{ id: string; title: string; description: string }>
+    subagentTypes: Array<{ slug: string; name: string; description: string }>
   }
 }
 
@@ -3853,7 +3854,7 @@ function renderUsersSection(data: SectionData): string {
 
   // ── Config page ──
   if (isConfigPage) {
-  const { activeModules = [], knowledgeCategories: kCats = [] } = ud
+  const { activeModules = [], knowledgeCategories: kCats = [], subagentTypes: saTypesAll = [] } = ud
   const SYSTEM_TYPES = ['admin', 'lead', 'coworker', 'partners']
   // Section A: Base Cards Grid
   const SVG_CONTACTS_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
@@ -4086,8 +4087,11 @@ function renderUsersSection(data: SectionData): string {
     }
     html += `</div></div>` // end Modules panel
 
-    // Tab 2: Subagents
-    const subOrig = perms.subagents ? 'on' : ''
+    // Tab 2: Subagents (toggle + per-subagent selection)
+    const subOrig = (isAdmin || perms.subagents) ? 'on' : ''
+    const saTypes = saTypesAll
+    const allowedSa = perms.allowedSubagents ?? []
+    const allSaAccess = isAdmin || allowedSa.length === 0
     html += `<div class="panel collapsed"><div class="panel-header" onclick="togglePanel(this)">
       <span class="panel-title">${lang === 'es' ? 'Subagentes' : 'Subagents'}</span>
       <span class="panel-chevron">&#9660;</span></div><div class="panel-body">
@@ -4097,8 +4101,21 @@ function renderUsersSection(data: SectionData): string {
         <input type="checkbox" class="perm-cb" class="ts-perm-cb"
           ${isAdmin || perms.subagents ? 'checked' : ''}${disabledAttr} data-hidden="sub_${esc(lt)}">
         <input type="hidden" name="sub_${esc(lt)}" value="${subOrig}" data-original="${subOrig}">
-      </div>
-    </div></div>` // end Subagents panel
+      </div>`
+    if (saTypes.length > 0) {
+      html += `<p class="panel-description ts-config-muted" style="margin:8px 0 4px">${lang === 'es' ? 'Sin seleccion = acceso a todos. Selecciona para restringir.' : 'No selection = access to all. Select to restrict.'}</p>`
+      html += `<div class="perm-grid">`
+      for (const sa of saTypes) {
+        const checked = allSaAccess || allowedSa.includes(sa.slug)
+        const origVal = checked && !allSaAccess ? 'on' : ''
+        html += `<label title="${esc(sa.description)}">
+          <input type="checkbox" class="perm-cb" ${checked ? 'checked' : ''}${disabledAttr} data-hidden="sa_${esc(lt)}_${esc(sa.slug)}">
+          <input type="hidden" name="sa_${esc(lt)}_${esc(sa.slug)}" value="${origVal}" data-original="${origVal}">
+          ${esc(sa.name)}</label>`
+      }
+      html += `</div>`
+    }
+    html += `</div></div>` // end Subagents panel
 
     // Tab 3: Knowledge Categories (always show, even if empty)
     const allowedCats = cfg.knowledgeCategories ?? []
