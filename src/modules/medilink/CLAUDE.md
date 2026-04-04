@@ -10,7 +10,7 @@ Provider de gestion clinica: pacientes, citas, disponibilidad, seguimiento autom
 - `cache.ts` — Redis + in-memory para datos de referencia (30d TTL) y disponibilidad (20min TTL, warm via webhooks)
 - `webhook-handler.ts` — receptor webhooks Medilink: HMAC verify, dispatch a listeners
 - `security.ts` — **CRITICO**: verificacion identidad, control acceso, filtrado datos, audit
-- `tools.ts` — 11 herramientas del agente (search, info, disponibilidad, profesionales, prestaciones, citas, pagos, tratamientos, crear paciente, agendar, reagendar)
+- `tools.ts` — 12 herramientas del agente (search, info, disponibilidad, profesionales, prestaciones, citas, pagos, tratamientos, crear paciente, agendar, reagendar, marcar pendiente)
 - `working-memory.ts` — memoria de trabajo Redis por contacto (TTL 6h). Clase generica `WorkingMemory` reutilizable por otros modulos
 - `follow-up-scheduler.ts` — secuencia 9 toques, delega a scheduled-tasks (NO crea su propio BullMQ)
 - `pg-store.ts` — migraciones (7 tablas) y queries SQL
@@ -41,10 +41,10 @@ Base: `MEDILINK_BASE_URL` + `/api/v1` (se agrega automaticamente si falta)
 **Filtros soportados**: solo `eq`. NO soporta `like` ni `contains`.
 
 ## Trampas criticas
-- `POST /citas` usa v5 (`/api/v5/citas`), todo lo demás usa v1
+- `POST /citas` y `PUT /citas/{id}` usan v5 (`/api/v5/citas`), todo lo demás usa v1
 - La respuesta de `POST /citas` retorna `id` (primer campo) e `id_atencion` — ambos se guardan
 - v1 usa `id_dentista`/`nombre_dentista` en citas, agendas, evoluciones
-- v5 usa `id_profesional`/`nombre_profesional` — **LUNA usa v1 excepto POST citas**
+- v5 usa `id_profesional`/`nombre_profesional` — **LUNA usa v1 excepto POST/PUT citas (v5)**
 - `MedilinkPatient.nombre` (singular) — NO `nombres`
 - `/sillones` no tiene `id_sucursal` — no se puede filtrar por sucursal
 - `/tratamientos` no tiene `duracion` — usar `MEDILINK_DEFAULT_DURATION_MIN`
@@ -58,7 +58,7 @@ Base: `MEDILINK_BASE_URL` + `/api/v1` (se agrega automaticamente si falta)
 
 **NUNCA exponer**: `evo.datos` (notas clinicas), archivos clinicos, info de un paciente a otro.
 
-## Tools del agente (11)
+## Tools del agente (12)
 - `medilink-search-patient` — busca auto por telefono; guarda patient_id en working memory
 - `medilink-get-patient-info` — datos basicos del paciente vinculado (nombre, tel, email)
 - `medilink-check-availability` — slots libres con logica de filtrado por contexto (ver abajo)
@@ -70,6 +70,7 @@ Base: `MEDILINK_BASE_URL` + `/api/v1` (se agrega automaticamente si falta)
 - `medilink-create-patient` — registrar paciente nuevo; guarda patient_id en working memory
 - `medilink-create-appointment` — agendar (professional y prestacion opcionales para leads — usa defaults del config). Param `context_summary`: resumen de contexto del paciente extraído de la conversación (NO preguntado). Retorna: id, id_atencion, fecha, hora, profesional, tratamiento, sucursal, comentarios. Post-acciones: guarda appointment_id en working memory (`pending_reschedule_id` + `last_appointment_id`), persiste branch preference en `contacts.custom_data`
 - `medilink-reschedule-appointment` — reagendar; lee appointment_id de working memory si no se pasa. Param `reschedule_reason`: motivo del reagendamiento (se agrega a comentarios como audit trail). Retorna: id, id_atencion, fecha, hora, profesional, tratamiento, sucursal, comentarios. Post-acciones: actualiza `pending_reschedule_id`, persiste branch preference
+- `medilink-mark-pending-reschedule` — marca cita como "Pendiente reagendar" (id_estado=16) cuando el paciente no define nueva fecha. Crea commitment automático de seguimiento (~4 días). Param `reason`: contexto de por qué no se definió fecha. Post-acciones: PUT id_estado=16, INSERT commitment tipo `reschedule_follow_up`
 
 Tools ELIMINADAS: verify-identity, request-patient-edit, execute-followup, get-my-evolutions, get-my-files
 

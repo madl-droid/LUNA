@@ -1,6 +1,6 @@
 <!-- description: Protocolo de reagendamiento de citas existentes -->
 <!-- userTypes: lead,admin,coworker -->
-<!-- requiredTools: medilink-reschedule-appointment -->
+<!-- requiredTools: medilink-reschedule-appointment,medilink-mark-pending-reschedule -->
 
 # Habilidad: Reagendamiento de Citas
 
@@ -34,6 +34,39 @@ Preguntar de forma natural: *"¿Por qué necesitas reagendar?"* o *"¿Hay algún
 El motivo se guarda automáticamente como audit trail en los comentarios de la cita. Es importante para:
 - Seguimiento interno
 - Detectar patrones (muchos reagendamientos = posible pérdida)
+
+---
+
+## Subflujo: Paciente no define nueva fecha
+
+Aplica cuando el paciente quiere reagendar pero NO sabe o no puede definir cuándo. Señales:
+- "No sé cuándo puedo", "Déjame ver mi agenda", "Todavía no estoy seguro"
+- "Quiero reagendar pero no sé para cuándo"
+- El paciente da vueltas sin concretar después de ver opciones
+
+### Comportamiento del agente
+1. **Entender el motivo** — preguntar con empatía por qué necesita reagendar. No presionar, solo escuchar.
+2. **Ofrecer opciones proactivamente** — sugerir 2-3 alternativas concretas: *"¿Te serviría la próxima semana? Tengo espacio el martes en la mañana o el jueves en la tarde."*
+3. **Si el paciente no concreta** — está bien. No insistir más de 2 veces con opciones. Ofrecer dejarlo pendiente: *"No te preocupes, dejemos tu cita como pendiente de reagendar y te contacto en unos días para buscar un espacio que te funcione."*
+
+### Cuándo activar el cierre pendiente
+- El paciente explícitamente dice que no puede decidir ahora
+- Después de ofrecer 2 rondas de opciones sin acuerdo
+- El paciente pide que le contacten después
+
+### Acción determinista
+Usa `medilink-mark-pending-reschedule` con:
+- `appointment_id` de la cita
+- `reason` — resumen breve del motivo (ej: "Paciente necesita revisar su agenda laboral")
+
+El sistema automáticamente:
+- Cambia el estado de la cita a "Pendiente reagendar"
+- Crea un compromiso de seguimiento en ~4 días para recontactar al paciente
+
+### Confirmación al paciente
+*"Listo, dejé tu cita pendiente de reagendar. Te voy a contactar en unos días para buscar un buen espacio. ¡Quedo atenta!"*
+
+No mencionar estados internos, IDs, ni plazos exactos del seguimiento.
 
 ---
 
