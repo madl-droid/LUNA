@@ -541,6 +541,9 @@ async function runSubagentLoop(
           const toolResult = await toolsRegistry.executeTool(toolCall.name, toolCall.input, {
             contactId: ctx.contactId,
             traceId: ctx.traceId,
+            correlationId: ctx.traceId,
+            db: registry.getDb(),
+            redis: registry.getRedis(),
           })
           lastData = toolResult.data
           toolResults.push(JSON.stringify({
