@@ -54,7 +54,9 @@ const MEMORY_TABLES = [
   'agents', 'companies', 'system_state',
   // Cortex / Trace
   'trace_scenarios', 'trace_runs', 'trace_results', 'task_checkpoints',
-  'cortex_pulse_events',
+  'pulse_reports',
+  // Notifications
+  'notifications',
   // HITL (tickets, not rules)
   'hitl_tickets', 'hitl_ticket_log',
   // LLM usage
@@ -81,6 +83,8 @@ const MEMORY_TABLES = [
   'medilink_followup_templates', 'medilink_webhook_log',
   // Proactive
   'proactive_outreach_log', 'daily_reports',
+  // Webhook log (users)
+  'webhook_lead_log',
 ]
 
 /** Agent intelligence/configuration: knowledge, subagents, tools, prompts, rules */
@@ -100,6 +104,8 @@ const AGENT_TABLES = [
   'scheduled_tasks',
   // HITL rules
   'hitl_rules',
+  // Medilink reference data
+  'medilink_professional_category_assignments',
 ]
 
 async function truncateTables(db: import('pg').Pool, tables: string[]): Promise<void> {
@@ -2164,6 +2170,13 @@ export function createApiRoutes(): ApiRoute[] {
 
           const body = await parseBody<{ overrideType: string }>(req)
           const overrideType = body.overrideType?.trim() || ''
+
+          // Validate override type
+          const VALID_OVERRIDES = ['', 'admin', 'lead', 'coworker']
+          if (!VALID_OVERRIDES.includes(overrideType)) {
+            jsonResponse(res, 400, { error: `Invalid override type: ${overrideType}. Must be one of: ${VALID_OVERRIDES.join(', ')}` })
+            return
+          }
 
           const configStore = await import('../../kernel/config-store.js')
           const db = registry.getDb()
