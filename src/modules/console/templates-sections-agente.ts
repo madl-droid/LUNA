@@ -26,7 +26,7 @@ export function renderLlmUnifiedSection(data: SectionData): string {
     </div>
     <div class="panel-body">
       <div class="panel-info">${t('sec_models_info', data.lang)}</div>
-      ${renderModelsContent(data)}
+      ${renderModelsTable(data, data.lang)}
     </div>
   </div>`
 
@@ -83,64 +83,7 @@ export function renderLlmUnifiedSection(data: SectionData): string {
   return h
 }
 
-/** Inner content for the models panel (reused by both standalone and unified) */
-function renderModelsContent(data: SectionData): string {
-  const models = data.allModels ?? { anthropic: [], gemini: [] }
-  const modelTasks: [string, string, string][] = [
-    ['LLM_CLASSIFY', 'f_LLM_CLASSIFY', 'i_LLM_CLASSIFY'],
-    ['LLM_RESPOND', 'f_LLM_RESPOND', 'i_LLM_RESPOND'],
-    ['LLM_COMPLEX', 'f_LLM_COMPLEX', 'i_LLM_COMPLEX'],
-    ['LLM_TOOLS', 'f_LLM_TOOLS', 'i_LLM_TOOLS'],
-    ['LLM_COMPRESS', 'f_LLM_COMPRESS', 'i_LLM_COMPRESS'],
-    ['LLM_PROACTIVE', 'f_LLM_PROACTIVE', 'i_LLM_PROACTIVE'],
-  ]
-  const fallbackTasks: [string, string, string][] = [
-    ['LLM_FALLBACK_CLASSIFY', 'f_LLM_FB_CLASSIFY', 'i_LLM_FB_CLASSIFY'],
-    ['LLM_FALLBACK_RESPOND', 'f_LLM_FB_RESPOND', 'i_LLM_FB_RESPOND'],
-    ['LLM_FALLBACK_COMPLEX', 'f_LLM_FB_COMPLEX', 'i_LLM_FB_COMPLEX'],
-  ]
 
-  const scanInfo = data.lastScan
-    ? `<span class="scan-info">${t('lastScan', data.lang)}: ${esc(data.lastScan.lastScanAt)}</span>`
-    : ''
-  const scanReplacements = (data.lastScan?.replacements?.length)
-    ? data.lastScan.replacements.map(r =>
-        `<div class="scan-replacement">
-          ${esc(r.configKey)}: <s>${esc(r.oldModel)}</s> ${t('scanReplaced', data.lang)} <b>${esc(r.newModel)}</b>
-        </div>`
-      ).join('') : ''
-
-  let h = `<div class="scan-bar">
-    <button type="button" class="act-btn act-btn-config" onclick="triggerScan()">${t('scanModelsBtn', data.lang)}</button>
-    ${scanInfo}
-  </div>
-  <div id="scan-replacements">${scanReplacements}</div>
-  <div class="section-label">${t('models_primary', data.lang)}</div>`
-
-  for (const [prefix, labelKey, infoKey] of modelTasks) {
-    h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || 'anthropic', cv(data, prefix + '_MODEL'), models, data.lang, labelKey, infoKey)
-  }
-  // Downgrade targets (same provider, lesser model — used before cross-API fallback)
-  const downgradeTasks: [string, string, string][] = [
-    ['LLM_CLASSIFY_DOWNGRADE', 'f_LLM_CLASSIFY', 'i_LLM_DG'],
-    ['LLM_RESPOND_DOWNGRADE', 'f_LLM_RESPOND', 'i_LLM_DG'],
-    ['LLM_COMPLEX_DOWNGRADE', 'f_LLM_COMPLEX', 'i_LLM_DG'],
-    ['LLM_TOOLS_DOWNGRADE', 'f_LLM_TOOLS', 'i_LLM_DG'],
-    ['LLM_PROACTIVE_DOWNGRADE', 'f_LLM_PROACTIVE', 'i_LLM_DG'],
-  ]
-
-  h += `<div class="section-label with-border">${data.lang === 'es' ? 'Downgrade (mismo provider, modelo menor)' : 'Downgrade (same provider, lesser model)'}</div>`
-  for (const [prefix, labelKey] of downgradeTasks) {
-    h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || '', cv(data, prefix + '_MODEL') || '', models, data.lang, labelKey)
-  }
-
-  h += `<div class="section-label with-border">${t('models_fallback', data.lang)}</div>`
-  for (const [prefix, labelKey, infoKey] of fallbackTasks) {
-    h += modelDropdown(prefix, cv(data, prefix + '_PROVIDER') || 'anthropic', cv(data, prefix + '_MODEL'), models, data.lang, labelKey, infoKey)
-  }
-  h += `<script type="application/json" id="models-data">${JSON.stringify(models)}</script>`
-  return h
-}
 
 const MODEL_SHORT: Record<string, string> = {
   'claude-haiku-4-5-20251001': 'Haiku 4.5',
