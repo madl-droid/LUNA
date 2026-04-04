@@ -207,16 +207,9 @@ function buildToolsSection(
 
   if (subagentCatalog && subagentCatalog.length > 0) {
     lines.push('')
-    lines.push('Subagentes disponibles (para tareas complejas, autónomas o multi-herramienta):')
+    lines.push('Subagentes disponibles — DELEGA a un subagente usando run_subagent(subagent_slug, task) cuando las instrucciones lo indiquen:')
     for (const sa of subagentCatalog) {
-      const toolList = sa.allowedTools.length > 0 ? ` [tools: ${sa.allowedTools.join(', ')}]` : ''
-      lines.push(`- "${sa.slug}" (${sa.name}): ${sa.description}${toolList}`)
-    }
-
-    const hasWebResearcher = subagentCatalog.some(sa => sa.slug === 'web-researcher')
-    if (hasWebResearcher) {
-      lines.push('')
-      lines.push('Para búsquedas web, lectura de URLs externas o verificación de información online: usa el subagente web-researcher.')
+      lines.push(`- "${sa.slug}" (${sa.name}): ${sa.description}`)
     }
   }
 

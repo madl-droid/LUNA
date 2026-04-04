@@ -493,7 +493,7 @@ async function loadHistoryFromDb(
 const DEFAULT_LEAD_PERMISSIONS: UserPermissions = {
   tools: ['schedule', 'lookup_product'],
   skills: ['respond', 'schedule'],
-  subagents: false,
+  subagents: true,
   canReceiveProactive: true,
   knowledgeCategories: [],
 }
