@@ -512,6 +512,11 @@ const manifest: ModuleManifest = {
     // Register agent tools
     await registerMedilinkTools(registry, apiClient, cache, security)
 
+    // Enable medilink-scheduler subagent (disabled when module is off)
+    await db.query(`UPDATE subagent_types SET enabled = true, updated_at = now() WHERE slug = 'medilink-scheduler'`)
+    const saCatalog = registry.getOptional<{ reload(): Promise<void> }>('subagents:catalog')
+    await saCatalog?.reload()
+
     const sec = security! // security is always set here (initialized just above)
 
     // ── Auto-link service ──────────────────────────────────────────────────
@@ -698,6 +703,18 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    // Disable medilink-scheduler subagent (re-enabled on next activate)
+    if (_registry) {
+      try {
+        const db = _registry.getDb()
+        await db.query(`UPDATE subagent_types SET enabled = false, updated_at = now() WHERE slug = 'medilink-scheduler'`)
+        const saCatalog = _registry.getOptional<{ reload(): Promise<void> }>('subagents:catalog')
+        await saCatalog?.reload()
+      } catch (err) {
+        logger.warn({ err }, 'Failed to disable medilink-scheduler subagent')
+      }
+    }
+
     if (healthCheckTimer) {
       clearInterval(healthCheckTimer)
       healthCheckTimer = null
