@@ -320,13 +320,13 @@ export interface PipelineLogEntry {
   messageId?: string | null
   contactId?: string | null
   sessionId?: string | null
-  phase1Ms?: number | null
+  intakeMs?: number | null
   phase2Ms?: number | null
   phase2Result?: Record<string, unknown> | null
   phase3Ms?: number | null
   phase3Result?: Record<string, unknown> | null
   phase4Ms?: number | null
-  phase5Ms?: number | null
+  deliveryMs?: number | null
   totalMs?: number | null
   tokensInput?: number | null
   tokensOutput?: number | null

@@ -278,8 +278,8 @@ export interface DeliveryResult {
 export interface PipelineResult {
   traceId: string
   success: boolean
-  phase1DurationMs: number
-  phase5DurationMs: number
+  intakeDurationMs: number
+  deliveryDurationMs: number
   totalDurationMs: number
   responseText?: string
   deliveryResult?: DeliveryResult

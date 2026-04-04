@@ -33,13 +33,13 @@ import type { ChannelAttachmentConfig, AttachmentEngineConfig } from '../attachm
 import { searchFreshdeskIndex } from '../../tools/freshdesk/freshdesk-rag.js'
 import type { FreshdeskMatch } from '../../tools/freshdesk/types.js'
 
-const logger = pino({ name: 'engine:phase1' })
+const logger = pino({ name: 'engine:intake' })
 
 /**
- * Execute Phase 1: Intake + Context Loading.
+ * Execute intake: normalize and load the full context bundle.
  * Returns a fully populated ContextBundle.
  */
-export async function phase1Intake(
+export async function intake(
   message: IncomingMessage,
   db: Pool,
   redis: Redis,

@@ -228,7 +228,7 @@ async function guardConversation(
 }
 
 /**
- * Mark that a conversation ended with a farewell (called from phase5 when intent is farewell).
+ * Mark that a conversation ended with a farewell (called from delivery when intent is farewell).
  */
 export async function markFarewell(contactId: string, redis: Redis): Promise<void> {
   const ttl = 24 * 60 * 60 // 24h

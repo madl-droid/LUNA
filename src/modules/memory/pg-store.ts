@@ -653,12 +653,12 @@ export class PgStore {
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
         [
-          entry.messageId ?? null, entry.contactId ?? null, entry.sessionId ?? null, entry.phase1Ms ?? null,
+          entry.messageId ?? null, entry.contactId ?? null, entry.sessionId ?? null, entry.intakeMs ?? null,
           entry.phase2Ms ?? null,
           entry.phase2Result ? JSON.stringify(entry.phase2Result) : null,
           entry.phase3Ms ?? null,
           entry.phase3Result ? JSON.stringify(entry.phase3Result) : null,
-          entry.phase4Ms ?? null, entry.phase5Ms ?? null, entry.totalMs ?? null,
+          entry.phase4Ms ?? null, entry.deliveryMs ?? null, entry.totalMs ?? null,
           entry.tokensInput ?? null, entry.tokensOutput ?? null, entry.estimatedCost ?? null,
           entry.modelsUsed ?? null, entry.toolsCalled ?? null,
           entry.hadSubagent ?? false, entry.hadFallback ?? false,
