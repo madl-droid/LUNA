@@ -13,6 +13,8 @@ import { intake } from './boundaries/intake.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
+import { registerUpdateCommitmentTool } from './proactive/tools/update-commitment.js'
+import { registerQueryPendingItemsTool } from './proactive/tools/query-pending-items.js'
 import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
@@ -88,6 +90,12 @@ export function initEngine(reg: Registry): void {
   const proactiveConfig = loadProactiveConfig()
   registerCreateCommitmentTool(registry, proactiveConfig).catch(err =>
     logger.warn({ err }, 'Failed to register create_commitment tool'),
+  )
+  registerUpdateCommitmentTool(registry).catch(err =>
+    logger.warn({ err }, 'Failed to register update_commitment tool'),
+  )
+  registerQueryPendingItemsTool(registry).catch(err =>
+    logger.warn({ err }, 'Failed to register query_pending_items tool'),
   )
 
   // Initialize checkpoint manager

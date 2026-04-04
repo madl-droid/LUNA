@@ -76,6 +76,12 @@ export interface ToolExecutionContext {
   messageId?: string
   contactId?: string
   contactType?: string
+  /** Channel name (whatsapp, gmail, google-chat, etc.) */
+  channelName?: string
+  /** Channel-specific sender ID (e.g. LID for WhatsApp, email for Gmail) */
+  senderId?: string
+  /** Active session ID */
+  sessionId?: string
   correlationId: string
   db: Pool
   redis: Redis

@@ -34,6 +34,9 @@ interface ToolExecutor {
       traceId?: string
       messageId?: string
       contactType?: string | null
+      channelName?: string
+      senderId?: string
+      sessionId?: string
       correlationId?: string
       db?: unknown
       redis?: unknown
@@ -338,6 +341,9 @@ async function executeToolCalls(
               traceId: ctx.traceId,
               messageId: ctx.message.id,
               contactType: ctx.contact?.contactType ?? null,
+              channelName: ctx.message.channelName,
+              senderId: ctx.message.from,
+              sessionId: ctx.session.id,
               correlationId: ctx.traceId,
               db: registry.getDb(),
               redis: registry.getRedis(),

@@ -19,6 +19,7 @@ import type {
   AttachmentMetadata,
   CampaignInfo,
   KnowledgeInjection,
+  ActiveHitlTicket,
 } from '../types.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { ContactMemory } from '../../modules/memory/types.js'
@@ -205,6 +206,7 @@ export async function intake(
 
   // 12-15. Load memory context in parallel
   const historyTurns = getChannelHistoryTurns(registry, message.channelName)
+  const contextLimits = getContextLimits(registry)
   const [
     historyResult,
     memoryResult,
@@ -212,13 +214,15 @@ export async function intake(
     summariesResult,
     leadStatusResult,
     bufferSummaryResult,
+    hitlTicketsResult,
   ] = await Promise.allSettled([
     loadHistory(memoryManager, db, session.id, historyTurns),
     contact?.id && memoryManager ? loadContactMemory(memoryManager, contact.id) : Promise.resolve(null),
-    contact?.id && memoryManager ? memoryManager.getPendingCommitments(contact.id, 5) : Promise.resolve([]),
+    contact?.id && memoryManager ? memoryManager.getPendingCommitments(contact.id, contextLimits.commitmentsMax) : Promise.resolve([]),
     contact?.id && memoryManager && normalizedText ? memoryManager.hybridSearch(contact.id, normalizedText, 'es', getContextSummariesLimit(registry, message.channelName)) : Promise.resolve([]),
     contact?.id && memoryManager ? memoryManager.getLeadStatus(contact.id) : Promise.resolve(null),
     memoryManager ? memoryManager.getBufferSummary(session.id) : Promise.resolve(null),
+    contact?.id && contextLimits.hitlMax > 0 ? loadActiveHitlTickets(db, contact.id, contextLimits.hitlMax) : Promise.resolve([]),
   ])
 
   const history = historyResult.status === 'fulfilled' ? historyResult.value : []
@@ -227,6 +231,7 @@ export async function intake(
   const relevantSummaries = summariesResult.status === 'fulfilled' ? summariesResult.value : []
   const leadStatus = leadStatusResult.status === 'fulfilled' ? leadStatusResult.value : null
   const bufferSummary = bufferSummaryResult.status === 'fulfilled' ? bufferSummaryResult.value : null
+  const activeHitlTickets = hitlTicketsResult.status === 'fulfilled' ? hitlTicketsResult.value : []
 
   // Invalidate context cache (new message = new context)
   if (contact?.id && memoryManager) {
@@ -322,6 +327,7 @@ export async function intake(
     summaries: relevantSummaries.length,
     attachments: attachmentMeta.length,
     hitlPending: !!hitlPendingContext,
+    hitlTickets: activeHitlTickets.length,
   }, 'Phase 1 complete')
 
   return {
@@ -355,6 +361,7 @@ export async function intake(
     })(),
     possibleInjection,
     hitlPendingContext,
+    activeHitlTickets,
   }
 }
 
@@ -894,5 +901,37 @@ function getContextSummariesLimit(registry: Registry, channel: string): number {
   if (channelType === 'async') return limits.async
   if (channelType === 'voice') return limits.voice
   return limits.instant
+}
+
+function getContextLimits(registry: Registry): { commitmentsMax: number; hitlMax: number } {
+  const svc = registry.getOptional<{ get(): { commitmentsMax: number; hitlMax: number } }>('memory:context-limits')
+  return svc?.get() ?? { commitmentsMax: 5, hitlMax: 3 }
+}
+
+async function loadActiveHitlTickets(db: Pool, contactId: string, limit: number): Promise<ActiveHitlTicket[]> {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, request_type, request_summary, urgency, status, assigned_channel, created_at
+       FROM hitl_tickets
+       WHERE requester_contact_id = $1
+         AND status NOT IN ('resolved', 'expired', 'cancelled')
+       ORDER BY
+         CASE urgency WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+         created_at DESC
+       LIMIT $2`,
+      [contactId, limit],
+    )
+    return rows.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      requestType: r.request_type as string,
+      requestSummary: r.request_summary as string,
+      urgency: r.urgency as string,
+      status: r.status as string,
+      assignedChannel: (r.assigned_channel as string) ?? null,
+      createdAt: new Date(r.created_at as string),
+    }))
+  } catch {
+    return []
+  }
 }
 
