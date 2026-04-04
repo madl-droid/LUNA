@@ -224,3 +224,31 @@ Reducir complejidad accidental, código muerto, duplicaciones, riesgos y costo o
 - Los logs de pipeline en memoria también quedaron alineados con `intakeMs` y `deliveryMs`.
 - Se migraron a `registry.getConfig('engine')` los campos restantes del módulo: session reopen window, pipeline timeout y checkpoints.
 - El grep final sobre `src/engine/**/*.ts` ya no devuelve referencias activas a `phase1`, `phase5` o `phases/`.
+
+### Segunda lectura honesta: complejidad útil vs volumen bruto
+- En números crudos, la primera ronda del engine fue sobre todo una reorganización estructural y de seguridad, no una reducción material del volumen total.
+- Para empezar a bajar complejidad útil de verdad, el siguiente mejor corte no era crear más helpers sino podar ramas legacy que el runtime actual ya no usa.
+
+### Cambios aplicados en esta pasada de reducción útil
+- `src/engine/boundaries/delivery.ts` dejó de arrastrar plumbing de evaluación legacy que ya no participaba en el flujo agentic actual.
+- `delivery()` eliminó el parámetro `evaluation` y el `run-agentic-delivery.ts` quedó alineado con ese contrato real.
+- Se retiraron side-effects ligados a `intent`, `emotion` y objection tracking que dependían de esa evaluación legacy.
+- Se compactó el fallback repetido de audio a texto en un helper único para reducir ramas duplicadas sin cambiar comportamiento.
+- `src/engine/boundaries/intake.ts` eliminó estado temporal huérfano de attachments que ya no afectaba el contexto final.
+
+### Verificación de esta pasada
+- Tests ejecutados:
+  `npx tsc --noEmit`
+  `npm test`
+- Resultado:
+  Compilación TypeScript limpia.
+  `Test Files  12 passed (12)`
+  `Tests  157 passed (157)`
+- Diff neto de esta pasada:
+  `27 insertions, 57 deletions`
+  Balance neto: `-30` líneas en el corte aplicado.
+
+### Conclusión honesta sobre reducción de complejidad
+- Sí hubo reducción de complejidad útil en `delivery`: menos contrato muerto, menos ramas duplicadas, menos semántica legacy escondida.
+- No, todavía no es la reducción material que cambiaría el peso total del engine.
+- El siguiente bloque que realmente puede mover la aguja es `src/engine/boundaries/intake.ts`; fuera de eso, lo demás ya empieza a dar rendimientos mucho menores por riesgo similar.
