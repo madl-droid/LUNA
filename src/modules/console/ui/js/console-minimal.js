@@ -1560,6 +1560,31 @@
     dlang === 'es' ? 'Se borrarán knowledge base, subagentes, herramientas y prompts. Los subagentes de sistema se re-siembran automáticamente.' : 'Knowledge base, subagents, tools and prompts will be deleted. System subagents are re-seeded automatically.',
     dlang === 'es' ? 'Agente limpiado' : 'Agent cleared')
 
+  // Admin override dropdown: test as lead/coworker
+  ;(function () {
+    var sel = document.getElementById('debug-admin-override')
+    if (!sel) return
+    sel.addEventListener('change', function () {
+      var val = sel.value
+      fetch('/console/api/console/admin-override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrideType: val })
+      })
+        .then(function (r) {
+          if (r.ok) {
+            showToast(
+              val
+                ? (dlang === 'es' ? 'Admin tratado como ' + val : 'Admin treated as ' + val)
+                : (dlang === 'es' ? 'Override desactivado' : 'Override disabled'),
+              'success'
+            )
+          } else { throw new Error('fail') }
+        })
+        .catch(function () { showToast('Error', 'error') })
+    })
+  })()
+
   // Factory reset: password-protected, triggers wizard with prefilled values
   ;(function () {
     var btn = document.getElementById('btn-factory-reset')

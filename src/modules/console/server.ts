@@ -1914,6 +1914,13 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
       // Resolve super admin status for debug panel visibility
       const isSuperAdmin = await checkSuperAdmin(registry, req.headers['cookie'])
 
+      // Read admin override type for debug panel dropdown
+      let adminOverrideType = ''
+      try {
+        const configStore = await import('../../kernel/config-store.js')
+        adminOverrideType = (await configStore.get(registry.getDb(), 'ADMIN_OVERRIDE_TYPE')) ?? ''
+      } catch { /* config_store may not be ready */ }
+
       const html = pageLayout({
         section: sidebarSection,
         content,
@@ -1932,6 +1939,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         debugExtremeLog: data.config.DEBUG_EXTREME_LOG === 'true',
         debugAdminOnly: data.config.DEBUG_ADMIN_ONLY !== 'false',
         isSuperAdmin,
+        adminOverrideType,
         contactsSubpage: contactsSubpage ?? undefined,
         contactLists,
         agenteSubpage: agenteSubpage ?? undefined,
@@ -2121,6 +2129,66 @@ export function createApiRoutes(): ApiRoute[] {
           jsonResponse(res, 200, { ok: true, module: name })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/console/admin-override — get current admin override type
+    {
+      method: 'GET',
+      path: 'admin-override',
+      handler: async (_req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          const configStore = await import('../../kernel/config-store.js')
+          const value = await configStore.get(registry.getDb(), 'ADMIN_OVERRIDE_TYPE')
+          jsonResponse(res, 200, { overrideType: value || '' })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/console/admin-override — set admin override type (test mode + super admin only)
+    {
+      method: 'POST',
+      path: 'admin-override',
+      handler: async (req, res) => {
+        try {
+          const { getRegistryRef } = await import('./manifest-ref.js')
+          const registry = getRegistryRef()
+          if (!registry) { jsonResponse(res, 500, { error: 'Registry not available' }); return }
+          if (await guardDebugEndpoint(req, res, registry)) return
+
+          const body = await parseBody<{ overrideType: string }>(req)
+          const overrideType = body.overrideType?.trim() || ''
+
+          const configStore = await import('../../kernel/config-store.js')
+          const db = registry.getDb()
+
+          if (overrideType === '' || overrideType === 'admin') {
+            // Clear override
+            await db.query(`DELETE FROM config_store WHERE key = 'ADMIN_OVERRIDE_TYPE'`).catch(() => {})
+          } else {
+            await configStore.set(db, 'ADMIN_OVERRIDE_TYPE', overrideType)
+          }
+
+          // Flush user cache so override takes effect immediately
+          const redis = registry.getRedis()
+          let cursor = '0'
+          do {
+            const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'user_type:*', 'COUNT', 200)
+            cursor = nextCursor
+            if (keys.length > 0) await redis.del(...(keys as [string, ...string[]]))
+          } while (cursor !== '0')
+
+          logger.info({ overrideType: overrideType || '(cleared)' }, 'Admin override type updated')
+          jsonResponse(res, 200, { ok: true, overrideType })
+        } catch (err) {
+          logger.error({ err }, 'Failed to set admin override')
+          jsonResponse(res, 500, { error: String(err) })
         }
       },
     },

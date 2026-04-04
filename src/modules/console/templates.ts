@@ -144,6 +144,8 @@ export interface PageOptions {
   agenteSubpage?: string
   /** Active herramientas sub-page (tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps) */
   herramientasSubpage?: string
+  /** Current admin override type (debug panel dropdown): 'lead', 'coworker', or '' for disabled */
+  adminOverrideType?: string
 }
 
 // ═══════════════════════════════════════════
@@ -273,6 +275,15 @@ function renderHeader(opts: PageOptions): string {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             <span>${t('dbg_admin_only', opts.lang)}</span>
             <label class="toggle toggle-sm"><input type="checkbox" id="debug-admin-cb"${opts.debugAdminOnly !== false ? ' checked' : ''}><span class="toggle-slider"></span></label>
+          </div>
+          <div class="dropdown-item" style="display:flex;align-items:center;gap:8px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+            <span>${t('dbg_admin_as', opts.lang)}</span>
+            <select id="debug-admin-override" class="js-custom-select" style="margin-left:auto;width:auto;min-width:90px;font-size:12px;padding:2px 6px">
+              <option value=""${!opts.adminOverrideType ? ' selected' : ''}>Admin</option>
+              <option value="lead"${opts.adminOverrideType === 'lead' ? ' selected' : ''}>Lead</option>
+              <option value="coworker"${opts.adminOverrideType === 'coworker' ? ' selected' : ''}>Coworker</option>
+            </select>
           </div>
           <div class="dropdown-divider"></div>
           <div class="dropdown-item" id="btn-db-viewer">
