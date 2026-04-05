@@ -5,7 +5,7 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console fields, API routes, migrations, polling, batching, jobs, labels
 - `types.ts` — EmailMessage, EmailAttachment, EmailSendOptions, EmailReplyOptions, EmailForwardOptions, EmailConfig, LunaLabelIds, CustomLabel, ResolvedCustomLabel
-- `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, listMessages (búsqueda genérica), filtro no-reply/domain/subject/List-Unsubscribe, labels, star, parsing MIME, footer, retry 429/5xx
+- `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, listMessages (búsqueda genérica), filtro no-reply/domain/subject/List-Unsubscribe, labels, star, parsing MIME, footer, firma (workspace/custom/auto), retry 429/5xx
 - `tools.ts` — registro de email tools para el pipeline (email-read-inbox, email-search, email-get-detail)
 - `email-oauth.ts` — OAuth2 standalone para Gmail-only (se usa cuando google-apps no está activo)
 - `rate-limiter.ts` — Redis-backed rate limiter con limites configurables (defaults: workspace 80/h 1500/d, free 20/h 400/d)
@@ -80,6 +80,15 @@ Clasificador determinístico (<5ms, sin LLM) que corre ANTES del agentic loop. D
 - `GET /label-instructions` — instrucciones de labels custom (para el agente)
 - `POST /apply-label` — aplicar label a mensaje (messageId + labelId)
 - Auth: `GET /auth-status`, `GET /auth-url`, `POST /auth-callback`, `POST /auth-disconnect`, `POST /auth-refresh`
+
+## Firma de email (outgoing)
+- **Workspace** (`gmail` mode): se lee con `sendAs.get()` al init y se cachea en HTML + plain text
+- **Custom** (`custom` mode): usa `EMAIL_SIGNATURE_TEXT` del config
+- **Auto** (`auto` mode): workspace si existe, fallback a custom
+- Se inyecta en `buildRawEmail()` ANTES del footer. Gmail API con `raw` messages NO inyecta firma server-side.
+- **Dedup**: si el body ya contiene la firma en plain text, no la duplica (por si el LLM la incluyó)
+- Se refresca en `console:config_applied` (por si cambió el modo o la firma en workspace)
+- El prompt `channel-format-email.md` instruye al LLM a NO firmar — la firma la pone el sistema
 
 ## Trampas
 - Emails con header `List-Unsubscribe` se filtran automáticamente (newsletters/marketing)

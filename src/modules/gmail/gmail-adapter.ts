@@ -1,6 +1,6 @@
 // LUNA — Module: gmail — Gmail Adapter
 // Lee, envía, responde y reenvía emails usando la API de Gmail.
-// La firma se envía tal cual está configurada en la cuenta de Google, no se genera por el sistema.
+// La firma se obtiene del workspace via sendAs.get() y se inyecta en buildRawEmail.
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
@@ -26,6 +26,10 @@ export class GmailAdapter {
   private allowedDomains: Set<string> = new Set()
   private blockedDomains: Set<string> = new Set()
   private labelCache: Map<string, string> = new Map()
+  /** Cached workspace signature (HTML) from sendAs.get(). null = not fetched yet. */
+  private cachedSignatureHtml: string | null = null
+  /** Cached workspace signature (plain text). null = not fetched yet. */
+  private cachedSignaturePlain: string | null = null
 
   constructor(
     auth: OAuth2Client,
@@ -57,6 +61,66 @@ export class GmailAdapter {
       (config.EMAIL_BLOCKED_DOMAINS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     )
   }
+
+  // ─── Signature ─────────────────────────────
+
+  /**
+   * Fetch the workspace signature from Gmail sendAs settings and cache it.
+   * Called once on init and can be refreshed on config change.
+   */
+  async fetchWorkspaceSignature(): Promise<void> {
+    try {
+      const profile = await this.gmail.users.getProfile({ userId: 'me' })
+      const email = profile.data.emailAddress
+      if (!email) {
+        logger.warn('Could not determine email address for signature fetch')
+        return
+      }
+
+      const sendAsRes = await this.gmail.users.settings.sendAs.get({
+        userId: 'me',
+        sendAsEmail: email,
+      })
+
+      const sigHtml = sendAsRes.data.signature || ''
+      if (sigHtml) {
+        this.cachedSignatureHtml = sigHtml
+        this.cachedSignaturePlain = this.stripHtml(sigHtml)
+        logger.info({ email, plainLength: this.cachedSignaturePlain.length }, 'Workspace signature cached')
+      } else {
+        this.cachedSignatureHtml = ''
+        this.cachedSignaturePlain = ''
+        logger.info({ email }, 'No workspace signature configured')
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Failed to fetch workspace signature — will send without signature')
+      this.cachedSignatureHtml = ''
+      this.cachedSignaturePlain = ''
+    }
+  }
+
+  /** Strip HTML tags and decode common entities to get plain text. */
+  private stripHtml(html: string): string {
+    return html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
+  /** Get cached workspace signature (HTML). Returns empty string if not available. */
+  getSignatureHtml(): string { return this.cachedSignatureHtml ?? '' }
+
+  /** Get cached workspace signature (plain). Returns empty string if not available. */
+  getSignaturePlain(): string { return this.cachedSignaturePlain ?? '' }
 
   // ─── Polling ───────────────────────────────
 
@@ -576,8 +640,37 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
       lines.push(`--${boundary}`)
     }
 
-    // Body — HTML es lo que va por defecto (incluye firma de Google)
+    // Body — signature injection based on config mode
     let bodyHtml = options.bodyHtml
+
+    // Signature: inject based on EMAIL_SIGNATURE_MODE (gmail/custom/auto)
+    if (this.config.EMAIL_INCLUDE_SIGNATURE) {
+      const mode = this.config.EMAIL_SIGNATURE_MODE || 'gmail'
+      let sigHtml = ''
+
+      if (mode === 'gmail') {
+        sigHtml = this.cachedSignatureHtml ?? ''
+      } else if (mode === 'custom') {
+        sigHtml = this.config.EMAIL_SIGNATURE_TEXT || ''
+      } else if (mode === 'auto') {
+        sigHtml = (this.cachedSignatureHtml ?? '') || (this.config.EMAIL_SIGNATURE_TEXT || '')
+      }
+
+      if (sigHtml) {
+        // Dedup: skip if body already contains the signature (LLM may have included it)
+        const sigPlain = mode === 'custom'
+          ? this.config.EMAIL_SIGNATURE_TEXT || ''
+          : this.cachedSignaturePlain ?? ''
+        const bodyPlain = this.stripHtml(bodyHtml)
+        const alreadyContains = sigPlain && bodyPlain.includes(sigPlain)
+
+        if (!alreadyContains) {
+          bodyHtml += `<br><br>\n${sigHtml}`
+        }
+      }
+    }
+
+    // Footer (separate from signature — legal disclaimers, etc.)
     if (this.config.EMAIL_FOOTER_ENABLED && this.config.EMAIL_FOOTER_TEXT) {
       const safeFooter = this.config.EMAIL_FOOTER_TEXT
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

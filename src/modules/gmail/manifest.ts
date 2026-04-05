@@ -1289,6 +1289,9 @@ const manifest: ModuleManifest = {
       gmailAdapter = new GmailAdapter(authClient, config)
       registry.provide('email:adapter', gmailAdapter)
 
+      // Fetch workspace signature for injection in outgoing emails
+      await gmailAdapter.fetchWorkspaceSignature()
+
       // Register email tools (proactive inbox access for the agent)
       const { registerEmailTools } = await import('./tools.js')
       await registerEmailTools(registry, gmailAdapter)
@@ -1516,6 +1519,8 @@ const manifest: ModuleManifest = {
       Object.assign(config, fresh)
       if (gmailAdapter) {
         gmailAdapter.reloadConfig(fresh)
+        // Refresh workspace signature (mode may have changed)
+        await gmailAdapter.fetchWorkspaceSignature()
         logger.info('Config applied — re-ensuring Gmail labels')
         await ensureAllLabels()
       }
