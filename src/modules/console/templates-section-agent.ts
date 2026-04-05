@@ -1,6 +1,6 @@
 import { t } from './templates-i18n.js'
 import { esc, textField, secretField, numField, boolField } from './templates-fields.js'
-import { cv, type SectionData } from './templates-sections-utils.js'
+import { cv, type SectionData } from './templates-section-data.js'
 
 export function renderLlmUnifiedSection(data: SectionData): string {
   let h = ''
