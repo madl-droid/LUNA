@@ -491,8 +491,8 @@ const ACCENT_TRAIT_PROMPTS: Record<string, string> = {
 
 function buildIdentityAccentPrompt(accent: string, traitPrompt: string): string {
   const languageScopedPrefix = accent.startsWith('en-')
-    ? 'Apply this accent profile only when responding in English. Keep spelling clean and professional; never imitate pronunciation with misspellings. When the answer will be spoken aloud, you may lean into natural regional wording, discourse markers, and rhythm that fit this accent, but keep them subtle, clear, and easy to understand.'
-    : 'Aplica este perfil de acento solo cuando respondas en espanol. Manten ortografia limpia y natural; nunca imites pronunciacion con errores escritos. Cuando la respuesta vaya a sonar en audio, puedes inclinarte un poco hacia giros regionales, muletillas y ritmo propios de este acento, pero siempre de forma sutil, clara y facil de entender.'
+    ? 'Apply this accent profile only when responding in English. Speak naturally; never imitate pronunciation with misspellings. When the answer will be spoken aloud, you may lean into natural regional wording, discourse markers, and rhythm that fit this accent, but keep them subtle, clear, and easy to understand.'
+    : 'Aplica este perfil de acento solo cuando respondas en espanol. Habla natural natural; nunca imites pronunciacion con errores escritos. Cuando la respuesta vaya a sonar en audio, puedes inclinarte un poco hacia giros regionales, muletillas y ritmo propios de este acento, pero siempre de forma sutil, clara y facil de entender.'
 
   const writingDirectives = accent.startsWith('en-')
     ? 'For text responses, prefer lexical choice, cadence, politeness level, and a light regional flavor over exaggerated slang.'
