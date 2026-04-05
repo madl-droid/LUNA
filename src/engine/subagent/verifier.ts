@@ -1,6 +1,6 @@
 // LUNA Engine — Subagent Verifier
 // Verifica la calidad del resultado del subagent.
-// Usa el mismo modelo de Phase 2 (classifyModel).
+// Usa task 'subagent-verify' → routed to 'criticize' via task router.
 // Veredicto: accept / retry (con feedback) / fail.
 // Soporta verificación progresiva: más estricto en cada retry.
 

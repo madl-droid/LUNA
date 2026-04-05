@@ -40,9 +40,6 @@ export function renderLlmUnifiedSection(data: SectionData): string {
       <div class="panel-info">${t('sec_llm_limits_info', data.lang)}</div>
       ${numField('LLM_MAX_INPUT_TOKENS', cv(data, 'LLM_MAX_INPUT_TOKENS'), data.lang, 'f_LLM_MAX_INPUT_TOKENS', 'i_LLM_MAX_INPUT_TOKENS')}
       ${numField('LLM_MAX_OUTPUT_TOKENS', cv(data, 'LLM_MAX_OUTPUT_TOKENS'), data.lang, 'f_LLM_MAX_OUTPUT_TOKENS', 'i_LLM_MAX_OUTPUT_TOKENS')}
-      ${numField('LLM_TEMPERATURE_CLASSIFY', cv(data, 'LLM_TEMPERATURE_CLASSIFY'), data.lang, 'f_LLM_TEMPERATURE_CLASSIFY', 'i_TEMPERATURE_CLASSIFY')}
-      ${numField('LLM_TEMPERATURE_RESPOND', cv(data, 'LLM_TEMPERATURE_RESPOND'), data.lang, 'f_LLM_TEMPERATURE_RESPOND', 'i_TEMPERATURE_RESPOND')}
-      ${numField('LLM_TEMPERATURE_COMPLEX', cv(data, 'LLM_TEMPERATURE_COMPLEX'), data.lang, 'f_LLM_TEMPERATURE_COMPLEX', 'i_TEMPERATURE_COMPLEX')}
       ${numField('LLM_REQUEST_TIMEOUT_MS', cv(data, 'LLM_REQUEST_TIMEOUT_MS'), data.lang, 'f_LLM_REQUEST_TIMEOUT_MS', 'i_LLM_REQUEST_TIMEOUT_MS')}
     </div>
   </div>`
@@ -448,9 +445,6 @@ export function renderAdvancedAgentSection(data: SectionData): string {
       ${boolField('ENGINE_EFFORT_ROUTING', cv(data, 'ENGINE_EFFORT_ROUTING') || 'true', data.lang,
         isEs ? 'Enrutamiento por esfuerzo' : 'Effort routing',
         isEs ? 'Clasifica mensajes por complejidad para usar el modelo mas apropiado y optimizar costos.' : 'Classifies messages by complexity to use the most appropriate model and optimize costs.')}
-      ${boolField('ENGINE_LOW_EFFORT_TOOLS', cv(data, 'ENGINE_LOW_EFFORT_TOOLS') || 'false', data.lang,
-        isEs ? 'Herramientas en bajo esfuerzo' : 'Tools in low effort',
-        isEs ? 'OFF = mensajes simples (saludos, ok, gracias) se responden sin herramientas — mas rapido y barato. ON = el modelo barato tambien intenta usar herramientas (puede fallar).' : 'OFF = simple messages (greetings, ok, thanks) answered without tools — faster and cheaper. ON = cheap model also attempts tool use (may fail).')}
       <div class="field">
         <span class="field-label">${isEs ? 'Verificador de calidad' : 'Quality checker'}</span>
         <span class="field-info">${isEs ? 'Controla cuando el verificador revisa la respuesta antes de enviarla.' : 'Controls when the quality checker reviews the response before sending.'}</span>
@@ -458,35 +452,6 @@ export function renderAdvancedAgentSection(data: SectionData): string {
           ${criticizerOpts.map(o => `<option value="${esc(o.v)}"${o.v === criticizerMode ? ' selected' : ''}>${esc(o.l)}</option>`).join('')}
         </select>
       </div>
-
-      <div class="field-divider"><span class="field-divider-label">${isEs ? 'Modelos por Esfuerzo' : 'Models by Effort'}</span></div>
-      ${modelDropdown(
-        'LLM_LOW_EFFORT',
-        cv(data, 'LLM_LOW_EFFORT_PROVIDER') || 'anthropic',
-        cv(data, 'LLM_LOW_EFFORT_MODEL') || 'claude-haiku-4-5-20251001',
-        data.allModels ?? {},
-        data.lang,
-        isEs ? 'Modelo bajo esfuerzo' : 'Low effort model',
-        isEs ? 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.' : 'Model for simple messages: greetings, confirmations, direct questions.',
-      )}
-      ${modelDropdown(
-        'LLM_MEDIUM_EFFORT',
-        cv(data, 'LLM_MEDIUM_EFFORT_PROVIDER') || 'anthropic',
-        cv(data, 'LLM_MEDIUM_EFFORT_MODEL') || 'claude-sonnet-4-6',
-        data.allModels ?? {},
-        data.lang,
-        isEs ? 'Modelo medio esfuerzo' : 'Medium effort model',
-        isEs ? 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.' : 'Model for medium complexity messages: contextual queries, follow-ups.',
-      )}
-      ${modelDropdown(
-        'LLM_HIGH_EFFORT',
-        cv(data, 'LLM_HIGH_EFFORT_PROVIDER') || 'anthropic',
-        cv(data, 'LLM_HIGH_EFFORT_MODEL') || 'claude-sonnet-4-6',
-        data.allModels ?? {},
-        data.lang,
-        isEs ? 'Modelo alto esfuerzo' : 'High effort model',
-        isEs ? 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.' : 'Model for complex messages: multiple tools, objections, deep reasoning.',
-      )}
     </div>
   </div>`
 
