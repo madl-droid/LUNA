@@ -118,7 +118,7 @@ const manifest: ModuleManifest = {
     }
 
     // Load accent style and voice instructions from config_store (set by prompts module)
-    const accentStyle = await configStore.get(pool, 'AGENT_ACCENT_PROMPT').catch(() => '') ?? ''
+    const accentStyle = await configStore.get(pool, 'AGENT_TTS_STYLE_PROMPT').catch(() => '') ?? ''
     const voiceInstructions = await configStore.get(pool, 'TTS_VOICE_INSTRUCTIONS').catch(() => '') ?? ''
 
     const ttsConfig = {
@@ -135,7 +135,7 @@ const manifest: ModuleManifest = {
       if (!service) return
       const fresh = registry.getConfig<typeof config>('tts')
       const freshApiKey = await configStore.get(pool, 'GOOGLE_AI_API_KEY').catch(() => '') ?? ''
-      const freshAccentStyle = await configStore.get(pool, 'AGENT_ACCENT_PROMPT').catch(() => '') ?? ''
+      const freshAccentStyle = await configStore.get(pool, 'AGENT_TTS_STYLE_PROMPT').catch(() => '') ?? ''
       const freshVoiceInstructions = await configStore.get(pool, 'TTS_VOICE_INSTRUCTIONS').catch(() => '') ?? ''
       service.updateConfig({
         ...fresh,
