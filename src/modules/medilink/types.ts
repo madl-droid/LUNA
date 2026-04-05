@@ -317,9 +317,9 @@ export interface MedilinkEvolution {
 // ─── Agenda / Disponibilidad ─────────────
 
 /**
- * Single agenda item from /agendas.
- * Free slots have id_paciente === null.
- * Booked slots have id_paciente set.
+ * Single agenda item — normalized from v5 hierarchical response.
+ * Free slots have id_paciente === null or 0.
+ * Booked slots have id_paciente set and optionally id_cita.
  */
 export interface MedilinkAgendaItem {
   id_paciente: number | null
@@ -332,6 +332,38 @@ export interface MedilinkAgendaItem {
   nombre_dentista: string
   fecha: string
   id_recurso: number
+  /** Only present for booked slots from v5 mostrar_detalles=1 */
+  id_cita?: number
+}
+
+// ─── v5 agenda response types ─────────────
+
+/** Booked slot detail from v5 mostrar_detalles=1 */
+export interface V5AgendaSlotDetail {
+  tipo: string
+  id_cita: number
+  id_paciente: number
+  nombre_paciente: string
+  apellidos_paciente: string
+  comentario: string
+  bloque: string
+  duracion_total: number
+  inicio: string
+  fin: string
+}
+
+/** A sillon value is either true (free) or a detail object (booked) */
+export type V5SillonValue = true | V5AgendaSlotDetail
+
+/** v5 response: data.fechas[date].horas[time].sillones[id] */
+export interface V5AgendaResponse {
+  data: {
+    fechas: Record<string, {
+      horas: Record<string, {
+        sillones: Record<string, V5SillonValue>
+      }>
+    }>
+  }
 }
 
 /** Raw agenda response is an array of MedilinkAgendaItem */

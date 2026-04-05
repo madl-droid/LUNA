@@ -85,11 +85,12 @@ El subagente lee el skill apropiado via `skill_read` antes de actuar. El skill v
 
 ## Cache de agenda (cache.ts)
 Warm diario + mutación quirúrgica via webhooks. Sin API calls durante operación normal.
-- **Warm**: Al iniciar + cada 24h, cachea agenda RAW de todos los profesionales activos × próximos N días (`MEDILINK_AGENDA_WARM_DAYS`, default 7)
+- **Warm**: Al iniciar + cada 24h, 1 API call por profesional cubre N días (`MEDILINK_AGENDA_WARM_DAYS`, default 7)
+- **API endpoint**: `GET /api/v5/sucursales/{id}/profesionales/{id}/agendas` con `mostrar_detalles=1` (retorna booked + free, incluye `id_cita`)
 - **Lectura**: `getAvailability(branchId, date, professionalId)` filtra RAW → slots libres + sillones permitidos
-- **Webhook mutación**: `applyCitaCreated/Modified/Deleted(WebhookCitaData)` — modifica cache in-place
-- **Índice de citas**: Redis hash `medilink:cache:cita-index` mapea citaId → {branchId, date, professionalId}
-- **API endpoint**: `GET /sucursales/{id}/profesionales/{id}/agendas` (retorna TODO: booked + free + sobreagendamiento)
+- **Webhook mutación**: `applyCitaCreated/Modified/Deleted(WebhookCitaData)` — modifica cache in-place, usa `id_cita` para matching preciso
+- **Índice de citas**: Redis hash `medilink:cache:cita-index` mapea citaId → {branchId, date, professionalId}. Poblado desde warm (v5 trae id_cita) Y desde webhooks
+- **v5 flatten**: Respuesta jerárquica (fechas → horas → sillones) se aplana a `MedilinkAgendaItem[]` en api-client. Se ignora "Sobrecupo"
 - **Estado "Reagendado por LUNA"**: id_estado=21. Webhook modified con este estado → slot viejo queda libre
 
 ## Logica de check-availability (prioridad de filtrado)

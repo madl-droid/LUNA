@@ -211,7 +211,7 @@ export class MedilinkCache {
   /**
    * Get available slots for a branch/date/professional.
    * Reads from raw agenda cache, filters on the fly.
-   * Falls back to API if cache miss.
+   * Falls back to v5 API if cache miss (single-day fetch).
    */
   async getAvailability(
     branchId: number,
@@ -230,35 +230,49 @@ export class MedilinkCache {
       }
     }
 
-    // Cache miss — fetch from API using the professional-specific endpoint
-    const items = await this.api.getProfessionalAgenda(branchId, professionalId, date)
+    // Cache miss — fetch single day from v5 API
+    this.ensureProfessionalNames()
+    const dateMap = await this.api.getProfessionalAgenda(branchId, professionalId, date, date)
+    const items = dateMap[date] ?? []
     const slots = this.filterToAvailableSlots(items, branchId)
 
     // Cache the raw items (not filtered) for future reads and webhook mutations
-    if (cacheOn) {
+    if (cacheOn && items.length > 0) {
       await this.redis.set(key, JSON.stringify(items), 'EX', AGENDA_TTL_S)
-      // Build cita index from booked items
       await this.indexCitasFromAgenda(items, branchId, date, professionalId)
     }
 
     return slots
   }
 
+  /** Push professional names to api-client for v5 flatten */
+  private ensureProfessionalNames(): void {
+    for (const prof of this.getActiveProfessionals()) {
+      this.api.setProfessionalName(prof.id, `${prof.nombre} ${prof.apellidos}`.trim())
+    }
+  }
+
   // ─── Cita index ────────────────────────
 
   /**
-   * Index booked citas from an agenda fetch.
-   * Note: The agenda endpoint doesn't return cita IDs, so the index is
-   * primarily populated by webhook events which DO have the cita ID.
+   * Index booked citas from a v5 agenda fetch.
+   * v5 with mostrar_detalles=1 returns id_cita for booked slots.
    */
   private async indexCitasFromAgenda(
-    _items: MedilinkAgendaItem[],
-    _branchId: number,
-    _date: string,
-    _professionalId: number,
+    items: MedilinkAgendaItem[],
+    branchId: number,
+    date: string,
+    professionalId: number,
   ): Promise<void> {
-    // No-op: agenda items don't carry cita IDs, so we can't index them.
-    // The cita index is populated from webhook events instead.
+    const entries: [string, string][] = []
+    for (const item of items) {
+      if (item.id_cita && item.id_paciente) {
+        entries.push([String(item.id_cita), JSON.stringify({ branchId, date, professionalId })])
+      }
+    }
+    if (entries.length > 0) {
+      await this.redis.hset(CITA_INDEX_KEY, ...entries.flat())
+    }
   }
 
   /** Store cita location in the index (called from webhook handlers) */
@@ -279,12 +293,18 @@ export class MedilinkCache {
 
   // ─── Webhook-driven cache mutation ─────
 
+  /** Normalize time to HH:mm (strip seconds if present) */
+  private normalizeTime(time: string): string {
+    return time.length > 5 ? time.slice(0, 5) : time
+  }
+
   /**
    * Handle cita:created — mark the slot as booked in the raw agenda cache.
    * The webhook data contains all the info needed.
    */
   async applyCitaCreated(data: WebhookCitaData): Promise<void> {
     const { id, id_sucursal, fecha, id_profesional, id_sillon } = data
+    const horaInicio = this.normalizeTime(data.hora_inicio)
     const key = this.agendaKey(id_sucursal, fecha, id_profesional)
 
     // Index this cita for future lookups
@@ -301,7 +321,7 @@ export class MedilinkCache {
     // Find the matching free slot and mark it as booked
     const slotIdx = items.findIndex(item =>
       (item.id_paciente == null || item.id_paciente === 0) &&
-      item.hora_inicio === data.hora_inicio &&
+      this.normalizeTime(item.hora_inicio) === horaInicio &&
       item.id_recurso === id_sillon,
     )
 
@@ -310,6 +330,7 @@ export class MedilinkCache {
         ...items[slotIdx]!,
         id_paciente: data.id_paciente,
         nombre_paciente: data.nombre_paciente,
+        id_cita: id,
       }
       await this.redis.set(key, JSON.stringify(items), 'KEEPTTL')
       logger.debug({ citaId: id, fecha, professionalId: id_profesional }, 'Cache: slot marked as booked')
@@ -325,6 +346,7 @@ export class MedilinkCache {
    */
   async applyCitaModified(data: WebhookCitaData): Promise<void> {
     const { id, id_sucursal, fecha, id_profesional, id_sillon } = data
+    const horaInicio = this.normalizeTime(data.hora_inicio)
     const cacheOn = await isCacheEnabled()
 
     // Look up where this cita WAS in the cache
@@ -335,31 +357,28 @@ export class MedilinkCache {
       const oldCached = await this.redis.get(oldKey)
       if (oldCached) {
         const oldItems = JSON.parse(oldCached) as MedilinkAgendaItem[]
-        // Find the booked slot by matching the appointment's patient + time
-        // Since cita ID isn't in agenda items, match by patient ID at the exact time
-        const oldIdx = oldItems.findIndex(item =>
-          item.id_paciente === data.id_paciente &&
-          item.hora_inicio === (oldLocation.date === fecha && oldLocation.professionalId === id_profesional
-            ? data.hora_inicio // same date/prof = status change, match same time
-            : item.hora_inicio), // different date/prof = moved, match by patient
-        )
+        // Find the booked slot — prefer id_cita match (populated by v5 warm), fall back to patient+time
+        const oldIdx = oldItems.findIndex(item => item.id_cita === id) >= 0
+          ? oldItems.findIndex(item => item.id_cita === id)
+          : oldItems.findIndex(item => item.id_paciente === data.id_paciente && this.normalizeTime(item.hora_inicio) === horaInicio)
 
-        // If the cita moved to a different date/professional, free the old slot
         const moved = oldLocation.date !== fecha || oldLocation.professionalId !== id_profesional
         if (moved && oldIdx >= 0) {
           oldItems[oldIdx] = {
             ...oldItems[oldIdx]!,
             id_paciente: null,
             nombre_paciente: null,
+            id_cita: undefined,
           }
           await this.redis.set(oldKey, JSON.stringify(oldItems), 'KEEPTTL')
           logger.debug({ citaId: id, oldDate: oldLocation.date, newDate: fecha }, 'Cache: freed old slot after reschedule')
         } else if (!moved && oldIdx >= 0) {
-          // Status change only (same date/prof) — update patient info in place
+          // Status change only (same date/prof) — update in place
           oldItems[oldIdx] = {
             ...oldItems[oldIdx]!,
             id_paciente: data.id_paciente,
             nombre_paciente: data.nombre_paciente,
+            id_cita: id,
           }
           await this.redis.set(oldKey, JSON.stringify(oldItems), 'KEEPTTL')
         }
@@ -375,7 +394,7 @@ export class MedilinkCache {
           const newItems = JSON.parse(newCached) as MedilinkAgendaItem[]
           const freeIdx = newItems.findIndex(item =>
             (item.id_paciente == null || item.id_paciente === 0) &&
-            item.hora_inicio === data.hora_inicio &&
+            this.normalizeTime(item.hora_inicio) === horaInicio &&
             item.id_recurso === id_sillon,
           )
           if (freeIdx >= 0) {
@@ -383,6 +402,7 @@ export class MedilinkCache {
               ...newItems[freeIdx]!,
               id_paciente: data.id_paciente,
               nombre_paciente: data.nombre_paciente,
+              id_cita: id,
             }
             await this.redis.set(newKey, JSON.stringify(newItems), 'KEEPTTL')
             logger.debug({ citaId: id, fecha, professionalId: id_profesional }, 'Cache: booked new slot after reschedule')
@@ -400,6 +420,7 @@ export class MedilinkCache {
    */
   async applyCitaDeleted(data: WebhookCitaData): Promise<void> {
     const { id } = data
+    const horaInicio = this.normalizeTime(data.hora_inicio)
     const cacheOn = await isCacheEnabled()
 
     // Look up where this cita was
@@ -409,12 +430,16 @@ export class MedilinkCache {
       const cached = await this.redis.get(key)
       if (cached) {
         const items = JSON.parse(cached) as MedilinkAgendaItem[]
-        const idx = items.findIndex(item => item.id_paciente === data.id_paciente && item.hora_inicio === data.hora_inicio)
+        // Prefer id_cita match, fall back to patient+time
+        const idx = items.findIndex(item => item.id_cita === id) >= 0
+          ? items.findIndex(item => item.id_cita === id)
+          : items.findIndex(item => item.id_paciente === data.id_paciente && this.normalizeTime(item.hora_inicio) === horaInicio)
         if (idx >= 0) {
           items[idx] = {
             ...items[idx]!,
             id_paciente: null,
             nombre_paciente: null,
+            id_cita: undefined,
           }
           await this.redis.set(key, JSON.stringify(items), 'KEEPTTL')
           logger.debug({ citaId: id }, 'Cache: freed slot after deletion')
@@ -430,7 +455,7 @@ export class MedilinkCache {
         const items = JSON.parse(cached) as MedilinkAgendaItem[]
         const idx = items.findIndex(item =>
           item.id_paciente === data.id_paciente &&
-          item.hora_inicio === data.hora_inicio &&
+          this.normalizeTime(item.hora_inicio) === horaInicio &&
           item.id_recurso === data.id_sillon,
         )
         if (idx >= 0) {
@@ -444,11 +469,12 @@ export class MedilinkCache {
     await this.removeCitaIndex(id)
   }
 
-  // ─── Weekly agenda warm ────────────────
+  // ─── Weekly agenda warm ─────��──────────
 
   /**
    * Fetch and cache the complete agenda for all active professionals
    * for the next N days. Called at startup and daily.
+   * Uses v5 endpoint: 1 API call per professional covers all days.
    */
   async warmWeeklyAgenda(): Promise<void> {
     const branch = this.getDefaultBranch()
@@ -463,33 +489,41 @@ export class MedilinkCache {
       return
     }
 
+    // Push professional names to api-client for v5 flatten
+    this.ensureProfessionalNames()
+
     const days = this.config.MEDILINK_AGENDA_WARM_DAYS
-    const dates: string[] = []
     const now = new Date()
-    for (let d = 0; d < days; d++) {
-      const date = new Date(now)
-      date.setDate(date.getDate() + d)
-      dates.push(date.toISOString().split('T')[0]!)
-    }
+    const fechaInicio = now.toISOString().split('T')[0]!
+    const endDate = new Date(now)
+    endDate.setDate(endDate.getDate() + days - 1)
+    const fechaFin = endDate.toISOString().split('T')[0]!
 
     let warmed = 0
+    let citasIndexed = 0
     let errors = 0
 
     for (const prof of professionals) {
-      for (const date of dates) {
-        try {
-          const items = await this.api.getProfessionalAgenda(branch.id, prof.id, date, 'low')
+      try {
+        // Single v5 call returns all days for this professional
+        const dateMap = await this.api.getProfessionalAgenda(branch.id, prof.id, fechaInicio, fechaFin, 'low')
+
+        for (const [date, items] of Object.entries(dateMap)) {
           const key = this.agendaKey(branch.id, date, prof.id)
           await this.redis.set(key, JSON.stringify(items), 'EX', AGENDA_TTL_S)
 
-          // Index any booked citas from the agenda
-          // Note: agenda items don't carry cita IDs, so we can't index them here.
-          // The cita index is populated from webhook events.
+          // Index booked citas (v5 provides id_cita)
+          for (const item of items) {
+            if (item.id_cita && item.id_paciente) {
+              await this.indexCita(item.id_cita, branch.id, date, prof.id)
+              citasIndexed++
+            }
+          }
           warmed++
-        } catch (err) {
-          errors++
-          logger.warn({ err: (err as Error).message, professionalId: prof.id, date }, 'Failed to warm agenda for date')
         }
+      } catch (err) {
+        errors++
+        logger.warn({ err: (err as Error).message, professionalId: prof.id }, 'Failed to warm agenda for professional')
       }
     }
 
@@ -499,7 +533,7 @@ export class MedilinkCache {
       if (oldKeys.length > 0) await this.redis.del(...oldKeys)
     } catch { /* best effort */ }
 
-    logger.info({ warmed, errors, professionals: professionals.length, dates: dates.length }, 'Weekly agenda warm complete')
+    logger.info({ warmed, citasIndexed, errors, professionals: professionals.length, days, apiCalls: professionals.length }, 'Weekly agenda warm complete')
   }
 
   // ─── Legacy invalidation (for non-cita entities) ──

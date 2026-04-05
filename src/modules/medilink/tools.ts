@@ -808,9 +808,8 @@ export async function registerMedilinkTools(
           comentario: input.context_summary as string | undefined,
         })
 
-        // Invalidate availability cache
-        // Webhook from Medilink will handle surgical cache update; invalidate as safety net
-        void cache.invalidateAllAgenda()
+        // Webhook from Medilink will handle surgical cache update.
+        // No blanket invalidation — trust the webhook + daily warm as safety net.
 
         // Store appointment ID in working memory for potential reschedule
         if (ctx.contactId) {
@@ -1034,8 +1033,8 @@ export async function registerMedilinkTools(
           }).catch(err => logger.warn({ err, appointmentId: newAppointment.id }, 'Failed to schedule follow-ups for rescheduled appointment'))
         }
 
-        // Webhook from Medilink will handle surgical cache update; invalidate as safety net
-        void cache.invalidateAllAgenda()
+        // Webhook from Medilink will handle surgical cache update.
+        // No blanket invalidation — trust the webhook + daily warm as safety net.
 
         if (ctx.contactId) {
           await wmem.set(ctx.contactId, ML.PENDING_RESCHEDULE_ID, newAppointment.id)

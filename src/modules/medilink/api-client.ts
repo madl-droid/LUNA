@@ -10,6 +10,7 @@ import type {
   MedilinkTreatment, MedilinkAppointmentStatus,
   MedilinkAgendaItem, MedilinkPatientArchive, MedilinkEvolution,
   MedilinkTreatmentPlan, MedilinkAdditionalField, MedilinkPrestacion,
+  V5AgendaResponse, V5AgendaSlotDetail,
 } from './types.js'
 import { RateLimiter } from './rate-limiter.js'
 
@@ -304,47 +305,127 @@ export class MedilinkApiClient {
 
   // ─── Agenda / Availability ─────────────
 
-  async getAgenda(
-    branchId: number,
-    date: string,
-    professionalId?: number,
-    durationMinutes?: number,
-  ): Promise<MedilinkAgendaItem[]> {
-    const filter: MedilinkFilter = {
-      id_sucursal: { eq: branchId },
-      fecha: { eq: date },
-    }
-    // API uses id_dentista, not id_profesional
-    if (professionalId) filter['id_dentista'] = { eq: professionalId }
-    if (durationMinutes) filter['duracion'] = { eq: durationMinutes }
-
-    // /agendas returns an array directly, not paginated
-    const res = await this.request<MedilinkAgendaItem[]>('GET', '/agendas', {
-      filter,
-      priority: 'high',
-    })
-    return Array.isArray(res.data) ? res.data : []
-  }
-
   /**
-   * GET /sucursales/{branchId}/profesionales/{professionalId}/agendas
-   * Returns ALL agenda entries (booked + free + sobreagendamiento) for a specific
-   * professional at a branch. Unlike GET /agendas which only returns the 10 soonest
-   * free slots, this endpoint returns the complete picture.
+   * GET /api/v5/sucursales/{branchId}/profesionales/{professionalId}/agendas
+   * with mostrar_detalles=1 — returns ALL agenda entries (booked + free) for a
+   * date range. Returns a map of date → MedilinkAgendaItem[].
+   *
+   * v5 returns a hierarchical structure (fechas → horas → sillones) which we
+   * flatten into the standard MedilinkAgendaItem[] array per date.
    */
   async getProfessionalAgenda(
     branchId: number,
     professionalId: number,
-    date: string,
+    fechaInicio: string,
+    fechaFin: string,
     priority?: RequestPriority,
-  ): Promise<MedilinkAgendaItem[]> {
-    const filter: MedilinkFilter = { fecha: { eq: date } }
-    const res = await this.request<MedilinkAgendaItem[]>(
+  ): Promise<Record<string, MedilinkAgendaItem[]>> {
+    const v5BaseUrl = this.baseUrl.replace('/api/v1', '/api/v5')
+    const filter: MedilinkFilter = {
+      fecha_inicio: { eq: fechaInicio },
+      fecha_fin: { eq: fechaFin },
+      mostrar_detalles: { eq: 1 },
+    }
+    // fullUrl skips automatic query string building, so we build it manually
+    const qs = new URLSearchParams({ q: JSON.stringify(filter) }).toString()
+    const fullUrl = `${v5BaseUrl}/sucursales/${branchId}/profesionales/${professionalId}/agendas?${qs}`
+
+    const res = await this.request<V5AgendaResponse['data']>(
       'GET',
       `/sucursales/${branchId}/profesionales/${professionalId}/agendas`,
-      { filter, priority: priority ?? 'high' },
+      { priority: priority ?? 'high', fullUrl },
     )
-    return Array.isArray(res.data) ? res.data : []
+
+    // Resolve professional name from the professionalId for the flattened items
+    const profName = this._professionalNameCache.get(professionalId) ?? ''
+
+    return this.flattenV5Agenda(res.data, professionalId, profName)
+  }
+
+  /** Cache professional names to avoid lookups during flatten */
+  private _professionalNameCache = new Map<number, string>()
+
+  /** Set professional name for v5 flatten (called from cache with ref data) */
+  setProfessionalName(id: number, name: string): void {
+    this._professionalNameCache.set(id, name)
+  }
+
+  /**
+   * Flatten v5 hierarchical agenda response into per-date MedilinkAgendaItem arrays.
+   * v5 structure: data.fechas[date].horas[time].sillones[id] = true | { detail }
+   */
+  private flattenV5Agenda(
+    data: V5AgendaResponse['data'] | unknown,
+    professionalId: number,
+    professionalName: string,
+  ): Record<string, MedilinkAgendaItem[]> {
+    const result: Record<string, MedilinkAgendaItem[]> = {}
+
+    // data may be the full response or just the nested object
+    const fechas = (data && typeof data === 'object' && 'fechas' in data)
+      ? (data as V5AgendaResponse['data']).fechas
+      : null
+
+    if (!fechas || typeof fechas !== 'object') {
+      logger.warn({ dataType: typeof data }, 'v5 agenda: unexpected response shape')
+      return result
+    }
+
+    for (const [date, dateData] of Object.entries(fechas)) {
+      const items: MedilinkAgendaItem[] = []
+      const horas = dateData?.horas
+      if (!horas || typeof horas !== 'object') continue
+
+      for (const [time, timeData] of Object.entries(horas)) {
+        const sillones = timeData?.sillones
+        if (!sillones || typeof sillones !== 'object') continue
+
+        for (const [sillonKey, value] of Object.entries(sillones)) {
+          // Skip "Sobrecupo" — not a real chair
+          if (sillonKey === 'Sobrecupo') continue
+
+          const chairId = parseInt(sillonKey, 10)
+          if (isNaN(chairId)) continue
+
+          if (value === true) {
+            // Free slot
+            items.push({
+              id_paciente: 0,
+              nombre_paciente: '',
+              hora_inicio: time,
+              hora_fin: '', // v5 grid doesn't provide end time for free slots
+              duracion: 30, // default; overridden by booked slot data when present
+              id_dentista: professionalId,
+              nombre_dentista: professionalName,
+              fecha: date,
+              id_recurso: chairId,
+            })
+          } else if (value && typeof value === 'object' && 'id_cita' in value) {
+            // Booked slot with details
+            const detail = value as V5AgendaSlotDetail
+            const nombre = `${detail.nombre_paciente ?? ''} ${detail.apellidos_paciente ?? ''}`.trim()
+            items.push({
+              id_paciente: detail.id_paciente,
+              nombre_paciente: nombre,
+              hora_inicio: time,
+              hora_fin: detail.fin ? detail.fin.slice(0, 5) : '', // "09:00:00" → "09:00"
+              duracion: detail.duracion_total,
+              id_dentista: professionalId,
+              nombre_dentista: professionalName,
+              fecha: date,
+              id_recurso: chairId,
+              id_cita: detail.id_cita,
+            })
+          }
+        }
+      }
+
+      // Sort by time, then by chair
+      items.sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio) || a.id_recurso - b.id_recurso)
+      result[date] = items
+    }
+
+    return result
   }
 
   async getPatientFiles(patientId: number, priority?: RequestPriority): Promise<MedilinkPatientArchive[]> {
