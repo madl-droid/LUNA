@@ -133,7 +133,14 @@ const manifest: ModuleManifest = {
       if (!service) return
       const fresh = registry.getConfig<typeof config>('tts')
       const freshApiKey = await configStore.get(pool, 'GOOGLE_AI_API_KEY').catch(() => '') ?? ''
-      service.updateConfig({ ...fresh, TTS_GOOGLE_API_KEY: freshApiKey })
+      const freshAccentStyle = await configStore.get(pool, 'AGENT_ACCENT_PROMPT').catch(() => '') ?? ''
+      const freshVoiceInstructions = await configStore.get(pool, 'TTS_VOICE_INSTRUCTIONS').catch(() => '') ?? ''
+      service.updateConfig({
+        ...fresh,
+        TTS_GOOGLE_API_KEY: freshApiKey,
+        TTS_ACCENT_STYLE: freshAccentStyle,
+        TTS_VOICE_INSTRUCTIONS: freshVoiceInstructions,
+      })
       logger.info('TTS service hot-reloaded')
     })
 

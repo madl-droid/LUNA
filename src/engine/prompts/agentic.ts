@@ -20,6 +20,10 @@ import { buildContextLayers } from './context-builder.js'
 import { buildAccentSection } from './accent.js'
 import { loadSkillCatalog, buildSkillCatalogSection, filterSkillsByTools } from './skills.js'
 
+interface TTSServiceLike {
+  shouldAutoTTS(channel: string, inputType: string): boolean
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface AgenticPromptOptions {
@@ -115,7 +119,11 @@ export async function buildAgenticPrompt(
   }
 
   // ── Section 9: <voice_instructions> (audio only) ──────────────────────────
-  if (ctx.responseFormat === 'audio') {
+  const ttsService = registry.getOptional<TTSServiceLike>('tts:service') ?? null
+  const prepareForVoice = ctx.responseFormat === 'audio'
+    || (ctx.responseFormat === 'auto' && !!ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType))
+
+  if (prepareForVoice) {
     const voiceSection = buildVoiceSection()
     const voiceTags = svc ? await svc.getSystemPrompt('tts-voice-tags') : ''
     let voiceContent = voiceSection

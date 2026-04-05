@@ -79,9 +79,9 @@ export async function buildFormatFromForm(channel: string, db: import('pg').Pool
   // Emoji instructions — explicit per level
   const emojiInstructions: Record<string, string> = {
     nunca: 'NUNCA uses emojis. Ni uno solo. Cero emojis en toda la respuesta.',
-    bajo: 'Usa emojis con moderación: 1-2 por mensaje como máximo. Solo cuando aporten calidez (👋 al saludar, ✅ al confirmar). No al inicio de cada frase.',
-    moderado: 'Usa emojis con frecuencia moderada: 2-4 por mensaje. Úsalos para dar calidez y hacer el mensaje más visual.',
-    alto: 'Usa emojis libremente: 3-5+ por mensaje. Los emojis son parte natural de tu estilo de comunicación.',
+    bajo: 'Usa 0-1 emoji por respuesta. Inclúyelo solo cuando aporte calidez o confirmación, como saludos, agradecimientos, cierres amables o mensajes positivos. Si el contexto es formal, delicado, técnico, de reclamo, cobro o error, usa 0 emojis.',
+    moderado: 'Usa 1-2 emojis en la mayoría de respuestas cálidas, comerciales o conversacionales. En saludos, seguimientos, confirmaciones y cierres amistosos deberías incluir al menos 1 emoji. Si el contexto es formal, delicado, técnico, de reclamo, cobro o error, puedes usar 0 emojis.',
+    alto: 'Usa 1-3 emojis en casi toda respuesta casual, comercial o cercana. Normalmente debe haber al menos 1 emoji por respuesta cuando el tono sea amistoso, de venta, seguimiento o confirmación. Si el contexto es formal, delicado, técnico, de reclamo, cobro o error, puedes bajar a 0 emojis.',
   }
   lines.push(`- ${emojiInstructions[emojiLevel] ?? emojiInstructions.bajo}`)
 
