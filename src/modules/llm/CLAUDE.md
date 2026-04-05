@@ -14,27 +14,34 @@ Gateway centralizado para Anthropic y Google (Gemini). Circuit breaker (por prov
 - `security.ts` — detección de prompt injection, sanitización de prompts/respuestas, redacción de API keys.
 - `model-scanner.ts` — escaneo periódico de modelos disponibles en ambos providers.
 
-## Estrategia de uso de modelos
+## 10 Tareas Canónicas (Task Routing v2)
 
-| Tarea | Task type | Modelo primario | Fallback |
-|-------|-----------|----------------|----------|
-| Fase 2 (evaluate) | `classify` | Sonnet | Flash |
-| Fase 3 simple (≤2 LLM steps) | `tools` | Sonnet | Flash |
-| Fase 3 compleja (3+ LLM steps) | `complex` | Opus | Sonnet → Pro |
-| Fase 4 (compose) | `respond` | Gemini Flash | Flash-Lite → Sonnet |
-| Criticizer (quality gate) | `criticize` | Gemini Pro | Flash → Sonnet |
-| Leer documentos | `document_read` | Sonnet | Flash |
-| Procesar multimedia | `vision` | Gemini Flash | Flash-Lite → Sonnet |
-| Búsqueda web | `web_search` | Gemini Flash+grounding | Pro → Sonnet |
-| Batch nocturno | `batch` | Sonnet | Flash |
-| TTS | `tts` | Gemini Pro TTS | — |
-| Compresión de sesiones | `compress` | Haiku | Flash |
-| Mensajes ACK | `ack` | Haiku | Flash |
+El Task Router es la ÚNICA fuente de verdad para selección de modelo/provider/key. No ejecuta llamadas.
+Documentación completa: `docs/architecture/task-routing.md`
 
-### Complejidad de Fase 3
-Un plan es "complejo" cuando tiene **3+ steps que requieren LLM** (subagent, web_search, code_execution).
-Steps determinísticos (api_call, workflow, memory_lookup, process_attachment) no cuentan.
-Threshold: `COMPLEX_PLAN_THRESHOLD = 3` en `phase3-execute.ts`.
+| Tarea | Modelo default | Fallback | Uso |
+|-------|---------------|----------|-----|
+| `main` | Sonnet 4.6 | Gemini Flash | Conversación, respuestas, tool calling |
+| `complex` | Opus 4.6 | Gemini Pro | Razonamiento profundo, objeciones, HITL |
+| `low` | Haiku 4.5 | Gemini Flash Lite | Saludos, ACKs, confirmaciones simples |
+| `criticize` | Gemini Pro | Sonnet 4.6 | Verificación de calidad, subagent verify |
+| `media` | Gemini Flash | Sonnet 4.6 | Vision, audio, video, documentos, OCR, STT |
+| `web_search` | Gemini Flash + grounding | Sonnet 4.6 | Búsqueda web con Google Search |
+| `compress` | Sonnet 4.6 | Gemini Flash | Compresión de sesiones, buffer |
+| `batch` | Sonnet 4.6 | Gemini Flash | Batch nocturno, scoring, tareas programadas |
+| `tts` | Gemini Pro TTS | Gemini Flash TTS | Síntesis de voz |
+| `knowledge` | text-embedding-004 | — | Embeddings, vectorización |
+
+### TaskCategory
+Cada feature que hace una llamada LLM DEBE declarar una categoría:
+```typescript
+import { TaskCategory } from '../../modules/llm/types.js'
+await callLLM({ task: TaskCategory.MEDIA, ... })
+```
+
+### TASK_ALIASES
+Nombres custom se registran en `TASK_ALIASES` en `task-router.ts`. Si un nombre no está registrado, ruta a `main` con warning.
+Nombres legacy (classify, respond, tools, vision, stt, document_read, ack) son aliases a las nuevas tareas canónicas.
 
 ## API Keys — una por provider
 
@@ -88,7 +95,8 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - Todos los modelos por tarea vienen de configSchema con `.default()` — NO hay `DEFAULT_ROUTES` hardcoded
 - Cada tarea tiene: `LLM_{TASK}_PROVIDER/MODEL` (primario), `_DOWNGRADE_` (mismo provider), `_FALLBACK_` (cross-API)
 - Temperaturas por tarea definidas en `TASK_TEMPERATURES` (internal, no configurable por UI)
-- 12 tareas configurables: classify, respond, complex, tools, proactive, criticize, document_read, batch, vision, web_search, compress, ack
+- 10 tareas canónicas: main, complex, low, criticize, media, web_search, compress, batch, tts, knowledge
+- `resolveTaskName()` en task-router.ts resuelve aliases a tareas canónicas
 
 ## Trampas
 - **API keys**: NUNCA se logean ni se incluyen en prompts.
@@ -98,3 +106,5 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - **Escalating CB es por target**: un modelo puede estar down sin afectar a otros del mismo provider.
 - **Phase 2 decide thinking/coding**: `ExecutionStep.useThinking` y `useCoding` son hints del evaluador.
 - **Task aliases**: `TASK_ALIASES` mapea nombres custom a tareas canónicas (ej: `'trace-evaluate'` → `'complex'`).
+- **Effort router**: 2 niveles (normal→main, complex→complex). NO hay nivel low en effort routing — `low` se usa directamente por ACK service.
+- **Subagentes**: heredan del router via task name (`model_tier: 'normal'` → main, `'complex'` → complex, verify → criticize).

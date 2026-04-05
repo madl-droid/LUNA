@@ -1,5 +1,7 @@
 // LUNA — LLM Task Router
-// Enruta tareas a providers/modelos según configuración, disponibilidad y circuit breaker.
+// Source of truth for model/provider/key selection.
+// Does NOT execute calls — each service queries the router and executes independently.
+// See docs/architecture/task-routing.md for the full design.
 
 import pino from 'pino'
 import type { CircuitBreakerManager } from './circuit-breaker.js'
@@ -18,27 +20,142 @@ const logger = pino({ name: 'llm:router' })
 // ═══════════════════════════════════════════
 
 const TASK_TEMPERATURES: Partial<Record<LLMTask, number>> = {
-  classify: 0.1,
-  respond: 0.7,
+  main: 0.7,
   complex: 0.5,
-  tools: 0.1,
-  proactive: 0.7,
-  compress: 0.2,
-  ack: 0.8,
+  low: 0.8,
   criticize: 0.3,
-  document_read: 0.2,
+  media: 0.2,
+  web_search: 0.3,
+  compress: 0.2,
   batch: 0.3,
 }
 
 const TASK_MAX_TOKENS: Partial<Record<LLMTask, number>> = {
-  ack: 30,
+  low: 150,
 }
 
-/** All tasks that can be configured via LLM_{TASK}_PROVIDER/MODEL */
+// ═══════════════════════════════════════════
+// Canonical tasks — the 10 routing targets
+// ═══════════════════════════════════════════
+
+/** All tasks that can be configured via LLM_{TASK}_PROVIDER/MODEL in the console */
 const CONFIGURABLE_TASKS: LLMTask[] = [
-  'classify', 'respond', 'complex', 'tools', 'proactive', 'criticize',
-  'document_read', 'batch', 'vision', 'web_search', 'compress', 'ack',
+  'main', 'complex', 'low', 'criticize', 'media',
+  'web_search', 'compress', 'batch', 'tts', 'knowledge',
 ]
+
+// ═══════════════════════════════════════════
+// Task aliases — maps ALL custom names to canonical tasks
+// ═══════════════════════════════════════════
+
+/**
+ * EVERY custom task name used anywhere in the codebase MUST be listed here.
+ * This ensures all LLM calls route through the configured models, with proper
+ * fallback chains, even when callers use descriptive task names.
+ *
+ * To add a new LLM call site:
+ *   1. Pick a TaskCategory (from types.ts) — it maps directly to a canonical task
+ *   2. If you use a descriptive task name instead, add it here
+ *   3. Run `npx tsc --noEmit` to verify
+ *
+ * Canonical tasks (main, complex, low, criticize, media, web_search, compress,
+ * batch, tts, knowledge) do NOT need aliases — they route directly.
+ */
+const TASK_ALIASES: Record<string, LLMTask> = {
+  // ── Legacy canonical names (removed in v2, aliased for backward compatibility) ──
+  'classify': 'main',
+  'respond': 'main',
+  'tools': 'main',
+  'proactive': 'main',
+  'vision': 'media',
+  'stt': 'media',
+  'document_read': 'media',
+  'image_gen': 'media',
+  'ack': 'low',
+  'custom': 'main',
+
+  // ── Engine: agentic loop ──
+  'agentic': 'main',                    // agentic-loop.ts — main LLM loop
+
+  // ── Engine: post-processor (criticizer) ──
+  'criticizer-review': 'criticize',      // post-processor.ts — quality review step
+  'criticizer-rewrite': 'criticize',     // post-processor.ts — quality rewrite step
+
+  // ── Engine: ACK ──
+  // 'ack' already aliased above to 'low'
+
+  // ── Engine: buffer compression ──
+  'buffer_compress': 'compress',         // buffer-compressor.ts
+
+  // ── Engine: commitment detection ──
+  'commitment-detect': 'main',           // commitment-detector.ts
+  'detect_commitment': 'main',           // legacy alias
+
+  // ── Engine: subagent ──
+  'subagent': 'main',                    // subagent execution
+  'subagent-verify': 'criticize',        // subagent verification step
+
+  // ── Engine: proactive ──
+  'nightly-scoring': 'batch',            // nightly-batch.ts
+  'nightly-compress': 'batch',           // nightly-batch.ts
+  'nightly-reactivation': 'batch',       // nightly-batch.ts
+  'scheduled-task': 'main',              // scheduled-tasks/executor.ts
+
+  // ── Extractors (all → media) ──
+  'extractor-image-vision': 'media',     // extractors/image.ts
+  'extractor-pdf-ocr': 'media',          // extractors/pdf.ts
+  'extractor-pdf-vision': 'media',       // extractors/pdf.ts
+  'extractor-slide-vision': 'media',     // extractors/slides.ts
+  'extractor-thumbnail-vision': 'media', // extractors/youtube.ts
+  'extractor-video-multimodal': 'media', // extractors/video.ts
+  'extractor-summarize-large': 'media',  // attachments/processor.ts
+  'transcribe': 'media',                 // legacy alias for STT
+  'process_attachment': 'media',         // legacy alias
+  'extract_knowledge': 'media',          // legacy alias
+  'read_document': 'media',              // legacy alias
+  'summarize_document': 'media',         // legacy alias
+
+  // ── Modules: lead-scoring ──
+  'extract_qualification': 'main',       // lead-scoring/extract-tool.ts
+
+  // ── Modules: gmail ──
+  'signature_extraction': 'main',        // gmail/signature-parser.ts
+  'parse_signature': 'main',             // legacy alias
+
+  // ── Modules: prompts ──
+  'generate-evaluator': 'complex',       // prompts/prompts-service.ts
+
+  // ── Modules: hitl ──
+  'hitl-expire-message': 'main',         // hitl/notifier.ts
+  'hitl-rephrase': 'main',               // hitl/resolver.ts
+
+  // ── Modules: knowledge ──
+  'knowledge-description': 'main',       // knowledge/description-generator.ts
+
+  // ── Modules: medilink ──
+  'medilink-followup-personalize': 'main', // medilink/follow-up-scheduler.ts
+
+  // ── Modules: memory ──
+  'session-summary-v2': 'compress',      // memory/session-archiver.ts
+
+  // ── Modules: twilio-voice ──
+  'summarize': 'main',                   // twilio-voice/voice-engine.ts
+
+  // ── Modules: cortex (all → complex) ──
+  'cortex-analyze': 'complex',           // cortex analysis
+  'cortex-pulse': 'complex',             // cortex pulse
+  'cortex-trace': 'complex',             // cortex trace
+  'trace-evaluate': 'complex',           // cortex trace simulation
+  'trace-compose': 'complex',            // cortex trace composition
+  'trace-analyze': 'complex',            // cortex trace analysis
+  'trace-synthesize': 'complex',         // cortex trace synthesis
+  'trace-agentic': 'complex',            // cortex trace agentic sim
+
+  // ── Legacy aliases (backward compatibility) ──
+  'evaluate': 'main',                    // old Phase 2 name
+  'proactive-evaluate': 'main',          // old proactive Phase 2
+  'compose': 'main',                     // old Phase 4 name
+}
 
 // ═══════════════════════════════════════════
 // Route resolution
@@ -59,37 +176,16 @@ export interface ResolvedRoute {
 }
 
 /**
- * Maps custom task names (used by engine/modules) to canonical route names.
- * This ensures all LLM calls route through the configured providers/models
- * with proper fallback chains, even when callers use descriptive task names.
+ * Resolve a task name to its canonical LLMTask.
+ * Returns the canonical task if already canonical, or the alias target.
+ * Falls back to 'main' for unknown task names (logged as warning).
  */
-const TASK_ALIASES: Record<string, LLMTask> = {
-  'evaluate': 'classify',
-  'proactive-evaluate': 'classify',
-  'compose': 'respond',
-  'detect_commitment': 'classify',
-  'process_attachment': 'vision',
-  'subagent': 'tools',
-  'scheduled-task': 'tools',
-  'extract_qualification': 'classify',
-  'parse_signature': 'classify',
-  'extract_knowledge': 'vision',
-  'transcribe': 'vision',
-  // Nightly batch jobs
-  'nightly-scoring': 'batch',
-  'nightly-compress': 'batch',
-  'nightly-reactivation': 'batch',
-  // Document reading (attachments, tools, knowledge)
-  'read_document': 'document_read',
-  'summarize_document': 'document_read',
-  // Cortex tasks (route to 'complex')
-  'cortex-analyze': 'complex',
-  'cortex-pulse': 'complex',
-  'cortex-trace': 'complex',
-  'trace-evaluate': 'complex',
-  'trace-compose': 'complex',
-  'trace-analyze': 'complex',
-  'trace-synthesize': 'complex',
+export function resolveTaskName(task: string): LLMTask {
+  if (CONFIGURABLE_TASKS.includes(task as LLMTask)) return task as LLMTask
+  const aliased = TASK_ALIASES[task]
+  if (aliased) return aliased
+  logger.warn({ task }, 'Unknown task name — routing to "main". Add it to TASK_ALIASES in task-router.ts')
+  return 'main'
 }
 
 export class TaskRouter {
@@ -181,18 +277,19 @@ export class TaskRouter {
   /**
    * Resolve the best available target for a request.
    * Considers: explicit overrides, circuit breaker state, adapter availability.
-   * In advanced API mode, selects group-specific API keys per task.
    * Returns ordered list of targets to try.
+   *
+   * @param task - Any task name (canonical or custom). Custom names are aliased automatically.
    */
   resolve(
-    task: LLMTask,
+    task: LLMTask | string,
     overrideProvider?: LLMProviderName,
     overrideModel?: string,
     overrideApiKeyEnv?: string,
   ): ResolvedRoute[] {
     const results: ResolvedRoute[] = []
-    const resolvedTask = TASK_ALIASES[task] ?? task
-    const route = this.routes.get(resolvedTask as LLMTask)
+    const resolvedTask = resolveTaskName(task)
+    const route = this.routes.get(resolvedTask)
 
     // If explicit override, try that first
     if (overrideProvider && overrideModel) {
@@ -295,7 +392,7 @@ export class TaskRouter {
    * web_search MUST use Google as primary for native search grounding.
    * Anthropic does not have native web search — results will be degraded.
    */
-  private validateRoute(task: LLMTask, route: TaskRoute): string | undefined {
+  private validateRoute(task: LLMTask | string, route: TaskRoute): string | undefined {
     if (task === 'web_search' && route.primary.provider !== 'google') {
       return 'web_search debe usar Google como provider primario. Anthropic no tiene búsqueda web nativa — los resultados serán degradados o fallarán.'
     }
@@ -331,7 +428,7 @@ export class TaskRouter {
 
   private defaultModelFor(provider: LLMProviderName): string {
     const defaults: Record<LLMProviderName, string> = {
-      anthropic: 'claude-sonnet-4-5-20250929',
+      anthropic: 'claude-sonnet-4-6-20260214',
       google: 'gemini-2.5-flash',
     }
     return defaults[provider]

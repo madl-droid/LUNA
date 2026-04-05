@@ -15,7 +15,7 @@ import {
   RUN_SUBAGENT_TOOL_NAME,
 } from './subagent-delegation.js'
 import { SKILL_READ_TOOL_NAME, executeSkillReadTool } from './skill-delegation.js'
-import { callLLMWithFallback } from '../utils/llm-client.js'
+import { callLLM } from '../utils/llm-client.js'
 import { StepSemaphore } from '../concurrency/step-semaphore.js'
 import { ToolDedupCache } from './tool-dedup-cache.js'
 import { ToolLoopDetector } from './tool-loop-detector.js'
@@ -84,8 +84,7 @@ export async function runAgenticLoop(
   logger.info({
     traceId: ctx.traceId,
     effort: config.effort,
-    model: config.model,
-    provider: config.provider,
+    task: config.task,
     maxToolTurns: config.maxToolTurns,
     toolCount: effectiveTools.length,
   }, 'Agentic loop starting')
@@ -109,21 +108,14 @@ export async function runAgenticLoop(
 
       turns++
 
-      // Call LLM
-      const llmResult = await callLLMWithFallback(
-        {
-          task: 'agentic',
-          provider: config.provider,
-          model: config.model,
-          system: systemPrompt,
-          messages,
-          maxTokens: config.maxOutputTokens,
-          temperature: config.temperature,
-          tools: effectiveTools.length > 0 ? effectiveTools : undefined,
-        },
-        config.fallbackProvider,
-        config.fallbackModel,
-      )
+      // Call LLM — task router determines model/provider from config.task
+      const llmResult = await callLLM({
+        task: config.task,
+        system: systemPrompt,
+        messages,
+        maxTokens: config.maxOutputTokens,
+        tools: effectiveTools.length > 0 ? effectiveTools : undefined,
+      })
 
       totalTokens += llmResult.inputTokens + llmResult.outputTokens
 
@@ -210,20 +202,13 @@ export async function runAgenticLoop(
   })
 
   try {
-    const finalResult = await callLLMWithFallback(
-      {
-        task: 'agentic',
-        provider: config.provider,
-        model: config.model,
-        system: systemPrompt,
-        messages,
-        maxTokens: config.maxOutputTokens,
-        temperature: config.temperature,
-        // NO tools parameter — forces text-only response
-      },
-      config.fallbackProvider,
-      config.fallbackModel,
-    )
+    const finalResult = await callLLM({
+      task: config.task,
+      system: systemPrompt,
+      messages,
+      maxTokens: config.maxOutputTokens,
+      // NO tools parameter — forces text-only response
+    })
 
     totalTokens += finalResult.inputTokens + finalResult.outputTokens
     const responseText = finalResult.text || partialText

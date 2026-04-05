@@ -2,7 +2,6 @@
 // Tipos internos del engine para el sistema de subagents.
 
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
-import type { LLMProvider } from '../types.js'
 
 // ═══════════════════════════════════════════
 // Guardrails — soft (warn) vs hard (stop)
@@ -35,10 +34,8 @@ export interface SubagentGuardrails {
 export interface SubagentRunConfig {
   /** Catalog entry this run is based on */
   entry: SubagentCatalogEntry
-  /** Resolved model name */
-  model: string
-  /** Resolved provider */
-  provider: LLMProvider
+  /** Task name for LLM routing (resolved from model tier: 'normal'→'main', 'complex'→'complex') */
+  task: string
   /** Temperature */
   temperature: number
   /** Max output tokens per LLM call */

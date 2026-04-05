@@ -1,17 +1,17 @@
 // LUNA Engine — Effort Router
 // Classify incoming messages by complexity. Pure deterministic code, no LLM call.
 // Must complete in <5ms.
+//
+// Two levels:
+//   'normal'  → task 'main'    (Sonnet — default for most messages)
+//   'complex' → task 'complex' (Opus  — objections, multi-step, HITL, long messages)
+//
+// See docs/architecture/task-routing.md for the full routing design.
 
 import type { ContextBundle } from '../types.js'
 import type { EffortLevel } from './types.js'
 
 // ── Module-level compiled patterns ──
-
-const GREETING_PATTERN = /^(hola|hey|buenas?|buenos?\s+(d[ií]as?|tardes?|noches?)|hi|hello|que tal|qué tal)\b/i
-
-const THANKS_PATTERN = /^(gracias|thanks|thank you|ok|okay|listo|perfecto|genial|dale|va|bien|entendido|claro)\b/i
-
-const EMOJI_PATTERN = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]+$/u
 
 const TIME_DATE_PATTERN = /\b(hoy|mañana|ayer|lunes|martes|miércoles|jueves|viernes|sábado|domingo|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|\d{1,2}\/\d{1,2}|\d{1,2}:\d{2}|a\.m\.|p\.m\.|am\b|pm\b|hora|fecha|día|semana|mes|año)\b/i
 
@@ -32,54 +32,39 @@ const OBJECTION_KEYWORDS: readonly string[] = [
  * Classify message complexity to route to the appropriate model tier.
  * Must complete in <5ms. No LLM calls, no async, no I/O.
  *
- * - 'low': greetings, thanks, simple acknowledgments -> cheap model (Haiku/Flash)
- * - 'medium': questions, information requests, single-tool tasks -> standard model (Sonnet)
- * - 'high': objections, multi-step requests, complex reasoning -> capable model (Sonnet/Opus)
+ * - 'normal': most messages → task 'main' (Sonnet)
+ * - 'complex': objections, multi-step requests, HITL, long messages → task 'complex' (Opus)
  */
 export function classifyEffort(ctx: ContextBundle): EffortLevel {
   const text = ctx.normalizedText
   const textLower = text.toLowerCase()
 
-  // ── HIGH effort checks (evaluated first, any match → 'high') ──
+  // ── COMPLEX checks (any match → 'complex') ──
 
   // 1. Long message (complex reasoning required)
-  if (text.length > 500) return 'high'
+  if (text.length > 500) return 'complex'
 
   // 2. Multi-question message
   const questionMarks = (text.match(/\?/g) ?? []).length
-  if (questionMarks >= 3) return 'high'
+  if (questionMarks >= 3) return 'complex'
 
   // 3. Multiple attachments need reasoning
-  if (ctx.attachmentMeta.length >= 2) return 'high'
+  if (ctx.attachmentMeta.length >= 2) return 'complex'
 
   // 4. Pending commitments with time/date reference (commitment follow-up)
-  if (ctx.pendingCommitments.length > 0 && TIME_DATE_PATTERN.test(text)) return 'high'
+  if (ctx.pendingCommitments.length > 0 && TIME_DATE_PATTERN.test(text)) return 'complex'
 
   // 5. HITL context requires careful handling
-  if (ctx.hitlPendingContext !== null) return 'high'
+  if (ctx.hitlPendingContext !== null) return 'complex'
 
   // 6. Objection keywords (case-insensitive substring match)
   for (const keyword of OBJECTION_KEYWORDS) {
-    if (textLower.includes(keyword)) return 'high'
+    if (textLower.includes(keyword)) return 'complex'
   }
 
   // 7. New contact with complex first message
-  if (ctx.isNewContact && text.length > 200) return 'high'
+  if (ctx.isNewContact && text.length > 200) return 'complex'
 
-  // ── LOW effort checks (any match → 'low', only if no 'high' matched) ──
-
-  // 1. Short message
-  if (text.length < 30) return 'low'
-
-  // 2. Greeting pattern
-  if (GREETING_PATTERN.test(text)) return 'low'
-
-  // 3. Thanks/acknowledgment pattern
-  if (THANKS_PATTERN.test(text)) return 'low'
-
-  // 4. Single emoji or sticker
-  if (ctx.messageType === 'sticker' || EMOJI_PATTERN.test(text)) return 'low'
-
-  // ── Default: medium ──
-  return 'medium'
+  // ── Default: normal ──
+  return 'normal'
 }

@@ -3,7 +3,7 @@
 
 import { getEnv } from '../kernel/config.js'
 import type { Registry } from '../kernel/registry.js'
-import type { EngineConfig, LLMProvider } from './types.js'
+import type { EngineConfig } from './types.js'
 import { SUBAGENT_HARD_LIMITS } from './subagent/types.js'
 
 interface EngineModuleConfig {
@@ -29,14 +29,7 @@ interface EngineModuleConfig {
   ENGINE_CHECKPOINT_CLEANUP_DAYS: number
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
-  ENGINE_LOW_EFFORT_TOOLS: boolean
   LLM_CRITICIZER_MODE: string
-  LLM_LOW_EFFORT_MODEL: string
-  LLM_LOW_EFFORT_PROVIDER: string
-  LLM_MEDIUM_EFFORT_MODEL: string
-  LLM_MEDIUM_EFFORT_PROVIDER: string
-  LLM_HIGH_EFFORT_MODEL: string
-  LLM_HIGH_EFFORT_PROVIDER: string
 }
 
 function env(key: string, fallback: string): string {
@@ -50,27 +43,10 @@ function envInt(key: string, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed
 }
 
-function envFloat(key: string, fallback: number): number {
-  const v = getEnv(key)
-  if (!v) return fallback
-  const parsed = parseFloat(v)
-  return Number.isNaN(parsed) ? fallback : parsed
-}
-
 function envBool(key: string, fallback: boolean): boolean {
   const v = getEnv(key)
   if (!v) return fallback
   return v === 'true'
-}
-
-/**
- * Read up to `max` numbered env vars (KEY_1, KEY_2, KEY_3).
- * Returns array of non-empty messages, or fallback if none found.
- */
-
-function envProvider(key: string, fallback: LLMProvider): LLMProvider {
-  const v = getEnv(key) as LLMProvider | undefined
-  return v ?? fallback
 }
 
 /**
@@ -79,32 +55,9 @@ function envProvider(key: string, fallback: LLMProvider): LLMProvider {
 export function loadEngineConfig(registry: Registry): EngineConfig {
   const moduleConfig = registry.getConfig<EngineModuleConfig>('engine')
   return {
-    // LLM models (defaults match LLM module configSchema — canonical source of truth)
-    classifyModel: env('LLM_CLASSIFY_MODEL', 'claude-sonnet-4-5-20250929'),
-    classifyProvider: envProvider('LLM_CLASSIFY_PROVIDER', 'anthropic'),
-    respondModel: env('LLM_RESPOND_MODEL', 'gemini-2.5-flash'),
-    respondProvider: envProvider('LLM_RESPOND_PROVIDER', 'google'),
-    complexModel: env('LLM_COMPLEX_MODEL', 'claude-opus-4-5-20251101'),
-    complexProvider: envProvider('LLM_COMPLEX_PROVIDER', 'anthropic'),
-    toolsModel: env('LLM_TOOLS_MODEL', 'claude-sonnet-4-5-20250929'),
-    toolsProvider: envProvider('LLM_TOOLS_PROVIDER', 'anthropic'),
-    proactiveModel: env('LLM_PROACTIVE_MODEL', 'claude-sonnet-4-5-20250929'),
-    proactiveProvider: envProvider('LLM_PROACTIVE_PROVIDER', 'anthropic'),
-
-    // Fallbacks (defaults match LLM module configSchema)
-    fallbackClassifyModel: env('LLM_FALLBACK_CLASSIFY_MODEL', 'gemini-2.5-flash'),
-    fallbackClassifyProvider: envProvider('LLM_FALLBACK_CLASSIFY_PROVIDER', 'google'),
-    fallbackRespondModel: env('LLM_FALLBACK_RESPOND_MODEL', 'claude-sonnet-4-5-20250929'),
-    fallbackRespondProvider: envProvider('LLM_FALLBACK_RESPOND_PROVIDER', 'anthropic'),
-    fallbackComplexModel: env('LLM_FALLBACK_COMPLEX_MODEL', 'gemini-2.5-pro'),
-    fallbackComplexProvider: envProvider('LLM_FALLBACK_COMPLEX_PROVIDER', 'google'),
-
-    // LLM limits
+    // LLM limits (model/provider selection handled by task router in LLM module)
     maxInputTokens: envInt('LLM_MAX_INPUT_TOKENS', 4096),
     maxOutputTokens: envInt('LLM_MAX_OUTPUT_TOKENS', 7000),
-    temperatureClassify: envFloat('LLM_TEMPERATURE_CLASSIFY', 0.1),
-    temperatureRespond: envFloat('LLM_TEMPERATURE_RESPOND', 0.7),
-    temperatureComplex: envFloat('LLM_TEMPERATURE_COMPLEX', 0.5),
     requestTimeoutMs: envInt('LLM_REQUEST_TIMEOUT_MS', 30000),
 
     // Pipeline
@@ -175,12 +128,5 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
     // --- Agentic engine config (v2.0) ---
     agenticMaxTurns:         moduleConfig.ENGINE_AGENTIC_MAX_TURNS,
     effortRoutingEnabled:    moduleConfig.ENGINE_EFFORT_ROUTING,
-    lowEffortTools:          moduleConfig.ENGINE_LOW_EFFORT_TOOLS,
-    lowEffortModel:          moduleConfig.LLM_LOW_EFFORT_MODEL,
-    lowEffortProvider:       moduleConfig.LLM_LOW_EFFORT_PROVIDER as LLMProvider,
-    mediumEffortModel:       moduleConfig.LLM_MEDIUM_EFFORT_MODEL,
-    mediumEffortProvider:    moduleConfig.LLM_MEDIUM_EFFORT_PROVIDER as LLMProvider,
-    highEffortModel:         moduleConfig.LLM_HIGH_EFFORT_MODEL,
-    highEffortProvider:      moduleConfig.LLM_HIGH_EFFORT_PROVIDER as LLMProvider,
   }
 }

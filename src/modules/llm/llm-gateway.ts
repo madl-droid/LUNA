@@ -578,7 +578,7 @@ export class LLMGateway {
   private async tryWithRetry(
     request: LLMRequest,
     target: ResolvedRoute,
-    task: LLMTask,
+    task: LLMTask | string,
     _overallStart: number,
   ): Promise<LLMResponse | null> {
     const adapter = this.adapters.get(target.provider)

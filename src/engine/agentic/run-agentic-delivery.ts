@@ -6,7 +6,6 @@ import type {
   ContextBundle,
   DeliveryResult,
   EngineConfig,
-  LLMProvider,
   LLMToolDef,
   PipelineResult,
   ToolCatalogEntry,
@@ -53,18 +52,12 @@ export interface AgenticDeliveryOutput {
   noAction: boolean
 }
 
-export function getModelForEffort(
-  effort: EffortLevel,
-  config: EngineConfig,
-): { model: string; provider: LLMProvider } {
-  switch (effort) {
-    case 'low':
-      return { model: config.lowEffortModel, provider: config.lowEffortProvider }
-    case 'high':
-      return { model: config.highEffortModel, provider: config.highEffortProvider }
-    default:
-      return { model: config.mediumEffortModel, provider: config.mediumEffortProvider }
-  }
+/**
+ * Map effort level to canonical task name.
+ * The task router resolves the task to the configured model/provider.
+ */
+export function getTaskForEffort(effort: EffortLevel): string {
+  return effort === 'complex' ? 'complex' : 'main'
 }
 
 export function toLLMToolDefs(defs: ToolDefinition[]): LLMToolDef[] {
@@ -86,9 +79,9 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
     noActionSentinel,
   } = input
 
-  const classifiedEffort = engineConfig.effortRoutingEnabled ? classifyEffort(ctx) : 'medium'
+  const classifiedEffort = engineConfig.effortRoutingEnabled ? classifyEffort(ctx) : 'normal'
   const effortLevel = effortOverride ?? classifiedEffort
-  const modelConfig = getModelForEffort(effortLevel, engineConfig)
+  const task = getTaskForEffort(effortLevel)
 
   const toolRegistry = registry.getOptional<ToolRegistryLike>('tools:registry')
   const subagentCatalog = getAgenticSubagentCatalog(ctx, registry)
@@ -110,15 +103,6 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
   const skillReadTool = buildSkillReadToolDef(filteredSkills.map((skill) => skill.name))
   if (skillReadTool) llmToolDefs.push(skillReadTool)
 
-  // Strip tools for low-effort when ENGINE_LOW_EFFORT_TOOLS=false (default).
-  // Low-effort messages (greetings, acks) respond conversationally — no tool calls,
-  // one cheap LLM call instead of risking failed tool attempts with a weak model.
-  const stripTools = effortLevel === 'low' && !engineConfig.lowEffortTools
-  if (stripTools) {
-    llmToolDefs.length = 0
-    toolCatalog.length = 0
-  }
-
   const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, registry, {
     ...promptOptions,
     subagentCatalog,
@@ -128,11 +112,7 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
     maxToolTurns: maxTurnsCap ? Math.min(engineConfig.agenticMaxTurns, maxTurnsCap) : engineConfig.agenticMaxTurns,
     maxConcurrentTools: engineConfig.maxConcurrentSteps,
     effort: effortLevel,
-    model: modelConfig.model,
-    provider: modelConfig.provider,
-    fallbackModel: engineConfig.fallbackRespondModel,
-    fallbackProvider: engineConfig.fallbackRespondProvider,
-    temperature: engineConfig.temperatureRespond,
+    task,
     maxOutputTokens: engineConfig.maxOutputTokens,
     criticizerMode: engineConfig.criticizerMode,
   }

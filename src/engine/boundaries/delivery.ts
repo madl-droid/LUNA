@@ -187,7 +187,7 @@ export async function delivery(
       const proactiveConfig = getProactiveConfig()
       detectCommitments(
         responseText, ctx.contactId, ctx.session.id,
-        registry, config, proactiveConfig,
+        registry, proactiveConfig,
       ).catch(() => {})
     }
   }

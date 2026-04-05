@@ -1,36 +1,31 @@
 // LUNA Engine — Agentic Loop Types
 // Internal types for the agentic loop (v2). Do NOT duplicate types from engine/types.ts.
 
-import type { LLMProvider } from '../types.js'
-
 /**
- * Effort level determines which model handles the message.
+ * Effort level determines which canonical task (and thus model) handles the message.
  * Classified deterministically (no LLM call) by effort-router.ts.
+ *
+ * - 'normal' → task 'main' (Sonnet — default for most messages)
+ * - 'complex' → task 'complex' (Opus — objections, multi-step, HITL, long messages)
+ *
+ * The low/ack task is selected separately when needed, not via effort routing.
+ * See docs/architecture/task-routing.md for the full model routing design.
  */
-export type EffortLevel = 'low' | 'medium' | 'high'
+export type EffortLevel = 'normal' | 'complex'
 
 /**
  * Agentic loop configuration.
- * Assembled by the engine from EngineConfig values — NOT a new config source.
- * The engine (Instance 4) will construct this from EngineConfig fields.
+ * Assembled by the engine — model/provider selection delegated to the task router.
  */
 export interface AgenticConfig {
   /** Max tool-calling turns before forcing a text response */
   maxToolTurns: number
   /** Max concurrent tool executions within a single turn (reuses StepSemaphore) */
   maxConcurrentTools: number
-  /** Effort level for this pipeline run (determines model selection) */
+  /** Effort level for this pipeline run */
   effort: EffortLevel
-  /** Primary model name (resolved from effort level) */
-  model: string
-  /** Primary provider (resolved from effort level) */
-  provider: LLMProvider
-  /** Fallback model name */
-  fallbackModel: string
-  /** Fallback provider */
-  fallbackProvider: LLMProvider
-  /** Temperature for responses */
-  temperature: number
+  /** Task name for LLM calls (resolved from effort: 'normal'→'main', 'complex'→'complex') */
+  task: string
   /** Max output tokens per LLM call */
   maxOutputTokens: number
   /** Criticizer mode: 'disabled' | 'complex_only' | 'always' */

@@ -32,7 +32,7 @@ export async function verifySubagentResult(
   taskDescription: string,
   result: unknown,
   success: boolean,
-  config: EngineConfig,
+  _config: EngineConfig,
   retryAttempt = 0,
   registry?: Registry,
 ): Promise<VerificationResult & { tokensUsed: number }> {
@@ -70,8 +70,6 @@ export async function verifySubagentResult(
 
     const llmResult = await callLLM({
       task: 'subagent-verify',
-      provider: config.classifyProvider,
-      model: config.classifyModel,
       system: systemPrompt,
       messages: [{ role: 'user', content: parts.join('\n') }],
       maxTokens: 512,

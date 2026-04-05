@@ -4,7 +4,7 @@
 export { runAgenticLoop } from './agentic-loop.js'
 export { postProcess } from './post-processor.js'
 export { classifyEffort } from './effort-router.js'
-export { runAgenticDelivery, getModelForEffort, toLLMToolDefs } from './run-agentic-delivery.js'
+export { runAgenticDelivery, getTaskForEffort, toLLMToolDefs } from './run-agentic-delivery.js'
 export { ToolResultCache } from './tool-result-cache.js'
 export type { ToolCacheEntry } from './tool-result-cache.js'
 
