@@ -85,7 +85,7 @@ El subagente lee el skill apropiado via `skill_read` antes de actuar. El skill v
 
 ## Cache de agenda (cache.ts)
 Warm diario + mutación quirúrgica via webhooks. Sin API calls durante operación normal.
-- **Warm**: Al iniciar + cada 24h, cachea agenda RAW de todos los profesionales activos × próximos N días
+- **Warm**: Al iniciar + cada 24h, cachea agenda RAW de todos los profesionales activos × próximos N días (`MEDILINK_AGENDA_WARM_DAYS`, default 7)
 - **Lectura**: `getAvailability(branchId, date, professionalId)` filtra RAW → slots libres + sillones permitidos
 - **Webhook mutación**: `applyCitaCreated/Modified/Deleted(WebhookCitaData)` — modifica cache in-place
 - **Índice de citas**: Redis hash `medilink:cache:cita-index` mapea citaId → {branchId, date, professionalId}
@@ -122,6 +122,7 @@ Cuando se use en 2+ modulos, mover `working-memory.ts` a `src/kernel/`.
 
 ## Config extra
 - `MEDILINK_ALLOWED_CHAIRS` — CSV de IDs de sillon permitidos (default "1,2"). Excluye sobreagendamiento de disponibilidad.
+- `MEDILINK_AGENDA_WARM_DAYS` — días de agenda a pre-cachear (default 7). Refresh diario + mutación por webhooks.
 - `MEDILINK_DEFAULT_PROFESSIONAL_ID` — profesional asignado automaticamente a leads (configurable en consola).
 - `MEDILINK_DEFAULT_VALORACION_ID` — prestacion por defecto para leads (configurable en consola).
 

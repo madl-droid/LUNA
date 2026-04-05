@@ -399,7 +399,6 @@ const manifest: ModuleManifest = {
     MEDILINK_WEBHOOK_PRIVATE_KEY: z.string().default(''),
     MEDILINK_RATE_LIMIT_RPM: numEnvMin(1, 20),
     MEDILINK_API_TIMEOUT_MS: numEnv(15000),
-    MEDILINK_AVAILABILITY_CACHE_TTL_MS: numEnv(1200000),
     MEDILINK_REFERENCE_REFRESH_DAYS: numEnv(30),
     MEDILINK_DEFAULT_BRANCH_ID: z.string().default(''),
     MEDILINK_DEFAULT_DURATION_MIN: numEnvMin(5, 30),
@@ -667,11 +666,10 @@ const manifest: ModuleManifest = {
       })
 
       webhookHandler.on('cita', 'modified', async (payload) => {
-        // If appointment modified externally, cancel existing follow-ups
-        const citaId = payload.data?.id
-        if (citaId) {
-          await followUpScheduler!.cancelSequence(String(citaId))
-        }
+        const citaData = asWebhookCitaData(payload)
+        if (!citaData) return
+        // Cancel existing follow-ups on modification
+        await followUpScheduler!.cancelSequence(String(citaData.id))
       })
     }
 
