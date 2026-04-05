@@ -1,7 +1,7 @@
 import { t, tWaStatus, type Lang } from './templates-i18n.js'
 import { esc } from './templates-fields.js'
 import { renderModulePanels } from './templates-modules.js'
-import { cv, type SectionData } from './templates-sections-utils.js'
+import { cv, type SectionData } from './templates-section-data.js'
 
 const GOOGLE_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" class="google-icon" xmlns="http://www.w3.org/2000/svg">
   <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>

@@ -1,16 +1,16 @@
-// templates-sections.ts - Server-side section renderers (split by console domain)
+// templates-section-router.ts - Server-side section router and shared section renderers
 
 import { t } from './templates-i18n.js'
 import { textField, secretField } from './templates-fields.js'
 import { renderModulePanels } from './templates-modules.js'
-import { renderChannelsSection, renderWhatsappSection, renderEmailSection, renderGoogleAppsSection } from './templates-sections-channels.js'
-import { renderDashboardSection, renderEngineMetricsSection, renderIdentitySection, renderLlmUnifiedSection, renderMemorySection, renderVoiceTTSSection } from './templates-sections-agente.js'
-import { renderLeadScoringSection, renderKnowledgeItemsSection, renderScheduledTasksSection, renderToolsCardsSection } from './templates-sections-herramientas.js'
-import { renderUsersSection } from './templates-sections-contacts.js'
-import { cv, type SectionData } from './templates-sections-utils.js'
+import { renderChannelsSection, renderWhatsappSection, renderEmailSection, renderGoogleAppsSection } from './templates-section-channels.js'
+import { renderDashboardSection, renderEngineMetricsSection, renderIdentitySection, renderLlmUnifiedSection, renderMemorySection, renderVoiceTTSSection } from './templates-section-agent.js'
+import { renderLeadScoringSection, renderKnowledgeItemsSection, renderScheduledTasksSection, renderToolsCardsSection } from './templates-section-tools.js'
+import { renderUsersSection } from './templates-section-contacts.js'
+import { cv, type SectionData } from './templates-section-data.js'
 
-export type { SectionData } from './templates-sections-utils.js'
-export { renderAdvancedAgentSection, renderEngineMetricsSection } from './templates-sections-agente.js'
+export type { SectionData } from './templates-section-data.js'
+export { renderAdvancedAgentSection, renderEngineMetricsSection } from './templates-section-agent.js'
 
 export function renderModulesSection(data: SectionData): string {
   return renderModulePanels(data.moduleStates ?? [], data.config, data.lang)

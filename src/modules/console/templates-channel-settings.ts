@@ -4,7 +4,7 @@
 import type { Lang } from './templates-i18n.js'
 import { esc, renderConsoleField } from './templates-fields.js'
 import type { ModuleInfo } from './templates-modules.js'
-import type { SectionData } from './templates-sections.js'
+import type { SectionData } from './templates-section-data.js'
 import type { ConsoleField } from '../../kernel/types.js'
 
 // ── Channel display names ──
