@@ -4,9 +4,8 @@
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
-import type { ContextBundle, CompositorOutput, EngineConfig } from '../types.js'
+import type { ContextBundle, CompositorOutput, EngineConfig, LLMToolDef } from '../types.js'
 import type { AgenticConfig, AgenticResult } from './types.js'
-import type { LLMToolDef } from '../types.js'
 import { callLLM } from '../utils/llm-client.js'
 import { runAgenticLoop } from './agentic-loop.js'
 import { formatForChannel } from '../utils/message-formatter.js'
