@@ -172,7 +172,6 @@ export interface AttachmentEngineConfig {
   smallDocTokens: number
   mediumDocTokens: number
   summaryMaxTokens: number
-  cacheTtlMs: number
   urlFetchTimeoutMs: number
   urlMaxSizeMb: number
   urlEnabled: boolean

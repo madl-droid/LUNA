@@ -1,6 +1,6 @@
 // LUNA Engine — query_attachment tool
-// Allows the LLM to re-query large cached documents during Phase 3.
-// Reads from Redis cache (att:{sessionId}:{attachmentId}).
+// Allows the LLM to re-query attachment content during the agentic loop.
+// Reads from attachment_extractions table in PostgreSQL.
 
 import pino from 'pino'
 import type { Registry } from '../../../kernel/registry.js'
@@ -21,7 +21,7 @@ interface ToolRegistry {
         required?: string[]
       }
     }
-    handler: (input: Record<string, unknown>, ctx: { contactId?: string; correlationId: string; redis?: import('ioredis').Redis }) => Promise<{ success: boolean; data?: unknown; error?: string }>
+    handler: (input: Record<string, unknown>, ctx: { contactId?: string; correlationId: string }) => Promise<{ success: boolean; data?: unknown; error?: string }>
   }): Promise<void>
 }
 
@@ -92,22 +92,21 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
         return { success: false, error: 'attachment_id and query are required' }
       }
 
-      // Read from Redis cache
-      const redis = registry.getRedis()
-      if (!redis) {
-        return { success: false, error: 'Redis not available' }
+      // Read from DB (attachment_extractions table)
+      const db = registry.getDb()
+      const res = await db.query<{ extracted_text: string | null; filename: string; category: string }>(
+        'SELECT extracted_text, filename, category FROM attachment_extractions WHERE id = $1',
+        [attachmentId],
+      )
+
+      const row = res.rows[0]
+      if (!row) {
+        return { success: false, error: 'Attachment not found. It may have been deleted during session compression.' }
       }
 
-      // Try to find the cache key using the session pattern
-      const keys = await redis.keys(`att:*:${attachmentId}`)
-      if (keys.length === 0) {
-        return { success: false, error: 'Attachment not found in cache (may have expired)' }
-      }
-
-      const cacheKey = keys[0]!
-      const fullText = await redis.get(cacheKey)
+      const fullText = row.extracted_text
       if (!fullText) {
-        return { success: false, error: 'Attachment content expired from cache' }
+        return { success: false, error: `Attachment "${row.filename}" (${row.category}) was processed but has no extracted text.` }
       }
 
       // IDF-weighted search: language-agnostic, no stop word lists needed

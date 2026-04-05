@@ -18,7 +18,6 @@ import { writeFile, mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import pino from 'pino'
 import type { Pool } from 'pg'
-import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
 import type { AttachmentMeta } from '../../channels/types.js'
 import type {
@@ -114,7 +113,6 @@ export async function processAttachments(
   messageId: string,
   registry: Registry,
   db: Pool,
-  redis: Redis,
 ): Promise<AttachmentContext> {
   const result: AttachmentContext = {
     attachments: [],
@@ -166,7 +164,7 @@ export async function processAttachments(
     async (att): Promise<ProcessedAttachment> => {
       try {
         const processed = await processOneAttachment(
-          att, effectiveChannelConfig, engineConfig, sessionId, registry, redis,
+          att, effectiveChannelConfig, engineConfig, registry,
         )
         // Persist to DB immediately after this individual file is done (fire-and-forget)
         persistOneAttachment(processed, sessionId, messageId, channelName, db).catch(err =>
@@ -247,9 +245,7 @@ async function processOneAttachment(
   att: AttachmentMeta,
   channelConfig: ChannelAttachmentConfig,
   engineConfig: AttachmentEngineConfig,
-  sessionId: string,
   registry: Registry,
-  redis: Redis,
 ): Promise<ProcessedAttachment> {
   const id = randomUUID()
   const category = resolveCategory(att.mimeType)
@@ -464,18 +460,6 @@ async function processOneAttachment(
     }
   }
 
-  // Cache large documents in Redis for query_attachment tool
-  let cacheKey: string | null = null
-  if (sizeTier === 'large' || sizeTier === 'medium') {
-    cacheKey = `att:${sessionId}:${id}`
-    try {
-      await redis.set(cacheKey, rawText, 'PX', engineConfig.cacheTtlMs)
-    } catch (err) {
-      logger.warn({ err, cacheKey }, 'Failed to cache attachment in Redis')
-      cacheKey = null
-    }
-  }
-
   // Build summary for large docs (uses LLM description if available, otherwise truncate)
   let summary: string | null = null
   if (sizeTier === 'large') {
@@ -499,7 +483,7 @@ async function processOneAttachment(
     summary,
     tokenEstimate,
     sizeTier,
-    cacheKey,
+    cacheKey: null,
     status: 'processed',
     injectionRisk: validation.injectionRisk,
     sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',

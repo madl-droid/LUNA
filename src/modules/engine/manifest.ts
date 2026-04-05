@@ -31,7 +31,6 @@ interface EngineModuleConfig {
   ATTACHMENT_SMALL_DOC_TOKENS: number
   ATTACHMENT_MEDIUM_DOC_TOKENS: number
   ATTACHMENT_SUMMARY_MAX_TOKENS: number
-  ATTACHMENT_CACHE_TTL_MS: number
   ATTACHMENT_URL_ENABLED: boolean
   ATTACHMENT_URL_FETCH_TIMEOUT_MS: number
   ATTACHMENT_URL_MAX_SIZE_MB: number
@@ -90,7 +89,6 @@ const manifest: ModuleManifest = {
     ATTACHMENT_SMALL_DOC_TOKENS: numEnvMin(1000, 8000),
     ATTACHMENT_MEDIUM_DOC_TOKENS: numEnvMin(1000, 32000),
     ATTACHMENT_SUMMARY_MAX_TOKENS: numEnvMin(100, 2000),
-    ATTACHMENT_CACHE_TTL_MS: numEnvMin(60000, 3600000),
     ATTACHMENT_URL_ENABLED: boolEnv(true),
     ATTACHMENT_URL_FETCH_TIMEOUT_MS: numEnvMin(1000, 10000),
     ATTACHMENT_URL_MAX_SIZE_MB: numEnvMin(1, 5),
@@ -241,14 +239,6 @@ const manifest: ModuleManifest = {
         info: { es: 'Longitud maxima del resumen para documentos grandes', en: 'Maximum summary length for large documents' },
         min: 100,
         max: 10000,
-        width: 'half',
-      },
-      {
-        key: 'ATTACHMENT_CACHE_TTL_MS',
-        type: 'duration',
-        label: { es: 'Cache TTL', en: 'Cache TTL' },
-        info: { es: 'Tiempo que los documentos medianos/grandes permanecen en cache Redis', en: 'Time medium/large docs stay cached in Redis' },
-        unit: 'ms',
         width: 'half',
       },
       { key: '_div_att_urls', type: 'divider', label: { es: 'Extraccion de URLs', en: 'URL extraction' } },
@@ -608,7 +598,6 @@ const manifest: ModuleManifest = {
       smallDocTokens: attConfig.ATTACHMENT_SMALL_DOC_TOKENS,
       mediumDocTokens: attConfig.ATTACHMENT_MEDIUM_DOC_TOKENS,
       summaryMaxTokens: attConfig.ATTACHMENT_SUMMARY_MAX_TOKENS,
-      cacheTtlMs: attConfig.ATTACHMENT_CACHE_TTL_MS,
       urlFetchTimeoutMs: attConfig.ATTACHMENT_URL_FETCH_TIMEOUT_MS,
       urlMaxSizeMb: attConfig.ATTACHMENT_URL_MAX_SIZE_MB,
       urlEnabled: attConfig.ATTACHMENT_URL_ENABLED,

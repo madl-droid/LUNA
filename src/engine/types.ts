@@ -579,7 +579,6 @@ export interface EngineConfig {
   attachmentSmallDocTokens: number
   attachmentMediumDocTokens: number
   attachmentSummaryMaxTokens: number
-  attachmentCacheTtlMs: number
   attachmentUrlFetchTimeoutMs: number
   attachmentUrlMaxSizeMb: number
   attachmentUrlEnabled: boolean

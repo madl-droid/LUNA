@@ -198,7 +198,7 @@ export async function intake(
 
   // 11b. Launch attachment processing in parallel (now that session.id is available)
   const attachmentProcessingPromise = (config.attachmentEnabled && message.attachments?.length)
-    ? processAttachmentsInPhase1(message, config, registry, db, redis, session.id)
+    ? processAttachmentsInPhase1(message, config, registry, db, session.id)
     : Promise.resolve(null)
 
   // 11c. Detect campaign (needs session for round number)
@@ -384,7 +384,6 @@ async function processAttachmentsInPhase1(
   config: EngineConfig,
   registry: Registry,
   db: Pool,
-  redis: Redis,
   sessionId: string,
 ): Promise<import('../attachments/types.js').AttachmentContext | null> {
   if (!message.attachments?.length) return null
@@ -400,7 +399,6 @@ async function processAttachmentsInPhase1(
     smallDocTokens: config.attachmentSmallDocTokens,
     mediumDocTokens: config.attachmentMediumDocTokens,
     summaryMaxTokens: config.attachmentSummaryMaxTokens,
-    cacheTtlMs: config.attachmentCacheTtlMs,
     urlFetchTimeoutMs: config.attachmentUrlFetchTimeoutMs,
     urlMaxSizeMb: config.attachmentUrlMaxSizeMb,
     urlEnabled: config.attachmentUrlEnabled,
@@ -418,7 +416,6 @@ async function processAttachmentsInPhase1(
     message.id,
     registry,
     db,
-    redis,
   )
 
   const fallbacks = buildFallbackMessages(attachmentContext.attachments, channelAttConfig)
