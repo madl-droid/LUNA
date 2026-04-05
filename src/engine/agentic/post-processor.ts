@@ -5,8 +5,10 @@
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { ContextBundle, CompositorOutput, EngineConfig } from '../types.js'
-import type { AgenticResult } from './types.js'
+import type { AgenticConfig, AgenticResult } from './types.js'
+import type { LLMToolDef } from '../types.js'
 import { callLLM } from '../utils/llm-client.js'
+import { runAgenticLoop } from './agentic-loop.js'
 import { formatForChannel } from '../utils/message-formatter.js'
 import { validateOutput } from '../output-sanitizer.js'
 
@@ -40,6 +42,11 @@ export async function postProcess(
   ctx: ContextBundle,
   config: EngineConfig,
   registry: Registry,
+  loopContext?: {
+    systemPrompt: string
+    toolDefinitions: LLMToolDef[]
+    agenticConfig: AgenticConfig
+  },
 ): Promise<CompositorOutput> {
   // ── 6.1 Criticizer (smart mode) ──
   let responseText = agenticResult.responseText
@@ -53,7 +60,7 @@ export async function postProcess(
 
   if (shouldCriticize && responseText.length > 50) {
     try {
-      const criticized = await runCriticizer(responseText, ctx, config, registry)
+      const criticized = await runCriticizer(responseText, ctx, config, registry, loopContext)
       if (criticized) {
         responseText = criticized
         logger.debug({ traceId: ctx.traceId }, 'Criticizer improved response')
@@ -179,6 +186,11 @@ async function runCriticizer(
   ctx: ContextBundle,
   config: EngineConfig,
   registry: Registry,
+  loopContext?: {
+    systemPrompt: string
+    toolDefinitions: LLMToolDef[]
+    agenticConfig: AgenticConfig
+  },
 ): Promise<string | null> {
   // Step 1: Get feedback from reviewer
   const feedback = await getReviewFeedback(responseText, ctx, config, registry)
@@ -186,7 +198,11 @@ async function runCriticizer(
 
   logger.debug({ traceId: ctx.traceId, feedbackLength: feedback.length }, 'Criticizer has feedback — rewriting')
 
-  // Step 2: Rewrite using feedback
+  // Step 2: Re-enter agentic loop with feedback (if loop context available) or fallback to simple rewrite
+  if (loopContext) {
+    const improved = await rewriteViaLoop(responseText, feedback, ctx, config, registry, loopContext)
+    return improved
+  }
   const improved = await rewriteWithFeedback(responseText, feedback, ctx, config)
   return improved
 }
@@ -264,9 +280,75 @@ Do NOT rewrite the response — only provide your feedback.`
   return raw
 }
 
+/** Max tool-calling turns for criticizer re-entry (1 turn = 1 LLM call that can produce tool_calls) */
+const CRITICIZER_MAX_TOOL_TURNS = 2
+/** Max individual tool calls allowed during criticizer re-entry */
+const CRITICIZER_MAX_TOOL_CALLS = 2
+/** Tool name for subagent delegation */
+const RUN_SUBAGENT_TOOL_NAME = 'run_subagent'
+
 /**
- * Step 2: Rewrite the original response incorporating the reviewer's feedback.
- * Returns a clean improved response — no analysis, no preamble.
+ * Step 2 (enhanced): Re-enter the agentic loop with full context + tools.
+ * The model sees its original response + feedback and can use tools to fix content gaps.
+ * Guards: criticizerMode=disabled (no recursion), maxToolTurns=2, max 2 tool calls + 1 subagent.
+ */
+async function rewriteViaLoop(
+  originalResponse: string,
+  feedback: string,
+  ctx: ContextBundle,
+  config: EngineConfig,
+  registry: Registry,
+  loopContext: {
+    systemPrompt: string
+    toolDefinitions: LLMToolDef[]
+    agenticConfig: AgenticConfig
+  },
+): Promise<string> {
+  // Filter tools: keep up to CRITICIZER_MAX_TOOL_CALLS regular tools + 1 subagent
+  const subagentTool = loopContext.toolDefinitions.find(t => t.name === RUN_SUBAGENT_TOOL_NAME)
+  const regularTools = loopContext.toolDefinitions
+    .filter(t => t.name !== RUN_SUBAGENT_TOOL_NAME)
+    .slice(0, CRITICIZER_MAX_TOOL_CALLS)
+  const limitedTools = subagentTool ? [...regularTools, subagentTool] : regularTools
+
+  const retryConfig: AgenticConfig = {
+    ...loopContext.agenticConfig,
+    maxToolTurns: CRITICIZER_MAX_TOOL_TURNS,
+    criticizerMode: 'disabled', // ← loop guard: never re-criticize a retry
+  }
+
+  // User message: original response as assistant context + feedback as correction instruction
+  const userMessage = `Tu respuesta anterior fue:\n\n${originalResponse}\n\n---\nEl revisor de calidad encontró estos problemas:\n${feedback}\n\n---\nCorrige tu respuesta incorporando el feedback. Si necesitas consultar información usa tus herramientas. Responde SOLO con la respuesta corregida, sin explicaciones ni preámbulos.`
+
+  const result = await runAgenticLoop(
+    ctx,
+    loopContext.systemPrompt,
+    limitedTools,
+    retryConfig,
+    registry,
+    config,
+    userMessage,
+  )
+
+  const rewritten = result.responseText.trim()
+  if (rewritten.length < 10) {
+    logger.warn({ traceId: ctx.traceId }, 'Criticizer loop retry returned empty/short text — keeping original')
+    return originalResponse
+  }
+
+  logger.info({
+    traceId: ctx.traceId,
+    retryTurns: result.turns,
+    retryToolsUsed: result.toolsUsed,
+    retryTokens: result.tokensUsed,
+  }, 'Criticizer loop retry completed')
+
+  return rewritten
+}
+
+/**
+ * Step 2 (fallback): Simple rewrite without tools or context.
+ * Used when loopContext is not available (e.g., called outside the agentic delivery pipeline).
  */
 async function rewriteWithFeedback(
   originalResponse: string,
