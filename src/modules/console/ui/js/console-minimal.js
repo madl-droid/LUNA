@@ -50,7 +50,7 @@
               item.addEventListener('click', (function (val) {
                 return function () {
                   sel.value = val
-                  sel.dispatchEvent(new Event('change'))
+                  sel.dispatchEvent(new Event('change', { bubbles: true }))
                   wrap.classList.remove('open')
                   updateLabel()
                   panel.querySelectorAll('.custom-select-option').forEach(function (o) {
@@ -72,7 +72,7 @@
             item.addEventListener('click', (function (val) {
               return function () {
                 sel.value = val
-                sel.dispatchEvent(new Event('change'))
+                sel.dispatchEvent(new Event('change', { bubbles: true }))
                 wrap.classList.remove('open')
                 updateLabel()
                 // Update selected class
@@ -659,6 +659,24 @@
     if (fbModInput) fbModInput.value = model
     checkDirty()
   })
+
+  // === Business hours day chips ===
+  window.toggleBhDay = function (btn) {
+    var hidden = document.getElementById('bh-days-input')
+    if (!hidden) return
+    var day = btn.getAttribute('data-day')
+    if (day == null) return
+    var current = hidden.value
+      ? hidden.value.split(',').map(function (s) { return s.trim() }).filter(Boolean)
+      : []
+    var idx = current.indexOf(day)
+    if (idx >= 0) current.splice(idx, 1)
+    else current.push(day)
+    current.sort(function (a, b) { return parseInt(a, 10) - parseInt(b, 10) })
+    hidden.value = current.join(',')
+    btn.classList.toggle('bh-day-btn--active', idx < 0)
+    hidden.dispatchEvent(new Event('input', { bubbles: true }))
+  }
 
   // === WhatsApp polling (only on /console/whatsapp) ===
   var waInner = document.getElementById('wa-inner')

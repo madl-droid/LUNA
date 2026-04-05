@@ -261,14 +261,34 @@ export function renderGoogleAppsSection(data: SectionData): string {
       permsData['GOOGLE_PERMS_' + svc.toUpperCase()] = activePerms.join(',');
     });
 
-    var body = Object.assign({ GOOGLE_ENABLED_SERVICES: enabled.join(',') }, permsData);
+    var params = new URLSearchParams();
+    params.append('_section', 'google-apps');
+    params.append('_lang', '${data.lang}');
+    params.append('GOOGLE_ENABLED_SERVICES', enabled.join(','));
+    Object.keys(permsData).forEach(function(key) {
+      params.append(key, permsData[key]);
+    });
+
     fetch('/console/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }).then(function() {
-      if (window.showToast) window.showToast('${isEs ? 'Guardado' : 'Saved'}', 'success');
-    });
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    })
+      .then(function(r) {
+        if (!(r.ok || r.redirected)) throw new Error('save failed');
+        return fetch('/console/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: '_section=google-apps&_lang=${data.lang}'
+        });
+      })
+      .then(function(r) {
+        if (!(r.ok || r.redirected)) throw new Error('apply failed');
+        if (window.showToast) window.showToast('${isEs ? 'Guardado y aplicado' : 'Saved and applied'}', 'success');
+      })
+      .catch(function() {
+        if (window.showToast) window.showToast('Error', 'error');
+      });
   }
 })();
 </script>`
