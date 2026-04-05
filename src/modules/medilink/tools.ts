@@ -6,13 +6,19 @@
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
-import type { MedilinkApiClient } from './api-client.js'
+import { MedilinkApiError, type MedilinkApiClient } from './api-client.js'
 import type { MedilinkCache } from './cache.js'
 import type { SecurityService } from './security.js'
 import * as pgStore from './pg-store.js'
 import { WorkingMemory, ML, type AppointmentSnapshot } from './working-memory.js'
 
 const logger = pino({ name: 'medilink:tools' })
+
+/** Extract a human-readable error detail from MedilinkApiError (includes API body) or fallback to String(err) */
+function medilinkErrorDetail(err: unknown): string {
+  if (err instanceof MedilinkApiError) return String(err)
+  return String(err)
+}
 
 interface ToolRegistry {
   registerTool(reg: {
@@ -186,7 +192,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { slots: cleanSlots, fecha: date, sucursal: defaultBranch.nombre } }
       } catch (err) {
         logger.error({ err }, 'check-availability failed')
-        return { success: false, error: 'Error al consultar disponibilidad' }
+        return { success: false, error: 'Error al consultar disponibilidad: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -224,8 +230,8 @@ export async function registerMedilinkTools(
             especialidad: p.especialidad,
           })),
         }
-      } catch {
-        return { success: false, error: 'Error al listar profesionales' }
+      } catch (err) {
+        return { success: false, error: 'Error al listar profesionales: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -337,7 +343,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { found: false, reason: 'not_found' } }
       } catch (err) {
         logger.error({ err }, 'search-patient failed')
-        return { success: false, error: 'Error al buscar paciente' }
+        return { success: false, error: 'Error al buscar paciente: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -383,7 +389,7 @@ export async function registerMedilinkTools(
         return { success: true, data: security.filterPatientBasic(patient) }
       } catch (err) {
         logger.error({ err }, 'get-patient-info failed')
-        return { success: false, error: 'Error al consultar datos del paciente' }
+        return { success: false, error: 'Error al consultar datos del paciente: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -459,7 +465,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { appointments: mapped } }
       } catch (err) {
         logger.error({ err }, 'get-my-appointments failed')
-        return { success: false, error: 'Error al consultar citas' }
+        return { success: false, error: 'Error al consultar citas: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -507,7 +513,7 @@ export async function registerMedilinkTools(
         return { success: true, data: filtered }
       } catch (err) {
         logger.error({ err }, 'get-my-payments failed')
-        return { success: false, error: 'Error al consultar pagos' }
+        return { success: false, error: 'Error al consultar pagos: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -562,7 +568,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { plans: clean } }
       } catch (err) {
         logger.error({ err }, 'get-treatment-plans failed')
-        return { success: false, error: 'Error al consultar planes de tratamiento' }
+        return { success: false, error: 'Error al consultar planes de tratamiento: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -609,7 +615,7 @@ export async function registerMedilinkTools(
         }
       } catch (err) {
         logger.error({ err }, 'get-prestaciones failed')
-        return { success: false, error: 'Error al consultar prestaciones' }
+        return { success: false, error: 'Error al consultar prestaciones: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -726,7 +732,7 @@ export async function registerMedilinkTools(
         }
 
         logger.error({ err }, 'create-patient failed')
-        return { success: false, error: 'Error al registrar paciente: ' + String(err) }
+        return { success: false, error: 'Error al registrar paciente: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -915,7 +921,7 @@ export async function registerMedilinkTools(
         }
       } catch (err) {
         logger.error({ err }, 'create-appointment failed')
-        return { success: false, error: 'Error al agendar cita: ' + String(err) }
+        return { success: false, error: 'Error al agendar cita: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -1118,7 +1124,7 @@ export async function registerMedilinkTools(
         }
       } catch (err) {
         logger.error({ err }, 'reschedule-appointment failed')
-        return { success: false, error: 'Error al reagendar cita: ' + String(err) }
+        return { success: false, error: 'Error al reagendar cita: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -1274,7 +1280,7 @@ export async function registerMedilinkTools(
         }
       } catch (err) {
         logger.error({ err }, 'mark-pending-reschedule failed')
-        return { success: false, error: 'Error al marcar cita como pendiente: ' + String(err) }
+        return { success: false, error: 'Error al marcar cita como pendiente: ' + medilinkErrorDetail(err) }
       }
     },
   })
