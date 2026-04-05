@@ -194,12 +194,8 @@ const manifest: ModuleManifest = {
           en: 'Agent primary language. Affects system messages, ack messages, and response preference.',
         },
         options: [
-          { value: 'es', label: 'Español / Spanish' },
-          { value: 'en', label: 'English / Inglés' },
-          { value: 'pt', label: 'Português / Portuguese' },
-          { value: 'fr', label: 'Français / French' },
-          { value: 'de', label: 'Deutsch / German' },
-          { value: 'it', label: 'Italiano / Italian' },
+          { value: 'es', label: 'Espanol / Spanish' },
+          { value: 'en', label: 'English / Ingles' },
         ],
         width: 'half',
       },
@@ -415,7 +411,8 @@ async function syncFromConsole(registry: Registry): Promise<void> {
 // Based on Gemini TTS documentation: use natural language style descriptions for voice persona.
 
 const ACCENT_STYLE_PROMPTS: Record<string, string> = {
-  // ── Spanish accents ──
+  // Spanish accents
+  'es-CAR': `Habla en espanol caribeno neutro. Prioriza cadencia calida, musical y cercana. Usa tuteo natural. Manten la pronunciacion clara para que se entienda bien en audio y evita exagerar modismos locales; si usas uno, que sea ocasional y muy comprensible.`,
   'es-MX': `Habla con acento mexicano neutro (zona centro/Ciudad de Mexico). Entonacion melodica y amable. Tuteo natural. Pronuncia las 's' claramente. Las 'd' intervocalicas se suavizan en habla casual ("cansado" suena mas como "cansao"). Muletillas: "o sea", "bueno pues", "este...", "no?", "fijate que", "mira". Expresiones: "orale" (=genial/OK), "que onda" (=que tal), "padre/padrisimo" (=genial), "chido", "neta" (=verdad), "a poco" (=en serio?), "sale" (=OK). Tono calido y cercano, ritmo moderado.`,
   'es-AR': `Habla con acento argentino rioplatense (Buenos Aires). Usa voseo ("vos sos", "dale"). Entonacion italiana con cadencia ascendente al final de las frases. Pronuncia "ll/y" como "sh". Expresiones: "che", "barbaro", "genial". Ritmo expresivo y enfatico.`,
   'es-CO': `Habla con acento colombiano (Bogota/zona andina). Entonacion suave y melodica. Usa "usted" en contextos formales o con desconocidos, tuteo con confianza. Pronunciacion clara y pausada, todas las letras se articulan. Muletillas: "pues" (al final: "si pues", "bueno pues"), "o sea", "digamos", "listo?". Expresiones: "con mucho gusto" (respuesta a gracias), "a la orden", "parce/parcero" (=amigo informal), "bacano/chevere" (=genial), "berraco" (=impresionante o dificil), "de una" (=de inmediato). NUNCA uses "que pena" ni variantes — suena insegura; usa "disculpa" o "perdona" en su lugar. Tono muy amable y servicial, ritmo moderado-pausado.`,
@@ -438,7 +435,8 @@ const ACCENT_STYLE_PROMPTS: Record<string, string> = {
   'es-UY': `Habla con acento uruguayo. Similar al argentino con voseo. Pronuncia "ll/y" como "sh". Expresiones: "ta", "bo", "que hacemo". Tono tranquilo y amigable. Ritmo moderado.`,
   'es-GQ': `Habla con acento de Guinea Ecuatorial. Entonacion clara y formal. Pronunciacion cuidada de todas las consonantes. Tono respetuoso. Ritmo moderado.`,
 
-  // ── English accents ──
+  // English accents
+  'en-CAR': `Speak with a neutral Caribbean English accent. Keep a warm, melodic cadence and relaxed confidence. Prioritize clarity and avoid heavy dialect spelling. If you use regional expressions, keep them occasional and easy to understand.`,
   'en-US': `Speak with a standard American English accent (General American, Midwest neutral). Clear pronunciation, rhotic 'r' (pronounce all r's). Natural contractions: "gonna", "wanna", "gotta", "y'all" (informal). Fillers: "like", "you know", "I mean", "basically", "so", "right?". Expressions: "awesome", "cool", "sounds good", "for sure", "no worries", "gotcha" (=got you), "my bad" (=sorry), "heads up" (=warning). Warm and professional tone. Moderate pace with slight upward inflection on questions.`,
   'en-GB': `Speak with a British Received Pronunciation accent. Clear enunciation, measured pace. Use British expressions: "brilliant", "lovely", "cheers". Professional and polished tone.`,
   'en-AU': `Speak with an Australian English accent. Rising intonation at end of sentences. Use Australian expressions: "no worries", "mate", "reckon". Friendly and relaxed tone. Moderate pace.`,
@@ -507,7 +505,13 @@ async function generateAccentPrompt(registry: Registry): Promise<void> {
     return
   }
 
-  await configStore.set(db, 'AGENT_ACCENT_PROMPT', stylePrompt, false).catch(() => {})
+  const languageScopedPrefix = accent.startsWith('en-')
+    ? 'Apply this accent profile only when speaking or writing in English. For text, keep spelling clean and professional; do not imitate pronunciation with misspellings. For audio or live voice, prioritize cadence, intonation, pacing, and light regional flavor over slang.'
+    : 'Aplica este perfil de acento solo cuando hables o escribas en espanol. En texto, manten ortografia limpia y natural; no imites pronunciacion con errores escritos. En audio o voz en vivo, prioriza cadencia, entonacion, ritmo y un matiz regional sutil por encima del slang.'
+
+  await configStore.set(db, 'AGENT_ACCENT_PROMPT', `${languageScopedPrefix}
+
+${stylePrompt}`, false).catch(() => {})
   logger.info({ accent }, 'Accent prompt auto-generated')
 }
 

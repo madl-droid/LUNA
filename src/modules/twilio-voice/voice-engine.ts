@@ -13,6 +13,7 @@ import type {
   CallDirection,
   TranscriptEntry,
 } from './types.js'
+import { getChannelLimit } from '../../engine/prompts/channel-format.js'
 
 const logger = pino({ name: 'twilio-voice:engine' })
 
@@ -224,6 +225,10 @@ async function buildSystemInstruction(
 
   // Voice-specific instructions — load from template (Category 2)
   const svc = registry?.getOptional<PromptsService>('prompts:service') ?? null
+  const channelFormat = registry ? await getChannelLimit('voice', registry) : ''
+  if (channelFormat) {
+    parts.push(channelFormat)
+  }
   const callDirectionText = direction === 'inbound' ? 'ENTRANTE (el cliente te llama a ti)' : 'SALIENTE (t\u00fa llamas al cliente)'
   const outboundInstr = direction === 'outbound' ? 'Espera confirmaci\u00f3n de que es buen momento antes de continuar.' : ''
   let voiceInstr = svc

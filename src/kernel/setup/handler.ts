@@ -96,7 +96,11 @@ function generateUserId(): string {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^\+\d{7,15}$/
-const VALID_AGENT_LANGS = new Set(['es', 'en', 'pt', 'fr', 'de', 'it'])
+const VALID_AGENT_LANGS = new Set(['es', 'en'])
+const VALID_AGENT_ACCENTS: Record<string, Set<string>> = {
+  es: new Set(['', 'es-MX', 'es-CO', 'es-EC', 'es-PE', 'es-CL', 'es-CAR']),
+  en: new Set(['', 'en-US', 'en-CAR']),
+}
 
 function validateAdmin(form: Record<string, string>, lang: SetupLang): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -114,6 +118,14 @@ function validateAdmin(form: Record<string, string>, lang: SetupLang): Record<st
 function validateAgent(form: Record<string, string>, lang: SetupLang): Record<string, string> {
   const errors: Record<string, string> = {}
   if (!form['agent_name']?.trim()) errors['agent_name'] = st('err_agent_name_required', lang)
+  const agentLang = form['agent_language']?.trim() ?? 'es'
+  const normalizedLang = VALID_AGENT_LANGS.has(agentLang) ? agentLang : 'es'
+  const agentAccent = form['agent_accent']?.trim() ?? ''
+  if (!(VALID_AGENT_ACCENTS[normalizedLang]?.has(agentAccent) ?? false)) {
+    errors['_global'] = lang === 'es'
+      ? 'El acento seleccionado no es valido para ese idioma.'
+      : 'The selected accent is not valid for that language.'
+  }
   return errors
 }
 
@@ -286,7 +298,10 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
         state.agentTitle = form['agent_title']?.trim() ?? ''
         const agentLang = form['agent_language']?.trim() ?? 'es'
         state.agentLanguage = VALID_AGENT_LANGS.has(agentLang) ? agentLang : 'es'
-        state.agentAccent = form['agent_accent']?.trim() ?? ''
+        const requestedAccent = form['agent_accent']?.trim() ?? ''
+        state.agentAccent = VALID_AGENT_ACCENTS[state.agentLanguage]?.has(requestedAccent)
+          ? requestedAccent
+          : ''
 
         const errors = validateAgent(form, lang)
         if (Object.keys(errors).length > 0) {
