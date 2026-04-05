@@ -11,6 +11,7 @@ const logger = pino({ name: 'tts:service' })
 export interface TTSConfig {
   TTS_GOOGLE_API_KEY: string
   TTS_MODEL: string
+  TTS_DOWNGRADE_MODEL?: string
   TTS_VOICE_NAME: string
   TTS_MAX_CHARS: number
   TTS_ENABLED_CHANNELS: string
@@ -21,7 +22,7 @@ export interface TTSConfig {
   TTS_VOICE_STYLES?: boolean
   TTS_TEMPERATURE?: number
   TTS_SPEAKING_RATE?: number
-  /** Accent style prompt injected as system instruction for TTS (from AGENT_ACCENT_PROMPT) */
+  /** Accent style prompt injected as system instruction for TTS (from AGENT_TTS_STYLE_PROMPT) */
   TTS_ACCENT_STYLE?: string
   /** Voice instructions from identity config (custom speaking style) */
   TTS_VOICE_INSTRUCTIONS?: string
@@ -144,8 +145,28 @@ export class TTSService {
         requestBody.systemInstruction = { parts: [{ text: styleParts.join('\n') }] }
       }
 
-      const ttsModel = this.config.TTS_MODEL || 'gemini-2.5-flash-preview-tts'
-      const response = await fetch(`${GEMINI_TTS_API_BASE}/${ttsModel}:generateContent?key=${this.config.TTS_GOOGLE_API_KEY}`, {
+      const primaryModel = this.config.TTS_MODEL || 'gemini-2.5-flash-preview-tts'
+      let result = await this.callTTSModel(primaryModel, requestBody)
+      if (!result) {
+        const downgradeModel = this.config.TTS_DOWNGRADE_MODEL
+        if (downgradeModel && downgradeModel !== primaryModel) {
+          logger.warn({ primaryModel, downgradeModel }, 'TTS primary model failed, trying downgrade')
+          result = await this.callTTSModel(downgradeModel, requestBody)
+        }
+      }
+      if (result) {
+        logger.info({ textLength: text.length, audioBytes: result.audioBuffer.length, durationSeconds: result.durationSeconds }, 'TTS synthesis complete')
+      }
+      return result
+    } catch (err) {
+      logger.error({ err }, 'TTS synthesis failed')
+      return null
+    }
+  }
+
+  private async callTTSModel(model: string, requestBody: Record<string, unknown>): Promise<SynthesizeResult | null> {
+    try {
+      const response = await fetch(`${GEMINI_TTS_API_BASE}/${model}:generateContent?key=${this.config.TTS_GOOGLE_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -153,7 +174,7 @@ export class TTSService {
 
       if (!response.ok) {
         const errorText = await response.text()
-        logger.error({ status: response.status, body: errorText }, 'Gemini TTS API error')
+        logger.error({ status: response.status, model, body: errorText }, 'Gemini TTS API error')
         return null
       }
 
@@ -162,14 +183,13 @@ export class TTSService {
       }
       const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
       if (!base64Audio) {
-        logger.error({ data }, 'Gemini TTS: no audio data in response')
+        logger.error({ model }, 'Gemini TTS: no audio data in response')
         return null
       }
 
       const pcmBuffer = Buffer.from(base64Audio, 'base64')
       const wavBuffer = pcmToWav(pcmBuffer)
 
-      // Convert WAV → OGG/Opus via ffmpeg (required for WhatsApp voice notes)
       let audioBuffer: Buffer
       try {
         audioBuffer = await wavToOggOpus(wavBuffer)
@@ -178,14 +198,10 @@ export class TTSService {
         audioBuffer = wavBuffer
       }
 
-      // Estimate duration from PCM: 24000 samples/sec * 2 bytes/sample * 1 channel = 48000 bytes/sec
       const durationSeconds = Math.max(1, Math.round(pcmBuffer.length / 48000))
-
-      logger.info({ textLength: text.length, audioBytes: audioBuffer.length, durationSeconds }, 'TTS synthesis complete')
-
       return { audioBuffer, durationSeconds }
     } catch (err) {
-      logger.error({ err }, 'TTS synthesis failed')
+      logger.error({ err, model }, 'TTS model call failed')
       return null
     }
   }

@@ -17,7 +17,7 @@ const CATEGORIES: SidebarCategory[] = [
   { id: 'main', key: 'cat_channels' },
 ]
 
-// Fixed sections: have custom renderers in templates-sections.ts
+// Fixed sections: have custom renderers in templates-section-router.ts
 // These always appear in the sidebar regardless of module state
 interface FixedSection {
   id: string

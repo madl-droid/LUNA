@@ -1,7 +1,7 @@
 import { t } from './templates-i18n.js'
 import { esc } from './templates-fields.js'
 import { ICON_OVERRIDES } from './templates.js'
-import type { SectionData } from './templates-sections-utils.js'
+import type { SectionData } from './templates-section-data.js'
 
 export function renderLeadScoringSection(data: SectionData): string {
   if (data.leadScoringHtml) {

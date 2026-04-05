@@ -29,6 +29,7 @@ const manifest: ModuleManifest = {
   configSchema: z.object({
     TTS_ENABLED: boolEnv(true),
     TTS_MODEL: z.string().default('gemini-2.5-flash-preview-tts'),
+    TTS_DOWNGRADE_MODEL: z.string().default(''),
     TTS_VOICE_NAME: z.string().default('Kore'),
     TTS_MAX_CHARS: numEnv(4000),
     TTS_ENABLED_CHANNELS: z.string().default('whatsapp'),
@@ -90,6 +91,7 @@ const manifest: ModuleManifest = {
     const config = registry.getConfig<{
       TTS_ENABLED: boolean
       TTS_MODEL: string
+      TTS_DOWNGRADE_MODEL: string
       TTS_VOICE_NAME: string
       TTS_MAX_CHARS: number
       TTS_ENABLED_CHANNELS: string
@@ -116,7 +118,7 @@ const manifest: ModuleManifest = {
     }
 
     // Load accent style and voice instructions from config_store (set by prompts module)
-    const accentStyle = await configStore.get(pool, 'AGENT_ACCENT_PROMPT').catch(() => '') ?? ''
+    const accentStyle = await configStore.get(pool, 'AGENT_TTS_STYLE_PROMPT').catch(() => '') ?? ''
     const voiceInstructions = await configStore.get(pool, 'TTS_VOICE_INSTRUCTIONS').catch(() => '') ?? ''
 
     const ttsConfig = {
@@ -133,7 +135,7 @@ const manifest: ModuleManifest = {
       if (!service) return
       const fresh = registry.getConfig<typeof config>('tts')
       const freshApiKey = await configStore.get(pool, 'GOOGLE_AI_API_KEY').catch(() => '') ?? ''
-      const freshAccentStyle = await configStore.get(pool, 'AGENT_ACCENT_PROMPT').catch(() => '') ?? ''
+      const freshAccentStyle = await configStore.get(pool, 'AGENT_TTS_STYLE_PROMPT').catch(() => '') ?? ''
       const freshVoiceInstructions = await configStore.get(pool, 'TTS_VOICE_INSTRUCTIONS').catch(() => '') ?? ''
       service.updateConfig({
         ...fresh,
