@@ -28,6 +28,8 @@ const TASK_TEMPERATURES: Partial<Record<LLMTask, number>> = {
   web_search: 0.3,
   compress: 0.2,
   batch: 0.3,
+  tts: 0.8,
+  // knowledge: embeddings — no temperature applicable
 }
 
 const TASK_MAX_TOKENS: Partial<Record<LLMTask, number>> = {
@@ -72,7 +74,6 @@ const TASK_ALIASES: Record<string, LLMTask> = {
   'document_read': 'media',
   'image_gen': 'media',
   'ack': 'low',
-  'custom': 'main',
 
   // ── Engine: agentic loop ──
   'agentic': 'main',                    // agentic-loop.ts — main LLM loop
