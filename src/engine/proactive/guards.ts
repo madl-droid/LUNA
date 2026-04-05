@@ -5,8 +5,16 @@
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
 import pino from 'pino'
+import type { Registry } from '../../kernel/registry.js'
 import type { ProactiveConfig, ProactiveCandidate } from '../types.js'
 import { shouldSuppressProactive } from './conversation-guard.js'
+
+interface BusinessHoursConfig {
+  start: number
+  end: number
+  days: number[]
+  agentTimezone: string
+}
 
 const logger = pino({ name: 'engine:proactive:guards' })
 
@@ -28,10 +36,11 @@ export async function runGuards(
   redis: Redis,
   db: Pool,
   config: ProactiveConfig,
+  registry?: Registry,
 ): Promise<GuardResult> {
   const guards = [
     () => guardIdempotency(candidate, redis),
-    () => guardBusinessHours(candidate, config),
+    () => guardBusinessHours(candidate, config, db, registry),
     () => guardContactLock(candidate, redis),
     () => guardOutreachDedup(candidate, redis, db),
     () => guardCooldown(candidate, redis, config),
@@ -78,20 +87,110 @@ async function guardIdempotency(
 async function guardBusinessHours(
   candidate: ProactiveCandidate,
   config: ProactiveConfig,
+  db: Pool,
+  registry?: Registry,
 ): Promise<GuardResult> {
   // Email bypasses business hours
   if (candidate.channel === 'email') return PASS
 
-  const bh = config.business_hours
-  const now = getNowInTimezone(bh.timezone)
+  // Prefer engine:business-hours service (configurable from console), fallback to proactive.json
+  const bhSvc = registry?.getOptional<{ get(): BusinessHoursConfig }>('engine:business-hours')
+  const bhConfig = bhSvc?.get()
+  const start = bhConfig?.start ?? config.business_hours.start
+  const end = bhConfig?.end ?? config.business_hours.end
+  const days = bhConfig?.days ?? config.business_hours.days
+  const agentTimezone = bhConfig?.agentTimezone ?? config.business_hours.timezone
+
+  // Resolve contact timezone: prefer contact's own timezone, then phone-based country, then agent default
+  const contactTimezone = await resolveContactTimezone(db, candidate.contactId, agentTimezone)
+
+  const bh = { start, end, days, timezone: contactTimezone }
+  const now = getNowInTimezone(contactTimezone)
   const hour = now.getHours()
   const day = now.getDay() // 0=Sun, 1=Mon...
 
-  if (!bh.days.includes(day) || hour < bh.start || hour >= bh.end) {
+  if (!days.includes(day) || hour < start || hour >= end) {
     return { passed: false, blockedBy: 'business_hours', requeue: true, requeueDelayMs: msUntilNextWindow(bh) }
   }
 
   return PASS
+}
+
+/** Resolve the best timezone for a contact: contact.timezone > phone country > agent default */
+async function resolveContactTimezone(db: Pool, contactId: string, agentTimezone: string): Promise<string> {
+  try {
+    const { rows } = await db.query(
+      `SELECT timezone, phone FROM contacts WHERE id = $1`,
+      [contactId],
+    )
+    const row = rows[0] as { timezone?: string; phone?: string } | undefined
+    if (!row) return agentTimezone
+
+    // 1. Contact has explicit timezone
+    if (row.timezone) return row.timezone
+
+    // 2. Derive from phone country code
+    if (row.phone) {
+      const tz = timezoneFromPhone(row.phone)
+      if (tz) return tz
+    }
+  } catch {
+    // DB error — fall through to default
+  }
+
+  return agentTimezone
+}
+
+/** Map common phone country codes to their primary timezone */
+const PHONE_TZ: Record<string, string> = {
+  '1': 'America/New_York',       // USA/Canada (default Eastern)
+  '44': 'Europe/London',         // UK
+  '34': 'Europe/Madrid',         // Spain
+  '49': 'Europe/Berlin',         // Germany
+  '33': 'Europe/Paris',          // France
+  '39': 'Europe/Rome',           // Italy
+  '55': 'America/Sao_Paulo',     // Brazil
+  '52': 'America/Mexico_City',   // Mexico
+  '54': 'America/Argentina/Buenos_Aires', // Argentina
+  '56': 'America/Santiago',      // Chile
+  '57': 'America/Bogota',        // Colombia
+  '58': 'America/Caracas',       // Venezuela
+  '51': 'America/Lima',          // Peru
+  '593': 'America/Guayaquil',    // Ecuador
+  '591': 'America/La_Paz',       // Bolivia
+  '595': 'America/Asuncion',     // Paraguay
+  '598': 'America/Montevideo',   // Uruguay
+  '506': 'America/Costa_Rica',   // Costa Rica
+  '507': 'America/Panama',       // Panama
+  '503': 'America/El_Salvador',  // El Salvador
+  '502': 'America/Guatemala',    // Guatemala
+  '504': 'America/Tegucigalpa',  // Honduras
+  '505': 'America/Managua',      // Nicaragua
+  '809': 'America/Santo_Domingo', // Dominican Republic
+  '1787': 'America/Puerto_Rico', // Puerto Rico
+  '81': 'Asia/Tokyo',            // Japan
+  '82': 'Asia/Seoul',            // South Korea
+  '86': 'Asia/Shanghai',         // China
+  '91': 'Asia/Kolkata',          // India
+  '61': 'Australia/Sydney',      // Australia
+  '971': 'Asia/Dubai',           // UAE
+  '972': 'Asia/Jerusalem',       // Israel
+  '966': 'Asia/Riyadh',          // Saudi Arabia
+  '27': 'Africa/Johannesburg',   // South Africa
+}
+
+function timezoneFromPhone(phone: string): string | null {
+  // Normalize: remove +, spaces, dashes
+  const digits = phone.replace(/[^0-9]/g, '')
+  if (!digits) return null
+
+  // Try 4-digit, 3-digit, 2-digit, 1-digit prefix (longer match wins)
+  for (const len of [4, 3, 2, 1]) {
+    const prefix = digits.substring(0, len)
+    if (PHONE_TZ[prefix]) return PHONE_TZ[prefix]!
+  }
+
+  return null
 }
 
 // ─── 3. Contact Lock ────────────────────────
@@ -303,7 +402,7 @@ function getNowInTimezone(timezone: string): Date {
   }
 }
 
-function msUntilNextWindow(bh: ProactiveConfig['business_hours']): number {
+function msUntilNextWindow(bh: { start: number; end: number; days: number[]; timezone: string }): number {
   const now = getNowInTimezone(bh.timezone)
   const hour = now.getHours()
   const day = now.getDay()

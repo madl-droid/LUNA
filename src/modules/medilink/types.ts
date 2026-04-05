@@ -145,12 +145,15 @@ export interface MedilinkAppointmentCreate {
   hora_inicio: string
   duracion: number
   comentario?: string
+  /** Vincula con atención/plan de tratamiento existente (obligatorio si se conoce) */
+  id_atencion?: number
 }
 
 export interface MedilinkAppointmentUpdate {
   id_estado?: number
   duracion?: number
-  comentarios?: string
+  /** API PUT accepts 'comentario' (singular) — GET returns 'comentarios' (plural) */
+  comentario?: string
   fecha?: string
   hora_inicio?: string
   /** API uses 'id_dentista', not 'id_profesional' */
@@ -383,7 +386,7 @@ export type AuditAction =
   | 'view_patient' | 'view_appointments' | 'view_payments'
   | 'view_evolutions' | 'view_treatment_plans' | 'search_patient'
   | 'create_patient' | 'create_appointment'
-  | 'reschedule_appointment' | 'edit_request'
+  | 'reschedule_appointment' | 'mark_pending_reschedule' | 'edit_request'
   | 'edit_approved' | 'edit_rejected'
   | 'identity_check' | 'access_denied'
 

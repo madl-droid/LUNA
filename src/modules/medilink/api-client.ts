@@ -253,9 +253,18 @@ export class MedilinkApiClient {
   }
 
   async updateAppointment(id: number, data: MedilinkAppointmentUpdate): Promise<MedilinkAppointment> {
+    // PUT /citas requires v5 API (v1 rejects "sucursal médica" type)
+    // v5 uses id_profesional instead of id_dentista
+    const v5Body: Record<string, unknown> = { ...data as unknown as Record<string, unknown> }
+    if (v5Body.id_dentista !== undefined) {
+      v5Body.id_profesional = v5Body.id_dentista
+      delete v5Body.id_dentista
+    }
+    const v5BaseUrl = this.baseUrl.replace('/api/v1', '/api/v5')
     const res = await this.request<MedilinkAppointment>('PUT', `/citas/${id}`, {
-      body: data as unknown as Record<string, unknown>,
+      body: v5Body,
       priority: 'medium',
+      fullUrl: `${v5BaseUrl}/citas/${id}`,
     })
     return res.data
   }
@@ -437,6 +446,17 @@ export class MedilinkApiError extends Error {
     this.name = 'MedilinkApiError'
     this.status = status
     this.body = body
+  }
+
+  override toString(): string {
+    if (!this.body) return this.message
+    try {
+      const parsed = JSON.parse(this.body)
+      const detail = parsed?.error?.message ?? parsed?.message ?? this.body
+      return `${this.message} — ${detail}`
+    } catch {
+      return `${this.message} — ${this.body}`
+    }
   }
 }
 

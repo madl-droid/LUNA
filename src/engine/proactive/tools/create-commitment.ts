@@ -44,11 +44,25 @@ export async function registerCreateCommitmentTool(
   // Build enum of known commitment types from config
   const knownTypes = proactiveConfig.commitments.commitment_types.map(ct => ct.type)
 
+  // Read business hours from engine config for dynamic description
+  const bhSvc = registry.getOptional<{ get(): { start: number; end: number; days: number[] } }>('engine:business-hours')
+  const bh = bhSvc?.get()
+  const bhStart = bh?.start ?? 8
+  const bhEnd = bh?.end ?? 17
+
   await toolRegistry.registerTool({
     definition: {
       name: 'create_commitment',
       displayName: 'Crear Compromiso',
-      description: 'Create a commitment (promise to the contact). The system will track it and remind you to fulfill it.',
+      description: `Create a commitment (promise to the contact). The system will track it and remind you to fulfill it.
+
+TIMING GUIDELINES — always set due_within_hours and scheduled_at_hours based on context, not defaults:
+- If the contact said a specific time ("mañana", "el lunes", "en 2 horas"), honor it.
+- If urgency is high or the contact is waiting, use short deadlines (1-4h).
+- If it's a routine follow-up with no rush, 24-72h is appropriate.
+- Use scheduled_at_hours to delay execution to business hours (${bhStart}:00-${bhEnd}:00 local) if the commitment would fire at night or on weekends.
+- When the contact explicitly says they'll call back or needs time, set a longer due + scheduled_at to give them space.
+- The system defaults are fallbacks only — you should ALWAYS provide explicit timing when context makes it clear.`,
       category: 'internal',
       sourceModule: 'engine',
       parameters: {
@@ -62,9 +76,18 @@ export async function registerCreateCommitmentTool(
             type: 'string',
             description: 'What was promised to the contact. Be specific.',
           },
+          category: {
+            type: 'string',
+            enum: ['followup', 'email', 'quote', 'meeting', 'delivery', 'call', 'voice', 'notification', 'send_message', 'schedule_appointment', 'reschedule'],
+            description: 'Category of the commitment. Helps classify and set default deadlines.',
+          },
           due_within_hours: {
             type: 'number',
-            description: 'Hours from now until the commitment should be fulfilled. Default depends on type.',
+            description: 'Hours from now until the commitment should be fulfilled. Default depends on type. No upper limit — use your best judgment.',
+          },
+          scheduled_at_hours: {
+            type: 'number',
+            description: 'Hours from now to schedule execution. If different from due_within_hours, the commitment will not trigger proactively until this time even if due_at has passed. Useful for respecting business hours or patient preferences.',
           },
         },
         required: ['type', 'description'],
@@ -86,6 +109,8 @@ export async function registerCreateCommitmentTool(
           description: String(input.description ?? ''),
           contactId: ctx.contactId,
           dueWithinHours: typeof input.due_within_hours === 'number' ? input.due_within_hours : undefined,
+          category: input.category ? String(input.category) : undefined,
+          scheduledAtHours: typeof input.scheduled_at_hours === 'number' ? input.scheduled_at_hours : undefined,
         },
         proactiveConfig,
         'tool',

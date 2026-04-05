@@ -520,6 +520,31 @@
   box-shadow: var(--shadow-subtle);
 }
 
+/* ═══ Business hours day buttons ═══ */
+.bh-day-btn {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-low);
+  color: var(--on-surface-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 40px;
+  text-align: center;
+}
+.bh-day-btn:hover:not(.bh-day-btn--active) {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+.bh-day-btn--active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
 /* ═══ API key 2-column layout ═══ */
 .api-key-cols {
   display: grid;

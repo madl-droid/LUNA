@@ -1,18 +1,24 @@
 // LUNA — Module: medilink
 // Agent tools registration — these are the capabilities the AI agent gets
-// 11 tools: check-availability, get-professionals, search-patient, get-patient-info,
+// 12 tools: check-availability, get-professionals, search-patient, get-patient-info,
 //           get-my-appointments, get-my-payments, get-patient-treatments, get-prestaciones,
-//           create-patient, create-appointment, reschedule-appointment
+//           create-patient, create-appointment, reschedule-appointment, mark-pending-reschedule
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
-import type { MedilinkApiClient } from './api-client.js'
+import { MedilinkApiError, type MedilinkApiClient } from './api-client.js'
 import type { MedilinkCache } from './cache.js'
 import type { SecurityService } from './security.js'
 import * as pgStore from './pg-store.js'
 import { WorkingMemory, ML, type AppointmentSnapshot } from './working-memory.js'
 
 const logger = pino({ name: 'medilink:tools' })
+
+/** Extract a human-readable error detail from MedilinkApiError (includes API body) or fallback to String(err) */
+function medilinkErrorDetail(err: unknown): string {
+  if (err instanceof MedilinkApiError) return String(err)
+  return String(err)
+}
 
 interface ToolRegistry {
   registerTool(reg: {
@@ -186,7 +192,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { slots: cleanSlots, fecha: date, sucursal: defaultBranch.nombre } }
       } catch (err) {
         logger.error({ err }, 'check-availability failed')
-        return { success: false, error: 'Error al consultar disponibilidad' }
+        return { success: false, error: 'Error al consultar disponibilidad: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -224,8 +230,8 @@ export async function registerMedilinkTools(
             especialidad: p.especialidad,
           })),
         }
-      } catch {
-        return { success: false, error: 'Error al listar profesionales' }
+      } catch (err) {
+        return { success: false, error: 'Error al listar profesionales: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -337,7 +343,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { found: false, reason: 'not_found' } }
       } catch (err) {
         logger.error({ err }, 'search-patient failed')
-        return { success: false, error: 'Error al buscar paciente' }
+        return { success: false, error: 'Error al buscar paciente: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -383,7 +389,7 @@ export async function registerMedilinkTools(
         return { success: true, data: security.filterPatientBasic(patient) }
       } catch (err) {
         logger.error({ err }, 'get-patient-info failed')
-        return { success: false, error: 'Error al consultar datos del paciente' }
+        return { success: false, error: 'Error al consultar datos del paciente: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -444,6 +450,7 @@ export async function registerMedilinkTools(
           treatmentName: a.nombre_tratamiento ?? '',
           branchId: a.id_sucursal,
           branchName: a.nombre_sucursal ?? '',
+          idAtencion: a.id_atencion ?? null,
         })))
 
         await pgStore.logAudit(ctx.db, {
@@ -458,7 +465,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { appointments: mapped } }
       } catch (err) {
         logger.error({ err }, 'get-my-appointments failed')
-        return { success: false, error: 'Error al consultar citas' }
+        return { success: false, error: 'Error al consultar citas: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -506,7 +513,7 @@ export async function registerMedilinkTools(
         return { success: true, data: filtered }
       } catch (err) {
         logger.error({ err }, 'get-my-payments failed')
-        return { success: false, error: 'Error al consultar pagos' }
+        return { success: false, error: 'Error al consultar pagos: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -561,7 +568,7 @@ export async function registerMedilinkTools(
         return { success: true, data: { plans: clean } }
       } catch (err) {
         logger.error({ err }, 'get-treatment-plans failed')
-        return { success: false, error: 'Error al consultar planes de tratamiento' }
+        return { success: false, error: 'Error al consultar planes de tratamiento: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -608,7 +615,7 @@ export async function registerMedilinkTools(
         }
       } catch (err) {
         logger.error({ err }, 'get-prestaciones failed')
-        return { success: false, error: 'Error al consultar prestaciones' }
+        return { success: false, error: 'Error al consultar prestaciones: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -725,7 +732,7 @@ export async function registerMedilinkTools(
         }
 
         logger.error({ err }, 'create-patient failed')
-        return { success: false, error: 'Error al registrar paciente: ' + String(err) }
+        return { success: false, error: 'Error al registrar paciente: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -914,7 +921,7 @@ export async function registerMedilinkTools(
         }
       } catch (err) {
         logger.error({ err }, 'create-appointment failed')
-        return { success: false, error: 'Error al agendar cita: ' + String(err) }
+        return { success: false, error: 'Error al agendar cita: ' + medilinkErrorDetail(err) }
       }
     },
   })
@@ -927,7 +934,7 @@ export async function registerMedilinkTools(
     definition: {
       name: 'medilink-reschedule-appointment',
       displayName: 'Reagendar cita',
-      description: 'Reagenda una cita existente. Prefiere el mismo profesional pero permite otros con las mismas categorías habilitadas. Cancela seguimientos anteriores y crea nuevos.',
+      description: 'Reagenda una cita existente. Crea una cita nueva en la fecha/hora deseada y marca la vieja como "Reagendado por LUNA". Prefiere el mismo profesional pero permite otros con las mismas categorías.',
       category: 'medilink',
       sourceModule: 'medilink',
       parameters: {
@@ -954,7 +961,13 @@ export async function registerMedilinkTools(
       }
 
       try {
-        // Resolve appointment_id from param or working memory
+        const config = registry.getConfig<{
+          MEDILINK_DEFAULT_STATUS_ID: string
+          MEDILINK_DEFAULT_DURATION_MIN: number
+          MEDILINK_DEFAULT_BRANCH_ID: string
+        }>('medilink')
+
+        // ── 1. Resolve the original appointment ──
         let appointmentId = input.appointment_id as number | undefined
         if (!appointmentId && ctx.contactId) {
           const pending = await wmem.get<number>(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
@@ -982,13 +995,12 @@ export async function registerMedilinkTools(
           }
         }
 
-        // If changing professional, validate category compatibility
+        // ── 2. Resolve professional (allow change with category validation) ──
         let newProfId = existing.id_dentista
         if (input.new_professional_name) {
           const newProf = cache.findProfessionalByName(input.new_professional_name as string)
           if (!newProf) return { success: false, error: `No se encontró al profesional "${input.new_professional_name}"` }
 
-          // Check category compatibility with original professional
           const catAssignments = await pgStore.getProfessionalCategoryAssignments(ctx.db)
           if (catAssignments.length > 0) {
             const origCats = new Set(catAssignments.filter(a => a.medilinkProfessionalId === existing.id_dentista).map(a => a.medilinkCategoryId))
@@ -1001,24 +1013,44 @@ export async function registerMedilinkTools(
           newProfId = newProf.id
         }
 
-        // Build comentarios with reschedule context
-        const reasonStr = input.reschedule_reason ? ` Motivo: ${input.reschedule_reason}` : ''
-        const rescheduleComment = `Reagendamiento — cita original: ${existing.fecha} ${existing.hora_inicio} con ${existing.nombre_dentista}.${reasonStr}`
-        const existingComments = existing.comentarios ? `${existing.comentarios} | ` : ''
+        // ── 3. Resolve id_atencion: from existing appointment or working memory snapshot ──
+        let idAtencion: number | undefined
+        if (existing.id_atencion) {
+          idAtencion = existing.id_atencion
+        } else {
+          // Try working memory snapshot (v1 GET may not return id_atencion but snapshot may have it)
+          const snapshots = await wmem.get<AppointmentSnapshot[]>(ctx.contactId, ML.APPOINTMENTS)
+          const snap = snapshots?.find(s => s.id === existing.id)
+          if (snap?.idAtencion) idAtencion = snap.idAtencion
+        }
 
-        // Update appointment
-        const updateData: Record<string, unknown> = {
+        // ── 4. Create NEW appointment with the desired date/time ──
+        const reasonStr = input.reschedule_reason ? ` Motivo: ${input.reschedule_reason}` : ''
+        const comment = `Reagendamiento — cita original #${existing.id}: ${existing.fecha} ${existing.hora_inicio} con ${existing.nombre_dentista}.${reasonStr}`
+
+        const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10) || 7
+        const createData: import('./types.js').MedilinkAppointmentCreate = {
+          id_dentista: newProfId,
+          id_sucursal: existing.id_sucursal,
+          id_estado: statusId,
+          id_sillon: existing.id_sillon,
+          id_paciente: existing.id_paciente,
+          id_tratamiento: existing.id_tratamiento,
           fecha: input.new_date as string,
           hora_inicio: input.new_time as string,
-          comentarios: `${existingComments}${rescheduleComment}`,
+          duracion: existing.duracion,
+          comentario: comment,
         }
-        if (newProfId !== existing.id_dentista) {
-          updateData.id_dentista = newProfId
-        }
+        // Include id_atencion to link new appointment with the treatment plan
+        if (idAtencion) createData.id_atencion = idAtencion
 
-        const updated = await api.updateAppointment(existing.id, updateData as import('./types.js').MedilinkAppointmentUpdate)
+        const newAppointment = await api.createAppointment(createData)
 
-        // Cancel old follow-ups and schedule new ones
+        // ── 5. Mark OLD appointment as "Reagendado por LUNA" (id_estado=21) ──
+        const RESCHEDULE_STATUS_ID = 21
+        await api.updateAppointment(existing.id, { id_estado: RESCHEDULE_STATUS_ID })
+
+        // ── 6. Post-actions: follow-ups, cache, working memory ──
         await pgStore.cancelFollowUpsForAppointment(ctx.db, String(existing.id))
 
         const followupScheduler = registry.getOptional<{
@@ -1030,34 +1062,31 @@ export async function registerMedilinkTools(
 
         if (followupScheduler) {
           await followupScheduler.scheduleSequence({
-            appointmentId: String(updated.id),
+            appointmentId: String(newAppointment.id),
             contactId: ctx.contactId,
             appointment: {
-              fecha: updated.fecha,
-              hora_inicio: updated.hora_inicio,
-              nombre_paciente: updated.nombre_paciente,
-              nombre_profesional: updated.nombre_dentista,
-              nombre_tratamiento: updated.nombre_tratamiento,
-              nombre_sucursal: updated.nombre_sucursal,
+              fecha: newAppointment.fecha,
+              hora_inicio: newAppointment.hora_inicio,
+              nombre_paciente: newAppointment.nombre_paciente,
+              nombre_profesional: newAppointment.nombre_dentista,
+              nombre_tratamiento: newAppointment.nombre_tratamiento,
+              nombre_sucursal: newAppointment.nombre_sucursal,
             },
-          }).catch(err => logger.warn({ err, appointmentId: updated.id }, 'Failed to schedule follow-ups for rescheduled appointment'))
+          }).catch(err => logger.warn({ err, appointmentId: newAppointment.id }, 'Failed to schedule follow-ups for rescheduled appointment'))
         }
 
-        // Invalidate availability cache
         await cache.invalidateAvailability()
 
-        // Update working memory: set new appointment as pending (in case of another reschedule)
         if (ctx.contactId) {
-          await wmem.set(ctx.contactId, ML.PENDING_RESCHEDULE_ID, updated.id)
-          await wmem.set(ctx.contactId, ML.LAST_APPOINTMENT_ID, updated.id)
+          await wmem.set(ctx.contactId, ML.PENDING_RESCHEDULE_ID, newAppointment.id)
+          await wmem.set(ctx.contactId, ML.LAST_APPOINTMENT_ID, newAppointment.id)
         }
 
-        // Persist branch preference on contact
         ctx.db.query(
           `UPDATE contacts SET custom_data = custom_data || $1::jsonb, updated_at = now() WHERE id = $2`,
           [JSON.stringify({
-            medilink_preferred_branch_id: updated.id_sucursal,
-            medilink_preferred_branch_name: updated.nombre_sucursal,
+            medilink_preferred_branch_id: newAppointment.id_sucursal,
+            medilink_preferred_branch_name: newAppointment.nombre_sucursal,
           }), ctx.contactId],
         ).catch(err => logger.warn({ err }, 'Failed to persist branch preference'))
 
@@ -1066,11 +1095,13 @@ export async function registerMedilinkTools(
           medilinkPatientId: String(secCtx.medilinkPatientId),
           action: 'reschedule_appointment', targetType: 'appointment', targetId: String(existing.id),
           detail: {
+            oldAppointmentId: existing.id, newAppointmentId: newAppointment.id,
             oldDate: existing.fecha, oldTime: existing.hora_inicio,
             newDate: input.new_date, newTime: input.new_time,
             professionalChanged: newProfId !== existing.id_dentista,
+            idAtencion: idAtencion ?? null,
             rescheduleReason: input.reschedule_reason ?? null,
-            branch: updated.nombre_sucursal,
+            branch: newAppointment.nombre_sucursal,
           },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',
@@ -1079,22 +1110,180 @@ export async function registerMedilinkTools(
         return {
           success: true,
           data: {
-            id: updated.id,
-            id_atencion: updated.id_atencion ?? null,
-            fecha: updated.fecha,
-            hora: updated.hora_inicio,
-            profesional: updated.nombre_dentista,
-            sucursal: updated.nombre_sucursal,
-            comentarios: updated.comentarios,
-            mensaje: `Cita reagendada al ${updated.fecha} a las ${updated.hora_inicio} con ${updated.nombre_dentista}`,
+            id: newAppointment.id,
+            old_appointment_id: existing.id,
+            id_atencion: newAppointment.id_atencion ?? null,
+            fecha: newAppointment.fecha,
+            hora: newAppointment.hora_inicio,
+            profesional: newAppointment.nombre_dentista,
+            tratamiento: newAppointment.nombre_tratamiento,
+            sucursal: newAppointment.nombre_sucursal,
+            comentarios: newAppointment.comentarios,
+            mensaje: `Cita reagendada al ${newAppointment.fecha} a las ${newAppointment.hora_inicio} con ${newAppointment.nombre_dentista}. La cita anterior fue marcada como reagendada.`,
           },
         }
       } catch (err) {
         logger.error({ err }, 'reschedule-appointment failed')
-        return { success: false, error: 'Error al reagendar cita: ' + String(err) }
+        return { success: false, error: 'Error al reagendar cita: ' + medilinkErrorDetail(err) }
       }
     },
   })
 
-  logger.info('11 Medilink tools registered')
+  // ═══════════════════════════════════════
+  // 12. MARK PENDING RESCHEDULE
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-mark-pending-reschedule',
+      displayName: 'Marcar cita pendiente de reagendar',
+      description: 'Marca una cita como "Pendiente reagendar" cuando el paciente quiere reagendar pero no define una nueva fecha/hora. Cambia el estado de la cita y crea un compromiso automático de seguimiento en 4 días.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'number', description: 'ID de la cita (opcional — el sistema lo obtiene de la memoria de trabajo si no se especifica)' },
+          reason: { type: 'string', description: 'Motivo o contexto de por qué no se pudo definir nueva fecha. Ej: "El paciente necesita consultar su agenda", "Prefiere esperar resultados antes de reagendar"' },
+        },
+      },
+    },
+    handler: async (input, ctx) => {
+      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
+
+      let secCtx = await security.resolveContext(ctx.contactId)
+      secCtx = await security.tryAutoLink(secCtx)
+
+      const access = security.canAccess(secCtx, 'appointments')
+      if (!access.allowed) {
+        return { success: false, error: 'Necesito primero verificar los datos en el sistema' }
+      }
+
+      try {
+        // ── 1. Resolve the appointment ──
+        let appointmentId = input.appointment_id as number | undefined
+        if (!appointmentId && ctx.contactId) {
+          const pending = await wmem.get<number>(ctx.contactId, ML.PENDING_RESCHEDULE_ID)
+          if (pending) appointmentId = pending
+        }
+        if (!appointmentId) return { success: false, error: '¿Qué cita quieres marcar como pendiente?' }
+
+        const existing = await api.getAppointment(appointmentId, 'high')
+
+        // Verify ownership
+        if (!security.ownsAppointment(secCtx, existing)) {
+          await pgStore.logAudit(ctx.db, {
+            contactId: ctx.contactId,
+            action: 'mark_pending_reschedule', targetType: 'appointment',
+            targetId: String(appointmentId),
+            detail: { reason: 'not_owner' },
+            verificationLevel: secCtx.verificationLevel,
+            result: 'denied',
+          })
+          return { success: false, error: 'No puedo modificar esta cita' }
+        }
+
+        // ── 2. Mark as "Pendiente reagendar" (id_estado=16) ──
+        const PENDING_RESCHEDULE_STATUS_ID = 16
+        const reasonStr = input.reason ? String(input.reason) : 'Paciente solicitó reagendar pero no definió nueva fecha'
+        const comment = `Pendiente reagendar — ${reasonStr}. Fecha original: ${existing.fecha} ${existing.hora_inicio} con ${existing.nombre_dentista}.`
+
+        await api.updateAppointment(existing.id, {
+          id_estado: PENDING_RESCHEDULE_STATUS_ID,
+          comentario: comment,
+        })
+
+        // ── 3. Create follow-up commitment (4 days = 96 hours) ──
+        let commitmentId: string | null = null
+        const FOLLOW_UP_HOURS = 96
+
+        const memMgr = registry.getOptional<{
+          saveCommitment(c: Record<string, unknown>): Promise<string>
+        }>('memory:manager')
+
+        if (memMgr) {
+          const dueAt = new Date(Date.now() + FOLLOW_UP_HOURS * 60 * 60 * 1000)
+          const autoCancelAt = new Date(dueAt.getTime() + 168 * 60 * 60 * 1000) // +7 days after due
+          try {
+            commitmentId = await memMgr.saveCommitment({
+              contactId: ctx.contactId,
+              sessionId: null,
+              commitmentBy: 'agent',
+              description: `Seguimiento de reagendamiento — cita #${existing.id} (${existing.nombre_tratamiento} con ${existing.nombre_dentista}). Contactar al paciente para definir nueva fecha.`,
+              category: 'reschedule_follow_up',
+              priority: 'normal',
+              commitmentType: 'follow_up',
+              dueAt,
+              scheduledAt: null,
+              eventStartsAt: null,
+              eventEndsAt: null,
+              externalId: String(existing.id),
+              externalProvider: 'medilink',
+              assignedTo: null,
+              status: 'pending',
+              attemptCount: 0,
+              lastAttemptAt: null,
+              nextCheckAt: dueAt,
+              blockedReason: null,
+              waitType: null,
+              actionTaken: null,
+              parentId: null,
+              sortOrder: 0,
+              watchMetadata: null,
+              reminderSent: false,
+              requiresTool: null,
+              autoCancelAt,
+              createdVia: 'tool',
+              metadata: {
+                appointmentId: existing.id,
+                originalDate: existing.fecha,
+                originalTime: existing.hora_inicio,
+                professionalName: existing.nombre_dentista,
+                treatmentName: existing.nombre_tratamiento,
+                reason: reasonStr,
+              },
+            })
+            logger.info({ commitmentId, appointmentId: existing.id, contactId: ctx.contactId }, 'Reschedule follow-up commitment created')
+          } catch (err) {
+            logger.warn({ err, appointmentId: existing.id }, 'Failed to create reschedule follow-up commitment')
+          }
+        }
+
+        // ── 4. Audit trail ──
+        await pgStore.logAudit(ctx.db, {
+          contactId: ctx.contactId,
+          medilinkPatientId: String(secCtx.medilinkPatientId),
+          action: 'mark_pending_reschedule', targetType: 'appointment', targetId: String(existing.id),
+          detail: {
+            appointmentId: existing.id,
+            previousStatus: existing.estado_cita,
+            newStatus: 'Pendiente reagendar',
+            newStatusId: PENDING_RESCHEDULE_STATUS_ID,
+            reason: reasonStr,
+            commitmentId,
+            commitmentDueHours: FOLLOW_UP_HOURS,
+          },
+          verificationLevel: secCtx.verificationLevel,
+          result: 'success',
+        })
+
+        return {
+          success: true,
+          data: {
+            appointment_id: existing.id,
+            status: 'Pendiente reagendar',
+            reason: reasonStr,
+            follow_up_commitment_id: commitmentId,
+            follow_up_in_days: Math.round(FOLLOW_UP_HOURS / 24),
+            mensaje: `La cita del ${existing.fecha} fue marcada como pendiente de reagendar. Se creó un recordatorio automático para hacer seguimiento en ${Math.round(FOLLOW_UP_HOURS / 24)} días.`,
+          },
+        }
+      } catch (err) {
+        logger.error({ err }, 'mark-pending-reschedule failed')
+        return { success: false, error: 'Error al marcar cita como pendiente: ' + medilinkErrorDetail(err) }
+      }
+    },
+  })
+
+  logger.info('12 Medilink tools registered')
 }

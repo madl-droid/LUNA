@@ -128,6 +128,7 @@ function buildSubagentContext(
 
     // HITL — STRIP
     hitlPendingContext: null,
+    activeHitlTickets: [],
   }
 }
 
@@ -535,6 +536,9 @@ async function runSubagentLoop(
           const toolResult = await toolsRegistry.executeTool(toolCall.name, toolCall.input, {
             contactId: ctx.contactId,
             traceId: ctx.traceId,
+            channelName: ctx.message.channelName,
+            senderId: ctx.message.from,
+            sessionId: ctx.session.id,
             correlationId: ctx.traceId,
             db: registry.getDb(),
             redis: registry.getRedis(),

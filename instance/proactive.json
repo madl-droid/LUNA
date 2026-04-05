@@ -55,6 +55,36 @@
         "max_due_hours": 24,
         "requires_tool": "calendar-create-event",
         "auto_cancel_hours": 48
+      },
+      {
+        "type": "reschedule_follow_up",
+        "max_due_hours": 120,
+        "requires_tool": null,
+        "auto_cancel_hours": 240
+      },
+      {
+        "type": "send_message",
+        "max_due_hours": 4,
+        "requires_tool": null,
+        "auto_cancel_hours": 24
+      },
+      {
+        "type": "call",
+        "max_due_hours": 24,
+        "requires_tool": null,
+        "auto_cancel_hours": 48
+      },
+      {
+        "type": "schedule_appointment",
+        "max_due_hours": 48,
+        "requires_tool": "medilink-create-appointment",
+        "auto_cancel_hours": 96
+      },
+      {
+        "type": "notification",
+        "max_due_hours": 1,
+        "requires_tool": null,
+        "auto_cancel_hours": 6
       }
     ]
   },
