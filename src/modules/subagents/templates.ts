@@ -74,6 +74,9 @@ const labels: Record<Lang, Record<string, string>> = {
     systemDeleteBlocked: 'Los subagentes de sistema no se pueden eliminar.',
     googleGrounding: 'Google Search',
     googleGroundingHelp: 'Usa Google Search Grounding nativo (Gemini) para buscar información en la web.',
+    sectionExclusiveTools: 'Herramientas exclusivas',
+    exclusiveToolsHelp: 'Estas herramientas se ELIMINAN del agente principal cuando este subagente esta activo. El agente solo podra usarlas delegando via run_subagent.',
+    noExclusiveTools: 'Selecciona herramientas permitidas primero.',
   },
   en: {
     title: 'Subagents',
@@ -142,6 +145,9 @@ const labels: Record<Lang, Record<string, string>> = {
     systemDeleteBlocked: 'System subagents cannot be deleted.',
     googleGrounding: 'Google Search',
     googleGroundingHelp: 'Uses native Google Search Grounding (Gemini) to search the web for information.',
+    sectionExclusiveTools: 'Exclusive tools',
+    exclusiveToolsHelp: 'These tools are REMOVED from the main agent when this subagent is active. The agent can only use them by delegating via run_subagent.',
+    noExclusiveTools: 'Select allowed tools first.',
   },
 }
 
@@ -211,6 +217,7 @@ function renderStyles(): string {
 .sa-tool-group-header { display:flex; align-items:center; justify-content:space-between; padding:4px 0; margin-bottom:6px }
 .sa-tool-group-name { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--on-surface-dim) }
 .sa-tool-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px }
+.sa-excl-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px }
 .sa-tool-row { display:flex; align-items:center; gap:5px; padding:5px 6px; border-radius:4px; cursor:pointer; font-size:12px; color:var(--on-surface); user-select:none }
 .sa-tool-row:hover { background:var(--surface-container-high) }
 .sa-tool-row input[type=checkbox] { flex-shrink:0; margin:0; cursor:pointer; accent-color:var(--primary) }
@@ -285,7 +292,7 @@ function renderStyles(): string {
 
 @media (max-width:768px) {
   .sa-basic-cols,.sa-func-cols { grid-template-columns:1fr }
-  .sa-tool-grid { grid-template-columns:repeat(2,1fr) }
+  .sa-tool-grid,.sa-excl-grid { grid-template-columns:repeat(2,1fr) }
   .sa-metrics-grid { grid-template-columns:1fr 1fr }
   .sa-card-desc { max-width:280px }
 }
@@ -345,6 +352,30 @@ function renderToolGroups(
   return html
 }
 
+// Render exclusive tools checkboxes (flat list, only tools in allowedTools scope)
+function renderExclusiveToolRows(
+  availableTools: AvailableTool[],
+  allowedTools: string[],     // empty = all tools
+  exclusiveTools: string[],   // currently marked as exclusive
+  idPrefix: string,
+  lang: Lang,
+): string {
+  // Show only tools that this subagent is allowed to use
+  const scope = allowedTools.length === 0
+    ? availableTools
+    : availableTools.filter(t => allowedTools.includes(t.name))
+  if (scope.length === 0) return `<p class="sa-help" style="margin:0">${l('noExclusiveTools', lang)}</p>`
+
+  return `<div class="sa-excl-grid">${scope.map(tool => {
+    const checked = exclusiveTools.includes(tool.name)
+    const cbId = `${esc(idPrefix)}-excl-${tool.name.replace(/[^a-z0-9]/gi, '-')}`
+    return `<label class="sa-tool-row" for="${cbId}">
+      <input type="checkbox" class="sa-excl-cb" id="${cbId}" value="${esc(tool.name)}"${checked ? ' checked' : ''}>
+      <span class="sa-tool-name" title="${esc(tool.description)}">${esc(tool.displayName)}</span>
+    </label>`
+  }).join('')}</div>`
+}
+
 // Render category checkboxes
 function renderCatRows(
   availableCategories: AvailableCategory[],
@@ -385,6 +416,7 @@ function renderFormSections(opts: {
   const grounding = t ? t.googleSearchGrounding : false
   const systemPrompt = t ? t.systemPrompt : ''
   const allowedTools = t ? t.allowedTools : []
+  const exclusiveTools = t ? t.exclusiveTools : []
   const allowedCategories = t ? t.allowedKnowledgeCategories : []
   const hasPrompt = systemPrompt.length > 0
   const isSystem = t?.isSystem ?? false
@@ -418,6 +450,7 @@ function renderFormSections(opts: {
     </div>` : ''
 
   const toolsHtml = renderToolGroups(availableTools, allowedTools, pfx, lang)
+  const exclToolsHtml = renderExclusiveToolRows(availableTools, allowedTools, exclusiveTools, pfx, lang)
   const catsHtml = renderCatRows(availableCategories, allowedCategories, pfx, lang)
 
   return `
@@ -497,6 +530,18 @@ function renderFormSections(opts: {
           <div class="sa-collapse-body" style="display:none">
             <div class="sa-help" style="margin-bottom:10px">${l('toolsHelp', lang)}</div>
             ${toolsHtml}
+          </div>
+        </div>
+
+        <!-- Exclusive tools collapsible (closed by default) -->
+        <div class="sa-collapse">
+          <button type="button" class="sa-collapse-header" onclick="saCollapseToggle(this)">
+            <span class="sa-collapse-label">${l('sectionExclusiveTools', lang)}</span>
+            ${chevronSvg}
+          </button>
+          <div class="sa-collapse-body" style="display:none">
+            <div class="sa-help" style="margin-bottom:10px">${l('exclusiveToolsHelp', lang)}</div>
+            ${exclToolsHtml}
           </div>
         </div>
 
@@ -832,6 +877,11 @@ function renderScript(lang: Lang): string {
     return tools
   }
 
+  // Collect selected exclusive tools
+  function getSelectedExclusiveTools(container) {
+    return Array.from(container.querySelectorAll('.sa-excl-cb:checked')).map(function(cb) { return cb.value })
+  }
+
   // Collect selected categories
   function getSelectedCats(container) {
     return Array.from(container.querySelectorAll('.sa-cat-cb:checked')).map(function(cb) { return cb.value })
@@ -885,6 +935,7 @@ function renderScript(lang: Lang): string {
       if (grid) grid.style.display = 'grid'
     })
     f.querySelectorAll('.sa-tool-cb,.sa-cat-cb').forEach(function(cb) { cb.checked = true })
+    f.querySelectorAll('.sa-excl-cb').forEach(function(cb) { cb.checked = false })
     var ms = document.getElementById('sa-model-tier')
     if (ms) { ms.value = 'normal'; ms.dispatchEvent(new Event('change')) }
     f.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -914,6 +965,7 @@ function renderScript(lang: Lang): string {
         canSpawnChildren: document.getElementById('sa-can-spawn').checked,
         googleSearchGrounding: document.getElementById('sa-grounding').checked,
         allowedTools: getSelectedTools(form),
+        exclusiveTools: getSelectedExclusiveTools(form),
         allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (document.getElementById('sa-system-prompt').value || '') : '',
         sortOrder: parseInt(document.getElementById('sa-priority').value, 10) || 0,
@@ -969,6 +1021,7 @@ function renderScript(lang: Lang): string {
         canSpawnChildren: form.querySelector('.sa-if-spawn').checked,
         googleSearchGrounding: form.querySelector('.sa-if-grounding').checked,
         allowedTools: getSelectedTools(form),
+        exclusiveTools: getSelectedExclusiveTools(form),
         allowedKnowledgeCategories: getSelectedCats(form),
         systemPrompt: (promptToggle && promptToggle.checked) ? (form.querySelector('.sa-if-prompt').value || '') : '',
         sortOrder: parseInt(form.querySelector('.sa-if-priority').value, 10) || 0,

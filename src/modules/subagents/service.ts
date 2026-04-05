@@ -46,6 +46,7 @@ export function createCatalogService(db: Pool): SubagentsCatalogService {
         verifyResult: t.verifyResult,
         canSpawnChildren: t.canSpawnChildren,
         allowedTools: t.allowedTools,
+        exclusiveTools: t.exclusiveTools,
         allowedKnowledgeCategories: t.allowedKnowledgeCategories,
         systemPrompt: t.systemPrompt,
         isSystem: t.isSystem,
