@@ -100,6 +100,17 @@ export interface ChatUserInfo {
   type: 'HUMAN' | 'BOT'
 }
 
+export interface ChatAttachmentData {
+  name: string
+  contentName?: string
+  contentType: string
+  downloadUri?: string
+  driveDataRef?: { resourceId: string }
+  attachmentDataRef?: { resourceId: string; attachmentUploadToken?: string }
+  source?: string
+  thumbnailUri?: string
+}
+
 export interface ChatMessageInfo {
   name: string
   text: string
@@ -108,6 +119,7 @@ export interface ChatMessageInfo {
   createTime: string
   space: { name: string }
   argumentText?: string
+  attachment?: ChatAttachmentData[]
 }
 
 export interface ChatCardAction {

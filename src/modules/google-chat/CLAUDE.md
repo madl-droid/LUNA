@@ -45,6 +45,14 @@ Sigue el patrón estándar de canales instant (igual que WhatsApp): channel-conf
 - PROCESS_THREADS: si false, no procesa mensajes de hilos
 - threadName se almacena en map por contacto (lastThreadByContact)
 
+## Adjuntos (Attachments)
+- Adapter extrae attachments del webhook payload (`event.message.attachment[]`)
+- Soporta: `downloadUri` (uploaded content) y `driveDataRef` (Drive files)
+- Lazy loader `getData()` descarga con auth token del service account
+- Config: GOOGLE_CHAT_ATT_IMAGES (true), GOOGLE_CHAT_ATT_DOCUMENTS (true), MAX_SIZE_MB (25), MAX_PER_MSG (5)
+- Platform capabilities: images, documents (definidas en engine/attachments/types.ts)
+- Adjuntos pasan al engine via `IncomingMessage.attachments` → pipeline de extractores estándar
+
 ## Retries
 - MAX_RETRIES + RETRY_DELAY_MS con backoff lineal
 - Solo reintenta errores transitorios (5xx). 4xx no se reintenta.

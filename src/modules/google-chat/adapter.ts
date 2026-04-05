@@ -12,9 +12,11 @@ import type {
   GoogleChatConfig,
   GoogleChatState,
   ChatEvent,
+  ChatAttachmentData,
   SendResult,
   ServiceAccountKeyInfo,
 } from './types.js'
+import type { AttachmentMeta } from '../../channels/types.js'
 
 const logger = pino({ name: 'google-chat:adapter' })
 
@@ -104,6 +106,7 @@ export class GoogleChatAdapter {
     timestamp: Date
     content: { type: string; text?: string }
     threadName?: string
+    attachments?: AttachmentMeta[]
     raw: unknown
   } | null> {
     if (event.type === 'ADDED_TO_SPACE') {
@@ -194,16 +197,80 @@ export class GoogleChatAdapter {
     // Track/update space last_message_at
     await this.touchSpace(event)
 
+    // Extract attachments from webhook payload
+    const attachments = this.extractAttachments(event.message.attachment)
+
     return {
       id: event.message.name,
       channelName: 'google-chat',
       channelMessageId: event.message.name,
       from: event.user.email,
       timestamp: new Date(event.eventTime),
-      content: { type: 'text', text },
+      content: { type: text ? 'text' : (attachments.length > 0 ? 'document' : 'text'), text },
       threadName: event.message.thread?.name,
+      attachments: attachments.length > 0 ? attachments : undefined,
       raw: event,
     }
+  }
+
+  // ─── Attachment extraction ───────────────────────────
+
+  /**
+   * Extract attachments from Google Chat webhook payload.
+   * Each attachment gets a lazy loader that fetches the binary via downloadUri
+   * using the service account's auth credentials.
+   */
+  private extractAttachments(rawAttachments?: ChatAttachmentData[]): AttachmentMeta[] {
+    if (!rawAttachments || rawAttachments.length === 0) return []
+
+    return rawAttachments
+      .filter(att => att.downloadUri || att.driveDataRef)
+      .map(att => {
+        const filename = att.contentName || att.name.split('/').pop() || `attachment-${Date.now()}`
+        const mimeType = att.contentType || 'application/octet-stream'
+
+        return {
+          id: `gchat-att-${att.name}`,
+          filename,
+          mimeType,
+          size: 0, // Google Chat webhook doesn't include file size
+          getData: () => this.downloadAttachment(att),
+        }
+      })
+  }
+
+  /**
+   * Download an attachment binary using the service account's auth token.
+   * Supports downloadUri (uploaded content) and driveDataRef (Drive files).
+   */
+  private async downloadAttachment(att: ChatAttachmentData): Promise<Buffer> {
+    if (att.downloadUri) {
+      // Uploaded content — fetch with auth header
+      const client = this.auth ? await this.auth.getClient() : null
+      const headers: Record<string, string> = {}
+      if (client && 'getAccessToken' in client) {
+        const tokenRes = await (client as { getAccessToken: () => Promise<{ token?: string | null }> }).getAccessToken()
+        if (tokenRes.token) headers['Authorization'] = `Bearer ${tokenRes.token}`
+      }
+
+      const response = await fetch(att.downloadUri, { headers, signal: AbortSignal.timeout(30_000) })
+      if (!response.ok) {
+        throw new Error(`Failed to download Google Chat attachment: HTTP ${response.status}`)
+      }
+      return Buffer.from(await response.arrayBuffer())
+    }
+
+    if (att.driveDataRef) {
+      // Drive file — use the media.download endpoint via Chat API
+      if (!this.chatClient) throw new Error('Chat client not initialized')
+      const res = await this.chatClient.media.download(
+        { resourceName: att.name },
+        { responseType: 'arraybuffer' },
+      )
+      return Buffer.from(res.data as ArrayBuffer)
+    }
+
+    throw new Error(`No download method available for attachment: ${att.name}`)
   }
 
   // ─── Mention detection (same pattern as WhatsApp) ──────
