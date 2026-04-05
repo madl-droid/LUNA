@@ -29,6 +29,7 @@ interface EngineModuleConfig {
   ENGINE_CHECKPOINT_CLEANUP_DAYS: number
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
+  ENGINE_LOW_EFFORT_TOOLS: boolean
   LLM_CRITICIZER_MODE: string
   LLM_LOW_EFFORT_MODEL: string
   LLM_LOW_EFFORT_PROVIDER: string
@@ -174,6 +175,7 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
     // --- Agentic engine config (v2.0) ---
     agenticMaxTurns:         moduleConfig.ENGINE_AGENTIC_MAX_TURNS,
     effortRoutingEnabled:    moduleConfig.ENGINE_EFFORT_ROUTING,
+    lowEffortTools:          moduleConfig.ENGINE_LOW_EFFORT_TOOLS,
     lowEffortModel:          moduleConfig.LLM_LOW_EFFORT_MODEL,
     lowEffortProvider:       moduleConfig.LLM_LOW_EFFORT_PROVIDER as LLMProvider,
     mediumEffortModel:       moduleConfig.LLM_MEDIUM_EFFORT_MODEL,

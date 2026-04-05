@@ -56,6 +56,7 @@ interface EngineModuleConfig {
   // Agentic engine (v2)
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
+  ENGINE_LOW_EFFORT_TOOLS: boolean
   LLM_CRITICIZER_MODE: string
   LLM_LOW_EFFORT_MODEL: string
   LLM_LOW_EFFORT_PROVIDER: string
@@ -117,6 +118,7 @@ const manifest: ModuleManifest = {
     // Agentic engine (v2)
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
+    ENGINE_LOW_EFFORT_TOOLS: boolEnv(false),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
     LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
     LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
@@ -463,6 +465,15 @@ const manifest: ModuleManifest = {
         info: {
           es: 'Clasifica mensajes por complejidad para usar el modelo mas apropiado y optimizar costos.',
           en: 'Classifies messages by complexity to use the most appropriate model and optimize costs.',
+        },
+      },
+      {
+        key: 'ENGINE_LOW_EFFORT_TOOLS',
+        type: 'boolean',
+        label: { es: 'Tools en bajo esfuerzo', en: 'Tools in low effort' },
+        info: {
+          es: 'Si esta OFF, mensajes de bajo esfuerzo (saludos, ok, gracias) se responden sin herramientas — mas rapido y barato. Si esta ON, el modelo barato tambien puede llamar herramientas (puede fallar).',
+          en: 'If OFF, low-effort messages (greetings, ok, thanks) are answered without tools — faster and cheaper. If ON, the cheap model can also call tools (may fail).',
         },
       },
 

@@ -626,6 +626,8 @@ export interface EngineConfig {
   agenticMaxTurns: number
   /** Enable effort routing: classify complexity to route to cheaper/capable model */
   effortRoutingEnabled: boolean
+  /** Allow tools in low-effort messages (default: false — low effort = conversational only) */
+  lowEffortTools: boolean
   /** Model for low-effort messages (greetings, acks) */
   lowEffortModel: string
   lowEffortProvider: LLMProvider
