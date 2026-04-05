@@ -181,6 +181,10 @@ export async function registerMedilinkTools(
           if (defaultProfId) professionalId = defaultProfId
         }
 
+        if (!professionalId) {
+          return { success: false, error: 'No hay profesional por defecto configurado. Configura MEDILINK_DEFAULT_PROFESSIONAL_ID en la consola.' }
+        }
+
         const slots = await cache.getAvailability(branchId, date, professionalId)
         const cleanSlots = slots.map(s => ({
           fecha: s.date,
@@ -470,53 +474,7 @@ export async function registerMedilinkTools(
     },
   })
 
-  // ═══════════════════════════════════════
-  // 6. GET MY PAYMENTS
-  // ═══════════════════════════════════════
-
-  await toolRegistry.registerTool({
-    definition: {
-      name: 'medilink-get-my-payments',
-      displayName: 'Ver pagos pendientes',
-      description: 'Consulta los pagos y deudas pendientes del paciente. Con verificación básica muestra solo si tiene deudas (sí/no). Para montos requiere verificación con documento.',
-      category: 'medilink',
-      sourceModule: 'medilink',
-      parameters: { type: 'object', properties: {} },
-    },
-    handler: async (_input, ctx) => {
-      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
-
-      let secCtx = await security.resolveContext(ctx.contactId)
-      secCtx = await security.tryAutoLink(secCtx)
-
-      const access = security.canAccess(secCtx, 'payments')
-      if (!access.allowed) {
-        if (access.reason === 'Document verification required for debt details') {
-          return { success: false, error: 'No puedo compartir información de pagos sin verificar tu identidad, por seguridad' }
-        }
-        return { success: false, error: 'Necesito primero verificar los datos en el sistema' }
-      }
-
-      try {
-        const payments = await api.getPatientPayments(secCtx.medilinkPatientId!, 'high')
-        const filtered = security.filterPayments(secCtx, payments)
-
-        await pgStore.logAudit(ctx.db, {
-          contactId: ctx.contactId,
-          medilinkPatientId: String(secCtx.medilinkPatientId),
-          action: 'view_payments', targetType: 'payment',
-          detail: { hasDebts: filtered.hasDebts, detailsShown: !!filtered.details },
-          verificationLevel: secCtx.verificationLevel,
-          result: 'success',
-        })
-
-        return { success: true, data: filtered }
-      } catch (err) {
-        logger.error({ err }, 'get-my-payments failed')
-        return { success: false, error: 'Error al consultar pagos: ' + medilinkErrorDetail(err) }
-      }
-    },
-  })
+  // medilink-get-my-payments REMOVED — Medilink API does not return useful payment info
 
   // ═══════════════════════════════════════
   // 7. GET PATIENT TREATMENT PLANS
@@ -851,7 +809,8 @@ export async function registerMedilinkTools(
         })
 
         // Invalidate availability cache
-        await cache.invalidateAvailability(defaultBranch.id, prof.id)
+        // Webhook from Medilink will handle surgical cache update; invalidate as safety net
+        void cache.invalidateAllAgenda()
 
         // Store appointment ID in working memory for potential reschedule
         if (ctx.contactId) {
@@ -1075,7 +1034,8 @@ export async function registerMedilinkTools(
           }).catch(err => logger.warn({ err, appointmentId: newAppointment.id }, 'Failed to schedule follow-ups for rescheduled appointment'))
         }
 
-        await cache.invalidateAvailability()
+        // Webhook from Medilink will handle surgical cache update; invalidate as safety net
+        void cache.invalidateAllAgenda()
 
         if (ctx.contactId) {
           await wmem.set(ctx.contactId, ML.PENDING_RESCHEDULE_ID, newAppointment.id)

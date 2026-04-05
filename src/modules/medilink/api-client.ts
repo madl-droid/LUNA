@@ -326,6 +326,27 @@ export class MedilinkApiClient {
     return Array.isArray(res.data) ? res.data : []
   }
 
+  /**
+   * GET /sucursales/{branchId}/profesionales/{professionalId}/agendas
+   * Returns ALL agenda entries (booked + free + sobreagendamiento) for a specific
+   * professional at a branch. Unlike GET /agendas which only returns the 10 soonest
+   * free slots, this endpoint returns the complete picture.
+   */
+  async getProfessionalAgenda(
+    branchId: number,
+    professionalId: number,
+    date: string,
+    priority?: RequestPriority,
+  ): Promise<MedilinkAgendaItem[]> {
+    const filter: MedilinkFilter = { fecha: { eq: date } }
+    const res = await this.request<MedilinkAgendaItem[]>(
+      'GET',
+      `/sucursales/${branchId}/profesionales/${professionalId}/agendas`,
+      { filter, priority: priority ?? 'high' },
+    )
+    return Array.isArray(res.data) ? res.data : []
+  }
+
   async getPatientFiles(patientId: number, priority?: RequestPriority): Promise<MedilinkPatientArchive[]> {
     return this.fetchAll<MedilinkPatientArchive>(`/pacientes/${patientId}/archivos`, { priority: priority ?? 'medium' })
   }

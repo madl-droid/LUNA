@@ -29,6 +29,7 @@ export interface MedilinkConfig {
   // FIX: ML-1 — Public URL for voice call webhooks
   MEDILINK_PUBLIC_URL: string
   MEDILINK_ALLOWED_CHAIRS: string
+  MEDILINK_AGENDA_WARM_DAYS: number
 }
 
 // ─── API response envelope ───────────────
@@ -362,10 +363,41 @@ export type WebhookEntity =
   | 'cita' | 'paciente' | 'profesional' | 'contrato'
   | 'horario' | 'horario_bloqueado' | 'horario_especial'
 
+/** Typed webhook payload for cita events (based on real observed payloads) */
+export interface WebhookCitaData {
+  id: number
+  fecha: string
+  hora_inicio: string
+  hora_fin: string
+  duracion: number
+  id_sucursal: number
+  id_profesional: number
+  id_sillon: number
+  id_estado: number
+  estado_cita: string
+  estado_anulacion: number
+  id_paciente: number
+  nombre_paciente: string
+  nombre_profesional: string
+  nombre_sucursal: string
+  nombre_sillon: string
+  nombre_atencion?: string
+  id_atencion?: number
+  fecha_actualizacion: string
+}
+
 export interface WebhookPayload {
   action: WebhookAction
   entity: WebhookEntity
   data: { id: number } & Record<string, unknown>
+}
+
+/** Helper to extract typed cita data from webhook payload */
+export function asWebhookCitaData(payload: WebhookPayload): WebhookCitaData | null {
+  if (payload.entity !== 'cita') return null
+  const d = payload.data
+  if (typeof d.fecha !== 'string' || typeof d.id_profesional !== 'number') return null
+  return d as unknown as WebhookCitaData
 }
 
 export interface WebhookLogEntry {
