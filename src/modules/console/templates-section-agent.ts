@@ -99,6 +99,9 @@ const MODEL_SHORT: Record<string, string> = {
   'gemini-2.5-flash-preview-tts': 'Flash 2.5 TTS',
   'gemini-2.5-pro-preview-tts': 'Pro 2.5 TTS',
   'gemini-2.0-flash-preview-tts': 'Flash 2.0 TTS',
+  'gemini-3-flash-preview': 'Flash 3 Preview',
+  'gemini-3.1-pro-preview': 'Pro 3.1 Preview',
+  'claude-sonnet-4-20250514': 'Sonnet 4',
 }
 
 function mShort(id: string): string {
@@ -107,11 +110,16 @@ function mShort(id: string): string {
 
 /** Known models as fallback when scanner hasn't run yet */
 const DEFAULT_ANTHROPIC_MODELS = [
+  'claude-opus-4-6',
   'claude-opus-4-5-20251101',
+  'claude-sonnet-4-6',
   'claude-sonnet-4-5-20250929',
+  'claude-sonnet-4-20250514',
   'claude-haiku-4-5-20251001',
 ]
 const DEFAULT_GOOGLE_MODELS = [
+  'gemini-3.1-pro-preview',
+  'gemini-3-flash-preview',
   'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
@@ -271,24 +279,24 @@ function renderModelsTable(data: SectionData, lang: string): string {
     {
       titleEs: 'Conversación', titleEn: 'Conversation',
       tasks: [
-        ['MAIN',         'Principal (Sonnet)',        'Main (Sonnet)',            'anthropic', 'claude-sonnet-4-6-20260214', '',         '',                          'google',    'gemini-2.5-flash'],
-        ['COMPLEX',      'Complejo (Opus)',           'Complex (Opus)',           'anthropic', 'claude-opus-4-6-20260210',   'anthropic','claude-sonnet-4-6-20260214','google',    'gemini-2.5-pro'],
-        ['LOW',          'Bajo esfuerzo (Haiku)',     'Low effort (Haiku)',       'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash-lite'],
-        ['CRITICIZE',    'Verificador de calidad',    'Quality checker',          'google',    'gemini-2.5-pro',             'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-6-20260214'],
+        ['MAIN',         'Principal (Sonnet)',        'Main (Sonnet)',            'anthropic', 'claude-sonnet-4-6',          'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-3-flash-preview'],
+        ['COMPLEX',      'Complejo (Opus)',           'Complex (Opus)',           'anthropic', 'claude-opus-4-6',            'anthropic','claude-opus-4-5-20251101',  'google',    'gemini-3.1-pro-preview'],
+        ['LOW',          'Bajo esfuerzo (Haiku)',     'Low effort (Haiku)',       'anthropic', 'claude-haiku-4-5-20251001',  'anthropic','claude-sonnet-4-20250514',  'google',    'gemini-2.5-flash-lite'],
+        ['CRITICIZE',    'Verificador de calidad',    'Quality checker',          'google',    'gemini-3.1-pro-preview',     'google',   'gemini-3-flash-preview',    'anthropic', 'claude-opus-4-6'],
       ],
     },
     {
       titleEs: 'Multimedia y búsqueda', titleEn: 'Multimedia & search',
       tasks: [
-        ['MEDIA',        'Multimedia (visión, audio, docs)', 'Multimedia (vision, audio, docs)', 'google', 'gemini-2.5-flash', 'google', 'gemini-2.5-flash-lite', 'anthropic', 'claude-sonnet-4-6-20260214'],
-        ['WEB_SEARCH',   'Búsqueda web',              'Web search',               'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-6-20260214'],
+        ['MEDIA',        'Multimedia (visión, audio, docs)', 'Multimedia (vision, audio, docs)', 'google', 'gemini-3-flash-preview', 'google', 'gemini-2.5-flash', 'anthropic', 'claude-sonnet-4-6'],
+        ['WEB_SEARCH',   'Búsqueda web',              'Web search',               'google',    'gemini-3-flash-preview',     'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-6'],
       ],
     },
     {
       titleEs: 'Background', titleEn: 'Background',
       tasks: [
-        ['COMPRESS',     'Compresión de memoria',     'Memory compression',       'anthropic', 'claude-sonnet-4-6-20260214', '',         '',                          'google',    'gemini-2.5-flash'],
-        ['BATCH',        'Batch nocturno',            'Nightly batch',            'anthropic', 'claude-sonnet-4-6-20260214', '',         '',                          'google',    'gemini-2.5-flash'],
+        ['COMPRESS',     'Compresión de memoria',     'Memory compression',       'anthropic', 'claude-sonnet-4-6',          'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-3-flash-preview'],
+        ['BATCH',        'Batch nocturno',            'Nightly batch',            'anthropic', 'claude-sonnet-4-6',          'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-3-flash-preview'],
       ],
     },
   ]
