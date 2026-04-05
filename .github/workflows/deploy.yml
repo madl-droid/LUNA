@@ -48,6 +48,21 @@ jobs:
     needs: build-and-push
     runs-on: [self-hosted, luna]
     steps:
+      - name: Sync instance prompts from repo
+        run: |
+          REPO_PROMPTS="/docker/luna-repo/instance/prompts"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            DEST="/docker/luna-production/instance/prompts"
+          else
+            DEST="/docker/lab/instance/prompts"
+          fi
+          if [ -d "$REPO_PROMPTS" ] && [ -d "$DEST" ]; then
+            rsync -av --delete "$REPO_PROMPTS/system/skills/" "$DEST/system/skills/"
+            echo "Synced skills to $DEST/system/skills/"
+          else
+            echo "Warning: prompts directories not found, skipping sync"
+          fi
+
       - name: Deploy
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then

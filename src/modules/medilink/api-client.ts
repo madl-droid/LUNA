@@ -447,6 +447,17 @@ export class MedilinkApiError extends Error {
     this.status = status
     this.body = body
   }
+
+  override toString(): string {
+    if (!this.body) return this.message
+    try {
+      const parsed = JSON.parse(this.body)
+      const detail = parsed?.error?.message ?? parsed?.message ?? this.body
+      return `${this.message} — ${detail}`
+    } catch {
+      return `${this.message} — ${this.body}`
+    }
+  }
 }
 
 // ─── Phone normalization ─────────────────
