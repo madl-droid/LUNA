@@ -1,5 +1,5 @@
 import { t } from './templates-i18n.js'
-import { esc, textField, secretField, numField, boolField, modelDropdown } from './templates-fields.js'
+import { esc, textField, secretField, numField, boolField } from './templates-fields.js'
 import { cv, type SectionData } from './templates-sections-utils.js'
 
 export function renderLlmUnifiedSection(data: SectionData): string {

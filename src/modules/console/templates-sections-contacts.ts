@@ -1052,7 +1052,7 @@ export function renderUsersSection(data: SectionData): string {
           <span class="ch-footer-spacer"></span>
           <label class="toggle toggle-sm" onclick="event.stopPropagation()">
             <input type="checkbox" ${whEnabledCol1 ? 'checked' : ''} data-hidden="webhook_enabled_lead"
-              onchange="document.querySelector('[name=webhook_enabled_lead]').value=this.checked?'on':'';var p=document.getElementById('webhook-panel-lead');if(p){if(this.checked){p.style.display='';p.classList.remove('collapsed')}else{p.style.display='none'}}">
+              onchange="var h=document.querySelector('[name=webhook_enabled_lead]');if(h){h.value=this.checked?'on':'';h.dispatchEvent(new Event('input',{bubbles:true}))}var p=document.getElementById('webhook-panel-lead');if(p){if(this.checked){p.style.display='';p.classList.remove('collapsed')}else{p.style.display='none'}}">
             <span class="toggle-slider"></span>
           </label>
           <input type="hidden" name="webhook_enabled_lead" value="${whEnabledOrigCol1}" data-original="${whEnabledOrigCol1}">

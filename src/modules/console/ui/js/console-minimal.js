@@ -272,9 +272,10 @@
       formData.forEach(function (v, k) { body.append(k, v) })
 
       // Also collect inputs outside the form (e.g. wa-inner)
-      var allInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
-      for (var i = 0; i < allInputs.length; i++) {
-        var inp = allInputs[i]
+      var namedInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
+      var trackedInputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
+      for (var i = 0; i < namedInputs.length; i++) {
+        var inp = namedInputs[i]
         if (isInstantToggle(inp)) continue
         if (saveForm.contains(inp)) continue
         body.append(inp.name, inp.value)
@@ -282,16 +283,24 @@
 
       fetch('/console/save', { method: 'POST', body: body })
         .then(function (r) {
+          if (!(r.ok || r.redirected)) throw new Error('save failed')
+          return fetch('/console/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: '_section=' + encodeURIComponent(document.querySelector('input[name="_section"]') ? document.querySelector('input[name="_section"]').value : '')
+              + '&_lang=' + encodeURIComponent(document.querySelector('input[name="_lang"]') ? document.querySelector('input[name="_lang"]').value : 'es'),
+          })
+        })
+        .then(function (r) {
           if (r.ok || r.redirected) {
-            showToast(document.documentElement.lang === 'es' ? 'Guardado' : 'Saved', 'success')
-            // Update data-original so fields are no longer dirty
-            allInputs.forEach(function (inp) {
+            showToast(document.documentElement.lang === 'es' ? 'Guardado y aplicado' : 'Saved and applied', 'success')
+            // Update data-original so fields are no longer dirty, including visual custom controls
+            trackedInputs.forEach(function (inp) {
               if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) return
               inp.setAttribute('data-original', inp.value)
               inp.classList.remove('modified')
             })
-            // Switch to "saved" phase → show Aplicar
-            setSaveBarPhase('saved')
+            setSaveBarPhase('hidden')
           } else {
             showToast('Error', 'error')
           }
