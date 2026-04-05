@@ -630,81 +630,23 @@ export function renderIdentitySection(data: SectionData): string {
   // Each language maps to countries where it's an official language
   const ACCENT_MAP: Record<string, Array<{ code: string; country: string }>> = {
     es: [
-      { code: 'es-AR', country: 'Argentina' },
-      { code: 'es-BO', country: 'Bolivia' },
       { code: 'es-CL', country: 'Chile' },
       { code: 'es-CO', country: 'Colombia' },
-      { code: 'es-CR', country: 'Costa Rica' },
-      { code: 'es-CU', country: 'Cuba' },
-      { code: 'es-DO', country: isEs ? 'Republica Dominicana' : 'Dominican Republic' },
+      { code: 'es-CAR', country: isEs ? 'Caribe' : 'Caribbean' },
       { code: 'es-EC', country: 'Ecuador' },
-      { code: 'es-SV', country: 'El Salvador' },
-      { code: 'es-GQ', country: isEs ? 'Guinea Ecuatorial' : 'Equatorial Guinea' },
-      { code: 'es-GT', country: 'Guatemala' },
-      { code: 'es-HN', country: 'Honduras' },
       { code: 'es-MX', country: isEs ? 'Mexico' : 'Mexico' },
-      { code: 'es-NI', country: 'Nicaragua' },
-      { code: 'es-PA', country: isEs ? 'Panama' : 'Panama' },
-      { code: 'es-PY', country: 'Paraguay' },
       { code: 'es-PE', country: isEs ? 'Peru' : 'Peru' },
-      { code: 'es-PR', country: 'Puerto Rico' },
-      { code: 'es-ES', country: isEs ? 'Espana' : 'Spain' },
-      { code: 'es-UY', country: 'Uruguay' },
-      { code: 'es-VE', country: 'Venezuela' },
     ],
     en: [
-      { code: 'en-AU', country: 'Australia' },
-      { code: 'en-CA', country: isEs ? 'Canada' : 'Canada' },
-      { code: 'en-GH', country: 'Ghana' },
-      { code: 'en-IN', country: 'India' },
-      { code: 'en-IE', country: isEs ? 'Irlanda' : 'Ireland' },
-      { code: 'en-JM', country: 'Jamaica' },
-      { code: 'en-KE', country: 'Kenya' },
-      { code: 'en-NZ', country: isEs ? 'Nueva Zelanda' : 'New Zealand' },
-      { code: 'en-NG', country: 'Nigeria' },
-      { code: 'en-PH', country: isEs ? 'Filipinas' : 'Philippines' },
-      { code: 'en-SG', country: isEs ? 'Singapur' : 'Singapore' },
-      { code: 'en-ZA', country: isEs ? 'Sudafrica' : 'South Africa' },
-      { code: 'en-GB', country: isEs ? 'Reino Unido' : 'United Kingdom' },
+      { code: 'en-CAR', country: isEs ? 'Caribe' : 'Caribbean' },
       { code: 'en-US', country: isEs ? 'Estados Unidos' : 'United States' },
-    ],
-    pt: [
-      { code: 'pt-AO', country: 'Angola' },
-      { code: 'pt-BR', country: isEs ? 'Brasil' : 'Brazil' },
-      { code: 'pt-CV', country: isEs ? 'Cabo Verde' : 'Cape Verde' },
-      { code: 'pt-MZ', country: isEs ? 'Mozambique' : 'Mozambique' },
-      { code: 'pt-PT', country: 'Portugal' },
-    ],
-    fr: [
-      { code: 'fr-BE', country: isEs ? 'Belgica' : 'Belgium' },
-      { code: 'fr-CM', country: isEs ? 'Camerun' : 'Cameroon' },
-      { code: 'fr-CA', country: isEs ? 'Canada (Quebec)' : 'Canada (Quebec)' },
-      { code: 'fr-CD', country: isEs ? 'Congo (RDC)' : 'Congo (DRC)' },
-      { code: 'fr-CI', country: isEs ? 'Costa de Marfil' : 'Ivory Coast' },
-      { code: 'fr-FR', country: isEs ? 'Francia' : 'France' },
-      { code: 'fr-HT', country: isEs ? 'Haiti' : 'Haiti' },
-      { code: 'fr-SN', country: 'Senegal' },
-      { code: 'fr-CH', country: isEs ? 'Suiza' : 'Switzerland' },
-    ],
-    de: [
-      { code: 'de-AT', country: 'Austria' },
-      { code: 'de-DE', country: isEs ? 'Alemania' : 'Germany' },
-      { code: 'de-LI', country: 'Liechtenstein' },
-      { code: 'de-LU', country: isEs ? 'Luxemburgo' : 'Luxembourg' },
-      { code: 'de-CH', country: isEs ? 'Suiza' : 'Switzerland' },
-    ],
-    it: [
-      { code: 'it-IT', country: isEs ? 'Italia' : 'Italy' },
-      { code: 'it-CH', country: isEs ? 'Suiza' : 'Switzerland' },
-      { code: 'it-SM', country: 'San Marino' },
     ],
   }
 
   // Language options
   const langOptions = [
-    { value: 'es', label: 'Español' }, { value: 'en', label: 'English' },
-    { value: 'pt', label: 'Português' }, { value: 'fr', label: 'Français' },
-    { value: 'de', label: 'Deutsch' }, { value: 'it', label: 'Italiano' },
+    { value: 'es', label: 'Espa\u00f1ol' },
+    { value: 'en', label: 'English' },
   ]
 
   // Slot mapping for prompt API
@@ -848,26 +790,14 @@ export function renderIdentitySection(data: SectionData): string {
 
     // IANA timezone by accent code
     var CODE_TZ = {
-      'es-AR':'America/Argentina/Buenos_Aires','es-BO':'America/La_Paz','es-CL':'America/Santiago',
-      'es-CO':'America/Bogota','es-CR':'America/Costa_Rica','es-CU':'America/Havana',
-      'es-DO':'America/Santo_Domingo','es-EC':'America/Guayaquil','es-SV':'America/El_Salvador',
-      'es-GQ':'Africa/Malabo','es-GT':'America/Guatemala','es-HN':'America/Tegucigalpa',
-      'es-MX':'America/Mexico_City','es-NI':'America/Managua','es-PA':'America/Panama',
-      'es-PY':'America/Asuncion','es-PE':'America/Lima','es-PR':'America/Puerto_Rico',
-      'es-ES':'Europe/Madrid','es-UY':'America/Montevideo','es-VE':'America/Caracas',
-      'en-AU':'Australia/Sydney','en-CA':'America/Toronto','en-GH':'Africa/Accra',
-      'en-IN':'Asia/Kolkata','en-IE':'Europe/Dublin','en-JM':'America/Jamaica',
-      'en-KE':'Africa/Nairobi','en-NZ':'Pacific/Auckland','en-NG':'Africa/Lagos',
-      'en-PH':'Asia/Manila','en-SG':'Asia/Singapore','en-ZA':'Africa/Johannesburg',
-      'en-GB':'Europe/London','en-US':'America/New_York',
-      'pt-AO':'Africa/Luanda','pt-BR':'America/Sao_Paulo','pt-CV':'Atlantic/Cape_Verde',
-      'pt-MZ':'Africa/Maputo','pt-PT':'Europe/Lisbon',
-      'fr-BE':'Europe/Brussels','fr-CM':'Africa/Douala','fr-CA':'America/Toronto',
-      'fr-CD':'Africa/Kinshasa','fr-CI':'Africa/Abidjan','fr-FR':'Europe/Paris',
-      'fr-HT':'America/Port-au-Prince','fr-SN':'Africa/Dakar','fr-CH':'Europe/Zurich',
-      'de-AT':'Europe/Vienna','de-DE':'Europe/Berlin','de-LI':'Europe/Vaduz',
-      'de-LU':'Europe/Luxembourg','de-CH':'Europe/Zurich',
-      'it-IT':'Europe/Rome','it-CH':'Europe/Zurich','it-SM':'Europe/San_Marino'
+      'es-CL':'America/Santiago',
+      'es-CO':'America/Bogota',
+      'es-CAR':'America/Santo_Domingo',
+      'es-EC':'America/Guayaquil',
+      'es-MX':'America/Mexico_City',
+      'es-PE':'America/Lima',
+      'en-CAR':'America/Port_of_Spain',
+      'en-US':'America/New_York'
     };
 
     function getTzForCountry(country, lang) {
