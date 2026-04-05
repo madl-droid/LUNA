@@ -15,6 +15,7 @@ output-sanitizer.ts   — sanitización de salida compartida (pre-TTS y pre-deli
 agentic/
   types.ts            — AgenticConfig, AgenticResult, EffortLevel (normal|complex), ToolCallLog, LoopDetectorResult
   effort-router.ts    — clasificador de complejidad determinístico (2 niveles: normal/complex, sin LLM, <5ms)
+  email-triage.ts     — clasificador pre-agentic para email (RESPOND/OBSERVE/IGNORE, determinístico, <5ms)
   tool-dedup-cache.ts — caché de dedup per-pipeline para tool calls idénticos
   tool-loop-detector.ts — anti-loop: generic repeat, no-progress, ping-pong detection
   agentic-loop.ts     — THE CORE: LLM + tool calling loop (reemplaza Phases 2+3+4)
@@ -161,7 +162,8 @@ Configurable desde consola y .env. Persiste al reinicio.
 1. Semaphore acquire → Contact lock → `processMessageInner()`
 2. Phase 1: normalize, user type via `users:resolve`, classify attachments (metadata only) → ContextBundle v4
 3. Test mode gate: si testMode && !admin → return silencioso
-4. Agentic loop: effort router → system prompt → while(tool_calls) { execute tools } → post-process → CompositorOutput
+4. Email triage gate: si channelName='email' y triage enabled → classifyEmailTriage() → RESPOND/OBSERVE/IGNORE. OBSERVE persiste en DB sin LLM. IGNORE descarta.
+5. Agentic loop: effort router → system prompt → while(tool_calls) { execute tools } → post-process → CompositorOutput
 5. Phase 5: validate, send (pre-formatted), persist, proactive signals
 
 ## Adjuntos (procesamiento en Phase 1)

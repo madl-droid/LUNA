@@ -20,6 +20,8 @@ import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
 // --- Agentic imports (v2.0) ---
 import { runAgenticDelivery } from './agentic/index.js'
+import { classifyEmailTriage } from './agentic/email-triage.js'
+import type { EmailTriageRule } from '../modules/gmail/types.js'
 
 const logger = pino({ name: 'engine' })
 
@@ -280,6 +282,44 @@ async function processMessageInner(
       }
     }
 
+    // ═══ EMAIL TRIAGE GATE ═══
+    // Deterministic pre-filter for email channel. Decides RESPOND/OBSERVE/IGNORE before LLM.
+    if (ctx.message.channelName === 'email') {
+      const triageConfig = registry.getOptional<{
+        getTriageConfig(): { enabled: boolean; rules: EmailTriageRule[]; ownAddress: string }
+      }>('gmail:triage-config')
+      if (triageConfig) {
+        const { enabled, rules, ownAddress } = triageConfig.getTriageConfig()
+        if (enabled) {
+          const triage = classifyEmailTriage(ctx, rules, ownAddress)
+          if (triage.decision !== 'respond') {
+            logger.info({ traceId, decision: triage.decision, reason: triage.reason, from: message.from }, 'Email triage — skipping pipeline')
+
+            if (triage.decision === 'observe') {
+              await persistObservedMessage(ctx, db)
+            }
+
+            // Mark as read
+            registry.runHook('channel:read', {
+              channel: message.channelName,
+              to: signalTo,
+              messageKeys,
+              correlationId: traceId,
+            }).catch(() => {})
+
+            return {
+              traceId,
+              success: true,
+              skipped: `triage:${triage.decision}:${triage.reason}`,
+              intakeDurationMs,
+              deliveryDurationMs: 0,
+              totalDurationMs: Date.now() - totalStart,
+            }
+          }
+        }
+      }
+    }
+
     // ═══ SIGNAL: READ (mark as read) — before agentic loop ═══
     registry.runHook('channel:read', {
       channel: message.channelName,
@@ -338,6 +378,50 @@ async function processMessageInner(
       totalDurationMs,
       error: String(err),
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Email triage — OBSERVE persistence
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Persist an incoming message to memory without generating an LLM response.
+ * Used by the OBSERVE triage path to keep context for future conversations.
+ */
+async function persistObservedMessage(
+  ctx: ContextBundle,
+  db: import('pg').Pool,
+): Promise<void> {
+  try {
+    const memoryManager = registry.getOptional<{
+      saveMessage(m: import('../modules/memory/types.js').StoredMessage): Promise<void>
+    }>('memory:manager')
+
+    const msg = {
+      id: ctx.message.id,
+      sessionId: ctx.session.id,
+      channelName: ctx.message.channelName,
+      senderType: 'user' as const,
+      senderId: ctx.message.from,
+      content: { type: ctx.messageType, text: ctx.normalizedText },
+      role: 'user' as const,
+      contentText: ctx.normalizedText,
+      contentType: (ctx.messageType ?? 'text') as 'text',
+      createdAt: ctx.message.timestamp,
+    }
+
+    if (memoryManager) {
+      await memoryManager.saveMessage(msg)
+    } else {
+      await db.query(
+        `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
+        [msg.id, msg.sessionId, msg.channelName, 'user', msg.senderId, JSON.stringify(msg.content), msg.createdAt],
+      )
+    }
+  } catch (err) {
+    logger.warn({ err, traceId: ctx.traceId }, 'Failed to persist observed email message')
   }
 }
 

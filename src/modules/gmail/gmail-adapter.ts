@@ -179,6 +179,12 @@ export class GmailAdapter {
     const inReplyTo = getHeader('In-Reply-To') || null
     const references = getHeader('References').split(/\s+/).filter(Boolean)
 
+    // Build raw headers map (lowercased keys) for triage classification
+    const rawHeaders: Record<string, string> = {}
+    for (const h of headers) {
+      if (h.name && h.value) rawHeaders[h.name.toLowerCase()] = h.value
+    }
+
     return {
       id: data.id ?? messageId,
       threadId: data.threadId ?? '',
@@ -199,6 +205,7 @@ export class GmailAdapter {
       references,
       isReply: !!inReplyTo,
       hasListUnsubscribe: !!getHeader('List-Unsubscribe'),
+      rawHeaders,
     }
   }
 

@@ -80,6 +80,19 @@ export interface AgenticResult {
 /**
  * Loop detector action. Graduated response to repetitive tool calls.
  */
+// ── Email Triage ──
+
+/** Pre-agentic triage decision for email channel. Deterministic, <5ms. */
+export type TriageDecision = 'respond' | 'observe' | 'ignore'
+
+export interface TriageResult {
+  decision: TriageDecision
+  /** Log-friendly reason (e.g. 'auto-reply-header', 'cc-only', 'rule:my-rule') */
+  reason: string
+}
+
+// ── Loop Detector ──
+
 export type LoopAction = 'allow' | 'warn' | 'block' | 'circuit_break'
 
 /**

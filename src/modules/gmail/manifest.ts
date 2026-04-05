@@ -26,6 +26,8 @@ let standaloneOAuth: EmailOAuthManager | null = null
 let usingStandaloneAuth = false
 let lunaLabels: LunaLabelIds = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
 let resolvedCustomLabels: ResolvedCustomLabel[] = []
+let parsedTriageRules: import('./types.js').EmailTriageRule[] = []
+let detectedOwnAddress = ''
 let rateLimiter: EmailRateLimiter | null = null
 
 /** Parse custom labels from config JSON string */
@@ -37,6 +39,22 @@ function parseCustomLabels(json: string): CustomLabel[] {
       const obj = item as Record<string, unknown>
       return typeof obj?.name === 'string' && obj.name.trim() && typeof obj?.instruction === 'string'
     }) as CustomLabel[]
+  } catch {
+    return []
+  }
+}
+
+/** Parse triage rules from config JSON string */
+function parseTriageRules(json: string): import('./types.js').EmailTriageRule[] {
+  try {
+    const arr = JSON.parse(json)
+    if (!Array.isArray(arr)) return []
+    return arr.filter((item: unknown) => {
+      const obj = item as Record<string, unknown>
+      return typeof obj?.name === 'string' && obj.name.trim()
+        && typeof obj?.action === 'string'
+        && typeof obj?.conditions === 'object' && obj.conditions !== null
+    }) as import('./types.js').EmailTriageRule[]
   } catch {
     return []
   }
@@ -800,6 +818,10 @@ const manifest: ModuleManifest = {
     // Firma de email
     EMAIL_SIGNATURE_MODE: z.string().default('gmail'),    // gmail | custom | auto
     EMAIL_SIGNATURE_TEXT: z.string().default(''),          // only used if mode = 'custom'
+    // Triage — pre-agentic classification
+    EMAIL_TRIAGE_ENABLED: boolEnv(true),
+    EMAIL_TRIAGE_RULES: z.string().default('[]'),       // JSON array of EmailTriageRule
+    EMAIL_TRIAGE_OWN_ADDRESS: z.string().default(''),   // agent's email (auto-detected if empty)
     // Attachment processing — which file types to process on email channel
     // Email supports all categories
     EMAIL_ATT_IMAGES: boolEnv(true),
@@ -1006,6 +1028,38 @@ const manifest: ModuleManifest = {
         width: 'half',
         label: { es: 'Limite por dia (custom)', en: 'Daily limit (custom)' },
         info: { es: 'Sobreescribe el limite diario. 0 = usar default del tipo de cuenta.', en: 'Override daily limit. 0 = use account type default.' },
+      },
+      // ── Triage (pre-procesamiento) ──
+      { key: '_divider_triage', type: 'divider', label: { es: 'Triage (pre-procesamiento)', en: 'Triage (pre-processing)' } },
+      {
+        key: 'EMAIL_TRIAGE_ENABLED',
+        type: 'boolean',
+        label: { es: 'Activar triage de emails', en: 'Enable email triage' },
+        description: {
+          es: 'Clasifica emails antes del pipeline: RESPOND (responder), OBSERVE (guardar sin responder), IGNORE (descartar). Filtra auto-replies, DSN, CC-only, etc.',
+          en: 'Classify emails before pipeline: RESPOND, OBSERVE (save without replying), IGNORE (discard). Filters auto-replies, DSN, CC-only, etc.',
+        },
+      },
+      {
+        key: 'EMAIL_TRIAGE_OWN_ADDRESS',
+        type: 'text',
+        label: { es: 'Direccion email del agente', en: 'Agent email address' },
+        info: {
+          es: 'Direccion de email del agente para detectar CC-only. Se auto-detecta del perfil OAuth si se deja vacio.',
+          en: 'Agent email address for CC-only detection. Auto-detected from OAuth profile if empty.',
+        },
+        placeholder: 'agente@empresa.com',
+      },
+      {
+        key: 'EMAIL_TRIAGE_RULES',
+        type: 'textarea',
+        rows: 8,
+        label: { es: 'Reglas de triage personalizadas (JSON)', en: 'Custom triage rules (JSON)' },
+        info: {
+          es: 'Array JSON de reglas. Cada regla: name, enabled, action (respond/observe/ignore), conditions (from, subject, to_cc, has_header, body — regex, AND logic). Se evaluan antes de las reglas built-in. Ejemplo: [{"name":"github","enabled":true,"action":"observe","conditions":{"from":".*@github\\\\.com"}}]',
+          en: 'JSON array of rules. Each: name, enabled, action (respond/observe/ignore), conditions (from, subject, to_cc, has_header, body — regex, AND logic). Evaluated before built-in rules. Example: [{"name":"github","enabled":true,"action":"observe","conditions":{"from":".*@github\\\\.com"}}]',
+        },
+        placeholder: '[{"name":"github","enabled":true,"action":"observe","conditions":{"from":".*@github\\\\.com"}}]',
       },
       // ── Etiquetas personalizadas ──
       { key: '_divider_labels', type: 'divider', label: { es: 'Etiquetas personalizadas', en: 'Custom labels' } },
@@ -1288,6 +1342,27 @@ const manifest: ModuleManifest = {
     // Expose label accessor so engine/tools can read custom label instructions
     registry.provide('gmail:label-instructions', () => resolvedCustomLabels)
 
+    // ── Triage Config Service (engine reads this for pre-agentic classification) ──
+    parsedTriageRules = parseTriageRules(config.EMAIL_TRIAGE_RULES)
+    // Auto-detect own address from OAuth profile if not configured
+    if (!config.EMAIL_TRIAGE_OWN_ADDRESS) {
+      try {
+        if (standaloneOAuth) {
+          detectedOwnAddress = standaloneOAuth.getState().email ?? ''
+        } else {
+          const googleApps = registry.getOptional<{ getProfile?(): { email?: string } }>('google-apps:provider')
+          detectedOwnAddress = googleApps?.getProfile?.()?.email ?? ''
+        }
+      } catch { /* ignore — will use empty string */ }
+    }
+    registry.provide('gmail:triage-config', {
+      getTriageConfig: () => ({
+        enabled: config.EMAIL_TRIAGE_ENABLED,
+        rules: parsedTriageRules,
+        ownAddress: config.EMAIL_TRIAGE_OWN_ADDRESS || detectedOwnAddress,
+      }),
+    })
+
     // ── Channel Config Service (standard pattern — engine reads this) ──
     registry.provide('channel-config:email', {
       get: (): import('../../channels/types.js').ChannelRuntimeConfig => {
@@ -1494,6 +1569,8 @@ const manifest: ModuleManifest = {
           perDay: fresh.EMAIL_RATE_LIMIT_PER_DAY || undefined,
         })
       }
+      // Update triage rules from fresh config
+      parsedTriageRules = parseTriageRules(fresh.EMAIL_TRIAGE_RULES)
       logger.info('Gmail config hot-reloaded')
     })
 
