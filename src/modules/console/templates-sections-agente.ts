@@ -457,6 +457,9 @@ export function renderAdvancedAgentSection(data: SectionData): string {
       ${boolField('ENGINE_EFFORT_ROUTING', cv(data, 'ENGINE_EFFORT_ROUTING') || 'true', data.lang,
         isEs ? 'Enrutamiento por esfuerzo' : 'Effort routing',
         isEs ? 'Clasifica mensajes por complejidad para usar el modelo mas apropiado y optimizar costos.' : 'Classifies messages by complexity to use the most appropriate model and optimize costs.')}
+      ${boolField('ENGINE_LOW_EFFORT_TOOLS', cv(data, 'ENGINE_LOW_EFFORT_TOOLS') || 'false', data.lang,
+        isEs ? 'Herramientas en bajo esfuerzo' : 'Tools in low effort',
+        isEs ? 'OFF = mensajes simples (saludos, ok, gracias) se responden sin herramientas — mas rapido y barato. ON = el modelo barato tambien intenta usar herramientas (puede fallar).' : 'OFF = simple messages (greetings, ok, thanks) answered without tools — faster and cheaper. ON = cheap model also attempts tool use (may fail).')}
       <div class="field">
         <span class="field-label">${isEs ? 'Verificador de calidad' : 'Quality checker'}</span>
         <span class="field-info">${isEs ? 'Controla cuando el verificador revisa la respuesta antes de enviarla.' : 'Controls when the quality checker reviews the response before sending.'}</span>

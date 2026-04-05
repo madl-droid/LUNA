@@ -110,6 +110,15 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
   const skillReadTool = buildSkillReadToolDef(filteredSkills.map((skill) => skill.name))
   if (skillReadTool) llmToolDefs.push(skillReadTool)
 
+  // Strip tools for low-effort when ENGINE_LOW_EFFORT_TOOLS=false (default).
+  // Low-effort messages (greetings, acks) respond conversationally — no tool calls,
+  // one cheap LLM call instead of risking failed tool attempts with a weak model.
+  const stripTools = effortLevel === 'low' && !engineConfig.lowEffortTools
+  if (stripTools) {
+    llmToolDefs.length = 0
+    toolCatalog.length = 0
+  }
+
   const agenticPrompt = await buildAgenticPrompt(ctx, toolCatalog, registry, {
     ...promptOptions,
     subagentCatalog,
