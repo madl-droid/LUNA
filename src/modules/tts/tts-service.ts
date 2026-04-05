@@ -22,7 +22,7 @@ export interface TTSConfig {
   TTS_VOICE_STYLES?: boolean
   TTS_TEMPERATURE?: number
   TTS_SPEAKING_RATE?: number
-  /** Accent style prompt injected as system instruction for TTS (from AGENT_ACCENT_PROMPT) */
+  /** Accent style prompt injected as system instruction for TTS (from AGENT_TTS_STYLE_PROMPT) */
   TTS_ACCENT_STYLE?: string
   /** Voice instructions from identity config (custom speaking style) */
   TTS_VOICE_INSTRUCTIONS?: string

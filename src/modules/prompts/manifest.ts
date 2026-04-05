@@ -139,6 +139,7 @@ const manifest: ModuleManifest = {
     // Generated accent prompt — injected into context when accent is set
     // Content will be built by a future accent prompt generator
     AGENT_ACCENT_PROMPT: z.string().default(''),
+    AGENT_TTS_STYLE_PROMPT: z.string().default(''),
     // Prompts system config
     PROMPTS_MAX_SYSTEM_PROMPT_TOKENS: numEnv(4000),
     PROMPTS_MAX_COMPRESSION_SUMMARY_TOKENS: numEnv(1000),
@@ -359,8 +360,12 @@ const manifest: ModuleManifest = {
 
     // Ensure accent prompt is generated if accent was set (e.g. by setup wizard)
     // but accent prompt was never generated yet
-    const bootCfg = registry.getConfig<{ AGENT_ACCENT: string; AGENT_ACCENT_PROMPT: string }>('prompts')
-    if (bootCfg.AGENT_ACCENT && !bootCfg.AGENT_ACCENT_PROMPT) {
+    const bootCfg = registry.getConfig<{
+      AGENT_ACCENT: string
+      AGENT_ACCENT_PROMPT: string
+      AGENT_TTS_STYLE_PROMPT: string
+    }>('prompts')
+    if (bootCfg.AGENT_ACCENT && (!bootCfg.AGENT_ACCENT_PROMPT || !bootCfg.AGENT_TTS_STYLE_PROMPT)) {
       await generateAccentPrompt(registry)
       await registry.reloadAllModuleConfigs()
     }
@@ -410,7 +415,7 @@ async function syncFromConsole(registry: Registry): Promise<void> {
 // These guide the TTS engine to speak with the correct regional style, intonation, and expressions.
 // Based on Gemini TTS documentation: use natural language style descriptions for voice persona.
 
-const ACCENT_STYLE_PROMPTS: Record<string, string> = {
+const ACCENT_TRAIT_PROMPTS: Record<string, string> = {
   // Spanish accents
   'es-CAR': `Habla en espanol caribeno neutro. Prioriza cadencia calida, musical y cercana. Usa tuteo natural. Manten la pronunciacion clara para que se entienda bien en audio y evita exagerar modismos locales; si usas uno, que sea ocasional y muy comprensible.`,
   'es-MX': `Habla con acento mexicano neutro (zona centro/Ciudad de Mexico). Entonacion melodica y amable. Tuteo natural. Pronuncia las 's' claramente. Las 'd' intervocalicas se suavizan en habla casual ("cansado" suena mas como "cansao"). Muletillas: "o sea", "bueno pues", "este...", "no?", "fijate que", "mira". Expresiones: "orale" (=genial/OK), "que onda" (=que tal), "padre/padrisimo" (=genial), "chido", "neta" (=verdad), "a poco" (=en serio?), "sale" (=OK). Tono calido y cercano, ritmo moderado.`,
@@ -484,8 +489,60 @@ const ACCENT_STYLE_PROMPTS: Record<string, string> = {
   'it-SM': `Parla con un accento sammarinese. Intonazione simile all'italiano standard con sfumature romagnole. Tono cordiale e professionale.`,
 }
 
+function buildIdentityAccentPrompt(accent: string, traitPrompt: string): string {
+  const languageScopedPrefix = accent.startsWith('en-')
+    ? 'Apply this accent profile only when responding in English. Keep spelling clean and professional; never imitate pronunciation with misspellings. When the answer will be spoken aloud, you may lean into natural regional wording, discourse markers, and rhythm that fit this accent, but keep them subtle, clear, and easy to understand.'
+    : 'Aplica este perfil de acento solo cuando respondas en espanol. Manten ortografia limpia y natural; nunca imites pronunciacion con errores escritos. Cuando la respuesta vaya a sonar en audio, puedes inclinarte un poco hacia giros regionales, muletillas y ritmo propios de este acento, pero siempre de forma sutil, clara y facil de entender.'
+
+  const writingDirectives = accent.startsWith('en-')
+    ? 'For text responses, prefer lexical choice, cadence, politeness level, and a light regional flavor over exaggerated slang.'
+    : 'Para respuestas en texto, prioriza eleccion lexical, cadencia, nivel de formalidad y un matiz regional ligero por encima del slang exagerado.'
+
+  const traitLabel = accent.startsWith('en-') ? 'Accent profile:' : 'Perfil del acento:'
+
+  return `${languageScopedPrefix}
+
+${writingDirectives}
+
+${traitLabel}
+${traitPrompt}`
+}
+
+function buildTtsAccentPrompt(accent: string, traitPrompt: string): string {
+  const audioProfile = accent.startsWith('en-')
+    ? 'You are a professional voice actor performing a regional accent for customer-facing audio. Keep the transcript faithful and let the accent be heard mainly through cadence, prosody, vowel color, articulation, consonant shaping, and pacing.'
+    : 'Eres un locutor profesional interpretando un acento regional para audio orientado al cliente. Manten el transcript fiel y deja que el acento se perciba sobre todo en la cadencia, la prosodia, el color vocalico, la articulacion, el modelado de consonantes y la velocidad.'
+
+  const directorsNotes = accent.startsWith('en-')
+    ? [
+        'DIRECTOR NOTES:',
+        '- Do not rewrite, translate, or embellish the transcript.',
+        '- Keep the accent natural, subtle, and consistent. Never caricature it.',
+        '- Prioritize intelligibility first and regional flavor second.',
+        '- Apply pronunciation cues only when they sound natural in fluent speech.',
+        '- Express local identity mostly through rhythm, melody, stress, pacing, and light pronunciation detail.',
+      ].join('\n')
+    : [
+        'NOTAS DE DIRECCION:',
+        '- No reescribas, traduzcas ni adornes el transcript.',
+        '- Manten el acento natural, sutil y consistente. Nunca lo caricaturices.',
+        '- Prioriza primero la inteligibilidad y despues el color regional.',
+        '- Aplica los rasgos de pronunciacion solo cuando suenen naturales en habla fluida.',
+        '- Expresa la identidad local sobre todo a traves de ritmo, melodia, acentuacion, velocidad y detalles ligeros de pronunciacion.',
+      ].join('\n')
+
+  const traitLabel = accent.startsWith('en-') ? 'ACCENT TRAITS:' : 'RASGOS DEL ACENTO:'
+
+  return `${audioProfile}
+
+${directorsNotes}
+
+${traitLabel}
+${traitPrompt}`
+}
+
 /**
- * Auto-generate AGENT_ACCENT_PROMPT when accent changes.
+ * Auto-generate AGENT_ACCENT_PROMPT and AGENT_TTS_STYLE_PROMPT when accent changes.
  */
 async function generateAccentPrompt(registry: Registry): Promise<void> {
   const configStore = await import('../../kernel/config-store.js')
@@ -493,26 +550,23 @@ async function generateAccentPrompt(registry: Registry): Promise<void> {
   const accent = await configStore.get(db, 'AGENT_ACCENT').catch(() => '')
 
   if (!accent) {
-    // Clear accent prompt when no accent selected
+    // Clear accent prompts when no accent selected
     await configStore.set(db, 'AGENT_ACCENT_PROMPT', '', false).catch(() => {})
+    await configStore.set(db, 'AGENT_TTS_STYLE_PROMPT', '', false).catch(() => {})
     return
   }
 
-  const stylePrompt = ACCENT_STYLE_PROMPTS[accent] ?? ''
-  if (!stylePrompt) {
-    logger.warn({ accent }, 'No TTS style prompt defined for accent')
+  const traitPrompt = ACCENT_TRAIT_PROMPTS[accent] ?? ''
+  if (!traitPrompt) {
+    logger.warn({ accent }, 'No accent trait prompt defined for accent')
     await configStore.set(db, 'AGENT_ACCENT_PROMPT', '', false).catch(() => {})
+    await configStore.set(db, 'AGENT_TTS_STYLE_PROMPT', '', false).catch(() => {})
     return
   }
 
-  const languageScopedPrefix = accent.startsWith('en-')
-    ? 'Apply this accent profile only when speaking or writing in English. For text, keep spelling clean and professional; do not imitate pronunciation with misspellings. For audio or live voice, prioritize cadence, intonation, pacing, and light regional flavor over slang.'
-    : 'Aplica este perfil de acento solo cuando hables o escribas en espanol. En texto, manten ortografia limpia y natural; no imites pronunciacion con errores escritos. En audio o voz en vivo, prioriza cadencia, entonacion, ritmo y un matiz regional sutil por encima del slang.'
-
-  await configStore.set(db, 'AGENT_ACCENT_PROMPT', `${languageScopedPrefix}
-
-${stylePrompt}`, false).catch(() => {})
-  logger.info({ accent }, 'Accent prompt auto-generated')
+  await configStore.set(db, 'AGENT_ACCENT_PROMPT', buildIdentityAccentPrompt(accent, traitPrompt), false).catch(() => {})
+  await configStore.set(db, 'AGENT_TTS_STYLE_PROMPT', buildTtsAccentPrompt(accent, traitPrompt), false).catch(() => {})
+  logger.info({ accent }, 'Accent prompts auto-generated for LLM and TTS')
 }
 
 export default manifest
