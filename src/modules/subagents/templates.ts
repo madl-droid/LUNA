@@ -573,7 +573,8 @@ export function renderSubagentsSection(
               : 'Subagents receive only the minimum necessary context, not the full parent history. Reduces token usage and improves focus.'}</p>
           </div>
           <label class="toggle">
-            <input type="checkbox" name="SUBAGENT_FRESH_CONTEXT" value="true" data-original="${freshContextVal}" ${freshContext ? 'checked' : ''} onchange="this.value = this.checked ? 'true' : 'false'">
+            <input type="hidden" name="SUBAGENT_FRESH_CONTEXT" value="${freshContextVal}" data-original="${freshContextVal}">
+            <input type="checkbox" ${freshContext ? 'checked' : ''} onchange="this.previousElementSibling.value=this.checked?'true':'false'">
             <span class="toggle-slider"></span>
           </label>
         </div>
