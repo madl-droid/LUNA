@@ -530,32 +530,9 @@ export interface LLMCallResult {
 // ═══════════════════════════════════════════
 
 export interface EngineConfig {
-  // LLM models
-  classifyModel: string
-  classifyProvider: LLMProvider
-  respondModel: string
-  respondProvider: LLMProvider
-  complexModel: string
-  complexProvider: LLMProvider
-  toolsModel: string
-  toolsProvider: LLMProvider
-  proactiveModel: string
-  proactiveProvider: LLMProvider
-
-  // Fallbacks
-  fallbackClassifyModel: string
-  fallbackClassifyProvider: LLMProvider
-  fallbackRespondModel: string
-  fallbackRespondProvider: LLMProvider
-  fallbackComplexModel: string
-  fallbackComplexProvider: LLMProvider
-
-  // LLM limits
+  // LLM limits (model/provider selection is handled by the task router in LLM module)
   maxInputTokens: number
   maxOutputTokens: number
-  temperatureClassify: number
-  temperatureRespond: number
-  temperatureComplex: number
   requestTimeoutMs: number
 
   // Pipeline
@@ -624,17 +601,6 @@ export interface EngineConfig {
   // --- Agentic engine config (v2.0) ---
   /** Max tool-calling turns before forcing a text response */
   agenticMaxTurns: number
-  /** Enable effort routing: classify complexity to route to cheaper/capable model */
+  /** Enable effort routing: classify complexity to route to appropriate model tier */
   effortRoutingEnabled: boolean
-  /** Allow tools in low-effort messages (default: false — low effort = conversational only) */
-  lowEffortTools: boolean
-  /** Model for low-effort messages (greetings, acks) */
-  lowEffortModel: string
-  lowEffortProvider: LLMProvider
-  /** Model for medium-effort messages (questions, single tool) */
-  mediumEffortModel: string
-  mediumEffortProvider: LLMProvider
-  /** Model for high-effort messages (objections, multi-step) */
-  highEffortModel: string
-  highEffortProvider: LLMProvider
 }

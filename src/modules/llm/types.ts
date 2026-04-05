@@ -43,23 +43,64 @@ export type LLMCapability =
   | 'web_search'
   | 'embeddings'
 
+/**
+ * Canonical LLM tasks — the ONLY valid routing targets.
+ * Every LLM call in the system routes to one of these 10 tasks.
+ * Custom/descriptive task names are aliased to canonical tasks via TASK_ALIASES in task-router.ts.
+ *
+ * To add a new LLM call site:
+ *   1. Pick the TaskCategory that best describes your use case
+ *   2. Use `task: TaskCategory.XXX` or add an alias in TASK_ALIASES
+ *   3. The router maps your call to the correct model/provider automatically
+ *
+ * See docs/architecture/task-routing.md for the full guide.
+ */
 export type LLMTask =
-  | 'classify'
-  | 'respond'
-  | 'complex'
-  | 'tools'
-  | 'proactive'
-  | 'vision'
-  | 'stt'
-  | 'tts'
-  | 'image_gen'
-  | 'web_search'
-  | 'compress'
-  | 'ack'
-  | 'criticize'
-  | 'document_read'
-  | 'batch'
-  | 'custom'
+  | 'main'        // Default: conversation, responses, tool calling, general purpose
+  | 'complex'     // Deep reasoning: objections, multi-step, cortex analysis
+  | 'low'         // Cheap: greetings, acks, simple confirmations
+  | 'criticize'   // Quality gate: review responses, verify subagent output
+  | 'media'       // Multimedia: vision, audio, video, documents, OCR, STT
+  | 'web_search'  // Web search with native grounding (Google required as primary)
+  | 'compress'    // Memory: session compression, buffer compression
+  | 'batch'       // Background: nightly scoring, scheduled batch jobs
+  | 'tts'         // Text-to-speech synthesis
+  | 'knowledge'   // Embeddings and vector operations
+
+/**
+ * Task categories — the entry point for new features making LLM calls.
+ * Every new LLM call MUST declare its category. The category maps to a canonical task,
+ * ensuring the router always controls which model/provider is used.
+ *
+ * Usage:
+ *   import { TaskCategory } from '../../modules/llm/types.js'
+ *   const result = await callLLM({ task: TaskCategory.MEDIA, ... })
+ *
+ * RULE: If your category doesn't exist, do NOT create a new canonical task.
+ * Instead, pick the closest category or propose a new category that maps to an existing task.
+ */
+export const TaskCategory = {
+  /** Chat, responses, tool calling, general conversation */
+  CONVERSATION: 'main' as LLMTask,
+  /** Deep reasoning, multi-step analysis, cortex */
+  ANALYSIS: 'complex' as LLMTask,
+  /** Greetings, acks, simple confirmations */
+  ACKNOWLEDGMENT: 'low' as LLMTask,
+  /** Quality review, response verification, subagent verification */
+  QUALITY_GATE: 'criticize' as LLMTask,
+  /** Vision, audio, video, documents, OCR, STT */
+  MEDIA: 'media' as LLMTask,
+  /** Web search with grounding */
+  SEARCH: 'web_search' as LLMTask,
+  /** Session compression, buffer compression */
+  MEMORY: 'compress' as LLMTask,
+  /** Nightly batch, scoring, scheduled jobs */
+  BACKGROUND: 'batch' as LLMTask,
+  /** Text-to-speech synthesis */
+  SPEECH: 'tts' as LLMTask,
+  /** Embeddings, vector operations */
+  INDEXING: 'knowledge' as LLMTask,
+} as const
 
 // ═══════════════════════════════════════════
 // Task routing
@@ -156,8 +197,8 @@ export interface LLMToolDef {
 }
 
 export interface LLMRequest {
-  /** Task type for routing */
-  task: LLMTask
+  /** Task type for routing. Use a canonical LLMTask or a descriptive name (aliased by router). */
+  task: LLMTask | string
   /** Override provider (bypasses router) */
   provider?: LLMProviderName
   /** Override model (bypasses router) */
@@ -250,7 +291,7 @@ export interface UsageRecord {
   timestamp: Date
   provider: LLMProviderName
   model: string
-  task: LLMTask
+  task: LLMTask | string
   inputTokens: number
   outputTokens: number
   durationMs: number

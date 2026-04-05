@@ -249,35 +249,26 @@ function renderModelsTable(data: SectionData, lang: string): string {
 
   const GROUPS: Array<{ titleEs: string; titleEn: string; tasks: TaskDef[] }> = [
     {
-      titleEs: 'Pipeline principal', titleEn: 'Main pipeline',
+      titleEs: 'Conversación', titleEn: 'Conversation',
       tasks: [
-        ['classify',     'Evaluador (Fase 2)',        'Evaluator (Phase 2)',      'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-        ['respond',      'Compositor (Fase 4)',       'Composer (Phase 4)',       'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
-        ['complex',      'Tarea compleja (3+ pasos)', 'Complex task (3+ steps)',  'anthropic', 'claude-opus-4-5-20251101',   'anthropic','claude-sonnet-4-5-20250929','google',    'gemini-2.5-pro'],
-        ['tools',        'Subagentes / Tools',        'Subagents / Tools',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-        ['criticize',    'Criticizer (calidad)',      'Criticizer (quality)',     'google',    'gemini-2.5-pro',             'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-5-20250929'],
+        ['MAIN',         'Principal (Sonnet)',        'Main (Sonnet)',            'anthropic', 'claude-sonnet-4-6-20260214', '',         '',                          'google',    'gemini-2.5-flash'],
+        ['COMPLEX',      'Complejo (Opus)',           'Complex (Opus)',           'anthropic', 'claude-opus-4-6-20260210',   'anthropic','claude-sonnet-4-6-20260214','google',    'gemini-2.5-pro'],
+        ['LOW',          'Bajo esfuerzo (Haiku)',     'Low effort (Haiku)',       'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash-lite'],
+        ['CRITICIZE',    'Verificador de calidad',    'Quality checker',          'google',    'gemini-2.5-pro',             'google',   'gemini-2.5-flash',          'anthropic', 'claude-sonnet-4-6-20260214'],
       ],
     },
     {
-      titleEs: 'Multimedia y datos', titleEn: 'Multimedia & data',
+      titleEs: 'Multimedia y búsqueda', titleEn: 'Multimedia & search',
       tasks: [
-        ['vision',       'Visión / Archivos',         'Vision / Files',           'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-flash-lite',     'anthropic', 'claude-sonnet-4-5-20250929'],
-        ['document_read','Lectura de documentos',     'Document reading',         'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-        ['web_search',   'Búsqueda web',              'Web search',               'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-5-20250929'],
+        ['MEDIA',        'Multimedia (visión, audio, docs)', 'Multimedia (vision, audio, docs)', 'google', 'gemini-2.5-flash', 'google', 'gemini-2.5-flash-lite', 'anthropic', 'claude-sonnet-4-6-20260214'],
+        ['WEB_SEARCH',   'Búsqueda web',              'Web search',               'google',    'gemini-2.5-flash',           'google',   'gemini-2.5-pro',            'anthropic', 'claude-sonnet-4-6-20260214'],
       ],
     },
     {
-      titleEs: 'Comunicación automática', titleEn: 'Automatic communication',
+      titleEs: 'Background', titleEn: 'Background',
       tasks: [
-        ['proactive',    'Mensaje proactivo',         'Proactive message',        'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-        ['ack',          'ACK (confirmación rápida)', 'ACK (quick confirmation)', 'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash'],
-        ['batch',        'Batch nocturno',            'Nightly batch',            'anthropic', 'claude-sonnet-4-5-20250929', '',         '',                          'google',    'gemini-2.5-flash'],
-      ],
-    },
-    {
-      titleEs: 'Mantenimiento interno', titleEn: 'Internal maintenance',
-      tasks: [
-        ['compress',     'Compresión de sesiones',    'Session compression',      'anthropic', 'claude-haiku-4-5-20251001',  '',         '',                          'google',    'gemini-2.5-flash'],
+        ['COMPRESS',     'Compresión de memoria',     'Memory compression',       'anthropic', 'claude-sonnet-4-6-20260214', '',         '',                          'google',    'gemini-2.5-flash'],
+        ['BATCH',        'Batch nocturno',            'Nightly batch',            'anthropic', 'claude-sonnet-4-6-20260214', '',         '',                          'google',    'gemini-2.5-flash'],
       ],
     },
   ]
@@ -305,8 +296,8 @@ function renderModelsTable(data: SectionData, lang: string): string {
   ${scanReplacements}
 
   <div class="panel-info" style="margin:12px 0 14px 0">${isEs
-    ? 'Estos modelos controlan subsistemas especializados como criticizer, subagentes, batch, vision y tareas proactivas. El loop agentico principal usa los modelos por esfuerzo del panel Motor Agentico.'
-    : 'These models control specialized subsystems such as criticizer, subagents, batch, vision and proactive tasks. The main agentic loop uses the effort-based models in the Agentic Engine panel.'}</div>
+    ? 'Cada tarea del motor usa un modelo específico. El router de esfuerzo asigna Main o Complex según la complejidad del mensaje. Todas las demás tareas (media, búsqueda, batch, etc.) usan su modelo asignado directamente.'
+    : 'Each engine task uses a specific model. The effort router assigns Main or Complex based on message complexity. All other tasks (media, search, batch, etc.) use their assigned model directly.'}</div>
 
   <div class="mt-table">
     <div class="mt-head">
@@ -368,8 +359,8 @@ export function renderAdvancedAgentSection(data: SectionData): string {
     </div>
     <div class="panel-body">
       <div class="panel-info">${isEs
-        ? 'Asigna que modelo usa cada tarea del motor. Principal es el modelo activo; Downgrade se activa si el circuit breaker del principal salta; Fallback cambia de proveedor.'
-        : 'Assign which model each engine task uses. Primary is the active model; Downgrade activates if the primary circuit breaker trips; Fallback switches provider.'}</div>
+        ? 'Asigna que modelo usa cada tarea. El router de tareas es la fuente unica de verdad para todos los modelos del sistema. Principal es el modelo activo; Downgrade se activa si el circuit breaker salta; Fallback cambia de proveedor.'
+        : 'Assign which model each task uses. The task router is the single source of truth for all system models. Primary is the active model; Downgrade activates if the circuit breaker trips; Fallback switches provider.'}</div>
       ${renderModelsTable(data, data.lang)}
     </div>
   </div>`

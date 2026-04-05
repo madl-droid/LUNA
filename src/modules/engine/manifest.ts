@@ -56,14 +56,7 @@ interface EngineModuleConfig {
   // Agentic engine (v2)
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
-  ENGINE_LOW_EFFORT_TOOLS: boolean
   LLM_CRITICIZER_MODE: string
-  LLM_LOW_EFFORT_MODEL: string
-  LLM_LOW_EFFORT_PROVIDER: string
-  LLM_MEDIUM_EFFORT_MODEL: string
-  LLM_MEDIUM_EFFORT_PROVIDER: string
-  LLM_HIGH_EFFORT_MODEL: string
-  LLM_HIGH_EFFORT_PROVIDER: string
 }
 
 const manifest: ModuleManifest = {
@@ -118,14 +111,7 @@ const manifest: ModuleManifest = {
     // Agentic engine (v2)
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
-    ENGINE_LOW_EFFORT_TOOLS: boolEnv(false),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
-    LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
-    LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
-    LLM_MEDIUM_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
-    LLM_MEDIUM_EFFORT_PROVIDER: z.string().default('anthropic'),
-    LLM_HIGH_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
-    LLM_HIGH_EFFORT_PROVIDER: z.string().default('anthropic'),
   }),
 
   console: {
@@ -468,16 +454,6 @@ const manifest: ModuleManifest = {
         },
       },
       {
-        key: 'ENGINE_LOW_EFFORT_TOOLS',
-        type: 'boolean',
-        label: { es: 'Tools en bajo esfuerzo', en: 'Tools in low effort' },
-        info: {
-          es: 'Si esta OFF, mensajes de bajo esfuerzo (saludos, ok, gracias) se responden sin herramientas — mas rapido y barato. Si esta ON, el modelo barato tambien puede llamar herramientas (puede fallar).',
-          en: 'If OFF, low-effort messages (greetings, ok, thanks) are answered without tools — faster and cheaper. If ON, the cheap model can also call tools (may fail).',
-        },
-      },
-
-      {
         key: 'LLM_CRITICIZER_MODE',
         type: 'select',
         label: { es: 'Modo del verificador de calidad', en: 'Quality checker mode' },
@@ -493,38 +469,6 @@ const manifest: ModuleManifest = {
         width: 'half',
       },
 
-      // ── Models by Effort ──
-      { key: '_div_effort_models', type: 'divider', label: { es: 'Modelos por Esfuerzo', en: 'Models by Effort' } },
-      {
-        key: 'LLM_LOW_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo bajo esfuerzo', en: 'Low effort model' },
-        info: {
-          es: 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.',
-          en: 'Model for simple messages: greetings, confirmations, direct questions.',
-        },
-        width: 'half',
-      },
-      {
-        key: 'LLM_MEDIUM_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo medio esfuerzo', en: 'Medium effort model' },
-        info: {
-          es: 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.',
-          en: 'Model for medium complexity messages: contextual queries, follow-ups.',
-        },
-        width: 'half',
-      },
-      {
-        key: 'LLM_HIGH_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo alto esfuerzo', en: 'High effort model' },
-        info: {
-          es: 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.',
-          en: 'Model for complex messages: multiple tools, objections, deep reasoning.',
-        },
-        width: 'half',
-      },
     ],
     apiRoutes: [
       {
