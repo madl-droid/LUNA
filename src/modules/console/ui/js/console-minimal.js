@@ -51,6 +51,7 @@
                 return function () {
                   sel.value = val
                   sel.dispatchEvent(new Event('change', { bubbles: true }))
+                  if (typeof checkDirty === 'function') checkDirty()
                   wrap.classList.remove('open')
                   updateLabel()
                   panel.querySelectorAll('.custom-select-option').forEach(function (o) {
@@ -73,6 +74,7 @@
               return function () {
                 sel.value = val
                 sel.dispatchEvent(new Event('change', { bubbles: true }))
+                if (typeof checkDirty === 'function') checkDirty()
                 wrap.classList.remove('open')
                 updateLabel()
                 // Update selected class
@@ -676,6 +678,7 @@
     hidden.value = current.join(',')
     btn.classList.toggle('bh-day-btn--active', idx < 0)
     hidden.dispatchEvent(new Event('input', { bubbles: true }))
+    if (typeof checkDirty === 'function') checkDirty()
   }
 
   // === WhatsApp polling (only on /console/whatsapp) ===
