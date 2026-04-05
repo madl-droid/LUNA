@@ -198,6 +198,7 @@ export class GmailAdapter {
       messageId: getHeader('Message-ID'),
       references,
       isReply: !!inReplyTo,
+      hasListUnsubscribe: !!getHeader('List-Unsubscribe'),
     }
   }
 
@@ -428,6 +429,32 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     return messages
   }
 
+  // ─── Listing / Search (for tools) ───────────
+
+  /** Generic message listing — used by email tools for inbox browsing and search. */
+  async listMessages(query: string, maxResults: number = 10): Promise<EmailMessage[]> {
+    const res = await this.gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: Math.min(maxResults, 20),
+    })
+
+    const messageIds = res.data.messages ?? []
+    const messages: EmailMessage[] = []
+
+    for (const msg of messageIds) {
+      if (!msg.id) continue
+      try {
+        const full = await this.getFullMessage(msg.id)
+        if (full) messages.push(full)
+      } catch (err) {
+        logger.warn({ messageId: msg.id, err }, 'Failed to fetch message in listMessages')
+      }
+    }
+
+    return messages
+  }
+
   // ─── Domain & subject filtering ──────────────
 
   isDomainBlocked(email: string): boolean {
@@ -477,6 +504,12 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     // Skip no-reply
     if (this.isNoReply(message.from)) {
       logger.debug({ from: message.from }, 'Skipping no-reply message')
+      return true
+    }
+
+    // Skip marketing / newsletter emails (List-Unsubscribe header present)
+    if (message.hasListUnsubscribe) {
+      logger.debug({ from: message.from, subject: message.subject }, 'Skipping list-unsubscribe (newsletter/marketing) message')
       return true
     }
 

@@ -5,7 +5,8 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console fields, API routes, migrations, polling, batching, jobs, labels
 - `types.ts` — EmailMessage, EmailAttachment, EmailSendOptions, EmailReplyOptions, EmailForwardOptions, EmailConfig, LunaLabelIds, CustomLabel, ResolvedCustomLabel
-- `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, filtro no-reply/domain/subject, labels, star, parsing MIME, footer, retry 429/5xx
+- `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, listMessages (búsqueda genérica), filtro no-reply/domain/subject/List-Unsubscribe, labels, star, parsing MIME, footer, retry 429/5xx
+- `tools.ts` — registro de email tools para el pipeline (email-read-inbox, email-search, email-get-detail)
 - `email-oauth.ts` — OAuth2 standalone para Gmail-only (se usa cuando google-apps no está activo)
 - `rate-limiter.ts` — Redis-backed rate limiter con limites configurables (defaults: workspace 80/h 1500/d, free 20/h 400/d)
 
@@ -54,6 +55,11 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - `email:adapter` — GmailAdapter instance
 - `gmail:label-instructions` — `() => ResolvedCustomLabel[]` — para que engine/tools lean instrucciones de labels
 
+## Tools registrados (cuando tools module existe y OAuth conectado)
+- `email-read-inbox` — Lee emails recientes del buzón (filter: unread/recent/important/all, max_results)
+- `email-search` — Busca emails con sintaxis Gmail nativa (from:, to:, subject:, has:attachment, newer_than:, etc.)
+- `email-get-detail` — Lee contenido completo de un email por ID (body truncado a 3000 chars)
+
 ## API Routes (bajo /console/api/gmail/)
 - `GET /rate-limits` — uso actual vs limites (con remaining)
 - `GET /status` — estado del poller + conexión OAuth
@@ -65,6 +71,7 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - Auth: `GET /auth-status`, `GET /auth-url`, `POST /auth-callback`, `POST /auth-disconnect`, `POST /auth-refresh`
 
 ## Trampas
+- Emails con header `List-Unsubscribe` se filtran automáticamente (newsletters/marketing)
 - History ID puede expirar → fallback automático a fetch unread
 - Labels se cachean en memoria (labelCache Map) y se recrean si faltan
 - Rate limiter usa Redis con TTL natural (no necesita cleanup)

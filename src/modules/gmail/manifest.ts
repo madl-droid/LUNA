@@ -640,6 +640,8 @@ const apiRoutes: ApiRoute[] = [
             const config = _registry.getConfig<EmailConfig>('gmail')
             gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
             _registry.provide('email:adapter', gmailAdapter)
+            const { registerEmailTools } = await import('./tools.js')
+            await registerEmailTools(_registry, gmailAdapter)
             await ensureAllLabels()
             startPolling(config.EMAIL_POLL_INTERVAL_MS)
           }
@@ -682,6 +684,8 @@ const apiRoutes: ApiRoute[] = [
           const config = _registry.getConfig<EmailConfig>('gmail')
           gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
           _registry.provide('email:adapter', gmailAdapter)
+          const { registerEmailTools } = await import('./tools.js')
+          await registerEmailTools(_registry, gmailAdapter)
           await ensureAllLabels()
           startPolling(config.EMAIL_POLL_INTERVAL_MS)
         }
@@ -1270,6 +1274,10 @@ const manifest: ModuleManifest = {
     if (authClient) {
       gmailAdapter = new GmailAdapter(authClient, config)
       registry.provide('email:adapter', gmailAdapter)
+
+      // Register email tools (proactive inbox access for the agent)
+      const { registerEmailTools } = await import('./tools.js')
+      await registerEmailTools(registry, gmailAdapter)
     }
 
     // Expose standalone OAuth manager for shared callback dispatch

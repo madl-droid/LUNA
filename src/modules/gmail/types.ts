@@ -96,6 +96,8 @@ export interface EmailMessage {
   messageId: string  // RFC Message-ID header
   references: string[]
   isReply: boolean
+  /** True when the email has a List-Unsubscribe header (newsletter/marketing). */
+  hasListUnsubscribe: boolean
 }
 
 export interface EmailAttachment {
