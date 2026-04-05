@@ -564,13 +564,8 @@ async function generateAccentPrompt(registry: Registry): Promise<void> {
     return
   }
 
-  const languageScopedPrefix = accent.startsWith('en-')
-    ? 'Apply this accent profile only when speaking or writing in English. For text, speak naturally; do not imitate pronunciation with misspellings. For audio or live voice, prioritize cadence, intonation, pacing, and light regional flavor over slang.'
-    : 'Aplica este perfil de acento solo cuando hables o escribas en espanol. En texto, habla natural; no imites pronunciacion con errores escritos. En audio o voz en vivo, prioriza cadencia, entonacion, ritmo y un matiz regional sutil por encima del slang.'
-
-  await configStore.set(db, 'AGENT_ACCENT_PROMPT', `${languageScopedPrefix}
-
-${stylePrompt}`, false).catch(() => {})
+  await configStore.set(db, 'AGENT_ACCENT_PROMPT', buildIdentityAccentPrompt(accent, traitPrompt), false).catch(() => {})
+  await configStore.set(db, 'AGENT_TTS_STYLE_PROMPT', buildTtsAccentPrompt(accent, traitPrompt), false).catch(() => {})
   logger.info({ accent }, 'Accent prompt auto-generated')
 }
 
