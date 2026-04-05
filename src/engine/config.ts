@@ -30,6 +30,7 @@ interface EngineModuleConfig {
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
   LLM_CRITICIZER_MODE: string
+  ENGINE_CRITICIZER_MAX_RETRIES: number
 }
 
 function env(key: string, fallback: string): string {
@@ -119,6 +120,7 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
 
     // Criticizer (quality gate): disabled | complex_only | always
     criticizerMode: moduleConfig.LLM_CRITICIZER_MODE as 'disabled' | 'complex_only' | 'always',
+    criticizerMaxRetries: moduleConfig.ENGINE_CRITICIZER_MAX_RETRIES,
 
     // Checkpoints (resumable pipelines)
     checkpointEnabled: moduleConfig.ENGINE_CHECKPOINT_ENABLED,

@@ -192,27 +192,59 @@ async function runCriticizer(
     agenticConfig: AgenticConfig
   },
 ): Promise<string | null> {
-  // Step 1: Get feedback from reviewer
-  const feedback = await getReviewFeedback(responseText, ctx, config, registry)
-  if (!feedback) return null // APPROVED — original is fine
+  const maxRetries = Math.min(config.criticizerMaxRetries, 5)
 
-  logger.debug({ traceId: ctx.traceId, feedbackLength: feedback.length }, 'Criticizer has feedback — rewriting')
-
-  // Step 2: Re-enter agentic loop with feedback (if loop context available) or fallback to simple rewrite
-  const improved = loopContext
-    ? await rewriteViaLoop(responseText, feedback, ctx, config, registry, loopContext)
-    : await rewriteWithFeedback(responseText, feedback, ctx, config)
-
-  // Step 3: Re-evaluate — reviewer decides if the retry is better than the original
-  const retryFeedback = await getReviewFeedback(improved, ctx, config, registry)
-  if (!retryFeedback) {
-    // Retry approved — use the improved version
-    logger.debug({ traceId: ctx.traceId }, 'Criticizer retry approved')
-    return improved
+  // If maxRetries is 0, single review only — no correction, just a gate
+  if (maxRetries === 0) {
+    const feedback = await getReviewFeedback(responseText, ctx, config, registry)
+    if (feedback) {
+      logger.info({ traceId: ctx.traceId }, 'Criticizer rejected but retries=0 — keeping original')
+    }
+    return null // no retry allowed, original always wins
   }
 
-  // Retry still has issues — keep original (conservative: don't make it worse)
-  logger.info({ traceId: ctx.traceId }, 'Criticizer retry not approved — keeping original response')
+  let currentResponse = responseText
+  const previousAttempts: Array<{ response: string; feedback: string }> = []
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Review current response
+    const feedback = await getReviewFeedback(currentResponse, ctx, config, registry)
+    if (!feedback) {
+      // APPROVED — use current response (may be original or an improved version)
+      if (attempt > 1) {
+        logger.info({ traceId: ctx.traceId, attempt }, 'Criticizer approved on retry')
+      }
+      return currentResponse === responseText ? null : currentResponse
+    }
+
+    logger.debug({
+      traceId: ctx.traceId,
+      attempt,
+      maxRetries,
+      feedbackLength: feedback.length,
+    }, 'Criticizer feedback — retrying')
+
+    // Track this attempt for context accumulation
+    previousAttempts.push({ response: currentResponse, feedback })
+
+    // Retry with feedback + context from previous attempts
+    currentResponse = loopContext
+      ? await rewriteViaLoop(currentResponse, feedback, ctx, config, registry, loopContext, previousAttempts)
+      : await rewriteWithFeedback(currentResponse, feedback, ctx, config)
+  }
+
+  // Exhausted all retries — final review to decide
+  const finalFeedback = await getReviewFeedback(currentResponse, ctx, config, registry)
+  if (!finalFeedback) {
+    logger.info({ traceId: ctx.traceId, attempts: maxRetries }, 'Criticizer approved on final review')
+    return currentResponse
+  }
+
+  // Still not approved after all retries — keep original (conservative)
+  logger.info({
+    traceId: ctx.traceId,
+    attempts: maxRetries,
+  }, 'Criticizer exhausted retries — keeping original response')
   return null
 }
 
@@ -312,6 +344,7 @@ async function rewriteViaLoop(
     toolDefinitions: LLMToolDef[]
     agenticConfig: AgenticConfig
   },
+  previousAttempts: Array<{ response: string; feedback: string }> = [],
 ): Promise<string> {
   // Filter tools: keep up to CRITICIZER_MAX_TOOL_CALLS regular tools + 1 subagent
   const subagentTool = loopContext.toolDefinitions.find(t => t.name === RUN_SUBAGENT_TOOL_NAME)
@@ -326,8 +359,16 @@ async function rewriteViaLoop(
     criticizerMode: 'disabled', // ← loop guard: never re-criticize a retry
   }
 
-  // User message: original response as assistant context + feedback as correction instruction
-  const userMessage = `Tu respuesta anterior fue:\n\n${originalResponse}\n\n---\nEl revisor de calidad encontró estos problemas:\n${feedback}\n\n---\nCorrige tu respuesta incorporando el feedback. Si necesitas consultar información usa tus herramientas. Responde SOLO con la respuesta corregida, sin explicaciones ni preámbulos.`
+  // Build context from previous attempts so the model knows what it already tried
+  let historySection = ''
+  if (previousAttempts.length > 1) {
+    const history = previousAttempts.slice(0, -1).map((a, i) =>
+      `Intento ${i + 1}:\nRespuesta: ${a.response.slice(0, 300)}${a.response.length > 300 ? '...' : ''}\nProblemas: ${a.feedback}`,
+    ).join('\n\n')
+    historySection = `\n\n--- INTENTOS ANTERIORES (no repetir los mismos errores) ---\n${history}\n`
+  }
+
+  const userMessage = `Tu respuesta anterior fue:\n\n${originalResponse}\n\n---\nEl revisor de calidad encontró estos problemas:\n${feedback}${historySection}\n\n---\nCorrige tu respuesta incorporando el feedback. Si necesitas consultar información usa tus herramientas. Responde SOLO con la respuesta corregida, sin explicaciones ni preámbulos.`
 
   const result = await runAgenticLoop(
     ctx,
