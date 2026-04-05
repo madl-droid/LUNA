@@ -27,7 +27,7 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
   - **ACK**: ACK_EMAIL_TRIGGER_MS (0=off), ACK_EMAIL_HOLD_MS (2000), ACK_EMAIL_MESSAGE, ACK_EMAIL_STYLE ('formal')
   - **Formato**: EMAIL_FORMAT_ADVANCED (false), FORMAT_INSTRUCTIONS_EMAIL, EMAIL_FORMAT_TONE ('profesional'), EMAIL_FORMAT_MAX_SENTENCES (4), EMAIL_FORMAT_MAX_PARAGRAPHS (4), EMAIL_FORMAT_EMOJI_LEVEL ('nunca')
   - **Firma**: EMAIL_SIGNATURE_MODE ('gmail'), EMAIL_SIGNATURE_TEXT
-  - **Triage**: EMAIL_TRIAGE_ENABLED (true), EMAIL_TRIAGE_RULES (JSON array de EmailTriageRule), EMAIL_TRIAGE_OWN_ADDRESS (auto-detect)
+  - **Triage**: EMAIL_TRIAGE_ENABLED (true) — toggle para reglas built-in (auto-replies, DSN, CC-only, empty body)
   - **Attachments**: EMAIL_ATT_IMAGES/DOCUMENTS/SPREADSHEETS/PRESENTATIONS/TEXT/AUDIO (all true), EMAIL_ATT_MAX_SIZE_MB (25), EMAIL_ATT_MAX_PER_MSG (10)
 
 ## Labels Gmail
@@ -40,17 +40,16 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 
 ## Triage (pre-procesamiento de emails)
 Clasificador determinístico (<5ms, sin LLM) que corre ANTES del agentic loop. Decide RESPOND/OBSERVE/IGNORE.
-- **Reglas custom** (JSON, console): evaluadas primero, condiciones AND (from, subject, to_cc, has_header, body — regex)
-- **Built-in**: auto-reply headers (Auto-Submitted, X-Auto-Response-Suppress, Precedence:bulk), auto-reply subjects (out of office, etc.), DSN (multipart/report), CC-only (agente en CC pero no en To), body vacío
+- **Built-in**: auto-reply headers (Auto-Submitted, X-Auto-Response-Suppress, Precedence:bulk), auto-reply subjects (out of office, etc.), DSN (multipart/report), CC-only (agente en CC pero no en To → OBSERVE), body vacío
 - **OBSERVE**: persiste mensaje en DB + sesión, no genera respuesta LLM. Útil para contexto futuro.
 - **IGNORE**: descarta completamente, solo marca como leído.
 - Clasificador en `src/engine/agentic/email-triage.ts`, gate en `src/engine/engine.ts`
-- Service: `gmail:triage-config` expone enabled + rules + ownAddress
+- Service: `gmail:triage-config` expone enabled + ownAddress (auto-detectado de OAuth)
 - `rawHeaders` en EmailMessage: mapa lowercased de headers del email (para detectar Auto-Submitted, Precedence, etc.)
 
 ## Hot reload
 - `reloadConfig()` en cada poll cycle y antes de enviar → filtros, footer, always-CC se actualizan sin restart
-- `console:config_applied` → re-ensure labels + actualiza triage rules
+- `console:config_applied` → re-ensure labels
 - Rate limiter sync: account type + custom limits se actualizan en cada send
 - Session jobs leen config fresco dentro del handler (no en closure)
 - SQL parametrizado con `make_interval(hours => $1)` — no interpolación

@@ -21,7 +21,6 @@ import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
 // --- Agentic imports (v2.0) ---
 import { runAgenticDelivery } from './agentic/index.js'
 import { classifyEmailTriage } from './agentic/email-triage.js'
-import type { EmailTriageRule } from '../modules/gmail/types.js'
 
 const logger = pino({ name: 'engine' })
 
@@ -286,12 +285,12 @@ async function processMessageInner(
     // Deterministic pre-filter for email channel. Decides RESPOND/OBSERVE/IGNORE before LLM.
     if (ctx.message.channelName === 'email') {
       const triageConfig = registry.getOptional<{
-        getTriageConfig(): { enabled: boolean; rules: EmailTriageRule[]; ownAddress: string }
+        getTriageConfig(): { enabled: boolean; ownAddress: string }
       }>('gmail:triage-config')
       if (triageConfig) {
-        const { enabled, rules, ownAddress } = triageConfig.getTriageConfig()
+        const { enabled, ownAddress } = triageConfig.getTriageConfig()
         if (enabled) {
-          const triage = classifyEmailTriage(ctx, rules, ownAddress)
+          const triage = classifyEmailTriage(ctx, ownAddress)
           if (triage.decision !== 'respond') {
             logger.info({ traceId, decision: triage.decision, reason: triage.reason, from: message.from }, 'Email triage — skipping pipeline')
 

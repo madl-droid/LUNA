@@ -49,8 +49,6 @@ export interface EmailConfig {
   GMAIL_TOKEN_REFRESH_BUFFER_MS: number
   // Triage
   EMAIL_TRIAGE_ENABLED: boolean
-  EMAIL_TRIAGE_RULES: string  // JSON array of EmailTriageRule
-  EMAIL_TRIAGE_OWN_ADDRESS: string
   // Attachment processing config
   EMAIL_ATT_IMAGES: boolean
   EMAIL_ATT_DOCUMENTS: boolean
@@ -156,27 +154,4 @@ export interface EmailPollerState {
   messagesProcessed: number
   errors: number
   lastError: string | null
-}
-
-/** Configurable triage rule for pre-agentic email classification. */
-export interface EmailTriageRule {
-  /** Unique identifier for the rule */
-  name: string
-  /** Whether this rule is active */
-  enabled: boolean
-  /** Action when all conditions match */
-  action: 'respond' | 'observe' | 'ignore'
-  /** All conditions must match (AND logic) */
-  conditions: {
-    /** Regex pattern for sender email */
-    from?: string
-    /** Regex pattern for subject */
-    subject?: string
-    /** Where the agent appears in recipients: 'to', 'cc', or 'bcc' */
-    to_cc?: 'to' | 'cc' | 'bcc'
-    /** Header name that must exist (lowercased, e.g. 'x-mailer-daemon') */
-    has_header?: string
-    /** Regex pattern for body text */
-    body?: string
-  }
 }
