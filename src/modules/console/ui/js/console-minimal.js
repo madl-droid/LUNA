@@ -218,7 +218,13 @@
   function isInstantToggle(el) {
     // Permission toggles inside .cb-config-panel are NOT instant — they require save
     if (el.closest('.cb-config-panel')) return false
-    return el.closest('.toggle-field') || el.closest('.chs-toggle-row')
+    // boolField toggles lack onchange="instantApply(…)" — they go through the save bar
+    var wrapper = el.closest('.toggle-field')
+    if (wrapper) {
+      var cb = wrapper.querySelector('input[type="checkbox"]')
+      if (cb && !cb.getAttribute('onchange')) return false
+    }
+    return wrapper || el.closest('.chs-toggle-row')
   }
 
   function isDirty() {
@@ -258,6 +264,14 @@
   document.addEventListener('change', function (e) {
     var el = e.target
     if (el.closest && isInstantToggle(el)) return
+    // Sync save-bar checkbox → paired hidden input so isDirty() picks up the change
+    if (el.type === 'checkbox' && !isInstantToggle(el)) {
+      var wrapper = el.closest('.toggle-field')
+      if (wrapper) {
+        var hidden = wrapper.querySelector('input[type="hidden"][name="' + el.name + '"]')
+        if (hidden) hidden.value = el.checked ? 'true' : 'false'
+      }
+    }
     checkDirty()
   })
 
@@ -286,7 +300,7 @@
             showToast(document.documentElement.lang === 'es' ? 'Guardado' : 'Saved', 'success')
             // Update data-original so fields are no longer dirty
             allInputs.forEach(function (inp) {
-              if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) return
+              if (isInstantToggle(inp)) return
               inp.setAttribute('data-original', inp.value)
               inp.classList.remove('modified')
             })
