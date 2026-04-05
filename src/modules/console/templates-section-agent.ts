@@ -274,7 +274,7 @@ function renderSpecializedRow(
     `<option value="${esc(m)}" ${m === currentModel ? 'selected' : ''}>${esc(mShort(m) || m)}</option>`
   ).join('')
 
-  let downgradeHtml = ''
+  let downgradeCell = ''
   if (downgradeConfigKey !== undefined) {
     const dgModels = [...new Set([...(downgradeExtraModels ?? []), ...scannedGoogleModels])]
     const dgOpts = ['<option value="">—</option>',
@@ -282,23 +282,26 @@ function renderSpecializedRow(
         `<option value="${esc(m)}" ${m === currentDowngradeModel ? 'selected' : ''}>${esc(mShort(m) || m)}</option>`
       ),
     ].join('')
-    downgradeHtml = `<span style="display:flex;align-items:center;gap:4px;margin-left:10px">
-      <span style="font-size:11px;color:var(--on-surface-dim);white-space:nowrap">DG:</span>
+    downgradeCell = `<span class="mt-dg">
       <select class="js-custom-select" name="${esc(downgradeConfigKey)}" data-original="${esc(currentDowngradeModel ?? '')}">
         ${dgOpts}
       </select>
     </span>`
   }
 
-  return `<div class="mt-row mt-row--special" data-task="${configKey}">
+  const gridStyle = downgradeConfigKey !== undefined
+    ? 'style="grid-template-columns: 1.6fr 2fr 1.4fr"'
+    : ''
+
+  return `<div class="mt-row mt-row--special" data-task="${configKey}" ${gridStyle}>
     <span class="mt-task">${esc(label)}<span class="mt-task-note">${esc(note)}</span></span>
-    <span class="mt-primary" style="grid-column:span 3">
+    <span class="mt-primary"${downgradeConfigKey === undefined ? ' style="grid-column:span 3"' : ''}>
       <span class="mt-fb-pill mt-fb-google" style="margin-right:8px"><span class="mt-fb-badge">G</span>Google</span>
       <select class="js-custom-select mt-special-sel" name="${esc(configKey)}" data-original="${esc(currentModel)}">
         ${opts}
       </select>
-      ${downgradeHtml}
     </span>
+    ${downgradeCell}
   </div>`
 }
 
