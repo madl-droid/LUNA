@@ -28,6 +28,7 @@ export interface PromptRecord {
 export interface CompositorPrompts {
   identity: string
   job: string
+  accent: string         // AGENT_ACCENT_PROMPT — own <accent> section
   guardrails: string
   relationship: string   // resolved for the specific userType
   criticizer: string     // editable part of the quality checklist

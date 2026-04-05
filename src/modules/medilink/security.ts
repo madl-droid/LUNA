@@ -403,6 +403,12 @@ export class SecurityService {
         contactId,
       ],
     )
+    // Promote lead to active client now that we've confirmed they're a Medilink patient.
+    // Only upgrades — won't overwrite client_former, team_internal, etc.
+    await this.db.query(
+      `UPDATE contacts SET contact_type = 'client_active' WHERE id = $1 AND contact_type = 'lead'`,
+      [contactId],
+    )
     logger.info({ contactId, patientId, level }, 'Contact linked to Medilink patient')
   }
 
