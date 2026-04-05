@@ -199,12 +199,21 @@ async function runCriticizer(
   logger.debug({ traceId: ctx.traceId, feedbackLength: feedback.length }, 'Criticizer has feedback — rewriting')
 
   // Step 2: Re-enter agentic loop with feedback (if loop context available) or fallback to simple rewrite
-  if (loopContext) {
-    const improved = await rewriteViaLoop(responseText, feedback, ctx, config, registry, loopContext)
+  const improved = loopContext
+    ? await rewriteViaLoop(responseText, feedback, ctx, config, registry, loopContext)
+    : await rewriteWithFeedback(responseText, feedback, ctx, config)
+
+  // Step 3: Re-evaluate — reviewer decides if the retry is better than the original
+  const retryFeedback = await getReviewFeedback(improved, ctx, config, registry)
+  if (!retryFeedback) {
+    // Retry approved — use the improved version
+    logger.debug({ traceId: ctx.traceId }, 'Criticizer retry approved')
     return improved
   }
-  const improved = await rewriteWithFeedback(responseText, feedback, ctx, config)
-  return improved
+
+  // Retry still has issues — keep original (conservative: don't make it worse)
+  logger.info({ traceId: ctx.traceId }, 'Criticizer retry not approved — keeping original response')
+  return null
 }
 
 /**
