@@ -26,6 +26,7 @@ function mapTypeRow(r: Record<string, unknown>): SubagentTypeRow {
     verifyResult: r.verify_result as boolean,
     canSpawnChildren: r.can_spawn_children as boolean,
     allowedTools: (r.allowed_tools as string[]) ?? [],
+    exclusiveTools: (r.exclusive_tools as string[]) ?? [],
     allowedKnowledgeCategories: (r.allowed_knowledge_categories as string[]) ?? [],
     systemPrompt: (r.system_prompt as string) ?? '',
     isSystem: (r.is_system as boolean) ?? false,
@@ -61,9 +62,9 @@ export async function getEnabledTypes(db: Pool): Promise<SubagentTypeRow[]> {
 export async function createType(db: Pool, data: CreateSubagentType): Promise<SubagentTypeRow> {
   const { rows } = await db.query(
     `INSERT INTO subagent_types (slug, name, description, enabled, model_tier, token_budget,
-      verify_result, can_spawn_children, allowed_tools, allowed_knowledge_categories, system_prompt,
-      google_search_grounding)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      verify_result, can_spawn_children, allowed_tools, exclusive_tools, allowed_knowledge_categories,
+      system_prompt, google_search_grounding)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
     [
       data.slug,
@@ -75,6 +76,7 @@ export async function createType(db: Pool, data: CreateSubagentType): Promise<Su
       data.verifyResult ?? true,
       data.canSpawnChildren ?? false,
       data.allowedTools ?? [],
+      data.exclusiveTools ?? [],
       data.allowedKnowledgeCategories ?? [],
       data.systemPrompt ?? '',
       data.googleSearchGrounding ?? false,
@@ -98,6 +100,7 @@ export async function updateType(db: Pool, id: string, data: UpdateSubagentType,
   if (data.verifyResult !== undefined && !isSystem) { sets.push(`verify_result = $${idx++}`); params.push(data.verifyResult) }
   if (data.canSpawnChildren !== undefined && !isSystem) { sets.push(`can_spawn_children = $${idx++}`); params.push(data.canSpawnChildren) }
   if (data.allowedTools !== undefined && !isSystem) { sets.push(`allowed_tools = $${idx++}`); params.push(data.allowedTools) }
+  if (data.exclusiveTools !== undefined) { sets.push(`exclusive_tools = $${idx++}`); params.push(data.exclusiveTools) }
   if (data.allowedKnowledgeCategories !== undefined) { sets.push(`allowed_knowledge_categories = $${idx++}`); params.push(data.allowedKnowledgeCategories) }
   if (data.systemPrompt !== undefined && !isSystem) { sets.push(`system_prompt = $${idx++}`); params.push(data.systemPrompt) }
   if (data.googleSearchGrounding !== undefined && !isSystem) { sets.push(`google_search_grounding = $${idx++}`); params.push(data.googleSearchGrounding) }
