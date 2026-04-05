@@ -133,6 +133,41 @@ export async function postProcess(
 
 // ── Internal helpers ──
 
+/** Structured feedback from the JSON-based reviewer (criticizer-review.md format) */
+interface ReviewerFeedback {
+  approved: boolean
+  tone?: string
+  length?: string | null
+  remove?: string[]
+  add?: string[]
+  rephrase?: string[]
+}
+
+/** Attempt to parse JSON reviewer feedback. Returns null if parsing fails. */
+function parseReviewerJSON(text: string): ReviewerFeedback | null {
+  try {
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>
+    if (typeof parsed === 'object' && parsed !== null && typeof parsed.approved === 'boolean') {
+      return parsed as unknown as ReviewerFeedback
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Convert structured JSON feedback into prose instructions for the rewriter. */
+function feedbackToProse(fb: ReviewerFeedback): string {
+  const parts: string[] = []
+  if (fb.tone) parts.push(`Ajuste de tono: ${fb.tone}`)
+  if (fb.length) parts.push(`Longitud: hacerla ${fb.length}`)
+  if (fb.remove?.length) parts.push(`Eliminar: ${fb.remove.join('; ')}`)
+  if (fb.add?.length) parts.push(`Agregar: ${fb.add.join('; ')}`)
+  if (fb.rephrase?.length) parts.push(`Reformular: ${fb.rephrase.join('; ')}`)
+  return parts.join('\n')
+}
+
 /**
  * Run the criticizer: two-step process.
  * Step 1 — Reviewer LLM: evaluates the response and returns detailed feedback or "APPROVED".
@@ -168,13 +203,27 @@ async function getReviewFeedback(
 ): Promise<string | null> {
   const promptsService = registry.getOptional<{
     getPrompt(slot: string, variant?: string): Promise<string>
+    getSystemPrompt(name: string, variables?: Record<string, string>): Promise<string>
   }>('prompts:service')
 
-  const criticizerPrompt = promptsService
-    ? await promptsService.getPrompt('criticizer').catch(() => null)
-    : null
+  // Load quality criteria (DB slot, points 6-10) + JSON format instructions (criticizer-review.md)
+  const [qualityCriteria, jsonFormatInstruction] = promptsService
+    ? await Promise.all([
+        promptsService.getPrompt('criticizer').catch(() => null),
+        promptsService.getSystemPrompt('criticizer-review').catch(() => null),
+      ])
+    : [null, null]
 
-  const system = criticizerPrompt || `You are a quality reviewer for a sales agent's response. Evaluate it for:
+  let system: string
+  if (qualityCriteria && jsonFormatInstruction) {
+    // Ideal path: quality criteria from DB + JSON format from criticizer-review.md
+    system = `You are a quality reviewer for a sales agent's response. Evaluate it against these criteria:\n\n${qualityCriteria}\n\n${jsonFormatInstruction}`
+  } else if (qualityCriteria) {
+    // criticizer-review.md missing/empty but DB criteria available — use criteria with prose format
+    system = `You are a quality reviewer for a sales agent's response. Evaluate it against these criteria:\n\n${qualityCriteria}\n\nIf the response is good as-is, reply with exactly: APPROVED\n\nIf improvements are needed, explain clearly what should be changed and why.\nDo NOT rewrite the response — only provide your feedback.`
+  } else {
+    // Fallback: hardcoded English prose-based review (original behavior)
+    system = `You are a quality reviewer for a sales agent's response. Evaluate it for:
 1. Accuracy — does it correctly answer the question?
 2. Tone — is it professional and warm?
 3. Completeness — is anything missing?
@@ -184,6 +233,7 @@ If the response is good as-is, reply with exactly: APPROVED
 
 If improvements are needed, explain clearly what should be changed and why.
 Do NOT rewrite the response — only provide your feedback.`
+  }
 
   const result = await callLLM({
     task: 'criticizer-review',
@@ -197,11 +247,21 @@ Do NOT rewrite the response — only provide your feedback.`
     maxTokens: 1024,
   })
 
-  const feedback = result.text.trim()
-  if (feedback.toUpperCase().startsWith('APPROVED') || feedback.length < 10) {
+  const raw = result.text.trim()
+
+  // Try JSON parse first (when criticizer-review.md format was used)
+  const structured = parseReviewerJSON(raw)
+  if (structured) {
+    if (structured.approved) return null
+    const prose = feedbackToProse(structured)
+    return prose || null // null if all optional fields were omitted
+  }
+
+  // Fallback: prose-based detection (when hardcoded English fallback was used)
+  if (raw.toUpperCase().startsWith('APPROVED') || raw.length < 10) {
     return null
   }
-  return feedback
+  return raw
 }
 
 /**
