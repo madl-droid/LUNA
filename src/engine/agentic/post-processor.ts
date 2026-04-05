@@ -160,11 +160,11 @@ function parseReviewerJSON(text: string): ReviewerFeedback | null {
 /** Convert structured JSON feedback into prose instructions for the rewriter. */
 function feedbackToProse(fb: ReviewerFeedback): string {
   const parts: string[] = []
-  if (fb.tone) parts.push(`Tone adjustment: ${fb.tone}`)
-  if (fb.length) parts.push(`Length: make it ${fb.length}`)
-  if (fb.remove?.length) parts.push(`Remove: ${fb.remove.join('; ')}`)
-  if (fb.add?.length) parts.push(`Add: ${fb.add.join('; ')}`)
-  if (fb.rephrase?.length) parts.push(`Rephrase: ${fb.rephrase.join('; ')}`)
+  if (fb.tone) parts.push(`Ajuste de tono: ${fb.tone}`)
+  if (fb.length) parts.push(`Longitud: hacerla ${fb.length}`)
+  if (fb.remove?.length) parts.push(`Eliminar: ${fb.remove.join('; ')}`)
+  if (fb.add?.length) parts.push(`Agregar: ${fb.add.join('; ')}`)
+  if (fb.rephrase?.length) parts.push(`Reformular: ${fb.rephrase.join('; ')}`)
   return parts.join('\n')
 }
 
@@ -216,7 +216,11 @@ async function getReviewFeedback(
 
   let system: string
   if (qualityCriteria && jsonFormatInstruction) {
+    // Ideal path: quality criteria from DB + JSON format from criticizer-review.md
     system = `You are a quality reviewer for a sales agent's response. Evaluate it against these criteria:\n\n${qualityCriteria}\n\n${jsonFormatInstruction}`
+  } else if (qualityCriteria) {
+    // criticizer-review.md missing/empty but DB criteria available — use criteria with prose format
+    system = `You are a quality reviewer for a sales agent's response. Evaluate it against these criteria:\n\n${qualityCriteria}\n\nIf the response is good as-is, reply with exactly: APPROVED\n\nIf improvements are needed, explain clearly what should be changed and why.\nDo NOT rewrite the response — only provide your feedback.`
   } else {
     // Fallback: hardcoded English prose-based review (original behavior)
     system = `You are a quality reviewer for a sales agent's response. Evaluate it for:
