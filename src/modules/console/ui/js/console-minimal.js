@@ -51,7 +51,6 @@
                 return function () {
                   sel.value = val
                   sel.dispatchEvent(new Event('change', { bubbles: true }))
-                  if (typeof checkDirty === 'function') checkDirty()
                   wrap.classList.remove('open')
                   updateLabel()
                   panel.querySelectorAll('.custom-select-option').forEach(function (o) {
@@ -74,7 +73,6 @@
               return function () {
                 sel.value = val
                 sel.dispatchEvent(new Event('change', { bubbles: true }))
-                if (typeof checkDirty === 'function') checkDirty()
                 wrap.classList.remove('open')
                 updateLabel()
                 // Update selected class
@@ -274,10 +272,9 @@
       formData.forEach(function (v, k) { body.append(k, v) })
 
       // Also collect inputs outside the form (e.g. wa-inner)
-      var namedInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
-      var trackedInputs = document.querySelectorAll('input[data-original], select[data-original], textarea[data-original]')
-      for (var i = 0; i < namedInputs.length; i++) {
-        var inp = namedInputs[i]
+      var allInputs = document.querySelectorAll('input[name][data-original], select[name][data-original], textarea[name][data-original]')
+      for (var i = 0; i < allInputs.length; i++) {
+        var inp = allInputs[i]
         if (isInstantToggle(inp)) continue
         if (saveForm.contains(inp)) continue
         body.append(inp.name, inp.value)
@@ -285,24 +282,16 @@
 
       fetch('/console/save', { method: 'POST', body: body })
         .then(function (r) {
-          if (!(r.ok || r.redirected)) throw new Error('save failed')
-          return fetch('/console/apply', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: '_section=' + encodeURIComponent(document.querySelector('input[name="_section"]') ? document.querySelector('input[name="_section"]').value : '')
-              + '&_lang=' + encodeURIComponent(document.querySelector('input[name="_lang"]') ? document.querySelector('input[name="_lang"]').value : 'es'),
-          })
-        })
-        .then(function (r) {
           if (r.ok || r.redirected) {
-            showToast(document.documentElement.lang === 'es' ? 'Guardado y aplicado' : 'Saved and applied', 'success')
-            // Update data-original so fields are no longer dirty, including visual custom controls
-            trackedInputs.forEach(function (inp) {
+            showToast(document.documentElement.lang === 'es' ? 'Guardado' : 'Saved', 'success')
+            // Update data-original so fields are no longer dirty
+            allInputs.forEach(function (inp) {
               if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) return
               inp.setAttribute('data-original', inp.value)
               inp.classList.remove('modified')
             })
-            setSaveBarPhase('hidden')
+            // Switch to "saved" phase → show Aplicar
+            setSaveBarPhase('saved')
           } else {
             showToast('Error', 'error')
           }
@@ -639,7 +628,6 @@
     var dgModInput = row.querySelector('input[name="LLM_' + taskKey + '_DOWNGRADE_MODEL"]')
     if (dgProvInput) dgProvInput.value = provider
     if (dgModInput) dgModInput.value = model
-    checkDirty()
   })
 
   // === Model table — fallback select change (update hidden inputs) ===
@@ -659,26 +647,17 @@
     var fbModInput = row.querySelector('input[name="LLM_' + taskKey + '_FALLBACK_MODEL"]')
     if (fbProvInput) fbProvInput.value = provider
     if (fbModInput) fbModInput.value = model
-    checkDirty()
   })
 
-  // === Business hours day chips ===
+  // === Business hours day toggle ===
   window.toggleBhDay = function (btn) {
+    btn.classList.toggle('bh-day-btn--active')
     var hidden = document.getElementById('bh-days-input')
     if (!hidden) return
-    var day = btn.getAttribute('data-day')
-    if (day == null) return
-    var current = hidden.value
-      ? hidden.value.split(',').map(function (s) { return s.trim() }).filter(Boolean)
-      : []
-    var idx = current.indexOf(day)
-    if (idx >= 0) current.splice(idx, 1)
-    else current.push(day)
-    current.sort(function (a, b) { return parseInt(a, 10) - parseInt(b, 10) })
-    hidden.value = current.join(',')
-    btn.classList.toggle('bh-day-btn--active', idx < 0)
-    hidden.dispatchEvent(new Event('input', { bubbles: true }))
-    if (typeof checkDirty === 'function') checkDirty()
+    var active = Array.from(document.querySelectorAll('.bh-day-btn.bh-day-btn--active'))
+      .map(function (b) { return b.getAttribute('data-day') })
+    hidden.value = active.join(',')
+    checkDirty()
   }
 
   // === WhatsApp polling (only on /console/whatsapp) ===
