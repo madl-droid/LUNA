@@ -10,7 +10,6 @@ export interface MedilinkConfig {
   MEDILINK_WEBHOOK_PRIVATE_KEY: string
   MEDILINK_RATE_LIMIT_RPM: number
   MEDILINK_API_TIMEOUT_MS: number
-  MEDILINK_AVAILABILITY_CACHE_TTL_MS: number
   MEDILINK_REFERENCE_REFRESH_DAYS: number
   MEDILINK_DEFAULT_BRANCH_ID: string
   MEDILINK_DEFAULT_DURATION_MIN: number
@@ -29,6 +28,7 @@ export interface MedilinkConfig {
   // FIX: ML-1 — Public URL for voice call webhooks
   MEDILINK_PUBLIC_URL: string
   MEDILINK_ALLOWED_CHAIRS: string
+  MEDILINK_AGENDA_WARM_DAYS: number
 }
 
 // ─── API response envelope ───────────────
@@ -317,9 +317,9 @@ export interface MedilinkEvolution {
 // ─── Agenda / Disponibilidad ─────────────
 
 /**
- * Single agenda item from /agendas.
- * Free slots have id_paciente === null.
- * Booked slots have id_paciente set.
+ * Single agenda item — normalized from v5 hierarchical response.
+ * Free slots have id_paciente === null or 0.
+ * Booked slots have id_paciente set and optionally id_cita.
  */
 export interface MedilinkAgendaItem {
   id_paciente: number | null
@@ -332,6 +332,38 @@ export interface MedilinkAgendaItem {
   nombre_dentista: string
   fecha: string
   id_recurso: number
+  /** Only present for booked slots from v5 mostrar_detalles=1 */
+  id_cita?: number
+}
+
+// ─── v5 agenda response types ─────────────
+
+/** Booked slot detail from v5 mostrar_detalles=1 */
+export interface V5AgendaSlotDetail {
+  tipo: string
+  id_cita: number
+  id_paciente: number
+  nombre_paciente: string
+  apellidos_paciente: string
+  comentario: string
+  bloque: string
+  duracion_total: number
+  inicio: string
+  fin: string
+}
+
+/** A sillon value is either true (free) or a detail object (booked) */
+export type V5SillonValue = true | V5AgendaSlotDetail
+
+/** v5 response: data.fechas[date].horas[time].sillones[id] */
+export interface V5AgendaResponse {
+  data: {
+    fechas: Record<string, {
+      horas: Record<string, {
+        sillones: Record<string, V5SillonValue>
+      }>
+    }>
+  }
 }
 
 /** Raw agenda response is an array of MedilinkAgendaItem */
@@ -362,10 +394,41 @@ export type WebhookEntity =
   | 'cita' | 'paciente' | 'profesional' | 'contrato'
   | 'horario' | 'horario_bloqueado' | 'horario_especial'
 
+/** Typed webhook payload for cita events (based on real observed payloads) */
+export interface WebhookCitaData {
+  id: number
+  fecha: string
+  hora_inicio: string
+  hora_fin: string
+  duracion: number
+  id_sucursal: number
+  id_profesional: number
+  id_sillon: number
+  id_estado: number
+  estado_cita: string
+  estado_anulacion: number
+  id_paciente: number
+  nombre_paciente: string
+  nombre_profesional: string
+  nombre_sucursal: string
+  nombre_sillon: string
+  nombre_atencion?: string
+  id_atencion?: number
+  fecha_actualizacion: string
+}
+
 export interface WebhookPayload {
   action: WebhookAction
   entity: WebhookEntity
   data: { id: number } & Record<string, unknown>
+}
+
+/** Helper to extract typed cita data from webhook payload */
+export function asWebhookCitaData(payload: WebhookPayload): WebhookCitaData | null {
+  if (payload.entity !== 'cita') return null
+  const d = payload.data
+  if (typeof d.fecha !== 'string' || typeof d.id_profesional !== 'number') return null
+  return d as unknown as WebhookCitaData
 }
 
 export interface WebhookLogEntry {

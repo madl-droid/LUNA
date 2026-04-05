@@ -20,6 +20,7 @@ import * as pgStore from './pg-store.js'
 import { renderMedilinkConsole } from './templates.js'
 import type { MedilinkConsoleData } from './templates.js'
 import type { MedilinkConfig } from './types.js'
+import { asWebhookCitaData } from './types.js'
 
 const logger = pino({ name: 'medilink' })
 
@@ -30,6 +31,7 @@ let webhookHandler: WebhookHandler | null = null
 let security: SecurityService | null = null
 let followUpScheduler: FollowUpScheduler | null = null
 let healthCheckTimer: ReturnType<typeof setInterval> | null = null
+let agendaWarmTimer: ReturnType<typeof setInterval> | null = null
 let _registry: Registry | null = null
 
 // ─── API Routes ──────────────────────────
@@ -397,7 +399,6 @@ const manifest: ModuleManifest = {
     MEDILINK_WEBHOOK_PRIVATE_KEY: z.string().default(''),
     MEDILINK_RATE_LIMIT_RPM: numEnvMin(1, 20),
     MEDILINK_API_TIMEOUT_MS: numEnv(15000),
-    MEDILINK_AVAILABILITY_CACHE_TTL_MS: numEnv(1200000),
     MEDILINK_REFERENCE_REFRESH_DAYS: numEnv(30),
     MEDILINK_DEFAULT_BRANCH_ID: z.string().default(''),
     MEDILINK_DEFAULT_DURATION_MIN: numEnvMin(5, 30),
@@ -416,6 +417,7 @@ const manifest: ModuleManifest = {
     // FIX: ML-1 — Public URL for voice call webhooks (no localhost)
     MEDILINK_PUBLIC_URL: z.string().default(''),
     MEDILINK_ALLOWED_CHAIRS: z.string().default('1,2'),
+    MEDILINK_AGENDA_WARM_DAYS: numEnvMin(1, 7),
   }),
 
   console: {
@@ -450,7 +452,7 @@ const manifest: ModuleManifest = {
       // ── Cache / Reference data ──
       { key: '_div_cache', type: 'divider', label: { es: 'Datos de referencia', en: 'Reference data' } },
       { key: 'MEDILINK_REFERENCE_REFRESH_DAYS', type: 'number', label: { es: 'Refresh automático (días)', en: 'Auto refresh (days)' }, info: { es: 'Cada cuántos días se recargan profesionales, tratamientos y sucursales', en: 'How often to reload professionals, treatments and branches' }, min: 1, max: 90, unit: 'días' },
-      { key: 'MEDILINK_AVAILABILITY_CACHE_TTL_MS', type: 'number', label: { es: 'Cache disponibilidad (ms)', en: 'Availability cache (ms)' }, min: 60000, unit: 'ms', info: { es: 'TTL del cache de disponibilidad. Se invalida automáticamente por webhook.', en: 'Availability cache TTL. Automatically invalidated by webhook.' } },
+      { key: 'MEDILINK_AGENDA_WARM_DAYS', type: 'number', label: { es: 'Días de agenda pre-cacheados', en: 'Agenda warm days' }, info: { es: 'Cuántos días de agenda se pre-cachean. Se actualiza diariamente y se mantiene al día por webhooks.', en: 'How many days of agenda to pre-cache. Updated daily and kept current via webhooks.' }, min: 1, max: 14, unit: 'días' },
 
       // ── Follow-up ──
       { key: '_div_followup', type: 'divider', label: { es: 'Seguimiento de citas', en: 'Appointment follow-up' } },
@@ -591,70 +593,83 @@ const manifest: ModuleManifest = {
       return renderMedilinkConsole(consoleData, lang)
     })
 
-    // Register webhook listeners for cache warm + follow-ups
+    // ── Webhook listeners: cache mutation + follow-ups ──────────────────────
+    // Use typed webhook payload data directly — no redundant API calls.
     if (webhookHandler) {
-      // Proactively warm availability cache after cita changes
-      const warmCacheForCita = async (citaId: number) => {
-        try {
-          const apt = await apiClient!.getAppointment(citaId, 'high')
-          // Warm cache for the affected date/branch
-          void cache!.refreshAvailability(apt.id_sucursal, apt.fecha, apt.id_dentista)
-        } catch { /* invalidation already happened, warm is best-effort */ }
-      }
-
       webhookHandler.on('cita', 'created', async (payload) => {
-        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+        const citaData = asWebhookCitaData(payload)
+        if (!citaData) return
+        try { await cache!.applyCitaCreated(citaData) } catch (err) {
+          logger.warn({ err, citaId: citaData.id }, 'Cache applyCitaCreated failed')
+        }
       })
+
       webhookHandler.on('cita', 'modified', async (payload) => {
-        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+        const citaData = asWebhookCitaData(payload)
+        if (!citaData) return
+        try { await cache!.applyCitaModified(citaData) } catch (err) {
+          logger.warn({ err, citaId: citaData.id }, 'Cache applyCitaModified failed')
+        }
       })
+
       webhookHandler.on('cita', 'deleted', async (payload) => {
-        if (payload.data?.id) void warmCacheForCita(payload.data.id)
+        const citaData = asWebhookCitaData(payload)
+        if (!citaData) return
+        try { await cache!.applyCitaDeleted(citaData) } catch (err) {
+          logger.warn({ err, citaId: citaData.id }, 'Cache applyCitaDeleted failed')
+        }
       })
     }
 
+    // ── Follow-up listeners: use webhook data, fallback API for treatment name ──
     if (followUpScheduler && webhookHandler) {
       webhookHandler.on('cita', 'created', async (payload) => {
-        // External appointment creation → create follow-up sequence
-        const citaId = payload.data?.id
-        if (!citaId) return
+        const citaData = asWebhookCitaData(payload)
+        if (!citaData) return
 
         try {
-          // Fetch appointment details from API
-          const apt = await apiClient!.getAppointment(citaId, 'high')
-
           // Find linked contact for this patient
           const contactResult = await db.query(
             `SELECT contact_id FROM agent_contacts
              WHERE agent_data->>'medilink_patient_id' = $1 LIMIT 1`,
-            [String(apt.id_paciente)],
+            [String(citaData.id_paciente)],
           )
           if (contactResult.rows.length === 0) return
 
+          // Resolve treatment name: webhook nombre_atencion is often empty
+          let nombreTratamiento = citaData.nombre_atencion ?? ''
+          if (!nombreTratamiento) {
+            try {
+              const apt = await apiClient!.getAppointment(citaData.id, 'medium')
+              nombreTratamiento = apt.nombre_tratamiento ?? 'Consulta'
+            } catch {
+              nombreTratamiento = 'Consulta'
+            }
+          }
+
           const row = contactResult.rows[0]!
           await followUpScheduler!.scheduleSequence({
-            appointmentId: String(citaId),
+            appointmentId: String(citaData.id),
             contactId: row.contact_id as string,
             appointment: {
-              fecha: apt.fecha,
-              hora_inicio: apt.hora_inicio,
-              nombre_paciente: apt.nombre_paciente,
-              nombre_profesional: apt.nombre_dentista,
-              nombre_tratamiento: apt.nombre_tratamiento,
-              nombre_sucursal: apt.nombre_sucursal,
+              fecha: citaData.fecha,
+              hora_inicio: citaData.hora_inicio,
+              nombre_paciente: citaData.nombre_paciente,
+              nombre_profesional: citaData.nombre_profesional,
+              nombre_tratamiento: nombreTratamiento,
+              nombre_sucursal: citaData.nombre_sucursal,
             },
           })
         } catch (err) {
-          logger.error({ err, citaId }, 'Failed to create follow-up from webhook')
+          logger.error({ err, citaId: citaData.id }, 'Failed to create follow-up from webhook')
         }
       })
 
       webhookHandler.on('cita', 'modified', async (payload) => {
-        // If appointment modified externally, cancel existing follow-ups
-        const citaId = payload.data?.id
-        if (citaId) {
-          await followUpScheduler!.cancelSequence(String(citaId))
-        }
+        const citaData = asWebhookCitaData(payload)
+        if (!citaData) return
+        // Cancel existing follow-ups on modification
+        await followUpScheduler!.cancelSequence(String(citaData.id))
       })
     }
 
@@ -674,9 +689,21 @@ const manifest: ModuleManifest = {
       try {
         await cache.refreshReferenceData()
         logger.info('Reference data loaded')
+
+        // Warm weekly agenda in background (don't block init)
+        void cache.warmWeeklyAgenda().catch(err =>
+          logger.warn({ err }, 'Initial agenda warm failed — will retry on daily schedule'),
+        )
       } catch (err) {
         logger.warn({ err }, 'Failed to load reference data — configure token in console')
       }
+
+      // Daily agenda warm (every 24h)
+      agendaWarmTimer = setInterval(() => {
+        void cache!.warmWeeklyAgenda().catch(err =>
+          logger.warn({ err }, 'Daily agenda warm failed'),
+        )
+      }, 24 * 3600 * 1000)
     } else {
       logger.info('Medilink API token not configured — use console to set it')
     }
@@ -718,6 +745,10 @@ const manifest: ModuleManifest = {
     if (healthCheckTimer) {
       clearInterval(healthCheckTimer)
       healthCheckTimer = null
+    }
+    if (agendaWarmTimer) {
+      clearInterval(agendaWarmTimer)
+      agendaWarmTimer = null
     }
     followUpScheduler = null
     rateLimiter?.stop()

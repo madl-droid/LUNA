@@ -12,6 +12,8 @@ export interface SubagentTypeRow {
   verifyResult: boolean
   canSpawnChildren: boolean
   allowedTools: string[]
+  /** Tools REMOVED from main agent when this subagent is active (must be subset of allowedTools) */
+  exclusiveTools: string[]
   allowedKnowledgeCategories: string[]
   systemPrompt: string
   /** System subagents cannot be deleted and have protected fields */
@@ -34,6 +36,7 @@ export interface CreateSubagentType {
   verifyResult?: boolean
   canSpawnChildren?: boolean
   allowedTools?: string[]
+  exclusiveTools?: string[]
   allowedKnowledgeCategories?: string[]
   systemPrompt?: string
   googleSearchGrounding?: boolean
@@ -49,6 +52,7 @@ export interface UpdateSubagentType {
   verifyResult?: boolean
   canSpawnChildren?: boolean
   allowedTools?: string[]
+  exclusiveTools?: string[]
   allowedKnowledgeCategories?: string[]
   systemPrompt?: string
   googleSearchGrounding?: boolean
@@ -105,6 +109,8 @@ export interface SubagentCatalogEntry {
   verifyResult: boolean
   canSpawnChildren: boolean
   allowedTools: string[]
+  /** Tools REMOVED from main agent when this subagent is active (must be subset of allowedTools) */
+  exclusiveTools: string[]
   allowedKnowledgeCategories: string[]
   systemPrompt: string
   /** System subagents cannot be deleted and have protected fields */

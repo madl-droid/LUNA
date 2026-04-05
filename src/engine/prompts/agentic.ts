@@ -14,6 +14,7 @@ import type { ContextBundle, ToolCatalogEntry, ProactiveTrigger } from '../types
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
+import { describeSubagentTooling } from '../agentic/subagent-delegation.js'
 import { loadSystemPrompt, renderTemplate } from '../../modules/prompts/template-loader.js'
 import { getChannelLimit } from './channel-format.js'
 import { buildContextLayers } from './context-builder.js'
@@ -227,6 +228,15 @@ function buildToolsSection(
   if (googleHints) {
     lines.push('')
     lines.push(googleHints)
+  }
+
+  // Mandatory routing hints for exclusive tools (auto-generated from subagent catalog)
+  if (subagentCatalog && subagentCatalog.length > 0) {
+    const routingHints = describeSubagentTooling(subagentCatalog)
+    if (routingHints.length > 0) {
+      lines.push('')
+      lines.push(...routingHints)
+    }
   }
 
   return lines.join('\n')
