@@ -88,6 +88,32 @@ export function initLLMClients(config: EngineConfig): void {
   }
 }
 
+// ═══════════════════════════════════════════
+// Direct SDK defaults (used only when LLM module is NOT active)
+// Minimal mapping so the engine can function standalone.
+// ════��══════════════════════════════════════
+
+const DIRECT_TASK_DEFAULTS: Record<string, { provider: LLMProvider; model: string }> = {
+  main:       { provider: 'anthropic', model: 'claude-sonnet-4-6-20260214' },
+  complex:    { provider: 'anthropic', model: 'claude-opus-4-6-20260210' },
+  low:        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+  criticize:  { provider: 'google',    model: 'gemini-2.5-pro' },
+  media:      { provider: 'google',    model: 'gemini-2.5-flash' },
+  web_search: { provider: 'google',    model: 'gemini-2.5-flash' },
+  compress:   { provider: 'anthropic', model: 'claude-sonnet-4-6-20260214' },
+  batch:      { provider: 'anthropic', model: 'claude-sonnet-4-6-20260214' },
+}
+
+function resolveDirectProvider(task?: string): LLMProvider {
+  if (!task) return 'anthropic'
+  return DIRECT_TASK_DEFAULTS[task]?.provider ?? 'anthropic'
+}
+
+function resolveDirectModel(task?: string): string {
+  if (!task) return 'claude-sonnet-4-6-20260214'
+  return DIRECT_TASK_DEFAULTS[task]?.model ?? 'claude-sonnet-4-6-20260214'
+}
+
 /**
  * Call an LLM provider.
  * Routes through gateway if available, otherwise uses direct SDK calls.
@@ -98,9 +124,9 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMCallResult> {
     return callViaGateway(options)
   }
 
-  // Fallback: direct SDK calls
-  const provider = options.provider ?? 'anthropic'
-  const model = options.model ?? ''
+  // Fallback: direct SDK calls — resolve defaults from task name
+  const provider = options.provider ?? resolveDirectProvider(options.task)
+  const model = options.model ?? resolveDirectModel(options.task)
 
   try {
     return await callProvider(provider, model, options)
