@@ -138,19 +138,18 @@ function buildSubagentContext(
  */
 function resolveRunConfig(
   entry: SubagentCatalogEntry,
-  config: EngineConfig,
+  _config: EngineConfig,
   step: ExecutionStep,
   isChild: boolean,
 ): SubagentRunConfig {
-  // Model tier: 'normal' = classifyModel (Phase 2), 'complex' = complexModel
+  // Model tier: 'normal' → task 'main', 'complex' → task 'complex'
+  // Task router determines actual model/provider from LLM module config
   const isComplex = entry.modelTier === 'complex' || step.useThinking === true
-  const model = isComplex ? config.complexModel : config.classifyModel
-  const provider = isComplex ? config.complexProvider : config.classifyProvider
+  const task = isComplex ? 'complex' : 'main'
 
   return {
     entry,
-    model,
-    provider,
+    task,
     temperature: 0.1,
     maxOutputTokens: 2048,
     useThinking: isComplex,
@@ -312,7 +311,7 @@ async function runSubagentLoop(
   logger.info({
     traceId: ctx.traceId,
     slug: entry.slug,
-    model: runConfig.model,
+    task: runConfig.task,
     tools: toolDefs.map(t => t.name),
     isChild: runConfig.isChild,
     isRetry: !!retryContext,
@@ -410,9 +409,6 @@ async function runSubagentLoop(
     messages = [{ role: 'user', content: userMessage }]
   }
 
-  // Determine LLM task: use 'web_search' for grounding (routes to Gemini Flash chain)
-  const llmTask = runConfig.useGrounding ? 'web_search' : 'subagent'
-
   while (true) {
     // Check guardrails
     const check = checkGuardrails(guardrails, iterations, tokensUsed, startMs)
@@ -452,9 +448,7 @@ async function runSubagentLoop(
     try {
       // Call LLM
       const result = await callLLM({
-        task: llmTask,
-        provider: runConfig.useGrounding ? undefined : runConfig.provider, // Let task router handle provider for grounding
-        model: runConfig.useGrounding ? undefined : runConfig.model,       // Let task router handle model for grounding
+        task: runConfig.useGrounding ? 'web_search' : runConfig.task,
         system,
         messages,
         maxTokens: runConfig.maxOutputTokens,

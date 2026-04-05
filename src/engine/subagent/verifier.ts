@@ -1,6 +1,6 @@
 // LUNA Engine — Subagent Verifier
 // Verifica la calidad del resultado del subagent.
-// Usa el mismo modelo de Phase 2 (classifyModel).
+// Usa task 'subagent-verify' → routed to 'criticize' via task router.
 // Veredicto: accept / retry (con feedback) / fail.
 // Soporta verificación progresiva: más estricto en cada retry.
 
@@ -32,7 +32,7 @@ export async function verifySubagentResult(
   taskDescription: string,
   result: unknown,
   success: boolean,
-  config: EngineConfig,
+  _config: EngineConfig,
   retryAttempt = 0,
   registry?: Registry,
 ): Promise<VerificationResult & { tokensUsed: number }> {
@@ -70,8 +70,6 @@ export async function verifySubagentResult(
 
     const llmResult = await callLLM({
       task: 'subagent-verify',
-      provider: config.classifyProvider,
-      model: config.classifyModel,
       system: systemPrompt,
       messages: [{ role: 'user', content: parts.join('\n') }],
       maxTokens: 512,

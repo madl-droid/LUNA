@@ -628,6 +628,7 @@
     var dgModInput = row.querySelector('input[name="LLM_' + taskKey + '_DOWNGRADE_MODEL"]')
     if (dgProvInput) dgProvInput.value = provider
     if (dgModInput) dgModInput.value = model
+    checkDirty()
   })
 
   // === Model table — fallback select change (update hidden inputs) ===
@@ -647,6 +648,7 @@
     var fbModInput = row.querySelector('input[name="LLM_' + taskKey + '_FALLBACK_MODEL"]')
     if (fbProvInput) fbProvInput.value = provider
     if (fbModInput) fbModInput.value = model
+    checkDirty()
   })
 
   // === WhatsApp polling (only on /console/whatsapp) ===

@@ -7,8 +7,7 @@ import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { MemoryManager } from '../../modules/memory/memory-manager.js'
 import type { ProactiveConfig } from '../types.js'
-import { callLLMWithFallback } from '../utils/llm-client.js'
-import type { EngineConfig } from '../types.js'
+import { callLLM } from '../utils/llm-client.js'
 import { validateCommitment } from './commitment-validator.js'
 
 const logger = pino({ name: 'engine:commitment-detector' })
@@ -26,7 +25,6 @@ export async function detectCommitments(
   contactId: string,
   sessionId: string,
   registry: Registry,
-  engineConfig: EngineConfig,
   proactiveConfig: ProactiveConfig,
 ): Promise<void> {
   if (!proactiveConfig.commitments.enabled) return
@@ -56,19 +54,12 @@ export async function detectCommitments(
       ? (await promptsSvc.getSystemPrompt('commitment-detector-system')) || DETECTOR_SYSTEM_FALLBACK
       : DETECTOR_SYSTEM_FALLBACK
 
-    const result = await callLLMWithFallback(
-      {
-        task: 'commitment-detect',
-        provider: engineConfig.classifyProvider,
-        model: engineConfig.classifyModel,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: `Agent response:\n"${responseText}"` }],
-        maxTokens: 256,
-        temperature: 0.1,
-      },
-      engineConfig.fallbackClassifyProvider,
-      engineConfig.fallbackClassifyModel,
-    )
+    const result = await callLLM({
+      task: 'commitment-detect',
+      system: systemPrompt,
+      messages: [{ role: 'user', content: `Agent response:\n"${responseText}"` }],
+      maxTokens: 256,
+    })
 
     // Parse response
     let jsonStr = result.text.trim()

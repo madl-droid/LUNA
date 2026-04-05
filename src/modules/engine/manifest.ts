@@ -57,12 +57,6 @@ interface EngineModuleConfig {
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
   LLM_CRITICIZER_MODE: string
-  LLM_LOW_EFFORT_MODEL: string
-  LLM_LOW_EFFORT_PROVIDER: string
-  LLM_MEDIUM_EFFORT_MODEL: string
-  LLM_MEDIUM_EFFORT_PROVIDER: string
-  LLM_HIGH_EFFORT_MODEL: string
-  LLM_HIGH_EFFORT_PROVIDER: string
   // Business hours
   ENGINE_BUSINESS_HOURS_START: number
   ENGINE_BUSINESS_HOURS_END: number
@@ -122,12 +116,6 @@ const manifest: ModuleManifest = {
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
-    LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
-    LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
-    LLM_MEDIUM_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
-    LLM_MEDIUM_EFFORT_PROVIDER: z.string().default('anthropic'),
-    LLM_HIGH_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
-    LLM_HIGH_EFFORT_PROVIDER: z.string().default('anthropic'),
     // Business hours for proactive contact
     ENGINE_BUSINESS_HOURS_START: numEnvMin(0, 8),
     ENGINE_BUSINESS_HOURS_END: numEnvMin(0, 17),
@@ -473,7 +461,6 @@ const manifest: ModuleManifest = {
           en: 'Classifies messages by complexity to use the most appropriate model and optimize costs.',
         },
       },
-
       {
         key: 'LLM_CRITICIZER_MODE',
         type: 'select',
@@ -487,39 +474,6 @@ const manifest: ModuleManifest = {
           { value: 'complex_only', label: { es: 'Solo mensajes complejos (recomendado)', en: 'Complex messages only (recommended)' } },
           { value: 'always', label: { es: 'Siempre', en: 'Always' } },
         ],
-        width: 'half',
-      },
-
-      // ── Models by Effort ──
-      { key: '_div_effort_models', type: 'divider', label: { es: 'Modelos por Esfuerzo', en: 'Models by Effort' } },
-      {
-        key: 'LLM_LOW_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo bajo esfuerzo', en: 'Low effort model' },
-        info: {
-          es: 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.',
-          en: 'Model for simple messages: greetings, confirmations, direct questions.',
-        },
-        width: 'half',
-      },
-      {
-        key: 'LLM_MEDIUM_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo medio esfuerzo', en: 'Medium effort model' },
-        info: {
-          es: 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.',
-          en: 'Model for medium complexity messages: contextual queries, follow-ups.',
-        },
-        width: 'half',
-      },
-      {
-        key: 'LLM_HIGH_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo alto esfuerzo', en: 'High effort model' },
-        info: {
-          es: 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.',
-          en: 'Model for complex messages: multiple tools, objections, deep reasoning.',
-        },
         width: 'half',
       },
 

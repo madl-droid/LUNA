@@ -47,7 +47,7 @@ export async function postProcess(
   const shouldCriticize =
     config.criticizerMode === 'always' ||
     (config.criticizerMode === 'complex_only' && (
-      agenticResult.effortUsed === 'high' ||
+      agenticResult.effortUsed === 'complex' ||
       agenticResult.toolCallsLog.filter(t => !t.blocked && !t.fromCache).length >= 3
     ))
 
@@ -163,7 +163,7 @@ async function runCriticizer(
 async function getReviewFeedback(
   responseText: string,
   ctx: ContextBundle,
-  config: EngineConfig,
+  _config: EngineConfig,
   registry: Registry,
 ): Promise<string | null> {
   const promptsService = registry.getOptional<{
@@ -187,8 +187,6 @@ Do NOT rewrite the response — only provide your feedback.`
 
   const result = await callLLM({
     task: 'criticizer-review',
-    provider: config.classifyProvider,
-    model: config.classifyModel,
     system,
     messages: [
       {
@@ -197,7 +195,6 @@ Do NOT rewrite the response — only provide your feedback.`
       },
     ],
     maxTokens: 1024,
-    temperature: 0.2,
   })
 
   const feedback = result.text.trim()
@@ -227,8 +224,6 @@ Rules:
 
   const result = await callLLM({
     task: 'criticizer-rewrite',
-    provider: config.classifyProvider,
-    model: config.classifyModel,
     system,
     messages: [
       {
@@ -237,7 +232,6 @@ Rules:
       },
     ],
     maxTokens: config.maxOutputTokens,
-    temperature: 0.3,
   })
 
   const rewritten = result.text.trim()

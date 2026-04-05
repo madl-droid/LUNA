@@ -30,7 +30,7 @@ const BUFFER_COMPRESS_SYSTEM_FALLBACK = 'Eres un asistente que resume conversaci
 export async function checkAndCompressBuffer(
   sessionId: string,
   memoryManager: MemoryManager,
-  config: EngineConfig,
+  _config: EngineConfig,
   registry?: Registry,
 ): Promise<void> {
   const { threshold, keepRecent } = memoryManager.getCompressionConfig()
@@ -60,8 +60,6 @@ export async function checkAndCompressBuffer(
   try {
     const result = await callLLM({
       task: 'buffer_compress',
-      provider: config.classifyProvider,
-      model: config.classifyModel,
       system: await loadBufferCompressSystem(registry),
       messages: [{ role: 'user', content: userPrompt }],
       maxTokens: 1000,

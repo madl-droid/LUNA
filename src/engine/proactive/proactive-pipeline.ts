@@ -151,8 +151,7 @@ async function runProactiveAgentic(
     }
   }
 
-  const classifiedEffort = classifyEffort(ctx)
-  const effortLevel = classifiedEffort === 'high' ? 'medium' : 'low'
+  const effortLevel = classifyEffort(ctx)
   const runResult = await runAgenticDelivery({
     ctx,
     mode: 'proactive',

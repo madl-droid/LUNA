@@ -45,11 +45,6 @@ const DEFAULTS: NightlyConfig = {
   maxRetries: 2,
 }
 
-/** Get batch LLM model/provider from engine config (proactive task routing) */
-function getBatchModel(ctx: ProactiveJobContext): { provider?: string; model?: string } {
-  return { provider: ctx.engineConfig.proactiveProvider, model: ctx.engineConfig.proactiveModel }
-}
-
 function getNightlyConfig(ctx: ProactiveJobContext): NightlyConfig {
   const svc = ctx.registry.getOptional<{ get(): NightlyConfig }>('engine:nightly-config')
   return svc ? svc.get() : DEFAULTS
@@ -318,11 +313,8 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
             .map(m => `[${m.role === 'assistant' ? 'Agente' : 'Usuario'}]: ${m.contentText || m.content?.text || ''}`)
             .join('\n')
 
-          const batchLlm = getBatchModel(ctx)
           const llmResult = await ctx.registry.callHook('llm:chat', {
             task: 'nightly-compress',
-            provider: batchLlm.provider,
-            model: batchLlm.model,
             system: 'Eres un asistente que resume conversaciones de ventas/atención al cliente.',
             messages: [{ role: 'user' as const, content: `Resume esta conversación:\n${conversationText.slice(0, 15000)}\n\nResponde SOLO con JSON: { "summary": "...", "keyFacts": [{"fact": "...", "confidence": 0.9}], "structuredData": {} }` }],
             maxTokens: 1500,
@@ -340,7 +332,7 @@ async function compressOldSessions(ctx: ProactiveJobContext): Promise<void> {
               keyFacts: Array.isArray(parsed.keyFacts) ? (parsed.keyFacts as Array<Record<string, unknown>>).map(kf => ({ fact: String(kf.fact ?? ''), source: 'nightly-compression', confidence: typeof kf.confidence === 'number' ? kf.confidence : 0.8 })) : [],
               structuredData: (parsed.structuredData ?? {}) as Record<string, unknown>,
               originalCount: messages.length, keptRecentCount: 0,
-              modelUsed: llmResult.model ?? batchLlm.model ?? 'unknown',
+              modelUsed: llmResult.model ?? 'batch',
               tokensUsed: (llmResult.inputTokens ?? 0) + (llmResult.outputTokens ?? 0),
             },
             new Date(), new Date(),
@@ -431,7 +423,6 @@ async function generateDailyReport(ctx: ProactiveJobContext): Promise<void> {
     // Generate narrative summary via LLM
     let narrative: string | null = null
     try {
-      const reportLlm = getBatchModel(ctx)
       const reportPromptsSvc = ctx.registry.getOptional<PromptsService>('prompts:service')
       let reportUserContent = ''
       if (reportPromptsSvc) {
@@ -459,9 +450,7 @@ Escribe el resumen en español, enfocándote en tendencias y datos relevantes.`
       }
 
       const llmResult = await ctx.registry.callHook('llm:chat', {
-        task: 'custom',
-        provider: reportLlm.provider,
-        model: reportLlm.model,
+        task: 'batch',
         system: 'Genera reportes diarios concisos de operación de un agente de atención al cliente.',
         messages: [{
           role: 'user' as const,

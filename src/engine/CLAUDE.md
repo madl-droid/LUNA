@@ -13,8 +13,8 @@ responder.ts          — responder legacy (bridge)
 output-sanitizer.ts   — sanitización de salida compartida (pre-TTS y pre-delivery)
 
 agentic/
-  types.ts            — AgenticConfig, AgenticResult, EffortLevel, ToolCallLog, LoopDetectorResult
-  effort-router.ts    — clasificador de complejidad determinístico (sin LLM, <5ms)
+  types.ts            — AgenticConfig, AgenticResult, EffortLevel (normal|complex), ToolCallLog, LoopDetectorResult
+  effort-router.ts    — clasificador de complejidad determinístico (2 niveles: normal/complex, sin LLM, <5ms)
   tool-dedup-cache.ts — caché de dedup per-pipeline para tool calls idénticos
   tool-loop-detector.ts — anti-loop: generic repeat, no-progress, ping-pong detection
   agentic-loop.ts     — THE CORE: LLM + tool calling loop (reemplaza Phases 2+3+4)
@@ -106,17 +106,17 @@ Las Phases 2+3+4 legacy fueron eliminadas. El engine usa exclusivamente el agent
 
 ### Cómo funciona el loop agentico
 
-1. **Effort Router**: `classifyEffort(ctx)` clasifica el mensaje como low/medium/high (determinístico, <5ms)
+1. **Effort Router**: `classifyEffort(ctx)` clasifica el mensaje como `normal` o `complex` (determinístico, <5ms, 2 niveles)
 2. **System Prompt**: ensamblado por prompt builder (identity + job + guardrails + tools + knowledge + historial)
 3. **Loop**: `runAgenticLoop(ctx, systemPrompt, tools, config, registry)`:
-   - Llama `callLLMWithFallback()` con system prompt + mensajes + tool definitions
+   - Llama `callLLM()` con task name (router decide modelo/provider)
    - Si LLM retorna solo texto → listo, retorna como respuesta final
    - Si LLM retorna tool_calls → ejecuta via `ToolRegistry.executeTool()`, retorna resultados
    - Protecciones: dedup cache (omite llamadas idénticas), loop detector (graduado: warn → block → circuit break)
    - Ejecución paralela de tools via `StepSemaphore`
    - Límite de turns → fuerza respuesta texto final
 4. **Post-processor**: `postProcess(result, ctx, config, registry)`:
-   - Criticizer (solo para effort=high o 3+ tool calls)
+   - Criticizer (solo para effort=complex o 3+ tool calls)
    - `formatForChannel()` → split WA/Chat, HTML para email
    - TTS si se requiere respuesta de audio
    - Retorna `CompositorOutput`

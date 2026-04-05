@@ -74,7 +74,7 @@ export class UsageTracker {
    */
   async record(
     response: LLMResponse | null,
-    task: LLMTask,
+    task: LLMTask | string,
     provider: LLMProviderName,
     model: string,
     durationMs: number,

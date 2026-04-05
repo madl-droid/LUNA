@@ -106,9 +106,9 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 
 ## Motor Agentico (v2) — `/console/agente/advanced` Panel 5
 - `ENGINE_AGENTIC_MAX_TURNS` — max tool-calling turns per message
-- `ENGINE_EFFORT_ROUTING` — enable/disable complexity-based effort routing
+- `ENGINE_EFFORT_ROUTING` — enable/disable complexity-based effort routing (2 levels: normal/complex)
 - `LLM_CRITICIZER_MODE` (disabled|complex_only|always)
-- Modelos por esfuerzo: `LLM_LOW/MEDIUM/HIGH_EFFORT_MODEL` + `LLM_LOW/MEDIUM/HIGH_EFFORT_PROVIDER`
+- Modelos por tarea se configuran en `/console/llm` (10 tareas canónicas, ver docs/architecture/task-routing.md)
 
 ## Subagente Contexto Fresco — `/console/agente/subagents`
 - `SUBAGENT_FRESH_CONTEXT` toggle — panel de configuracion global al inicio de la pagina
