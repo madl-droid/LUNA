@@ -149,3 +149,7 @@ Barra de error roja con border-left que aparece debajo de la descripción cuando
 - Google auth status no se obtiene server-side (solo via API) — initial render muestra "not connected".
 - QR data URL tampoco se obtiene server-side — client JS polling lo actualiza.
 - No agregar redirects de compatibilidad para rutas legacy del panel.
+## Notas recientes
+- Save bar: `Guardar` persiste y luego encadena `/console/apply` para hot-reload del runtime.
+- Toggles instantaneos: bypass del save bar y aplicacion inmediata.
+- Dirty tracking: si un control custom actualiza un hidden input, tambien debe disparar `input` o `change` bubbling.
