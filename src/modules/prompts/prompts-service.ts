@@ -159,11 +159,10 @@ export class PromptsServiceImpl implements PromptsService {
     if (personaParts.length > 0) {
       finalIdentity = personaParts.join(' ') + '\n\n' + identity
     }
-    if (cfg.AGENT_ACCENT && cfg.AGENT_ACCENT_PROMPT) {
-      finalIdentity = finalIdentity + '\n\n--- ACENTO ---\n' + cfg.AGENT_ACCENT_PROMPT
-    }
 
-    return { identity: finalIdentity, job, guardrails, relationship, criticizer }
+    const accent = (cfg.AGENT_ACCENT && cfg.AGENT_ACCENT_PROMPT) ? cfg.AGENT_ACCENT_PROMPT : ''
+
+    return { identity: finalIdentity, job, accent, guardrails, relationship, criticizer }
   }
 
   async getEvaluatorGenerated(): Promise<string> {
