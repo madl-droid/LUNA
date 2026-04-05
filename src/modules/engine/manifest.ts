@@ -122,6 +122,7 @@ const manifest: ModuleManifest = {
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
+    ENGINE_CRITICIZER_MAX_RETRIES: numEnvMin(0, 1),
     LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
     LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
     LLM_MEDIUM_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
@@ -486,6 +487,16 @@ const manifest: ModuleManifest = {
           { value: 'complex_only', label: { es: 'Solo mensajes complejos (recomendado)', en: 'Complex messages only (recommended)' } },
           { value: 'always', label: { es: 'Siempre', en: 'Always' } },
         ],
+        width: 'half',
+      },
+      {
+        key: 'ENGINE_CRITICIZER_MAX_RETRIES',
+        type: 'number',
+        label: { es: 'Reintentos del verificador', en: 'Quality checker retries' },
+        info: {
+          es: 'Cuántas veces el verificador puede pedir correcciones antes de aceptar la respuesta original. 0 = sin reintentos (1 sola revisión). Máximo 5.',
+          en: 'How many times the quality checker can request corrections before accepting the original response. 0 = no retries (single review). Max 5.',
+        },
         width: 'half',
       },
 

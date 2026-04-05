@@ -603,6 +603,8 @@ export interface EngineConfig {
 
   // Criticizer (quality gate): 'disabled' | 'complex_only' | 'always'
   criticizerMode: 'disabled' | 'complex_only' | 'always'
+  /** Max criticizer retry attempts before accepting the original response (0-5) */
+  criticizerMaxRetries: number
 
   // Checkpoints (resumable pipelines)
   checkpointEnabled: boolean
