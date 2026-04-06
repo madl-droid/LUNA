@@ -31,12 +31,13 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /^https?:\/\/metadata\./i, // cloud metadata endpoints
 ]
 
-// Google Drive/Docs/Sheets/Slides URL patterns
-const DRIVE_PATTERNS: RegExp[] = [
-  /^https?:\/\/docs\.google\.com\/(document|spreadsheets|presentation)\/d\/([a-zA-Z0-9_-]+)/,
-  /^https?:\/\/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,
-  /^https?:\/\/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/,
-]
+// Google Drive mimeType → driveType + suggestedTool mapping
+const DRIVE_MIME_MAP: Record<string, { driveType: 'document' | 'spreadsheet' | 'presentation' | 'folder' | 'file'; suggestedTool: string }> = {
+  'application/vnd.google-apps.document': { driveType: 'document', suggestedTool: 'docs-read' },
+  'application/vnd.google-apps.spreadsheet': { driveType: 'spreadsheet', suggestedTool: 'sheets-read' },
+  'application/vnd.google-apps.presentation': { driveType: 'presentation', suggestedTool: 'slides-read' },
+  'application/vnd.google-apps.folder': { driveType: 'folder', suggestedTool: 'drive-list-files' },
+}
 
 /** DriveService interface (from google-apps module) */
 interface DriveService {
@@ -45,6 +46,9 @@ interface DriveService {
     name: string
     mimeType: string
     modifiedTime?: string
+  }>
+  listFiles(options?: { folderId?: string; pageSize?: number }): Promise<{
+    files: Array<{ id: string; name: string; mimeType: string }>
   }>
 }
 
@@ -72,14 +76,14 @@ function isBlockedUrl(url: string): boolean {
 }
 
 /**
- * Check if a URL is a Google Drive/Docs/Sheets/Slides URL.
+ * Check if a URL is a Google Drive/Docs/Sheets/Slides/Folder URL.
  */
 export function isDriveUrl(url: string): boolean {
-  return DRIVE_PATTERNS.some(pattern => pattern.test(url))
+  return /^https?:\/\/(docs|drive)\.google\.com\//.test(url)
 }
 
 /**
- * Extract the file ID from a Google Drive URL.
+ * Extract the file/folder ID from a Google Drive URL.
  * Returns null if URL doesn't match any known Drive pattern.
  */
 export function extractDriveFileId(url: string): string | null {
@@ -91,11 +95,22 @@ export function extractDriveFileId(url: string): string | null {
   const fileMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)
   if (fileMatch?.[1]) return fileMatch[1]
 
+  // drive.google.com/drive/folders/{ID}
+  const folderMatch = url.match(/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([a-zA-Z0-9_-]+)/)
+  if (folderMatch?.[1]) return folderMatch[1]
+
   // drive.google.com/open?id={ID}
   const openMatch = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/)
   if (openMatch?.[1]) return openMatch[1]
 
   return null
+}
+
+/**
+ * Resolve drive type and suggested tool from mimeType.
+ */
+function resolveDriveType(mimeType: string): { driveType: 'document' | 'spreadsheet' | 'presentation' | 'folder' | 'file'; suggestedTool: string } {
+  return DRIVE_MIME_MAP[mimeType] ?? { driveType: 'file', suggestedTool: 'drive-get-file' }
 }
 
 /**
@@ -170,7 +185,8 @@ export async function extractUrls(
 /**
  * Handle a Google Drive URL:
  * - Check if google:drive service is available and connected
- * - Try to get file metadata via API
+ * - Try to get file/folder metadata via API
+ * - For folders, list contents (max 20 items)
  * - If no access, return drive_no_access with email so agent can ask user to share
  */
 async function handleDriveUrl(url: string, registry: Registry): Promise<UrlExtraction> {
@@ -204,7 +220,21 @@ async function handleDriveUrl(url: string, registry: Registry): Promise<UrlExtra
   // Try to get file metadata
   try {
     const file = await driveService.getFile(fileId)
-    logger.info({ fileId, name: file.name, mimeType: file.mimeType }, 'Drive URL resolved to file metadata')
+    const { driveType, suggestedTool } = resolveDriveType(file.mimeType)
+
+    logger.info({ fileId, name: file.name, mimeType: file.mimeType, driveType }, 'Drive URL resolved')
+
+    // If it's a folder, list its contents
+    let folderContents: Array<{ name: string; mimeType: string; id: string }> | undefined
+    if (driveType === 'folder') {
+      try {
+        const listing = await driveService.listFiles({ folderId: fileId, pageSize: 20 })
+        folderContents = listing.files.map(f => ({ name: f.name, mimeType: f.mimeType, id: f.id }))
+      } catch (listErr) {
+        logger.warn({ listErr, fileId }, 'Failed to list folder contents')
+        folderContents = []
+      }
+    }
 
     return {
       url,
@@ -219,6 +249,9 @@ async function handleDriveUrl(url: string, registry: Registry): Promise<UrlExtra
         name: file.name,
         mimeType: file.mimeType,
         modifiedTime: file.modifiedTime,
+        driveType,
+        suggestedTool,
+        folderContents,
       },
     }
   } catch (err: unknown) {

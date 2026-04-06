@@ -315,20 +315,34 @@ export async function intake(
             timestamp: new Date(),
           })
         } else if (url.status === 'drive_reference' && url.driveMeta) {
-          // Drive URL with access: inject metadata so agent knows about the file
           const meta = url.driveMeta
           const modified = meta.modifiedTime ? ` (modificado: ${new Date(meta.modifiedTime).toLocaleDateString('es')})` : ''
-          history.push({
-            role: 'user',
-            content: `[drive] El usuario compartió un enlace de Google Drive: "${meta.name}" (${meta.mimeType})${modified}. URL: ${url.url} — Puedes usar las tools de Google (docs-read, sheets-read, slides-read, drive-get-file) con el ID "${meta.fileId}" para leer el contenido.`,
-            timestamp: new Date(),
-          })
+
+          if (meta.driveType === 'folder') {
+            // Folder: list contents so agent knows what's inside
+            const items = meta.folderContents ?? []
+            const listing = items.length > 0
+              ? items.map(f => `  - "${f.name}" (${f.mimeType}, id: ${f.id})`).join('\n')
+              : '  (carpeta vacía o sin permisos para listar)'
+            history.push({
+              role: 'user',
+              content: `[drive:folder] Carpeta de Drive: "${meta.name}"${modified}.\nContenido (${items.length} archivos):\n${listing}\nPuedes leer archivos individuales con la tool correspondiente según su tipo.`,
+              timestamp: new Date(),
+            })
+          } else {
+            // File: inject type-specific tag + suggested tool
+            history.push({
+              role: 'user',
+              content: `[drive:${meta.driveType}] "${meta.name}"${modified}. Disponible via ${meta.suggestedTool} con ID "${meta.fileId}".`,
+              timestamp: new Date(),
+            })
+          }
         } else if (url.status === 'drive_no_access') {
           // Drive URL without access: tell agent to ask user to share
           const emailHint = url.driveEmail ? ` con la cuenta ${url.driveEmail}` : ''
           history.push({
             role: 'user',
-            content: `[drive] El usuario compartió un enlace de Google Drive (${url.url}) pero no tenemos acceso al archivo. Pídele al usuario que comparta el documento${emailHint} para poder leerlo.`,
+            content: `[drive] El usuario compartió un enlace de Google Drive (${url.url}) pero no tenemos acceso. Pídele que comparta el documento${emailHint}.`,
             timestamp: new Date(),
           })
         } else if (url.status === 'unauthorized') {
@@ -339,7 +353,7 @@ export async function intake(
             timestamp: new Date(),
           })
         }
-        // needs_subagent, too_large: already handled by existing logic (not injected)
+        // needs_subagent, too_large: not injected — agent doesn't see them
       }
     }
   } catch (err) {

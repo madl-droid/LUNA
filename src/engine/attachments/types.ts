@@ -151,12 +151,18 @@ export interface UrlExtraction {
   status: AttachmentStatus
   injectionRisk: boolean
   cacheKey: string | null
-  /** Drive file metadata (only for drive_reference status) */
+  /** Drive file/folder metadata (only for drive_reference status) */
   driveMeta?: {
     fileId: string
     name: string
     mimeType: string
     modifiedTime?: string
+    /** Specific drive type: document, spreadsheet, presentation, folder, or file (generic) */
+    driveType: 'document' | 'spreadsheet' | 'presentation' | 'folder' | 'file'
+    /** Suggested tool for reading this file (e.g. docs-read, sheets-read) */
+    suggestedTool: string
+    /** Folder contents (only when driveType === 'folder') */
+    folderContents?: Array<{ name: string; mimeType: string; id: string }>
   }
   /** Google account email for drive_no_access (so agent can tell user to share) */
   driveEmail?: string
