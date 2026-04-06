@@ -240,6 +240,8 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
 
   // Min body length check (skip empty/trivial emails)
   const textContent = msg.bodyText || stripHtml(msg.bodyHtml)
+  // Use cleaned body for the engine (quoted replies, signatures, disclaimers stripped)
+  const cleanContent = msg.cleanBodyText || textContent
   if (textContent.trim().length < 2 && msg.attachments.length === 0) {
     logger.debug({ messageId: msg.id, from: msg.from }, 'Skipping email with empty body')
     return
@@ -257,7 +259,7 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
       }))
     : undefined
 
-  const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${textContent}`
+  const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${cleanContent}`
 
   // Fire message:incoming hook para que el engine lo procese
   await _registry.runHook('message:incoming', {

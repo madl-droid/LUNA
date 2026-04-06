@@ -3,6 +3,7 @@
 // La firma se obtiene del workspace via sendAs.get() y se inyecta en buildRawEmail.
 
 import { google } from 'googleapis'
+import { cleanEmailBody } from './email-cleaner.js'
 import type { OAuth2Client } from 'google-auth-library'
 import pino from 'pino'
 import type {
@@ -270,6 +271,7 @@ export class GmailAdapter {
       isReply: !!inReplyTo,
       hasListUnsubscribe: !!getHeader('List-Unsubscribe'),
       rawHeaders,
+      cleanBodyText: cleanEmailBody(bodyText),
     }
   }
 

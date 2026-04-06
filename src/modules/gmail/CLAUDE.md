@@ -6,6 +6,7 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - `manifest.ts` — lifecycle, configSchema, console fields, API routes, migrations, polling, batching, jobs, labels
 - `types.ts` — EmailMessage, EmailAttachment, EmailSendOptions, EmailReplyOptions, EmailForwardOptions, EmailConfig, LunaLabelIds, CustomLabel, ResolvedCustomLabel
 - `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, listMessages (búsqueda genérica), filtro no-reply/domain/subject/List-Unsubscribe, labels, star, parsing MIME, footer, firma (workspace/custom/auto), retry 429/5xx
+- `email-cleaner.ts` — limpieza de body: stripQuotedReplies, stripDisclaimers, compactForwardHeaders, stripThirdPartySignatures
 - `tools.ts` — registro de email tools para el pipeline (email-read-inbox, email-search, email-get-detail)
 - `email-oauth.ts` — OAuth2 standalone para Gmail-only (se usa cuando google-apps no está activo)
 - `rate-limiter.ts` — Redis-backed rate limiter con limites configurables (defaults: workspace 80/h 1500/d, free 20/h 400/d)
@@ -85,6 +86,13 @@ Clasificador determinístico (<5ms, sin LLM) que corre ANTES del agentic loop. D
 - `instance/prompts/system/skills/email-outreach.md` — protocolo cross-channel (captura email, envío material, cuándo no responder, timing follow-ups)
 - `requiredTools: email-read-inbox` — solo aparece cuando gmail está activo
 - Ver `docs/architecture/channel-guide.md` sección "Skill de outreach cross-channel" para la política general
+
+## Limpieza de body (incoming)
+- `cleanEmailBody()` en `email-cleaner.ts` produce `cleanBodyText` en cada `EmailMessage`
+- El engine recibe `cleanBodyText` como `content.text` (no el `bodyText` original)
+- `bodyText` original se preserva intacto para `signature-parser.ts` y persistencia en `raw`
+- Limpieza: quoted replies (`>` lines, "On ... wrote:"), forward headers (compactados a 1 línea), firmas de terceros (después de `-- ` en el último 30%), disclaimers legales
+- Forward bodies se mantienen — solo se compactan los headers repetitivos
 
 ## Firma de email (outgoing)
 - **Workspace** (`gmail` mode): se lee con `sendAs.get()` al init y se cachea en HTML + plain text

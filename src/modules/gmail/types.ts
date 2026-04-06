@@ -102,6 +102,8 @@ export interface EmailMessage {
   hasListUnsubscribe: boolean
   /** Raw email headers (lowercased keys) for triage classification. */
   rawHeaders: Record<string, string>
+  /** Cleaned body text: quoted replies, signatures, disclaimers stripped. Original in bodyText. */
+  cleanBodyText: string
 }
 
 export interface EmailAttachment {
