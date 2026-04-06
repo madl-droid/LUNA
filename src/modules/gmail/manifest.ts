@@ -335,10 +335,6 @@ async function detectThreadGap(
   return gaps.length > 0 ? gaps : null
 }
 
-/** Escape angle brackets to prevent injection in text context */
-function escapeGapName(name: string): string {
-  return name.replace(/</g, '‹').replace(/>/g, '›')
-}
 
 /** Sanitize a sender display name to prevent prompt injection and XSS. */
 function sanitizeSenderName(name: string): string {
