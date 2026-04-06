@@ -52,6 +52,9 @@ async function ensureAllLabels(): Promise<void> {
   const config = _registry.getConfig<EmailConfig>('gmail')
 
   try {
+    // Race condition note: ensureLabel is idempotent (creates label if not exists, returns
+    // existing ID if already present). Gmail API handles concurrent label creation safely,
+    // so no mutex is needed here. The worst case is two concurrent calls both succeed.
     // Default labels — always present
     lunaLabels = {
       agent: await gmailAdapter.ensureLabel('LUNA/Agent'),
@@ -276,7 +279,10 @@ async function detectThreadGap(
       break
     }
     try {
-      const gapMsg = await gmailAdapter.getFullMessage(gapId)
+      const gapMsg = await Promise.race([
+        gmailAdapter.getFullMessage(gapId),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000)),
+      ])
       if (!gapMsg) continue
       gaps.push({
         id: gapId,
@@ -298,12 +304,22 @@ function escapeGapName(name: string): string {
   return name.replace(/</g, '‹').replace(/>/g, '›')
 }
 
+/** Sanitize a sender display name to prevent prompt injection and XSS. */
+function sanitizeSenderName(name: string): string {
+  return name
+    .replace(/<[^>]*>/g, '')          // strip HTML tags
+    .replace(/[\x00-\x1F\x7F]/g, '') // remove control characters
+    .replace(/[<>{}]/g, (c) => ({ '<': '‹', '>': '›', '{': '❴', '}': '❵' })[c]!)
+    .slice(0, 100)
+    .trim()
+}
+
 /** Format gap messages as a text preamble (fallback when session not found) */
 function formatGapPreamble(gaps: GapMessage[]): string {
   const parts: string[] = ['[Contexto: mensajes en el hilo mientras estabas ausente]']
   for (const g of gaps) {
     const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
-    parts.push(`---\nDe: ${escapeGapName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`)
+    parts.push(`---\nDe: ${sanitizeSenderName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`)
   }
   parts.push('---')
   return parts.join('\n')
@@ -319,7 +335,7 @@ async function persistGapMessages(
 
   for (const g of gaps) {
     const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
-    const contentText = `[Hilo] De: ${escapeGapName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`
+    const contentText = `[Hilo] De: ${sanitizeSenderName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`
 
     const msg = {
       id: randomUUID(),

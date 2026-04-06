@@ -29,10 +29,16 @@ export function cleanEmailBody(bodyText: string): string {
 
   let text = bodyText
 
+  // Detect if email is a forward before compacting headers
+  const isForward = FORWARD_PATTERNS.some((p) => p.test(bodyText))
+
   // Order matters: forwards first (preserve body, compact headers),
-  // then quoted replies, then signatures, then disclaimers.
+  // then quoted replies (skip for forwards — would remove forwarded content),
+  // then signatures, then disclaimers.
   text = compactForwardHeaders(text)
-  text = stripQuotedReplies(text)
+  if (!isForward) {
+    text = stripQuotedReplies(text)
+  }
   text = stripThirdPartySignatures(text)
   text = stripDisclaimers(text)
 
@@ -64,10 +70,16 @@ function stripQuotedReplies(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
 
-    // "On March 15, Juan wrote:" — start of quote block
+    // "On March 15, Juan wrote:" — start of quote block.
+    // Require preceding empty line to avoid false positives in body text.
+    // Example valid: "\n\nOn March 15, Juan wrote:\n> quoted"
+    // Example false positive: "El cliente escribió: quiero el plan" (no preceding blank)
     if (!inQuoteBlock && WROTE_LINE.test(line)) {
-      inQuoteBlock = true
-      continue
+      const prevLine = result[result.length - 1] ?? ''
+      if (prevLine.trim() === '') {
+        inQuoteBlock = true
+        continue
+      }
     }
 
     // Lines starting with ">" are quoted
