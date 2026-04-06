@@ -14,7 +14,7 @@ import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
 import { EmailRateLimiter } from './rate-limiter.js'
-import { cleanEmailBody } from './email-cleaner.js'
+import { cleanEmailBody, stripHtml } from './email-cleaner.js'
 import type { EmailConfig, EmailPollerState, EmailMessage, LunaLabelIds, CustomLabel, ResolvedCustomLabel } from './types.js'
 
 const logger = pino({ name: 'gmail' })
@@ -512,20 +512,6 @@ async function autoCreateCoworkerFromDomain(email: string, fromName: string): Pr
   logger.info({ email, fromName }, 'Auto-created coworker from email domain match')
 }
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
 
 // ─── API Routes ────────────────────────────
 

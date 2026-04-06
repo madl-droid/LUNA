@@ -3,7 +3,7 @@
 // La firma se obtiene del workspace via sendAs.get() y se inyecta en buildRawEmail.
 
 import { google } from 'googleapis'
-import { cleanEmailBody } from './email-cleaner.js'
+import { cleanEmailBody, stripHtml } from './email-cleaner.js'
 import type { OAuth2Client } from 'google-auth-library'
 import pino from 'pino'
 import type {
@@ -86,7 +86,7 @@ export class GmailAdapter {
       const sigHtml = sendAsRes.data.signature || ''
       if (sigHtml) {
         this.cachedSignatureHtml = sigHtml
-        this.cachedSignaturePlain = this.stripHtml(sigHtml)
+        this.cachedSignaturePlain = stripHtml(sigHtml)
         logger.info({ email, plainLength: this.cachedSignaturePlain.length }, 'Workspace signature cached')
       } else {
         this.cachedSignatureHtml = ''
@@ -98,23 +98,6 @@ export class GmailAdapter {
       this.cachedSignatureHtml = ''
       this.cachedSignaturePlain = ''
     }
-  }
-
-  /** Strip HTML tags and decode common entities to get plain text. */
-  private stripHtml(html: string): string {
-    return html
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
-      .replace(/<\/div>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
   }
 
   /** Get cached workspace signature (HTML). Returns empty string if not available. */
@@ -678,7 +661,7 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
         const sigPlain = mode === 'custom'
           ? this.config.EMAIL_SIGNATURE_TEXT || ''
           : this.cachedSignaturePlain ?? ''
-        const bodyPlain = this.stripHtml(bodyHtml)
+        const bodyPlain = stripHtml(bodyHtml)
         const alreadyContains = sigPlain && bodyPlain.includes(sigPlain)
 
         if (!alreadyContains) {

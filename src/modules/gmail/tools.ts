@@ -7,28 +7,12 @@ import type { Registry } from '../../kernel/registry.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 import type { GmailAdapter } from './gmail-adapter.js'
 import type { EmailMessage } from './types.js'
+import { stripHtml } from './email-cleaner.js'
 
 const logger = pino({ name: 'gmail:tools' })
 
 /** Max chars to return for email body text in get-detail results. */
 const BODY_MAX_CHARS = 3000
-
-/** Strip HTML tags and decode basic entities for plain-text presentation. */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
 
 /** Build a compact summary of an EmailMessage for tool results (token-efficient). */
 function toSummary(msg: EmailMessage): Record<string, unknown> {
