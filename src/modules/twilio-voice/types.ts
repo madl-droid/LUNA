@@ -53,6 +53,15 @@ export interface TwilioVoiceConfig {
   VOICE_RATE_LIMIT_HOUR: number
   VOICE_RATE_LIMIT_DAY: number
   VOICE_SESSION_TIMEOUT_HOURS: number
+  // Outbound call restrictions
+  VOICE_BUSINESS_HOURS_ENABLED: boolean
+  VOICE_BUSINESS_HOURS_START: number
+  VOICE_BUSINESS_HOURS_END: number
+  VOICE_BUSINESS_HOURS_TIMEZONE: string
+  VOICE_OUTBOUND_RATE_LIMIT_HOUR: number
+  // Ring delay range (replaces VOICE_ANSWER_DELAY_RINGS)
+  VOICE_ANSWER_DELAY_MIN_RINGS: number
+  VOICE_ANSWER_DELAY_MAX_RINGS: number
 }
 
 // ═══════════════════════════════════════════
@@ -373,8 +382,16 @@ export interface VoiceCallTranscriptRow {
 // API types
 // ═══════════════════════════════════════════
 
+export interface OutboundCallInfo {
+  reason: string
+  contactName: string | null
+  contactId: string | null
+  requestedAt: Date
+}
+
 export interface InitiateCallRequest {
   to: string
+  reason?: string
   context?: string
 }
 

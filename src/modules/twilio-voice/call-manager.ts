@@ -4,7 +4,7 @@
 import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Registry } from '../../kernel/registry.js'
-import type { TwilioVoiceConfig, ActiveCall, CallDirection, TranscriptEntry } from './types.js'
+import type { TwilioVoiceConfig, ActiveCall, CallDirection, TranscriptEntry, OutboundCallInfo } from './types.js'
 import { TwilioAdapter } from './twilio-adapter.js'
 import { MediaStreamServer } from './media-stream.js'
 import { GeminiLiveSession } from './gemini-live.js'
@@ -20,6 +20,8 @@ export class CallManager {
   private callSidToStream = new Map<string, string>() // callSid → streamSid
   private geminiSessions = new Map<string, GeminiLiveSession>() // keyed by streamSid
   private maxDurationTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private outboundCallInfo = new Map<string, OutboundCallInfo>() // callSid → outbound info
+  private outboundInfoCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>() // safety cleanup
   private silenceDetector: SilenceDetector
   private mediaServer: MediaStreamServer
   private twilioAdapter: TwilioAdapter
@@ -84,9 +86,15 @@ export class CallManager {
 
     logger.info({ callSid, callId, from }, 'Incoming call, generating TwiML')
 
+    // Random ring delay between min and max for natural feel
+    const minRings = this.config.VOICE_ANSWER_DELAY_MIN_RINGS
+    const maxRings = this.config.VOICE_ANSWER_DELAY_MAX_RINGS
+    const answerDelayRings = Math.floor(Math.random() * (maxRings - minRings + 1)) + minRings
+    logger.debug({ callSid, answerDelayRings, minRings, maxRings }, 'Ring delay selected')
+
     return this.twilioAdapter.generateInboundTwiML(
       mediaStreamUrl,
-      this.config.VOICE_ANSWER_DELAY_RINGS,
+      answerDelayRings,
       { callId, direction: 'inbound' },
     )
   }
@@ -99,6 +107,7 @@ export class CallManager {
     twimlUrl: string,
     statusCallbackUrl: string | undefined,
     _mediaStreamUrl: string,
+    reason?: string,
   ): Promise<{ callSid: string; callId: string }> {
     if (!this.config.VOICE_ENABLED) {
       throw new Error('Voice calls are disabled')
@@ -108,19 +117,66 @@ export class CallManager {
       throw new Error('Max concurrent calls reached')
     }
 
-    // Pre-load context before dialing
-    const contextPromise = preloadContext(this.registry, this.db, to, 'outbound', this.config)
+    // ── Business hours check ──
+    if (this.config.VOICE_BUSINESS_HOURS_ENABLED) {
+      const now = new Date()
+      const localHour = getLocalHour(now, this.config.VOICE_BUSINESS_HOURS_TIMEZONE)
+      const dayOfWeek = getLocalDayOfWeek(now, this.config.VOICE_BUSINESS_HOURS_TIMEZONE)
+
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        throw new Error('Fuera de horario laboral (fin de semana)')
+      }
+
+      if (localHour < this.config.VOICE_BUSINESS_HOURS_START || localHour >= this.config.VOICE_BUSINESS_HOURS_END) {
+        throw new Error(`Fuera de horario laboral (${this.config.VOICE_BUSINESS_HOURS_START}:00-${this.config.VOICE_BUSINESS_HOURS_END}:00)`)
+      }
+    }
+
+    // ── Outbound rate limit by phone number ──
+    if (this.config.VOICE_OUTBOUND_RATE_LIMIT_HOUR > 0) {
+      const recentCalls = await pgStore.countRecentCalls(this.db, to, 'outbound', 60)
+      if (recentCalls >= this.config.VOICE_OUTBOUND_RATE_LIMIT_HOUR) {
+        throw new Error(`Límite alcanzado: ${recentCalls}/${this.config.VOICE_OUTBOUND_RATE_LIMIT_HOUR} llamadas/hora a este número`)
+      }
+    }
+
+    // Pre-load context before dialing (pass reason for greeting customization)
+    const contextPromise = preloadContext(this.registry, this.db, to, 'outbound', this.config, reason)
 
     const { callSid } = await this.twilioAdapter.makeCall(to, twimlUrl, statusCallbackUrl)
     const callId = await pgStore.insertCall(
       this.db, callSid, 'outbound', this.config.TWILIO_PHONE_NUMBER, to, this.config.VOICE_GEMINI_VOICE,
     )
 
+    // Store outbound call info for greeting customization
+    if (reason) {
+      const info: OutboundCallInfo = {
+        reason,
+        contactName: null, // will be resolved in preloadContext
+        contactId: null,
+        requestedAt: new Date(),
+      }
+      this.outboundCallInfo.set(callSid, info)
+      // Safety cleanup after 5 minutes if call never connects
+      const timer = setTimeout(() => {
+        this.outboundCallInfo.delete(callSid)
+        this.outboundInfoCleanupTimers.delete(callSid)
+      }, 5 * 60 * 1000)
+      this.outboundInfoCleanupTimers.set(callSid, timer)
+    }
+
     this.callSidToStream.set(callSid, '')
     ;(this as unknown as Record<string, unknown>)[`_ctx_${callSid}`] = contextPromise
 
-    logger.info({ callSid, callId, to }, 'Outbound call initiated')
+    logger.info({ callSid, callId, to, reason }, 'Outbound call initiated')
     return { callSid, callId }
+  }
+
+  /**
+   * Get outbound call info for a given callSid (used by voice engine for greeting).
+   */
+  getOutboundCallInfo(callSid: string): OutboundCallInfo | null {
+    return this.outboundCallInfo.get(callSid) ?? null
   }
 
   /**
@@ -460,6 +516,16 @@ export class CallManager {
     // Cleanup
     this.activeCalls.delete(streamSid)
     this.callSidToStream.delete(call.callSid)
+
+    // Clean up outbound call info + safety timer
+    if (this.outboundCallInfo.has(call.callSid)) {
+      this.outboundCallInfo.delete(call.callSid)
+      const cleanupTimer = this.outboundInfoCleanupTimers.get(call.callSid)
+      if (cleanupTimer) {
+        clearTimeout(cleanupTimer)
+        this.outboundInfoCleanupTimers.delete(call.callSid)
+      }
+    }
   }
 
   /**
@@ -495,6 +561,12 @@ export class CallManager {
       await this.endCall(streamSid, 'error')
     }
     this.silenceDetector.stopAll()
+    // Clear all safety timers
+    for (const timer of this.outboundInfoCleanupTimers.values()) {
+      clearTimeout(timer)
+    }
+    this.outboundInfoCleanupTimers.clear()
+    this.outboundCallInfo.clear()
   }
 
   // ═══════════════════════════════════════════
@@ -701,5 +773,25 @@ export class CallManager {
     } catch {
       return ''
     }
+  }
+}
+
+// ═══════════════════════════════════════════
+// Timezone helpers
+// ═══════════════════════════════════════════
+
+function getLocalHour(date: Date, timezone: string): number {
+  try {
+    return parseInt(date.toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: timezone }), 10)
+  } catch {
+    return date.getUTCHours()
+  }
+}
+
+function getLocalDayOfWeek(date: Date, timezone: string): number {
+  try {
+    return new Date(date.toLocaleString('en-US', { timeZone: timezone })).getDay()
+  } catch {
+    return date.getUTCDay()
   }
 }
