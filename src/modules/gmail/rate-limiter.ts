@@ -4,6 +4,9 @@
 // Can be overridden via config (EMAIL_RATE_LIMIT_PER_HOUR, EMAIL_RATE_LIMIT_PER_DAY).
 
 import type { Redis } from 'ioredis'
+import pino from 'pino'
+
+const logger = pino({ name: 'gmail:rate-limiter' })
 
 const DEFAULT_LIMITS = {
   workspace: { perHour: 80, perDay: 1500 },
@@ -40,11 +43,26 @@ export class EmailRateLimiter {
     const hourKey = `email:rate:hour:${this.formatHour(now)}`
     const dayKey = `email:rate:day:${this.formatDay(now)}`
     const { atomicDualRateCheck } = await import('../../kernel/redis-rate-limiter.js')
-    return atomicDualRateCheck(
+    const allowed = await atomicDualRateCheck(
       this.redis,
       hourKey, this.limits.perHour, 3600,
       dayKey, this.limits.perDay, 86400,
     )
+    if (allowed) {
+      // Warn when approaching 80% of either limit
+      const [hourly, daily] = await Promise.all([
+        this.getHourlyCount(),
+        this.getDailyCount(),
+      ])
+      if (hourly / this.limits.perHour >= 0.8 || daily / this.limits.perDay >= 0.8) {
+        logger.warn({
+          remainingHourly: Math.max(0, this.limits.perHour - hourly),
+          remainingDaily: Math.max(0, this.limits.perDay - daily),
+          limits: this.limits,
+        }, 'Email rate limit approaching 80% — consider throttling')
+      }
+    }
+    return allowed
   }
 
   /** @deprecated Use canSend() which now atomically increments. Kept for backward compat. */

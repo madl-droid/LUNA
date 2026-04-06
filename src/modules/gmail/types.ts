@@ -1,6 +1,15 @@
 // LUNA — Module: gmail — Types
 // Interfaces para el canal de email (Gmail).
 
+/** Raw email fields used by the triage classifier. */
+export interface RawEmailMessage {
+  from: string
+  to: string[]
+  cc: string[]
+  subject: string
+  rawHeaders: Record<string, string>
+}
+
 export interface EmailConfig {
   EMAIL_POLL_INTERVAL_MS: number
   EMAIL_MAX_ATTACHMENT_SIZE_MB: number
@@ -47,6 +56,11 @@ export interface EmailConfig {
   GMAIL_CLIENT_SECRET: string
   GMAIL_REFRESH_TOKEN: string
   GMAIL_TOKEN_REFRESH_BUFFER_MS: number
+  // Triage
+  EMAIL_TRIAGE_ENABLED: boolean
+  // Thread gap detection
+  EMAIL_GAP_CONTEXT_MAX: number
+  EMAIL_GAP_FETCH_TIMEOUT_S: number
   // Attachment processing config
   EMAIL_ATT_IMAGES: boolean
   EMAIL_ATT_DOCUMENTS: boolean
@@ -96,6 +110,12 @@ export interface EmailMessage {
   messageId: string  // RFC Message-ID header
   references: string[]
   isReply: boolean
+  /** True when the email has a List-Unsubscribe header (newsletter/marketing). */
+  hasListUnsubscribe: boolean
+  /** Raw email headers (lowercased keys) for triage classification. */
+  rawHeaders: Record<string, string>
+  /** Cleaned body text: quoted replies, signatures, disclaimers stripped. Original in bodyText. */
+  cleanBodyText: string
 }
 
 export interface EmailAttachment {

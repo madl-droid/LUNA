@@ -296,7 +296,7 @@ export interface PipelineResult {
   responseText?: string
   deliveryResult?: DeliveryResult
   error?: string
-  skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}`
+  skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}` | `triage:${string}`
   // --- Agentic fields (v2.0) ---
   agenticResult?: import('./agentic/types.js').AgenticResult
   effortLevel?: import('./agentic/types.js').EffortLevel

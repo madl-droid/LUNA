@@ -1,8 +1,9 @@
 // LUNA — Module: gmail — Gmail Adapter
 // Lee, envía, responde y reenvía emails usando la API de Gmail.
-// La firma se envía tal cual está configurada en la cuenta de Google, no se genera por el sistema.
+// La firma se obtiene del workspace via sendAs.get() y se inyecta en buildRawEmail.
 
 import { google } from 'googleapis'
+import { cleanEmailBody, stripHtml } from './email-cleaner.js'
 import type { OAuth2Client } from 'google-auth-library'
 import pino from 'pino'
 import type {
@@ -26,6 +27,10 @@ export class GmailAdapter {
   private allowedDomains: Set<string> = new Set()
   private blockedDomains: Set<string> = new Set()
   private labelCache: Map<string, string> = new Map()
+  /** Cached workspace signature (HTML) from sendAs.get(). null = not fetched yet. */
+  private cachedSignatureHtml: string | null = null
+  /** Cached workspace signature (plain text). null = not fetched yet. */
+  private cachedSignaturePlain: string | null = null
 
   constructor(
     auth: OAuth2Client,
@@ -58,6 +63,49 @@ export class GmailAdapter {
     )
   }
 
+  // ─── Signature ─────────────────────────────
+
+  /**
+   * Fetch the workspace signature from Gmail sendAs settings and cache it.
+   * Called once on init and can be refreshed on config change.
+   */
+  async fetchWorkspaceSignature(): Promise<void> {
+    try {
+      const profile = await this.gmail.users.getProfile({ userId: 'me' })
+      const email = profile.data.emailAddress
+      if (!email) {
+        logger.warn('Could not determine email address for signature fetch')
+        return
+      }
+
+      const sendAsRes = await this.gmail.users.settings.sendAs.get({
+        userId: 'me',
+        sendAsEmail: email,
+      })
+
+      const sigHtml = sendAsRes.data.signature || ''
+      if (sigHtml) {
+        this.cachedSignatureHtml = sigHtml
+        this.cachedSignaturePlain = stripHtml(sigHtml)
+        logger.info({ email, plainLength: this.cachedSignaturePlain.length }, 'Workspace signature cached')
+      } else {
+        this.cachedSignatureHtml = ''
+        this.cachedSignaturePlain = ''
+        logger.info({ email }, 'No workspace signature configured')
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Failed to fetch workspace signature — will send without signature')
+      this.cachedSignatureHtml = ''
+      this.cachedSignaturePlain = ''
+    }
+  }
+
+  /** Get cached workspace signature (HTML). Returns empty string if not available. */
+  getSignatureHtml(): string { return this.cachedSignatureHtml ?? '' }
+
+  /** Get cached workspace signature (plain). Returns empty string if not available. */
+  getSignaturePlain(): string { return this.cachedSignaturePlain ?? '' }
+
   // ─── Polling ───────────────────────────────
 
   async fetchNewMessages(afterHistoryId?: string): Promise<EmailMessage[]> {
@@ -84,7 +132,7 @@ export class GmailAdapter {
 
     const res = await this.gmail.users.messages.list({
       userId: 'me',
-      q: `is:unread (${labelQuery})`,
+      q: `is:unread (${labelQuery}) -in:trash -in:spam -is:draft`,
       maxResults: this.config.EMAIL_MAX_HISTORY_FETCH,
     })
 
@@ -121,6 +169,11 @@ export class GmailAdapter {
         const added = history.messagesAdded ?? []
         for (const item of added) {
           if (item.message?.id) {
+            const labels = item.message.labelIds ?? []
+            if (labels.includes('TRASH') || labels.includes('SPAM') || labels.includes('DRAFT')) {
+              logger.debug({ messageId: item.message.id, labels }, 'Skipping trash/spam/draft from history')
+              continue
+            }
             messageIds.add(item.message.id)
           }
         }
@@ -179,6 +232,12 @@ export class GmailAdapter {
     const inReplyTo = getHeader('In-Reply-To') || null
     const references = getHeader('References').split(/\s+/).filter(Boolean)
 
+    // Build raw headers map (lowercased keys) for triage classification
+    const rawHeaders: Record<string, string> = {}
+    for (const h of headers) {
+      if (h.name && h.value) rawHeaders[h.name.toLowerCase()] = h.value
+    }
+
     return {
       id: data.id ?? messageId,
       threadId: data.threadId ?? '',
@@ -198,6 +257,9 @@ export class GmailAdapter {
       messageId: getHeader('Message-ID'),
       references,
       isReply: !!inReplyTo,
+      hasListUnsubscribe: !!getHeader('List-Unsubscribe'),
+      rawHeaders,
+      cleanBodyText: cleanEmailBody(bodyText),
     }
   }
 
@@ -428,6 +490,47 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     return messages
   }
 
+  // ─── Thread ─────────────────────────────────
+
+  /**
+   * Get all message IDs in a thread (chronological order).
+   * Uses format: 'metadata' — single API call, no bodies.
+   */
+  async getThreadMessageIds(threadId: string): Promise<string[]> {
+    const res = await this.gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'metadata',
+    })
+    return (res.data.messages ?? []).map(m => m.id).filter((id): id is string => !!id)
+  }
+
+  // ─── Listing / Search (for tools) ───────────
+
+  /** Generic message listing — used by email tools for inbox browsing and search. */
+  async listMessages(query: string, maxResults: number = 10): Promise<EmailMessage[]> {
+    const res = await this.gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: Math.min(maxResults, 20),
+    })
+
+    const messageIds = res.data.messages ?? []
+    const messages: EmailMessage[] = []
+
+    for (const msg of messageIds) {
+      if (!msg.id) continue
+      try {
+        const full = await this.getFullMessage(msg.id)
+        if (full) messages.push(full)
+      } catch (err) {
+        logger.warn({ messageId: msg.id, err }, 'Failed to fetch message in listMessages')
+      }
+    }
+
+    return messages
+  }
+
   // ─── Domain & subject filtering ──────────────
 
   isDomainBlocked(email: string): boolean {
@@ -477,6 +580,12 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     // Skip no-reply
     if (this.isNoReply(message.from)) {
       logger.debug({ from: message.from }, 'Skipping no-reply message')
+      return true
+    }
+
+    // Skip marketing / newsletter emails (List-Unsubscribe header present)
+    if (message.hasListUnsubscribe) {
+      logger.debug({ from: message.from, subject: message.subject }, 'Skipping list-unsubscribe (newsletter/marketing) message')
       return true
     }
 
@@ -536,12 +645,44 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
       lines.push(`--${boundary}`)
     }
 
-    // Body — HTML es lo que va por defecto (incluye firma de Google)
+    // Body — signature injection based on config mode
     let bodyHtml = options.bodyHtml
+
+    // Signature: inject based on EMAIL_SIGNATURE_MODE (gmail/custom/auto)
+    if (this.config.EMAIL_INCLUDE_SIGNATURE) {
+      const mode = this.config.EMAIL_SIGNATURE_MODE || 'gmail'
+      let sigHtml = ''
+
+      if (mode === 'gmail') {
+        sigHtml = this.cachedSignatureHtml ?? ''
+      } else if (mode === 'custom') {
+        sigHtml = this.config.EMAIL_SIGNATURE_TEXT || ''
+      } else if (mode === 'auto') {
+        sigHtml = (this.cachedSignatureHtml ?? '') || (this.config.EMAIL_SIGNATURE_TEXT || '')
+      }
+
+      if (sigHtml) {
+        // Dedup: skip if body already contains the signature (LLM may have included it)
+        const sigPlain = mode === 'custom'
+          ? this.config.EMAIL_SIGNATURE_TEXT || ''
+          : this.cachedSignaturePlain ?? ''
+        const bodyPlain = stripHtml(bodyHtml)
+        const alreadyContains = sigPlain && bodyPlain.includes(sigPlain)
+
+        if (!alreadyContains) {
+          bodyHtml += `<br><br>\n${sigHtml}`
+        }
+      }
+    }
+
+    // Footer (separate from signature — legal disclaimers, etc.)
     if (this.config.EMAIL_FOOTER_ENABLED && this.config.EMAIL_FOOTER_TEXT) {
-      const safeFooter = this.config.EMAIL_FOOTER_TEXT
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      bodyHtml += `<br/><hr style="border:none;border-top:1px solid #ccc;margin:16px 0"/><small style="color:#888">${safeFooter}</small>`
+      const footerText = this.config.EMAIL_FOOTER_TEXT
+      if (!stripHtml(bodyHtml).includes(footerText)) {
+        const safeFooter = footerText
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        bodyHtml += `<br/><hr style="border:none;border-top:1px solid #ccc;margin:16px 0"/><small style="color:#888">${safeFooter}</small>`
+      }
     }
     lines.push('Content-Type: text/html; charset=UTF-8')
     lines.push('Content-Transfer-Encoding: base64')

@@ -70,6 +70,7 @@ Resumen rápido:
 4. Dependencias: declarar `depends: ['otro-modulo']`.
 5. **OBLIGATORIO: Crear `CLAUDE.md`** en el directorio del módulo (ver template en sección "Mantenimiento" abajo). Agregar entrada a la lista de "Módulos documentados".
 6. **OBLIGATORIO: Usar helpers del kernel** — ver sección "REGLA: No duplicar helpers HTTP ni config schemas" abajo.
+7. **Si type='channel': Crear skill de outreach** — `instance/prompts/system/skills/{canal}-outreach.md`. Ver `docs/architecture/channel-guide.md`.
 
 ## REGLA: Nombre del agente en canales instant
 
@@ -265,7 +266,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/tools/CLAUDE.md` — herramientas del agente (registro, ejecución, tool calling nativo)
 - `src/modules/lead-scoring/CLAUDE.md` — calificación de leads (BANT + custom, scoring, UI console)
 - `src/modules/google-apps/CLAUDE.md` — provider Google (OAuth2, Drive, Sheets, Docs, Slides, Calendar)
-- `src/modules/gmail/CLAUDE.md` — canal de email via Gmail API (send, reply, forward, attachments)
+- `src/modules/gmail/CLAUDE.md` — canal de email via Gmail API (send, reply, forward, attachments, email tools: read-inbox, search, get-detail)
 - `src/modules/prompts/CLAUDE.md` — gestión centralizada de prompts del agente (slots, campaigns, console)
 - `src/modules/engine/CLAUDE.md` — wrapper del pipeline para el kernel
 - `src/modules/google-chat/CLAUDE.md` — canal Google Chat (webhook + Chat API, Service Account)

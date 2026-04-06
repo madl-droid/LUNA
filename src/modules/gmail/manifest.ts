@@ -2,6 +2,7 @@
 // Canal de email via Gmail API. Recibe emails, los procesa por el engine, y envía respuestas.
 // La firma se incluye directamente desde la cuenta de Google (no se genera por el sistema).
 
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
@@ -13,6 +14,7 @@ import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
 import { EmailRateLimiter } from './rate-limiter.js'
+import { cleanEmailBody, stripHtml } from './email-cleaner.js'
 import type { EmailConfig, EmailPollerState, EmailMessage, LunaLabelIds, CustomLabel, ResolvedCustomLabel } from './types.js'
 
 const logger = pino({ name: 'gmail' })
@@ -26,6 +28,7 @@ let standaloneOAuth: EmailOAuthManager | null = null
 let usingStandaloneAuth = false
 let lunaLabels: LunaLabelIds = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
 let resolvedCustomLabels: ResolvedCustomLabel[] = []
+let detectedOwnAddress = ''
 let rateLimiter: EmailRateLimiter | null = null
 
 /** Parse custom labels from config JSON string */
@@ -49,6 +52,9 @@ async function ensureAllLabels(): Promise<void> {
   const config = _registry.getConfig<EmailConfig>('gmail')
 
   try {
+    // Race condition note: ensureLabel is idempotent (creates label if not exists, returns
+    // existing ID if already present). Gmail API handles concurrent label creation safely,
+    // so no mutex is needed here. The worst case is two concurrent calls both succeed.
     // Default labels — always present
     lunaLabels = {
       agent: await gmailAdapter.ensureLabel('LUNA/Agent'),
@@ -89,6 +95,11 @@ const pollerState: EmailPollerState = {
   errors: 0,
   lastError: null,
 }
+
+// Exponential backoff state for polling error recovery
+let pollBackoffMs = 0
+let consecutivePollErrors = 0
+const MAX_POLL_BACKOFF_MS = 5 * 60 * 1000 // 5 minutes
 
 /** Build the shared OAuth redirect URI from the request */
 function getRedirectUri(req: import('node:http').IncomingMessage): string {
@@ -141,6 +152,15 @@ async function runMigrations(db: import('pg').Pool): Promise<void> {
 async function pollForEmails(): Promise<void> {
   if (!gmailAdapter || !_registry) return
 
+  // If backing off from previous errors, skip this cycle
+  if (pollBackoffMs > 0 && consecutivePollErrors > 0) {
+    const skipUntil = (pollerState.lastPollAt?.getTime() ?? 0) + pollBackoffMs
+    if (Date.now() < skipUntil) {
+      logger.debug({ remainingMs: skipUntil - Date.now(), consecutivePollErrors }, 'Skipping poll cycle — backoff active')
+      return
+    }
+  }
+
   pollerState.status = 'polling'
   try {
     // Reload config on each poll cycle to pick up console changes
@@ -165,9 +185,9 @@ async function pollForEmails(): Promise<void> {
     }
 
     const batchWaitMs = config.EMAIL_BATCH_WAIT_MS
-    for (const msg of messages) {
-      if (batchWaitMs > 0) {
-        // Batching mode: debounce per threadId
+    if (batchWaitMs > 0) {
+      // Batching mode: debounce per threadId
+      for (const msg of messages) {
         const key = msg.threadId || msg.from
         const existing = pendingBatch.get(key)
         if (existing) {
@@ -190,21 +210,33 @@ async function pollForEmails(): Promise<void> {
             logger.error({ messageId: latest.id, err }, 'Failed to process batched email')
           }
         }, batchWaitMs)
-      } else {
-        // Immediate processing
-        try {
-          await processIncomingEmail(msg)
-          pollerState.messagesProcessed++
-        } catch (err) {
-          pollerState.errors++
-          pollerState.lastError = err instanceof Error ? err.message : String(err)
-          logger.error({ messageId: msg.id, err }, 'Failed to process email')
-        }
+      }
+    } else {
+      // Immediate processing — up to EMAIL_POLL_CONCURRENCY concurrent
+      const EMAIL_POLL_CONCURRENCY = 5
+      for (let i = 0; i < messages.length; i += EMAIL_POLL_CONCURRENCY) {
+        const chunk = messages.slice(i, i + EMAIL_POLL_CONCURRENCY)
+        await Promise.all(chunk.map(async (msg) => {
+          try {
+            await processIncomingEmail(msg)
+            pollerState.messagesProcessed++
+          } catch (err) {
+            pollerState.errors++
+            pollerState.lastError = err instanceof Error ? err.message : String(err)
+            logger.error({ messageId: msg.id, err }, 'Failed to process email')
+          }
+        }))
       }
     }
 
     pollerState.lastPollAt = new Date()
     pollerState.status = 'idle'
+    // Reset backoff on success
+    if (consecutivePollErrors > 0) {
+      logger.info({ previousErrors: consecutivePollErrors }, 'Poll recovered — resetting backoff')
+      consecutivePollErrors = 0
+      pollBackoffMs = 0
+    }
 
     // Persistir estado
     const db = _registry.getDb()
@@ -216,10 +248,157 @@ async function pollForEmails(): Promise<void> {
     `, [lastHistoryId, pollerState.messagesProcessed]).catch(() => {})
 
   } catch (err) {
+    const status = (err as { code?: number })?.code ?? (err as { status?: number })?.status ?? 0
+    if (status === 401) {
+      pollerState.status = 'error'
+      pollerState.lastError = 'Authentication revoked (401) — reconnect from console'
+      logger.error({ err }, 'Gmail auth revoked — stopping poller')
+      stopPolling()
+      return
+    }
     pollerState.status = 'error'
     pollerState.errors++
     pollerState.lastError = err instanceof Error ? err.message : String(err)
-    logger.error({ err }, 'Email poll cycle failed')
+    consecutivePollErrors++
+    pollBackoffMs = Math.min(1000 * Math.pow(2, consecutivePollErrors - 1), MAX_POLL_BACKOFF_MS)
+    logger.error({ err, consecutivePollErrors, nextRetryMs: pollBackoffMs }, 'Email poll cycle failed')
+  }
+}
+
+/** A single gap message fetched from Gmail */
+interface GapMessage {
+  id: string
+  from: string
+  fromName: string
+  date: Date
+  body: string
+}
+
+/**
+ * Detect gap messages in a thread when Luna was absent.
+ * Compares last_message_gmail_id (our last known msg) with current msg position in Gmail thread.
+ * Returns fetched gap messages or null if no gap.
+ */
+async function detectThreadGap(
+  msg: EmailMessage, db: import('pg').Pool, config: EmailConfig,
+): Promise<GapMessage[] | null> {
+  if (config.EMAIL_GAP_CONTEXT_MAX === 0 || !msg.threadId || !gmailAdapter) return null
+
+  // Get the last message ID we processed in this thread
+  const row = await db.query<{ last_message_gmail_id: string | null }>(
+    `SELECT last_message_gmail_id FROM email_threads WHERE thread_id = $1`,
+    [msg.threadId],
+  )
+  const lastKnownId = row.rows[0]?.last_message_gmail_id
+  if (!lastKnownId) return null // First message in thread or no record
+
+  // Get all message IDs in the thread from Gmail (chronological order)
+  const threadIds = await gmailAdapter.getThreadMessageIds(msg.threadId)
+  const lastIdx = threadIds.indexOf(lastKnownId)
+  const currentIdx = threadIds.indexOf(msg.id)
+
+  if (lastIdx === -1 || currentIdx === -1 || currentIdx <= lastIdx + 1) return null // No gap
+
+  // IDs between our last known and current (exclusive on both ends)
+  const gapIds = threadIds.slice(lastIdx + 1, currentIdx)
+  if (gapIds.length === 0) return null
+
+  // Cap to configured max, take the most recent ones
+  const toFetch = gapIds.slice(-config.EMAIL_GAP_CONTEXT_MAX)
+  const timeoutMs = config.EMAIL_GAP_FETCH_TIMEOUT_S * 1000
+  const deadline = Date.now() + timeoutMs
+
+  const gaps: GapMessage[] = []
+  for (const gapId of toFetch) {
+    if (Date.now() >= deadline) {
+      logger.warn({ fetched: gaps.length, remaining: toFetch.length - gaps.length }, 'Gap fetch timeout — returning partial results')
+      break
+    }
+    try {
+      const gapMsg = await Promise.race([
+        gmailAdapter.getFullMessage(gapId),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000)),
+      ])
+      if (!gapMsg) continue
+      gaps.push({
+        id: gapId,
+        from: gapMsg.from,
+        fromName: gapMsg.fromName,
+        date: gapMsg.date,
+        body: gapMsg.cleanBodyText || cleanEmailBody(gapMsg.bodyText) || '(sin contenido)',
+      })
+    } catch (err) {
+      logger.warn({ gapId, err }, 'Failed to fetch gap message — skipping')
+    }
+  }
+
+  return gaps.length > 0 ? gaps : null
+}
+
+
+/** Sanitize a sender display name to prevent prompt injection and XSS. */
+function sanitizeSenderName(name: string): string {
+  return name
+    .replace(/<[^>]*>/g, '')          // strip HTML tags
+    .replace(/[\x00-\x1F\x7F]/g, '') // remove control characters
+    .replace(/[<>{}]/g, (c) => ({ '<': '‹', '>': '›', '{': '❴', '}': '❵' })[c]!)
+    .slice(0, 100)
+    .trim()
+}
+
+/** Format gap messages as a text preamble (fallback when session not found) */
+function formatGapPreamble(gaps: GapMessage[]): string {
+  const parts: string[] = ['[Contexto: mensajes en el hilo mientras estabas ausente]']
+  for (const g of gaps) {
+    const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
+    parts.push(`---\nDe: ${sanitizeSenderName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`)
+  }
+  parts.push('---')
+  return parts.join('\n')
+}
+
+/** Persist gap messages into the session as individual system messages */
+async function persistGapMessages(
+  gaps: GapMessage[], sessionId: string, registry: Registry,
+): Promise<void> {
+  const memoryManager = registry.getOptional<{
+    saveMessage(m: import('../memory/types.js').StoredMessage): Promise<void>
+  }>('memory:manager')
+
+  for (const g of gaps) {
+    const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
+    const contentText = `[Hilo] De: ${sanitizeSenderName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`
+
+    const msg = {
+      id: randomUUID(),
+      sessionId,
+      channelName: 'email',
+      senderType: 'user' as const,
+      senderId: g.from,
+      content: { type: 'text', text: contentText },
+      role: 'system' as const,
+      contentText,
+      contentType: 'text' as const,
+      metadata: { source: 'thread-gap', originalMessageId: g.id },
+      createdAt: g.date, // Original date for chronological ordering
+    }
+
+    try {
+      if (memoryManager) {
+        await memoryManager.saveMessage(msg)
+      } else {
+        const db = registry.getDb()
+        await db.query(
+          `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, role, content_text, content_type, metadata, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
+          [msg.id, msg.sessionId, msg.channelName, msg.senderType, msg.senderId,
+           JSON.stringify(msg.content), msg.role, msg.contentText, msg.contentType,
+           JSON.stringify(msg.metadata), msg.createdAt],
+        )
+      }
+    } catch (err) {
+      logger.warn({ gapId: g.id, sessionId, err }, 'Failed to persist gap message — skipping')
+    }
   }
 }
 
@@ -227,9 +406,39 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
   if (!_registry || !gmailAdapter) return
 
   const config = _registry.getConfig<EmailConfig>('gmail')
-
-  // Track thread (including Gmail message ID for label operations)
   const db = _registry.getDb()
+
+  // Detect thread gap BEFORE updating last_message_gmail_id
+  let gapPreamble = ''
+  if (msg.threadId) {
+    try {
+      const gaps = await detectThreadGap(msg, db, config)
+      if (gaps && gaps.length > 0) {
+        // Try to persist into existing session
+        const sessionRow = await db.query<{ id: string }>(
+          `SELECT id FROM sessions WHERE thread_id = $1
+           AND last_activity_at > now() - make_interval(hours => $2)
+           ORDER BY last_activity_at DESC LIMIT 1`,
+          [msg.threadId, config.EMAIL_SESSION_INACTIVITY_HOURS],
+        )
+        const sessionId = sessionRow.rows[0]?.id
+
+        if (sessionId) {
+          // Session active → persist individual gap messages
+          await persistGapMessages(gaps, sessionId, _registry)
+          logger.info({ messageId: msg.id, threadId: msg.threadId, gapCount: gaps.length, sessionId }, 'Thread gap messages persisted to session')
+        } else {
+          // Session expired → fallback to text preamble for this turn
+          gapPreamble = formatGapPreamble(gaps) + '\n\n'
+          logger.info({ messageId: msg.id, threadId: msg.threadId, gapCount: gaps.length }, 'Thread gap context injected as preamble (no active session)')
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, messageId: msg.id }, 'Gap detection failed — continuing without')
+    }
+  }
+
+  // Track thread (including Gmail message ID for label operations) — AFTER gap detection
   await db.query(`
     INSERT INTO email_threads (thread_id, contact_id, subject, last_message_at, message_count, last_message_gmail_id)
     VALUES ($1, $2, $3, $4, 1, $5)
@@ -239,6 +448,8 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
 
   // Min body length check (skip empty/trivial emails)
   const textContent = msg.bodyText || stripHtml(msg.bodyHtml)
+  // Use cleaned body for the engine (quoted replies, signatures, disclaimers stripped)
+  const cleanContent = msg.cleanBodyText || textContent
   if (textContent.trim().length < 2 && msg.attachments.length === 0) {
     logger.debug({ messageId: msg.id, from: msg.from }, 'Skipping email with empty body')
     return
@@ -252,11 +463,16 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
         filename: att.filename,
         mimeType: att.mimeType,
         size: att.size,
-        getData: () => adapter.downloadAttachment(msg.id, att.id).then((b) => b ?? Buffer.alloc(0)),
+        getData: () => adapter.downloadAttachment(msg.id, att.id)
+          .then((b) => b ?? Buffer.alloc(0))
+          .catch((err: unknown) => {
+            logger.warn({ messageId: msg.id, attachmentId: att.id, filename: att.filename, err }, 'Attachment download failed — skipping')
+            return Buffer.alloc(0)
+          }),
       }))
     : undefined
 
-  const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${textContent}`
+  const fullContent = `${gapPreamble}[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${cleanContent}`
 
   // Fire message:incoming hook para que el engine lo procese
   await _registry.runHook('message:incoming', {
@@ -349,20 +565,6 @@ async function autoCreateCoworkerFromDomain(email: string, fromName: string): Pr
   logger.info({ email, fromName }, 'Auto-created coworker from email domain match')
 }
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
 
 // ─── API Routes ────────────────────────────
 
@@ -640,6 +842,8 @@ const apiRoutes: ApiRoute[] = [
             const config = _registry.getConfig<EmailConfig>('gmail')
             gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
             _registry.provide('email:adapter', gmailAdapter)
+            const { registerEmailTools } = await import('./tools.js')
+            await registerEmailTools(_registry, gmailAdapter)
             await ensureAllLabels()
             startPolling(config.EMAIL_POLL_INTERVAL_MS)
           }
@@ -682,6 +886,8 @@ const apiRoutes: ApiRoute[] = [
           const config = _registry.getConfig<EmailConfig>('gmail')
           gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
           _registry.provide('email:adapter', gmailAdapter)
+          const { registerEmailTools } = await import('./tools.js')
+          await registerEmailTools(_registry, gmailAdapter)
           await ensureAllLabels()
           startPolling(config.EMAIL_POLL_INTERVAL_MS)
         }
@@ -796,6 +1002,11 @@ const manifest: ModuleManifest = {
     // Firma de email
     EMAIL_SIGNATURE_MODE: z.string().default('gmail'),    // gmail | custom | auto
     EMAIL_SIGNATURE_TEXT: z.string().default(''),          // only used if mode = 'custom'
+    // Triage — pre-agentic classification
+    EMAIL_TRIAGE_ENABLED: boolEnv(true),
+    // Thread gap detection — max messages to recover when Luna is re-added to a thread
+    EMAIL_GAP_CONTEXT_MAX: numEnv(5),
+    EMAIL_GAP_FETCH_TIMEOUT_S: numEnvMin(5, 30),
     // Attachment processing — which file types to process on email channel
     // Email supports all categories
     EMAIL_ATT_IMAGES: boolEnv(true),
@@ -1003,6 +1214,17 @@ const manifest: ModuleManifest = {
         label: { es: 'Limite por dia (custom)', en: 'Daily limit (custom)' },
         info: { es: 'Sobreescribe el limite diario. 0 = usar default del tipo de cuenta.', en: 'Override daily limit. 0 = use account type default.' },
       },
+      // ── Triage (pre-procesamiento) ──
+      { key: '_divider_triage', type: 'divider', label: { es: 'Triage (pre-procesamiento)', en: 'Triage (pre-processing)' } },
+      {
+        key: 'EMAIL_TRIAGE_ENABLED',
+        type: 'boolean',
+        label: { es: 'Activar triage de emails', en: 'Enable email triage' },
+        description: {
+          es: 'Clasifica emails antes del pipeline: RESPOND (responder), OBSERVE (guardar sin responder), IGNORE (descartar). Filtra auto-replies, DSN, CC-only, etc.',
+          en: 'Classify emails before pipeline: RESPOND, OBSERVE (save without replying), IGNORE (discard). Filters auto-replies, DSN, CC-only, etc.',
+        },
+      },
       // ── Etiquetas personalizadas ──
       { key: '_divider_labels', type: 'divider', label: { es: 'Etiquetas personalizadas', en: 'Custom labels' } },
       {
@@ -1038,6 +1260,20 @@ const manifest: ModuleManifest = {
         rows: 3,
         label: { es: 'Mensaje de seguimiento', en: 'Follow-up message' },
         info: { es: 'Texto del email de seguimiento antes de cerrar la sesion', en: 'Follow-up email text before closing the session' },
+      },
+      {
+        key: 'EMAIL_GAP_CONTEXT_MAX',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Contexto de hilo faltante (msgs)', en: 'Thread gap context (msgs)' },
+        info: { es: 'Max mensajes a recuperar cuando Luna es re-agregada a un hilo del que estuvo ausente. 0 = desactivado.', en: 'Max messages to recover when Luna is re-added to a thread she was absent from. 0 = disabled.' },
+      },
+      {
+        key: 'EMAIL_GAP_FETCH_TIMEOUT_S',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Timeout recuperación hilo (s)', en: 'Thread gap fetch timeout (s)' },
+        info: { es: 'Tiempo máximo en segundos para recuperar mensajes faltantes de un hilo. Min: 5.', en: 'Maximum time in seconds to fetch missing thread messages. Min: 5.' },
       },
       // ── Naturalidad ──
       { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
@@ -1193,6 +1429,12 @@ const manifest: ModuleManifest = {
     const db = registry.getDb()
     const config = registry.getConfig<EmailConfig>('gmail')
 
+    // Config coherence checks
+    const validReplyModes = ['reply-sender', 'reply-all', 'new-thread']
+    if (config.EMAIL_REPLY_MODE && !validReplyModes.includes(config.EMAIL_REPLY_MODE)) {
+      logger.warn({ configured: config.EMAIL_REPLY_MODE, valid: validReplyModes }, 'EMAIL_REPLY_MODE is not a recognized value — defaulting to reply-sender')
+    }
+
     // Run migrations
     await runMigrations(db)
 
@@ -1270,6 +1512,13 @@ const manifest: ModuleManifest = {
     if (authClient) {
       gmailAdapter = new GmailAdapter(authClient, config)
       registry.provide('email:adapter', gmailAdapter)
+
+      // Fetch workspace signature for injection in outgoing emails
+      await gmailAdapter.fetchWorkspaceSignature()
+
+      // Register email tools (proactive inbox access for the agent)
+      const { registerEmailTools } = await import('./tools.js')
+      await registerEmailTools(registry, gmailAdapter)
     }
 
     // Expose standalone OAuth manager for shared callback dispatch
@@ -1279,6 +1528,23 @@ const manifest: ModuleManifest = {
 
     // Expose label accessor so engine/tools can read custom label instructions
     registry.provide('gmail:label-instructions', () => resolvedCustomLabels)
+
+    // ── Triage Config Service (engine reads this for pre-agentic classification) ──
+    // Auto-detect own address from OAuth profile
+    try {
+      if (standaloneOAuth) {
+        detectedOwnAddress = standaloneOAuth.getState().email ?? ''
+      } else {
+        const googleApps = registry.getOptional<{ getProfile?(): { email?: string } }>('google-apps:provider')
+        detectedOwnAddress = googleApps?.getProfile?.()?.email ?? ''
+      }
+    } catch { /* ignore — will use empty string */ }
+    registry.provide('gmail:triage-config', {
+      getTriageConfig: () => ({
+        enabled: config.EMAIL_TRIAGE_ENABLED,
+        ownAddress: detectedOwnAddress,
+      }),
+    })
 
     // ── Channel Config Service (standard pattern — engine reads this) ──
     registry.provide('channel-config:email', {
@@ -1477,6 +1743,8 @@ const manifest: ModuleManifest = {
       Object.assign(config, fresh)
       if (gmailAdapter) {
         gmailAdapter.reloadConfig(fresh)
+        // Refresh workspace signature (mode may have changed)
+        await gmailAdapter.fetchWorkspaceSignature()
         logger.info('Config applied — re-ensuring Gmail labels')
         await ensureAllLabels()
       }

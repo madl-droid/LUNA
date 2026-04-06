@@ -134,30 +134,29 @@ export class RedisBuffer {
     const raw = await this.redis.lrange(key, 0, -1)
     if (raw.length === 0) return
 
+    // Walk backwards counting assistant messages (turn boundaries)
     let turns = 0
-    let cutIndex = 0 // default: keep everything (ltrim 0 -1 = no-op)
-
+    let cutIndex = raw.length // default: keep everything
     for (let i = raw.length - 1; i >= 0; i--) {
       const msg = JSON.parse(raw[i]!) as StoredMessage
-      if (msg.role !== 'assistant') continue
-
-      turns++
-      if (turns < keepTurns) continue
-
-      // Oldest turn to keep found at position i.
-      // Its start = first position after the previous assistant.
-      let prevAssistantIdx = -1
-      for (let j = i - 1; j >= 0; j--) {
-        if ((JSON.parse(raw[j]!) as StoredMessage).role === 'assistant') {
-          prevAssistantIdx = j
+      if (msg.role === 'assistant') {
+        turns++
+        if (turns >= keepTurns) {
+          // Find the start of this turn: walk back to find the previous assistant or start
+          let turnStart = i
+          for (let j = i - 1; j >= 0; j--) {
+            const prev = JSON.parse(raw[j]!) as StoredMessage
+            if (prev.role === 'assistant') break
+            turnStart = j
+          }
+          cutIndex = turnStart
           break
         }
       }
-      cutIndex = prevAssistantIdx + 1  // -1+1=0 if no prior assistant
-      break
     }
 
-    if (cutIndex <= 0) return
+    if (cutIndex <= 0) return // nothing to trim
+    // Keep from cutIndex to end → ltrim(cutIndex, -1)
     await this.redis.ltrim(key, cutIndex, -1)
   }
 

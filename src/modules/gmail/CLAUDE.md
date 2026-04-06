@@ -5,7 +5,9 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console fields, API routes, migrations, polling, batching, jobs, labels
 - `types.ts` — EmailMessage, EmailAttachment, EmailSendOptions, EmailReplyOptions, EmailForwardOptions, EmailConfig, LunaLabelIds, CustomLabel, ResolvedCustomLabel
-- `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, filtro no-reply/domain/subject, labels, star, parsing MIME, footer, retry 429/5xx
+- `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, listMessages (búsqueda genérica), filtro no-reply/domain/subject/List-Unsubscribe, labels, star, parsing MIME, footer, firma (workspace/custom/auto), retry 429/5xx
+- `email-cleaner.ts` — limpieza de body: stripQuotedReplies, stripDisclaimers, compactForwardHeaders, stripThirdPartySignatures
+- `tools.ts` — registro de email tools para el pipeline (email-read-inbox, email-search, email-get-detail)
 - `email-oauth.ts` — OAuth2 standalone para Gmail-only (se usa cuando google-apps no está activo)
 - `rate-limiter.ts` — Redis-backed rate limiter con limites configurables (defaults: workspace 80/h 1500/d, free 20/h 400/d)
 
@@ -21,11 +23,12 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
   - **Rate limit**: EMAIL_ACCOUNT_TYPE ('workspace'), EMAIL_RATE_LIMIT_PER_HOUR (0=auto), EMAIL_RATE_LIMIT_PER_DAY (0=auto)
   - **Labels**: EMAIL_CUSTOM_LABELS (JSON array)
   - **Batching**: EMAIL_BATCH_WAIT_MS (0)
-  - **Sessions**: EMAIL_SESSION_INACTIVITY_HOURS (48), EMAIL_PRECLOSE_FOLLOWUP_HOURS (0), EMAIL_PRECLOSE_FOLLOWUP_TEXT
+  - **Sessions**: EMAIL_SESSION_INACTIVITY_HOURS (48), EMAIL_PRECLOSE_FOLLOWUP_HOURS (0), EMAIL_PRECLOSE_FOLLOWUP_TEXT, EMAIL_GAP_CONTEXT_MAX (5)
   - **OAuth standalone**: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_TOKEN_REFRESH_BUFFER_MS (300000)
   - **ACK**: ACK_EMAIL_TRIGGER_MS (0=off), ACK_EMAIL_HOLD_MS (2000), ACK_EMAIL_MESSAGE, ACK_EMAIL_STYLE ('formal')
   - **Formato**: EMAIL_FORMAT_ADVANCED (false), FORMAT_INSTRUCTIONS_EMAIL, EMAIL_FORMAT_TONE ('profesional'), EMAIL_FORMAT_MAX_SENTENCES (4), EMAIL_FORMAT_MAX_PARAGRAPHS (4), EMAIL_FORMAT_EMOJI_LEVEL ('nunca')
   - **Firma**: EMAIL_SIGNATURE_MODE ('gmail'), EMAIL_SIGNATURE_TEXT
+  - **Triage**: EMAIL_TRIAGE_ENABLED (true) — toggle para reglas built-in (auto-replies, DSN, CC-only, empty body)
   - **Attachments**: EMAIL_ATT_IMAGES/DOCUMENTS/SPREADSHEETS/PRESENTATIONS/TEXT/AUDIO (all true), EMAIL_ATT_MAX_SIZE_MB (25), EMAIL_ATT_MAX_PER_MSG (10)
 
 ## Labels Gmail
@@ -36,9 +39,29 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - Escalación: star + markImportant + markUnread + labels Escalated+Human-Loop
 - Conversión: label Converted, remove Agent
 
+## Triage (pre-procesamiento de emails)
+Clasificador determinístico (<5ms, sin LLM) que corre ANTES del agentic loop. Decide RESPOND/OBSERVE/IGNORE.
+- **Built-in**: auto-reply headers (Auto-Submitted, X-Auto-Response-Suppress, Precedence:bulk), auto-reply subjects (out of office, etc.), DSN (multipart/report), CC-only (agente en CC pero no en To → OBSERVE), body vacío
+- **OBSERVE**: persiste mensaje en DB + sesión, no genera respuesta LLM. Útil para contexto futuro.
+- **IGNORE**: descarta completamente, solo marca como leído.
+- Clasificador en `src/engine/agentic/email-triage.ts`, gate en `src/engine/engine.ts`
+- Service: `gmail:triage-config` expone enabled + ownAddress (auto-detectado de OAuth)
+- `rawHeaders` en EmailMessage: mapa lowercased de headers del email (para detectar Auto-Submitted, Precedence, etc.)
+
+## Thread Gap Detection
+Cuando Luna es removida del CC de un hilo y luego re-agregada, detecta y recupera mensajes faltantes.
+- Usa `last_message_gmail_id` (ya en `email_threads`) como marcador de posición
+- `getThreadMessageIds()` en gmail-adapter: 1 API call (`threads.get` format: metadata) para IDs del hilo
+- `detectThreadGap()` en manifest: compara posición del marcador vs msg actual, fetchea gap messages
+- Gap detection corre ANTES del UPSERT de `email_threads` (para leer el marcador previo)
+- **Persistencia dual**: si hay sesión activa → persiste cada gap msg como `role: 'system'` via memory:manager (fecha original, orden cronológico). Si sesión expiró → fallback a preámbulo texto en el mensaje actual.
+- `persistGapMessages()`: guarda individuales con `metadata: { source: 'thread-gap' }` y `createdAt` original
+- `EMAIL_GAP_CONTEXT_MAX` (default 5): máximo mensajes a recuperar. 0 = desactivado.
+- Fallo graceful: si la API falla, pipeline continúa sin gap context
+
 ## Hot reload
 - `reloadConfig()` en cada poll cycle y antes de enviar → filtros, footer, always-CC se actualizan sin restart
-- `console:config_applied` → re-ensure labels (crea nuevas custom labels si se agregaron)
+- `console:config_applied` → re-ensure labels
 - Rate limiter sync: account type + custom limits se actualizan en cada send
 - Session jobs leen config fresco dentro del handler (no en closure)
 - SQL parametrizado con `make_interval(hours => $1)` — no interpolación
@@ -53,6 +76,12 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 ## Servicios registrados
 - `email:adapter` — GmailAdapter instance
 - `gmail:label-instructions` — `() => ResolvedCustomLabel[]` — para que engine/tools lean instrucciones de labels
+- `gmail:triage-config` — `{ getTriageConfig() }` — config de triage para el engine (enabled, rules, ownAddress)
+
+## Tools registrados (cuando tools module existe y OAuth conectado)
+- `email-read-inbox` — Lee emails recientes del buzón (filter: unread/recent/important/all, max_results)
+- `email-search` — Busca emails con sintaxis Gmail nativa (from:, to:, subject:, has:attachment, newer_than:, etc.)
+- `email-get-detail` — Lee contenido completo de un email por ID (body truncado a 3000 chars)
 
 ## API Routes (bajo /console/api/gmail/)
 - `GET /rate-limits` — uso actual vs limites (con remaining)
@@ -64,7 +93,29 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - `POST /apply-label` — aplicar label a mensaje (messageId + labelId)
 - Auth: `GET /auth-status`, `GET /auth-url`, `POST /auth-callback`, `POST /auth-disconnect`, `POST /auth-refresh`
 
+## Skill de outreach
+- `instance/prompts/system/skills/email-outreach.md` — protocolo cross-channel (captura email, envío material, cuándo no responder, timing follow-ups)
+- `requiredTools: email-read-inbox` — solo aparece cuando gmail está activo
+- Ver `docs/architecture/channel-guide.md` sección "Skill de outreach cross-channel" para la política general
+
+## Limpieza de body (incoming)
+- `cleanEmailBody()` en `email-cleaner.ts` produce `cleanBodyText` en cada `EmailMessage`
+- El engine recibe `cleanBodyText` como `content.text` (no el `bodyText` original)
+- `bodyText` original se preserva intacto para `signature-parser.ts` y persistencia en `raw`
+- Limpieza: quoted replies (`>` lines, "On ... wrote:"), forward headers (compactados a 1 línea), firmas de terceros (después de `-- ` en el último 30%), disclaimers legales
+- Forward bodies se mantienen — solo se compactan los headers repetitivos
+
+## Firma de email (outgoing)
+- **Workspace** (`gmail` mode): se lee con `sendAs.get()` al init y se cachea en HTML + plain text
+- **Custom** (`custom` mode): usa `EMAIL_SIGNATURE_TEXT` del config
+- **Auto** (`auto` mode): workspace si existe, fallback a custom
+- Se inyecta en `buildRawEmail()` ANTES del footer. Gmail API con `raw` messages NO inyecta firma server-side.
+- **Dedup**: si el body ya contiene la firma en plain text, no la duplica (por si el LLM la incluyó)
+- Se refresca en `console:config_applied` (por si cambió el modo o la firma en workspace)
+- El prompt `channel-format-email.md` instruye al LLM a NO firmar — la firma la pone el sistema
+
 ## Trampas
+- Emails con header `List-Unsubscribe` se filtran automáticamente (newsletters/marketing)
 - History ID puede expirar → fallback automático a fetch unread
 - Labels se cachean en memoria (labelCache Map) y se recrean si faltan
 - Rate limiter usa Redis con TTL natural (no necesita cleanup)
