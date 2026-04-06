@@ -43,6 +43,12 @@ export interface TwilioVoiceConfig {
   VOICE_MAX_CALL_DURATION_MS: number
   VOICE_MAX_CONCURRENT_CALLS: number
   VOICE_ENABLED: boolean
+  // Freeze detection
+  VOICE_GEMINI_FREEZE_TIMEOUT_MS: number
+  // Tool filler + timeout + retry
+  VOICE_TOOL_FILLER_DELAY_MS: number
+  VOICE_TOOL_TIMEOUT_MS: number
+  VOICE_TOOL_MAX_RETRIES: number
   // Channel runtime config (for engine integration)
   VOICE_RATE_LIMIT_HOUR: number
   VOICE_RATE_LIMIT_DAY: number
@@ -74,6 +80,7 @@ export type CallEndReason =
   | 'error'
   | 'busy'
   | 'no-answer'
+  | 'gemini_freeze'
 
 export interface ActiveCall {
   callId: string
@@ -92,6 +99,26 @@ export interface ActiveCall {
   transcript: TranscriptEntry[]
   /** Pre-loaded context (populated during answer delay) */
   preloadedContext: PreloadedContext | null
+
+  // ── Greeting gate ──
+  /** false until Gemini completes first turn (inbound). outbound starts as true. */
+  greetingDone: boolean
+
+  // ── Freeze detection ──
+  /** true while Gemini is producing audio */
+  geminiSpeaking: boolean
+  /** Timer watching for Gemini freeze (no response after caller speaks) */
+  geminiResponseTimer: ReturnType<typeof setTimeout> | null
+  /** 0=nothing, 1=re-injected transcript, 2+=hangup */
+  geminiFreezeAttempts: number
+  /** Last text recognized from caller */
+  lastCallerTranscript: string
+  /** Timestamp of last raw caller audio chunk */
+  lastRawCallerAudioAt: number
+
+  // ── Tool cancel via barge-in ──
+  /** IDs of tool calls cancelled by barge-in */
+  cancelledToolCalls: Set<string>
 }
 
 export interface TranscriptEntry {

@@ -326,6 +326,11 @@ const manifest: ModuleManifest = {
     VOICE_MAX_CALL_DURATION_MS: numEnv(1800000),
     VOICE_MAX_CONCURRENT_CALLS: numEnvMin(1, 5),
     VOICE_ENABLED: boolEnv(true),
+    // ── Freeze detection + tool filler ──
+    VOICE_GEMINI_FREEZE_TIMEOUT_MS: numEnv(10000),
+    VOICE_TOOL_FILLER_DELAY_MS: numEnv(3000),
+    VOICE_TOOL_TIMEOUT_MS: numEnv(10000),
+    VOICE_TOOL_MAX_RETRIES: numEnvMin(0, 1),
     // ── Channel runtime config (engine integration) ──
     VOICE_RATE_LIMIT_HOUR: numEnvMin(0, 0),
     VOICE_RATE_LIMIT_DAY: numEnvMin(0, 0),
@@ -492,6 +497,35 @@ const manifest: ModuleManifest = {
       },
       // ── Comportamiento de llamada ──
       { key: '_divider_behavior', type: 'divider', label: { es: 'Comportamiento de llamada', en: 'Call behavior' } },
+      {
+        key: 'VOICE_GEMINI_FREEZE_TIMEOUT_MS',
+        type: 'number',
+        label: { es: 'Timeout de freeze de Gemini (ms)', en: 'Gemini freeze timeout (ms)' },
+        info: { es: 'Tiempo sin respuesta de Gemini tras turno del caller antes de re-inyectar. 2 fallos = colgar.', en: 'Time without Gemini response after caller turn before re-injecting. 2 failures = hangup.' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_TOOL_FILLER_DELAY_MS',
+        type: 'number',
+        label: { es: 'Delay antes de filler por tool (ms)', en: 'Tool filler delay (ms)' },
+        info: { es: 'Tiempo antes de pedirle a Gemini que diga algo mientras ejecuta una tool lenta', en: 'Time before asking Gemini to say something while a slow tool runs' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_TOOL_TIMEOUT_MS',
+        type: 'number',
+        label: { es: 'Timeout de ejecucion de tool (ms)', en: 'Tool execution timeout (ms)' },
+        info: { es: 'Tiempo maximo por intento de ejecucion de tool antes de reintentar o fallar', en: 'Max time per tool execution attempt before retry or failure' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_TOOL_MAX_RETRIES',
+        type: 'number',
+        label: { es: 'Reintentos de tool por timeout', en: 'Tool retries on timeout' },
+        info: { es: 'Cantidad de reintentos antes de reportar error al caller (0 = sin reintentos)', en: 'Number of retries before reporting error to caller (0 = no retries)' },
+        min: 0,
+        width: 'half',
+      },
       {
         key: 'VOICE_GREETING_INBOUND',
         type: 'textarea',
