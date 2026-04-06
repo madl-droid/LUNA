@@ -10,6 +10,7 @@ import type { Redis } from 'ioredis'
 import type { Pool } from 'pg'
 import pino from 'pino'
 import type { EmbeddingService } from './embedding-service.js'
+import { getBullRedisOpts } from './bull-redis-opts.js'
 
 const logger = pino({ name: 'embedding-queue' })
 
@@ -122,13 +123,7 @@ export class EmbeddingQueue {
     this.embeddingService = embeddingService
     this.registry = registry
 
-    const bullRedisOpts = {
-      host: redis.options.host ?? 'localhost',
-      port: redis.options.port ?? 6379,
-      password: redis.options.password,
-      db: redis.options.db ?? 0,
-      maxRetriesPerRequest: null,
-    }
+    const bullRedisOpts = getBullRedisOpts(redis)
 
     this.queue = new Queue<EmbedJobData>(QUEUE_NAME, {
       connection: bullRedisOpts,
@@ -169,8 +164,8 @@ export class EmbeddingQueue {
 
     await this.queue.add('embed', data, {
       priority,
-      removeOnComplete: 200,
-      removeOnFail: 100,
+      removeOnComplete: true,
+      removeOnFail: { count: 20 },
       jobId: `embed-${data.source}-${data.chunkId}`, // Dedup by chunk
     })
   }
@@ -233,43 +228,49 @@ export class EmbeddingQueue {
     let knowledge = 0
     let memory = 0
 
-    // Knowledge chunks stuck in pending/queued/processing
-    const kcResult = await this.db.query<{ id: string; document_id: string; content_type: string }>(
-      `SELECT id, document_id, COALESCE(content_type, 'text') AS content_type
-       FROM knowledge_chunks
-       WHERE embedding_status IN ('pending', 'queued', 'processing')
-       ORDER BY document_id, chunk_index
-       LIMIT 500`,
-    )
+    // Knowledge chunks stuck in pending/queued/processing — paginated to handle large backlogs
+    let kcBatch: Array<{ id: string; document_id: string; content_type: string }> = []
+    do {
+      const kcResult = await this.db.query<{ id: string; document_id: string; content_type: string }>(
+        `SELECT id, document_id, COALESCE(content_type, 'text') AS content_type
+         FROM knowledge_chunks
+         WHERE embedding_status IN ('pending', 'queued', 'processing')
+         ORDER BY document_id, chunk_index
+         LIMIT 500`,
+      )
+      kcBatch = kcResult.rows
+      for (const row of kcBatch) {
+        await this.enqueue({
+          chunkId: row.id,
+          source: 'knowledge',
+          parentId: row.document_id,
+          contentType: row.content_type,
+        })
+        knowledge++
+      }
+    } while (kcBatch.length === 500)
 
-    for (const row of kcResult.rows) {
-      await this.enqueue({
-        chunkId: row.id,
-        source: 'knowledge',
-        parentId: row.document_id,
-        contentType: row.content_type,
-      })
-      knowledge++
-    }
-
-    // Session memory chunks stuck in pending/queued/processing
-    const smcResult = await this.db.query<{ id: string; session_id: string; content_type: string }>(
-      `SELECT id, session_id, content_type
-       FROM session_memory_chunks
-       WHERE embedding_status IN ('pending', 'queued', 'processing')
-       ORDER BY session_id, chunk_index
-       LIMIT 500`,
-    )
-
-    for (const row of smcResult.rows) {
-      await this.enqueue({
-        chunkId: row.id,
-        source: 'memory',
-        parentId: row.session_id,
-        contentType: row.content_type,
-      })
-      memory++
-    }
+    // Session memory chunks stuck in pending/queued/processing — paginated
+    let smcBatch: Array<{ id: string; session_id: string; content_type: string }> = []
+    do {
+      const smcResult = await this.db.query<{ id: string; session_id: string; content_type: string }>(
+        `SELECT id, session_id, content_type
+         FROM session_memory_chunks
+         WHERE embedding_status IN ('pending', 'queued', 'processing')
+         ORDER BY session_id, chunk_index
+         LIMIT 500`,
+      )
+      smcBatch = smcResult.rows
+      for (const row of smcBatch) {
+        await this.enqueue({
+          chunkId: row.id,
+          source: 'memory',
+          parentId: row.session_id,
+          contentType: row.content_type,
+        })
+        memory++
+      }
+    } while (smcBatch.length === 500)
 
     if (knowledge > 0 || memory > 0) {
       logger.info({ knowledge, memory }, '[EMBED-Q] Recovered pending chunks on startup')
@@ -315,27 +316,21 @@ export class EmbeddingQueue {
   private async processJob(job: Job<EmbedJobData>): Promise<void> {
     const { chunkId, source, parentId } = job.data
 
-    // Circuit breaker check
+    // Circuit breaker check — throw to let BullMQ handle retry with backoff
     if (Date.now() < this.cbPausedUntil) {
       const remainMs = this.cbPausedUntil - Date.now()
-      logger.warn({ chunkId, remainMs }, '[EMBED-Q] Circuit breaker open, re-queuing')
-      // Re-enqueue with delay
-      await this.enqueue(job.data)
-      return
+      logger.warn({ chunkId, remainMs }, '[EMBED-Q] Circuit breaker open, will retry via BullMQ backoff')
+      throw new Error(`Circuit breaker open for ${Math.ceil(remainMs / 1000)}s`)
     }
 
-    // Check if embedding service is available
+    // Check if embedding service is available — throw to let BullMQ handle retry
     if (!this.embeddingService.isAvailable()) {
-      logger.warn({ chunkId }, '[EMBED-Q] Embedding service unavailable, re-queuing')
-      await this.updateChunkStatus(chunkId, source, 'pending')
-      // Re-enqueue with small delay
-      await new Promise(resolve => setTimeout(resolve, 5000))
-      await this.enqueue(job.data)
-      return
+      logger.warn({ chunkId }, '[EMBED-Q] Embedding service unavailable, will retry')
+      throw new Error('Embedding service unavailable, will retry')
     }
 
     // Load chunk data from PG
-    const chunk = await this.loadChunk(chunkId, source, parentId)
+    const chunk = await this.loadChunk(chunkId, source)
     if (!chunk) {
       logger.warn({ chunkId, source }, '[EMBED-Q] Chunk not found, skipping')
       return
@@ -360,6 +355,8 @@ export class EmbeddingQueue {
       // Check if all sibling chunks are now embedded → reconcile parent status
       if (source === 'knowledge') {
         await this.reconcileDocumentStatus(parentId)
+      } else if (source === 'memory') {
+        await this.reconcileSessionStatus(chunkId)
       }
     } catch (err) {
       await this.handleFailure(chunkId, source, parentId, err)
@@ -384,7 +381,7 @@ export class EmbeddingQueue {
   }
 
   private isMultimodalChunk(chunk: ChunkToEmbed): boolean {
-    const MULTIMODAL_TYPES = new Set(['pdf_pages', 'image', 'slide', 'video_frames', 'audio_segment'])
+    const MULTIMODAL_TYPES = new Set(['pdf_pages', 'image', 'slide', 'video_frames'])
     if (!MULTIMODAL_TYPES.has(chunk.contentType)) return false
 
     // Knowledge chunks use mediaRefs array, memory chunks use mediaRef path
@@ -400,18 +397,30 @@ export class EmbeddingQueue {
       let mimeType = chunk.mimeType ?? 'application/octet-stream'
 
       if (chunk.source === 'memory' && chunk.mediaRef) {
-        // Memory: mediaRef is a file path
+        // Memory: mediaRef is a file path — validate against known media dir
+        const { resolve } = await import('node:path')
         const { readFile } = await import('node:fs/promises')
-        buffer = await readFile(chunk.mediaRef)
+        const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+        const resolvedMemPath = resolve(chunk.mediaRef)
+        if (!resolvedMemPath.startsWith(mediaDir + '/') && !resolvedMemPath.startsWith(mediaDir + '\\')) {
+          logger.error({ filePath: chunk.mediaRef }, '[EMBED-Q] Path traversal attempt blocked (memory mediaRef)')
+          throw new Error('Invalid media file path')
+        }
+        buffer = await readFile(resolvedMemPath)
       } else if (chunk.source === 'knowledge' && chunk.mediaRefs?.[0]) {
         const firstMedia = chunk.mediaRefs[0]
         mimeType = firstMedia.mimeType
 
         if (firstMedia.filePath) {
-          const { resolve, join } = await import('node:path')
+          const { resolve } = await import('node:path')
           const { readFile } = await import('node:fs/promises')
           const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
-          buffer = await readFile(join(knowledgeDir, firstMedia.filePath))
+          const resolvedPath = resolve(knowledgeDir, firstMedia.filePath)
+          if (!resolvedPath.startsWith(knowledgeDir + '/') && !resolvedPath.startsWith(knowledgeDir + '\\')) {
+            logger.error({ filePath: firstMedia.filePath }, '[EMBED-Q] Path traversal attempt blocked')
+            throw new Error('Invalid media file path')
+          }
+          buffer = await readFile(resolvedPath)
         } else if (firstMedia.data) {
           buffer = Buffer.from(firstMedia.data, 'base64')
         }
@@ -437,7 +446,7 @@ export class EmbeddingQueue {
   // Chunk loading from PG
   // ═══════════════════════════════════════════
 
-  private async loadChunk(chunkId: string, source: EmbedSource, _parentId: string): Promise<ChunkToEmbed | null> {
+  private async loadChunk(chunkId: string, source: EmbedSource): Promise<ChunkToEmbed | null> {
     if (source === 'knowledge') {
       const res = await this.db.query<{
         id: string; content: string | null; content_type: string; mime_type: string | null
@@ -495,7 +504,6 @@ export class EmbeddingQueue {
     await this.db.query(
       `UPDATE ${table} SET
         embedding = $1::vector,
-        has_embedding = true,
         embedding_status = 'embedded',
         retry_count = 0,
         last_error = NULL,
@@ -568,7 +576,7 @@ export class EmbeddingQueue {
 
       if (row.embedded + row.failed >= row.total) {
         // All chunks have a terminal state
-        const docStatus = row.failed > 0 ? 'failed' : 'done'
+        const docStatus = row.failed > 0 ? 'failed' : 'embedded'
         await this.db.query(
           `UPDATE knowledge_documents SET embedding_status = $1, updated_at = NOW() WHERE id = $2`,
           [docStatus, documentId],
@@ -592,6 +600,31 @@ export class EmbeddingQueue {
       }
     } catch (err) {
       logger.warn({ err, documentId }, '[EMBED-Q] Document reconciliation failed (non-fatal)')
+    }
+  }
+
+  /**
+   * After embedding a memory chunk, check if ALL chunks for the parent session
+   * are now embedded. If so, mark the session embedding as done.
+   */
+  private async reconcileSessionStatus(chunkId: string): Promise<void> {
+    try {
+      await this.db.query(
+        `UPDATE sessions
+         SET compression_status = 'done'
+         WHERE id = (
+           SELECT session_id FROM session_memory_chunks WHERE id = $1
+         )
+         AND compression_status = 'embedding'
+         AND NOT EXISTS (
+           SELECT 1 FROM session_memory_chunks
+           WHERE session_id = (SELECT session_id FROM session_memory_chunks WHERE id = $1)
+             AND embedding_status != 'embedded'
+         )`,
+        [chunkId],
+      )
+    } catch (err) {
+      logger.warn({ err, chunkId }, '[EMBED-Q] Session reconciliation failed (non-fatal)')
     }
   }
 

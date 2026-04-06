@@ -9,6 +9,7 @@ import type { KnowledgePgStore } from './pg-store.js'
 import type { EmbeddingService } from './embedding-service.js'
 import type { EmbeddingQueue } from './embedding-queue.js'
 import { generateDescription } from './description-generator.js'
+import { getBullRedisOpts } from './bull-redis-opts.js'
 
 const QUEUE_NAME = 'knowledge-vectorize'
 const BULK_LOCK_KEY = 'knowledge:vectorize:bulk_lock'
@@ -55,14 +56,7 @@ export class VectorizeWorker {
     this.registry = registry ?? null
     this.log = logger.child({ component: 'vectorize-worker' })
 
-    // BullMQ requires dedicated Redis connections with maxRetriesPerRequest: null
-    const bullRedisOpts = {
-      host: redis.options.host ?? 'localhost',
-      port: redis.options.port ?? 6379,
-      password: redis.options.password,
-      db: redis.options.db ?? 0,
-      maxRetriesPerRequest: null,
-    }
+    const bullRedisOpts = getBullRedisOpts(redis)
 
     this.queue = new Queue<VectorizeJobData>(QUEUE_NAME, {
       connection: bullRedisOpts,
@@ -112,7 +106,7 @@ export class VectorizeWorker {
 
       if (chunks.length === 0) {
         this.log.info({ documentId }, '[EMBED] No chunks without embedding, marking done')
-        await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
+        await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'embedded')
         return
       }
 
@@ -132,9 +126,9 @@ export class VectorizeWorker {
       await this.embedChunks(chunks)
 
       const durationMs = Date.now() - startMs
-      await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
+      await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'embedded')
       // Propagate status to parent knowledge_item (via source_ref)
-      await this.updateParentItemStatus(documentId, 'done')
+      await this.updateParentItemStatus(documentId, 'embedded')
       this.log.info({ documentId, chunksProcessed: chunks.length, durationMs, avgMsPerChunk: Math.round(durationMs / chunks.length) }, '[EMBED] Document embeddings complete')
     } catch (err) {
       this.log.error({ documentId, err }, 'failed to process document embeddings')
@@ -184,7 +178,7 @@ export class VectorizeWorker {
 
       // Update document statuses
       for (const docId of documentIds) {
-        const status: EmbeddingStatus = failedDocIds.has(docId) ? 'failed' : 'done'
+        const status: EmbeddingStatus = failedDocIds.has(docId) ? 'failed' : 'embedded'
         await this.pgStore.updateDocumentEmbeddingStatus(docId, status)
       }
 
@@ -273,7 +267,7 @@ export class VectorizeWorker {
   }
 
   /** Update the parent knowledge_item embedding status when its document finishes */
-  private async updateParentItemStatus(documentId: string, status: 'done' | 'failed'): Promise<void> {
+  private async updateParentItemStatus(documentId: string, status: 'embedded' | 'failed'): Promise<void> {
     try {
       const doc = await this.pgStore.getDocument(documentId)
       if (!doc?.sourceRef) return

@@ -332,10 +332,35 @@ export interface MedilinkAgendaItem {
   nombre_dentista: string
   fecha: string
   id_recurso: number
+  /** Only present for booked slots from v5 agenda */
+  id_cita?: number
 }
 
 /** Raw agenda response is an array of MedilinkAgendaItem */
 export type MedilinkAgendaRaw = MedilinkAgendaItem[]
+
+// ─── V5 Agenda types ────────────────────
+
+/** Detail for a booked slot in v5 hierarchical agenda response */
+export interface V5AgendaSlotDetail {
+  id_cita: number
+  id_paciente: number
+  nombre_paciente?: string
+  apellidos_paciente?: string
+  duracion_total: number
+  fin?: string
+}
+
+/** V5 agenda response: data.fechas[date].horas[time].sillones[id] = true | detail */
+export interface V5AgendaResponse {
+  data: {
+    fechas: Record<string, {
+      horas: Record<string, {
+        sillones: Record<string, true | V5AgendaSlotDetail>
+      }>
+    }>
+  }
+}
 
 /** Cleaned/processed availability slot for agent consumption */
 export interface AvailabilitySlot {

@@ -390,7 +390,7 @@ async function executeToolCalls(
           captureDriveToolResult(
             toolCall.name, toolCall.input, result.data, result.success,
             ctx.session.id, registry,
-          ).catch(() => {})
+          ).catch(err => logger.debug({ err }, '[agentic] Drive capture failed'))
         }
 
         // 7. Return result
@@ -439,9 +439,10 @@ function formatToolResultsMessage(
     if (r.success) {
       const dataStr = typeof r.data === 'string' ? r.data : JSON.stringify(r.data)
       const fullText = dataStr ?? '(no data)'
-      const truncated = fullText.length > 8000
-      const display = truncated ? fullText.slice(0, 8000) : fullText
-      const truncNote = truncated ? `\n[... resultado truncado: mostrando 8,000 de ${fullText.length.toLocaleString()} caracteres]` : ''
+      const MAX_TOOL_RESULT_CHARS = 8_000
+      const truncated = fullText.length > MAX_TOOL_RESULT_CHARS
+      const display = truncated ? fullText.slice(0, MAX_TOOL_RESULT_CHARS) : fullText
+      const truncNote = truncated ? `\n[... resultado truncado: mostrando ${MAX_TOOL_RESULT_CHARS} de ${String(fullText.length)} caracteres]` : ''
       parts.push(`[${r.name}]: ${display}${truncNote}`)
     } else {
       parts.push(`[${r.name}]: ERROR — ${r.error ?? 'Unknown error'}`)

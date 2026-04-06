@@ -289,7 +289,7 @@ export async function intake(
         let injectedContent: string
         if (att.sizeTier === 'large' && att.llmText) {
           // Large file: inject category label + filename + duration + truncation note + LLM description + query hint
-          const sizeNote = att.tokenEstimate > 0 ? ` [documento de ~${att.tokenEstimate.toLocaleString()} tokens, contenido resumido]` : ''
+          const sizeNote = att.tokenEstimate > 0 ? ` [documento de ~${String(att.tokenEstimate)} tokens, contenido resumido]` : ''
           const queryHint = ` Si necesitas buscar información específica dentro del documento, usa query_attachment con id "${att.id}".`
           injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}${queryHint}`
         } else if (att.llmText && (att.category === 'images' || att.category === 'audio' || att.category === 'video')) {
@@ -318,7 +318,7 @@ export async function intake(
           })
         } else if (url.status === 'drive_reference' && url.driveMeta) {
           const meta = url.driveMeta
-          const modified = meta.modifiedTime ? ` (modificado: ${new Date(meta.modifiedTime).toLocaleDateString('es')})` : ''
+          const modified = meta.modifiedTime ? ` (modificado: ${new Date(meta.modifiedTime).toISOString().slice(0, 10)})` : ''
 
           if (meta.driveType === 'folder') {
             // Folder: list contents so agent knows what's inside

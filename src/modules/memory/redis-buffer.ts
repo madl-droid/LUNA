@@ -89,10 +89,6 @@ export class RedisBuffer {
     )
   }
 
-  async getMessageCount(sessionId: string): Promise<number> {
-    return await this.redis.llen(`session:${sessionId}:messages`)
-  }
-
   /**
    * Count turns (not raw messages) in the buffer.
    * A turn = user message(s) + assistant response. We count assistant messages.
@@ -181,18 +177,6 @@ export class RedisBuffer {
   async setBufferSummary(sessionId: string, summary: string): Promise<void> {
     const ttlSeconds = this.config.MEMORY_SESSION_MAX_TTL_HOURS * 3600
     await this.redis.set(`session:${sessionId}:buffer_summary`, summary, 'EX', ttlSeconds)
-  }
-
-  /** Get the oldest `count` messages from the buffer (for compression input) */
-  async getOldestMessages(sessionId: string, count: number): Promise<StoredMessage[]> {
-    const key = `session:${sessionId}:messages`
-    const raw = await this.redis.lrange(key, 0, count - 1)
-    return raw.map((item: string) => JSON.parse(item) as StoredMessage)
-  }
-
-  /** Trim buffer to keep only the last `keepCount` messages (removes oldest) */
-  async trimOldestMessages(sessionId: string, keepCount: number): Promise<void> {
-    await this.redis.ltrim(`session:${sessionId}:messages`, -keepCount, -1)
   }
 
   // ═══════════════════════════════════════════

@@ -164,8 +164,10 @@ export class MedilinkCache {
       }
     }
 
-    // Fetch from API
-    const items = await this.api.getAgenda(branchId, date, professionalId, durationMinutes)
+    // Fetch from API (v5: single-date range, per professional)
+    if (!professionalId) throw new Error('professionalId is required for v5 agenda API')
+    const agendaByDate = await this.api.getProfessionalAgenda(branchId, professionalId, date, date)
+    const items = agendaByDate[date] ?? []
     const slots = this.processAgendaResponse(items, branchId)
 
     // Cache with TTL (skip if cache disabled)
@@ -292,7 +294,9 @@ export class MedilinkCache {
    */
   async refreshAvailability(branchId: number, date: string, professionalId?: number): Promise<void> {
     try {
-      const items = await this.api.getAgenda(branchId, date, professionalId)
+      if (!professionalId) return  // v5 requires professionalId; skip refresh without it
+      const agendaByDate = await this.api.getProfessionalAgenda(branchId, professionalId, date, date)
+      const items = agendaByDate[date] ?? []
       const slots = this.processAgendaResponse(items, branchId)
 
       const cacheKey = `${AVAIL_PREFIX}${branchId}:${date}:${professionalId ?? 'all'}:default`

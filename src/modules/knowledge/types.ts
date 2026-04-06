@@ -14,7 +14,7 @@ export type FAQSourceType = 'manual' | 'sheets' | 'file'
 
 export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web'
 
-export type EmbeddingStatus = 'pending' | 'processing' | 'done' | 'failed' | 'pending_review'
+export type EmbeddingStatus = 'pending' | 'queued' | 'processing' | 'embedded' | 'failed' | 'pending_review'
 
 // Frecuencias en milisegundos
 export const SYNC_FREQUENCY_MS: Record<SyncFrequency, number> = {
@@ -92,7 +92,7 @@ export interface KnowledgeChunk {
   nextChunkId: string | null
   contentType: ChunkContentType
   mediaRefs: MediaRef[] | null
-  extraMetadata: Record<string, unknown> | null
+  extraMetadata: import('./embedding-limits.js').ChunkMetadata | null
   createdAt: Date
 }
 

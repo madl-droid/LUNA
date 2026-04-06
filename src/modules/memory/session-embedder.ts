@@ -134,7 +134,7 @@ export async function embedSessionChunks(
 // Persist chunks to session_memory_chunks table
 // ═══════════════════════════════════════════
 
-async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<void> {
+export async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<void> {
   if (chunks.length === 0) return
 
   // Batch insert using unnest for performance
@@ -165,7 +165,7 @@ async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<vo
         chunk.mediaRef,
         chunk.mimeType,
         chunk.extraMetadata ? JSON.stringify(chunk.extraMetadata) : null,
-        chunk.hasEmbedding,
+        chunk.hasEmbedding ? 'embedded' : 'pending', // embedding_status
         chunk.embedding ? `[${chunk.embedding.join(',')}]` : null,
         tsvContent,
         JSON.stringify(chunk.metadata),
@@ -177,7 +177,7 @@ async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<vo
       `INSERT INTO session_memory_chunks
         (id, session_id, contact_id, source_id, source_type, content_type,
          chunk_index, chunk_total, prev_chunk_id, next_chunk_id,
-         content, media_ref, mime_type, extra_metadata, has_embedding, embedding, tsv, metadata)
+         content, media_ref, mime_type, extra_metadata, embedding_status, embedding, tsv, metadata)
        VALUES ${placeholders.join(', ')}
        ON CONFLICT (id) DO NOTHING`,
       values,

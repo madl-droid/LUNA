@@ -99,7 +99,7 @@ interface DriveService {
   }>
   getFile(fileId: string): Promise<{ id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string }>
   downloadFile(fileId: string): Promise<Buffer>
-  exportFile(fileId: string, exportMimeType: string): Promise<string>
+  exportFile(fileId: string, exportMimeType: string): Promise<string | Buffer>
 }
 
 interface SlidesService {
@@ -587,8 +587,8 @@ export class KnowledgeItemManager {
     let slideImages: string[] = []
     if (drive) {
       try {
-        const pdfBuffer = await drive.exportFile(item.sourceId, 'application/pdf')
-        const pdfBytes = Buffer.from(pdfBuffer, 'utf-8')
+        const exported = await drive.exportFile(item.sourceId, 'application/pdf')
+        const pdfBytes = Buffer.isBuffer(exported) ? exported : Buffer.from(exported, 'utf-8')
         if (pdfBytes.length > 100) {
           const { PDFParse } = await import('pdf-parse')
           const parser = new PDFParse({ data: new Uint8Array(pdfBytes) })
@@ -710,26 +710,26 @@ export class KnowledgeItemManager {
 
     } else if (mime === 'application/vnd.google-apps.spreadsheet') {
       // No Sheets service — export as CSV
-      text = await drive.exportFile(file.id, 'text/csv')
+      text = await drive.exportFile(file.id, 'text/csv') as string
 
     } else if (mime === 'application/vnd.google-apps.document') {
-      text = await drive.exportFile(file.id, 'text/plain')
+      text = await drive.exportFile(file.id, 'text/plain') as string
 
     } else if (mime === 'application/vnd.google-apps.presentation') {
-      text = await drive.exportFile(file.id, 'text/plain')
+      text = await drive.exportFile(file.id, 'text/plain') as string
 
     // ── Office formats uploaded to Drive (export via Drive API) ──
     } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       || mime === 'application/msword') {
-      text = await drive.exportFile(file.id, 'text/plain')
+      text = await drive.exportFile(file.id, 'text/plain') as string
 
     } else if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       || mime === 'application/vnd.ms-excel') {
-      text = await drive.exportFile(file.id, 'text/csv')
+      text = await drive.exportFile(file.id, 'text/csv') as string
 
     } else if (mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
       || mime === 'application/vnd.ms-powerpoint') {
-      text = await drive.exportFile(file.id, 'text/plain')
+      text = await drive.exportFile(file.id, 'text/plain') as string
 
     // ── PDF ──
     } else if (mime === 'application/pdf') {

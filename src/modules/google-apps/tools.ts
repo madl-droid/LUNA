@@ -15,6 +15,20 @@ import type { ExtractorResult } from '../../extractors/types.js'
 
 const logger = pino({ name: 'google-apps:tools' })
 
+/** Google-native MIME types — agent must use dedicated read tools instead of drive-read-file */
+const GOOGLE_NATIVE_MIMES = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.presentation',
+])
+
+/** Suggested tool per Google-native MIME type */
+const GOOGLE_NATIVE_TOOL_MAP: Record<string, string> = {
+  'application/vnd.google-apps.document': 'docs-read',
+  'application/vnd.google-apps.spreadsheet': 'sheets-read',
+  'application/vnd.google-apps.presentation': 'slides-read',
+}
+
 /** Office mimeType → export format for files.export() */
 const OFFICE_EXPORT_MAP: Record<string, { exportMime: string; extractorMime: string; label: string }> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { exportMime: 'text/plain', extractorMime: 'text/plain', label: 'Word' },
@@ -225,7 +239,7 @@ export async function registerGoogleTools(
           required: ['fileId'],
         },
       },
-      handler: async (input) => {
+      handler: async (input, ctx) => {
         const fileId = input.fileId as string
 
         // 1. Get file metadata (name, mimeType, size)
@@ -240,21 +254,11 @@ export async function registerGoogleTools(
         }
 
         // Guard: reject Google-native types — agent should use docs-read/sheets-read/slides-read
-        const GOOGLE_NATIVE_MIMES = new Set([
-          'application/vnd.google-apps.document',
-          'application/vnd.google-apps.spreadsheet',
-          'application/vnd.google-apps.presentation',
-        ])
         if (GOOGLE_NATIVE_MIMES.has(file.mimeType)) {
-          const toolMap: Record<string, string> = {
-            'application/vnd.google-apps.document': 'docs-read',
-            'application/vnd.google-apps.spreadsheet': 'sheets-read',
-            'application/vnd.google-apps.presentation': 'slides-read',
-          }
           return {
             success: false,
-            error: `Este es un archivo nativo de Google. Usa ${toolMap[file.mimeType]} en vez de drive-read-file.`,
-            data: { name: file.name, mimeType: file.mimeType, suggestedTool: toolMap[file.mimeType] },
+            error: `Este es un archivo nativo de Google. Usa ${GOOGLE_NATIVE_TOOL_MAP[file.mimeType]} en vez de drive-read-file.`,
+            data: { name: file.name, mimeType: file.mimeType, suggestedTool: GOOGLE_NATIVE_TOOL_MAP[file.mimeType] },
           }
         }
 
@@ -278,7 +282,7 @@ export async function registerGoogleTools(
         if (officeExport) {
           // Office file: export via files.export() to a readable format
           const exported = await drive.exportFile(fileId, officeExport.exportMime)
-          buffer = Buffer.from(exported, 'utf-8')
+          buffer = Buffer.isBuffer(exported) ? exported : Buffer.from(exported, 'utf-8')
           extractorMime = officeExport.extractorMime
           logger.info({ fileId, name: file.name, exportMime: officeExport.exportMime }, `Drive ${officeExport.label} exported`)
         } else {
@@ -316,7 +320,7 @@ export async function registerGoogleTools(
         }
 
         // 5. Persist to attachment_extractions (fire-and-forget)
-        persistDriveReadResult(registry, fileId, file.name, file.mimeType, extracted.text, llmDescription).catch(
+        persistDriveReadResult(registry, fileId, file.name, file.mimeType, extracted.text, llmDescription, ctx?.sessionId).catch(
           (err: unknown) => logger.warn({ err, fileId }, 'Failed to persist drive-read-file result'),
         )
 
@@ -884,6 +888,7 @@ async function persistDriveReadResult(
   mimeType: string,
   extractedText: string | null,
   llmText: string | null,
+  sessionId?: string,
 ): Promise<void> {
   const db = registry.getDb()
   const tokenEstimate = extractedText ? Math.ceil(extractedText.length / 4) : 0
@@ -908,9 +913,9 @@ async function persistDriveReadResult(
     `INSERT INTO attachment_extractions
       (id, session_id, filename, mime_type, category, category_label, source_type,
        extracted_text, llm_text, token_estimate, status, metadata)
-     VALUES (gen_random_uuid(), NULL, $1, $2, 'documents', 'documents', 'drive_read',
+     VALUES (gen_random_uuid(), $7, $1, $2, 'documents', 'documents', 'drive_read',
        $3, $4, $5, 'processed', $6)`,
-    [fileName, mimeType, extractedText, llmText, tokenEstimate, JSON.stringify({ fileId })],
+    [fileName, mimeType, extractedText, llmText, tokenEstimate, JSON.stringify({ fileId }), sessionId ?? null],
   )
 
   logger.info({ fileId, fileName }, 'drive-read-file result persisted (new row)')

@@ -186,7 +186,6 @@ export async function processAttachments(
           summary: null,
           tokenEstimate: 0,
           sizeTier: 'small',
-          cacheKey: null,
           status: 'extraction_failed',
           injectionRisk: false,
           sourceType: 'file_attachment',
@@ -270,7 +269,6 @@ async function processOneAttachment(
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: 'disabled_by_channel',
       injectionRisk: false,
       sourceType: 'file_attachment',
@@ -302,7 +300,6 @@ async function processOneAttachment(
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: isSystemLimit ? 'system_limit_exceeded' : 'too_large',
       injectionRisk: false,
       sourceType: 'file_attachment',
@@ -337,7 +334,7 @@ async function processOneAttachment(
           extractedText: `[Documento ya indexado en knowledge: "${existingDoc.title}"]`,
           llmText: null, categoryLabel,
           summary: `[${categoryLabel}] ${att.filename} — ya existe en knowledge como "${existingDoc.title}"`,
-          tokenEstimate: 0, sizeTier: 'small', cacheKey: null,
+          tokenEstimate: 0, sizeTier: 'small',
           status: 'knowledge_match', injectionRisk: false,
           sourceType: 'file_attachment', sourceRef: att.id,
           llmEnriched: false, filePath: null, metadata: null,
@@ -414,7 +411,6 @@ async function processOneAttachment(
       summary: `[${categoryLabel}] ${att.filename} — no se pudo extraer contenido`,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: 'extraction_failed',
       injectionRisk: false,
       sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
@@ -441,7 +437,7 @@ async function processOneAttachment(
       const totalChars = rawText.length
       const sampledText = distributedSample(rawText, 30000)
       const truncationNote = totalChars > 30000
-        ? `\n\n[NOTA: El documento tiene ${totalChars.toLocaleString()} caracteres (~${tokenEstimate.toLocaleString()} tokens). Se muestran muestras del inicio, mitad y final. Resume lo que puedas ver y menciona que hay contenido intermedio no visible.]`
+        ? `\n\n[NOTA: El documento tiene ${String(totalChars)} caracteres (~${String(tokenEstimate)} tokens). Se muestran muestras del inicio, mitad y final. Resume lo que puedas ver y menciona que hay contenido intermedio no visible.]`
         : ''
       const descResult = await registry.callHook('llm:chat', {
         task: 'extractor-summarize-large',
@@ -470,7 +466,7 @@ async function processOneAttachment(
   // Build summary for large docs (uses LLM description if available, otherwise truncate)
   let summary: string | null = null
   if (sizeTier === 'large') {
-    const truncNote = `[documento de ~${tokenEstimate.toLocaleString()} tokens, contenido resumido]`
+    const truncNote = `[documento de ~${String(tokenEstimate)} tokens, contenido resumido]`
     summary = llmText
       ? `[${categoryLabel}] ${att.filename} ${truncNote} — ${llmText}`
       : `[${categoryLabel}] ${att.filename} ${truncNote}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
@@ -491,7 +487,6 @@ async function processOneAttachment(
     summary,
     tokenEstimate,
     sizeTier,
-    cacheKey: null,
     status: 'processed',
     injectionRisk: validation.injectionRisk,
     sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
@@ -541,7 +536,6 @@ async function processAudio(
       summary: `[${categoryLabel}] ${att.filename} — no se pudo transcribir`,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: 'extraction_failed',
       injectionRisk: false,
       sourceType: 'audio_transcription',
@@ -571,7 +565,6 @@ async function processAudio(
     summary: null,
     tokenEstimate,
     sizeTier,
-    cacheKey: null,
     status: 'processed',
     injectionRisk: validation.injectionRisk,
     sourceType: 'audio_transcription',
@@ -605,16 +598,19 @@ function distributedSample(text: string, maxChars: number): string {
   const startEnd = findParagraphBreak(text, third)
   const startSection = text.slice(0, startEnd)
 
-  // Middle: centered around midpoint
+  // Middle: centered around midpoint — clamp to avoid overlap with start section
   const midPoint = Math.floor(text.length / 2)
   const midHalf = Math.floor(third / 2)
-  const midStart = findParagraphBreak(text, midPoint - midHalf, 'backward')
-  const midEnd = findParagraphBreak(text, midPoint + midHalf)
-  const midSection = text.slice(midStart, midEnd)
+  const midStartRaw = findParagraphBreak(text, midPoint - midHalf, 'backward')
+  const midEndRaw = findParagraphBreak(text, midPoint + midHalf)
+  const clampedMidStart = Math.max(startEnd, midStartRaw)
+  const clampedMidEnd = Math.max(clampedMidStart, midEndRaw)
+  const midSection = text.slice(clampedMidStart, clampedMidEnd)
 
-  // End: last third
-  const endStart = findParagraphBreak(text, text.length - third, 'backward')
-  const endSection = text.slice(endStart)
+  // End: last third — clamp to avoid overlap with middle section
+  const endStartRaw = findParagraphBreak(text, text.length - third, 'backward')
+  const clampedEndStart = Math.max(clampedMidEnd, endStartRaw)
+  const endSection = text.slice(clampedEndStart)
 
   return `${startSection}\n\n[... contenido omitido ...]\n\n${midSection}\n\n[... contenido omitido ...]\n\n${endSection}`
 }

@@ -21,7 +21,7 @@ interface ToolRegistry {
         required?: string[]
       }
     }
-    handler: (input: Record<string, unknown>, ctx: { contactId?: string; correlationId: string }) => Promise<{ success: boolean; data?: unknown; error?: string }>
+    handler: (input: Record<string, unknown>, ctx: { contactId?: string; sessionId?: string; correlationId: string }) => Promise<{ success: boolean; data?: unknown; error?: string }>
   }): Promise<void>
 }
 
@@ -95,8 +95,8 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
       // Read from DB (attachment_extractions table)
       const db = registry.getDb()
       const res = await db.query<{ extracted_text: string | null; filename: string; category: string }>(
-        'SELECT extracted_text, filename, category FROM attachment_extractions WHERE id = $1',
-        [attachmentId],
+        'SELECT extracted_text, filename, category FROM attachment_extractions WHERE id = $1 AND ($2::uuid IS NULL OR session_id = $2)',
+        [attachmentId, ctx.sessionId ?? null],
       )
 
       const row = res.rows[0]
@@ -144,12 +144,12 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
       // Return top relevant paragraphs with minimum threshold (up to ~8K chars)
       const relevant: string[] = []
       let totalChars = 0
-      const MAX_CHARS = 8000
+      const MAX_TOOL_RESULT_CHARS = 8_000
       const MIN_SCORE = 0.5
 
       for (const item of scored) {
         if (item.score < MIN_SCORE) break
-        if (totalChars + item.para.length > MAX_CHARS) break
+        if (totalChars + item.para.length > MAX_TOOL_RESULT_CHARS) break
         relevant.push(item.para)
         totalChars += item.para.length
       }
@@ -161,7 +161,7 @@ export async function registerQueryAttachmentTool(registry: Registry): Promise<v
           success: true,
           data: {
             match: 'fallback',
-            content: longest.slice(0, MAX_CHARS),
+            content: longest.slice(0, MAX_TOOL_RESULT_CHARS),
             note: 'No specific section matched the query. Showing longest paragraph.',
           },
         }

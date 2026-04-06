@@ -10,6 +10,7 @@ import type { KnowledgeManager } from '../../modules/knowledge/knowledge-manager
 import { escapeDataForPrompt, wrapUserContent } from '../utils/prompt-escape.js'
 import { SKILL_READ_TOOL_NAME } from '../agentic/skill-delegation.js'
 import { loadSkillCatalog } from './skills.js'
+import { buildDatetimeSection } from './agentic.js'
 
 // Minimal fallback — full prompt lives in instance/prompts/system/subagent-system.md
 const SUBAGENT_SYSTEM_FALLBACK = `Eres un agente de ejecución. Completa la tarea con las herramientas disponibles.
@@ -85,25 +86,9 @@ export async function buildSubagentPrompt(
 
   // ── Datetime context (subagents need temporal awareness for scheduling) ──
   if (registry) {
-    try {
-      const configStore = await import('../../kernel/config-store.js')
-      const db = registry.getDb()
-      const agentTz = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || 'UTC'
-      const now = new Date()
-      const todayLocal = new Intl.DateTimeFormat('en-CA', {
-        timeZone: agentTz, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(now)
-      const dateStr = new Intl.DateTimeFormat('es', {
-        timeZone: agentTz,
-        weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: false,
-      }).format(now).replace(',', '')
-      parts.push(`\n<datetime>`)
-      parts.push(`Fecha y hora actual: ${dateStr} (${agentTz})`)
-      parts.push(`Hoy en ISO: ${todayLocal}`)
-      parts.push(`</datetime>`)
-    } catch {
-      // Non-fatal — subagent works without datetime
+    const datetimeSection = await buildDatetimeSection(registry)
+    if (datetimeSection) {
+      parts.push(`\n<datetime>\n${datetimeSection}\n</datetime>`)
     }
   }
 
