@@ -89,9 +89,23 @@ export class GeminiLiveSession {
       throw new Error(`Gemini Live connection failed for model "${primaryModel}" and no different fallback configured`)
     }
 
-    await this.connectWithModel(fallbackModel)
-    this.modelUsed = fallbackModel
-    logger.info({ model: fallbackModel }, 'Gemini Live connected using fallback model')
+    // Suppress stale onClose/onError events from the failed primary connection during fallback attempt
+    const originalOnClose = this.events.onClose
+    const originalOnError = this.events.onError
+    this.events.onClose = () => {}
+    this.events.onError = () => {}
+
+    try {
+      await this.connectWithModel(fallbackModel)
+      this.events.onClose = originalOnClose
+      this.events.onError = originalOnError
+      this.modelUsed = fallbackModel
+      logger.info({ model: fallbackModel }, 'Gemini Live connected using fallback model')
+    } catch (fallbackErr) {
+      this.events.onClose = originalOnClose
+      this.events.onError = originalOnError
+      throw new Error(`Gemini Live connection failed for both primary "${primaryModel}" and fallback "${fallbackModel}" models`)
+    }
   }
 
   /**

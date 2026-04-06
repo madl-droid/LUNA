@@ -104,7 +104,6 @@ export async function completeCall(
   db: Pool,
   callSid: string,
   endReason: string,
-  summary: string | null,
   modelUsed: string | null = null,
 ): Promise<void> {
   await db.query(
@@ -113,10 +112,9 @@ export async function completeCall(
          ended_at = now(),
          duration_seconds = EXTRACT(EPOCH FROM (now() - COALESCE(connected_at, started_at)))::INTEGER,
          end_reason = $1,
-         summary = $2,
-         model_used = $3
-     WHERE call_sid = $4`,
-    [endReason, summary, modelUsed, callSid],
+         model_used = $2
+     WHERE call_sid = $3`,
+    [endReason, modelUsed, callSid],
   )
 }
 
