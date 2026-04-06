@@ -20,14 +20,27 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding_v2
   WHERE embedding_status = 'embedded';
 
 -- 4. CHECK constraint en embedding_status para knowledge_chunks
-ALTER TABLE knowledge_chunks
-  ADD CONSTRAINT IF NOT EXISTS chk_kc_embedding_status
-  CHECK (embedding_status IN ('pending', 'queued', 'processing', 'embedded', 'done', 'failed', 'pending_review'));
+--    (ADD CONSTRAINT IF NOT EXISTS no existe en PG — usar DO block)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chk_kc_embedding_status'
+  ) THEN
+    ALTER TABLE knowledge_chunks
+      ADD CONSTRAINT chk_kc_embedding_status
+      CHECK (embedding_status IN ('pending', 'queued', 'processing', 'embedded', 'done', 'failed', 'pending_review'));
+  END IF;
+END $$;
 
 -- 5. CHECK constraint en embedding_status para session_memory_chunks
-ALTER TABLE session_memory_chunks
-  ADD CONSTRAINT IF NOT EXISTS chk_smc_embedding_status
-  CHECK (embedding_status IN ('pending', 'queued', 'processing', 'embedded', 'done', 'failed', 'pending_review'));
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chk_smc_embedding_status'
+  ) THEN
+    ALTER TABLE session_memory_chunks
+      ADD CONSTRAINT chk_smc_embedding_status
+      CHECK (embedding_status IN ('pending', 'queued', 'processing', 'embedded', 'done', 'failed', 'pending_review'));
+  END IF;
+END $$;
 
 -- 6. Eliminar columna has_embedding de session_memory_chunks
 --    (reemplazada por embedding_status; el código TS ya no la escribe)
