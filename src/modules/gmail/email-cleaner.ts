@@ -27,8 +27,12 @@ export function cleanEmailBody(bodyText: string): string {
 
 // ── Quoted replies ───────────────────────────────────────────
 
-/** Pattern for "On <date>, <person> wrote:" in multiple languages */
-const WROTE_LINE = /^(?:On |El |Em |Le |Am ).{10,80}(?:wrote|escribi[oó]|escreveu|[eé]crit|schrieb)\s*:?\s*$/im
+/**
+ * Pattern for "On <date>, <person> wrote:" in multiple languages.
+ * Requires a date-like fragment (digit or month word) between the prefix and "wrote"
+ * to avoid false positives like "El cliente escribió: quiero el plan".
+ */
+const WROTE_LINE = /^(?:On |El |Em |Le |Am )(?=.*\d).{10,80}(?:wrote|escribi[oó]|escreveu|[eé]crit|schrieb)\s*:?\s*$/im
 
 /**
  * Strip quoted reply blocks.

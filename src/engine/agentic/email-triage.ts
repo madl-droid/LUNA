@@ -12,6 +12,7 @@
 
 import type { ContextBundle } from '../types.js'
 import type { TriageResult } from './types.js'
+import type { RawEmailMessage } from '../../modules/gmail/types.js'
 
 // ── Built-in patterns ──
 
@@ -31,19 +32,19 @@ const RESPOND_DEFAULT: TriageResult = { decision: 'respond', reason: 'default' }
 
 // ── Helpers ──
 
-interface RawEmailMessage {
-  from: string
-  to: string[]
-  cc: string[]
-  subject: string
-  rawHeaders: Record<string, string>
-}
-
 /** Safely extract the raw EmailMessage from ctx.message.raw. */
 function getRawEmail(ctx: ContextBundle): RawEmailMessage | null {
   const raw = ctx.message.raw as Record<string, unknown> | undefined
   if (!raw || typeof raw !== 'object') return null
-  return raw as unknown as RawEmailMessage
+  if (typeof raw.from !== 'string' || typeof raw.subject !== 'string') return null
+  if (!raw.rawHeaders || typeof raw.rawHeaders !== 'object') return null
+  return {
+    from: raw.from as string,
+    to: Array.isArray(raw.to) ? raw.to as string[] : [],
+    cc: Array.isArray(raw.cc) ? raw.cc as string[] : [],
+    subject: raw.subject as string,
+    rawHeaders: raw.rawHeaders as Record<string, string>,
+  }
 }
 
 /** Check if agent's own address appears in a list of email addresses. */

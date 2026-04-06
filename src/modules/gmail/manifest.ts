@@ -266,9 +266,15 @@ async function detectThreadGap(
 
   // Cap to configured max, take the most recent ones
   const toFetch = gapIds.slice(-config.EMAIL_GAP_CONTEXT_MAX)
+  const timeoutMs = config.EMAIL_GAP_FETCH_TIMEOUT_S * 1000
+  const deadline = Date.now() + timeoutMs
 
   const gaps: GapMessage[] = []
   for (const gapId of toFetch) {
+    if (Date.now() >= deadline) {
+      logger.warn({ fetched: gaps.length, remaining: toFetch.length - gaps.length }, 'Gap fetch timeout — returning partial results')
+      break
+    }
     try {
       const gapMsg = await gmailAdapter.getFullMessage(gapId)
       if (!gapMsg) continue
@@ -287,12 +293,17 @@ async function detectThreadGap(
   return gaps.length > 0 ? gaps : null
 }
 
+/** Escape angle brackets to prevent injection in text context */
+function escapeGapName(name: string): string {
+  return name.replace(/</g, '‹').replace(/>/g, '›')
+}
+
 /** Format gap messages as a text preamble (fallback when session not found) */
 function formatGapPreamble(gaps: GapMessage[]): string {
   const parts: string[] = ['[Contexto: mensajes en el hilo mientras estabas ausente]']
   for (const g of gaps) {
     const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
-    parts.push(`---\nDe: ${g.fromName} <${g.from}> | ${dateStr}\n${g.body}`)
+    parts.push(`---\nDe: ${escapeGapName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`)
   }
   parts.push('---')
   return parts.join('\n')
@@ -308,7 +319,7 @@ async function persistGapMessages(
 
   for (const g of gaps) {
     const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
-    const contentText = `[Hilo] De: ${g.fromName} <${g.from}> | ${dateStr}\n${g.body}`
+    const contentText = `[Hilo] De: ${escapeGapName(g.fromName)} <${g.from}> | ${dateStr}\n${g.body}`
 
     const msg = {
       id: randomUUID(),
@@ -324,17 +335,21 @@ async function persistGapMessages(
       createdAt: g.date, // Original date for chronological ordering
     }
 
-    if (memoryManager) {
-      await memoryManager.saveMessage(msg)
-    } else {
-      const db = registry.getDb()
-      await db.query(
-        `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, role, content_text, content_type, metadata, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
-        [msg.id, msg.sessionId, msg.channelName, msg.senderType, msg.senderId,
-         JSON.stringify(msg.content), msg.role, msg.contentText, msg.contentType,
-         JSON.stringify(msg.metadata), msg.createdAt],
-      )
+    try {
+      if (memoryManager) {
+        await memoryManager.saveMessage(msg)
+      } else {
+        const db = registry.getDb()
+        await db.query(
+          `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, role, content_text, content_type, metadata, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
+          [msg.id, msg.sessionId, msg.channelName, msg.senderType, msg.senderId,
+           JSON.stringify(msg.content), msg.role, msg.contentText, msg.contentType,
+           JSON.stringify(msg.metadata), msg.createdAt],
+        )
+      }
+    } catch (err) {
+      logger.warn({ gapId: g.id, sessionId, err }, 'Failed to persist gap message — skipping')
     }
   }
 }
@@ -952,6 +967,7 @@ const manifest: ModuleManifest = {
     EMAIL_TRIAGE_ENABLED: boolEnv(true),
     // Thread gap detection — max messages to recover when Luna is re-added to a thread
     EMAIL_GAP_CONTEXT_MAX: numEnv(5),
+    EMAIL_GAP_FETCH_TIMEOUT_S: numEnvMin(5, 30),
     // Attachment processing — which file types to process on email channel
     // Email supports all categories
     EMAIL_ATT_IMAGES: boolEnv(true),
@@ -1212,6 +1228,13 @@ const manifest: ModuleManifest = {
         width: 'half',
         label: { es: 'Contexto de hilo faltante (msgs)', en: 'Thread gap context (msgs)' },
         info: { es: 'Max mensajes a recuperar cuando Luna es re-agregada a un hilo del que estuvo ausente. 0 = desactivado.', en: 'Max messages to recover when Luna is re-added to a thread she was absent from. 0 = disabled.' },
+      },
+      {
+        key: 'EMAIL_GAP_FETCH_TIMEOUT_S',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Timeout recuperación hilo (s)', en: 'Thread gap fetch timeout (s)' },
+        info: { es: 'Tiempo máximo en segundos para recuperar mensajes faltantes de un hilo. Min: 5.', en: 'Maximum time in seconds to fetch missing thread messages. Min: 5.' },
       },
       // ── Naturalidad ──
       { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },
