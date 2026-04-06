@@ -15,6 +15,20 @@ import type { ExtractorResult } from '../../extractors/types.js'
 
 const logger = pino({ name: 'google-apps:tools' })
 
+/** Google-native MIME types — agent must use dedicated read tools instead of drive-read-file */
+const GOOGLE_NATIVE_MIMES = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.presentation',
+])
+
+/** Suggested tool per Google-native MIME type */
+const GOOGLE_NATIVE_TOOL_MAP: Record<string, string> = {
+  'application/vnd.google-apps.document': 'docs-read',
+  'application/vnd.google-apps.spreadsheet': 'sheets-read',
+  'application/vnd.google-apps.presentation': 'slides-read',
+}
+
 /** Office mimeType → export format for files.export() */
 const OFFICE_EXPORT_MAP: Record<string, { exportMime: string; extractorMime: string; label: string }> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { exportMime: 'text/plain', extractorMime: 'text/plain', label: 'Word' },
@@ -240,21 +254,11 @@ export async function registerGoogleTools(
         }
 
         // Guard: reject Google-native types — agent should use docs-read/sheets-read/slides-read
-        const GOOGLE_NATIVE_MIMES = new Set([
-          'application/vnd.google-apps.document',
-          'application/vnd.google-apps.spreadsheet',
-          'application/vnd.google-apps.presentation',
-        ])
         if (GOOGLE_NATIVE_MIMES.has(file.mimeType)) {
-          const toolMap: Record<string, string> = {
-            'application/vnd.google-apps.document': 'docs-read',
-            'application/vnd.google-apps.spreadsheet': 'sheets-read',
-            'application/vnd.google-apps.presentation': 'slides-read',
-          }
           return {
             success: false,
-            error: `Este es un archivo nativo de Google. Usa ${toolMap[file.mimeType]} en vez de drive-read-file.`,
-            data: { name: file.name, mimeType: file.mimeType, suggestedTool: toolMap[file.mimeType] },
+            error: `Este es un archivo nativo de Google. Usa ${GOOGLE_NATIVE_TOOL_MAP[file.mimeType]} en vez de drive-read-file.`,
+            data: { name: file.name, mimeType: file.mimeType, suggestedTool: GOOGLE_NATIVE_TOOL_MAP[file.mimeType] },
           }
         }
 

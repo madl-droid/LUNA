@@ -13,7 +13,7 @@ import type { StoredMessage, CompressionStatus } from './types.js'
 import type { AttachmentExtraction } from './session-chunker.js'
 import { archiveSessionLegal, generateSessionSummary } from './session-archiver.js'
 import { chunkSession } from './session-chunker.js'
-import { embedSessionChunks } from './session-embedder.js'
+import { embedSessionChunks, persistChunks } from './session-embedder.js'
 
 const logger = pino({ name: 'memory:compression-worker' })
 
@@ -176,12 +176,12 @@ export class CompressionWorker {
             logger.info({ sessionId, ...result, usedQueue: !!embeddingQueue }, 'Session chunks embedded')
           } else if (embeddingQueue) {
             // No direct service but queue available — persist and delegate
-            await this.persistChunksWithoutEmbeddings(chunks)
+            await persistChunks(this.db, chunks)
             await embeddingQueue.enqueueSessionChunks(sessionId)
             logger.info({ sessionId, chunks: chunks.length }, 'Chunks persisted and delegated to unified queue')
           } else {
             // Persist chunks without embeddings — nightly batch will catch them
-            await this.persistChunksWithoutEmbeddings(chunks)
+            await persistChunks(this.db, chunks)
             logger.warn({ sessionId, chunks: chunks.length }, 'Embedding service unavailable, chunks persisted without embeddings')
           }
         }
@@ -319,42 +319,6 @@ export class CompressionWorker {
     if (!row) return { title: `Session ${sessionId}`, sections: null }
     const sections = Array.isArray(row.sections) ? row.sections as import('./types.js').SessionSummarySection[] : null
     return { title: row.title, sections }
-  }
-
-  private async persistChunksWithoutEmbeddings(chunks: import('./types.js').SessionMemoryChunk[]): Promise<void> {
-    // Import embedder's persist function indirectly by doing raw SQL
-    const BATCH = 50
-    for (let i = 0; i < chunks.length; i += BATCH) {
-      const batch = chunks.slice(i, i + BATCH)
-      const values: unknown[] = []
-      const placeholders: string[] = []
-      let paramIdx = 1
-
-      for (const chunk of batch) {
-        const tsvContent = chunk.content?.slice(0, 5000) ?? ''
-        placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12}, $${paramIdx + 13}, false, NULL, to_tsvector('spanish', $${paramIdx + 14}), $${paramIdx + 15})`)
-
-        values.push(
-          chunk.id, chunk.sessionId, chunk.contactId, chunk.sourceId,
-          chunk.sourceType, chunk.contentType, chunk.chunkIndex, chunk.chunkTotal,
-          chunk.prevChunkId, chunk.nextChunkId, chunk.content, chunk.mediaRef,
-          chunk.mimeType, chunk.extraMetadata ? JSON.stringify(chunk.extraMetadata) : null,
-          tsvContent,
-          JSON.stringify(chunk.metadata),
-        )
-        paramIdx += 16
-      }
-
-      await this.db.query(
-        `INSERT INTO session_memory_chunks
-          (id, session_id, contact_id, source_id, source_type, content_type,
-           chunk_index, chunk_total, prev_chunk_id, next_chunk_id,
-           content, media_ref, mime_type, extra_metadata, has_embedding, embedding, tsv, metadata)
-         VALUES ${placeholders.join(', ')}
-         ON CONFLICT (id) DO NOTHING`,
-        values,
-      )
-    }
   }
 
   private async fireReflexAlert(data: CompressionJobData, err: unknown): Promise<void> {

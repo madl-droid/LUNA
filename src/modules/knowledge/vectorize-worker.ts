@@ -9,6 +9,7 @@ import type { KnowledgePgStore } from './pg-store.js'
 import type { EmbeddingService } from './embedding-service.js'
 import type { EmbeddingQueue } from './embedding-queue.js'
 import { generateDescription } from './description-generator.js'
+import { getBullRedisOpts } from './bull-redis-opts.js'
 
 const QUEUE_NAME = 'knowledge-vectorize'
 const BULK_LOCK_KEY = 'knowledge:vectorize:bulk_lock'
@@ -55,14 +56,7 @@ export class VectorizeWorker {
     this.registry = registry ?? null
     this.log = logger.child({ component: 'vectorize-worker' })
 
-    // BullMQ requires dedicated Redis connections with maxRetriesPerRequest: null
-    const bullRedisOpts = {
-      host: redis.options.host ?? 'localhost',
-      port: redis.options.port ?? 6379,
-      password: redis.options.password,
-      db: redis.options.db ?? 0,
-      maxRetriesPerRequest: null,
-    }
+    const bullRedisOpts = getBullRedisOpts(redis)
 
     this.queue = new Queue<VectorizeJobData>(QUEUE_NAME, {
       connection: bullRedisOpts,
