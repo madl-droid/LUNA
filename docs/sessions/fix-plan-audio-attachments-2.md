@@ -1,43 +1,49 @@
 # Plan de correcciones — Parte 2 (Items de discusión + NITs)
 
 Complemento del plan `fix-plan-audio-attachments.md`.
-Aplicar sobre la rama `claude/fix-audio-attachments-3pqFJ`.
+Aplicar sobre la rama `claude/audit-audio-attachments-b68WJ` (que ya tiene Plan 1 mergeado).
 
 ---
 
 ## GRUPO H — Bugs confirmados en discusión
 
-### H1. PowerPoint exportado como PDF corrupto
-**Archivo:** `src/modules/google-apps/tools.ts` — constante `OFFICE_EXPORT_MAP`
+### H1. exportFile corrompe binarios (PowerPoint → PDF)
+**Archivos:** `src/modules/google-apps/drive-service.ts` (fix principal), callers en `item-manager.ts`
 
-El `exportMime: 'application/pdf'` para PPTX/PPT pasa datos binarios por `String(res.data)` en
-`DriveService.exportFile()`, corrompiendo el archivo. El objetivo es extracción de texto, no
-fidelidad visual.
+`DriveService.exportFile()` hace `return String(res.data)` — corrompe datos binarios.
+Para PPTX el `exportMime` es `application/pdf`, que es binario. `String(pdf_bytes)` destruye los bytes.
 
-**Fix:** Cambiar el `exportMime` de los tipos PowerPoint a `text/plain`:
+**Fix:** Hacer que `exportFile` detecte mimes binarios y retorne `Buffer` en ese caso:
 
 ```typescript
-// ANTES:
-'application/vnd.openxmlformats-officedocument.presentationml.presentation': {
-  exportMime: 'application/pdf', extractorMime: 'application/pdf', label: 'PowerPoint'
-},
-'application/vnd.ms-powerpoint': {
-  exportMime: 'application/pdf', extractorMime: 'application/pdf', label: 'PowerPoint'
-},
+// ANTES (drive-service.ts:232):
+async exportFile(fileId: string, exportMimeType: string): Promise<string> {
+  const res = await this.drive.files.export({ fileId, mimeType: exportMimeType })
+  return String(res.data)
+}
 
 // DESPUÉS:
-'application/vnd.openxmlformats-officedocument.presentationml.presentation': {
-  exportMime: 'text/plain', extractorMime: 'text/plain', label: 'PowerPoint'
-},
-'application/vnd.ms-powerpoint': {
-  exportMime: 'text/plain', extractorMime: 'text/plain', label: 'PowerPoint'
-},
+async exportFile(fileId: string, exportMimeType: string): Promise<string | Buffer> {
+  const isBinary = exportMimeType === 'application/pdf'
+    || exportMimeType.startsWith('application/vnd.')
+  const res = await this.drive.files.export(
+    { fileId, mimeType: exportMimeType },
+    isBinary ? { responseType: 'arraybuffer' } : {},
+  )
+  return isBinary ? Buffer.from(res.data as ArrayBuffer) : String(res.data)
+}
 ```
 
-Nota: Google Drive permite exportar presentaciones a `text/plain` via la API. Verificar que
-no retorne error 415. Si la API lo rechaza, alternativa: exportar como
-`application/vnd.openxmlformats-officedocument.presentationml.presentation` y añadir
-extractor PPTX (similar al .docx existente).
+**Callers que consumen el resultado:** buscar con grep todos los que llaman `exportFile` y
+verificar que manejen `string | Buffer`. Si el caller hace `Buffer.from(result, 'utf-8')`,
+cambiar a:
+```typescript
+const exported = await drive.exportFile(fileId, exportMime)
+const buffer = Buffer.isBuffer(exported) ? exported : Buffer.from(exported, 'utf-8')
+```
+
+Esto mantiene PDF como formato de export para PowerPoint (preserva layout y formato)
+y corrige la corrupción de datos binarios en la raíz del problema.
 
 ### H2. sourceId único por sección temática
 **Archivo:** `src/modules/memory/session-chunker.ts` — función que genera secciones temáticas
@@ -63,25 +69,84 @@ Problema: el contenido extraído de Drive (`doc.body`, `content` de sheets, slid
 directamente a `enriched.extractedContent` sin pasar por `validateInjection()`. Un Google Doc
 compartido podría contener prompt injection.
 
-**Fix:** Aplicar `validateInjection` al contenido antes de asignarlo:
+**Fix:** Aplicar `validateInjection` al contenido antes de asignarlo. La API real de
+`validateInjection` (en `src/engine/attachments/injection-validator.ts`) es:
 
 ```typescript
-// Después de obtener el content (doc.body, sheet data, slide text):
-// Importar validateInjection desde el módulo correspondiente
-import { validateInjection } from '../engine/attachments/injection-validator.js'
-
-// Antes de: const enriched = { ...result, extractedContent: content }
-const injectionCheck = validateInjection(content)
-if (injectionCheck.blocked) {
-  logger.warn({ fileId: result.fileId, reason: injectionCheck.reason }, 'Drive content blocked by injection validator')
-  return result  // retornar sin enriquecer
-}
-const safeContent = injectionCheck.sanitized ?? content
-const enriched: DriveResult = { ...result, extractedContent: safeContent }
+validateInjection(content: string, sourceType: string, sourceName: string)
+  → { safe: boolean, injectionRisk: boolean, threats: string[], sanitizedText: string }
 ```
 
-Verificar la API exacta de `validateInjection` en el archivo `injection-validator.ts`
-y ajustar el código según lo que retorne esa función.
+Aplicar en `enrichDriveContent` después de obtener el content:
+```typescript
+import { validateInjection } from '../engine/attachments/injection-validator.js'
+
+const check = validateInjection(content, 'drive', result.fileName ?? result.fileId)
+if (check.injectionRisk) {
+  logger.warn({ fileId: result.fileId, threats: check.threats }, 'Drive content injection risk detected')
+}
+// Usar check.sanitizedText en vez de content crudo
+```
+
+Nota: `validateInjection` no bloquea — envuelve contenido sospechoso con trust boundaries
+(UUID markers) para que el LLM sea consciente del riesgo. Usar `sanitizedText` siempre.
+
+**Este fix se implementa dentro del grupo K (refactor enrichDriveContent) para no tocar
+el archivo dos veces.**
+
+### H4. query_attachment sin scoping de sesión (ex deuda C1 del Plan 1)
+**Archivo:** `src/engine/attachments/tools/query-attachment.ts`
+
+El reporte del Plan 1 marcó esto como deuda por "ctx no tiene sessionId". Revisión muestra
+que `ToolExecutionContext` ya define `sessionId?: string` (types.ts:84) y `agentic-loop.ts:332`
+ya lo pasa como `sessionId: ctx.session.id`.
+
+El problema real: el handler en query-attachment.ts:24 define un tipo inline estrecho
+`ctx: { contactId?, correlationId }` que ignora el sessionId que sí recibe.
+
+**Fix:**
+```typescript
+// ANTES (query-attachment.ts:24):
+handler: (input: Record<string, unknown>, ctx: { contactId?: string; correlationId: string })
+
+// DESPUÉS:
+handler: (input: Record<string, unknown>, ctx: { contactId?: string; sessionId?: string; correlationId: string; db: Pool })
+```
+
+Y en la query SQL, agregar filtro:
+```sql
+WHERE contact_id = $1
+  AND ($2::uuid IS NULL OR session_id = $2)  -- scope by session when available
+```
+
+### H5. drive-read-file no pasa session_id a persistDriveReadResult (ex deuda C3 del Plan 1)
+**Archivos:** `src/modules/google-apps/tools.ts` — handler de `drive-read-file` y función `persistDriveReadResult`
+
+Mismo diagnóstico que H4: el handler declara `async (input) =>` sin recibir `ctx`,
+pero `ToolHandler` lo pasa como segundo argumento.
+
+**Fix:**
+```typescript
+// ANTES (tools.ts:242):
+handler: async (input) => {
+
+// DESPUÉS:
+handler: async (input, ctx) => {
+```
+
+Y pasar `ctx.sessionId` a `persistDriveReadResult`:
+```typescript
+// Añadir sessionId al signature de persistDriveReadResult
+async function persistDriveReadResult(
+  registry: Registry,
+  fileId: string, fileName: string, mimeType: string,
+  extractedText: string | null, llmText: string | null,
+  sessionId?: string,  // ← nuevo
+): Promise<void>
+```
+
+En el INSERT (tools.ts:915), reemplazar `NULL` por `$7` y agregar `sessionId ?? null`
+al array de params.
 
 ---
 
@@ -92,36 +157,45 @@ y ajustar el código según lo que retorne esa función.
 - `src/modules/knowledge/pg-store.ts` — `updateDocumentEmbeddingStatus`
 - `src/modules/knowledge/vectorize-worker.ts` — cualquier `'done'` de embedding
 - `src/modules/knowledge/types.ts` — `EmbeddingStatus`
+- `src/modules/knowledge/console-section.ts` — checks de `!== 'done'`
 - Cualquier query con `WHERE embedding_status = 'done'`
+
+**Nota:** El Plan 1 (D1) ya añadió `'queued'` y `'embedded'` a `EmbeddingStatus`.
+Este grupo elimina `'done'` del vocabulario activo.
 
 **Fix:**
 
-1. En `types.ts`, eliminar `'done'` de `EmbeddingStatus` (tras actualizar el fix D1):
+1. En `types.ts`, eliminar `'done'` de `EmbeddingStatus`:
 ```typescript
 export type EmbeddingStatus = 'pending' | 'queued' | 'processing' | 'embedded' | 'failed' | 'pending_review'
 ```
 
-2. En `reconcileDocumentStatus` de embedding-queue.ts, cambiar:
-```typescript
-// ANTES:
-await this.db.query(`UPDATE knowledge_documents SET embedding_status = 'done' WHERE id = $1`, [documentId])
+2. En `vectorize-worker.ts` (líneas 107, 118, 120, 170): cambiar `'done'` → `'embedded'`.
 
-// DESPUÉS:
-await this.db.query(`UPDATE knowledge_documents SET embedding_status = 'embedded' WHERE id = $1`, [documentId])
-```
+3. En `console-section.ts` (línea 82): cambiar `!== 'done'` → `!== 'embedded'`.
 
-3. En `updateDocumentEmbeddingStatus` de pg-store.ts: si algún caller pasa `'done'`,
-   actualizar a `'embedded'`.
+4. En `pg-store.ts` (línea 1286): cambiar `NOT IN ('done', 'processing')` →
+   `NOT IN ('embedded', 'processing')`.
 
-4. Grep general antes de commitear:
+5. En `reconcileDocumentStatus` de embedding-queue.ts: si escribe `'done'` a documentos,
+   cambiar a `'embedded'`.
+
+6. Grep general antes de commitear:
 ```bash
-grep -r "'done'" src/modules/knowledge/ src/modules/memory/
+grep -rn "'done'" src/modules/knowledge/ src/modules/memory/
 ```
 Eliminar toda referencia a `'done'` como valor de embedding_status.
 
+7. **Migración:** Agregar a la migración existente o crear una nueva:
+```sql
+UPDATE knowledge_chunks SET embedding_status = 'embedded' WHERE embedding_status = 'done';
+UPDATE knowledge_documents SET embedding_status = 'embedded' WHERE embedding_status = 'done';
+UPDATE session_memory_chunks SET embedding_status = 'embedded' WHERE embedding_status = 'done';
+```
+
 ---
 
-## GRUPO J — Limpieza de exports duplicados
+## GRUPO J — Limpieza de exports duplicados + documentación
 
 ### J1. Eliminar re-export de SmartChunk/LinkedChunk de smart-chunker.ts
 **Archivo:** `src/modules/knowledge/extractors/smart-chunker.ts` línea 17
@@ -131,18 +205,31 @@ Eliminar toda referencia a `'done'` como valor de embedding_status.
 export type { EmbeddableChunk as SmartChunk, LinkedEmbeddableChunk as LinkedChunk }
 ```
 
-El único punto de export de estos aliases debe ser `types.ts` (línea 107). Si hay callers
+El único punto de export de estos aliases debe ser `types.ts`. Si hay callers
 que importan desde `smart-chunker.ts`, redirigirlos a `types.ts` o `embedding-limits.ts`.
 
-### J2. Eliminar updateChunkEmbedding de pg-store cuando se borre el vectorize-worker
-**Archivo:** `src/modules/knowledge/pg-store.ts` — `updateChunkEmbedding`
+### J2. Documentar updateChunkEmbedding como path directo para batch jobs
+**Archivos:** `src/modules/knowledge/pg-store.ts`, `src/modules/memory/pg-store.ts`
 
-Al eliminar `vectorize-worker.ts` (plan 1, grupo E4), hacer grep para confirmar que
-`updateChunkEmbedding` no tiene otros callers:
-```bash
-grep -r "updateChunkEmbedding" src/
+~~El plan original proponía eliminar `updateChunkEmbedding`.~~
+Revisión reveló callers activos fuera del vectorize-worker:
+- `nightly-batch.ts:348,655` — embedding de stragglers en batch nocturno
+- `vectorize-worker.ts:216,251` — embedding directo de knowledge chunks
+
+Son **dos paths complementarios, no duplicados:**
+- `persistEmbedding` (embedding-queue): path de cola BullMQ con retry y backoff
+- `updateChunkEmbedding` (pg-store): path directo para batch jobs con su propio retry
+
+**Fix:** No eliminar. Agregar comentario JSDoc en ambas implementaciones:
+
+```typescript
+/**
+ * Direct embedding persistence — bypasses BullMQ queue.
+ * Used by batch jobs (nightly-batch, vectorize-worker) that manage their own retry logic.
+ * For normal flow, use EmbeddingQueue.enqueue() instead.
+ */
+async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void>
 ```
-Si solo era llamada por el vectorize-worker, eliminar el método de pg-store.ts.
 
 ---
 
@@ -150,7 +237,8 @@ Si solo era llamada por el vectorize-worker, eliminar el método de pg-store.ts.
 
 **Archivo:** `src/extractors/drive.ts`
 
-Split de `enrichDriveContent` en tres funciones para mejor diagnóstico de errores:
+Split de `enrichDriveContent` en tres funciones internas para mejor diagnóstico de errores.
+La firma pública no cambia. Los callers existentes no se modifican.
 
 ```typescript
 /**
@@ -188,6 +276,20 @@ async function fetchDriveContent(
 }
 
 /**
+ * Sanitiza contenido contra prompt injection (fix H3).
+ */
+function sanitizeDriveContent(
+  content: string,
+  result: DriveResult,
+): string {
+  const check = validateInjection(content, 'drive', result.fileName ?? result.fileId)
+  if (check.injectionRisk) {
+    logger.warn({ fileId: result.fileId, threats: check.threats }, '[Drive] Injection risk detected')
+  }
+  return check.sanitizedText
+}
+
+/**
  * Para contenido grande, genera resumen LLM.
  * Si el LLM falla, retorna el resultado sin summary (no propaga el error).
  */
@@ -208,12 +310,13 @@ async function generateDriveSummary(
     return enriched
   } catch (err) {
     logger.warn({ err, fileId: result.fileId }, '[Drive] LLM summary failed')
-    return enriched  // retornar sin summary, no tirar el error
+    return enriched
   }
 }
 
 /**
  * Orquestador público. Misma firma y comportamiento que antes.
+ * Internamente separa fetch, sanitización y LLM para diagnóstico claro.
  */
 export async function enrichDriveContent(
   result: DriveResult,
@@ -224,16 +327,14 @@ export async function enrichDriveContent(
   try {
     const content = await fetchDriveContent(result, registry)
     if (!content) return result
-    const withInjectionCheck = validateAndSanitize(content)  // fix H3
-    return await generateDriveSummary(withInjectionCheck, result, registry)
+    const safeContent = sanitizeDriveContent(content, result)  // H3
+    return await generateDriveSummary(safeContent, result, registry)
   } catch (err) {
     logger.warn({ err, fileId: result.fileId }, '[Drive] Content enrichment failed')
     return result
   }
 }
 ```
-
-La firma de `enrichDriveContent` no cambia. Los callers existentes no se modifican.
 
 ---
 
@@ -288,16 +389,14 @@ Nota sobre riesgo de atomicidad (`lrange` + `ltrim` no son atómicos):
 
 **Archivos:** `src/modules/memory/memory-manager.ts` y `src/modules/memory/redis-buffer.ts`
 
-Antes de eliminar, verificar que no tengan callers externos:
+**Nota:** El Plan 1 (G1) ya eliminó `getOldestMessages` y `trimOldestMessages`.
+Verificar que se completó correctamente y que no quedaron referencias huérfanas:
 
 ```bash
 grep -rn "getOldestMessages\|trimOldestMessages\|getMessageCount" src/
 ```
 
-Si los únicos callers son los propios archivos o código comentado:
-1. Eliminar `getOldestMessages` de `memory-manager.ts` y `redis-buffer.ts`
-2. Eliminar `trimOldestMessages` de `memory-manager.ts` y `redis-buffer.ts`
-3. Verificar que `getMessageCount` también sea dead code antes de eliminarlo
+Si `getMessageCount` aún existe y no tiene callers, eliminarlo también.
 
 ---
 
@@ -310,11 +409,7 @@ Si los únicos callers son los propios archivos o código comentado:
 // ANTES:
 new Date(meta.modifiedTime).toLocaleDateString('es')
 
-// DESPUÉS — usar formato explícito e independiente del locale del servidor:
-new Date(meta.modifiedTime).toLocaleDateString('es-ES', {
-  year: 'numeric', month: 'long', day: 'numeric'
-})
-// O más simple:
+// DESPUÉS:
 new Date(meta.modifiedTime).toISOString().slice(0, 10)  // "2025-04-06"
 ```
 
@@ -339,38 +434,28 @@ parece el decimal 8.192, no ocho mil ciento noventa y dos.
 // ANTES:
 tokenEstimate.toLocaleString()
 
-// DESPUÉS (sin ambigüedad):
-tokenEstimate.toLocaleString('es-ES')  // siempre consistente: "8.192"
-// O aún más explícito:
-new Intl.NumberFormat('es-ES').format(tokenEstimate)
+// DESPUÉS:
+String(tokenEstimate)
 ```
-
-Nota: si el estilo del proyecto prefiere solo dígitos sin formato, usar simplemente
-`String(tokenEstimate)`.
 
 ### N4. Magic number 8000 → constante nombrada
 **Archivos:** `src/engine/agentic/agentic-loop.ts` y `src/engine/attachments/tools/query-attachment.ts`
 
 ```typescript
-// Al inicio del archivo o en un lugar compartido:
 const MAX_TOOL_RESULT_CHARS = 8_000
-
-// Reemplazar todos los `8000` relacionados con truncación de tool results
 ```
 
 ### N5. Parámetro _parentId sin uso en loadChunk
 **Archivo:** `src/modules/knowledge/embedding-queue.ts`
 
-```typescript
-// Eliminar el parámetro _parentId de la firma de loadChunk.
-// El parentId se lee de PG internamente, el parámetro es dead code.
-```
+Eliminar el parámetro `_parentId` de la firma de `loadChunk`.
+El parentId se lee de PG internamente, el parámetro es dead code.
 
 ### N6. chunkDocs hardcodea 'docx' en overflow path
 **Archivo:** `src/modules/knowledge/extractors/smart-chunker.ts`
 
 ```typescript
-// ANTES (en el path de sub-chunks dentro de chunkDocs):
+// ANTES:
 sourceType: 'docx',
 
 // DESPUÉS:
@@ -378,23 +463,12 @@ sourceType: opts?.sourceType ?? 'docx',
 ```
 
 ### N7. Loggers standalone en lugar del kernel logger
-**Archivos:** `src/extractors/drive.ts` línea 10, `src/modules/knowledge/embedding-queue.ts` línea 14
+**Archivos:** `src/extractors/drive.ts`, `src/modules/knowledge/embedding-queue.ts`,
+`src/engine/attachments/tools/query-attachment.ts`
 
-Estos archivos usan `pino()` directo en vez del logger del kernel. El logger del kernel
-respeta el `LOG_LEVEL` configurado; los loggers standalone no.
-
-```typescript
-// ANTES:
-import pino from 'pino'
-const logger = pino({ name: 'drive-extractor' })
-
-// DESPUÉS — buscar cómo obtener el logger del kernel en estos archivos:
-// Opción A: pasarlo como parámetro a las funciones que lo necesitan
-// Opción B: importar desde el kernel si hay un singleton exportado
-// Opción C: usar el registry para acceder al servicio de logging
-
-// Verificar el patrón usado por otros extractors/módulos similares y replicarlo.
-```
+Estos archivos usan `pino()` directo en vez del logger del kernel.
+Verificar el patrón usado por otros módulos y replicarlo (pasar logger como parámetro
+o importar singleton del kernel).
 
 ### N8. Deuda técnica — chunkSheets: 1 chunk por fila
 **Archivo:** `src/modules/knowledge/extractors/smart-chunker.ts` — función `chunkSheets`
@@ -406,7 +480,6 @@ Agregar comentario de deuda técnica:
 // (>1000 filas), esto genera demasiados chunks con baja densidad semántica.
 // Mejora futura: si se elige un valor N para agrupar filas (ej: N=5-10 filas por chunk),
 // la vectorización y búsqueda semántica serán más efectivas al tener más contexto por chunk.
-// Ver: https://github.com/madl-droid/LUNA/issues/XXX
 ```
 
 ---
@@ -414,9 +487,9 @@ Agregar comentario de deuda técnica:
 ## NOTA — Riesgo documentado (no corregir)
 
 ### Race condition en trimKeepingTurns (riesgo aceptado)
-**Archivo:** `src/modules/memory/redis-buffer.ts` — CLAUDE.md del módulo memory
+**Archivo:** `src/modules/memory/CLAUDE.md`
 
-Agregar nota en `src/modules/memory/CLAUDE.md`:
+Agregar nota:
 
 ```
 ### Race condition en trimKeepingTurns (aceptado)
@@ -435,7 +508,31 @@ un mensaje nuevo podría ser eliminado del buffer. Riesgo aceptado porque:
 H → I → J → K → L → M → N
 ```
 
-- H (bugs) y N (nits) son independientes entre sí → pueden hacerse en paralelo
-- I (vocabulario) depende de que el fix D1 de EmbeddingStatus esté aplicado (plan 1)
-- J2 (eliminar updateChunkEmbedding) depende de E4 (eliminar vectorize-worker) del plan 1
-- K (enrichDriveContent) incluye el H3 (validateInjection) para no tocar el archivo dos veces
+- H1 (exportFile) es independiente del resto
+- H2 (sourceId) es independiente
+- H3 (validateInjection) se implementa dentro de K (enrichDriveContent refactor)
+- H4 y H5 (session scoping) son independientes entre sí
+- I (vocabulario) depende de que D1 de EmbeddingStatus esté aplicado (Plan 1 ✅)
+- J1 (exports duplicados) es independiente
+- J2 (documentar updateChunkEmbedding) es independiente
+- K incluye H3 para no tocar el archivo dos veces
+- L y M pueden hacerse en paralelo con todo lo demás
+- N (nits) son todos independientes
+
+**Paralelización sugerida:**
+- Batch 1: H1, H2, H4, H5 (bugs, independientes)
+- Batch 2: I, J1, J2 (vocabulario y limpieza)
+- Batch 3: K (refactor enrichDriveContent + H3)
+- Batch 4: L, M, N (simplificación + nits)
+
+---
+
+## CAMBIOS RESPECTO AL PLAN ORIGINAL
+
+| Item | Antes | Ahora | Razón |
+|------|-------|-------|-------|
+| H1 | Cambiar exportMime a `text/plain` | Fix `exportFile` para soportar `Buffer` en mimes binarios | Owner quiere mantener PDF, arreglar el manejo binario |
+| H4 | Deuda técnica C1 (fuera de scope) | Fix trivial: ampliar tipo de ctx en handler | `ToolExecutionContext` ya tiene `sessionId`, solo falta leerlo |
+| H5 | Deuda técnica C3 (fuera de scope) | Fix trivial: recibir `ctx` en handler | Mismo caso que H4 |
+| J2 | Eliminar `updateChunkEmbedding` | Documentar como path directo para batch | `nightly-batch.ts` lo usa activamente, no es dead code |
+| M | Eliminar getOldest/trimOldest | Verificar que Plan 1 G1 lo completó | Ya fue ejecutado en Plan 1, solo verificar |
