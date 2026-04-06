@@ -10,8 +10,20 @@ import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
 import type { GoogleServiceName, CalendarEventUpdateOptions } from './types.js'
 import pino from 'pino'
+import { extractContent, enrichWithLLM } from '../../extractors/index.js'
+import type { ExtractorResult } from '../../extractors/types.js'
 
 const logger = pino({ name: 'google-apps:tools' })
+
+/** Office mimeType → export format for files.export() */
+const OFFICE_EXPORT_MAP: Record<string, { exportMime: string; extractorMime: string; label: string }> = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { exportMime: 'text/plain', extractorMime: 'text/plain', label: 'Word' },
+  'application/msword': { exportMime: 'text/plain', extractorMime: 'text/plain', label: 'Word' },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { exportMime: 'text/csv', extractorMime: 'text/csv', label: 'Excel' },
+  'application/vnd.ms-excel': { exportMime: 'text/csv', extractorMime: 'text/csv', label: 'Excel' },
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { exportMime: 'application/pdf', extractorMime: 'application/pdf', label: 'PowerPoint' },
+  'application/vnd.ms-powerpoint': { exportMime: 'application/pdf', extractorMime: 'application/pdf', label: 'PowerPoint' },
+}
 
 export async function registerGoogleTools(
   registry: Registry,
@@ -194,6 +206,104 @@ export async function registerGoogleTools(
           input.removeFromParent as string | undefined,
         )
         return { success: true, data: { moved: true } }
+      },
+    })
+
+    // drive-read-file: lazy download + extract for binary/Office files in Drive
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'drive-read-file',
+        displayName: 'Leer archivo binario de Drive',
+        description: 'Descarga y extrae contenido de un archivo en Google Drive (PDF, Word, Excel, PowerPoint, imágenes, video). Verifica tamaño antes de descargar. Usa esta herramienta cuando encuentres un archivo de Drive que no sea un Google Doc/Sheet/Slides nativo.',
+        category: 'drive',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            fileId: { type: 'string', description: 'ID del archivo en Drive' },
+          },
+          required: ['fileId'],
+        },
+      },
+      handler: async (input) => {
+        const fileId = input.fileId as string
+
+        // 1. Get file metadata (name, mimeType, size)
+        const file = await drive.getFile(fileId)
+        const fileSizeBytes = file.size ? parseInt(file.size, 10) : 0
+        const maxSizeMb = registry.getConfig<{ ATTACHMENT_URL_MAX_SIZE_MB: number }>('engine')?.ATTACHMENT_URL_MAX_SIZE_MB ?? 10
+        const maxSizeBytes = maxSizeMb * 1024 * 1024
+
+        if (fileSizeBytes > maxSizeBytes) {
+          return {
+            success: false,
+            error: `Archivo demasiado grande: ${(fileSizeBytes / 1024 / 1024).toFixed(1)}MB (máximo: ${maxSizeMb}MB)`,
+            data: { name: file.name, mimeType: file.mimeType, sizeMb: +(fileSizeBytes / 1024 / 1024).toFixed(1) },
+          }
+        }
+
+        // 2. Download or export the file
+        let buffer: Buffer
+        let extractorMime: string
+        const officeExport = OFFICE_EXPORT_MAP[file.mimeType]
+
+        if (officeExport) {
+          // Office file: export via files.export() to a readable format
+          const exported = await drive.exportFile(fileId, officeExport.exportMime)
+          buffer = Buffer.from(exported, 'utf-8')
+          extractorMime = officeExport.extractorMime
+          logger.info({ fileId, name: file.name, exportMime: officeExport.exportMime }, `Drive ${officeExport.label} exported`)
+        } else {
+          // Binary file (PDF, image, video, etc.): download via files.get({alt:'media'})
+          buffer = await drive.downloadFile(fileId)
+          extractorMime = file.mimeType
+          logger.info({ fileId, name: file.name, mimeType: file.mimeType, bytes: buffer.length }, 'Drive binary downloaded')
+        }
+
+        // 3. Run extractor
+        const extracted = await extractContent(buffer, file.name, extractorMime, registry)
+
+        // 4. Try LLM enrichment for images (vision description)
+        let llmDescription: string | null = null
+        try {
+          const mimePrefix = extractorMime.split('/')[0]
+          if (mimePrefix === 'image') {
+            const imageResult: ExtractorResult = {
+              kind: 'image',
+              buffer,
+              mimeType: extractorMime,
+              width: 0,
+              height: 0,
+              md5: '',
+              accompanyingText: '',
+              metadata: { originalName: file.name, sizeBytes: buffer.length },
+            }
+            const enriched = await enrichWithLLM(imageResult, registry)
+            if ('llmEnrichment' in enriched && enriched.llmEnrichment?.description) {
+              llmDescription = enriched.llmEnrichment.description
+            }
+          }
+        } catch (enrichErr) {
+          logger.warn({ enrichErr, fileId }, 'Drive file LLM enrichment failed — returning extracted text only')
+        }
+
+        // 5. Persist to attachment_extractions (fire-and-forget)
+        persistDriveReadResult(registry, fileId, file.name, file.mimeType, extracted.text, llmDescription).catch(
+          (err: unknown) => logger.warn({ err, fileId }, 'Failed to persist drive-read-file result'),
+        )
+
+        // 6. Return to agent
+        const result: Record<string, unknown> = {
+          name: file.name,
+          mimeType: file.mimeType,
+          sizeMb: fileSizeBytes ? +(fileSizeBytes / 1024 / 1024).toFixed(1) : null,
+          extractedText: extracted.text?.slice(0, 32000) ?? null,
+          sections: extracted.sections?.length ?? 0,
+        }
+        if (llmDescription) result.description = llmDescription
+        if (extracted.metadata?.pages) result.pages = extracted.metadata.pages
+
+        return { success: true, data: result }
       },
     })
   }
@@ -731,4 +841,49 @@ export async function registerGoogleTools(
     { services: [...enabledServices] },
     'Google tools registered',
   )
+}
+
+// ─── Persistence helper ──────────────────────
+
+/**
+ * Persist drive-read-file extraction to attachment_extractions.
+ * Updates existing drive_reference row if present, otherwise inserts new.
+ */
+async function persistDriveReadResult(
+  registry: Registry,
+  fileId: string,
+  fileName: string,
+  mimeType: string,
+  extractedText: string | null,
+  llmText: string | null,
+): Promise<void> {
+  const db = registry.getDb()
+  const tokenEstimate = extractedText ? Math.ceil(extractedText.length / 4) : 0
+
+  // Try to update existing drive_reference row (created by URL extractor in intake)
+  const updated = await db.query(
+    `UPDATE attachment_extractions
+     SET extracted_text = $1, llm_text = $2, token_estimate = $3, status = 'processed'
+     WHERE source_type = 'drive_reference' AND metadata->>'fileId' = $4
+       AND status != 'processed'
+     RETURNING id`,
+    [extractedText, llmText, tokenEstimate, fileId],
+  )
+
+  if (updated.rows.length > 0) {
+    logger.info({ fileId, rowId: updated.rows[0]!.id }, 'drive-read-file result persisted (updated existing row)')
+    return
+  }
+
+  // No existing row — insert new one (tool called directly by agent, not from a URL)
+  await db.query(
+    `INSERT INTO attachment_extractions
+      (id, session_id, filename, mime_type, category, category_label, source_type,
+       extracted_text, llm_text, token_estimate, status, metadata)
+     VALUES (gen_random_uuid(), NULL, $1, $2, 'documents', 'documents', 'drive_read',
+       $3, $4, $5, 'processed', $6)`,
+    [fileName, mimeType, extractedText, llmText, tokenEstimate, JSON.stringify({ fileId })],
+  )
+
+  logger.info({ fileId, fileName }, 'drive-read-file result persisted (new row)')
 }

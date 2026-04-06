@@ -45,11 +45,23 @@ interface SlidesService {
 }
 
 // Google Drive mimeType → driveType + suggestedTool mapping
+// Google-native types use their specific read tools.
+// Office and binary types use drive-read-file (lazy download + extract).
 const DRIVE_MIME_MAP: Record<string, { driveType: DriveResult['driveType']; suggestedTool: string }> = {
+  // Google-native
   'application/vnd.google-apps.document': { driveType: 'document', suggestedTool: 'docs-read' },
   'application/vnd.google-apps.spreadsheet': { driveType: 'spreadsheet', suggestedTool: 'sheets-read' },
   'application/vnd.google-apps.presentation': { driveType: 'presentation', suggestedTool: 'slides-read' },
   'application/vnd.google-apps.folder': { driveType: 'folder', suggestedTool: 'drive-list-files' },
+  // Office — exported via files.export() then extracted
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { driveType: 'file', suggestedTool: 'drive-read-file' },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { driveType: 'file', suggestedTool: 'drive-read-file' },
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { driveType: 'file', suggestedTool: 'drive-read-file' },
+  'application/msword': { driveType: 'file', suggestedTool: 'drive-read-file' },
+  'application/vnd.ms-excel': { driveType: 'file', suggestedTool: 'drive-read-file' },
+  'application/vnd.ms-powerpoint': { driveType: 'file', suggestedTool: 'drive-read-file' },
+  // Binary — downloaded via files.get({alt:'media'}) then extracted
+  'application/pdf': { driveType: 'file', suggestedTool: 'drive-read-file' },
 }
 
 /**
@@ -86,7 +98,7 @@ export function extractDriveFileId(url: string): string | null {
  * Resolve drive type and suggested tool from mimeType.
  */
 function resolveDriveType(mimeType: string): { driveType: DriveResult['driveType']; suggestedTool: string } {
-  return DRIVE_MIME_MAP[mimeType] ?? { driveType: 'file', suggestedTool: 'drive-get-file' }
+  return DRIVE_MIME_MAP[mimeType] ?? { driveType: 'file', suggestedTool: 'drive-read-file' }
 }
 
 /**
@@ -280,7 +292,7 @@ function buildNoAccessResult(url: string, accountEmail: string | null, error: st
     name: url,
     mimeType: 'unknown',
     driveType: 'file',
-    suggestedTool: 'drive-get-file',
+    suggestedTool: 'drive-read-file',
     hasAccess: false,
     accountEmail,
     folderContents: undefined,
