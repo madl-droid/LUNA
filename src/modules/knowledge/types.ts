@@ -1,6 +1,8 @@
-// LUNA — Module: knowledge — Types v2
+// LUNA — Module: knowledge — Types v3
 // Interfaces del sistema de base de conocimiento del agente.
-// v2: categorías como tabla, embeddings, API connectors, web sources.
+// v3: unified chunk format (EmbeddableChunk), categories, embeddings, API connectors, web sources.
+
+import type { ChunkContentType, MediaRef } from './embedding-limits.js'
 
 // ═══════════════════════════════════════════
 // Frecuencias y source types
@@ -12,7 +14,7 @@ export type FAQSourceType = 'manual' | 'sheets' | 'file'
 
 export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web'
 
-export type EmbeddingStatus = 'pending' | 'processing' | 'done' | 'failed' | 'pending_review'
+export type EmbeddingStatus = 'pending' | 'queued' | 'processing' | 'embedded' | 'failed' | 'pending_review'
 
 // Frecuencias en milisegundos
 export const SYNC_FREQUENCY_MS: Record<SyncFrequency, number> = {
@@ -90,7 +92,7 @@ export interface KnowledgeChunk {
   nextChunkId: string | null
   contentType: ChunkContentType
   mediaRefs: MediaRef[] | null
-  extraMetadata: Record<string, unknown> | null
+  extraMetadata: import('./embedding-limits.js').ChunkMetadata | null
   createdAt: Date
 }
 
@@ -98,33 +100,11 @@ export interface KnowledgeChunk {
 // Smart Chunking (v2 — type-specific strategies)
 // ═══════════════════════════════════════════
 
-export type ChunkContentType = 'text' | 'csv' | 'pdf_pages' | 'slide' | 'image_text' | 'yt_header' | 'yt_transcript'
+// Re-export unified types from embedding-limits (single source of truth)
+export type { ChunkContentType, MediaRef, ChunkMetadata, EmbeddableChunk, LinkedEmbeddableChunk } from './embedding-limits.js'
 
-export interface MediaRef {
-  mimeType: string
-  data?: string       // base64 inline data
-  filePath?: string   // on-disk reference
-}
-
-/** Pre-insert chunk (no ID yet, no linking) */
-export interface SmartChunk {
-  content: string
-  contentType: ChunkContentType
-  section: string | null
-  page: number | null
-  mediaRefs: MediaRef[] | null
-  extraMetadata: Record<string, unknown> | null
-}
-
-/** Post-linking chunk (with IDs and chain pointers) */
-export interface LinkedChunk extends SmartChunk {
-  id: string
-  chunkIndex: number
-  chunkTotal: number
-  prevChunkId: string | null
-  nextChunkId: string | null
-  sourceId: string
-}
+// Backward-compatible aliases
+export type { EmbeddableChunk as SmartChunk, LinkedEmbeddableChunk as LinkedChunk } from './embedding-limits.js'
 
 // ═══════════════════════════════════════════
 // FAQs

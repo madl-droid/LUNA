@@ -7,10 +7,10 @@ Provider de gestion clinica: pacientes, citas, disponibilidad, seguimiento autom
 - `types.ts` — interfaces API (Patient, Appointment [incluye id_atencion], Professional, Evolution, Archive, TreatmentPlan), config, internas
 - `api-client.ts` — HTTP client con rate limiting, retry, paginacion por cursor. Base: `/api/v1`
 - `rate-limiter.ts` — token bucket con cola de 3 prioridades (high/medium/low), Redis sliding window
-- `cache.ts` — Redis + in-memory para datos de referencia (30d TTL) y agenda RAW (25h TTL, warm diario, mutación quirúrgica via webhooks)
+- `cache.ts` — Redis + in-memory para datos de referencia (30d TTL) y disponibilidad (20min TTL, warm via webhooks)
 - `webhook-handler.ts` — receptor webhooks Medilink: HMAC verify, dispatch a listeners
 - `security.ts` — **CRITICO**: verificacion identidad, control acceso, filtrado datos, audit
-- `tools.ts` — 11 herramientas del agente (search, info, disponibilidad, profesionales, prestaciones, citas, tratamientos, crear paciente, agendar, reagendar, marcar pendiente)
+- `tools.ts` — 12 herramientas del agente (search, info, disponibilidad, profesionales, prestaciones, citas, pagos, tratamientos, crear paciente, agendar, reagendar, marcar pendiente)
 - `working-memory.ts` — memoria de trabajo Redis por contacto (TTL 6h). Clase generica `WorkingMemory` reutilizable por otros modulos
 - `follow-up-scheduler.ts` — secuencia 9 toques, delega a scheduled-tasks (NO crea su propio BullMQ)
 - `pg-store.ts` — migraciones (7 tablas) y queries SQL
@@ -58,20 +58,21 @@ Base: `MEDILINK_BASE_URL` + `/api/v1` (se agrega automaticamente si falta)
 
 **NUNCA exponer**: `evo.datos` (notas clinicas), archivos clinicos, info de un paciente a otro.
 
-## Tools del agente (11)
+## Tools del agente (12)
 - `medilink-search-patient` — busca auto por telefono; guarda patient_id en working memory
 - `medilink-get-patient-info` — datos basicos del paciente vinculado (nombre, tel, email)
 - `medilink-check-availability` — slots libres con logica de filtrado por contexto (ver abajo)
 - `medilink-get-professionals` — profesionales activos
 - `medilink-get-prestaciones` — catalogo de prestaciones habilitadas
 - `medilink-get-my-appointments` — citas del paciente; guarda snapshots en working memory
+- `medilink-get-my-payments` — pagos/deudas
 - `medilink-get-treatment-plans` — planes de tratamiento activos
 - `medilink-create-patient` — registrar paciente nuevo; guarda patient_id en working memory
 - `medilink-create-appointment` — agendar (professional y prestacion opcionales para leads — usa defaults del config). Param `context_summary`: resumen de contexto del paciente extraído de la conversación (NO preguntado). Retorna: id, id_atencion, fecha, hora, profesional, tratamiento, sucursal, comentarios. Post-acciones: guarda appointment_id en working memory (`pending_reschedule_id` + `last_appointment_id`), persiste branch preference en `contacts.custom_data`
 - `medilink-reschedule-appointment` — reagendar; lee appointment_id de working memory si no se pasa. Param `reschedule_reason`: motivo del reagendamiento (se agrega a comentarios como audit trail). Retorna: id, id_atencion, fecha, hora, profesional, tratamiento, sucursal, comentarios. Post-acciones: actualiza `pending_reschedule_id`, persiste branch preference
 - `medilink-mark-pending-reschedule` — marca cita como "Pendiente reagendar" (id_estado=16) cuando el paciente no define nueva fecha. Crea commitment automático de seguimiento (~4 días). Param `reason`: contexto de por qué no se definió fecha. Post-acciones: PUT id_estado=16, INSERT commitment tipo `reschedule_follow_up`
 
-Tools ELIMINADAS: verify-identity, request-patient-edit, execute-followup, get-my-evolutions, get-my-files, get-my-payments
+Tools ELIMINADAS: verify-identity, request-patient-edit, execute-followup, get-my-evolutions, get-my-files
 
 ## Skills de medilink (5) — instance/prompts/system/skills/
 Fuente única de verdad para el comportamiento del subagente medilink-scheduler:
@@ -83,21 +84,11 @@ Fuente única de verdad para el comportamiento del subagente medilink-scheduler:
 
 El subagente lee el skill apropiado via `skill_read` antes de actuar. El skill viejo `medilink-scheduling.md` fue eliminado y reemplazado por estos 5.
 
-## Cache de agenda (cache.ts)
-Warm diario + mutación quirúrgica via webhooks. Sin API calls durante operación normal.
-- **Warm**: Al iniciar + cada 24h, 1 API call por profesional cubre N días (`MEDILINK_AGENDA_WARM_DAYS`, default 7)
-- **API endpoint**: `GET /api/v5/sucursales/{id}/profesionales/{id}/agendas` con `mostrar_detalles=1` (retorna booked + free, incluye `id_cita`)
-- **Lectura**: `getAvailability(branchId, date, professionalId)` filtra RAW → slots libres + sillones permitidos
-- **Webhook mutación**: `applyCitaCreated/Modified/Deleted(WebhookCitaData)` — modifica cache in-place, usa `id_cita` para matching preciso
-- **Índice de citas**: Redis hash `medilink:cache:cita-index` mapea citaId → {branchId, date, professionalId}. Poblado desde warm (v5 trae id_cita) Y desde webhooks
-- **v5 flatten**: Respuesta jerárquica (fechas → horas → sillones) se aplana a `MedilinkAgendaItem[]` en api-client. Se ignora "Sobrecupo"
-- **Estado "Reagendado por LUNA"**: id_estado=21. Webhook modified con este estado → slot viejo queda libre
-
 ## Logica de check-availability (prioridad de filtrado)
 1. `appointment_id` presente (o en working memory) → filtra por categorias del profesional original
 2. `treatment_name` presente → filtra por categoria del tratamiento
 3. `professional_name` presente → filtra por ese profesional
-4. Ninguno → usa `MEDILINK_DEFAULT_PROFESSIONAL_ID` (flujo lead, OBLIGATORIO)
+4. Ninguno → usa `MEDILINK_DEFAULT_PROFESSIONAL_ID` (flujo lead)
 
 ## Working Memory (working-memory.ts)
 Clase generica `WorkingMemory(redis, namespace, ttlS=6h)` — reutilizable por cualquier modulo.
@@ -123,7 +114,6 @@ Cuando se use en 2+ modulos, mover `working-memory.ts` a `src/kernel/`.
 
 ## Config extra
 - `MEDILINK_ALLOWED_CHAIRS` — CSV de IDs de sillon permitidos (default "1,2"). Excluye sobreagendamiento de disponibilidad.
-- `MEDILINK_AGENDA_WARM_DAYS` — días de agenda a pre-cachear (default 7). Refresh diario + mutación por webhooks.
 - `MEDILINK_DEFAULT_PROFESSIONAL_ID` — profesional asignado automaticamente a leads (configurable en consola).
 - `MEDILINK_DEFAULT_VALORACION_ID` — prestacion por defecto para leads (configurable en consola).
 

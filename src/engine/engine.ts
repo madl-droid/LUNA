@@ -348,7 +348,7 @@ async function processMessageInner(
 /**
  * Run the agentic pipeline for a reactive message.
  * Phase 1 → effort classification → agentic loop → post-process → Phase 5.
- * Called from processMessageInner() when ENGINE_MODE=agentic (default).
+ * Called from processMessageInner().
  */
 async function runAgenticPipeline(
   ctx: ContextBundle,

@@ -99,7 +99,7 @@ export async function generateSessionSummary(
     }).join('\n')
     : ''
 
-  const userContent = `Analiza esta conversación y genera un resumen estructurado.
+  const userContent = `Analiza esta conversación y genera un resumen temático estructurado.
 
 CONVERSACIÓN:
 ${conversationText.slice(0, 15000)}
@@ -108,8 +108,9 @@ ${attachmentContext.slice(0, 3000)}
 Responde SOLO con JSON válido:
 {
   "title": "título descriptivo (máximo 15 palabras)",
-  "description": "descripción concisa (máximo 5 oraciones)",
-  "full_summary": "resumen completo mencionando: documentos revisados, imágenes analizadas, decisiones tomadas, compromisos, datos extraídos, navegación web si hubo"
+  "description": "descripción concisa (máximo 3 oraciones)",
+  "sections": [{"topic": "nombre del tema", "summary": "resumen con datos concretos", "attachments": ["[tipo] archivo — resumen"]}],
+  "full_summary": "resumen narrativo completo integrando todos los temas (máx 400 palabras)"
 }`
 
   const llmResult = await registry.callHook('llm:chat', {
@@ -134,13 +135,16 @@ Responde SOLO con JSON válido:
   const modelUsed = llmResult.model ?? null
   const tokensUsed = ((llmResult.inputTokens ?? 0) + (llmResult.outputTokens ?? 0)) || null
 
+  // Parse sections (new thematic format) — graceful fallback if LLM doesn't produce them
+  const sections = Array.isArray(parsed.sections) ? parsed.sections as Array<{ topic: string; summary: string; attachments?: string[] }> : null
+
   const result = await db.query<{ id: string }>(
-    `INSERT INTO session_summaries_v2 (session_id, contact_id, title, description, full_summary, model_used, tokens_used)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO session_summaries_v2 (session_id, contact_id, title, description, full_summary, sections, model_used, tokens_used)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (session_id) DO UPDATE SET
        title = EXCLUDED.title, description = EXCLUDED.description,
-       full_summary = EXCLUDED.full_summary, model_used = EXCLUDED.model_used,
-       tokens_used = EXCLUDED.tokens_used
+       full_summary = EXCLUDED.full_summary, sections = EXCLUDED.sections,
+       model_used = EXCLUDED.model_used, tokens_used = EXCLUDED.tokens_used
      RETURNING id`,
     [
       sessionId,
@@ -148,6 +152,7 @@ Responde SOLO con JSON válido:
       String(parsed.title).slice(0, 200),
       String(parsed.description).slice(0, 1000),
       String(parsed.full_summary),
+      sections ? JSON.stringify(sections) : null,
       modelUsed,
       tokensUsed,
     ],
@@ -160,6 +165,7 @@ Responde SOLO con JSON válido:
     title: String(parsed.title),
     description: String(parsed.description),
     fullSummary: String(parsed.full_summary),
+    sections,
     modelUsed,
     tokensUsed,
   }

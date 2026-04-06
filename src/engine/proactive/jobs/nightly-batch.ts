@@ -3,8 +3,7 @@
 // Idempotente: usa fecha como flag. Config desde engine:nightly-config service.
 // Usa taskPool para concurrencia configurable con retries + exponential backoff.
 
-import { readdir, stat, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { unlink } from 'node:fs/promises'
 import pino from 'pino'
 import type { ProactiveJobContext } from '../../types.js'
 import type { PromptsService } from '../../../modules/prompts/types.js'
@@ -88,8 +87,8 @@ export async function runNightlyBatch(ctx: ProactiveJobContext): Promise<void> {
     // 7. Purge old legal archives
     await purgeOldArchives(ctx)
 
-    // 8. Purge expired media files from disk
-    await purgeOldMedia(ctx)
+    // 8. Purge expired attachments (DB records + media files on disk)
+    await purgeExpiredAttachments(ctx)
 
     // Mark as completed
     await ctx.redis.set(redisKey, '1', 'EX', 86400)
@@ -718,49 +717,62 @@ async function purgeOldArchives(ctx: ProactiveJobContext): Promise<void> {
   }
 }
 
-// ─── 8. Purge Expired Media Files ────────────
+// ─── 8. Purge Expired Attachments (DB + disk) ────────────
+// Uses MEMORY_SUMMARY_RETENTION_DAYS — attachments live as long as their session summaries.
 
-const MEDIA_DIR = 'instance/knowledge/media'
-
-async function purgeOldMedia(ctx: ProactiveJobContext): Promise<void> {
-  let retentionMonths: number
+async function purgeExpiredAttachments(ctx: ProactiveJobContext): Promise<void> {
+  let retentionDays: number
   try {
-    const config = ctx.registry.getConfig<{ MEMORY_MEDIA_RETENTION_MONTHS: number }>('memory')
-    retentionMonths = config.MEMORY_MEDIA_RETENTION_MONTHS
+    const config = ctx.registry.getConfig<{ MEMORY_SUMMARY_RETENTION_DAYS: number }>('memory')
+    retentionDays = config.MEMORY_SUMMARY_RETENTION_DAYS
   } catch {
-    retentionMonths = 6
+    retentionDays = 120
   }
 
-  const cutoff = Date.now() - retentionMonths * 30 * 24 * 60 * 60 * 1000
-
   try {
-    let files: string[]
-    try {
-      files = await readdir(MEDIA_DIR)
-    } catch {
-      // Directory doesn't exist yet
-      return
-    }
+    // 1. Get file_paths of expired attachment_extractions before deleting
+    const expiredFiles = await ctx.db.query<{ file_path: string }>(
+      `SELECT DISTINCT file_path FROM attachment_extractions
+       WHERE file_path IS NOT NULL
+         AND created_at < NOW() - INTERVAL '1 day' * $1`,
+      [retentionDays],
+    )
 
-    let deleted = 0
-    for (const file of files) {
+    // 2. Delete expired attachment_extractions from DB
+    const deleteResult = await ctx.db.query(
+      `DELETE FROM attachment_extractions
+       WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
+      [retentionDays],
+    )
+    const dbDeleted = deleteResult.rowCount ?? 0
+
+    // 3. Delete corresponding media files from disk + nullify media_ref in chunks
+    let filesDeleted = 0
+    const filePaths = expiredFiles.rows.map(r => r.file_path)
+
+    for (const filePath of filePaths) {
       try {
-        const filePath = join(MEDIA_DIR, file)
-        const fileStat = await stat(filePath)
-        if (fileStat.mtimeMs < cutoff) {
-          await unlink(filePath)
-          deleted++
-        }
+        await unlink(filePath)
+        filesDeleted++
       } catch {
-        // Skip files that can't be stat'd or deleted
+        // File may already be gone or path invalid — skip
       }
     }
 
-    if (deleted > 0) {
-      logger.info({ traceId: ctx.traceId, deleted, retentionMonths }, 'Purged expired media files')
+    // 4. Clear dead media_ref pointers in session_memory_chunks
+    if (filePaths.length > 0) {
+      await ctx.db.query(
+        `UPDATE session_memory_chunks SET media_ref = NULL
+         WHERE media_ref = ANY($1)`,
+        [filePaths],
+      )
+    }
+
+    if (dbDeleted > 0 || filesDeleted > 0) {
+      logger.info({ traceId: ctx.traceId, dbDeleted, filesDeleted, mediaRefsCleared: filePaths.length, retentionDays }, 'Purged expired attachments (DB + disk + media_ref)')
     }
   } catch (err) {
-    logger.error({ err, traceId: ctx.traceId }, 'Media purge failed')
+    logger.error({ err, traceId: ctx.traceId }, 'Attachment purge failed')
   }
 }
 

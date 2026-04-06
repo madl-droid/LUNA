@@ -45,6 +45,24 @@ Todos los extractores de texto usan `isImplicitTitle()` de utils.ts:
 ## Imágenes en documentos
 DOCX, PDF y Web extraen imágenes embebidas. Filtros: mínimo 75×75px, dedup por MD5.
 
+## REGLA: Uso obligatorio de extractores en todos los canales
+
+**TODOS los canales que reciban adjuntos DEBEN pasarlos al engine via `message.attachments: AttachmentMeta[]`.**
+El engine los procesa con los extractores globales en `processAttachments()` (src/engine/attachments/processor.ts).
+NUNCA procesar adjuntos fuera del pipeline de extractores.
+
+### Checklist para canales con adjuntos
+- [ ] Adapter extrae metadata del payload del canal (id, filename, mimeType, size)
+- [ ] Adapter provee lazy loader `getData()` que retorna `Promise<Buffer>`
+- [ ] Manifest pasa `attachments[]` en `IncomingMessage` al hook `message:incoming`
+- [ ] Channel config define `enabledCategories` en `buildAttachmentConfig()`
+- [ ] Platform capabilities registradas en `engine/attachments/types.ts` → `CHANNEL_PLATFORM_CAPABILITIES`
+
+### Canales implementados
+- **WhatsApp**: ✅ completo (images, documents, audio, video, spreadsheets, text)
+- **Gmail**: ✅ completo (images, documents, spreadsheets, presentations, text, audio)
+- **Google Chat**: ✅ completo (images, documents)
+
 ## Trampas
 - `registry` es opcional para code extraction, pero NECESARIO para LLM enrichment
 - Los extractores legacy de `src/modules/knowledge/extractors/` se mantienen como shim re-export

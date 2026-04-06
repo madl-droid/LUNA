@@ -3,23 +3,19 @@
 // Produces linked chunks per source (text, images, PDFs, slides, video, audio, spreadsheets).
 
 import { randomUUID } from 'node:crypto'
-import type { StoredMessage, SessionMemoryChunk } from './types.js'
-
-// ═══════════════════════════════════════════
-// Gemini Embedding 2 limits
-// ═══════════════════════════════════════════
-
-const MAX_TEXT_WORDS = 6000
-const TEXT_OVERLAP_WORDS = 200
-// MAX_IMAGES_PER_REQUEST (6), MAX_SLIDES_PER_REQUEST (6), SLIDE_OVERLAP (1):
-// used for embedding batching in session-embedder, not for chunking logic here.
-const MAX_PDF_PAGES = 6
-const PDF_PAGE_OVERLAP = 1
-const MAX_VIDEO_NO_AUDIO_SEC = 128
-const MAX_VIDEO_WITH_AUDIO_SEC = 80
-const VIDEO_OVERLAP_SEC = 10
-const MAX_AUDIO_SEC = 80
-const AUDIO_OVERLAP_SEC = 10
+import type { StoredMessage, SessionMemoryChunk, SessionSummarySection } from './types.js'
+import type { ChunkMetadata } from '../knowledge/embedding-limits.js'
+import {
+  MAX_TEXT_WORDS,
+  TEXT_OVERLAP_WORDS,
+  MAX_PDF_PAGES_PER_REQUEST as MAX_PDF_PAGES,
+  PDF_PAGE_OVERLAP,
+  MAX_VIDEO_NO_AUDIO_SEC,
+  MAX_VIDEO_WITH_AUDIO_SEC,
+  VIDEO_OVERLAP_SEC,
+  MAX_AUDIO_SEC,
+  AUDIO_OVERLAP_SEC,
+} from '../knowledge/embedding-limits.js'
 
 // ═══════════════════════════════════════════
 // Attachment extraction record (from DB)
@@ -50,6 +46,26 @@ interface PreChunk {
   mediaRef: string | null
   mimeType: string | null
   extraMetadata: Record<string, unknown> | null
+}
+
+/** Build ChunkMetadata from PreChunk + session context */
+function buildChunkMetadata(c: PreChunk, sessionId: string, contactId: string): ChunkMetadata {
+  const extra = c.extraMetadata ?? {}
+  const meta: ChunkMetadata = {
+    sourceType: c.sourceType === 'text' ? 'session_text' : `session_${c.sourceType}`,
+    sessionId,
+    contactId,
+  }
+  if (extra.filename) meta.sourceFile = String(extra.filename)
+  if (c.mimeType) meta.sourceMimeType = c.mimeType
+  if (extra.page_range) meta.pageRange = String(extra.page_range)
+  if (extra.section_title || extra.topic) meta.sectionTitle = String(extra.section_title ?? extra.topic)
+  if (extra.slide_index != null) meta.pageRange = String(Number(extra.slide_index) + 1)
+  if (extra.interaction_title) meta.interaction_title = extra.interaction_title
+  if (extra.timestamp_start != null) meta.timestampStart = Number(extra.timestamp_start)
+  if (extra.timestamp_end != null) meta.timestampEnd = Number(extra.timestamp_end)
+  if (extra.tab_name) meta.tab_name = extra.tab_name
+  return meta
 }
 
 // ═══════════════════════════════════════════
@@ -368,6 +384,45 @@ export function chunkSpreadsheet(attachment: AttachmentExtraction, interactionTi
 }
 
 // ═══════════════════════════════════════════
+// Thematic section chunking — one chunk per LLM-identified topic
+// ═══════════════════════════════════════════
+
+export function chunkByThematicSections(
+  messages: StoredMessage[],
+  interactionTitle: string,
+  sections: SessionSummarySection[],
+): PreChunk[] {
+  const sessionId = messages[0]?.sessionId ?? 'unknown'
+  const chunks: PreChunk[] = []
+
+  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+    const section = sections[sectionIndex]!
+    // Build section content: topic summary + attachment references
+    let content = `[${section.topic}]\n${section.summary}`
+    if (section.attachments && section.attachments.length > 0) {
+      content += '\n\nAdjuntos:\n' + section.attachments.join('\n')
+    }
+
+    chunks.push({
+      sourceId: `section-${sessionId}-${sectionIndex}`,
+      sourceType: 'text',
+      contentType: 'text',
+      content,
+      mediaRef: null,
+      mimeType: null,
+      extraMetadata: { interaction_title: interactionTitle, topic: section.topic },
+    })
+  }
+
+  // Safety: if sections produced no chunks, fall back to word-count split
+  if (chunks.length === 0) {
+    return chunkText(messages, interactionTitle)
+  }
+
+  return chunks
+}
+
+// ═══════════════════════════════════════════
 // Link chunks — assign UUIDs and prev/next pointers
 // ═══════════════════════════════════════════
 
@@ -409,6 +464,7 @@ export function linkSessionChunks(
         mediaRef: c.mediaRef,
         mimeType: c.mimeType,
         extraMetadata: c.extraMetadata,
+        metadata: buildChunkMetadata(c, sessionId, contactId),
         hasEmbedding: false,
         embedding: null,
       })
@@ -428,11 +484,16 @@ export function chunkSession(
   messages: StoredMessage[],
   attachments: AttachmentExtraction[],
   interactionTitle: string,
+  sections?: SessionSummarySection[] | null,
 ): SessionMemoryChunk[] {
   const preChunks: PreChunk[] = []
 
-  // 1. Conversation text
-  preChunks.push(...chunkText(messages, interactionTitle))
+  // 1. Conversation text — use thematic sections if available, otherwise word-count split
+  if (sections && sections.length > 0) {
+    preChunks.push(...chunkByThematicSections(messages, interactionTitle, sections))
+  } else {
+    preChunks.push(...chunkText(messages, interactionTitle))
+  }
 
   // 2. Classify and chunk each attachment by category
   for (const att of attachments) {

@@ -17,7 +17,6 @@ interface EngineModuleConfig {
   ATTACHMENT_SMALL_DOC_TOKENS: number
   ATTACHMENT_MEDIUM_DOC_TOKENS: number
   ATTACHMENT_SUMMARY_MAX_TOKENS: number
-  ATTACHMENT_CACHE_TTL_MS: number
   ATTACHMENT_URL_ENABLED: boolean
   ATTACHMENT_URL_FETCH_TIMEOUT_MS: number
   ATTACHMENT_URL_MAX_SIZE_MB: number
@@ -30,7 +29,6 @@ interface EngineModuleConfig {
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
   LLM_CRITICIZER_MODE: string
-  ENGINE_CRITICIZER_MAX_RETRIES: number
 }
 
 function env(key: string, fallback: string): string {
@@ -95,7 +93,7 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
     attachmentSmallDocTokens: moduleConfig.ATTACHMENT_SMALL_DOC_TOKENS,
     attachmentMediumDocTokens: moduleConfig.ATTACHMENT_MEDIUM_DOC_TOKENS,
     attachmentSummaryMaxTokens: moduleConfig.ATTACHMENT_SUMMARY_MAX_TOKENS,
-    attachmentCacheTtlMs: moduleConfig.ATTACHMENT_CACHE_TTL_MS,
+
     attachmentUrlFetchTimeoutMs: moduleConfig.ATTACHMENT_URL_FETCH_TIMEOUT_MS,
     attachmentUrlMaxSizeMb: moduleConfig.ATTACHMENT_URL_MAX_SIZE_MB,
     attachmentUrlEnabled: moduleConfig.ATTACHMENT_URL_ENABLED,
@@ -120,7 +118,6 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
 
     // Criticizer (quality gate): disabled | complex_only | always
     criticizerMode: moduleConfig.LLM_CRITICIZER_MODE as 'disabled' | 'complex_only' | 'always',
-    criticizerMaxRetries: moduleConfig.ENGINE_CRITICIZER_MAX_RETRIES,
 
     // Checkpoints (resumable pipelines)
     checkpointEnabled: moduleConfig.ENGINE_CHECKPOINT_ENABLED,

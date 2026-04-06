@@ -65,6 +65,7 @@ const apiRoutes: ApiRoute[] = [
             from: normalized.from,
             timestamp: normalized.timestamp,
             content: { ...normalized.content, type: normalized.content.type as IncomingMessage['content']['type'] },
+            attachments: normalized.attachments,
             raw: normalized.raw,
           }
 

@@ -6,9 +6,10 @@
 
 ## Cuándo aplica
 - El contacto pregunta por sus citas programadas
+- Pregunta por pagos, deudas o saldos
 - Pregunta por sus tratamientos activos
 - Pregunta por profesionales o servicios disponibles
-- Pregunta "¿cuándo es mi cita?", "¿qué tratamiento tengo?"
+- Pregunta "¿cuándo es mi cita?", "¿cuánto debo?", "¿qué tratamiento tengo?"
 
 ## NUNCA
 - Mencionar "Medilink", "HealthAtom", "Dentalink" — solo "la agenda" o "el sistema"
@@ -31,6 +32,20 @@ Presentar de forma organizada:
 - Mencionar si alguna es pronto (hoy, mañana)
 
 Si pregunta por una cita pasada → informar fecha y estado, no detalles clínicos.
+
+---
+
+## Consulta de pagos y deudas
+
+Usa `medilink-get-my-payments`.
+
+Presentar:
+- Saldo pendiente total
+- Desglose por tratamiento si hay varios
+- Último pago realizado (fecha y monto)
+- NO exponer detalles internos de facturación
+
+Si tiene deuda → informar de forma neutral, sin presionar: *"Tu saldo pendiente es de $[monto]. Si necesitas información sobre formas de pago, con gusto te ayudo."*
 
 ---
 
@@ -60,6 +75,7 @@ Usa `medilink-get-professionals` o `medilink-get-prestaciones` según lo que pre
 
 Después de dar la información, sugerir acciones relevantes:
 - Si tiene cita pronto → *"¿Necesitas reagendar o tienes alguna duda?"*
+- Si tiene deuda → *"¿Quieres saber las opciones de pago?"*
 - Si no tiene cita → *"¿Te gustaría agendar una cita?"*
 - Si pregunta por servicios → *"¿Te interesa agendar con alguno?"*
 

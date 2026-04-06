@@ -143,7 +143,7 @@ export interface PageOptions {
   agenteSubpage?: string
   /** Active herramientas sub-page (tools, lead-scoring, freight, medilink, scheduled-tasks, google-apps) */
   herramientasSubpage?: string
-  /** Current admin override type for debug testing dropdown */
+  /** Current admin override type (debug panel dropdown): 'lead', 'coworker', or '' for disabled */
   adminOverrideType?: string
 }
 

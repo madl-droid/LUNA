@@ -537,7 +537,7 @@ export class KnowledgePgStore {
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
        LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
-       WHERE c.has_embedding = true
+       WHERE c.embedding_status = 'embedded'
        GROUP BY c.id, c.document_id, c.content, c.section, c.embedding, d.title, d.metadata
        ORDER BY c.embedding <=> $1::vector
        LIMIT $2`,
@@ -598,7 +598,7 @@ export class KnowledgePgStore {
     if (documentId) {
       const res = await this.db.query<{ id: string; content: string; document_id: string; content_type: string; media_refs: unknown; extra_metadata: unknown }>(
         `SELECT ${cols} FROM knowledge_chunks
-         WHERE document_id = $1 AND has_embedding = false
+         WHERE document_id = $1 AND embedding_status != 'embedded'
          ORDER BY chunk_index`,
         [documentId],
       )
@@ -612,7 +612,7 @@ export class KnowledgePgStore {
 
     const res = await this.db.query<{ id: string; content: string; document_id: string; content_type: string; media_refs: unknown; extra_metadata: unknown }>(
       `SELECT ${cols} FROM knowledge_chunks
-       WHERE has_embedding = false
+       WHERE embedding_status != 'embedded'
        ORDER BY document_id, chunk_index`,
     )
     return res.rows.map(r => ({
@@ -626,22 +626,28 @@ export class KnowledgePgStore {
   /** Toggle searchability of all chunks belonging to an item's documents */
   async setItemChunksSearchable(itemId: string, searchable: boolean): Promise<void> {
     await this.db.query(
-      `UPDATE knowledge_chunks SET has_embedding = CASE WHEN $2 THEN (embedding IS NOT NULL) ELSE false END
+      `UPDATE knowledge_chunks SET
+        embedding_status = CASE WHEN $2 AND embedding IS NOT NULL THEN 'embedded' ELSE 'pending' END
        WHERE document_id IN (SELECT id FROM knowledge_documents WHERE source_ref = $1)`,
       [itemId, searchable],
     )
   }
 
+  /**
+   * Direct embedding persistence — bypasses BullMQ queue.
+   * Used by batch jobs (nightly-batch, vectorize-worker) that manage their own retry logic.
+   * For normal flow, use EmbeddingQueue.enqueue() instead.
+   */
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
     const embStr = `[${embedding.join(',')}]`
     await this.db.query(
-      `UPDATE knowledge_chunks SET embedding = $1::vector, has_embedding = true WHERE id = $2`,
+      `UPDATE knowledge_chunks SET embedding = $1::vector, embedding_status = 'embedded', retry_count = 0, last_error = NULL, last_attempt_at = NOW() WHERE id = $2`,
       [embStr, chunkId],
     )
   }
 
-  /** Insert smart linked chunks (v2 — type-specific with media refs and linking) */
-  async insertLinkedChunks(documentId: string, chunks: import('./types.js').LinkedChunk[]): Promise<void> {
+  /** Insert linked chunks (v3 — unified EmbeddableChunk format with ChunkMetadata) */
+  async insertLinkedChunks(documentId: string, chunks: import('./embedding-limits.js').LinkedEmbeddableChunk[]): Promise<void> {
     if (chunks.length === 0) return
 
     // Delete existing chunks for this document first
@@ -651,22 +657,26 @@ export class KnowledgePgStore {
       await this.db.query(
         `INSERT INTO knowledge_chunks
          (id, document_id, content, section, chunk_index, page, source_id, chunk_total,
-          prev_chunk_id, next_chunk_id, content_type, media_refs, extra_metadata, tsv)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, to_tsvector('spanish', $3))`,
+          prev_chunk_id, next_chunk_id, content_type, media_refs, extra_metadata,
+          mime_type, tsv)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, to_tsvector('spanish', COALESCE($3, '')))`,
         [
           chunk.id,
           documentId,
           chunk.content,
-          chunk.section,
+          chunk.metadata.sectionTitle ?? null,
           chunk.chunkIndex,
-          chunk.page,
+          chunk.metadata.pageRange
+            ? (parseInt(chunk.metadata.pageRange.split('-')[0]!, 10) || null)
+            : null,
           chunk.sourceId,
           chunk.chunkTotal,
           chunk.prevChunkId,
           chunk.nextChunkId,
           chunk.contentType,
           chunk.mediaRefs ? JSON.stringify(chunk.mediaRefs) : null,
-          chunk.extraMetadata ? JSON.stringify(chunk.extraMetadata) : null,
+          JSON.stringify(chunk.metadata),
+          chunk.metadata.sourceMimeType ?? null,
         ],
       )
     }
@@ -1068,7 +1078,7 @@ export class KnowledgePgStore {
         FROM knowledge_documents
       `),
       this.db.query<{ total: string; embedded: string }>(`
-        SELECT count(*) as total, count(*) FILTER (WHERE has_embedding = true) as embedded
+        SELECT count(*) as total, count(*) FILTER (WHERE embedding_status = 'embedded') as embedded
         FROM knowledge_chunks
       `),
       this.db.query<{ total: string; active: string }>(`
@@ -1283,7 +1293,7 @@ export class KnowledgePgStore {
     const res = await this.db.query<ItemRow>(
       `SELECT * FROM knowledge_items
        WHERE active = true
-         AND (content_loaded = false OR embedding_status NOT IN ('done', 'processing'))
+         AND (content_loaded = false OR embedding_status NOT IN ('embedded', 'processing'))
        ORDER BY created_at ASC`,
     )
     return res.rows.map(mapItemRow)

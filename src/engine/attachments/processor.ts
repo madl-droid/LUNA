@@ -18,7 +18,6 @@ import { writeFile, mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import pino from 'pino'
 import type { Pool } from 'pg'
-import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
 import type { AttachmentMeta } from '../../channels/types.js'
 import type {
@@ -114,7 +113,6 @@ export async function processAttachments(
   messageId: string,
   registry: Registry,
   db: Pool,
-  redis: Redis,
 ): Promise<AttachmentContext> {
   const result: AttachmentContext = {
     attachments: [],
@@ -166,7 +164,7 @@ export async function processAttachments(
     async (att): Promise<ProcessedAttachment> => {
       try {
         const processed = await processOneAttachment(
-          att, effectiveChannelConfig, engineConfig, sessionId, registry, redis,
+          att, effectiveChannelConfig, engineConfig, registry,
         )
         // Persist to DB immediately after this individual file is done (fire-and-forget)
         persistOneAttachment(processed, sessionId, messageId, channelName, db).catch(err =>
@@ -188,7 +186,6 @@ export async function processAttachments(
           summary: null,
           tokenEstimate: 0,
           sizeTier: 'small',
-          cacheKey: null,
           status: 'extraction_failed',
           injectionRisk: false,
           sourceType: 'file_attachment',
@@ -218,16 +215,18 @@ export async function processAttachments(
     }
   }
 
-  // Process URLs in text
+  // Process URLs in text (3-tier routing: Drive → Authorized → Unauthorized)
   if (engineConfig.urlEnabled && normalizedText) {
     const urls = detectUrls(normalizedText)
     if (urls.length > 0) {
-      const urlResults = await extractUrls(urls, engineConfig)
+      const urlResults = await extractUrls(urls, engineConfig, registry)
       result.urls = urlResults
 
-      // Persist each URL extraction independently
+      // Persist each URL extraction independently (including Drive refs for lifecycle tracking)
       for (const url of urlResults) {
+        // Skip only needs_subagent with no content — everything else gets a DB row
         if (url.status === 'needs_subagent' && !url.extractedText) continue
+        if (url.status === 'unauthorized') continue // unauthorized URLs are ephemeral
         persistOneUrl(url, sessionId, messageId, channelName, db).catch(err =>
           logger.warn({ err, url: url.url }, 'Failed to persist URL extraction'),
         )
@@ -247,9 +246,7 @@ async function processOneAttachment(
   att: AttachmentMeta,
   channelConfig: ChannelAttachmentConfig,
   engineConfig: AttachmentEngineConfig,
-  sessionId: string,
   registry: Registry,
-  redis: Redis,
 ): Promise<ProcessedAttachment> {
   const id = randomUUID()
   const category = resolveCategory(att.mimeType)
@@ -272,7 +269,6 @@ async function processOneAttachment(
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: 'disabled_by_channel',
       injectionRisk: false,
       sourceType: 'file_attachment',
@@ -304,7 +300,6 @@ async function processOneAttachment(
       summary: null,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: isSystemLimit ? 'system_limit_exceeded' : 'too_large',
       injectionRisk: false,
       sourceType: 'file_attachment',
@@ -339,7 +334,7 @@ async function processOneAttachment(
           extractedText: `[Documento ya indexado en knowledge: "${existingDoc.title}"]`,
           llmText: null, categoryLabel,
           summary: `[${categoryLabel}] ${att.filename} — ya existe en knowledge como "${existingDoc.title}"`,
-          tokenEstimate: 0, sizeTier: 'small', cacheKey: null,
+          tokenEstimate: 0, sizeTier: 'small',
           status: 'knowledge_match', injectionRisk: false,
           sourceType: 'file_attachment', sourceRef: att.id,
           llmEnriched: false, filePath: null, metadata: null,
@@ -416,7 +411,6 @@ async function processOneAttachment(
       summary: `[${categoryLabel}] ${att.filename} — no se pudo extraer contenido`,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: 'extraction_failed',
       injectionRisk: false,
       sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
@@ -440,13 +434,18 @@ async function processOneAttachment(
   // ── Step 2: For large text-based files, generate LLM description ──
   if (!llmEnriched && sizeTier === 'large') {
     try {
+      const totalChars = rawText.length
+      const sampledText = distributedSample(rawText, 30000)
+      const truncationNote = totalChars > 30000
+        ? `\n\n[NOTA: El documento tiene ${String(totalChars)} caracteres (~${String(tokenEstimate)} tokens). Se muestran muestras del inicio, mitad y final. Resume lo que puedas ver y menciona que hay contenido intermedio no visible.]`
+        : ''
       const descResult = await registry.callHook('llm:chat', {
         task: 'extractor-summarize-large',
         system: 'Eres un asistente que resume documentos. Genera una descripción concisa pero completa del documento, cubriendo los puntos principales, estructura y datos relevantes. Responde en español. Máximo 500 palabras.',
         messages: [{
           role: 'user' as const,
           content: [
-            { type: 'text' as const, text: `Resume este documento (${att.filename}):\n\n${rawText.slice(0, 24000)}` },
+            { type: 'text' as const, text: `Resume este documento (${att.filename}):\n\n${sampledText}${truncationNote}` },
           ],
         }],
         maxTokens: 1500,
@@ -464,24 +463,13 @@ async function processOneAttachment(
     }
   }
 
-  // Cache large documents in Redis for query_attachment tool
-  let cacheKey: string | null = null
-  if (sizeTier === 'large' || sizeTier === 'medium') {
-    cacheKey = `att:${sessionId}:${id}`
-    try {
-      await redis.set(cacheKey, rawText, 'PX', engineConfig.cacheTtlMs)
-    } catch (err) {
-      logger.warn({ err, cacheKey }, 'Failed to cache attachment in Redis')
-      cacheKey = null
-    }
-  }
-
   // Build summary for large docs (uses LLM description if available, otherwise truncate)
   let summary: string | null = null
   if (sizeTier === 'large') {
+    const truncNote = `[documento de ~${String(tokenEstimate)} tokens, contenido resumido]`
     summary = llmText
-      ? `[${categoryLabel}] ${att.filename} — ${llmText}`
-      : `[${categoryLabel}] ${att.filename}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
+      ? `[${categoryLabel}] ${att.filename} ${truncNote} — ${llmText}`
+      : `[${categoryLabel}] ${att.filename} ${truncNote}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
   }
 
   // Evaluate value for potential knowledge base promotion
@@ -499,7 +487,6 @@ async function processOneAttachment(
     summary,
     tokenEstimate,
     sizeTier,
-    cacheKey,
     status: 'processed',
     injectionRisk: validation.injectionRisk,
     sourceType: category === 'images' ? 'image_vision' : category === 'video' ? 'video_multimodal' : 'file_attachment',
@@ -549,7 +536,6 @@ async function processAudio(
       summary: `[${categoryLabel}] ${att.filename} — no se pudo transcribir`,
       tokenEstimate: 0,
       sizeTier: 'small',
-      cacheKey: null,
       status: 'extraction_failed',
       injectionRisk: false,
       sourceType: 'audio_transcription',
@@ -579,7 +565,6 @@ async function processAudio(
     summary: null,
     tokenEstimate,
     sizeTier,
-    cacheKey: null,
     status: 'processed',
     injectionRisk: validation.injectionRisk,
     sourceType: 'audio_transcription',
@@ -597,6 +582,49 @@ function resolveCategory(mimeType: string): AttachmentCategory {
   // Handle MIME types with parameters (e.g., "audio/ogg; codecs=opus")
   const baseMime = mimeType.split(';')[0]!.trim()
   return MIME_TO_CATEGORY[mimeType] ?? MIME_TO_CATEGORY[baseMime] ?? 'documents'
+}
+
+/**
+ * Distributed sampling: takes start + middle + end of a document.
+ * Ensures the LLM sees representative content from the entire document.
+ * Cuts at paragraph boundaries (\n\n) when possible.
+ */
+function distributedSample(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+
+  const third = Math.floor(maxChars / 3)
+
+  // Start: first third
+  const startEnd = findParagraphBreak(text, third)
+  const startSection = text.slice(0, startEnd)
+
+  // Middle: centered around midpoint — clamp to avoid overlap with start section
+  const midPoint = Math.floor(text.length / 2)
+  const midHalf = Math.floor(third / 2)
+  const midStartRaw = findParagraphBreak(text, midPoint - midHalf, 'backward')
+  const midEndRaw = findParagraphBreak(text, midPoint + midHalf)
+  const clampedMidStart = Math.max(startEnd, midStartRaw)
+  const clampedMidEnd = Math.max(clampedMidStart, midEndRaw)
+  const midSection = text.slice(clampedMidStart, clampedMidEnd)
+
+  // End: last third — clamp to avoid overlap with middle section
+  const endStartRaw = findParagraphBreak(text, text.length - third, 'backward')
+  const clampedEndStart = Math.max(clampedMidEnd, endStartRaw)
+  const endSection = text.slice(clampedEndStart)
+
+  return `${startSection}\n\n[... contenido omitido ...]\n\n${midSection}\n\n[... contenido omitido ...]\n\n${endSection}`
+}
+
+/** Find nearest paragraph break (\n\n) near position. Returns adjusted position. */
+function findParagraphBreak(text: string, pos: number, direction: 'forward' | 'backward' = 'forward'): number {
+  const MAX_SEARCH = 500 // max chars to search for a clean break
+  if (direction === 'forward') {
+    const idx = text.indexOf('\n\n', pos)
+    return (idx !== -1 && idx - pos < MAX_SEARCH) ? idx + 2 : pos
+  } else {
+    const idx = text.lastIndexOf('\n\n', pos)
+    return (idx !== -1 && pos - idx < MAX_SEARCH) ? idx + 2 : pos
+  }
 }
 
 function classifySizeTier(tokens: number, config: AttachmentEngineConfig): AttachmentSizeTier {
@@ -702,25 +730,33 @@ async function persistOneUrl(
   channel: string,
   db: Pool,
 ): Promise<void> {
+  // Drive references: store driveMeta in metadata JSONB for lifecycle + re-consultation
+  const isDrive = url.status === 'drive_reference' || url.status === 'drive_no_access'
+  const category = isDrive ? 'drive' : 'web_link'
+  const sourceType = isDrive ? 'drive_reference' : 'url_extraction'
+  const mimeType = url.driveMeta?.mimeType ?? 'text/html'
+  const metadata = url.driveMeta ? JSON.stringify(url.driveMeta) : null
+
   await db.query(
     `INSERT INTO attachment_extractions
-     (session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     (session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      ON CONFLICT DO NOTHING`,
     [
       sessionId,
       messageId,
       channel,
       url.title ?? url.url,
-      'text/html',
+      mimeType,
       0,
-      'web_link',
-      'url_extraction',
+      category,
+      sourceType,
       url.extractedText,
       url.tokenEstimate,
       url.status,
       url.injectionRisk,
       url.url,
+      metadata,
     ],
   )
 }

@@ -145,6 +145,7 @@ import type { StoredMessage } from '../memory/types.js'
 - Contact unification cross-channel
 
 ## Lo que NO hacer
+- NO procesar adjuntos fuera del pipeline de extractores — todos los canales DEBEN pasar `attachments: AttachmentMeta[]` via `IncomingMessage` al engine. Ver checklist en `src/extractors/CLAUDE.md`
 - NO usar ORM (Drizzle, Prisma, TypeORM) — raw SQL con queries parametrizadas ($1, $2)
 - NO agregar Express ni Fastify — servidor HTTP nativo de Node.js
 - NO importar código entre módulos directamente — usar hooks o services del registry

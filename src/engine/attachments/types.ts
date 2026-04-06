@@ -16,6 +16,7 @@ export type AttachmentCategory =
   | 'presentations'
   | 'text'
   | 'web_link'
+  | 'drive'
 
 /**
  * All categories the engine's extractors can process.
@@ -69,6 +70,7 @@ export type AttachmentSourceType =
   | 'url_extraction'
   | 'image_vision'
   | 'video_multimodal'
+  | 'drive_reference'
 
 /** Status of an attachment after processing */
 export type AttachmentStatus =
@@ -81,6 +83,9 @@ export type AttachmentStatus =
   | 'unsupported_type'
   | 'needs_subagent'
   | 'knowledge_match'
+  | 'drive_reference'
+  | 'drive_no_access'
+  | 'unauthorized'
 
 /**
  * Category label = category name. Used for context injection: [documents], [images], etc.
@@ -95,6 +100,7 @@ export const CATEGORY_LABEL_MAP: Record<AttachmentCategory, string> = {
   presentations: 'presentations',
   text: 'text',
   web_link: 'web_link',
+  drive: 'Google Drive',
 }
 
 /** Threshold tokens for small vs large classification (~8192 tokens ≈ Gemini Embedding 2 limit) */
@@ -116,7 +122,6 @@ export interface ProcessedAttachment {
   summary: string | null
   tokenEstimate: number
   sizeTier: AttachmentSizeTier
-  cacheKey: string | null
   status: AttachmentStatus
   injectionRisk: boolean
   sourceType: AttachmentSourceType
@@ -147,7 +152,21 @@ export interface UrlExtraction {
   tokenEstimate: number
   status: AttachmentStatus
   injectionRisk: boolean
-  cacheKey: string | null
+  /** Drive file/folder metadata (only for drive_reference status) */
+  driveMeta?: {
+    fileId: string
+    name: string
+    mimeType: string
+    modifiedTime?: string
+    /** Specific drive type: document, spreadsheet, presentation, folder, or file (generic) */
+    driveType: 'document' | 'spreadsheet' | 'presentation' | 'folder' | 'file'
+    /** Suggested tool for reading this file (e.g. docs-read, sheets-read) */
+    suggestedTool: string
+    /** Folder contents (only when driveType === 'folder') */
+    folderContents?: Array<{ name: string; mimeType: string; id: string }>
+  }
+  /** Google account email for drive_no_access (so agent can tell user to share) */
+  driveEmail?: string
 }
 
 /** Complete attachment context injected into ContextBundle */
@@ -172,10 +191,11 @@ export interface AttachmentEngineConfig {
   smallDocTokens: number
   mediumDocTokens: number
   summaryMaxTokens: number
-  cacheTtlMs: number
   urlFetchTimeoutMs: number
   urlMaxSizeMb: number
   urlEnabled: boolean
+  /** Domains authorized for automatic fetch+extract (user-configured + knowledge auto-added) */
+  authorizedDomains: string[]
 }
 
 /**
