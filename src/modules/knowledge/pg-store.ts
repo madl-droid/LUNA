@@ -635,7 +635,7 @@ export class KnowledgePgStore {
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
     const embStr = `[${embedding.join(',')}]`
     await this.db.query(
-      `UPDATE knowledge_chunks SET embedding = $1::vector, has_embedding = true WHERE id = $2`,
+      `UPDATE knowledge_chunks SET embedding = $1::vector, has_embedding = true, embedding_status = 'embedded', retry_count = 0, last_error = NULL, last_attempt_at = NOW() WHERE id = $2`,
       [embStr, chunkId],
     )
   }

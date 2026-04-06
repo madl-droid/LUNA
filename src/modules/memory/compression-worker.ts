@@ -169,9 +169,16 @@ export class CompressionWorker {
 
         if (chunks.length > 0) {
           const embeddingService = this.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
+          // Try unified embedding queue first, then direct embedding, then persist without
+          const embeddingQueue = this.registry.getOptional<{ enqueueSessionChunks(sessionId: string): Promise<number> }>('knowledge:embedding-queue')
           if (embeddingService) {
-            const result = await embedSessionChunks(this.db, embeddingService, chunks)
-            logger.info({ sessionId, ...result }, 'Session chunks embedded')
+            const result = await embedSessionChunks(this.db, embeddingService, chunks, embeddingQueue ?? undefined)
+            logger.info({ sessionId, ...result, usedQueue: !!embeddingQueue }, 'Session chunks embedded')
+          } else if (embeddingQueue) {
+            // No direct service but queue available — persist and delegate
+            await this.persistChunksWithoutEmbeddings(chunks)
+            await embeddingQueue.enqueueSessionChunks(sessionId)
+            logger.info({ sessionId, chunks: chunks.length }, 'Chunks persisted and delegated to unified queue')
           } else {
             // Persist chunks without embeddings — nightly batch will catch them
             await this.persistChunksWithoutEmbeddings(chunks)

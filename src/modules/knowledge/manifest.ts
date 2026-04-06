@@ -15,6 +15,7 @@ import { KnowledgeCache } from './cache.js'
 import { KnowledgeManager } from './knowledge-manager.js'
 import { EmbeddingService } from './embedding-service.js'
 import { VectorizeWorker } from './vectorize-worker.js'
+import { EmbeddingQueue } from './embedding-queue.js'
 import { SyncManager } from './sync-manager.js'
 import { unifiedSearch, type MemorySearchService } from '../../engine/unified-search.js'
 import { FAQManager } from './faq-manager.js'
@@ -39,6 +40,7 @@ let apiConnectorManager: ApiConnectorManager | null = null
 let webSourceManager: WebSourceManager | null = null
 let itemManager: KnowledgeItemManager | null = null
 let vectorizeWorker: VectorizeWorker | null = null
+let embeddingQueue: EmbeddingQueue | null = null
 let downgradeTimer: ReturnType<typeof setInterval> | null = null
 
 function resolveKnowledgeGoogleApiKey(registry: Registry, config: KnowledgeConfig): string {
@@ -1231,11 +1233,22 @@ const manifest: ModuleManifest = {
     // Initialize knowledge manager
     knowledgeManager = new KnowledgeManager(pgStore, searchEngine, cache, config, registry)
 
-    // Initialize vectorize worker (if embeddings enabled)
+    // Initialize unified embedding queue (if embeddings enabled)
     if (embeddingService) {
+      embeddingQueue = new EmbeddingQueue(registry.getDb(), redis, embeddingService, registry)
+      registry.provide('knowledge:embedding-queue', embeddingQueue)
+
+      // Initialize vectorize worker and connect to unified queue
       vectorizeWorker = new VectorizeWorker(redis, pgStore, embeddingService, logger, registry)
+      vectorizeWorker.setEmbeddingQueue(embeddingQueue)
       knowledgeManager.setVectorizeWorker(vectorizeWorker)
-      logger.info('Vectorize worker initialized')
+
+      // Recover pending embeddings from previous run
+      embeddingQueue.recoverPending().catch((err: unknown) => {
+        logger.warn({ err }, 'Failed to recover pending embeddings on startup')
+      })
+
+      logger.info('Embedding queue + vectorize worker initialized')
     }
 
     // Initialize FAQ manager
@@ -1375,6 +1388,10 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    if (embeddingQueue) {
+      await embeddingQueue.stop()
+      embeddingQueue = null
+    }
     if (vectorizeWorker) {
       await vectorizeWorker.stop()
       vectorizeWorker = null

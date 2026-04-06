@@ -1,7 +1,7 @@
 // LUNA — Session Embedder
 // Generates embeddings for SessionMemoryChunk[] using knowledge embedding service.
 // Text chunks → batch embedding. Multimodal chunks → individual file embedding.
-// Fallback: if multimodal fails → embed as text content.
+// Supports unified embedding queue: persist chunks first, then delegate embedding.
 
 import { readFile } from 'node:fs/promises'
 import type { Pool } from 'pg'
@@ -18,21 +18,43 @@ interface EmbeddingService {
   generateEmbedding(text: string): Promise<number[] | null>
 }
 
+interface EmbeddingQueueLike {
+  enqueueSessionChunks(sessionId: string): Promise<number>
+}
+
 const MULTIMODAL_CONTENT_TYPES = new Set([
   'pdf_pages', 'image', 'slide', 'video_frames',
 ])
 
 // ═══════════════════════════════════════════
-// Embed all session chunks
+// Embed all session chunks (with unified queue support)
 // ═══════════════════════════════════════════
 
+/**
+ * Embed session chunks. If embeddingQueue is provided, persists chunks with
+ * embedding_status='pending' and delegates embedding to the unified queue.
+ * Otherwise falls back to direct embedding (legacy path).
+ */
 export async function embedSessionChunks(
   db: Pool,
   embeddingService: EmbeddingService,
   chunks: SessionMemoryChunk[],
+  embeddingQueue?: EmbeddingQueueLike,
 ): Promise<{ embedded: number; failed: number }> {
   if (chunks.length === 0) return { embedded: 0, failed: 0 }
 
+  // If unified queue available: persist chunks first, then enqueue for async embedding
+  if (embeddingQueue && chunks.length > 0) {
+    // Persist all chunks without embeddings (status = 'pending')
+    await persistChunks(db, chunks)
+
+    const sessionId = chunks[0]!.sessionId
+    const enqueued = await embeddingQueue.enqueueSessionChunks(sessionId)
+    logger.info({ sessionId, total: chunks.length, enqueued }, 'Session chunks persisted and delegated to unified embedding queue')
+    return { embedded: 0, failed: 0 } // Actual embedding happens async
+  }
+
+  // Legacy path: direct embedding
   // Separate text vs multimodal chunks
   const textChunks: SessionMemoryChunk[] = []
   const multimodalChunks: SessionMemoryChunk[] = []

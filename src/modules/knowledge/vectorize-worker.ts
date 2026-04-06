@@ -7,6 +7,7 @@ import type pino from 'pino'
 import type { VectorizeJobData, EmbeddingStatus } from './types.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { EmbeddingService } from './embedding-service.js'
+import type { EmbeddingQueue } from './embedding-queue.js'
 import { generateDescription } from './description-generator.js'
 
 const QUEUE_NAME = 'knowledge-vectorize'
@@ -33,6 +34,13 @@ export class VectorizeWorker {
   private readonly embeddingService: EmbeddingService
   private readonly log: pino.Logger
   private readonly registry: RegistryLike | null
+  private embeddingQueue: EmbeddingQueue | null = null
+
+  /** Inject the unified embedding queue (optional — falls back to direct embedding) */
+  setEmbeddingQueue(eq: EmbeddingQueue): void {
+    this.embeddingQueue = eq
+    this.log.info('[EMBED] Unified embedding queue connected')
+  }
 
   constructor(
     redis: Redis,
@@ -111,6 +119,15 @@ export class VectorizeWorker {
       // Generate LLM description (before embedding, using chunk content)
       await this.generateDocumentDescription(documentId)
 
+      // Delegate to unified embedding queue if available
+      if (this.embeddingQueue) {
+        const count = await this.embeddingQueue.enqueueDocument(documentId)
+        this.log.info({ documentId, chunksEnqueued: count }, '[EMBED] Delegated to unified embedding queue')
+        // Document status will be updated by a poll/check mechanism or when all chunks are embedded
+        return
+      }
+
+      // Fallback: direct embedding (legacy path)
       const startMs = Date.now()
       await this.embedChunks(chunks)
 
