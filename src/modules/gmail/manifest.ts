@@ -2,6 +2,7 @@
 // Canal de email via Gmail API. Recibe emails, los procesa por el engine, y envía respuestas.
 // La firma se incluye directamente desde la cuenta de Google (no se genera por el sistema).
 
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
@@ -225,14 +226,23 @@ async function pollForEmails(): Promise<void> {
   }
 }
 
+/** A single gap message fetched from Gmail */
+interface GapMessage {
+  id: string
+  from: string
+  fromName: string
+  date: Date
+  body: string
+}
+
 /**
  * Detect gap messages in a thread when Luna was absent.
  * Compares last_message_gmail_id (our last known msg) with current msg position in Gmail thread.
- * Returns a formatted preamble string with the missed messages, or null if no gap.
+ * Returns fetched gap messages or null if no gap.
  */
 async function detectThreadGap(
   msg: EmailMessage, db: import('pg').Pool, config: EmailConfig,
-): Promise<string | null> {
+): Promise<GapMessage[] | null> {
   if (config.EMAIL_GAP_CONTEXT_MAX === 0 || !msg.threadId || !gmailAdapter) return null
 
   // Get the last message ID we processed in this thread
@@ -257,22 +267,76 @@ async function detectThreadGap(
   // Cap to configured max, take the most recent ones
   const toFetch = gapIds.slice(-config.EMAIL_GAP_CONTEXT_MAX)
 
-  const parts: string[] = ['[Contexto: mensajes en el hilo mientras estabas ausente]']
+  const gaps: GapMessage[] = []
   for (const gapId of toFetch) {
     try {
       const gapMsg = await gmailAdapter.getFullMessage(gapId)
       if (!gapMsg) continue
-      const body = gapMsg.cleanBodyText || cleanEmailBody(gapMsg.bodyText) || '(sin contenido)'
-      const dateStr = gapMsg.date.toISOString().replace('T', ' ').substring(0, 16)
-      parts.push(`---\nDe: ${gapMsg.fromName} <${gapMsg.from}> | ${dateStr}\n${body}`)
+      gaps.push({
+        id: gapId,
+        from: gapMsg.from,
+        fromName: gapMsg.fromName,
+        date: gapMsg.date,
+        body: gapMsg.cleanBodyText || cleanEmailBody(gapMsg.bodyText) || '(sin contenido)',
+      })
     } catch (err) {
       logger.warn({ gapId, err }, 'Failed to fetch gap message — skipping')
     }
   }
 
-  if (parts.length <= 1) return null // Only header, no actual messages fetched
+  return gaps.length > 0 ? gaps : null
+}
+
+/** Format gap messages as a text preamble (fallback when session not found) */
+function formatGapPreamble(gaps: GapMessage[]): string {
+  const parts: string[] = ['[Contexto: mensajes en el hilo mientras estabas ausente]']
+  for (const g of gaps) {
+    const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
+    parts.push(`---\nDe: ${g.fromName} <${g.from}> | ${dateStr}\n${g.body}`)
+  }
   parts.push('---')
   return parts.join('\n')
+}
+
+/** Persist gap messages into the session as individual system messages */
+async function persistGapMessages(
+  gaps: GapMessage[], sessionId: string, registry: Registry,
+): Promise<void> {
+  const memoryManager = registry.getOptional<{
+    saveMessage(m: import('../memory/types.js').StoredMessage): Promise<void>
+  }>('memory:manager')
+
+  for (const g of gaps) {
+    const dateStr = g.date.toISOString().replace('T', ' ').substring(0, 16)
+    const contentText = `[Hilo] De: ${g.fromName} <${g.from}> | ${dateStr}\n${g.body}`
+
+    const msg = {
+      id: randomUUID(),
+      sessionId,
+      channelName: 'email',
+      senderType: 'user' as const,
+      senderId: g.from,
+      content: { type: 'text', text: contentText },
+      role: 'system' as const,
+      contentText,
+      contentType: 'text' as const,
+      metadata: { source: 'thread-gap', originalMessageId: g.id },
+      createdAt: g.date, // Original date for chronological ordering
+    }
+
+    if (memoryManager) {
+      await memoryManager.saveMessage(msg)
+    } else {
+      const db = registry.getDb()
+      await db.query(
+        `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, role, content_text, content_type, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
+        [msg.id, msg.sessionId, msg.channelName, msg.senderType, msg.senderId,
+         JSON.stringify(msg.content), msg.role, msg.contentText, msg.contentType,
+         JSON.stringify(msg.metadata), msg.createdAt],
+      )
+    }
+  }
 }
 
 async function processIncomingEmail(msg: EmailMessage): Promise<void> {
@@ -285,10 +349,26 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
   let gapPreamble = ''
   if (msg.threadId) {
     try {
-      const preamble = await detectThreadGap(msg, db, config)
-      if (preamble) {
-        gapPreamble = preamble + '\n\n'
-        logger.info({ messageId: msg.id, threadId: msg.threadId }, 'Thread gap context injected')
+      const gaps = await detectThreadGap(msg, db, config)
+      if (gaps && gaps.length > 0) {
+        // Try to persist into existing session
+        const sessionRow = await db.query<{ id: string }>(
+          `SELECT id FROM sessions WHERE thread_id = $1
+           AND last_activity_at > now() - make_interval(hours => $2)
+           ORDER BY last_activity_at DESC LIMIT 1`,
+          [msg.threadId, config.EMAIL_SESSION_INACTIVITY_HOURS],
+        )
+        const sessionId = sessionRow.rows[0]?.id
+
+        if (sessionId) {
+          // Session active → persist individual gap messages
+          await persistGapMessages(gaps, sessionId, _registry)
+          logger.info({ messageId: msg.id, threadId: msg.threadId, gapCount: gaps.length, sessionId }, 'Thread gap messages persisted to session')
+        } else {
+          // Session expired → fallback to text preamble for this turn
+          gapPreamble = formatGapPreamble(gaps) + '\n\n'
+          logger.info({ messageId: msg.id, threadId: msg.threadId, gapCount: gaps.length }, 'Thread gap context injected as preamble (no active session)')
+        }
       }
     } catch (err) {
       logger.warn({ err, messageId: msg.id }, 'Gap detection failed — continuing without')

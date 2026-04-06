@@ -54,7 +54,8 @@ Cuando Luna es removida del CC de un hilo y luego re-agregada, detecta y recuper
 - `getThreadMessageIds()` en gmail-adapter: 1 API call (`threads.get` format: metadata) para IDs del hilo
 - `detectThreadGap()` en manifest: compara posición del marcador vs msg actual, fetchea gap messages
 - Gap detection corre ANTES del UPSERT de `email_threads` (para leer el marcador previo)
-- Preámbulo inyectado en `fullContent` antes del contenido del email
+- **Persistencia dual**: si hay sesión activa → persiste cada gap msg como `role: 'system'` via memory:manager (fecha original, orden cronológico). Si sesión expiró → fallback a preámbulo texto en el mensaje actual.
+- `persistGapMessages()`: guarda individuales con `metadata: { source: 'thread-gap' }` y `createdAt` original
 - `EMAIL_GAP_CONTEXT_MAX` (default 5): máximo mensajes a recuperar. 0 = desactivado.
 - Fallo graceful: si la API falla, pipeline continúa sin gap context
 
