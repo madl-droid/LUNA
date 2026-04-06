@@ -3,7 +3,7 @@
 // Usado por: DOCX con imágenes, PPTX local (no de Drive).
 
 import { execFile } from 'node:child_process'
-import { writeFile, readFile, unlink, mkdir } from 'node:fs/promises'
+import { writeFile, readFile, unlink, mkdir, rmdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -51,11 +51,12 @@ export async function convertToPdf(
     logger.warn({ err, fileName }, 'LibreOffice PDF conversion failed')
     return null
   } finally {
-    // Cleanup tmp files
+    // Cleanup tmp files and directory
     await Promise.all([
       unlink(inputPath).catch(() => {}),
       unlink(outputPath).catch(() => {}),
     ])
+    await rmdir(tmpDir).catch(() => {})
   }
 }
 

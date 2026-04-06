@@ -343,7 +343,7 @@ export class EmbeddingQueue {
           try {
             // Path traversal guard: only delete files within media dir
             const resolvedPath = resolve(filePath)
-            if (!resolvedPath.startsWith(mediaDir + '/') && resolvedPath !== mediaDir) {
+            if (!resolvedPath.startsWith(mediaDir + '/')) {
               logger.warn({ filePath, documentId: row.document_id }, '[EMBED-Q] Binary cleanup: path outside media dir, skipping')
               continue
             }
