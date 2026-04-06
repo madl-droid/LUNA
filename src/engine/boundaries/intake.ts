@@ -269,15 +269,30 @@ export async function intake(
           continue
         }
 
+        // Extraction failed for audio/video: tell the agent so it can respond
+        if (att.status === 'extraction_failed' && (att.category === 'audio' || att.category === 'video')) {
+          const failDuration = typeof att.metadata?.duration === 'number' ? ` (${Math.round(att.metadata.duration)}s)` : ''
+          history.push({
+            role: 'user',
+            content: `[${att.categoryLabel}] ${att.filename}${failDuration} — No se pudo procesar. El usuario envió un ${att.category === 'audio' ? 'audio' : 'video'} pero no fue posible transcribirlo/analizarlo.`,
+            timestamp: new Date(),
+          })
+          continue
+        }
+
         if (att.status !== 'processed' || !att.extractedText) continue
+
+        // Build duration suffix for audio/video (e.g., "(32s)")
+        const durationSec = typeof att.metadata?.duration === 'number' ? att.metadata.duration : null
+        const durationTag = durationSec != null ? ` (${Math.round(durationSec)}s)` : ''
 
         let injectedContent: string
         if (att.sizeTier === 'large' && att.llmText) {
-          // Large file: inject category label + LLM description
-          injectedContent = `[${att.categoryLabel}] ${att.filename} — Descripción: ${att.llmText}`
+          // Large file: inject category label + filename + duration + LLM description
+          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — Descripción: ${att.llmText}`
         } else if (att.llmText && (att.category === 'images' || att.category === 'audio' || att.category === 'video')) {
-          // Multimedia: inject category label + LLM content (vision/transcription/multimodal)
-          injectedContent = `[${att.categoryLabel}] ${att.llmText}`
+          // Multimedia: inject category label + filename + duration + LLM content
+          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}`
         } else {
           // Small/medium text file: inject category label + full extracted content
           injectedContent = `[${att.categoryLabel}] ${att.extractedText}`
