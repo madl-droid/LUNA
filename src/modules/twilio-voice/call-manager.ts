@@ -43,10 +43,15 @@ export class CallManager {
     this.mediaServer = mediaServer
     this.twilioAdapter = twilioAdapter
 
-    this.silenceDetector = new SilenceDetector(config.VOICE_SILENCE_TIMEOUT_MS, config.VOICE_SILENCE_RMS_THRESHOLD, {
-      onSilenceDetected: (callId) => this.handleSilence(callId),
-      onFinalSilence: (callId) => this.handleFinalSilence(callId),
-    })
+    this.silenceDetector = new SilenceDetector(
+      config.VOICE_SILENCE_TIMEOUT_MS,
+      config.VOICE_POST_GREETING_SILENCE_TIMEOUT_MS,
+      config.VOICE_SILENCE_RMS_THRESHOLD,
+      {
+        onSilenceDetected: (callId) => this.handleSilence(callId),
+        onFinalSilence: (callId) => this.handleFinalSilence(callId),
+      },
+    )
   }
 
   /** Get global accent/language from prompts:service (fallback for when VOICE_GEMINI_LANGUAGE is empty) */
@@ -340,6 +345,9 @@ export class CallManager {
             call.greetingDone = true
             this.silenceDetector.startMonitoring(streamSid)
             logger.debug({ callSid }, 'Greeting done, audio gate unlocked')
+          } else {
+            // Gemini completed a turn = conversation flowing; reset silence state machine
+            this.silenceDetector.resetState(streamSid)
           }
         },
         onError: (err) => {
@@ -432,7 +440,6 @@ export class CallManager {
     this.silenceDetector.feedAudio(streamSid, pcmBuffer)
 
     // Update session activity (throttled to max 1/min, fire-and-forget)
-    const call = this.activeCalls.get(streamSid)
     if (call) this.updateSessionActivity(call)
 
     // Send to Gemini

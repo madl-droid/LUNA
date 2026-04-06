@@ -320,6 +320,7 @@ const manifest: ModuleManifest = {
     VOICE_ANSWER_DELAY_MIN_RINGS: numEnvMin(1, 2),
     VOICE_ANSWER_DELAY_MAX_RINGS: numEnvMin(1, 5),
     VOICE_SILENCE_TIMEOUT_MS: numEnv(10000),
+    VOICE_POST_GREETING_SILENCE_TIMEOUT_MS: numEnv(30000),
     VOICE_SILENCE_MESSAGE: z.string().default('\u00bfSigues ah\u00ed?'),
     VOICE_GREETING_INBOUND: z.string().default('Hola, gracias por llamar. \u00bfEn qu\u00e9 puedo ayudarte?'),
     VOICE_GREETING_OUTBOUND: z.string().default('Hola, te llamo de parte de la empresa. \u00bfEs un buen momento para hablar?'),
@@ -571,7 +572,14 @@ const manifest: ModuleManifest = {
         key: 'VOICE_SILENCE_TIMEOUT_MS',
         type: 'number',
         label: { es: 'Timeout de silencio (ms)', en: 'Silence timeout (ms)' },
-        info: { es: 'Tiempo sin habla antes de preguntar si sigue ahi', en: 'Time without speech before prompting' },
+        info: { es: 'Tiempo sin habla antes de preguntar si sigue ahi (modo conversacion normal)', en: 'Time without speech before prompting (normal conversation mode)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_POST_GREETING_SILENCE_TIMEOUT_MS',
+        type: 'number',
+        label: { es: 'Timeout post-saludo (ms)', en: 'Post-greeting timeout (ms)' },
+        info: { es: 'Tiempo extra para que el caller responda tras el saludo inicial (30s recomendado)', en: 'Extra time for caller to respond after initial greeting (30s recommended)' },
         width: 'half',
       },
       {

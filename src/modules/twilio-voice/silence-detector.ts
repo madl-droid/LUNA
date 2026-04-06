@@ -21,29 +21,41 @@ interface CallSilenceState {
   state: SilenceState
   lastVoiceActivity: number
   timer: ReturnType<typeof setTimeout> | null
+  isPostGreeting: boolean // true until caller speaks for the first time
 }
 
 export class SilenceDetector {
   private calls = new Map<string, CallSilenceState>()
   private timeoutMs: number
+  private postGreetingTimeoutMs: number
   private rmsThreshold: number
   private events: SilenceEvents
 
-  constructor(timeoutMs: number, rmsThreshold: number, events: SilenceEvents) {
+  constructor(
+    timeoutMs: number,
+    postGreetingTimeoutMs: number,
+    rmsThreshold: number,
+    events: SilenceEvents,
+  ) {
     this.timeoutMs = timeoutMs
+    this.postGreetingTimeoutMs = postGreetingTimeoutMs
     this.rmsThreshold = rmsThreshold || DEFAULT_SILENCE_RMS_THRESHOLD
     this.events = events
   }
 
   /**
    * Start monitoring a call for silence.
+   * Always starts in post-greeting mode (extended timeout) until caller first speaks.
    */
   startMonitoring(callId: string): void {
     this.calls.set(callId, {
       state: 'listening',
       lastVoiceActivity: Date.now(),
-      timer: this.createTimer(callId),
+      timer: null,
+      isPostGreeting: true,
     })
+    const state = this.calls.get(callId)!
+    state.timer = this.createTimer(callId)
   }
 
   /**
@@ -56,13 +68,32 @@ export class SilenceDetector {
 
     const rms = calculateRms(pcmBuffer)
     if (rms > this.rmsThreshold) {
-      // Voice activity detected — reset
+      // Voice activity detected — update timestamp
       callState.lastVoiceActivity = Date.now()
+
+      // First voice from caller → switch from post-greeting to normal timeout
+      if (callState.isPostGreeting) {
+        callState.isPostGreeting = false
+        logger.debug({ callId }, 'Caller spoke, switching to normal silence timeout')
+      }
+
       if (callState.state !== 'listening') {
         callState.state = 'listening'
         this.resetTimer(callId)
       }
     }
+  }
+
+  /**
+   * Reset state machine to 'listening' and restart timer.
+   * Call this when Gemini completes a turn (conversation flowing normally)
+   * to prevent stale state accumulation between turns.
+   */
+  resetState(callId: string): void {
+    const state = this.calls.get(callId)
+    if (!state) return
+    state.state = 'listening'
+    this.resetTimer(callId)
   }
 
   /**
@@ -87,9 +118,11 @@ export class SilenceDetector {
   }
 
   private createTimer(callId: string): ReturnType<typeof setTimeout> {
+    const state = this.calls.get(callId)
+    const timeout = state?.isPostGreeting ? this.postGreetingTimeoutMs : this.timeoutMs
     return setTimeout(() => {
       this.handleTimeout(callId)
-    }, this.timeoutMs)
+    }, timeout)
   }
 
   private resetTimer(callId: string): void {
@@ -103,17 +136,22 @@ export class SilenceDetector {
     const callState = this.calls.get(callId)
     if (!callState) return
 
-    const silenceDuration = Date.now() - callState.lastVoiceActivity
+    // DEBOUNCE: if there was recent voice activity, restart timer instead of escalating
+    const msSinceVoice = Date.now() - callState.lastVoiceActivity
+    const currentTimeout = callState.isPostGreeting ? this.postGreetingTimeoutMs : this.timeoutMs
 
-    if (silenceDuration < this.timeoutMs) {
-      // Timer fired but voice was detected since — reschedule
+    if (callState.lastVoiceActivity > 0 && msSinceVoice < currentTimeout) {
       callState.timer = this.createTimer(callId)
       return
     }
 
+    const silenceDuration = Date.now() - callState.lastVoiceActivity
+
     switch (callState.state) {
       case 'listening':
         callState.state = 'prompting'
+        // After first prompt, switch to normal timeout (post-greeting window is over)
+        callState.isPostGreeting = false
         logger.info({ callId, silenceMs: silenceDuration }, 'Silence detected, prompting caller')
         this.events.onSilenceDetected(callId)
         // Set timer for second silence round
