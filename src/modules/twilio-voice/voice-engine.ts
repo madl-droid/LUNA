@@ -2,6 +2,7 @@
 // Pipeline ligero para llamadas de voz. Delega la conversación a Gemini Live
 // mientras LUNA provee contexto, tools y monitoreo.
 
+import * as crypto from 'node:crypto'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { Pool } from 'pg'
@@ -109,51 +110,21 @@ export async function preloadContext(
 }
 
 /**
- * Generate a call summary from transcript using LLM.
- */
-export async function generateCallSummary(
-  registry: Registry,
-  transcript: TranscriptEntry[],
-  contactName: string | null,
-): Promise<string | null> {
-  if (transcript.length === 0) return null
-
-  const transcriptText = transcript
-    .map(t => `${t.speaker === 'caller' ? (contactName ?? 'Caller') : 'Agente'}: ${t.text}`)
-    .join('\n')
-
-  try {
-    const result = await registry.callHook('llm:chat', {
-      task: 'summarize',
-      system: 'Resume la siguiente conversaci\u00f3n telef\u00f3nica en 2-3 oraciones. Incluye: tema principal, acuerdos/compromisos, y pr\u00f3ximos pasos si los hay. Responde solo con el resumen, sin encabezados.',
-      messages: [{ role: 'user', content: transcriptText }],
-      maxTokens: 300,
-      temperature: 0.3,
-      traceId: `call-summary-${Date.now()}`,
-    })
-
-    return result?.text ?? null
-  } catch (err) {
-    logger.error({ err }, 'Failed to generate call summary')
-    return null
-  }
-}
-
-/**
- * Persist call transcript and summary to memory system.
+ * Persist call transcript to memory system and enqueue compression pipeline.
+ * Connects voice calls to the same archive→summary→chunk→embed pipeline as WhatsApp/Gmail.
  */
 export async function persistToMemory(
   registry: Registry,
-  _db: Pool,
+  db: Pool,
   contactId: string,
+  sessionId: string,
   startedAt: Date,
   transcript: TranscriptEntry[],
-  _summary: string | null,
 ): Promise<void> {
   if (transcript.length === 0) return
 
   try {
-    // Save key turns as messages via memory:manager (if available)
+    // 1. Save significant turns as messages linked to the real session
     const memMgr = registry.getOptional<{
       saveMessage: (msg: {
         id: string
@@ -171,17 +142,11 @@ export async function persistToMemory(
     }>('memory:manager')
 
     if (memMgr) {
-      // Create a pseudo-session for this call
-      const sessionId = `voice-${Date.now()}`
-      let counter = 0
-
-      // Save significant caller/agent turns only. Internal system notes are not conversational memory.
       for (const entry of transcript) {
         if (entry.speaker === 'system' || entry.text.length < 5) continue
-        const createdAt = new Date(startedAt.getTime() + entry.timestampMs)
         const isCaller = entry.speaker === 'caller'
         await memMgr.saveMessage({
-          id: `${sessionId}-${counter++}`,
+          id: crypto.randomUUID(),
           contactId,
           sessionId,
           channelName: 'voice',
@@ -191,12 +156,38 @@ export async function persistToMemory(
           role: isCaller ? 'user' : 'assistant',
           contentText: entry.text,
           contentType: 'text',
-          createdAt,
-        }).catch(() => {}) // fire-and-forget
+          createdAt: new Date(startedAt.getTime() + entry.timestampMs),
+        }).catch(() => {})
       }
     }
+
+    // 2. Close the session
+    await db.query(
+      `UPDATE sessions SET status = 'closed', last_activity_at = NOW() WHERE id = $1`,
+      [sessionId],
+    )
+
+    // 3. Enqueue compression (same pipeline as WhatsApp/Gmail)
+    const compressionWorker = registry.getOptional<{
+      enqueue: (data: {
+        sessionId: string
+        contactId: string
+        channel: string
+        triggerType: 'reopen_expired' | 'nightly_batch'
+      }) => Promise<void>
+    }>('memory:compression-worker')
+
+    if (compressionWorker) {
+      await compressionWorker.enqueue({
+        sessionId,
+        contactId,
+        channel: 'voice',
+        triggerType: 'reopen_expired',
+      })
+    }
+    // If compression worker unavailable, nightly batch will pick up the closed session
   } catch (err) {
-    logger.error({ err, contactId }, 'Failed to persist call to memory')
+    logger.error({ err, contactId, sessionId }, 'Failed to persist call to memory')
   }
 }
 

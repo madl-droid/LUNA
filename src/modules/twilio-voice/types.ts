@@ -100,6 +100,8 @@ export interface ActiveCall {
   to: string
   status: CallStatus
   contactId: string | null
+  /** Real session ID in the sessions table (set when media stream starts) */
+  sessionId: string | null
   startedAt: Date
   connectedAt: Date | null
   geminiVoice: string
