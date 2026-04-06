@@ -12,7 +12,7 @@ export type SyncFrequency = '6h' | '12h' | '24h' | '1w' | '1m'
 
 export type FAQSourceType = 'manual' | 'sheets' | 'file'
 
-export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web'
+export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web' | 'attachment'
 
 export type EmbeddingStatus = 'pending' | 'queued' | 'processing' | 'embedded' | 'failed' | 'pending_review'
 

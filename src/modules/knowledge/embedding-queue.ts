@@ -8,6 +8,8 @@ import { Queue, Worker } from 'bullmq'
 import type { Job } from 'bullmq'
 import type { Redis } from 'ioredis'
 import type { Pool } from 'pg'
+import { unlink } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import pino from 'pino'
 import type { EmbeddingService } from './embedding-service.js'
 import { getBullRedisOpts } from './bull-redis-opts.js'
@@ -303,6 +305,74 @@ export class EmbeddingQueue {
     }
   }
 
+  /**
+   * Nightly batch: delete binary files for attachment documents that have
+   * been fully embedded and have binary_cleanup_ready = TRUE.
+   * Only deletes files under instance/knowledge/media/ (path traversal guard).
+   * Called by the knowledge manifest's scheduled nightly task.
+   */
+  async runNightlyBinaryCleanup(): Promise<{ cleaned: number; errors: number }> {
+    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+    let cleaned = 0
+    let errors = 0
+
+    try {
+      const res = await this.db.query<{
+        document_id: string
+        file_paths: string[] | null
+      }>(
+        `SELECT
+           d.id AS document_id,
+           array_remove(
+             array_agg(DISTINCT elem->>'filePath'),
+             NULL
+           ) AS file_paths
+         FROM knowledge_documents d
+         JOIN knowledge_chunks c ON c.document_id = d.id
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.media_refs, '[]'::jsonb)) AS elem
+         WHERE d.binary_cleanup_ready = TRUE
+           AND d.source_type = 'attachment'
+         GROUP BY d.id`,
+      )
+
+      for (const row of res.rows) {
+        const filePaths = (row.file_paths ?? []).filter(Boolean)
+        let docOk = true
+
+        for (const filePath of filePaths) {
+          try {
+            // Path traversal guard: only delete files within media dir
+            const resolvedPath = resolve(filePath)
+            if (!resolvedPath.startsWith(mediaDir + '/') && resolvedPath !== mediaDir) {
+              logger.warn({ filePath, documentId: row.document_id }, '[EMBED-Q] Binary cleanup: path outside media dir, skipping')
+              continue
+            }
+            await unlink(resolvedPath)
+            cleaned++
+          } catch (err) {
+            logger.warn({ err, filePath, documentId: row.document_id }, '[EMBED-Q] Binary cleanup: failed to delete file')
+            errors++
+            docOk = false
+          }
+        }
+
+        // Clear flag only if all files deleted successfully
+        if (docOk) {
+          await this.db.query(
+            `UPDATE knowledge_documents SET binary_cleanup_ready = FALSE, updated_at = NOW() WHERE id = $1`,
+            [row.document_id],
+          )
+        }
+      }
+
+      logger.info({ cleaned, errors, docsProcessed: res.rows.length }, '[EMBED-Q] Nightly binary cleanup complete')
+    } catch (err) {
+      logger.error({ err }, '[EMBED-Q] Nightly binary cleanup failed')
+    }
+
+    return { cleaned, errors }
+  }
+
   async stop(): Promise<void> {
     await this.worker.close()
     await this.queue.close()
@@ -583,20 +653,36 @@ export class EmbeddingQueue {
         )
 
         // Propagate to parent knowledge_item
-        const docResult = await this.db.query<{ source_ref: string | null }>(
-          `SELECT source_ref FROM knowledge_documents WHERE id = $1`,
+        const docResult = await this.db.query<{ source_ref: string | null; source_type: string }>(
+          `SELECT source_ref, source_type FROM knowledge_documents WHERE id = $1`,
           [documentId],
         )
-        const sourceRef = docResult.rows[0]?.source_ref
-        if (sourceRef) {
+        const docRow = docResult.rows[0]
+        if (docRow?.source_ref) {
           await this.db.query(
             `UPDATE knowledge_items SET embedding_status = $1, updated_at = NOW() WHERE id = $2`,
-            [docStatus, sourceRef],
+            [docStatus, docRow.source_ref],
           )
         }
 
-        logger.info({ documentId, sourceRef, status: docStatus, total: row.total, embedded: row.embedded, failed: row.failed },
-          '[EMBED-Q] Document status reconciled')
+        // Binary cleanup: mark attachment binaries ready for nightly deletion
+        if (docRow?.source_type === 'attachment') {
+          await this.db.query(
+            `UPDATE knowledge_documents SET binary_cleanup_ready = TRUE, updated_at = NOW() WHERE id = $1`,
+            [documentId],
+          )
+          logger.info({ documentId }, '[EMBED-Q] Attachment binaries marked for cleanup after full embedding')
+        }
+
+        logger.info({
+          documentId,
+          sourceRef: docRow?.source_ref,
+          sourceType: docRow?.source_type,
+          status: docStatus,
+          total: row.total,
+          embedded: row.embedded,
+          failed: row.failed,
+        }, '[EMBED-Q] Document status reconciled')
       }
     } catch (err) {
       logger.warn({ err, documentId }, '[EMBED-Q] Document reconciliation failed (non-fatal)')
