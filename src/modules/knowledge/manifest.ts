@@ -42,6 +42,7 @@ let itemManager: KnowledgeItemManager | null = null
 let vectorizeWorker: VectorizeWorker | null = null
 let embeddingQueue: EmbeddingQueue | null = null
 let downgradeTimer: ReturnType<typeof setInterval> | null = null
+let binaryCleanupTimer: ReturnType<typeof setInterval> | null = null
 
 function resolveKnowledgeGoogleApiKey(registry: Registry, config: KnowledgeConfig): string {
   if (config.KNOWLEDGE_GOOGLE_AI_API_KEY) return config.KNOWLEDGE_GOOGLE_AI_API_KEY
@@ -1364,6 +1365,25 @@ const manifest: ModuleManifest = {
       logger.info('Tool search_knowledge registered')
     }
 
+    // Schedule nightly binary cleanup at 3 AM (checks every hour, runs at target hour)
+    if (embeddingQueue) {
+      const eq = embeddingQueue
+      const NIGHTLY_CHECK_MS = 60 * 60 * 1000  // check every hour
+      binaryCleanupTimer = setInterval(async () => {
+        const now = new Date()
+        if (now.getHours() === 3) {
+          try {
+            const result = await eq.runNightlyBinaryCleanup()
+            logger.info(result, '[KNOWLEDGE] Nightly binary cleanup done')
+          } catch (err) {
+            logger.error({ err }, '[KNOWLEDGE] Nightly binary cleanup error')
+          }
+        }
+      }, NIGHTLY_CHECK_MS)
+      binaryCleanupTimer.unref()
+      logger.info('Nightly binary cleanup scheduled (3 AM daily)')
+    }
+
     // Schedule auto-downgrade check (daily)
     const DAILY_MS = 24 * 60 * 60 * 1000
     downgradeTimer = setInterval(async () => {
@@ -1400,6 +1420,10 @@ const manifest: ModuleManifest = {
     if (downgradeTimer) {
       clearInterval(downgradeTimer)
       downgradeTimer = null
+    }
+    if (binaryCleanupTimer) {
+      clearInterval(binaryCleanupTimer)
+      binaryCleanupTimer = null
     }
     pgStore = null
     knowledgeManager = null

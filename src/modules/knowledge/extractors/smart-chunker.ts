@@ -623,7 +623,7 @@ export function chunkAudio(opts: {
 
     chunks.push({
       content: segmentText,
-      contentType: 'text',
+      contentType: 'audio',   // multimodal: Gemini Embedding 2 recibe audio nativo
       mediaRefs: seg.segmentPath
         ? [{ mimeType: opts.mimeType, filePath: seg.segmentPath }]
         : null,

@@ -468,7 +468,7 @@ export class EmbeddingQueue {
   }
 
   private isMultimodalChunk(chunk: ChunkToEmbed): boolean {
-    const MULTIMODAL_TYPES = new Set(['pdf_pages', 'image', 'slide', 'video_frames'])
+    const MULTIMODAL_TYPES = new Set(['pdf_pages', 'image', 'slide', 'video_frames', 'audio'])
     if (!MULTIMODAL_TYPES.has(chunk.contentType)) return false
 
     // Knowledge chunks use mediaRefs array, memory chunks use mediaRef path
