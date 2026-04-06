@@ -15,7 +15,6 @@ const TEXT_BATCH_SIZE = 100
 interface EmbeddingService {
   generateBatchEmbeddings(texts: string[]): Promise<(number[] | null)[]>
   generateFileEmbedding(data: Buffer, mimeType: string): Promise<number[] | null>
-  generateEmbedding(text: string): Promise<number[] | null>
 }
 
 interface EmbeddingQueueLike {
@@ -95,7 +94,7 @@ export async function embedSessionChunks(
     }
   }
 
-  // 2. Multimodal chunks — individual embedding
+  // 2. Multimodal chunks — individual embedding (no text-only fallback)
   for (const chunk of multimodalChunks) {
     try {
       const buffer = await readFile(chunk.mediaRef!)
@@ -105,39 +104,15 @@ export async function embedSessionChunks(
         chunk.embedding = emb
         chunk.hasEmbedding = true
         embedded++
-      } else if (chunk.content) {
-        // Fallback: embed as text
-        const textEmb = await embeddingService.generateEmbedding(chunk.content)
-        if (textEmb) {
-          chunk.embedding = textEmb
-          chunk.hasEmbedding = true
-          embedded++
-        } else {
-          failed++
-        }
       } else {
+        // No text-only fallback — multimodal chunks retry via unified queue
         failed++
+        logger.warn({ chunkId: chunk.id, contentType: chunk.contentType }, 'Multimodal embedding returned null, will be retried by queue')
       }
     } catch (err) {
-      logger.warn({ err, chunkId: chunk.id, mediaRef: chunk.mediaRef }, 'Multimodal embedding failed, trying text fallback')
-
-      // Fallback: embed text content if available
-      if (chunk.content) {
-        try {
-          const textEmb = await embeddingService.generateEmbedding(chunk.content)
-          if (textEmb) {
-            chunk.embedding = textEmb
-            chunk.hasEmbedding = true
-            embedded++
-          } else {
-            failed++
-          }
-        } catch {
-          failed++
-        }
-      } else {
-        failed++
-      }
+      // No text-only fallback — let the unified queue handle retries
+      failed++
+      logger.warn({ err, chunkId: chunk.id, mediaRef: chunk.mediaRef }, 'Multimodal embedding failed, will be retried by queue')
     }
   }
 

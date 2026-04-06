@@ -253,18 +253,15 @@ export class VectorizeWorker {
           }
         }
 
-        // Fallback: if multimodal failed, embed as text
-        if (!embedding) {
-          embedding = await this.embeddingService.generateEmbedding(chunk.content)
-        }
-
         if (embedding) {
           await this.pgStore.updateChunkEmbedding(chunk.id, embedding)
           successCount++
           this.log.info({ chunkId: chunk.id, contentType: chunk.contentType, dims: embedding.length }, '[EMBED] Multimodal chunk embedded')
         } else {
+          // No text-only fallback — multimodal chunks must be embedded as multimodal.
+          // The unified embedding queue will retry with exponential backoff.
           nullCount++
-          this.log.warn({ chunkId: chunk.id, contentType: chunk.contentType }, '[EMBED] Multimodal embedding null')
+          this.log.warn({ chunkId: chunk.id, contentType: chunk.contentType }, '[EMBED] Multimodal embedding failed, will be retried by queue')
         }
       } catch (err) {
         nullCount++

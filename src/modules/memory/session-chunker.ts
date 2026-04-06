@@ -4,22 +4,17 @@
 
 import { randomUUID } from 'node:crypto'
 import type { StoredMessage, SessionMemoryChunk, SessionSummarySection } from './types.js'
-
-// ═══════════════════════════════════════════
-// Gemini Embedding 2 limits
-// ═══════════════════════════════════════════
-
-const MAX_TEXT_WORDS = 6000
-const TEXT_OVERLAP_WORDS = 200
-// MAX_IMAGES_PER_REQUEST (6), MAX_SLIDES_PER_REQUEST (6), SLIDE_OVERLAP (1):
-// used for embedding batching in session-embedder, not for chunking logic here.
-const MAX_PDF_PAGES = 6
-const PDF_PAGE_OVERLAP = 1
-const MAX_VIDEO_NO_AUDIO_SEC = 128
-const MAX_VIDEO_WITH_AUDIO_SEC = 80
-const VIDEO_OVERLAP_SEC = 10
-const MAX_AUDIO_SEC = 80
-const AUDIO_OVERLAP_SEC = 10
+import {
+  MAX_TEXT_WORDS,
+  TEXT_OVERLAP_WORDS,
+  MAX_PDF_PAGES_PER_REQUEST as MAX_PDF_PAGES,
+  PDF_PAGE_OVERLAP,
+  MAX_VIDEO_NO_AUDIO_SEC,
+  MAX_VIDEO_WITH_AUDIO_SEC,
+  VIDEO_OVERLAP_SEC,
+  MAX_AUDIO_SEC,
+  AUDIO_OVERLAP_SEC,
+} from '../knowledge/embedding-limits.js'
 
 // ═══════════════════════════════════════════
 // Attachment extraction record (from DB)

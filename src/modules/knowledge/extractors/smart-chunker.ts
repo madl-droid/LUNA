@@ -5,17 +5,13 @@
 
 import { randomUUID } from 'node:crypto'
 import type { SmartChunk, LinkedChunk, MediaRef } from '../types.js'
-
-// ═══════════════════════════════════════════
-// Gemini Embedding 2 limits
-// ═══════════════════════════════════════════
-
-// MAX_TEXT_TOKENS = 8192 (Gemini Embedding 2 limit)
-const MAX_WORDS = 6000  // ~8192 tokens ≈ 6000 words (conservative)
-const MAX_IMAGES_PER_REQUEST = 6
-const MAX_PDF_PAGES_PER_REQUEST = 6
-const WORD_OVERLAP = 200
-const MIN_CHUNK_WORDS = 20
+import {
+  MAX_TEXT_WORDS as MAX_WORDS,
+  TEXT_OVERLAP_WORDS as WORD_OVERLAP,
+  MIN_CHUNK_WORDS,
+  MAX_IMAGES_PER_REQUEST,
+  MAX_PDF_PAGES_PER_REQUEST,
+} from '../embedding-limits.js'
 
 // ═══════════════════════════════════════════
 // 1. DOCS / WORD → text by headings

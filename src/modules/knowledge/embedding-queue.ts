@@ -356,6 +356,11 @@ export class EmbeddingQueue {
       this.cbOnSuccess()
 
       logger.info({ chunkId, source, parentId, dims: embedding.length }, '[EMBED-Q] Chunk embedded')
+
+      // Check if all sibling chunks are now embedded → reconcile parent status
+      if (source === 'knowledge') {
+        await this.reconcileDocumentStatus(parentId)
+      }
     } catch (err) {
       await this.handleFailure(chunkId, source, parentId, err)
     }
@@ -536,6 +541,58 @@ export class EmbeddingQueue {
     )
 
     return res.rows[0]?.retry_count ?? 1
+  }
+
+  // ═══════════════════════════════════════════
+  // Document status reconciliation
+  // ═══════════════════════════════════════════
+
+  /**
+   * After embedding a knowledge chunk, check if ALL chunks for the parent document
+   * are now embedded. If so, mark the document (and its parent knowledge_item) as done.
+   */
+  private async reconcileDocumentStatus(documentId: string): Promise<void> {
+    try {
+      const res = await this.db.query<{ total: number; embedded: number; failed: number }>(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE embedding_status = 'embedded')::int AS embedded,
+           COUNT(*) FILTER (WHERE embedding_status = 'failed' AND retry_count >= 10)::int AS failed
+         FROM knowledge_chunks
+         WHERE document_id = $1`,
+        [documentId],
+      )
+
+      const row = res.rows[0]
+      if (!row || row.total === 0) return
+
+      if (row.embedded + row.failed >= row.total) {
+        // All chunks have a terminal state
+        const docStatus = row.failed > 0 ? 'failed' : 'done'
+        await this.db.query(
+          `UPDATE knowledge_documents SET embedding_status = $1, updated_at = NOW() WHERE id = $2`,
+          [docStatus, documentId],
+        )
+
+        // Propagate to parent knowledge_item
+        const docResult = await this.db.query<{ source_ref: string | null }>(
+          `SELECT source_ref FROM knowledge_documents WHERE id = $1`,
+          [documentId],
+        )
+        const sourceRef = docResult.rows[0]?.source_ref
+        if (sourceRef) {
+          await this.db.query(
+            `UPDATE knowledge_items SET embedding_status = $1, updated_at = NOW() WHERE id = $2`,
+            [docStatus, sourceRef],
+          )
+        }
+
+        logger.info({ documentId, sourceRef, status: docStatus, total: row.total, embedded: row.embedded, failed: row.failed },
+          '[EMBED-Q] Document status reconciled')
+      }
+    } catch (err) {
+      logger.warn({ err, documentId }, '[EMBED-Q] Document reconciliation failed (non-fatal)')
+    }
   }
 
   // ═══════════════════════════════════════════

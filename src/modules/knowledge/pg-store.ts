@@ -537,7 +537,7 @@ export class KnowledgePgStore {
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
        LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
-       WHERE c.has_embedding = true
+       WHERE c.embedding_status = 'embedded'
        GROUP BY c.id, c.document_id, c.content, c.section, c.embedding, d.title, d.metadata
        ORDER BY c.embedding <=> $1::vector
        LIMIT $2`,
@@ -598,7 +598,7 @@ export class KnowledgePgStore {
     if (documentId) {
       const res = await this.db.query<{ id: string; content: string; document_id: string; content_type: string; media_refs: unknown; extra_metadata: unknown }>(
         `SELECT ${cols} FROM knowledge_chunks
-         WHERE document_id = $1 AND has_embedding = false
+         WHERE document_id = $1 AND embedding_status != 'embedded'
          ORDER BY chunk_index`,
         [documentId],
       )
@@ -612,7 +612,7 @@ export class KnowledgePgStore {
 
     const res = await this.db.query<{ id: string; content: string; document_id: string; content_type: string; media_refs: unknown; extra_metadata: unknown }>(
       `SELECT ${cols} FROM knowledge_chunks
-       WHERE has_embedding = false
+       WHERE embedding_status != 'embedded'
        ORDER BY document_id, chunk_index`,
     )
     return res.rows.map(r => ({
@@ -626,7 +626,9 @@ export class KnowledgePgStore {
   /** Toggle searchability of all chunks belonging to an item's documents */
   async setItemChunksSearchable(itemId: string, searchable: boolean): Promise<void> {
     await this.db.query(
-      `UPDATE knowledge_chunks SET has_embedding = CASE WHEN $2 THEN (embedding IS NOT NULL) ELSE false END
+      `UPDATE knowledge_chunks SET
+        has_embedding = CASE WHEN $2 THEN (embedding IS NOT NULL) ELSE false END,
+        embedding_status = CASE WHEN $2 AND embedding IS NOT NULL THEN 'embedded' ELSE 'pending' END
        WHERE document_id IN (SELECT id FROM knowledge_documents WHERE source_ref = $1)`,
       [itemId, searchable],
     )
@@ -1068,7 +1070,7 @@ export class KnowledgePgStore {
         FROM knowledge_documents
       `),
       this.db.query<{ total: string; embedded: string }>(`
-        SELECT count(*) as total, count(*) FILTER (WHERE has_embedding = true) as embedded
+        SELECT count(*) as total, count(*) FILTER (WHERE embedding_status = 'embedded') as embedded
         FROM knowledge_chunks
       `),
       this.db.query<{ total: string; active: string }>(`
