@@ -20,6 +20,7 @@ import { StepSemaphore } from '../concurrency/step-semaphore.js'
 import { ToolDedupCache } from './tool-dedup-cache.js'
 import { ToolLoopDetector } from './tool-loop-detector.js'
 import { ToolResultCache } from './tool-result-cache.js'
+import { captureDriveToolResult } from '../attachments/drive-capture.js'
 
 const logger = pino({ name: 'engine:agentic' })
 
@@ -383,6 +384,14 @@ async function executeToolCalls(
           durationMs: result.durationMs,
           traceId: ctx.traceId,
         }, 'Tool executed')
+
+        // 6b. Capture Google read tool results into attachment_extractions (fire-and-forget)
+        if (result.success) {
+          captureDriveToolResult(
+            toolCall.name, toolCall.input, result.data, result.success,
+            ctx.session.id, registry,
+          ).catch(() => {})
+        }
 
         // 7. Return result
         return { name: toolCall.name, success: result.success, data: result.data ?? null, error: result.error }

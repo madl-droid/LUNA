@@ -223,9 +223,11 @@ export async function processAttachments(
       const urlResults = await extractUrls(urls, engineConfig, registry)
       result.urls = urlResults
 
-      // Persist each URL extraction independently
+      // Persist each URL extraction independently (including Drive refs for lifecycle tracking)
       for (const url of urlResults) {
+        // Skip only needs_subagent with no content — everything else gets a DB row
         if (url.status === 'needs_subagent' && !url.extractedText) continue
+        if (url.status === 'unauthorized') continue // unauthorized URLs are ephemeral
         persistOneUrl(url, sessionId, messageId, channelName, db).catch(err =>
           logger.warn({ err, url: url.url }, 'Failed to persist URL extraction'),
         )
@@ -686,25 +688,33 @@ async function persistOneUrl(
   channel: string,
   db: Pool,
 ): Promise<void> {
+  // Drive references: store driveMeta in metadata JSONB for lifecycle + re-consultation
+  const isDrive = url.status === 'drive_reference' || url.status === 'drive_no_access'
+  const category = isDrive ? 'drive' : 'web_link'
+  const sourceType = isDrive ? 'drive_reference' : 'url_extraction'
+  const mimeType = url.driveMeta?.mimeType ?? 'text/html'
+  const metadata = url.driveMeta ? JSON.stringify(url.driveMeta) : null
+
   await db.query(
     `INSERT INTO attachment_extractions
-     (session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     (session_id, message_id, channel, filename, mime_type, size_bytes, category, source_type, extracted_text, token_estimate, status, injection_risk, source_ref, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      ON CONFLICT DO NOTHING`,
     [
       sessionId,
       messageId,
       channel,
       url.title ?? url.url,
-      'text/html',
+      mimeType,
       0,
-      'web_link',
-      'url_extraction',
+      category,
+      sourceType,
       url.extractedText,
       url.tokenEstimate,
       url.status,
       url.injectionRisk,
       url.url,
+      metadata,
     ],
   )
 }
