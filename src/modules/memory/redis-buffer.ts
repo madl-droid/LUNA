@@ -93,6 +93,77 @@ export class RedisBuffer {
     return await this.redis.llen(`session:${sessionId}:messages`)
   }
 
+  /**
+   * Count turns (not raw messages) in the buffer.
+   * A turn = user message(s) + assistant response. We count assistant messages.
+   */
+  async getTurnCount(sessionId: string): Promise<number> {
+    const key = `session:${sessionId}:messages`
+    const raw = await this.redis.lrange(key, 0, -1)
+    let turns = 0
+    for (const item of raw) {
+      const msg = JSON.parse(item) as StoredMessage
+      if (msg.role === 'assistant') turns++
+    }
+    return turns
+  }
+
+  /**
+   * Get all messages belonging to the oldest N turns (for compression input).
+   * A turn boundary is an assistant message. We collect messages until we've
+   * seen `turnCount` assistant messages.
+   */
+  async getOldestTurnMessages(sessionId: string, turnCount: number): Promise<StoredMessage[]> {
+    const key = `session:${sessionId}:messages`
+    const raw = await this.redis.lrange(key, 0, -1)
+    const result: StoredMessage[] = []
+    let turns = 0
+    for (const item of raw) {
+      const msg = JSON.parse(item) as StoredMessage
+      result.push(msg)
+      if (msg.role === 'assistant') {
+        turns++
+        if (turns >= turnCount) break
+      }
+    }
+    return result
+  }
+
+  /**
+   * Trim buffer keeping only the last N complete turns.
+   * Scans from the end to find the boundary of the Nth turn, then trims.
+   */
+  async trimKeepingTurns(sessionId: string, keepTurns: number): Promise<void> {
+    const key = `session:${sessionId}:messages`
+    const raw = await this.redis.lrange(key, 0, -1)
+    if (raw.length === 0) return
+
+    // Walk backwards counting assistant messages (turn boundaries)
+    let turns = 0
+    let cutIndex = raw.length // default: keep everything
+    for (let i = raw.length - 1; i >= 0; i--) {
+      const msg = JSON.parse(raw[i]!) as StoredMessage
+      if (msg.role === 'assistant') {
+        turns++
+        if (turns >= keepTurns) {
+          // Find the start of this turn: walk back to find the previous assistant or start
+          let turnStart = i
+          for (let j = i - 1; j >= 0; j--) {
+            const prev = JSON.parse(raw[j]!) as StoredMessage
+            if (prev.role === 'assistant') break
+            turnStart = j
+          }
+          cutIndex = turnStart
+          break
+        }
+      }
+    }
+
+    if (cutIndex <= 0) return // nothing to trim
+    // Keep from cutIndex to end → ltrim(cutIndex, -1)
+    await this.redis.ltrim(key, cutIndex, -1)
+  }
+
   // ═══════════════════════════════════════════
   // Buffer summary (inline compression — Phase 3)
   // key: session:{sessionId}:buffer_summary
