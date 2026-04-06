@@ -192,6 +192,54 @@ export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; 
 }
 
 // ═══════════════════════════════════════════
+// 3b. SLIDES-AS-PDF → chunkPdf + speaker notes extras
+// ═══════════════════════════════════════════
+
+/**
+ * Chunk una presentación (PPTX local o Google Slides exportado) convertida a PDF.
+ * Usa el pipeline de PDF (3 páginas por chunk) y agrega speaker notes como chunks extras de texto.
+ * sourceType se sobrescribe a 'slides' para distinguir de PDFs genéricos.
+ */
+export function chunkSlidesAsPdf(
+  pdfPageTexts: string[],
+  pdfFilePath: string,
+  totalPages: number,
+  speakerNotes: Array<{ slideIndex: number; text: string }>,
+  opts?: { sourceFile?: string },
+): EmbeddableChunk[] {
+  // Chunks visuales del PDF (3 páginas cada uno)
+  const pdfChunks = chunkPdf(pdfPageTexts, pdfFilePath, totalPages, {
+    sourceFile: opts?.sourceFile,
+  })
+
+  // Actualizar sourceType a 'slides' (no 'pdf')
+  for (const chunk of pdfChunks) {
+    chunk.metadata.sourceType = 'slides'
+  }
+
+  // Agregar speaker notes como chunks extras de texto
+  for (const note of speakerNotes) {
+    if (!note.text.trim()) continue
+
+    pdfChunks.push({
+      content: `[Notas del expositor - Slide ${note.slideIndex + 1}]\n${note.text}`,
+      contentType: 'text',
+      mediaRefs: null,
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'slides',
+        sourceFile: opts?.sourceFile,
+        sectionTitle: `Notas - Slide ${note.slideIndex + 1}`,
+        pageRange: String(note.slideIndex + 1),
+        isNote: true,
+      },
+    })
+  }
+
+  return pdfChunks
+}
+
+// ═══════════════════════════════════════════
 // 4. PDF → blocks of max 6 pages
 // ═══════════════════════════════════════════
 

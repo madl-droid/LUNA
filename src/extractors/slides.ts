@@ -1,7 +1,7 @@
 // LUNA — Global Extractors — Slides / PowerPoint
 // Extrae texto y screenshots de presentaciones.
 // Google Slides: via API (requiere google:slides service).
-// PPTX: via text extraction + screenshot si disponible.
+// PPTX local: via XML del ZIP + LibreOffice para PDF multimodal.
 // Cada slide: texto extraído + imagen PNG renderizada del slide completo.
 // No se extraen imágenes individuales embebidas.
 
@@ -160,6 +160,106 @@ export async function describeSlideScreenshots(
   }
 
   return slidesResult
+}
+
+// ═══════════════════════════════════════════
+// PPTX local (ZIP/XML)
+// ═══════════════════════════════════════════
+
+/**
+ * Extrae texto plano de un XML de slide PPTX.
+ * Busca todos los elementos <a:t> (text runs).
+ */
+function extractTextFromSlideXml(xml: string): string {
+  const textParts: string[] = []
+  const regex = /<a:t[^>]*>([^<]*)<\/a:t>/g
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(xml)) !== null) {
+    if (match[1]) textParts.push(match[1])
+  }
+  return textParts.join(' ').trim()
+}
+
+/**
+ * Extrae el título del slide (primer placeholder de tipo title/ctrTitle).
+ */
+function extractTitleFromSlideXml(xml: string): string | null {
+  // Buscar shape con nvSpPr que tenga type="title" o type="ctrTitle"
+  const titleMatch = xml.match(/<p:sp>[\s\S]*?<p:nvSpPr>[\s\S]*?type="(?:title|ctrTitle)"[\s\S]*?<\/p:nvSpPr>[\s\S]*?<a:t[^>]*>([^<]*)<\/a:t>/i)
+  return titleMatch?.[1]?.trim() ?? null
+}
+
+/**
+ * Extrae una presentación PPTX local.
+ * 1. Extrae texto de los slides del XML del ZIP
+ * 2. Extrae speaker notes del XML
+ * 3. Convierte a PDF con LibreOffice (para embedding multimodal)
+ * 4. Retorna SlidesResult con pdfBuffer y speakerNotes para el chunker
+ */
+export async function extractPptx(
+  input: Buffer,
+  fileName: string,
+): Promise<SlidesResult & { pdfBuffer?: Buffer; speakerNotes?: Array<{ slideIndex: number; text: string }> }> {
+  const { default: JSZip } = await import('jszip')
+
+  const zip = await JSZip.loadAsync(input)
+  const slides: ExtractedSlide[] = []
+  const speakerNotes: Array<{ slideIndex: number; text: string }> = []
+
+  // Encontrar slides en orden
+  let slideIndex = 0
+  while (true) {
+    const slideFile = zip.file(`ppt/slides/slide${slideIndex + 1}.xml`)
+    if (!slideFile) break
+
+    const slideXml = await slideFile.async('string')
+    const text = extractTextFromSlideXml(slideXml)
+    const title = extractTitleFromSlideXml(slideXml)
+
+    slides.push({
+      index: slideIndex,
+      title,
+      text,
+      screenshotPng: null,
+    })
+
+    // Speaker notes
+    const notesFile = zip.file(`ppt/notesSlides/notesSlide${slideIndex + 1}.xml`)
+    if (notesFile) {
+      const notesXml = await notesFile.async('string')
+      const noteText = extractTextFromSlideXml(notesXml)
+      if (noteText.trim()) {
+        speakerNotes.push({ slideIndex, text: noteText.trim() })
+      }
+    }
+
+    slideIndex++
+  }
+
+  // Convertir a PDF con LibreOffice para pipeline visual
+  let pdfBuffer: Buffer | undefined
+  try {
+    const { convertToPdf } = await import('./convert-to-pdf.js')
+    const result = await convertToPdf(input, fileName)
+    if (result) pdfBuffer = result
+  } catch (err) {
+    logger.warn({ err, fileName }, 'PDF conversion failed for PPTX — continuing without PDF')
+  }
+
+  return {
+    kind: 'slides',
+    fileName,
+    slides,
+    pdfBuffer,
+    speakerNotes,
+    metadata: {
+      originalName: fileName,
+      extractorUsed: 'pptx-xml' + (pdfBuffer ? '+libreoffice-pdf' : ''),
+      slideCount: slides.length,
+      hasScreenshots: false,
+      sizeBytes: input.length,
+    },
+  }
 }
 
 // ═══════════════════════════════════════════

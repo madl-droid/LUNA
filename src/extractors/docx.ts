@@ -3,9 +3,13 @@
 // Headings explícitos: Heading1/2/3 via mammoth style mapping.
 // Headings implícitos: bold + <15 palabras + seguido de texto más largo.
 // Imágenes: embebidas en el cuerpo, filtradas por tamaño y dedup MD5.
+// Smart router: DOCX con imágenes → PDF via LibreOffice para pipeline visual.
 
 import type { ExtractedContent, ExtractedSection, ExtractedImage } from './types.js'
 import { computeMD5, isSmallImage, MAX_FILE_SIZE } from './utils.js'
+import pino from 'pino'
+
+const logger = pino({ name: 'extractors:docx' })
 
 // ═══════════════════════════════════════════
 // Función principal
@@ -292,4 +296,58 @@ function estimateImageDimensions(buffer: Buffer): { width: number; height: numbe
 
 function stripHtmlTags(html: string): string {
   return html.replace(/<[^>]+>/g, '')
+}
+
+// ═══════════════════════════════════════════
+// Smart router: DOCX con imágenes → PDF
+// ═══════════════════════════════════════════
+
+/**
+ * Extrae DOCX con router inteligente.
+ * Sin imágenes: extracción de texto pura (mammoth).
+ * Con imágenes: intenta convertir a PDF (LibreOffice) para embedding multimodal.
+ * Si LibreOffice no está disponible o falla, cae de vuelta a texto puro.
+ */
+export async function extractDocxSmart(
+  input: Buffer,
+  fileName: string,
+): Promise<ExtractedContent & { pdfBuffer?: Buffer }> {
+  // Siempre extraer texto con mammoth (más preciso que OCR)
+  const textResult = await extractDocx(input, fileName)
+
+  // Sin imágenes → retornar texto puro directamente
+  if (!textResult.metadata.hasImages) {
+    return textResult
+  }
+
+  // Tiene imágenes → intentar convertir a PDF para pipeline visual
+  try {
+    const { convertToPdf, isLibreOfficeAvailable } = await import('./convert-to-pdf.js')
+
+    if (!await isLibreOfficeAvailable()) {
+      logger.warn({ fileName }, 'DOCX has images but LibreOffice not available — using text-only')
+      return textResult
+    }
+
+    const pdfBuffer = await convertToPdf(input, fileName)
+    if (!pdfBuffer) {
+      logger.warn({ fileName }, 'DOCX PDF conversion returned null — using text-only')
+      return textResult
+    }
+
+    logger.info({ fileName, pdfSize: pdfBuffer.length, imageCount: textResult.metadata.imageCount }, 'DOCX with images converted to PDF')
+
+    return {
+      ...textResult,
+      pdfBuffer,
+      metadata: {
+        ...textResult.metadata,
+        extractorUsed: 'docx-mammoth+libreoffice-pdf',
+        pdfSize: pdfBuffer.length,
+      },
+    }
+  } catch (err) {
+    logger.warn({ err, fileName }, 'DOCX PDF conversion error — falling back to text-only')
+    return textResult
+  }
 }
