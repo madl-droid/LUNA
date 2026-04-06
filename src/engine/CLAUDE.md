@@ -217,12 +217,18 @@ Configurable desde consola y .env. Persiste al reinicio.
 - **EmbeddableChunk**: cada extractor debe producir EmbeddableChunk con ChunkMetadata correcto
 
 ### Rediseño de chunking (Fases 2-3)
-- **Binarios por chunk**: guardar binarios partidos por chunk para embedding multimodal (audio split, video split, PDF pages, images)
+
+**Decisiones tomadas (pendientes de implementar):**
+- **DOCX con imágenes**: Dos opciones: (a) hacer transcript + convertir a PDF + procesar como PDF, o (b) transcript + screenshots por página como slides. Slides y PPTX deberían manejarse como uno solo.
+- **Binarios por chunk**: Obligatorio para embedding multimodal. Gemini Embedding solo acepta 6 páginas por request, por eso el límite actual. Hay que partir binarios por chunk para enviar cada chunk con su archivo al embedder.
+- **Video chunking**: Enviar video a Gemini para que haga lectura + temario → chunks por temas, si superan duración máxima → sub-chunks. Pregunta abierta: ¿puede Gemini ver video desde la API? (sí, via content type 'video' en llm:chat, task 'extractor-video-multimodal')
+- **Audio chunking**: Orden correcto: audio entra → STT completo → se envía al agente → buscar puntos de corte → partir transcripción → actualizar en DB. No partir audio antes de STT.
+- **Modelo multimedia**: Todos los extractores usan task `media` que se rutea via task-router.ts. Es configurable (LLM_MEDIA_PROVIDER/MODEL en consola). Por defecto Gemini. Tasks: extractor-image-vision, extractor-pdf-ocr, extractor-pdf-vision, extractor-slide-vision, extractor-thumbnail-vision, extractor-video-multimodal, extractor-summarize-large.
 - **LLM description dual**: descripción larga → content, descripción corta → metadata
-- **Embedding status + binario lifecycle**: no marcar completo hasta que último chunk relacionado se procese
-- **DOCX con imágenes → PDF path**: convertir a PDF solo cuando tiene imágenes embebidas
-- **YouTube temario inferido**: LLM infiere secciones del transcript + frame extraction (screenshots del video)
+- **Embedding status + binario lifecycle**: no marcar completo hasta que último chunk relacionado se procese, no borrar binario antes
+- **YouTube temario inferido**: LLM infiere secciones del transcript + frame extraction (screenshots del video). Thumbnail es la miniatura del video, no frames internos.
 - **YouTube playlists/canales**: cómo manejar playlists y canales completos (sync, chunking por video, límites)
 - **Slides notes**: speaker notes como chunks extras del mismo archivo
 - **Audio chunks temporales**: 60s primer chunk, 70s siguientes con 10s overlap (requiere ffmpeg split + N llamadas STT)
 - **Video chunks temporales**: 50s primer chunk, 60s siguientes con 10s overlap (requiere ffmpeg split)
+- **Slides + PPTX unificados**: manejar ambos con el mismo pipeline (convertir a PDF o screenshots)
