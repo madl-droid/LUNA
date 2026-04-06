@@ -295,6 +295,8 @@ export interface SessionMemoryChunk {
   mediaRef: string | null
   mimeType: string | null
   extraMetadata: Record<string, unknown> | null
+  /** Rich metadata (unified ChunkMetadata format) */
+  metadata: import('../knowledge/embedding-limits.js').ChunkMetadata
   hasEmbedding: boolean
   embedding: number[] | null
 }

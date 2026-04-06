@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { StoredMessage, SessionMemoryChunk, SessionSummarySection } from './types.js'
+import type { ChunkMetadata } from '../knowledge/embedding-limits.js'
 import {
   MAX_TEXT_WORDS,
   TEXT_OVERLAP_WORDS,
@@ -45,6 +46,26 @@ interface PreChunk {
   mediaRef: string | null
   mimeType: string | null
   extraMetadata: Record<string, unknown> | null
+}
+
+/** Build ChunkMetadata from PreChunk + session context */
+function buildChunkMetadata(c: PreChunk, sessionId: string, contactId: string): ChunkMetadata {
+  const extra = c.extraMetadata ?? {}
+  const meta: ChunkMetadata = {
+    sourceType: c.sourceType === 'text' ? 'session_text' : `session_${c.sourceType}`,
+    sessionId,
+    contactId,
+  }
+  if (extra.filename) meta.sourceFile = String(extra.filename)
+  if (c.mimeType) meta.sourceMimeType = c.mimeType
+  if (extra.page_range) meta.pageRange = String(extra.page_range)
+  if (extra.section_title || extra.topic) meta.sectionTitle = String(extra.section_title ?? extra.topic)
+  if (extra.slide_index != null) meta.pageRange = String(Number(extra.slide_index) + 1)
+  if (extra.interaction_title) meta.interaction_title = extra.interaction_title
+  if (extra.timestamp_start != null) meta.timestampStart = Number(extra.timestamp_start)
+  if (extra.timestamp_end != null) meta.timestampEnd = Number(extra.timestamp_end)
+  if (extra.tab_name) meta.tab_name = extra.tab_name
+  return meta
 }
 
 // ═══════════════════════════════════════════
@@ -442,6 +463,7 @@ export function linkSessionChunks(
         mediaRef: c.mediaRef,
         mimeType: c.mimeType,
         extraMetadata: c.extraMetadata,
+        metadata: buildChunkMetadata(c, sessionId, contactId),
         hasEmbedding: false,
         embedding: null,
       })

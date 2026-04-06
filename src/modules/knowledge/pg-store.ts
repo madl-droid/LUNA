@@ -642,8 +642,8 @@ export class KnowledgePgStore {
     )
   }
 
-  /** Insert smart linked chunks (v2 — type-specific with media refs and linking) */
-  async insertLinkedChunks(documentId: string, chunks: import('./types.js').LinkedChunk[]): Promise<void> {
+  /** Insert linked chunks (v3 — unified EmbeddableChunk format with ChunkMetadata) */
+  async insertLinkedChunks(documentId: string, chunks: import('./embedding-limits.js').LinkedEmbeddableChunk[]): Promise<void> {
     if (chunks.length === 0) return
 
     // Delete existing chunks for this document first
@@ -653,22 +653,24 @@ export class KnowledgePgStore {
       await this.db.query(
         `INSERT INTO knowledge_chunks
          (id, document_id, content, section, chunk_index, page, source_id, chunk_total,
-          prev_chunk_id, next_chunk_id, content_type, media_refs, extra_metadata, tsv)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, to_tsvector('spanish', $3))`,
+          prev_chunk_id, next_chunk_id, content_type, media_refs, extra_metadata,
+          mime_type, tsv)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, to_tsvector('spanish', COALESCE($3, '')))`,
         [
           chunk.id,
           documentId,
           chunk.content,
-          chunk.section,
+          chunk.metadata.sectionTitle ?? null,
           chunk.chunkIndex,
-          chunk.page,
+          chunk.metadata.pageRange ? parseInt(chunk.metadata.pageRange) || null : null,
           chunk.sourceId,
           chunk.chunkTotal,
           chunk.prevChunkId,
           chunk.nextChunkId,
           chunk.contentType,
           chunk.mediaRefs ? JSON.stringify(chunk.mediaRefs) : null,
-          chunk.extraMetadata ? JSON.stringify(chunk.extraMetadata) : null,
+          JSON.stringify(chunk.metadata),
+          chunk.metadata.sourceMimeType ?? null,
         ],
       )
     }

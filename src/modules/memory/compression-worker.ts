@@ -332,7 +332,7 @@ export class CompressionWorker {
 
       for (const chunk of batch) {
         const tsvContent = chunk.content?.slice(0, 5000) ?? ''
-        placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12}, $${paramIdx + 13}, false, NULL, to_tsvector('spanish', $${paramIdx + 14}))`)
+        placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12}, $${paramIdx + 13}, false, NULL, to_tsvector('spanish', $${paramIdx + 14}), $${paramIdx + 15})`)
 
         values.push(
           chunk.id, chunk.sessionId, chunk.contactId, chunk.sourceId,
@@ -340,15 +340,16 @@ export class CompressionWorker {
           chunk.prevChunkId, chunk.nextChunkId, chunk.content, chunk.mediaRef,
           chunk.mimeType, chunk.extraMetadata ? JSON.stringify(chunk.extraMetadata) : null,
           tsvContent,
+          JSON.stringify(chunk.metadata),
         )
-        paramIdx += 15
+        paramIdx += 16
       }
 
       await this.db.query(
         `INSERT INTO session_memory_chunks
           (id, session_id, contact_id, source_id, source_type, content_type,
            chunk_index, chunk_total, prev_chunk_id, next_chunk_id,
-           content, media_ref, mime_type, extra_metadata, has_embedding, embedding, tsv)
+           content, media_ref, mime_type, extra_metadata, has_embedding, embedding, tsv, metadata)
          VALUES ${placeholders.join(', ')}
          ON CONFLICT (id) DO NOTHING`,
         values,

@@ -147,7 +147,7 @@ export class KnowledgeItemManager {
       filePath = safeFileName
       await writeFile(join(knowledgeDir, safeFileName), opts.buffer)
     } else {
-      contentHash = createHash('sha256').update(docTitle + chunks[0]!.content.substring(0, 500)).digest('hex')
+      contentHash = createHash('sha256').update(docTitle + (chunks[0]!.content ?? '').substring(0, 500)).digest('hex')
     }
 
     // Create document record — store fileUrl in metadata for shareable links

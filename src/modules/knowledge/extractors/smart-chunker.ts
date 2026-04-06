@@ -1,10 +1,10 @@
-// LUNA — Module: knowledge — Smart Chunker v2
+// LUNA — Module: knowledge — Smart Chunker v3
 // Type-specific chunking strategies for Gemini Embedding 2.
-// Each content type has its own splitting logic respecting embedding limits.
+// Produces EmbeddableChunk format (unified with memory chunker).
 // Universal linking applied after all chunking.
 
 import { randomUUID } from 'node:crypto'
-import type { SmartChunk, LinkedChunk, MediaRef } from '../types.js'
+import type { EmbeddableChunk, LinkedEmbeddableChunk, MediaRef } from '../embedding-limits.js'
 import {
   MAX_TEXT_WORDS as MAX_WORDS,
   TEXT_OVERLAP_WORDS as WORD_OVERLAP,
@@ -13,12 +13,15 @@ import {
   MAX_PDF_PAGES_PER_REQUEST,
 } from '../embedding-limits.js'
 
+// Re-export for backward compat (callers importing SmartChunk/LinkedChunk)
+export type { EmbeddableChunk as SmartChunk, LinkedEmbeddableChunk as LinkedChunk }
+
 // ═══════════════════════════════════════════
 // 1. DOCS / WORD → text by headings
 // ═══════════════════════════════════════════
 
-export function chunkDocs(text: string): SmartChunk[] {
-  const chunks: SmartChunk[] = []
+export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string }): EmbeddableChunk[] {
+  const chunks: EmbeddableChunk[] = []
 
   // Split by H1/H2 headings first
   const sections = text.split(/(?=^#{1,2}\s)/m)
@@ -29,7 +32,7 @@ export function chunkDocs(text: string): SmartChunk[] {
 
     // Extract heading
     const headingMatch = trimmed.match(/^(#{1,2})\s+(.+?)$/m)
-    const sectionTitle = headingMatch?.[2]?.trim() ?? null
+    const sectionTitle = headingMatch?.[2]?.trim() ?? undefined
 
     const words = trimmed.split(/\s+/)
     if (words.length < MIN_CHUNK_WORDS) continue
@@ -38,13 +41,18 @@ export function chunkDocs(text: string): SmartChunk[] {
       chunks.push({
         content: trimmed,
         contentType: 'text',
-        section: sectionTitle,
-        page: null,
         mediaRefs: null,
-        extraMetadata: sectionTitle ? { section_title: sectionTitle } : null,
+        chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+        metadata: {
+          sourceType: 'docx',
+          sourceFile: opts?.sourceFile,
+          sourceMimeType: opts?.sourceMimeType,
+          sectionTitle,
+        },
       })
     } else {
       // Split into sub-chunks with word overlap
+      const subTotal = Math.ceil((words.length - WORD_OVERLAP) / (MAX_WORDS - WORD_OVERLAP))
       let start = 0
       let subIndex = 0
       while (start < words.length) {
@@ -55,10 +63,16 @@ export function chunkDocs(text: string): SmartChunk[] {
           chunks.push({
             content: slice,
             contentType: 'text',
-            section: sectionTitle ? `${sectionTitle} (${subIndex + 1})` : null,
-            page: null,
             mediaRefs: null,
-            extraMetadata: { section_title: sectionTitle, sub_chunk: subIndex },
+            chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+            metadata: {
+              sourceType: 'docx',
+              sourceFile: opts?.sourceFile,
+              sourceMimeType: opts?.sourceMimeType,
+              sectionTitle: sectionTitle ? `${sectionTitle} (${subIndex + 1})` : undefined,
+              subChunkIndex: subIndex,
+              subChunkTotal: subTotal,
+            },
           })
           subIndex++
         }
@@ -79,10 +93,13 @@ export function chunkDocs(text: string): SmartChunk[] {
           chunks.push({
             content: accumulated.trim(),
             contentType: 'text',
-            section: null,
-            page: null,
             mediaRefs: null,
-            extraMetadata: null,
+            chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+            metadata: {
+              sourceType: 'docx',
+              sourceFile: opts?.sourceFile,
+              sourceMimeType: opts?.sourceMimeType,
+            },
           })
         }
         accumulated = para
@@ -94,10 +111,13 @@ export function chunkDocs(text: string): SmartChunk[] {
       chunks.push({
         content: accumulated.trim(),
         contentType: 'text',
-        section: null,
-        page: null,
         mediaRefs: null,
-        extraMetadata: null,
+        chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+        metadata: {
+          sourceType: 'docx',
+          sourceFile: opts?.sourceFile,
+          sourceMimeType: opts?.sourceMimeType,
+        },
       })
     }
   }
@@ -109,8 +129,8 @@ export function chunkDocs(text: string): SmartChunk[] {
 // 2. SHEETS → CSV with repeated headers
 // ═══════════════════════════════════════════
 
-export function chunkSheets(headers: string[], rows: string[][]): SmartChunk[] {
-  const chunks: SmartChunk[] = []
+export function chunkSheets(headers: string[], rows: string[][], opts?: { sourceFile?: string }): EmbeddableChunk[] {
+  const chunks: EmbeddableChunk[] = []
   const headerLine = headers.join(',')
 
   // 1 row = 1 chunk, with header prepended for context
@@ -122,11 +142,13 @@ export function chunkSheets(headers: string[], rows: string[][]): SmartChunk[] {
     chunks.push({
       content,
       contentType: 'csv',
-      section: null,
-      page: null,
       mediaRefs: null,
-      extraMetadata: {
-        row_index: i + 2,  // +2 because row 1 is header in sheet
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'sheets',
+        sourceFile: opts?.sourceFile,
+        sourceMimeType: 'application/vnd.google-apps.spreadsheet',
+        row_index: i + 2,  // +2 because row 1 is header
         headers,
         row_count: 1,
       },
@@ -140,7 +162,7 @@ export function chunkSheets(headers: string[], rows: string[][]): SmartChunk[] {
 // 3. SLIDES → 1 image + text per slide
 // ═══════════════════════════════════════════
 
-export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; title?: string }>): SmartChunk[] {
+export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; title?: string }>, opts?: { sourceFile?: string }): EmbeddableChunk[] {
   return slides.map((slide, i) => {
     const mediaRefs: MediaRef[] = []
     if (slide.imageBase64) {
@@ -154,10 +176,15 @@ export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; 
     return {
       content: text || `[Slide ${i + 1}]`,
       contentType: 'slide' as const,
-      section: slide.title ?? `Slide ${i + 1}`,
-      page: i + 1,
       mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
-      extraMetadata: { slide_index: i, slide_title: slide.title ?? null },
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'slides',
+        sourceFile: opts?.sourceFile,
+        sourceMimeType: 'application/vnd.google-apps.presentation',
+        sectionTitle: slide.title ?? `Slide ${i + 1}`,
+        pageRange: String(i + 1),
+      },
     }
   })
 }
@@ -166,18 +193,13 @@ export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; 
 // 4. PDF → blocks of max 6 pages
 // ═══════════════════════════════════════════
 
-/**
- * Chunk a PDF into blocks of up to 6 pages each.
- * Each chunk stores the PDF page range as media ref (the actual buffer is passed at embed time).
- * Text content is extracted per-page for FTS (passed separately).
- * 1-page overlap between consecutive chunks.
- */
 export function chunkPdf(
   pageTexts: string[],
   pdfFilePath: string,
   totalPages: number,
-): SmartChunk[] {
-  const chunks: SmartChunk[] = []
+  opts?: { sourceFile?: string },
+): EmbeddableChunk[] {
+  const chunks: EmbeddableChunk[] = []
   let pageStart = 0
 
   while (pageStart < totalPages) {
@@ -187,14 +209,17 @@ export function chunkPdf(
     chunks.push({
       content: textForFts || `[PDF páginas ${pageStart + 1}-${pageEnd}]`,
       contentType: 'pdf_pages',
-      section: `Páginas ${pageStart + 1}-${pageEnd}`,
-      page: pageStart + 1,
       mediaRefs: [{
         mimeType: 'application/pdf',
         filePath: pdfFilePath,
       }],
-      extraMetadata: {
-        page_range: `${pageStart + 1}-${pageEnd}`,
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'pdf',
+        sourceFile: opts?.sourceFile,
+        sourceMimeType: 'application/pdf',
+        sectionTitle: `Páginas ${pageStart + 1}-${pageEnd}`,
+        pageRange: `${pageStart + 1}-${pageEnd}`,
         page_start: pageStart + 1,
         page_end: pageEnd,
         page_total: totalPages,
@@ -219,8 +244,8 @@ export interface WebBlock {
   images: Array<{ data: string; mimeType: string }>  // base64
 }
 
-export function chunkWeb(blocks: WebBlock[]): SmartChunk[] {
-  const chunks: SmartChunk[] = []
+export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string }): EmbeddableChunk[] {
+  const chunks: EmbeddableChunk[] = []
 
   for (const block of blocks) {
     if (!block.text.trim()) continue
@@ -229,7 +254,6 @@ export function chunkWeb(blocks: WebBlock[]): SmartChunk[] {
     const images = block.images.slice(0, MAX_IMAGES_PER_REQUEST)
 
     if (words.length <= MAX_WORDS) {
-      // Fits in one chunk
       const mediaRefs: MediaRef[] = images.map(img => ({
         mimeType: img.mimeType,
         data: img.data,
@@ -237,18 +261,19 @@ export function chunkWeb(blocks: WebBlock[]): SmartChunk[] {
 
       chunks.push({
         content: block.text,
-        contentType: images.length > 0 ? 'image_text' : 'text',
-        section: block.heading,
-        page: null,
+        contentType: images.length > 0 ? 'image' : 'web',
         mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
-        extraMetadata: {
-          section: block.heading,
-          has_images: images.length > 0,
+        chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+        metadata: {
+          sourceType: 'web',
+          sourceUrl: opts?.sourceUrl,
+          sectionTitle: block.heading ?? undefined,
           image_count: images.length,
         },
       })
     } else {
       // Split text, only first sub-chunk gets images
+      const subTotal = Math.ceil((words.length - WORD_OVERLAP) / (MAX_WORDS - WORD_OVERLAP))
       let start = 0
       let subIndex = 0
       while (start < words.length) {
@@ -262,14 +287,16 @@ export function chunkWeb(blocks: WebBlock[]): SmartChunk[] {
 
         chunks.push({
           content: slice,
-          contentType: isFirst && images.length > 0 ? 'image_text' : 'text',
-          section: block.heading ? `${block.heading} (${subIndex + 1})` : null,
-          page: null,
+          contentType: isFirst && images.length > 0 ? 'image' : 'web',
           mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
-          extraMetadata: {
-            section: block.heading,
-            has_images: isFirst && images.length > 0,
-            sub_chunk: subIndex,
+          chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+          metadata: {
+            sourceType: 'web',
+            sourceUrl: opts?.sourceUrl,
+            sectionTitle: block.heading ? `${block.heading} (${subIndex + 1})` : undefined,
+            subChunkIndex: subIndex,
+            subChunkTotal: subTotal,
+            image_count: isFirst ? images.length : 0,
           },
         })
 
@@ -329,11 +356,11 @@ const YT_SEGMENT_SECONDS = 300  // 5 minutes
 const YT_OVERLAP_SECONDS = 30
 
 export function chunkYoutube(
-  metadata: { title: string; description: string; thumbnailBase64?: string },
+  metadata: { title: string; description: string; thumbnailBase64?: string; url?: string },
   transcriptSegments: Array<{ text: string; offset: number; duration?: number }>,
   chapters?: Array<{ title: string; startSeconds: number }> | null,
-): SmartChunk[] {
-  const chunks: SmartChunk[] = []
+): EmbeddableChunk[] {
+  const chunks: EmbeddableChunk[] = []
 
   // ── Chunk 0: header (thumbnail + title + description) ──
   const headerText = `${metadata.title}\n\n${metadata.description}`.trim()
@@ -343,12 +370,13 @@ export function chunkYoutube(
 
   chunks.push({
     content: headerText || metadata.title,
-    contentType: 'yt_header',
-    section: metadata.title,
-    page: null,
+    contentType: 'youtube',
     mediaRefs: headerMedia.length > 0 ? headerMedia : null,
-    extraMetadata: {
-      video_title: metadata.title,
+    chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+    metadata: {
+      sourceType: 'youtube',
+      sourceUrl: metadata.url,
+      sectionTitle: metadata.title,
       has_thumbnail: !!metadata.thumbnailBase64,
     },
   })
@@ -373,14 +401,15 @@ export function chunkYoutube(
 
       chunks.push({
         content: `${chapter.title}\n\n${chapterText}`,
-        contentType: 'yt_transcript',
-        section: chapter.title,
-        page: null,
+        contentType: 'youtube',
         mediaRefs: null,
-        extraMetadata: {
-          timestamp_start: formatTimestamp(chapter.startSeconds),
-          timestamp_end: formatTimestamp(endSeconds),
-          chapter_title: chapter.title,
+        chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+        metadata: {
+          sourceType: 'youtube',
+          sourceUrl: metadata.url,
+          sectionTitle: chapter.title,
+          timestampStart: chapter.startSeconds,
+          timestampEnd: endSeconds,
         },
       })
     }
@@ -400,13 +429,15 @@ export function chunkYoutube(
       if (segText.trim()) {
         chunks.push({
           content: segText,
-          contentType: 'yt_transcript',
-          section: `${formatTimestamp(segStart)} - ${formatTimestamp(Math.min(segEnd, totalDuration))}`,
-          page: null,
+          contentType: 'youtube',
           mediaRefs: null,
-          extraMetadata: {
-            timestamp_start: formatTimestamp(segStart),
-            timestamp_end: formatTimestamp(Math.min(segEnd, totalDuration)),
+          chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+          metadata: {
+            sourceType: 'youtube',
+            sourceUrl: metadata.url,
+            sectionTitle: `${formatTimestamp(segStart)} - ${formatTimestamp(Math.min(segEnd, totalDuration))}`,
+            timestampStart: segStart,
+            timestampEnd: Math.min(segEnd, totalDuration),
           },
         })
       }
@@ -423,7 +454,7 @@ export function chunkYoutube(
 // Universal linking function
 // ═══════════════════════════════════════════
 
-export function linkChunks(sourceId: string, chunks: SmartChunk[]): LinkedChunk[] {
+export function linkChunks(sourceId: string, chunks: EmbeddableChunk[]): LinkedEmbeddableChunk[] {
   // Generate IDs first so we can reference prev/next
   const ids = chunks.map(() => randomUUID())
 

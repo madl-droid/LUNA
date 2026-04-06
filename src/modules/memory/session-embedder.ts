@@ -148,7 +148,7 @@ async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<vo
 
     for (const chunk of batch) {
       const tsvContent = chunk.content?.slice(0, 5000) ?? ''
-      placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12}, $${paramIdx + 13}, $${paramIdx + 14}, $${paramIdx + 15}::vector, to_tsvector('spanish', $${paramIdx + 16}))`)
+      placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12}, $${paramIdx + 13}, $${paramIdx + 14}, $${paramIdx + 15}::vector, to_tsvector('spanish', $${paramIdx + 16}), $${paramIdx + 17})`)
 
       values.push(
         chunk.id,
@@ -168,15 +168,16 @@ async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<vo
         chunk.hasEmbedding,
         chunk.embedding ? `[${chunk.embedding.join(',')}]` : null,
         tsvContent,
+        JSON.stringify(chunk.metadata),
       )
-      paramIdx += 17
+      paramIdx += 18
     }
 
     await db.query(
       `INSERT INTO session_memory_chunks
         (id, session_id, contact_id, source_id, source_type, content_type,
          chunk_index, chunk_total, prev_chunk_id, next_chunk_id,
-         content, media_ref, mime_type, extra_metadata, has_embedding, embedding, tsv)
+         content, media_ref, mime_type, extra_metadata, has_embedding, embedding, tsv, metadata)
        VALUES ${placeholders.join(', ')}
        ON CONFLICT (id) DO NOTHING`,
       values,
