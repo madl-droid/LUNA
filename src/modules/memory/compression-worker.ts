@@ -164,8 +164,8 @@ export class CompressionWorker {
       const alreadyChunked = (existingChunks.rows[0]?.cnt ?? 0) > 0
 
       if (!alreadyChunked) {
-        const interactionTitle = await this.getInteractionTitle(sessionId)
-        const chunks = chunkSession(sessionId, contactId, messages, attachments, interactionTitle)
+        const { title: interactionTitle, sections } = await this.getSummaryData(sessionId)
+        const chunks = chunkSession(sessionId, contactId, messages, attachments, interactionTitle, sections)
 
         if (chunks.length > 0) {
           const embeddingService = this.registry.getOptional<EmbeddingService>('knowledge:embedding-service')
@@ -193,11 +193,8 @@ export class CompressionWorker {
         [sessionId],
       )
 
-      // Delete attachment extractions for this session
-      await this.db.query(
-        `DELETE FROM attachment_extractions WHERE session_id = $1`,
-        [sessionId],
-      )
+      // attachment_extractions survive compression — purged by nightly batch
+      // based on MEMORY_SUMMARY_RETENTION_DAYS (same lifecycle as session summaries)
 
       // Delete Redis buffer
       const redisBuffer = this.registry.getOptional<{ deleteSession(id: string): Promise<void> }>('memory:manager')
@@ -306,12 +303,15 @@ export class CompressionWorker {
     )
   }
 
-  private async getInteractionTitle(sessionId: string): Promise<string> {
-    const result = await this.db.query<{ title: string }>(
-      `SELECT title FROM session_summaries_v2 WHERE session_id = $1`,
+  private async getSummaryData(sessionId: string): Promise<{ title: string; sections: import('./types.js').SessionSummarySection[] | null }> {
+    const result = await this.db.query<{ title: string; sections: unknown }>(
+      `SELECT title, sections FROM session_summaries_v2 WHERE session_id = $1`,
       [sessionId],
     )
-    return result.rows[0]?.title ?? `Session ${sessionId}`
+    const row = result.rows[0]
+    if (!row) return { title: `Session ${sessionId}`, sections: null }
+    const sections = Array.isArray(row.sections) ? row.sections as import('./types.js').SessionSummarySection[] : null
+    return { title: row.title, sections }
   }
 
   private async persistChunksWithoutEmbeddings(chunks: import('./types.js').SessionMemoryChunk[]): Promise<void> {

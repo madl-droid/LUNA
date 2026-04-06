@@ -3,7 +3,7 @@
 // Produces linked chunks per source (text, images, PDFs, slides, video, audio, spreadsheets).
 
 import { randomUUID } from 'node:crypto'
-import type { StoredMessage, SessionMemoryChunk } from './types.js'
+import type { StoredMessage, SessionMemoryChunk, SessionSummarySection } from './types.js'
 
 // ═══════════════════════════════════════════
 // Gemini Embedding 2 limits
@@ -368,6 +368,44 @@ export function chunkSpreadsheet(attachment: AttachmentExtraction, interactionTi
 }
 
 // ═══════════════════════════════════════════
+// Thematic section chunking — one chunk per LLM-identified topic
+// ═══════════════════════════════════════════
+
+export function chunkByThematicSections(
+  messages: StoredMessage[],
+  interactionTitle: string,
+  sections: SessionSummarySection[],
+): PreChunk[] {
+  const sessionId = messages[0]?.sessionId ?? 'unknown'
+  const chunks: PreChunk[] = []
+
+  for (const section of sections) {
+    // Build section content: topic summary + attachment references
+    let content = `[${section.topic}]\n${section.summary}`
+    if (section.attachments && section.attachments.length > 0) {
+      content += '\n\nAdjuntos:\n' + section.attachments.join('\n')
+    }
+
+    chunks.push({
+      sourceId: `section-${sessionId}`,
+      sourceType: 'text',
+      contentType: 'text',
+      content,
+      mediaRef: null,
+      mimeType: null,
+      extraMetadata: { interaction_title: interactionTitle, topic: section.topic },
+    })
+  }
+
+  // Safety: if sections produced no chunks, fall back to word-count split
+  if (chunks.length === 0) {
+    return chunkText(messages, interactionTitle)
+  }
+
+  return chunks
+}
+
+// ═══════════════════════════════════════════
 // Link chunks — assign UUIDs and prev/next pointers
 // ═══════════════════════════════════════════
 
@@ -428,11 +466,16 @@ export function chunkSession(
   messages: StoredMessage[],
   attachments: AttachmentExtraction[],
   interactionTitle: string,
+  sections?: SessionSummarySection[] | null,
 ): SessionMemoryChunk[] {
   const preChunks: PreChunk[] = []
 
-  // 1. Conversation text
-  preChunks.push(...chunkText(messages, interactionTitle))
+  // 1. Conversation text — use thematic sections if available, otherwise word-count split
+  if (sections && sections.length > 0) {
+    preChunks.push(...chunkByThematicSections(messages, interactionTitle, sections))
+  } else {
+    preChunks.push(...chunkText(messages, interactionTitle))
+  }
 
   // 2. Classify and chunk each attachment by category
   for (const att of attachments) {

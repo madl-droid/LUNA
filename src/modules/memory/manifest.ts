@@ -55,7 +55,7 @@ const manifest: ModuleManifest = {
     MEMORY_SUMMARY_RETENTION_DAYS: numEnv(120),
     MEMORY_ARCHIVE_RETENTION_YEARS: numEnv(2),
     MEMORY_PIPELINE_LOGS_RETENTION_DAYS: numEnv(90),
-    MEMORY_MEDIA_RETENTION_MONTHS: numEnv(6),
+    // REMOVED: MEMORY_MEDIA_RETENTION_MONTHS — media now purged with MEMORY_SUMMARY_RETENTION_DAYS
     // backend-only: messages are always purged after compression
     MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolEnv(true),
 
@@ -100,7 +100,7 @@ const manifest: ModuleManifest = {
       // Tab: Mediano plazo
       { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resúmenes de interacciones (días)', en: 'Interaction summaries (days)' }, info: { es: 'Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', en: 'Days before deleting session summaries. Maximum 730 days (2 years).' }, width: 'half', min: 30, max: 730 },
       { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Registros del sistema (días)', en: 'System logs (days)' }, info: { es: 'Días antes de eliminar registros de procesamiento interno', en: 'Days before deleting internal processing logs' }, width: 'half' },
-      { key: 'MEMORY_MEDIA_RETENTION_MONTHS', type: 'number', label: { es: 'Almacenamiento de media (meses)', en: 'Media storage (months)' }, info: { es: 'Meses de retención de imágenes y archivos en disco. Máximo 24 meses (2 años).', en: 'Months to retain images and media files on disk. Maximum 24 months (2 years).' }, width: 'half', min: 1, max: 24 },
+      // REMOVED: MEMORY_MEDIA_RETENTION_MONTHS — media files now purged with MEMORY_SUMMARY_RETENTION_DAYS
       // Tab: Avanzado
       {
         key: 'MEMORY_ARCHIVE_RETENTION_YEARS',
@@ -135,7 +135,7 @@ const manifest: ModuleManifest = {
       MEMORY_SUMMARY_RETENTION_DAYS: number
       MEMORY_ARCHIVE_RETENTION_YEARS: number
       MEMORY_PIPELINE_LOGS_RETENTION_DAYS: number
-      MEMORY_MEDIA_RETENTION_MONTHS: number
+      // REMOVED: MEMORY_MEDIA_RETENTION_MONTHS
       MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolean
       MEMORY_BUFFER_TURNS_INSTANT: number
       MEMORY_BUFFER_TURNS_ASYNC: number
