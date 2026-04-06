@@ -316,6 +316,9 @@ El skill define el protocolo para que el agente use ese canal de forma proactiva
 | Canal | Skill | requiredTools |
 |-------|-------|---------------|
 | Email (Gmail) | `email-outreach.md` | `email-read-inbox` |
+| WhatsApp | `whatsapp-outreach.md` | — (siempre visible) |
+| Google Chat | `google-chat-outreach.md` | — (siempre visible) |
+| Voz (Twilio) | `voice-outreach.md` | — (siempre visible) |
 
 ### Lo que NO incluir en el skill
 
