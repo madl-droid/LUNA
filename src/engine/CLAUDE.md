@@ -199,3 +199,19 @@ Configurable desde consola y .env. Persiste al reinicio.
 - Contact lock in-memory auto-expira con session TTL
 - Redis contact lock (proactive) es independiente del ContactLock in-memory (reactivo)
 - ACK service es opcional — si falla, el pipeline continúa sin enviar ACK
+
+## Deuda técnica
+
+### Drive folders
+1. **pageSize hardcoded 20**: `extractDrive()` en `src/extractors/drive.ts` lista solo 20 items del nivel 1, sin paginación. Para carpetas grandes el agente no ve todo el contenido.
+2. **Knowledge sync de carpetas Drive**: Si se sube una carpeta de Drive a knowledge, debería recorrer recursivamente, descargar cada archivo, extraer y chunkear. Hoy no existe — solo archivos individuales.
+3. **drive-list-files sin paginación en tool**: El tool devuelve max 20 items. Debería soportar `nextPageToken` y/o `pageSize` configurable para carpetas grandes. También falta `orderBy: 'folder,name'` y flags `supportsAllDrives`.
+
+### Extractores
+- **PDF**: OCR solo 6 páginas (resto se pierde) — necesita multi-chunk
+- **Summary**: truncación a 24K chars — necesita distributed sampling
+- **DOCX**: imágenes embebidas no se describen con LLM
+- **Slides/PPTX**: no implementado como extractor
+- **Sheets**: ciego a charts/imágenes
+- **Truncation indicator**: falta en agentic-loop.ts para contenido cortado
+- **EmbeddableChunk**: cada extractor debe producir EmbeddableChunk con ChunkMetadata correcto
