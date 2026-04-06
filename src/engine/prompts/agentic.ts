@@ -281,7 +281,7 @@ function buildKnowledgeCatalogSection(ctx: ContextBundle): string {
   return lines.join('\n')
 }
 
-async function buildDatetimeSection(registry: Registry): Promise<string> {
+export async function buildDatetimeSection(registry: Registry): Promise<string> {
   try {
     const configStore = await import('../../kernel/config-store.js')
     const db = registry.getDb()
