@@ -439,9 +439,9 @@ async function processOneAttachment(
   if (!llmEnriched && sizeTier === 'large') {
     try {
       const totalChars = rawText.length
-      const sampledText = rawText.slice(0, 24000)
-      const truncationNote = totalChars > 24000
-        ? `\n\n[NOTA: El documento tiene ${totalChars.toLocaleString()} caracteres (~${tokenEstimate.toLocaleString()} tokens). Solo se muestran los primeros 24,000 caracteres. Resume lo que puedas ver y menciona que el documento continúa.]`
+      const sampledText = distributedSample(rawText, 30000)
+      const truncationNote = totalChars > 30000
+        ? `\n\n[NOTA: El documento tiene ${totalChars.toLocaleString()} caracteres (~${tokenEstimate.toLocaleString()} tokens). Se muestran muestras del inicio, mitad y final. Resume lo que puedas ver y menciona que hay contenido intermedio no visible.]`
         : ''
       const descResult = await registry.callHook('llm:chat', {
         task: 'extractor-summarize-large',
@@ -589,6 +589,46 @@ function resolveCategory(mimeType: string): AttachmentCategory {
   // Handle MIME types with parameters (e.g., "audio/ogg; codecs=opus")
   const baseMime = mimeType.split(';')[0]!.trim()
   return MIME_TO_CATEGORY[mimeType] ?? MIME_TO_CATEGORY[baseMime] ?? 'documents'
+}
+
+/**
+ * Distributed sampling: takes start + middle + end of a document.
+ * Ensures the LLM sees representative content from the entire document.
+ * Cuts at paragraph boundaries (\n\n) when possible.
+ */
+function distributedSample(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+
+  const third = Math.floor(maxChars / 3)
+
+  // Start: first third
+  const startEnd = findParagraphBreak(text, third)
+  const startSection = text.slice(0, startEnd)
+
+  // Middle: centered around midpoint
+  const midPoint = Math.floor(text.length / 2)
+  const midHalf = Math.floor(third / 2)
+  const midStart = findParagraphBreak(text, midPoint - midHalf, 'backward')
+  const midEnd = findParagraphBreak(text, midPoint + midHalf)
+  const midSection = text.slice(midStart, midEnd)
+
+  // End: last third
+  const endStart = findParagraphBreak(text, text.length - third, 'backward')
+  const endSection = text.slice(endStart)
+
+  return `${startSection}\n\n[... contenido omitido ...]\n\n${midSection}\n\n[... contenido omitido ...]\n\n${endSection}`
+}
+
+/** Find nearest paragraph break (\n\n) near position. Returns adjusted position. */
+function findParagraphBreak(text: string, pos: number, direction: 'forward' | 'backward' = 'forward'): number {
+  const MAX_SEARCH = 500 // max chars to search for a clean break
+  if (direction === 'forward') {
+    const idx = text.indexOf('\n\n', pos)
+    return (idx !== -1 && idx - pos < MAX_SEARCH) ? idx + 2 : pos
+  } else {
+    const idx = text.lastIndexOf('\n\n', pos)
+    return (idx !== -1 && pos - idx < MAX_SEARCH) ? idx + 2 : pos
+  }
 }
 
 function classifySizeTier(tokens: number, config: AttachmentEngineConfig): AttachmentSizeTier {

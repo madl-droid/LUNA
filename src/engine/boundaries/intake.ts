@@ -288,9 +288,10 @@ export async function intake(
 
         let injectedContent: string
         if (att.sizeTier === 'large' && att.llmText) {
-          // Large file: inject category label + filename + duration + truncation note + LLM description
+          // Large file: inject category label + filename + duration + truncation note + LLM description + query hint
           const sizeNote = att.tokenEstimate > 0 ? ` [documento de ~${att.tokenEstimate.toLocaleString()} tokens, contenido resumido]` : ''
-          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}`
+          const queryHint = ` Si necesitas buscar información específica dentro del documento, usa query_attachment con id "${att.id}".`
+          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}${queryHint}`
         } else if (att.llmText && (att.category === 'images' || att.category === 'audio' || att.category === 'video')) {
           // Multimedia: inject category label + filename + duration + LLM content
           injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}`
