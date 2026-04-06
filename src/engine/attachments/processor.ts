@@ -438,13 +438,18 @@ async function processOneAttachment(
   // ── Step 2: For large text-based files, generate LLM description ──
   if (!llmEnriched && sizeTier === 'large') {
     try {
+      const totalChars = rawText.length
+      const sampledText = rawText.slice(0, 24000)
+      const truncationNote = totalChars > 24000
+        ? `\n\n[NOTA: El documento tiene ${totalChars.toLocaleString()} caracteres (~${tokenEstimate.toLocaleString()} tokens). Solo se muestran los primeros 24,000 caracteres. Resume lo que puedas ver y menciona que el documento continúa.]`
+        : ''
       const descResult = await registry.callHook('llm:chat', {
         task: 'extractor-summarize-large',
         system: 'Eres un asistente que resume documentos. Genera una descripción concisa pero completa del documento, cubriendo los puntos principales, estructura y datos relevantes. Responde en español. Máximo 500 palabras.',
         messages: [{
           role: 'user' as const,
           content: [
-            { type: 'text' as const, text: `Resume este documento (${att.filename}):\n\n${rawText.slice(0, 24000)}` },
+            { type: 'text' as const, text: `Resume este documento (${att.filename}):\n\n${sampledText}${truncationNote}` },
           ],
         }],
         maxTokens: 1500,
@@ -465,9 +470,10 @@ async function processOneAttachment(
   // Build summary for large docs (uses LLM description if available, otherwise truncate)
   let summary: string | null = null
   if (sizeTier === 'large') {
+    const truncNote = `[documento de ~${tokenEstimate.toLocaleString()} tokens, contenido resumido]`
     summary = llmText
-      ? `[${categoryLabel}] ${att.filename} — ${llmText}`
-      : `[${categoryLabel}] ${att.filename}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
+      ? `[${categoryLabel}] ${att.filename} ${truncNote} — ${llmText}`
+      : `[${categoryLabel}] ${att.filename} ${truncNote}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`
   }
 
   // Evaluate value for potential knowledge base promotion

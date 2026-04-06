@@ -438,7 +438,11 @@ function formatToolResultsMessage(
   for (const r of results) {
     if (r.success) {
       const dataStr = typeof r.data === 'string' ? r.data : JSON.stringify(r.data)
-      parts.push(`[${r.name}]: ${(dataStr ?? '(no data)').slice(0, 3000)}`)
+      const fullText = dataStr ?? '(no data)'
+      const truncated = fullText.length > 3000
+      const display = truncated ? fullText.slice(0, 3000) : fullText
+      const truncNote = truncated ? `\n[... resultado truncado: mostrando 3,000 de ${fullText.length.toLocaleString()} caracteres]` : ''
+      parts.push(`[${r.name}]: ${display}${truncNote}`)
     } else {
       parts.push(`[${r.name}]: ERROR — ${r.error ?? 'Unknown error'}`)
     }
