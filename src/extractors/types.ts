@@ -15,6 +15,8 @@ export interface ExtractedImage {
   height?: number
   md5: string
   altText?: string
+  /** URL de origen — solo para imágenes web (no descargadas). data es Buffer vacío. */
+  url?: string
 }
 
 // ═══════════════════════════════════════════

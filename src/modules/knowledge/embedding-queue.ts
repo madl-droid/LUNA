@@ -12,6 +12,7 @@ import { unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import pino from 'pino'
 import type { EmbeddingService } from './embedding-service.js'
+import type { KnowledgePgStore } from './pg-store.js'
 import { getBullRedisOpts } from './bull-redis-opts.js'
 
 const logger = pino({ name: 'embedding-queue' })
@@ -108,6 +109,7 @@ export class EmbeddingQueue {
   private readonly db: Pool
   private readonly embeddingService: EmbeddingService
   private readonly registry: RegistryLike
+  private readonly pgStore: KnowledgePgStore | null
 
   // Circuit breaker state (in-memory, resets on restart)
   private cbDistinctFailures: Set<string> = new Set()
@@ -120,10 +122,12 @@ export class EmbeddingQueue {
     redis: Redis,
     embeddingService: EmbeddingService,
     registry: RegistryLike,
+    pgStore?: KnowledgePgStore,
   ) {
     this.db = db
     this.embeddingService = embeddingService
     this.registry = registry
+    this.pgStore = pgStore ?? null
 
     const bullRedisOpts = getBullRedisOpts(redis)
 
@@ -317,40 +321,49 @@ export class EmbeddingQueue {
     let errors = 0
 
     try {
-      const res = await this.db.query<{
-        document_id: string
-        file_paths: string[] | null
-      }>(
-        `SELECT
-           d.id AS document_id,
-           array_remove(
-             array_agg(DISTINCT elem->>'filePath'),
-             NULL
-           ) AS file_paths
-         FROM knowledge_documents d
-         JOIN knowledge_chunks c ON c.document_id = d.id
-         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.media_refs, '[]'::jsonb)) AS elem
-         WHERE d.binary_cleanup_ready = TRUE
-           AND d.source_type = 'attachment'
-         GROUP BY d.id`,
-      )
+      // Fetch docs to clean up — use pgStore if available, else inline SQL
+      let docsToClean: Array<{ documentId: string; filePaths: string[] }>
+      if (this.pgStore) {
+        docsToClean = await this.pgStore.getDocumentsForBinaryCleanup()
+      } else {
+        const res = await this.db.query<{
+          document_id: string
+          file_paths: string[] | null
+        }>(
+          `SELECT
+             d.id AS document_id,
+             array_remove(
+               array_agg(DISTINCT elem->>'filePath'),
+               NULL
+             ) AS file_paths
+           FROM knowledge_documents d
+           JOIN knowledge_chunks c ON c.document_id = d.id
+           CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.media_refs, '[]'::jsonb)) AS elem
+           WHERE d.binary_cleanup_ready = TRUE
+             AND d.source_type = 'attachment'
+           GROUP BY d.id`,
+        )
+        docsToClean = res.rows.map((r: { document_id: string; file_paths: string[] | null }) => ({
+          documentId: r.document_id,
+          filePaths: (r.file_paths ?? []).filter(Boolean),
+        }))
+      }
 
-      for (const row of res.rows) {
-        const filePaths = (row.file_paths ?? []).filter(Boolean)
+      for (const doc of docsToClean) {
         let docOk = true
 
-        for (const filePath of filePaths) {
+        for (const filePath of doc.filePaths) {
           try {
             // Path traversal guard: only delete files within media dir
             const resolvedPath = resolve(filePath)
             if (!resolvedPath.startsWith(mediaDir + '/')) {
-              logger.warn({ filePath, documentId: row.document_id }, '[EMBED-Q] Binary cleanup: path outside media dir, skipping')
+              logger.warn({ filePath, documentId: doc.documentId }, '[EMBED-Q] Binary cleanup: path outside media dir, skipping')
               continue
             }
             await unlink(resolvedPath)
             cleaned++
           } catch (err) {
-            logger.warn({ err, filePath, documentId: row.document_id }, '[EMBED-Q] Binary cleanup: failed to delete file')
+            logger.warn({ err, filePath, documentId: doc.documentId }, '[EMBED-Q] Binary cleanup: failed to delete file')
             errors++
             docOk = false
           }
@@ -358,14 +371,18 @@ export class EmbeddingQueue {
 
         // Clear flag only if all files deleted successfully
         if (docOk) {
-          await this.db.query(
-            `UPDATE knowledge_documents SET binary_cleanup_ready = FALSE, updated_at = NOW() WHERE id = $1`,
-            [row.document_id],
-          )
+          if (this.pgStore) {
+            await this.pgStore.clearBinaryCleanupFlag(doc.documentId)
+          } else {
+            await this.db.query(
+              `UPDATE knowledge_documents SET binary_cleanup_ready = FALSE, updated_at = NOW() WHERE id = $1`,
+              [doc.documentId],
+            )
+          }
         }
       }
 
-      logger.info({ cleaned, errors, docsProcessed: res.rows.length }, '[EMBED-Q] Nightly binary cleanup complete')
+      logger.info({ cleaned, errors, docsProcessed: docsToClean.length }, '[EMBED-Q] Nightly binary cleanup complete')
     } catch (err) {
       logger.error({ err }, '[EMBED-Q] Nightly binary cleanup failed')
     }
@@ -667,10 +684,14 @@ export class EmbeddingQueue {
 
         // Binary cleanup: mark attachment binaries ready for nightly deletion
         if (docRow?.source_type === 'attachment') {
-          await this.db.query(
-            `UPDATE knowledge_documents SET binary_cleanup_ready = TRUE, updated_at = NOW() WHERE id = $1`,
-            [documentId],
-          )
+          if (this.pgStore) {
+            await this.pgStore.markBinariesForCleanup(documentId)
+          } else {
+            await this.db.query(
+              `UPDATE knowledge_documents SET binary_cleanup_ready = TRUE, updated_at = NOW() WHERE id = $1 AND source_type = 'attachment'`,
+              [documentId],
+            )
+          }
           logger.info({ documentId }, '[EMBED-Q] Attachment binaries marked for cleanup after full embedding')
         }
 

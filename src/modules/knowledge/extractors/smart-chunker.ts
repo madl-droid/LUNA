@@ -795,13 +795,31 @@ export function linkChunks(sourceId: string, chunks: EmbeddableChunk[]): LinkedE
   // Generate IDs first so we can reference prev/next
   const ids = chunks.map(() => randomUUID())
 
+  // Build ordered list of indices for non-note chunks (notes don't participate in prev/next chain)
+  const chainIndices: number[] = []
+  for (let i = 0; i < chunks.length; i++) {
+    if (!(chunks[i]!.metadata as Record<string, unknown>)['isNote']) {
+      chainIndices.push(i)
+    }
+  }
+
+  // Build prev/next maps for non-note chunks only
+  const prevMap = new Map<number, string | null>()
+  const nextMap = new Map<number, string | null>()
+  for (let ci = 0; ci < chainIndices.length; ci++) {
+    const idx = chainIndices[ci]!
+    prevMap.set(idx, ci > 0 ? ids[chainIndices[ci - 1]!]! : null)
+    nextMap.set(idx, ci < chainIndices.length - 1 ? ids[chainIndices[ci + 1]!]! : null)
+  }
+
   return chunks.map((chunk, i) => ({
     ...chunk,
     id: ids[i]!,
     chunkIndex: i,
     chunkTotal: chunks.length,
-    prevChunkId: i > 0 ? ids[i - 1]! : null,
-    nextChunkId: i < chunks.length - 1 ? ids[i + 1]! : null,
+    // Notes get null for prev/next (not part of the semantic chain)
+    prevChunkId: prevMap.get(i) ?? null,
+    nextChunkId: nextMap.get(i) ?? null,
     sourceId,
   }))
 }

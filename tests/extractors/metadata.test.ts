@@ -95,11 +95,25 @@ describe('Extractor Metadata Completeness', () => {
       expect(result.metadata.hasExplicitHeadings).toBe(true)
     })
 
+    it('extractMarkdown — sin headings explícitos retorna hasExplicitHeadings=false', async () => {
+      const { extractMarkdown } = await import('../../src/extractors/text.js')
+      const md = 'Este es un párrafo de texto.\nOtro párrafo más largo aquí.\nTercer párrafo con más contenido.'
+      const result = await extractMarkdown(createTextBuffer(md), 'plain.md')
+      expect(result.metadata.hasExplicitHeadings).toBe(false)
+    })
+
     it('extractPlainText always returns hasExplicitHeadings=false', async () => {
       // extractPlainText hardcodes hasExplicitHeadings=false (it doesn't process # headings)
       const { extractPlainText } = await import('../../src/extractors/text.js')
       const txt = 'Plain text without any hash headings at all. Just a normal paragraph.'
       const result = await extractPlainText(createTextBuffer(txt), 'test.txt')
+      expect(result.metadata.hasExplicitHeadings).toBe(false)
+    })
+
+    it('extractPlainText — siempre hasExplicitHeadings=false aunque tenga ## símbolos', async () => {
+      const { extractPlainText } = await import('../../src/extractors/text.js')
+      const txt = '## Esto parece heading pero es plain text\nContenido normal aquí.'
+      const result = await extractPlainText(createTextBuffer(txt), 'file.txt')
       expect(result.metadata.hasExplicitHeadings).toBe(false)
     })
 

@@ -144,3 +144,43 @@ export const MAX_FILE_SIZE = 50 * 1024 * 1024
 
 /** Límite máximo de imagen para extracción (20MB) */
 export const MAX_IMAGE_SIZE = 20 * 1024 * 1024
+
+// ═══════════════════════════════════════════
+// Word count
+// ═══════════════════════════════════════════
+
+/** Cuenta palabras en texto (split por whitespace, filtra vacíos) */
+export function countWords(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length
+}
+
+// ═══════════════════════════════════════════
+// Dual description parser (LLM format)
+// ═══════════════════════════════════════════
+
+export interface DualDescriptionResult {
+  description: string
+  shortDescription?: string
+  transcription?: string
+}
+
+/**
+ * Parsea el formato dual/triple [DESCRIPCIÓN]/[RESUMEN]/[TRANSCRIPCIÓN] que producen los LLMs.
+ * Fallback: si el LLM no siguió el formato, el texto completo va a description.
+ */
+export function parseDualDescription(rawText: string): DualDescriptionResult {
+  const descMatch = rawText.match(/\[DESCRIPCIÓN\]\s*\n([\s\S]*?)(?:\n\s*\[RESUMEN\]|\n\s*\[TRANSCRIPCIÓN\]|$)/)
+  const summaryMatch = rawText.match(/\[RESUMEN\]\s*\n([\s\S]*?)(?:\n\s*\[TRANSCRIPCIÓN\]|$)/)
+  const transcriptionMatch = rawText.match(/\[TRANSCRIPCIÓN\]\s*\n([\s\S]*)$/)
+
+  if (!descMatch?.[1]) {
+    // LLM no siguió el formato — fallback: texto completo como descripción
+    return { description: rawText.trim() }
+  }
+
+  return {
+    description: descMatch[1].trim(),
+    shortDescription: summaryMatch?.[1]?.trim() || undefined,
+    transcription: transcriptionMatch?.[1]?.trim() || undefined,
+  }
+}

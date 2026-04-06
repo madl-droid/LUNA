@@ -7,7 +7,7 @@
 
 import type { Registry } from '../kernel/registry.js'
 import type { ExtractedContent, ExtractedSection, SlidesResult, ExtractedSlide, LLMEnrichment } from './types.js'
-import { isImplicitTitle } from './utils.js'
+import { isImplicitTitle, parseDualDescription } from './utils.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:slides' })
@@ -136,11 +136,9 @@ export async function describeSlideScreenshots(
       if (result && typeof result === 'object' && 'text' in result) {
         const rawText = (result as { text: string }).text?.trim()
         if (rawText) {
-          // Parsear formato dual
-          const descMatch = rawText.match(/\[DESCRIPCIÓN\]\s*\n([\s\S]*?)(?:\n\[RESUMEN\]\s*\n|$)/)
-          const desc = descMatch?.[1]?.trim() ?? rawText
-          slide.screenshotDescription = desc
-          descriptions.push(desc)
+          const parsed = parseDualDescription(rawText)
+          slide.screenshotDescription = parsed.description
+          descriptions.push(parsed.description)
           continue
         }
       }

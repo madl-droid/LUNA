@@ -122,8 +122,8 @@ export async function extractWeb(url: string, options?: WebExtractOptions): Prom
 
   const imageUrls = sections
     .flatMap(s => s.images ?? [])
-    .map(img => img.data.toString('utf-8'))
-    .filter(u => u.startsWith('http'))
+    .map(img => img.url)
+    .filter((u): u is string => !!u && u.startsWith('http'))
 
   return {
     kind: 'web',
@@ -225,11 +225,12 @@ function collectImages(el: Element, hostname: string, images: ExtractedImage[]):
     const height = parseInt(img.getAttribute('height') ?? '0', 10)
     if (width > 0 && height > 0 && isSmallImage(width, height)) continue
 
-    // Nota: no descargamos la imagen aquí — guardamos la referencia
-    // El consumer decidirá si la descarga
+    // Nota: no descargamos la imagen aquí — guardamos la URL de referencia
+    // El consumer decidirá si la descarga. data es Buffer vacío (no tenemos los bytes).
     images.push({
-      data: Buffer.from(src ?? '', 'utf-8'),
+      data: Buffer.alloc(0),
       mimeType: 'image/unknown',
+      url: src ?? undefined,
       width: width || undefined,
       height: height || undefined,
       md5: computeMD5(Buffer.from(src ?? '')),

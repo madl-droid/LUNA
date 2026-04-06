@@ -6,7 +6,7 @@
 // Smart router: DOCX con imágenes → PDF via LibreOffice para pipeline visual.
 
 import type { ExtractedContent, ExtractedSection, ExtractedImage } from './types.js'
-import { computeMD5, isSmallImage, MAX_FILE_SIZE } from './utils.js'
+import { computeMD5, isSmallImage, MAX_FILE_SIZE, countWords } from './utils.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:docx' })
@@ -45,7 +45,7 @@ export async function extractDocx(input: Buffer, fileName: string): Promise<Extr
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'docx-mammoth',
-      wordCount: text.split(/\s+/).filter(Boolean).length,
+      wordCount: countWords(text),
       hasImages: images.length > 0,
       imageCount: images.length,
       sectionCount: sections.length,

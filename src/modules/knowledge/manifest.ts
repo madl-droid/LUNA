@@ -1235,7 +1235,7 @@ const manifest: ModuleManifest = {
 
     // Initialize unified embedding queue (if embeddings enabled)
     if (embeddingService) {
-      embeddingQueue = new EmbeddingQueue(registry.getDb(), redis, embeddingService, registry)
+      embeddingQueue = new EmbeddingQueue(registry.getDb(), redis, embeddingService, registry, pgStore)
       registry.provide('knowledge:embedding-queue', embeddingQueue)
 
       // Initialize vectorize worker and connect to unified queue
