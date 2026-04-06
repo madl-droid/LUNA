@@ -211,10 +211,42 @@ const chunks = chunkSlidesAsPdf(pageTexts, pdfName, pageTexts.length, speakerNot
 
 ## WP4: Audio con embedding multimodal
 
-**Archivo:** `src/modules/knowledge/extractors/smart-chunker.ts`
+**Archivos:**
+- `src/modules/knowledge/extractors/temporal-splitter.ts` — cambiar config
+- `src/modules/knowledge/extractors/smart-chunker.ts` — contentType + mediaRefs
+- `src/modules/knowledge/embedding-limits.ts` — tipo ChunkContentType
 
-### Cambio
-Actualmente `chunkAudio()` produce `contentType: 'text'`. Gemini Embedding 2 soporta audio nativo.
+### Cambio 1: Config de splitting para audio embedding
+
+Cambiar `AUDIO_SPLIT_CONFIG` de `60/70/10` a `60/60/10`:
+
+```typescript
+// ANTES:
+export const AUDIO_SPLIT_CONFIG: SplitConfig = {
+  firstChunkSeconds: 60,
+  subsequentSeconds: 70,
+  overlapSeconds: 10,
+}
+
+// DESPUÉS:
+export const AUDIO_SPLIT_CONFIG: SplitConfig = {
+  firstChunkSeconds: 60,
+  subsequentSeconds: 60,   // 50s nuevo + 10s overlap = 60s total
+  overlapSeconds: 10,
+}
+```
+
+Resultado para audio de 180s:
+- Chunk 1: 0-60s (60s)
+- Chunk 2: 50-110s (50s nuevo + 10s overlap = 60s)
+- Chunk 3: 100-160s (50s nuevo + 10s overlap = 60s)
+- Chunk 4: 150-180s (último, 30s)
+
+Cada chunk de audio enviado a Gemini Embedding tiene ~60s de audio real.
+
+### Cambio 2: contentType y mediaRefs en chunkAudio
+
+Actualmente `chunkAudio()` produce `contentType: 'text'`. Gemini Embedding 2 soporta audio nativo — debemos enviar el audio chunkeado como multimodal.
 
 ```typescript
 // Cuando hay segments con archivos de audio:
@@ -225,7 +257,7 @@ if (segments && segments.length > 0) {
       contentType: 'audio',                // NUEVO: no 'text'
       mediaRefs: [{
         mimeType: opts.mimeType ?? 'audio/mpeg',
-        filePath: seg.segmentPath,          // referencia al segmento de audio
+        filePath: seg.segmentPath,          // referencia al segmento de audio en disco
       }],
       // ...
     })
@@ -233,8 +265,10 @@ if (segments && segments.length > 0) {
 }
 ```
 
+### Cambio 3: Agregar 'audio' a ChunkContentType
+
 **Archivo:** `src/modules/knowledge/embedding-limits.ts`
-Agregar `'audio'` al tipo `ChunkContentType` (ya existe como comentario pero NO está en la unión):
+
 ```typescript
 export type ChunkContentType =
   | 'text'
@@ -279,9 +313,12 @@ O alternativamente, usar el módulo `scheduled-tasks` si ya tiene soporte para c
 
 ---
 
-## WP6: Metadata propagación al chunker
+## WP6: Metadata propagación al chunker (PRIORIDAD ALTA)
 
 **Archivo:** `src/modules/knowledge/knowledge-manager.ts` y `item-manager.ts`
+
+### Por qué es crítico
+Sin metadata propagada, los chunks en la DB no tienen contexto de origen. La búsqueda híbrida, el evaluador, y los filtros por tipo/fuente dependen de esta metadata. Sin ella, los chunks son texto huérfano sin semántica.
 
 ### Cambio
 
@@ -378,3 +415,5 @@ WP5 (binary lifecycle)      ──── depende de WP1 (saber cuándo activar)
 2. **Drive API `exportFile` retorna string**: para exportar Slides como PDF necesitamos buffer. Verificar si existe `exportFileAsBuffer()` o agregar.
 3. **Gemini Embedding multimodal**: verificar que `@google/generative-ai` soporta enviar PDF/audio/video para embedding, no solo texto.
 4. **Backward compatibility**: uploads existentes en knowledge deben seguir funcionando. Los chunks viejos (sin contentType) deben tratarse como 'text'.
+5. **AUDIO_SPLIT_CONFIG cambió de 60/70/10 a 60/60/10**: los tests de Track B (`tests/extractors/temporal-split.test.ts`) validan la config anterior. Actualizar los tests para reflejar la nueva config.
+6. **Schema drift en knowledge_chunks**: el agente de exploración detectó que la tabla `knowledge_chunks` puede no tener columnas para `content_type`, `media_refs`, `extra_metadata`. Verificar migraciones existentes y crear migración si falta.
