@@ -26,7 +26,7 @@ export const MIN_CHUNK_WORDS = 20
 export const MAX_IMAGES_PER_REQUEST = 6
 
 /** Max PDF pages per embedding request */
-export const MAX_PDF_PAGES_PER_REQUEST = 6
+export const MAX_PDF_PAGES_PER_REQUEST = 3
 
 /** PDF page overlap between consecutive chunks */
 export const PDF_PAGE_OVERLAP = 1
