@@ -118,6 +118,7 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
 
     // Criticizer (quality gate): disabled | complex_only | always
     criticizerMode: moduleConfig.LLM_CRITICIZER_MODE as 'disabled' | 'complex_only' | 'always',
+    criticizerMaxRetries: envInt('ENGINE_CRITICIZER_MAX_RETRIES', 2),
 
     // Checkpoints (resumable pipelines)
     checkpointEnabled: moduleConfig.ENGINE_CHECKPOINT_ENABLED,
