@@ -502,6 +502,21 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
     return messages
   }
 
+  // ─── Thread ─────────────────────────────────
+
+  /**
+   * Get all message IDs in a thread (chronological order).
+   * Uses format: 'metadata' — single API call, no bodies.
+   */
+  async getThreadMessageIds(threadId: string): Promise<string[]> {
+    const res = await this.gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'metadata',
+    })
+    return (res.data.messages ?? []).map(m => m.id).filter((id): id is string => !!id)
+  }
+
   // ─── Listing / Search (for tools) ───────────
 
   /** Generic message listing — used by email tools for inbox browsing and search. */

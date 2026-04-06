@@ -13,6 +13,7 @@ import type { OAuthManager } from '../google-apps/oauth-manager.js'
 import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
 import { EmailRateLimiter } from './rate-limiter.js'
+import { cleanEmailBody } from './email-cleaner.js'
 import type { EmailConfig, EmailPollerState, EmailMessage, LunaLabelIds, CustomLabel, ResolvedCustomLabel } from './types.js'
 
 const logger = pino({ name: 'gmail' })
@@ -224,13 +225,77 @@ async function pollForEmails(): Promise<void> {
   }
 }
 
+/**
+ * Detect gap messages in a thread when Luna was absent.
+ * Compares last_message_gmail_id (our last known msg) with current msg position in Gmail thread.
+ * Returns a formatted preamble string with the missed messages, or null if no gap.
+ */
+async function detectThreadGap(
+  msg: EmailMessage, db: import('pg').Pool, config: EmailConfig,
+): Promise<string | null> {
+  if (config.EMAIL_GAP_CONTEXT_MAX === 0 || !msg.threadId || !gmailAdapter) return null
+
+  // Get the last message ID we processed in this thread
+  const row = await db.query<{ last_message_gmail_id: string | null }>(
+    `SELECT last_message_gmail_id FROM email_threads WHERE thread_id = $1`,
+    [msg.threadId],
+  )
+  const lastKnownId = row.rows[0]?.last_message_gmail_id
+  if (!lastKnownId) return null // First message in thread or no record
+
+  // Get all message IDs in the thread from Gmail (chronological order)
+  const threadIds = await gmailAdapter.getThreadMessageIds(msg.threadId)
+  const lastIdx = threadIds.indexOf(lastKnownId)
+  const currentIdx = threadIds.indexOf(msg.id)
+
+  if (lastIdx === -1 || currentIdx === -1 || currentIdx <= lastIdx + 1) return null // No gap
+
+  // IDs between our last known and current (exclusive on both ends)
+  const gapIds = threadIds.slice(lastIdx + 1, currentIdx)
+  if (gapIds.length === 0) return null
+
+  // Cap to configured max, take the most recent ones
+  const toFetch = gapIds.slice(-config.EMAIL_GAP_CONTEXT_MAX)
+
+  const parts: string[] = ['[Contexto: mensajes en el hilo mientras estabas ausente]']
+  for (const gapId of toFetch) {
+    try {
+      const gapMsg = await gmailAdapter.getFullMessage(gapId)
+      if (!gapMsg) continue
+      const body = gapMsg.cleanBodyText || cleanEmailBody(gapMsg.bodyText) || '(sin contenido)'
+      const dateStr = gapMsg.date.toISOString().replace('T', ' ').substring(0, 16)
+      parts.push(`---\nDe: ${gapMsg.fromName} <${gapMsg.from}> | ${dateStr}\n${body}`)
+    } catch (err) {
+      logger.warn({ gapId, err }, 'Failed to fetch gap message — skipping')
+    }
+  }
+
+  if (parts.length <= 1) return null // Only header, no actual messages fetched
+  parts.push('---')
+  return parts.join('\n')
+}
+
 async function processIncomingEmail(msg: EmailMessage): Promise<void> {
   if (!_registry || !gmailAdapter) return
 
   const config = _registry.getConfig<EmailConfig>('gmail')
-
-  // Track thread (including Gmail message ID for label operations)
   const db = _registry.getDb()
+
+  // Detect thread gap BEFORE updating last_message_gmail_id
+  let gapPreamble = ''
+  if (msg.threadId) {
+    try {
+      const preamble = await detectThreadGap(msg, db, config)
+      if (preamble) {
+        gapPreamble = preamble + '\n\n'
+        logger.info({ messageId: msg.id, threadId: msg.threadId }, 'Thread gap context injected')
+      }
+    } catch (err) {
+      logger.warn({ err, messageId: msg.id }, 'Gap detection failed — continuing without')
+    }
+  }
+
+  // Track thread (including Gmail message ID for label operations) — AFTER gap detection
   await db.query(`
     INSERT INTO email_threads (thread_id, contact_id, subject, last_message_at, message_count, last_message_gmail_id)
     VALUES ($1, $2, $3, $4, 1, $5)
@@ -259,7 +324,7 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
       }))
     : undefined
 
-  const fullContent = `[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${cleanContent}`
+  const fullContent = `${gapPreamble}[Email] De: ${msg.fromName} <${msg.from}>\nAsunto: ${msg.subject}\n\n${cleanContent}`
 
   // Fire message:incoming hook para que el engine lo procese
   await _registry.runHook('message:incoming', {
@@ -805,6 +870,8 @@ const manifest: ModuleManifest = {
     EMAIL_SIGNATURE_TEXT: z.string().default(''),          // only used if mode = 'custom'
     // Triage — pre-agentic classification
     EMAIL_TRIAGE_ENABLED: boolEnv(true),
+    // Thread gap detection — max messages to recover when Luna is re-added to a thread
+    EMAIL_GAP_CONTEXT_MAX: numEnv(5),
     // Attachment processing — which file types to process on email channel
     // Email supports all categories
     EMAIL_ATT_IMAGES: boolEnv(true),
@@ -1058,6 +1125,13 @@ const manifest: ModuleManifest = {
         rows: 3,
         label: { es: 'Mensaje de seguimiento', en: 'Follow-up message' },
         info: { es: 'Texto del email de seguimiento antes de cerrar la sesion', en: 'Follow-up email text before closing the session' },
+      },
+      {
+        key: 'EMAIL_GAP_CONTEXT_MAX',
+        type: 'number',
+        width: 'half',
+        label: { es: 'Contexto de hilo faltante (msgs)', en: 'Thread gap context (msgs)' },
+        info: { es: 'Max mensajes a recuperar cuando Luna es re-agregada a un hilo del que estuvo ausente. 0 = desactivado.', en: 'Max messages to recover when Luna is re-added to a thread she was absent from. 0 = disabled.' },
       },
       // ── Naturalidad ──
       { key: '_divider_naturalidad', type: 'divider', label: { es: 'Naturalidad', en: 'Naturalness' } },

@@ -49,6 +49,8 @@ export interface EmailConfig {
   GMAIL_TOKEN_REFRESH_BUFFER_MS: number
   // Triage
   EMAIL_TRIAGE_ENABLED: boolean
+  // Thread gap detection
+  EMAIL_GAP_CONTEXT_MAX: number
   // Attachment processing config
   EMAIL_ATT_IMAGES: boolean
   EMAIL_ATT_DOCUMENTS: boolean

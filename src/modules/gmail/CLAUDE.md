@@ -23,7 +23,7 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
   - **Rate limit**: EMAIL_ACCOUNT_TYPE ('workspace'), EMAIL_RATE_LIMIT_PER_HOUR (0=auto), EMAIL_RATE_LIMIT_PER_DAY (0=auto)
   - **Labels**: EMAIL_CUSTOM_LABELS (JSON array)
   - **Batching**: EMAIL_BATCH_WAIT_MS (0)
-  - **Sessions**: EMAIL_SESSION_INACTIVITY_HOURS (48), EMAIL_PRECLOSE_FOLLOWUP_HOURS (0), EMAIL_PRECLOSE_FOLLOWUP_TEXT
+  - **Sessions**: EMAIL_SESSION_INACTIVITY_HOURS (48), EMAIL_PRECLOSE_FOLLOWUP_HOURS (0), EMAIL_PRECLOSE_FOLLOWUP_TEXT, EMAIL_GAP_CONTEXT_MAX (5)
   - **OAuth standalone**: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_TOKEN_REFRESH_BUFFER_MS (300000)
   - **ACK**: ACK_EMAIL_TRIGGER_MS (0=off), ACK_EMAIL_HOLD_MS (2000), ACK_EMAIL_MESSAGE, ACK_EMAIL_STYLE ('formal')
   - **Formato**: EMAIL_FORMAT_ADVANCED (false), FORMAT_INSTRUCTIONS_EMAIL, EMAIL_FORMAT_TONE ('profesional'), EMAIL_FORMAT_MAX_SENTENCES (4), EMAIL_FORMAT_MAX_PARAGRAPHS (4), EMAIL_FORMAT_EMOJI_LEVEL ('nunca')
@@ -47,6 +47,16 @@ Clasificador determinístico (<5ms, sin LLM) que corre ANTES del agentic loop. D
 - Clasificador en `src/engine/agentic/email-triage.ts`, gate en `src/engine/engine.ts`
 - Service: `gmail:triage-config` expone enabled + ownAddress (auto-detectado de OAuth)
 - `rawHeaders` en EmailMessage: mapa lowercased de headers del email (para detectar Auto-Submitted, Precedence, etc.)
+
+## Thread Gap Detection
+Cuando Luna es removida del CC de un hilo y luego re-agregada, detecta y recupera mensajes faltantes.
+- Usa `last_message_gmail_id` (ya en `email_threads`) como marcador de posición
+- `getThreadMessageIds()` en gmail-adapter: 1 API call (`threads.get` format: metadata) para IDs del hilo
+- `detectThreadGap()` en manifest: compara posición del marcador vs msg actual, fetchea gap messages
+- Gap detection corre ANTES del UPSERT de `email_threads` (para leer el marcador previo)
+- Preámbulo inyectado en `fullContent` antes del contenido del email
+- `EMAIL_GAP_CONTEXT_MAX` (default 5): máximo mensajes a recuperar. 0 = desactivado.
+- Fallo graceful: si la API falla, pipeline continúa sin gap context
 
 ## Hot reload
 - `reloadConfig()` en cada poll cycle y antes de enviar → filtros, footer, always-CC se actualizan sin restart
