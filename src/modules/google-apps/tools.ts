@@ -230,6 +230,34 @@ export async function registerGoogleTools(
 
         // 1. Get file metadata (name, mimeType, size)
         const file = await drive.getFile(fileId)
+        // Guard: reject folders — agent should use drive-list-files instead
+        if (file.mimeType === 'application/vnd.google-apps.folder') {
+          return {
+            success: false,
+            error: 'Este ID es una carpeta, no un archivo. Usa drive-list-files para ver su contenido.',
+            data: { name: file.name, mimeType: file.mimeType },
+          }
+        }
+
+        // Guard: reject Google-native types — agent should use docs-read/sheets-read/slides-read
+        const GOOGLE_NATIVE_MIMES = new Set([
+          'application/vnd.google-apps.document',
+          'application/vnd.google-apps.spreadsheet',
+          'application/vnd.google-apps.presentation',
+        ])
+        if (GOOGLE_NATIVE_MIMES.has(file.mimeType)) {
+          const toolMap: Record<string, string> = {
+            'application/vnd.google-apps.document': 'docs-read',
+            'application/vnd.google-apps.spreadsheet': 'sheets-read',
+            'application/vnd.google-apps.presentation': 'slides-read',
+          }
+          return {
+            success: false,
+            error: `Este es un archivo nativo de Google. Usa ${toolMap[file.mimeType]} en vez de drive-read-file.`,
+            data: { name: file.name, mimeType: file.mimeType, suggestedTool: toolMap[file.mimeType] },
+          }
+        }
+
         const fileSizeBytes = file.size ? parseInt(file.size, 10) : 0
         const maxSizeMb = registry.getConfig<{ ATTACHMENT_URL_MAX_SIZE_MB: number }>('engine')?.ATTACHMENT_URL_MAX_SIZE_MB ?? 10
         const maxSizeBytes = maxSizeMb * 1024 * 1024
