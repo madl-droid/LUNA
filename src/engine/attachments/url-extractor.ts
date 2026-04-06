@@ -96,7 +96,6 @@ export async function extractUrls(
         tokenEstimate: 0,
         status: 'unauthorized',
         injectionRisk: false,
-        cacheKey: null,
       })
     } catch (err) {
       logger.warn({ url, err }, 'URL extraction failed')
@@ -107,7 +106,6 @@ export async function extractUrls(
         tokenEstimate: 0,
         status: 'needs_subagent',
         injectionRisk: false,
-        cacheKey: null,
       })
     }
   }
@@ -127,7 +125,6 @@ function driveResultToUrlExtraction(drive: import('../../extractors/types.js').D
       tokenEstimate: 0,
       status: 'drive_no_access',
       injectionRisk: false,
-      cacheKey: null,
       driveEmail: drive.accountEmail ?? undefined,
     }
   }
@@ -139,7 +136,6 @@ function driveResultToUrlExtraction(drive: import('../../extractors/types.js').D
     tokenEstimate: drive.extractedContent ? Math.ceil(drive.extractedContent.length / 4) : 0,
     status: 'drive_reference',
     injectionRisk: false,
-    cacheKey: null,
     driveMeta: {
       fileId: drive.fileId,
       name: drive.name,
@@ -175,7 +171,7 @@ async function extractAuthorizedUrl(
     if (!response.ok) {
       return {
         url, title: null, extractedText: null, tokenEstimate: 0,
-        status: 'needs_subagent', injectionRisk: false, cacheKey: null,
+        status: 'needs_subagent', injectionRisk: false,
       }
     }
 
@@ -183,7 +179,7 @@ async function extractAuthorizedUrl(
     if (contentLength && Number(contentLength) > config.urlMaxSizeMb * 1024 * 1024) {
       return {
         url, title: null, extractedText: null, tokenEstimate: 0,
-        status: 'too_large', injectionRisk: false, cacheKey: null,
+        status: 'too_large', injectionRisk: false,
       }
     }
 
@@ -193,7 +189,7 @@ async function extractAuthorizedUrl(
     if (html.length > config.urlMaxSizeMb * 1024 * 1024) {
       return {
         url, title: null, extractedText: null, tokenEstimate: 0,
-        status: 'too_large', injectionRisk: false, cacheKey: null,
+        status: 'too_large', injectionRisk: false,
       }
     }
 
@@ -206,7 +202,6 @@ async function extractAuthorizedUrl(
         tokenEstimate: estimateTokens(html),
         status: 'processed',
         injectionRisk: validation.injectionRisk,
-        cacheKey: null,
       }
     }
 
@@ -222,7 +217,6 @@ async function extractAuthorizedUrl(
         tokenEstimate: 0,
         status: 'needs_subagent',
         injectionRisk: false,
-        cacheKey: null,
       }
     }
 
@@ -236,7 +230,6 @@ async function extractAuthorizedUrl(
       tokenEstimate: estimateTokens(cleanText),
       status: 'processed',
       injectionRisk: validation.injectionRisk,
-      cacheKey: null,
     }
   } finally {
     clearTimeout(timeout)

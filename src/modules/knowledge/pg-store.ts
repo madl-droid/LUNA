@@ -627,7 +627,6 @@ export class KnowledgePgStore {
   async setItemChunksSearchable(itemId: string, searchable: boolean): Promise<void> {
     await this.db.query(
       `UPDATE knowledge_chunks SET
-        has_embedding = CASE WHEN $2 THEN (embedding IS NOT NULL) ELSE false END,
         embedding_status = CASE WHEN $2 AND embedding IS NOT NULL THEN 'embedded' ELSE 'pending' END
        WHERE document_id IN (SELECT id FROM knowledge_documents WHERE source_ref = $1)`,
       [itemId, searchable],
@@ -637,7 +636,7 @@ export class KnowledgePgStore {
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
     const embStr = `[${embedding.join(',')}]`
     await this.db.query(
-      `UPDATE knowledge_chunks SET embedding = $1::vector, has_embedding = true, embedding_status = 'embedded', retry_count = 0, last_error = NULL, last_attempt_at = NOW() WHERE id = $2`,
+      `UPDATE knowledge_chunks SET embedding = $1::vector, embedding_status = 'embedded', retry_count = 0, last_error = NULL, last_attempt_at = NOW() WHERE id = $2`,
       [embStr, chunkId],
     )
   }
@@ -662,7 +661,9 @@ export class KnowledgePgStore {
           chunk.content,
           chunk.metadata.sectionTitle ?? null,
           chunk.chunkIndex,
-          chunk.metadata.pageRange ? parseInt(chunk.metadata.pageRange) || null : null,
+          chunk.metadata.pageRange
+            ? (parseInt(chunk.metadata.pageRange.split('-')[0]!, 10) || null)
+            : null,
           chunk.sourceId,
           chunk.chunkTotal,
           chunk.prevChunkId,

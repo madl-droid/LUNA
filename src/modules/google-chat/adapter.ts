@@ -257,6 +257,14 @@ export class GoogleChatAdapter {
       if (!response.ok) {
         throw new Error(`Failed to download Google Chat attachment: HTTP ${response.status}`)
       }
+
+      // Guard against oversized attachments (Content-Length header check)
+      const contentLength = response.headers.get('content-length')
+      const maxBytes = this.config.GOOGLE_CHAT_ATT_MAX_SIZE_MB * 1024 * 1024
+      if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+        throw new Error(`Attachment too large: ${contentLength} bytes (max ${maxBytes})`)
+      }
+
       return Buffer.from(await response.arrayBuffer())
     }
 
@@ -337,10 +345,10 @@ export class GoogleChatAdapter {
       } catch (err) {
         const errMsg = String(err)
 
-        // Don't retry on 4xx errors (client errors)
+        // Don't retry on 4xx errors (client errors). 429 = rate limit → retryable, NOT included.
         const is4xx = errMsg.includes('400') || errMsg.includes('401')
           || errMsg.includes('403') || errMsg.includes('404')
-          || errMsg.includes('409') || errMsg.includes('429')
+          || errMsg.includes('409')
         if (is4xx || attempt === maxRetries) {
           logger.error({ err, spaceName, attempt }, 'Failed to send message to Google Chat')
           return { success: false, error: errMsg }
