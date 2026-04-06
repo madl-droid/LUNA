@@ -81,6 +81,9 @@ export type AttachmentStatus =
   | 'unsupported_type'
   | 'needs_subagent'
   | 'knowledge_match'
+  | 'drive_reference'
+  | 'drive_no_access'
+  | 'unauthorized'
 
 /**
  * Category label = category name. Used for context injection: [documents], [images], etc.
@@ -148,6 +151,15 @@ export interface UrlExtraction {
   status: AttachmentStatus
   injectionRisk: boolean
   cacheKey: string | null
+  /** Drive file metadata (only for drive_reference status) */
+  driveMeta?: {
+    fileId: string
+    name: string
+    mimeType: string
+    modifiedTime?: string
+  }
+  /** Google account email for drive_no_access (so agent can tell user to share) */
+  driveEmail?: string
 }
 
 /** Complete attachment context injected into ContextBundle */
@@ -175,6 +187,8 @@ export interface AttachmentEngineConfig {
   urlFetchTimeoutMs: number
   urlMaxSizeMb: number
   urlEnabled: boolean
+  /** Domains authorized for automatic fetch+extract (user-configured + knowledge auto-added) */
+  authorizedDomains: string[]
 }
 
 /**

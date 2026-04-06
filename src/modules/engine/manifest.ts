@@ -34,6 +34,7 @@ interface EngineModuleConfig {
   ATTACHMENT_URL_ENABLED: boolean
   ATTACHMENT_URL_FETCH_TIMEOUT_MS: number
   ATTACHMENT_URL_MAX_SIZE_MB: number
+  ATTACHMENT_AUTHORIZED_DOMAINS: string
   MEMORY_SESSION_REOPEN_WINDOW_HOURS: number
   SESSION_REOPEN_WINDOW_MS: number
   ENGINE_PIPELINE_TIMEOUT_MS: number
@@ -92,6 +93,7 @@ const manifest: ModuleManifest = {
     ATTACHMENT_URL_ENABLED: boolEnv(true),
     ATTACHMENT_URL_FETCH_TIMEOUT_MS: numEnvMin(1000, 10000),
     ATTACHMENT_URL_MAX_SIZE_MB: numEnvMin(1, 5),
+    ATTACHMENT_AUTHORIZED_DOMAINS: z.string().default(''),
     MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnvMin(0, 1),
     SESSION_REOPEN_WINDOW_MS: numEnvMin(60000, 3600000),
     ENGINE_PIPELINE_TIMEOUT_MS: numEnvMin(1000, 120000),
@@ -259,6 +261,20 @@ const manifest: ModuleManifest = {
         max: 20,
         unit: 'MB',
         width: 'half',
+      },
+      {
+        key: 'ATTACHMENT_AUTHORIZED_DOMAINS',
+        type: 'tags',
+        label: { es: 'Dominios autorizados', en: 'Authorized domains' },
+        description: {
+          es: 'Dominios de los que se puede extraer contenido automaticamente. Las URLs de knowledge se agregan automaticamente.',
+          en: 'Domains from which content can be automatically extracted. Knowledge URLs are added automatically.',
+        },
+        info: {
+          es: 'URLs de estos dominios se descargan y extraen automaticamente. URLs de otros dominios se pasan al agente para que decida si usar un subagente. URLs de Google Drive se manejan via API. Separar con coma.',
+          en: 'URLs from these domains are automatically downloaded and extracted. URLs from other domains are passed to the agent to decide if a subagent is needed. Google Drive URLs are handled via API. Comma-separated.',
+        },
+        separator: ',',
       },
 
       // ── Runtime ──
@@ -593,15 +609,42 @@ const manifest: ModuleManifest = {
     // ── Attachment engine config service (hot-reloadable via console) ──
     let attConfig = registry.getConfig<EngineModuleConfig>('engine')
 
-    const buildAttEngineConfig = (): AttachmentEngineConfig => ({
-      enabled: attConfig.ATTACHMENT_ENABLED,
-      smallDocTokens: attConfig.ATTACHMENT_SMALL_DOC_TOKENS,
-      mediumDocTokens: attConfig.ATTACHMENT_MEDIUM_DOC_TOKENS,
-      summaryMaxTokens: attConfig.ATTACHMENT_SUMMARY_MAX_TOKENS,
-      urlFetchTimeoutMs: attConfig.ATTACHMENT_URL_FETCH_TIMEOUT_MS,
-      urlMaxSizeMb: attConfig.ATTACHMENT_URL_MAX_SIZE_MB,
-      urlEnabled: attConfig.ATTACHMENT_URL_ENABLED,
-    })
+    // Cache knowledge web source domains (refreshed on config reload)
+    let cachedKnowledgeDomains: string[] = []
+
+    async function refreshKnowledgeDomains(): Promise<void> {
+      try {
+        const pgStore = registry.getOptional<{ listWebSources(): Promise<{ url: string }[]> }>('knowledge:pg-store')
+        if (pgStore) {
+          const sources = await pgStore.listWebSources()
+          cachedKnowledgeDomains = sources
+            .map(s => { try { return new URL(s.url).hostname.toLowerCase() } catch { return '' } })
+            .filter(Boolean)
+        }
+      } catch { /* knowledge module not active */ }
+    }
+
+    // Initial load of knowledge domains (fire-and-forget)
+    refreshKnowledgeDomains().catch(() => {})
+
+    const buildAttEngineConfig = (): AttachmentEngineConfig => {
+      const configDomains = attConfig.ATTACHMENT_AUTHORIZED_DOMAINS
+        ? attConfig.ATTACHMENT_AUTHORIZED_DOMAINS.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
+        : []
+
+      const allDomains = [...new Set([...configDomains, ...cachedKnowledgeDomains])]
+
+      return {
+        enabled: attConfig.ATTACHMENT_ENABLED,
+        smallDocTokens: attConfig.ATTACHMENT_SMALL_DOC_TOKENS,
+        mediumDocTokens: attConfig.ATTACHMENT_MEDIUM_DOC_TOKENS,
+        summaryMaxTokens: attConfig.ATTACHMENT_SUMMARY_MAX_TOKENS,
+        urlFetchTimeoutMs: attConfig.ATTACHMENT_URL_FETCH_TIMEOUT_MS,
+        urlMaxSizeMb: attConfig.ATTACHMENT_URL_MAX_SIZE_MB,
+        urlEnabled: attConfig.ATTACHMENT_URL_ENABLED,
+        authorizedDomains: allDomains,
+      }
+    }
 
     registry.provide('engine:attachment-config', {
       get: buildAttEngineConfig,
@@ -653,6 +696,9 @@ const manifest: ModuleManifest = {
 
       // Hot-reload core engine config (models, pipeline, concurrency, etc.)
       reloadEngineConfig()
+
+      // Refresh knowledge domains for authorized URL list
+      refreshKnowledgeDomains().catch(() => {})
 
       // Dynamic extreme logging: read DEBUG_EXTREME_LOG and update global pino level
       try {

@@ -305,14 +305,41 @@ export async function intake(
         })
       }
 
-      // Inject URL extractions too
+      // Inject URL extractions with tier-aware messages
       for (const url of attResult.urls) {
-        if (url.status !== 'processed' || !url.extractedText) continue
-        history.push({
-          role: 'user',
-          content: `[web_link] ${url.title ?? url.url}: ${url.extractedText}`,
-          timestamp: new Date(),
-        })
+        if (url.status === 'processed' && url.extractedText) {
+          // Authorized domain: fetched and extracted successfully
+          history.push({
+            role: 'user',
+            content: `[web_link] ${url.title ?? url.url}: ${url.extractedText}`,
+            timestamp: new Date(),
+          })
+        } else if (url.status === 'drive_reference' && url.driveMeta) {
+          // Drive URL with access: inject metadata so agent knows about the file
+          const meta = url.driveMeta
+          const modified = meta.modifiedTime ? ` (modificado: ${new Date(meta.modifiedTime).toLocaleDateString('es')})` : ''
+          history.push({
+            role: 'user',
+            content: `[drive] El usuario compartió un enlace de Google Drive: "${meta.name}" (${meta.mimeType})${modified}. URL: ${url.url} — Puedes usar las tools de Google (docs-read, sheets-read, slides-read, drive-get-file) con el ID "${meta.fileId}" para leer el contenido.`,
+            timestamp: new Date(),
+          })
+        } else if (url.status === 'drive_no_access') {
+          // Drive URL without access: tell agent to ask user to share
+          const emailHint = url.driveEmail ? ` con la cuenta ${url.driveEmail}` : ''
+          history.push({
+            role: 'user',
+            content: `[drive] El usuario compartió un enlace de Google Drive (${url.url}) pero no tenemos acceso al archivo. Pídele al usuario que comparta el documento${emailHint} para poder leerlo.`,
+            timestamp: new Date(),
+          })
+        } else if (url.status === 'unauthorized') {
+          // Unauthorized domain: agent decides what to do (can use web-researcher subagent)
+          history.push({
+            role: 'user',
+            content: `[url] El usuario envió un enlace: ${url.url} — Si necesitas consultar el contenido, puedes usar un subagente web-researcher.`,
+            timestamp: new Date(),
+          })
+        }
+        // needs_subagent, too_large: already handled by existing logic (not injected)
       }
     }
   } catch (err) {
@@ -417,6 +444,7 @@ async function processAttachmentsInPhase1(
     urlFetchTimeoutMs: config.attachmentUrlFetchTimeoutMs,
     urlMaxSizeMb: config.attachmentUrlMaxSizeMb,
     urlEnabled: config.attachmentUrlEnabled,
+    authorizedDomains: [],
   }
 
   if (!attEngineConfig.enabled) return null

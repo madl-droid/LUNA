@@ -216,11 +216,11 @@ export async function processAttachments(
     }
   }
 
-  // Process URLs in text
+  // Process URLs in text (3-tier routing: Drive → Authorized → Unauthorized)
   if (engineConfig.urlEnabled && normalizedText) {
     const urls = detectUrls(normalizedText)
     if (urls.length > 0) {
-      const urlResults = await extractUrls(urls, engineConfig)
+      const urlResults = await extractUrls(urls, engineConfig, registry)
       result.urls = urlResults
 
       // Persist each URL extraction independently
