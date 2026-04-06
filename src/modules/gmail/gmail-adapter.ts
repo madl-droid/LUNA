@@ -132,7 +132,7 @@ export class GmailAdapter {
 
     const res = await this.gmail.users.messages.list({
       userId: 'me',
-      q: `is:unread (${labelQuery})`,
+      q: `is:unread (${labelQuery}) -in:trash -in:spam -is:draft`,
       maxResults: this.config.EMAIL_MAX_HISTORY_FETCH,
     })
 
@@ -169,6 +169,11 @@ export class GmailAdapter {
         const added = history.messagesAdded ?? []
         for (const item of added) {
           if (item.message?.id) {
+            const labels = item.message.labelIds ?? []
+            if (labels.includes('TRASH') || labels.includes('SPAM') || labels.includes('DRAFT')) {
+              logger.debug({ messageId: item.message.id, labels }, 'Skipping trash/spam/draft from history')
+              continue
+            }
             messageIds.add(item.message.id)
           }
         }
@@ -672,9 +677,12 @@ ${original.bodyHtml || `<pre>${original.bodyText}</pre>`}
 
     // Footer (separate from signature — legal disclaimers, etc.)
     if (this.config.EMAIL_FOOTER_ENABLED && this.config.EMAIL_FOOTER_TEXT) {
-      const safeFooter = this.config.EMAIL_FOOTER_TEXT
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      bodyHtml += `<br/><hr style="border:none;border-top:1px solid #ccc;margin:16px 0"/><small style="color:#888">${safeFooter}</small>`
+      const footerText = this.config.EMAIL_FOOTER_TEXT
+      if (!stripHtml(bodyHtml).includes(footerText)) {
+        const safeFooter = footerText
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        bodyHtml += `<br/><hr style="border:none;border-top:1px solid #ccc;margin:16px 0"/><small style="color:#888">${safeFooter}</small>`
+      }
     }
     lines.push('Content-Type: text/html; charset=UTF-8')
     lines.push('Content-Transfer-Encoding: base64')

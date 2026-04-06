@@ -96,6 +96,11 @@ const pollerState: EmailPollerState = {
   lastError: null,
 }
 
+// Exponential backoff state for polling error recovery
+let pollBackoffMs = 0
+let consecutivePollErrors = 0
+const MAX_POLL_BACKOFF_MS = 5 * 60 * 1000 // 5 minutes
+
 /** Build the shared OAuth redirect URI from the request */
 function getRedirectUri(req: import('node:http').IncomingMessage): string {
   return `${buildBaseUrl(req)}/console/oauth/callback`
@@ -147,6 +152,15 @@ async function runMigrations(db: import('pg').Pool): Promise<void> {
 async function pollForEmails(): Promise<void> {
   if (!gmailAdapter || !_registry) return
 
+  // If backing off from previous errors, skip this cycle
+  if (pollBackoffMs > 0 && consecutivePollErrors > 0) {
+    const skipUntil = (pollerState.lastPollAt?.getTime() ?? 0) + pollBackoffMs
+    if (Date.now() < skipUntil) {
+      logger.debug({ remainingMs: skipUntil - Date.now(), consecutivePollErrors }, 'Skipping poll cycle — backoff active')
+      return
+    }
+  }
+
   pollerState.status = 'polling'
   try {
     // Reload config on each poll cycle to pick up console changes
@@ -171,9 +185,9 @@ async function pollForEmails(): Promise<void> {
     }
 
     const batchWaitMs = config.EMAIL_BATCH_WAIT_MS
-    for (const msg of messages) {
-      if (batchWaitMs > 0) {
-        // Batching mode: debounce per threadId
+    if (batchWaitMs > 0) {
+      // Batching mode: debounce per threadId
+      for (const msg of messages) {
         const key = msg.threadId || msg.from
         const existing = pendingBatch.get(key)
         if (existing) {
@@ -196,21 +210,33 @@ async function pollForEmails(): Promise<void> {
             logger.error({ messageId: latest.id, err }, 'Failed to process batched email')
           }
         }, batchWaitMs)
-      } else {
-        // Immediate processing
-        try {
-          await processIncomingEmail(msg)
-          pollerState.messagesProcessed++
-        } catch (err) {
-          pollerState.errors++
-          pollerState.lastError = err instanceof Error ? err.message : String(err)
-          logger.error({ messageId: msg.id, err }, 'Failed to process email')
-        }
+      }
+    } else {
+      // Immediate processing — up to EMAIL_POLL_CONCURRENCY concurrent
+      const EMAIL_POLL_CONCURRENCY = 5
+      for (let i = 0; i < messages.length; i += EMAIL_POLL_CONCURRENCY) {
+        const chunk = messages.slice(i, i + EMAIL_POLL_CONCURRENCY)
+        await Promise.all(chunk.map(async (msg) => {
+          try {
+            await processIncomingEmail(msg)
+            pollerState.messagesProcessed++
+          } catch (err) {
+            pollerState.errors++
+            pollerState.lastError = err instanceof Error ? err.message : String(err)
+            logger.error({ messageId: msg.id, err }, 'Failed to process email')
+          }
+        }))
       }
     }
 
     pollerState.lastPollAt = new Date()
     pollerState.status = 'idle'
+    // Reset backoff on success
+    if (consecutivePollErrors > 0) {
+      logger.info({ previousErrors: consecutivePollErrors }, 'Poll recovered — resetting backoff')
+      consecutivePollErrors = 0
+      pollBackoffMs = 0
+    }
 
     // Persistir estado
     const db = _registry.getDb()
@@ -222,10 +248,20 @@ async function pollForEmails(): Promise<void> {
     `, [lastHistoryId, pollerState.messagesProcessed]).catch(() => {})
 
   } catch (err) {
+    const status = (err as { code?: number })?.code ?? (err as { status?: number })?.status ?? 0
+    if (status === 401) {
+      pollerState.status = 'error'
+      pollerState.lastError = 'Authentication revoked (401) — reconnect from console'
+      logger.error({ err }, 'Gmail auth revoked — stopping poller')
+      stopPolling()
+      return
+    }
     pollerState.status = 'error'
     pollerState.errors++
     pollerState.lastError = err instanceof Error ? err.message : String(err)
-    logger.error({ err }, 'Email poll cycle failed')
+    consecutivePollErrors++
+    pollBackoffMs = Math.min(1000 * Math.pow(2, consecutivePollErrors - 1), MAX_POLL_BACKOFF_MS)
+    logger.error({ err, consecutivePollErrors, nextRetryMs: pollBackoffMs }, 'Email poll cycle failed')
   }
 }
 
@@ -431,7 +467,12 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
         filename: att.filename,
         mimeType: att.mimeType,
         size: att.size,
-        getData: () => adapter.downloadAttachment(msg.id, att.id).then((b) => b ?? Buffer.alloc(0)),
+        getData: () => adapter.downloadAttachment(msg.id, att.id)
+          .then((b) => b ?? Buffer.alloc(0))
+          .catch((err: unknown) => {
+            logger.warn({ messageId: msg.id, attachmentId: att.id, filename: att.filename, err }, 'Attachment download failed — skipping')
+            return Buffer.alloc(0)
+          }),
       }))
     : undefined
 
@@ -1391,6 +1432,12 @@ const manifest: ModuleManifest = {
     _registry = registry
     const db = registry.getDb()
     const config = registry.getConfig<EmailConfig>('gmail')
+
+    // Config coherence checks
+    const validReplyModes = ['reply-sender', 'reply-all', 'new-thread']
+    if (config.EMAIL_REPLY_MODE && !validReplyModes.includes(config.EMAIL_REPLY_MODE)) {
+      logger.warn({ configured: config.EMAIL_REPLY_MODE, valid: validReplyModes }, 'EMAIL_REPLY_MODE is not a recognized value — defaulting to reply-sender')
+    }
 
     // Run migrations
     await runMigrations(db)
