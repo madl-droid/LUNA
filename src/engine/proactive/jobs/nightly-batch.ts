@@ -746,19 +746,30 @@ async function purgeExpiredAttachments(ctx: ProactiveJobContext): Promise<void> 
     )
     const dbDeleted = deleteResult.rowCount ?? 0
 
-    // 3. Delete corresponding media files from disk
+    // 3. Delete corresponding media files from disk + nullify media_ref in chunks
     let filesDeleted = 0
-    for (const row of expiredFiles.rows) {
+    const filePaths = expiredFiles.rows.map(r => r.file_path)
+
+    for (const filePath of filePaths) {
       try {
-        await unlink(row.file_path)
+        await unlink(filePath)
         filesDeleted++
       } catch {
         // File may already be gone or path invalid — skip
       }
     }
 
+    // 4. Clear dead media_ref pointers in session_memory_chunks
+    if (filePaths.length > 0) {
+      await ctx.db.query(
+        `UPDATE session_memory_chunks SET media_ref = NULL
+         WHERE media_ref = ANY($1)`,
+        [filePaths],
+      )
+    }
+
     if (dbDeleted > 0 || filesDeleted > 0) {
-      logger.info({ traceId: ctx.traceId, dbDeleted, filesDeleted, retentionDays }, 'Purged expired attachments (DB + disk)')
+      logger.info({ traceId: ctx.traceId, dbDeleted, filesDeleted, mediaRefsCleared: filePaths.length, retentionDays }, 'Purged expired attachments (DB + disk + media_ref)')
     }
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Attachment purge failed')
