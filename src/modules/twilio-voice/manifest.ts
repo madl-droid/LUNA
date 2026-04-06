@@ -295,7 +295,9 @@ const manifest: ModuleManifest = {
     TWILIO_PHONE_NUMBER: z.string().default(''),
     // ── Gemini Live — API & model ──
     VOICE_GOOGLE_API_KEY: z.string().default(''),
-    VOICE_GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+    VOICE_GEMINI_MODEL: z.string().default('gemini-3.1-flash-live-preview'),
+    VOICE_GEMINI_FALLBACK_MODEL: z.string().default('gemini-2.5-flash-live-preview'),
+    VOICE_GEMINI_THINKING_LEVEL: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
     VOICE_GEMINI_VOICE: z.string().default('Kore'),
     VOICE_GEMINI_LANGUAGE: z.string().default(''),
     // ── Gemini Live — generation config ──
@@ -371,8 +373,28 @@ const manifest: ModuleManifest = {
       {
         key: 'VOICE_GEMINI_MODEL',
         type: 'text',
-        label: { es: 'Modelo Gemini Live', en: 'Gemini Live model' },
-        info: { es: 'Modelo a usar (ej: gemini-2.5-flash, gemini-2.5-flash-native-audio-preview)', en: 'Model to use (e.g., gemini-2.5-flash, gemini-2.5-flash-native-audio-preview)' },
+        label: { es: 'Modelo Gemini Live (primario)', en: 'Gemini Live model (primary)' },
+        info: { es: 'Modelo principal (ej: gemini-3.1-flash-live-preview)', en: 'Primary model (e.g., gemini-3.1-flash-live-preview)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_FALLBACK_MODEL',
+        type: 'text',
+        label: { es: 'Modelo Gemini Live (fallback)', en: 'Gemini Live model (fallback)' },
+        info: { es: 'Modelo alternativo si el primario falla (ej: gemini-2.5-flash-live-preview)', en: 'Fallback model if primary fails (e.g., gemini-2.5-flash-live-preview)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_THINKING_LEVEL',
+        type: 'select',
+        label: { es: 'Nivel de razonamiento (thinking)', en: 'Thinking level' },
+        info: { es: 'Solo aplica a gemini-3.1. minimal = latencia minima; high = respuestas mas elaboradas', en: 'Only applies to gemini-3.1. minimal = lowest latency; high = more thorough responses' },
+        options: [
+          { value: 'minimal', label: 'Minimal (recomendado)' },
+          { value: 'low', label: 'Low' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High' },
+        ],
         width: 'half',
       },
       {

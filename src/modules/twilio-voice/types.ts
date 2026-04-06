@@ -13,6 +13,8 @@ export interface TwilioVoiceConfig {
   // Gemini Live — API & model
   VOICE_GOOGLE_API_KEY: string
   VOICE_GEMINI_MODEL: string
+  VOICE_GEMINI_FALLBACK_MODEL: string
+  VOICE_GEMINI_THINKING_LEVEL: string
   VOICE_GEMINI_VOICE: string
   VOICE_GEMINI_LANGUAGE: string
   // Gemini Live — generation config
@@ -85,6 +87,8 @@ export interface ActiveCall {
   startedAt: Date
   connectedAt: Date | null
   geminiVoice: string
+  /** Which Gemini model was actually used (primary or fallback) */
+  modelUsed: string
   transcript: TranscriptEntry[]
   /** Pre-loaded context (populated during answer delay) */
   preloadedContext: PreloadedContext | null
@@ -181,6 +185,8 @@ export type TwilioStreamMessage =
 export interface GeminiLiveConfig {
   apiKey: string
   model: string
+  fallbackModel: string
+  thinkingLevel: string
   voice: string
   language: string
   systemInstruction: string
@@ -216,6 +222,10 @@ export interface GeminiSetupMessage {
         }
         languageCode?: string
       }
+      thinkingConfig?: {
+        thinkingLevel?: string
+        thinkingBudget?: number
+      }
     }
     systemInstruction: {
       parts: Array<{ text: string }>
@@ -230,6 +240,8 @@ export interface GeminiSetupMessage {
       }
       activityHandling?: string
     }
+    outputAudioTranscription?: Record<string, never>
+    inputAudioTranscription?: Record<string, never>
     tools?: Array<{
       functionDeclarations: GeminiToolDeclaration[]
     }>
@@ -273,6 +285,16 @@ export interface GeminiServerContent {
     }
     turnComplete?: boolean
     interrupted?: boolean
+    /** Native transcription: what Gemini said (agent audio transcribed) */
+    outputTranscription?: {
+      text?: string
+      finished?: boolean
+    }
+    /** Native transcription: what the caller said (input audio transcribed) */
+    inputTranscription?: {
+      text?: string
+      finished?: boolean
+    }
   }
   toolCall?: {
     functionCalls: Array<{
@@ -280,6 +302,10 @@ export interface GeminiServerContent {
       name: string
       args: Record<string, unknown>
     }>
+  }
+  /** Tool calls cancelled due to barge-in */
+  toolCallCancellation?: {
+    ids: string[]
   }
   setupComplete?: Record<string, never>
 }
@@ -302,6 +328,7 @@ export interface VoiceCallRow {
   duration_seconds: number | null
   end_reason: string | null
   gemini_voice: string | null
+  model_used: string | null
   summary: string | null
   created_at: Date
 }
