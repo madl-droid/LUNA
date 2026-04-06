@@ -70,6 +70,7 @@ Resumen rápido:
 4. Dependencias: declarar `depends: ['otro-modulo']`.
 5. **OBLIGATORIO: Crear `CLAUDE.md`** en el directorio del módulo (ver template en sección "Mantenimiento" abajo). Agregar entrada a la lista de "Módulos documentados".
 6. **OBLIGATORIO: Usar helpers del kernel** — ver sección "REGLA: No duplicar helpers HTTP ni config schemas" abajo.
+7. **Si type='channel': Crear skill de outreach** — `instance/prompts/system/skills/{canal}-outreach.md`. Ver `docs/architecture/channel-guide.md`.
 
 ## REGLA: Nombre del agente en canales instant
 

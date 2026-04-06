@@ -57,6 +57,7 @@ import type { Registry } from '../../kernel/registry.js'
 6. **Env vars en UPPER_SNAKE_CASE** — prefijo del módulo: `MI_MODULO_VAR`
 7. **SQL raw con $1, $2** — NO usar ORM
 8. **CLAUDE.md obligatorio** — cada módulo nuevo debe tener su CLAUDE.md y agregarse a la lista en CLAUDE.md raíz
+9. **Skill de outreach obligatorio si type='channel'** — crear `instance/prompts/system/skills/{canal}-outreach.md`. Ver `docs/architecture/channel-guide.md` sección "Skill de outreach cross-channel"
 
 ## Config schema: usar helpers del kernel
 
@@ -122,6 +123,7 @@ API routes se montan en `/console/api/{moduleName}/{path}`.
 - [ ] **Si type='channel'**: credenciales se guardan en `config_store` (sobrevive reinicios)
 - [ ] **Si type='channel'**: `channelType` y `operationParams` definidos
 - [ ] **Si type='channel'**: TODOS los params configurables del canal en `console.fields` (no en otra sección)
+- [ ] **Si type='channel'**: skill de outreach creado en `instance/prompts/system/skills/{canal}-outreach.md`
 
 ## Regla: parámetros de canal solo en su pestaña
 
