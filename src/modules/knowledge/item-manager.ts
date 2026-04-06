@@ -22,6 +22,7 @@ import {
   chunkDocs,
   chunkSheets,
   chunkPdf,
+  chunkSlidesAsPdf,
   chunkYoutube,
   chunkWeb,
   parseYoutubeChapters,
@@ -576,56 +577,51 @@ export class KnowledgeItemManager {
   }
 
   private async loadSlidesContent(item: KnowledgeItem): Promise<number> {
-    const slidesService = this.registry.getOptional<SlidesService>('google:slides')
     const drive = this.registry.getOptional<DriveService>('google:drive')
+    if (!drive) throw new Error('Servicio Google Drive no disponible para exportar Slides')
 
-    // Get slide text per slide
-    const slideText = slidesService ? await slidesService.getSlideText(item.sourceId) : ''
-    const slideTexts = slideText.split(/---slide---/i).map(s => s.trim()).filter(Boolean)
-
-    // Try to export as PDF and render each page as image for multimodal
-    let slideImages: string[] = []
-    if (drive) {
-      try {
-        const exported = await drive.exportFile(item.sourceId, 'application/pdf')
-        const pdfBytes = Buffer.isBuffer(exported) ? exported : Buffer.from(exported, 'utf-8')
-        if (pdfBytes.length > 100) {
-          const { PDFParse } = await import('pdf-parse')
-          const parser = new PDFParse({ data: new Uint8Array(pdfBytes) })
-          const screenshots = await parser.getScreenshot({
-            scale: 1.5,
-            imageBuffer: true,
-          })
-          if (screenshots?.pages) {
-            slideImages = screenshots.pages
-              .map(p => p.data ? Buffer.from(p.data).toString('base64') : '')
-              .filter(Boolean)
-          }
-          await parser.destroy().catch(() => {})
-        }
-      } catch (err) {
-        logger.warn({ err, itemId: item.id }, '[SLIDES] PDF export/screenshot failed, using text-only')
-      }
-    }
-
-    // Build slide chunks: image + text per slide
-    const { chunkSlides } = await import('./extractors/smart-chunker.js')
-    const slideData = slideTexts.map((text, i) => ({
-      text,
-      imageBase64: slideImages[i],
-      title: `Slide ${i + 1}`,
-    }))
-
-    // Fallback: if no individual slides, treat as single text document
-    if (slideData.length === 0 && slideText.trim()) {
-      const chunks = chunkDocs(slideText)
+    // Exportar Google Slides como PDF via Drive API
+    // drive.exportFile con 'application/pdf' retorna Buffer (según DriveService)
+    let pdfBuffer: Buffer
+    try {
+      const exported = await drive.exportFile(item.sourceId, 'application/pdf')
+      pdfBuffer = Buffer.isBuffer(exported) ? exported : Buffer.from(exported as string, 'binary')
+      if (pdfBuffer.length < 100) throw new Error('PDF export empty')
+    } catch (err) {
+      logger.warn({ err, itemId: item.id }, '[SLIDES] PDF export failed, falling back to text-only')
+      // Fallback: obtener texto via Slides API
+      const slidesService = this.registry.getOptional<SlidesService>('google:slides')
+      const slideText = slidesService ? await slidesService.getSlideText(item.sourceId) : ''
+      if (!slideText.trim()) return 0
+      const chunks = chunkDocs(slideText, { sourceFile: item.title, sourceType: 'slides' })
       return this.persistSmartChunks(item, item.title, 'text/plain', chunks, {
         fileUrl: item.sourceUrl,
       })
     }
 
-    const chunks = chunkSlides(slideData)
+    // Extraer texto por página para FTS
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
+    const pageTexts = pdfResult.sections.map(s => s.content)
+    const totalPages = pageTexts.length || 1
+
+    // Guardar PDF en media dir
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
+    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    await mkdir(knowledgeDir, { recursive: true })
+    const pdfName = `${contentHash.substring(0, 12)}_${item.title.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
+    await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
+
+    // Chunk visual (pipeline PDF) — sin speaker notes (Google Slides API no las expone fácilmente)
+    const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, [], {
+      sourceFile: item.title,
+    })
+
+    logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[SLIDES] Visual pipeline via PDF export')
+
     return this.persistSmartChunks(item, item.title, 'application/vnd.google-apps.presentation', chunks, {
+      buffer: pdfBuffer,
+      description: item.description,
       fileUrl: item.sourceUrl,
     })
   }
@@ -718,10 +714,29 @@ export class KnowledgeItemManager {
     } else if (mime === 'application/vnd.google-apps.presentation') {
       text = await drive.exportFile(file.id, 'text/plain') as string
 
-    // ── Office formats uploaded to Drive (export via Drive API) ──
+    // ── Office formats uploaded to Drive (binaries + smart router) ──
     } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       || mime === 'application/msword') {
-      text = await drive.exportFile(file.id, 'text/plain') as string
+      // DOCX: descargar binario → extractDocxSmart → visual o text
+      const docxBuffer = await drive.downloadFile(file.id)
+      const { extractDocxSmart } = await import('../../extractors/docx.js')
+      const docxResult = await extractDocxSmart(docxBuffer, file.name)
+
+      if (docxResult.pdfBuffer) {
+        // VISUAL pipeline: DOCX con imágenes → PDF
+        return this.persistVisualPdf(item, file, docxResult.pdfBuffer, mime)
+      }
+      // TEXT pipeline: DOCX sin imágenes
+      text = docxResult.sections.map(s => {
+        const heading = s.title ? `## ${s.title}\n` : ''
+        return heading + s.content
+      }).join('\n\n')
+      if (!text.trim()) return 0
+      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'docx', sourceMimeType: mime })
+      return this.persistSmartChunks(item, fileName, mime, chunks, {
+        description: fileName,
+        fileUrl: file.webViewLink,
+      })
 
     } else if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       || mime === 'application/vnd.ms-excel') {
@@ -729,15 +744,29 @@ export class KnowledgeItemManager {
 
     } else if (mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
       || mime === 'application/vnd.ms-powerpoint') {
-      text = await drive.exportFile(file.id, 'text/plain') as string
+      // PPTX: descargar binario → extractPptx → visual o text
+      const pptxBuffer = await drive.downloadFile(file.id)
+      const { extractPptx } = await import('../../extractors/slides.js')
+      const pptxResult = await extractPptx(pptxBuffer, file.name)
+
+      if (pptxResult.pdfBuffer) {
+        // VISUAL pipeline con speaker notes
+        return this.persistVisualSlides(item, file, pptxResult.pdfBuffer, pptxResult.speakerNotes ?? [], mime)
+      }
+      // TEXT fallback
+      text = pptxResult.slides.map(s => s.text).join('\n\n')
+      if (!text.trim()) return 0
+      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'slides', sourceMimeType: mime })
+      return this.persistSmartChunks(item, fileName, mime, chunks, {
+        description: fileName,
+        fileUrl: file.webViewLink,
+      })
 
     // ── PDF ──
     } else if (mime === 'application/pdf') {
-      const buffer = await drive.downloadFile(file.id)
-      text = await extractTextFromPdf(buffer)
-      if (!text.trim()) {
-        logger.warn({ fileId: file.id, name: file.name }, 'PDF has no extractable text (possibly scanned image)')
-      }
+      // PDF: descargar binario → chunkPdf (visual pipeline)
+      const pdfBuffer = await drive.downloadFile(file.id)
+      return this.persistVisualPdf(item, file, pdfBuffer, mime)
 
     // ── Plain text / Markdown ──
     } else if (mime === 'text/plain' || mime === 'text/markdown' || mime === 'text/csv'
@@ -753,8 +782,8 @@ export class KnowledgeItemManager {
 
     if (!text.trim()) return 0
 
-    // Use smart chunker for Drive files
-    const chunks = chunkDocs(text)
+    // Use smart chunker for Drive files (text-only path)
+    const chunks = chunkDocs(text, { sourceFile: file.name, sourceMimeType: mime })
     return this.persistSmartChunks(item, fileName, 'text/plain', chunks, {
       description: fileName,
       fileUrl: file.webViewLink,
@@ -797,6 +826,74 @@ export class KnowledgeItemManager {
     return this.persistSmartChunks(item, item.title, 'application/pdf', chunks, {
       buffer: pdfBuffer,
       description: item.description,
+    })
+  }
+
+  // ─── Visual pipeline helpers (Drive files) ───
+
+  /**
+   * Persiste un PDF (de DOCX convertido o PDF descargado de Drive) via pipeline visual.
+   * Extrae texto por página, guarda PDF en media dir, usa chunkPdf.
+   */
+  private async persistVisualPdf(
+    item: KnowledgeItem,
+    file: { id: string; name: string; mimeType: string; webViewLink?: string },
+    pdfBuffer: Buffer,
+    originalMime: string,
+  ): Promise<number> {
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
+    const pageTexts = pdfResult.sections.map(s => s.content)
+    const totalPages = pageTexts.length || 1
+
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
+    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    await mkdir(knowledgeDir, { recursive: true })
+    const pdfName = `${contentHash.substring(0, 12)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
+    await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
+
+    const chunks = chunkPdf(pageTexts, pdfName, totalPages, {
+      sourceFile: file.name,
+    })
+    logger.info({ fileId: file.id, totalPages, chunkCount: chunks.length }, '[DRIVE-PDF] Visual pipeline')
+
+    return this.persistSmartChunks(item, file.name, originalMime, chunks, {
+      buffer: pdfBuffer,
+      description: file.name,
+      fileUrl: file.webViewLink,
+    })
+  }
+
+  /**
+   * Persiste slides PPTX de Drive (exportado a PDF) via pipeline visual con speaker notes.
+   */
+  private async persistVisualSlides(
+    item: KnowledgeItem,
+    file: { id: string; name: string; mimeType: string; webViewLink?: string },
+    pdfBuffer: Buffer,
+    speakerNotes: Array<{ slideIndex: number; text: string }>,
+    originalMime: string,
+  ): Promise<number> {
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
+    const pageTexts = pdfResult.sections.map(s => s.content)
+    const totalPages = pageTexts.length || 1
+
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
+    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    await mkdir(knowledgeDir, { recursive: true })
+    const pdfName = `${contentHash.substring(0, 12)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
+    await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
+
+    const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, speakerNotes, {
+      sourceFile: file.name,
+    })
+    logger.info({ fileId: file.id, totalPages, speakerNotes: speakerNotes.length, chunkCount: chunks.length }, '[DRIVE-PPTX] Visual pipeline')
+
+    return this.persistSmartChunks(item, file.name, originalMime, chunks, {
+      buffer: pdfBuffer,
+      description: file.name,
+      fileUrl: file.webViewLink,
     })
   }
 
@@ -1187,18 +1284,3 @@ export class KnowledgeItemManager {
   }
 }
 
-// ═══════════════════════════════════════════
-// PDF text extraction helper
-// ═══════════════════════════════════════════
-
-async function extractTextFromPdf(buffer: Buffer): Promise<string> {
-  try {
-    const { PDFParse } = await import('pdf-parse')
-    const parser = new PDFParse({ data: new Uint8Array(buffer) })
-    const result = await parser.getText()
-    return result.text ?? ''
-  } catch (err) {
-    logger.warn({ err }, 'pdf-parse failed')
-    return ''
-  }
-}

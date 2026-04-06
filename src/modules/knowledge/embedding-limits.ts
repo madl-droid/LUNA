@@ -64,6 +64,7 @@ export type ChunkContentType =
   | 'pdf_pages'      // páginas de PDF (multimodal)
   | 'slide'          // presentación (multimodal)
   | 'image'          // imagen (multimodal)
+  | 'audio'          // segmento de audio (multimodal — Gemini Embedding 2)
   | 'video_frames'   // frames de video (multimodal)
   | 'youtube'        // contenido YouTube (transcript + metadata)
   | 'web'            // contenido web extraído
