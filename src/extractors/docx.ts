@@ -41,6 +41,11 @@ export async function extractDocx(input: Buffer, fileName: string): Promise<Extr
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'docx-mammoth',
+      wordCount: text.split(/\s+/).filter(Boolean).length,
+      hasImages: images.length > 0,
+      imageCount: images.length,
+      sectionCount: sections.length,
+      hasExplicitHeadings: sections.some(s => s.title !== null),
     },
   }
 }

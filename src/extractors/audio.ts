@@ -92,6 +92,10 @@ export async function extractAudio(
       sizeBytes: buffer.length,
       originalName: fileName,
       extractorUsed: 'audio-ffprobe',
+      durationSeconds: duration,
+      format,
+      mimeType: resolvedMime,
+      wasConverted: resolvedMime !== mimeType,
     },
   }
 }
@@ -124,7 +128,6 @@ export async function transcribeAudioContent(
         ],
       }],
       maxTokens: 4096,
-      temperature: 0.1,
     })
 
     if (result && typeof result === 'object' && 'text' in result) {

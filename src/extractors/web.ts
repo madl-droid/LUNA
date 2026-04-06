@@ -120,6 +120,11 @@ export async function extractWeb(url: string, options?: WebExtractOptions): Prom
     }
   }
 
+  const imageUrls = sections
+    .flatMap(s => s.images ?? [])
+    .map(img => img.data.toString('utf-8'))
+    .filter(u => u.startsWith('http'))
+
   return {
     kind: 'web',
     url,
@@ -129,6 +134,12 @@ export async function extractWeb(url: string, options?: WebExtractOptions): Prom
       originalName: url,
       extractorUsed: 'web-jsdom',
       sizeBytes: html.length,
+      domain: parsedUrl.hostname,
+      title: pageTitle,
+      fetchedAt: new Date().toISOString(),
+      sectionCount: sections.length,
+      imageCount: sections.reduce((sum, s) => sum + (s.images?.length ?? 0), 0),
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
     },
   }
 }

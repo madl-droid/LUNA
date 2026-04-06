@@ -81,6 +81,11 @@ export async function extractVideo(
       sizeBytes: buffer.length,
       originalName: fileName,
       extractorUsed: 'video-ffprobe',
+      durationSeconds: probe.duration,
+      format,
+      mimeType: resolvedMime,
+      hasAudio: probe.hasAudio,
+      wasConverted: resolvedMime !== mimeType,
     },
   }
 }
@@ -102,13 +107,13 @@ export async function describeVideo(
   try {
     const base64Video = videoResult.buffer.toString('base64')
 
-    const hasAudioInstr = videoResult.hasAudio
-      ? '\nEl video tiene audio. Incluye también la transcripción del audio al final, precedida por "[Transcripción]:".'
+    const audioSection = videoResult.hasAudio
+      ? '\n\n[TRANSCRIPCIÓN]\n(transcripción del audio)'
       : ''
 
     const result = await registry.callHook('llm:chat', {
       task: 'extractor-video-multimodal',
-      system: `Eres un asistente que analiza videos. Describe el contenido visual de forma detallada: escenas, textos visibles, personas, objetos, acciones, transiciones. Sé exhaustivo y preciso. Responde en español.${hasAudioInstr}`,
+      system: `Eres un asistente que analiza videos. Describe el contenido visual de forma detallada: escenas, textos visibles, personas, objetos, acciones, transiciones. Sé exhaustivo y preciso. Responde en español.${videoResult.hasAudio ? '\nEl video tiene audio. Incluye también la transcripción del audio.' : ''}\n\nFormato de respuesta obligatorio:\n[DESCRIPCIÓN]\n(descripción detallada)\n\n[RESUMEN]\n(resumen en 1 línea)${audioSection}`,
       messages: [{
         role: 'user' as const,
         content: [
@@ -117,24 +122,37 @@ export async function describeVideo(
         ],
       }],
       maxTokens: 4096,
-      temperature: 0.1,
     })
 
     if (result && typeof result === 'object' && 'text' in result) {
       const fullText = (result as { text: string }).text?.trim()
       if (fullText) {
-        // Separar descripción de transcripción si existe
+        // Parsear formato dual [DESCRIPCIÓN] / [RESUMEN] / [TRANSCRIPCIÓN]
         let description = fullText
+        let shortDesc: string | undefined
         let transcription: string | undefined
-        const transcriptionMarker = '[Transcripción]:'
-        const markerIdx = fullText.indexOf(transcriptionMarker)
-        if (markerIdx !== -1) {
-          description = fullText.slice(0, markerIdx).trim()
-          transcription = fullText.slice(markerIdx + transcriptionMarker.length).trim()
+
+        const descMatch = fullText.match(/\[DESCRIPCIÓN\]\s*\n([\s\S]*?)(?:\n\[RESUMEN\]|\n\[TRANSCRIPCIÓN\]|$)/)
+        const summaryMatch = fullText.match(/\[RESUMEN\]\s*\n([\s\S]*?)(?:\n\[TRANSCRIPCIÓN\]|$)/)
+        const transcriptionMatch = fullText.match(/\[TRANSCRIPCIÓN\]\s*\n([\s\S]*)$/)
+
+        if (descMatch?.[1]) {
+          description = descMatch[1].trim()
+          shortDesc = summaryMatch?.[1]?.trim()
+          transcription = transcriptionMatch?.[1]?.trim() || undefined
+        } else {
+          // Fallback: formato legacy con [Transcripción]:
+          const legacyMarker = '[Transcripción]:'
+          const markerIdx = fullText.indexOf(legacyMarker)
+          if (markerIdx !== -1) {
+            description = fullText.slice(0, markerIdx).trim()
+            transcription = fullText.slice(markerIdx + legacyMarker.length).trim()
+          }
         }
 
         const enrichment: LLMEnrichment = {
           description,
+          shortDescription: shortDesc,
           transcription,
           provider: (result as { provider?: string }).provider ?? 'google',
           generatedAt: new Date(),

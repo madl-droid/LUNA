@@ -211,15 +211,30 @@ export async function extractSheets(input: Buffer, fileName: string): Promise<Sh
   const parentId = randomUUID()
   const sheets = await readSpreadsheetSheets(input, fileName)
 
+  // Generar CSV buffer para guardar como binario
+  const csvLines: string[] = []
+  for (const sheet of sheets) {
+    csvLines.push(`# Sheet: ${sheet.name}`)
+    csvLines.push(sheet.headers.join(','))
+    for (const row of sheet.rows) {
+      csvLines.push(row.map(cell => cell.includes(',') || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell).join(','))
+    }
+    csvLines.push('')
+  }
+  const csvBuffer = Buffer.from(csvLines.join('\n'), 'utf-8')
+
   return {
     kind: 'sheets',
     parentId,
     fileName,
     sheets,
+    csvBuffer,
     metadata: {
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: isZipSpreadsheet(input) ? 'jszip' : 'csv',
+      sheetCount: sheets.length,
+      totalRows: sheets.reduce((sum, s) => sum + s.rows.length, 0),
     },
   }
 }

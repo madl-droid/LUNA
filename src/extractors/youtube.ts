@@ -93,6 +93,13 @@ export function extractYouTube(input: YouTubeInput): YouTubeResult {
       metadata: {
         originalName: input.title,
         extractorUsed: 'youtube',
+        videoId: input.videoId,
+        duration: input.duration ?? null,
+        hasChapters: !!(chapters && chapters.length >= 2),
+        chapterCount: chapters?.length ?? 0,
+        sectionCount: 0,
+        hasTranscript: false,
+        hasThumbnail: !!input.thumbnail,
       },
     }
   }
@@ -160,6 +167,13 @@ export function extractYouTube(input: YouTubeInput): YouTubeResult {
     metadata: {
       originalName: input.title,
       extractorUsed: 'youtube',
+      videoId: input.videoId,
+      duration: input.duration ?? null,
+      hasChapters: !!(chapters && chapters.length >= 2),
+      chapterCount: chapters?.length ?? 0,
+      sectionCount: sections.length,
+      hasTranscript: input.transcript.length > 0,
+      hasThumbnail: !!input.thumbnail,
     },
   }
 }
@@ -194,7 +208,6 @@ export async function describeThumbnail(
         ],
       }],
       maxTokens: 300,
-      temperature: 0.1,
     })
 
     if (result && typeof result === 'object' && 'text' in result) {

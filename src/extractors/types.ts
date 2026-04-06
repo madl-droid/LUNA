@@ -41,6 +41,42 @@ export interface DocumentMetadata {
   extractorUsed?: string
   isScanned?: boolean
   imagePages?: number[]
+  // Text metrics
+  wordCount?: number
+  lineCount?: number
+  sectionCount?: number
+  hasExplicitHeadings?: boolean
+  // Image/visual metadata
+  hasImages?: boolean
+  imageCount?: number
+  format?: string           // 'png', 'mp3', 'mp4', etc.
+  width?: number
+  height?: number
+  md5?: string
+  mimeType?: string
+  // Audio/video metadata
+  durationSeconds?: number
+  hasAudio?: boolean
+  wasConverted?: boolean
+  // Web metadata
+  domain?: string
+  title?: string | null
+  fetchedAt?: string
+  imageUrls?: string[]
+  // YouTube metadata
+  videoId?: string
+  duration?: number | null
+  hasChapters?: boolean
+  chapterCount?: number
+  hasTranscript?: boolean
+  hasThumbnail?: boolean
+  // Sheets metadata
+  sheetCount?: number
+  totalRows?: number
+  // Slides metadata
+  slideCount?: number
+  hasScreenshots?: boolean
+  // Conversion flag
   [key: string]: unknown
 }
 
@@ -72,6 +108,8 @@ export interface SheetsResult {
   fileName: string
   sheets: ExtractedSheet[]
   metadata: DocumentMetadata
+  /** CSV serializado para guardar como binario — generado por extractSheets() */
+  csvBuffer?: Buffer
 }
 
 // ═══════════════════════════════════════════
@@ -147,6 +185,8 @@ export interface YouTubeResult {
 export interface LLMEnrichment {
   /** Descripción generada por LLM (vision para imágenes/video, STT para audio) */
   description: string
+  /** Resumen en 1 línea — para metadata de chunks (dual description) */
+  shortDescription?: string
   /** Transcripción de audio/video (STT) — solo si tiene audio */
   transcription?: string
   /** Provider que generó el enriquecimiento */

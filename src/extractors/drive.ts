@@ -261,7 +261,6 @@ async function generateDriveSummary(
         ],
       }],
       maxTokens: 1500,
-      temperature: 0.1,
     })
 
     if (llmResult && typeof llmResult === 'object' && 'text' in llmResult) {

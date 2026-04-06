@@ -80,6 +80,8 @@ export async function extractGoogleSlides(
       metadata: {
         originalName: info.title ?? presentationId,
         extractorUsed: 'google-slides-api',
+        slideCount: slides.length,
+        hasScreenshots: slides.some(s => s.screenshotPng !== null),
       },
     }
   } catch (err) {
@@ -120,7 +122,7 @@ export async function describeSlideScreenshots(
       const base64 = slide.screenshotPng!.toString('base64')
       const result = await registry.callHook('llm:chat', {
         task: 'extractor-slide-vision',
-        system: 'Eres un asistente que describe diapositivas de presentaciones. Describe el contenido visual: textos, gráficos, diagramas, imágenes, layout y diseño. Sé preciso y conciso. Responde en español.',
+        system: 'Eres un asistente que describe diapositivas de presentaciones. Describe el contenido visual: textos, gráficos, diagramas, imágenes, layout y diseño. Sé preciso. Responde en español.\n\nFormato:\n[DESCRIPCIÓN]\n(descripción)\n\n[RESUMEN]\n(1 línea)',
         messages: [{
           role: 'user' as const,
           content: [
@@ -129,12 +131,14 @@ export async function describeSlideScreenshots(
           ],
         }],
         maxTokens: 1000,
-        temperature: 0.1,
       })
 
       if (result && typeof result === 'object' && 'text' in result) {
-        const desc = (result as { text: string }).text?.trim()
-        if (desc) {
+        const rawText = (result as { text: string }).text?.trim()
+        if (rawText) {
+          // Parsear formato dual
+          const descMatch = rawText.match(/\[DESCRIPCIÓN\]\s*\n([\s\S]*?)(?:\n\[RESUMEN\]\s*\n|$)/)
+          const desc = descMatch?.[1]?.trim() ?? rawText
           slide.screenshotDescription = desc
           descriptions.push(desc)
           continue

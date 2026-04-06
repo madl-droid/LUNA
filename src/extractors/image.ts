@@ -75,6 +75,11 @@ export async function extractImage(
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'image-metadata',
+      width: dims?.width ?? 0,
+      height: dims?.height ?? 0,
+      md5,
+      format: resolvedMime.split('/')[1],
+      mimeType: resolvedMime,
     },
   }
 }
@@ -126,7 +131,6 @@ export async function extractImageWithVision(
       ],
     }],
     maxTokens: 2000,
-    temperature: 0.1,
   })
 
   if (!result) {
@@ -166,7 +170,7 @@ export async function describeImage(
     const base64 = imageResult.buffer.toString('base64')
 
     // Intentar obtener prompt customizado
-    let systemPrompt = 'Eres un asistente que describe imágenes de forma detallada y completa. Describe TODO el contenido visible: texto, diagramas, tablas, gráficos, logos, personas, objetos, colores, layout. Si hay texto visible, transcríbelo exactamente. Sé exhaustivo y preciso. Responde en español.'
+    let systemPrompt = 'Eres un asistente que describe imágenes de forma detallada y completa. Describe TODO el contenido visible: texto, diagramas, tablas, gráficos, logos, personas, objetos, colores, layout. Si hay texto visible, transcríbelo exactamente. Sé exhaustivo y preciso. Responde en español.\n\nFormato de respuesta obligatorio:\n[DESCRIPCIÓN]\n(tu descripción detallada aquí)\n\n[RESUMEN]\n(resumen en máximo 1 línea)'
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -188,14 +192,25 @@ export async function describeImage(
         ],
       }],
       maxTokens: 2000,
-      temperature: 0.1,
     })
 
     if (result && typeof result === 'object' && 'text' in result) {
-      const description = (result as { text: string }).text?.trim()
-      if (description) {
+      const rawText = (result as { text: string }).text?.trim()
+      if (rawText) {
+        // Parsear formato dual [DESCRIPCIÓN] / [RESUMEN]
+        let longDesc = rawText
+        let shortDesc: string | undefined
+
+        const descMatch = rawText.match(/\[DESCRIPCIÓN\]\s*\n([\s\S]*?)(?:\n\[RESUMEN\]\s*\n|$)/)
+        const summaryMatch = rawText.match(/\[RESUMEN\]\s*\n(.+)/)
+        if (descMatch?.[1]) {
+          longDesc = descMatch[1].trim()
+          shortDesc = summaryMatch?.[1]?.trim()
+        }
+
         const enrichment: LLMEnrichment = {
-          description,
+          description: longDesc,
+          shortDescription: shortDesc,
           provider: (result as { provider?: string }).provider ?? 'google',
           generatedAt: new Date(),
         }

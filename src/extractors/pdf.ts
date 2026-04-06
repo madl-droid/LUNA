@@ -88,6 +88,9 @@ export async function extractPDF(
       extractorUsed: isScanned ? 'pdf-ocr-vision' : (imagePages.length > 0 ? 'pdf-parse+vision' : 'pdf-parse'),
       isScanned,
       imagePages: imagePages.length > 0 ? imagePages : undefined,
+      wordCount: fullText.split(/\s+/).filter(Boolean).length,
+      hasImages: imagePages.length > 0,
+      sectionCount: sections.length,
     },
   }
 }
@@ -211,7 +214,6 @@ async function extractScannedPdf(parser: any, pages: number[], fileName: string,
               ],
             }],
             maxTokens: 4000,
-            temperature: 0.1,
           })
 
           if (visionResult?.text?.trim()) {
@@ -311,7 +313,6 @@ async function extractVisionPages(parser: any, imagePages: number[], fileName: s
               ],
             }],
             maxTokens: 3000,
-            temperature: 0.1,
           })
 
           if (visionResult?.text?.trim()) {
