@@ -20,7 +20,7 @@ export type { EmbeddableChunk as SmartChunk, LinkedEmbeddableChunk as LinkedChun
 // 1. DOCS / WORD → text by headings
 // ═══════════════════════════════════════════
 
-export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string }): EmbeddableChunk[] {
+export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string; sourceType?: string }): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
 
   // Split by H1/H2 headings first
@@ -44,7 +44,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
         mediaRefs: null,
         chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
         metadata: {
-          sourceType: 'docx',
+          sourceType: opts?.sourceType ?? 'text',
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
           sectionTitle,
@@ -114,7 +114,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
         mediaRefs: null,
         chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
         metadata: {
-          sourceType: 'docx',
+          sourceType: opts?.sourceType ?? 'text',
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
         },
@@ -129,7 +129,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
 // 2. SHEETS → CSV with repeated headers
 // ═══════════════════════════════════════════
 
-export function chunkSheets(headers: string[], rows: string[][], opts?: { sourceFile?: string }): EmbeddableChunk[] {
+export function chunkSheets(headers: string[], rows: string[][], opts?: { sourceFile?: string; sourceMimeType?: string; sheetName?: string }): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
   const headerLine = headers.join(',')
 
@@ -147,7 +147,8 @@ export function chunkSheets(headers: string[], rows: string[][], opts?: { source
       metadata: {
         sourceType: 'sheets',
         sourceFile: opts?.sourceFile,
-        sourceMimeType: 'application/vnd.google-apps.spreadsheet',
+        sourceMimeType: opts?.sourceMimeType ?? 'text/csv',
+        sectionTitle: opts?.sheetName,
         row_index: i + 2,  // +2 because row 1 is header
         headers,
         row_count: 1,
@@ -244,7 +245,7 @@ export interface WebBlock {
   images: Array<{ data: string; mimeType: string }>  // base64
 }
 
-export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string }): EmbeddableChunk[] {
+export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string; sourceFile?: string }): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
 
   for (const block of blocks) {
@@ -266,6 +267,7 @@ export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string }): Emb
         chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
         metadata: {
           sourceType: 'web',
+          sourceFile: opts?.sourceFile,
           sourceUrl: opts?.sourceUrl,
           sectionTitle: block.heading ?? undefined,
           image_count: images.length,
@@ -448,6 +450,179 @@ export function chunkYoutube(
   }
 
   return chunks
+}
+
+// ═══════════════════════════════════════════
+// 7. IMAGE → 1 image = 1 chunk
+// ═══════════════════════════════════════════
+
+export function chunkImage(opts: {
+  description: string | null
+  shortDescription?: string
+  mimeType: string
+  sourceFile?: string
+  sourceUrl?: string
+  width?: number
+  height?: number
+  filePath?: string
+  base64?: string
+}): EmbeddableChunk[] {
+  const mediaRefs: MediaRef[] = []
+  if (opts.base64) mediaRefs.push({ mimeType: opts.mimeType, data: opts.base64 })
+  else if (opts.filePath) mediaRefs.push({ mimeType: opts.mimeType, filePath: opts.filePath })
+
+  return [{
+    content: opts.description ?? `[Imagen: ${opts.sourceFile ?? 'sin nombre'}]`,
+    contentType: 'image',
+    mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
+    chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
+    metadata: {
+      sourceType: 'image',
+      sourceFile: opts.sourceFile,
+      sourceMimeType: opts.mimeType,
+      sourceUrl: opts.sourceUrl,
+      sectionTitle: opts.shortDescription ?? opts.sourceFile,
+      width: opts.width,
+      height: opts.height,
+    },
+  }]
+}
+
+// ═══════════════════════════════════════════
+// 8. AUDIO → transcription as text chunk(s)
+// ═══════════════════════════════════════════
+
+export function chunkAudio(opts: {
+  transcription: string | null
+  durationSeconds: number
+  mimeType: string
+  sourceFile?: string
+  sourceUrl?: string
+  filePath?: string
+}): EmbeddableChunk[] {
+  if (!opts.transcription) {
+    return [{
+      content: `[Audio: ${opts.sourceFile ?? 'sin nombre'}, ${Math.round(opts.durationSeconds)}s, sin transcripción]`,
+      contentType: 'text',
+      mediaRefs: opts.filePath ? [{ mimeType: opts.mimeType, filePath: opts.filePath }] : null,
+      chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'audio',
+        sourceFile: opts.sourceFile,
+        sourceMimeType: opts.mimeType,
+        sourceUrl: opts.sourceUrl,
+        durationSeconds: opts.durationSeconds,
+      },
+    }]
+  }
+
+  // Single chunk for now — temporal splitting (60/70s) is Phase 2
+  return [{
+    content: opts.transcription,
+    contentType: 'text',
+    mediaRefs: opts.filePath ? [{ mimeType: opts.mimeType, filePath: opts.filePath }] : null,
+    chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
+    metadata: {
+      sourceType: 'audio',
+      sourceFile: opts.sourceFile,
+      sourceMimeType: opts.mimeType,
+      sourceUrl: opts.sourceUrl,
+      durationSeconds: opts.durationSeconds,
+      timestampStart: 0,
+      timestampEnd: opts.durationSeconds,
+    },
+  }]
+}
+
+// ═══════════════════════════════════════════
+// 9. VIDEO → description + transcription as text chunk(s)
+// ═══════════════════════════════════════════
+
+export function chunkVideo(opts: {
+  description: string | null
+  transcription: string | null
+  durationSeconds: number
+  mimeType: string
+  sourceFile?: string
+  sourceUrl?: string
+  filePath?: string
+}): EmbeddableChunk[] {
+  const parts: string[] = []
+  if (opts.description) parts.push(opts.description)
+  if (opts.transcription) parts.push(`[Transcripción]: ${opts.transcription}`)
+  const content = parts.length > 0
+    ? parts.join('\n\n')
+    : `[Video: ${opts.sourceFile ?? 'sin nombre'}, ${Math.round(opts.durationSeconds)}s]`
+
+  // Single chunk for now — temporal splitting (50/60s) is Phase 2
+  return [{
+    content,
+    contentType: 'text',
+    mediaRefs: opts.filePath ? [{ mimeType: opts.mimeType, filePath: opts.filePath }] : null,
+    chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
+    metadata: {
+      sourceType: 'video',
+      sourceFile: opts.sourceFile,
+      sourceMimeType: opts.mimeType,
+      sourceUrl: opts.sourceUrl,
+      durationSeconds: opts.durationSeconds,
+      hasDescription: !!opts.description,
+      hasTranscription: !!opts.transcription,
+      timestampStart: 0,
+      timestampEnd: opts.durationSeconds,
+    },
+  }]
+}
+
+// ═══════════════════════════════════════════
+// 10. DRIVE → metadata-only chunks for unread files/folders
+// ═══════════════════════════════════════════
+
+export function chunkDriveLink(opts: {
+  fileId: string
+  name: string
+  mimeType: string
+  driveType: string
+  url: string
+  suggestedTool: string
+  folderContents?: Array<{ id: string; name: string; mimeType: string }>
+}): EmbeddableChunk[] {
+  if (opts.driveType === 'folder') {
+    const listing = opts.folderContents?.map(f => `- ${f.name} (${f.mimeType}, id: ${f.id})`).join('\n') ?? '(vacía)'
+    return [{
+      content: `[Carpeta de Drive] "${opts.name}"\nContenido:\n${listing}`,
+      contentType: 'drive',
+      mediaRefs: null,
+      chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'drive',
+        sourceFile: opts.name,
+        sourceMimeType: opts.mimeType,
+        sourceUrl: opts.url,
+        sectionTitle: opts.name,
+        driveType: opts.driveType,
+        fileId: opts.fileId,
+        fileCount: opts.folderContents?.length ?? 0,
+      },
+    }]
+  }
+
+  return [{
+    content: `[Archivo de Drive] "${opts.name}" (${opts.mimeType}). Disponible via ${opts.suggestedTool} con ID "${opts.fileId}".`,
+    contentType: 'drive',
+    mediaRefs: null,
+    chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
+    metadata: {
+      sourceType: 'drive',
+      sourceFile: opts.name,
+      sourceMimeType: opts.mimeType,
+      sourceUrl: opts.url,
+      sectionTitle: opts.name,
+      driveType: opts.driveType,
+      fileId: opts.fileId,
+      suggestedTool: opts.suggestedTool,
+    },
+  }]
 }
 
 // ═══════════════════════════════════════════

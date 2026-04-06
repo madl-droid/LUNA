@@ -215,3 +215,14 @@ Configurable desde consola y .env. Persiste al reinicio.
 - **Sheets**: ciego a charts/imágenes
 - **Truncation indicator**: falta en agentic-loop.ts para contenido cortado
 - **EmbeddableChunk**: cada extractor debe producir EmbeddableChunk con ChunkMetadata correcto
+
+### Rediseño de chunking (Fases 2-3)
+- **Binarios por chunk**: guardar binarios partidos por chunk para embedding multimodal (audio split, video split, PDF pages, images)
+- **LLM description dual**: descripción larga → content, descripción corta → metadata
+- **Embedding status + binario lifecycle**: no marcar completo hasta que último chunk relacionado se procese
+- **DOCX con imágenes → PDF path**: convertir a PDF solo cuando tiene imágenes embebidas
+- **YouTube temario inferido**: LLM infiere secciones del transcript + frame extraction (screenshots del video)
+- **YouTube playlists/canales**: cómo manejar playlists y canales completos (sync, chunking por video, límites)
+- **Slides notes**: speaker notes como chunks extras del mismo archivo
+- **Audio chunks temporales**: 60s primer chunk, 70s siguientes con 10s overlap (requiere ffmpeg split + N llamadas STT)
+- **Video chunks temporales**: 50s primer chunk, 60s siguientes con 10s overlap (requiere ffmpeg split)
