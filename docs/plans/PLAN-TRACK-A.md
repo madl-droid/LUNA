@@ -449,36 +449,42 @@ metadata: {
 
 ---
 
-## WP9: DOCX Router
+## WP9: DOCX/PDF Router hacia Pipeline Dual
 
 ### Objetivo
-- DOCX sin imágenes → mantener como texto (ya funciona)
-- DOCX con imágenes → convertir a PDF → pipeline PDF
+Los extractores de DOCX y PDF ya detectan si tienen imágenes. Este WP agrega los flags
+que el caller (knowledge-manager / item-manager) necesita para decidir pipeline texto vs visual.
+
+### Lógica del router (en el caller, NO en el extractor)
+
+```
+Extractor produce resultado con metadata
+  ↓
+Caller lee metadata:
+  - PDF: metadata.hasImages || metadata.isScanned → pipeline visual
+  - PDF: !metadata.hasImages && !metadata.isScanned → pipeline texto (chunkDocs con fullText)
+  - DOCX: metadata.hasImages → convertir a PDF (LibreOffice) → pipeline visual
+  - DOCX: !metadata.hasImages → pipeline texto (chunkDocs)
+  - PPTX/Slides: siempre → pipeline visual
+  - text/md/json: siempre → pipeline texto
+```
 
 ### Cambios en `src/extractors/docx.ts`
 
-Agregar un flag al resultado para que el consumer sepa si debe convertir:
-```typescript
-export async function extractDocx(input: Buffer, fileName: string): Promise<ExtractedContent> {
-  // ... extracto existente ...
-  const images = await extractImages(input)
+Solo asegurar que `metadata.hasImages` y `metadata.imageCount` estén bien seteados (ya cubierto en WP1).
+NO agregar flag `needsPdfConversion` — eso lo decide el caller basándose en `hasImages`.
 
-  // Si tiene imágenes significativas (>0), marcar para conversión PDF
-  if (images.length > 0) {
-    return {
-      text,
-      sections,
-      metadata: {
-        ...metadata,
-        needsPdfConversion: true,  // Flag para Track D
-      },
-    }
-  }
-  // ... retorno normal ...
-}
-```
+### Cambios en `src/extractors/pdf.ts`
 
-La conversión real a PDF la implementa Track D (WP8/WP-INFRA con LibreOffice). Este track solo marca el flag.
+Solo asegurar que `metadata.hasImages` y `metadata.isScanned` estén bien seteados (ya cubierto en WP1).
+El caller decide:
+- `hasImages || isScanned` → chunkPdf() (pipeline visual, 3 págs con multimodal embedding)
+- `!hasImages && !isScanned` → chunkDocs(fullText) (pipeline texto, headings semánticos)
+
+### NOTA: el extractor PDF SIEMPRE extrae texto completo (fullText)
+Tanto pipeline texto como visual reciben el texto. La diferencia es:
+- Texto: se fragmenta semánticamente por headings
+- Visual: se fragmenta por páginas, el texto va como content para FTS, el PDF va como mediaRefs para multimodal
 
 ---
 

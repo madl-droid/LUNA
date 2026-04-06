@@ -134,9 +134,15 @@ export async function isLibreOfficeAvailable(): Promise<boolean> {
 
 ## WP10: Binary Lifecycle Management
 
-### Regla máxima
-- **Knowledge source**: guardar binario particionado por chunk, con path local + URL remoto
-- **Attachment source**: guardar binario completo, no borrar hasta que TODOS los chunks estén embedded
+### Regla universal v2
+- **Binarios SIEMPRE se guardan chunkeados** (tanto knowledge como attachment)
+- El embedding multimodal necesita chunk + su binario correspondiente
+- La diferencia entre knowledge y attachment es solo la VIDA del binario
+
+### Lifecycle por source
+- **Knowledge**: binario vive mientras el documento de KB exista. Se borra cuando el usuario lo elimina.
+- **Attachment**: binario vive hasta que TODOS los chunks del documento estén en estado terminal (embedded o max-retry-failed). Nightly batch limpia.
+- **Video attachment**: EXCEPCIÓN — NO se guarda binario (muy pesado para algo temporal). Solo knowledge guarda video.
 
 ### Problema actual
 - Los binarios se guardan completos en `instance/knowledge/media/`
@@ -179,13 +185,28 @@ for (const chunk of linkedChunks) {
 }
 ```
 
-#### Para Attachments: lifecycle management
+#### Para Attachments: TAMBIÉN guardar chunkeado
+
+Los attachments se guardan chunkeados igual que knowledge. El embedding multimodal necesita
+chunk + binario independientemente del source. La única diferencia es la vida del archivo.
+
+Mismo código que knowledge para guardar:
+```typescript
+// Attachments: mismo flujo de guardado que knowledge
+// Mover segmentos de /tmp/ a instance/knowledge/media/
+// Cada chunk tiene su propio archivo referenciado en mediaRefs
+```
+
+EXCEPCIÓN: **video attachments NO guardan binario** (muy pesado para algo temporal).
+El video se procesa en memoria, se extrae descripción+transcripción, y se descarta.
+
+#### Lifecycle: marcar para cleanup
 
 En `embedding-queue.ts`, modificar `reconcileDocumentStatus()`:
 
 ```typescript
 // ANTES: solo actualiza embedding_status del documento
-// DESPUÉS: también gestiona cleanup de binarios
+// DESPUÉS: también gestiona cleanup de binarios para attachments
 
 async reconcileDocumentStatus(documentId: string): Promise<void> {
   const stats = await this.pgStore.getChunkEmbeddingStats(documentId)
@@ -199,8 +220,7 @@ async reconcileDocumentStatus(documentId: string): Promise<void> {
     // Binary cleanup para attachments (no knowledge)
     const doc = await this.pgStore.getDocument(documentId)
     if (doc?.source === 'attachment') {
-      // Ahora es seguro marcar binarios para limpieza
-      // Los binarios se limpian en el nightly batch, no aquí
+      // Ahora es seguro marcar binarios chunkeados para limpieza
       await this.pgStore.markBinariesForCleanup(documentId)
       logger.info({ documentId }, 'Attachment binaries marked for cleanup after full embedding')
     }

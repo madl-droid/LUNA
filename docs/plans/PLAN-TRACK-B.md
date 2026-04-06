@@ -1,4 +1,4 @@
-# Track B: Smart Chunker — PDF Fix + Audio/Video Temporal Chunking
+# Track B: Smart Chunker — Pipeline Dual + Audio/Video Temporal
 
 ## Archivos a modificar
 - `src/modules/knowledge/extractors/smart-chunker.ts` (principal)
@@ -12,10 +12,31 @@
 NOTA: Track B puede ejecutarse EN PARALELO con Track A si el ejecutor tiene cuidado de no tocar los mismos archivos. Track A modifica `src/extractors/*.ts`, Track B modifica `src/modules/knowledge/extractors/smart-chunker.ts` — archivos distintos.
 
 ## Orden de ejecución dentro del track
-1. WP2: PDF 3-page chunking (fix bug de 6 páginas)
+1. WP2: Pipeline dual (texto vs visual) + PDF 3-page chunking (fix bug 6 páginas)
 2. WP3: Audio temporal chunking (60/70/10)
 3. WP4: Video temporal chunking (50/60/10)
 4. Propagación de metadata de WP1 en todos los chunkers
+
+## CAMBIO CLAVE v2: Pipeline Dual
+
+El smart-chunker ahora tiene 2 pipelines principales:
+
+### Pipeline Texto (chunkDocs)
+Recibe texto plano de: .txt, .md, .json, .docx sin imágenes, .pdf solo texto.
+Fragmenta por: headings explícitos (H1-H3) → headings implícitos → párrafos con word overlap.
+contentType: 'text'. mediaRefs: null. Sin binario.
+
+### Pipeline Visual (chunkPdf)
+Recibe PDF (directo o convertido) de: .pdf con imgs, .docx con imgs (→PDF), .pptx (→PDF), slides (→PDF).
+Fragmenta por: 3 páginas max, 1 página overlap, 200 chars text overlap.
+contentType: 'pdf_pages'. mediaRefs: [{pdf filePath}]. Con binario.
+
+### Router en el caller (knowledge-manager / item-manager)
+El caller decide el pipeline basándose en metadata del extractor:
+- `metadata.hasImages === true` → pipeline visual
+- `metadata.isScanned === true` → pipeline visual
+- `kind === 'slides'` → pipeline visual
+- Todo lo demás → pipeline texto
 
 ---
 
