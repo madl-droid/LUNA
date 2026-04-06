@@ -27,6 +27,7 @@ export async function preloadContext(
   phoneNumber: string,
   direction: CallDirection,
   config: TwilioVoiceConfig,
+  outboundReason?: string,
 ): Promise<PreloadedContext> {
   const startMs = Date.now()
 
@@ -73,6 +74,7 @@ export async function preloadContext(
     direction,
     config,
     registry,
+    outboundReason,
   )
 
   // Add end-call tool to the declarations
@@ -212,6 +214,7 @@ async function buildSystemInstruction(
   direction: CallDirection,
   config: TwilioVoiceConfig,
   registry?: Registry,
+  outboundReason?: string,
 ): Promise<string> {
   const parts: string[] = []
 
@@ -244,6 +247,17 @@ async function buildSystemInstruction(
     voiceInstr = `## Instrucciones de llamada de voz\n\nEst\u00e1s en una llamada telef\u00f3nica en VIVO.\nSaludo: "${greeting}"\nFiller: "${config.VOICE_FILLER_MESSAGE}"\nSilencio: "${config.VOICE_SILENCE_MESSAGE}"`
   }
   parts.push(voiceInstr)
+
+  // Outbound call reason (injected after voice instructions)
+  if (direction === 'outbound' && outboundReason) {
+    let outboundCtx = '\n\n## Llamada saliente'
+    if (contact?.displayName) {
+      outboundCtx += `\n\nEstás llamando a ${contact.displayName}.`
+    }
+    outboundCtx += ` Razón de la llamada: ${outboundReason}.`
+    outboundCtx += ' Saluda, confirma que hablas con la persona correcta, y explica la razón de tu llamada.'
+    parts.push(outboundCtx)
+  }
 
   // Contact context
   if (contact || contactMemory || pendingCommitments.length > 0) {

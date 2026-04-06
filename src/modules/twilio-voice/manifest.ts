@@ -92,6 +92,7 @@ const apiRoutes: ApiRoute[] = [
           twimlUrl,
           statusUrl,
           mediaStreamUrl,
+          body.reason,
         )
 
         jsonResponse(res, 200, { ok: true, ...result })
@@ -223,7 +224,6 @@ const apiRoutes: ApiRoute[] = [
       const mediaStreamUrl = `wss://${host}/twilio/media-stream`
 
       const twiml = await callManager.handleIncomingCall(callSid, from, to, mediaStreamUrl)
-
       res.writeHead(200, { 'Content-Type': 'text/xml' })
       res.end(twiml)
     },
@@ -316,7 +316,9 @@ const manifest: ModuleManifest = {
     VOICE_SILENCE_RMS_THRESHOLD: numEnvMin(0, 200),
     // ── Call behavior ──
     VOICE_PREVIEW_TEXT: z.string().default('Hola, soy tu asistente virtual. \u00bfEn qu\u00e9 puedo ayudarte hoy?'),
-    VOICE_ANSWER_DELAY_RINGS: numEnvMin(1, 2),
+    VOICE_ANSWER_DELAY_RINGS: numEnvMin(1, 2), // deprecated — use MIN/MAX below
+    VOICE_ANSWER_DELAY_MIN_RINGS: numEnvMin(1, 2),
+    VOICE_ANSWER_DELAY_MAX_RINGS: numEnvMin(1, 5),
     VOICE_SILENCE_TIMEOUT_MS: numEnv(10000),
     VOICE_SILENCE_MESSAGE: z.string().default('\u00bfSigues ah\u00ed?'),
     VOICE_GREETING_INBOUND: z.string().default('Hola, gracias por llamar. \u00bfEn qu\u00e9 puedo ayudarte?'),
@@ -330,6 +332,12 @@ const manifest: ModuleManifest = {
     VOICE_RATE_LIMIT_HOUR: numEnvMin(0, 0),
     VOICE_RATE_LIMIT_DAY: numEnvMin(0, 0),
     VOICE_SESSION_TIMEOUT_HOURS: numEnvMin(1, 1),
+    // ── Outbound call restrictions ──
+    VOICE_BUSINESS_HOURS_ENABLED: boolEnv(true),
+    VOICE_BUSINESS_HOURS_START: numEnvMin(0, 8),
+    VOICE_BUSINESS_HOURS_END: numEnvMin(0, 17),
+    VOICE_BUSINESS_HOURS_TIMEZONE: z.string().default('America/Bogota'),
+    VOICE_OUTBOUND_RATE_LIMIT_HOUR: numEnvMin(0, 3),
   }),
 
   console: {
@@ -503,10 +511,19 @@ const manifest: ModuleManifest = {
         label: { es: 'Saludo para llamadas salientes', en: 'Outbound call greeting' },
       },
       {
-        key: 'VOICE_ANSWER_DELAY_RINGS',
+        key: 'VOICE_ANSWER_DELAY_MIN_RINGS',
         type: 'number',
-        label: { es: 'Timbrazos antes de contestar', en: 'Rings before answering' },
-        info: { es: 'Numero de timbrazos para parecer natural (minimo 1)', en: 'Number of rings for natural feel (minimum 1)' },
+        label: { es: 'Timbrazos minimos antes de contestar', en: 'Min rings before answering' },
+        info: { es: 'Minimo de timbrazos para parecer natural (minimo 1)', en: 'Minimum rings for natural feel (minimum 1)' },
+        min: 1,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_ANSWER_DELAY_MAX_RINGS',
+        type: 'number',
+        label: { es: 'Timbrazos maximos antes de contestar', en: 'Max rings before answering' },
+        info: { es: 'Maximo de timbrazos antes de contestar (aleatorio entre min y max)', en: 'Max rings before answering (random between min and max)' },
+        min: 1,
         width: 'half',
       },
       {
@@ -585,6 +602,45 @@ const manifest: ModuleManifest = {
         label: { es: 'Timeout de sesion (horas)', en: 'Session timeout (hours)' },
         info: { es: 'Horas de inactividad para cerrar la sesion', en: 'Inactivity hours to close the session' },
         min: 1,
+        width: 'half',
+      },
+      // ── Llamadas salientes ──
+      { key: '_divider_outbound', type: 'divider', label: { es: 'Llamadas salientes', en: 'Outbound calls' } },
+      {
+        key: 'VOICE_BUSINESS_HOURS_ENABLED',
+        type: 'boolean',
+        label: { es: 'Restringir a horario laboral', en: 'Restrict to business hours' },
+        info: { es: 'Si se activa, bloquea llamadas salientes fuera del horario configurado y en fines de semana', en: 'If enabled, blocks outbound calls outside configured hours and on weekends' },
+      },
+      {
+        key: 'VOICE_BUSINESS_HOURS_START',
+        type: 'number',
+        label: { es: 'Hora de inicio (0-23)', en: 'Start hour (0-23)' },
+        info: { es: 'Hora en que comienza el horario laboral (ej: 8 = 8:00 AM)', en: 'Hour business hours begin (e.g.: 8 = 8:00 AM)' },
+        min: 0,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_BUSINESS_HOURS_END',
+        type: 'number',
+        label: { es: 'Hora de fin (0-23)', en: 'End hour (0-23)' },
+        info: { es: 'Hora en que termina el horario laboral (ej: 17 = 5:00 PM)', en: 'Hour business hours end (e.g.: 17 = 5:00 PM)' },
+        min: 0,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_BUSINESS_HOURS_TIMEZONE',
+        type: 'text',
+        label: { es: 'Zona horaria', en: 'Timezone' },
+        info: { es: 'Zona horaria IANA (ej: America/Bogota, America/Mexico_City, Europe/Madrid)', en: 'IANA timezone (e.g.: America/Bogota, America/Mexico_City, Europe/Madrid)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_OUTBOUND_RATE_LIMIT_HOUR',
+        type: 'number',
+        label: { es: 'Max llamadas salientes/hora por numero', en: 'Max outbound calls/hour per number' },
+        info: { es: '0 = sin limite. Limita llamadas salientes al mismo numero en la ultima hora', en: '0 = unlimited. Limits outbound calls to the same number in the last hour' },
+        min: 0,
         width: 'half',
       },
       {
