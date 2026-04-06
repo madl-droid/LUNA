@@ -437,7 +437,7 @@ async function processOneAttachment(
       const totalChars = rawText.length
       const sampledText = distributedSample(rawText, 30000)
       const truncationNote = totalChars > 30000
-        ? `\n\n[NOTA: El documento tiene ${totalChars.toLocaleString()} caracteres (~${tokenEstimate.toLocaleString()} tokens). Se muestran muestras del inicio, mitad y final. Resume lo que puedas ver y menciona que hay contenido intermedio no visible.]`
+        ? `\n\n[NOTA: El documento tiene ${String(totalChars)} caracteres (~${String(tokenEstimate)} tokens). Se muestran muestras del inicio, mitad y final. Resume lo que puedas ver y menciona que hay contenido intermedio no visible.]`
         : ''
       const descResult = await registry.callHook('llm:chat', {
         task: 'extractor-summarize-large',
@@ -466,7 +466,7 @@ async function processOneAttachment(
   // Build summary for large docs (uses LLM description if available, otherwise truncate)
   let summary: string | null = null
   if (sizeTier === 'large') {
-    const truncNote = `[documento de ~${tokenEstimate.toLocaleString()} tokens, contenido resumido]`
+    const truncNote = `[documento de ~${String(tokenEstimate)} tokens, contenido resumido]`
     summary = llmText
       ? `[${categoryLabel}] ${att.filename} ${truncNote} — ${llmText}`
       : `[${categoryLabel}] ${att.filename} ${truncNote}: ${rawText.slice(0, engineConfig.summaryMaxTokens * 4)}...`

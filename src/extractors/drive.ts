@@ -6,6 +6,7 @@
 import pino from 'pino'
 import type { Registry } from '../kernel/registry.js'
 import type { DriveResult, DriveFileEntry } from './types.js'
+import { validateInjection } from '../engine/attachments/injection-validator.js'
 
 const logger = pino({ name: 'extractors:drive' })
 
@@ -189,10 +190,101 @@ export async function extractDrive(url: string, registry: Registry): Promise<Dri
 }
 
 /**
- * Enrich a DriveResult by reading the file content via Google API.
+ * Reads the file content from Google APIs.
+ * Returns null if the service is unavailable or the drive type is unsupported.
+ */
+async function fetchDriveContent(
+  result: DriveResult,
+  registry: Registry,
+): Promise<string | null> {
+  switch (result.driveType) {
+    case 'document': {
+      const docs = registry.getOptional<DocsService>('google:docs')
+      if (!docs) return null
+      const doc = await docs.getDocument(result.fileId)
+      return doc.body
+    }
+    case 'spreadsheet': {
+      const sheets = registry.getOptional<SheetsService>('google:sheets')
+      if (!sheets) return null
+      const info = await sheets.getSpreadsheet(result.fileId)
+      const firstSheet = info.sheets[0]
+      if (!firstSheet) return null
+      const data = await sheets.readRange(result.fileId, `'${firstSheet.title}'`)
+      return data.values.map(row => row.join('\t')).join('\n')
+    }
+    case 'presentation': {
+      const slides = registry.getOptional<SlidesService>('google:slides')
+      if (!slides) return null
+      return slides.getSlideText(result.fileId)
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * Sanitizes content against prompt injection (H3).
+ */
+function sanitizeDriveContent(
+  content: string,
+  result: DriveResult,
+): string {
+  const check = validateInjection(content, 'drive', result.name ?? result.fileId)
+  if (check.injectionRisk) {
+    logger.warn({ fileId: result.fileId, threats: check.threats }, '[Drive] Injection risk detected')
+  }
+  return check.sanitizedText
+}
+
+/**
+ * For large content, generates an LLM summary.
+ * If the LLM fails, returns the result without summary (does not propagate the error).
+ */
+async function generateDriveSummary(
+  content: string,
+  result: DriveResult,
+  registry: Registry,
+): Promise<DriveResult> {
+  const enriched: DriveResult = { ...result, extractedContent: content }
+  const tokenEstimate = Math.ceil(content.length / 4)
+  if (tokenEstimate <= 8000) return enriched
+
+  try {
+    const llmResult = await registry.callHook('llm:chat', {
+      task: 'drive-summarize-large',
+      system: 'Eres un asistente que resume documentos. Genera una descripción concisa pero completa del documento, cubriendo los puntos principales, estructura y datos relevantes. Responde en español. Máximo 500 palabras.',
+      messages: [{
+        role: 'user' as const,
+        content: [
+          { type: 'text' as const, text: `Resume este documento ("${result.name}"):\n\n${content.slice(0, 24000)}` },
+        ],
+      }],
+      maxTokens: 1500,
+      temperature: 0.1,
+    })
+
+    if (llmResult && typeof llmResult === 'object' && 'text' in llmResult) {
+      const summary = (llmResult as { text: string }).text?.trim()
+      if (summary) {
+        enriched.llmEnrichment = {
+          description: summary,
+          provider: 'drive-enrichment',
+          generatedAt: new Date(),
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, fileId: result.fileId }, '[Drive] LLM summary failed')
+  }
+
+  return enriched
+}
+
+/**
+ * Public orchestrator. Same signature and behavior as before.
+ * Internally separates fetch, sanitization and LLM for clearer diagnostics.
  * Called by enrichWithLLM() orchestrator in index.ts.
- * Reads document/spreadsheet/presentation content, populates extractedContent.
- * For large content, generates LLM summary.
  */
 export async function enrichDriveContent(
   result: DriveResult,
@@ -201,84 +293,14 @@ export async function enrichDriveContent(
   if (!result.hasAccess || result.driveType === 'folder') return result
 
   try {
-    let content: string | null = null
-
-    switch (result.driveType) {
-      case 'document': {
-        const docs = registry.getOptional<DocsService>('google:docs')
-        if (docs) {
-          const doc = await docs.getDocument(result.fileId)
-          content = doc.body
-        }
-        break
-      }
-      case 'spreadsheet': {
-        const sheets = registry.getOptional<SheetsService>('google:sheets')
-        if (sheets) {
-          // Read first sheet overview
-          const info = await sheets.getSpreadsheet(result.fileId)
-          const firstSheet = info.sheets[0]
-          if (firstSheet) {
-            const data = await sheets.readRange(result.fileId, `'${firstSheet.title}'`)
-            content = data.values.map(row => row.join('\t')).join('\n')
-          }
-        }
-        break
-      }
-      case 'presentation': {
-        const slides = registry.getOptional<SlidesService>('google:slides')
-        if (slides) {
-          content = await slides.getSlideText(result.fileId)
-        }
-        break
-      }
-      // 'file' type: can't read generic files via API (PDF, images, etc.)
-      // Agent would need to use drive-get-file tool directly
-    }
-
+    const content = await fetchDriveContent(result, registry)
     if (!content) return result
-
-    const enriched: DriveResult = {
-      ...result,
-      extractedContent: content,
-    }
-
-    // Generate summary for large content
-    const tokenEstimate = Math.ceil(content.length / 4)
-    if (tokenEstimate > 8000) {
-      try {
-        const llmResult = await registry.callHook('llm:chat', {
-          task: 'drive-summarize-large',
-          system: 'Eres un asistente que resume documentos. Genera una descripción concisa pero completa del documento, cubriendo los puntos principales, estructura y datos relevantes. Responde en español. Máximo 500 palabras.',
-          messages: [{
-            role: 'user' as const,
-            content: [
-              { type: 'text' as const, text: `Resume este documento ("${result.name}"):\n\n${content.slice(0, 24000)}` },
-            ],
-          }],
-          maxTokens: 1500,
-          temperature: 0.1,
-        })
-
-        if (llmResult && typeof llmResult === 'object' && 'text' in llmResult) {
-          const summary = (llmResult as { text: string }).text?.trim()
-          if (summary) {
-            enriched.llmEnrichment = {
-              description: summary,
-              provider: 'drive-enrichment',
-              generatedAt: new Date(),
-            }
-          }
-        }
-      } catch (err) {
-        logger.warn({ err, fileId: result.fileId }, 'Drive LLM summary failed')
-      }
-    }
-
+    const safeContent = sanitizeDriveContent(content, result)
+    const enriched = await generateDriveSummary(safeContent, result, registry)
     logger.info({ fileId: result.fileId, name: result.name, contentLen: content.length }, 'Drive content enriched')
     return enriched
   } catch (err) {
-    logger.warn({ err, fileId: result.fileId }, 'Drive content enrichment failed')
+    logger.warn({ err, fileId: result.fileId }, '[Drive] Content enrichment failed')
     return result
   }
 }

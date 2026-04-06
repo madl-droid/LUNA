@@ -106,7 +106,7 @@ export class VectorizeWorker {
 
       if (chunks.length === 0) {
         this.log.info({ documentId }, '[EMBED] No chunks without embedding, marking done')
-        await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
+        await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'embedded')
         return
       }
 
@@ -126,9 +126,9 @@ export class VectorizeWorker {
       await this.embedChunks(chunks)
 
       const durationMs = Date.now() - startMs
-      await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
+      await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'embedded')
       // Propagate status to parent knowledge_item (via source_ref)
-      await this.updateParentItemStatus(documentId, 'done')
+      await this.updateParentItemStatus(documentId, 'embedded')
       this.log.info({ documentId, chunksProcessed: chunks.length, durationMs, avgMsPerChunk: Math.round(durationMs / chunks.length) }, '[EMBED] Document embeddings complete')
     } catch (err) {
       this.log.error({ documentId, err }, 'failed to process document embeddings')
@@ -178,7 +178,7 @@ export class VectorizeWorker {
 
       // Update document statuses
       for (const docId of documentIds) {
-        const status: EmbeddingStatus = failedDocIds.has(docId) ? 'failed' : 'done'
+        const status: EmbeddingStatus = failedDocIds.has(docId) ? 'failed' : 'embedded'
         await this.pgStore.updateDocumentEmbeddingStatus(docId, status)
       }
 
@@ -267,7 +267,7 @@ export class VectorizeWorker {
   }
 
   /** Update the parent knowledge_item embedding status when its document finishes */
-  private async updateParentItemStatus(documentId: string, status: 'done' | 'failed'): Promise<void> {
+  private async updateParentItemStatus(documentId: string, status: 'embedded' | 'failed'): Promise<void> {
     try {
       const doc = await this.pgStore.getDocument(documentId)
       if (!doc?.sourceRef) return

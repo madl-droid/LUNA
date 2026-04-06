@@ -633,6 +633,11 @@ export class KnowledgePgStore {
     )
   }
 
+  /**
+   * Direct embedding persistence — bypasses BullMQ queue.
+   * Used by batch jobs (nightly-batch, vectorize-worker) that manage their own retry logic.
+   * For normal flow, use EmbeddingQueue.enqueue() instead.
+   */
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
     const embStr = `[${embedding.join(',')}]`
     await this.db.query(
@@ -1288,7 +1293,7 @@ export class KnowledgePgStore {
     const res = await this.db.query<ItemRow>(
       `SELECT * FROM knowledge_items
        WHERE active = true
-         AND (content_loaded = false OR embedding_status NOT IN ('done', 'processing'))
+         AND (content_loaded = false OR embedding_status NOT IN ('embedded', 'processing'))
        ORDER BY created_at ASC`,
     )
     return res.rows.map(mapItemRow)

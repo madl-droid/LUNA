@@ -239,7 +239,7 @@ export async function registerGoogleTools(
           required: ['fileId'],
         },
       },
-      handler: async (input) => {
+      handler: async (input, ctx) => {
         const fileId = input.fileId as string
 
         // 1. Get file metadata (name, mimeType, size)
@@ -282,7 +282,7 @@ export async function registerGoogleTools(
         if (officeExport) {
           // Office file: export via files.export() to a readable format
           const exported = await drive.exportFile(fileId, officeExport.exportMime)
-          buffer = Buffer.from(exported, 'utf-8')
+          buffer = Buffer.isBuffer(exported) ? exported : Buffer.from(exported, 'utf-8')
           extractorMime = officeExport.extractorMime
           logger.info({ fileId, name: file.name, exportMime: officeExport.exportMime }, `Drive ${officeExport.label} exported`)
         } else {
@@ -320,7 +320,7 @@ export async function registerGoogleTools(
         }
 
         // 5. Persist to attachment_extractions (fire-and-forget)
-        persistDriveReadResult(registry, fileId, file.name, file.mimeType, extracted.text, llmDescription).catch(
+        persistDriveReadResult(registry, fileId, file.name, file.mimeType, extracted.text, llmDescription, ctx?.sessionId).catch(
           (err: unknown) => logger.warn({ err, fileId }, 'Failed to persist drive-read-file result'),
         )
 
@@ -888,6 +888,7 @@ async function persistDriveReadResult(
   mimeType: string,
   extractedText: string | null,
   llmText: string | null,
+  sessionId?: string,
 ): Promise<void> {
   const db = registry.getDb()
   const tokenEstimate = extractedText ? Math.ceil(extractedText.length / 4) : 0
@@ -912,9 +913,9 @@ async function persistDriveReadResult(
     `INSERT INTO attachment_extractions
       (id, session_id, filename, mime_type, category, category_label, source_type,
        extracted_text, llm_text, token_estimate, status, metadata)
-     VALUES (gen_random_uuid(), NULL, $1, $2, 'documents', 'documents', 'drive_read',
+     VALUES (gen_random_uuid(), $7, $1, $2, 'documents', 'documents', 'drive_read',
        $3, $4, $5, 'processed', $6)`,
-    [fileName, mimeType, extractedText, llmText, tokenEstimate, JSON.stringify({ fileId })],
+    [fileName, mimeType, extractedText, llmText, tokenEstimate, JSON.stringify({ fileId }), sessionId ?? null],
   )
 
   logger.info({ fileId, fileName }, 'drive-read-file result persisted (new row)')

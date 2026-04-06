@@ -14,7 +14,7 @@ export type FAQSourceType = 'manual' | 'sheets' | 'file'
 
 export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web'
 
-export type EmbeddingStatus = 'pending' | 'queued' | 'processing' | 'embedded' | 'done' | 'failed' | 'pending_review'
+export type EmbeddingStatus = 'pending' | 'queued' | 'processing' | 'embedded' | 'failed' | 'pending_review'
 
 // Frecuencias en milisegundos
 export const SYNC_FREQUENCY_MS: Record<SyncFrequency, number> = {

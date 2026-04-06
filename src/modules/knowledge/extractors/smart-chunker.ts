@@ -13,9 +13,6 @@ import {
   MAX_PDF_PAGES_PER_REQUEST,
 } from '../embedding-limits.js'
 
-// Re-export for backward compat (callers importing SmartChunk/LinkedChunk)
-export type { EmbeddableChunk as SmartChunk, LinkedEmbeddableChunk as LinkedChunk }
-
 // ═══════════════════════════════════════════
 // 1. DOCS / WORD → text by headings
 // ═══════════════════════════════════════════
@@ -66,7 +63,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
             mediaRefs: null,
             chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
             metadata: {
-              sourceType: 'docx',
+              sourceType: opts?.sourceType ?? 'docx',
               sourceFile: opts?.sourceFile,
               sourceMimeType: opts?.sourceMimeType,
               sectionTitle: sectionTitle ? `${sectionTitle} (${subIndex + 1})` : undefined,
@@ -96,7 +93,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
             mediaRefs: null,
             chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
             metadata: {
-              sourceType: 'docx',
+              sourceType: opts?.sourceType ?? 'docx',
               sourceFile: opts?.sourceFile,
               sourceMimeType: opts?.sourceMimeType,
             },
@@ -130,6 +127,10 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
 // ═══════════════════════════════════════════
 
 export function chunkSheets(headers: string[], rows: string[][], opts?: { sourceFile?: string; sourceMimeType?: string; sheetName?: string }): EmbeddableChunk[] {
+  // Tech debt: actualmente se crea 1 chunk por fila. Para spreadsheets grandes
+  // (>1000 filas), esto genera demasiados chunks con baja densidad semántica.
+  // Mejora futura: si se elige un valor N para agrupar filas (ej: N=5-10 filas por chunk),
+  // la vectorización y búsqueda semántica serán más efectivas al tener más contexto por chunk.
   const chunks: EmbeddableChunk[] = []
   const headerLine = headers.join(',')
 

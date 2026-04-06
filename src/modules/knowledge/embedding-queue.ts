@@ -330,7 +330,7 @@ export class EmbeddingQueue {
     }
 
     // Load chunk data from PG
-    const chunk = await this.loadChunk(chunkId, source, parentId)
+    const chunk = await this.loadChunk(chunkId, source)
     if (!chunk) {
       logger.warn({ chunkId, source }, '[EMBED-Q] Chunk not found, skipping')
       return
@@ -446,7 +446,7 @@ export class EmbeddingQueue {
   // Chunk loading from PG
   // ═══════════════════════════════════════════
 
-  private async loadChunk(chunkId: string, source: EmbedSource, _parentId: string): Promise<ChunkToEmbed | null> {
+  private async loadChunk(chunkId: string, source: EmbedSource): Promise<ChunkToEmbed | null> {
     if (source === 'knowledge') {
       const res = await this.db.query<{
         id: string; content: string | null; content_type: string; mime_type: string | null
@@ -576,7 +576,7 @@ export class EmbeddingQueue {
 
       if (row.embedded + row.failed >= row.total) {
         // All chunks have a terminal state
-        const docStatus = row.failed > 0 ? 'failed' : 'done'
+        const docStatus = row.failed > 0 ? 'failed' : 'embedded'
         await this.db.query(
           `UPDATE knowledge_documents SET embedding_status = $1, updated_at = NOW() WHERE id = $2`,
           [docStatus, documentId],

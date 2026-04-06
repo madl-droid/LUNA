@@ -395,7 +395,8 @@ export function chunkByThematicSections(
   const sessionId = messages[0]?.sessionId ?? 'unknown'
   const chunks: PreChunk[] = []
 
-  for (const section of sections) {
+  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+    const section = sections[sectionIndex]!
     // Build section content: topic summary + attachment references
     let content = `[${section.topic}]\n${section.summary}`
     if (section.attachments && section.attachments.length > 0) {
@@ -403,7 +404,7 @@ export function chunkByThematicSections(
     }
 
     chunks.push({
-      sourceId: `section-${sessionId}`,
+      sourceId: `section-${sessionId}-${sectionIndex}`,
       sourceType: 'text',
       contentType: 'text',
       content,

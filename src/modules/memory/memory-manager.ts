@@ -91,10 +91,6 @@ export class MemoryManager {
     return turns >= this.redis.getConfig().MEMORY_COMPRESSION_THRESHOLD
   }
 
-  async getMessageCount(sessionId: string): Promise<number> {
-    return await this.redis.getMessageCount(sessionId)
-  }
-
   async getTurnCount(sessionId: string): Promise<number> {
     return await this.redis.getTurnCount(sessionId)
   }
