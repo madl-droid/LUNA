@@ -156,6 +156,7 @@ export class CallManager {
       startedAt: new Date(),
       connectedAt: new Date(),
       geminiVoice: this.config.VOICE_GEMINI_VOICE,
+      modelUsed: this.config.VOICE_GEMINI_MODEL, // updated after connect()
       transcript: [],
       preloadedContext: context,
     }
@@ -191,6 +192,8 @@ export class CallManager {
       {
         apiKey,
         model: this.config.VOICE_GEMINI_MODEL,
+        fallbackModel: this.config.VOICE_GEMINI_FALLBACK_MODEL,
+        thinkingLevel: this.config.VOICE_GEMINI_THINKING_LEVEL,
         voice: this.config.VOICE_GEMINI_VOICE,
         language: this.config.VOICE_GEMINI_LANGUAGE || this.getGlobalAccent(),
         systemInstruction: context.systemInstruction,
@@ -246,11 +249,32 @@ export class CallManager {
         onClose: () => {
           logger.info({ callSid, streamSid }, 'Gemini Live session closed')
         },
+        onUserTranscript: (text, isFinal) => {
+          // Native caller transcription — add final entries to transcript
+          if (isFinal && text.trim()) {
+            const entry: TranscriptEntry = {
+              speaker: 'caller',
+              text: text.trim(),
+              timestampMs: Date.now() - call.startedAt.getTime(),
+            }
+            call.transcript.push(entry)
+            logger.debug({ text: text.trim() }, 'Native caller transcript (final)')
+          }
+        },
+        onAgentTranscript: (text, isFinal) => {
+          // Native agent transcription — log for debugging
+          logger.debug({ text: text.trim(), isFinal }, 'Native agent transcript')
+        },
+        onToolCallCancellation: (ids) => {
+          logger.info({ ids, callSid }, 'Tool calls cancelled by barge-in')
+        },
       },
     )
 
     try {
       await gemini.connect()
+      // Record which model was actually used (primary or fallback)
+      call.modelUsed = gemini.modelUsed
       this.geminiSessions.set(streamSid, gemini)
 
       // Start silence monitoring
@@ -263,7 +287,7 @@ export class CallManager {
         setTimeout(() => this.endCall(streamSid, 'max-duration'), this.config.VOICE_GOODBYE_TIMEOUT_MS)
       }, this.config.VOICE_MAX_CALL_DURATION_MS))
 
-      logger.info({ callSid, streamSid, voice: this.config.VOICE_GEMINI_VOICE }, 'Audio bridge established')
+      logger.info({ callSid, streamSid, voice: this.config.VOICE_GEMINI_VOICE, modelUsed: call.modelUsed }, 'Audio bridge established')
     } catch (err) {
       logger.error({ err, callSid }, 'Failed to connect Gemini Live')
       this.endCall(streamSid, 'error')
@@ -335,7 +359,7 @@ export class CallManager {
     )
 
     // Update DB
-    await pgStore.completeCall(this.db, call.callSid, reason, summary)
+    await pgStore.completeCall(this.db, call.callSid, reason, summary, call.modelUsed || null)
 
     // Save transcript to DB
     if (call.transcript.length > 0) {

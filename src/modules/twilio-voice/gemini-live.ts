@@ -24,6 +24,12 @@ export type GeminiLiveEvents = {
   onTurnComplete: () => void
   onError: (error: Error) => void
   onClose: () => void
+  /** Native transcription: what the caller said (from inputAudioTranscription) */
+  onUserTranscript: (text: string, isFinal: boolean) => void
+  /** Native transcription: what Gemini said (from outputAudioTranscription) */
+  onAgentTranscript: (text: string, isFinal: boolean) => void
+  /** Tool calls cancelled due to barge-in */
+  onToolCallCancellation: (ids: string[]) => void
 }
 
 export class GeminiLiveSession {
@@ -33,6 +39,10 @@ export class GeminiLiveSession {
   private connected = false
   private setupComplete = false
   private reconnecting = false
+  /** Which model is being tried in the current connection attempt */
+  private currentModel: string = ''
+  /** Which model was actually connected (set after successful connect) */
+  public modelUsed: string = ''
 
   constructor(config: GeminiLiveConfig, events: GeminiLiveEvents) {
     this.config = config
@@ -40,20 +50,74 @@ export class GeminiLiveSession {
   }
 
   /**
-   * Connect to Gemini Live API and send setup message.
+   * Build model-specific thinking config for the setup message.
+   * 3.1 models use thinkingLevel, 2.5 models use thinkingBudget.
+   */
+  private buildModelSpecificConfig(model: string): {
+    thinkingLevel?: string
+    thinkingBudget?: number
+  } {
+    if (model.includes('3.1')) {
+      return { thinkingLevel: this.config.thinkingLevel.toUpperCase() }
+    }
+    if (model.includes('2.5')) {
+      return { thinkingBudget: 0 }
+    }
+    // Default fallback: use thinkingLevel
+    return { thinkingLevel: 'MINIMAL' }
+  }
+
+  /**
+   * Connect to Gemini Live API with primary model, falling back to fallbackModel on error.
    */
   async connect(): Promise<void> {
-    const model = this.config.model
+    const primaryModel = this.config.model
+
+    // Try primary model
+    try {
+      await this.connectWithModel(primaryModel)
+      this.modelUsed = primaryModel
+      logger.info({ model: primaryModel }, 'Gemini Live connected with primary model')
+      return
+    } catch (primaryErr) {
+      logger.warn({ err: primaryErr, model: primaryModel }, 'Primary Gemini model failed, trying fallback')
+    }
+
+    // Try fallback model
+    const fallbackModel = this.config.fallbackModel
+    if (!fallbackModel || fallbackModel === primaryModel) {
+      throw new Error(`Gemini Live connection failed for model "${primaryModel}" and no different fallback configured`)
+    }
+
+    await this.connectWithModel(fallbackModel)
+    this.modelUsed = fallbackModel
+    logger.info({ model: fallbackModel }, 'Gemini Live connected using fallback model')
+  }
+
+  /**
+   * Internal: attempt connection with a specific model.
+   */
+  private connectWithModel(model: string): Promise<void> {
+    this.currentModel = model
     const url = `${GEMINI_LIVE_BASE_URL}?key=${this.config.apiKey}`
     const connectionTimeoutMs = this.config.connectionTimeoutMs
 
     return new Promise<void>((resolve, reject) => {
+      // Close any existing WS before retry
+      if (this.ws) {
+        this.ws.removeAllListeners()
+        this.ws.close()
+        this.ws = null
+      }
+      this.connected = false
+      this.setupComplete = false
+
       this.ws = new WebSocket(url)
 
       const timeout = setTimeout(() => {
         if (!this.connected) {
           this.ws?.close()
-          reject(new Error('Gemini Live connection timeout'))
+          reject(new Error(`Gemini Live connection timeout (model: ${model})`))
         }
       }, connectionTimeoutMs)
 
@@ -165,6 +229,8 @@ export class GeminiLiveSession {
   private sendSetup(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
 
+    const model = this.currentModel
+
     const speechConfig: GeminiSetupMessage['setup']['generationConfig']['speechConfig'] = {
       voiceConfig: {
         prebuiltVoiceConfig: {
@@ -180,7 +246,7 @@ export class GeminiLiveSession {
 
     const setup: GeminiSetupMessage = {
       setup: {
-        model: `models/${this.config.model}`,
+        model: `models/${model}`,
         generationConfig: {
           responseModalities: ['AUDIO'],
           temperature: this.config.temperature,
@@ -188,6 +254,7 @@ export class GeminiLiveSession {
           topK: this.config.topK,
           maxOutputTokens: this.config.maxOutputTokens,
           speechConfig,
+          thinkingConfig: this.buildModelSpecificConfig(model),
         },
         systemInstruction: {
           parts: [{ text: this.config.systemInstruction }],
@@ -203,6 +270,9 @@ export class GeminiLiveSession {
             ? 'START_OF_ACTIVITY_INTERRUPTS'
             : 'NO_INTERRUPTION',
         },
+        // Native bidirectional transcription
+        outputAudioTranscription: {},
+        inputAudioTranscription: {},
       },
     }
 
@@ -219,6 +289,7 @@ export class GeminiLiveSession {
       voice: speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName,
       temperature: this.config.temperature,
       bargeIn: this.config.bargeInEnabled,
+      thinkingConfig: setup.setup.generationConfig.thinkingConfig,
     }, 'Gemini Live setup message sent')
   }
 
@@ -233,6 +304,14 @@ export class GeminiLiveSession {
         return
       }
 
+      // Tool calls cancelled due to barge-in
+      if (message.toolCallCancellation) {
+        const ids = message.toolCallCancellation.ids
+        logger.info({ ids }, 'Gemini tool call cancellation received')
+        this.events.onToolCallCancellation(ids)
+        return
+      }
+
       // Tool calls
       if (message.toolCall) {
         for (const fc of message.toolCall.functionCalls) {
@@ -242,7 +321,7 @@ export class GeminiLiveSession {
         return
       }
 
-      // Server content (audio/text/interruption)
+      // Server content (audio/text/interruption/transcription)
       if (message.serverContent) {
         const sc = message.serverContent
 
@@ -250,6 +329,20 @@ export class GeminiLiveSession {
         if (sc.interrupted) {
           this.events.onInterrupted()
           return
+        }
+
+        // Native agent transcription (what Gemini said)
+        const agentTranscriptText = sc.outputTranscription?.text
+        if (agentTranscriptText) {
+          const isFinal = sc.outputTranscription?.finished ?? false
+          this.events.onAgentTranscript(agentTranscriptText, isFinal)
+        }
+
+        // Native caller transcription (what the user said)
+        const userTranscriptText = sc.inputTranscription?.text
+        if (userTranscriptText) {
+          const isFinal = sc.inputTranscription?.finished ?? false
+          this.events.onUserTranscript(userTranscriptText, isFinal)
         }
 
         // Model turn with parts
