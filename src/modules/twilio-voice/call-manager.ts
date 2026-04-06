@@ -159,6 +159,16 @@ export class CallManager {
       modelUsed: this.config.VOICE_GEMINI_MODEL, // updated after connect()
       transcript: [],
       preloadedContext: context,
+      // Greeting gate: outbound starts unlocked (caller already listening)
+      greetingDone: direction === 'outbound',
+      // Freeze detection
+      geminiSpeaking: false,
+      geminiResponseTimer: null,
+      geminiFreezeAttempts: 0,
+      lastCallerTranscript: '',
+      lastRawCallerAudioAt: 0,
+      // Tool cancel via barge-in
+      cancelledToolCalls: new Set(),
     }
     this.activeCalls.set(streamSid, call)
 
@@ -211,6 +221,15 @@ export class CallManager {
       },
       {
         onAudio: (audioBase64, _mimeType) => {
+          // Gemini is producing audio — cancel any freeze timer and mark as speaking
+          if (!call.geminiSpeaking) {
+            call.geminiSpeaking = true
+            if (call.geminiResponseTimer) {
+              clearTimeout(call.geminiResponseTimer)
+              call.geminiResponseTimer = null
+            }
+            call.geminiFreezeAttempts = 0
+          }
           // Convert PCM from Gemini to mulaw for Twilio
           const pcmBuffer = Buffer.from(audioBase64, 'base64')
           const mulawBuffer = pcmToMulaw8k(pcmBuffer)
@@ -241,7 +260,15 @@ export class CallManager {
           this.mediaServer.clearAudio(streamSid)
         },
         onTurnComplete: () => {
-          // Turn complete — silence detector restarts
+          // Gemini finished speaking this turn
+          call.geminiSpeaking = false
+
+          // First turn complete = greeting finished; unlock audio gate and start silence detector
+          if (!call.greetingDone) {
+            call.greetingDone = true
+            this.silenceDetector.startMonitoring(streamSid)
+            logger.debug({ callSid }, 'Greeting done, audio gate unlocked')
+          }
         },
         onError: (err) => {
           logger.error({ err, callSid, streamSid }, 'Gemini Live error')
@@ -259,6 +286,15 @@ export class CallManager {
             }
             call.transcript.push(entry)
             logger.debug({ text: text.trim() }, 'Native caller transcript (final)')
+
+            // Update freeze detection state
+            call.lastCallerTranscript = text.trim()
+            call.lastRawCallerAudioAt = Date.now()
+
+            // Start freeze timer if Gemini isn't already responding
+            if (!call.geminiSpeaking) {
+              this.startGeminiResponseTimer(streamSid)
+            }
           }
         },
         onAgentTranscript: (text, isFinal) => {
@@ -267,6 +303,13 @@ export class CallManager {
         },
         onToolCallCancellation: (ids) => {
           logger.info({ ids, callSid }, 'Tool calls cancelled by barge-in')
+          for (const id of ids) {
+            call.cancelledToolCalls.add(id)
+          }
+          // Clear pending Twilio audio buffer so barge-in takes effect immediately
+          if (call.streamSid) {
+            this.mediaServer.clearAudio(call.streamSid)
+          }
         },
       },
     )
@@ -277,8 +320,10 @@ export class CallManager {
       call.modelUsed = gemini.modelUsed
       this.geminiSessions.set(streamSid, gemini)
 
-      // Start silence monitoring
-      this.silenceDetector.startMonitoring(streamSid)
+      // Start silence monitoring immediately for outbound; inbound waits for greeting to complete
+      if (direction === 'outbound') {
+        this.silenceDetector.startMonitoring(streamSid)
+      }
 
       // Start max duration timer
       this.maxDurationTimers.set(streamSid, setTimeout(() => {
@@ -298,8 +343,15 @@ export class CallManager {
    * Called for each audio frame from Twilio (caller speaking).
    */
   onMediaReceived(streamSid: string, mulawBuffer: Buffer): void {
+    const call = this.activeCalls.get(streamSid)
     const gemini = this.geminiSessions.get(streamSid)
     if (!gemini?.isConnected()) return
+
+    // GREETING GATE: don't forward caller audio until Gemini completes greeting (inbound only)
+    if (call && !call.greetingDone) return
+
+    // Track timestamp of last raw caller audio (for freeze detection)
+    if (call) call.lastRawCallerAudioAt = Date.now()
 
     // Convert mulaw 8kHz → PCM 16kHz
     const pcmBuffer = mulawToPcm16k(mulawBuffer)
@@ -333,6 +385,12 @@ export class CallManager {
 
     // Stop silence monitoring
     this.silenceDetector.stopMonitoring(streamSid)
+
+    // Clear freeze detection timer
+    if (call.geminiResponseTimer) {
+      clearTimeout(call.geminiResponseTimer)
+      call.geminiResponseTimer = null
+    }
 
     // Clear max duration timer
     const maxTimer = this.maxDurationTimers.get(streamSid)
@@ -482,26 +540,139 @@ export class CallManager {
 
     logger.info({ callSid: call.callSid, toolName }, 'Executing tool call from voice')
 
-    try {
-      const result = await toolRegistry.executeTool(toolName, args, {
-        contactId: call.contactId ?? undefined,
-        channel: 'voice',
-      })
+    const maxRetries = this.config.VOICE_TOOL_MAX_RETRIES
+    let attempt = 0
 
+    while (attempt <= maxRetries) {
+      // Start filler timer: if tool takes too long, ask Gemini to say something natural
+      const fillerTimer = setTimeout(() => {
+        if (!call.cancelledToolCalls.has(toolCallId) && gemini.isConnected()) {
+          const msg = attempt === 0
+            ? `[Sistema: la herramienta '${toolName}' est\u00e1 tardando. Decile algo breve y natural al caller mientras esperamos.]`
+            : `[Sistema: '${toolName}' sigue tardando. Decile que est\u00e1s reintentando, algo como 'hmm, dej\u00e1me intentar de nuevo'.]`
+          gemini.sendTextInput(msg)
+        }
+      }, this.config.VOICE_TOOL_FILLER_DELAY_MS)
+
+      let result: { success: boolean; data?: unknown; error?: string } | null = null
+      let timedOut = false
+
+      try {
+        result = await Promise.race([
+          toolRegistry.executeTool(toolName, args, {
+            contactId: call.contactId ?? undefined,
+            channel: 'voice',
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('tool_timeout')), this.config.VOICE_TOOL_TIMEOUT_MS),
+          ),
+        ])
+      } catch (err) {
+        if ((err as Error).message === 'tool_timeout') {
+          timedOut = true
+        } else {
+          clearTimeout(fillerTimer)
+          logger.error({ err, toolName }, 'Tool execution error')
+          gemini.sendToolResponse(toolCallId, toolName, {
+            error: `Error executing tool: ${String(err)}`,
+          })
+          return
+        }
+      } finally {
+        clearTimeout(fillerTimer)
+      }
+
+      // Check if cancelled by barge-in
+      if (call.cancelledToolCalls.has(toolCallId)) {
+        logger.info({ callSid: call.callSid, toolCallId, toolName }, 'Tool cancelled by barge-in, discarding result')
+        if (call.streamSid) {
+          this.mediaServer.clearAudio(call.streamSid)
+        }
+        return
+      }
+
+      if (timedOut) {
+        attempt++
+        if (attempt <= maxRetries) {
+          logger.warn({ callSid: call.callSid, toolName, attempt }, 'Tool timed out, retrying')
+          continue
+        }
+
+        // All retries exhausted
+        logger.error({ callSid: call.callSid, toolName }, 'Tool timed out after all retries')
+        gemini.sendTextInput(
+          `[Sistema: La herramienta '${toolName}' fall\u00f3 despu\u00e9s de reintentar. Decile que no pudiste completar esa acci\u00f3n ahora pero que lo dej\u00e1s agendado para hacerlo despu\u00e9s de la llamada. Usa la herramienta end_call si ya no hay m\u00e1s temas.]`,
+        )
+        gemini.sendToolResponse(toolCallId, toolName, {
+          error: `Tool timed out after ${attempt} attempt(s)`,
+        })
+        call.transcript.push({
+          speaker: 'system',
+          text: `[Tool: ${toolName}] Timeout after ${attempt} attempt(s)`,
+          timestampMs: Date.now() - call.startedAt.getTime(),
+        })
+        return
+      }
+
+      // Success
       gemini.sendToolResponse(toolCallId, toolName, result as Record<string, unknown>)
 
-      // Add to transcript
       call.transcript.push({
         speaker: 'system',
-        text: `[Tool: ${toolName}] ${result.success ? 'OK' : 'Error: ' + result.error}`,
+        text: `[Tool: ${toolName}] ${result!.success ? 'OK' : 'Error: ' + result!.error}`,
         timestampMs: Date.now() - call.startedAt.getTime(),
       })
-    } catch (err) {
-      logger.error({ err, toolName }, 'Tool execution error')
-      gemini.sendToolResponse(toolCallId, toolName, {
-        error: `Error executing tool: ${String(err)}`,
-      })
+      return
     }
+  }
+
+  /**
+   * Start (or restart) the freeze detection timer for a call.
+   * If Gemini doesn't produce audio within VOICE_GEMINI_FREEZE_TIMEOUT_MS:
+   *   - attempt 1: re-inject caller's last transcript as a system text prompt
+   *   - attempt 2+: hang up with reason 'gemini_freeze'
+   */
+  private startGeminiResponseTimer(streamSid: string): void {
+    const call = this.activeCalls.get(streamSid)
+    if (!call) return
+
+    // Clear existing timer
+    if (call.geminiResponseTimer) {
+      clearTimeout(call.geminiResponseTimer)
+      call.geminiResponseTimer = null
+    }
+
+    call.geminiResponseTimer = setTimeout(() => {
+      call.geminiResponseTimer = null
+      const c = this.activeCalls.get(streamSid)
+      if (!c || c.status !== 'active') return
+
+      // If Gemini is already speaking, it recovered — nothing to do
+      if (c.geminiSpeaking) return
+
+      // If there's no recent raw audio from caller, silence detector handles it
+      const silentCaller = Date.now() - c.lastRawCallerAudioAt > this.config.VOICE_GEMINI_FREEZE_TIMEOUT_MS
+      if (silentCaller) return
+
+      const gemini = this.geminiSessions.get(streamSid)
+      if (!gemini?.isConnected()) return
+
+      if (c.geminiFreezeAttempts < 1) {
+        // First attempt: re-inject the caller's last transcript
+        c.geminiFreezeAttempts++
+        logger.warn({ callSid: c.callSid, attempt: c.geminiFreezeAttempts }, 'Gemini freeze detected, re-injecting transcript')
+        gemini.sendTextInput(
+          `[Sistema: No respondiste al caller. Su \u00faltimo mensaje fue: "${c.lastCallerTranscript}". Resp\u00f3ndele ahora.]`,
+        )
+        // Schedule second attempt
+        this.startGeminiResponseTimer(streamSid)
+      } else {
+        // Second consecutive freeze — hang up
+        c.geminiFreezeAttempts++
+        logger.error({ callSid: c.callSid, attempt: c.geminiFreezeAttempts }, 'Gemini freeze: second failure, hanging up')
+        this.endCall(streamSid, 'gemini_freeze')
+      }
+    }, this.config.VOICE_GEMINI_FREEZE_TIMEOUT_MS)
   }
 
   private handleSilence(streamSid: string): void {
