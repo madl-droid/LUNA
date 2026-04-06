@@ -1492,6 +1492,65 @@ export class KnowledgePgStore {
       chunkTotal: total,
     }))
   }
+
+  // ─── Binary lifecycle ─────────────────────
+
+  /**
+   * Mark a document's binaries as ready for cleanup (only for attachment source_type).
+   * Called after all chunks reach a terminal embedding state.
+   */
+  async markBinariesForCleanup(documentId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_documents
+       SET binary_cleanup_ready = TRUE, updated_at = now()
+       WHERE id = $1 AND source_type = 'attachment'`,
+      [documentId],
+    )
+  }
+
+  /**
+   * Returns attachment documents whose binaries are ready to be deleted.
+   * Each row includes all chunk media_refs so the caller can remove the files.
+   */
+  async getDocumentsForBinaryCleanup(): Promise<Array<{
+    documentId: string
+    filePaths: string[]
+  }>> {
+    const res = await this.db.query<{
+      document_id: string
+      file_paths: string[] | null
+    }>(
+      `SELECT
+         d.id AS document_id,
+         array_remove(
+           array_agg(DISTINCT elem->>'filePath'),
+           NULL
+         ) AS file_paths
+       FROM knowledge_documents d
+       JOIN knowledge_chunks c ON c.document_id = d.id
+       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.media_refs, '[]'::jsonb)) AS elem
+       WHERE d.binary_cleanup_ready = TRUE
+         AND d.source_type = 'attachment'
+       GROUP BY d.id`,
+    )
+
+    return res.rows.map(r => ({
+      documentId: r.document_id,
+      filePaths: (r.file_paths ?? []).filter(Boolean),
+    }))
+  }
+
+  /**
+   * Clear binary_cleanup_ready flag after files have been deleted.
+   */
+  async clearBinaryCleanupFlag(documentId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_documents
+       SET binary_cleanup_ready = FALSE, updated_at = now()
+       WHERE id = $1`,
+      [documentId],
+    )
+  }
 }
 
 // ─── Row mappers ─────────────────────────────
