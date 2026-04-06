@@ -1,12 +1,16 @@
-// LUNA Engine — URL Extractor
-// Detects URLs in message text, fetches their content, and extracts readable text.
-// Uses @mozilla/readability + jsdom for clean text extraction.
+// LUNA Engine — URL Extractor (v2)
+// 3-tier URL routing:
+//   1. Drive URLs → delegated to src/extractors/drive.ts
+//   2. Authorized domain URLs → fetch + extract (readability)
+//   3. Unauthorized URLs → pass to agent for subagent delegation
 
 import pino from 'pino'
 import { Readability } from '@mozilla/readability'
 import { JSDOM } from 'jsdom'
 import type { UrlExtraction, AttachmentEngineConfig } from './types.js'
+import type { Registry } from '../../kernel/registry.js'
 import { validateInjection } from './injection-validator.js'
+import { isDriveUrl, extractDrive } from '../../extractors/drive.js'
 
 const logger = pino({ name: 'engine:url-extractor' })
 
@@ -22,7 +26,7 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /^https?:\/\/192\.168\.\d+\.\d+/,
   /^https?:\/\/0\.0\.0\.0/,
   /^https?:\/\/\[::1\]/,
-  /^https?:\/\/\[f[cd]/i,    // fc00::/7 ULA (covers both fc00::/8 and fd00::/8)
+  /^https?:\/\/\[f[cd]/i,    // fc00::/7 ULA
   /^https?:\/\/\[fe80:/i,    // link-local
   /^https?:\/\/169\.254\./,  // link-local IPv4
   /^https?:\/\/metadata\./i, // cloud metadata endpoints
@@ -38,27 +42,61 @@ export function detectUrls(text: string): string[] {
   return unique.filter(url => !isBlockedUrl(url))
 }
 
-/**
- * Check if a URL targets a blocked/internal address.
- */
 function isBlockedUrl(url: string): boolean {
   return BLOCKED_PATTERNS.some(pattern => pattern.test(url))
 }
 
 /**
- * Extract content from a list of URLs.
- * Fetches each URL, parses with readability, validates injection.
+ * Check if a URL's domain is in the authorized list.
+ */
+function isAuthorizedDomain(url: string, authorizedDomains: string[]): boolean {
+  if (authorizedDomains.length === 0) return false
+  try {
+    const hostname = new URL(url).hostname.toLowerCase()
+    return authorizedDomains.some(domain => hostname === domain || hostname.endsWith(`.${domain}`))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Extract content from a list of URLs with 3-tier routing.
+ * - Drive URLs → extractDrive() from src/extractors/drive.ts
+ * - Authorized domains → fetch + readability extract
+ * - Unauthorized → mark as unauthorized for agent to handle
  */
 export async function extractUrls(
   urls: string[],
   config: AttachmentEngineConfig,
+  registry: Registry,
 ): Promise<UrlExtraction[]> {
   const results: UrlExtraction[] = []
 
   for (const url of urls) {
     try {
-      const extraction = await extractSingleUrl(url, config)
-      results.push(extraction)
+      // Tier 1: Drive URLs → delegate to drive extractor
+      if (isDriveUrl(url)) {
+        const driveResult = await extractDrive(url, registry)
+        results.push(driveResultToUrlExtraction(driveResult))
+        continue
+      }
+
+      // Tier 2: Authorized domains → fetch + extract
+      if (isAuthorizedDomain(url, config.authorizedDomains)) {
+        const result = await extractAuthorizedUrl(url, config)
+        results.push(result)
+        continue
+      }
+
+      // Tier 3: Unauthorized → pass to agent
+      results.push({
+        url,
+        title: null,
+        extractedText: null,
+        tokenEstimate: 0,
+        status: 'unauthorized',
+        injectionRisk: false,
+      })
     } catch (err) {
       logger.warn({ url, err }, 'URL extraction failed')
       results.push({
@@ -68,7 +106,6 @@ export async function extractUrls(
         tokenEstimate: 0,
         status: 'needs_subagent',
         injectionRisk: false,
-        cacheKey: null,
       })
     }
   }
@@ -76,7 +113,45 @@ export async function extractUrls(
   return results
 }
 
-async function extractSingleUrl(
+/**
+ * Convert a DriveResult (from extractor) to UrlExtraction (engine format).
+ */
+function driveResultToUrlExtraction(drive: import('../../extractors/types.js').DriveResult): UrlExtraction {
+  if (!drive.hasAccess) {
+    return {
+      url: drive.url,
+      title: null,
+      extractedText: null,
+      tokenEstimate: 0,
+      status: 'drive_no_access',
+      injectionRisk: false,
+      driveEmail: drive.accountEmail ?? undefined,
+    }
+  }
+
+  return {
+    url: drive.url,
+    title: drive.name,
+    extractedText: drive.extractedContent,
+    tokenEstimate: drive.extractedContent ? Math.ceil(drive.extractedContent.length / 4) : 0,
+    status: 'drive_reference',
+    injectionRisk: false,
+    driveMeta: {
+      fileId: drive.fileId,
+      name: drive.name,
+      mimeType: drive.mimeType,
+      modifiedTime: drive.modifiedTime,
+      driveType: drive.driveType,
+      suggestedTool: drive.suggestedTool,
+      folderContents: drive.folderContents?.map(f => ({ name: f.name, mimeType: f.mimeType, id: f.id })),
+    },
+  }
+}
+
+/**
+ * Fetch and extract content from an authorized domain URL.
+ */
+async function extractAuthorizedUrl(
   url: string,
   config: AttachmentEngineConfig,
 ): Promise<UrlExtraction> {
@@ -95,47 +170,29 @@ async function extractSingleUrl(
 
     if (!response.ok) {
       return {
-        url,
-        title: null,
-        extractedText: null,
-        tokenEstimate: 0,
-        status: 'needs_subagent',
-        injectionRisk: false,
-        cacheKey: null,
+        url, title: null, extractedText: null, tokenEstimate: 0,
+        status: 'needs_subagent', injectionRisk: false,
       }
     }
 
-    // Check content size
     const contentLength = response.headers.get('content-length')
     if (contentLength && Number(contentLength) > config.urlMaxSizeMb * 1024 * 1024) {
       return {
-        url,
-        title: null,
-        extractedText: null,
-        tokenEstimate: 0,
-        status: 'too_large',
-        injectionRisk: false,
-        cacheKey: null,
+        url, title: null, extractedText: null, tokenEstimate: 0,
+        status: 'too_large', injectionRisk: false,
       }
     }
 
     const contentType = response.headers.get('content-type') ?? ''
     const html = await response.text()
 
-    // Size check on actual content
     if (html.length > config.urlMaxSizeMb * 1024 * 1024) {
       return {
-        url,
-        title: null,
-        extractedText: null,
-        tokenEstimate: 0,
-        status: 'too_large',
-        injectionRisk: false,
-        cacheKey: null,
+        url, title: null, extractedText: null, tokenEstimate: 0,
+        status: 'too_large', injectionRisk: false,
       }
     }
 
-    // If plain text, use directly
     if (contentType.includes('text/plain')) {
       const validation = validateInjection(html, 'url', url)
       return {
@@ -145,17 +202,14 @@ async function extractSingleUrl(
         tokenEstimate: estimateTokens(html),
         status: 'processed',
         injectionRisk: validation.injectionRisk,
-        cacheKey: null,
       }
     }
 
-    // Parse HTML with readability
     const dom = new JSDOM(html, { url })
     const reader = new Readability(dom.window.document)
     const article = reader.parse()
 
     if (!article || !article.textContent?.trim()) {
-      // SPA or auth-protected page — needs subagent
       return {
         url,
         title: dom.window.document.title || null,
@@ -163,7 +217,6 @@ async function extractSingleUrl(
         tokenEstimate: 0,
         status: 'needs_subagent',
         injectionRisk: false,
-        cacheKey: null,
       }
     }
 
@@ -177,14 +230,12 @@ async function extractSingleUrl(
       tokenEstimate: estimateTokens(cleanText),
       status: 'processed',
       injectionRisk: validation.injectionRisk,
-      cacheKey: null,
     }
   } finally {
     clearTimeout(timeout)
   }
 }
 
-/** Estimate token count (~4 chars per token) */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }

@@ -1,7 +1,7 @@
 // LUNA — Session Embedder
 // Generates embeddings for SessionMemoryChunk[] using knowledge embedding service.
 // Text chunks → batch embedding. Multimodal chunks → individual file embedding.
-// Fallback: if multimodal fails → embed as text content.
+// Supports unified embedding queue: persist chunks first, then delegate embedding.
 
 import { readFile } from 'node:fs/promises'
 import type { Pool } from 'pg'
@@ -15,7 +15,10 @@ const TEXT_BATCH_SIZE = 100
 interface EmbeddingService {
   generateBatchEmbeddings(texts: string[]): Promise<(number[] | null)[]>
   generateFileEmbedding(data: Buffer, mimeType: string): Promise<number[] | null>
-  generateEmbedding(text: string): Promise<number[] | null>
+}
+
+interface EmbeddingQueueLike {
+  enqueueSessionChunks(sessionId: string): Promise<number>
 }
 
 const MULTIMODAL_CONTENT_TYPES = new Set([
@@ -23,16 +26,34 @@ const MULTIMODAL_CONTENT_TYPES = new Set([
 ])
 
 // ═══════════════════════════════════════════
-// Embed all session chunks
+// Embed all session chunks (with unified queue support)
 // ═══════════════════════════════════════════
 
+/**
+ * Embed session chunks. If embeddingQueue is provided, persists chunks with
+ * embedding_status='pending' and delegates embedding to the unified queue.
+ * Otherwise falls back to direct embedding (legacy path).
+ */
 export async function embedSessionChunks(
   db: Pool,
   embeddingService: EmbeddingService,
   chunks: SessionMemoryChunk[],
+  embeddingQueue?: EmbeddingQueueLike,
 ): Promise<{ embedded: number; failed: number }> {
   if (chunks.length === 0) return { embedded: 0, failed: 0 }
 
+  // If unified queue available: persist chunks first, then enqueue for async embedding
+  if (embeddingQueue && chunks.length > 0) {
+    // Persist all chunks without embeddings (status = 'pending')
+    await persistChunks(db, chunks)
+
+    const sessionId = chunks[0]!.sessionId
+    const enqueued = await embeddingQueue.enqueueSessionChunks(sessionId)
+    logger.info({ sessionId, total: chunks.length, enqueued }, 'Session chunks persisted and delegated to unified embedding queue')
+    return { embedded: 0, failed: 0 } // Actual embedding happens async
+  }
+
+  // Legacy path: direct embedding
   // Separate text vs multimodal chunks
   const textChunks: SessionMemoryChunk[] = []
   const multimodalChunks: SessionMemoryChunk[] = []
@@ -73,7 +94,7 @@ export async function embedSessionChunks(
     }
   }
 
-  // 2. Multimodal chunks — individual embedding
+  // 2. Multimodal chunks — individual embedding (no text-only fallback)
   for (const chunk of multimodalChunks) {
     try {
       const buffer = await readFile(chunk.mediaRef!)
@@ -83,39 +104,15 @@ export async function embedSessionChunks(
         chunk.embedding = emb
         chunk.hasEmbedding = true
         embedded++
-      } else if (chunk.content) {
-        // Fallback: embed as text
-        const textEmb = await embeddingService.generateEmbedding(chunk.content)
-        if (textEmb) {
-          chunk.embedding = textEmb
-          chunk.hasEmbedding = true
-          embedded++
-        } else {
-          failed++
-        }
       } else {
+        // No text-only fallback — multimodal chunks retry via unified queue
         failed++
+        logger.warn({ chunkId: chunk.id, contentType: chunk.contentType }, 'Multimodal embedding returned null, will be retried by queue')
       }
     } catch (err) {
-      logger.warn({ err, chunkId: chunk.id, mediaRef: chunk.mediaRef }, 'Multimodal embedding failed, trying text fallback')
-
-      // Fallback: embed text content if available
-      if (chunk.content) {
-        try {
-          const textEmb = await embeddingService.generateEmbedding(chunk.content)
-          if (textEmb) {
-            chunk.embedding = textEmb
-            chunk.hasEmbedding = true
-            embedded++
-          } else {
-            failed++
-          }
-        } catch {
-          failed++
-        }
-      } else {
-        failed++
-      }
+      // No text-only fallback — let the unified queue handle retries
+      failed++
+      logger.warn({ err, chunkId: chunk.id, mediaRef: chunk.mediaRef }, 'Multimodal embedding failed, will be retried by queue')
     }
   }
 
@@ -137,7 +134,7 @@ export async function embedSessionChunks(
 // Persist chunks to session_memory_chunks table
 // ═══════════════════════════════════════════
 
-async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<void> {
+export async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<void> {
   if (chunks.length === 0) return
 
   // Batch insert using unnest for performance
@@ -151,7 +148,7 @@ async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<vo
 
     for (const chunk of batch) {
       const tsvContent = chunk.content?.slice(0, 5000) ?? ''
-      placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12}, $${paramIdx + 13}, $${paramIdx + 14}, $${paramIdx + 15}::vector, to_tsvector('spanish', $${paramIdx + 16}))`)
+      placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12}, $${paramIdx + 13}, $${paramIdx + 14}, $${paramIdx + 15}::vector, to_tsvector('spanish', $${paramIdx + 16}), $${paramIdx + 17})`)
 
       values.push(
         chunk.id,
@@ -168,18 +165,19 @@ async function persistChunks(db: Pool, chunks: SessionMemoryChunk[]): Promise<vo
         chunk.mediaRef,
         chunk.mimeType,
         chunk.extraMetadata ? JSON.stringify(chunk.extraMetadata) : null,
-        chunk.hasEmbedding,
+        chunk.hasEmbedding ? 'embedded' : 'pending', // embedding_status
         chunk.embedding ? `[${chunk.embedding.join(',')}]` : null,
         tsvContent,
+        JSON.stringify(chunk.metadata),
       )
-      paramIdx += 17
+      paramIdx += 18
     }
 
     await db.query(
       `INSERT INTO session_memory_chunks
         (id, session_id, contact_id, source_id, source_type, content_type,
          chunk_index, chunk_total, prev_chunk_id, next_chunk_id,
-         content, media_ref, mime_type, extra_metadata, has_embedding, embedding, tsv)
+         content, media_ref, mime_type, extra_metadata, embedding_status, embedding, tsv, metadata)
        VALUES ${placeholders.join(', ')}
        ON CONFLICT (id) DO NOTHING`,
       values,

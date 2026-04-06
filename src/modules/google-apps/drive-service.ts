@@ -229,12 +229,14 @@ export class DriveService {
     return Buffer.from(res.data as ArrayBuffer)
   }
 
-  async exportFile(fileId: string, exportMimeType: string): Promise<string> {
-    const res = await this.drive.files.export({
-      fileId,
-      mimeType: exportMimeType,
-    })
-    return String(res.data)
+  async exportFile(fileId: string, exportMimeType: string): Promise<string | Buffer> {
+    const isBinary = exportMimeType === 'application/pdf'
+      || exportMimeType.startsWith('application/vnd.')
+    const res = await this.drive.files.export(
+      { fileId, mimeType: exportMimeType },
+      isBinary ? { responseType: 'arraybuffer' } : {},
+    )
+    return isBinary ? Buffer.from(res.data as ArrayBuffer) : String(res.data)
   }
 
   async getSharedWithMe(pageSize = 20, pageToken?: string): Promise<DriveListResult> {

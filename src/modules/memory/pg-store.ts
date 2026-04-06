@@ -420,6 +420,11 @@ export class PgStore {
     }
   }
 
+  /**
+   * Direct embedding persistence — bypasses BullMQ queue.
+   * Used by batch jobs (nightly-batch, vectorize-worker) that manage their own retry logic.
+   * For normal flow, use EmbeddingQueue.enqueue() instead.
+   */
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
     try {
       await this.pool.query(

@@ -7,7 +7,9 @@ import type pino from 'pino'
 import type { VectorizeJobData, EmbeddingStatus } from './types.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { EmbeddingService } from './embedding-service.js'
+import type { EmbeddingQueue } from './embedding-queue.js'
 import { generateDescription } from './description-generator.js'
+import { getBullRedisOpts } from './bull-redis-opts.js'
 
 const QUEUE_NAME = 'knowledge-vectorize'
 const BULK_LOCK_KEY = 'knowledge:vectorize:bulk_lock'
@@ -33,6 +35,13 @@ export class VectorizeWorker {
   private readonly embeddingService: EmbeddingService
   private readonly log: pino.Logger
   private readonly registry: RegistryLike | null
+  private embeddingQueue: EmbeddingQueue | null = null
+
+  /** Inject the unified embedding queue (optional — falls back to direct embedding) */
+  setEmbeddingQueue(eq: EmbeddingQueue): void {
+    this.embeddingQueue = eq
+    this.log.info('[EMBED] Unified embedding queue connected')
+  }
 
   constructor(
     redis: Redis,
@@ -47,14 +56,7 @@ export class VectorizeWorker {
     this.registry = registry ?? null
     this.log = logger.child({ component: 'vectorize-worker' })
 
-    // BullMQ requires dedicated Redis connections with maxRetriesPerRequest: null
-    const bullRedisOpts = {
-      host: redis.options.host ?? 'localhost',
-      port: redis.options.port ?? 6379,
-      password: redis.options.password,
-      db: redis.options.db ?? 0,
-      maxRetriesPerRequest: null,
-    }
+    const bullRedisOpts = getBullRedisOpts(redis)
 
     this.queue = new Queue<VectorizeJobData>(QUEUE_NAME, {
       connection: bullRedisOpts,
@@ -104,20 +106,29 @@ export class VectorizeWorker {
 
       if (chunks.length === 0) {
         this.log.info({ documentId }, '[EMBED] No chunks without embedding, marking done')
-        await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
+        await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'embedded')
         return
       }
 
       // Generate LLM description (before embedding, using chunk content)
       await this.generateDocumentDescription(documentId)
 
+      // Delegate to unified embedding queue if available
+      if (this.embeddingQueue) {
+        const count = await this.embeddingQueue.enqueueDocument(documentId)
+        this.log.info({ documentId, chunksEnqueued: count }, '[EMBED] Delegated to unified embedding queue')
+        // Document status will be updated by a poll/check mechanism or when all chunks are embedded
+        return
+      }
+
+      // Fallback: direct embedding (legacy path)
       const startMs = Date.now()
       await this.embedChunks(chunks)
 
       const durationMs = Date.now() - startMs
-      await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'done')
+      await this.pgStore.updateDocumentEmbeddingStatus(documentId, 'embedded')
       // Propagate status to parent knowledge_item (via source_ref)
-      await this.updateParentItemStatus(documentId, 'done')
+      await this.updateParentItemStatus(documentId, 'embedded')
       this.log.info({ documentId, chunksProcessed: chunks.length, durationMs, avgMsPerChunk: Math.round(durationMs / chunks.length) }, '[EMBED] Document embeddings complete')
     } catch (err) {
       this.log.error({ documentId, err }, 'failed to process document embeddings')
@@ -167,7 +178,7 @@ export class VectorizeWorker {
 
       // Update document statuses
       for (const docId of documentIds) {
-        const status: EmbeddingStatus = failedDocIds.has(docId) ? 'failed' : 'done'
+        const status: EmbeddingStatus = failedDocIds.has(docId) ? 'failed' : 'embedded'
         await this.pgStore.updateDocumentEmbeddingStatus(docId, status)
       }
 
@@ -236,18 +247,15 @@ export class VectorizeWorker {
           }
         }
 
-        // Fallback: if multimodal failed, embed as text
-        if (!embedding) {
-          embedding = await this.embeddingService.generateEmbedding(chunk.content)
-        }
-
         if (embedding) {
           await this.pgStore.updateChunkEmbedding(chunk.id, embedding)
           successCount++
           this.log.info({ chunkId: chunk.id, contentType: chunk.contentType, dims: embedding.length }, '[EMBED] Multimodal chunk embedded')
         } else {
+          // No text-only fallback — multimodal chunks must be embedded as multimodal.
+          // The unified embedding queue will retry with exponential backoff.
           nullCount++
-          this.log.warn({ chunkId: chunk.id, contentType: chunk.contentType }, '[EMBED] Multimodal embedding null')
+          this.log.warn({ chunkId: chunk.id, contentType: chunk.contentType }, '[EMBED] Multimodal embedding failed, will be retried by queue')
         }
       } catch (err) {
         nullCount++
@@ -259,7 +267,7 @@ export class VectorizeWorker {
   }
 
   /** Update the parent knowledge_item embedding status when its document finishes */
-  private async updateParentItemStatus(documentId: string, status: 'done' | 'failed'): Promise<void> {
+  private async updateParentItemStatus(documentId: string, status: 'embedded' | 'failed'): Promise<void> {
     try {
       const doc = await this.pgStore.getDocument(documentId)
       if (!doc?.sourceRef) return

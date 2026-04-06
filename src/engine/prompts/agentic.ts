@@ -14,10 +14,10 @@ import type { ContextBundle, ToolCatalogEntry, ProactiveTrigger } from '../types
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
-import { describeSubagentTooling } from '../agentic/subagent-delegation.js'
 import { loadSystemPrompt, renderTemplate } from '../../modules/prompts/template-loader.js'
 import { getChannelLimit } from './channel-format.js'
 import { buildContextLayers } from './context-builder.js'
+import { buildAccentSection } from './accent.js'
 import { loadSkillCatalog, buildSkillCatalogSection, filterSkillsByTools } from './skills.js'
 
 interface TTSServiceLike {
@@ -35,23 +35,23 @@ export interface AgenticPromptOptions {
 // ─── Main builder ─────────────────────────────────────────────────────────────
 
 /**
- * Build the complete agentic prompt: system prompt (14 sections) + user message.
+ * Build the complete agentic prompt: system prompt (13 sections) + user message.
  *
  * System sections (in order):
- *  1. <security>             — non-overridable security rules
- *  2. <identity>             — agent persona with dynamic config fields (name, title, company, language, country)
- *  3. <job>                  — job instructions
- *  4. <accent>               — AGENT_ACCENT_PROMPT (optional, own section)
- *  5. <guardrails>           — behavior rules
- *  6. <relationship>         — tone for this user type
+ *  1. <security>          — non-overridable security rules
+ *  2. <identity>          — agent persona with dynamic config fields
+ *  3. <job>               — job instructions
+ *  4. <guardrails>        — behavior rules
+ *  5. <relationship>      — tone for this user type
+ *  6. <accent>            — dynamic accent (optional)
  *  7. <agentic_instructions> — how to use tools in the loop
- *  8. <channel_format>       — channel-specific formatting rules
- *  9. <voice_instructions>   — only when responseFormat === 'audio'
- * 10. <quality_checklist>    — criticizer checklist
- * 11. <tools>                — tool catalog stubs (short descriptions)
- * 12. <skills>               — skill catalog stubs
- * 13. <knowledge_catalog>    — available knowledge (only if ctx.knowledgeInjection exists)
- * 14. <datetime>             — current date/time + 14-day calendar (runtime, AGENT_TIMEZONE)
+ *  8. <channel_format>    — channel-specific formatting rules
+ *  9. <voice_instructions> — only when responseFormat === 'audio'
+ * 10. <quality_checklist> — criticizer checklist
+ * 11. <tools>             — tool catalog stubs (short descriptions)
+ * 12. <skills>            — skill catalog stubs
+ * 13. <knowledge_catalog> — available knowledge (only if no injection in user msg)
+ * 14. <datetime>          — current date/time in agent's timezone
  *
  * User message: full context layers via buildContextLayers() +
  *               proactive trigger info (if isProactive)
@@ -73,7 +73,7 @@ export async function buildAgenticPrompt(
     systemParts.push(`<security>\n${securityPreamble}\n</security>`)
   }
 
-  // ── Sections 2–6: identity, job, accent, guardrails, relationship ────────
+  // ── Sections 2–5: identity, job, guardrails, relationship ─────────────────
   if (svc) {
     const prompts = await svc.getCompositorPrompts(ctx.userType)
 
@@ -83,15 +83,18 @@ export async function buildAgenticPrompt(
     if (prompts.job) {
       systemParts.push(`<job>\n${prompts.job}\n</job>`)
     }
-    if (prompts.accent) {
-      systemParts.push(`<accent>\n${prompts.accent}\n</accent>`)
-    }
     if (prompts.guardrails) {
       systemParts.push(`<guardrails>\n${prompts.guardrails}\n</guardrails>`)
     }
     if (prompts.relationship) {
       systemParts.push(`<relationship>\n${prompts.relationship}\n</relationship>`)
     }
+  }
+
+  // ── Section 6: <accent> ───────────────────────────────────────────────────
+  const accentSection = await buildAccentSection(registry)
+  if (accentSection) {
+    systemParts.push(accentSection)
   }
 
   // ── Section 7: <agentic_instructions> ────────────────────────────────────
@@ -230,15 +233,6 @@ function buildToolsSection(
     lines.push(googleHints)
   }
 
-  // Mandatory routing hints for exclusive tools (auto-generated from subagent catalog)
-  if (subagentCatalog && subagentCatalog.length > 0) {
-    const routingHints = describeSubagentTooling(subagentCatalog)
-    if (routingHints.length > 0) {
-      lines.push('')
-      lines.push(...routingHints)
-    }
-  }
-
   return lines.join('\n')
 }
 
@@ -287,34 +281,15 @@ async function buildDatetimeSection(registry: Registry): Promise<string> {
     const db = registry.getDb()
     const tz = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || 'UTC'
     const now = new Date()
-
+    const todayLocal = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now)
     const dateStr = new Intl.DateTimeFormat('es', {
       timeZone: tz,
       weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit', hour12: false,
     }).format(now).replace(',', '')
-
-    const lines: string[] = [
-      `Fecha y hora actual: ${dateStr} (${tz})`,
-      ``,
-      `Calendario — usa esta tabla para convertir días a fechas ISO. NUNCA calcules mentalmente:`,
-    ]
-
-    for (let i = 0; i <= 13; i++) {
-      // Advance day-by-day in wall-clock time using the agent's timezone
-      const d = new Date(now)
-      d.setDate(d.getDate() + i)
-      const dayName = new Intl.DateTimeFormat('es', {
-        timeZone: tz, weekday: 'long',
-      }).format(d)
-      const isoDate = new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(d)
-      const label = i === 0 ? ' ← hoy' : i === 1 ? ' ← mañana' : ''
-      lines.push(`${dayName} → ${isoDate}${label}`)
-    }
-
-    return lines.join('\n')
+    return `Fecha y hora actual: ${dateStr} (${tz})\nHoy en ISO: ${todayLocal}`
   } catch {
     return ''
   }

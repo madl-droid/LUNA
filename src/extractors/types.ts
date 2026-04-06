@@ -210,6 +210,37 @@ export interface VideoResult {
 }
 
 // ═══════════════════════════════════════════
+// Resultado de extracción de Google Drive
+// ═══════════════════════════════════════════
+
+export interface DriveFileEntry {
+  id: string
+  name: string
+  mimeType: string
+  driveType: 'document' | 'spreadsheet' | 'presentation' | 'folder' | 'file'
+  suggestedTool: string
+}
+
+export interface DriveResult {
+  kind: 'drive'
+  url: string
+  fileId: string
+  name: string
+  mimeType: string
+  driveType: 'document' | 'spreadsheet' | 'presentation' | 'folder' | 'file'
+  suggestedTool: string
+  hasAccess: boolean
+  accountEmail: string | null
+  folderContents?: DriveFileEntry[]
+  modifiedTime?: string
+  /** Content read from the file via API — null until enrichment */
+  extractedContent: string | null
+  /** LLM summary for large content */
+  llmEnrichment?: LLMEnrichment
+  metadata: DocumentMetadata
+}
+
+// ═══════════════════════════════════════════
 // Unión discriminada de todos los resultados
 // ═══════════════════════════════════════════
 
@@ -222,6 +253,7 @@ export type ExtractorResult =
   | ImageResult
   | AudioResult
   | VideoResult
+  | DriveResult
 
 // ═══════════════════════════════════════════
 // Firma de función extractora
@@ -338,6 +370,28 @@ export function toExtractedContent(result: ExtractorResult): ExtractedContent {
       return {
         text: videoText,
         sections: [{ title: null, content: videoText }],
+        metadata: result.metadata,
+      }
+    }
+
+    case 'drive': {
+      // Use enriched content if available, otherwise metadata summary
+      if (result.extractedContent) {
+        const driveText = result.llmEnrichment?.description ?? result.extractedContent
+        return {
+          text: driveText,
+          sections: [{ title: result.name, content: driveText }],
+          metadata: result.metadata,
+        }
+      }
+      // Metadata only (no content read yet)
+      const folderInfo = result.folderContents
+        ? `\nContenido: ${result.folderContents.map(f => f.name).join(', ')}`
+        : ''
+      const metaText = `[Drive: ${result.driveType}] ${result.name} (${result.mimeType})${folderInfo}`
+      return {
+        text: metaText,
+        sections: [{ title: result.name, content: metaText }],
         metadata: result.metadata,
       }
     }

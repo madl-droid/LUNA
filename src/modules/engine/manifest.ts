@@ -31,10 +31,10 @@ interface EngineModuleConfig {
   ATTACHMENT_SMALL_DOC_TOKENS: number
   ATTACHMENT_MEDIUM_DOC_TOKENS: number
   ATTACHMENT_SUMMARY_MAX_TOKENS: number
-  ATTACHMENT_CACHE_TTL_MS: number
   ATTACHMENT_URL_ENABLED: boolean
   ATTACHMENT_URL_FETCH_TIMEOUT_MS: number
   ATTACHMENT_URL_MAX_SIZE_MB: number
+  ATTACHMENT_AUTHORIZED_DOMAINS: string
   MEMORY_SESSION_REOPEN_WINDOW_HOURS: number
   SESSION_REOPEN_WINDOW_MS: number
   ENGINE_PIPELINE_TIMEOUT_MS: number
@@ -57,12 +57,6 @@ interface EngineModuleConfig {
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
   LLM_CRITICIZER_MODE: string
-  LLM_LOW_EFFORT_MODEL: string
-  LLM_LOW_EFFORT_PROVIDER: string
-  LLM_MEDIUM_EFFORT_MODEL: string
-  LLM_MEDIUM_EFFORT_PROVIDER: string
-  LLM_HIGH_EFFORT_MODEL: string
-  LLM_HIGH_EFFORT_PROVIDER: string
   // Business hours
   ENGINE_BUSINESS_HOURS_START: number
   ENGINE_BUSINESS_HOURS_END: number
@@ -96,10 +90,10 @@ const manifest: ModuleManifest = {
     ATTACHMENT_SMALL_DOC_TOKENS: numEnvMin(1000, 8000),
     ATTACHMENT_MEDIUM_DOC_TOKENS: numEnvMin(1000, 32000),
     ATTACHMENT_SUMMARY_MAX_TOKENS: numEnvMin(100, 2000),
-    ATTACHMENT_CACHE_TTL_MS: numEnvMin(60000, 3600000),
     ATTACHMENT_URL_ENABLED: boolEnv(true),
     ATTACHMENT_URL_FETCH_TIMEOUT_MS: numEnvMin(1000, 10000),
-    ATTACHMENT_URL_MAX_SIZE_MB: numEnvMin(1, 5),
+    ATTACHMENT_URL_MAX_SIZE_MB: numEnvMin(1, 10),
+    ATTACHMENT_AUTHORIZED_DOMAINS: z.string().default(''),
     MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnvMin(0, 1),
     SESSION_REOPEN_WINDOW_MS: numEnvMin(60000, 3600000),
     ENGINE_PIPELINE_TIMEOUT_MS: numEnvMin(1000, 120000),
@@ -122,13 +116,6 @@ const manifest: ModuleManifest = {
     ENGINE_AGENTIC_MAX_TURNS: numEnvMin(1, 15),
     ENGINE_EFFORT_ROUTING: boolEnv(true),
     LLM_CRITICIZER_MODE: z.string().default('complex_only'),
-    ENGINE_CRITICIZER_MAX_RETRIES: numEnvMin(0, 1),
-    LLM_LOW_EFFORT_MODEL: z.string().default('claude-haiku-4-5-20251001'),
-    LLM_LOW_EFFORT_PROVIDER: z.string().default('anthropic'),
-    LLM_MEDIUM_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
-    LLM_MEDIUM_EFFORT_PROVIDER: z.string().default('anthropic'),
-    LLM_HIGH_EFFORT_MODEL: z.string().default('claude-sonnet-4-6'),
-    LLM_HIGH_EFFORT_PROVIDER: z.string().default('anthropic'),
     // Business hours for proactive contact
     ENGINE_BUSINESS_HOURS_START: numEnvMin(0, 8),
     ENGINE_BUSINESS_HOURS_END: numEnvMin(0, 17),
@@ -256,14 +243,6 @@ const manifest: ModuleManifest = {
         max: 10000,
         width: 'half',
       },
-      {
-        key: 'ATTACHMENT_CACHE_TTL_MS',
-        type: 'duration',
-        label: { es: 'Cache TTL', en: 'Cache TTL' },
-        info: { es: 'Tiempo que los documentos medianos/grandes permanecen en cache Redis', en: 'Time medium/large docs stay cached in Redis' },
-        unit: 'ms',
-        width: 'half',
-      },
       { key: '_div_att_urls', type: 'divider', label: { es: 'Extraccion de URLs', en: 'URL extraction' } },
       {
         key: 'ATTACHMENT_URL_FETCH_TIMEOUT_MS',
@@ -282,6 +261,20 @@ const manifest: ModuleManifest = {
         max: 20,
         unit: 'MB',
         width: 'half',
+      },
+      {
+        key: 'ATTACHMENT_AUTHORIZED_DOMAINS',
+        type: 'tags',
+        label: { es: 'Dominios autorizados', en: 'Authorized domains' },
+        description: {
+          es: 'Dominios de los que se puede extraer contenido automaticamente. Las URLs de knowledge se agregan automaticamente.',
+          en: 'Domains from which content can be automatically extracted. Knowledge URLs are added automatically.',
+        },
+        info: {
+          es: 'URLs de estos dominios se descargan y extraen automaticamente. URLs de otros dominios se pasan al agente para que decida si usar un subagente. URLs de Google Drive se manejan via API. Separar con coma.',
+          en: 'URLs from these domains are automatically downloaded and extracted. URLs from other domains are passed to the agent to decide if a subagent is needed. Google Drive URLs are handled via API. Comma-separated.',
+        },
+        separator: ',',
       },
 
       // ── Runtime ──
@@ -489,49 +482,6 @@ const manifest: ModuleManifest = {
         ],
         width: 'half',
       },
-      {
-        key: 'ENGINE_CRITICIZER_MAX_RETRIES',
-        type: 'number',
-        label: { es: 'Reintentos del verificador', en: 'Quality checker retries' },
-        info: {
-          es: 'Cuántas veces el verificador puede pedir correcciones antes de aceptar la respuesta original. 0 = sin reintentos (1 sola revisión). Máximo 5.',
-          en: 'How many times the quality checker can request corrections before accepting the original response. 0 = no retries (single review). Max 5.',
-        },
-        width: 'half',
-      },
-
-      // ── Models by Effort ──
-      { key: '_div_effort_models', type: 'divider', label: { es: 'Modelos por Esfuerzo', en: 'Models by Effort' } },
-      {
-        key: 'LLM_LOW_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo bajo esfuerzo', en: 'Low effort model' },
-        info: {
-          es: 'Modelo para mensajes simples: saludos, confirmaciones, preguntas directas.',
-          en: 'Model for simple messages: greetings, confirmations, direct questions.',
-        },
-        width: 'half',
-      },
-      {
-        key: 'LLM_MEDIUM_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo medio esfuerzo', en: 'Medium effort model' },
-        info: {
-          es: 'Modelo para mensajes de complejidad media: consultas con contexto, seguimientos.',
-          en: 'Model for medium complexity messages: contextual queries, follow-ups.',
-        },
-        width: 'half',
-      },
-      {
-        key: 'LLM_HIGH_EFFORT_MODEL',
-        type: 'model-select',
-        label: { es: 'Modelo alto esfuerzo', en: 'High effort model' },
-        info: {
-          es: 'Modelo para mensajes complejos: multiples herramientas, objeciones, razonamiento profundo.',
-          en: 'Model for complex messages: multiple tools, objections, deep reasoning.',
-        },
-        width: 'half',
-      },
 
       // ── Business Hours ──
       { key: '_div_business_hours', type: 'divider', label: { es: 'Horario laboral', en: 'Business hours' } },
@@ -659,16 +609,42 @@ const manifest: ModuleManifest = {
     // ── Attachment engine config service (hot-reloadable via console) ──
     let attConfig = registry.getConfig<EngineModuleConfig>('engine')
 
-    const buildAttEngineConfig = (): AttachmentEngineConfig => ({
-      enabled: attConfig.ATTACHMENT_ENABLED,
-      smallDocTokens: attConfig.ATTACHMENT_SMALL_DOC_TOKENS,
-      mediumDocTokens: attConfig.ATTACHMENT_MEDIUM_DOC_TOKENS,
-      summaryMaxTokens: attConfig.ATTACHMENT_SUMMARY_MAX_TOKENS,
-      cacheTtlMs: attConfig.ATTACHMENT_CACHE_TTL_MS,
-      urlFetchTimeoutMs: attConfig.ATTACHMENT_URL_FETCH_TIMEOUT_MS,
-      urlMaxSizeMb: attConfig.ATTACHMENT_URL_MAX_SIZE_MB,
-      urlEnabled: attConfig.ATTACHMENT_URL_ENABLED,
-    })
+    // Cache knowledge web source domains (refreshed on config reload)
+    let cachedKnowledgeDomains: string[] = []
+
+    async function refreshKnowledgeDomains(): Promise<void> {
+      try {
+        const pgStore = registry.getOptional<{ listWebSources(): Promise<{ url: string }[]> }>('knowledge:pg-store')
+        if (pgStore) {
+          const sources = await pgStore.listWebSources()
+          cachedKnowledgeDomains = sources
+            .map(s => { try { return new URL(s.url).hostname.toLowerCase() } catch { return '' } })
+            .filter(Boolean)
+        }
+      } catch { /* knowledge module not active */ }
+    }
+
+    // Initial load of knowledge domains (fire-and-forget)
+    refreshKnowledgeDomains().catch(() => {})
+
+    const buildAttEngineConfig = (): AttachmentEngineConfig => {
+      const configDomains = attConfig.ATTACHMENT_AUTHORIZED_DOMAINS
+        ? attConfig.ATTACHMENT_AUTHORIZED_DOMAINS.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
+        : []
+
+      const allDomains = [...new Set([...configDomains, ...cachedKnowledgeDomains])]
+
+      return {
+        enabled: attConfig.ATTACHMENT_ENABLED,
+        smallDocTokens: attConfig.ATTACHMENT_SMALL_DOC_TOKENS,
+        mediumDocTokens: attConfig.ATTACHMENT_MEDIUM_DOC_TOKENS,
+        summaryMaxTokens: attConfig.ATTACHMENT_SUMMARY_MAX_TOKENS,
+        urlFetchTimeoutMs: attConfig.ATTACHMENT_URL_FETCH_TIMEOUT_MS,
+        urlMaxSizeMb: attConfig.ATTACHMENT_URL_MAX_SIZE_MB,
+        urlEnabled: attConfig.ATTACHMENT_URL_ENABLED,
+        authorizedDomains: allDomains,
+      }
+    }
 
     registry.provide('engine:attachment-config', {
       get: buildAttEngineConfig,
@@ -720,6 +696,9 @@ const manifest: ModuleManifest = {
 
       // Hot-reload core engine config (models, pipeline, concurrency, etc.)
       reloadEngineConfig()
+
+      // Refresh knowledge domains for authorized URL list
+      refreshKnowledgeDomains().catch(() => {})
 
       // Dynamic extreme logging: read DEBUG_EXTREME_LOG and update global pino level
       try {

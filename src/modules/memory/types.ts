@@ -258,6 +258,12 @@ export interface AttachmentArchiveMeta {
 // Session summaries v2 — LLM-generated
 // ═══════════════════════════════════════════
 
+export interface SessionSummarySection {
+  topic: string
+  summary: string
+  attachments?: string[]
+}
+
 export interface SessionSummaryV2 {
   id: string
   sessionId: string
@@ -265,6 +271,7 @@ export interface SessionSummaryV2 {
   title: string
   description: string
   fullSummary: string
+  sections: SessionSummarySection[] | null
   modelUsed: string | null
   tokensUsed: number | null
 }
@@ -288,6 +295,8 @@ export interface SessionMemoryChunk {
   mediaRef: string | null
   mimeType: string | null
   extraMetadata: Record<string, unknown> | null
+  /** Rich metadata (unified ChunkMetadata format) */
+  metadata: import('../knowledge/embedding-limits.js').ChunkMetadata
   hasEmbedding: boolean
   embedding: number[] | null
 }

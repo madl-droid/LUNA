@@ -28,6 +28,8 @@ export type {
   ImageResult,
   AudioResult,
   VideoResult,
+  DriveResult,
+  DriveFileEntry,
   DocumentMetadata,
   LLMEnrichment,
 } from './types.js'
@@ -39,6 +41,7 @@ export { extractWeb, extractWebAsContent } from './web.js'
 export { extractYouTube, parseYoutubeChapters, formatTimestamp, describeThumbnail } from './youtube.js'
 export { extractVideo, describeVideo } from './video.js'
 export { extractAudio, transcribeAudioContent } from './audio.js'
+export { extractDrive, enrichDriveContent, isDriveUrl, extractDriveFileId } from './drive.js'
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
@@ -51,6 +54,7 @@ import { transcribeAudioContent } from './audio.js'
 import { describeVideo } from './video.js'
 import { describeSlideScreenshots } from './slides.js'
 import { describeThumbnail } from './youtube.js'
+import { enrichDriveContent } from './drive.js'
 import type { ExtractorResult } from './types.js'
 
 // ─── Legacy fallback para extractores aún no migrados ────
@@ -248,6 +252,9 @@ export async function enrichWithLLM(
 
       case 'youtube':
         return await describeThumbnail(result, registry)
+
+      case 'drive':
+        return await enrichDriveContent(result, registry)
 
       // Text-based: no LLM enrichment needed
       case 'document':

@@ -79,7 +79,7 @@ export function renderKnowledgeSection(
   config?: { faqSheetUrl?: string; faqDescription?: string; productsSheetUrl?: string; productsDescription?: string; debugMode?: boolean; syncFrequency?: string },
 ): string {
   let html = ''
-  const hasPending = items.some(i => i.active && i.embeddingStatus !== 'done' && i.embeddingStatus !== 'pending_review')
+  const hasPending = items.some(i => i.active && i.embeddingStatus !== 'embedded' && i.embeddingStatus !== 'pending_review')
   const isProduction = !config?.debugMode // cooldown only when debugging OFF
   const syncFrequency = config?.syncFrequency ?? '24h'
   const syncOptions: { value: string; label: string }[] = [
@@ -274,7 +274,7 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         <span class="info-wrap"><span class="info-btn">i</span><span class="info-tooltip info-flip">${esc(shareTip)}</span></span>
       </button>
-      ${!isInactive ? `<button type="button" class="act-btn act-btn--compact ki-train-btn ${item.embeddingStatus !== 'done' ? 'act-btn-cta' : 'act-btn-config'}"
+      ${!isInactive ? `<button type="button" class="act-btn act-btn--compact ki-train-btn ${item.embeddingStatus !== 'embedded' ? 'act-btn-cta' : 'act-btn-config'}"
         data-item-id="${esc(item.id)}"
         onclick="kiLoadContent('${esc(item.id)}')">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/><line x1="22" y1="10" x2="22" y2="16"/></svg>

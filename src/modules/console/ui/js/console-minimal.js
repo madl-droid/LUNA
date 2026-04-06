@@ -218,13 +218,7 @@
   function isInstantToggle(el) {
     // Permission toggles inside .cb-config-panel are NOT instant — they require save
     if (el.closest('.cb-config-panel')) return false
-    // boolField toggles lack onchange="instantApply(…)" — they go through the save bar
-    var wrapper = el.closest('.toggle-field')
-    if (wrapper) {
-      var cb = wrapper.querySelector('input[type="checkbox"]')
-      if (cb && !cb.getAttribute('onchange')) return false
-    }
-    return wrapper || el.closest('.chs-toggle-row')
+    return el.closest('.toggle-field') || el.closest('.chs-toggle-row')
   }
 
   function isDirty() {
@@ -264,14 +258,6 @@
   document.addEventListener('change', function (e) {
     var el = e.target
     if (el.closest && isInstantToggle(el)) return
-    // Sync save-bar checkbox → paired hidden input so isDirty() picks up the change
-    if (el.type === 'checkbox' && !isInstantToggle(el)) {
-      var wrapper = el.closest('.toggle-field')
-      if (wrapper) {
-        var hidden = wrapper.querySelector('input[type="hidden"][name="' + el.name + '"]')
-        if (hidden) hidden.value = el.checked ? 'true' : 'false'
-      }
-    }
     checkDirty()
   })
 
@@ -300,7 +286,7 @@
             showToast(document.documentElement.lang === 'es' ? 'Guardado' : 'Saved', 'success')
             // Update data-original so fields are no longer dirty
             allInputs.forEach(function (inp) {
-              if (isInstantToggle(inp)) return
+              if (inp.closest('.toggle-field') || inp.closest('.chs-toggle-row')) return
               inp.setAttribute('data-original', inp.value)
               inp.classList.remove('modified')
             })
@@ -566,36 +552,6 @@
     }).join('')
     checkDirty()
   })
-
-  // === API Key Mode segment toggle ===
-  window.setApiKeyMode = function (mode) {
-    var input = document.getElementById('api-mode-input')
-    if (input) {
-      input.value = mode
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-    }
-    document.querySelectorAll('.seg-btn').forEach(function (btn) {
-      btn.classList.toggle('seg-btn--active', btn.getAttribute('data-mode') === mode)
-    })
-    var advGroups = document.querySelectorAll('.adv-group-keys')
-    advGroups.forEach(function (el) {
-      el.style.display = mode === 'advanced' ? 'block' : 'none'
-    })
-  }
-
-  // === Business Hours day toggle ===
-  window.toggleBhDay = function (btn) {
-    btn.classList.toggle('bh-day-btn--active')
-    var input = document.getElementById('bh-days-input')
-    if (!input) return
-    var days = []
-    document.querySelectorAll('.bh-day-btn--active').forEach(function (el) {
-      days.push(el.getAttribute('data-day'))
-    })
-    days.sort()
-    input.value = days.join(',')
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-  }
 
   // === Model table — refresh custom select widget ===
   function refreshCustomSelect(sel) {
@@ -1648,8 +1604,6 @@
         .catch(function () { showToast('Error', 'error') })
     })
   })()
-
-
 
   // Factory reset: password-protected, triggers wizard with prefilled values
   ;(function () {

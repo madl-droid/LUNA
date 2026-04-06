@@ -155,7 +155,7 @@ async function searchVector(
               1 - (embedding <=> $2::vector) AS similarity
        FROM session_memory_chunks
        WHERE contact_id = $1
-         AND has_embedding = true
+         AND embedding_status = 'embedded'
        ORDER BY embedding <=> $2::vector
        LIMIT $3`,
       [contactId, vectorStr, limit],

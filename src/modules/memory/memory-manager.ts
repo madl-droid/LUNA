@@ -87,12 +87,12 @@ export class MemoryManager {
   }
 
   async needsCompression(sessionId: string): Promise<boolean> {
-    const count = await this.redis.getMessageCount(sessionId)
-    return count >= this.redis.getConfig().MEMORY_COMPRESSION_THRESHOLD
+    const turns = await this.redis.getTurnCount(sessionId)
+    return turns >= this.redis.getConfig().MEMORY_COMPRESSION_THRESHOLD
   }
 
-  async getMessageCount(sessionId: string): Promise<number> {
-    return await this.redis.getMessageCount(sessionId)
+  async getTurnCount(sessionId: string): Promise<number> {
+    return await this.redis.getTurnCount(sessionId)
   }
 
   getCompressionConfig(): { threshold: number; keepRecent: number } {
@@ -113,12 +113,12 @@ export class MemoryManager {
     await this.redis.setBufferSummary(sessionId, summary)
   }
 
-  async getOldestMessages(sessionId: string, count: number): Promise<import('./types.js').StoredMessage[]> {
-    return await this.redis.getOldestMessages(sessionId, count)
+  async getOldestTurnMessages(sessionId: string, turnCount: number): Promise<import('./types.js').StoredMessage[]> {
+    return await this.redis.getOldestTurnMessages(sessionId, turnCount)
   }
 
-  async trimOldestMessages(sessionId: string, keepCount: number): Promise<void> {
-    await this.redis.trimOldestMessages(sessionId, keepCount)
+  async trimKeepingTurns(sessionId: string, keepTurns: number): Promise<void> {
+    await this.redis.trimKeepingTurns(sessionId, keepTurns)
   }
 
   async deleteSession(sessionId: string): Promise<void> {

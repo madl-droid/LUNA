@@ -34,15 +34,16 @@ export async function checkAndCompressBuffer(
   registry?: Registry,
 ): Promise<void> {
   const { threshold, keepRecent } = memoryManager.getCompressionConfig()
-  const count = await memoryManager.getMessageCount(sessionId)
+  // Count turns (assistant messages), not raw messages
+  const turnCount = await memoryManager.getTurnCount(sessionId)
 
-  if (count <= threshold) return
+  if (turnCount <= threshold) return
 
-  const toCompressCount = count - keepRecent
-  if (toCompressCount <= 0) return
+  const turnsToCompress = turnCount - keepRecent
+  if (turnsToCompress <= 0) return
 
-  // Get oldest messages (the ones we'll compress away)
-  const oldMessages = await memoryManager.getOldestMessages(sessionId, toCompressCount)
+  // Get all messages belonging to the oldest N turns
+  const oldMessages = await memoryManager.getOldestTurnMessages(sessionId, turnsToCompress)
   if (oldMessages.length === 0) return
 
   // Get existing buffer summary (cumulative — may already contain prior compressions)
@@ -66,11 +67,11 @@ export async function checkAndCompressBuffer(
       temperature: 0.2,
     })
 
-    // Save updated summary and trim the Redis buffer
+    // Save updated summary and trim keeping last N complete turns
     await memoryManager.setBufferSummary(sessionId, result.text.trim())
-    await memoryManager.trimOldestMessages(sessionId, keepRecent)
+    await memoryManager.trimKeepingTurns(sessionId, keepRecent)
 
-    logger.info({ sessionId, compressed: toCompressCount, kept: keepRecent, totalWas: count }, 'Buffer compressed inline')
+    logger.info({ sessionId, turnsCompressed: turnsToCompress, turnsKept: keepRecent, totalTurns: turnCount, messagesCompressed: oldMessages.length }, 'Buffer compressed inline (turn-based)')
   } catch (err) {
     // Don't trim on failure — better to have extra messages than lose context
     logger.warn({ err, sessionId }, 'Inline buffer compression failed — buffer not trimmed')

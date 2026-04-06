@@ -147,11 +147,7 @@ export async function runAgenticDelivery(input: AgenticDeliveryInput): Promise<A
     }
   }
 
-  const composed = await postProcess(agenticResult, ctx, engineConfig, registry, {
-    systemPrompt: agenticPrompt.system,
-    toolDefinitions: llmToolDefs,
-    agenticConfig,
-  })
+  const composed = await postProcess(agenticResult, ctx, engineConfig, registry)
   const deliveryStart = Date.now()
   const deliveryResult = await delivery(ctx, composed, registry, db, redis, engineConfig)
   const deliveryDurationMs = Date.now() - deliveryStart

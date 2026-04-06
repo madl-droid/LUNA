@@ -36,14 +36,10 @@ export function filterAgenticTools<T extends { name: string }>(
   tools: T[],
   subagentCatalog: SubagentCatalogEntry[],
 ): T[] {
-  // Collect ALL exclusive tools from ALL enabled subagents — these are
-  // removed from the main agent so the LLM is forced to delegate via run_subagent.
-  const exclusive = new Set<string>()
-  for (const sa of subagentCatalog) {
-    for (const tool of sa.exclusiveTools) exclusive.add(tool)
+  if (!subagentCatalog.some(sa => sa.slug === 'web-researcher')) {
+    return tools
   }
-  if (exclusive.size === 0) return tools
-  return tools.filter(tool => !exclusive.has(tool.name))
+  return tools.filter(tool => tool.name !== 'web_explore')
 }
 
 export function buildRunSubagentToolDef(
@@ -142,26 +138,19 @@ export async function executeRunSubagentTool(
   }
 }
 
-/**
- * Generate mandatory routing hints for tools claimed as exclusive by subagents.
- * These tools are REMOVED from the main agent's toolkit; the hints explain
- * which subagent to delegate to for each exclusive tool.
- */
 export function describeSubagentTooling(
   subagentCatalog: SubagentCatalogEntry[],
 ): string[] {
   if (subagentCatalog.length === 0) return []
 
-  const lines: string[] = []
-  for (const sa of subagentCatalog) {
-    if (sa.exclusiveTools.length === 0) continue
-    lines.push(`- Para ${sa.exclusiveTools.join(', ')} → DELEGA a "${sa.slug}" via run_subagent. NO uses esas tools directamente.`)
+  const lines: string[] = [
+    'Para delegar trabajo a un subagente especializado, usa la tool interna run_subagent con subagent_slug y task.',
+  ]
+
+  const hasWebResearcher = subagentCatalog.some(sa => sa.slug === 'web-researcher')
+  if (hasWebResearcher) {
+    lines.push('Toda navegación o investigación web externa debe pasar por run_subagent usando subagent_slug="web-researcher".')
   }
 
-  if (lines.length === 0) return []
-
-  return [
-    'DELEGACIÓN OBLIGATORIA — las siguientes herramientas NO están disponibles directamente. Debes usar run_subagent:',
-    ...lines,
-  ]
+  return lines
 }

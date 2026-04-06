@@ -31,7 +31,9 @@ const manifest: ModuleManifest = {
     MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN: numEnv(30),
     MEMORY_SESSION_MAX_TTL_HOURS: numEnv(24),
     MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnv(1),
-    MEMORY_COMPRESSION_THRESHOLD: numEnv(30),
+    MEMORY_COMPRESSION_THRESHOLD: numEnv(30).describe(
+      'Número de TURNS (ida+vuelta) antes de comprimir. Un turn = mensaje usuario + respuesta asistente.',
+    ),
     MEMORY_COMPRESSION_KEEP_RECENT: numEnv(10),
 
     // History turns per channel category (how many turns Phase 1 loads)
@@ -55,7 +57,7 @@ const manifest: ModuleManifest = {
     MEMORY_SUMMARY_RETENTION_DAYS: numEnv(120),
     MEMORY_ARCHIVE_RETENTION_YEARS: numEnv(2),
     MEMORY_PIPELINE_LOGS_RETENTION_DAYS: numEnv(90),
-    MEMORY_MEDIA_RETENTION_MONTHS: numEnv(6),
+    // REMOVED: MEMORY_MEDIA_RETENTION_MONTHS — media now purged with MEMORY_SUMMARY_RETENTION_DAYS
     // backend-only: messages are always purged after compression
     MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolEnv(true),
 
@@ -91,8 +93,8 @@ const manifest: ModuleManifest = {
       { key: 'MEMORY_CONTEXT_SUMMARIES_INSTANT', type: 'number', label: { es: 'Interacciones previas (instantáneo)', en: 'Past interactions (instant)' }, info: { es: 'Resúmenes de interacciones anteriores inyectados en canales instantáneos', en: 'Past interaction summaries injected for instant channels' }, width: 'half', min: 0, max: 10 },
       { key: 'MEMORY_CONTEXT_SUMMARIES_ASYNC', type: 'number', label: { es: 'Interacciones previas (asíncrono)', en: 'Past interactions (async)' }, info: { es: 'Resúmenes de interacciones anteriores inyectados en canales asíncronos', en: 'Past interaction summaries injected for async channels' }, width: 'half', min: 0, max: 10 },
       { key: 'MEMORY_CONTEXT_SUMMARIES_VOICE', type: 'number', label: { es: 'Interacciones previas (voz)', en: 'Past interactions (voice)' }, info: { es: 'Resúmenes de interacciones anteriores inyectados en canales de voz', en: 'Past interaction summaries injected for voice channels' }, width: 'half', min: 0, max: 10 },
-      { key: 'MEMORY_COMPRESSION_THRESHOLD', type: 'number', label: { es: 'Umbral de compresión', en: 'Compression threshold' }, info: { es: 'Cantidad mínima de mensajes en una sesión para activar compresión automática', en: 'Minimum messages in a session to trigger automatic compression' }, width: 'half' },
-      { key: 'MEMORY_COMPRESSION_KEEP_RECENT', type: 'number', label: { es: 'Mensajes recientes a conservar', en: 'Recent messages to keep' }, info: { es: 'Mensajes que se mantienen sin comprimir para contexto inmediato', en: 'Messages kept uncompressed for immediate context' }, width: 'half' },
+      { key: 'MEMORY_COMPRESSION_THRESHOLD', type: 'number', label: { es: 'Umbral de compresión (turnos)', en: 'Compression threshold (turns)' }, info: { es: 'Cantidad mínima de turnos en una sesión para activar compresión automática del buffer. Un turno = mensaje(s) del usuario + respuesta del agente.', en: 'Minimum turns in a session to trigger automatic buffer compression. A turn = user message(s) + agent response.' }, width: 'half' },
+      { key: 'MEMORY_COMPRESSION_KEEP_RECENT', type: 'number', label: { es: 'Turnos recientes a conservar', en: 'Recent turns to keep' }, info: { es: 'Turnos que se mantienen sin comprimir para contexto inmediato', en: 'Turns kept uncompressed for immediate context' }, width: 'half' },
       // Tab: Compromisos en contexto
       { key: 'divider:commitments_context', type: 'divider', label: { es: 'Compromisos en contexto', en: 'Commitments in context' } },
       { key: 'MEMORY_CONTEXT_COMMITMENTS_MAX', type: 'number', label: { es: 'Compromisos en contexto', en: 'Commitments in context' }, info: { es: 'Cantidad máxima de compromisos pendientes que el agente ve en cada conversación. Incluye seguimientos, tareas y promesas activas.', en: 'Maximum pending commitments the agent sees in each conversation. Includes follow-ups, tasks, and active promises.' }, width: 'half', min: 0, max: 50 },
@@ -100,7 +102,7 @@ const manifest: ModuleManifest = {
       // Tab: Mediano plazo
       { key: 'MEMORY_SUMMARY_RETENTION_DAYS', type: 'number', label: { es: 'Resúmenes de interacciones (días)', en: 'Interaction summaries (days)' }, info: { es: 'Días antes de eliminar resúmenes de sesión. Máximo 730 días (2 años).', en: 'Days before deleting session summaries. Maximum 730 days (2 years).' }, width: 'half', min: 30, max: 730 },
       { key: 'MEMORY_PIPELINE_LOGS_RETENTION_DAYS', type: 'number', label: { es: 'Registros del sistema (días)', en: 'System logs (days)' }, info: { es: 'Días antes de eliminar registros de procesamiento interno', en: 'Days before deleting internal processing logs' }, width: 'half' },
-      { key: 'MEMORY_MEDIA_RETENTION_MONTHS', type: 'number', label: { es: 'Almacenamiento de media (meses)', en: 'Media storage (months)' }, info: { es: 'Meses de retención de imágenes y archivos en disco. Máximo 24 meses (2 años).', en: 'Months to retain images and media files on disk. Maximum 24 months (2 years).' }, width: 'half', min: 1, max: 24 },
+      // REMOVED: MEMORY_MEDIA_RETENTION_MONTHS — media files now purged with MEMORY_SUMMARY_RETENTION_DAYS
       // Tab: Avanzado
       {
         key: 'MEMORY_ARCHIVE_RETENTION_YEARS',
@@ -135,7 +137,7 @@ const manifest: ModuleManifest = {
       MEMORY_SUMMARY_RETENTION_DAYS: number
       MEMORY_ARCHIVE_RETENTION_YEARS: number
       MEMORY_PIPELINE_LOGS_RETENTION_DAYS: number
-      MEMORY_MEDIA_RETENTION_MONTHS: number
+      // REMOVED: MEMORY_MEDIA_RETENTION_MONTHS
       MEMORY_HOT_MESSAGES_PURGE_AFTER_COMPRESS: boolean
       MEMORY_BUFFER_TURNS_INSTANT: number
       MEMORY_BUFFER_TURNS_ASYNC: number

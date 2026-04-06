@@ -48,3 +48,10 @@
 - pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration
 - **Config helpers**: usa `numEnv`, `boolEnv` de `kernel/config-helpers.js`
 - Nightly batch usa compression worker si disponible, fallback a compresión legacy
+
+### Race condition en trimKeepingTurns (aceptado)
+`lrange` y `ltrim` no son atómicos. En la ventana entre ambas operaciones (microsegundos),
+un mensaje nuevo podría ser eliminado del buffer. Riesgo aceptado porque:
+1. La ventana es extremadamente pequeña
+2. El buffer es solo caché — PG es la fuente de verdad y el mensaje queda ahí
+3. El costo de un Lua script no justifica la mejora en este caso

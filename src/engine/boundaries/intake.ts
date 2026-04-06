@@ -198,7 +198,7 @@ export async function intake(
 
   // 11b. Launch attachment processing in parallel (now that session.id is available)
   const attachmentProcessingPromise = (config.attachmentEnabled && message.attachments?.length)
-    ? processAttachmentsInPhase1(message, config, registry, db, redis, session.id)
+    ? processAttachmentsInPhase1(message, config, registry, db, session.id)
     : Promise.resolve(null)
 
   // 11c. Detect campaign (needs session for round number)
@@ -269,15 +269,32 @@ export async function intake(
           continue
         }
 
+        // Extraction failed for audio/video: tell the agent so it can respond
+        if (att.status === 'extraction_failed' && (att.category === 'audio' || att.category === 'video')) {
+          const failDuration = typeof att.metadata?.duration === 'number' ? ` (${Math.round(att.metadata.duration)}s)` : ''
+          history.push({
+            role: 'user',
+            content: `[${att.categoryLabel}] ${att.filename}${failDuration} — No se pudo procesar. El usuario envió un ${att.category === 'audio' ? 'audio' : 'video'} pero no fue posible transcribirlo/analizarlo.`,
+            timestamp: new Date(),
+          })
+          continue
+        }
+
         if (att.status !== 'processed' || !att.extractedText) continue
+
+        // Build duration suffix for audio/video (e.g., "(32s)")
+        const durationSec = typeof att.metadata?.duration === 'number' ? att.metadata.duration : null
+        const durationTag = durationSec != null ? ` (${Math.round(durationSec)}s)` : ''
 
         let injectedContent: string
         if (att.sizeTier === 'large' && att.llmText) {
-          // Large file: inject category label + LLM description
-          injectedContent = `[${att.categoryLabel}] ${att.filename} — Descripción: ${att.llmText}`
+          // Large file: inject category label + filename + duration + truncation note + LLM description + query hint
+          const sizeNote = att.tokenEstimate > 0 ? ` [documento de ~${String(att.tokenEstimate)} tokens, contenido resumido]` : ''
+          const queryHint = ` Si necesitas buscar información específica dentro del documento, usa query_attachment con id "${att.id}".`
+          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}${queryHint}`
         } else if (att.llmText && (att.category === 'images' || att.category === 'audio' || att.category === 'video')) {
-          // Multimedia: inject category label + LLM content (vision/transcription/multimodal)
-          injectedContent = `[${att.categoryLabel}] ${att.llmText}`
+          // Multimedia: inject category label + filename + duration + LLM content
+          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}`
         } else {
           // Small/medium text file: inject category label + full extracted content
           injectedContent = `[${att.categoryLabel}] ${att.extractedText}`
@@ -290,14 +307,55 @@ export async function intake(
         })
       }
 
-      // Inject URL extractions too
+      // Inject URL extractions with tier-aware messages
       for (const url of attResult.urls) {
-        if (url.status !== 'processed' || !url.extractedText) continue
-        history.push({
-          role: 'user',
-          content: `[web_link] ${url.title ?? url.url}: ${url.extractedText}`,
-          timestamp: new Date(),
-        })
+        if (url.status === 'processed' && url.extractedText) {
+          // Authorized domain: fetched and extracted successfully
+          history.push({
+            role: 'user',
+            content: `[web_link] ${url.title ?? url.url}: ${url.extractedText}`,
+            timestamp: new Date(),
+          })
+        } else if (url.status === 'drive_reference' && url.driveMeta) {
+          const meta = url.driveMeta
+          const modified = meta.modifiedTime ? ` (modificado: ${new Date(meta.modifiedTime).toISOString().slice(0, 10)})` : ''
+
+          if (meta.driveType === 'folder') {
+            // Folder: list contents so agent knows what's inside
+            const items = meta.folderContents ?? []
+            const listing = items.length > 0
+              ? items.map(f => `  - "${f.name}" (${f.mimeType}, id: ${f.id})`).join('\n')
+              : '  (carpeta vacía o sin permisos para listar)'
+            history.push({
+              role: 'user',
+              content: `[drive:folder] Carpeta de Drive: "${meta.name}"${modified}.\nContenido (${items.length} archivos):\n${listing}\nPuedes leer archivos individuales con la tool correspondiente según su tipo.`,
+              timestamp: new Date(),
+            })
+          } else {
+            // File: inject type-specific tag + suggested tool
+            history.push({
+              role: 'user',
+              content: `[drive:${meta.driveType}] "${meta.name}"${modified}. Disponible via ${meta.suggestedTool} con ID "${meta.fileId}".`,
+              timestamp: new Date(),
+            })
+          }
+        } else if (url.status === 'drive_no_access') {
+          // Drive URL without access: tell agent to ask user to share
+          const emailHint = url.driveEmail ? ` con la cuenta ${url.driveEmail}` : ''
+          history.push({
+            role: 'user',
+            content: `[drive] El usuario compartió un enlace de Google Drive (${url.url}) pero no tenemos acceso. Pídele que comparta el documento${emailHint}.`,
+            timestamp: new Date(),
+          })
+        } else if (url.status === 'unauthorized') {
+          // Unauthorized domain: agent decides what to do (can use web-researcher subagent)
+          history.push({
+            role: 'user',
+            content: `[url] El usuario envió un enlace: ${url.url} — Si necesitas consultar el contenido, puedes usar un subagente web-researcher.`,
+            timestamp: new Date(),
+          })
+        }
+        // needs_subagent, too_large: not injected — agent doesn't see them
       }
     }
   } catch (err) {
@@ -384,7 +442,6 @@ async function processAttachmentsInPhase1(
   config: EngineConfig,
   registry: Registry,
   db: Pool,
-  redis: Redis,
   sessionId: string,
 ): Promise<import('../attachments/types.js').AttachmentContext | null> {
   if (!message.attachments?.length) return null
@@ -400,10 +457,10 @@ async function processAttachmentsInPhase1(
     smallDocTokens: config.attachmentSmallDocTokens,
     mediumDocTokens: config.attachmentMediumDocTokens,
     summaryMaxTokens: config.attachmentSummaryMaxTokens,
-    cacheTtlMs: config.attachmentCacheTtlMs,
     urlFetchTimeoutMs: config.attachmentUrlFetchTimeoutMs,
     urlMaxSizeMb: config.attachmentUrlMaxSizeMb,
     urlEnabled: config.attachmentUrlEnabled,
+    authorizedDomains: [],
   }
 
   if (!attEngineConfig.enabled) return null
@@ -418,7 +475,6 @@ async function processAttachmentsInPhase1(
     message.id,
     registry,
     db,
-    redis,
   )
 
   const fallbacks = buildFallbackMessages(attachmentContext.attachments, channelAttConfig)

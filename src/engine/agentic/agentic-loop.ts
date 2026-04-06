@@ -20,6 +20,7 @@ import { StepSemaphore } from '../concurrency/step-semaphore.js'
 import { ToolDedupCache } from './tool-dedup-cache.js'
 import { ToolLoopDetector } from './tool-loop-detector.js'
 import { ToolResultCache } from './tool-result-cache.js'
+import { captureDriveToolResult } from '../attachments/drive-capture.js'
 
 const logger = pino({ name: 'engine:agentic' })
 
@@ -384,6 +385,14 @@ async function executeToolCalls(
           traceId: ctx.traceId,
         }, 'Tool executed')
 
+        // 6b. Capture Google read tool results into attachment_extractions (fire-and-forget)
+        if (result.success) {
+          captureDriveToolResult(
+            toolCall.name, toolCall.input, result.data, result.success,
+            ctx.session.id, registry,
+          ).catch(err => logger.debug({ err }, '[agentic] Drive capture failed'))
+        }
+
         // 7. Return result
         return { name: toolCall.name, success: result.success, data: result.data ?? null, error: result.error }
       }),
@@ -429,7 +438,12 @@ function formatToolResultsMessage(
   for (const r of results) {
     if (r.success) {
       const dataStr = typeof r.data === 'string' ? r.data : JSON.stringify(r.data)
-      parts.push(`[${r.name}]: ${(dataStr ?? '(no data)').slice(0, 3000)}`)
+      const fullText = dataStr ?? '(no data)'
+      const MAX_TOOL_RESULT_CHARS = 8_000
+      const truncated = fullText.length > MAX_TOOL_RESULT_CHARS
+      const display = truncated ? fullText.slice(0, MAX_TOOL_RESULT_CHARS) : fullText
+      const truncNote = truncated ? `\n[... resultado truncado: mostrando ${MAX_TOOL_RESULT_CHARS} de ${String(fullText.length)} caracteres]` : ''
+      parts.push(`[${r.name}]: ${display}${truncNote}`)
     } else {
       parts.push(`[${r.name}]: ERROR — ${r.error ?? 'Unknown error'}`)
     }

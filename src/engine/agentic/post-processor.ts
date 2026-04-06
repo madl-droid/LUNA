@@ -4,10 +4,9 @@
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
-import type { ContextBundle, CompositorOutput, EngineConfig, LLMToolDef } from '../types.js'
-import type { AgenticConfig, AgenticResult } from './types.js'
+import type { ContextBundle, CompositorOutput, EngineConfig } from '../types.js'
+import type { AgenticResult } from './types.js'
 import { callLLM } from '../utils/llm-client.js'
-import { runAgenticLoop } from './agentic-loop.js'
 import { formatForChannel } from '../utils/message-formatter.js'
 import { validateOutput } from '../output-sanitizer.js'
 
@@ -41,11 +40,6 @@ export async function postProcess(
   ctx: ContextBundle,
   config: EngineConfig,
   registry: Registry,
-  loopContext?: {
-    systemPrompt: string
-    toolDefinitions: LLMToolDef[]
-    agenticConfig: AgenticConfig
-  },
 ): Promise<CompositorOutput> {
   // ── 6.1 Criticizer (smart mode) ──
   let responseText = agenticResult.responseText
@@ -59,7 +53,7 @@ export async function postProcess(
 
   if (shouldCriticize && responseText.length > 50) {
     try {
-      const criticized = await runCriticizer(responseText, ctx, config, registry, loopContext)
+      const criticized = await runCriticizer(responseText, ctx, config, registry)
       if (criticized) {
         responseText = criticized
         logger.debug({ traceId: ctx.traceId }, 'Criticizer improved response')
@@ -139,41 +133,6 @@ export async function postProcess(
 
 // ── Internal helpers ──
 
-/** Structured feedback from the JSON-based reviewer (criticizer-review.md format) */
-interface ReviewerFeedback {
-  approved: boolean
-  tone?: string
-  length?: string | null
-  remove?: string[]
-  add?: string[]
-  rephrase?: string[]
-}
-
-/** Attempt to parse JSON reviewer feedback. Returns null if parsing fails. */
-function parseReviewerJSON(text: string): ReviewerFeedback | null {
-  try {
-    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>
-    if (typeof parsed === 'object' && parsed !== null && typeof parsed.approved === 'boolean') {
-      return parsed as unknown as ReviewerFeedback
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-/** Convert structured JSON feedback into prose instructions for the rewriter. */
-function feedbackToProse(fb: ReviewerFeedback): string {
-  const parts: string[] = []
-  if (fb.tone) parts.push(`Ajuste de tono: ${fb.tone}`)
-  if (fb.length) parts.push(`Longitud: hacerla ${fb.length}`)
-  if (fb.remove?.length) parts.push(`Eliminar: ${fb.remove.join('; ')}`)
-  if (fb.add?.length) parts.push(`Agregar: ${fb.add.join('; ')}`)
-  if (fb.rephrase?.length) parts.push(`Reformular: ${fb.rephrase.join('; ')}`)
-  return parts.join('\n')
-}
-
 /**
  * Run the criticizer: two-step process.
  * Step 1 — Reviewer LLM: evaluates the response and returns detailed feedback or "APPROVED".
@@ -185,66 +144,16 @@ async function runCriticizer(
   ctx: ContextBundle,
   config: EngineConfig,
   registry: Registry,
-  loopContext?: {
-    systemPrompt: string
-    toolDefinitions: LLMToolDef[]
-    agenticConfig: AgenticConfig
-  },
 ): Promise<string | null> {
-  const maxRetries = Math.min(config.criticizerMaxRetries, 5)
+  // Step 1: Get feedback from reviewer
+  const feedback = await getReviewFeedback(responseText, ctx, config, registry)
+  if (!feedback) return null // APPROVED — original is fine
 
-  // If maxRetries is 0, single review only — no correction, just a gate
-  if (maxRetries === 0) {
-    const feedback = await getReviewFeedback(responseText, ctx, config, registry)
-    if (feedback) {
-      logger.info({ traceId: ctx.traceId }, 'Criticizer rejected but retries=0 — keeping original')
-    }
-    return null // no retry allowed, original always wins
-  }
+  logger.debug({ traceId: ctx.traceId, feedbackLength: feedback.length }, 'Criticizer has feedback — rewriting')
 
-  let currentResponse = responseText
-  const previousAttempts: Array<{ response: string; feedback: string }> = []
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    // Review current response
-    const feedback = await getReviewFeedback(currentResponse, ctx, config, registry)
-    if (!feedback) {
-      // APPROVED — use current response (may be original or an improved version)
-      if (attempt > 1) {
-        logger.info({ traceId: ctx.traceId, attempt }, 'Criticizer approved on retry')
-      }
-      return currentResponse === responseText ? null : currentResponse
-    }
-
-    logger.debug({
-      traceId: ctx.traceId,
-      attempt,
-      maxRetries,
-      feedbackLength: feedback.length,
-    }, 'Criticizer feedback — retrying')
-
-    // Track this attempt for context accumulation
-    previousAttempts.push({ response: currentResponse, feedback })
-
-    // Retry with feedback + context from previous attempts
-    currentResponse = loopContext
-      ? await rewriteViaLoop(currentResponse, feedback, ctx, config, registry, loopContext, previousAttempts)
-      : await rewriteWithFeedback(currentResponse, feedback, ctx, config)
-  }
-
-  // Exhausted all retries — final review to decide
-  const finalFeedback = await getReviewFeedback(currentResponse, ctx, config, registry)
-  if (!finalFeedback) {
-    logger.info({ traceId: ctx.traceId, attempts: maxRetries }, 'Criticizer approved on final review')
-    return currentResponse
-  }
-
-  // Still not approved after all retries — keep original (conservative)
-  logger.info({
-    traceId: ctx.traceId,
-    attempts: maxRetries,
-  }, 'Criticizer exhausted retries — keeping original response')
-  return null
+  // Step 2: Rewrite using feedback
+  const improved = await rewriteWithFeedback(responseText, feedback, ctx, config)
+  return improved
 }
 
 /**
@@ -259,27 +168,13 @@ async function getReviewFeedback(
 ): Promise<string | null> {
   const promptsService = registry.getOptional<{
     getPrompt(slot: string, variant?: string): Promise<string>
-    getSystemPrompt(name: string, variables?: Record<string, string>): Promise<string>
   }>('prompts:service')
 
-  // Load quality criteria (DB slot, points 6-10) + JSON format instructions (criticizer-review.md)
-  const [qualityCriteria, jsonFormatInstruction] = promptsService
-    ? await Promise.all([
-        promptsService.getPrompt('criticizer').catch(() => null),
-        promptsService.getSystemPrompt('criticizer-review').catch(() => null),
-      ])
-    : [null, null]
+  const criticizerPrompt = promptsService
+    ? await promptsService.getPrompt('criticizer').catch(() => null)
+    : null
 
-  let system: string
-  if (qualityCriteria && jsonFormatInstruction) {
-    // Ideal path: quality criteria from DB + JSON format from criticizer-review.md
-    system = `You are a quality reviewer for a sales agent's response. Evaluate it against these criteria:\n\n${qualityCriteria}\n\n${jsonFormatInstruction}`
-  } else if (qualityCriteria) {
-    // criticizer-review.md missing/empty but DB criteria available — use criteria with prose format
-    system = `You are a quality reviewer for a sales agent's response. Evaluate it against these criteria:\n\n${qualityCriteria}\n\nIf the response is good as-is, reply with exactly: APPROVED\n\nIf improvements are needed, explain clearly what should be changed and why.\nDo NOT rewrite the response — only provide your feedback.`
-  } else {
-    // Fallback: hardcoded English prose-based review (original behavior)
-    system = `You are a quality reviewer for a sales agent's response. Evaluate it for:
+  const system = criticizerPrompt || `You are a quality reviewer for a sales agent's response. Evaluate it for:
 1. Accuracy — does it correctly answer the question?
 2. Tone — is it professional and warm?
 3. Completeness — is anything missing?
@@ -289,7 +184,6 @@ If the response is good as-is, reply with exactly: APPROVED
 
 If improvements are needed, explain clearly what should be changed and why.
 Do NOT rewrite the response — only provide your feedback.`
-  }
 
   const result = await callLLM({
     task: 'criticizer-review',
@@ -303,101 +197,16 @@ Do NOT rewrite the response — only provide your feedback.`
     maxTokens: 1024,
   })
 
-  const raw = result.text.trim()
-
-  // Try JSON parse first (when criticizer-review.md format was used)
-  const structured = parseReviewerJSON(raw)
-  if (structured) {
-    if (structured.approved) return null
-    const prose = feedbackToProse(structured)
-    return prose || null // null if all optional fields were omitted
-  }
-
-  // Fallback: prose-based detection (when hardcoded English fallback was used)
-  if (raw.toUpperCase().startsWith('APPROVED') || raw.length < 10) {
+  const feedback = result.text.trim()
+  if (feedback.toUpperCase().startsWith('APPROVED') || feedback.length < 10) {
     return null
   }
-  return raw
-}
-
-/** Max tool-calling turns for criticizer re-entry (1 turn = 1 LLM call that can produce tool_calls) */
-const CRITICIZER_MAX_TOOL_TURNS = 2
-/** Max individual tool calls allowed during criticizer re-entry */
-const CRITICIZER_MAX_TOOL_CALLS = 2
-/** Tool name for subagent delegation */
-const RUN_SUBAGENT_TOOL_NAME = 'run_subagent'
-
-/**
- * Step 2 (enhanced): Re-enter the agentic loop with full context + tools.
- * The model sees its original response + feedback and can use tools to fix content gaps.
- * Guards: criticizerMode=disabled (no recursion), maxToolTurns=2, max 2 tool calls + 1 subagent.
- */
-async function rewriteViaLoop(
-  originalResponse: string,
-  feedback: string,
-  ctx: ContextBundle,
-  config: EngineConfig,
-  registry: Registry,
-  loopContext: {
-    systemPrompt: string
-    toolDefinitions: LLMToolDef[]
-    agenticConfig: AgenticConfig
-  },
-  previousAttempts: Array<{ response: string; feedback: string }> = [],
-): Promise<string> {
-  // Filter tools: keep up to CRITICIZER_MAX_TOOL_CALLS regular tools + 1 subagent
-  const subagentTool = loopContext.toolDefinitions.find(t => t.name === RUN_SUBAGENT_TOOL_NAME)
-  const regularTools = loopContext.toolDefinitions
-    .filter(t => t.name !== RUN_SUBAGENT_TOOL_NAME)
-    .slice(0, CRITICIZER_MAX_TOOL_CALLS)
-  const limitedTools = subagentTool ? [...regularTools, subagentTool] : regularTools
-
-  const retryConfig: AgenticConfig = {
-    ...loopContext.agenticConfig,
-    maxToolTurns: CRITICIZER_MAX_TOOL_TURNS,
-    criticizerMode: 'disabled', // ← loop guard: never re-criticize a retry
-  }
-
-  // Build context from previous attempts so the model knows what it already tried
-  let historySection = ''
-  if (previousAttempts.length > 1) {
-    const history = previousAttempts.slice(0, -1).map((a, i) =>
-      `Intento ${i + 1}:\nRespuesta: ${a.response.slice(0, 300)}${a.response.length > 300 ? '...' : ''}\nProblemas: ${a.feedback}`,
-    ).join('\n\n')
-    historySection = `\n\n--- INTENTOS ANTERIORES (no repetir los mismos errores) ---\n${history}\n`
-  }
-
-  const userMessage = `Tu respuesta anterior fue:\n\n${originalResponse}\n\n---\nEl revisor de calidad encontró estos problemas:\n${feedback}${historySection}\n\n---\nCorrige tu respuesta incorporando el feedback. Si necesitas consultar información usa tus herramientas. Responde SOLO con la respuesta corregida, sin explicaciones ni preámbulos.`
-
-  const result = await runAgenticLoop(
-    ctx,
-    loopContext.systemPrompt,
-    limitedTools,
-    retryConfig,
-    registry,
-    config,
-    userMessage,
-  )
-
-  const rewritten = result.responseText.trim()
-  if (rewritten.length < 10) {
-    logger.warn({ traceId: ctx.traceId }, 'Criticizer loop retry returned empty/short text — keeping original')
-    return originalResponse
-  }
-
-  logger.info({
-    traceId: ctx.traceId,
-    retryTurns: result.turns,
-    retryToolsUsed: result.toolsUsed,
-    retryTokens: result.tokensUsed,
-  }, 'Criticizer loop retry completed')
-
-  return rewritten
+  return feedback
 }
 
 /**
- * Step 2 (fallback): Simple rewrite without tools or context.
- * Used when loopContext is not available (e.g., called outside the agentic delivery pipeline).
+ * Step 2: Rewrite the original response incorporating the reviewer's feedback.
+ * Returns a clean improved response — no analysis, no preamble.
  */
 async function rewriteWithFeedback(
   originalResponse: string,
