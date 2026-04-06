@@ -286,6 +286,43 @@ adapter = new MyAdapter(config, db, getAgentName)
 
 **NO hardcodear nombres de agente en los canales.** El valor se configura centralizadamente en el módulo `prompts` (`AGENT_NAME` en configSchema, editable desde console).
 
+## REGLA: Skill de outreach cross-channel
+
+**Cada canal con type='channel' DEBE tener un skill de outreach** en `instance/prompts/system/skills/{canal}-outreach.md`.
+
+El skill define el protocolo para que el agente use ese canal de forma proactiva desde otros canales (cross-channel), y las reglas de respuesta específicas del canal.
+
+### Contenido obligatorio del skill
+
+1. **Cuándo usar** — en qué situaciones el agente debe usar este canal para contactar al lead
+2. **Tools disponibles** — referencia rápida a las tools del canal (no duplicar definiciones, solo cuándo usar cuál)
+3. **Flujo cross-channel** — captura de datos de contacto → verificar historial → enviar → agendar follow-up
+4. **Cuándo NO responder** — reglas específicas del canal (acknowledgments, cortesías, FYI, etc.)
+5. **Timing de follow-ups** — tiempos específicos del canal (complementa `follow-up-strategy.md`, no lo duplica)
+6. **Formato** — referencia al `channel-format-*.md` correspondiente, no duplicar reglas de formato
+
+### Frontmatter obligatorio
+
+```
+<!-- description: Outreach por {canal} cross-channel — ... -->
+<!-- userTypes: lead,unknown -->
+<!-- requiredTools: {tool-del-canal} -->
+```
+
+`requiredTools` debe apuntar a una tool registrada por el canal. Esto asegura que el skill solo aparece cuando el canal está activo y conectado.
+
+### Skills existentes
+
+| Canal | Skill | requiredTools |
+|-------|-------|---------------|
+| Email (Gmail) | `email-outreach.md` | `email-read-inbox` |
+
+### Lo que NO incluir en el skill
+
+- Estrategia general de seguimiento → eso va en `follow-up-strategy.md`
+- Formato detallado del canal → eso va en `channel-format-{canal}.md`
+- Definición de tools → eso va en el registro de tools del módulo
+
 ## REGLA: Rooms/grupos en canales instant
 
 Todos los canales `instant` que soporten conversaciones grupales (WhatsApp grupos, Google Chat rooms) DEBEN seguir el mismo patrón:

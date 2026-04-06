@@ -81,6 +81,11 @@ Clasificador determinístico (<5ms, sin LLM) que corre ANTES del agentic loop. D
 - `POST /apply-label` — aplicar label a mensaje (messageId + labelId)
 - Auth: `GET /auth-status`, `GET /auth-url`, `POST /auth-callback`, `POST /auth-disconnect`, `POST /auth-refresh`
 
+## Skill de outreach
+- `instance/prompts/system/skills/email-outreach.md` — protocolo cross-channel (captura email, envío material, cuándo no responder, timing follow-ups)
+- `requiredTools: email-read-inbox` — solo aparece cuando gmail está activo
+- Ver `docs/architecture/channel-guide.md` sección "Skill de outreach cross-channel" para la política general
+
 ## Firma de email (outgoing)
 - **Workspace** (`gmail` mode): se lee con `sendAs.get()` al init y se cachea en HTML + plain text
 - **Custom** (`custom` mode): usa `EMAIL_SIGNATURE_TEXT` del config
