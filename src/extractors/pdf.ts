@@ -7,7 +7,7 @@
 import type { Registry } from '../kernel/registry.js'
 import type { PromptsService } from '../modules/prompts/types.js'
 import type { ExtractedContent, ExtractedSection } from './types.js'
-import { isImplicitTitle, MAX_FILE_SIZE } from './utils.js'
+import { isImplicitTitle, MAX_FILE_SIZE, countWords } from './utils.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:pdf' })
@@ -88,6 +88,9 @@ export async function extractPDF(
       extractorUsed: isScanned ? 'pdf-ocr-vision' : (imagePages.length > 0 ? 'pdf-parse+vision' : 'pdf-parse'),
       isScanned,
       imagePages: imagePages.length > 0 ? imagePages : undefined,
+      wordCount: countWords(fullText),
+      hasImages: imagePages.length > 0,
+      sectionCount: sections.length,
     },
   }
 }
@@ -211,7 +214,6 @@ async function extractScannedPdf(parser: any, pages: number[], fileName: string,
               ],
             }],
             maxTokens: 4000,
-            temperature: 0.1,
           })
 
           if (visionResult?.text?.trim()) {
@@ -311,7 +313,6 @@ async function extractVisionPages(parser: any, imagePages: number[], fileName: s
               ],
             }],
             maxTokens: 3000,
-            temperature: 0.1,
           })
 
           if (visionResult?.text?.trim()) {

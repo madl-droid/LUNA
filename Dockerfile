@@ -9,7 +9,7 @@ RUN npm run build
 FROM node:22-alpine
 ARG BUILD_VERSION=dev
 WORKDIR /app
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg libreoffice-writer libreoffice-impress libreoffice-calc yt-dlp
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist/

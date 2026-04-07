@@ -35,8 +35,8 @@ export type {
 } from './types.js'
 export { toExtractedContent } from './types.js'
 export { extractSheets } from './sheets.js'
-export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable, describeSlideScreenshots } from './slides.js'
-export { extractImage, extractImageWithVision, describeImage } from './image.js'
+export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable, describeSlideScreenshots, extractPptx } from './slides.js'
+export { extractImage, describeImage } from './image.js'
 export { extractWeb, extractWebAsContent } from './web.js'
 export { extractYouTube, parseYoutubeChapters, formatTimestamp, describeThumbnail } from './youtube.js'
 export { extractVideo, describeVideo } from './video.js'
@@ -45,16 +45,16 @@ export { extractDrive, enrichDriveContent, isDriveUrl, extractDriveFileId } from
 
 // ─── Extractores migrados ───────────────────
 import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
-import { extractDocx } from './docx.js'
+import { extractDocxSmart } from './docx.js'
 import { extractXlsx } from './sheets.js'
 import { extractPDF } from './pdf.js'
-import { extractImageWithVision } from './image.js'
-import { describeImage } from './image.js'
+import { extractImage, describeImage } from './image.js'
 import { transcribeAudioContent } from './audio.js'
 import { describeVideo } from './video.js'
-import { describeSlideScreenshots } from './slides.js'
+import { extractPptx, describeSlideScreenshots } from './slides.js'
 import { describeThumbnail } from './youtube.js'
 import { enrichDriveContent } from './drive.js'
+import { toExtractedContent } from './types.js'
 import type { ExtractorResult } from './types.js'
 
 // ─── Legacy fallback para extractores aún no migrados ────
@@ -63,18 +63,30 @@ async function legacyExtract(input: Buffer, fileName: string, mimeType: string, 
   return legacyExtractContent(input, fileName, mimeType, registry)
 }
 
+/**
+ * Wrapper para PPTX: extrae con extractPptx() y convierte a ExtractedContent.
+ * El pdfBuffer se pierde aquí (usar extractPptx() directo si se necesita para embedding).
+ */
+async function extractPptxAsContent(input: Buffer, fileName: string): Promise<ExtractedContent> {
+  const result = await extractPptx(input, fileName)
+  return toExtractedContent(result)
+}
+
 // Mapa de extractores migrados por MIME type
 const MIGRATED_EXTRACTORS: Record<string, (input: Buffer, fileName: string, registry?: Registry) => Promise<ExtractedContent>> = {
   'text/markdown': extractMarkdown,
   'text/plain': extractPlainText,
   'application/json': extractJSON,
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extractDocx,
-  'application/msword': extractDocx,
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extractDocxSmart,
+  'application/msword': extractDocxSmart,
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': extractXlsx,
   'application/vnd.ms-excel': extractXlsx,
   'text/csv': extractXlsx,
   'application/vnd.oasis.opendocument.spreadsheet': extractXlsx,
   'application/pdf': extractPDF,
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': extractPptxAsContent,
+  'application/vnd.ms-powerpoint': extractPptxAsContent,
+  'application/vnd.oasis.opendocument.presentation': extractPptxAsContent,
 }
 
 // ─── MIME types soportados ──────────────────
@@ -185,7 +197,7 @@ export async function extractContent(
   const resolvedMime = mimeType ?? resolveMimeType(fileName)
 
   try {
-    // Imágenes: extractor especial (vision con LLM si hay registry)
+    // Imágenes: extractor code + LLM enrichment si hay registry
     if (IMAGE_TYPES.has(resolvedMime)) {
       if (!registry) {
         return {
@@ -194,7 +206,9 @@ export async function extractContent(
           metadata: { sizeBytes: input.length, originalName: fileName, extractorUsed: 'none' },
         }
       }
-      return await extractImageWithVision(input, fileName, registry)
+      const imageResult = await extractImage(input, fileName, resolvedMime)
+      const enriched = await describeImage(imageResult, registry)
+      return toExtractedContent(enriched)
     }
 
     // Usar extractor migrado si existe, sino legacy

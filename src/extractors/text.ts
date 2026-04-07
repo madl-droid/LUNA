@@ -5,7 +5,7 @@
 // JSON: parseo + formato.
 
 import type { ExtractedContent, ExtractedSection } from './types.js'
-import { isImplicitTitle } from './utils.js'
+import { isImplicitTitle, countWords } from './utils.js'
 
 // ═══════════════════════════════════════════
 // Markdown
@@ -13,7 +13,7 @@ import { isImplicitTitle } from './utils.js'
 
 export async function extractMarkdown(input: Buffer, fileName: string): Promise<ExtractedContent> {
   const text = input.toString('utf-8')
-  const sections = splitMarkdown(text)
+  const { sections, hasExplicitHeadings } = splitMarkdown(text)
 
   return {
     text,
@@ -22,6 +22,10 @@ export async function extractMarkdown(input: Buffer, fileName: string): Promise<
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'markdown',
+      wordCount: countWords(text),
+      lineCount: text.split('\n').length,
+      sectionCount: sections.length,
+      hasExplicitHeadings,
     },
   }
 }
@@ -31,17 +35,17 @@ export async function extractMarkdown(input: Buffer, fileName: string): Promise<
  * Si no hay headings, aplica detección de títulos implícitos.
  * Si tampoco hay implícitos, parte por párrafos.
  */
-function splitMarkdown(text: string): ExtractedSection[] {
+function splitMarkdown(text: string): { sections: ExtractedSection[]; hasExplicitHeadings: boolean } {
   // Intentar por headings explícitos
   const byHeadings = splitByExplicitHeadings(text)
-  if (byHeadings.length > 0) return byHeadings
+  if (byHeadings.length > 0) return { sections: byHeadings, hasExplicitHeadings: true }
 
   // Fallback: títulos implícitos
   const byImplicit = splitByImplicitTitles(text)
-  if (byImplicit.length > 0) return byImplicit
+  if (byImplicit.length > 0) return { sections: byImplicit, hasExplicitHeadings: false }
 
   // Fallback final: párrafos
-  return splitByParagraphs(text)
+  return { sections: splitByParagraphs(text), hasExplicitHeadings: false }
 }
 
 /**
@@ -81,6 +85,10 @@ export async function extractPlainText(input: Buffer, fileName: string): Promise
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'plain-text',
+      wordCount: countWords(text),
+      lineCount: text.split('\n').length,
+      sectionCount: sections.length,
+      hasExplicitHeadings: false,
     },
   }
 }
@@ -117,6 +125,9 @@ export async function extractJSON(input: Buffer, fileName: string): Promise<Extr
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'json',
+      wordCount: countWords(text),
+      lineCount: text.split('\n').length,
+      sectionCount: 1,
     },
   }
 }

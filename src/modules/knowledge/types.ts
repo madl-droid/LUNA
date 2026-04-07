@@ -12,7 +12,7 @@ export type SyncFrequency = '6h' | '12h' | '24h' | '1w' | '1m'
 
 export type FAQSourceType = 'manual' | 'sheets' | 'file'
 
-export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web'
+export type DocumentSourceType = 'upload' | 'drive' | 'url' | 'web' | 'attachment'
 
 export type EmbeddingStatus = 'pending' | 'queued' | 'processing' | 'embedded' | 'failed' | 'pending_review'
 
@@ -272,6 +272,51 @@ export interface KnowledgeConfig {
   KNOWLEDGE_MAX_CORE_DOCS: number
   KNOWLEDGE_EMBEDDING_MODEL: string
   KNOWLEDGE_EMBEDDING_DIMENSIONS: number
+}
+
+// ═══════════════════════════════════════════
+// Drive Folder Index (WP3 — knowledge crawl)
+// ═══════════════════════════════════════════
+
+export interface DriveFolderIndex {
+  itemId: string                // knowledge_item.id
+  rootFolderId: string          // Drive folder ID de la raíz
+  structure: DriveFolderNode[]  // árbol completo
+  lastCrawlAt: Date
+  fileCount: number
+  folderCount: number
+}
+
+export interface DriveFolderNode {
+  id: string
+  name: string
+  mimeType: string
+  path: string                  // "Subcarpeta/archivo.pdf" (relativo a la raíz)
+  parentId: string | null
+  isFolder: boolean
+  modifiedTime?: string
+  webViewLink?: string
+  contentHash?: string          // md5Checksum para detección de cambios
+  documentId?: string           // knowledge_document.id si ya procesado
+  status: 'pending' | 'processed' | 'error' | 'skipped'
+}
+
+// Row retornado por pg-store (con fileId como columna DB)
+export interface FolderIndexEntry {
+  id: string
+  itemId: string
+  fileId: string
+  name: string
+  mimeType: string
+  path: string
+  parentId: string | null
+  isFolder: boolean
+  modifiedTime?: string
+  webViewLink?: string
+  contentHash?: string
+  documentId?: string
+  status: string
+  errorMessage?: string
 }
 
 // ═══════════════════════════════════════════

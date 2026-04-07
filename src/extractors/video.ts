@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { VideoResult, LLMEnrichment } from './types.js'
 import type { Registry } from '../kernel/registry.js'
+import { parseDualDescription } from './utils.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:video' })
@@ -81,6 +82,11 @@ export async function extractVideo(
       sizeBytes: buffer.length,
       originalName: fileName,
       extractorUsed: 'video-ffprobe',
+      durationSeconds: probe.duration,
+      format,
+      mimeType: resolvedMime,
+      hasAudio: probe.hasAudio,
+      wasConverted: resolvedMime !== mimeType,
     },
   }
 }
@@ -102,13 +108,13 @@ export async function describeVideo(
   try {
     const base64Video = videoResult.buffer.toString('base64')
 
-    const hasAudioInstr = videoResult.hasAudio
-      ? '\nEl video tiene audio. Incluye también la transcripción del audio al final, precedida por "[Transcripción]:".'
+    const audioSection = videoResult.hasAudio
+      ? '\n\n[TRANSCRIPCIÓN]\n(transcripción del audio)'
       : ''
 
     const result = await registry.callHook('llm:chat', {
       task: 'extractor-video-multimodal',
-      system: `Eres un asistente que analiza videos. Describe el contenido visual de forma detallada: escenas, textos visibles, personas, objetos, acciones, transiciones. Sé exhaustivo y preciso. Responde en español.${hasAudioInstr}`,
+      system: `Eres un asistente que analiza videos. Describe el contenido visual de forma detallada: escenas, textos visibles, personas, objetos, acciones, transiciones. Sé exhaustivo y preciso. Responde en español.${videoResult.hasAudio ? '\nEl video tiene audio. Incluye también la transcripción del audio.' : ''}\n\nFormato de respuesta obligatorio:\n[DESCRIPCIÓN]\n(descripción detallada)\n\n[RESUMEN]\n(resumen en 1 línea)${audioSection}`,
       messages: [{
         role: 'user' as const,
         content: [
@@ -117,29 +123,31 @@ export async function describeVideo(
         ],
       }],
       maxTokens: 4096,
-      temperature: 0.1,
     })
 
     if (result && typeof result === 'object' && 'text' in result) {
       const fullText = (result as { text: string }).text?.trim()
       if (fullText) {
-        // Separar descripción de transcripción si existe
-        let description = fullText
-        let transcription: string | undefined
-        const transcriptionMarker = '[Transcripción]:'
-        const markerIdx = fullText.indexOf(transcriptionMarker)
-        if (markerIdx !== -1) {
-          description = fullText.slice(0, markerIdx).trim()
-          transcription = fullText.slice(markerIdx + transcriptionMarker.length).trim()
+        const parsed = parseDualDescription(fullText)
+
+        // Fallback legacy: formato con [Transcripción]: (si el LLM no usó el nuevo formato)
+        let transcription = parsed.transcription
+        if (!parsed.shortDescription && !transcription) {
+          const legacyMarker = '[Transcripción]:'
+          const markerIdx = fullText.indexOf(legacyMarker)
+          if (markerIdx !== -1) {
+            transcription = fullText.slice(markerIdx + legacyMarker.length).trim()
+          }
         }
 
         const enrichment: LLMEnrichment = {
-          description,
+          description: parsed.description,
+          shortDescription: parsed.shortDescription,
           transcription,
           provider: (result as { provider?: string }).provider ?? 'google',
           generatedAt: new Date(),
         }
-        logger.info({ format: videoResult.format, duration: videoResult.durationSeconds, descLength: description.length }, 'Video described via multimodal')
+        logger.info({ format: videoResult.format, duration: videoResult.durationSeconds, descLength: parsed.description.length }, 'Video described via multimodal')
         return { ...videoResult, llmEnrichment: enrichment }
       }
     }

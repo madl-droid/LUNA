@@ -10,6 +10,7 @@ import type { EmbeddingService } from './embedding-service.js'
 import type { EmbeddingQueue } from './embedding-queue.js'
 import { generateDescription } from './description-generator.js'
 import { getBullRedisOpts } from './bull-redis-opts.js'
+import { KNOWLEDGE_MEDIA_DIR } from './constants.js'
 
 const QUEUE_NAME = 'knowledge-vectorize'
 const BULK_LOCK_KEY = 'knowledge:vectorize:bulk_lock'
@@ -229,9 +230,9 @@ export class VectorizeWorker {
 
         if (chunk.contentType === 'pdf_pages' && chunk.mediaRefs?.[0]?.filePath) {
           // PDF: read the file and send raw PDF to embedding
-          const { resolve, join } = await import('node:path')
+          const { join } = await import('node:path')
           const { readFile } = await import('node:fs/promises')
-          const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+          const knowledgeDir = KNOWLEDGE_MEDIA_DIR
           const buffer = await readFile(join(knowledgeDir, chunk.mediaRefs[0].filePath))
           if (buffer.length <= 20 * 1024 * 1024) {
             embedding = await this.embeddingService.generateFileEmbedding(buffer, 'application/pdf')

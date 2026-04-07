@@ -5,8 +5,8 @@
 // Texto acompañante obligatorio (crea contexto mínimo si falta).
 
 import type { Registry } from '../kernel/registry.js'
-import type { ExtractedContent, ImageResult, LLMEnrichment } from './types.js'
-import { computeMD5, MAX_IMAGE_SIZE } from './utils.js'
+import type { ImageResult, LLMEnrichment } from './types.js'
+import { computeMD5, MAX_IMAGE_SIZE, parseDualDescription } from './utils.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:image' })
@@ -75,75 +75,12 @@ export async function extractImage(
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'image-metadata',
+      width: dims?.width ?? 0,
+      height: dims?.height ?? 0,
+      md5,
+      format: resolvedMime.split('/')[1],
+      mimeType: resolvedMime,
     },
-  }
-}
-
-// ═══════════════════════════════════════════
-// Backward-compatible: LLM vision description
-// Para knowledge que necesita texto descriptivo
-// ═══════════════════════════════════════════
-
-/**
- * Extrae descripción de imagen via LLM vision.
- * Requiere registry con llm:chat hook.
- * Usado por knowledge para indexar imágenes como texto.
- */
-export async function extractImageWithVision(
-  input: Buffer,
-  fileName: string,
-  registry: Registry,
-): Promise<ExtractedContent> {
-  if (input.length > MAX_IMAGE_SIZE) {
-    throw new Error(`Image too large: ${(input.length / 1024 / 1024).toFixed(1)}MB exceeds ${MAX_IMAGE_SIZE / 1024 / 1024}MB limit`)
-  }
-
-  const mimeType = resolveImageMimeType(fileName)
-  const base64 = input.toString('base64')
-
-  // Intentar obtener prompt de templates
-  let systemPrompt = 'Eres un asistente que describe imágenes de forma detallada y estructurada para una base de conocimiento. Describe todo el contenido visible: texto, diagramas, tablas, gráficos. Si hay texto, transcríbelo exactamente. Responde en español.'
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const promptsSvc = registry.getOptional<any>('prompts:service')
-    if (promptsSvc) {
-      const customPrompt = await promptsSvc.getSystemPrompt('image-extraction')
-      if (customPrompt) systemPrompt = customPrompt
-    }
-  } catch {
-    // Usar prompt por defecto
-  }
-
-  const result = await registry.callHook('llm:chat', {
-    task: 'extractor-image-vision',
-    system: systemPrompt,
-    messages: [{
-      role: 'user' as const,
-      content: [
-        { type: 'image_url' as const, data: base64, mimeType },
-        { type: 'text' as const, text: 'Describe detalladamente el contenido de esta imagen para indexarlo en una base de conocimiento.' },
-      ],
-    }],
-    maxTokens: 2000,
-    temperature: 0.1,
-  })
-
-  if (!result) {
-    logger.warn({ fileName }, 'LLM gateway not available for image extraction')
-    return {
-      text: `[Imagen: ${fileName}]`,
-      sections: [{ title: fileName, content: `[Imagen sin procesar: ${fileName}. LLM no disponible para descripción.]` }],
-      metadata: { sizeBytes: input.length, originalName: fileName, extractorUsed: 'image-fallback' },
-    }
-  }
-
-  const description = result.text
-
-  return {
-    text: description,
-    sections: [{ title: `Imagen: ${fileName}`, content: description }],
-    metadata: { sizeBytes: input.length, originalName: fileName, extractorUsed: 'image-llm-vision' },
   }
 }
 
@@ -166,7 +103,7 @@ export async function describeImage(
     const base64 = imageResult.buffer.toString('base64')
 
     // Intentar obtener prompt customizado
-    let systemPrompt = 'Eres un asistente que describe imágenes de forma detallada y completa. Describe TODO el contenido visible: texto, diagramas, tablas, gráficos, logos, personas, objetos, colores, layout. Si hay texto visible, transcríbelo exactamente. Sé exhaustivo y preciso. Responde en español.'
+    let systemPrompt = 'Eres un asistente que describe imágenes de forma detallada y completa. Describe TODO el contenido visible: texto, diagramas, tablas, gráficos, logos, personas, objetos, colores, layout. Si hay texto visible, transcríbelo exactamente. Sé exhaustivo y preciso. Responde en español.\n\nFormato de respuesta obligatorio:\n[DESCRIPCIÓN]\n(tu descripción detallada aquí)\n\n[RESUMEN]\n(resumen en máximo 1 línea)'
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -188,14 +125,15 @@ export async function describeImage(
         ],
       }],
       maxTokens: 2000,
-      temperature: 0.1,
     })
 
     if (result && typeof result === 'object' && 'text' in result) {
-      const description = (result as { text: string }).text?.trim()
-      if (description) {
+      const rawText = (result as { text: string }).text?.trim()
+      if (rawText) {
+        const parsed = parseDualDescription(rawText)
         const enrichment: LLMEnrichment = {
-          description,
+          description: parsed.description,
+          shortDescription: parsed.shortDescription,
           provider: (result as { provider?: string }).provider ?? 'google',
           generatedAt: new Date(),
         }
@@ -214,17 +152,6 @@ export async function describeImage(
 // ═══════════════════════════════════════════
 // Utilidades
 // ═══════════════════════════════════════════
-
-function resolveImageMimeType(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase()
-  switch (ext) {
-    case 'png': return 'image/png'
-    case 'jpg': case 'jpeg': return 'image/jpeg'
-    case 'webp': return 'image/webp'
-    case 'gif': return 'image/gif'
-    default: return 'image/png'
-  }
-}
 
 /**
  * Estima dimensiones de una imagen desde headers del buffer.

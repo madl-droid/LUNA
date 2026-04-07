@@ -345,3 +345,107 @@ describe('classifyMimeType', () => {
     expect(classifyMimeType('application/octet-stream')).toBe('unknown')
   })
 })
+
+// ═══════════════════════════════════════════
+// LLM Dual Description (WP5)
+// ═══════════════════════════════════════════
+
+describe('LLM dual description', () => {
+  it('describeImage parses [DESCRIPCIÓN] and [RESUMEN] format', async () => {
+    const registry = createMockRegistry({
+      text: '[DESCRIPCIÓN]\nUna foto detallada de un gato naranja dormido sobre un sofá azul.\n\n[RESUMEN]\nGato naranja durmiendo en sofá.',
+      provider: 'google',
+    })
+
+    const { extractImage, describeImage } = await import('../../src/extractors/image.js')
+    const codeResult = await extractImage(createMinimalPNG(), 'cat.png', 'image/png')
+    const enriched = await describeImage(codeResult, registry)
+
+    expect(enriched.llmEnrichment?.description).toBe('Una foto detallada de un gato naranja dormido sobre un sofá azul.')
+    expect(enriched.llmEnrichment?.shortDescription).toBe('Gato naranja durmiendo en sofá.')
+  })
+
+  it('describeImage handles response without [RESUMEN] section', async () => {
+    const registry = createMockRegistry({
+      text: 'Simple description without format markers',
+      provider: 'google',
+    })
+
+    const { extractImage, describeImage } = await import('../../src/extractors/image.js')
+    const codeResult = await extractImage(createMinimalPNG(), 'test.png', 'image/png')
+    const enriched = await describeImage(codeResult, registry)
+
+    expect(enriched.llmEnrichment?.description).toBe('Simple description without format markers')
+    expect(enriched.llmEnrichment?.shortDescription).toBeUndefined()
+  })
+
+  it('describeImage handles response with [DESCRIPCIÓN] but no [RESUMEN]', async () => {
+    const registry = createMockRegistry({
+      text: '[DESCRIPCIÓN]\nDetailed description of the image content visible here.',
+      provider: 'google',
+    })
+
+    const { extractImage, describeImage } = await import('../../src/extractors/image.js')
+    const codeResult = await extractImage(createMinimalPNG(), 'test.png', 'image/png')
+    const enriched = await describeImage(codeResult, registry)
+
+    expect(enriched.llmEnrichment?.description).toBe('Detailed description of the image content visible here.')
+    expect(enriched.llmEnrichment?.shortDescription).toBeUndefined()
+  })
+
+  it('extractors do NOT send temperature in llm:chat calls', async () => {
+    const registry = createMockRegistry({ text: 'test description', provider: 'google' })
+
+    const { extractImage, describeImage } = await import('../../src/extractors/image.js')
+    const codeResult = await extractImage(createMinimalPNG(), 'test.png', 'image/png')
+    await describeImage(codeResult, registry)
+
+    // callHook is called once for the vision description
+    expect(registry.callHook).toHaveBeenCalled()
+    // The payload (second argument) must NOT contain temperature
+    const callPayload = (registry.callHook as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]
+    expect(callPayload).not.toHaveProperty('temperature')
+  })
+
+  it('describeImage preserves original ImageResult fields after enrichment', async () => {
+    const registry = createMockRegistry({
+      text: '[DESCRIPCIÓN]\nA simple test image.\n\n[RESUMEN]\nTest image.',
+      provider: 'google',
+    })
+
+    const { extractImage, describeImage } = await import('../../src/extractors/image.js')
+    const codeResult = await extractImage(createMinimalPNG(), 'original.png', 'image/png')
+    const enriched = await describeImage(codeResult, registry)
+
+    // Original fields preserved
+    expect(enriched.kind).toBe('image')
+    expect(enriched.md5).toBe(codeResult.md5)
+    expect(enriched.width).toBe(codeResult.width)
+    expect(enriched.height).toBe(codeResult.height)
+    expect(enriched.mimeType).toBe(codeResult.mimeType)
+  })
+
+  it('describeImage provider is captured from LLM response', async () => {
+    const registry = createMockRegistry({ text: 'Una imagen de prueba', provider: 'anthropic' })
+
+    const { extractImage, describeImage } = await import('../../src/extractors/image.js')
+    const codeResult = await extractImage(createMinimalPNG(), 'test.png', 'image/png')
+    const enriched = await describeImage(codeResult, registry)
+
+    expect(enriched.llmEnrichment?.provider).toBe('anthropic')
+  })
+
+  it('describeImage generatedAt is a recent Date', async () => {
+    const before = new Date()
+    const registry = createMockRegistry({ text: 'Una imagen de prueba', provider: 'google' })
+
+    const { extractImage, describeImage } = await import('../../src/extractors/image.js')
+    const codeResult = await extractImage(createMinimalPNG(), 'test.png', 'image/png')
+    const enriched = await describeImage(codeResult, registry)
+    const after = new Date()
+
+    expect(enriched.llmEnrichment?.generatedAt).toBeInstanceOf(Date)
+    expect(enriched.llmEnrichment!.generatedAt.getTime()).toBeGreaterThanOrEqual(before.getTime())
+    expect(enriched.llmEnrichment!.generatedAt.getTime()).toBeLessThanOrEqual(after.getTime())
+  })
+})

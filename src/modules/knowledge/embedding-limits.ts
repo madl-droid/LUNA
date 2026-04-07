@@ -26,7 +26,7 @@ export const MIN_CHUNK_WORDS = 20
 export const MAX_IMAGES_PER_REQUEST = 6
 
 /** Max PDF pages per embedding request */
-export const MAX_PDF_PAGES_PER_REQUEST = 6
+export const MAX_PDF_PAGES_PER_REQUEST = 3
 
 /** PDF page overlap between consecutive chunks */
 export const PDF_PAGE_OVERLAP = 1
@@ -64,6 +64,7 @@ export type ChunkContentType =
   | 'pdf_pages'      // páginas de PDF (multimodal)
   | 'slide'          // presentación (multimodal)
   | 'image'          // imagen (multimodal)
+  | 'audio'          // segmento de audio (multimodal — Gemini Embedding 2)
   | 'video_frames'   // frames de video (multimodal)
   | 'youtube'        // contenido YouTube (transcript + metadata)
   | 'web'            // contenido web extraído

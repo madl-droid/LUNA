@@ -8,9 +8,13 @@ import { Queue, Worker } from 'bullmq'
 import type { Job } from 'bullmq'
 import type { Redis } from 'ioredis'
 import type { Pool } from 'pg'
+import { unlink } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import pino from 'pino'
 import type { EmbeddingService } from './embedding-service.js'
+import type { KnowledgePgStore } from './pg-store.js'
 import { getBullRedisOpts } from './bull-redis-opts.js'
+import { KNOWLEDGE_MEDIA_DIR } from './constants.js'
 
 const logger = pino({ name: 'embedding-queue' })
 
@@ -106,6 +110,7 @@ export class EmbeddingQueue {
   private readonly db: Pool
   private readonly embeddingService: EmbeddingService
   private readonly registry: RegistryLike
+  private readonly pgStore: KnowledgePgStore | null
 
   // Circuit breaker state (in-memory, resets on restart)
   private cbDistinctFailures: Set<string> = new Set()
@@ -118,10 +123,12 @@ export class EmbeddingQueue {
     redis: Redis,
     embeddingService: EmbeddingService,
     registry: RegistryLike,
+    pgStore?: KnowledgePgStore,
   ) {
     this.db = db
     this.embeddingService = embeddingService
     this.registry = registry
+    this.pgStore = pgStore ?? null
 
     const bullRedisOpts = getBullRedisOpts(redis)
 
@@ -303,6 +310,59 @@ export class EmbeddingQueue {
     }
   }
 
+  /**
+   * Nightly batch: delete binary files for attachment documents that have
+   * been fully embedded and have binary_cleanup_ready = TRUE.
+   * Only deletes files under instance/knowledge/media/ (path traversal guard).
+   * Called by the knowledge manifest's scheduled nightly task.
+   */
+  async runNightlyBinaryCleanup(): Promise<{ cleaned: number; errors: number }> {
+    if (!this.pgStore) {
+      logger.warn('[EMBED-Q] pgStore not injected, skipping nightly binary cleanup')
+      return { cleaned: 0, errors: 0 }
+    }
+
+    const mediaDir = KNOWLEDGE_MEDIA_DIR
+    let cleaned = 0
+    let errors = 0
+
+    try {
+      const docsToClean = await this.pgStore.getDocumentsForBinaryCleanup()
+
+      for (const doc of docsToClean) {
+        let docOk = true
+
+        for (const filePath of doc.filePaths) {
+          try {
+            // Path traversal guard: only delete files within media dir
+            const resolvedPath = resolve(filePath)
+            if (!resolvedPath.startsWith(mediaDir + '/')) {
+              logger.warn({ filePath, documentId: doc.documentId }, '[EMBED-Q] Binary cleanup: path outside media dir, skipping')
+              continue
+            }
+            await unlink(resolvedPath)
+            cleaned++
+          } catch (err) {
+            logger.warn({ err, filePath, documentId: doc.documentId }, '[EMBED-Q] Binary cleanup: failed to delete file')
+            errors++
+            docOk = false
+          }
+        }
+
+        // Clear flag only if all files deleted successfully
+        if (docOk) {
+          await this.pgStore.clearBinaryCleanupFlag(doc.documentId)
+        }
+      }
+
+      logger.info({ cleaned, errors, docsProcessed: docsToClean.length }, '[EMBED-Q] Nightly binary cleanup complete')
+    } catch (err) {
+      logger.error({ err }, '[EMBED-Q] Nightly binary cleanup failed')
+    }
+
+    return { cleaned, errors }
+  }
+
   async stop(): Promise<void> {
     await this.worker.close()
     await this.queue.close()
@@ -381,7 +441,7 @@ export class EmbeddingQueue {
   }
 
   private isMultimodalChunk(chunk: ChunkToEmbed): boolean {
-    const MULTIMODAL_TYPES = new Set(['pdf_pages', 'image', 'slide', 'video_frames'])
+    const MULTIMODAL_TYPES = new Set(['pdf_pages', 'image', 'slide', 'video_frames', 'audio'])
     if (!MULTIMODAL_TYPES.has(chunk.contentType)) return false
 
     // Knowledge chunks use mediaRefs array, memory chunks use mediaRef path
@@ -400,7 +460,7 @@ export class EmbeddingQueue {
         // Memory: mediaRef is a file path — validate against known media dir
         const { resolve } = await import('node:path')
         const { readFile } = await import('node:fs/promises')
-        const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+        const mediaDir = KNOWLEDGE_MEDIA_DIR
         const resolvedMemPath = resolve(chunk.mediaRef)
         if (!resolvedMemPath.startsWith(mediaDir + '/') && !resolvedMemPath.startsWith(mediaDir + '\\')) {
           logger.error({ filePath: chunk.mediaRef }, '[EMBED-Q] Path traversal attempt blocked (memory mediaRef)')
@@ -414,7 +474,7 @@ export class EmbeddingQueue {
         if (firstMedia.filePath) {
           const { resolve } = await import('node:path')
           const { readFile } = await import('node:fs/promises')
-          const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+          const knowledgeDir = KNOWLEDGE_MEDIA_DIR
           const resolvedPath = resolve(knowledgeDir, firstMedia.filePath)
           if (!resolvedPath.startsWith(knowledgeDir + '/') && !resolvedPath.startsWith(knowledgeDir + '\\')) {
             logger.error({ filePath: firstMedia.filePath }, '[EMBED-Q] Path traversal attempt blocked')
@@ -583,20 +643,40 @@ export class EmbeddingQueue {
         )
 
         // Propagate to parent knowledge_item
-        const docResult = await this.db.query<{ source_ref: string | null }>(
-          `SELECT source_ref FROM knowledge_documents WHERE id = $1`,
+        const docResult = await this.db.query<{ source_ref: string | null; source_type: string }>(
+          `SELECT source_ref, source_type FROM knowledge_documents WHERE id = $1`,
           [documentId],
         )
-        const sourceRef = docResult.rows[0]?.source_ref
-        if (sourceRef) {
+        const docRow = docResult.rows[0]
+        if (docRow?.source_ref) {
           await this.db.query(
             `UPDATE knowledge_items SET embedding_status = $1, updated_at = NOW() WHERE id = $2`,
-            [docStatus, sourceRef],
+            [docStatus, docRow.source_ref],
           )
         }
 
-        logger.info({ documentId, sourceRef, status: docStatus, total: row.total, embedded: row.embedded, failed: row.failed },
-          '[EMBED-Q] Document status reconciled')
+        // Binary cleanup: mark attachment binaries ready for nightly deletion
+        if (docRow?.source_type === 'attachment') {
+          if (this.pgStore) {
+            await this.pgStore.markBinariesForCleanup(documentId)
+          } else {
+            await this.db.query(
+              `UPDATE knowledge_documents SET binary_cleanup_ready = TRUE, updated_at = NOW() WHERE id = $1 AND source_type = 'attachment'`,
+              [documentId],
+            )
+          }
+          logger.info({ documentId }, '[EMBED-Q] Attachment binaries marked for cleanup after full embedding')
+        }
+
+        logger.info({
+          documentId,
+          sourceRef: docRow?.source_ref,
+          sourceType: docRow?.source_type,
+          status: docStatus,
+          total: row.total,
+          embedded: row.embedded,
+          failed: row.failed,
+        }, '[EMBED-Q] Document status reconciled')
       }
     } catch (err) {
       logger.warn({ err, documentId }, '[EMBED-Q] Document reconciliation failed (non-fatal)')
