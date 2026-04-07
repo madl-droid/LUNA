@@ -1030,6 +1030,16 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           if (!sectionData.herramientasContent) {
             sectionData.herramientasContent = notAvailable('tareas programadas')
           }
+        } else if (herramientasSubpage === 'google-apps/calendar') {
+          const renderFn = registry.getOptional<(data: SectionData) => Promise<string>>('google-apps:renderCalendarSection')
+          if (renderFn) {
+            try {
+              sectionData.herramientasContent = await renderFn(sectionData)
+            } catch (err) { logger.error({ err }, 'Failed to render calendar settings section') }
+          }
+          if (!sectionData.herramientasContent) {
+            sectionData.herramientasContent = notAvailable('Google Calendar')
+          }
         } else if (herramientasSubpage === 'google-apps') {
           sectionData.herramientasContent = renderSection('google-apps', sectionData) || notAvailable('Google API')
         } else if (herramientasSubpage === 'freshdesk') {

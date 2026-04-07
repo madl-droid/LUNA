@@ -8,12 +8,32 @@ import type { SheetsService } from './sheets-service.js'
 import type { DocsService } from './docs-service.js'
 import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
-import type { GoogleServiceName, CalendarEventUpdateOptions } from './types.js'
+import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig } from './types.js'
+import { CALENDAR_CONFIG_DEFAULTS } from './calendar-config.js'
+import {
+  formatEventsListForAgent,
+  formatAvailabilityForAgent,
+  formatSingleEventForAgent,
+  validateEventTiming,
+  isBusinessDay,
+} from './calendar-helpers.js'
 import pino from 'pino'
 import { extractContent, enrichWithLLM } from '../../extractors/index.js'
 import type { ExtractorResult } from '../../extractors/types.js'
 
 const logger = pino({ name: 'google-apps:tools' })
+
+// ─── Calendar config helpers ───────────────
+
+function getCalendarConfig(registry: Registry): CalendarSchedulingConfig {
+  const svc = registry.getOptional<{ get(): CalendarSchedulingConfig }>('google-apps:calendar-config')
+  return svc?.get() ?? CALENDAR_CONFIG_DEFAULTS
+}
+
+function getBusinessHours(registry: Registry): { start: number; end: number; days: number[] } | null {
+  const svc = registry.getOptional<{ get(): { start: number; end: number; days: number[] } }>('engine:business-hours')
+  return svc?.get() ?? null
+}
 
 /** Google-native MIME types — agent must use dedicated read tools instead of drive-read-file */
 const GOOGLE_NATIVE_MIMES = new Set([
@@ -711,7 +731,7 @@ export async function registerGoogleTools(
           query: input.query as string | undefined,
           maxResults: input.maxResults as number | undefined,
         })
-        return { success: true, data: result }
+        return { success: true, data: formatEventsListForAgent(result.events) }
       },
     })
 
@@ -719,7 +739,7 @@ export async function registerGoogleTools(
       definition: {
         name: 'calendar-create-event',
         displayName: 'Crear evento en calendario',
-        description: 'Crea un nuevo evento en Google Calendar. Puede incluir invitados, ubicación y recordatorios.',
+        description: 'Crea un nuevo evento en Google Calendar. Incluye Google Meet automáticamente, valida horario laboral y revisa conflictos.',
         category: 'calendar',
         sourceModule: 'google-apps',
         parameters: {
@@ -735,33 +755,66 @@ export async function registerGoogleTools(
             timeZone: { type: 'string', description: 'Zona horaria (ej: America/Mexico_City)' },
             attendees: { type: 'array', description: 'Lista de emails de invitados', items: { type: 'string', description: 'Email del invitado' } },
             calendarId: { type: 'string', description: 'ID del calendario (default: primary)' },
+            durationMinutes: { type: 'number', description: 'Duración en minutos (default: según config)' },
+            force: { type: 'boolean', description: 'Forzar creación aunque haya conflictos (default: false)' },
+            addMeet: { type: 'boolean', description: 'Incluir link de Google Meet (default: según config)' },
           },
           required: ['summary'],
         },
       },
-      handler: async (input) => {
+      handler: async (input, context) => {
+        const calConfig = getCalendarConfig(registry)
+        const bh = getBusinessHours(registry)
+
+        const startDateTime = input.startDateTime as string | undefined
+        const endDateTime = input.endDateTime as string | undefined
+        const timezone = (input.timeZone as string | undefined) ?? 'UTC'
+
+        // Validar business hours si hay startDateTime y business hours configurado
+        if (startDateTime && bh && !(input.force as boolean | undefined)) {
+          const validation = validateEventTiming(
+            startDateTime,
+            endDateTime,
+            { start: bh.start, end: bh.end, days: bh.days },
+            bh.days,
+            calConfig.daysOff,
+            timezone,
+          )
+          if (!validation.valid) {
+            const errorMsg = validation.errors.join('. ')
+            const suggestion = validation.suggestion ? ` Próximo slot disponible: ${validation.suggestion}` : ''
+            return { success: false, error: `${errorMsg}.${suggestion}` }
+          }
+        }
+
         const start: Record<string, string> = {}
         const end: Record<string, string> = {}
 
-        if (input.startDateTime) {
-          start.dateTime = input.startDateTime as string
-          if (input.timeZone) start.timeZone = input.timeZone as string
+        if (startDateTime) {
+          start.dateTime = startDateTime
+          if (timezone) start.timeZone = timezone
         } else if (input.startDate) {
           start.date = input.startDate as string
         }
 
-        if (input.endDateTime) {
-          end.dateTime = input.endDateTime as string
-          if (input.timeZone) end.timeZone = input.timeZone as string
+        if (endDateTime) {
+          end.dateTime = endDateTime
+          if (timezone) end.timeZone = timezone
         } else if (input.endDate) {
           end.date = input.endDate as string
+        } else if (startDateTime) {
+          // Calcular end desde defaultDurationMinutes
+          const durationMs = ((input.durationMinutes as number | undefined) ?? calConfig.defaultDurationMinutes) * 60000
+          const endDate = new Date(new Date(startDateTime).getTime() + durationMs)
+          end.dateTime = endDate.toISOString()
+          if (timezone) end.timeZone = timezone
         }
 
         const attendees = input.attendees
           ? (input.attendees as string[]).map((email) => ({ email }))
           : undefined
 
-        const event = await cal.createEvent({
+        const result = await cal.createEvent({
           calendarId: input.calendarId as string | undefined,
           summary: input.summary as string,
           description: input.description as string | undefined,
@@ -769,8 +822,87 @@ export async function registerGoogleTools(
           start,
           end,
           attendees,
+          reminders: { useDefault: false, overrides: calConfig.defaultReminders },
+          addMeet: (input.addMeet as boolean | undefined) ?? calConfig.meetEnabled,
+          force: input.force as boolean | undefined,
         })
-        return { success: true, data: event }
+
+        if (!result.created) {
+          return {
+            success: false,
+            error: result.warning ?? 'No se pudo crear el evento',
+            conflicts: result.conflicts,
+          }
+        }
+
+        // Emitir hook para follow-ups (Plan 4) — solo si hay contacto y canal disponibles
+        if (context?.contactId && context?.channelName) {
+          await registry.runHook('calendar:event-created', {
+            event: result.event as Record<string, unknown> | undefined,
+            meetLink: result.meetLink ?? undefined,
+            contactId: context.contactId,
+            channel: context.channelName,
+          })
+        }
+
+        const formatted = formatSingleEventForAgent(result.event!, timezone)
+        const meetLine = result.meetLink ? `\n🎥 Meet: ${result.meetLink}` : ''
+        return { success: true, data: `${formatted}${meetLine}` }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'calendar-get-event',
+        displayName: 'Obtener detalle de evento',
+        description: 'Obtiene los detalles completos de un evento de Google Calendar por su ID.',
+        category: 'calendar',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            eventId: { type: 'string', description: 'ID del evento [REQUIRED]' },
+            calendarId: { type: 'string', description: 'ID del calendario (default: primary)' },
+          },
+          required: ['eventId'],
+        },
+      },
+      handler: async (input) => {
+        const event = await cal.getEvent(
+          input.eventId as string,
+          input.calendarId as string | undefined,
+        )
+        return { success: true, data: formatSingleEventForAgent(event) }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'calendar-delete-event',
+        displayName: 'Cancelar/eliminar evento',
+        description: 'Cancela y elimina un evento de Google Calendar. Notifica a todos los asistentes.',
+        category: 'calendar',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            eventId: { type: 'string', description: 'ID del evento a cancelar [REQUIRED]' },
+            calendarId: { type: 'string', description: 'ID del calendario (default: primary)' },
+            notifyAttendees: { type: 'boolean', description: 'Notificar a asistentes (default: true)' },
+          },
+          required: ['eventId'],
+        },
+      },
+      handler: async (input) => {
+        const sendUpdates = (input.notifyAttendees as boolean | undefined) !== false ? 'all' : 'none'
+        await cal.deleteEvent(
+          input.eventId as string,
+          input.calendarId as string | undefined,
+          sendUpdates,
+        )
+        // Emitir hook para que Plan 4 cancele follow-ups
+        await registry.runHook('calendar:event-deleted', { eventId: input.eventId as string })
+        return { success: true, data: 'Evento cancelado exitosamente. Los asistentes fueron notificados.' }
       },
     })
 
@@ -778,7 +910,7 @@ export async function registerGoogleTools(
       definition: {
         name: 'calendar-update-event',
         displayName: 'Actualizar evento del calendario',
-        description: 'Actualiza un evento existente en Google Calendar.',
+        description: 'Actualiza un evento existente en Google Calendar. Valida horario laboral si se cambia la fecha.',
         category: 'calendar',
         sourceModule: 'google-apps',
         parameters: {
@@ -797,6 +929,32 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
+        const startDateTime = input.startDateTime as string | undefined
+        const endDateTime = input.endDateTime as string | undefined
+        const timezone = (input.timeZone as string | undefined) ?? 'UTC'
+        const dateChanged = !!(startDateTime ?? endDateTime)
+
+        // Validar business hours si se cambia la fecha
+        if (dateChanged && startDateTime) {
+          const calConfig = getCalendarConfig(registry)
+          const bh = getBusinessHours(registry)
+          if (bh) {
+            const validation = validateEventTiming(
+              startDateTime,
+              endDateTime,
+              { start: bh.start, end: bh.end, days: bh.days },
+              bh.days,
+              calConfig.daysOff,
+              timezone,
+            )
+            if (!validation.valid) {
+              const errorMsg = validation.errors.join('. ')
+              const suggestion = validation.suggestion ? ` Próximo slot: ${validation.suggestion}` : ''
+              return { success: false, error: `${errorMsg}.${suggestion}` }
+            }
+          }
+        }
+
         const opts: Record<string, unknown> = {
           eventId: input.eventId as string,
           calendarId: input.calendarId as string | undefined,
@@ -804,15 +962,23 @@ export async function registerGoogleTools(
         if (input.summary) opts.summary = input.summary
         if (input.description) opts.description = input.description
         if (input.location) opts.location = input.location
-        if (input.startDateTime) {
-          opts.start = { dateTime: input.startDateTime as string, timeZone: input.timeZone as string | undefined }
+        if (startDateTime) {
+          opts.start = { dateTime: startDateTime, timeZone: timezone }
         }
-        if (input.endDateTime) {
-          opts.end = { dateTime: input.endDateTime as string, timeZone: input.timeZone as string | undefined }
+        if (endDateTime) {
+          opts.end = { dateTime: endDateTime, timeZone: timezone }
         }
 
         const event = await cal.updateEvent(opts as unknown as CalendarEventUpdateOptions)
-        return { success: true, data: event }
+
+        // Emitir hook
+        await registry.runHook('calendar:event-updated', {
+          eventId: input.eventId as string,
+          event: event as unknown as Record<string, unknown>,
+          dateChanged,
+        })
+
+        return { success: true, data: formatSingleEventForAgent(event, timezone) }
       },
     })
 
@@ -840,7 +1006,10 @@ export async function registerGoogleTools(
           attendees,
           input.calendarId as string | undefined,
         )
-        return { success: true, data: event }
+        const attendeeList = (event.attendees ?? [])
+          .map((a) => `${a.displayName ?? a.email} (${a.responseStatus ?? 'pendiente'})`)
+          .join(', ')
+        return { success: true, data: `Invitados actualizados en "${event.summary}". Asistentes: ${attendeeList || 'ninguno'}` }
       },
     })
 
@@ -855,7 +1024,11 @@ export async function registerGoogleTools(
       },
       handler: async () => {
         const calendars = await cal.listCalendars()
-        return { success: true, data: calendars }
+        const lines = calendars.map((c) => {
+          const primary = c.primary ? ' [principal]' : ''
+          return `${c.summary}${primary} (ID: ${c.id})`
+        })
+        return { success: true, data: lines.length > 0 ? lines.join('\n') : 'No hay calendarios disponibles.' }
       },
     })
 
@@ -863,26 +1036,141 @@ export async function registerGoogleTools(
       definition: {
         name: 'calendar-check-availability',
         displayName: 'Verificar disponibilidad',
-        description: 'Verifica horarios ocupados/libres en calendarios para un rango de fechas.',
+        description: 'Verifica slots libres para una fecha. Consulta los calendarios de las personas indicadas y muestra horarios disponibles.',
         category: 'calendar',
         sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
-            timeMin: { type: 'string', description: 'Fecha inicio ISO' },
-            timeMax: { type: 'string', description: 'Fecha fin ISO' },
-            calendarIds: { type: 'array', description: 'IDs de calendarios a verificar', items: { type: 'string', description: 'ID de calendario' } },
+            date: { type: 'string', description: 'Fecha a consultar YYYY-MM-DD [REQUIRED]' },
+            durationMinutes: { type: 'number', description: 'Duración mínima del slot en minutos (default: según config)' },
+            emails: { type: 'array', description: 'Emails de personas a verificar', items: { type: 'string', description: 'Email' } },
+            timeMin: { type: 'string', description: 'Fecha inicio ISO (legacy, usar date en su lugar)' },
+            timeMax: { type: 'string', description: 'Fecha fin ISO (legacy)' },
           },
-          required: ['timeMin', 'timeMax'],
+          required: ['date'],
         },
       },
       handler: async (input) => {
-        const result = await cal.findFreeSlots(
-          input.timeMin as string,
-          input.timeMax as string,
-          input.calendarIds as string[] | undefined,
-        )
-        return { success: true, data: result }
+        const calConfig = getCalendarConfig(registry)
+        const bh = getBusinessHours(registry)
+        const date = input.date as string
+        const durationMinutes = (input.durationMinutes as number | undefined) ?? calConfig.defaultDurationMinutes
+        const emails = (input.emails as string[] | undefined) ?? []
+
+        // Validar que la fecha no sea día off
+        if (bh && bh.days.length > 0) {
+          const check = isBusinessDay(date, bh.days, calConfig.daysOff)
+          if (!check.valid) {
+            return { success: false, error: check.reason ?? `${date} no es día laboral` }
+          }
+        }
+
+        const result = await cal.checkAvailability({ emails, date, durationMinutes })
+        return { success: true, data: formatAvailabilityForAgent(result) }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'calendar-get-scheduling-context',
+        displayName: 'Obtener contexto de agendamiento',
+        description: 'Obtiene la configuración completa de agendamiento: roles habilitados, coworkers disponibles con instrucciones, días off, horario laboral, y configuración general. Llamar SIEMPRE como primera acción.',
+        category: 'calendar',
+        sourceModule: 'google-apps',
+        parameters: { type: 'object', properties: {} },
+      },
+      handler: async () => {
+        const calConfig = getCalendarConfig(registry)
+        const bh = getBusinessHours(registry)
+        const usersDb = registry.getOptional<{
+          listByType(t: string, active: boolean): Promise<Array<{
+            id: string
+            displayName?: string
+            contacts?: Array<{ channel: string; senderId: string }>
+            metadata?: unknown
+          }>>
+        }>('users:db')
+
+        // Obtener coworkers habilitados agrupados por rol
+        const allCoworkers = await usersDb?.listByType?.('coworker', true) ?? []
+        const enabledRoles: Array<{
+          role: string
+          instructions: string
+          coworkers: Array<{ name: string; email: string; instructions: string }>
+        }> = []
+
+        for (const [roleName, roleConfig] of Object.entries(calConfig.schedulingRoles)) {
+          if (!roleConfig.enabled) continue
+
+          const roleCoworkers = allCoworkers
+            .filter((u) => (u.metadata as Record<string, unknown>)?.role === roleName)
+            .filter((u) => {
+              const cwConfig = calConfig.schedulingCoworkers[u.id]
+              return cwConfig ? cwConfig.enabled !== false : true
+            })
+            .map((u) => {
+              const email = u.contacts?.find((c) => c.channel === 'email')?.senderId ?? ''
+              const cwConfig = calConfig.schedulingCoworkers[u.id]
+              return {
+                name: u.displayName ?? u.id,
+                email,
+                instructions: cwConfig?.instructions ?? '',
+              }
+            })
+
+          enabledRoles.push({
+            role: roleName,
+            instructions: roleConfig.instructions,
+            coworkers: roleCoworkers,
+          })
+        }
+
+        // Formatear output legible
+        let output = `## Configuración de agendamiento\n`
+        output += `- Google Meet: ${calConfig.meetEnabled ? 'habilitado' : 'deshabilitado'}\n`
+        output += `- Duración default: ${calConfig.defaultDurationMinutes} min\n`
+        output += `- Nombre de cita: "${calConfig.eventNamePrefix} - [nombre cliente] [empresa]"\n`
+        if (calConfig.descriptionInstructions) {
+          output += `- Instrucciones para descripción: ${calConfig.descriptionInstructions}\n`
+        }
+
+        if (bh) {
+          const dayNames = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+          const days = bh.days.map((d) => dayNames[d] ?? String(d)).join(', ')
+          output += `\n## Horario laboral\n`
+          output += `- Horas: ${bh.start}:00 a ${bh.end}:00\n`
+          output += `- Días: ${days}\n`
+        }
+
+        if (calConfig.daysOff.length > 0) {
+          output += `\n## Días no laborables\n`
+          for (const d of calConfig.daysOff) {
+            if (d.type === 'single') output += `- ${d.date}\n`
+            else output += `- ${d.start} al ${d.end}\n`
+          }
+        }
+
+        if (enabledRoles.length > 0) {
+          output += `\n## Roles habilitados para agendamiento\n`
+          for (const role of enabledRoles) {
+            output += `\n### Rol: ${role.role}\n`
+            if (role.instructions) output += `Instrucciones: ${role.instructions}\n`
+            output += `Coworkers:\n`
+            if (role.coworkers.length === 0) {
+              output += `  (ninguno asignado a este rol)\n`
+            }
+            for (const cw of role.coworkers) {
+              output += `  - ${cw.name} (${cw.email})`
+              if (cw.instructions) output += ` — INSTRUCCIÓN: ${cw.instructions}`
+              output += `\n`
+            }
+          }
+        } else {
+          output += `\n## Equipo\nNo hay roles habilitados para agendamiento.\n`
+        }
+
+        return { success: true, data: output }
       },
     })
   }
