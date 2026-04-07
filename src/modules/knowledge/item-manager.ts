@@ -152,9 +152,17 @@ export class KnowledgeItemManager {
     docTitle: string,
     mimeType: string,
     chunks: SmartChunk[],
-    opts?: { buffer?: Buffer; description?: string; fileUrl?: string },
+    opts?: {
+      buffer?: Buffer
+      description?: string
+      fileUrl?: string
+      columnDescriptions?: string  // "Col1: desc, Col2: desc" — para sheets
+    },
   ): Promise<number> {
     if (chunks.length === 0) return 0
+
+    // ── Enriquecer chunks con descripciones contextuales ──
+    const enrichedChunks = enrichChunksWithContext(item, chunks, mimeType, opts)
 
     // Save file to disk if buffer provided (PDFs, etc.)
     let filePath: string | null = null
@@ -167,7 +175,7 @@ export class KnowledgeItemManager {
       filePath = safeFileName
       await writeFile(join(knowledgeDir, safeFileName), opts.buffer)
     } else {
-      contentHash = createHash('sha256').update(docTitle + (chunks[0]!.content ?? '').substring(0, 500)).digest('hex')
+      contentHash = createHash('sha256').update(docTitle + (enrichedChunks[0]!.content ?? '').substring(0, 500)).digest('hex')
     }
 
     // Create document record — store fileUrl in metadata for shareable links
@@ -182,13 +190,13 @@ export class KnowledgeItemManager {
       mimeType,
       metadata: {
         chunkerVersion: 'smart-v2',
-        chunkCount: chunks.length,
+        chunkCount: enrichedChunks.length,
         ...(opts?.fileUrl ? { fileUrl: opts.fileUrl } : {}),
       },
     })
 
     // Link and insert chunks
-    const linked = linkChunks(item.id, chunks)
+    const linked = linkChunks(item.id, enrichedChunks)
     await this.pgStore.insertLinkedChunks(docId, linked)
 
     // Assign category
@@ -515,6 +523,41 @@ export class KnowledgeItemManager {
       totalChunks = await this.loadYoutubeContent(item)
     }
 
+    // ── Build index chunk for multi-document items ──
+    const allDocs = await this.pgStore.getPool().query<{
+      id: string; title: string; description: string; chunk_count: number
+    }>(
+      `SELECT id, title, description, chunk_count FROM knowledge_documents WHERE source_ref = $1 ORDER BY created_at`, [id],
+    )
+
+    if (allDocs.rows.length > 1) {
+      const indexChunk = buildIndexChunk(item, allDocs.rows.map((d: { id: string; title: string; description: string; chunk_count: number }) => ({
+        title: d.title,
+        description: d.description,
+        chunkCount: d.chunk_count,
+      })))
+      const indexHash = createHash('sha256').update(`index:${item.id}:${Date.now()}`).digest('hex')
+      const indexDocId = await this.pgStore.insertDocument({
+        title: `Índice: ${item.title}`,
+        description: item.description,
+        isCore: false,
+        sourceType: 'drive',
+        sourceRef: item.id,
+        contentHash: indexHash,
+        filePath: '',
+        mimeType: 'text/plain',
+        metadata: { chunkerVersion: 'smart-v2', isIndex: true },
+      })
+      const indexLinked = linkChunks(item.id, [indexChunk])
+      await this.pgStore.insertLinkedChunks(indexDocId, indexLinked)
+      if (item.categoryId) {
+        await this.pgStore.assignDocumentCategory(indexDocId, item.categoryId)
+      }
+      allDocs.rows.push({ id: indexDocId, title: `Índice: ${item.title}`, description: item.description, chunk_count: 1 })
+      totalChunks += 1
+      logger.info({ itemId: id, docCount: allDocs.rows.length - 1, indexDocId }, '[INDEX] Index chunk created for multi-document item')
+    }
+
     await this.pgStore.updateItem(id, {
       contentLoaded: true,
       embeddingStatus: 'pending',
@@ -523,11 +566,7 @@ export class KnowledgeItemManager {
 
     // Trigger vectorization
     if (this.vectorizeWorker) {
-      // Get all documents created for this item and enqueue each
-      const docs = await this.pgStore.getPool().query<{ id: string }>(
-        `SELECT id FROM knowledge_documents WHERE source_ref = $1`, [id],
-      )
-      for (const doc of docs.rows) {
+      for (const doc of allDocs.rows) {
         this.vectorizeWorker.enqueueDocument(doc.id).catch(err => {
           logger.warn({ err, docId: doc.id }, 'Failed to enqueue vectorization')
         })
@@ -565,12 +604,19 @@ export class KnowledgeItemManager {
 
       if (rows.length === 0) continue
 
+      // Build column descriptions string for embedding enrichment
+      const colDescs = tabColumns
+        .filter(c => !c.ignored && c.description?.trim())
+        .map(c => `${c.columnName}: ${c.description.trim()}`)
+        .join(', ')
+
       // Smart chunk: CSV with repeated headers
       const chunks = chunkSheets(headers, rows, { docMeta: { sourceType: 'sheets', sourceId: item.sourceId, tabName: tab.tabName, title: item.title } as Record<string, unknown> })
       const docTitle = `${item.title} — ${tab.tabName}`
       totalChunks += await this.persistSmartChunks(item, docTitle, 'text/csv', chunks, {
         description: tab.description || `Tab ${tab.tabName} de ${item.title}`,
         fileUrl: item.sourceUrl,
+        columnDescriptions: colDescs || undefined,
       })
     }
 
@@ -1879,5 +1925,86 @@ function hasFileChanged(existing: FolderIndexEntry, fresh: DriveFolderNode): boo
     return new Date(fresh.modifiedTime).getTime() > new Date(existing.modifiedTime).getTime()
   }
   return true   // sin data para comparar → asumir que cambió (re-procesar es seguro)
+}
+
+/**
+ * Enrich chunks with contextual descriptions before embedding.
+ * - CSV/sheets: prepend context + column descriptions to EACH chunk
+ * - Others: prepend item/doc description to FIRST chunk only
+ */
+function enrichChunksWithContext(
+  item: KnowledgeItem,
+  chunks: SmartChunk[],
+  mimeType: string,
+  opts?: { description?: string; columnDescriptions?: string },
+): SmartChunk[] {
+  if (chunks.length === 0) return chunks
+
+  const itemDesc = item.description?.trim() ?? ''
+  const docDesc = opts?.description?.trim() ?? ''
+
+  if (mimeType === 'text/csv') {
+    // Sheets: prepend context to EACH chunk (improves FTS for row-level searches)
+    const colDescs = opts?.columnDescriptions?.trim() ?? ''
+    if (!itemDesc && !colDescs) return chunks
+
+    let prefix: string
+    if (itemDesc && colDescs) {
+      prefix = `[Contexto: ${itemDesc}. Columnas: ${colDescs}]`
+    } else if (itemDesc) {
+      prefix = `[Contexto: ${itemDesc}]`
+    } else {
+      prefix = `[Columnas: ${colDescs}]`
+    }
+
+    return chunks.map(c => ({
+      ...c,
+      content: c.content ? `${prefix}\n${c.content}` : c.content,
+    }))
+  }
+
+  // Non-CSV: prepend to first chunk only
+  if (!itemDesc && !docDesc) return chunks
+
+  const lines: string[] = []
+  if (itemDesc) lines.push(`[Contexto: ${itemDesc}]`)
+  if (docDesc && docDesc !== itemDesc) lines.push(`[Fuente: ${docDesc}]`)
+  if (lines.length === 0) return chunks
+
+  const prefix = lines.join('\n')
+  return chunks.map((c, i) => i === 0 && c.content
+    ? { ...c, content: `${prefix}\n${c.content}` }
+    : c,
+  )
+}
+
+/**
+ * Build an index chunk summarizing all documents belonging to a multi-document item.
+ * Helps the agent understand what's in a multi-tab/multi-file item at a glance.
+ */
+function buildIndexChunk(
+  item: KnowledgeItem,
+  docs: Array<{ title: string; description: string; chunkCount: number }>,
+): SmartChunk {
+  const lines = [
+    `[Índice de "${item.title}"]`,
+    item.description ? `Descripción: ${item.description}` : '',
+    `Contiene ${docs.length} documentos:`,
+    ...docs.map((d, i) => `${i + 1}. ${d.title}${d.description ? ` — ${d.description}` : ''} (${d.chunkCount} fragmentos)`),
+  ].filter(Boolean)
+
+  return {
+    content: lines.join('\n'),
+    contentType: 'text',
+    mediaRefs: null,
+    chunkIndex: 0,
+    chunkTotal: 0,
+    prevChunkId: null,
+    nextChunkId: null,
+    metadata: {
+      sourceType: 'index',
+      isIndex: true,
+    },
+  }
 }
 

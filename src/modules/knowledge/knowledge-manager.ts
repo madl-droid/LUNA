@@ -389,6 +389,102 @@ export class KnowledgeManager {
     logger.info({ id, title: doc.title, isCore }, 'Document core flag changed')
   }
 
+  // ─── Expand Knowledge ──────────────────────
+
+  /**
+   * Expand a document found via search_knowledge — returns full content of the document.
+   * Uses Redis cache (TTL 15 min) to avoid re-fetching on repeated expand calls.
+   */
+  async expandKnowledge(documentId: string): Promise<{
+    success: boolean
+    data?: {
+      title: string
+      description: string
+      content: string
+      totalChunks: number
+      sourceType: string
+      fileUrl?: string
+      liveQueryHint?: string
+    }
+    error?: string
+  }> {
+    // Try Redis cache first
+    const redis = this.registry.getRedis()
+    const cacheKey = `expand:${documentId}`
+    try {
+      const cached = await redis.get(cacheKey)
+      if (cached) return JSON.parse(cached) as ReturnType<typeof this.expandKnowledge> extends Promise<infer T> ? T : never
+    } catch {
+      // Cache miss or error — generate fresh
+    }
+
+    const doc = await this.pgStore.getDocument(documentId)
+    if (!doc) return { success: false, error: 'Documento no encontrado' }
+
+    const chunks = await this.pgStore.getChunksByDocumentId(documentId)
+
+    let content: string
+    if (chunks.length <= 15) {
+      content = chunks.map(c => c.content).filter(Boolean).join('\n\n---\n\n')
+    } else {
+      const first5 = chunks.slice(0, 5).map(c => c.content).filter(Boolean).join('\n\n')
+      const last3 = chunks.slice(-3).map(c => c.content).filter(Boolean).join('\n\n')
+      content = `[Documento con ${chunks.length} fragmentos. Mostrando primeros 5 y últimos 3:]\n\n${first5}\n\n[...${chunks.length - 8} fragmentos intermedios...]\n\n${last3}`
+    }
+
+    // Live query hint if item supports it
+    let liveQueryHint: string | undefined
+    if (doc.sourceRef) {
+      const item = await this.pgStore.getItem(doc.sourceRef)
+      if (item?.liveQueryEnabled && item.sourceId && item.sourceType) {
+        const toolMap: Record<string, string> = {
+          sheets: 'sheets-read',
+          docs: 'docs-read',
+          slides: 'slides-read',
+          drive: 'drive-list-files',
+        }
+        liveQueryHint = `Puedes consultar este recurso en vivo: ${toolMap[item.sourceType] ?? item.sourceType}(id: ${item.sourceId})`
+      }
+    }
+
+    const fileUrl = (doc.metadata as Record<string, unknown>)?.fileUrl as string | undefined
+
+    const result = {
+      success: true,
+      data: {
+        title: doc.title,
+        description: doc.description,
+        content,
+        totalChunks: chunks.length,
+        sourceType: doc.sourceType,
+        fileUrl: fileUrl || undefined,
+        liveQueryHint,
+      },
+    }
+
+    // Cache result (TTL 15 min)
+    try {
+      await redis.set(cacheKey, JSON.stringify(result), 'EX', 900)
+    } catch {
+      // Non-critical
+    }
+
+    return result
+  }
+
+  /**
+   * Invalidate expand_knowledge cache for a document.
+   * Called when document is re-trained.
+   */
+  async invalidateExpandCache(documentId: string): Promise<void> {
+    try {
+      const redis = this.registry.getRedis()
+      await redis.del(`expand:${documentId}`)
+    } catch {
+      // Non-critical
+    }
+  }
+
   // ─── Search ────────────────────────────────
 
   /**

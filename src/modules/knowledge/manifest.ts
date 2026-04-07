@@ -1355,6 +1355,10 @@ const manifest: ModuleManifest = {
                   score: r.score,
                   type: r.type,
                   fileUrl: r.fileUrl,
+                  documentId: r.documentId,
+                  chunkIndex: r.chunkIndex,
+                  chunkTotal: r.chunkTotal,
+                  sourceType: r.sourceType,
                 })),
                 count: results.length,
               },
@@ -1365,6 +1369,36 @@ const manifest: ModuleManifest = {
         },
       })
       logger.info('Tool search_knowledge registered')
+
+      // Register expand_knowledge tool
+      await toolRegistry.registerTool({
+        definition: {
+          name: 'expand_knowledge',
+          displayName: 'Expandir Conocimiento',
+          description: 'Obtiene el contenido completo de un documento encontrado con search_knowledge. Usar cuando el resultado de búsqueda es insuficiente y se necesita más contexto del documento.',
+          category: 'knowledge',
+          sourceModule: 'knowledge',
+          parameters: {
+            type: 'object',
+            properties: {
+              documentId: {
+                type: 'string',
+                description: 'ID del documento (viene del campo documentId en los resultados de search_knowledge)',
+              },
+            },
+            required: ['documentId'],
+          },
+        },
+        handler: async (input) => {
+          try {
+            const documentId = input.documentId as string
+            return knowledgeManager!.expandKnowledge(documentId)
+          } catch (err) {
+            return { success: false, error: String(err) }
+          }
+        },
+      })
+      logger.info('Tool expand_knowledge registered')
     }
 
     // Schedule nightly binary cleanup at 3 AM (checks every hour, runs at target hour)

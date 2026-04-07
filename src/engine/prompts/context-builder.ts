@@ -251,7 +251,10 @@ export async function buildContextLayers(
           const liveTag = item.liveQueryEnabled && item.sourceId && item.sourceType
             ? ` [CONSULTA_VIVA: ${LIVE_QUERY_TOOL[item.sourceType] ?? item.sourceType}, id=${item.sourceId}]`
             : ''
-          parts.push(`    - ${item.title}${desc}${liveTag}`)
+          const shareTag = item.shareable && item.sourceUrl
+            ? ` (compartible: ${item.sourceUrl})`
+            : ''
+          parts.push(`    - ${item.title}${desc}${liveTag}${shareTag}`)
         }
       }
       if (noCategory.length > 0) {
@@ -261,8 +264,15 @@ export async function buildContextLayers(
           const liveTag = item.liveQueryEnabled && item.sourceId && item.sourceType
             ? ` [CONSULTA_VIVA: ${LIVE_QUERY_TOOL[item.sourceType] ?? item.sourceType}, id=${item.sourceId}]`
             : ''
-          parts.push(`    - ${item.title}${desc}${liveTag}`)
+          const shareTag = item.shareable && item.sourceUrl
+            ? ` (compartible: ${item.sourceUrl})`
+            : ''
+          parts.push(`    - ${item.title}${desc}${liveTag}${shareTag}`)
         }
+      }
+
+      if (inj.items.some(i => i.shareable)) {
+        parts.push(`[Items marcados "(compartible: URL)" pueden compartirse con el usuario cuando sea relevante. Para carpetas de Drive, comparte el enlace del archivo específico que contiene la respuesta, no de la carpeta raíz.]`)
       }
     } else if (inj.categories.length > 0) {
       parts.push(`[Categorías de conocimiento:]`)
