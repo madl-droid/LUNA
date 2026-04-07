@@ -26,15 +26,18 @@ interface ScheduledTasksApi {
   removeJobById(jobId: string): Promise<void>
 }
 
-// ─── UsersDb interface (minimal) ───────────────────
+// ─── UsersDb interface (minimal, shared with manifest.ts) ─────────────────
 
-interface UsersDb {
+export interface CalendarUsersDb {
   listByType(listType: string, activeOnly?: boolean): Promise<Array<{
     id: string
     displayName?: string
     contacts?: Array<{ channel: string; senderId: string }>
     metadata?: unknown
   }>>
+  getListConfig?(listType: string): Promise<{
+    syncConfig?: Record<string, unknown>
+  } | null>
 }
 
 // ─── CalendarFollowUpScheduler ─────────────────────
@@ -171,7 +174,7 @@ export class CalendarFollowUpScheduler {
     const attendees = event.attendees ?? []
     if (attendees.length === 0) return
 
-    const usersDb = this.registry.getOptional<UsersDb>('users:db')
+    const usersDb = this.registry.getOptional<CalendarUsersDb>('users:db')
     if (!usersDb) {
       logger.debug('users:db not available — skipping coworker follow-up')
       return
@@ -214,7 +217,8 @@ export class CalendarFollowUpScheduler {
           scheduledAt,
         })
 
-        // Only schedule for first matching coworker found
+        // Only the first matching coworker receives post-meeting follow-up
+        // (events typically have 1 assigned coworker)
         break
       }
     } catch (err) {
@@ -352,6 +356,14 @@ export class CalendarFollowUpScheduler {
 
   // ─── Reschedule follow-ups when event date changes ─
 
+  /**
+   * Reschedule follow-ups when event dates change.
+   * Note: If called concurrently for the same event (rapid edits),
+   * duplicate tasks may be created. This is mitigated by:
+   * 1. calendar-execute-followup is idempotent (checks status before sending)
+   * 2. Low probability in practice (pipeline serializes per-contact)
+   * A proper fix would use optimistic locking (UPDATE ... WHERE status='pending' RETURNING id).
+   */
   async rescheduleFollowUps(calendarEventId: string, newEvent: CalendarEvent): Promise<void> {
     const tasksApi = this.getTasksApi()
 
