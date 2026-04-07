@@ -18,6 +18,7 @@ import { CalendarService } from './calendar-service.js'
 import { registerGoogleTools } from './tools.js'
 import { CalendarConfigService } from './calendar-config.js'
 import { renderCalendarSettingsPage } from './calendar-console.js'
+import { CalendarFollowUpScheduler, registerCalendarFollowUpTool } from './calendar-followups.js'
 import type { GoogleApiConfig, GoogleServiceName } from './types.js'
 
 const logger = pino({ name: 'google-apps' })
@@ -34,6 +35,7 @@ let _services: {
 let _enabledSet: Set<GoogleServiceName> = new Set()
 let _toolsRegistered = false
 let _calConfigService: CalendarConfigService | null = null
+let _calFollowUpScheduler: CalendarFollowUpScheduler | null = null
 
 /** Build the shared OAuth redirect URI from the request */
 function getRedirectUri(req: import('node:http').IncomingMessage): string {
@@ -527,6 +529,50 @@ const manifest: ModuleManifest = {
       await _calConfigService?.reload()
     }, 100)
 
+    // Inicializar follow-up scheduler de Calendar
+    if (_enabledSet.has('calendar')) {
+      _calFollowUpScheduler = new CalendarFollowUpScheduler(db, registry)
+
+      // Registrar tool de ejecución de follow-ups
+      registerCalendarFollowUpTool(registry, db)
+
+      // Hook: cuando se crea un evento → programar follow-ups
+      registry.addHook('google-apps', 'calendar:event-created', async (payload) => {
+        try {
+          await _calFollowUpScheduler?.scheduleFollowUps(payload as {
+            event: import('./types.js').CalendarEvent
+            contactId: string
+            channel: string
+            meetLink?: string | null
+          })
+        } catch (err) {
+          logger.warn({ err }, 'Failed to schedule calendar follow-ups')
+        }
+      }, 100)
+
+      // Hook: cuando se elimina un evento → cancelar follow-ups
+      registry.addHook('google-apps', 'calendar:event-deleted', async (payload) => {
+        try {
+          const p = payload as { eventId: string }
+          await _calFollowUpScheduler?.cancelFollowUps(p.eventId)
+        } catch (err) {
+          logger.warn({ err }, 'Failed to cancel calendar follow-ups')
+        }
+      }, 100)
+
+      // Hook: cuando se actualiza un evento → reagendar follow-ups si cambió fecha
+      registry.addHook('google-apps', 'calendar:event-updated', async (payload) => {
+        try {
+          const p = payload as { eventId: string; event: import('./types.js').CalendarEvent; dateChanged: boolean }
+          if (p.dateChanged) {
+            await _calFollowUpScheduler?.rescheduleFollowUps(p.eventId, p.event)
+          }
+        } catch (err) {
+          logger.warn({ err }, 'Failed to reschedule calendar follow-ups')
+        }
+      }, 100)
+    }
+
     // Registrar tools solo si OAuth está conectado (sin auth las tools fallarían)
     const oauthConnected = oauthManager?.isConnected() ?? false
     _toolsRegistered = oauthConnected
@@ -576,6 +622,7 @@ const manifest: ModuleManifest = {
     _enabledSet = new Set()
     _toolsRegistered = false
     _calConfigService = null
+    _calFollowUpScheduler = null
   },
 }
 
