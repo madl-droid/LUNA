@@ -73,6 +73,11 @@ export interface HookMap {
   'hitl:ticket_expired':    [HitlTicketExpiredPayload, void]
   'hitl:ticket_escalated':  [HitlTicketEscalatedPayload, void]
   'hitl:handoff_return':    [HitlHandoffReturnPayload, void]
+
+  // Calendar (google-apps module)
+  'calendar:event-created': [CalendarEventCreatedPayload, void]
+  'calendar:event-deleted': [CalendarEventDeletedPayload, void]
+  'calendar:event-updated': [CalendarEventUpdatedPayload, void]
 }
 
 // Hook payload types
@@ -325,6 +330,24 @@ export interface HitlHandoffReturnPayload {
   channel: string
   senderId: string
   ticketId: string
+}
+
+// Calendar hook payloads (google-apps module)
+export interface CalendarEventCreatedPayload {
+  event?: unknown
+  meetLink?: string | null
+  contactId?: string
+  channel?: string
+}
+
+export interface CalendarEventDeletedPayload {
+  eventId: unknown
+}
+
+export interface CalendarEventUpdatedPayload {
+  eventId: string
+  event?: unknown
+  dateChanged: boolean
 }
 
 // ═══════════════════════════════════════════
