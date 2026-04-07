@@ -33,7 +33,6 @@ export interface TwilioVoiceConfig {
   VOICE_SILENCE_RMS_THRESHOLD: number
   // Call behavior
   VOICE_PREVIEW_TEXT: string
-  VOICE_ANSWER_DELAY_RINGS: number
   VOICE_SILENCE_TIMEOUT_MS: number
   VOICE_POST_GREETING_SILENCE_TIMEOUT_MS: number
   VOICE_SILENCE_MESSAGE: string
@@ -384,13 +383,6 @@ export interface VoiceCallTranscriptRow {
 // ═══════════════════════════════════════════
 // API types
 // ═══════════════════════════════════════════
-
-export interface OutboundCallInfo {
-  reason: string
-  contactName: string | null
-  contactId: string | null
-  requestedAt: Date
-}
 
 export interface InitiateCallRequest {
   to: string

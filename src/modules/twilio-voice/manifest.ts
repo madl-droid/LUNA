@@ -316,7 +316,6 @@ const manifest: ModuleManifest = {
     VOICE_SILENCE_RMS_THRESHOLD: numEnvMin(0, 200),
     // ── Call behavior ──
     VOICE_PREVIEW_TEXT: z.string().default('Hola, soy tu asistente virtual. \u00bfEn qu\u00e9 puedo ayudarte hoy?'),
-    VOICE_ANSWER_DELAY_RINGS: numEnvMin(1, 2), // deprecated — use MIN/MAX below
     VOICE_ANSWER_DELAY_MIN_RINGS: numEnvMin(1, 2),
     VOICE_ANSWER_DELAY_MAX_RINGS: numEnvMin(1, 5),
     VOICE_SILENCE_TIMEOUT_MS: numEnv(10000),
