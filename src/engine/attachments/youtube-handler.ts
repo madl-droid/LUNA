@@ -69,8 +69,11 @@ export async function processYouTubeAttachment(
     }
   }
 
-  // 2. Transcript
-  const transcriptResult = await getTranscript(videoId, registry, { fallbackSTT: true })
+  // 2. Transcript — limit STT fallback to 30 min to avoid huge audio downloads
+  const MAX_STT_DURATION_SECONDS = 30 * 60
+  const transcriptResult = await getTranscript(videoId, registry, {
+    fallbackSTT: (duration ?? 0) <= MAX_STT_DURATION_SECONDS,
+  })
   const segments = transcriptResult?.segments ?? []
 
   if (segments.length === 0 && !description.trim()) {

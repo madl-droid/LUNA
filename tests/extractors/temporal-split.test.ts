@@ -1,6 +1,6 @@
 // LUNA — Tests — Temporal Splitter
 // Verifica el algoritmo de segmentación temporal de audio/video.
-// Config: audio 60/70/10 — video 50/60/10
+// Config: audio 60/60/10 — video 50/60/10
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -11,10 +11,10 @@ import {
 
 describe('calculateSegments', () => {
   // ═══════════════════════════════════════════
-  // Audio config: first=60s, subsequent=70s, overlap=10s
+  // Audio config: first=60s, subsequent=60s, overlap=10s
   // ═══════════════════════════════════════════
 
-  describe('audio config (60/70/10)', () => {
+  describe('audio config (60/60/10)', () => {
     it('returns empty for 0 duration', () => {
       expect(calculateSegments(0, AUDIO_SPLIT_CONFIG)).toEqual([])
     })
@@ -35,29 +35,29 @@ describe('calculateSegments', () => {
       expect(segments[0]).toEqual({ startSeconds: 0, endSeconds: 60 })
     })
 
-    it('splits 130s audio into 3 segments (60 + 70 + 20 overlap)', () => {
-      // Algorithm:
+    it('splits 130s audio into 3 segments (60/60/10 config)', () => {
+      // Algorithm (subsequentSeconds=60, overlap=10):
       // 1. Push {0, 60}. 60 < 130.
-      // 2. start=50, end=min(120, 130)=120. Push {50, 120}. 120 < 130.
-      // 3. start=110, end=min(180, 130)=130. Push {110, 130}. break.
+      // 2. start=50, end=min(110, 130)=110. Push {50, 110}. 110 < 130.
+      // 3. start=100, end=min(160, 130)=130. Push {100, 130}. break.
       const segments = calculateSegments(130, AUDIO_SPLIT_CONFIG)
       expect(segments).toHaveLength(3)
       expect(segments[0]).toEqual({ startSeconds: 0, endSeconds: 60 })
-      expect(segments[1]).toEqual({ startSeconds: 50, endSeconds: 120 })
-      expect(segments[2]).toEqual({ startSeconds: 110, endSeconds: 130 })
+      expect(segments[1]).toEqual({ startSeconds: 50, endSeconds: 110 })
+      expect(segments[2]).toEqual({ startSeconds: 100, endSeconds: 130 })
     })
 
     it('splits 200s audio into 4 segments', () => {
       // 1. {0, 60}. start=50.
-      // 2. {50, 120}. start=110.
-      // 3. {110, 180}. start=170.
-      // 4. {170, 200}. break.
+      // 2. {50, 110}. start=100.
+      // 3. {100, 160}. start=150.
+      // 4. {150, 200}. break.
       const segments = calculateSegments(200, AUDIO_SPLIT_CONFIG)
       expect(segments).toHaveLength(4)
       expect(segments[0]).toEqual({ startSeconds: 0, endSeconds: 60 })
-      expect(segments[1]).toEqual({ startSeconds: 50, endSeconds: 120 })
-      expect(segments[2]).toEqual({ startSeconds: 110, endSeconds: 180 })
-      expect(segments[3]).toEqual({ startSeconds: 170, endSeconds: 200 })
+      expect(segments[1]).toEqual({ startSeconds: 50, endSeconds: 110 })
+      expect(segments[2]).toEqual({ startSeconds: 100, endSeconds: 160 })
+      expect(segments[3]).toEqual({ startSeconds: 150, endSeconds: 200 })
     })
 
     it('overlap is exactly 10 seconds between consecutive segments', () => {
@@ -155,7 +155,7 @@ describe('calculateSegments', () => {
   describe('config constants', () => {
     it('AUDIO_SPLIT_CONFIG has correct values', () => {
       expect(AUDIO_SPLIT_CONFIG.firstChunkSeconds).toBe(60)
-      expect(AUDIO_SPLIT_CONFIG.subsequentSeconds).toBe(70)
+      expect(AUDIO_SPLIT_CONFIG.subsequentSeconds).toBe(60)
       expect(AUDIO_SPLIT_CONFIG.overlapSeconds).toBe(10)
     })
 

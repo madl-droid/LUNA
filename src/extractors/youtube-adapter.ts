@@ -337,6 +337,7 @@ export async function downloadVideo(
     await execFileAsync('yt-dlp', [
       '--format', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best',
       '--merge-output-format', 'mp4',
+      '--max-filesize', '500m',
       '--output', outputPath,
       '--no-playlist',
       `https://www.youtube.com/watch?v=${videoId}`,
@@ -412,6 +413,9 @@ export async function listPlaylistVideos(playlistId: string, apiKey: string): Pr
 
     if (!data.nextPageToken) break
     pageToken = data.nextPageToken
+    if (page === 4 && data.nextPageToken) {
+      logger.warn({ playlistId, videoCount: videoIds.length }, '[YT] Playlist truncated at 250 videos — more videos exist but were not fetched')
+    }
   }
 
   if (videoIds.length === 0) return []

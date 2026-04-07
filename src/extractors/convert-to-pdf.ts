@@ -60,10 +60,14 @@ export async function convertToPdf(
   }
 }
 
+let _libreOfficeAvailable: boolean | null = null
+
 /**
  * Verifica si LibreOffice está disponible en el sistema.
+ * Resultado cacheado — solo ejecuta `libreoffice --version` una vez por proceso.
  */
 export async function isLibreOfficeAvailable(): Promise<boolean> {
+  if (_libreOfficeAvailable !== null) return _libreOfficeAvailable
   try {
     await new Promise<void>((resolve, reject) => {
       execFile('libreoffice', ['--version'], { timeout: 10_000 }, (err) => {
@@ -71,8 +75,9 @@ export async function isLibreOfficeAvailable(): Promise<boolean> {
         else resolve()
       })
     })
-    return true
+    _libreOfficeAvailable = true
   } catch {
-    return false
+    _libreOfficeAvailable = false
   }
+  return _libreOfficeAvailable
 }
