@@ -617,8 +617,24 @@ export class KnowledgeItemManager {
     // Extraer texto por página para FTS
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
-    const pageTexts = pdfResult.sections.map(s => s.content)
-    const totalPages = pageTexts.length || 1
+
+    // Reconstruct per-page texts from sections
+    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
+    const pageTextsMap = new Map<number, string[]>()
+    for (const section of pdfResult.sections) {
+      const page = section.page ?? 1
+      const list = pageTextsMap.get(page) ?? []
+      list.push(section.title ? `${section.title}\n${section.content}` : section.content)
+      pageTextsMap.set(page, list)
+    }
+    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
+      (pageTextsMap.get(i + 1) ?? []).join('\n'),
+    )
+
+    // Enrich with LLM for visual descriptions
+    const { enrichWithLLM } = await import('../../extractors/index.js')
+    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
+    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
 
     // Guardar PDF en media dir
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
@@ -631,6 +647,7 @@ export class KnowledgeItemManager {
     const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, [], {
       sourceFile: item.title,
       docMeta: pdfResult.metadata as Record<string, unknown>,
+      visualDescriptions,
     })
 
     logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[SLIDES] Visual pipeline via PDF export')
@@ -1086,7 +1103,7 @@ export class KnowledgeItemManager {
     })
   }
 
-  /** Load a PDF: extract per-page text (for FTS) + send raw PDF blocks (for multimodal embedding) */
+  /** Load a PDF: uses global extractPDF (handles text, scanned OCR, image pages) */
   private async loadPdfContent(item: KnowledgeItem): Promise<number> {
     let pdfBuffer: Buffer
 
@@ -1100,13 +1117,28 @@ export class KnowledgeItemManager {
       pdfBuffer = await drive.downloadFile(item.sourceId)
     }
 
-    // Extract per-page text for FTS content in each chunk
-    const { PDFParse } = await import('pdf-parse')
-    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) })
-    const textResult = await parser.getText()
-    const pageTexts = (textResult.pages ?? []).map(p => p.text ?? '')
-    const totalPages = pageTexts.length || 1
-    await parser.destroy().catch(() => {})
+    // Use global extractPDF: handles text, scanned PDFs (vision OCR), and image pages
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
+
+    // Reconstruct per-page texts from sections for FTS content in each chunk
+    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
+    const pageTextsMap = new Map<number, string[]>()
+    for (const section of pdfResult.sections) {
+      const page = section.page ?? 1
+      const list = pageTextsMap.get(page) ?? []
+      const sectionText = section.title ? `${section.title}\n${section.content}` : section.content
+      list.push(sectionText)
+      pageTextsMap.set(page, list)
+    }
+    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
+      (pageTextsMap.get(i + 1) ?? []).join('\n'),
+    )
+
+    // Enrich with LLM for visual descriptions (image pages, scanned PDFs)
+    const { enrichWithLLM } = await import('../../extractors/index.js')
+    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
+    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
 
     // Save PDF to disk so vectorize worker can read it for multimodal embedding
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
@@ -1115,8 +1147,14 @@ export class KnowledgeItemManager {
     const safeFileName = `${contentHash.substring(0, 12)}_${item.title.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
     await writeFile(join(knowledgeDir, safeFileName), pdfBuffer)
 
-    // Smart chunk: 6-page blocks with 1-page overlap, ref to PDF file
-    const chunks = chunkPdf(pageTexts, safeFileName, totalPages, { docMeta: { sourceType: 'pdf', sourceId: item.sourceId, title: item.title, totalPages } as Record<string, unknown> })
+    // Smart chunk: page blocks with overlap, ref to PDF file
+    const chunks = chunkPdf(pageTexts, safeFileName, totalPages, {
+      docMeta: {
+        ...pdfResult.metadata as Record<string, unknown>,
+        sourceType: 'pdf', sourceId: item.sourceId, title: item.title,
+      },
+      visualDescriptions,
+    })
     logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[PDF] Smart chunked')
 
     return this.persistSmartChunks(item, item.title, 'application/pdf', chunks, {
@@ -1139,8 +1177,24 @@ export class KnowledgeItemManager {
   ): Promise<number> {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
-    const pageTexts = pdfResult.sections.map(s => s.content)
-    const totalPages = pageTexts.length || 1
+
+    // Reconstruct per-page texts from sections
+    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
+    const pageTextsMap = new Map<number, string[]>()
+    for (const section of pdfResult.sections) {
+      const page = section.page ?? 1
+      const list = pageTextsMap.get(page) ?? []
+      list.push(section.title ? `${section.title}\n${section.content}` : section.content)
+      pageTextsMap.set(page, list)
+    }
+    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
+      (pageTextsMap.get(i + 1) ?? []).join('\n'),
+    )
+
+    // Enrich with LLM for visual descriptions (image pages)
+    const { enrichWithLLM } = await import('../../extractors/index.js')
+    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
+    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
     const knowledgeDir = KNOWLEDGE_MEDIA_DIR
@@ -1151,6 +1205,7 @@ export class KnowledgeItemManager {
     const chunks = chunkPdf(pageTexts, pdfName, totalPages, {
       sourceFile: file.name,
       docMeta: pdfResult.metadata as Record<string, unknown>,
+      visualDescriptions,
     })
     logger.info({ fileId: file.id, totalPages, chunkCount: chunks.length }, '[DRIVE-PDF] Visual pipeline')
 
@@ -1173,8 +1228,24 @@ export class KnowledgeItemManager {
   ): Promise<number> {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
-    const pageTexts = pdfResult.sections.map(s => s.content)
-    const totalPages = pageTexts.length || 1
+
+    // Reconstruct per-page texts from sections
+    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
+    const pageTextsMap = new Map<number, string[]>()
+    for (const section of pdfResult.sections) {
+      const page = section.page ?? 1
+      const list = pageTextsMap.get(page) ?? []
+      list.push(section.title ? `${section.title}\n${section.content}` : section.content)
+      pageTextsMap.set(page, list)
+    }
+    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
+      (pageTextsMap.get(i + 1) ?? []).join('\n'),
+    )
+
+    // Enrich with LLM for visual descriptions (slide images)
+    const { enrichWithLLM } = await import('../../extractors/index.js')
+    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
+    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
     const knowledgeDir = KNOWLEDGE_MEDIA_DIR
@@ -1185,6 +1256,7 @@ export class KnowledgeItemManager {
     const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, speakerNotes, {
       sourceFile: file.name,
       docMeta: pdfResult.metadata as Record<string, unknown>,
+      visualDescriptions,
     })
     logger.info({ fileId: file.id, totalPages, speakerNotes: speakerNotes.length, chunkCount: chunks.length }, '[DRIVE-PPTX] Visual pipeline')
 
@@ -1263,7 +1335,7 @@ export class KnowledgeItemManager {
     } catch { return null }
   }
 
-  /** Load web content — extract semantic blocks with associated images */
+  /** Load web content — uses global extractWeb() for SSRF protection + Readability fallback */
   private async loadWebContent(item: KnowledgeItem): Promise<number> {
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
@@ -1279,15 +1351,26 @@ export class KnowledgeItemManager {
       urls = [item.sourceUrl]
     }
 
+    const { extractWeb } = await import('../../extractors/web.js')
+
     let totalChunks = 0
     for (const url of urls) {
       if (ignoredNames.has(url)) continue
       try {
-        const blocks = await this.extractWebBlocks(url)
+        const webResult = await extractWeb(url)
+
+        // Adapt WebResult.sections → WebBlock[] format for chunkWeb
+        const blocks = webResult.sections.map(s => ({
+          text: s.content,
+          heading: s.title ?? null,
+          // Web images from extractWeb are URL-only (not downloadable base64)
+          images: [] as Array<{ data: string; mimeType: string }>,
+        }))
+
         if (blocks.length === 0) continue
 
         const chunks = chunkWeb(blocks, { docMeta: { sourceType: 'web', sourceUrl: url, title: item.title } as Record<string, unknown> })
-        const pageTitle = new URL(url).pathname || url
+        const pageTitle = webResult.title ?? (new URL(url).pathname || url)
         totalChunks += await this.persistSmartChunks(item, pageTitle, 'text/html', chunks, {
           description: `Web: ${url}`,
         })
@@ -1298,99 +1381,6 @@ export class KnowledgeItemManager {
     }
 
     return totalChunks
-  }
-
-  /** Extract semantic blocks (heading + content + images) from a web page */
-  private async extractWebBlocks(url: string): Promise<import('./extractors/smart-chunker.js').WebBlock[]> {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(15000),
-      headers: { 'User-Agent': 'LUNA-KnowledgeBot/1.0' },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-    const html = await res.text()
-    const { JSDOM } = await import('jsdom')
-    const dom = new JSDOM(html, { url })
-    const doc = dom.window.document
-
-    // Remove scripts, styles, nav, footer, sidebar
-    for (const tag of ['script', 'style', 'nav', 'footer', 'aside', 'header']) {
-      doc.querySelectorAll(tag).forEach(el => el.remove())
-    }
-
-    const blocks: import('./extractors/smart-chunker.js').WebBlock[] = []
-    const body = doc.body
-    if (!body) return blocks
-
-    // Split by headings (H1-H3) — each heading starts a new block
-    let currentHeading: string | null = null
-    let currentText = ''
-    let currentImages: Array<{ data: string; mimeType: string }> = []
-
-    const flushBlock = () => {
-      if (currentText.trim()) {
-        blocks.push({ text: currentText.trim(), heading: currentHeading, images: currentImages })
-      }
-      currentText = ''
-      currentImages = []
-    }
-
-    const walkNode = (node: Node) => {
-      if (node.nodeType === 1) { // Element
-        const el = node as Element
-        const tag = el.tagName.toLowerCase()
-
-        if (['h1', 'h2', 'h3'].includes(tag)) {
-          flushBlock()
-          currentHeading = el.textContent?.trim() ?? null
-          return
-        }
-
-        if (tag === 'img') {
-          const src = el.getAttribute('src')
-          const alt = el.getAttribute('alt') ?? ''
-          const width = parseInt(el.getAttribute('width') ?? '0', 10)
-          const height = parseInt(el.getAttribute('height') ?? '0', 10)
-
-          // Filter decorative images
-          if (!src) return
-          if (alt === '') return
-          if (/icon|logo|banner|avatar|spacer|pixel/i.test(src)) return
-          if (width > 0 && width < 100 && height > 0 && height < 100) return
-
-          // Include alt text as description (downloading images inline is too expensive for scanning)
-          if (currentImages.length < 6) {
-            try {
-              new URL(src, url) // validate URL
-              currentText += `\n[Imagen: ${alt}]\n`
-            } catch { /* invalid URL */ }
-          }
-          return
-        }
-
-        if (['p', 'li', 'td', 'div', 'span', 'blockquote', 'pre', 'code'].includes(tag)) {
-          const text = el.textContent?.trim()
-          if (text) currentText += text + '\n'
-          return
-        }
-      }
-
-      // Walk children
-      for (const child of Array.from(node.childNodes)) {
-        walkNode(child)
-      }
-    }
-
-    walkNode(body)
-    flushBlock()
-
-    // If no headings found, treat entire page as one block
-    if (blocks.length === 0) {
-      const text = body.textContent?.trim()
-      if (text) blocks.push({ text, heading: null, images: [] })
-    }
-
-    return blocks
   }
 
   /**
