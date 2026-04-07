@@ -270,8 +270,35 @@ export async function enrichWithLLM(
       case 'drive':
         return await enrichDriveContent(result, registry)
 
+      case 'document': {
+        // PDF enrichment: collect visual descriptions from sections already extracted by extractPDF
+        // extractPDF with registry already ran vision on image pages — package them as visualDescriptions
+        const extractor = result.metadata?.extractorUsed ?? ''
+        if (extractor.includes('pdf') && result.metadata?.hasImages && (result.metadata.imagePages?.length ?? 0) > 0) {
+          // Collect sections that were produced by vision (image pages or OCR)
+          const visualSections = result.sections.filter(s =>
+            s.title?.includes('(visual)') || s.title?.includes('OCR') || extractor === 'pdf-ocr-vision',
+          )
+          if (visualSections.length > 0) {
+            const visualDescriptions = visualSections.map(s => ({
+              pageRange: s.page ? String(s.page) : 'unknown',
+              description: s.content,
+            }))
+            return {
+              ...result,
+              llmEnrichment: {
+                description: visualDescriptions.map(d => d.description).join('\n\n'),
+                provider: 'pdf-vision',
+                generatedAt: new Date(),
+                visualDescriptions,
+              },
+            }
+          }
+        }
+        return result
+      }
+
       // Text-based: no LLM enrichment needed
-      case 'document':
       case 'sheets':
       case 'web':
         return result

@@ -18,7 +18,7 @@ import { calculateSegments, AUDIO_SPLIT_CONFIG } from './temporal-splitter.js'
 // 1. DOCS / WORD → text by headings
 // ═══════════════════════════════════════════
 
-export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string; sourceType?: string; docMeta?: Record<string, unknown> }): EmbeddableChunk[] {
+export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string; sourceType?: string; docMeta?: Record<string, unknown>; llmDescription?: string }): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
 
   // Split by H1/H2 headings first
@@ -47,6 +47,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
           sectionTitle,
+          ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
         },
       })
     } else {
@@ -72,6 +73,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
               sectionTitle: sectionTitle ? `${sectionTitle} (${subIndex + 1})` : undefined,
               subChunkIndex: subIndex,
               subChunkTotal: subTotal,
+              ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
             },
           })
           subIndex++
@@ -100,6 +102,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
               sourceType: opts?.sourceType ?? 'docx',
               sourceFile: opts?.sourceFile,
               sourceMimeType: opts?.sourceMimeType,
+              ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
             },
           })
         }
@@ -119,6 +122,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
           sourceType: opts?.sourceType ?? 'text',
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
+          ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
         },
       })
     }
@@ -212,12 +216,18 @@ export function chunkSlidesAsPdf(
   pdfFilePath: string,
   totalPages: number,
   speakerNotes: Array<{ slideIndex: number; text: string }>,
-  opts?: { sourceFile?: string; docMeta?: Record<string, unknown> },
+  opts?: {
+    sourceFile?: string
+    docMeta?: Record<string, unknown>
+    /** Descripciones visuales por página — de enrichWithLLM() para slides con imágenes */
+    visualDescriptions?: Array<{ pageRange: string; description: string }>
+  },
 ): EmbeddableChunk[] {
   // Chunks visuales del PDF (3 páginas cada uno)
   const pdfChunks = chunkPdf(pdfPageTexts, pdfFilePath, totalPages, {
     sourceFile: opts?.sourceFile,
     docMeta: opts?.docMeta,
+    visualDescriptions: opts?.visualDescriptions,
   })
 
   // Actualizar sourceType a 'slides' (no 'pdf')
@@ -256,7 +266,12 @@ export function chunkPdf(
   pageTexts: string[],
   pdfFilePath: string,
   totalPages: number,
-  opts?: { sourceFile?: string; docMeta?: Record<string, unknown> },
+  opts?: {
+    sourceFile?: string
+    docMeta?: Record<string, unknown>
+    /** Descripciones visuales por página — de enrichWithLLM() para PDFs con imágenes */
+    visualDescriptions?: Array<{ pageRange: string; description: string }>
+  },
 ): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
   let pageStart = 0
@@ -271,6 +286,20 @@ export function chunkPdf(
       const prevText = pageTexts[pageStart - 1]!
       overlapPrefix = prevText.slice(-200).trim()
       if (overlapPrefix) overlapPrefix = `[...] ${overlapPrefix}\n\n`
+    }
+
+    // Collect visual descriptions for pages in this chunk's range
+    let visualDescription: string | undefined
+    if (opts?.visualDescriptions && opts.visualDescriptions.length > 0) {
+      const pageDescriptions = opts.visualDescriptions
+        .filter(vd => {
+          const page = parseInt(vd.pageRange, 10)
+          return !isNaN(page) && page >= pageStart + 1 && page <= pageEnd
+        })
+        .map(vd => vd.description)
+      if (pageDescriptions.length > 0) {
+        visualDescription = pageDescriptions.join('\n\n')
+      }
     }
 
     chunks.push({
@@ -291,6 +320,7 @@ export function chunkPdf(
         page_start: pageStart + 1,
         page_end: pageEnd,
         page_total: totalPages,
+        ...(visualDescription ? { visualDescription } : {}),
       },
     })
 
