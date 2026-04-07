@@ -73,6 +73,12 @@ export async function buildAgenticPrompt(
     systemParts.push(`<security>\n${securityPreamble}\n</security>`)
   }
 
+  // ── Knowledge mandate (hardcoded — non-removable by admin) ────────────────
+  const knowledgeMandate = await loadSystemPrompt('knowledge-mandate')
+  if (knowledgeMandate) {
+    systemParts.push(`<knowledge_mandate>\n${knowledgeMandate}\n</knowledge_mandate>`)
+  }
+
   // ── Sections 2–5: identity, job, guardrails, relationship ─────────────────
   if (svc) {
     const prompts = await svc.getCompositorPrompts(ctx.userType)

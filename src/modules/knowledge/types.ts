@@ -226,6 +226,10 @@ export interface KnowledgeSearchResult {
   documentId?: string
   faqId?: string
   fileUrl?: string            // shareable URL of the specific source file
+  chunkIndex?: number         // posición del chunk dentro del documento
+  chunkTotal?: number         // total de chunks en el documento
+  sourceType?: string         // 'sheets' | 'docs' | 'pdf' | 'drive' | 'web' | 'youtube'
+  isCore?: boolean            // si el documento fuente es core
 }
 
 export interface KnowledgeSearchOptions {
@@ -372,7 +376,6 @@ export interface KnowledgeItem {
   lastSyncCheckedAt: Date | null   // last Drive modifiedTime check
   lastModifiedTime: string | null  // last known Drive modifiedTime
   shareable: boolean              // agent can share the source URL with users
-  fullVideoEmbed: boolean         // download + embed full video segments (YouTube only)
   liveQueryEnabled: boolean       // agent can query this resource live via Google API (sheets-read, docs-read, etc.)
   createdAt: Date
   updatedAt: Date

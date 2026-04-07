@@ -15,6 +15,11 @@ const logger = pino({ name: 'extractors:pdf' })
 const MIN_TEXT_PER_PAGE = 50  // chars: debajo de esto la página es imagen/scan
 const MAX_VISION_PAGES = 6   // máximo de páginas para vision OCR
 
+/** Marker appended to section titles produced by LLM vision extraction (image pages) */
+export const VISUAL_SECTION_MARKER = '(visual)'
+/** Marker appended to section titles produced by OCR on scanned pages */
+export const OCR_SECTION_MARKER = '(OCR)'
+
 // Minimal fallback — full prompt lives in instance/prompts/system/pdf-ocr.md
 const PDF_OCR_SYSTEM_FALLBACK = 'Eres un OCR. Extrae TODO el texto visible de esta imagen. Responde SOLO con el texto extraído.'
 

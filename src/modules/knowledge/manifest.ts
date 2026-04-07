@@ -978,7 +978,12 @@ function createApiRoutes(): ApiRoute[] {
           }
           const extracted = extractGoogleId(body.sourceUrl)
           if (!extracted) {
-            jsonResponse(res, 400, { error: 'URL no valida. Debe ser Google Sheets, Docs o Drive.', accessible: false })
+            // Unknown URL format — allow only if it looks like an HTTP URL
+            if (body.sourceUrl.startsWith('http')) {
+              jsonResponse(res, 200, { accessible: true, sourceType: 'web' })
+            } else {
+              jsonResponse(res, 400, { error: 'URL no válida', accessible: false })
+            }
             return
           }
           // Try OAuth first, then public API fallback
@@ -992,7 +997,7 @@ function createApiRoutes(): ApiRoute[] {
               oauthOk = true
             } catch { /* OAuth failed — try public fallback below */ }
             if (oauthOk) {
-              jsonResponse(res, 200, { accessible: true })
+              jsonResponse(res, 200, { accessible: true, sourceType: extracted.type })
               return
             }
           }
@@ -1005,14 +1010,14 @@ function createApiRoutes(): ApiRoute[] {
                 : `https://docs.googleapis.com/v1/documents/${encodeURIComponent(extracted.id)}?fields=documentId`
               const checkRes = await fetch(`${apiBase}&key=${encodeURIComponent(apiKey)}`, { signal: AbortSignal.timeout(10000) })
               if (checkRes.ok) {
-                jsonResponse(res, 200, { accessible: true })
+                jsonResponse(res, 200, { accessible: true, sourceType: extracted.type })
                 return
               }
             } catch { /* public API also failed */ }
           }
           // For web URLs, PDFs, YouTube — just allow (we'll verify on content load)
           // Cannot verify via OAuth or public API — allow with warning (verified on content load)
-          jsonResponse(res, 200, { accessible: true, warning: 'No se pudo verificar acceso. Asegúrate de que el documento esté compartido.' })
+          jsonResponse(res, 200, { accessible: true, sourceType: extracted.type, warning: 'No se pudo verificar acceso. Asegúrate de que el documento esté compartido.' })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err), accessible: false })
         }
@@ -1355,6 +1360,10 @@ const manifest: ModuleManifest = {
                   score: r.score,
                   type: r.type,
                   fileUrl: r.fileUrl,
+                  documentId: r.documentId,
+                  chunkIndex: r.chunkIndex,
+                  chunkTotal: r.chunkTotal,
+                  sourceType: r.sourceType,
                 })),
                 count: results.length,
               },
@@ -1365,6 +1374,36 @@ const manifest: ModuleManifest = {
         },
       })
       logger.info('Tool search_knowledge registered')
+
+      // Register expand_knowledge tool
+      await toolRegistry.registerTool({
+        definition: {
+          name: 'expand_knowledge',
+          displayName: 'Expandir Conocimiento',
+          description: 'Obtiene el contenido completo de un documento encontrado con search_knowledge. Usar cuando el resultado de búsqueda es insuficiente y se necesita más contexto del documento.',
+          category: 'knowledge',
+          sourceModule: 'knowledge',
+          parameters: {
+            type: 'object',
+            properties: {
+              documentId: {
+                type: 'string',
+                description: 'ID del documento (viene del campo documentId en los resultados de search_knowledge)',
+              },
+            },
+            required: ['documentId'],
+          },
+        },
+        handler: async (input) => {
+          try {
+            const documentId = input.documentId as string
+            return await knowledgeManager!.expandKnowledge(documentId)
+          } catch (err) {
+            return { success: false, error: String(err) }
+          }
+        },
+      })
+      logger.info('Tool expand_knowledge registered')
     }
 
     // Schedule nightly binary cleanup at 3 AM (checks every hour, runs at target hour)

@@ -4627,6 +4627,17 @@ select.wizard-input option:checked {
 .ki-dot-failed { background:var(--error, #ef4444); }
 .ki-dot-pending_review { background:var(--warning, #f59e0b); outline:2px solid var(--warning, #f59e0b); outline-offset:1px; opacity:0.7; }
 .ki-chunks { font-size:11px; color:var(--on-surface-dim); margin-left:2px; }
+.ki-chunk-info { display:block; font-size:11px; color:var(--on-surface-dim); margin-top:2px; }
+
+/* Pipeline type badges */
+.ki-pipeline-badge { display:inline-block; font-size:10px; padding:1px 5px; border-radius:3px; opacity:0.7; margin-left:4px; font-weight:500; }
+.ki-pipeline-sheets  { background:rgba(26,158,92,0.12);  color:#1a9e5c; }
+.ki-pipeline-docs    { background:rgba(26,110,240,0.12); color:#1a6ef0; }
+.ki-pipeline-slides  { background:rgba(124,58,237,0.12); color:#7c3aed; }
+.ki-pipeline-drive   { background:rgba(107,114,128,0.12);color:#6b7280; }
+.ki-pipeline-pdf     { background:rgba(124,58,237,0.12); color:#7c3aed; }
+.ki-pipeline-youtube { background:rgba(239,68,68,0.12);  color:#ef4444; }
+.ki-pipeline-web     { background:rgba(107,114,128,0.12);color:#6b7280; }
 
 /* Icon-only action buttons */
 .ki-icon-btn { display:inline-flex; align-items:center; gap:3px; padding:6px; border-radius:0.5rem; border:none; background:none; color:var(--on-surface-dim); cursor:pointer; transition:all 0.15s; }

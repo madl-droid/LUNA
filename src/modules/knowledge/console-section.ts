@@ -52,7 +52,7 @@ const t = (key: string, lang: Lang): string => {
     status_done: { es: 'Entrenado', en: 'Trained' },
     status_failed: { es: 'Error', en: 'Failed' },
     status_pending_review: { es: 'Por revisar', en: 'Pending Review' },
-    chunks: { es: 'chunks', en: 'chunks' },
+    chunks: { es: 'fragmentos', en: 'chunks' },
     content_loaded: { es: 'Contenido cargado', en: 'Content loaded' },
     not_loaded: { es: 'Sin cargar', en: 'Not loaded' },
     confirm_delete: { es: '¿Eliminar este item?', en: 'Delete this item?' },
@@ -206,6 +206,26 @@ function sourceIcon(sourceType: string): string {
 }
 
 // ═══════════════════════════════════════════
+// Pipeline badge by source type
+// ═══════════════════════════════════════════
+
+function pipelineBadgeHtml(sourceType: string, lang: Lang): string {
+  const isEs = lang === 'es'
+  const badges: Record<string, { label: string; css: string }> = {
+    sheets:  { label: 'CSV',                    css: 'ki-pipeline-sheets'  },
+    docs:    { label: isEs ? 'Texto' : 'Text',  css: 'ki-pipeline-docs'    },
+    slides:  { label: 'Visual',                 css: 'ki-pipeline-slides'  },
+    drive:   { label: 'Drive',                  css: 'ki-pipeline-drive'   },
+    pdf:     { label: 'Visual',                 css: 'ki-pipeline-pdf'     },
+    youtube: { label: 'Video',                  css: 'ki-pipeline-youtube' },
+    web:     { label: 'Web',                    css: 'ki-pipeline-web'     },
+  }
+  const b = badges[sourceType]
+  if (!b) return ''
+  return `<span class="ki-pipeline-badge ${esc(b.css)}">${b.label}</span>`
+}
+
+// ═══════════════════════════════════════════
 // Status dot
 // ═══════════════════════════════════════════
 
@@ -257,8 +277,8 @@ function renderItemCard(item: KnowledgeItem, categories: KnowledgeCategory[], la
         ${category ? `<span class="ki-tag">${esc(category.title)}</span>` : ''}
       </div>
     </div>
-    <div class="ki-col-tipo"><span class="ki-badge ki-badge-source">${esc(sourceLabel)}</span></div>
-    <div class="ki-col-estado">${statusCell(item, lang)}</div>
+    <div class="ki-col-tipo"><span class="ki-badge ki-badge-source">${esc(sourceLabel)}</span>${pipelineBadgeHtml(item.sourceType, lang)}</div>
+    <div class="ki-col-estado">${statusCell(item, lang)}${item.embeddingStatus === 'embedded' && (item.chunkCount ?? 0) > 0 ? `<span class="ki-chunk-info">${item.chunkCount} ${t('chunks', lang)}</span>` : ''}</div>
     <div class="ki-col-acciones">
       <button type="button" class="ki-icon-btn" onclick='kiOpenWizardEdit(${itemData})' title="${t('edit_btn', lang)}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -538,11 +558,19 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     }
   }, 1000);
 
+  // ── Item ID extraction (server returns { item: { id } }) ──
+  function extractItemId(r) {
+    if (r && r.item && typeof r.item === 'object' && r.item.id) return r.item.id;
+    if (r && r.id) return r.id;
+    return null;
+  }
+
   // ── Wizard state ──
   var wizState = {
     itemId: null,
     editing: false,
     coreKey: null,
+    sourceType: null,
     tabs: [],
     activeTabIdx: 0,
   };
@@ -650,7 +678,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
   }
 
   window.kiOpenWizard = function() {
-    wizState = { itemId: null, editing: false, coreKey: null, tabs: [], activeTabIdx: 0 };
+    wizState = { itemId: null, editing: false, coreKey: null, sourceType: null, tabs: [], activeTabIdx: 0 };
     document.getElementById('ki-wizard').style.display = '';
     document.getElementById('ki-wiz-title').value = '';
     document.getElementById('ki-wiz-desc').value = '';
@@ -664,7 +692,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
   };
 
   window.kiOpenWizardEdit = function(data) {
-    wizState = { itemId: data.id, editing: true, coreKey: null, tabs: [], activeTabIdx: 0 };
+    wizState = { itemId: data.id, editing: true, coreKey: null, sourceType: null, tabs: [], activeTabIdx: 0 };
     document.getElementById('ki-wizard').style.display = '';
     document.getElementById('ki-wiz-title').value = data.title;
     document.getElementById('ki-wiz-desc').value = data.description;
@@ -679,7 +707,7 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
 
   window.kiOpenWizardForCore = function(key, title, desc, url, existingItemId) {
     var hasExisting = !!(existingItemId && existingItemId.length > 5);
-    wizState = { itemId: hasExisting ? existingItemId : null, editing: hasExisting, coreKey: key, tabs: [], activeTabIdx: 0 };
+    wizState = { itemId: hasExisting ? existingItemId : null, editing: hasExisting, coreKey: key, sourceType: null, tabs: [], activeTabIdx: 0 };
     document.getElementById('ki-wizard').style.display = '';
     document.getElementById('ki-wiz-title').value = title;
     document.getElementById('ki-wiz-desc').value = desc;
@@ -718,24 +746,21 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     if (!url) { wizShowErr('url', '${isEs ? 'La URL es requerida' : 'URL is required'}'); hasErr = true; }
     if (hasErr) return;
 
-    // Detect source type from URL — skip scanner for types that don't need it
-    var lUrl = url.toLowerCase();
-    var skipScanner = lUrl.indexOf('.pdf') !== -1 || url.indexOf('presentation/d/') !== -1;
-    // Web URLs (not Google, not YouTube, not PDF) also skip
-    if (!skipScanner && lUrl.indexOf('docs.google') === -1 && lUrl.indexOf('drive.google') === -1 && lUrl.indexOf('sheets.google') === -1 && lUrl.indexOf('youtube.com') === -1 && lUrl.indexOf('http') === 0) {
-      skipScanner = true;
-    }
+    // skipScanner is set from server's sourceType in verify-url callback
+    var skipScanner = false;
 
     var btn = document.getElementById('ki-wiz-next1');
     if (btn) { btn.disabled = true; btn.textContent = '${isEs ? 'Procesando...' : 'Processing...'}'; }
 
     if (wizState.editing && wizState.itemId) {
+      var typesThatSkipScannerEdit = ['pdf', 'web', 'slides', 'youtube'];
+      var skipScannerEdit = wizState.sourceType ? typesThatSkipScannerEdit.indexOf(wizState.sourceType) !== -1 : false;
       showLoading('${isEs ? 'Actualizando...' : 'Updating...'}');
       api('', 'PUT', { id: wizState.itemId, title: title, description: desc, categoryId: cat || undefined })
         .then(function(r) {
           if (r.error) { window.showWizPage(0); wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
           toast('${isEs ? 'Actualizado' : 'Updated'}');
-          if (skipScanner) { kiCloseWizard(); location.reload(); return; }
+          if (skipScannerEdit) { kiCloseWizard(); location.reload(); return; }
           return api('/scan-tabs', 'POST', { id: wizState.itemId });
         })
         .then(function(r) {
@@ -769,18 +794,21 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return null;
         }
+        // Use server sourceType to determine if scanner step is needed
+        wizState.sourceType = v.sourceType || null;
+        var typesThatSkipScanner = ['pdf', 'web', 'slides', 'youtube'];
+        skipScanner = v.sourceType ? typesThatSkipScanner.indexOf(v.sourceType) !== -1 : true;
         return api('', 'POST', { title: title, description: desc, categoryId: cat || undefined, sourceUrl: url });
       })
       .then(function(r) {
-        console.log('CREATE response:', JSON.stringify(r));
-        if (!r) { console.log('CREATE returned null/undefined'); return; }
+        if (!r) return;
         if (r.error) {
           showWizPage(0);
           wizShowErr('url', r.error);
           if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; }
           return;
         }
-        wizState.itemId = r.item?.id || r.item?.item?.id || r.id;
+        wizState.itemId = extractItemId(r);
         if (!wizState.itemId) {
           console.error('Knowledge create response missing id:', JSON.stringify(r));
           showWizPage(0);
@@ -790,7 +818,18 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
         }
         wizState.editing = true;
         if (skipScanner) {
-          toast('${isEs ? 'Conocimiento creado' : 'Knowledge created'}');
+          var pipelineMsgs = ${isEs ? JSON.stringify({
+            pdf:     'PDF creado. Al entrenar, se procesará con análisis visual de páginas.',
+            web:     'Web creada. Al entrenar, se extraerá el contenido de la página.',
+            slides:  'Presentación creada. Al entrenar, se exportará como PDF visual.',
+            youtube: 'YouTube creado. Al entrenar, se procesará video + transcripción.',
+          }) : JSON.stringify({
+            pdf:     'PDF created. On training, pages will be processed with visual analysis.',
+            web:     'Web source created. On training, page content will be extracted.',
+            slides:  'Slides created. On training, it will be exported as a visual PDF.',
+            youtube: 'YouTube created. On training, video + transcription will be processed.',
+          })};
+          toast(pipelineMsgs[wizState.sourceType] || '${isEs ? 'Conocimiento creado' : 'Knowledge created'}');
           kiCloseWizard(); location.reload(); return;
         }
         toast('${isEs ? 'Conocimiento creado — escaneando...' : 'Knowledge created — scanning...'}');

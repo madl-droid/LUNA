@@ -26,7 +26,23 @@ export class DocsService {
 
     // Extraer texto plano del body (legacy field — populated from first tab when includeTabsContent=false)
     // With includeTabsContent=true, body may be empty; content lives inside each tab's documentTab.body
-    const body = this.extractPlainText(res.data.body?.content ?? [])
+    let body = this.extractPlainText(res.data.body?.content ?? [])
+
+    // Bug fix: when includeTabsContent=true, body may be empty — extract from tabs instead
+    if (!body.trim() && rawTabs && rawTabs.length > 0) {
+      const tabBodies: string[] = []
+      for (const tab of rawTabs) {
+        const tabData = tab as Record<string, unknown>
+        const docTab = tabData.documentTab as Record<string, unknown> | undefined
+        if (docTab) {
+          const tabBody = docTab.body as Record<string, unknown> | undefined
+          const tabContent = (tabBody?.content ?? []) as unknown[]
+          const tabText = this.extractPlainText(tabContent)
+          if (tabText.trim()) tabBodies.push(tabText)
+        }
+      }
+      if (tabBodies.length > 0) body = tabBodies.join('\n\n')
+    }
 
     return {
       documentId: res.data.documentId ?? documentId,
@@ -150,16 +166,37 @@ export class DocsService {
   private extractPlainText(content: unknown[]): string {
     const parts: string[] = []
 
+    // Mapping of Google Docs namedStyleType → Markdown heading prefix
+    const HEADING_PREFIX: Record<string, string> = {
+      TITLE: '# ',
+      HEADING_1: '# ',
+      HEADING_2: '## ',
+      HEADING_3: '### ',
+      HEADING_4: '#### ',
+      HEADING_5: '##### ',
+      HEADING_6: '###### ',
+      SUBTITLE: '## ',
+    }
+
     for (const element of content) {
       const el = element as Record<string, unknown>
       if (el.paragraph) {
         const paragraph = el.paragraph as Record<string, unknown>
+        const paragraphStyle = paragraph.paragraphStyle as Record<string, unknown> | undefined
+        const namedStyleType = paragraphStyle?.namedStyleType as string | undefined
+        const headingPrefix = (namedStyleType && HEADING_PREFIX[namedStyleType]) ? HEADING_PREFIX[namedStyleType]! : ''
+
         const elements = (paragraph.elements ?? []) as Array<Record<string, unknown>>
-        for (const pe of elements) {
+        const lineText = elements.map(pe => {
           const textRun = pe.textRun as Record<string, unknown> | undefined
-          if (textRun?.content) {
-            parts.push(String(textRun.content))
-          }
+          return textRun?.content ? String(textRun.content) : ''
+        }).join('')
+
+        if (lineText.trim()) {
+          parts.push(headingPrefix + lineText)
+        } else if (lineText) {
+          // Preserve whitespace/newline-only runs as-is
+          parts.push(lineText)
         }
       } else if (el.table) {
         // Extraer texto de tablas recursivamente

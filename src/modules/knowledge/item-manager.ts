@@ -152,9 +152,17 @@ export class KnowledgeItemManager {
     docTitle: string,
     mimeType: string,
     chunks: SmartChunk[],
-    opts?: { buffer?: Buffer; description?: string; fileUrl?: string },
+    opts?: {
+      buffer?: Buffer
+      description?: string
+      fileUrl?: string
+      columnDescriptions?: string  // "Col1: desc, Col2: desc" — para sheets
+    },
   ): Promise<number> {
     if (chunks.length === 0) return 0
+
+    // ── Enriquecer chunks con descripciones contextuales ──
+    const enrichedChunks = enrichChunksWithContext(item, chunks, mimeType, opts)
 
     // Save file to disk if buffer provided (PDFs, etc.)
     let filePath: string | null = null
@@ -167,7 +175,7 @@ export class KnowledgeItemManager {
       filePath = safeFileName
       await writeFile(join(knowledgeDir, safeFileName), opts.buffer)
     } else {
-      contentHash = createHash('sha256').update(docTitle + (chunks[0]!.content ?? '').substring(0, 500)).digest('hex')
+      contentHash = createHash('sha256').update(docTitle + (enrichedChunks[0]!.content ?? '').substring(0, 500)).digest('hex')
     }
 
     // Create document record — store fileUrl in metadata for shareable links
@@ -182,13 +190,13 @@ export class KnowledgeItemManager {
       mimeType,
       metadata: {
         chunkerVersion: 'smart-v2',
-        chunkCount: chunks.length,
+        chunkCount: enrichedChunks.length,
         ...(opts?.fileUrl ? { fileUrl: opts.fileUrl } : {}),
       },
     })
 
     // Link and insert chunks
-    const linked = linkChunks(item.id, chunks)
+    const linked = linkChunks(item.id, enrichedChunks)
     await this.pgStore.insertLinkedChunks(docId, linked)
 
     // Assign category
@@ -494,6 +502,15 @@ export class KnowledgeItemManager {
     const item = await this.pgStore.getItem(id)
     if (!item) throw new Error('Item no encontrado')
 
+    // Invalidate expand cache for all existing documents of this item before re-training
+    const existingDocs = await this.pgStore.getPool().query<{ id: string }>(
+      `SELECT id FROM knowledge_documents WHERE source_ref = $1`, [id],
+    )
+    const redis = this.registry.getRedis()
+    for (const doc of existingDocs.rows) {
+      await redis.del(`expand:${doc.id}`).catch(() => {})
+    }
+
     // Clean previous chunks
     await this.pgStore.deleteItemChunks(id)
 
@@ -515,6 +532,57 @@ export class KnowledgeItemManager {
       totalChunks = await this.loadYoutubeContent(item)
     }
 
+    // ── Build index chunk for multi-document items ──
+    const allDocs = await this.pgStore.getPool().query<{
+      id: string; title: string; description: string; chunk_count: number
+    }>(
+      `SELECT id, title, description, chunk_count FROM knowledge_documents WHERE source_ref = $1 ORDER BY created_at`, [id],
+    )
+
+    if (allDocs.rows.length > 1) {
+      // Delete previous index doc/chunks before re-creating (prevents duplication on re-sync)
+      await this.pgStore.getPool().query(
+        `DELETE FROM knowledge_chunks WHERE document_id IN (
+          SELECT id FROM knowledge_documents WHERE source_ref = $1 AND metadata->>'isIndex' = 'true'
+        )`, [id],
+      )
+      await this.pgStore.getPool().query(
+        `DELETE FROM knowledge_documents WHERE source_ref = $1 AND metadata->>'isIndex' = 'true'`, [id],
+      )
+
+      const indexChunk = buildIndexChunk(item, allDocs.rows.map((d: { id: string; title: string; description: string; chunk_count: number }) => ({
+        title: d.title,
+        description: d.description,
+        chunkCount: d.chunk_count,
+      })))
+      // Deterministic hash — no Date.now() so re-sync doesn't accumulate docs
+      const indexHash = createHash('sha256').update(`index:${item.id}`).digest('hex')
+      // Map KnowledgeSourceType → DocumentSourceType for the index chunk
+      const indexSourceType: import('./types.js').DocumentSourceType =
+        item.sourceType === 'web' ? 'web'
+        : (item.sourceType === 'drive' || item.sourceType === 'sheets' || item.sourceType === 'docs' || item.sourceType === 'slides') ? 'drive'
+        : 'url'
+      const indexDocId = await this.pgStore.insertDocument({
+        title: `Índice: ${item.title}`,
+        description: item.description,
+        isCore: false,
+        sourceType: indexSourceType,
+        sourceRef: item.id,
+        contentHash: indexHash,
+        filePath: '',
+        mimeType: 'text/plain',
+        metadata: { chunkerVersion: 'smart-v2', isIndex: true },
+      })
+      const indexLinked = linkChunks(item.id, [indexChunk])
+      await this.pgStore.insertLinkedChunks(indexDocId, indexLinked)
+      if (item.categoryId) {
+        await this.pgStore.assignDocumentCategory(indexDocId, item.categoryId)
+      }
+      allDocs.rows.push({ id: indexDocId, title: `Índice: ${item.title}`, description: item.description, chunk_count: 1 })
+      totalChunks += 1
+      logger.info({ itemId: id, docCount: allDocs.rows.length - 1, indexDocId }, '[INDEX] Index chunk created for multi-document item')
+    }
+
     await this.pgStore.updateItem(id, {
       contentLoaded: true,
       embeddingStatus: 'pending',
@@ -523,11 +591,7 @@ export class KnowledgeItemManager {
 
     // Trigger vectorization
     if (this.vectorizeWorker) {
-      // Get all documents created for this item and enqueue each
-      const docs = await this.pgStore.getPool().query<{ id: string }>(
-        `SELECT id FROM knowledge_documents WHERE source_ref = $1`, [id],
-      )
-      for (const doc of docs.rows) {
+      for (const doc of allDocs.rows) {
         this.vectorizeWorker.enqueueDocument(doc.id).catch(err => {
           logger.warn({ err, docId: doc.id }, 'Failed to enqueue vectorization')
         })
@@ -565,12 +629,19 @@ export class KnowledgeItemManager {
 
       if (rows.length === 0) continue
 
+      // Build column descriptions string for embedding enrichment
+      const colDescs = tabColumns
+        .filter(c => !c.ignored && c.description?.trim())
+        .map(c => `${c.columnName}: ${c.description.trim()}`)
+        .join(', ')
+
       // Smart chunk: CSV with repeated headers
       const chunks = chunkSheets(headers, rows, { docMeta: { sourceType: 'sheets', sourceId: item.sourceId, tabName: tab.tabName, title: item.title } as Record<string, unknown> })
       const docTitle = `${item.title} — ${tab.tabName}`
       totalChunks += await this.persistSmartChunks(item, docTitle, 'text/csv', chunks, {
         description: tab.description || `Tab ${tab.tabName} de ${item.title}`,
         fileUrl: item.sourceUrl,
+        columnDescriptions: colDescs || undefined,
       })
     }
 
@@ -617,8 +688,9 @@ export class KnowledgeItemManager {
     // Extraer texto por página para FTS
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
-    const pageTexts = pdfResult.sections.map(s => s.content)
-    const totalPages = pageTexts.length || 1
+
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     // Guardar PDF en media dir
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
@@ -631,6 +703,7 @@ export class KnowledgeItemManager {
     const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, [], {
       sourceFile: item.title,
       docMeta: pdfResult.metadata as Record<string, unknown>,
+      visualDescriptions,
     })
 
     logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[SLIDES] Visual pipeline via PDF export')
@@ -1086,7 +1159,7 @@ export class KnowledgeItemManager {
     })
   }
 
-  /** Load a PDF: extract per-page text (for FTS) + send raw PDF blocks (for multimodal embedding) */
+  /** Load a PDF: uses global extractPDF (handles text, scanned OCR, image pages) */
   private async loadPdfContent(item: KnowledgeItem): Promise<number> {
     let pdfBuffer: Buffer
 
@@ -1100,13 +1173,12 @@ export class KnowledgeItemManager {
       pdfBuffer = await drive.downloadFile(item.sourceId)
     }
 
-    // Extract per-page text for FTS content in each chunk
-    const { PDFParse } = await import('pdf-parse')
-    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) })
-    const textResult = await parser.getText()
-    const pageTexts = (textResult.pages ?? []).map(p => p.text ?? '')
-    const totalPages = pageTexts.length || 1
-    await parser.destroy().catch(() => {})
+    // Use global extractPDF: handles text, scanned PDFs (vision OCR), and image pages
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
+
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     // Save PDF to disk so vectorize worker can read it for multimodal embedding
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
@@ -1115,8 +1187,14 @@ export class KnowledgeItemManager {
     const safeFileName = `${contentHash.substring(0, 12)}_${item.title.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
     await writeFile(join(knowledgeDir, safeFileName), pdfBuffer)
 
-    // Smart chunk: 6-page blocks with 1-page overlap, ref to PDF file
-    const chunks = chunkPdf(pageTexts, safeFileName, totalPages, { docMeta: { sourceType: 'pdf', sourceId: item.sourceId, title: item.title, totalPages } as Record<string, unknown> })
+    // Smart chunk: page blocks with overlap, ref to PDF file
+    const chunks = chunkPdf(pageTexts, safeFileName, totalPages, {
+      docMeta: {
+        ...pdfResult.metadata as Record<string, unknown>,
+        sourceType: 'pdf', sourceId: item.sourceId, title: item.title,
+      },
+      visualDescriptions,
+    })
     logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[PDF] Smart chunked')
 
     return this.persistSmartChunks(item, item.title, 'application/pdf', chunks, {
@@ -1139,8 +1217,9 @@ export class KnowledgeItemManager {
   ): Promise<number> {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
-    const pageTexts = pdfResult.sections.map(s => s.content)
-    const totalPages = pageTexts.length || 1
+
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
     const knowledgeDir = KNOWLEDGE_MEDIA_DIR
@@ -1151,6 +1230,7 @@ export class KnowledgeItemManager {
     const chunks = chunkPdf(pageTexts, pdfName, totalPages, {
       sourceFile: file.name,
       docMeta: pdfResult.metadata as Record<string, unknown>,
+      visualDescriptions,
     })
     logger.info({ fileId: file.id, totalPages, chunkCount: chunks.length }, '[DRIVE-PDF] Visual pipeline')
 
@@ -1173,8 +1253,9 @@ export class KnowledgeItemManager {
   ): Promise<number> {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
-    const pageTexts = pdfResult.sections.map(s => s.content)
-    const totalPages = pageTexts.length || 1
+
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
     const knowledgeDir = KNOWLEDGE_MEDIA_DIR
@@ -1185,6 +1266,7 @@ export class KnowledgeItemManager {
     const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, speakerNotes, {
       sourceFile: file.name,
       docMeta: pdfResult.metadata as Record<string, unknown>,
+      visualDescriptions,
     })
     logger.info({ fileId: file.id, totalPages, speakerNotes: speakerNotes.length, chunkCount: chunks.length }, '[DRIVE-PPTX] Visual pipeline')
 
@@ -1263,7 +1345,7 @@ export class KnowledgeItemManager {
     } catch { return null }
   }
 
-  /** Load web content — extract semantic blocks with associated images */
+  /** Load web content — uses global extractWeb() for SSRF protection + Readability fallback */
   private async loadWebContent(item: KnowledgeItem): Promise<number> {
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
@@ -1279,15 +1361,26 @@ export class KnowledgeItemManager {
       urls = [item.sourceUrl]
     }
 
+    const { extractWeb } = await import('../../extractors/web.js')
+
     let totalChunks = 0
     for (const url of urls) {
       if (ignoredNames.has(url)) continue
       try {
-        const blocks = await this.extractWebBlocks(url)
+        const webResult = await extractWeb(url)
+
+        // Adapt WebResult.sections → WebBlock[] format for chunkWeb
+        const blocks = webResult.sections.map(s => ({
+          text: s.content,
+          heading: s.title ?? null,
+          // Web images from extractWeb are URL-only (not downloadable base64)
+          images: [] as Array<{ data: string; mimeType: string }>,
+        }))
+
         if (blocks.length === 0) continue
 
         const chunks = chunkWeb(blocks, { docMeta: { sourceType: 'web', sourceUrl: url, title: item.title } as Record<string, unknown> })
-        const pageTitle = new URL(url).pathname || url
+        const pageTitle = webResult.title ?? (new URL(url).pathname || url)
         totalChunks += await this.persistSmartChunks(item, pageTitle, 'text/html', chunks, {
           description: `Web: ${url}`,
         })
@@ -1298,99 +1391,6 @@ export class KnowledgeItemManager {
     }
 
     return totalChunks
-  }
-
-  /** Extract semantic blocks (heading + content + images) from a web page */
-  private async extractWebBlocks(url: string): Promise<import('./extractors/smart-chunker.js').WebBlock[]> {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(15000),
-      headers: { 'User-Agent': 'LUNA-KnowledgeBot/1.0' },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-    const html = await res.text()
-    const { JSDOM } = await import('jsdom')
-    const dom = new JSDOM(html, { url })
-    const doc = dom.window.document
-
-    // Remove scripts, styles, nav, footer, sidebar
-    for (const tag of ['script', 'style', 'nav', 'footer', 'aside', 'header']) {
-      doc.querySelectorAll(tag).forEach(el => el.remove())
-    }
-
-    const blocks: import('./extractors/smart-chunker.js').WebBlock[] = []
-    const body = doc.body
-    if (!body) return blocks
-
-    // Split by headings (H1-H3) — each heading starts a new block
-    let currentHeading: string | null = null
-    let currentText = ''
-    let currentImages: Array<{ data: string; mimeType: string }> = []
-
-    const flushBlock = () => {
-      if (currentText.trim()) {
-        blocks.push({ text: currentText.trim(), heading: currentHeading, images: currentImages })
-      }
-      currentText = ''
-      currentImages = []
-    }
-
-    const walkNode = (node: Node) => {
-      if (node.nodeType === 1) { // Element
-        const el = node as Element
-        const tag = el.tagName.toLowerCase()
-
-        if (['h1', 'h2', 'h3'].includes(tag)) {
-          flushBlock()
-          currentHeading = el.textContent?.trim() ?? null
-          return
-        }
-
-        if (tag === 'img') {
-          const src = el.getAttribute('src')
-          const alt = el.getAttribute('alt') ?? ''
-          const width = parseInt(el.getAttribute('width') ?? '0', 10)
-          const height = parseInt(el.getAttribute('height') ?? '0', 10)
-
-          // Filter decorative images
-          if (!src) return
-          if (alt === '') return
-          if (/icon|logo|banner|avatar|spacer|pixel/i.test(src)) return
-          if (width > 0 && width < 100 && height > 0 && height < 100) return
-
-          // Include alt text as description (downloading images inline is too expensive for scanning)
-          if (currentImages.length < 6) {
-            try {
-              new URL(src, url) // validate URL
-              currentText += `\n[Imagen: ${alt}]\n`
-            } catch { /* invalid URL */ }
-          }
-          return
-        }
-
-        if (['p', 'li', 'td', 'div', 'span', 'blockquote', 'pre', 'code'].includes(tag)) {
-          const text = el.textContent?.trim()
-          if (text) currentText += text + '\n'
-          return
-        }
-      }
-
-      // Walk children
-      for (const child of Array.from(node.childNodes)) {
-        walkNode(child)
-      }
-    }
-
-    walkNode(body)
-    flushBlock()
-
-    // If no headings found, treat entire page as one block
-    if (blocks.length === 0) {
-      const text = body.textContent?.trim()
-      if (text) blocks.push({ text, heading: null, images: [] })
-    }
-
-    return blocks
   }
 
   /**
@@ -1889,5 +1889,118 @@ function hasFileChanged(existing: FolderIndexEntry, fresh: DriveFolderNode): boo
     return new Date(fresh.modifiedTime).getTime() > new Date(existing.modifiedTime).getTime()
   }
   return true   // sin data para comparar → asumir que cambió (re-procesar es seguro)
+}
+
+/**
+ * Enrich chunks with contextual descriptions before embedding.
+ * - CSV/sheets: prepend context + column descriptions to EACH chunk
+ * - Others: prepend item/doc description to FIRST chunk only
+ */
+function enrichChunksWithContext(
+  item: KnowledgeItem,
+  chunks: SmartChunk[],
+  mimeType: string,
+  opts?: { description?: string; columnDescriptions?: string },
+): SmartChunk[] {
+  if (chunks.length === 0) return chunks
+
+  const itemDesc = item.description?.trim() ?? ''
+  const docDesc = opts?.description?.trim() ?? ''
+
+  if (mimeType === 'text/csv') {
+    // Sheets: prepend context to EACH chunk (improves FTS for row-level searches)
+    const colDescs = opts?.columnDescriptions?.trim() ?? ''
+    if (!itemDesc && !colDescs) return chunks
+
+    let prefix: string
+    if (itemDesc && colDescs) {
+      prefix = `[Contexto: ${itemDesc}. Columnas: ${colDescs}]`
+    } else if (itemDesc) {
+      prefix = `[Contexto: ${itemDesc}]`
+    } else {
+      prefix = `[Columnas: ${colDescs}]`
+    }
+
+    return chunks.map(c => ({
+      ...c,
+      content: c.content ? `${prefix}\n${c.content}` : c.content,
+    }))
+  }
+
+  // Non-CSV: prepend to first chunk only
+  if (!itemDesc && !docDesc) return chunks
+
+  const lines: string[] = []
+  if (itemDesc) lines.push(`[Contexto: ${itemDesc}]`)
+  if (docDesc && docDesc !== itemDesc) lines.push(`[Fuente: ${docDesc}]`)
+  if (lines.length === 0) return chunks
+
+  const prefix = lines.join('\n')
+  return chunks.map((c, i) => i === 0 && c.content
+    ? { ...c, content: `${prefix}\n${c.content}` }
+    : c,
+  )
+}
+
+/**
+ * Build an index chunk summarizing all documents belonging to a multi-document item.
+ * Helps the agent understand what's in a multi-tab/multi-file item at a glance.
+ */
+function buildIndexChunk(
+  item: KnowledgeItem,
+  docs: Array<{ title: string; description: string; chunkCount: number }>,
+): SmartChunk {
+  const lines = [
+    `[Índice de "${item.title}"]`,
+    item.description ? `Descripción: ${item.description}` : '',
+    `Contiene ${docs.length} documentos:`,
+    ...docs.map((d, i) => `${i + 1}. ${d.title}${d.description ? ` — ${d.description}` : ''} (${d.chunkCount} fragmentos)`),
+  ].filter(Boolean)
+
+  return {
+    content: lines.join('\n'),
+    contentType: 'text',
+    mediaRefs: null,
+    chunkIndex: 0,
+    chunkTotal: 0,
+    prevChunkId: null,
+    nextChunkId: null,
+    metadata: {
+      sourceType: 'index',
+      isIndex: true,
+    },
+  }
+}
+
+/**
+ * Reconstruct per-page texts from extractor sections.
+ * Used by PDF and Slides visual pipeline loaders.
+ */
+function reconstructPageTexts(pdfResult: import('../../extractors/types.js').ExtractedContent): { pageTexts: string[]; totalPages: number } {
+  const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
+  const pageTextsMap = new Map<number, string[]>()
+  for (const section of pdfResult.sections) {
+    const page = section.page ?? 1
+    const list = pageTextsMap.get(page) ?? []
+    list.push(section.title ? `${section.title}\n${section.content}` : section.content)
+    pageTextsMap.set(page, list)
+  }
+  const pageTexts = Array.from({ length: totalPages }, (_, i) =>
+    (pageTextsMap.get(i + 1) ?? []).join('\n'),
+  )
+  return { pageTexts, totalPages }
+}
+
+/**
+ * Enrich PDF extraction with visual descriptions via LLM enrichment.
+ * Used by PDF and Slides visual pipeline loaders.
+ */
+async function enrichPdfVisual(
+  pdfResult: import('../../extractors/types.js').ExtractedContent,
+  registry: import('../../kernel/registry.js').Registry,
+): Promise<Array<{ pageRange: string; description: string }> | undefined> {
+  const { enrichWithLLM } = await import('../../extractors/index.js')
+  const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, registry)
+  return enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
 }
 

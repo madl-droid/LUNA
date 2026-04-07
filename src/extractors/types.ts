@@ -91,6 +91,8 @@ export interface ExtractedContent {
   text: string
   sections: ExtractedSection[]
   metadata: DocumentMetadata
+  /** Enriquecimiento LLM opcional — populado por enrichWithLLM() para PDFs con contenido visual */
+  llmEnrichment?: LLMEnrichment
 }
 
 // ═══════════════════════════════════════════
@@ -198,6 +200,8 @@ export interface LLMEnrichment {
   shortDescription?: string
   /** Transcripción de audio/video (STT) — solo si tiene audio */
   transcription?: string
+  /** Descripciones visuales por rango de páginas — para PDFs con contenido visual */
+  visualDescriptions?: Array<{ pageRange: string; description: string }>
   /** Provider que generó el enriquecimiento */
   provider: string
   /** Timestamp de generación */
