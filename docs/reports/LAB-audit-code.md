@@ -24,12 +24,44 @@
 
 **Evidencia:** 24 de 24 reviews generaron feedback (0 aprobaciones). Modelo: `gemini-3.1-pro-preview`.
 **Impacto:** Cada pipeline que activa el criticizer gasta ~17 segundos extra (9.5s review + 7.9s rewrite) sin garantia de mejora. Peor: la reescritura puede cambiar informacion correcta o alterar el tono.
-**Causa raiz:** El prompt del criticizer tiene 10 puntos de evaluacion subjetivos. `gemini-3.1-pro-preview` siempre encuentra algo que criticar en al menos 1 de los 10 puntos.
+
+**Causa raiz — BUG DOBLE (parsing + criterio):**
+
+**A) Bug de parsing (el principal):** El prompt `criticizer-review.md` le pide a Gemini que responda en JSON:
+```json
+{"approved": true}
+```
+Pero el codigo en `post-processor.js` (linea ~108) busca texto plano:
+```js
+if (feedback.toUpperCase().startsWith('APPROVED') || feedback.length < 10) {
+    return null; // APPROVED
+}
+```
+Gemini responde `{"approved": true}` → el codigo NO lo reconoce como aprobacion porque no empieza con la cadena `"APPROVED"` sino con `{`. **El criticizer aprueba pero nadie lo escucha.**
+
+**B) Criterio demasiado subjetivo:** Los prompts tienen 10 puntos de evaluacion entre `criticizer-base.md` (5 puntos de sistema) y `criticizer.md` (5 puntos adicionales). Puntos como "¿El tono es calido y consultivo?", "¿Termina con pregunta o CTA claro?", "¿Usa el nombre del contacto?" son subjetivos y siempre hay algo que criticar. Incluso sin el bug de parsing, la tasa de aprobacion seria baja.
+
+**Archivos involucrados:**
+- `dist/engine/agentic/post-processor.js` — logica de parsing (linea ~108)
+- `instance/prompts/system/criticizer-review.md` — prompt que pide JSON
+- `instance/prompts/system/criticizer-base.md` — 5 puntos de revision base
+- `instance/prompts/defaults/criticizer.md` — 5 puntos adicionales
+
 **Sugerencia:**
-1. Cambiar `LLM_CRITICIZER_MODE` a `disabled` temporalmente hasta ajustar
-2. Ajustar el prompt del criticizer para que solo rechace respuestas con errores facticos o de tono graves (no estilísticos)
-3. Considerar cambiar el modelo de critica a uno menos agresivo
+1. **Fix inmediato del parsing** — soportar ambos formatos en `post-processor.js`:
+```js
+if (feedback.toUpperCase().startsWith('APPROVED') || feedback.length < 10) {
+    return null;
+}
+try {
+    const parsed = JSON.parse(feedback);
+    if (parsed.approved === true) return null;
+} catch {}
+```
+2. O mejor: unificar para que el prompt y el codigo hablen el mismo idioma (que el prompt pida `APPROVED` como texto, o que el codigo parsee JSON)
+3. Reducir los 10 puntos a 3-4 objetivos (precision factual, guardrails, seguridad) y eliminar los subjetivos (tono, CTA, nombre)
 4. Agregar metrica de tasa de aprobacion para monitoreo
+5. Considerar cambiar `LLM_CRITICIZER_MODE` a `disabled` temporalmente hasta corregir
 
 ---
 
