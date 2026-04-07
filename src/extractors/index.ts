@@ -36,7 +36,7 @@ export type {
 export { toExtractedContent } from './types.js'
 export { extractSheets } from './sheets.js'
 export { extractGoogleSlides, extractSlidesAsContent, isSlidesAvailable, describeSlideScreenshots, extractPptx } from './slides.js'
-export { extractImage, extractImageWithVision, describeImage } from './image.js'
+export { extractImage, describeImage } from './image.js'
 export { extractWeb, extractWebAsContent } from './web.js'
 export { extractYouTube, parseYoutubeChapters, formatTimestamp, describeThumbnail } from './youtube.js'
 export { extractVideo, describeVideo } from './video.js'
@@ -48,8 +48,7 @@ import { extractMarkdown, extractPlainText, extractJSON } from './text.js'
 import { extractDocxSmart } from './docx.js'
 import { extractXlsx } from './sheets.js'
 import { extractPDF } from './pdf.js'
-import { extractImageWithVision } from './image.js'
-import { describeImage } from './image.js'
+import { extractImage, describeImage } from './image.js'
 import { transcribeAudioContent } from './audio.js'
 import { describeVideo } from './video.js'
 import { extractPptx, describeSlideScreenshots } from './slides.js'
@@ -87,6 +86,7 @@ const MIGRATED_EXTRACTORS: Record<string, (input: Buffer, fileName: string, regi
   'application/pdf': extractPDF,
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': extractPptxAsContent,
   'application/vnd.ms-powerpoint': extractPptxAsContent,
+  'application/vnd.oasis.opendocument.presentation': extractPptxAsContent,
 }
 
 // ─── MIME types soportados ──────────────────
@@ -197,7 +197,7 @@ export async function extractContent(
   const resolvedMime = mimeType ?? resolveMimeType(fileName)
 
   try {
-    // Imágenes: extractor especial (vision con LLM si hay registry)
+    // Imágenes: extractor code + LLM enrichment si hay registry
     if (IMAGE_TYPES.has(resolvedMime)) {
       if (!registry) {
         return {
@@ -206,7 +206,9 @@ export async function extractContent(
           metadata: { sizeBytes: input.length, originalName: fileName, extractorUsed: 'none' },
         }
       }
-      return await extractImageWithVision(input, fileName, registry)
+      const imageResult = await extractImage(input, fileName, resolvedMime)
+      const enriched = await describeImage(imageResult, registry)
+      return toExtractedContent(enriched)
     }
 
     // Usar extractor migrado si existe, sino legacy

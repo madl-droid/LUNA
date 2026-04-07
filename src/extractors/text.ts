@@ -5,7 +5,7 @@
 // JSON: parseo + formato.
 
 import type { ExtractedContent, ExtractedSection } from './types.js'
-import { isImplicitTitle } from './utils.js'
+import { isImplicitTitle, countWords } from './utils.js'
 
 // ═══════════════════════════════════════════
 // Markdown
@@ -22,7 +22,7 @@ export async function extractMarkdown(input: Buffer, fileName: string): Promise<
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'markdown',
-      wordCount: text.split(/\s+/).filter(Boolean).length,
+      wordCount: countWords(text),
       lineCount: text.split('\n').length,
       sectionCount: sections.length,
       hasExplicitHeadings,
@@ -85,7 +85,7 @@ export async function extractPlainText(input: Buffer, fileName: string): Promise
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'plain-text',
-      wordCount: text.split(/\s+/).filter(Boolean).length,
+      wordCount: countWords(text),
       lineCount: text.split('\n').length,
       sectionCount: sections.length,
       hasExplicitHeadings: false,
@@ -125,7 +125,7 @@ export async function extractJSON(input: Buffer, fileName: string): Promise<Extr
       sizeBytes: input.length,
       originalName: fileName,
       extractorUsed: 'json',
-      wordCount: text.split(/\s+/).filter(Boolean).length,
+      wordCount: countWords(text),
       lineCount: text.split('\n').length,
       sectionCount: 1,
     },

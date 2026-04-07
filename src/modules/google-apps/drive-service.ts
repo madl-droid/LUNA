@@ -48,12 +48,17 @@ export class DriveService {
 
     const q = queryParts.join(' and ')
 
+    // Folder-first when listing a specific folder, modifiedTime desc for general searches
+    const defaultOrder = options.folderId ? 'folder,name' : 'modifiedTime desc'
+
     const res = await this.drive.files.list({
       q,
       pageSize: options.pageSize ?? 20,
       pageToken: options.pageToken,
-      orderBy: options.orderBy ?? 'modifiedTime desc',
+      orderBy: options.orderBy ?? defaultOrder,
       fields: options.fields ?? 'nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime, parents, webViewLink, webContentLink, shared, owners, sharingUser)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     })
 
     const files: DriveFile[] = (res.data.files ?? []).map((f) => ({
@@ -87,6 +92,7 @@ export class DriveService {
     const res = await this.drive.files.get({
       fileId,
       fields: 'id, name, mimeType, size, createdTime, modifiedTime, parents, webViewLink, webContentLink, shared, owners, sharingUser, permissions',
+      supportsAllDrives: true,
     })
 
     const f = res.data
@@ -223,7 +229,7 @@ export class DriveService {
 
   async downloadFile(fileId: string): Promise<Buffer> {
     const res = await googleApiCall(() => this.drive.files.get(
-      { fileId, alt: 'media' },
+      { fileId, alt: 'media', supportsAllDrives: true },
       { responseType: 'arraybuffer' },
     ), this.apiConfig, 'drive.files.download')
     return Buffer.from(res.data as ArrayBuffer)

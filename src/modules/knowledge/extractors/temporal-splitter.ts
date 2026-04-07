@@ -25,7 +25,7 @@ export interface SplitConfig {
 
 export const AUDIO_SPLIT_CONFIG: SplitConfig = {
   firstChunkSeconds: 60,
-  subsequentSeconds: 70,
+  subsequentSeconds: 60,   // 50s nuevo + 10s overlap = 60s total por chunk
   overlapSeconds: 10,
 }
 

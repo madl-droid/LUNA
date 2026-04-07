@@ -18,8 +18,9 @@ interface DriveService {
     mimeType: string
     modifiedTime?: string
   }>
-  listFiles(options?: { folderId?: string; pageSize?: number }): Promise<{
-    files: Array<{ id: string; name: string; mimeType: string }>
+  listFiles(options?: { folderId?: string; pageSize?: number; orderBy?: string }): Promise<{
+    files: Array<{ id: string; name: string; mimeType: string; webViewLink?: string }>
+    nextPageToken?: string
   }>
 }
 
@@ -140,17 +141,43 @@ export async function extractDrive(url: string, registry: Registry): Promise<Dri
 
     logger.info({ fileId, name: file.name, mimeType: file.mimeType, driveType }, 'Drive URL resolved')
 
-    // If folder, list contents
+    // If folder, list contents with folder-first ordering
     let folderContents: DriveFileEntry[] | undefined
+    let folderTreeText: string | undefined
+    let hasMoreFiles = false
     if (driveType === 'folder') {
       try {
-        const listing = await driveService.listFiles({ folderId: fileId, pageSize: 20 })
-        folderContents = listing.files.map(f => ({
+        const listing = await driveService.listFiles({
+          folderId: fileId,
+          pageSize: 50,
+          orderBy: 'folder,name',
+        })
+        // Sort: folders first, then files, both alphabetical
+        const sorted = [...listing.files].sort((a, b) => {
+          const aIsFolder = a.mimeType === 'application/vnd.google-apps.folder'
+          const bIsFolder = b.mimeType === 'application/vnd.google-apps.folder'
+          if (aIsFolder !== bIsFolder) return aIsFolder ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
+        folderContents = sorted.map(f => ({
           id: f.id,
           name: f.name,
           mimeType: f.mimeType,
+          webViewLink: f.webViewLink,
           ...resolveDriveType(f.mimeType),
         }))
+        hasMoreFiles = !!listing.nextPageToken
+
+        // Build text tree for agent readability (WP8)
+        const lines = folderContents.map(f => {
+          const icon = f.isFolder ? '📁' : fileIcon(f.mimeType)
+          const action = f.isFolder
+            ? `drive-list-files(folderId: "${f.id}")`
+            : `${f.suggestedTool}(${f.id})`
+          return `${icon} ${f.name} → ${action}`
+        })
+        if (hasMoreFiles) lines.push('... (hay más archivos — usa pageToken para ver el resto)')
+        folderTreeText = lines.join('\n')
       } catch (listErr) {
         logger.warn({ listErr, fileId }, 'Failed to list folder contents')
         folderContents = []
@@ -169,12 +196,13 @@ export async function extractDrive(url: string, registry: Registry): Promise<Dri
       accountEmail,
       folderContents,
       modifiedTime: file.modifiedTime,
-      extractedContent: null,
+      extractedContent: folderTreeText ?? null,
       llmEnrichment: undefined,
       metadata: {
         originalName: file.name,
         driveModifiedTime: file.modifiedTime,
         extractorUsed: 'drive',
+        hasMoreFiles: hasMoreFiles || undefined,
       },
     }
   } catch (err: unknown) {
@@ -302,6 +330,18 @@ export async function enrichDriveContent(
     logger.warn({ err, fileId: result.fileId }, '[Drive] Content enrichment failed')
     return result
   }
+}
+
+/** Returns a display icon for a MIME type */
+function fileIcon(mimeType: string): string {
+  if (mimeType === 'application/vnd.google-apps.document') return '📄'
+  if (mimeType === 'application/vnd.google-apps.spreadsheet') return '📊'
+  if (mimeType === 'application/vnd.google-apps.presentation') return '📑'
+  if (mimeType === 'application/pdf') return '📕'
+  if (mimeType.startsWith('image/')) return '🖼️'
+  if (mimeType.startsWith('video/')) return '🎬'
+  if (mimeType.startsWith('audio/')) return '🎵'
+  return '📄'
 }
 
 function buildNoAccessResult(url: string, accountEmail: string | null, error: string): DriveResult {

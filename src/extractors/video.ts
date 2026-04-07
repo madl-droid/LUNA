@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { VideoResult, LLMEnrichment } from './types.js'
 import type { Registry } from '../kernel/registry.js'
+import { parseDualDescription } from './utils.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'extractors:video' })
@@ -127,37 +128,26 @@ export async function describeVideo(
     if (result && typeof result === 'object' && 'text' in result) {
       const fullText = (result as { text: string }).text?.trim()
       if (fullText) {
-        // Parsear formato dual [DESCRIPCIÓN] / [RESUMEN] / [TRANSCRIPCIÓN]
-        let description = fullText
-        let shortDesc: string | undefined
-        let transcription: string | undefined
+        const parsed = parseDualDescription(fullText)
 
-        const descMatch = fullText.match(/\[DESCRIPCIÓN\]\s*\n([\s\S]*?)(?:\n\[RESUMEN\]|\n\[TRANSCRIPCIÓN\]|$)/)
-        const summaryMatch = fullText.match(/\[RESUMEN\]\s*\n([\s\S]*?)(?:\n\[TRANSCRIPCIÓN\]|$)/)
-        const transcriptionMatch = fullText.match(/\[TRANSCRIPCIÓN\]\s*\n([\s\S]*)$/)
-
-        if (descMatch?.[1]) {
-          description = descMatch[1].trim()
-          shortDesc = summaryMatch?.[1]?.trim()
-          transcription = transcriptionMatch?.[1]?.trim() || undefined
-        } else {
-          // Fallback: formato legacy con [Transcripción]:
+        // Fallback legacy: formato con [Transcripción]: (si el LLM no usó el nuevo formato)
+        let transcription = parsed.transcription
+        if (!parsed.shortDescription && !transcription) {
           const legacyMarker = '[Transcripción]:'
           const markerIdx = fullText.indexOf(legacyMarker)
           if (markerIdx !== -1) {
-            description = fullText.slice(0, markerIdx).trim()
             transcription = fullText.slice(markerIdx + legacyMarker.length).trim()
           }
         }
 
         const enrichment: LLMEnrichment = {
-          description,
-          shortDescription: shortDesc,
+          description: parsed.description,
+          shortDescription: parsed.shortDescription,
           transcription,
           provider: (result as { provider?: string }).provider ?? 'google',
           generatedAt: new Date(),
         }
-        logger.info({ format: videoResult.format, duration: videoResult.durationSeconds, descLength: description.length }, 'Video described via multimodal')
+        logger.info({ format: videoResult.format, duration: videoResult.durationSeconds, descLength: parsed.description.length }, 'Video described via multimodal')
         return { ...videoResult, llmEnrichment: enrichment }
       }
     }

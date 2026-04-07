@@ -12,6 +12,7 @@ import {
   MAX_IMAGES_PER_REQUEST,
   MAX_PDF_PAGES_PER_REQUEST,
 } from '../embedding-limits.js'
+import { calculateSegments, AUDIO_SPLIT_CONFIG } from './temporal-splitter.js'
 
 // ═══════════════════════════════════════════
 // 1. DOCS / WORD → text by headings
@@ -411,9 +412,6 @@ function formatTimestamp(seconds: number): string {
     : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-const YT_SEGMENT_SECONDS = 300  // 5 minutes
-const YT_OVERLAP_SECONDS = 30
-
 export function chunkYoutube(
   metadata: { title: string; description: string; thumbnailBase64?: string; url?: string },
   transcriptSegments: Array<{ text: string; offset: number; duration?: number }>,
@@ -473,12 +471,13 @@ export function chunkYoutube(
       })
     }
   } else {
-    // No chapters — split every 5 minutes with 30s overlap
+    // No chapters — split every 60s with 10s overlap (AUDIO_SPLIT_CONFIG)
     const totalDuration = (transcriptSegments.at(-1)?.offset ?? 0) + (transcriptSegments.at(-1)?.duration ?? 5)
-    let segStart = 0
+    const timeSegments = calculateSegments(totalDuration, AUDIO_SPLIT_CONFIG)
 
-    while (segStart < totalDuration) {
-      const segEnd = segStart + YT_SEGMENT_SECONDS
+    for (const seg of timeSegments) {
+      const segStart = seg.startSeconds
+      const segEnd = seg.endSeconds
 
       const segText = transcriptSegments
         .filter(s => s.offset >= segStart && s.offset < segEnd)
@@ -501,8 +500,6 @@ export function chunkYoutube(
         })
       }
 
-      if (segEnd >= totalDuration) break
-      segStart = segEnd - YT_OVERLAP_SECONDS
     }
   }
 
@@ -623,7 +620,7 @@ export function chunkAudio(opts: {
 
     chunks.push({
       content: segmentText,
-      contentType: 'text',
+      contentType: 'audio',   // multimodal: Gemini Embedding 2 recibe audio nativo
       mediaRefs: seg.segmentPath
         ? [{ mimeType: opts.mimeType, filePath: seg.segmentPath }]
         : null,
@@ -658,6 +655,8 @@ export function chunkVideo(opts: {
   filePath?: string
   // Segmentos pre-calculados con sus paths (de splitMediaFile)
   segments?: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }>
+  // Transcript con timestamps para corte preciso (YouTube)
+  transcriptSegments?: Array<{ text: string; offset: number; duration?: number }>
 }): EmbeddableChunk[] {
   // Si no hay segmentos, un solo chunk (backward compatible)
   if (!opts.segments || opts.segments.length === 0) {
@@ -698,8 +697,16 @@ export function chunkVideo(opts: {
     const parts: string[] = []
     if (i === 0 && opts.description) parts.push(opts.description)
 
-    // Cortar transcripción proporcionalmente
-    if (opts.transcription) {
+    // Corte preciso por timestamps si hay transcriptSegments (YouTube)
+    if (opts.transcriptSegments) {
+      const segTranscript = opts.transcriptSegments
+        .filter(t => t.offset >= seg.startSeconds && t.offset < seg.endSeconds)
+        .map(t => t.text)
+        .join(' ')
+        .trim()
+      if (segTranscript) parts.push(`[Transcripción]: ${segTranscript}`)
+    } else if (opts.transcription) {
+      // Corte proporcional fallback
       const ratio = opts.durationSeconds > 0 ? opts.transcription.length / opts.durationSeconds : 0
       const charStart = Math.floor(seg.startSeconds * ratio)
       const charEnd = Math.floor(seg.endSeconds * ratio)
@@ -795,13 +802,31 @@ export function linkChunks(sourceId: string, chunks: EmbeddableChunk[]): LinkedE
   // Generate IDs first so we can reference prev/next
   const ids = chunks.map(() => randomUUID())
 
+  // Build ordered list of indices for non-note chunks (notes don't participate in prev/next chain)
+  const chainIndices: number[] = []
+  for (let i = 0; i < chunks.length; i++) {
+    if (!(chunks[i]!.metadata as Record<string, unknown>)['isNote']) {
+      chainIndices.push(i)
+    }
+  }
+
+  // Build prev/next maps for non-note chunks only
+  const prevMap = new Map<number, string | null>()
+  const nextMap = new Map<number, string | null>()
+  for (let ci = 0; ci < chainIndices.length; ci++) {
+    const idx = chainIndices[ci]!
+    prevMap.set(idx, ci > 0 ? ids[chainIndices[ci - 1]!]! : null)
+    nextMap.set(idx, ci < chainIndices.length - 1 ? ids[chainIndices[ci + 1]!]! : null)
+  }
+
   return chunks.map((chunk, i) => ({
     ...chunk,
     id: ids[i]!,
     chunkIndex: i,
     chunkTotal: chunks.length,
-    prevChunkId: i > 0 ? ids[i - 1]! : null,
-    nextChunkId: i < chunks.length - 1 ? ids[i + 1]! : null,
+    // Notes get null for prev/next (not part of the semantic chain)
+    prevChunkId: prevMap.get(i) ?? null,
+    nextChunkId: nextMap.get(i) ?? null,
     sourceId,
   }))
 }

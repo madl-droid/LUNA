@@ -9,7 +9,7 @@ import type { KnowledgeCache } from './cache.js'
 import type { KnowledgeManager } from './knowledge-manager.js'
 import type { VectorizeWorker } from './vectorize-worker.js'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, unlink } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import type {
   KnowledgeItem,
@@ -17,16 +17,29 @@ import type {
   KnowledgeSourceType,
   KnowledgeConfig,
   SmartChunk,
+  DriveFolderNode,
+  FolderIndexEntry,
 } from './types.js'
 import {
   chunkDocs,
   chunkSheets,
   chunkPdf,
+  chunkSlidesAsPdf,
   chunkYoutube,
   chunkWeb,
-  parseYoutubeChapters,
   linkChunks,
 } from './extractors/smart-chunker.js'
+
+import {
+  parseYouTubeUrl,
+  getVideoMeta,
+  getTranscript,
+  downloadThumbnail,
+  downloadVideo,
+  listPlaylistVideos,
+  getChannelMeta,
+} from '../../extractors/youtube-adapter.js'
+import { parseYoutubeChapters } from '../../extractors/youtube.js'
 
 const logger = pino({ name: 'knowledge:items' })
 
@@ -94,8 +107,12 @@ interface DocsService {
 }
 
 interface DriveService {
-  listFiles(options: { folderId?: string; mimeType?: string; pageSize?: number }): Promise<{
-    files: Array<{ id: string; name: string; mimeType: string; webViewLink?: string }>
+  listFiles(options: {
+    folderId?: string; mimeType?: string; pageSize?: number
+    pageToken?: string; orderBy?: string; fields?: string
+  }): Promise<{
+    files: Array<{ id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string }>
+    nextPageToken?: string
   }>
   getFile(fileId: string): Promise<{ id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string }>
   downloadFile(fileId: string): Promise<Buffer>
@@ -385,22 +402,20 @@ export class KnowledgeItemManager {
       tabNames = ['PDF']
     } else if (item.sourceType === 'youtube') {
       const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
-      const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
-      if (playlistMatch?.[1]) {
-        // Direct playlist → list videos as tabs
-        const videos = await this.listPlaylistVideos(playlistMatch[1], apiKey)
+      const parsed = parseYouTubeUrl(item.sourceUrl)
+      if (parsed.type === 'playlist' && parsed.id) {
+        const videos = await listPlaylistVideos(parsed.id, apiKey)
         tabNames = videos.map(v => v.title)
-      } else {
-        // Channel → list playlists as tabs (or uploads)
-        const channelMatch = YOUTUBE_CHANNEL_REGEX.exec(item.sourceUrl)
-        if (channelMatch && apiKey) {
-          const handle = channelMatch[1] ?? channelMatch[2]!
-          const playlists = await this.listChannelPlaylists(handle, apiKey)
-          tabNames = playlists.map(p => p.title)
+      } else if (parsed.type === 'channel' && parsed.id && apiKey) {
+        try {
+          const channelMeta = await getChannelMeta(parsed.id, apiKey)
+          tabNames = channelMeta.playlists.map(p => p.title)
           if (tabNames.length === 0) tabNames = ['Uploads']
-        } else {
+        } catch {
           tabNames = ['Videos']
         }
+      } else {
+        tabNames = ['Videos']
       }
     }
 
@@ -576,56 +591,51 @@ export class KnowledgeItemManager {
   }
 
   private async loadSlidesContent(item: KnowledgeItem): Promise<number> {
-    const slidesService = this.registry.getOptional<SlidesService>('google:slides')
     const drive = this.registry.getOptional<DriveService>('google:drive')
+    if (!drive) throw new Error('Servicio Google Drive no disponible para exportar Slides')
 
-    // Get slide text per slide
-    const slideText = slidesService ? await slidesService.getSlideText(item.sourceId) : ''
-    const slideTexts = slideText.split(/---slide---/i).map(s => s.trim()).filter(Boolean)
-
-    // Try to export as PDF and render each page as image for multimodal
-    let slideImages: string[] = []
-    if (drive) {
-      try {
-        const exported = await drive.exportFile(item.sourceId, 'application/pdf')
-        const pdfBytes = Buffer.isBuffer(exported) ? exported : Buffer.from(exported, 'utf-8')
-        if (pdfBytes.length > 100) {
-          const { PDFParse } = await import('pdf-parse')
-          const parser = new PDFParse({ data: new Uint8Array(pdfBytes) })
-          const screenshots = await parser.getScreenshot({
-            scale: 1.5,
-            imageBuffer: true,
-          })
-          if (screenshots?.pages) {
-            slideImages = screenshots.pages
-              .map(p => p.data ? Buffer.from(p.data).toString('base64') : '')
-              .filter(Boolean)
-          }
-          await parser.destroy().catch(() => {})
-        }
-      } catch (err) {
-        logger.warn({ err, itemId: item.id }, '[SLIDES] PDF export/screenshot failed, using text-only')
-      }
-    }
-
-    // Build slide chunks: image + text per slide
-    const { chunkSlides } = await import('./extractors/smart-chunker.js')
-    const slideData = slideTexts.map((text, i) => ({
-      text,
-      imageBase64: slideImages[i],
-      title: `Slide ${i + 1}`,
-    }))
-
-    // Fallback: if no individual slides, treat as single text document
-    if (slideData.length === 0 && slideText.trim()) {
-      const chunks = chunkDocs(slideText)
+    // Exportar Google Slides como PDF via Drive API
+    // drive.exportFile con 'application/pdf' retorna Buffer (según DriveService)
+    let pdfBuffer: Buffer
+    try {
+      const exported = await drive.exportFile(item.sourceId, 'application/pdf')
+      pdfBuffer = Buffer.isBuffer(exported) ? exported : Buffer.from(exported as string, 'binary')
+      if (pdfBuffer.length < 100) throw new Error('PDF export empty')
+    } catch (err) {
+      logger.warn({ err, itemId: item.id }, '[SLIDES] PDF export failed, falling back to text-only')
+      // Fallback: obtener texto via Slides API
+      const slidesService = this.registry.getOptional<SlidesService>('google:slides')
+      const slideText = slidesService ? await slidesService.getSlideText(item.sourceId) : ''
+      if (!slideText.trim()) return 0
+      const chunks = chunkDocs(slideText, { sourceFile: item.title, sourceType: 'slides' })
       return this.persistSmartChunks(item, item.title, 'text/plain', chunks, {
         fileUrl: item.sourceUrl,
       })
     }
 
-    const chunks = chunkSlides(slideData)
+    // Extraer texto por página para FTS
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
+    const pageTexts = pdfResult.sections.map(s => s.content)
+    const totalPages = pageTexts.length || 1
+
+    // Guardar PDF en media dir
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
+    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    await mkdir(knowledgeDir, { recursive: true })
+    const pdfName = `${contentHash.substring(0, 12)}_${item.title.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
+    await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
+
+    // Chunk visual (pipeline PDF) — sin speaker notes (Google Slides API no las expone fácilmente)
+    const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, [], {
+      sourceFile: item.title,
+    })
+
+    logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[SLIDES] Visual pipeline via PDF export')
+
     return this.persistSmartChunks(item, item.title, 'application/vnd.google-apps.presentation', chunks, {
+      buffer: pdfBuffer,
+      description: item.description,
       fileUrl: item.sourceUrl,
     })
   }
@@ -637,24 +647,221 @@ export class KnowledgeItemManager {
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 100 })
+    // ═══ Fase 1: Crawl completo (solo metadata — rápido) ═══
+    const allNodes = await this.crawlDriveFolder(drive, item.sourceId, '', null, 0)
+
+    // Filter ignored files
+    const filteredNodes = allNodes.filter(n => !n.isFolder && !ignoredNames.has(n.name))
+    const folderNodes = allNodes.filter(n => n.isFolder)
+
+    logger.info({
+      itemId: item.id, fileCount: filteredNodes.length, folderCount: folderNodes.length,
+    }, '[DRIVE] Folder structure scanned')
+
+    // Persist folder index (all nodes including folders)
+    await this.pgStore.replaceFolderIndex(item.id, allNodes)
+
+    // ═══ Fase 2: Procesar archivos nivel por nivel ═══
+    const byDepth = new Map<number, DriveFolderNode[]>()
+    for (const file of filteredNodes) {
+      const depth = file.path.split('/').length - 1
+      const list = byDepth.get(depth) ?? []
+      list.push(file)
+      byDepth.set(depth, list)
+    }
+
     let totalChunks = 0
+    const sortedDepths = [...byDepth.keys()].sort((a, b) => a - b)
 
-    for (const file of result.files) {
-      if (ignoredNames.has(file.name)) {
-        logger.debug({ name: file.name }, 'Drive file ignored')
-        continue
+    for (const depth of sortedDepths) {
+      const levelFiles = byDepth.get(depth)!
+      logger.info({ depth, fileCount: levelFiles.length }, '[DRIVE] Processing level')
+
+      for (const node of levelFiles) {
+        try {
+          const fileObj = {
+            id: node.id,
+            name: node.name,
+            mimeType: node.mimeType,
+            webViewLink: node.webViewLink,
+          }
+          const chunks = await this.loadDriveFile(fileObj, item)
+          totalChunks += chunks
+          await this.pgStore.updateFolderIndexEntry(item.id, node.id, { status: 'processed' })
+        } catch (err) {
+          await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
+            status: 'error',
+            errorMessage: (err as Error).message,
+          })
+          logger.warn({ err, fileId: node.id, name: node.name, path: node.path }, '[DRIVE] File failed')
+        }
       }
 
-      try {
-        const chunks = await this.loadDriveFile(file, item)
-        totalChunks += chunks
-      } catch (err) {
-        logger.warn({ err, fileId: file.id, name: file.name }, 'Failed to load drive file, skipping')
-      }
+      logger.info({ depth, totalChunks }, '[DRIVE] Level complete')
     }
 
     return totalChunks
+  }
+
+  /**
+   * Crawl recursivo de una carpeta de Drive (solo metadata, sin descargar archivos).
+   * Retorna todos los nodos (carpetas + archivos) con path relativo desde la raíz.
+   */
+  private async crawlDriveFolder(
+    drive: DriveService,
+    folderId: string,
+    parentPath: string,
+    parentId: string | null,
+    depth: number,
+  ): Promise<DriveFolderNode[]> {
+    if (depth > 10) {
+      logger.warn({ folderId, depth }, '[DRIVE] Max depth reached, stopping recursion')
+      return []
+    }
+
+    const nodes: DriveFolderNode[] = []
+    let pageToken: string | undefined
+
+    do {
+      const result = await drive.listFiles({
+        folderId,
+        pageSize: 100,
+        pageToken,
+        orderBy: 'folder,name',
+        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, webViewLink, md5Checksum)',
+      })
+
+      for (const file of result.files) {
+        const isFolder = file.mimeType === 'application/vnd.google-apps.folder'
+        const path = parentPath ? `${parentPath}/${file.name}` : file.name
+
+        nodes.push({
+          id: file.id,
+          name: file.name,
+          mimeType: file.mimeType,
+          path,
+          parentId,
+          isFolder,
+          modifiedTime: file.modifiedTime,
+          webViewLink: file.webViewLink,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          contentHash: (file as any).md5Checksum ?? undefined,
+          status: 'pending',
+        })
+
+        // Recursión en subcarpetas
+        if (isFolder) {
+          const children = await this.crawlDriveFolder(drive, file.id, path, file.id, depth + 1)
+          nodes.push(...children)
+        }
+      }
+
+      pageToken = result.nextPageToken
+    } while (pageToken)
+
+    return nodes
+  }
+
+  /**
+   * Sync incremental de carpeta: re-crawl + comparación con índice existente.
+   * Retorna conteo de archivos añadidos, actualizados y eliminados.
+   */
+  async syncDriveFolder(item: KnowledgeItem): Promise<{ added: number; updated: number; deleted: number; chunks: number }> {
+    const drive = this.registry.getOptional<DriveService>('google:drive')
+    if (!drive) throw new Error('Servicio Google Drive no disponible')
+
+    // 1. Re-crawl (solo metadata — rápido)
+    const freshNodes = await this.crawlDriveFolder(drive, item.sourceId, '', null, 0)
+    const freshFiles = freshNodes.filter(n => !n.isFolder)
+    const freshMap = new Map(freshFiles.map(n => [n.id, n]))
+
+    // 2. Cargar índice existente
+    const existingEntries = await this.pgStore.getFolderIndex(item.id)
+    const existingFiles = existingEntries.filter(e => !e.isFolder)
+    const existingMap = new Map(existingFiles.map(e => [e.fileId, e]))
+
+    let added = 0, updated = 0, deleted = 0, totalChunks = 0
+
+    // Detectar archivos ignorados
+    const allTabs = item.tabs ?? []
+    const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
+
+    // 3a. Nuevos y modificados
+    for (const [fileId, freshNode] of freshMap) {
+      if (ignoredNames.has(freshNode.name)) {
+        freshNode.status = 'skipped'
+        continue
+      }
+
+      const existing = existingMap.get(fileId)
+
+      if (!existing) {
+        freshNode.status = 'pending'
+        added++
+      } else if (hasFileChanged(existing, freshNode)) {
+        // Archivo modificado — limpiar documento viejo si existe
+        if (existing.documentId) {
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_chunks WHERE document_id = $1`, [existing.documentId],
+          )
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_documents WHERE id = $1`, [existing.documentId],
+          )
+        }
+        freshNode.status = 'pending'
+        updated++
+      } else {
+        // Sin cambios — mantener estado existente
+        freshNode.status = existing.status as DriveFolderNode['status']
+        freshNode.documentId = existing.documentId
+      }
+    }
+
+    // 3b. Detectar eliminados
+    for (const [fileId, existing] of existingMap) {
+      if (!freshMap.has(fileId)) {
+        if (existing.documentId) {
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_chunks WHERE document_id = $1`, [existing.documentId],
+          )
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_documents WHERE id = $1`, [existing.documentId],
+          )
+        }
+        deleted++
+      }
+    }
+
+    // 4. Reemplazar índice completo
+    await this.pgStore.replaceFolderIndex(item.id, freshNodes)
+
+    // 5. Procesar pendientes
+    const pending = freshFiles.filter(n => n.status === 'pending')
+    logger.info({
+      itemId: item.id, added, updated, deleted, pending: pending.length,
+    }, '[DRIVE] Sync diff computed')
+
+    for (const node of pending) {
+      try {
+        const fileObj = {
+          id: node.id,
+          name: node.name,
+          mimeType: node.mimeType,
+          webViewLink: node.webViewLink,
+        }
+        const chunks = await this.loadDriveFile(fileObj, item)
+        totalChunks += chunks
+        await this.pgStore.updateFolderIndexEntry(item.id, node.id, { status: 'processed' })
+      } catch (err) {
+        await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
+          status: 'error',
+          errorMessage: (err as Error).message,
+        })
+        logger.warn({ err, fileId: node.id, name: node.name }, '[DRIVE] Sync file failed')
+      }
+    }
+
+    return { added, updated, deleted, chunks: totalChunks }
   }
 
   /** Load a single file from Drive, dispatching by MIME type */
@@ -718,10 +925,29 @@ export class KnowledgeItemManager {
     } else if (mime === 'application/vnd.google-apps.presentation') {
       text = await drive.exportFile(file.id, 'text/plain') as string
 
-    // ── Office formats uploaded to Drive (export via Drive API) ──
+    // ── Office formats uploaded to Drive (binaries + smart router) ──
     } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       || mime === 'application/msword') {
-      text = await drive.exportFile(file.id, 'text/plain') as string
+      // DOCX: descargar binario → extractDocxSmart → visual o text
+      const docxBuffer = await drive.downloadFile(file.id)
+      const { extractDocxSmart } = await import('../../extractors/docx.js')
+      const docxResult = await extractDocxSmart(docxBuffer, file.name)
+
+      if (docxResult.pdfBuffer) {
+        // VISUAL pipeline: DOCX con imágenes → PDF
+        return this.persistVisualPdf(item, file, docxResult.pdfBuffer, mime)
+      }
+      // TEXT pipeline: DOCX sin imágenes
+      text = docxResult.sections.map(s => {
+        const heading = s.title ? `## ${s.title}\n` : ''
+        return heading + s.content
+      }).join('\n\n')
+      if (!text.trim()) return 0
+      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'docx', sourceMimeType: mime })
+      return this.persistSmartChunks(item, fileName, mime, chunks, {
+        description: fileName,
+        fileUrl: file.webViewLink,
+      })
 
     } else if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       || mime === 'application/vnd.ms-excel') {
@@ -729,15 +955,29 @@ export class KnowledgeItemManager {
 
     } else if (mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
       || mime === 'application/vnd.ms-powerpoint') {
-      text = await drive.exportFile(file.id, 'text/plain') as string
+      // PPTX: descargar binario → extractPptx → visual o text
+      const pptxBuffer = await drive.downloadFile(file.id)
+      const { extractPptx } = await import('../../extractors/slides.js')
+      const pptxResult = await extractPptx(pptxBuffer, file.name)
+
+      if (pptxResult.pdfBuffer) {
+        // VISUAL pipeline con speaker notes
+        return this.persistVisualSlides(item, file, pptxResult.pdfBuffer, pptxResult.speakerNotes ?? [], mime)
+      }
+      // TEXT fallback
+      text = pptxResult.slides.map(s => s.text).join('\n\n')
+      if (!text.trim()) return 0
+      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'slides', sourceMimeType: mime })
+      return this.persistSmartChunks(item, fileName, mime, chunks, {
+        description: fileName,
+        fileUrl: file.webViewLink,
+      })
 
     // ── PDF ──
     } else if (mime === 'application/pdf') {
-      const buffer = await drive.downloadFile(file.id)
-      text = await extractTextFromPdf(buffer)
-      if (!text.trim()) {
-        logger.warn({ fileId: file.id, name: file.name }, 'PDF has no extractable text (possibly scanned image)')
-      }
+      // PDF: descargar binario → chunkPdf (visual pipeline)
+      const pdfBuffer = await drive.downloadFile(file.id)
+      return this.persistVisualPdf(item, file, pdfBuffer, mime)
 
     // ── Plain text / Markdown ──
     } else if (mime === 'text/plain' || mime === 'text/markdown' || mime === 'text/csv'
@@ -753,8 +993,8 @@ export class KnowledgeItemManager {
 
     if (!text.trim()) return 0
 
-    // Use smart chunker for Drive files
-    const chunks = chunkDocs(text)
+    // Use smart chunker for Drive files (text-only path)
+    const chunks = chunkDocs(text, { sourceFile: file.name, sourceMimeType: mime })
     return this.persistSmartChunks(item, fileName, 'text/plain', chunks, {
       description: fileName,
       fileUrl: file.webViewLink,
@@ -797,6 +1037,74 @@ export class KnowledgeItemManager {
     return this.persistSmartChunks(item, item.title, 'application/pdf', chunks, {
       buffer: pdfBuffer,
       description: item.description,
+    })
+  }
+
+  // ─── Visual pipeline helpers (Drive files) ───
+
+  /**
+   * Persiste un PDF (de DOCX convertido o PDF descargado de Drive) via pipeline visual.
+   * Extrae texto por página, guarda PDF en media dir, usa chunkPdf.
+   */
+  private async persistVisualPdf(
+    item: KnowledgeItem,
+    file: { id: string; name: string; mimeType: string; webViewLink?: string },
+    pdfBuffer: Buffer,
+    originalMime: string,
+  ): Promise<number> {
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
+    const pageTexts = pdfResult.sections.map(s => s.content)
+    const totalPages = pageTexts.length || 1
+
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
+    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    await mkdir(knowledgeDir, { recursive: true })
+    const pdfName = `${contentHash.substring(0, 12)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
+    await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
+
+    const chunks = chunkPdf(pageTexts, pdfName, totalPages, {
+      sourceFile: file.name,
+    })
+    logger.info({ fileId: file.id, totalPages, chunkCount: chunks.length }, '[DRIVE-PDF] Visual pipeline')
+
+    return this.persistSmartChunks(item, file.name, originalMime, chunks, {
+      buffer: pdfBuffer,
+      description: file.name,
+      fileUrl: file.webViewLink,
+    })
+  }
+
+  /**
+   * Persiste slides PPTX de Drive (exportado a PDF) via pipeline visual con speaker notes.
+   */
+  private async persistVisualSlides(
+    item: KnowledgeItem,
+    file: { id: string; name: string; mimeType: string; webViewLink?: string },
+    pdfBuffer: Buffer,
+    speakerNotes: Array<{ slideIndex: number; text: string }>,
+    originalMime: string,
+  ): Promise<number> {
+    const { extractPDF } = await import('../../extractors/pdf.js')
+    const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
+    const pageTexts = pdfResult.sections.map(s => s.content)
+    const totalPages = pageTexts.length || 1
+
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
+    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    await mkdir(knowledgeDir, { recursive: true })
+    const pdfName = `${contentHash.substring(0, 12)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
+    await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
+
+    const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, speakerNotes, {
+      sourceFile: file.name,
+    })
+    logger.info({ fileId: file.id, totalPages, speakerNotes: speakerNotes.length, chunkCount: chunks.length }, '[DRIVE-PPTX] Visual pipeline')
+
+    return this.persistSmartChunks(item, file.name, originalMime, chunks, {
+      buffer: pdfBuffer,
+      description: file.name,
+      fileUrl: file.webViewLink,
     })
   }
 
@@ -998,142 +1306,402 @@ export class KnowledgeItemManager {
     return blocks
   }
 
-  /** YouTube: smart chunk — header (thumbnail+meta) + transcript by chapters/5min */
+  /**
+   * YouTube: router unificado.
+   * Detecta tipo (video / playlist / channel) y delega al sub-loader correspondiente.
+   */
   private async loadYoutubeContent(item: KnowledgeItem): Promise<number> {
+    const parsed = parseYouTubeUrl(item.sourceUrl)
+
+    if (parsed.type === 'video' && parsed.id) {
+      return this.loadYoutubeVideo(item, parsed.id)
+    }
+
+    if (parsed.type === 'playlist' && parsed.id) {
+      return this.loadYoutubePlaylist(item, parsed.id)
+    }
+
+    if (parsed.type === 'channel' && parsed.id) {
+      return this.loadYoutubeChannel(item, parsed.id)
+    }
+
+    logger.warn({ itemId: item.id, url: item.sourceUrl, type: parsed.type }, '[YT] Unknown YouTube URL type')
+    return 0
+  }
+
+  /**
+   * WP4: Escenario 2 — Video individual con transcript preciso + descarga mp4.
+   */
+  private async loadYoutubeVideo(item: KnowledgeItem, videoId: string): Promise<number> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
-    let videos: Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }> = []
+    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+
+    // 1. Metadata del video
+    let meta: import('../../extractors/youtube-adapter.js').YouTubeVideoMeta | null = null
+    if (apiKey) {
+      try {
+        meta = await getVideoMeta(videoId, apiKey)
+      } catch (err) {
+        logger.warn({ err, videoId }, '[YT-VIDEO] getVideoMeta failed, continuing')
+      }
+    }
+
+    const title = meta?.title ?? `Video ${videoId}`
+    const description = meta?.description ?? ''
+    const videoUrl = meta?.url ?? `https://www.youtube.com/watch?v=${videoId}`
+
+    // 2. Transcript
+    const transcriptResult = await getTranscript(videoId, this.registry, { fallbackSTT: true })
+    const segments = transcriptResult?.segments ?? []
+
+    // 3. Descargar video mp4
+    let videoBuffer: Buffer | null = null
+    let videoMimeType = 'video/mp4'
+    let downloadedPath: string | null = null
+
+    try {
+      const dl = await downloadVideo(videoId, mediaDir)
+      const { readFile } = await import('node:fs/promises')
+      videoBuffer = await readFile(dl.filePath)
+      videoMimeType = dl.mimeType
+      downloadedPath = dl.filePath
+      logger.info({ videoId, sizeBytes: dl.sizeBytes }, '[YT-VIDEO] Downloaded mp4')
+    } catch (err) {
+      logger.warn({ err, videoId }, '[YT-VIDEO] yt-dlp download failed, falling back to text-only')
+    }
+
+    let totalChunks = 0
+
+    if (videoBuffer) {
+      // 4a. Pipeline video: extractVideo + describeVideo + temporal split + chunkVideo
+      try {
+        const { extractVideo, describeVideo } = await import('../../extractors/video.js')
+        const videoResult = await extractVideo(videoBuffer, `${videoId}.mp4`, videoMimeType)
+        const enriched = await describeVideo(videoResult, this.registry)
+        const llmDescription = enriched.llmEnrichment?.description ?? null
+        const duration = videoResult.durationSeconds ?? (meta?.duration ?? 0)
+
+        const contentHash = createHash('sha256').update(videoBuffer).digest('hex')
+        const hashPrefix = contentHash.substring(0, 12)
+
+        // routeVideo from knowledge-manager handles temporal splitting
+        // We replicate the logic here using KnowledgeManager's routeVideo indirectly
+        // via the internal split + chunkVideo approach
+        const { splitMediaFile, VIDEO_SPLIT_CONFIG } = await import('./extractors/temporal-splitter.js')
+        const { chunkVideo: _chunkVideo } = await import('./extractors/smart-chunker.js')
+
+        let videoChunks: import('./embedding-limits.js').EmbeddableChunk[]
+
+        if (duration > 50) {
+          const splitSegs = await splitMediaFile(videoBuffer, videoMimeType, duration, VIDEO_SPLIT_CONFIG)
+          const persistedSegs: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }> = []
+
+          await mkdir(mediaDir, { recursive: true })
+          for (let i = 0; i < splitSegs.length; i++) {
+            const seg = splitSegs[i]!
+            const segFile = `${hashPrefix}_vseg${i}.mp4`
+            const segBuf = await (await import('node:fs/promises')).readFile(seg.segmentPath)
+            await writeFile(join(mediaDir, segFile), segBuf)
+            await unlink(seg.segmentPath).catch(() => {})
+            persistedSegs.push({ startSeconds: seg.startSeconds, endSeconds: seg.endSeconds, segmentPath: segFile })
+          }
+
+          videoChunks = _chunkVideo({
+            description: llmDescription,
+            transcription: segments.length > 0 ? segments.map(s => s.text).join(' ') : null,
+            transcriptSegments: segments.length > 0 ? segments : undefined,
+            durationSeconds: duration,
+            mimeType: videoMimeType,
+            sourceFile: title,
+            sourceUrl: videoUrl,
+            segments: persistedSegs,
+          })
+        } else {
+          // Video corto: 1 solo chunk
+          const videoFile = `${hashPrefix}_${videoId}.mp4`
+          await mkdir(mediaDir, { recursive: true })
+          await writeFile(join(mediaDir, videoFile), videoBuffer)
+
+          videoChunks = _chunkVideo({
+            description: llmDescription,
+            transcription: segments.length > 0 ? segments.map(s => s.text).join(' ') : null,
+            transcriptSegments: segments.length > 0 ? segments : undefined,
+            durationSeconds: duration,
+            mimeType: videoMimeType,
+            sourceFile: title,
+            sourceUrl: videoUrl,
+            filePath: videoFile,
+          })
+        }
+
+        // Enriquecer metadata YouTube
+        for (const chunk of videoChunks) {
+          chunk.metadata = {
+            ...chunk.metadata,
+            sourceType: 'video',
+            sourceUrl: videoUrl,
+            videoId,
+            channelTitle: meta?.channelTitle ?? null,
+            publishedAt: meta?.publishedAt ?? null,
+            tags: meta?.tags ?? [],
+            topicCategories: meta?.topicCategories ?? [],
+          }
+        }
+
+        totalChunks += await this.persistSmartChunks(item, title, videoMimeType, videoChunks, {
+          description: `YouTube video: ${title}`,
+        })
+
+        // Limpiar binario descargado (ya fue partido en segmentos o persistido)
+        if (downloadedPath) {
+          await unlink(downloadedPath).catch(() => {})
+        }
+      } catch (err) {
+        logger.warn({ err, videoId }, '[YT-VIDEO] Video pipeline failed, falling back to text')
+        if (downloadedPath) await unlink(downloadedPath).catch(() => {})
+        videoBuffer = null
+      }
+    }
+
+    // 4b. Fallback text-only: chunkYoutube con transcript
+    if (!videoBuffer) {
+      if (segments.length === 0 && !description.trim()) {
+        logger.warn({ videoId, title }, '[YT-VIDEO] No transcript + no description + no video, skipping')
+        return 0
+      }
+
+      let thumbnailBase64: string | undefined
+      if (meta?.thumbnailUrl) {
+        const thumb = await downloadThumbnail(meta.thumbnailUrl)
+        if (thumb) thumbnailBase64 = thumb.buffer.toString('base64')
+      }
+
+      const chapters = description ? parseYoutubeChapters(description) : null
+      const chunks = chunkYoutube(
+        { title, description, thumbnailBase64, url: videoUrl },
+        segments,
+        chapters,
+      )
+
+      // Enriquecer metadata
+      for (const chunk of chunks) {
+        chunk.metadata = {
+          ...chunk.metadata,
+          videoId,
+          channelTitle: meta?.channelTitle ?? null,
+          publishedAt: meta?.publishedAt ?? null,
+          tags: meta?.tags ?? [],
+          topicCategories: meta?.topicCategories ?? [],
+          transcriptSource: transcriptResult?.source ?? null,
+        }
+      }
+
+      totalChunks += await this.persistSmartChunks(item, title, 'text/plain', chunks, {
+        description: `YouTube video: ${title}`,
+      })
+    }
+
+    logger.info({ videoId, title, totalChunks }, '[YT-VIDEO] Video loaded')
+    return totalChunks
+  }
+
+  /**
+   * WP5: Escenario 3 — Playlist: preview 60s + transcript por cada video.
+   */
+  private async loadYoutubePlaylist(item: KnowledgeItem, playlistId: string): Promise<number> {
+    const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
 
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
-    if (playlistMatch?.[1]) {
-      videos = await this.listPlaylistVideos(playlistMatch[1], apiKey)
-    } else {
-      const channelMatch = YOUTUBE_CHANNEL_REGEX.exec(item.sourceUrl)
-      if (channelMatch) {
-        const handle = channelMatch[1] ?? channelMatch[2]!
-        const uploadsPlaylistId = await this.getChannelUploadsPlaylist(handle, apiKey)
-        if (uploadsPlaylistId) {
-          videos = await this.listPlaylistVideos(uploadsPlaylistId, apiKey)
-        }
-      }
-    }
-
-    logger.info({ itemId: item.id, videoCount: videos.length }, '[YT] Videos found')
+    const videos = await listPlaylistVideos(playlistId, apiKey)
+    logger.info({ itemId: item.id, playlistId, videoCount: videos.length }, '[YT-PLAYLIST] Videos found')
 
     let totalChunks = 0
+
     for (const video of videos) {
       if (ignoredNames.has(video.title)) continue
+
       try {
-        // 1. Fetch transcript with offset/duration for time-based chunking
-        const { fetchTranscript } = await import('youtube-transcript')
-        const rawSegments = await fetchTranscript(video.id, { lang: 'es' }).catch(() =>
-          fetchTranscript(video.id).catch(() => []),
-        )
-        const segments = rawSegments.map(s => ({
-          text: s.text,
-          offset: (s as unknown as { offset?: number }).offset ?? 0,
-          duration: (s as unknown as { duration?: number }).duration,
-        }))
+        // 1. Transcript
+        const transcriptResult = await getTranscript(video.videoId, this.registry, { fallbackSTT: true })
+        const segments = transcriptResult?.segments ?? []
 
         if (segments.length === 0 && !video.description.trim()) {
-          logger.warn({ videoId: video.id, title: video.title }, '[YT] No transcript + no description, skipping')
+          logger.warn({ videoId: video.videoId, title: video.title }, '[YT-PLAYLIST] No transcript + no description, skipping')
           continue
         }
 
-        // 2. Download thumbnail as base64 for multimodal header chunk
+        // 2. Thumbnail
         let thumbnailBase64: string | undefined
         if (video.thumbnailUrl) {
-          try {
-            const thumbRes = await fetch(video.thumbnailUrl, { signal: AbortSignal.timeout(10000) })
-            if (thumbRes.ok) {
-              thumbnailBase64 = Buffer.from(await thumbRes.arrayBuffer()).toString('base64')
-            }
-          } catch { /* non-fatal */ }
+          const thumb = await downloadThumbnail(video.thumbnailUrl)
+          if (thumb) thumbnailBase64 = thumb.buffer.toString('base64')
         }
 
-        // 3. Parse chapters from description (if any)
+        // 3. Chapters
         const chapters = video.description ? parseYoutubeChapters(video.description) : null
 
-        // 4. Smart chunk: header + transcript sections
-        const chunks = chunkYoutube(
-          { title: video.title, description: video.description, thumbnailBase64 },
+        // 4. Transcript chunks (audio contentType)
+        const transcriptChunks = chunkYoutube(
+          { title: video.title, description: video.description, thumbnailBase64, url: video.url },
           segments,
           chapters,
         )
 
-        totalChunks += await this.persistSmartChunks(item, video.title, 'text/plain', chunks, {
-          description: `YouTube: ${video.title}`,
+        // Enriquecer metadata
+        const playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`
+        for (const chunk of transcriptChunks) {
+          chunk.metadata = {
+            ...chunk.metadata,
+            videoId: video.videoId,
+            channelTitle: video.channelTitle,
+            publishedAt: video.publishedAt,
+            tags: video.tags,
+            playlistId,
+            playlistUrl,
+            transcriptSource: transcriptResult?.source ?? null,
+          }
+        }
+
+        // 5. Preview video: descargar primeros 60s y agregar como chunk video_frames
+        const videoChunks: import('./embedding-limits.js').EmbeddableChunk[] = []
+        try {
+          const dl = await downloadVideo(video.videoId, mediaDir)
+          const { readFile: readFileFn } = await import('node:fs/promises')
+          const videoBuf = await readFileFn(dl.filePath)
+
+          const { extractVideo } = await import('../../extractors/video.js')
+          const videoResult = await extractVideo(videoBuf, `${video.videoId}.mp4`, 'video/mp4')
+          const duration = videoResult.durationSeconds ?? (video.duration ?? 0)
+
+          // Solo primer segmento de 60s
+          const { splitMediaFile: splitFn } = await import('./extractors/temporal-splitter.js')
+          const previewConfig = { firstChunkSeconds: 60, subsequentSeconds: 0, overlapSeconds: 0 }
+          const splitSegs = await splitFn(videoBuf, 'video/mp4', Math.min(duration, 60), previewConfig)
+
+          const contentHash = createHash('sha256').update(videoBuf).digest('hex')
+          const hashPrefix = contentHash.substring(0, 12)
+
+          if (splitSegs.length > 0) {
+            const seg = splitSegs[0]!
+            const previewFile = `${hashPrefix}_preview.mp4`
+            await mkdir(mediaDir, { recursive: true })
+            const segBuf = await (await import('node:fs/promises')).readFile(seg.segmentPath)
+            await writeFile(join(mediaDir, previewFile), segBuf)
+            await unlink(seg.segmentPath).catch(() => {})
+
+            videoChunks.push({
+              content: `[Preview video 60s] ${video.title}`,
+              contentType: 'video_frames',
+              mediaRefs: [{ mimeType: 'video/mp4', filePath: previewFile }],
+              chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+              metadata: {
+                sourceType: 'video',
+                sourceFile: video.title,
+                sourceMimeType: 'video/mp4',
+                sourceUrl: video.url,
+                videoId: video.videoId,
+                playlistId,
+                playlistUrl,
+                timestampStart: 0,
+                timestampEnd: Math.min(duration, 60),
+              },
+            })
+          }
+
+          // Limpiar binario completo
+          await unlink(dl.filePath).catch(() => {})
+        } catch (err) {
+          logger.debug({ err, videoId: video.videoId }, '[YT-PLAYLIST] Preview download failed (non-fatal)')
+        }
+
+        const allChunks = [...transcriptChunks, ...videoChunks]
+        totalChunks += await this.persistSmartChunks(item, video.title, 'text/plain', allChunks, {
+          description: `YouTube playlist video: ${video.title}`,
         })
 
         logger.info({
-          videoId: video.id, title: video.title, chunkCount: chunks.length,
-          hasChapters: !!chapters, hasThumbnail: !!thumbnailBase64, segmentCount: segments.length,
-        }, '[YT] Video smart chunked')
+          videoId: video.videoId, title: video.title,
+          transcriptChunks: transcriptChunks.length, videoChunks: videoChunks.length,
+        }, '[YT-PLAYLIST] Video processed')
       } catch (err) {
-        logger.warn({ err, videoId: video.id, title: video.title }, '[YT] Failed to process video')
+        logger.warn({ err, videoId: video.videoId, title: video.title }, '[YT-PLAYLIST] Failed to process video')
       }
     }
 
     return totalChunks
   }
 
-  /** List videos in a YouTube playlist via Data API v3 */
-  private async listPlaylistVideos(playlistId: string, apiKey: string): Promise<Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }>> {
-    if (!apiKey) { logger.warn('No Google API key for YouTube Data API'); return [] }
-    const videos: Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }> = []
-    let pageToken = ''
-    for (let page = 0; page < 5; page++) {
-      const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
-      if (!res.ok) { logger.warn({ status: res.status }, '[YT] Playlist API error'); break }
-      const data = await res.json() as { items?: Array<{ snippet?: { resourceId?: { videoId?: string }; title?: string; description?: string; thumbnails?: { high?: { url?: string }; medium?: { url?: string }; default?: { url?: string } } } }>; nextPageToken?: string }
-      for (const item of data.items ?? []) {
-        const s = item.snippet
-        const vid = s?.resourceId?.videoId
-        const title = s?.title ?? 'Sin título'
-        const description = s?.description ?? ''
-        const thumbnailUrl = s?.thumbnails?.high?.url ?? s?.thumbnails?.medium?.url ?? s?.thumbnails?.default?.url ?? null
-        if (vid) videos.push({ id: vid, title, description, thumbnailUrl })
-      }
-      if (!data.nextPageToken) break
-      pageToken = data.nextPageToken
+  /**
+   * WP6: Escenario 4 — Canal: solo metadata + índice jerárquico de playlists.
+   */
+  private async loadYoutubeChannel(item: KnowledgeItem, handleOrId: string): Promise<number> {
+    const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+
+    let channelMeta: import('../../extractors/youtube-adapter.js').YouTubeChannelMeta | null = null
+    try {
+      channelMeta = await getChannelMeta(handleOrId, apiKey)
+    } catch (err) {
+      logger.warn({ err, handleOrId }, '[YT-CHANNEL] getChannelMeta failed')
+      return 0
     }
-    return videos
-  }
 
-  /** List playlists for a YouTube channel */
-  private async listChannelPlaylists(handle: string, apiKey: string): Promise<Array<{ id: string; title: string }>> {
-    if (!apiKey) return []
-    // Get channel ID first
-    const isHandle = !handle.startsWith('UC')
-    const param = isHandle ? `forHandle=${encodeURIComponent(handle)}` : `id=${encodeURIComponent(handle)}`
-    const chUrl = `https://www.googleapis.com/youtube/v3/channels?part=id&${param}&key=${encodeURIComponent(apiKey)}`
-    const chRes = await fetch(chUrl, { signal: AbortSignal.timeout(10000) })
-    if (!chRes.ok) return []
-    const chData = await chRes.json() as { items?: Array<{ id?: string }> }
-    const channelId = chData.items?.[0]?.id
-    if (!channelId) return []
+    // Chunk 1: Header del canal
+    const headerChunks: import('./embedding-limits.js').EmbeddableChunk[] = [{
+      content: [
+        `# Canal YouTube: ${channelMeta.title}`,
+        channelMeta.description ? `\n${channelMeta.description}` : '',
+        `\nURL: ${channelMeta.url}`,
+        `\nPlaylists públicas: ${channelMeta.playlists.length}`,
+      ].join('').trim(),
+      contentType: 'text',
+      mediaRefs: null,
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'youtube',
+        sourceUrl: channelMeta.url,
+        sectionTitle: channelMeta.title,
+        channelId: channelMeta.channelId,
+        playlistCount: channelMeta.playlists.length,
+      },
+    }]
 
-    const plUrl = `https://www.googleapis.com/youtube/v3/playlists?part=snippet&channelId=${encodeURIComponent(channelId)}&maxResults=50&key=${encodeURIComponent(apiKey)}`
-    const plRes = await fetch(plUrl, { signal: AbortSignal.timeout(10000) })
-    if (!plRes.ok) return []
-    const plData = await plRes.json() as { items?: Array<{ id?: string; snippet?: { title?: string } }> }
-    return (plData.items ?? []).map(p => ({ id: p.id ?? '', title: p.snippet?.title ?? '' })).filter(p => p.id)
-  }
+    // Chunks por playlist
+    const playlistChunks: import('./embedding-limits.js').EmbeddableChunk[] = channelMeta.playlists.map(pl => ({
+      content: [
+        `## Playlist: ${pl.title}`,
+        pl.description ? `\n${pl.description}` : '',
+        `\nVideos: ${pl.videoCount}`,
+        `\nURL: ${pl.url}`,
+      ].join('').trim(),
+      contentType: 'text' as const,
+      mediaRefs: null,
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'youtube',
+        sourceUrl: pl.url,
+        sectionTitle: pl.title,
+        channelId: channelMeta!.channelId,
+        playlistId: pl.playlistId,
+        videoCount: pl.videoCount,
+      },
+    }))
 
-  /** Get the "uploads" playlist ID for a YouTube channel */
-  private async getChannelUploadsPlaylist(handle: string, apiKey: string): Promise<string | null> {
-    if (!apiKey) return null
-    // Try by handle first, then by channel ID
-    const isHandle = !handle.startsWith('UC')
-    const param = isHandle ? `forHandle=${encodeURIComponent(handle)}` : `id=${encodeURIComponent(handle)}`
-    const url = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&${param}&key=${encodeURIComponent(apiKey)}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
-    if (!res.ok) { logger.warn({ status: res.status }, '[YT] Channel API error'); return null }
-    const data = await res.json() as { items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }> }
-    return data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads ?? null
+    const allChunks = [...headerChunks, ...playlistChunks]
+    const totalChunks = await this.persistSmartChunks(item, channelMeta.title, 'text/plain', allChunks, {
+      description: `YouTube canal: ${channelMeta.title}`,
+    })
+
+    logger.info({
+      channelId: channelMeta.channelId,
+      title: channelMeta.title,
+      playlists: channelMeta.playlists.length,
+      totalChunks,
+    }, '[YT-CHANNEL] Channel indexed')
+
+    return totalChunks
   }
 
   // ─── Public API fallbacks (no OAuth needed) ──
@@ -1164,6 +1732,35 @@ export class KnowledgeItemManager {
     return names
   }
 
+  // ─── Drive folder index helpers ─────────────
+
+  /**
+   * Build a text tree view from folder index entries for the console/injection.
+   */
+  async buildFolderTreeText(itemId: string): Promise<string> {
+    const entries = await this.pgStore.getFolderIndex(itemId)
+    const sorted = entries.sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1
+      return a.path.localeCompare(b.path)
+    })
+
+    const lines: string[] = []
+    for (const entry of sorted) {
+      const depth = entry.path.split('/').length - 1
+      const indent = '  '.repeat(depth)
+      const icon = entry.isFolder ? '📁' : '📄'
+      const status = entry.isFolder
+        ? ''
+        : entry.status === 'processed'
+          ? ' ✅'
+          : entry.status === 'error'
+            ? ' ❌'
+            : ' ⏳'
+      lines.push(`${indent}${icon} ${entry.name}${status}`)
+    }
+    return lines.join('\n')
+  }
+
   /** Scan column headers using Google Sheets API v4 with API key (public sheets only) */
   private async scanColumnsPublic(spreadsheetId: string, tabName: string): Promise<string[]> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
@@ -1187,18 +1784,19 @@ export class KnowledgeItemManager {
   }
 }
 
-// ═══════════════════════════════════════════
-// PDF text extraction helper
-// ═══════════════════════════════════════════
+// ─── Module-level helpers ─────────────────────
 
-async function extractTextFromPdf(buffer: Buffer): Promise<string> {
-  try {
-    const { PDFParse } = await import('pdf-parse')
-    const parser = new PDFParse({ data: new Uint8Array(buffer) })
-    const result = await parser.getText()
-    return result.text ?? ''
-  } catch (err) {
-    logger.warn({ err }, 'pdf-parse failed')
-    return ''
+/**
+ * Detect if a Drive file has changed since the last crawl.
+ * Uses md5Checksum for binary files, modifiedTime for Google-native formats.
+ */
+function hasFileChanged(existing: FolderIndexEntry, fresh: DriveFolderNode): boolean {
+  if (fresh.contentHash && existing.contentHash) {
+    return fresh.contentHash !== existing.contentHash
   }
+  if (fresh.modifiedTime && existing.modifiedTime) {
+    return new Date(fresh.modifiedTime).getTime() > new Date(existing.modifiedTime).getTime()
+  }
+  return false  // no podemos determinar → asumir sin cambios
 }
+
