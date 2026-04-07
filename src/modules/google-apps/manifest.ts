@@ -533,7 +533,7 @@ const manifest: ModuleManifest = {
       // Hook: cuando se crea un evento → programar follow-ups
       registry.addHook('google-apps', 'calendar:event-created', async (payload) => {
         try {
-          await _calFollowUpScheduler?.scheduleFollowUps(payload as {
+          await _calFollowUpScheduler?.scheduleFollowUps(payload as unknown as {
             event: import('./types.js').CalendarEvent
             contactId: string
             channel: string
@@ -557,7 +557,7 @@ const manifest: ModuleManifest = {
       // Hook: cuando se actualiza un evento → reagendar follow-ups si cambió fecha
       registry.addHook('google-apps', 'calendar:event-updated', async (payload) => {
         try {
-          const p = payload as { eventId: string; event: import('./types.js').CalendarEvent; dateChanged: boolean }
+          const p = payload as unknown as { eventId: string; event: import('./types.js').CalendarEvent; dateChanged: boolean }
           if (p.dateChanged) {
             await _calFollowUpScheduler?.rescheduleFollowUps(p.eventId, p.event)
           }
