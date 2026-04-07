@@ -247,9 +247,6 @@ function buildGoogleUrlHints(toolNames: string[]): string {
     if (toolNames.includes('drive-get-file')) hints.push('- drive.google.com/file/d/{ID}/... → drive-get-file con fileId="{ID}"')
     hints.push('El ID es el string entre /d/ y el siguiente /')
   }
-  if (toolNames.includes('web_explore')) {
-    hints.push('URLs de YouTube (youtube.com, youtu.be): usar web_explore directo.')
-  }
   return hints.join('\n')
 }
 
