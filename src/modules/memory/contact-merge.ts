@@ -260,12 +260,13 @@ async function backfillContactInfo(
   mergeContactId: string,
 ): Promise<void> {
   // Copy display_name, email, phone from merge to keep if keep is missing them
+  // Use CASE instead of COALESCE to also handle empty strings
   await client.query(
     `UPDATE contacts AS k
      SET
-       display_name = COALESCE(k.display_name, m.display_name),
-       email = COALESCE(k.email, m.email),
-       phone = COALESCE(k.phone, m.phone)
+       display_name = CASE WHEN k.display_name IS NULL OR k.display_name = '' THEN m.display_name ELSE k.display_name END,
+       email = CASE WHEN k.email IS NULL OR k.email = '' THEN m.email ELSE k.email END,
+       phone = CASE WHEN k.phone IS NULL OR k.phone = '' THEN m.phone ELSE k.phone END
      FROM contacts AS m
      WHERE k.id = $1 AND m.id = $2`,
     [keepContactId, mergeContactId],

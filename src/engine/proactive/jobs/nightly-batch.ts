@@ -146,8 +146,11 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
           .join('\n') || '(sin datos)'
 
         const summaries = await ctx.db.query(
-          `SELECT summary_text FROM session_summaries
-           WHERE contact_id = $1 ORDER BY created_at DESC LIMIT 3`,
+          `SELECT summary_text FROM (
+             SELECT summary_text, created_at FROM session_summaries WHERE contact_id = $1
+             UNION ALL
+             SELECT full_summary AS summary_text, created_at FROM session_summaries_v2 WHERE contact_id = $1
+           ) combined ORDER BY created_at DESC LIMIT 3`,
           [row.id],
         ).catch(() => ({ rows: [] }))
 
@@ -795,11 +798,15 @@ async function mergeContactMemories(ctx: ProactiveJobContext): Promise<void> {
   }
 
   try {
-    // Find contacts with unmerged summaries (limit to avoid overloading the batch)
+    // Find contacts with unmerged summaries from both v1 and v2 tables
     const result = await ctx.db.query<{ contact_id: string }>(
-      `SELECT DISTINCT contact_id FROM session_summaries
-       WHERE merged_to_memory_at IS NULL
-         AND created_at < NOW() - INTERVAL '1 hour'
+      `SELECT DISTINCT contact_id FROM (
+         SELECT contact_id FROM session_summaries
+         WHERE merged_to_memory_at IS NULL AND created_at < NOW() - INTERVAL '1 hour'
+         UNION
+         SELECT contact_id FROM session_summaries_v2
+         WHERE merged_to_memory_at IS NULL AND created_at < NOW() - INTERVAL '1 hour'
+       ) combined
        LIMIT $1`,
       [config.compressionBatchSize],
     )

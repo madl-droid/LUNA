@@ -4,7 +4,7 @@
 
 import type { Pool } from 'pg'
 import pino from 'pino'
-import { mergeContacts } from '../../modules/memory/contact-merge.js'
+import { mergeContacts } from '../contact-merge.js'
 
 const logger = pino({ name: 'tool:merge_contacts' })
 

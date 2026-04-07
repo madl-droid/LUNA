@@ -10,8 +10,8 @@ import { MemoryManager } from './memory-manager.js'
 import { CompressionWorker } from './compression-worker.js'
 import { searchSessionMemory } from './memory-search.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
-import { saveContactData } from '../../tools/contacts/save-contact-data.js'
-import { executeMergeContacts } from '../../tools/contacts/merge-contacts.js'
+import { saveContactData } from './tools/save-contact-data.js'
+import { executeMergeContacts } from './tools/merge-contacts.js'
 
 let manager: MemoryManager | null = null
 let compressionWorker: CompressionWorker | null = null
@@ -26,7 +26,7 @@ const manifest: ModuleManifest = {
   type: 'core-module',
   removable: false,
   activateByDefault: true,
-  depends: ['tools'],
+  depends: [],
 
   configSchema: z.object({
     // Buffer and sessions
@@ -256,7 +256,7 @@ const manifest: ModuleManifest = {
           },
         },
         handler: async (input, ctx) => {
-          const typedInput = input as unknown as import('../../tools/contacts/save-contact-data.js').SaveContactDataInput
+          const typedInput = input as unknown as import('./tools/save-contact-data.js').SaveContactDataInput
           if (!ctx.contactId) {
             return { success: false, data: { message: 'No hay contacto activo para guardar datos' } }
           }
@@ -296,8 +296,15 @@ const manifest: ModuleManifest = {
             required: ['keep_contact_id', 'merge_contact_id', 'reason'],
           },
         },
-        handler: async (input) => {
-          const typedInput = input as unknown as import('../../tools/contacts/merge-contacts.js').MergeContactsInput
+        handler: async (input, ctx) => {
+          if (!ctx.contactId) {
+            return { success: false, data: { message: 'No hay contacto activo en esta conversación' } }
+          }
+          const typedInput = input as unknown as import('./tools/merge-contacts.js').MergeContactsInput
+          // At least one of the IDs must be the current contact (prevent arbitrary merges)
+          if (typedInput.keep_contact_id !== ctx.contactId && typedInput.merge_contact_id !== ctx.contactId) {
+            return { success: false, data: { message: 'Al menos uno de los contactos debe ser el contacto actual de la conversación' } }
+          }
           const result = await executeMergeContacts(typedInput, db)
           return { success: result.success, data: result }
         },

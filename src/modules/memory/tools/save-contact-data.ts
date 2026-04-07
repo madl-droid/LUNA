@@ -4,8 +4,8 @@
 
 import type { Pool } from 'pg'
 import pino from 'pino'
-import type { ContactMemory } from '../../modules/memory/types.js'
-import { findMergeCandidates } from '../../modules/memory/contact-merge.js'
+import type { ContactMemory } from '../types.js'
+import { findMergeCandidates } from '../contact-merge.js'
 
 const logger = pino({ name: 'tool:save_contact_data' })
 
@@ -88,25 +88,10 @@ async function handleContactPoint(
   // Normalize identifier
   const normalized = normalizeIdentifier(channel, value)
 
-  // Check for merge candidates (same identifier on a different contact)
-  const mergeCandidates = await findMergeCandidates(db, contactId, normalized)
-  if (mergeCandidates.length > 0) {
-    const candidate = mergeCandidates[0]!
-    return {
-      success: false,
-      message: `El identificador "${normalized}" ya existe en otro contacto: "${candidate.displayName ?? candidate.contactId}" (${candidate.channelType}). Si es la misma persona, usa la herramienta merge_contacts para unificarlos.`,
-      merge_candidate: {
-        contact_id: candidate.contactId,
-        display_name: candidate.displayName,
-        channel_type: candidate.channelType,
-      },
-    }
-  }
-
   // Map channel alias to DB channel_type
   const channelType = mapChannelToType(channel)
 
-  // Insert into contact_channels (idempotent)
+  // Always save channel first (idempotent)
   const insertResult = await db.query(
     `INSERT INTO contact_channels (contact_id, channel_type, channel_identifier, is_primary, last_used_at)
      VALUES ($1, $2, $3, false, NOW())
@@ -137,6 +122,21 @@ async function handleContactPoint(
     if (!memory.key_facts.some(f => f.fact === fact)) {
       memory.key_facts.push({ fact, source: 'agent:conversation', confidence: 0.95 })
       await memoryManager.updateContactMemory(contactId, memory)
+    }
+  }
+
+  // Check for merge candidates (same identifier on a different contact)
+  const mergeCandidates = await findMergeCandidates(db, contactId, normalized)
+  if (mergeCandidates.length > 0) {
+    const candidate = mergeCandidates[0]!
+    return {
+      success: true,
+      message: `Canal guardado: ${channelType} ${normalized}. ATENCIÓN: este identificador ya existe en otro contacto: "${candidate.displayName ?? candidate.contactId}" (${candidate.channelType}). Si es la misma persona, usa la herramienta merge_contacts para unificarlos.`,
+      merge_candidate: {
+        contact_id: candidate.contactId,
+        display_name: candidate.displayName,
+        channel_type: candidate.channelType,
+      },
     }
   }
 
@@ -247,9 +247,10 @@ function normalizeIdentifier(channel: ContactPointChannel, value: string): strin
   const trimmed = value.trim()
   if (channel === 'email') return trimmed.toLowerCase()
   if (channel === 'phone' || channel === 'whatsapp' || channel === 'voice') {
-    // Keep only digits and leading +
-    const digits = trimmed.replace(/[^\d+]/g, '')
-    return digits.startsWith('+') ? digits : `+${digits}`
+    // Strip everything except digits, then add single + prefix (proper E.164)
+    const digits = trimmed.replace(/\D/g, '')
+    if (!digits) return trimmed
+    return `+${digits}`
   }
   return trimmed
 }
