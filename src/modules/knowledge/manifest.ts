@@ -978,7 +978,8 @@ function createApiRoutes(): ApiRoute[] {
           }
           const extracted = extractGoogleId(body.sourceUrl)
           if (!extracted) {
-            jsonResponse(res, 400, { error: 'URL no valida. Debe ser Google Sheets, Docs o Drive.', accessible: false })
+            // Unknown URL format — allow with web fallback (will validate on content load)
+            jsonResponse(res, 200, { accessible: true, sourceType: 'web' })
             return
           }
           // Try OAuth first, then public API fallback
@@ -992,7 +993,7 @@ function createApiRoutes(): ApiRoute[] {
               oauthOk = true
             } catch { /* OAuth failed — try public fallback below */ }
             if (oauthOk) {
-              jsonResponse(res, 200, { accessible: true })
+              jsonResponse(res, 200, { accessible: true, sourceType: extracted.type })
               return
             }
           }
@@ -1005,14 +1006,14 @@ function createApiRoutes(): ApiRoute[] {
                 : `https://docs.googleapis.com/v1/documents/${encodeURIComponent(extracted.id)}?fields=documentId`
               const checkRes = await fetch(`${apiBase}&key=${encodeURIComponent(apiKey)}`, { signal: AbortSignal.timeout(10000) })
               if (checkRes.ok) {
-                jsonResponse(res, 200, { accessible: true })
+                jsonResponse(res, 200, { accessible: true, sourceType: extracted.type })
                 return
               }
             } catch { /* public API also failed */ }
           }
           // For web URLs, PDFs, YouTube — just allow (we'll verify on content load)
           // Cannot verify via OAuth or public API — allow with warning (verified on content load)
-          jsonResponse(res, 200, { accessible: true, warning: 'No se pudo verificar acceso. Asegúrate de que el documento esté compartido.' })
+          jsonResponse(res, 200, { accessible: true, sourceType: extracted.type, warning: 'No se pudo verificar acceso. Asegúrate de que el documento esté compartido.' })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err), accessible: false })
         }
