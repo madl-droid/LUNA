@@ -155,7 +155,7 @@ export function renderGoogleAppsSection(data: SectionData): string {
     { id: 'slides', name: 'Google Slides', icon: '&#128253;',
       perms: ['view', 'share', 'create', 'edit', 'delete'] },
     { id: 'calendar', name: 'Google Calendar', icon: '&#128197;',
-      perms: ['view', 'create', 'edit', 'delete'] },
+      perms: ['view', 'create', 'edit', 'delete'], hasSettings: true },
     { id: 'gmail', name: 'Gmail', icon: '&#9993;',
       perms: ['view', 'create', 'edit', 'delete'] },
   ]
@@ -201,16 +201,23 @@ export function renderGoogleAppsSection(data: SectionData): string {
       </div>`
     }
 
+    const settingsBtn = (svc as { hasSettings?: boolean }).hasSettings && isActive
+      ? `<a href="/console/herramientas/google-apps/${svc.id}" class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:8px;text-decoration:none" onclick="event.stopPropagation()">${isEs ? 'Configurar' : 'Configure'}</a>`
+      : ''
+
     return `<div class="gws-card ts-gws-card${!isActive ? ' ts-gws-card-inactive' : ''}" data-service="${svc.id}">
       <div class="ts-gws-card-header" onclick="gwsToggleCard('${svc.id}')">
         <div class="ts-gws-card-name-wrap">
           <span class="ts-gws-card-icon">${svc.icon}</span>
           <span class="ts-gws-card-name">${svc.name}</span>
         </div>
-        <label class="toggle u-flex-shrink-0" onclick="event.stopPropagation()">
-          <input type="checkbox" class="gws-toggle" data-service="${svc.id}" ${isActive ? 'checked' : ''} onchange="gwsServiceToggled(this)">
-          <span class="toggle-slider"></span>
-        </label>
+        <div style="display:flex;align-items:center;flex-shrink:0" onclick="event.stopPropagation()">
+          ${settingsBtn}
+          <label class="toggle" style="margin-left:8px">
+            <input type="checkbox" class="gws-toggle" data-service="${svc.id}" ${isActive ? 'checked' : ''} onchange="gwsServiceToggled(this)">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
       </div>${statusBadge}
       <div class="gws-card-body ts-gws-card-body" data-card-body="${svc.id}">
         <div class="ts-gws-perms-title">${isEs ? 'Permisos del agente' : 'Agent permissions'}</div>

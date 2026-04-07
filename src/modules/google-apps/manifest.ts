@@ -16,6 +16,8 @@ import { DocsService } from './docs-service.js'
 import { SlidesService } from './slides-service.js'
 import { CalendarService } from './calendar-service.js'
 import { registerGoogleTools } from './tools.js'
+import { CalendarConfigService } from './calendar-config.js'
+import { renderCalendarSettingsPage } from './calendar-console.js'
 import type { GoogleApiConfig, GoogleServiceName } from './types.js'
 
 const logger = pino({ name: 'google-apps' })
@@ -31,6 +33,7 @@ let _services: {
 } = {}
 let _enabledSet: Set<GoogleServiceName> = new Set()
 let _toolsRegistered = false
+let _calConfigService: CalendarConfigService | null = null
 
 /** Build the shared OAuth redirect URI from the request */
 function getRedirectUri(req: import('node:http').IncomingMessage): string {
@@ -269,6 +272,96 @@ const apiRoutes: ApiRoute[] = [
       }
     },
   },
+  // ── Calendar config ──
+  {
+    method: 'GET',
+    path: 'calendar-config',
+    handler: async (_req, res) => {
+      const config = _calConfigService?.get() ?? null
+      const usersDb = _registry?.getOptional<{
+        getListConfig(t: string): Promise<{ syncConfig: Record<string, unknown> } | null>
+        listByType(t: string, active: boolean): Promise<Array<{ id: string; displayName?: string; contacts?: Array<{ channel: string; senderId: string }>; metadata?: unknown }>>
+      }>('users:db')
+      const coworkerListConfig = await usersDb?.getListConfig?.('coworker') ?? null
+      const roles: string[] = ((coworkerListConfig?.syncConfig as Record<string, unknown>)?.roles as string[]) ?? []
+      const allCoworkers = await usersDb?.listByType?.('coworker', true) ?? []
+      const coworkersByRole: Record<string, Array<{ id: string; displayName: string; email: string; role: string }>> = {}
+      for (const role of roles) {
+        coworkersByRole[role] = allCoworkers
+          .filter(u => (u.metadata as Record<string, unknown>)?.role === role)
+          .map(u => ({
+            id: u.id,
+            displayName: u.displayName ?? u.id,
+            email: u.contacts?.find(c => c.channel === 'email')?.senderId ?? '',
+            role,
+          }))
+      }
+      jsonResponse(res, 200, { config, roles, coworkersByRole })
+    },
+  },
+  {
+    method: 'POST',
+    path: 'calendar-config',
+    handler: async (req, res) => {
+      if (!_calConfigService) {
+        jsonResponse(res, 503, { error: 'Calendar config service not ready' })
+        return
+      }
+      try {
+        const body = await parseBody<{
+          meetEnabled: boolean
+          defaultReminders: Array<{ method: 'email' | 'popup'; minutes: number }>
+          defaultDurationMinutes: number
+          eventNamePrefix: string
+          descriptionInstructions: string
+          daysOff: Array<{ type: string; date?: string; start?: string; end?: string }>
+          schedulingRoles: Record<string, { enabled: boolean; instructions: string }>
+          schedulingCoworkers: Record<string, { enabled: boolean; instructions: string }>
+          followUpPost: { enabled: boolean; delayMinutes: number }
+          followUpPre: { enabled: boolean; hoursBefore: number }
+        }>(req)
+        // Clamp numeric values
+        if (body.defaultDurationMinutes < 15) body.defaultDurationMinutes = 15
+        if (body.defaultDurationMinutes > 480) body.defaultDurationMinutes = 480
+        if (body.followUpPost?.delayMinutes < 30) body.followUpPost.delayMinutes = 30
+        if (body.followUpPost?.delayMinutes > 360) body.followUpPost.delayMinutes = 360
+        if (body.followUpPre?.hoursBefore < 3) body.followUpPre.hoursBefore = 3
+        if (body.followUpPre?.hoursBefore > 24) body.followUpPre.hoursBefore = 24
+        await _calConfigService.save(body as Parameters<typeof _calConfigService.save>[0])
+        jsonResponse(res, 200, { ok: true })
+      } catch (err) {
+        jsonResponse(res, 500, { error: 'Save failed: ' + String(err) })
+      }
+    },
+  },
+  {
+    method: 'POST',
+    path: 'calendar-check-access',
+    handler: async (req, res) => {
+      const cal = _services.calendar
+      if (!cal) {
+        jsonResponse(res, 400, { error: 'Calendar not enabled' })
+        return
+      }
+      try {
+        const { emails } = await parseBody<{ emails: string[] }>(req)
+        const results: Record<string, { hasAccess: boolean; error?: string }> = {}
+        const now = new Date()
+        const oneHour = new Date(now.getTime() + 3_600_000)
+        for (const email of emails ?? []) {
+          try {
+            await cal.findFreeSlots(now.toISOString(), oneHour.toISOString(), [email])
+            results[email] = { hasAccess: true }
+          } catch (err: unknown) {
+            results[email] = { hasAccess: false, error: err instanceof Error ? err.message : 'Unknown error' }
+          }
+        }
+        jsonResponse(res, 200, results)
+      } catch (err) {
+        jsonResponse(res, 500, { error: 'Check failed: ' + String(err) })
+      }
+    },
+  },
 ]
 
 // ─── Helpers ───────────────────────────────
@@ -399,6 +492,41 @@ const manifest: ModuleManifest = {
       logger.info('Calendar service enabled')
     }
 
+    // Inicializar servicio de config de Calendar
+    _calConfigService = new CalendarConfigService(db)
+    await _calConfigService.load()
+    registry.provide('google-apps:calendar-config', _calConfigService)
+
+    // Renderer de la página de settings de Calendar para la console
+    registry.provide('google-apps:renderCalendarSection', async (sectionData: { lang?: string }) => {
+      const calCfg = _calConfigService!.get()
+      const usersDb = registry.getOptional<{
+        getListConfig(t: string): Promise<{ syncConfig: Record<string, unknown> } | null>
+        listByType(t: string, active: boolean): Promise<Array<{ id: string; displayName?: string; contacts?: Array<{ channel: string; senderId: string }>; metadata?: unknown }>>
+      }>('users:db')
+      const coworkerListConfig = await usersDb?.getListConfig?.('coworker') ?? null
+      const roles: string[] = ((coworkerListConfig?.syncConfig as Record<string, unknown>)?.roles as string[]) ?? []
+      const allCoworkers = await usersDb?.listByType?.('coworker', true) ?? []
+      const coworkersByRole: Record<string, Array<{ id: string; displayName: string; email: string; role: string }>> = {}
+      for (const role of roles) {
+        coworkersByRole[role] = allCoworkers
+          .filter(u => (u.metadata as Record<string, unknown>)?.role === role)
+          .map(u => ({
+            id: u.id,
+            displayName: u.displayName ?? u.id,
+            email: u.contacts?.find(c => c.channel === 'email')?.senderId ?? '',
+            role,
+          }))
+      }
+      const lang = (sectionData?.lang === 'en' ? 'en' : 'es') as 'es' | 'en'
+      return renderCalendarSettingsPage({ config: calCfg, roles, coworkersByRole, lang })
+    })
+
+    // Hot-reload al aplicar config desde la console
+    registry.addHook('google-apps', 'console:config_applied', async () => {
+      await _calConfigService?.reload()
+    }, 100)
+
     // Registrar tools solo si OAuth está conectado (sin auth las tools fallarían)
     const oauthConnected = oauthManager?.isConnected() ?? false
     _toolsRegistered = oauthConnected
@@ -419,6 +547,7 @@ const manifest: ModuleManifest = {
     _services = {}
     _enabledSet = new Set()
     _toolsRegistered = false
+    _calConfigService = null
   },
 }
 
