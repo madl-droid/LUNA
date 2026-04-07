@@ -19,18 +19,20 @@ Optimización integral del módulo Knowledge para:
 | 1 | [Extractores Globales](knowledge-optimization-plan1-extractors.md) | `feat/knowledge-extractors-integration` | 5 | — |
 | 2 | [Deep Knowledge](knowledge-optimization-plan2-embeddings.md) | `feat/knowledge-deep-search` | 7 | Plan 1 |
 | 3 | [UI/UX](knowledge-optimization-plan3-ui-ux.md) | `feat/knowledge-ui-ux` | 6 | Plan 1 |
+| 4 | [Audit Fixes](knowledge-optimization-plan4-audit-fixes.md) | `feat/knowledge-audit-fixes` | 7 | Plans 1-3 |
 
 ## Orden de ejecución
 
 ```
                     ┌─── Plan 2: Deep Knowledge (7 tareas) ──┐
-Plan 1 (5 tareas) ─┤                                         ├─ Merge a planning branch → PR
+Plan 1 (5 tareas) ─┤                                         ├─ Plan 4: Audit Fixes (7 tareas) → PR
                     └─── Plan 3: UI/UX (6 tareas) ──────────┘
 ```
 
-**Fase 1**: Plan 1 (secuencial, fundacional)
-**Fase 2**: Plan 2 + Plan 3 (en paralelo, branches independientes)
-**Fase 3**: Merge ambos a planning branch → revisión → PR
+**Fase 1**: Plan 1 (secuencial, fundacional) ✅
+**Fase 2**: Plan 2 + Plan 3 (en paralelo, branches independientes) ✅
+**Fase 3**: Auditoría → Plan 4 (audit fixes, branch independiente) ← SIGUIENTE
+**Fase 4**: Merge a planning branch → revisión → PR
 
 ## Branches
 
@@ -38,9 +40,10 @@ Todos derivan de `claude/project-planning-session-nrsYJ`:
 
 ```
 claude/project-planning-session-nrsYJ  (planning branch - este)
-├── feat/knowledge-extractors-integration  (Plan 1 - PRIMERO)
-├── feat/knowledge-deep-search             (Plan 2 - después de merge Plan 1)
-└── feat/knowledge-ui-ux                   (Plan 3 - después de merge Plan 1)
+├── feat/knowledge-extractors-integration  (Plan 1 - PRIMERO) ✅
+├── feat/knowledge-deep-search             (Plan 2 - después de merge Plan 1) ✅
+├── feat/knowledge-ui-ux                   (Plan 3 - después de merge Plan 1) ✅
+└── feat/knowledge-audit-fixes             (Plan 4 - después de merge Plans 1-3) ← SIGUIENTE
 ```
 
 ## Qué resuelve cada plan
@@ -68,6 +71,15 @@ claude/project-planning-session-nrsYJ  (planning branch - este)
 - **Nuevo**: Toast informativo post-creación
 - **Nuevo**: Conteo de fragmentos en items entrenados
 - **Cleanup**: Dead code en UI
+
+### Plan 4: Audit Fixes (Calidad)
+- **[ALTO] Fix missing await**: `expand_knowledge` handler — try/catch era dead code
+- **[ALTO] Fix index chunks duplicados**: hash determinístico + delete-before-insert en re-sync
+- **[MEDIO] Cache invalidation**: `invalidateExpandCache()` conectado al re-training
+- **[MEDIO] Refactor**: Extraer helpers para 4 patrones copy-paste (pageTexts + enrichWithLLM)
+- **[MEDIO] Cleanup llmDescription**: Evaluar si eliminar o conectar parámetro muerto
+- **[BAJO] Cleanup**: console.log, verify-url, skipScannerFallback, traducciones, dead code
+- **[BAJO] Estabilizar**: Constantes compartidas para visual section matching
 
 ## Archivos impactados (consolidado)
 
@@ -102,9 +114,10 @@ claude/project-planning-session-nrsYJ  (planning branch - este)
 ```
 docs/plans/
 ├── knowledge-optimization-overview.md          ← ESTE ARCHIVO
-├── knowledge-optimization-plan1-extractors.md  ← Plan 1
-├── knowledge-optimization-plan2-embeddings.md  ← Plan 2
-└── knowledge-optimization-plan3-ui-ux.md       ← Plan 3
+├── knowledge-optimization-plan1-extractors.md  ← Plan 1 ✅
+├── knowledge-optimization-plan2-embeddings.md  ← Plan 2 ✅
+├── knowledge-optimization-plan3-ui-ux.md       ← Plan 3 ✅
+└── knowledge-optimization-plan4-audit-fixes.md ← Plan 4 (audit fixes)
 ```
 
 ## Instrucciones para el ejecutor (Sonnet 4.6)
