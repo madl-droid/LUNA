@@ -22,6 +22,9 @@ const FAQ_WEIGHT_DEGRADED = 0.2
 // Category boost when searchHint matches
 const CATEGORY_BOOST = 0.2
 
+// Core document boost — applied after category boost
+const CORE_BOOST = 0.15
+
 // Query embedding cache TTL
 const QUERY_CACHE_TTL_S = 600 // 10 min
 
@@ -89,7 +92,8 @@ export class KnowledgeSearchEngine {
     const wFaq = useVector ? FAQ_WEIGHT : FAQ_WEIGHT_DEGRADED
 
     // Merge and score chunks
-    const scored = new Map<string, KnowledgeSearchResult & { combinedScore: number; categoryIds: string[] }>()
+    type ScoredEntry = KnowledgeSearchResult & { combinedScore: number; categoryIds: string[]; isCore: boolean }
+    const scored = new Map<string, ScoredEntry>()
 
     // Add vector results
     for (const r of vectorResults) {
@@ -100,6 +104,10 @@ export class KnowledgeSearchEngine {
         type: 'chunk',
         documentId: r.documentId,
         fileUrl: r.fileUrl ?? undefined,
+        chunkIndex: r.chunkIndex,
+        chunkTotal: r.chunkTotal ?? undefined,
+        sourceType: r.sourceType,
+        isCore: r.isCore,
         combinedScore: r.similarity * wVector,
         categoryIds: r.categoryIds ?? [],
       })
@@ -110,6 +118,7 @@ export class KnowledgeSearchEngine {
       const existing = scored.get(r.chunkId)
       if (existing) {
         existing.combinedScore += r.rank * wFts
+        existing.isCore ||= r.isCore
       } else {
         scored.set(r.chunkId, {
           content: r.content,
@@ -118,6 +127,10 @@ export class KnowledgeSearchEngine {
           type: 'chunk',
           documentId: r.documentId,
           fileUrl: r.fileUrl ?? undefined,
+          chunkIndex: r.chunkIndex,
+          chunkTotal: r.chunkTotal ?? undefined,
+          sourceType: r.sourceType,
+          isCore: r.isCore,
           combinedScore: r.rank * wFts,
           categoryIds: r.categoryIds ?? [],
         })
@@ -132,6 +145,7 @@ export class KnowledgeSearchEngine {
         score: 0,
         type: 'faq',
         faqId: r.faqId,
+        isCore: false,
         combinedScore: r.rank * wFaq,
         categoryIds: [],
       })
@@ -149,6 +163,11 @@ export class KnowledgeSearchEngine {
       }
     }
 
+    // Apply core boost
+    for (const entry of scored.values()) {
+      if (entry.isCore) entry.combinedScore += CORE_BOOST
+    }
+
     // Sort by combined score, normalize, and take top N
     const sorted = [...scored.values()]
       .sort((a, b) => b.combinedScore - a.combinedScore)
@@ -156,7 +175,7 @@ export class KnowledgeSearchEngine {
 
     // Normalize scores to 0-1
     const maxScore = sorted[0]?.combinedScore ?? 1
-    return sorted.map(({ combinedScore, categoryIds: _cats, ...rest }) => ({
+    return sorted.map(({ combinedScore, categoryIds: _cats, isCore: _ic, ...rest }) => ({
       ...rest,
       score: maxScore > 0 ? combinedScore / maxScore : 0,
     }))

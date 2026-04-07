@@ -519,6 +519,10 @@ export class KnowledgePgStore {
     documentTitle: string
     categoryIds: string[]
     fileUrl: string | null
+    isCore: boolean
+    chunkIndex: number
+    chunkTotal: number | null
+    sourceType: string
   }>> {
     const res = await this.db.query<{
       chunk_id: string
@@ -529,6 +533,10 @@ export class KnowledgePgStore {
       document_title: string
       category_ids: string[]
       file_url: string | null
+      is_core: boolean
+      chunk_index: number
+      chunk_total: number | null
+      source_type: string
     }>(
       `SELECT
         c.id as chunk_id,
@@ -538,18 +546,23 @@ export class KnowledgePgStore {
         ts_rank(c.tsv, plainto_tsquery('spanish', $1)) as rank,
         d.title as document_title,
         COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids,
-        d.metadata->>'fileUrl' as file_url
+        d.metadata->>'fileUrl' as file_url,
+        d.is_core,
+        c.chunk_index,
+        c.chunk_total,
+        d.source_type
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
        LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
        WHERE c.tsv @@ plainto_tsquery('spanish', $1)
-       GROUP BY c.id, c.document_id, c.content, c.section, c.tsv, d.title, d.metadata
+       GROUP BY c.id, c.document_id, c.content, c.section, c.tsv, c.chunk_index, c.chunk_total, d.title, d.metadata, d.is_core, d.source_type
        ORDER BY rank DESC
        LIMIT $2`,
       [query, limit],
     )
 
-    return res.rows.map(r => ({
+    type FTSRow = { chunk_id: string; document_id: string; content: string; section: string | null; rank: number; document_title: string; category_ids: string[]; file_url: string | null; is_core: boolean; chunk_index: number; chunk_total: number | null; source_type: string }
+    return res.rows.map((r: FTSRow) => ({
       chunkId: r.chunk_id,
       documentId: r.document_id,
       content: r.content,
@@ -558,6 +571,10 @@ export class KnowledgePgStore {
       documentTitle: r.document_title,
       categoryIds: r.category_ids,
       fileUrl: r.file_url,
+      isCore: r.is_core ?? false,
+      chunkIndex: r.chunk_index,
+      chunkTotal: r.chunk_total,
+      sourceType: r.source_type,
     }))
   }
 
@@ -570,6 +587,10 @@ export class KnowledgePgStore {
     documentTitle: string
     categoryIds: string[]
     fileUrl: string | null
+    isCore: boolean
+    chunkIndex: number
+    chunkTotal: number | null
+    sourceType: string
   }>> {
     const embStr = `[${embedding.join(',')}]`
     const res = await this.db.query<{
@@ -581,6 +602,10 @@ export class KnowledgePgStore {
       document_title: string
       category_ids: string[]
       file_url: string | null
+      is_core: boolean
+      chunk_index: number
+      chunk_total: number | null
+      source_type: string
     }>(
       `SELECT
         c.id as chunk_id,
@@ -590,18 +615,23 @@ export class KnowledgePgStore {
         1 - (c.embedding <=> $1::vector) as similarity,
         d.title as document_title,
         COALESCE(array_agg(dc.category_id) FILTER (WHERE dc.category_id IS NOT NULL), '{}') as category_ids,
-        d.metadata->>'fileUrl' as file_url
+        d.metadata->>'fileUrl' as file_url,
+        d.is_core,
+        c.chunk_index,
+        c.chunk_total,
+        d.source_type
        FROM knowledge_chunks c
        JOIN knowledge_documents d ON d.id = c.document_id
        LEFT JOIN knowledge_document_categories dc ON dc.document_id = d.id
        WHERE c.embedding_status = 'embedded'
-       GROUP BY c.id, c.document_id, c.content, c.section, c.embedding, d.title, d.metadata
+       GROUP BY c.id, c.document_id, c.content, c.section, c.embedding, c.chunk_index, c.chunk_total, d.title, d.metadata, d.is_core, d.source_type
        ORDER BY c.embedding <=> $1::vector
        LIMIT $2`,
       [embStr, limit],
     )
 
-    return res.rows.map(r => ({
+    type VectorRow = { chunk_id: string; document_id: string; content: string; section: string | null; similarity: number; document_title: string; category_ids: string[]; file_url: string | null; is_core: boolean; chunk_index: number; chunk_total: number | null; source_type: string }
+    return res.rows.map((r: VectorRow) => ({
       chunkId: r.chunk_id,
       documentId: r.document_id,
       content: r.content,
@@ -610,6 +640,10 @@ export class KnowledgePgStore {
       documentTitle: r.document_title,
       categoryIds: r.category_ids,
       fileUrl: r.file_url,
+      isCore: r.is_core ?? false,
+      chunkIndex: r.chunk_index,
+      chunkTotal: r.chunk_total,
+      sourceType: r.source_type,
     }))
   }
 
@@ -640,6 +674,43 @@ export class KnowledgePgStore {
       question: r.question,
       answer: r.answer,
       rank: r.rank,
+    }))
+  }
+
+  /**
+   * Get all chunks for a document ordered by chunk_index.
+   * Used by expand_knowledge tool to return full document content.
+   */
+  async getChunksByDocumentId(docId: string): Promise<Array<{
+    id: string
+    content: string | null
+    chunkIndex: number
+    chunkTotal: number | null
+    section: string | null
+    contentType: string
+  }>> {
+    const res = await this.db.query<{
+      id: string
+      content: string | null
+      chunk_index: number
+      chunk_total: number | null
+      section: string | null
+      content_type: string
+    }>(
+      `SELECT id, content, chunk_index, chunk_total, section, COALESCE(content_type, 'text') as content_type
+       FROM knowledge_chunks
+       WHERE document_id = $1
+       ORDER BY chunk_index ASC`,
+      [docId],
+    )
+    type ChunkRow = { id: string; content: string | null; chunk_index: number; chunk_total: number | null; section: string | null; content_type: string }
+    return res.rows.map((r: ChunkRow) => ({
+      id: r.id,
+      content: r.content,
+      chunkIndex: r.chunk_index,
+      chunkTotal: r.chunk_total,
+      section: r.section,
+      contentType: r.content_type,
     }))
   }
 
@@ -1276,7 +1347,6 @@ export class KnowledgePgStore {
     embeddingStatus?: EmbeddingStatus
     chunkCount?: number
     shareable?: boolean
-    fullVideoEmbed?: boolean
     liveQueryEnabled?: boolean
   }): Promise<void> {
     const sets: string[] = []
@@ -1293,7 +1363,6 @@ export class KnowledgePgStore {
     if (updates.embeddingStatus !== undefined) { sets.push(`embedding_status = $${idx++}`); params.push(updates.embeddingStatus) }
     if (updates.chunkCount !== undefined) { sets.push(`chunk_count = $${idx++}`); params.push(updates.chunkCount) }
     if (updates.shareable !== undefined) { sets.push(`shareable = $${idx++}`); params.push(updates.shareable) }
-    if (updates.fullVideoEmbed !== undefined) { sets.push(`full_video_embed = $${idx++}`); params.push(updates.fullVideoEmbed) }
     if (updates.liveQueryEnabled !== undefined) { sets.push(`live_query_enabled = $${idx++}`); params.push(updates.liveQueryEnabled) }
 
     if (sets.length === 0) return
@@ -1938,7 +2007,6 @@ interface ItemRow {
   last_sync_checked_at: Date | null
   last_modified_time: string | null
   shareable: boolean
-  full_video_embed: boolean
   live_query_enabled: boolean
   created_at: Date
   updated_at: Date
@@ -1961,7 +2029,6 @@ function mapItemRow(r: ItemRow): KnowledgeItem {
     lastSyncCheckedAt: r.last_sync_checked_at ?? null,
     lastModifiedTime: r.last_modified_time ?? null,
     shareable: r.shareable ?? false,
-    fullVideoEmbed: r.full_video_embed ?? false,
     liveQueryEnabled: r.live_query_enabled ?? false,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
