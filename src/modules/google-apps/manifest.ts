@@ -532,6 +532,20 @@ const manifest: ModuleManifest = {
     _toolsRegistered = oauthConnected
     await registerGoogleTools(registry, _services, _enabledSet, oauthConnected)
 
+    // Habilitar subagent de calendar si el servicio está activo
+    if (_enabledSet.has('calendar')) {
+      try {
+        await db.query(
+          `UPDATE subagent_types SET enabled = true, updated_at = now() WHERE slug = 'google-calendar-scheduler'`
+        )
+        const saCatalog = registry.getOptional<{ reload(): Promise<void> }>('subagents:catalog')
+        await saCatalog?.reload()
+        logger.info('Google Calendar scheduler subagent enabled')
+      } catch (err) {
+        logger.warn({ err }, 'Could not enable calendar scheduler subagent')
+      }
+    }
+
     logger.info(
       { email: oauthManager.getState().email, services: enabledList },
       'Google API module initialized',
@@ -539,6 +553,20 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    // Deshabilitar subagent de calendar
+    if (_registry) {
+      try {
+        const db = _registry.getDb()
+        await db.query(
+          `UPDATE subagent_types SET enabled = false, updated_at = now() WHERE slug = 'google-calendar-scheduler'`
+        )
+        const saCatalog = _registry.getOptional<{ reload(): Promise<void> }>('subagents:catalog')
+        await saCatalog?.reload()
+      } catch (err) {
+        logger.warn({ err }, 'Could not disable calendar scheduler subagent')
+      }
+    }
+
     if (oauthManager) {
       await oauthManager.shutdown()
       oauthManager = null
