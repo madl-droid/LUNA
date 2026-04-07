@@ -978,8 +978,12 @@ function createApiRoutes(): ApiRoute[] {
           }
           const extracted = extractGoogleId(body.sourceUrl)
           if (!extracted) {
-            // Unknown URL format — allow with web fallback (will validate on content load)
-            jsonResponse(res, 200, { accessible: true, sourceType: 'web' })
+            // Unknown URL format — allow only if it looks like an HTTP URL
+            if (body.sourceUrl.startsWith('http')) {
+              jsonResponse(res, 200, { accessible: true, sourceType: 'web' })
+            } else {
+              jsonResponse(res, 400, { error: 'URL no válida', accessible: false })
+            }
             return
           }
           // Try OAuth first, then public API fallback
@@ -1393,7 +1397,7 @@ const manifest: ModuleManifest = {
         handler: async (input) => {
           try {
             const documentId = input.documentId as string
-            return knowledgeManager!.expandKnowledge(documentId)
+            return await knowledgeManager!.expandKnowledge(documentId)
           } catch (err) {
             return { success: false, error: String(err) }
           }

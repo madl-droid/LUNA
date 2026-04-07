@@ -18,7 +18,7 @@ import { calculateSegments, AUDIO_SPLIT_CONFIG } from './temporal-splitter.js'
 // 1. DOCS / WORD → text by headings
 // ═══════════════════════════════════════════
 
-export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string; sourceType?: string; docMeta?: Record<string, unknown>; llmDescription?: string }): EmbeddableChunk[] {
+export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string; sourceType?: string; docMeta?: Record<string, unknown> }): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
 
   // Split by H1/H2 headings first
@@ -47,7 +47,6 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
           sectionTitle,
-          ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
         },
       })
     } else {
@@ -73,7 +72,6 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
               sectionTitle: sectionTitle ? `${sectionTitle} (${subIndex + 1})` : undefined,
               subChunkIndex: subIndex,
               subChunkTotal: subTotal,
-              ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
             },
           })
           subIndex++
@@ -102,7 +100,6 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
               sourceType: opts?.sourceType ?? 'docx',
               sourceFile: opts?.sourceFile,
               sourceMimeType: opts?.sourceMimeType,
-              ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
             },
           })
         }
@@ -122,7 +119,6 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
           sourceType: opts?.sourceType ?? 'text',
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
-          ...(opts?.llmDescription ? { llmDescription: opts.llmDescription } : {}),
         },
       })
     }

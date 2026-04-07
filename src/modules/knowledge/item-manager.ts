@@ -502,6 +502,15 @@ export class KnowledgeItemManager {
     const item = await this.pgStore.getItem(id)
     if (!item) throw new Error('Item no encontrado')
 
+    // Invalidate expand cache for all existing documents of this item before re-training
+    const existingDocs = await this.pgStore.getPool().query<{ id: string }>(
+      `SELECT id FROM knowledge_documents WHERE source_ref = $1`, [id],
+    )
+    const redis = this.registry.getRedis()
+    for (const doc of existingDocs.rows) {
+      await redis.del(`expand:${doc.id}`).catch(() => {})
+    }
+
     // Clean previous chunks
     await this.pgStore.deleteItemChunks(id)
 
@@ -531,17 +540,33 @@ export class KnowledgeItemManager {
     )
 
     if (allDocs.rows.length > 1) {
+      // Delete previous index doc/chunks before re-creating (prevents duplication on re-sync)
+      await this.pgStore.getPool().query(
+        `DELETE FROM knowledge_chunks WHERE document_id IN (
+          SELECT id FROM knowledge_documents WHERE source_ref = $1 AND metadata->>'isIndex' = 'true'
+        )`, [id],
+      )
+      await this.pgStore.getPool().query(
+        `DELETE FROM knowledge_documents WHERE source_ref = $1 AND metadata->>'isIndex' = 'true'`, [id],
+      )
+
       const indexChunk = buildIndexChunk(item, allDocs.rows.map((d: { id: string; title: string; description: string; chunk_count: number }) => ({
         title: d.title,
         description: d.description,
         chunkCount: d.chunk_count,
       })))
-      const indexHash = createHash('sha256').update(`index:${item.id}:${Date.now()}`).digest('hex')
+      // Deterministic hash — no Date.now() so re-sync doesn't accumulate docs
+      const indexHash = createHash('sha256').update(`index:${item.id}`).digest('hex')
+      // Map KnowledgeSourceType → DocumentSourceType for the index chunk
+      const indexSourceType: import('./types.js').DocumentSourceType =
+        item.sourceType === 'web' ? 'web'
+        : (item.sourceType === 'drive' || item.sourceType === 'sheets' || item.sourceType === 'docs' || item.sourceType === 'slides') ? 'drive'
+        : 'url'
       const indexDocId = await this.pgStore.insertDocument({
         title: `Índice: ${item.title}`,
         description: item.description,
         isCore: false,
-        sourceType: 'drive',
+        sourceType: indexSourceType,
         sourceRef: item.id,
         contentHash: indexHash,
         filePath: '',
@@ -664,23 +689,8 @@ export class KnowledgeItemManager {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
 
-    // Reconstruct per-page texts from sections
-    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
-    const pageTextsMap = new Map<number, string[]>()
-    for (const section of pdfResult.sections) {
-      const page = section.page ?? 1
-      const list = pageTextsMap.get(page) ?? []
-      list.push(section.title ? `${section.title}\n${section.content}` : section.content)
-      pageTextsMap.set(page, list)
-    }
-    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
-      (pageTextsMap.get(i + 1) ?? []).join('\n'),
-    )
-
-    // Enrich with LLM for visual descriptions
-    const { enrichWithLLM } = await import('../../extractors/index.js')
-    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
-    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     // Guardar PDF en media dir
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
@@ -1167,24 +1177,8 @@ export class KnowledgeItemManager {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, `${item.title}.pdf`, this.registry)
 
-    // Reconstruct per-page texts from sections for FTS content in each chunk
-    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
-    const pageTextsMap = new Map<number, string[]>()
-    for (const section of pdfResult.sections) {
-      const page = section.page ?? 1
-      const list = pageTextsMap.get(page) ?? []
-      const sectionText = section.title ? `${section.title}\n${section.content}` : section.content
-      list.push(sectionText)
-      pageTextsMap.set(page, list)
-    }
-    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
-      (pageTextsMap.get(i + 1) ?? []).join('\n'),
-    )
-
-    // Enrich with LLM for visual descriptions (image pages, scanned PDFs)
-    const { enrichWithLLM } = await import('../../extractors/index.js')
-    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
-    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     // Save PDF to disk so vectorize worker can read it for multimodal embedding
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
@@ -1224,23 +1218,8 @@ export class KnowledgeItemManager {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
 
-    // Reconstruct per-page texts from sections
-    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
-    const pageTextsMap = new Map<number, string[]>()
-    for (const section of pdfResult.sections) {
-      const page = section.page ?? 1
-      const list = pageTextsMap.get(page) ?? []
-      list.push(section.title ? `${section.title}\n${section.content}` : section.content)
-      pageTextsMap.set(page, list)
-    }
-    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
-      (pageTextsMap.get(i + 1) ?? []).join('\n'),
-    )
-
-    // Enrich with LLM for visual descriptions (image pages)
-    const { enrichWithLLM } = await import('../../extractors/index.js')
-    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
-    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
     const knowledgeDir = KNOWLEDGE_MEDIA_DIR
@@ -1275,23 +1254,8 @@ export class KnowledgeItemManager {
     const { extractPDF } = await import('../../extractors/pdf.js')
     const pdfResult = await extractPDF(pdfBuffer, file.name, this.registry)
 
-    // Reconstruct per-page texts from sections
-    const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
-    const pageTextsMap = new Map<number, string[]>()
-    for (const section of pdfResult.sections) {
-      const page = section.page ?? 1
-      const list = pageTextsMap.get(page) ?? []
-      list.push(section.title ? `${section.title}\n${section.content}` : section.content)
-      pageTextsMap.set(page, list)
-    }
-    const pageTexts: string[] = Array.from({ length: totalPages }, (_, i) =>
-      (pageTextsMap.get(i + 1) ?? []).join('\n'),
-    )
-
-    // Enrich with LLM for visual descriptions (slide images)
-    const { enrichWithLLM } = await import('../../extractors/index.js')
-    const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, this.registry)
-    const visualDescriptions = enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
+    const { pageTexts, totalPages } = reconstructPageTexts(pdfResult)
+    const visualDescriptions = await enrichPdfVisual(pdfResult, this.registry)
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
     const knowledgeDir = KNOWLEDGE_MEDIA_DIR
@@ -2006,5 +1970,37 @@ function buildIndexChunk(
       isIndex: true,
     },
   }
+}
+
+/**
+ * Reconstruct per-page texts from extractor sections.
+ * Used by PDF and Slides visual pipeline loaders.
+ */
+function reconstructPageTexts(pdfResult: import('../../extractors/types.js').ExtractedContent): { pageTexts: string[]; totalPages: number } {
+  const totalPages = (pdfResult.metadata.pages ?? pdfResult.sections.length) || 1
+  const pageTextsMap = new Map<number, string[]>()
+  for (const section of pdfResult.sections) {
+    const page = section.page ?? 1
+    const list = pageTextsMap.get(page) ?? []
+    list.push(section.title ? `${section.title}\n${section.content}` : section.content)
+    pageTextsMap.set(page, list)
+  }
+  const pageTexts = Array.from({ length: totalPages }, (_, i) =>
+    (pageTextsMap.get(i + 1) ?? []).join('\n'),
+  )
+  return { pageTexts, totalPages }
+}
+
+/**
+ * Enrich PDF extraction with visual descriptions via LLM enrichment.
+ * Used by PDF and Slides visual pipeline loaders.
+ */
+async function enrichPdfVisual(
+  pdfResult: import('../../extractors/types.js').ExtractedContent,
+  registry: import('../../kernel/registry.js').Registry,
+): Promise<Array<{ pageRange: string; description: string }> | undefined> {
+  const { enrichWithLLM } = await import('../../extractors/index.js')
+  const enriched = await enrichWithLLM({ ...pdfResult, kind: 'document' as const }, registry)
+  return enriched.kind === 'document' ? enriched.llmEnrichment?.visualDescriptions : undefined
 }
 

@@ -52,7 +52,7 @@ const t = (key: string, lang: Lang): string => {
     status_done: { es: 'Entrenado', en: 'Trained' },
     status_failed: { es: 'Error', en: 'Failed' },
     status_pending_review: { es: 'Por revisar', en: 'Pending Review' },
-    chunks: { es: 'chunks', en: 'chunks' },
+    chunks: { es: 'fragmentos', en: 'chunks' },
     content_loaded: { es: 'Contenido cargado', en: 'Content loaded' },
     not_loaded: { es: 'Sin cargar', en: 'Not loaded' },
     confirm_delete: { es: '¿Eliminar este item?', en: 'Delete this item?' },
@@ -212,13 +212,13 @@ function sourceIcon(sourceType: string): string {
 function pipelineBadgeHtml(sourceType: string, lang: Lang): string {
   const isEs = lang === 'es'
   const badges: Record<string, { label: string; css: string }> = {
-    sheets:  { label: 'CSV',                          css: 'ki-pipeline-sheets'  },
-    docs:    { label: isEs ? 'Texto'  : 'Text',       css: 'ki-pipeline-docs'    },
-    slides:  { label: isEs ? 'Visual' : 'Visual',     css: 'ki-pipeline-slides'  },
-    drive:   { label: 'Drive',                        css: 'ki-pipeline-drive'   },
-    pdf:     { label: isEs ? 'Visual' : 'Visual',     css: 'ki-pipeline-pdf'     },
-    youtube: { label: isEs ? 'Video'  : 'Video',      css: 'ki-pipeline-youtube' },
-    web:     { label: 'Web',                          css: 'ki-pipeline-web'     },
+    sheets:  { label: 'CSV',                    css: 'ki-pipeline-sheets'  },
+    docs:    { label: isEs ? 'Texto' : 'Text',  css: 'ki-pipeline-docs'    },
+    slides:  { label: 'Visual',                 css: 'ki-pipeline-slides'  },
+    drive:   { label: 'Drive',                  css: 'ki-pipeline-drive'   },
+    pdf:     { label: 'Visual',                 css: 'ki-pipeline-pdf'     },
+    youtube: { label: 'Video',                  css: 'ki-pipeline-youtube' },
+    web:     { label: 'Web',                    css: 'ki-pipeline-web'     },
   }
   const b = badges[sourceType]
   if (!b) return ''
@@ -558,12 +558,9 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     }
   }, 1000);
 
-  // ── Item ID extraction (robust — server returns { item: { id } }) ──
+  // ── Item ID extraction (server returns { item: { id } }) ──
   function extractItemId(r) {
-    if (r && r.item && typeof r.item === 'object') {
-      if (r.item.id) return r.item.id;
-      if (r.item.item && r.item.item.id) return r.item.item.id;
-    }
+    if (r && r.item && typeof r.item === 'object' && r.item.id) return r.item.id;
     if (r && r.id) return r.id;
     return null;
   }
@@ -749,25 +746,21 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
     if (!url) { wizShowErr('url', '${isEs ? 'La URL es requerida' : 'URL is required'}'); hasErr = true; }
     if (hasErr) return;
 
-    // URL-based detection as fallback (if server doesn't return sourceType)
-    var lUrl = url.toLowerCase();
-    var skipScannerFallback = lUrl.indexOf('.pdf') !== -1 || url.indexOf('presentation/d/') !== -1;
-    if (!skipScannerFallback && lUrl.indexOf('docs.google') === -1 && lUrl.indexOf('drive.google') === -1 && lUrl.indexOf('sheets.google') === -1 && lUrl.indexOf('youtube.com') === -1 && lUrl.indexOf('http') === 0) {
-      skipScannerFallback = true;
-    }
-    // skipScanner is finalized inside verify-url callback using server's sourceType
-    var skipScanner = skipScannerFallback;
+    // skipScanner is set from server's sourceType in verify-url callback
+    var skipScanner = false;
 
     var btn = document.getElementById('ki-wiz-next1');
     if (btn) { btn.disabled = true; btn.textContent = '${isEs ? 'Procesando...' : 'Processing...'}'; }
 
     if (wizState.editing && wizState.itemId) {
+      var typesThatSkipScannerEdit = ['pdf', 'web', 'slides', 'youtube'];
+      var skipScannerEdit = wizState.sourceType ? typesThatSkipScannerEdit.indexOf(wizState.sourceType) !== -1 : false;
       showLoading('${isEs ? 'Actualizando...' : 'Updating...'}');
       api('', 'PUT', { id: wizState.itemId, title: title, description: desc, categoryId: cat || undefined })
         .then(function(r) {
           if (r.error) { window.showWizPage(0); wizShowErr('title', r.error); if (btn) { btn.disabled = false; btn.textContent = '${t('next', lang)}'; } return; }
           toast('${isEs ? 'Actualizado' : 'Updated'}');
-          if (skipScanner) { kiCloseWizard(); location.reload(); return; }
+          if (skipScannerEdit) { kiCloseWizard(); location.reload(); return; }
           return api('/scan-tabs', 'POST', { id: wizState.itemId });
         })
         .then(function(r) {
@@ -804,14 +797,11 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
         // Use server sourceType to determine if scanner step is needed
         wizState.sourceType = v.sourceType || null;
         var typesThatSkipScanner = ['pdf', 'web', 'slides', 'youtube'];
-        skipScanner = wizState.sourceType
-          ? typesThatSkipScanner.indexOf(wizState.sourceType) !== -1
-          : skipScannerFallback;
+        skipScanner = v.sourceType ? typesThatSkipScanner.indexOf(v.sourceType) !== -1 : true;
         return api('', 'POST', { title: title, description: desc, categoryId: cat || undefined, sourceUrl: url });
       })
       .then(function(r) {
-        console.log('CREATE response:', JSON.stringify(r));
-        if (!r) { console.log('CREATE returned null/undefined'); return; }
+        if (!r) return;
         if (r.error) {
           showWizPage(0);
           wizShowErr('url', r.error);
