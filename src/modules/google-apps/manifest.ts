@@ -18,7 +18,7 @@ import { CalendarService } from './calendar-service.js'
 import { registerGoogleTools } from './tools.js'
 import { CalendarConfigService } from './calendar-config.js'
 import { renderCalendarSettingsPage } from './calendar-console.js'
-import { CalendarFollowUpScheduler, registerCalendarFollowUpTool } from './calendar-followups.js'
+import { CalendarFollowUpScheduler, registerCalendarFollowUpTool, type CalendarUsersDb } from './calendar-followups.js'
 import type { GoogleApiConfig, GoogleServiceName } from './types.js'
 
 const logger = pino({ name: 'google-apps' })
@@ -280,10 +280,7 @@ const apiRoutes: ApiRoute[] = [
     path: 'calendar-config',
     handler: async (_req, res) => {
       const config = _calConfigService?.get() ?? null
-      const usersDb = _registry?.getOptional<{
-        getListConfig(t: string): Promise<{ syncConfig: Record<string, unknown> } | null>
-        listByType(t: string, active: boolean): Promise<Array<{ id: string; displayName?: string; contacts?: Array<{ channel: string; senderId: string }>; metadata?: unknown }>>
-      }>('users:db')
+      const usersDb = _registry?.getOptional<CalendarUsersDb>('users:db')
       const coworkerListConfig = await usersDb?.getListConfig?.('coworker') ?? null
       const roles: string[] = ((coworkerListConfig?.syncConfig as Record<string, unknown>)?.roles as string[]) ?? []
       const allCoworkers = await usersDb?.listByType?.('coworker', true) ?? []
@@ -502,10 +499,7 @@ const manifest: ModuleManifest = {
     // Renderer de la página de settings de Calendar para la console
     registry.provide('google-apps:renderCalendarSection', async (sectionData: { lang?: string }) => {
       const calCfg = _calConfigService!.get()
-      const usersDb = registry.getOptional<{
-        getListConfig(t: string): Promise<{ syncConfig: Record<string, unknown> } | null>
-        listByType(t: string, active: boolean): Promise<Array<{ id: string; displayName?: string; contacts?: Array<{ channel: string; senderId: string }>; metadata?: unknown }>>
-      }>('users:db')
+      const usersDb = registry.getOptional<CalendarUsersDb>('users:db')
       const coworkerListConfig = await usersDb?.getListConfig?.('coworker') ?? null
       const roles: string[] = ((coworkerListConfig?.syncConfig as Record<string, unknown>)?.roles as string[]) ?? []
       const allCoworkers = await usersDb?.listByType?.('coworker', true) ?? []

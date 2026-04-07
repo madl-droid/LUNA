@@ -1,10 +1,10 @@
 // LUNA — Google Apps: Calendar Console Renderer
 // HTML renderer for the Google Calendar settings page at /console/herramientas/google-apps/calendar
 
-import type { CalendarSchedulingConfig } from './calendar-config.js'
+import type { CalendarSchedulingConfig } from './types.js'
 
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
 function checked(val: boolean): string {

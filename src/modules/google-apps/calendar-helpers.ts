@@ -84,7 +84,7 @@ export function getNextBusinessSlot(
   businessDays: number[],
   daysOff: DayOff[],
   timezone: string,
-): string {
+): string | null {
   const d = new Date(`${fromDate}T00:00:00Z`)
   // Iterar hasta encontrar un día válido (máx 30 días)
   for (let i = 0; i < 30; i++) {
@@ -106,7 +106,7 @@ export function getNextBusinessSlot(
     d.setUTCDate(d.getUTCDate() + 1)
   }
 
-  return `${fromDate}T${String(bh.start).padStart(2, '0')}:00:00`
+  return null
 }
 
 /** Construye ISO datetime para una fecha+hora en una timezone específica */
@@ -128,7 +128,10 @@ function buildDateTimeInTimezone(dateStr: string, hour: number, minute: number, 
 
     const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00'
     return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}`
-  } catch {
+  } catch (err) {
+    // Log so invalid timezone config is visible in logs
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn(`[calendar-helpers] buildDateTimeInTimezone failed for tz="${timezone}": ${msg}`)
     return null
   }
 }
@@ -148,8 +151,8 @@ export function validateEventTiming(
   const errors: string[] = []
 
   // Extraer la fecha del startDateTime
-  const datePart = startDateTime.split('T')[0]
-  if (!datePart) return { valid: false, errors: ['DateTime de inicio inválido'] }
+  // split('T')[0] always returns a string — no null check needed
+  const datePart = startDateTime.split('T')[0]!
 
   const dayCheck = isBusinessDay(datePart, businessDays, daysOff)
   if (!dayCheck.valid && dayCheck.reason) errors.push(dayCheck.reason)
@@ -164,7 +167,7 @@ export function validateEventTiming(
 
   if (errors.length > 0) {
     const suggestion = getNextBusinessSlot(datePart, bh, businessDays, daysOff, timezone)
-    return { valid: false, errors, suggestion }
+    return { valid: false, errors, suggestion: suggestion ?? undefined }
   }
 
   return { valid: true, errors: [] }

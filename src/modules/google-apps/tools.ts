@@ -9,6 +9,7 @@ import type { DocsService } from './docs-service.js'
 import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
 import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig } from './types.js'
+import { CALENDAR_CONFIG_DEFAULTS } from './calendar-config.js'
 import {
   formatEventsListForAgent,
   formatAvailabilityForAgent,
@@ -24,26 +25,9 @@ const logger = pino({ name: 'google-apps:tools' })
 
 // ─── Calendar config helpers ───────────────
 
-const DEFAULT_CALENDAR_CONFIG: CalendarSchedulingConfig = {
-  meetEnabled: true,
-  defaultReminders: [
-    { method: 'popup' as const, minutes: 5 },
-    { method: 'popup' as const, minutes: 30 },
-    { method: 'email' as const, minutes: 2880 },
-  ],
-  defaultDurationMinutes: 30,
-  eventNamePrefix: 'Reunión',
-  descriptionInstructions: '',
-  daysOff: [],
-  followUpPost: { enabled: true, delayMinutes: 60 },
-  followUpPre: { enabled: true, hoursBefore: 24 },
-  schedulingRoles: {},
-  schedulingCoworkers: {},
-}
-
 function getCalendarConfig(registry: Registry): CalendarSchedulingConfig {
   const svc = registry.getOptional<{ get(): CalendarSchedulingConfig }>('google-apps:calendar-config')
-  return svc?.get() ?? DEFAULT_CALENDAR_CONFIG
+  return svc?.get() ?? CALENDAR_CONFIG_DEFAULTS
 }
 
 function getBusinessHours(registry: Registry): { start: number; end: number; days: number[] } | null {
@@ -851,13 +835,15 @@ export async function registerGoogleTools(
           }
         }
 
-        // Emitir hook para follow-ups (Plan 4)
-        await registry.runHook('calendar:event-created', {
-          event: result.event,
-          meetLink: result.meetLink,
-          contactId: context?.contactId ?? undefined,
-          channel: context?.channelName ?? undefined,
-        })
+        // Emitir hook para follow-ups (Plan 4) — solo si hay contacto y canal disponibles
+        if (context?.contactId && context?.channelName) {
+          await registry.runHook('calendar:event-created', {
+            event: result.event as Record<string, unknown> | undefined,
+            meetLink: result.meetLink ?? undefined,
+            contactId: context.contactId,
+            channel: context.channelName,
+          })
+        }
 
         const formatted = formatSingleEventForAgent(result.event!, timezone)
         const meetLine = result.meetLink ? `\n🎥 Meet: ${result.meetLink}` : ''
@@ -915,7 +901,7 @@ export async function registerGoogleTools(
           sendUpdates,
         )
         // Emitir hook para que Plan 4 cancele follow-ups
-        await registry.runHook('calendar:event-deleted', { eventId: input.eventId })
+        await registry.runHook('calendar:event-deleted', { eventId: input.eventId as string })
         return { success: true, data: 'Evento cancelado exitosamente. Los asistentes fueron notificados.' }
       },
     })
@@ -988,7 +974,7 @@ export async function registerGoogleTools(
         // Emitir hook
         await registry.runHook('calendar:event-updated', {
           eventId: input.eventId as string,
-          event,
+          event: event as unknown as Record<string, unknown>,
           dateChanged,
         })
 

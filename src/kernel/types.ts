@@ -334,19 +334,19 @@ export interface HitlHandoffReturnPayload {
 
 // Calendar hook payloads (google-apps module)
 export interface CalendarEventCreatedPayload {
-  event?: unknown
-  meetLink?: string | null
-  contactId?: string
-  channel?: string
+  event?: Record<string, unknown>   // CalendarEvent shape, not imported from module
+  contactId: string                 // required — always comes from the pipeline
+  channel: string                   // required — always comes from the channel
+  meetLink?: string
 }
 
 export interface CalendarEventDeletedPayload {
-  eventId: unknown
+  eventId: string                   // always a string
 }
 
 export interface CalendarEventUpdatedPayload {
   eventId: string
-  event?: unknown
+  event?: Record<string, unknown>
   dateChanged: boolean
 }
 

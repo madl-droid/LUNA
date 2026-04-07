@@ -2,36 +2,46 @@
 // CRUD + cache for calendar scheduling configuration stored in config_store.
 
 import type { Pool } from 'pg'
+import { z } from 'zod'
 import * as configStore from '../../kernel/config-store.js'
+import type { CalendarSchedulingConfig } from './types.js'
 
-// ─── Types ─────────────────────────────────
+// ─── Zod schema ────────────────────────────
 
-export interface CalendarSchedulingConfig {
-  // General
-  meetEnabled: boolean
-  defaultReminders: Array<{ method: 'email' | 'popup'; minutes: number }>
-  defaultDurationMinutes: number
-  eventNamePrefix: string
-  descriptionInstructions: string
+const dayOffSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('single'), date: z.string() }),
+  z.object({ type: z.literal('range'), start: z.string(), end: z.string() }),
+])
 
-  // Days off
-  daysOff: Array<
-    | { type: 'single'; date: string }
-    | { type: 'range'; start: string; end: string }
-  >
+const reminderSchema = z.object({
+  method: z.enum(['email', 'popup']),
+  minutes: z.number().int().min(0).max(40320),
+})
 
-  // Roles enabled for scheduling
-  schedulingRoles: Record<string, { enabled: boolean; instructions: string }>
-
-  // Individual coworkers
-  schedulingCoworkers: Record<string, { enabled: boolean; instructions: string }>
-
-  // Post-meeting follow-up
-  followUpPost: { enabled: boolean; delayMinutes: number }
-
-  // Pre-meeting reminder
-  followUpPre: { enabled: boolean; hoursBefore: number }
-}
+const calendarConfigSchema = z.object({
+  meetEnabled: z.boolean().default(true),
+  defaultReminders: z.array(reminderSchema).default([]),
+  defaultDurationMinutes: z.number().int().min(15).max(480).default(30),
+  eventNamePrefix: z.string().default('Reunión'),
+  descriptionInstructions: z.string().default(''),
+  daysOff: z.array(dayOffSchema).default([]),
+  schedulingRoles: z.record(z.object({
+    enabled: z.boolean(),
+    instructions: z.string().default(''),
+  })).default({}),
+  schedulingCoworkers: z.record(z.object({
+    enabled: z.boolean(),
+    instructions: z.string().default(''),
+  })).default({}),
+  followUpPost: z.object({
+    enabled: z.boolean().default(true),
+    delayMinutes: z.number().int().min(30).max(360).default(60),
+  }).default({}),
+  followUpPre: z.object({
+    enabled: z.boolean().default(true),
+    hoursBefore: z.number().int().min(3).max(24).default(24),
+  }).default({}),
+})
 
 // ─── Defaults ──────────────────────────────
 
@@ -68,7 +78,8 @@ export class CalendarConfigService {
       return
     }
     try {
-      this.cache = { ...CALENDAR_CONFIG_DEFAULTS, ...JSON.parse(raw) }
+      const parsed = calendarConfigSchema.safeParse(JSON.parse(raw))
+      this.cache = parsed.success ? parsed.data : { ...CALENDAR_CONFIG_DEFAULTS }
     } catch {
       this.cache = { ...CALENDAR_CONFIG_DEFAULTS }
     }
@@ -78,7 +89,8 @@ export class CalendarConfigService {
     return this.cache ?? { ...CALENDAR_CONFIG_DEFAULTS }
   }
 
-  async save(config: CalendarSchedulingConfig): Promise<void> {
+  async save(input: unknown): Promise<void> {
+    const config = calendarConfigSchema.parse(input)
     await configStore.set(this.db, CONFIG_KEY, JSON.stringify(config))
     this.cache = config
   }
