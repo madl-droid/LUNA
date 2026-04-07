@@ -9,11 +9,11 @@
 
 ## Resumen ejecutivo
 
-La implementación cumple ~85% de lo planificado. El código es funcional y no tiene errores de compilación. Sin embargo, hay **1 bug de cache stale**, **2 features incompletas del plan**, **redundancia significativa de copy-paste** (4x), y **código muerto** que nunca se conectó. No se encontraron violaciones de políticas del CLAUDE.md.
+La implementación cumple ~80% de lo planificado. El código compila sin errores semánticos. Sin embargo, hay **5 bugs** (2 de severidad alta), **4 features incompletas**, **redundancia significativa de copy-paste** (4x), y **código muerto** que nunca se conectó. No se encontraron violaciones de políticas del CLAUDE.md.
 
 ---
 
-## BUGS (3)
+## BUGS (6)
 
 ### BUG-1: `invalidateExpandCache()` nunca se llama — cache stale [MEDIO]
 **Archivo**: `src/modules/knowledge/knowledge-manager.ts:479`
@@ -39,6 +39,33 @@ Dos `console.log('CREATE response:', ...)` quedan en el client-side JS del wizar
 El branch `if (!extracted)` retorna `{ accessible: true, sourceType: 'web' }`. Pero `extractGoogleId()` solo retorna `null` si el input no es una URL válida. Esto es una regresión — antes devolvía 400.
 
 **Fix**: Retornar `{ accessible: false }` cuando `!extracted` y no es URL parseable.
+
+---
+
+### BUG-4: Missing `await` en handler de `expand_knowledge` — try/catch es dead code [ALTO]
+**Archivo**: `src/modules/knowledge/manifest.ts:1396`
+
+El handler retorna `knowledgeManager!.expandKnowledge(documentId)` sin `await`. Como `expandKnowledge` es async, el `try/catch` que lo envuelve **nunca captura errores** — la Promise se retorna directamente y cualquier error se propaga como rechazo no manejado.
+
+**Fix**: Agregar `await` → `return await knowledgeManager!.expandKnowledge(documentId)`
+
+---
+
+### BUG-5: Index chunks se duplican en cada re-sync — `contentHash` usa `Date.now()` [ALTO]
+**Archivo**: `src/modules/knowledge/item-manager.ts:539`
+
+`createHash('sha256').update(\`index:${item.id}:${Date.now()}\`)` genera un hash diferente cada vez que se llama `loadContent()`. Si un item se re-sincroniza, se crea un nuevo documento índice **sin eliminar el anterior**. Sobre múltiples syncs, se acumulan documentos índice orphaned en la base de datos, contaminando resultados de búsqueda.
+
+**Fix**: Usar hash determinístico `index:${item.id}` sin `Date.now()`, o eliminar el index doc anterior antes de crear uno nuevo.
+
+---
+
+### BUG-6: Index chunks hardcodean `sourceType: 'drive'` independiente del tipo real [MEDIO]
+**Archivo**: `src/modules/knowledge/item-manager.ts:545`
+
+Los documentos índice siempre se crean con `sourceType: 'drive'`. Un item de Sheets o YouTube tendrá su index doc marcado como `drive`. Esto es misleading en resultados de búsqueda y en los badges de `sourceType`.
+
+**Fix**: Pasar `item.sourceType` real al crear el index document.
 
 ---
 
@@ -176,17 +203,26 @@ Sin errores semánticos en los archivos modificados. Los únicos errores del `ts
 
 ---
 
+## NOTA: Core boost compuesto con category boost
+
+`CORE_BOOST = 0.15` y `CATEGORY_BOOST = 0.2` son ambos aditivos. Un documento core en la categoría correcta recibe **+0.35 flat** a su score. Dado que los scores combinados típicos están en rango 0.05-0.6, este boost puede ser dominante para resultados de baja relevancia pero que son core + categoría match. Monitorear en producción.
+
+---
+
 ## RESUMEN POR SEVERIDAD
 
 | Severidad | Hallazgos |
 |-----------|-----------|
-| **MEDIO** | BUG-1 (cache stale), GAP-1 (llmDescription dead), GAP-3 (index chunks), REDUNDANCY-1+2 (4x copy-paste) |
+| **ALTO** | BUG-4 (missing await, try/catch muerto), BUG-5 (index chunks se duplican en re-sync) |
+| **MEDIO** | BUG-1 (cache stale), BUG-6 (sourceType hardcoded), GAP-1 (llmDescription dead), GAP-3 (index chunks), REDUNDANCY-1+2 (4x copy-paste) |
 | **BAJO** | BUG-2 (console.log), BUG-3 (verify-url), GAP-2 (liveQueryInfo), GAP-4 (web images), COMPLEXITY-1/2/3, DEBT-1/2/3 |
 
-## TOP 5 FIXES RECOMENDADOS
+## TOP 7 FIXES RECOMENDADOS (por prioridad)
 
-1. **Conectar `invalidateExpandCache()`** al flujo de re-training (BUG-1)
-2. **Extraer helpers** para los 4 patrones copy-paste de `pageTexts` y `enrichWithLLM` (REDUNDANCY-1+2)
-3. **Eliminar `console.log`** de debug en console-section (BUG-2)
-4. **Conectar `llmDescription`** o eliminar el parámetro muerto de los chunkers (GAP-1)
-5. **Eliminar `skipScannerFallback`** dead code en wizard (COMPLEXITY-3)
+1. **Agregar `await`** en handler de expand_knowledge (BUG-4) — try/catch no funciona sin esto
+2. **Fix hash de index chunks** — usar hash determinístico o delete-before-insert para evitar duplicados (BUG-5)
+3. **Conectar `invalidateExpandCache()`** al flujo de re-training (BUG-1)
+4. **Fix `sourceType` de index chunks** — usar el tipo real del item, no hardcoded `'drive'` (BUG-6)
+5. **Extraer helpers** para los 4 patrones copy-paste de `pageTexts` y `enrichWithLLM` (REDUNDANCY-1+2)
+6. **Conectar `llmDescription`** o eliminar el parámetro muerto de los chunkers (GAP-1)
+7. **Eliminar `console.log`** de debug + `skipScannerFallback` dead code (BUG-2 + COMPLEXITY-3)
