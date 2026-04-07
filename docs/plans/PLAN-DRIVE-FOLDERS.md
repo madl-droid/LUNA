@@ -236,53 +236,71 @@ CREATE INDEX IF NOT EXISTS idx_folder_index_item ON knowledge_folder_index(item_
 CREATE INDEX IF NOT EXISTS idx_folder_index_status ON knowledge_folder_index(item_id, status);
 ```
 
-### 3c. Reescribir `loadDriveContent()` — crawl recursivo
+### 3c. Reescribir `loadDriveContent()` — crawl completo + procesamiento nivel por nivel
+
+**Estrategia:** Escanear toda la estructura de golpe (solo metadata, no descarga archivos), luego procesar archivos nivel por nivel empezando por el raíz.
 
 ```typescript
 private async loadDriveContent(item: KnowledgeItem): Promise<number> {
   const drive = this.registry.getOptional<DriveService>('google:drive')
   if (!drive) throw new Error('Servicio Google Drive no disponible')
 
-  // Paso 1: Crawl recursivo — construir índice completo
+  // ═══ Fase 1: Crawl completo (solo metadata — rápido) ═══
   const allNodes = await this.crawlDriveFolder(drive, item.sourceId, '', null, 0)
-  
-  // Paso 2: Guardar índice en DB
   await this.pgStore.upsertFolderIndex(item.id, allNodes)
   
+  const files = allNodes.filter(n => !n.isFolder)
+  const folders = allNodes.filter(n => n.isFolder)
   logger.info({
-    itemId: item.id,
-    files: allNodes.filter(n => !n.isFolder).length,
-    folders: allNodes.filter(n => n.isFolder).length,
-  }, '[DRIVE] Folder crawl complete')
+    itemId: item.id, fileCount: files.length, folderCount: folders.length,
+  }, '[DRIVE] Folder structure scanned')
 
-  // Paso 3: Procesar archivos pendientes
+  // ═══ Fase 2: Procesar archivos nivel por nivel ═══
+  // Agrupar archivos por profundidad (nivel 0 = raíz, nivel 1 = subcarpetas, etc.)
+  const byDepth = new Map<number, DriveFolderNode[]>()
+  for (const file of files) {
+    const depth = file.path.split('/').length - 1  // "archivo.pdf" = 0, "sub/archivo.pdf" = 1
+    const list = byDepth.get(depth) ?? []
+    list.push(file)
+    byDepth.set(depth, list)
+  }
+
   let totalChunks = 0
-  const pendingFiles = allNodes.filter(n => !n.isFolder && n.status === 'pending')
-  
-  for (const node of pendingFiles) {
-    try {
-      const file = { id: node.id, name: node.name, mimeType: node.mimeType, webViewLink: node.webViewLink }
-      const chunks = await this.loadDriveFile(file, item)
-      
-      // Actualizar índice: marcar como processed + guardar document_id
-      await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
-        status: 'processed',
-        documentId: /* el doc ID retornado por persistSmartChunks */,
-      })
-      
-      totalChunks += chunks
-    } catch (err) {
-      await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
-        status: 'error',
-        errorMessage: (err as Error).message,
-      })
-      logger.warn({ err, fileId: node.id, name: node.name, path: node.path }, '[DRIVE] File processing failed')
+  const sortedDepths = [...byDepth.keys()].sort((a, b) => a - b)
+
+  for (const depth of sortedDepths) {
+    const levelFiles = byDepth.get(depth)!
+    logger.info({ depth, fileCount: levelFiles.length }, '[DRIVE] Processing level')
+
+    for (const node of levelFiles) {
+      try {
+        const file = { id: node.id, name: node.name, mimeType: node.mimeType, webViewLink: node.webViewLink }
+        const chunks = await this.loadDriveFile(file, item)
+        
+        await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
+          status: 'processed',
+          documentId: /* retornado por persistSmartChunks */,
+        })
+        totalChunks += chunks
+      } catch (err) {
+        await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
+          status: 'error',
+          errorMessage: (err as Error).message,
+        })
+        logger.warn({ err, fileId: node.id, name: node.name, path: node.path }, '[DRIVE] File failed')
+      }
     }
+
+    // Actualizar index en DB después de cada nivel completo
+    // (si el proceso se interrumpe, los niveles anteriores ya están procesados)
+    logger.info({ depth, totalChunks }, '[DRIVE] Level complete')
   }
 
   return totalChunks
 }
 ```
+
+**Ventaja del nivel por nivel:** Si el proceso se interrumpe (timeout, crash), los archivos del nivel raíz ya están procesados y embebidos. Un re-sync posterior solo procesará los pendientes.
 
 ### 3d. Crawl recursivo con paginación
 
@@ -543,14 +561,124 @@ if (source.type === 'drive') {
 
 ## Binarios en knowledge de Drive
 
-**REGLA del usuario:** No se guarda el binario para archivos de Drive knowledge, pero SÍ se guarda un index con metadata, chunks relacionados, y la ruta.
+**REGLA:** Si el formato es compatible con embedding multimodal, se fragmenta en chunks y se almacena el binario chunkeado mientras exista el knowledge item. La extracción ya genera los binarios — conservarlos.
 
-Esto ya funciona parcialmente:
-- `persistSmartChunks()` guarda el buffer en disco solo si `opts.buffer` se provee
-- Para archivos de Drive que pasan por pipeline visual (PDF/DOCX→PDF/PPTX→PDF), el PDF SÍ se guarda en disco porque es necesario para embedding multimodal (`chunkPdf` referencia al PDF via `mediaRefs`)
-- Para archivos de texto puro, NO se guarda binario — solo chunks de texto
+### Por formato:
 
-**Acción:** Verificar que `loadDriveFile()` no pase `buffer` innecesariamente para archivos de texto. Para PDF/DOCX con imágenes/PPTX el PDF convertido sí debe guardarse (lo necesita el embedding worker para multimodal).
+| Formato | ¿Guardar binario? | Qué se guarda | Para qué |
+|---------|-------------------|---------------|----------|
+| PDF | SÍ | PDF completo en media/ | `chunkPdf` → mediaRefs al PDF → Gemini Embedding multimodal |
+| DOCX con imágenes | SÍ | PDF convertido en media/ | Pipeline visual → Gemini Embedding multimodal |
+| PPTX | SÍ | PDF convertido en media/ | Pipeline visual → Gemini Embedding multimodal |
+| Imagen (.png, .jpg) | SÍ | Imagen en media/ | `chunkImage` → mediaRef → Gemini Embedding multimodal |
+| Audio (.mp3, .wav) | SÍ | Segmentos chunkeados en media/ | `chunkAudio` → mediaRef → Gemini Embedding multimodal (60/60/10s) |
+| **Video (.mp4, .mov)** | **SÍ** | **Segmentos chunkeados en media/** | **`chunkVideo` → mediaRef → Gemini Embedding multimodal (50/60/10s)** |
+| Google Docs (texto) | NO | Solo chunks de texto | FTS + text embedding |
+| Google Sheets | NO | Solo chunks CSV | FTS + text embedding |
+| Google Slides | SÍ | PDF exportado en media/ | Pipeline visual via Drive PDF export |
+| DOCX sin imágenes | NO | Solo chunks de texto | FTS + text embedding |
+| TXT/MD/JSON | NO | Solo chunks de texto | FTS + text embedding |
+
+### Video desde Drive (NUEVO)
+
+Video en carpetas de Drive se trata igual que audio:
+1. `drive.downloadFile(fileId)` → buffer del video
+2. `extractVideo()` → ffprobe (duration, format, hasAudio)
+3. `describeVideo()` → LLM multimodal (descripción + resumen + transcripción)
+4. `splitMediaFile(buffer, mimeType, duration, VIDEO_SPLIT_CONFIG)` → segmentos en tmpdir
+5. Mover segmentos a `instance/knowledge/media/`
+6. `chunkVideo({ segments, ... })` → `contentType: 'video_frames'`, mediaRefs a cada segmento
+7. Segmentos viven en media/ mientras exista el knowledge item
+
+Esto requiere agregar routing de video y audio en `loadDriveFile()`:
+
+```typescript
+// En loadDriveFile() — agregar después del bloque PDF:
+} else if (mime.startsWith('video/')) {
+  const videoBuffer = await drive.downloadFile(file.id)
+  return this.routeVideo(item, file, videoBuffer, mime)
+
+} else if (mime.startsWith('audio/')) {
+  const audioBuffer = await drive.downloadFile(file.id)
+  return this.routeAudio(item, file, audioBuffer, mime)
+
+} else if (mime.startsWith('image/')) {
+  const imageBuffer = await drive.downloadFile(file.id)
+  return this.routeImage(item, file, imageBuffer, mime)
+```
+
+**Nota:** `routeVideo`, `routeAudio`, `routeImage` ya existen en `knowledge-manager.ts` (Track F). Necesitamos equivalentes en `item-manager.ts` o refactorizar para compartir la lógica.
+
+### Lifecycle
+
+- Binarios se eliminan cuando se elimina el knowledge item (CASCADE en folder_index → DELETE de documents → cleanup de media/)
+- El nightly binary cleanup de attachments NO aplica aquí — knowledge binaries viven indefinidamente con su item
+
+---
+
+## WP8: Folder tree view — índice visible para agente y consola
+
+**Archivos:**
+- `src/modules/knowledge/item-manager.ts` — método para generar tree view
+- `src/extractors/drive.ts` — tree view para adjuntos
+- `src/modules/knowledge/console-section.ts` — renderizado en consola (opcional)
+
+### Para knowledge (injection al agente)
+
+Cuando el agente busca en knowledge y un resultado viene de una carpeta de Drive, incluir contexto de la estructura:
+
+```typescript
+// Generar tree view desde folder_index
+function buildFolderTreeText(itemId: string, pgStore: PgStore): Promise<string> {
+  const entries = await pgStore.getFolderIndex(itemId)
+  
+  // Ordenar: carpetas primero, luego archivos, ambos por nombre
+  const sorted = entries.sort((a, b) => {
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+
+  // Agrupar por profundidad y construir árbol indentado
+  const lines: string[] = []
+  for (const entry of sorted) {
+    const depth = entry.path.split('/').length - 1
+    const indent = '  '.repeat(depth)
+    const icon = entry.isFolder ? '📁' : fileIcon(entry.mimeType)
+    const status = entry.isFolder ? '' : entry.status === 'processed' ? ' ✅' : entry.status === 'error' ? ' ❌' : ' ⏳'
+    lines.push(`${indent}${icon} ${entry.name}${status}`)
+  }
+  
+  return lines.join('\n')
+}
+```
+
+### Para adjuntos (respuesta del extractor)
+
+Cuando el agente recibe un link de carpeta de Drive como adjunto, el extractor retorna el listado ordenado:
+
+```typescript
+// En extractDrive() — cuando driveType === 'folder':
+// Ordenar: carpetas primero, luego archivos por nombre
+const sortedContents = folderContents.sort((a, b) => {
+  if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1
+  return a.name.localeCompare(b.name)
+})
+
+// Formatear como texto legible para el agente
+const treeText = sortedContents.map(f => {
+  const icon = f.isFolder ? '📁' : fileIcon(f.mimeType)
+  return `${icon} ${f.name} (${f.isFolder ? 'carpeta' : f.mimeType}) → ${f.suggestedTool}(${f.id})`
+}).join('\n')
+```
+
+El agente ve algo como:
+```
+📁 Contratos → drive-list-files(abc123)
+📁 Facturas → drive-list-files(def456)
+📄 propuesta.docx → drive-read-file(ghi789)
+📊 presupuesto.xlsx → sheets-read(jkl012)
+🖼️ logo.png → drive-read-file(mno345)
+```
 
 ---
 
@@ -559,6 +687,7 @@ Esto ya funciona parcialmente:
 ```
 WP1 (infrastructure)     ─── independiente, hacer PRIMERO (2 fixes simples)
 WP2 (tool navegación)    ─── depende de WP1
+WP8 (folder tree view)   ─── depende de WP2 (usa los datos del listing)
 WP3 (knowledge crawl)    ─── depende de WP1
 WP4 (sync incremental)   ─── depende de WP3 (necesita folder index)
 WP5 (sharing)            ─── depende de WP3 (necesita webViewLink guardado)
@@ -568,8 +697,8 @@ WP7 (sync-manager)       ─── depende de WP3+WP4
 
 ### Recomendación de sub-tracks
 
-- **G1 (infrastructure + tool):** WP1 + WP2 — Shared Drives, ordering, tool mejorado
-- **G2 (knowledge crawl):** WP3 + WP6 + migración — el grueso del trabajo
+- **G1 (infrastructure + tool + tree):** WP1 + WP2 + WP8 — Shared Drives, ordering, tool mejorado, tree view
+- **G2 (knowledge crawl):** WP3 + WP6 + migración + binarios multimedia en Drive — el grueso del trabajo
 - **G3 (sync + sharing):** WP4 + WP5 + WP7 — detección de cambios y sharing
 
 ---
