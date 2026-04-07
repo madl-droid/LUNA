@@ -47,17 +47,20 @@ export async function preloadContext(
   let contactMemory: string | null = null
   let pendingCommitments: string[] = []
   let recentSummaries: string[] = []
+  let contactChannels: Array<{ channel_type: string; channel_identifier: string; is_primary: boolean }> = []
 
   if (contact?.contactId) {
     const memResults = await Promise.allSettled([
       loadContactMemory(registry, contact.contactId),
       loadCommitments(registry, contact.contactId),
       loadSummaries(registry, contact.contactId),
+      loadContactChannels(db, contact.contactId),
     ])
 
     contactMemory = memResults[0]!.status === 'fulfilled' ? memResults[0]!.value : null
     pendingCommitments = memResults[1]!.status === 'fulfilled' ? memResults[1]!.value : []
     recentSummaries = memResults[2]!.status === 'fulfilled' ? memResults[2]!.value : []
+    contactChannels = memResults[3]!.status === 'fulfilled' ? memResults[3]!.value : []
   }
 
   // Build system instruction
@@ -76,6 +79,7 @@ export async function preloadContext(
     config,
     registry,
     outboundReason,
+    contactChannels,
   )
 
   // Add end-call tool to the declarations
@@ -206,6 +210,7 @@ async function buildSystemInstruction(
   config: TwilioVoiceConfig,
   registry?: Registry,
   outboundReason?: string,
+  contactChannels: Array<{ channel_type: string; channel_identifier: string; is_primary: boolean }> = [],
 ): Promise<string> {
   const parts: string[] = []
 
@@ -251,12 +256,20 @@ async function buildSystemInstruction(
   }
 
   // Contact context
-  if (contact || contactMemory || pendingCommitments.length > 0) {
+  if (contact || contactMemory || pendingCommitments.length > 0 || contactChannels.length > 0) {
     const contextParts: string[] = ['\n## Contexto del contacto']
 
     if (contact) {
       if (contact.displayName) contextParts.push(`- Nombre: ${contact.displayName}`)
       if (contact.status) contextParts.push(`- Estado: ${contact.status}`)
+    }
+
+    if (contactChannels.length > 0) {
+      const channelLines = contactChannels.map(ch => {
+        const primary = ch.is_primary ? ' (principal)' : ''
+        return `- ${ch.channel_type}: ${ch.channel_identifier}${primary}`
+      })
+      contextParts.push(`\n### Puntos de contacto:\n${channelLines.join('\n')}`)
     }
 
     if (contactMemory) {
@@ -393,4 +406,26 @@ async function loadSummaries(registry: Registry, contactId: string): Promise<str
   if (!memMgr) return []
   const summaries = await memMgr.getRecentSummaries(contactId, 3)
   return summaries.map(s => s.summary)
+}
+
+async function loadContactChannels(
+  db: Pool,
+  contactId: string,
+): Promise<Array<{ channel_type: string; channel_identifier: string; is_primary: boolean }>> {
+  try {
+    const result = await db.query<{
+      channel_type: string
+      channel_identifier: string
+      is_primary: boolean
+    }>(
+      `SELECT channel_type, channel_identifier, is_primary
+       FROM contact_channels
+       WHERE contact_id = $1
+       ORDER BY is_primary DESC, last_used_at DESC NULLS LAST`,
+      [contactId],
+    )
+    return result.rows
+  } catch {
+    return []
+  }
 }
