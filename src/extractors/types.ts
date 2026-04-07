@@ -140,12 +140,19 @@ export interface SlidesResult {
 // Resultado de extracción web
 // ═══════════════════════════════════════════
 
+export interface EmbeddedYouTubeRef {
+  videoId: string
+  url: string
+}
+
 export interface WebResult {
   kind: 'web'
   url: string
   title: string | null
   sections: ExtractedSection[]
   metadata: DocumentMetadata
+  /** YouTube iframes detectados en la página */
+  embeddedVideos?: EmbeddedYouTubeRef[]
 }
 
 // ═══════════════════════════════════════════

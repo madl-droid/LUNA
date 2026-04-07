@@ -9,7 +9,7 @@ import type { KnowledgeCache } from './cache.js'
 import type { KnowledgeManager } from './knowledge-manager.js'
 import type { VectorizeWorker } from './vectorize-worker.js'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, unlink } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import type {
   KnowledgeItem,
@@ -25,9 +25,19 @@ import {
   chunkSlidesAsPdf,
   chunkYoutube,
   chunkWeb,
-  parseYoutubeChapters,
   linkChunks,
 } from './extractors/smart-chunker.js'
+
+import {
+  parseYouTubeUrl,
+  getVideoMeta,
+  getTranscript,
+  downloadThumbnail,
+  downloadVideo,
+  listPlaylistVideos,
+  getChannelMeta,
+} from '../../extractors/youtube-adapter.js'
+import { parseYoutubeChapters } from '../../extractors/youtube.js'
 
 const logger = pino({ name: 'knowledge:items' })
 
@@ -386,22 +396,20 @@ export class KnowledgeItemManager {
       tabNames = ['PDF']
     } else if (item.sourceType === 'youtube') {
       const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
-      const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
-      if (playlistMatch?.[1]) {
-        // Direct playlist → list videos as tabs
-        const videos = await this.listPlaylistVideos(playlistMatch[1], apiKey)
+      const parsed = parseYouTubeUrl(item.sourceUrl)
+      if (parsed.type === 'playlist' && parsed.id) {
+        const videos = await listPlaylistVideos(parsed.id, apiKey)
         tabNames = videos.map(v => v.title)
-      } else {
-        // Channel → list playlists as tabs (or uploads)
-        const channelMatch = YOUTUBE_CHANNEL_REGEX.exec(item.sourceUrl)
-        if (channelMatch && apiKey) {
-          const handle = channelMatch[1] ?? channelMatch[2]!
-          const playlists = await this.listChannelPlaylists(handle, apiKey)
-          tabNames = playlists.map(p => p.title)
+      } else if (parsed.type === 'channel' && parsed.id && apiKey) {
+        try {
+          const channelMeta = await getChannelMeta(parsed.id, apiKey)
+          tabNames = channelMeta.playlists.map(p => p.title)
           if (tabNames.length === 0) tabNames = ['Uploads']
-        } else {
+        } catch {
           tabNames = ['Videos']
         }
+      } else {
+        tabNames = ['Videos']
       }
     }
 
@@ -1095,142 +1103,402 @@ export class KnowledgeItemManager {
     return blocks
   }
 
-  /** YouTube: smart chunk — header (thumbnail+meta) + transcript by chapters/5min */
+  /**
+   * YouTube: router unificado.
+   * Detecta tipo (video / playlist / channel) y delega al sub-loader correspondiente.
+   */
   private async loadYoutubeContent(item: KnowledgeItem): Promise<number> {
+    const parsed = parseYouTubeUrl(item.sourceUrl)
+
+    if (parsed.type === 'video' && parsed.id) {
+      return this.loadYoutubeVideo(item, parsed.id)
+    }
+
+    if (parsed.type === 'playlist' && parsed.id) {
+      return this.loadYoutubePlaylist(item, parsed.id)
+    }
+
+    if (parsed.type === 'channel' && parsed.id) {
+      return this.loadYoutubeChannel(item, parsed.id)
+    }
+
+    logger.warn({ itemId: item.id, url: item.sourceUrl, type: parsed.type }, '[YT] Unknown YouTube URL type')
+    return 0
+  }
+
+  /**
+   * WP4: Escenario 2 — Video individual con transcript preciso + descarga mp4.
+   */
+  private async loadYoutubeVideo(item: KnowledgeItem, videoId: string): Promise<number> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
-    let videos: Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }> = []
+    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+
+    // 1. Metadata del video
+    let meta: import('../../extractors/youtube-adapter.js').YouTubeVideoMeta | null = null
+    if (apiKey) {
+      try {
+        meta = await getVideoMeta(videoId, apiKey)
+      } catch (err) {
+        logger.warn({ err, videoId }, '[YT-VIDEO] getVideoMeta failed, continuing')
+      }
+    }
+
+    const title = meta?.title ?? `Video ${videoId}`
+    const description = meta?.description ?? ''
+    const videoUrl = meta?.url ?? `https://www.youtube.com/watch?v=${videoId}`
+
+    // 2. Transcript
+    const transcriptResult = await getTranscript(videoId, this.registry, { fallbackSTT: true })
+    const segments = transcriptResult?.segments ?? []
+
+    // 3. Descargar video mp4
+    let videoBuffer: Buffer | null = null
+    let videoMimeType = 'video/mp4'
+    let downloadedPath: string | null = null
+
+    try {
+      const dl = await downloadVideo(videoId, mediaDir)
+      const { readFile } = await import('node:fs/promises')
+      videoBuffer = await readFile(dl.filePath)
+      videoMimeType = dl.mimeType
+      downloadedPath = dl.filePath
+      logger.info({ videoId, sizeBytes: dl.sizeBytes }, '[YT-VIDEO] Downloaded mp4')
+    } catch (err) {
+      logger.warn({ err, videoId }, '[YT-VIDEO] yt-dlp download failed, falling back to text-only')
+    }
+
+    let totalChunks = 0
+
+    if (videoBuffer) {
+      // 4a. Pipeline video: extractVideo + describeVideo + temporal split + chunkVideo
+      try {
+        const { extractVideo, describeVideo } = await import('../../extractors/video.js')
+        const videoResult = await extractVideo(videoBuffer, `${videoId}.mp4`, videoMimeType)
+        const enriched = await describeVideo(videoResult, this.registry)
+        const llmDescription = enriched.llmEnrichment?.description ?? null
+        const duration = videoResult.durationSeconds ?? (meta?.duration ?? 0)
+
+        const contentHash = createHash('sha256').update(videoBuffer).digest('hex')
+        const hashPrefix = contentHash.substring(0, 12)
+
+        // routeVideo from knowledge-manager handles temporal splitting
+        // We replicate the logic here using KnowledgeManager's routeVideo indirectly
+        // via the internal split + chunkVideo approach
+        const { splitMediaFile, VIDEO_SPLIT_CONFIG } = await import('./extractors/temporal-splitter.js')
+        const { chunkVideo: _chunkVideo } = await import('./extractors/smart-chunker.js')
+
+        let videoChunks: import('./embedding-limits.js').EmbeddableChunk[]
+
+        if (duration > 50) {
+          const splitSegs = await splitMediaFile(videoBuffer, videoMimeType, duration, VIDEO_SPLIT_CONFIG)
+          const persistedSegs: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }> = []
+
+          await mkdir(mediaDir, { recursive: true })
+          for (let i = 0; i < splitSegs.length; i++) {
+            const seg = splitSegs[i]!
+            const segFile = `${hashPrefix}_vseg${i}.mp4`
+            const segBuf = await (await import('node:fs/promises')).readFile(seg.segmentPath)
+            await writeFile(join(mediaDir, segFile), segBuf)
+            await unlink(seg.segmentPath).catch(() => {})
+            persistedSegs.push({ startSeconds: seg.startSeconds, endSeconds: seg.endSeconds, segmentPath: segFile })
+          }
+
+          videoChunks = _chunkVideo({
+            description: llmDescription,
+            transcription: segments.length > 0 ? segments.map(s => s.text).join(' ') : null,
+            transcriptSegments: segments.length > 0 ? segments : undefined,
+            durationSeconds: duration,
+            mimeType: videoMimeType,
+            sourceFile: title,
+            sourceUrl: videoUrl,
+            segments: persistedSegs,
+          })
+        } else {
+          // Video corto: 1 solo chunk
+          const videoFile = `${hashPrefix}_${videoId}.mp4`
+          await mkdir(mediaDir, { recursive: true })
+          await writeFile(join(mediaDir, videoFile), videoBuffer)
+
+          videoChunks = _chunkVideo({
+            description: llmDescription,
+            transcription: segments.length > 0 ? segments.map(s => s.text).join(' ') : null,
+            transcriptSegments: segments.length > 0 ? segments : undefined,
+            durationSeconds: duration,
+            mimeType: videoMimeType,
+            sourceFile: title,
+            sourceUrl: videoUrl,
+            filePath: videoFile,
+          })
+        }
+
+        // Enriquecer metadata YouTube
+        for (const chunk of videoChunks) {
+          chunk.metadata = {
+            ...chunk.metadata,
+            sourceType: 'video',
+            sourceUrl: videoUrl,
+            videoId,
+            channelTitle: meta?.channelTitle ?? null,
+            publishedAt: meta?.publishedAt ?? null,
+            tags: meta?.tags ?? [],
+            topicCategories: meta?.topicCategories ?? [],
+          }
+        }
+
+        totalChunks += await this.persistSmartChunks(item, title, videoMimeType, videoChunks, {
+          description: `YouTube video: ${title}`,
+        })
+
+        // Limpiar binario descargado (ya fue partido en segmentos o persistido)
+        if (downloadedPath) {
+          await unlink(downloadedPath).catch(() => {})
+        }
+      } catch (err) {
+        logger.warn({ err, videoId }, '[YT-VIDEO] Video pipeline failed, falling back to text')
+        if (downloadedPath) await unlink(downloadedPath).catch(() => {})
+        videoBuffer = null
+      }
+    }
+
+    // 4b. Fallback text-only: chunkYoutube con transcript
+    if (!videoBuffer) {
+      if (segments.length === 0 && !description.trim()) {
+        logger.warn({ videoId, title }, '[YT-VIDEO] No transcript + no description + no video, skipping')
+        return 0
+      }
+
+      let thumbnailBase64: string | undefined
+      if (meta?.thumbnailUrl) {
+        const thumb = await downloadThumbnail(meta.thumbnailUrl)
+        if (thumb) thumbnailBase64 = thumb.buffer.toString('base64')
+      }
+
+      const chapters = description ? parseYoutubeChapters(description) : null
+      const chunks = chunkYoutube(
+        { title, description, thumbnailBase64, url: videoUrl },
+        segments,
+        chapters,
+      )
+
+      // Enriquecer metadata
+      for (const chunk of chunks) {
+        chunk.metadata = {
+          ...chunk.metadata,
+          videoId,
+          channelTitle: meta?.channelTitle ?? null,
+          publishedAt: meta?.publishedAt ?? null,
+          tags: meta?.tags ?? [],
+          topicCategories: meta?.topicCategories ?? [],
+          transcriptSource: transcriptResult?.source ?? null,
+        }
+      }
+
+      totalChunks += await this.persistSmartChunks(item, title, 'text/plain', chunks, {
+        description: `YouTube video: ${title}`,
+      })
+    }
+
+    logger.info({ videoId, title, totalChunks }, '[YT-VIDEO] Video loaded')
+    return totalChunks
+  }
+
+  /**
+   * WP5: Escenario 3 — Playlist: preview 60s + transcript por cada video.
+   */
+  private async loadYoutubePlaylist(item: KnowledgeItem, playlistId: string): Promise<number> {
+    const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
 
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    const playlistMatch = YOUTUBE_PLAYLIST_REGEX.exec(item.sourceUrl)
-    if (playlistMatch?.[1]) {
-      videos = await this.listPlaylistVideos(playlistMatch[1], apiKey)
-    } else {
-      const channelMatch = YOUTUBE_CHANNEL_REGEX.exec(item.sourceUrl)
-      if (channelMatch) {
-        const handle = channelMatch[1] ?? channelMatch[2]!
-        const uploadsPlaylistId = await this.getChannelUploadsPlaylist(handle, apiKey)
-        if (uploadsPlaylistId) {
-          videos = await this.listPlaylistVideos(uploadsPlaylistId, apiKey)
-        }
-      }
-    }
-
-    logger.info({ itemId: item.id, videoCount: videos.length }, '[YT] Videos found')
+    const videos = await listPlaylistVideos(playlistId, apiKey)
+    logger.info({ itemId: item.id, playlistId, videoCount: videos.length }, '[YT-PLAYLIST] Videos found')
 
     let totalChunks = 0
+
     for (const video of videos) {
       if (ignoredNames.has(video.title)) continue
+
       try {
-        // 1. Fetch transcript with offset/duration for time-based chunking
-        const { fetchTranscript } = await import('youtube-transcript')
-        const rawSegments = await fetchTranscript(video.id, { lang: 'es' }).catch(() =>
-          fetchTranscript(video.id).catch(() => []),
-        )
-        const segments = rawSegments.map(s => ({
-          text: s.text,
-          offset: (s as unknown as { offset?: number }).offset ?? 0,
-          duration: (s as unknown as { duration?: number }).duration,
-        }))
+        // 1. Transcript
+        const transcriptResult = await getTranscript(video.videoId, this.registry, { fallbackSTT: true })
+        const segments = transcriptResult?.segments ?? []
 
         if (segments.length === 0 && !video.description.trim()) {
-          logger.warn({ videoId: video.id, title: video.title }, '[YT] No transcript + no description, skipping')
+          logger.warn({ videoId: video.videoId, title: video.title }, '[YT-PLAYLIST] No transcript + no description, skipping')
           continue
         }
 
-        // 2. Download thumbnail as base64 for multimodal header chunk
+        // 2. Thumbnail
         let thumbnailBase64: string | undefined
         if (video.thumbnailUrl) {
-          try {
-            const thumbRes = await fetch(video.thumbnailUrl, { signal: AbortSignal.timeout(10000) })
-            if (thumbRes.ok) {
-              thumbnailBase64 = Buffer.from(await thumbRes.arrayBuffer()).toString('base64')
-            }
-          } catch { /* non-fatal */ }
+          const thumb = await downloadThumbnail(video.thumbnailUrl)
+          if (thumb) thumbnailBase64 = thumb.buffer.toString('base64')
         }
 
-        // 3. Parse chapters from description (if any)
+        // 3. Chapters
         const chapters = video.description ? parseYoutubeChapters(video.description) : null
 
-        // 4. Smart chunk: header + transcript sections
-        const chunks = chunkYoutube(
-          { title: video.title, description: video.description, thumbnailBase64 },
+        // 4. Transcript chunks (audio contentType)
+        const transcriptChunks = chunkYoutube(
+          { title: video.title, description: video.description, thumbnailBase64, url: video.url },
           segments,
           chapters,
         )
 
-        totalChunks += await this.persistSmartChunks(item, video.title, 'text/plain', chunks, {
-          description: `YouTube: ${video.title}`,
+        // Enriquecer metadata
+        const playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`
+        for (const chunk of transcriptChunks) {
+          chunk.metadata = {
+            ...chunk.metadata,
+            videoId: video.videoId,
+            channelTitle: video.channelTitle,
+            publishedAt: video.publishedAt,
+            tags: video.tags,
+            playlistId,
+            playlistUrl,
+            transcriptSource: transcriptResult?.source ?? null,
+          }
+        }
+
+        // 5. Preview video: descargar primeros 60s y agregar como chunk video_frames
+        const videoChunks: import('./embedding-limits.js').EmbeddableChunk[] = []
+        try {
+          const dl = await downloadVideo(video.videoId, mediaDir)
+          const { readFile: readFileFn } = await import('node:fs/promises')
+          const videoBuf = await readFileFn(dl.filePath)
+
+          const { extractVideo } = await import('../../extractors/video.js')
+          const videoResult = await extractVideo(videoBuf, `${video.videoId}.mp4`, 'video/mp4')
+          const duration = videoResult.durationSeconds ?? (video.duration ?? 0)
+
+          // Solo primer segmento de 60s
+          const { splitMediaFile: splitFn } = await import('./extractors/temporal-splitter.js')
+          const previewConfig = { firstChunkSeconds: 60, subsequentSeconds: 0, overlapSeconds: 0 }
+          const splitSegs = await splitFn(videoBuf, 'video/mp4', Math.min(duration, 60), previewConfig)
+
+          const contentHash = createHash('sha256').update(videoBuf).digest('hex')
+          const hashPrefix = contentHash.substring(0, 12)
+
+          if (splitSegs.length > 0) {
+            const seg = splitSegs[0]!
+            const previewFile = `${hashPrefix}_preview.mp4`
+            await mkdir(mediaDir, { recursive: true })
+            const segBuf = await (await import('node:fs/promises')).readFile(seg.segmentPath)
+            await writeFile(join(mediaDir, previewFile), segBuf)
+            await unlink(seg.segmentPath).catch(() => {})
+
+            videoChunks.push({
+              content: `[Preview video 60s] ${video.title}`,
+              contentType: 'video_frames',
+              mediaRefs: [{ mimeType: 'video/mp4', filePath: previewFile }],
+              chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+              metadata: {
+                sourceType: 'video',
+                sourceFile: video.title,
+                sourceMimeType: 'video/mp4',
+                sourceUrl: video.url,
+                videoId: video.videoId,
+                playlistId,
+                playlistUrl,
+                timestampStart: 0,
+                timestampEnd: Math.min(duration, 60),
+              },
+            })
+          }
+
+          // Limpiar binario completo
+          await unlink(dl.filePath).catch(() => {})
+        } catch (err) {
+          logger.debug({ err, videoId: video.videoId }, '[YT-PLAYLIST] Preview download failed (non-fatal)')
+        }
+
+        const allChunks = [...transcriptChunks, ...videoChunks]
+        totalChunks += await this.persistSmartChunks(item, video.title, 'text/plain', allChunks, {
+          description: `YouTube playlist video: ${video.title}`,
         })
 
         logger.info({
-          videoId: video.id, title: video.title, chunkCount: chunks.length,
-          hasChapters: !!chapters, hasThumbnail: !!thumbnailBase64, segmentCount: segments.length,
-        }, '[YT] Video smart chunked')
+          videoId: video.videoId, title: video.title,
+          transcriptChunks: transcriptChunks.length, videoChunks: videoChunks.length,
+        }, '[YT-PLAYLIST] Video processed')
       } catch (err) {
-        logger.warn({ err, videoId: video.id, title: video.title }, '[YT] Failed to process video')
+        logger.warn({ err, videoId: video.videoId, title: video.title }, '[YT-PLAYLIST] Failed to process video')
       }
     }
 
     return totalChunks
   }
 
-  /** List videos in a YouTube playlist via Data API v3 */
-  private async listPlaylistVideos(playlistId: string, apiKey: string): Promise<Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }>> {
-    if (!apiKey) { logger.warn('No Google API key for YouTube Data API'); return [] }
-    const videos: Array<{ id: string; title: string; description: string; thumbnailUrl: string | null }> = []
-    let pageToken = ''
-    for (let page = 0; page < 5; page++) {
-      const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
-      if (!res.ok) { logger.warn({ status: res.status }, '[YT] Playlist API error'); break }
-      const data = await res.json() as { items?: Array<{ snippet?: { resourceId?: { videoId?: string }; title?: string; description?: string; thumbnails?: { high?: { url?: string }; medium?: { url?: string }; default?: { url?: string } } } }>; nextPageToken?: string }
-      for (const item of data.items ?? []) {
-        const s = item.snippet
-        const vid = s?.resourceId?.videoId
-        const title = s?.title ?? 'Sin título'
-        const description = s?.description ?? ''
-        const thumbnailUrl = s?.thumbnails?.high?.url ?? s?.thumbnails?.medium?.url ?? s?.thumbnails?.default?.url ?? null
-        if (vid) videos.push({ id: vid, title, description, thumbnailUrl })
-      }
-      if (!data.nextPageToken) break
-      pageToken = data.nextPageToken
+  /**
+   * WP6: Escenario 4 — Canal: solo metadata + índice jerárquico de playlists.
+   */
+  private async loadYoutubeChannel(item: KnowledgeItem, handleOrId: string): Promise<number> {
+    const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+
+    let channelMeta: import('../../extractors/youtube-adapter.js').YouTubeChannelMeta | null = null
+    try {
+      channelMeta = await getChannelMeta(handleOrId, apiKey)
+    } catch (err) {
+      logger.warn({ err, handleOrId }, '[YT-CHANNEL] getChannelMeta failed')
+      return 0
     }
-    return videos
-  }
 
-  /** List playlists for a YouTube channel */
-  private async listChannelPlaylists(handle: string, apiKey: string): Promise<Array<{ id: string; title: string }>> {
-    if (!apiKey) return []
-    // Get channel ID first
-    const isHandle = !handle.startsWith('UC')
-    const param = isHandle ? `forHandle=${encodeURIComponent(handle)}` : `id=${encodeURIComponent(handle)}`
-    const chUrl = `https://www.googleapis.com/youtube/v3/channels?part=id&${param}&key=${encodeURIComponent(apiKey)}`
-    const chRes = await fetch(chUrl, { signal: AbortSignal.timeout(10000) })
-    if (!chRes.ok) return []
-    const chData = await chRes.json() as { items?: Array<{ id?: string }> }
-    const channelId = chData.items?.[0]?.id
-    if (!channelId) return []
+    // Chunk 1: Header del canal
+    const headerChunks: import('./embedding-limits.js').EmbeddableChunk[] = [{
+      content: [
+        `# Canal YouTube: ${channelMeta.title}`,
+        channelMeta.description ? `\n${channelMeta.description}` : '',
+        `\nURL: ${channelMeta.url}`,
+        `\nPlaylists públicas: ${channelMeta.playlists.length}`,
+      ].join('').trim(),
+      contentType: 'text',
+      mediaRefs: null,
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'youtube',
+        sourceUrl: channelMeta.url,
+        sectionTitle: channelMeta.title,
+        channelId: channelMeta.channelId,
+        playlistCount: channelMeta.playlists.length,
+      },
+    }]
 
-    const plUrl = `https://www.googleapis.com/youtube/v3/playlists?part=snippet&channelId=${encodeURIComponent(channelId)}&maxResults=50&key=${encodeURIComponent(apiKey)}`
-    const plRes = await fetch(plUrl, { signal: AbortSignal.timeout(10000) })
-    if (!plRes.ok) return []
-    const plData = await plRes.json() as { items?: Array<{ id?: string; snippet?: { title?: string } }> }
-    return (plData.items ?? []).map(p => ({ id: p.id ?? '', title: p.snippet?.title ?? '' })).filter(p => p.id)
-  }
+    // Chunks por playlist
+    const playlistChunks: import('./embedding-limits.js').EmbeddableChunk[] = channelMeta.playlists.map(pl => ({
+      content: [
+        `## Playlist: ${pl.title}`,
+        pl.description ? `\n${pl.description}` : '',
+        `\nVideos: ${pl.videoCount}`,
+        `\nURL: ${pl.url}`,
+      ].join('').trim(),
+      contentType: 'text' as const,
+      mediaRefs: null,
+      chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
+      metadata: {
+        sourceType: 'youtube',
+        sourceUrl: pl.url,
+        sectionTitle: pl.title,
+        channelId: channelMeta!.channelId,
+        playlistId: pl.playlistId,
+        videoCount: pl.videoCount,
+      },
+    }))
 
-  /** Get the "uploads" playlist ID for a YouTube channel */
-  private async getChannelUploadsPlaylist(handle: string, apiKey: string): Promise<string | null> {
-    if (!apiKey) return null
-    // Try by handle first, then by channel ID
-    const isHandle = !handle.startsWith('UC')
-    const param = isHandle ? `forHandle=${encodeURIComponent(handle)}` : `id=${encodeURIComponent(handle)}`
-    const url = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&${param}&key=${encodeURIComponent(apiKey)}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
-    if (!res.ok) { logger.warn({ status: res.status }, '[YT] Channel API error'); return null }
-    const data = await res.json() as { items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }> }
-    return data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads ?? null
+    const allChunks = [...headerChunks, ...playlistChunks]
+    const totalChunks = await this.persistSmartChunks(item, channelMeta.title, 'text/plain', allChunks, {
+      description: `YouTube canal: ${channelMeta.title}`,
+    })
+
+    logger.info({
+      channelId: channelMeta.channelId,
+      title: channelMeta.title,
+      playlists: channelMeta.playlists.length,
+      totalChunks,
+    }, '[YT-CHANNEL] Channel indexed')
+
+    return totalChunks
   }
 
   // ─── Public API fallbacks (no OAuth needed) ──

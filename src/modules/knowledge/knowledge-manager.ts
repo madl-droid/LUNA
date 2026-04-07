@@ -594,6 +594,10 @@ export class KnowledgeManager {
     mimeType: string,
     hashPrefix: string,
     mediaDir: string,
+    opts?: {
+      transcription?: string
+      transcriptSegments?: Array<{ text: string; offset: number; duration?: number }>
+    },
   ): Promise<EmbeddableChunk[]> {
     const { extractVideo, describeVideo } = await import('../../extractors/video.js')
 
@@ -605,13 +609,17 @@ export class KnowledgeManager {
     const enriched = await describeVideo(videoResult, this.registry)
     const description = enriched.llmEnrichment?.description ?? null
 
+    const transcription = opts?.transcription ?? null
+    const transcriptSegments = opts?.transcriptSegments
+
     if (duration <= VIDEO_THRESHOLD_SECONDS) {
       // Single chunk — save original to mediaDir
       const videoFileName = `${hashPrefix}_${sanitizeFileName(fileName)}`
       await writeFile(join(mediaDir, videoFileName), buffer)
       return chunkVideo({
         description,
-        transcription: null,
+        transcription,
+        transcriptSegments,
         durationSeconds: duration,
         mimeType: resolvedMime,
         sourceFile: fileName,
@@ -626,7 +634,8 @@ export class KnowledgeManager {
       await writeFile(join(mediaDir, videoFileName), buffer)
       return chunkVideo({
         description,
-        transcription: null,
+        transcription,
+        transcriptSegments,
         durationSeconds: duration,
         mimeType: resolvedMime,
         sourceFile: fileName,
@@ -658,7 +667,8 @@ export class KnowledgeManager {
 
     return chunkVideo({
       description,
-      transcription: null,
+      transcription,
+      transcriptSegments,
       durationSeconds: duration,
       mimeType: resolvedMime,
       sourceFile: fileName,

@@ -4,7 +4,7 @@
 // Imágenes filtradas: alt no vacío, no icons/logos, mismo dominio, min 75x75.
 // NO pasa por subagent de research.
 
-import type { WebResult, ExtractedSection, ExtractedImage } from './types.js'
+import type { WebResult, ExtractedSection, ExtractedImage, EmbeddedYouTubeRef } from './types.js'
 import { computeMD5, isSmallImage } from './utils.js'
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAX_CONTENT_SIZE = 10 * 1024 * 1024 // 10MB
@@ -125,11 +125,26 @@ export async function extractWeb(url: string, options?: WebExtractOptions): Prom
     .map(img => img.url)
     .filter((u): u is string => !!u && u.startsWith('http'))
 
+  // Detectar YouTube iframes embebidos
+  const embeddedVideos: EmbeddedYouTubeRef[] = []
+  const iframes = doc.querySelectorAll('iframe[src*="youtube.com/embed/"], iframe[src*="youtube-nocookie.com/embed/"]')
+  for (const iframe of iframes) {
+    const src = iframe.getAttribute('src') ?? ''
+    const match = src.match(/\/embed\/([\w-]{11})/)
+    if (match?.[1]) {
+      embeddedVideos.push({
+        videoId: match[1],
+        url: `https://www.youtube.com/watch?v=${match[1]}`,
+      })
+    }
+  }
+
   return {
     kind: 'web',
     url,
     title: pageTitle,
     sections,
+    embeddedVideos: embeddedVideos.length > 0 ? embeddedVideos : undefined,
     metadata: {
       originalName: url,
       extractorUsed: 'web-jsdom',
