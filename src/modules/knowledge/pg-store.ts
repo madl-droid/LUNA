@@ -80,22 +80,68 @@ export class KnowledgePgStore {
 
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS knowledge_chunks (
-        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        document_id   uuid NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
-        content       text NOT NULL,
-        section       text,
-        chunk_index   int NOT NULL,
-        page          int,
-        has_embedding boolean NOT NULL DEFAULT false,
-        embedding     vector(1536),
-        tsv           tsvector,
-        created_at    timestamptz NOT NULL DEFAULT now()
+        id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        document_id      uuid NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+        content          text NOT NULL,
+        section          text,
+        chunk_index      int NOT NULL,
+        page             int,
+        embedding        vector(1536),
+        tsv              tsvector,
+        created_at       timestamptz NOT NULL DEFAULT now(),
+        source_id        text,
+        chunk_total      int,
+        prev_chunk_id    uuid,
+        next_chunk_id    uuid,
+        content_type     text NOT NULL DEFAULT 'text',
+        media_refs       jsonb,
+        extra_metadata   jsonb,
+        mime_type        text,
+        embedding_status text NOT NULL DEFAULT 'pending',
+        retry_count      int NOT NULL DEFAULT 0,
+        last_error       text,
+        last_attempt_at  timestamptz,
+        parent_chunk_id  uuid,
+        sub_chunk_index  int,
+        sub_chunk_total  int,
+        CONSTRAINT chk_kc_embedding_status CHECK (embedding_status = ANY (ARRAY['pending','queued','processing','embedded','done','failed','pending_review']))
       )
+    `)
+
+    // Schema migrations for pre-existing tables
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS source_id text`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS chunk_total int`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS prev_chunk_id uuid`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS next_chunk_id uuid`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS content_type text NOT NULL DEFAULT 'text'`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS media_refs jsonb`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS extra_metadata jsonb`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS mime_type text`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS embedding_status text NOT NULL DEFAULT 'pending'`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS retry_count int NOT NULL DEFAULT 0`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS last_error text`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS last_attempt_at timestamptz`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS parent_chunk_id uuid`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS sub_chunk_index int`)
+    await this.db.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS sub_chunk_total int`)
+
+    // Migrate has_embedding → embedding_status for tables created with the old schema
+    await this.db.query(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'knowledge_chunks' AND column_name = 'has_embedding') THEN
+          UPDATE knowledge_chunks SET embedding_status = 'embedded' WHERE has_embedding = true AND embedding_status = 'pending';
+          ALTER TABLE knowledge_chunks DROP COLUMN has_embedding;
+        END IF;
+      END $$
     `)
 
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tsv ON knowledge_chunks USING GIN(tsv)`)
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(document_id)`)
-    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WHERE has_embedding = true`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding_v2 ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WHERE embedding_status = 'embedded'`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_kc_embedding_status ON knowledge_chunks(embedding_status) WHERE embedding_status != 'embedded'`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_kc_source ON knowledge_chunks(source_id) WHERE source_id IS NOT NULL`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_kc_linking ON knowledge_chunks(prev_chunk_id, next_chunk_id) WHERE prev_chunk_id IS NOT NULL OR next_chunk_id IS NOT NULL`)
+    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_kc_parent_chunk ON knowledge_chunks(parent_chunk_id) WHERE parent_chunk_id IS NOT NULL`)
 
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS knowledge_faqs (
