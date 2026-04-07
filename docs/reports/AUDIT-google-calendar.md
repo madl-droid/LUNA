@@ -199,6 +199,25 @@ La implementación cubre los 4 planes de forma completa y coherente. La arquitec
 7. **C-2:** Eliminar dead code check `if (!datePart)`
 8. **R-5:** Unificar `UsersDb` partial interface
 9. **C-3:** Evaluar inyectar config en system prompt vs tool call
+10. **BUG-4:** Decidir si el `break` en `scheduleCoworkerFollowUp()` es intencional (solo primer coworker recibe post-meeting follow-up)
+11. **BUG-5:** Documentar o mitigar race condition en `rescheduleFollowUps()` concurrente
+
+---
+
+## BUGS ADICIONALES (Plan 4)
+
+### BUG-4: Solo el primer coworker recibe follow-up post-reunión
+- **Archivo:** `calendar-followups.ts` línea ~185 (`scheduleCoworkerFollowUp`)
+- **Severidad:** BAJA (decisión de diseño ambigua)
+- **Descripción:** El loop sobre attendees tiene un `break` después de encontrar el primer coworker. Si un evento tiene 2+ coworkers como asistentes, solo el primero recibe el mensaje post-reunión.
+- **Fix:** Si es intencional, agregar comentario explicativo. Si todos deben recibir, eliminar el `break`.
+
+### BUG-5: Race condition en `rescheduleFollowUps()` concurrente
+- **Archivo:** `calendar-followups.ts` (`rescheduleFollowUps`)
+- **Severidad:** BAJA
+- **Descripción:** Si se llama `rescheduleFollowUps()` dos veces casi simultáneamente para el mismo evento (ej: dos edits rápidos), ambas threads leen los mismos follow-ups pendientes, ambas cancelan los mismos jobs, y ambas crean nuevos tasks — resultando en duplicados.
+- **Mitigación:** Bajo riesgo real (el tool `calendar-execute-followup` es idempotente — marca como `sent` y no re-envía). Pero puede generar tasks huérfanos en scheduled-tasks.
+- **Fix:** Agregar un lock optimista (ej: `UPDATE ... SET status = 'rescheduling' WHERE status = 'pending' RETURNING id`) o documentar como riesgo aceptado.
 
 ---
 
