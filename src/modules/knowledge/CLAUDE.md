@@ -5,9 +5,9 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 ## Archivos
 - `manifest.ts` — lifecycle v2, configSchema (14 params), ~25 apiRoutes, tool registration
 - `types.ts` — KnowledgeDocument, KnowledgeCategory, KnowledgeApiConnector, KnowledgeWebSource, KnowledgeInjection, EmbeddingStatus, DocumentSourceType (incluye 'attachment')
-- `knowledge-manager.ts` — orquestador: addDocument con **router dual TEXT/VISUAL**, setCore(), getInjection(), triggerBulkVectorization()
-- `pg-store.ts` — 8 tablas: documents, chunks, faqs, sync_sources, gaps, categories, document_categories, api_connectors, web_sources. Métodos de binary lifecycle: markBinariesForCleanup(), getDocumentsForBinaryCleanup(), clearBinaryCleanupFlag()
-- `search-engine.ts` — búsqueda híbrida: pgvector cosine + FTS + FAQ FTS. Category boost via searchHint. Degradación a FTS si sin embeddings.
+- `knowledge-manager.ts` — orquestador: addDocument con **router dual TEXT/VISUAL**, setCore(), getInjection(), triggerBulkVectorization(), expandKnowledge(), invalidateExpandCache()
+- `pg-store.ts` — 8 tablas: documents, chunks, faqs, sync_sources, gaps, categories, document_categories, api_connectors, web_sources. Métodos de binary lifecycle: markBinariesForCleanup(), getDocumentsForBinaryCleanup(), clearBinaryCleanupFlag(). Nuevo: getChunksByDocumentId() (para expand_knowledge)
+- `search-engine.ts` — búsqueda híbrida: pgvector cosine + FTS + FAQ FTS. Category boost (+0.2) via searchHint. Core boost (+0.15) aditivo. Degradación a FTS si sin embeddings.
 - `cache.ts` — Redis cache para KnowledgeInjection (TTL 5min), invalidación en cambios core/categorías/connectors
 - `embedding-service.ts` — Google gemini-embedding-exp-03-07 (1536 dims) via @google/generative-ai. Circuit breaker (3 fallas → 5min down). Rate limit 5000 RPM (tier 2). Soporta multimodal (generateFileEmbedding).
 - `embedding-queue.ts` — BullMQ cola unificada. Circuit breaker, HITL escalation (retry 5 y 10), reconcileDocumentStatus, generateMultimodalEmbedding (lee mediaRefs de disco), runNightlyBinaryCleanup.
@@ -20,7 +20,7 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 - `extractors/smart-chunker.ts` — 11 funciones de chunking tipo-específicas (ver sección Chunking)
 - `extractors/temporal-splitter.ts` — corte temporal de audio/video con ffmpeg `-c copy` (sin re-encode)
 - `extractors/` — shim re-exports de extractores globales (src/extractors/)
-- `item-manager.ts` — CRUD knowledge items (Google Sheets/Docs/Drive/PDF/Web/YouTube), **router dual por MIME type**, carga de contenido
+- `item-manager.ts` — CRUD knowledge items (Google Sheets/Docs/Drive/PDF/Web/YouTube), **router dual por MIME type**, carga de contenido. Helpers: enrichChunksWithContext(), buildIndexChunk(), reconstructPageTexts(), enrichPdfVisual()
 - `console-section.ts` — renderizado SSR del panel de knowledge items en la consola
 
 ## Manifest
@@ -34,6 +34,12 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 
 ## Pipeline dual TEXT / VISUAL
 
+### Enriquecimiento de chunks
+- **enrichChunksWithContext()**: prepende descripción del item/doc al primer chunk. Para CSV/sheets, prepende contexto + column descriptions a CADA chunk (mejora FTS para búsquedas row-level).
+- **buildIndexChunk()**: para items multi-documento (ej. Drive folders con varios archivos), crea un chunk índice que resume todos los documentos del item. Hash determinístico (sin Date.now()) para evitar duplicación en re-sync.
+- **reconstructPageTexts()**: reconstruye textos por página desde secciones del extractor (reemplaza el viejo `sections.map(s => s.content)`). Agrupa secciones por número de página.
+- **enrichPdfVisual()**: enriquece PDFs con visualDescriptions via `enrichWithLLM('document')` del extractor global. Usado por loaders de PDF y Slides.
+
 ### Decisión de pipeline
 El router en `addDocument()` / `loadDriveFile()` elige pipeline basándose en:
 - MIME type (pdf → VISUAL, audio/video/image → multimedia, xlsx → sheets, text → TEXT)
@@ -45,7 +51,7 @@ El router en `addDocument()` / `loadDriveFile()` elige pipeline basándose en:
 `chunkDocs()`: split por H1/H2 headings → si sección > MAX_WORDS → split con word overlap → contentType 'text'
 
 ### Pipeline VISUAL
-`chunkPdf()`: bloques de 3 páginas, 1 página overlap, prefijo texto `[...]` de página anterior → contentType 'pdf_pages', mediaRefs al PDF en disco
+`chunkPdf()`: bloques de 3 páginas, 1 página overlap, prefijo texto `[...]` de página anterior → contentType 'pdf_pages', mediaRefs al PDF en disco. Acepta `opts.visualDescriptions` para inyectar descripciones visuales por rango de páginas en metadata de cada chunk.
 
 ### Pipeline multimedia
 - **Imagen**: `chunkImage()` → 1 chunk, contentType 'image', mediaRef a imagen
@@ -62,8 +68,8 @@ El router en `addDocument()` / `loadDriveFile()` elige pipeline basándose en:
 - `chunkDocs(text, opts?)` — TEXT pipeline
 - `chunkSheets(headers, rows, opts?)` — 1 row = 1 chunk
 - `chunkSlides(slides, opts?)` — legacy: 1 slide = 1 chunk (Google Slides con screenshots)
-- `chunkSlidesAsPdf(pageTexts, pdfPath, totalPages, notes, opts?)` — VISUAL: delega a chunkPdf + notes extras
-- `chunkPdf(pageTexts, pdfPath, totalPages, opts?)` — 3 páginas/chunk, 1 overlap, mediaRef a PDF
+- `chunkSlidesAsPdf(pageTexts, pdfPath, totalPages, notes, opts?)` — VISUAL: delega a chunkPdf + notes extras. opts acepta `visualDescriptions`
+- `chunkPdf(pageTexts, pdfPath, totalPages, opts?)` — 3 páginas/chunk, 1 overlap, mediaRef a PDF. opts acepta `visualDescriptions` (array {pageRange, description})
 - `chunkWeb(blocks, opts?)` — secciones semánticas + imágenes
 - `chunkYoutube(data, opts?)` — header + transcript por chapter/5min
 - `chunkImage(data, opts?)` — 1 chunk multimodal
@@ -93,9 +99,14 @@ Corte de audio/video con ffmpeg `-c copy` (sin re-encode, rápido):
 ```
 addDocument() / loadContent()
   → extractContent() + router dual
-  → chunkXxx() → EmbeddableChunk[]
+  → enrichPdfVisual() (para PDF/Slides: obtiene visualDescriptions)
+  → reconstructPageTexts() (para PDF/Slides: agrupa secciones por página)
+  → chunkXxx(opts: { visualDescriptions }) → EmbeddableChunk[]
+  → enrichChunksWithContext() → prepende descripción/contexto a chunks
   → linkChunks() → LinkedEmbeddableChunk[]
   → persistSmartChunks() → DB (knowledge_chunks)
+  → buildIndexChunk() (si multi-documento) → chunk índice
+  → invalidate expand cache (Redis del:`expand:{docId}`)
   → vectorizeWorker.enqueueDocument(docId) [async]
     → embeddingQueue.enqueueDocument(docId)
       → processJob(): loadChunk → text o multimodal embedding → persistEmbedding
@@ -111,13 +122,16 @@ addDocument() / loadContent()
 - Toggle active/inactive, checkbox core, delete (solo si inactive)
 - DB: knowledge_items, knowledge_item_tabs, knowledge_item_columns
 
-## Tool registrada
-- `search_knowledge` — busca en conocimiento con category_hint para boosting (Phase 3)
+## Tools registradas
+- `search_knowledge` — busca en conocimiento con category_hint para boosting (Phase 3). Retorna campos extendidos: documentId, chunkIndex, chunkTotal, sourceType, isCore, fileUrl
+- `expand_knowledge` — deep-dive: obtiene contenido completo de un documento por documentId (viene de search_knowledge). Cache Redis 15min. Si doc tiene ≤15 chunks muestra todo, si >15 muestra primeros 5 + últimos 3. Incluye liveQueryHint si el item soporta consulta en vivo
 
 ## Pipeline integration (v2)
 - Phase 1: `getInjection()` → catálogo de docs core, categorías, API connectors
 - Phase 2: Evaluador ve catálogo, produce search_query + search_hint
-- Phase 3: Ejecuta search_knowledge con vector search + category boost
+- Phase 3: Ejecuta search_knowledge con vector search + category boost + core boost
+- Phase 3b (opcional): Agente usa expand_knowledge para deep-dive en documentos relevantes
+- `knowledge-mandate.md` — prompt slot hardcoded (non-editable) inyectado en agentic.ts que fuerza al agente a SIEMPRE buscar knowledge antes de responder
 - Fallback: si knowledge module inactivo → rag-local.ts (fuse.js sobre archivos locales)
 
 ## Auto-downgrade
@@ -147,7 +161,9 @@ addDocument() / loadContent()
 
 ## Drive folder crawl (item-manager.ts)
 - `loadDriveFile()` rutea por MIME type: Sheets/Docs/Slides/DOCX/PPTX/PDF/plain text/audio/video.
+- PDF y Slides de Drive ahora usan extractores globales (`extractPDF`) + `reconstructPageTexts()` + `enrichPdfVisual()` para visual descriptions.
 - Audio y video de Drive usan `extractAudio`/`extractVideo` + `transcribeAudioContent`/`describeVideo` + temporal split → `chunkAudio`/`chunkVideo`.
+- Web loading usa `extractWeb()` global (SSRF protection + Readability). Eliminado método privado `extractWebBlocks()`.
 - Sync incremental via `hasFileChanged()`: `false` → sin cambios, `true` (default cuando sin datos) → re-procesar.
 
 ## Seguridad: YouTube API Key

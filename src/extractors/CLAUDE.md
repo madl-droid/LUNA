@@ -4,9 +4,9 @@
 Funciones de extracción de contenido unificadas. **CUALQUIER** módulo, agente, subagente o proceso que necesite extraer información de un archivo DEBE usar estas funciones. No se duplica lógica de extracción en ningún otro lugar.
 
 ## Archivos
-- `types.ts` — Tipos: ExtractedContent, ExtractorResult (unión discriminada), LLMEnrichment, ImageResult, AudioResult, VideoResult, DocumentMetadata (~25 campos), ExtractedImage (con `url?` para web)
+- `types.ts` — Tipos: ExtractedContent (con `llmEnrichment?` opcional), ExtractorResult (unión discriminada), LLMEnrichment (con `visualDescriptions?`), ImageResult, AudioResult, VideoResult, DocumentMetadata (~25 campos), ExtractedImage (con `url?` para web)
 - `utils.ts` — Utilidades: resolveMimeType, isImplicitTitle, computeMD5, isSmallImage, parseDualDescription, countWords, constantes
-- `index.ts` — Registry central: extractContent(), enrichWithLLM(), isSupportedMimeType(), classifyMimeType(), MIGRATED_EXTRACTORS
+- `index.ts` — Registry central: extractContent(), enrichWithLLM(), isSupportedMimeType(), classifyMimeType(), MIGRATED_EXTRACTORS. Re-exporta VISUAL_SECTION_MARKER, OCR_SECTION_MARKER de pdf.ts
 - `convert-to-pdf.ts` — Conversión DOCX/PPTX→PDF via LibreOffice headless (120s timeout, tmpdir con UUID)
 - Extractores por formato: text.ts, docx.ts, sheets.ts, pdf.ts, slides.ts, image.ts, web.ts, youtube.ts, video.ts, audio.ts
 
@@ -57,7 +57,10 @@ Una sola llamada LLM produce descripción detallada + resumen de 1 línea:
 - `describeVideo(videoResult, registry)` → VideoResult con llmEnrichment (triple: desc + resumen + transcripción)
 - `describeSlideScreenshots(slidesResult, registry)` → SlidesResult con screenshotDescription per slide
 - `describeThumbnail(youtubeResult, registry)` → YouTubeResult con thumbnailDescription
-- `enrichWithLLM(result, registry)` → orchestrador que llama a la función correcta según kind
+- `enrichWithLLM(result, registry)` → orchestrador que llama a la función correcta según kind:
+  - `case 'document'`: para PDFs con imágenes/scanned, empaqueta secciones con `VISUAL_SECTION_MARKER`/`OCR_SECTION_MARKER` como `visualDescriptions` en llmEnrichment (NO llama LLM, reorganiza datos existentes de extractPDF)
+  - Otros kinds multimedia: delegan a sus funciones específicas (describeImage, etc.)
+  - `case 'sheets'`/`'web'`: no-op, retorna sin enriquecer
 
 ### Temperatura
 Todos los extractores usan task router centralizado. Tarea: `media` (via TASK_ALIASES en llm/task-router.ts). Temperatura: `0.2`. **NO hardcodear temperature en extractores.**
@@ -72,7 +75,7 @@ Todos los extractores populan metadata tipada (~25 campos opcionales):
 - **Sheets**: sheetCount, totalRows + csvBuffer
 - **DOCX**: wordCount, hasImages, imageCount, sectionCount, hasExplicitHeadings
 - **Slides**: slideCount, hasScreenshots
-- **PDF**: wordCount, hasImages, isScanned, imagePages
+- **PDF**: wordCount, hasImages, isScanned, imagePages, pages (total de páginas)
 
 Helper: `countWords(text)` en utils.ts (DRY, usado por text.ts, pdf.ts, docx.ts)
 
