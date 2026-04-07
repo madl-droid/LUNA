@@ -90,6 +90,9 @@ export async function runNightlyBatch(ctx: ProactiveJobContext): Promise<void> {
     // 8. Purge expired attachments (DB records + media files on disk)
     await purgeExpiredAttachments(ctx)
 
+    // 9. Merge unmerged session summaries into contact_memory (warm → cold)
+    await mergeContactMemories(ctx)
+
     // Mark as completed
     await ctx.redis.set(redisKey, '1', 'EX', 86400)
 
@@ -748,7 +751,7 @@ async function purgeExpiredAttachments(ctx: ProactiveJobContext): Promise<void> 
 
     // 3. Delete corresponding media files from disk + nullify media_ref in chunks
     let filesDeleted = 0
-    const filePaths = expiredFiles.rows.map(r => r.file_path)
+    const filePaths = expiredFiles.rows.map((r: { file_path: string }) => r.file_path)
 
     for (const filePath of filePaths) {
       try {
@@ -773,6 +776,159 @@ async function purgeExpiredAttachments(ctx: ProactiveJobContext): Promise<void> 
     }
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Attachment purge failed')
+  }
+}
+
+// ─── 9. Merge Contact Memories (warm → cold) ──────────────────────────────
+
+/**
+ * For contacts with unmerged session summaries, extract key_facts and preferences
+ * via LLM and merge them into the contact's cold-tier contact_memory.
+ * Uses mergeToContactMemory() which already exists in memory-manager but was never called.
+ */
+async function mergeContactMemories(ctx: ProactiveJobContext): Promise<void> {
+  const config = getNightlyConfig(ctx)
+  const memoryManager = ctx.registry.getOptional<MemoryManager>('memory:manager')
+  if (!memoryManager) {
+    logger.debug({ traceId: ctx.traceId }, 'memory:manager not available, skipping contact memory merge')
+    return
+  }
+
+  try {
+    // Find contacts with unmerged summaries (limit to avoid overloading the batch)
+    const result = await ctx.db.query<{ contact_id: string }>(
+      `SELECT DISTINCT contact_id FROM session_summaries
+       WHERE merged_to_memory_at IS NULL
+         AND created_at < NOW() - INTERVAL '1 hour'
+       LIMIT $1`,
+      [config.compressionBatchSize],
+    )
+
+    if (result.rows.length === 0) {
+      logger.debug({ traceId: ctx.traceId }, 'No contacts need contact_memory merge')
+      return
+    }
+
+    logger.info({ traceId: ctx.traceId, count: result.rows.length }, 'Starting contact_memory merge')
+
+    interface ContactIdRow { contact_id: string }
+
+    const poolResult = await taskPool({
+      items: result.rows as ContactIdRow[],
+      concurrency: config.concurrency,
+      maxRetries: config.maxRetries,
+      label: 'nightly-contact-memory-merge',
+      worker: async (row: ContactIdRow) => {
+        const contactId = row.contact_id
+
+        // Load unmerged summaries for this contact
+        const summaries = await memoryManager.getUnmergedSummaries(contactId)
+        if (summaries.length === 0) return
+
+        const summaryIds = summaries.map(s => s.id)
+        const summaryText = summaries.map(s => s.summaryText).join('\n\n---\n\n').slice(0, 12000)
+
+        // Get existing contact memory
+        const ac = await memoryManager.getAgentContact(contactId)
+        const existingMemory = ac?.contactMemory ?? {
+          summary: '',
+          key_facts: [],
+          preferences: {},
+          important_dates: [],
+          relationship_notes: '',
+        }
+
+        // LLM: extract facts, preferences, dates from summaries
+        const llmResult = await ctx.registry.callHook('llm:chat', {
+          task: 'batch',
+          system: 'Eres un asistente que extrae información estructurada de conversaciones de ventas/atención al cliente.',
+          messages: [{
+            role: 'user' as const,
+            content: `Analiza estos resúmenes de conversación y extrae:
+1. Datos clave del contacto (hechos relevantes, cargo, empresa, situación)
+2. Preferencias detectadas (canal, horario, idioma, etc.)
+3. Fechas importantes mencionadas
+
+Resúmenes:
+${summaryText}
+
+Responde SOLO con JSON válido:
+{
+  "key_facts": [{"fact": "...", "confidence": 0.9}],
+  "preferences": {"clave": "valor"},
+  "important_dates": [{"date": "YYYY-MM-DD", "what": "descripción"}],
+  "summary_addition": "Nueva info relevante en 1-2 líneas (o null si no hay nada nuevo)"
+}`,
+          }],
+          maxTokens: 800,
+          temperature: 0.2,
+        })
+
+        if (!llmResult?.text) return
+        const extracted = parseJSON(llmResult.text)
+        if (!extracted) return
+
+        // Merge extracted data into existing memory
+        const mergedMemory = { ...existingMemory }
+
+        // Merge key_facts (dedup by fact text)
+        const existingFacts = new Set(mergedMemory.key_facts.map((f: { fact: string }) => f.fact.toLowerCase()))
+        for (const kf of (extracted.key_facts as Array<{ fact: string; confidence: number }> ?? [])) {
+          if (kf.fact && !existingFacts.has(kf.fact.toLowerCase())) {
+            mergedMemory.key_facts.push({
+              fact: kf.fact,
+              source: 'nightly:session_merge',
+              confidence: kf.confidence ?? 0.8,
+            })
+            existingFacts.add(kf.fact.toLowerCase())
+          }
+        }
+
+        // Merge preferences (existing wins)
+        for (const [key, value] of Object.entries((extracted.preferences as Record<string, string>) ?? {})) {
+          if (!(key in mergedMemory.preferences)) {
+            mergedMemory.preferences[key] = value
+          }
+        }
+
+        // Merge important_dates (dedup by date+what)
+        const existingDates = new Set(
+          mergedMemory.important_dates.map((d: { date: string; what: string }) => `${d.date}::${d.what}`)
+        )
+        for (const d of (extracted.important_dates as Array<{ date: string; what: string }> ?? [])) {
+          if (d.date && d.what && !existingDates.has(`${d.date}::${d.what}`)) {
+            mergedMemory.important_dates.push({ date: d.date, what: d.what })
+            existingDates.add(`${d.date}::${d.what}`)
+          }
+        }
+
+        // Append summary addition if provided
+        if (typeof extracted.summary_addition === 'string' && extracted.summary_addition.trim()) {
+          mergedMemory.summary = mergedMemory.summary
+            ? `${mergedMemory.summary}\n${extracted.summary_addition}`
+            : extracted.summary_addition
+        }
+
+        // Save merged memory and mark summaries as merged
+        await memoryManager.mergeToContactMemory(contactId, mergedMemory, summaryIds)
+
+        logger.info({
+          traceId: ctx.traceId,
+          contactId,
+          summariesMerged: summaryIds.length,
+          newFacts: mergedMemory.key_facts.length - existingMemory.key_facts.length,
+        }, 'Contact memory merged from session summaries')
+      },
+    })
+
+    logger.info({
+      traceId: ctx.traceId,
+      total: result.rows.length,
+      succeeded: poolResult.succeeded,
+      failed: poolResult.failed,
+    }, 'Contact memory merge complete')
+  } catch (err) {
+    logger.error({ err, traceId: ctx.traceId }, 'Contact memory merge failed')
   }
 }
 

@@ -147,6 +147,10 @@ export async function intake(
       )
       if (contact) {
         logger.info({ traceId, contactId: contact.id, channel: message.channelName }, 'Auto-created contact for new sender')
+        // Store channel as key_fact in contact_memory (fire-and-forget)
+        if (memoryManager) {
+          addChannelKeyFact(memoryManager, contact.id, message.channelName, message.from).catch(() => {})
+        }
       }
     } catch (err) {
       logger.warn({ err, traceId }, 'Failed to auto-create contact')
@@ -722,6 +726,32 @@ async function autoCreateContact(
     logger.warn({ err, channelContactId, channel }, 'Failed to auto-create contact')
     return null
   }
+}
+
+/**
+ * Add a key_fact to contact_memory recording a channel discovery.
+ * Called fire-and-forget when a new contact/channel is created.
+ */
+async function addChannelKeyFact(
+  memoryManager: MemoryManager,
+  contactId: string,
+  channelType: string,
+  channelIdentifier: string,
+): Promise<void> {
+  try {
+    const ac = await memoryManager.getAgentContact(contactId)
+    if (!ac) return
+    const memory = ac.contactMemory
+    const fact = `Contacto disponible por ${channelType}: ${channelIdentifier}`
+    // Avoid duplicates
+    if (memory.key_facts.some(f => f.fact === fact)) return
+    memory.key_facts.push({
+      fact,
+      source: 'system:channel_discovery',
+      confidence: 1.0,
+    })
+    await memoryManager.updateContactMemory(contactId, memory)
+  } catch { /* non-critical */ }
 }
 
 /**

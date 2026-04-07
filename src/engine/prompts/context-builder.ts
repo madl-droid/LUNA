@@ -130,6 +130,33 @@ export async function buildContextLayers(
     }
   }
 
+  // ── 5b. Contact channels (puntos de contacto) ────────────────────────────
+  if (registry && ctx.contactId) {
+    try {
+      const db = registry.getDb()
+      const channelsResult = await db.query<{
+        channel_type: string
+        channel_identifier: string
+        is_primary: boolean
+        last_used_at: Date | null
+      }>(
+        `SELECT channel_type, channel_identifier, is_primary, last_used_at
+         FROM contact_channels
+         WHERE contact_id = $1
+         ORDER BY is_primary DESC, last_used_at DESC NULLS LAST`,
+        [ctx.contactId],
+      )
+      if (channelsResult.rows.length > 0) {
+        const lines = channelsResult.rows.map((r: { channel_type: string; channel_identifier: string; is_primary: boolean; last_used_at: Date | null }) => {
+          const primary = r.is_primary ? ' (principal)' : ''
+          const lastUsed = r.last_used_at ? `, último uso: ${relativeTime(r.last_used_at)}` : ''
+          return `- ${r.channel_type}: ${escapeDataForPrompt(r.channel_identifier, 100)}${primary}${lastUsed}`
+        })
+        parts.push(`[Puntos de contacto:]\n${lines.join('\n')}`)
+      }
+    } catch { /* DB unavailable — skip channel context */ }
+  }
+
   // ── 6. Pending commitments + HITL tickets (unified view) ──────────────────
   {
     const commitments = ctx.pendingCommitments
