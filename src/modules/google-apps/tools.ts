@@ -1082,6 +1082,109 @@ export async function registerGoogleTools(
         return { success: true, data: formatAvailabilityForAgent(result) }
       },
     })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'calendar-get-scheduling-context',
+        displayName: 'Obtener contexto de agendamiento',
+        description: 'Obtiene la configuración completa de agendamiento: roles habilitados, coworkers disponibles con instrucciones, días off, horario laboral, y configuración general. Llamar SIEMPRE como primera acción.',
+        category: 'calendar',
+        sourceModule: 'google-apps',
+        parameters: { type: 'object', properties: {} },
+      },
+      handler: async () => {
+        const calConfig = getCalendarConfig(registry)
+        const bh = getBusinessHours(registry)
+        const usersDb = registry.getOptional<{
+          listByType(t: string, active: boolean): Promise<Array<{
+            id: string
+            displayName?: string
+            contacts?: Array<{ channel: string; senderId: string }>
+            metadata?: unknown
+          }>>
+        }>('users:db')
+
+        // Obtener coworkers habilitados agrupados por rol
+        const allCoworkers = await usersDb?.listByType?.('coworker', true) ?? []
+        const enabledRoles: Array<{
+          role: string
+          instructions: string
+          coworkers: Array<{ name: string; email: string; instructions: string }>
+        }> = []
+
+        for (const [roleName, roleConfig] of Object.entries(calConfig.schedulingRoles)) {
+          if (!roleConfig.enabled) continue
+
+          const roleCoworkers = allCoworkers
+            .filter((u) => (u.metadata as Record<string, unknown>)?.role === roleName)
+            .filter((u) => {
+              const cwConfig = calConfig.schedulingCoworkers[u.id]
+              return cwConfig ? cwConfig.enabled !== false : true
+            })
+            .map((u) => {
+              const email = u.contacts?.find((c) => c.channel === 'email')?.senderId ?? ''
+              const cwConfig = calConfig.schedulingCoworkers[u.id]
+              return {
+                name: u.displayName ?? u.id,
+                email,
+                instructions: cwConfig?.instructions ?? '',
+              }
+            })
+
+          enabledRoles.push({
+            role: roleName,
+            instructions: roleConfig.instructions,
+            coworkers: roleCoworkers,
+          })
+        }
+
+        // Formatear output legible
+        let output = `## Configuración de agendamiento\n`
+        output += `- Google Meet: ${calConfig.meetEnabled ? 'habilitado' : 'deshabilitado'}\n`
+        output += `- Duración default: ${calConfig.defaultDurationMinutes} min\n`
+        output += `- Nombre de cita: "${calConfig.eventNamePrefix} - [nombre cliente] [empresa]"\n`
+        if (calConfig.descriptionInstructions) {
+          output += `- Instrucciones para descripción: ${calConfig.descriptionInstructions}\n`
+        }
+
+        if (bh) {
+          const dayNames = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+          const days = bh.days.map((d) => dayNames[d] ?? String(d)).join(', ')
+          output += `\n## Horario laboral\n`
+          output += `- Horas: ${bh.start}:00 a ${bh.end}:00\n`
+          output += `- Días: ${days}\n`
+        }
+
+        if (calConfig.daysOff.length > 0) {
+          output += `\n## Días no laborables\n`
+          for (const d of calConfig.daysOff) {
+            if (d.type === 'single') output += `- ${d.date}\n`
+            else output += `- ${d.start} al ${d.end}\n`
+          }
+        }
+
+        if (enabledRoles.length > 0) {
+          output += `\n## Roles habilitados para agendamiento\n`
+          for (const role of enabledRoles) {
+            output += `\n### Rol: ${role.role}\n`
+            if (role.instructions) output += `Instrucciones: ${role.instructions}\n`
+            output += `Coworkers:\n`
+            if (role.coworkers.length === 0) {
+              output += `  (ninguno asignado a este rol)\n`
+            }
+            for (const cw of role.coworkers) {
+              output += `  - ${cw.name} (${cw.email})`
+              if (cw.instructions) output += ` — INSTRUCCIÓN: ${cw.instructions}`
+              output += `\n`
+            }
+          }
+        } else {
+          output += `\n## Equipo\nNo hay roles habilitados para agendamiento.\n`
+        }
+
+        return { success: true, data: output }
+      },
+    })
   }
 
   logger.info(
