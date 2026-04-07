@@ -54,7 +54,7 @@ El router en `addDocument()` / `loadDriveFile()` elige pipeline basándose en:
 - **Sheets**: `chunkSheets()` → 1 row = 1 chunk con headers, contentType 'csv'
 - **Slides**: `chunkSlidesAsPdf()` → delega a chunkPdf (3 slides/chunk) + speaker notes como chunks texto separados (no participan en linking)
 - **Web**: `chunkWeb()` → 1 chunk/sección con imágenes, contentType 'web'
-- **YouTube**: `chunkYoutube()` → por chapter o 5min segments con 30s overlap
+- **YouTube**: `chunkYoutube()` → por chapter o segmentos de 5min. `routeVideo()` acepta `opts.transcription` + `opts.transcriptSegments` para enriquecer chunks con transcript preciso.
 
 ## Chunking (smart-chunker.ts)
 
@@ -137,6 +137,27 @@ addDocument() / loadContent()
 - Items scan: POST /items/scan-tabs, POST /items/scan-columns
 - Items content: POST /items/load-content, PUT /items/tab-description, PUT /items/column-description
 
+## YouTube adapter (src/extractors/youtube-adapter.ts)
+5 escenarios cubiertos:
+1. **Video individual**: `getVideoMeta()` + `getTranscript()` (español primero, luego default, luego STT fallback via yt-dlp). STT fallback limitado a videos ≤30 min.
+2. **Playlist**: `listPlaylistVideos()` — máx 250 videos (5 páginas × 50). Trunca con warning si hay más.
+3. **Canal**: `getChannelMeta()` — metadata + playlists. Sin descarga de videos.
+4. **Attachment handler**: `processYouTubeAttachment()` en engine/attachments/youtube-handler.ts.
+5. **Download**: `downloadVideo()` via yt-dlp, máx 720p, máx 500MB. `downloadAudio()` para STT.
+
+## Drive folder crawl (item-manager.ts)
+- `loadDriveFile()` rutea por MIME type: Sheets/Docs/Slides/DOCX/PPTX/PDF/plain text/audio/video.
+- Audio y video de Drive usan `extractAudio`/`extractVideo` + `transcribeAudioContent`/`describeVideo` + temporal split → `chunkAudio`/`chunkVideo`.
+- Sync incremental via `hasFileChanged()`: `false` → sin cambios, `true` (default cuando sin datos) → re-procesar.
+
+## Seguridad: YouTube API Key
+La key va en query string (limitación de YouTube Data API v3).
+La key DEBE tener restricciones de IP en Google Cloud Console.
+Rotar si se expone en logs.
+
+## csvBuffer (Sheets)
+`extractSheets()` genera `csvBuffer` pero no se persiste a disco. Sheets se indexan como texto; no requieren binario para embedding multimodal. Esto es by design.
+
 ## Trampas
 - pgvector requiere CREATE EXTENSION vector (ya instalado en prod por módulo memory)
 - BullMQ: primer uso real en el proyecto. Worker corre en mismo proceso. Comparte instancia ioredis.
@@ -146,3 +167,4 @@ addDocument() / loadContent()
 - **SmartChunk vs EmbeddableChunk**: los chunkers producen EmbeddableChunk (de embedding-limits.ts). persistSmartChunks() debe aceptar este tipo.
 - **knowledge_chunks schema**: verificar que tenga columnas content_type, media_refs (JSONB), extra_metadata (JSONB). Si no, crear migración.
 - **Notes en slides**: speaker notes NO deben participar en linkChunks() — tienen `isNote: true` en metadata.
+- **KNOWLEDGE_MEDIA_DIR**: importar de `./constants.js`. NO redefinir `resolve(process.cwd(), 'instance/knowledge/media')` en cada módulo.

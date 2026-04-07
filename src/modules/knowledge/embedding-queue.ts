@@ -14,6 +14,7 @@ import pino from 'pino'
 import type { EmbeddingService } from './embedding-service.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import { getBullRedisOpts } from './bull-redis-opts.js'
+import { KNOWLEDGE_MEDIA_DIR } from './constants.js'
 
 const logger = pino({ name: 'embedding-queue' })
 
@@ -316,38 +317,17 @@ export class EmbeddingQueue {
    * Called by the knowledge manifest's scheduled nightly task.
    */
   async runNightlyBinaryCleanup(): Promise<{ cleaned: number; errors: number }> {
-    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+    if (!this.pgStore) {
+      logger.warn('[EMBED-Q] pgStore not injected, skipping nightly binary cleanup')
+      return { cleaned: 0, errors: 0 }
+    }
+
+    const mediaDir = KNOWLEDGE_MEDIA_DIR
     let cleaned = 0
     let errors = 0
 
     try {
-      // Fetch docs to clean up — use pgStore if available, else inline SQL
-      let docsToClean: Array<{ documentId: string; filePaths: string[] }>
-      if (this.pgStore) {
-        docsToClean = await this.pgStore.getDocumentsForBinaryCleanup()
-      } else {
-        const res = await this.db.query<{
-          document_id: string
-          file_paths: string[] | null
-        }>(
-          `SELECT
-             d.id AS document_id,
-             array_remove(
-               array_agg(DISTINCT elem->>'filePath'),
-               NULL
-             ) AS file_paths
-           FROM knowledge_documents d
-           JOIN knowledge_chunks c ON c.document_id = d.id
-           CROSS JOIN LATERAL jsonb_array_elements(COALESCE(c.media_refs, '[]'::jsonb)) AS elem
-           WHERE d.binary_cleanup_ready = TRUE
-             AND d.source_type = 'attachment'
-           GROUP BY d.id`,
-        )
-        docsToClean = res.rows.map((r: { document_id: string; file_paths: string[] | null }) => ({
-          documentId: r.document_id,
-          filePaths: (r.file_paths ?? []).filter(Boolean),
-        }))
-      }
+      const docsToClean = await this.pgStore.getDocumentsForBinaryCleanup()
 
       for (const doc of docsToClean) {
         let docOk = true
@@ -371,14 +351,7 @@ export class EmbeddingQueue {
 
         // Clear flag only if all files deleted successfully
         if (docOk) {
-          if (this.pgStore) {
-            await this.pgStore.clearBinaryCleanupFlag(doc.documentId)
-          } else {
-            await this.db.query(
-              `UPDATE knowledge_documents SET binary_cleanup_ready = FALSE, updated_at = NOW() WHERE id = $1`,
-              [doc.documentId],
-            )
-          }
+          await this.pgStore.clearBinaryCleanupFlag(doc.documentId)
         }
       }
 
@@ -487,7 +460,7 @@ export class EmbeddingQueue {
         // Memory: mediaRef is a file path — validate against known media dir
         const { resolve } = await import('node:path')
         const { readFile } = await import('node:fs/promises')
-        const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+        const mediaDir = KNOWLEDGE_MEDIA_DIR
         const resolvedMemPath = resolve(chunk.mediaRef)
         if (!resolvedMemPath.startsWith(mediaDir + '/') && !resolvedMemPath.startsWith(mediaDir + '\\')) {
           logger.error({ filePath: chunk.mediaRef }, '[EMBED-Q] Path traversal attempt blocked (memory mediaRef)')
@@ -501,7 +474,7 @@ export class EmbeddingQueue {
         if (firstMedia.filePath) {
           const { resolve } = await import('node:path')
           const { readFile } = await import('node:fs/promises')
-          const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+          const knowledgeDir = KNOWLEDGE_MEDIA_DIR
           const resolvedPath = resolve(knowledgeDir, firstMedia.filePath)
           if (!resolvedPath.startsWith(knowledgeDir + '/') && !resolvedPath.startsWith(knowledgeDir + '\\')) {
             logger.error({ filePath: firstMedia.filePath }, '[EMBED-Q] Path traversal attempt blocked')

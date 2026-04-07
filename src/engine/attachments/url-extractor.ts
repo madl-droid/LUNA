@@ -49,6 +49,14 @@ function isBlockedUrl(url: string): boolean {
 }
 
 /**
+ * Checks if a hostname resolves to an internal/private IP range.
+ * Used to block SSRF via open redirects.
+ */
+function isInternalHostname(hostname: string): boolean {
+  return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|localhost|::1|\[::1\])/.test(hostname)
+}
+
+/**
  * Check if a URL's domain is in the authorized list.
  */
 function isAuthorizedDomain(url: string, authorizedDomains: string[]): boolean {
@@ -193,16 +201,33 @@ async function extractAuthorizedUrl(
   const timeout = setTimeout(() => controller.abort(), config.urlFetchTimeoutMs)
 
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; LUNA-Bot/1.0)',
-        'Accept': 'text/html,application/xhtml+xml,text/plain',
-      },
-      redirect: 'follow',
-    })
+    // Use manual redirect to prevent SSRF via open redirects (SEC-1)
+    const fetchWithRedirectGuard = async (targetUrl: string, depth = 0): Promise<Response | null> => {
+      if (depth > 3) return null
+      const res = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; LUNA-Bot/1.0)',
+          'Accept': 'text/html,application/xhtml+xml,text/plain',
+        },
+        redirect: 'manual',
+      })
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location')
+        if (!location) return null
+        const redirectUrl = new URL(location, targetUrl)
+        if (isInternalHostname(redirectUrl.hostname)) {
+          logger.warn({ url: targetUrl, redirect: location }, '[URL-EXT] SSRF: redirect to internal host blocked')
+          return null
+        }
+        return fetchWithRedirectGuard(redirectUrl.toString(), depth + 1)
+      }
+      return res
+    }
 
-    if (!response.ok) {
+    const response = await fetchWithRedirectGuard(url)
+
+    if (!response || !response.ok) {
       return {
         extraction: { url, title: null, extractedText: null, tokenEstimate: 0, status: 'needs_subagent', injectionRisk: false },
         embeddedYouTubeIds: [],

@@ -8,9 +8,10 @@ import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeCache } from './cache.js'
 import type { KnowledgeManager } from './knowledge-manager.js'
 import type { VectorizeWorker } from './vectorize-worker.js'
+import { KNOWLEDGE_MEDIA_DIR } from './constants.js'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile, unlink } from 'node:fs/promises'
-import { resolve, join } from 'node:path'
+import { join } from 'node:path'
 import type {
   KnowledgeItem,
   KnowledgeItemTab,
@@ -27,6 +28,8 @@ import {
   chunkSlidesAsPdf,
   chunkYoutube,
   chunkWeb,
+  chunkAudio,
+  chunkVideo,
   linkChunks,
 } from './extractors/smart-chunker.js'
 
@@ -158,7 +161,7 @@ export class KnowledgeItemManager {
     let contentHash = ''
     if (opts?.buffer) {
       contentHash = createHash('sha256').update(opts.buffer).digest('hex')
-      const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+      const knowledgeDir = KNOWLEDGE_MEDIA_DIR
       await mkdir(knowledgeDir, { recursive: true })
       const safeFileName = `${contentHash.substring(0, 12)}_${docTitle.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 80)}`
       filePath = safeFileName
@@ -325,11 +328,9 @@ export class KnowledgeItemManager {
         `SELECT file_path FROM knowledge_documents WHERE source_ref = $1 AND file_path IS NOT NULL AND file_path != ''`,
         [id],
       )
-      const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
       for (const doc of docs.rows) {
         if (doc.file_path) {
-          const { unlink } = await import('node:fs/promises')
-          await unlink(join(knowledgeDir, doc.file_path)).catch(() => {})
+          await unlink(join(KNOWLEDGE_MEDIA_DIR, doc.file_path)).catch(() => {})
         }
       }
     } catch (err) {
@@ -621,7 +622,7 @@ export class KnowledgeItemManager {
 
     // Guardar PDF en media dir
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
-    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    const knowledgeDir = KNOWLEDGE_MEDIA_DIR
     await mkdir(knowledgeDir, { recursive: true })
     const pdfName = `${contentHash.substring(0, 12)}_${item.title.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
     await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
@@ -985,6 +986,89 @@ export class KnowledgeItemManager {
       const buffer = await drive.downloadFile(file.id)
       text = buffer.toString('utf-8')
 
+    // ── Audio ──
+    } else if (mime.startsWith('audio/')) {
+      const audioBuffer = await drive.downloadFile(file.id)
+      const contentHash = createHash('sha256').update(audioBuffer).digest('hex')
+      const hashPrefix = contentHash.substring(0, 12)
+      const knowledgeDir = KNOWLEDGE_MEDIA_DIR
+      await mkdir(knowledgeDir, { recursive: true })
+
+      const { extractAudio, transcribeAudioContent } = await import('../../extractors/audio.js')
+      const { splitMediaFile, AUDIO_SPLIT_CONFIG } = await import('./extractors/temporal-splitter.js')
+
+      const audioResult = await extractAudio(audioBuffer, file.name, mime)
+      const duration = audioResult.durationSeconds ?? 0
+      const enriched = await transcribeAudioContent(audioResult, this.registry)
+      const transcription = enriched.llmEnrichment?.transcription ?? enriched.llmEnrichment?.description ?? null
+
+      let audioChunks: import('./embedding-limits.js').EmbeddableChunk[]
+
+      if (duration <= 60) {
+        const audioFileName = `${hashPrefix}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+        await writeFile(join(knowledgeDir, audioFileName), audioBuffer)
+        audioChunks = chunkAudio({ transcription, durationSeconds: duration, mimeType: mime, sourceFile: file.name, filePath: audioFileName })
+      } else {
+        const segs = await splitMediaFile(audioBuffer, mime, duration, AUDIO_SPLIT_CONFIG)
+        const ext = mime.includes('mpeg') ? 'mp3' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'mp3'
+        const persistedSegs: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }> = []
+        for (let i = 0; i < segs.length; i++) {
+          const seg = segs[i]!
+          const segFile = `${hashPrefix}_aseg${i}.${ext}`
+          const segBuf = await (await import('node:fs/promises')).readFile(seg.segmentPath)
+          await writeFile(join(knowledgeDir, segFile), segBuf)
+          await unlink(seg.segmentPath).catch(() => {})
+          persistedSegs.push({ startSeconds: seg.startSeconds, endSeconds: seg.endSeconds, segmentPath: segFile })
+        }
+        audioChunks = chunkAudio({ transcription, durationSeconds: duration, mimeType: mime, sourceFile: file.name, segments: persistedSegs })
+      }
+
+      return this.persistSmartChunks(item, file.name, mime, audioChunks, {
+        description: `Audio from Drive: ${file.name}`,
+        fileUrl: file.webViewLink,
+      })
+
+    // ── Video ──
+    } else if (mime.startsWith('video/')) {
+      const videoBuffer = await drive.downloadFile(file.id)
+      const contentHash = createHash('sha256').update(videoBuffer).digest('hex')
+      const hashPrefix = contentHash.substring(0, 12)
+      const knowledgeDir = KNOWLEDGE_MEDIA_DIR
+      await mkdir(knowledgeDir, { recursive: true })
+
+      const { extractVideo, describeVideo } = await import('../../extractors/video.js')
+      const { splitMediaFile, VIDEO_SPLIT_CONFIG } = await import('./extractors/temporal-splitter.js')
+
+      const videoResult = await extractVideo(videoBuffer, file.name, mime)
+      const duration = videoResult.durationSeconds ?? 0
+      const enriched = await describeVideo(videoResult, this.registry)
+      const description = enriched.llmEnrichment?.description ?? null
+
+      let videoChunks: import('./embedding-limits.js').EmbeddableChunk[]
+
+      if (duration <= 50) {
+        const videoFile = `${hashPrefix}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+        await writeFile(join(knowledgeDir, videoFile), videoBuffer)
+        videoChunks = chunkVideo({ description, transcription: null, durationSeconds: duration, mimeType: mime, sourceFile: file.name, sourceUrl: file.webViewLink, filePath: videoFile })
+      } else {
+        const segs = await splitMediaFile(videoBuffer, mime, duration, VIDEO_SPLIT_CONFIG)
+        const persistedSegs: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }> = []
+        for (let i = 0; i < segs.length; i++) {
+          const seg = segs[i]!
+          const segFile = `${hashPrefix}_vseg${i}.mp4`
+          const segBuf = await (await import('node:fs/promises')).readFile(seg.segmentPath)
+          await writeFile(join(knowledgeDir, segFile), segBuf)
+          await unlink(seg.segmentPath).catch(() => {})
+          persistedSegs.push({ startSeconds: seg.startSeconds, endSeconds: seg.endSeconds, segmentPath: segFile })
+        }
+        videoChunks = chunkVideo({ description, transcription: null, durationSeconds: duration, mimeType: mime, sourceFile: file.name, sourceUrl: file.webViewLink, segments: persistedSegs })
+      }
+
+      return this.persistSmartChunks(item, file.name, mime, videoChunks, {
+        description: `Video from Drive: ${file.name}`,
+        fileUrl: file.webViewLink,
+      })
+
     // ── Unsupported format ──
     } else {
       logger.debug({ mime, name: file.name }, 'Unsupported MIME type in Drive, skipping')
@@ -1025,7 +1109,7 @@ export class KnowledgeItemManager {
 
     // Save PDF to disk so vectorize worker can read it for multimodal embedding
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
-    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    const knowledgeDir = KNOWLEDGE_MEDIA_DIR
     await mkdir(knowledgeDir, { recursive: true })
     const safeFileName = `${contentHash.substring(0, 12)}_${item.title.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
     await writeFile(join(knowledgeDir, safeFileName), pdfBuffer)
@@ -1058,7 +1142,7 @@ export class KnowledgeItemManager {
     const totalPages = pageTexts.length || 1
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
-    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    const knowledgeDir = KNOWLEDGE_MEDIA_DIR
     await mkdir(knowledgeDir, { recursive: true })
     const pdfName = `${contentHash.substring(0, 12)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
     await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
@@ -1091,7 +1175,7 @@ export class KnowledgeItemManager {
     const totalPages = pageTexts.length || 1
 
     const contentHash = createHash('sha256').update(pdfBuffer).digest('hex')
-    const knowledgeDir = resolve(process.cwd(), 'instance/knowledge/media')
+    const knowledgeDir = KNOWLEDGE_MEDIA_DIR
     await mkdir(knowledgeDir, { recursive: true })
     const pdfName = `${contentHash.substring(0, 12)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}.pdf`
     await writeFile(join(knowledgeDir, pdfName), pdfBuffer)
@@ -1334,7 +1418,7 @@ export class KnowledgeItemManager {
    */
   private async loadYoutubeVideo(item: KnowledgeItem, videoId: string): Promise<number> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
-    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+    const mediaDir = KNOWLEDGE_MEDIA_DIR
 
     // 1. Metadata del video
     let meta: import('../../extractors/youtube-adapter.js').YouTubeVideoMeta | null = null
@@ -1510,7 +1594,7 @@ export class KnowledgeItemManager {
    */
   private async loadYoutubePlaylist(item: KnowledgeItem, playlistId: string): Promise<number> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
-    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+    const mediaDir = KNOWLEDGE_MEDIA_DIR
 
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
@@ -1797,6 +1881,6 @@ function hasFileChanged(existing: FolderIndexEntry, fresh: DriveFolderNode): boo
   if (fresh.modifiedTime && existing.modifiedTime) {
     return new Date(fresh.modifiedTime).getTime() > new Date(existing.modifiedTime).getTime()
   }
-  return false  // no podemos determinar → asumir sin cambios
+  return true   // sin data para comparar → asumir que cambió (re-procesar es seguro)
 }
 

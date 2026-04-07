@@ -23,6 +23,7 @@ import type {
   DocumentSourceType,
 } from './types.js'
 import type { EmbeddableChunk } from './embedding-limits.js'
+import { KNOWLEDGE_MEDIA_DIR } from './constants.js'
 import { extractContent, resolveMimeType } from './extractors/index.js'
 import {
   chunkDocs,
@@ -116,7 +117,7 @@ export class KnowledgeManager {
 
     // Prepare dirs
     const knowledgeDir = resolve(process.cwd(), this.config.KNOWLEDGE_DIR)
-    const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+    const mediaDir = KNOWLEDGE_MEDIA_DIR
     await mkdir(knowledgeDir, { recursive: true })
     await mkdir(mediaDir, { recursive: true })
 
@@ -218,10 +219,10 @@ export class KnowledgeManager {
 
     } else if (mimeType.startsWith('image/')) {
       // Imagen: 1 chunk con mediaRef
-      // extractImageWithVision(buffer, fileName, registry) → ExtractedContent with LLM description
-      const { extractImageWithVision } = await import('../../extractors/image.js')
-      const imageContent = await extractImageWithVision(buffer, fileName, this.registry)
-      const description = imageContent.text || null
+      const { extractImage, describeImage } = await import('../../extractors/image.js')
+      const imageResult = await extractImage(buffer, fileName, mimeType)
+      const enriched = await describeImage(imageResult, this.registry)
+      const description = enriched.llmEnrichment?.description || null
 
       // Save image to mediaDir for embedding
       await writeFile(join(mediaDir, safeFileName), buffer)
@@ -339,7 +340,7 @@ export class KnowledgeManager {
     // Remove file from disk (check both knowledgeDir and mediaDir)
     if (doc.filePath) {
       const knowledgeDir = resolve(process.cwd(), this.config.KNOWLEDGE_DIR)
-      const mediaDir = resolve(process.cwd(), 'instance/knowledge/media')
+      const mediaDir = KNOWLEDGE_MEDIA_DIR
       const inKnowledge = join(knowledgeDir, doc.filePath)
       const inMedia = join(mediaDir, doc.filePath)
       try {
