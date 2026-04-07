@@ -778,7 +778,7 @@ export async function registerGoogleTools(
           required: ['summary'],
         },
       },
-      handler: async (input, _context) => {
+      handler: async (input, context) => {
         const calConfig = getCalendarConfig(registry)
         const bh = getBusinessHours(registry)
 
@@ -855,6 +855,8 @@ export async function registerGoogleTools(
         await registry.runHook('calendar:event-created', {
           event: result.event,
           meetLink: result.meetLink,
+          contactId: context?.contactId ?? undefined,
+          channel: context?.channelName ?? undefined,
         })
 
         const formatted = formatSingleEventForAgent(result.event!, timezone)
