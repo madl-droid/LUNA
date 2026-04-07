@@ -22,6 +22,8 @@ import type {
   UpgradeSuggestion,
   ApiAuthType,
   ApiAuthConfig,
+  DriveFolderNode,
+  FolderIndexEntry,
 } from './types.js'
 
 const logger = pino({ name: 'knowledge:pg' })
@@ -1550,6 +1552,142 @@ export class KnowledgePgStore {
        WHERE id = $1`,
       [documentId],
     )
+  }
+
+  // ─── Drive Folder Index ───────────────────────
+
+  /**
+   * Upsert all nodes from a Drive folder crawl.
+   * Existing rows for the item are removed and replaced.
+   */
+  async replaceFolderIndex(
+    itemId: string,
+    nodes: DriveFolderNode[],
+  ): Promise<void> {
+    if (nodes.length === 0) {
+      await this.db.query(`DELETE FROM knowledge_folder_index WHERE item_id = $1`, [itemId])
+      return
+    }
+
+    // Build bulk upsert
+    const values: string[] = []
+    const params: unknown[] = []
+    let idx = 1
+
+    for (const node of nodes) {
+      values.push(
+        `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`,
+      )
+      params.push(
+        itemId,
+        node.id,
+        node.name,
+        node.mimeType,
+        node.path,
+        node.parentId ?? null,
+        node.isFolder,
+        node.modifiedTime ? new Date(node.modifiedTime) : null,
+        node.webViewLink ?? null,
+        node.contentHash ?? null,
+        node.documentId ?? null,
+        node.status,
+      )
+    }
+
+    await this.db.query(
+      `INSERT INTO knowledge_folder_index
+         (item_id, file_id, name, mime_type, path, parent_id, is_folder, modified_time, web_view_link, content_hash, document_id, status)
+       VALUES ${values.join(', ')}
+       ON CONFLICT (item_id, file_id) DO UPDATE SET
+         name = EXCLUDED.name,
+         mime_type = EXCLUDED.mime_type,
+         path = EXCLUDED.path,
+         parent_id = EXCLUDED.parent_id,
+         is_folder = EXCLUDED.is_folder,
+         modified_time = EXCLUDED.modified_time,
+         web_view_link = EXCLUDED.web_view_link,
+         content_hash = EXCLUDED.content_hash,
+         document_id = CASE
+           WHEN EXCLUDED.document_id IS NOT NULL THEN EXCLUDED.document_id
+           ELSE knowledge_folder_index.document_id
+         END,
+         status = EXCLUDED.status,
+         error_message = NULL,
+         updated_at = now()`,
+      params,
+    )
+  }
+
+  /**
+   * Get all folder index entries for an item.
+   */
+  async getFolderIndex(itemId: string): Promise<FolderIndexEntry[]> {
+    const res = await this.db.query<{
+      id: string; item_id: string; file_id: string; name: string; mime_type: string
+      path: string; parent_id: string | null; is_folder: boolean; modified_time: Date | null
+      web_view_link: string | null; content_hash: string | null; document_id: string | null
+      status: string; error_message: string | null
+    }>(
+      `SELECT * FROM knowledge_folder_index WHERE item_id = $1 ORDER BY path`, [itemId],
+    )
+    return res.rows.map(r => ({
+      id: r.id,
+      itemId: r.item_id,
+      fileId: r.file_id,
+      name: r.name,
+      mimeType: r.mime_type,
+      path: r.path,
+      parentId: r.parent_id,
+      isFolder: r.is_folder,
+      modifiedTime: r.modified_time?.toISOString(),
+      webViewLink: r.web_view_link ?? undefined,
+      contentHash: r.content_hash ?? undefined,
+      documentId: r.document_id ?? undefined,
+      status: r.status,
+      errorMessage: r.error_message ?? undefined,
+    }))
+  }
+
+  /**
+   * Update a single folder index entry (status, documentId, errorMessage).
+   */
+  async updateFolderIndexEntry(
+    itemId: string,
+    fileId: string,
+    update: { status?: string; documentId?: string; errorMessage?: string; contentHash?: string },
+  ): Promise<void> {
+    const sets: string[] = ['updated_at = now()']
+    const params: unknown[] = []
+    let idx = 1
+
+    if (update.status !== undefined) { sets.push(`status = $${idx++}`); params.push(update.status) }
+    if (update.documentId !== undefined) { sets.push(`document_id = $${idx++}`); params.push(update.documentId) }
+    if (update.errorMessage !== undefined) { sets.push(`error_message = $${idx++}`); params.push(update.errorMessage) }
+    if (update.contentHash !== undefined) { sets.push(`content_hash = $${idx++}`); params.push(update.contentHash) }
+
+    params.push(itemId, fileId)
+    await this.db.query(
+      `UPDATE knowledge_folder_index SET ${sets.join(', ')} WHERE item_id = $${idx++} AND file_id = $${idx++}`,
+      params,
+    )
+  }
+
+  /**
+   * Get the webViewLink (shareable URL) for a document from the folder index.
+   */
+  async getDocumentShareLink(documentId: string): Promise<string | null> {
+    const res = await this.db.query<{ web_view_link: string | null }>(
+      `SELECT web_view_link FROM knowledge_folder_index WHERE document_id = $1 LIMIT 1`,
+      [documentId],
+    )
+    return res.rows[0]?.web_view_link ?? null
+  }
+
+  /**
+   * Delete all folder index entries for an item.
+   */
+  async deleteFolderIndex(itemId: string): Promise<void> {
+    await this.db.query(`DELETE FROM knowledge_folder_index WHERE item_id = $1`, [itemId])
   }
 }
 
