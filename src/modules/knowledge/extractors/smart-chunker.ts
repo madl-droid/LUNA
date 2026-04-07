@@ -18,7 +18,7 @@ import { calculateSegments, AUDIO_SPLIT_CONFIG } from './temporal-splitter.js'
 // 1. DOCS / WORD → text by headings
 // ═══════════════════════════════════════════
 
-export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string; sourceType?: string }): EmbeddableChunk[] {
+export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMimeType?: string; sourceType?: string; docMeta?: Record<string, unknown> }): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
 
   // Split by H1/H2 headings first
@@ -42,6 +42,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
         mediaRefs: null,
         chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
         metadata: {
+          ...(opts?.docMeta ?? {}),
           sourceType: opts?.sourceType ?? 'text',
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
@@ -64,6 +65,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
             mediaRefs: null,
             chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
             metadata: {
+              ...(opts?.docMeta ?? {}),
               sourceType: opts?.sourceType ?? 'docx',
               sourceFile: opts?.sourceFile,
               sourceMimeType: opts?.sourceMimeType,
@@ -94,6 +96,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
             mediaRefs: null,
             chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
             metadata: {
+              ...(opts?.docMeta ?? {}),
               sourceType: opts?.sourceType ?? 'docx',
               sourceFile: opts?.sourceFile,
               sourceMimeType: opts?.sourceMimeType,
@@ -112,6 +115,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
         mediaRefs: null,
         chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
         metadata: {
+          ...(opts?.docMeta ?? {}),
           sourceType: opts?.sourceType ?? 'text',
           sourceFile: opts?.sourceFile,
           sourceMimeType: opts?.sourceMimeType,
@@ -127,7 +131,7 @@ export function chunkDocs(text: string, opts?: { sourceFile?: string; sourceMime
 // 2. SHEETS → CSV with repeated headers
 // ═══════════════════════════════════════════
 
-export function chunkSheets(headers: string[], rows: string[][], opts?: { sourceFile?: string; sourceMimeType?: string; sheetName?: string }): EmbeddableChunk[] {
+export function chunkSheets(headers: string[], rows: string[][], opts?: { sourceFile?: string; sourceMimeType?: string; sheetName?: string; docMeta?: Record<string, unknown> }): EmbeddableChunk[] {
   // Tech debt: actualmente se crea 1 chunk por fila. Para spreadsheets grandes
   // (>1000 filas), esto genera demasiados chunks con baja densidad semántica.
   // Mejora futura: si se elige un valor N para agrupar filas (ej: N=5-10 filas por chunk),
@@ -147,6 +151,7 @@ export function chunkSheets(headers: string[], rows: string[][], opts?: { source
       mediaRefs: null,
       chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts?.docMeta ?? {}),
         sourceType: 'sheets',
         sourceFile: opts?.sourceFile,
         sourceMimeType: opts?.sourceMimeType ?? 'text/csv',
@@ -165,7 +170,7 @@ export function chunkSheets(headers: string[], rows: string[][], opts?: { source
 // 3. SLIDES → 1 image + text per slide
 // ═══════════════════════════════════════════
 
-export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; title?: string }>, opts?: { sourceFile?: string }): EmbeddableChunk[] {
+export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; title?: string }>, opts?: { sourceFile?: string; docMeta?: Record<string, unknown> }): EmbeddableChunk[] {
   return slides.map((slide, i) => {
     const mediaRefs: MediaRef[] = []
     if (slide.imageBase64) {
@@ -182,6 +187,7 @@ export function chunkSlides(slides: Array<{ text: string; imageBase64?: string; 
       mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
       chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts?.docMeta ?? {}),
         sourceType: 'slides',
         sourceFile: opts?.sourceFile,
         sourceMimeType: 'application/vnd.google-apps.presentation',
@@ -206,11 +212,12 @@ export function chunkSlidesAsPdf(
   pdfFilePath: string,
   totalPages: number,
   speakerNotes: Array<{ slideIndex: number; text: string }>,
-  opts?: { sourceFile?: string },
+  opts?: { sourceFile?: string; docMeta?: Record<string, unknown> },
 ): EmbeddableChunk[] {
   // Chunks visuales del PDF (3 páginas cada uno)
   const pdfChunks = chunkPdf(pdfPageTexts, pdfFilePath, totalPages, {
     sourceFile: opts?.sourceFile,
+    docMeta: opts?.docMeta,
   })
 
   // Actualizar sourceType a 'slides' (no 'pdf')
@@ -228,6 +235,7 @@ export function chunkSlidesAsPdf(
       mediaRefs: null,
       chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts?.docMeta ?? {}),
         sourceType: 'slides',
         sourceFile: opts?.sourceFile,
         sectionTitle: `Notas - Slide ${note.slideIndex + 1}`,
@@ -248,7 +256,7 @@ export function chunkPdf(
   pageTexts: string[],
   pdfFilePath: string,
   totalPages: number,
-  opts?: { sourceFile?: string },
+  opts?: { sourceFile?: string; docMeta?: Record<string, unknown> },
 ): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
   let pageStart = 0
@@ -274,6 +282,7 @@ export function chunkPdf(
       }],
       chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts?.docMeta ?? {}),
         sourceType: 'pdf',
         sourceFile: opts?.sourceFile,
         sourceMimeType: 'application/pdf',
@@ -303,7 +312,7 @@ export interface WebBlock {
   images: Array<{ data: string; mimeType: string }>  // base64
 }
 
-export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string; sourceFile?: string }): EmbeddableChunk[] {
+export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string; sourceFile?: string; docMeta?: Record<string, unknown> }): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
 
   for (const block of blocks) {
@@ -324,6 +333,7 @@ export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string; source
         mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
         chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
         metadata: {
+          ...(opts?.docMeta ?? {}),
           sourceType: 'web',
           sourceFile: opts?.sourceFile,
           sourceUrl: opts?.sourceUrl,
@@ -351,6 +361,7 @@ export function chunkWeb(blocks: WebBlock[], opts?: { sourceUrl?: string; source
           mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
           chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
           metadata: {
+            ...(opts?.docMeta ?? {}),
             sourceType: 'web',
             sourceUrl: opts?.sourceUrl,
             sectionTitle: block.heading ? `${block.heading} (${subIndex + 1})` : undefined,
@@ -416,6 +427,7 @@ export function chunkYoutube(
   metadata: { title: string; description: string; thumbnailBase64?: string; url?: string },
   transcriptSegments: Array<{ text: string; offset: number; duration?: number }>,
   chapters?: Array<{ title: string; startSeconds: number }> | null,
+  opts?: { docMeta?: Record<string, unknown> },
 ): EmbeddableChunk[] {
   const chunks: EmbeddableChunk[] = []
 
@@ -431,6 +443,7 @@ export function chunkYoutube(
     mediaRefs: headerMedia.length > 0 ? headerMedia : null,
     chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
     metadata: {
+      ...(opts?.docMeta ?? {}),
       sourceType: 'youtube',
       sourceUrl: metadata.url,
       sectionTitle: metadata.title,
@@ -462,6 +475,7 @@ export function chunkYoutube(
         mediaRefs: null,
         chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
         metadata: {
+          ...(opts?.docMeta ?? {}),
           sourceType: 'youtube',
           sourceUrl: metadata.url,
           sectionTitle: chapter.title,
@@ -491,6 +505,7 @@ export function chunkYoutube(
           mediaRefs: null,
           chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
           metadata: {
+            ...(opts?.docMeta ?? {}),
             sourceType: 'youtube',
             sourceUrl: metadata.url,
             sectionTitle: `${formatTimestamp(segStart)} - ${formatTimestamp(Math.min(segEnd, totalDuration))}`,
@@ -520,6 +535,7 @@ export function chunkImage(opts: {
   height?: number
   filePath?: string
   base64?: string
+  docMeta?: Record<string, unknown>
 }): EmbeddableChunk[] {
   const mediaRefs: MediaRef[] = []
   if (opts.base64) mediaRefs.push({ mimeType: opts.mimeType, data: opts.base64 })
@@ -531,6 +547,7 @@ export function chunkImage(opts: {
     mediaRefs: mediaRefs.length > 0 ? mediaRefs : null,
     chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
     metadata: {
+      ...(opts.docMeta ?? {}),
       sourceType: 'image',
       sourceFile: opts.sourceFile,
       sourceMimeType: opts.mimeType,
@@ -557,6 +574,7 @@ export function chunkAudio(opts: {
   segments?: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }>
   // Transcript con timestamps para corte preciso
   transcriptSegments?: Array<{ text: string; offset: number; duration?: number }>
+  docMeta?: Record<string, unknown>
 }): EmbeddableChunk[] {
   if (!opts.transcription) {
     // Sin transcripción: 1 chunk placeholder
@@ -566,6 +584,7 @@ export function chunkAudio(opts: {
       mediaRefs: opts.filePath ? [{ mimeType: opts.mimeType, filePath: opts.filePath }] : null,
       chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts.docMeta ?? {}),
         sourceType: 'audio',
         sourceFile: opts.sourceFile,
         sourceMimeType: opts.mimeType,
@@ -583,6 +602,7 @@ export function chunkAudio(opts: {
       mediaRefs: opts.filePath ? [{ mimeType: opts.mimeType, filePath: opts.filePath }] : null,
       chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts.docMeta ?? {}),
         sourceType: 'audio',
         sourceFile: opts.sourceFile,
         sourceMimeType: opts.mimeType,
@@ -626,6 +646,7 @@ export function chunkAudio(opts: {
         : null,
       chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts.docMeta ?? {}),
         sourceType: 'audio',
         sourceFile: opts.sourceFile,
         sourceMimeType: opts.mimeType,
@@ -657,6 +678,7 @@ export function chunkVideo(opts: {
   segments?: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }>
   // Transcript con timestamps para corte preciso (YouTube)
   transcriptSegments?: Array<{ text: string; offset: number; duration?: number }>
+  docMeta?: Record<string, unknown>
 }): EmbeddableChunk[] {
   // Si no hay segmentos, un solo chunk (backward compatible)
   if (!opts.segments || opts.segments.length === 0) {
@@ -673,6 +695,7 @@ export function chunkVideo(opts: {
       mediaRefs: opts.filePath ? [{ mimeType: opts.mimeType, filePath: opts.filePath }] : null,
       chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts.docMeta ?? {}),
         sourceType: 'video',
         sourceFile: opts.sourceFile,
         sourceMimeType: opts.mimeType,
@@ -726,6 +749,7 @@ export function chunkVideo(opts: {
         : null,
       chunkIndex: 0, chunkTotal: 0, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts.docMeta ?? {}),
         sourceType: 'video',
         sourceFile: opts.sourceFile,
         sourceMimeType: opts.mimeType,
@@ -755,6 +779,7 @@ export function chunkDriveLink(opts: {
   url: string
   suggestedTool: string
   folderContents?: Array<{ id: string; name: string; mimeType: string }>
+  docMeta?: Record<string, unknown>
 }): EmbeddableChunk[] {
   if (opts.driveType === 'folder') {
     const listing = opts.folderContents?.map(f => `- ${f.name} (${f.mimeType}, id: ${f.id})`).join('\n') ?? '(vacía)'
@@ -764,6 +789,7 @@ export function chunkDriveLink(opts: {
       mediaRefs: null,
       chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
       metadata: {
+        ...(opts.docMeta ?? {}),
         sourceType: 'drive',
         sourceFile: opts.name,
         sourceMimeType: opts.mimeType,
@@ -782,6 +808,7 @@ export function chunkDriveLink(opts: {
     mediaRefs: null,
     chunkIndex: 0, chunkTotal: 1, prevChunkId: null, nextChunkId: null,
     metadata: {
+      ...(opts.docMeta ?? {}),
       sourceType: 'drive',
       sourceFile: opts.name,
       sourceMimeType: opts.mimeType,

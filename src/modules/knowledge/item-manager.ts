@@ -566,7 +566,7 @@ export class KnowledgeItemManager {
       if (rows.length === 0) continue
 
       // Smart chunk: CSV with repeated headers
-      const chunks = chunkSheets(headers, rows)
+      const chunks = chunkSheets(headers, rows, { docMeta: { sourceType: 'sheets', sourceId: item.sourceId, tabName: tab.tabName, title: item.title } as Record<string, unknown> })
       const docTitle = `${item.title} — ${tab.tabName}`
       totalChunks += await this.persistSmartChunks(item, docTitle, 'text/csv', chunks, {
         description: tab.description || `Tab ${tab.tabName} de ${item.title}`,
@@ -585,7 +585,7 @@ export class KnowledgeItemManager {
     if (!doc.body.trim()) return 0
 
     // Smart chunk: split by headings with word overlap
-    const chunks = chunkDocs(doc.body)
+    const chunks = chunkDocs(doc.body, { docMeta: { sourceType: 'docs', sourceId: item.sourceId, title: doc.title || item.title } as Record<string, unknown> })
     return this.persistSmartChunks(item, doc.title || item.title, 'text/plain', chunks, {
       fileUrl: item.sourceUrl,
     })
@@ -608,7 +608,7 @@ export class KnowledgeItemManager {
       const slidesService = this.registry.getOptional<SlidesService>('google:slides')
       const slideText = slidesService ? await slidesService.getSlideText(item.sourceId) : ''
       if (!slideText.trim()) return 0
-      const chunks = chunkDocs(slideText, { sourceFile: item.title, sourceType: 'slides' })
+      const chunks = chunkDocs(slideText, { sourceFile: item.title, sourceType: 'slides', docMeta: { sourceType: 'slides', sourceId: item.sourceId, title: item.title } as Record<string, unknown> })
       return this.persistSmartChunks(item, item.title, 'text/plain', chunks, {
         fileUrl: item.sourceUrl,
       })
@@ -630,6 +630,7 @@ export class KnowledgeItemManager {
     // Chunk visual (pipeline PDF) — sin speaker notes (Google Slides API no las expone fácilmente)
     const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, [], {
       sourceFile: item.title,
+      docMeta: pdfResult.metadata as Record<string, unknown>,
     })
 
     logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[SLIDES] Visual pipeline via PDF export')
@@ -900,7 +901,7 @@ export class KnowledgeItemManager {
         if (textParts.length === 0) continue
         const chunks = chunkSheets(headers, data.values.slice(1).map(row =>
           headers.map((_, i) => row[i]?.trim() ?? ''),
-        ).filter(r => r.some(v => v)))
+        ).filter(r => r.some(v => v)), { docMeta: { sourceType: 'sheets', sourceId: file.id, tabName: sheet.title, title: file.name } as Record<string, unknown> })
         totalChunks += await this.persistSmartChunks(item, `${file.name} — ${sheet.title}`, 'text/csv', chunks, {
           description: `${file.name} — ${sheet.title}`,
           fileUrl: file.webViewLink,
@@ -944,7 +945,7 @@ export class KnowledgeItemManager {
         return heading + s.content
       }).join('\n\n')
       if (!text.trim()) return 0
-      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'docx', sourceMimeType: mime })
+      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'docx', sourceMimeType: mime, docMeta: docxResult.metadata as Record<string, unknown> })
       return this.persistSmartChunks(item, fileName, mime, chunks, {
         description: fileName,
         fileUrl: file.webViewLink,
@@ -968,7 +969,7 @@ export class KnowledgeItemManager {
       // TEXT fallback
       text = pptxResult.slides.map(s => s.text).join('\n\n')
       if (!text.trim()) return 0
-      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'slides', sourceMimeType: mime })
+      const chunks = chunkDocs(text, { sourceFile: file.name, sourceType: 'slides', sourceMimeType: mime, docMeta: pptxResult.metadata as Record<string, unknown> })
       return this.persistSmartChunks(item, fileName, mime, chunks, {
         description: fileName,
         fileUrl: file.webViewLink,
@@ -1007,7 +1008,7 @@ export class KnowledgeItemManager {
       if (duration <= 60) {
         const audioFileName = `${hashPrefix}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
         await writeFile(join(knowledgeDir, audioFileName), audioBuffer)
-        audioChunks = chunkAudio({ transcription, durationSeconds: duration, mimeType: mime, sourceFile: file.name, filePath: audioFileName })
+        audioChunks = chunkAudio({ transcription, durationSeconds: duration, mimeType: mime, sourceFile: file.name, filePath: audioFileName, docMeta: audioResult.metadata as Record<string, unknown> })
       } else {
         const segs = await splitMediaFile(audioBuffer, mime, duration, AUDIO_SPLIT_CONFIG)
         const ext = mime.includes('mpeg') ? 'mp3' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'mp3'
@@ -1020,7 +1021,7 @@ export class KnowledgeItemManager {
           await unlink(seg.segmentPath).catch(() => {})
           persistedSegs.push({ startSeconds: seg.startSeconds, endSeconds: seg.endSeconds, segmentPath: segFile })
         }
-        audioChunks = chunkAudio({ transcription, durationSeconds: duration, mimeType: mime, sourceFile: file.name, segments: persistedSegs })
+        audioChunks = chunkAudio({ transcription, durationSeconds: duration, mimeType: mime, sourceFile: file.name, segments: persistedSegs, docMeta: audioResult.metadata as Record<string, unknown> })
       }
 
       return this.persistSmartChunks(item, file.name, mime, audioChunks, {
@@ -1049,7 +1050,7 @@ export class KnowledgeItemManager {
       if (duration <= 50) {
         const videoFile = `${hashPrefix}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
         await writeFile(join(knowledgeDir, videoFile), videoBuffer)
-        videoChunks = chunkVideo({ description, transcription: null, durationSeconds: duration, mimeType: mime, sourceFile: file.name, sourceUrl: file.webViewLink, filePath: videoFile })
+        videoChunks = chunkVideo({ description, transcription: null, durationSeconds: duration, mimeType: mime, sourceFile: file.name, sourceUrl: file.webViewLink, filePath: videoFile, docMeta: videoResult.metadata as Record<string, unknown> })
       } else {
         const segs = await splitMediaFile(videoBuffer, mime, duration, VIDEO_SPLIT_CONFIG)
         const persistedSegs: Array<{ startSeconds: number; endSeconds: number; segmentPath: string }> = []
@@ -1061,7 +1062,7 @@ export class KnowledgeItemManager {
           await unlink(seg.segmentPath).catch(() => {})
           persistedSegs.push({ startSeconds: seg.startSeconds, endSeconds: seg.endSeconds, segmentPath: segFile })
         }
-        videoChunks = chunkVideo({ description, transcription: null, durationSeconds: duration, mimeType: mime, sourceFile: file.name, sourceUrl: file.webViewLink, segments: persistedSegs })
+        videoChunks = chunkVideo({ description, transcription: null, durationSeconds: duration, mimeType: mime, sourceFile: file.name, sourceUrl: file.webViewLink, segments: persistedSegs, docMeta: videoResult.metadata as Record<string, unknown> })
       }
 
       return this.persistSmartChunks(item, file.name, mime, videoChunks, {
@@ -1078,7 +1079,7 @@ export class KnowledgeItemManager {
     if (!text.trim()) return 0
 
     // Use smart chunker for Drive files (text-only path)
-    const chunks = chunkDocs(text, { sourceFile: file.name, sourceMimeType: mime })
+    const chunks = chunkDocs(text, { sourceFile: file.name, sourceMimeType: mime, docMeta: { sourceType: 'drive', sourceId: file.id, title: file.name, mimeType: mime } as Record<string, unknown> })
     return this.persistSmartChunks(item, fileName, 'text/plain', chunks, {
       description: fileName,
       fileUrl: file.webViewLink,
@@ -1115,7 +1116,7 @@ export class KnowledgeItemManager {
     await writeFile(join(knowledgeDir, safeFileName), pdfBuffer)
 
     // Smart chunk: 6-page blocks with 1-page overlap, ref to PDF file
-    const chunks = chunkPdf(pageTexts, safeFileName, totalPages)
+    const chunks = chunkPdf(pageTexts, safeFileName, totalPages, { docMeta: { sourceType: 'pdf', sourceId: item.sourceId, title: item.title, totalPages } as Record<string, unknown> })
     logger.info({ itemId: item.id, totalPages, chunkCount: chunks.length }, '[PDF] Smart chunked')
 
     return this.persistSmartChunks(item, item.title, 'application/pdf', chunks, {
@@ -1149,6 +1150,7 @@ export class KnowledgeItemManager {
 
     const chunks = chunkPdf(pageTexts, pdfName, totalPages, {
       sourceFile: file.name,
+      docMeta: pdfResult.metadata as Record<string, unknown>,
     })
     logger.info({ fileId: file.id, totalPages, chunkCount: chunks.length }, '[DRIVE-PDF] Visual pipeline')
 
@@ -1182,6 +1184,7 @@ export class KnowledgeItemManager {
 
     const chunks = chunkSlidesAsPdf(pageTexts, pdfName, totalPages, speakerNotes, {
       sourceFile: file.name,
+      docMeta: pdfResult.metadata as Record<string, unknown>,
     })
     logger.info({ fileId: file.id, totalPages, speakerNotes: speakerNotes.length, chunkCount: chunks.length }, '[DRIVE-PPTX] Visual pipeline')
 
@@ -1283,7 +1286,7 @@ export class KnowledgeItemManager {
         const blocks = await this.extractWebBlocks(url)
         if (blocks.length === 0) continue
 
-        const chunks = chunkWeb(blocks)
+        const chunks = chunkWeb(blocks, { docMeta: { sourceType: 'web', sourceUrl: url, title: item.title } as Record<string, unknown> })
         const pageTitle = new URL(url).pathname || url
         totalChunks += await this.persistSmartChunks(item, pageTitle, 'text/html', chunks, {
           description: `Web: ${url}`,
@@ -1499,6 +1502,7 @@ export class KnowledgeItemManager {
             sourceFile: title,
             sourceUrl: videoUrl,
             segments: persistedSegs,
+            docMeta: videoResult.metadata as Record<string, unknown>,
           })
         } else {
           // Video corto: 1 solo chunk
@@ -1515,6 +1519,7 @@ export class KnowledgeItemManager {
             sourceFile: title,
             sourceUrl: videoUrl,
             filePath: videoFile,
+            docMeta: videoResult.metadata as Record<string, unknown>,
           })
         }
 
@@ -1565,6 +1570,7 @@ export class KnowledgeItemManager {
         { title, description, thumbnailBase64, url: videoUrl },
         segments,
         chapters,
+        { docMeta: { sourceType: 'youtube', videoId, title, channelTitle: meta?.channelTitle, publishedAt: meta?.publishedAt, url: videoUrl } as Record<string, unknown> },
       )
 
       // Enriquecer metadata
@@ -1632,6 +1638,7 @@ export class KnowledgeItemManager {
           { title: video.title, description: video.description, thumbnailBase64, url: video.url },
           segments,
           chapters,
+          { docMeta: { sourceType: 'youtube', videoId: video.videoId, title: video.title, channelTitle: video.channelTitle, publishedAt: video.publishedAt, url: video.url } as Record<string, unknown> },
         )
 
         // Enriquecer metadata

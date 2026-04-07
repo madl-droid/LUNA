@@ -149,6 +149,7 @@ export class KnowledgeManager {
 
       smartChunks = chunkPdf(pageTexts, mediaFileName, totalPages, {
         sourceFile: fileName,
+        docMeta: pdfResult.metadata as Record<string, unknown>,
       })
       logger.info({ fileName, pages: totalPages, chunks: smartChunks.length }, '[ROUTER] PDF → visual pipeline')
 
@@ -172,6 +173,7 @@ export class KnowledgeManager {
 
         smartChunks = chunkPdf(pageTexts, pdfFileName, totalPages, {
           sourceFile: fileName,
+          docMeta: docxResult.metadata as Record<string, unknown>,
         })
         logger.info({ fileName, pages: totalPages, chunks: smartChunks.length }, '[ROUTER] DOCX+imgs → visual pipeline (PDF)')
       } else {
@@ -180,6 +182,7 @@ export class KnowledgeManager {
           sourceFile: fileName,
           sourceType: 'docx',
           sourceMimeType: mimeType,
+          docMeta: extracted.metadata as Record<string, unknown>,
         })
         logger.info({ fileName, chunks: smartChunks.length }, '[ROUTER] DOCX → text pipeline')
       }
@@ -204,6 +207,7 @@ export class KnowledgeManager {
 
         smartChunks = chunkSlidesAsPdf(pageTexts, pdfFileName, totalPages, speakerNotes, {
           sourceFile: fileName,
+          docMeta: pptxResult.metadata as Record<string, unknown>,
         })
         logger.info({ fileName, pages: totalPages, notes: speakerNotes.length, chunks: smartChunks.length }, '[ROUTER] PPTX → visual pipeline (PDF+notes)')
       } else {
@@ -213,6 +217,7 @@ export class KnowledgeManager {
           sourceFile: fileName,
           sourceType: 'slides',
           sourceMimeType: mimeType,
+          docMeta: extracted.metadata as Record<string, unknown>,
         })
         logger.info({ fileName, chunks: smartChunks.length }, '[ROUTER] PPTX (no LibreOffice) → text pipeline')
       }
@@ -233,6 +238,7 @@ export class KnowledgeManager {
         mimeType,
         sourceFile: fileName,
         filePath: safeFileName,
+        docMeta: imageResult.metadata as Record<string, unknown>,
       })
       logger.info({ fileName, hasDescription: !!description, chunks: smartChunks.length }, '[ROUTER] Image → image pipeline')
 
@@ -261,13 +267,14 @@ export class KnowledgeManager {
             sourceFile: fileName,
             sourceMimeType: mimeType,
             sheetName: sheet.name,
+            docMeta: sheetsResult.metadata as Record<string, unknown>,
           })
           allChunks.push(...sheetChunks)
         }
         smartChunks = allChunks
         logger.info({ fileName, sheets: sheetsResult.sheets.length, chunks: smartChunks.length }, '[ROUTER] Sheets → sheets pipeline')
       } catch {
-        smartChunks = chunkDocs(fullText, { sourceFile: fileName, sourceMimeType: mimeType })
+        smartChunks = chunkDocs(fullText, { sourceFile: fileName, sourceMimeType: mimeType, docMeta: extracted.metadata as Record<string, unknown> })
         logger.warn({ fileName }, '[ROUTER] Sheets extraction failed → text fallback')
       }
 
@@ -276,6 +283,7 @@ export class KnowledgeManager {
       smartChunks = chunkDocs(fullText, {
         sourceFile: fileName,
         sourceMimeType: mimeType,
+        docMeta: extracted.metadata as Record<string, unknown>,
       })
       logger.info({ fileName, mimeType, chunks: smartChunks.length }, '[ROUTER] Default → text pipeline')
     }
@@ -532,6 +540,7 @@ export class KnowledgeManager {
         mimeType: resolvedMime,
         sourceFile: fileName,
         filePath: audioFileName,
+        docMeta: audioResult.metadata as Record<string, unknown>,
       })
     }
 
@@ -547,6 +556,7 @@ export class KnowledgeManager {
         mimeType: resolvedMime,
         sourceFile: fileName,
         filePath: audioFileName,
+        docMeta: audioResult.metadata as Record<string, unknown>,
       })
     }
 
@@ -581,6 +591,7 @@ export class KnowledgeManager {
       mimeType: resolvedMime,
       sourceFile: fileName,
       segments: persistedSegments,
+      docMeta: audioResult.metadata as Record<string, unknown>,
     })
   }
 
@@ -625,6 +636,7 @@ export class KnowledgeManager {
         mimeType: resolvedMime,
         sourceFile: fileName,
         filePath: videoFileName,
+        docMeta: videoResult.metadata as Record<string, unknown>,
       })
     }
 
@@ -641,6 +653,7 @@ export class KnowledgeManager {
         mimeType: resolvedMime,
         sourceFile: fileName,
         filePath: videoFileName,
+        docMeta: videoResult.metadata as Record<string, unknown>,
       })
     }
 
@@ -674,6 +687,7 @@ export class KnowledgeManager {
       mimeType: resolvedMime,
       sourceFile: fileName,
       segments: persistedSegments,
+      docMeta: videoResult.metadata as Record<string, unknown>,
     })
   }
 

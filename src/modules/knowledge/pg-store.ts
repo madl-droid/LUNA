@@ -139,7 +139,16 @@ export class KnowledgePgStore {
 
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tsv ON knowledge_chunks USING GIN(tsv)`)
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(document_id)`)
-    await this.db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding_v2 ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WHERE embedding_status = 'embedded'`)
+    // ivfflat requires training data — defer creation if table is empty or has no embedded rows
+    await this.db.query(`
+      DO $$ BEGIN
+        CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding_v2
+          ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops)
+          WHERE embedding_status = 'embedded';
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'ivfflat index deferred (need rows): %', SQLERRM;
+      END $$
+    `)
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_kc_embedding_status ON knowledge_chunks(embedding_status) WHERE embedding_status != 'embedded'`)
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_kc_source ON knowledge_chunks(source_id) WHERE source_id IS NOT NULL`)
     await this.db.query(`CREATE INDEX IF NOT EXISTS idx_kc_linking ON knowledge_chunks(prev_chunk_id, next_chunk_id) WHERE prev_chunk_id IS NOT NULL OR next_chunk_id IS NOT NULL`)
