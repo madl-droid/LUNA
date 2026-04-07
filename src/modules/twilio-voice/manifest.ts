@@ -92,6 +92,7 @@ const apiRoutes: ApiRoute[] = [
           twimlUrl,
           statusUrl,
           mediaStreamUrl,
+          body.reason,
         )
 
         jsonResponse(res, 200, { ok: true, ...result })
@@ -223,7 +224,6 @@ const apiRoutes: ApiRoute[] = [
       const mediaStreamUrl = `wss://${host}/twilio/media-stream`
 
       const twiml = await callManager.handleIncomingCall(callSid, from, to, mediaStreamUrl)
-
       res.writeHead(200, { 'Content-Type': 'text/xml' })
       res.end(twiml)
     },
@@ -295,7 +295,9 @@ const manifest: ModuleManifest = {
     TWILIO_PHONE_NUMBER: z.string().default(''),
     // ── Gemini Live — API & model ──
     VOICE_GOOGLE_API_KEY: z.string().default(''),
-    VOICE_GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+    VOICE_GEMINI_MODEL: z.string().default('gemini-3.1-flash-live-preview'),
+    VOICE_GEMINI_FALLBACK_MODEL: z.string().default('gemini-2.5-flash-live-preview'),
+    VOICE_GEMINI_THINKING_LEVEL: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
     VOICE_GEMINI_VOICE: z.string().default('Kore'),
     VOICE_GEMINI_LANGUAGE: z.string().default(''),
     // ── Gemini Live — generation config ──
@@ -314,8 +316,10 @@ const manifest: ModuleManifest = {
     VOICE_SILENCE_RMS_THRESHOLD: numEnvMin(0, 200),
     // ── Call behavior ──
     VOICE_PREVIEW_TEXT: z.string().default('Hola, soy tu asistente virtual. \u00bfEn qu\u00e9 puedo ayudarte hoy?'),
-    VOICE_ANSWER_DELAY_RINGS: numEnvMin(1, 2),
+    VOICE_ANSWER_DELAY_MIN_RINGS: numEnvMin(1, 2),
+    VOICE_ANSWER_DELAY_MAX_RINGS: numEnvMin(1, 5),
     VOICE_SILENCE_TIMEOUT_MS: numEnv(10000),
+    VOICE_POST_GREETING_SILENCE_TIMEOUT_MS: numEnv(30000),
     VOICE_SILENCE_MESSAGE: z.string().default('\u00bfSigues ah\u00ed?'),
     VOICE_GREETING_INBOUND: z.string().default('Hola, gracias por llamar. \u00bfEn qu\u00e9 puedo ayudarte?'),
     VOICE_GREETING_OUTBOUND: z.string().default('Hola, te llamo de parte de la empresa. \u00bfEs un buen momento para hablar?'),
@@ -324,10 +328,21 @@ const manifest: ModuleManifest = {
     VOICE_MAX_CALL_DURATION_MS: numEnv(1800000),
     VOICE_MAX_CONCURRENT_CALLS: numEnvMin(1, 5),
     VOICE_ENABLED: boolEnv(true),
+    // ── Freeze detection + tool filler ──
+    VOICE_GEMINI_FREEZE_TIMEOUT_MS: numEnv(10000),
+    VOICE_TOOL_FILLER_DELAY_MS: numEnv(3000),
+    VOICE_TOOL_TIMEOUT_MS: numEnv(10000),
+    VOICE_TOOL_MAX_RETRIES: numEnvMin(0, 1),
     // ── Channel runtime config (engine integration) ──
     VOICE_RATE_LIMIT_HOUR: numEnvMin(0, 0),
     VOICE_RATE_LIMIT_DAY: numEnvMin(0, 0),
     VOICE_SESSION_TIMEOUT_HOURS: numEnvMin(1, 1),
+    // ── Outbound call restrictions ──
+    VOICE_BUSINESS_HOURS_ENABLED: boolEnv(true),
+    VOICE_BUSINESS_HOURS_START: numEnvMin(0, 8),
+    VOICE_BUSINESS_HOURS_END: numEnvMin(0, 17),
+    VOICE_BUSINESS_HOURS_TIMEZONE: z.string().default('America/Bogota'),
+    VOICE_OUTBOUND_RATE_LIMIT_HOUR: numEnvMin(0, 3),
   }),
 
   console: {
@@ -371,8 +386,28 @@ const manifest: ModuleManifest = {
       {
         key: 'VOICE_GEMINI_MODEL',
         type: 'text',
-        label: { es: 'Modelo Gemini Live', en: 'Gemini Live model' },
-        info: { es: 'Modelo a usar (ej: gemini-2.5-flash, gemini-2.5-flash-native-audio-preview)', en: 'Model to use (e.g., gemini-2.5-flash, gemini-2.5-flash-native-audio-preview)' },
+        label: { es: 'Modelo Gemini Live (primario)', en: 'Gemini Live model (primary)' },
+        info: { es: 'Modelo principal (ej: gemini-3.1-flash-live-preview)', en: 'Primary model (e.g., gemini-3.1-flash-live-preview)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_FALLBACK_MODEL',
+        type: 'text',
+        label: { es: 'Modelo Gemini Live (fallback)', en: 'Gemini Live model (fallback)' },
+        info: { es: 'Modelo alternativo si el primario falla (ej: gemini-2.5-flash-live-preview)', en: 'Fallback model if primary fails (e.g., gemini-2.5-flash-live-preview)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_GEMINI_THINKING_LEVEL',
+        type: 'select',
+        label: { es: 'Nivel de razonamiento (thinking)', en: 'Thinking level' },
+        info: { es: 'Solo aplica a gemini-3.1. minimal = latencia minima; high = respuestas mas elaboradas', en: 'Only applies to gemini-3.1. minimal = lowest latency; high = more thorough responses' },
+        options: [
+          { value: 'minimal', label: 'Minimal (recomendado)' },
+          { value: 'low', label: 'Low' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High' },
+        ],
         width: 'half',
       },
       {
@@ -471,6 +506,35 @@ const manifest: ModuleManifest = {
       // ── Comportamiento de llamada ──
       { key: '_divider_behavior', type: 'divider', label: { es: 'Comportamiento de llamada', en: 'Call behavior' } },
       {
+        key: 'VOICE_GEMINI_FREEZE_TIMEOUT_MS',
+        type: 'number',
+        label: { es: 'Timeout de freeze de Gemini (ms)', en: 'Gemini freeze timeout (ms)' },
+        info: { es: 'Tiempo sin respuesta de Gemini tras turno del caller antes de re-inyectar. 2 fallos = colgar.', en: 'Time without Gemini response after caller turn before re-injecting. 2 failures = hangup.' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_TOOL_FILLER_DELAY_MS',
+        type: 'number',
+        label: { es: 'Delay antes de filler por tool (ms)', en: 'Tool filler delay (ms)' },
+        info: { es: 'Tiempo antes de pedirle a Gemini que diga algo mientras ejecuta una tool lenta', en: 'Time before asking Gemini to say something while a slow tool runs' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_TOOL_TIMEOUT_MS',
+        type: 'number',
+        label: { es: 'Timeout de ejecucion de tool (ms)', en: 'Tool execution timeout (ms)' },
+        info: { es: 'Tiempo maximo por intento de ejecucion de tool antes de reintentar o fallar', en: 'Max time per tool execution attempt before retry or failure' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_TOOL_MAX_RETRIES',
+        type: 'number',
+        label: { es: 'Reintentos de tool por timeout', en: 'Tool retries on timeout' },
+        info: { es: 'Cantidad de reintentos antes de reportar error al caller (0 = sin reintentos)', en: 'Number of retries before reporting error to caller (0 = no retries)' },
+        min: 0,
+        width: 'half',
+      },
+      {
         key: 'VOICE_GREETING_INBOUND',
         type: 'textarea',
         label: { es: 'Saludo para llamadas entrantes', en: 'Inbound call greeting' },
@@ -481,10 +545,19 @@ const manifest: ModuleManifest = {
         label: { es: 'Saludo para llamadas salientes', en: 'Outbound call greeting' },
       },
       {
-        key: 'VOICE_ANSWER_DELAY_RINGS',
+        key: 'VOICE_ANSWER_DELAY_MIN_RINGS',
         type: 'number',
-        label: { es: 'Timbrazos antes de contestar', en: 'Rings before answering' },
-        info: { es: 'Numero de timbrazos para parecer natural (minimo 1)', en: 'Number of rings for natural feel (minimum 1)' },
+        label: { es: 'Timbrazos minimos antes de contestar', en: 'Min rings before answering' },
+        info: { es: 'Minimo de timbrazos para parecer natural (minimo 1)', en: 'Minimum rings for natural feel (minimum 1)' },
+        min: 1,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_ANSWER_DELAY_MAX_RINGS',
+        type: 'number',
+        label: { es: 'Timbrazos maximos antes de contestar', en: 'Max rings before answering' },
+        info: { es: 'Maximo de timbrazos antes de contestar (aleatorio entre min y max)', en: 'Max rings before answering (random between min and max)' },
+        min: 1,
         width: 'half',
       },
       {
@@ -498,7 +571,14 @@ const manifest: ModuleManifest = {
         key: 'VOICE_SILENCE_TIMEOUT_MS',
         type: 'number',
         label: { es: 'Timeout de silencio (ms)', en: 'Silence timeout (ms)' },
-        info: { es: 'Tiempo sin habla antes de preguntar si sigue ahi', en: 'Time without speech before prompting' },
+        info: { es: 'Tiempo sin habla antes de preguntar si sigue ahi (modo conversacion normal)', en: 'Time without speech before prompting (normal conversation mode)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_POST_GREETING_SILENCE_TIMEOUT_MS',
+        type: 'number',
+        label: { es: 'Timeout post-saludo (ms)', en: 'Post-greeting timeout (ms)' },
+        info: { es: 'Tiempo extra para que el caller responda tras el saludo inicial (30s recomendado)', en: 'Extra time for caller to respond after initial greeting (30s recommended)' },
         width: 'half',
       },
       {
@@ -563,6 +643,45 @@ const manifest: ModuleManifest = {
         label: { es: 'Timeout de sesion (horas)', en: 'Session timeout (hours)' },
         info: { es: 'Horas de inactividad para cerrar la sesion', en: 'Inactivity hours to close the session' },
         min: 1,
+        width: 'half',
+      },
+      // ── Llamadas salientes ──
+      { key: '_divider_outbound', type: 'divider', label: { es: 'Llamadas salientes', en: 'Outbound calls' } },
+      {
+        key: 'VOICE_BUSINESS_HOURS_ENABLED',
+        type: 'boolean',
+        label: { es: 'Restringir a horario laboral', en: 'Restrict to business hours' },
+        info: { es: 'Si se activa, bloquea llamadas salientes fuera del horario configurado y en fines de semana', en: 'If enabled, blocks outbound calls outside configured hours and on weekends' },
+      },
+      {
+        key: 'VOICE_BUSINESS_HOURS_START',
+        type: 'number',
+        label: { es: 'Hora de inicio (0-23)', en: 'Start hour (0-23)' },
+        info: { es: 'Hora en que comienza el horario laboral (ej: 8 = 8:00 AM)', en: 'Hour business hours begin (e.g.: 8 = 8:00 AM)' },
+        min: 0,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_BUSINESS_HOURS_END',
+        type: 'number',
+        label: { es: 'Hora de fin (0-23)', en: 'End hour (0-23)' },
+        info: { es: 'Hora en que termina el horario laboral (ej: 17 = 5:00 PM)', en: 'Hour business hours end (e.g.: 17 = 5:00 PM)' },
+        min: 0,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_BUSINESS_HOURS_TIMEZONE',
+        type: 'text',
+        label: { es: 'Zona horaria', en: 'Timezone' },
+        info: { es: 'Zona horaria IANA (ej: America/Bogota, America/Mexico_City, Europe/Madrid)', en: 'IANA timezone (e.g.: America/Bogota, America/Mexico_City, Europe/Madrid)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_OUTBOUND_RATE_LIMIT_HOUR',
+        type: 'number',
+        label: { es: 'Max llamadas salientes/hora por numero', en: 'Max outbound calls/hour per number' },
+        info: { es: '0 = sin limite. Limita llamadas salientes al mismo numero en la ultima hora', en: '0 = unlimited. Limits outbound calls to the same number in the last hour' },
+        min: 0,
         width: 'half',
       },
       {

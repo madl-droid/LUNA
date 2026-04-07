@@ -2,6 +2,7 @@
 // Pipeline ligero para llamadas de voz. Delega la conversación a Gemini Live
 // mientras LUNA provee contexto, tools y monitoreo.
 
+import * as crypto from 'node:crypto'
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { Pool } from 'pg'
@@ -27,6 +28,7 @@ export async function preloadContext(
   phoneNumber: string,
   direction: CallDirection,
   config: TwilioVoiceConfig,
+  outboundReason?: string,
 ): Promise<PreloadedContext> {
   const startMs = Date.now()
 
@@ -45,17 +47,20 @@ export async function preloadContext(
   let contactMemory: string | null = null
   let pendingCommitments: string[] = []
   let recentSummaries: string[] = []
+  let contactChannels: Array<{ channel_type: string; channel_identifier: string; is_primary: boolean }> = []
 
   if (contact?.contactId) {
     const memResults = await Promise.allSettled([
       loadContactMemory(registry, contact.contactId),
       loadCommitments(registry, contact.contactId),
       loadSummaries(registry, contact.contactId),
+      loadContactChannels(db, contact.contactId),
     ])
 
     contactMemory = memResults[0]!.status === 'fulfilled' ? memResults[0]!.value : null
     pendingCommitments = memResults[1]!.status === 'fulfilled' ? memResults[1]!.value : []
     recentSummaries = memResults[2]!.status === 'fulfilled' ? memResults[2]!.value : []
+    contactChannels = memResults[3]!.status === 'fulfilled' ? memResults[3]!.value : []
   }
 
   // Build system instruction
@@ -73,6 +78,8 @@ export async function preloadContext(
     direction,
     config,
     registry,
+    outboundReason,
+    contactChannels,
   )
 
   // Add end-call tool to the declarations
@@ -107,51 +114,21 @@ export async function preloadContext(
 }
 
 /**
- * Generate a call summary from transcript using LLM.
- */
-export async function generateCallSummary(
-  registry: Registry,
-  transcript: TranscriptEntry[],
-  contactName: string | null,
-): Promise<string | null> {
-  if (transcript.length === 0) return null
-
-  const transcriptText = transcript
-    .map(t => `${t.speaker === 'caller' ? (contactName ?? 'Caller') : 'Agente'}: ${t.text}`)
-    .join('\n')
-
-  try {
-    const result = await registry.callHook('llm:chat', {
-      task: 'summarize',
-      system: 'Resume la siguiente conversaci\u00f3n telef\u00f3nica en 2-3 oraciones. Incluye: tema principal, acuerdos/compromisos, y pr\u00f3ximos pasos si los hay. Responde solo con el resumen, sin encabezados.',
-      messages: [{ role: 'user', content: transcriptText }],
-      maxTokens: 300,
-      temperature: 0.3,
-      traceId: `call-summary-${Date.now()}`,
-    })
-
-    return result?.text ?? null
-  } catch (err) {
-    logger.error({ err }, 'Failed to generate call summary')
-    return null
-  }
-}
-
-/**
- * Persist call transcript and summary to memory system.
+ * Persist call transcript to memory system and enqueue compression pipeline.
+ * Connects voice calls to the same archive→summary→chunk→embed pipeline as WhatsApp/Gmail.
  */
 export async function persistToMemory(
   registry: Registry,
-  _db: Pool,
+  db: Pool,
   contactId: string,
+  sessionId: string,
   startedAt: Date,
   transcript: TranscriptEntry[],
-  _summary: string | null,
 ): Promise<void> {
   if (transcript.length === 0) return
 
   try {
-    // Save key turns as messages via memory:manager (if available)
+    // 1. Save significant turns as messages linked to the real session
     const memMgr = registry.getOptional<{
       saveMessage: (msg: {
         id: string
@@ -169,17 +146,11 @@ export async function persistToMemory(
     }>('memory:manager')
 
     if (memMgr) {
-      // Create a pseudo-session for this call
-      const sessionId = `voice-${Date.now()}`
-      let counter = 0
-
-      // Save significant caller/agent turns only. Internal system notes are not conversational memory.
       for (const entry of transcript) {
         if (entry.speaker === 'system' || entry.text.length < 5) continue
-        const createdAt = new Date(startedAt.getTime() + entry.timestampMs)
         const isCaller = entry.speaker === 'caller'
         await memMgr.saveMessage({
-          id: `${sessionId}-${counter++}`,
+          id: crypto.randomUUID(),
           contactId,
           sessionId,
           channelName: 'voice',
@@ -189,12 +160,38 @@ export async function persistToMemory(
           role: isCaller ? 'user' : 'assistant',
           contentText: entry.text,
           contentType: 'text',
-          createdAt,
-        }).catch(() => {}) // fire-and-forget
+          createdAt: new Date(startedAt.getTime() + entry.timestampMs),
+        }).catch(() => {})
       }
     }
+
+    // 2. Close the session
+    await db.query(
+      `UPDATE sessions SET status = 'closed', last_activity_at = NOW() WHERE id = $1`,
+      [sessionId],
+    )
+
+    // 3. Enqueue compression (same pipeline as WhatsApp/Gmail)
+    const compressionWorker = registry.getOptional<{
+      enqueue: (data: {
+        sessionId: string
+        contactId: string
+        channel: string
+        triggerType: 'reopen_expired' | 'nightly_batch'
+      }) => Promise<void>
+    }>('memory:compression-worker')
+
+    if (compressionWorker) {
+      await compressionWorker.enqueue({
+        sessionId,
+        contactId,
+        channel: 'voice',
+        triggerType: 'reopen_expired',
+      })
+    }
+    // If compression worker unavailable, nightly batch will pick up the closed session
   } catch (err) {
-    logger.error({ err, contactId }, 'Failed to persist call to memory')
+    logger.error({ err, contactId, sessionId }, 'Failed to persist call to memory')
   }
 }
 
@@ -212,6 +209,8 @@ async function buildSystemInstruction(
   direction: CallDirection,
   config: TwilioVoiceConfig,
   registry?: Registry,
+  outboundReason?: string,
+  contactChannels: Array<{ channel_type: string; channel_identifier: string; is_primary: boolean }> = [],
 ): Promise<string> {
   const parts: string[] = []
 
@@ -245,13 +244,32 @@ async function buildSystemInstruction(
   }
   parts.push(voiceInstr)
 
+  // Outbound call reason (injected after voice instructions)
+  if (direction === 'outbound' && outboundReason) {
+    let outboundCtx = '\n\n## Llamada saliente'
+    if (contact?.displayName) {
+      outboundCtx += `\n\nEstás llamando a ${contact.displayName}.`
+    }
+    outboundCtx += ` Razón de la llamada: ${outboundReason}.`
+    outboundCtx += ' Saluda, confirma que hablas con la persona correcta, y explica la razón de tu llamada.'
+    parts.push(outboundCtx)
+  }
+
   // Contact context
-  if (contact || contactMemory || pendingCommitments.length > 0) {
+  if (contact || contactMemory || pendingCommitments.length > 0 || contactChannels.length > 0) {
     const contextParts: string[] = ['\n## Contexto del contacto']
 
     if (contact) {
       if (contact.displayName) contextParts.push(`- Nombre: ${contact.displayName}`)
       if (contact.status) contextParts.push(`- Estado: ${contact.status}`)
+    }
+
+    if (contactChannels.length > 0) {
+      const channelLines = contactChannels.map(ch => {
+        const primary = ch.is_primary ? ' (principal)' : ''
+        return `- ${ch.channel_type}: ${ch.channel_identifier}${primary}`
+      })
+      contextParts.push(`\n### Puntos de contacto:\n${channelLines.join('\n')}`)
     }
 
     if (contactMemory) {
@@ -388,4 +406,26 @@ async function loadSummaries(registry: Registry, contactId: string): Promise<str
   if (!memMgr) return []
   const summaries = await memMgr.getRecentSummaries(contactId, 3)
   return summaries.map(s => s.summary)
+}
+
+async function loadContactChannels(
+  db: Pool,
+  contactId: string,
+): Promise<Array<{ channel_type: string; channel_identifier: string; is_primary: boolean }>> {
+  try {
+    const result = await db.query<{
+      channel_type: string
+      channel_identifier: string
+      is_primary: boolean
+    }>(
+      `SELECT channel_type, channel_identifier, is_primary
+       FROM contact_channels
+       WHERE contact_id = $1
+       ORDER BY is_primary DESC, last_used_at DESC NULLS LAST`,
+      [contactId],
+    )
+    return result.rows
+  } catch {
+    return []
+  }
 }

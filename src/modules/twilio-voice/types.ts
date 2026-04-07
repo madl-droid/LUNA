@@ -13,6 +13,8 @@ export interface TwilioVoiceConfig {
   // Gemini Live — API & model
   VOICE_GOOGLE_API_KEY: string
   VOICE_GEMINI_MODEL: string
+  VOICE_GEMINI_FALLBACK_MODEL: string
+  VOICE_GEMINI_THINKING_LEVEL: string
   VOICE_GEMINI_VOICE: string
   VOICE_GEMINI_LANGUAGE: string
   // Gemini Live — generation config
@@ -31,8 +33,8 @@ export interface TwilioVoiceConfig {
   VOICE_SILENCE_RMS_THRESHOLD: number
   // Call behavior
   VOICE_PREVIEW_TEXT: string
-  VOICE_ANSWER_DELAY_RINGS: number
   VOICE_SILENCE_TIMEOUT_MS: number
+  VOICE_POST_GREETING_SILENCE_TIMEOUT_MS: number
   VOICE_SILENCE_MESSAGE: string
   VOICE_GREETING_INBOUND: string
   VOICE_GREETING_OUTBOUND: string
@@ -41,10 +43,25 @@ export interface TwilioVoiceConfig {
   VOICE_MAX_CALL_DURATION_MS: number
   VOICE_MAX_CONCURRENT_CALLS: number
   VOICE_ENABLED: boolean
+  // Freeze detection
+  VOICE_GEMINI_FREEZE_TIMEOUT_MS: number
+  // Tool filler + timeout + retry
+  VOICE_TOOL_FILLER_DELAY_MS: number
+  VOICE_TOOL_TIMEOUT_MS: number
+  VOICE_TOOL_MAX_RETRIES: number
   // Channel runtime config (for engine integration)
   VOICE_RATE_LIMIT_HOUR: number
   VOICE_RATE_LIMIT_DAY: number
   VOICE_SESSION_TIMEOUT_HOURS: number
+  // Outbound call restrictions
+  VOICE_BUSINESS_HOURS_ENABLED: boolean
+  VOICE_BUSINESS_HOURS_START: number
+  VOICE_BUSINESS_HOURS_END: number
+  VOICE_BUSINESS_HOURS_TIMEZONE: string
+  VOICE_OUTBOUND_RATE_LIMIT_HOUR: number
+  // Ring delay range (replaces VOICE_ANSWER_DELAY_RINGS)
+  VOICE_ANSWER_DELAY_MIN_RINGS: number
+  VOICE_ANSWER_DELAY_MAX_RINGS: number
 }
 
 // ═══════════════════════════════════════════
@@ -72,6 +89,7 @@ export type CallEndReason =
   | 'error'
   | 'busy'
   | 'no-answer'
+  | 'gemini_freeze'
 
 export interface ActiveCall {
   callId: string
@@ -82,12 +100,36 @@ export interface ActiveCall {
   to: string
   status: CallStatus
   contactId: string | null
+  /** Real session ID in the sessions table (set when media stream starts) */
+  sessionId: string | null
   startedAt: Date
   connectedAt: Date | null
   geminiVoice: string
+  /** Which Gemini model was actually used (primary or fallback) */
+  modelUsed: string
   transcript: TranscriptEntry[]
   /** Pre-loaded context (populated during answer delay) */
   preloadedContext: PreloadedContext | null
+
+  // ── Greeting gate ──
+  /** false until Gemini completes first turn (inbound). outbound starts as true. */
+  greetingDone: boolean
+
+  // ── Freeze detection ──
+  /** true while Gemini is producing audio */
+  geminiSpeaking: boolean
+  /** Timer watching for Gemini freeze (no response after caller speaks) */
+  geminiResponseTimer: ReturnType<typeof setTimeout> | null
+  /** 0=nothing, 1=re-injected transcript, 2+=hangup */
+  geminiFreezeAttempts: number
+  /** Last text recognized from caller */
+  lastCallerTranscript: string
+  /** Timestamp of last raw caller audio chunk */
+  lastRawCallerAudioAt: number
+
+  // ── Tool cancel via barge-in ──
+  /** IDs of tool calls cancelled by barge-in */
+  cancelledToolCalls: Set<string>
 }
 
 export interface TranscriptEntry {
@@ -181,6 +223,8 @@ export type TwilioStreamMessage =
 export interface GeminiLiveConfig {
   apiKey: string
   model: string
+  fallbackModel: string
+  thinkingLevel: string
   voice: string
   language: string
   systemInstruction: string
@@ -216,6 +260,10 @@ export interface GeminiSetupMessage {
         }
         languageCode?: string
       }
+      thinkingConfig?: {
+        thinkingLevel?: string
+        thinkingBudget?: number
+      }
     }
     systemInstruction: {
       parts: Array<{ text: string }>
@@ -230,6 +278,8 @@ export interface GeminiSetupMessage {
       }
       activityHandling?: string
     }
+    outputAudioTranscription?: Record<string, never>
+    inputAudioTranscription?: Record<string, never>
     tools?: Array<{
       functionDeclarations: GeminiToolDeclaration[]
     }>
@@ -273,6 +323,16 @@ export interface GeminiServerContent {
     }
     turnComplete?: boolean
     interrupted?: boolean
+    /** Native transcription: what Gemini said (agent audio transcribed) */
+    outputTranscription?: {
+      text?: string
+      finished?: boolean
+    }
+    /** Native transcription: what the caller said (input audio transcribed) */
+    inputTranscription?: {
+      text?: string
+      finished?: boolean
+    }
   }
   toolCall?: {
     functionCalls: Array<{
@@ -280,6 +340,10 @@ export interface GeminiServerContent {
       name: string
       args: Record<string, unknown>
     }>
+  }
+  /** Tool calls cancelled due to barge-in */
+  toolCallCancellation?: {
+    ids: string[]
   }
   setupComplete?: Record<string, never>
 }
@@ -302,6 +366,7 @@ export interface VoiceCallRow {
   duration_seconds: number | null
   end_reason: string | null
   gemini_voice: string | null
+  model_used: string | null
   summary: string | null
   created_at: Date
 }
@@ -321,6 +386,7 @@ export interface VoiceCallTranscriptRow {
 
 export interface InitiateCallRequest {
   to: string
+  reason?: string
   context?: string
 }
 

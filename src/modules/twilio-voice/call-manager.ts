@@ -4,13 +4,13 @@
 import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Registry } from '../../kernel/registry.js'
-import type { TwilioVoiceConfig, ActiveCall, CallDirection, TranscriptEntry } from './types.js'
+import type { TwilioVoiceConfig, ActiveCall, CallDirection, TranscriptEntry, PreloadedContext } from './types.js'
 import { TwilioAdapter } from './twilio-adapter.js'
 import { MediaStreamServer } from './media-stream.js'
 import { GeminiLiveSession } from './gemini-live.js'
 import { SilenceDetector } from './silence-detector.js'
 import { mulawToPcm16k, pcmToMulaw8k } from './audio-converter.js'
-import { preloadContext, generateCallSummary, persistToMemory } from './voice-engine.js'
+import { preloadContext, persistToMemory } from './voice-engine.js'
 import * as pgStore from './pg-store.js'
 
 const logger = pino({ name: 'twilio-voice:call-manager' })
@@ -20,6 +20,8 @@ export class CallManager {
   private callSidToStream = new Map<string, string>() // callSid → streamSid
   private geminiSessions = new Map<string, GeminiLiveSession>() // keyed by streamSid
   private maxDurationTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private contextPromises = new Map<string, Promise<PreloadedContext>>() // callSid → pre-loaded context
+  private lastActivityUpdate = new Map<string, number>() // callId → last update timestamp
   private silenceDetector: SilenceDetector
   private mediaServer: MediaStreamServer
   private twilioAdapter: TwilioAdapter
@@ -40,10 +42,15 @@ export class CallManager {
     this.mediaServer = mediaServer
     this.twilioAdapter = twilioAdapter
 
-    this.silenceDetector = new SilenceDetector(config.VOICE_SILENCE_TIMEOUT_MS, config.VOICE_SILENCE_RMS_THRESHOLD, {
-      onSilenceDetected: (callId) => this.handleSilence(callId),
-      onFinalSilence: (callId) => this.handleFinalSilence(callId),
-    })
+    this.silenceDetector = new SilenceDetector(
+      config.VOICE_SILENCE_TIMEOUT_MS,
+      config.VOICE_POST_GREETING_SILENCE_TIMEOUT_MS,
+      config.VOICE_SILENCE_RMS_THRESHOLD,
+      {
+        onSilenceDetected: (callId) => this.handleSilence(callId),
+        onFinalSilence: (callId) => this.handleFinalSilence(callId),
+      },
+    )
   }
 
   /** Get global accent/language from prompts:service (fallback for when VOICE_GEMINI_LANGUAGE is empty) */
@@ -79,14 +86,19 @@ export class CallManager {
 
     // Store the promise for when stream connects
     this.callSidToStream.set(callSid, '') // placeholder, will be updated on stream start
-    // Store context promise on a temporary map
-    ;(this as unknown as Record<string, unknown>)[`_ctx_${callSid}`] = contextPromise
+    this.contextPromises.set(callSid, contextPromise)
 
     logger.info({ callSid, callId, from }, 'Incoming call, generating TwiML')
 
+    // Random ring delay between min and max for natural feel
+    const minRings = this.config.VOICE_ANSWER_DELAY_MIN_RINGS
+    const maxRings = Math.max(minRings, this.config.VOICE_ANSWER_DELAY_MAX_RINGS) // guard: max must be >= min
+    const answerDelayRings = Math.floor(Math.random() * (maxRings - minRings + 1)) + minRings
+    logger.debug({ callSid, answerDelayRings, minRings, maxRings }, 'Ring delay selected')
+
     return this.twilioAdapter.generateInboundTwiML(
       mediaStreamUrl,
-      this.config.VOICE_ANSWER_DELAY_RINGS,
+      answerDelayRings,
       { callId, direction: 'inbound' },
     )
   }
@@ -99,6 +111,7 @@ export class CallManager {
     twimlUrl: string,
     statusCallbackUrl: string | undefined,
     _mediaStreamUrl: string,
+    reason?: string,
   ): Promise<{ callSid: string; callId: string }> {
     if (!this.config.VOICE_ENABLED) {
       throw new Error('Voice calls are disabled')
@@ -108,8 +121,31 @@ export class CallManager {
       throw new Error('Max concurrent calls reached')
     }
 
-    // Pre-load context before dialing
-    const contextPromise = preloadContext(this.registry, this.db, to, 'outbound', this.config)
+    // ── Business hours check ──
+    if (this.config.VOICE_BUSINESS_HOURS_ENABLED) {
+      const now = new Date()
+      const localHour = getLocalHour(now, this.config.VOICE_BUSINESS_HOURS_TIMEZONE)
+      const dayOfWeek = getLocalDayOfWeek(now, this.config.VOICE_BUSINESS_HOURS_TIMEZONE)
+
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        throw new Error('Fuera de horario laboral (fin de semana)')
+      }
+
+      if (localHour < this.config.VOICE_BUSINESS_HOURS_START || localHour >= this.config.VOICE_BUSINESS_HOURS_END) {
+        throw new Error(`Fuera de horario laboral (${this.config.VOICE_BUSINESS_HOURS_START}:00-${this.config.VOICE_BUSINESS_HOURS_END}:00)`)
+      }
+    }
+
+    // ── Outbound rate limit by phone number ──
+    if (this.config.VOICE_OUTBOUND_RATE_LIMIT_HOUR > 0) {
+      const recentCalls = await pgStore.countRecentCalls(this.db, to, 'outbound', 60)
+      if (recentCalls >= this.config.VOICE_OUTBOUND_RATE_LIMIT_HOUR) {
+        throw new Error(`Límite alcanzado: ${recentCalls}/${this.config.VOICE_OUTBOUND_RATE_LIMIT_HOUR} llamadas/hora a este número`)
+      }
+    }
+
+    // Pre-load context before dialing (pass reason for greeting customization)
+    const contextPromise = preloadContext(this.registry, this.db, to, 'outbound', this.config, reason)
 
     const { callSid } = await this.twilioAdapter.makeCall(to, twimlUrl, statusCallbackUrl)
     const callId = await pgStore.insertCall(
@@ -117,9 +153,9 @@ export class CallManager {
     )
 
     this.callSidToStream.set(callSid, '')
-    ;(this as unknown as Record<string, unknown>)[`_ctx_${callSid}`] = contextPromise
+    this.contextPromises.set(callSid, contextPromise)
 
-    logger.info({ callSid, callId, to }, 'Outbound call initiated')
+    logger.info({ callSid, callId, to, reason }, 'Outbound call initiated')
     return { callSid, callId }
   }
 
@@ -135,13 +171,26 @@ export class CallManager {
     this.callSidToStream.set(callSid, streamSid)
 
     // Retrieve pre-loaded context
-    const ctxPromise = (this as unknown as Record<string, unknown>)[`_ctx_${callSid}`] as
-      Promise<Awaited<ReturnType<typeof preloadContext>>> | undefined
-    delete (this as unknown as Record<string, unknown>)[`_ctx_${callSid}`]
+    const ctxPromise = this.contextPromises.get(callSid)
+    this.contextPromises.delete(callSid)
 
     const context = ctxPromise ? await ctxPromise : await preloadContext(
       this.registry, this.db, '', direction, this.config,
     )
+
+    // Create real session in sessions table for compression pipeline integration
+    let sessionId: string | null = null
+    try {
+      const sessionResult = await this.db.query<{ id: string }>(
+        `INSERT INTO sessions (id, contact_id, channel_name, status, started_at, last_activity_at)
+         VALUES (gen_random_uuid(), $1, 'voice', 'active', NOW(), NOW())
+         RETURNING id`,
+        [context.contactId],
+      )
+      sessionId = sessionResult.rows[0]?.id ?? null
+    } catch (err) {
+      logger.error({ err, callSid }, 'Failed to create voice session in DB')
+    }
 
     // Create active call entry
     const call: ActiveCall = {
@@ -153,11 +202,23 @@ export class CallManager {
       to: '',
       status: 'active',
       contactId: context.contactId,
+      sessionId,
       startedAt: new Date(),
       connectedAt: new Date(),
       geminiVoice: this.config.VOICE_GEMINI_VOICE,
+      modelUsed: this.config.VOICE_GEMINI_MODEL, // updated after connect()
       transcript: [],
       preloadedContext: context,
+      // Greeting gate: outbound starts unlocked (caller already listening)
+      greetingDone: direction === 'outbound',
+      // Freeze detection
+      geminiSpeaking: false,
+      geminiResponseTimer: null,
+      geminiFreezeAttempts: 0,
+      lastCallerTranscript: '',
+      lastRawCallerAudioAt: 0,
+      // Tool cancel via barge-in
+      cancelledToolCalls: new Set(),
     }
     this.activeCalls.set(streamSid, call)
 
@@ -191,6 +252,8 @@ export class CallManager {
       {
         apiKey,
         model: this.config.VOICE_GEMINI_MODEL,
+        fallbackModel: this.config.VOICE_GEMINI_FALLBACK_MODEL,
+        thinkingLevel: this.config.VOICE_GEMINI_THINKING_LEVEL,
         voice: this.config.VOICE_GEMINI_VOICE,
         language: this.config.VOICE_GEMINI_LANGUAGE || this.getGlobalAccent(),
         systemInstruction: context.systemInstruction,
@@ -208,6 +271,15 @@ export class CallManager {
       },
       {
         onAudio: (audioBase64, _mimeType) => {
+          // Gemini is producing audio — cancel any freeze timer and mark as speaking
+          if (!call.geminiSpeaking) {
+            call.geminiSpeaking = true
+            if (call.geminiResponseTimer) {
+              clearTimeout(call.geminiResponseTimer)
+              call.geminiResponseTimer = null
+            }
+            call.geminiFreezeAttempts = 0
+          }
           // Convert PCM from Gemini to mulaw for Twilio
           const pcmBuffer = Buffer.from(audioBase64, 'base64')
           const mulawBuffer = pcmToMulaw8k(pcmBuffer)
@@ -238,7 +310,18 @@ export class CallManager {
           this.mediaServer.clearAudio(streamSid)
         },
         onTurnComplete: () => {
-          // Turn complete — silence detector restarts
+          // Gemini finished speaking this turn
+          call.geminiSpeaking = false
+
+          // First turn complete = greeting finished; unlock audio gate and start silence detector
+          if (!call.greetingDone) {
+            call.greetingDone = true
+            this.silenceDetector.startMonitoring(streamSid)
+            logger.debug({ callSid }, 'Greeting done, audio gate unlocked')
+          } else {
+            // Gemini completed a turn = conversation flowing; reset silence state machine
+            this.silenceDetector.resetState(streamSid)
+          }
         },
         onError: (err) => {
           logger.error({ err, callSid, streamSid }, 'Gemini Live error')
@@ -246,15 +329,54 @@ export class CallManager {
         onClose: () => {
           logger.info({ callSid, streamSid }, 'Gemini Live session closed')
         },
+        onUserTranscript: (text, isFinal) => {
+          // Native caller transcription — add final entries to transcript
+          if (isFinal && text.trim()) {
+            const entry: TranscriptEntry = {
+              speaker: 'caller',
+              text: text.trim(),
+              timestampMs: Date.now() - call.startedAt.getTime(),
+            }
+            call.transcript.push(entry)
+            logger.debug({ text: text.trim() }, 'Native caller transcript (final)')
+
+            // Update freeze detection state
+            call.lastCallerTranscript = text.trim()
+            call.lastRawCallerAudioAt = Date.now()
+
+            // Start freeze timer if Gemini isn't already responding
+            if (!call.geminiSpeaking) {
+              this.startGeminiResponseTimer(streamSid)
+            }
+          }
+        },
+        onAgentTranscript: (text, isFinal) => {
+          // Native agent transcription — log for debugging
+          logger.debug({ text: text.trim(), isFinal }, 'Native agent transcript')
+        },
+        onToolCallCancellation: (ids) => {
+          logger.info({ ids, callSid }, 'Tool calls cancelled by barge-in')
+          for (const id of ids) {
+            call.cancelledToolCalls.add(id)
+          }
+          // Clear pending Twilio audio buffer so barge-in takes effect immediately
+          if (call.streamSid) {
+            this.mediaServer.clearAudio(call.streamSid)
+          }
+        },
       },
     )
 
     try {
       await gemini.connect()
+      // Record which model was actually used (primary or fallback)
+      call.modelUsed = gemini.modelUsed
       this.geminiSessions.set(streamSid, gemini)
 
-      // Start silence monitoring
-      this.silenceDetector.startMonitoring(streamSid)
+      // Start silence monitoring immediately for outbound; inbound waits for greeting to complete
+      if (direction === 'outbound') {
+        this.silenceDetector.startMonitoring(streamSid)
+      }
 
       // Start max duration timer
       this.maxDurationTimers.set(streamSid, setTimeout(() => {
@@ -263,7 +385,7 @@ export class CallManager {
         setTimeout(() => this.endCall(streamSid, 'max-duration'), this.config.VOICE_GOODBYE_TIMEOUT_MS)
       }, this.config.VOICE_MAX_CALL_DURATION_MS))
 
-      logger.info({ callSid, streamSid, voice: this.config.VOICE_GEMINI_VOICE }, 'Audio bridge established')
+      logger.info({ callSid, streamSid, voice: this.config.VOICE_GEMINI_VOICE, modelUsed: call.modelUsed }, 'Audio bridge established')
     } catch (err) {
       logger.error({ err, callSid }, 'Failed to connect Gemini Live')
       this.endCall(streamSid, 'error')
@@ -274,14 +396,24 @@ export class CallManager {
    * Called for each audio frame from Twilio (caller speaking).
    */
   onMediaReceived(streamSid: string, mulawBuffer: Buffer): void {
+    const call = this.activeCalls.get(streamSid)
     const gemini = this.geminiSessions.get(streamSid)
     if (!gemini?.isConnected()) return
+
+    // GREETING GATE: don't forward caller audio until Gemini completes greeting (inbound only)
+    if (call && !call.greetingDone) return
+
+    // Track timestamp of last raw caller audio (for freeze detection)
+    if (call) call.lastRawCallerAudioAt = Date.now()
 
     // Convert mulaw 8kHz → PCM 16kHz
     const pcmBuffer = mulawToPcm16k(mulawBuffer)
 
     // Feed to silence detector
     this.silenceDetector.feedAudio(streamSid, pcmBuffer)
+
+    // Update session activity (throttled to max 1/min, fire-and-forget)
+    if (call) this.updateSessionActivity(call)
 
     // Send to Gemini
     gemini.sendAudio(pcmBuffer.toString('base64'))
@@ -310,6 +442,12 @@ export class CallManager {
     // Stop silence monitoring
     this.silenceDetector.stopMonitoring(streamSid)
 
+    // Clear freeze detection timer
+    if (call.geminiResponseTimer) {
+      clearTimeout(call.geminiResponseTimer)
+      call.geminiResponseTimer = null
+    }
+
     // Clear max duration timer
     const maxTimer = this.maxDurationTimers.get(streamSid)
     if (maxTimer) {
@@ -327,15 +465,8 @@ export class CallManager {
     // Close media stream
     this.mediaServer.closeStream(streamSid)
 
-    // Generate summary
-    const summary = await generateCallSummary(
-      this.registry,
-      call.transcript,
-      call.preloadedContext?.contactName ?? null,
-    )
-
-    // Update DB
-    await pgStore.completeCall(this.db, call.callSid, reason, summary)
+    // Update DB (summary will be generated by the compression pipeline)
+    await pgStore.completeCall(this.db, call.callSid, reason, call.modelUsed || null)
 
     // Save transcript to DB
     if (call.transcript.length > 0) {
@@ -344,17 +475,29 @@ export class CallManager {
       )
     }
 
-    // Persist to memory system
-    if (call.preloadedContext?.contactId) {
+    // Persist to memory system (saves messages, closes session, enqueues compression)
+    if (call.contactId && call.sessionId) {
       persistToMemory(
         this.registry,
         this.db,
-        call.preloadedContext.contactId,
+        call.contactId,
+        call.sessionId,
         call.startedAt,
         call.transcript,
-        summary,
       ).catch(() => {})
     }
+
+    // Safety: close session if persistToMemory didn't (e.g., empty transcript, no contactId)
+    if (call.sessionId) {
+      this.db.query(
+        `UPDATE sessions SET status = 'closed', last_activity_at = NOW()
+         WHERE id = $1 AND status = 'active'`,
+        [call.sessionId],
+      ).catch(() => {})
+    }
+
+    // Clean up activity tracker
+    this.lastActivityUpdate.delete(call.callId)
 
     // Hang up via Twilio (if caller didn't already)
     if (reason !== 'caller-hangup') {
@@ -458,26 +601,159 @@ export class CallManager {
 
     logger.info({ callSid: call.callSid, toolName }, 'Executing tool call from voice')
 
-    try {
-      const result = await toolRegistry.executeTool(toolName, args, {
-        contactId: call.contactId ?? undefined,
-        channel: 'voice',
-      })
+    const maxRetries = this.config.VOICE_TOOL_MAX_RETRIES
+    let attempt = 0
 
+    while (attempt <= maxRetries) {
+      // Start filler timer: if tool takes too long, ask Gemini to say something natural
+      const fillerTimer = setTimeout(() => {
+        if (!call.cancelledToolCalls.has(toolCallId) && gemini.isConnected()) {
+          const msg = attempt === 0
+            ? `[Sistema: la herramienta '${toolName}' est\u00e1 tardando. Decile algo breve y natural al caller mientras esperamos.]`
+            : `[Sistema: '${toolName}' sigue tardando. Decile que est\u00e1s reintentando, algo como 'hmm, dej\u00e1me intentar de nuevo'.]`
+          gemini.sendTextInput(msg)
+        }
+      }, this.config.VOICE_TOOL_FILLER_DELAY_MS)
+
+      let result: { success: boolean; data?: unknown; error?: string } | null = null
+      let timedOut = false
+
+      let timeoutTimer: ReturnType<typeof setTimeout> | null = null
+      try {
+        result = await Promise.race([
+          toolRegistry.executeTool(toolName, args, {
+            contactId: call.contactId ?? undefined,
+            channel: 'voice',
+          }),
+          new Promise<never>((_, reject) => {
+            timeoutTimer = setTimeout(() => reject(new Error('tool_timeout')), this.config.VOICE_TOOL_TIMEOUT_MS)
+          }),
+        ]).finally(() => {
+          if (timeoutTimer) clearTimeout(timeoutTimer)
+        })
+      } catch (err) {
+        if ((err as Error).message === 'tool_timeout') {
+          timedOut = true
+        } else {
+          clearTimeout(fillerTimer)
+          logger.error({ err, toolName }, 'Tool execution error')
+          gemini.sendToolResponse(toolCallId, toolName, {
+            error: `Error executing tool: ${String(err)}`,
+          })
+          return
+        }
+      } finally {
+        clearTimeout(fillerTimer)
+      }
+
+      // Check if cancelled by barge-in
+      if (call.cancelledToolCalls.has(toolCallId)) {
+        logger.info({ callSid: call.callSid, toolCallId, toolName }, 'Tool cancelled by barge-in, discarding result')
+        if (call.streamSid) {
+          this.mediaServer.clearAudio(call.streamSid)
+        }
+        return
+      }
+
+      if (timedOut) {
+        attempt++
+        if (attempt <= maxRetries) {
+          logger.warn({ callSid: call.callSid, toolName, attempt }, 'Tool timed out, retrying')
+          continue
+        }
+
+        // All retries exhausted
+        logger.error({ callSid: call.callSid, toolName }, 'Tool timed out after all retries')
+        gemini.sendTextInput(
+          `[Sistema: La herramienta '${toolName}' fall\u00f3 despu\u00e9s de reintentar. Decile que no pudiste completar esa acci\u00f3n ahora pero que lo dej\u00e1s agendado para hacerlo despu\u00e9s de la llamada. Usa la herramienta end_call si ya no hay m\u00e1s temas.]`,
+        )
+        gemini.sendToolResponse(toolCallId, toolName, {
+          error: `Tool timed out after ${attempt} attempt(s)`,
+        })
+        call.transcript.push({
+          speaker: 'system',
+          text: `[Tool: ${toolName}] Timeout after ${attempt} attempt(s)`,
+          timestampMs: Date.now() - call.startedAt.getTime(),
+        })
+        return
+      }
+
+      // Success
       gemini.sendToolResponse(toolCallId, toolName, result as Record<string, unknown>)
 
-      // Add to transcript
       call.transcript.push({
         speaker: 'system',
-        text: `[Tool: ${toolName}] ${result.success ? 'OK' : 'Error: ' + result.error}`,
+        text: `[Tool: ${toolName}] ${result!.success ? 'OK' : 'Error: ' + result!.error}`,
         timestampMs: Date.now() - call.startedAt.getTime(),
       })
-    } catch (err) {
-      logger.error({ err, toolName }, 'Tool execution error')
-      gemini.sendToolResponse(toolCallId, toolName, {
-        error: `Error executing tool: ${String(err)}`,
-      })
+      return
     }
+  }
+
+  /**
+   * Start (or restart) the freeze detection timer for a call.
+   * If Gemini doesn't produce audio within VOICE_GEMINI_FREEZE_TIMEOUT_MS:
+   *   - attempt 1: re-inject caller's last transcript as a system text prompt
+   *   - attempt 2+: hang up with reason 'gemini_freeze'
+   */
+  private startGeminiResponseTimer(streamSid: string): void {
+    const call = this.activeCalls.get(streamSid)
+    if (!call) return
+
+    // Clear existing timer
+    if (call.geminiResponseTimer) {
+      clearTimeout(call.geminiResponseTimer)
+      call.geminiResponseTimer = null
+    }
+
+    call.geminiResponseTimer = setTimeout(() => {
+      call.geminiResponseTimer = null
+      const c = this.activeCalls.get(streamSid)
+      if (!c || c.status !== 'active') return
+
+      // If Gemini is already speaking, it recovered — nothing to do
+      if (c.geminiSpeaking) return
+
+      // If there's no recent raw audio from caller, silence detector handles it
+      const silentCaller = Date.now() - c.lastRawCallerAudioAt > this.config.VOICE_GEMINI_FREEZE_TIMEOUT_MS
+      if (silentCaller) return
+
+      const gemini = this.geminiSessions.get(streamSid)
+      if (!gemini?.isConnected()) return
+
+      if (c.geminiFreezeAttempts < 1) {
+        // First attempt: re-inject the caller's last transcript
+        c.geminiFreezeAttempts++
+        logger.warn({ callSid: c.callSid, attempt: c.geminiFreezeAttempts }, 'Gemini freeze detected, re-injecting transcript')
+        gemini.sendTextInput(
+          `[Sistema: No respondiste al caller. Su \u00faltimo mensaje fue: "${c.lastCallerTranscript}". Resp\u00f3ndele ahora.]`,
+        )
+        // Schedule second attempt
+        this.startGeminiResponseTimer(streamSid)
+      } else {
+        // Second consecutive freeze — hang up
+        c.geminiFreezeAttempts++
+        logger.error({ callSid: c.callSid, attempt: c.geminiFreezeAttempts }, 'Gemini freeze: second failure, hanging up')
+        this.endCall(streamSid, 'gemini_freeze')
+      }
+    }, this.config.VOICE_GEMINI_FREEZE_TIMEOUT_MS)
+  }
+
+  /**
+   * Update sessions.last_activity_at during an active call.
+   * Throttled to max 1 update/min to avoid hammering the DB on every audio frame.
+   */
+  private updateSessionActivity(call: ActiveCall): void {
+    if (!call.sessionId) return
+    const now = Date.now()
+    const last = this.lastActivityUpdate.get(call.callId) ?? 0
+    if (now - last < 60_000) return
+
+    this.lastActivityUpdate.set(call.callId, now)
+    this.db.query(
+      'UPDATE sessions SET last_activity_at = NOW() WHERE id = $1',
+      [call.sessionId],
+    ).catch(() => {}) // fire-and-forget, must not block audio path
   }
 
   private handleSilence(streamSid: string): void {
@@ -506,5 +782,26 @@ export class CallManager {
     } catch {
       return ''
     }
+  }
+}
+
+// ═══════════════════════════════════════════
+// Timezone helpers
+// ═══════════════════════════════════════════
+
+function getLocalHour(date: Date, tz: string): number {
+  try {
+    return parseInt(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: tz }).format(date), 10)
+  } catch {
+    return date.getUTCHours()
+  }
+}
+
+function getLocalDayOfWeek(date: Date, tz: string): number {
+  try {
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: tz }).format(date)
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekday)
+  } catch {
+    return date.getUTCDay()
   }
 }

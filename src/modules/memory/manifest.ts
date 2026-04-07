@@ -9,6 +9,9 @@ import { numEnv, numEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { MemoryManager } from './memory-manager.js'
 import { CompressionWorker } from './compression-worker.js'
 import { searchSessionMemory } from './memory-search.js'
+import type { ToolRegistry } from '../tools/tool-registry.js'
+import { saveContactData } from './tools/save-contact-data.js'
+import { executeMergeContacts } from './tools/merge-contacts.js'
 
 let manager: MemoryManager | null = null
 let compressionWorker: CompressionWorker | null = null
@@ -195,6 +198,118 @@ const manifest: ModuleManifest = {
         hitlMax: config.MEMORY_CONTEXT_HITL_MAX,
       }),
     })
+
+    // Register contact management tools
+    const toolRegistry = registry.getOptional<ToolRegistry>('tools:registry')
+    if (toolRegistry) {
+      const db = registry.getDb()
+      const memManager = manager
+
+      await toolRegistry.registerTool({
+        definition: {
+          name: 'save_contact_data',
+          displayName: 'Guardar datos del contacto',
+          description: 'Guarda información del contacto descubierta durante la conversación: puntos de contacto (email, teléfono, WhatsApp), preferencias, fechas importantes, o datos clave. Úsala cuando el usuario comparta información personal relevante.',
+          shortDescription: 'Guarda datos del contacto (canales, preferencias, fechas, hechos clave)',
+          detailedGuidance: 'Tipos disponibles: contact_point (requiere channel y value), preference (requiere preference_key y preference_value), important_date (requiere date en ISO 8601 y date_description), key_fact (requiere fact). Si detectas un posible contacto duplicado (merge_candidate en la respuesta), informa al usuario y usa merge_contacts si confirma.',
+          category: 'contacts',
+          sourceModule: 'memory',
+          parameters: {
+            type: 'object',
+            properties: {
+              type: {
+                type: 'string',
+                enum: ['contact_point', 'preference', 'important_date', 'key_fact'],
+                description: 'Tipo de dato a guardar',
+              },
+              channel: {
+                type: 'string',
+                enum: ['email', 'whatsapp', 'phone', 'voice', 'other'],
+                description: 'Canal para contact_point',
+              },
+              value: {
+                type: 'string',
+                description: 'Email, teléfono u otro identificador para contact_point',
+              },
+              preference_key: {
+                type: 'string',
+                description: 'Clave de la preferencia (ej: "horario_contacto", "idioma", "canal_preferido")',
+              },
+              preference_value: {
+                type: 'string',
+                description: 'Valor de la preferencia',
+              },
+              date: {
+                type: 'string',
+                description: 'Fecha en formato ISO 8601 (ej: "2026-05-15") para important_date',
+              },
+              date_description: {
+                type: 'string',
+                description: 'Descripción de la fecha (ej: "Cumpleaños", "Aniversario de empresa")',
+              },
+              fact: {
+                type: 'string',
+                description: 'Dato clave sobre el contacto para key_fact',
+              },
+            },
+            required: ['type'],
+          },
+        },
+        handler: async (input, ctx) => {
+          const typedInput = input as unknown as import('./tools/save-contact-data.js').SaveContactDataInput
+          if (!ctx.contactId) {
+            return { success: false, data: { message: 'No hay contacto activo para guardar datos' } }
+          }
+          if (!memManager) {
+            return { success: false, data: { message: 'Memory manager no disponible' } }
+          }
+          const result = await saveContactData(typedInput, ctx.contactId, db, memManager)
+          return { success: result.success, data: result }
+        },
+      })
+
+      await toolRegistry.registerTool({
+        definition: {
+          name: 'merge_contacts',
+          displayName: 'Fusionar contactos duplicados',
+          description: 'Fusiona dos contactos que son la misma persona. Transfiere todos los canales, sesiones, mensajes y memoria al contacto principal (keep_contact_id) y marca el otro como fusionado.',
+          shortDescription: 'Fusiona dos contactos duplicados en uno solo',
+          detailedGuidance: 'Usar solo cuando estés seguro de que ambos contactos son la misma persona (idealmente después de que el usuario lo confirmó). El contacto merge_contact_id queda soft-deleted. Esta operación es irreversible sin intervención manual.',
+          category: 'contacts',
+          sourceModule: 'memory',
+          parameters: {
+            type: 'object',
+            properties: {
+              keep_contact_id: {
+                type: 'string',
+                description: 'ID del contacto a mantener como principal',
+              },
+              merge_contact_id: {
+                type: 'string',
+                description: 'ID del contacto a absorber (será marcado como fusionado)',
+              },
+              reason: {
+                type: 'string',
+                description: 'Razón del merge (ej: "usuario confirmó que es la misma persona", "mismo email detectado")',
+              },
+            },
+            required: ['keep_contact_id', 'merge_contact_id', 'reason'],
+          },
+        },
+        handler: async (input, ctx) => {
+          if (!ctx.contactId) {
+            return { success: false, data: { message: 'No hay contacto activo en esta conversación' } }
+          }
+          const typedInput = input as unknown as import('./tools/merge-contacts.js').MergeContactsInput
+          // At least one of the IDs must be the current contact (prevent arbitrary merges)
+          if (typedInput.keep_contact_id !== ctx.contactId && typedInput.merge_contact_id !== ctx.contactId) {
+            return { success: false, data: { message: 'Al menos uno de los contactos debe ser el contacto actual de la conversación' } }
+          }
+          const result = await executeMergeContacts(typedInput, db)
+          return { success: result.success, data: result }
+        },
+      })
+    }
   },
 
   async stop() {

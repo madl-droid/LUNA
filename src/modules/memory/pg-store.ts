@@ -317,9 +317,23 @@ export class PgStore {
 
   async getUnmergedSummaries(contactId: string): Promise<SessionSummary[]> {
     try {
+      // Query both v1 and v2 tables — v2 columns aliased to match v1 schema
       const result = await this.pool.query(
-        `SELECT *
+        `SELECT id, session_id, contact_id, channel_identifier, summary_text,
+                summary_language, key_facts, structured_data, original_message_count,
+                model_used, compression_tokens, interaction_started_at, interaction_closed_at,
+                merged_to_memory_at, created_at, 'v1' AS source_table
          FROM session_summaries
+         WHERE contact_id = $1 AND merged_to_memory_at IS NULL
+         UNION ALL
+         SELECT id::text, session_id, contact_id, NULL AS channel_identifier,
+                full_summary AS summary_text, 'es' AS summary_language,
+                '[]'::jsonb AS key_facts, '{}'::jsonb AS structured_data,
+                0 AS original_message_count, model_used,
+                tokens_used AS compression_tokens,
+                created_at AS interaction_started_at, created_at AS interaction_closed_at,
+                merged_to_memory_at, created_at, 'v2' AS source_table
+         FROM session_summaries_v2
          WHERE contact_id = $1 AND merged_to_memory_at IS NULL
          ORDER BY interaction_started_at ASC`,
         [contactId],
@@ -334,10 +348,17 @@ export class PgStore {
   async markSummariesMerged(summaryIds: string[]): Promise<void> {
     if (summaryIds.length === 0) return
     try {
-      await this.pool.query(
-        `UPDATE session_summaries SET merged_to_memory_at = now() WHERE id = ANY($1)`,
-        [summaryIds],
-      )
+      // Update both tables — IDs are unique across tables so both queries are safe
+      await Promise.all([
+        this.pool.query(
+          `UPDATE session_summaries SET merged_to_memory_at = now() WHERE id = ANY($1)`,
+          [summaryIds],
+        ),
+        this.pool.query(
+          `UPDATE session_summaries_v2 SET merged_to_memory_at = now() WHERE id::text = ANY($1)`,
+          [summaryIds],
+        ),
+      ])
     } catch (err) {
       logger.warn({ err, count: summaryIds.length }, 'Failed to mark summaries as merged')
     }

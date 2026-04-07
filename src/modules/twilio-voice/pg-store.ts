@@ -104,7 +104,7 @@ export async function completeCall(
   db: Pool,
   callSid: string,
   endReason: string,
-  summary: string | null,
+  modelUsed: string | null = null,
 ): Promise<void> {
   await db.query(
     `UPDATE voice_calls
@@ -112,9 +112,9 @@ export async function completeCall(
          ended_at = now(),
          duration_seconds = EXTRACT(EPOCH FROM (now() - COALESCE(connected_at, started_at)))::INTEGER,
          end_reason = $1,
-         summary = $2
+         model_used = $2
      WHERE call_sid = $3`,
-    [endReason, summary, callSid],
+    [endReason, modelUsed, callSid],
   )
 }
 
@@ -192,6 +192,29 @@ export async function getTranscript(db: Pool, callId: string): Promise<VoiceCall
     [callId],
   )
   return result.rows
+}
+
+// ═══════════════════════════════════════════
+// Rate limiting
+// ═══════════════════════════════════════════
+
+/**
+ * Count recent outbound calls to a given phone number within the last N minutes.
+ * Used for outbound rate limiting.
+ */
+export async function countRecentCalls(
+  db: Pool,
+  toNumber: string,
+  direction: string,
+  minutesBack: number,
+): Promise<number> {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) as count FROM voice_calls
+     WHERE to_number = $1 AND direction = $2
+     AND started_at > NOW() - make_interval(mins => $3)`,
+    [toNumber, direction, minutesBack],
+  )
+  return parseInt(result.rows[0]?.count ?? '0', 10)
 }
 
 // ═══════════════════════════════════════════
