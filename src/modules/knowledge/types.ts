@@ -275,6 +275,51 @@ export interface KnowledgeConfig {
 }
 
 // ═══════════════════════════════════════════
+// Drive Folder Index (WP3 — knowledge crawl)
+// ═══════════════════════════════════════════
+
+export interface DriveFolderIndex {
+  itemId: string                // knowledge_item.id
+  rootFolderId: string          // Drive folder ID de la raíz
+  structure: DriveFolderNode[]  // árbol completo
+  lastCrawlAt: Date
+  fileCount: number
+  folderCount: number
+}
+
+export interface DriveFolderNode {
+  id: string
+  name: string
+  mimeType: string
+  path: string                  // "Subcarpeta/archivo.pdf" (relativo a la raíz)
+  parentId: string | null
+  isFolder: boolean
+  modifiedTime?: string
+  webViewLink?: string
+  contentHash?: string          // md5Checksum para detección de cambios
+  documentId?: string           // knowledge_document.id si ya procesado
+  status: 'pending' | 'processed' | 'error' | 'skipped'
+}
+
+// Row retornado por pg-store (con fileId como columna DB)
+export interface FolderIndexEntry {
+  id: string
+  itemId: string
+  fileId: string
+  name: string
+  mimeType: string
+  path: string
+  parentId: string | null
+  isFolder: boolean
+  modifiedTime?: string
+  webViewLink?: string
+  contentHash?: string
+  documentId?: string
+  status: string
+  errorMessage?: string
+}
+
+// ═══════════════════════════════════════════
 // Stats
 // ═══════════════════════════════════════════
 

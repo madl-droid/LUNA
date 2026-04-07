@@ -261,6 +261,8 @@ export interface DriveFileEntry {
   mimeType: string
   driveType: 'document' | 'spreadsheet' | 'presentation' | 'folder' | 'file'
   suggestedTool: string
+  isFolder?: boolean
+  webViewLink?: string
 }
 
 export interface DriveResult {
