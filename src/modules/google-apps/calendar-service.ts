@@ -11,9 +11,13 @@ import type {
   CalendarEventListOptions,
   CalendarEventCreateOptions,
   CalendarEventUpdateOptions,
+  CalendarCreateResult,
+  CalendarAvailabilityOptions,
+  CalendarAvailabilityResult,
   GoogleApiConfig,
 } from './types.js'
 import { googleApiCall } from './api-wrapper.js'
+import { mergeBusyIntervals, calculateFreeSlots } from './calendar-helpers.js'
 
 const logger = pino({ name: 'google-apps:calendar' })
 
@@ -83,10 +87,32 @@ export class CalendarService {
     return this.mapEvent(res.data)
   }
 
-  async createEvent(options: CalendarEventCreateOptions): Promise<CalendarEvent> {
+  async createEvent(options: CalendarEventCreateOptions): Promise<CalendarCreateResult> {
     const calendarId = options.calendarId ?? 'primary'
 
-    const res = await googleApiCall(() => this.calendar.events.insert({
+    // Conflict check: si hay attendees y no se fuerza, verificar solapamientos
+    if (options.force !== true && options.attendees && options.attendees.length > 0 && options.start.dateTime && options.end.dateTime) {
+      const busyData = await this.findFreeSlots(
+        options.start.dateTime,
+        options.end.dateTime,
+        options.attendees.map((a) => a.email),
+      )
+      const conflicting = busyData
+        .filter((c) => c.busy.length > 0)
+        .map((c) => c.calendarId)
+      if (conflicting.length > 0) {
+        return {
+          created: false,
+          conflicts: conflicting,
+          warning: `Hay conflictos con: ${conflicting.join(', ')}. Usa force=true para crear de todas formas.`,
+        }
+      }
+    }
+
+    const addMeet = options.addMeet !== false
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const insertParams: Record<string, any> = {
       calendarId,
       sendUpdates: options.sendUpdates ?? 'all',
       requestBody: {
@@ -102,10 +128,27 @@ export class CalendarService {
         })),
         reminders: options.reminders,
       },
-    }), this.apiConfig, 'calendar.events.insert')
+    }
+
+    if (addMeet) {
+      insertParams.conferenceDataVersion = 1
+      insertParams.requestBody.conferenceData = {
+        createRequest: {
+          requestId: `luna-${Date.now()}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      }
+    }
+
+    const res = await googleApiCall(() => this.calendar.events.insert(insertParams), this.apiConfig, 'calendar.events.insert')
 
     logger.info({ eventId: res.data.id, summary: options.summary }, 'Calendar event created')
-    return this.mapEvent(res.data)
+    const event = this.mapEvent(res.data)
+    return {
+      created: true,
+      event,
+      meetLink: event.meetLink ?? null,
+    }
   }
 
   async updateEvent(options: CalendarEventUpdateOptions): Promise<CalendarEvent> {
@@ -242,6 +285,13 @@ export class CalendarService {
     const startRaw = e.start as Record<string, unknown> | undefined
     const endRaw = e.end as Record<string, unknown> | undefined
 
+    // Extraer Meet link desde conferenceData o hangoutLink
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const entryPoints = (e.conferenceData?.entryPoints ?? []) as Array<any>
+    const meetLink: string | undefined =
+      entryPoints.find((ep) => ep.entryPointType === 'video')?.uri
+      ?? (e.hangoutLink ? String(e.hangoutLink) : undefined)
+
     return {
       id: String(e.id ?? ''),
       summary: String(e.summary ?? ''),
@@ -273,9 +323,97 @@ export class CalendarService {
       status: e.status as CalendarEvent['status'],
       htmlLink: e.htmlLink ? String(e.htmlLink) : undefined,
       hangoutLink: e.hangoutLink ? String(e.hangoutLink) : undefined,
+      meetLink,
       recurringEventId: e.recurringEventId ? String(e.recurringEventId) : undefined,
       created: e.created ? String(e.created) : undefined,
       updated: e.updated ? String(e.updated) : undefined,
+    }
+  }
+
+  // ─── checkAvailability ─────────────────────
+
+  async checkAvailability(options: CalendarAvailabilityOptions): Promise<CalendarAvailabilityResult> {
+    const { emails, date, durationMinutes, includeOwnCalendar = true } = options
+
+    const d = new Date(`${date}T00:00:00Z`)
+    const nextD = new Date(d)
+    nextD.setUTCDate(nextD.getUTCDate() + 1)
+    const timeMin = d.toISOString()
+    const timeMax = nextD.toISOString()
+
+    const calendarIds: string[] = includeOwnCalendar ? ['primary', ...emails] : [...emails]
+
+    const failedCalendars: string[] = []
+    const warnings: string[] = []
+    const allBusy: Array<{ calId: string; start: string; end: string }> = []
+
+    try {
+      const res = await this.calendar.freebusy.query({
+        requestBody: {
+          timeMin,
+          timeMax,
+          items: calendarIds.map((id) => ({ id })),
+        },
+      })
+
+      const calendarData = res.data.calendars ?? {}
+
+      for (const [calId, data] of Object.entries(calendarData)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const calData = data as any
+        if (calData.errors && calData.errors.length > 0) {
+          // Fallback: intentar con events.list
+          try {
+            const evRes = await this.calendar.events.list({
+              calendarId: calId,
+              timeMin,
+              timeMax,
+              singleEvents: true,
+              orderBy: 'startTime',
+            })
+            const items = evRes.data.items ?? []
+            for (const ev of items) {
+              const evStart = (ev.start as Record<string, string> | undefined)?.dateTime ?? timeMin
+              const evEnd = (ev.end as Record<string, string> | undefined)?.dateTime ?? timeMax
+              allBusy.push({ calId, start: evStart, end: evEnd })
+            }
+          } catch {
+            failedCalendars.push(calId)
+            warnings.push(`No se pudo leer calendario de ${calId}`)
+          }
+        } else {
+          const busyPeriods = (calData.busy ?? []) as Array<{ start: string; end: string }>
+          for (const b of busyPeriods) {
+            allBusy.push({ calId, start: b.start ?? '', end: b.end ?? '' })
+          }
+        }
+      }
+    } catch (err) {
+      logger.error({ err, date }, 'checkAvailability freebusy.query failed')
+      warnings.push('Error consultando disponibilidad')
+    }
+
+    // busyPeople: emails que tienen al menos un bloque busy
+    const busyPeople = [...new Set(
+      allBusy
+        .filter((b) => b.calId !== 'primary' && emails.includes(b.calId))
+        .map((b) => b.calId),
+    )]
+
+    // Merge todos los busy blocks para calcular free slots
+    const mergedBusy = mergeBusyIntervals(allBusy.map((b) => ({ start: b.start, end: b.end })))
+
+    // Usar boundaries del día completo para el cálculo de slots
+    const dayStart = timeMin
+    const dayEnd = timeMax
+    const freeSlots = calculateFreeSlots(mergedBusy, dayStart, dayEnd, durationMinutes)
+
+    return {
+      date,
+      busyPeople,
+      freeSlots: freeSlots.map((s) => ({ start: s.start, end: s.end, durationMinutes: s.durationMinutes })),
+      failedCalendars,
+      warnings,
     }
   }
 }

@@ -148,6 +148,7 @@ export interface CalendarEvent {
   status?: 'confirmed' | 'tentative' | 'cancelled'
   htmlLink?: string
   hangoutLink?: string
+  meetLink?: string
   recurringEventId?: string
   created?: string
   updated?: string
@@ -193,6 +194,8 @@ export interface CalendarEventCreateOptions {
   attendees?: Array<{ email: string; displayName?: string; optional?: boolean }>
   sendUpdates?: 'all' | 'externalOnly' | 'none'
   reminders?: { useDefault: boolean; overrides?: Array<{ method: 'email' | 'popup'; minutes: number }> }
+  addMeet?: boolean
+  force?: boolean
 }
 
 export interface CalendarEventUpdateOptions {
@@ -205,4 +208,50 @@ export interface CalendarEventUpdateOptions {
   end?: { dateTime?: string; date?: string; timeZone?: string }
   attendees?: Array<{ email: string; displayName?: string; optional?: boolean }>
   sendUpdates?: 'all' | 'externalOnly' | 'none'
+}
+
+// ═══════════════════════════════════════════
+// Calendar enhanced types (Plan 1)
+// ═══════════════════════════════════════════
+
+export interface CalendarCreateResult {
+  created: boolean
+  event?: CalendarEvent
+  meetLink?: string | null
+  conflicts?: string[]
+  warning?: string
+}
+
+export interface CalendarAvailabilityOptions {
+  emails: string[]
+  date: string
+  durationMinutes: number
+  includeOwnCalendar?: boolean
+}
+
+export interface CalendarFreeSlot {
+  start: string
+  end: string
+  durationMinutes: number
+}
+
+export interface CalendarAvailabilityResult {
+  date: string
+  busyPeople: string[]
+  freeSlots: CalendarFreeSlot[]
+  failedCalendars: string[]
+  warnings: string[]
+}
+
+export interface CalendarSchedulingConfig {
+  meetEnabled: boolean
+  defaultReminders: Array<{ method: 'email' | 'popup'; minutes: number }>
+  defaultDurationMinutes: number
+  eventNamePrefix: string
+  descriptionInstructions: string
+  daysOff: Array<{ type: 'single'; date: string } | { type: 'range'; start: string; end: string }>
+  followUpPost: { enabled: boolean; delayMinutes: number }
+  followUpPre: { enabled: boolean; hoursBefore: number }
+  schedulingRoles: Record<string, { enabled: boolean; instructions: string }>
+  schedulingCoworkers: Record<string, { enabled: boolean; instructions: string }>
 }
