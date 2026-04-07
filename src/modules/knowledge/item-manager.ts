@@ -17,6 +17,8 @@ import type {
   KnowledgeSourceType,
   KnowledgeConfig,
   SmartChunk,
+  DriveFolderNode,
+  FolderIndexEntry,
 } from './types.js'
 import {
   chunkDocs,
@@ -95,8 +97,12 @@ interface DocsService {
 }
 
 interface DriveService {
-  listFiles(options: { folderId?: string; mimeType?: string; pageSize?: number }): Promise<{
-    files: Array<{ id: string; name: string; mimeType: string; webViewLink?: string }>
+  listFiles(options: {
+    folderId?: string; mimeType?: string; pageSize?: number
+    pageToken?: string; orderBy?: string; fields?: string
+  }): Promise<{
+    files: Array<{ id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string }>
+    nextPageToken?: string
   }>
   getFile(fileId: string): Promise<{ id: string; name: string; mimeType: string; modifiedTime?: string; webViewLink?: string }>
   downloadFile(fileId: string): Promise<Buffer>
@@ -633,24 +639,221 @@ export class KnowledgeItemManager {
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 100 })
+    // ═══ Fase 1: Crawl completo (solo metadata — rápido) ═══
+    const allNodes = await this.crawlDriveFolder(drive, item.sourceId, '', null, 0)
+
+    // Filter ignored files
+    const filteredNodes = allNodes.filter(n => !n.isFolder && !ignoredNames.has(n.name))
+    const folderNodes = allNodes.filter(n => n.isFolder)
+
+    logger.info({
+      itemId: item.id, fileCount: filteredNodes.length, folderCount: folderNodes.length,
+    }, '[DRIVE] Folder structure scanned')
+
+    // Persist folder index (all nodes including folders)
+    await this.pgStore.replaceFolderIndex(item.id, allNodes)
+
+    // ═══ Fase 2: Procesar archivos nivel por nivel ═══
+    const byDepth = new Map<number, DriveFolderNode[]>()
+    for (const file of filteredNodes) {
+      const depth = file.path.split('/').length - 1
+      const list = byDepth.get(depth) ?? []
+      list.push(file)
+      byDepth.set(depth, list)
+    }
+
     let totalChunks = 0
+    const sortedDepths = [...byDepth.keys()].sort((a, b) => a - b)
 
-    for (const file of result.files) {
-      if (ignoredNames.has(file.name)) {
-        logger.debug({ name: file.name }, 'Drive file ignored')
-        continue
+    for (const depth of sortedDepths) {
+      const levelFiles = byDepth.get(depth)!
+      logger.info({ depth, fileCount: levelFiles.length }, '[DRIVE] Processing level')
+
+      for (const node of levelFiles) {
+        try {
+          const fileObj = {
+            id: node.id,
+            name: node.name,
+            mimeType: node.mimeType,
+            webViewLink: node.webViewLink,
+          }
+          const chunks = await this.loadDriveFile(fileObj, item)
+          totalChunks += chunks
+          await this.pgStore.updateFolderIndexEntry(item.id, node.id, { status: 'processed' })
+        } catch (err) {
+          await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
+            status: 'error',
+            errorMessage: (err as Error).message,
+          })
+          logger.warn({ err, fileId: node.id, name: node.name, path: node.path }, '[DRIVE] File failed')
+        }
       }
 
-      try {
-        const chunks = await this.loadDriveFile(file, item)
-        totalChunks += chunks
-      } catch (err) {
-        logger.warn({ err, fileId: file.id, name: file.name }, 'Failed to load drive file, skipping')
-      }
+      logger.info({ depth, totalChunks }, '[DRIVE] Level complete')
     }
 
     return totalChunks
+  }
+
+  /**
+   * Crawl recursivo de una carpeta de Drive (solo metadata, sin descargar archivos).
+   * Retorna todos los nodos (carpetas + archivos) con path relativo desde la raíz.
+   */
+  private async crawlDriveFolder(
+    drive: DriveService,
+    folderId: string,
+    parentPath: string,
+    parentId: string | null,
+    depth: number,
+  ): Promise<DriveFolderNode[]> {
+    if (depth > 10) {
+      logger.warn({ folderId, depth }, '[DRIVE] Max depth reached, stopping recursion')
+      return []
+    }
+
+    const nodes: DriveFolderNode[] = []
+    let pageToken: string | undefined
+
+    do {
+      const result = await drive.listFiles({
+        folderId,
+        pageSize: 100,
+        pageToken,
+        orderBy: 'folder,name',
+        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, webViewLink, md5Checksum)',
+      })
+
+      for (const file of result.files) {
+        const isFolder = file.mimeType === 'application/vnd.google-apps.folder'
+        const path = parentPath ? `${parentPath}/${file.name}` : file.name
+
+        nodes.push({
+          id: file.id,
+          name: file.name,
+          mimeType: file.mimeType,
+          path,
+          parentId,
+          isFolder,
+          modifiedTime: file.modifiedTime,
+          webViewLink: file.webViewLink,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          contentHash: (file as any).md5Checksum ?? undefined,
+          status: 'pending',
+        })
+
+        // Recursión en subcarpetas
+        if (isFolder) {
+          const children = await this.crawlDriveFolder(drive, file.id, path, file.id, depth + 1)
+          nodes.push(...children)
+        }
+      }
+
+      pageToken = result.nextPageToken
+    } while (pageToken)
+
+    return nodes
+  }
+
+  /**
+   * Sync incremental de carpeta: re-crawl + comparación con índice existente.
+   * Retorna conteo de archivos añadidos, actualizados y eliminados.
+   */
+  async syncDriveFolder(item: KnowledgeItem): Promise<{ added: number; updated: number; deleted: number; chunks: number }> {
+    const drive = this.registry.getOptional<DriveService>('google:drive')
+    if (!drive) throw new Error('Servicio Google Drive no disponible')
+
+    // 1. Re-crawl (solo metadata — rápido)
+    const freshNodes = await this.crawlDriveFolder(drive, item.sourceId, '', null, 0)
+    const freshFiles = freshNodes.filter(n => !n.isFolder)
+    const freshMap = new Map(freshFiles.map(n => [n.id, n]))
+
+    // 2. Cargar índice existente
+    const existingEntries = await this.pgStore.getFolderIndex(item.id)
+    const existingFiles = existingEntries.filter(e => !e.isFolder)
+    const existingMap = new Map(existingFiles.map(e => [e.fileId, e]))
+
+    let added = 0, updated = 0, deleted = 0, totalChunks = 0
+
+    // Detectar archivos ignorados
+    const allTabs = item.tabs ?? []
+    const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
+
+    // 3a. Nuevos y modificados
+    for (const [fileId, freshNode] of freshMap) {
+      if (ignoredNames.has(freshNode.name)) {
+        freshNode.status = 'skipped'
+        continue
+      }
+
+      const existing = existingMap.get(fileId)
+
+      if (!existing) {
+        freshNode.status = 'pending'
+        added++
+      } else if (hasFileChanged(existing, freshNode)) {
+        // Archivo modificado — limpiar documento viejo si existe
+        if (existing.documentId) {
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_chunks WHERE document_id = $1`, [existing.documentId],
+          )
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_documents WHERE id = $1`, [existing.documentId],
+          )
+        }
+        freshNode.status = 'pending'
+        updated++
+      } else {
+        // Sin cambios — mantener estado existente
+        freshNode.status = existing.status as DriveFolderNode['status']
+        freshNode.documentId = existing.documentId
+      }
+    }
+
+    // 3b. Detectar eliminados
+    for (const [fileId, existing] of existingMap) {
+      if (!freshMap.has(fileId)) {
+        if (existing.documentId) {
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_chunks WHERE document_id = $1`, [existing.documentId],
+          )
+          await this.pgStore.getPool().query(
+            `DELETE FROM knowledge_documents WHERE id = $1`, [existing.documentId],
+          )
+        }
+        deleted++
+      }
+    }
+
+    // 4. Reemplazar índice completo
+    await this.pgStore.replaceFolderIndex(item.id, freshNodes)
+
+    // 5. Procesar pendientes
+    const pending = freshFiles.filter(n => n.status === 'pending')
+    logger.info({
+      itemId: item.id, added, updated, deleted, pending: pending.length,
+    }, '[DRIVE] Sync diff computed')
+
+    for (const node of pending) {
+      try {
+        const fileObj = {
+          id: node.id,
+          name: node.name,
+          mimeType: node.mimeType,
+          webViewLink: node.webViewLink,
+        }
+        const chunks = await this.loadDriveFile(fileObj, item)
+        totalChunks += chunks
+        await this.pgStore.updateFolderIndexEntry(item.id, node.id, { status: 'processed' })
+      } catch (err) {
+        await this.pgStore.updateFolderIndexEntry(item.id, node.id, {
+          status: 'error',
+          errorMessage: (err as Error).message,
+        })
+        logger.warn({ err, fileId: node.id, name: node.name }, '[DRIVE] Sync file failed')
+      }
+    }
+
+    return { added, updated, deleted, chunks: totalChunks }
   }
 
   /** Load a single file from Drive, dispatching by MIME type */
@@ -1261,6 +1464,35 @@ export class KnowledgeItemManager {
     return names
   }
 
+  // ─── Drive folder index helpers ─────────────
+
+  /**
+   * Build a text tree view from folder index entries for the console/injection.
+   */
+  async buildFolderTreeText(itemId: string): Promise<string> {
+    const entries = await this.pgStore.getFolderIndex(itemId)
+    const sorted = entries.sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1
+      return a.path.localeCompare(b.path)
+    })
+
+    const lines: string[] = []
+    for (const entry of sorted) {
+      const depth = entry.path.split('/').length - 1
+      const indent = '  '.repeat(depth)
+      const icon = entry.isFolder ? '📁' : '📄'
+      const status = entry.isFolder
+        ? ''
+        : entry.status === 'processed'
+          ? ' ✅'
+          : entry.status === 'error'
+            ? ' ❌'
+            : ' ⏳'
+      lines.push(`${indent}${icon} ${entry.name}${status}`)
+    }
+    return lines.join('\n')
+  }
+
   /** Scan column headers using Google Sheets API v4 with API key (public sheets only) */
   private async scanColumnsPublic(spreadsheetId: string, tabName: string): Promise<string[]> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
@@ -1282,5 +1514,21 @@ export class KnowledgeItemManager {
     logger.info({ spreadsheetId, tabName, count: headers.length }, 'Columns scanned via public API')
     return headers
   }
+}
+
+// ─── Module-level helpers ─────────────────────
+
+/**
+ * Detect if a Drive file has changed since the last crawl.
+ * Uses md5Checksum for binary files, modifiedTime for Google-native formats.
+ */
+function hasFileChanged(existing: FolderIndexEntry, fresh: DriveFolderNode): boolean {
+  if (fresh.contentHash && existing.contentHash) {
+    return fresh.contentHash !== existing.contentHash
+  }
+  if (fresh.modifiedTime && existing.modifiedTime) {
+    return new Date(fresh.modifiedTime).getTime() > new Date(existing.modifiedTime).getTime()
+  }
+  return false  // no podemos determinar → asumir sin cambios
 }
 

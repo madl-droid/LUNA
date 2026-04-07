@@ -7,6 +7,7 @@ import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
 import type { KnowledgePgStore } from './pg-store.js'
 import type { KnowledgeManager } from './knowledge-manager.js'
+import type { KnowledgeItemManager } from './item-manager.js'
 import type { KnowledgeSyncSource } from './types.js'
 import { SYNC_FREQUENCY_MS, type KnowledgeConfig } from './types.js'
 import { isSupportedMimeType, GOOGLE_NATIVE_TYPES, resolveMimeType } from './extractors/index.js'
@@ -24,6 +25,7 @@ export class SyncManager {
     private config: KnowledgeConfig,
     private registry: Registry,
     _redis: Redis,
+    private itemManager?: KnowledgeItemManager,
   ) {}
 
   /**
@@ -106,9 +108,32 @@ export class SyncManager {
     }
   }
 
+  /** Allow setting itemManager after construction (circular dependency avoidance) */
+  setItemManager(manager: KnowledgeItemManager): void {
+    this.itemManager = manager
+  }
+
   // ─── Drive sync ────────────────────────────
 
   private async syncDrive(source: KnowledgeSyncSource): Promise<{ synced: number; errors: number }> {
+    // If there's a knowledge item backed by this Drive folder, use incremental folder sync
+    if (this.itemManager) {
+      const item = await this.pgStore.findItemBySourceId(source.ref)
+      if (item && item.sourceType === 'drive') {
+        try {
+          const result = await this.itemManager.syncDriveFolder(item)
+          logger.info({
+            itemId: item.id, added: result.added, updated: result.updated,
+            deleted: result.deleted, chunks: result.chunks,
+          }, '[DRIVE] Incremental folder sync complete')
+          return { synced: result.added + result.updated, errors: 0 }
+        } catch (err) {
+          logger.error({ err, itemId: item.id }, '[DRIVE] Folder sync failed')
+          return { synced: 0, errors: 1 }
+        }
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const driveService = this.registry.getOptional<any>('google:drive')
     if (!driveService) {

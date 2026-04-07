@@ -1269,6 +1269,8 @@ const manifest: ModuleManifest = {
     if (vectorizeWorker) {
       itemManager.setVectorizeWorker(vectorizeWorker)
     }
+    // Link item manager to sync manager for incremental Drive folder sync (WP7)
+    syncManager.setItemManager(itemManager)
 
     // Register services
     registry.provide('knowledge:manager', knowledgeManager)

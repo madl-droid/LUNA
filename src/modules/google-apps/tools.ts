@@ -71,29 +71,47 @@ export async function registerGoogleTools(
       definition: {
         name: 'drive-list-files',
         displayName: 'Listar archivos en Drive',
-        description: 'Lista archivos y carpetas en Google Drive del agente. Puede buscar por nombre, carpeta o tipo.',
+        description: 'Lista archivos y carpetas en Google Drive del agente. Puede navegar carpetas por folderId, buscar por nombre, filtrar por tipo y paginar resultados.',
         category: 'drive',
         sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
             query: { type: 'string', description: 'Texto a buscar en nombres de archivo' },
-            folderId: { type: 'string', description: 'ID de carpeta específica para listar contenido' },
+            folderId: { type: 'string', description: 'ID de carpeta para listar su contenido (carpetas primero, luego archivos)' },
             mimeType: { type: 'string', description: 'Filtrar por tipo MIME (ej: application/vnd.google-apps.spreadsheet)' },
             sharedWithMe: { type: 'boolean', description: 'Mostrar archivos compartidos conmigo' },
-            pageSize: { type: 'number', description: 'Cantidad de resultados (default: 20)' },
+            pageSize: { type: 'number', description: 'Cantidad de resultados por página (default: 50, max: 100)' },
+            pageToken: { type: 'string', description: 'Token para obtener la siguiente página de resultados (viene de nextPageToken)' },
           },
         },
       },
       handler: async (input) => {
+        const pageSize = Math.min((input.pageSize as number | undefined) ?? 50, 100)
         const result = await drive.listFiles({
           query: input.query as string | undefined,
           folderId: input.folderId as string | undefined,
           mimeType: input.mimeType as string | undefined,
           includeSharedWithMe: input.sharedWithMe as boolean | undefined,
-          pageSize: input.pageSize as number | undefined,
+          pageSize,
+          pageToken: input.pageToken as string | undefined,
         })
-        return { success: true, data: result }
+        return {
+          success: true,
+          data: {
+            files: result.files.map(f => ({
+              id: f.id,
+              name: f.name,
+              mimeType: f.mimeType,
+              isFolder: f.mimeType === 'application/vnd.google-apps.folder',
+              size: f.size,
+              modifiedTime: f.modifiedTime,
+              webViewLink: f.webViewLink,
+            })),
+            nextPageToken: result.nextPageToken ?? null,
+            totalShown: result.files.length,
+          },
+        }
       },
     })
 
