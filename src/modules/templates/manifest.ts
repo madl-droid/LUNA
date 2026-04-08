@@ -10,6 +10,7 @@ import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.j
 import { TemplatesService } from './service.js'
 import { renderTemplatesSection } from './render-section.js'
 import { registerTemplateTools } from './tools.js'
+import { COMPARATIVO_SLUG, COMPARATIVO_SYSTEM_PROMPT } from './comparativo-subagent.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 import type {
   TemplatesConfig,
@@ -22,8 +23,9 @@ import type {
 
 const logger = pino({ name: 'templates' })
 
-// Module-level service reference — set during init, used by API route handlers
+// Module-level references — set during init, used by API route handlers and stop()
 let service: TemplatesService | undefined
+let _registry: Registry | undefined
 
 const manifest: ModuleManifest = {
   name: 'templates',
@@ -262,6 +264,7 @@ const manifest: ModuleManifest = {
   },
 
   async init(registry: Registry) {
+    _registry = registry
     const config = registry.getConfig<TemplatesConfig>('templates')
     const db = registry.getDb()
 
@@ -286,11 +289,41 @@ const manifest: ModuleManifest = {
       logger.warn('tools:registry not available — templates tools not registered')
     }
 
+    // Enable comparativo-researcher subagent and inject system prompt
+    try {
+      await db.query(
+        `UPDATE subagent_types SET system_prompt = $1, enabled = true, updated_at = now() WHERE slug = $2`,
+        [COMPARATIVO_SYSTEM_PROMPT, COMPARATIVO_SLUG],
+      )
+      const saCatalog = registry.getOptional<{ reload(): Promise<void> }>('subagents:catalog')
+      await saCatalog?.reload()
+      logger.info('comparativo-researcher subagent enabled')
+    } catch (err) {
+      logger.warn({ err }, 'Could not enable comparativo-researcher subagent')
+    }
+
     logger.info('templates module initialized')
   },
 
   async stop() {
+    // Disable comparativo-researcher subagent when module deactivates
+    if (_registry) {
+      try {
+        const db = _registry.getDb()
+        await db.query(
+          `UPDATE subagent_types SET enabled = false, updated_at = now() WHERE slug = $1`,
+          [COMPARATIVO_SLUG],
+        )
+        const saCatalog = _registry.getOptional<{ reload(): Promise<void> }>('subagents:catalog')
+        await saCatalog?.reload()
+        logger.info('comparativo-researcher subagent disabled')
+      } catch (err) {
+        logger.warn({ err }, 'Could not disable comparativo-researcher subagent')
+      }
+    }
+
     service = undefined
+    _registry = undefined
     logger.info('templates module stopped')
   },
 }

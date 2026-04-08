@@ -1,11 +1,14 @@
 // LUNA — Module: templates — Tools
 // Registra las 3 tools del agente: create-from-template, search-generated-documents, reedit-document.
 
+import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 import type { TemplatesService } from './service.js'
 import type { DocType } from './types.js'
 import type { CreateTicketInput } from '../hitl/types.js'
+
+const logger = pino({ name: 'templates:tools' })
 
 export async function registerTemplateTools(
   registry: Registry,
@@ -19,12 +22,25 @@ export async function registerTemplateTools(
       displayName: 'Crear documento desde plantilla',
       description: 'Crea un documento (comparativo, cotización, presentación) a partir de una plantilla registrada, llenando los campos con la información proporcionada. El documento se organiza automáticamente en carpetas y se comparte vía enlace de Drive.',
       shortDescription: 'Crea documentos desde plantillas registradas llenando campos {KEY}.',
-      detailedGuidance: `ANTES de crear un documento:
-1. Busca si ya existe uno similar con search-generated-documents (evita duplicados)
-2. Si existe un comparativo del mismo producto/competencia, comparte el existente
-3. Para cotizaciones/presentaciones, cada contacto puede tener la suya propia
-4. Si no tienes template_id, especifica doc_type para auto-selección de plantilla
-5. Asegúrate de tener todos los campos requeridos de la plantilla antes de llamar esta tool`,
+      detailedGuidance: `## Flujo para comparativos
+1. SIEMPRE busca primero si ya existe: search-generated-documents con doc_type="comparativo" y tags relevantes
+2. Si existe uno reciente y vigente → comparte el enlace existente, NO crees uno nuevo
+3. Si NO existe → necesitas investigar:
+   a. Usa run_subagent con slug="comparativo-researcher" y la tarea de investigar
+   b. Incluye en la tarea: qué producto/competidor comparar y los keys de la plantilla con sus descripciones
+   c. El subagente retorna los key_values investigados
+   d. Usa esos key_values para llamar create-from-template
+4. Si el subagente no pudo obtener todos los datos → NO crees un comparativo incompleto. Informa al contacto qué datos faltan.
+
+## Flujo para cotizaciones y presentaciones
+1. Los key_values provienen del contexto de la conversación (datos del contacto, producto, precio, etc.)
+2. NO necesitas subagente para estos tipos
+3. Puedes re-editar libremente con reedit-document si el contacto lo solicita
+
+## Re-edición de comparativos
+- Solo re-editar un comparativo si el contacto señala un ERROR FACTUAL específico
+- "Los datos están desactualizados" o "el precio cambió" → sí re-editar
+- "Me gusta pero quiero ver otras marcas" → NO re-editar, crear uno nuevo`,
       category: 'documents',
       sourceModule: 'templates',
       parameters: {
@@ -136,6 +152,21 @@ export async function registerTemplateTools(
           success: false,
           error: `Faltan los siguientes campos requeridos: ${missing}`,
           missingKeys: missingKeys.map(k => ({ key: k.key, description: k.description })),
+        }
+      }
+
+      // Auto-generate tags for comparativos if none were provided
+      const effectiveDocType = (docType ?? template.docType) as DocType
+      if (effectiveDocType === 'comparativo' && Object.keys(tags).length === 0) {
+        const tagKeywords = ['brand', 'competitor', 'product', 'company', 'marca', 'competidor']
+        for (const [key, value] of Object.entries(keyValues)) {
+          const lowerKey = key.toLowerCase()
+          for (const keyword of tagKeywords) {
+            if (lowerKey.includes(keyword)) {
+              tags[keyword] = value
+              break
+            }
+          }
         }
       }
 
@@ -277,6 +308,14 @@ El documento mantiene el mismo enlace de Drive después de la re-edición.`,
 
       try {
         const doc = await service.reeditDocument({ generatedDocId: documentId, updatedKeyValues })
+
+        if (doc.docType === 'comparativo') {
+          logger.info({
+            docId: doc.id,
+            reason: input['reason'],
+            updatedKeys: Object.keys(updatedKeyValues),
+          }, 'Comparativo re-edit requested')
+        }
 
         return {
           success: true,
