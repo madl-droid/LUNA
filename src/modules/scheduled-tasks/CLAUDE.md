@@ -14,7 +14,7 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 ## Manifest
 - **type**: `feature`
 - **depends**: `['llm']`
-- **configSchema**: `SCHEDULED_TASKS_ENABLED`, `SCHEDULED_TASKS_MAX_CONCURRENT`, `SCHEDULED_TASKS_EXECUTION_TIMEOUT_MS`
+- **configSchema**: `SCHEDULED_TASKS_ENABLED`, `SCHEDULED_TASKS_MAX_CONCURRENT`, `SCHEDULED_TASKS_EXECUTION_TIMEOUT_MS`, `SCHEDULED_TASKS_MAX_MSG_PER_CONTACT_PER_HOUR` (0=ilimitado, default 10)
 
 ## Servicios expuestos
 - `scheduled-tasks:renderSection` — `(lang) => Promise<string>` renderiza la seccion para console
@@ -49,6 +49,25 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 - `message` — envia mensaje a los destinatarios via message:send hook
 - `hook` — dispara un hook arbitrario del kernel
 - Placeholder `{{result}}` en textos se reemplaza por el output del LLM
+
+## Rate limiting (FIX-01)
+- Mensajes de action `message` respetan límite `SCHEDULED_TASKS_MAX_MSG_PER_CONTACT_PER_HOUR` (default 10)
+- Rate limit atómico en Redis: clave `ratelimit:scheduled-task:{senderId}:hourly`, TTL 3600s
+- 0 = ilimitado. Si rate-limited, se loguea WARN y se salta el destinatario
+
+## Persistencia de mensajes (FIX-02)
+- Tras enviar un mensaje de action `message`, se persiste en memoria via `memory:manager`
+- Busca sesión activa del destinatario (JOIN contact_channels + sessions)
+- Fire-and-forget: si no hay sesión activa, se omite sin error
+- Metadata incluye `source: 'scheduled-task'` y `taskId` para auditoría
+
+## JobId uniqueness (FIX-03)
+- `addDelayedJob` usa `delayed-{taskId}-{Date.now()}` como jobId (único por llamada)
+- Evita deduplicación silenciosa de BullMQ al reprogramar. Colons reemplazados por hyphens (BullMQ los rechaza)
+
+## Cron validation (FIX-04)
+- `scheduleTask` envuelve `queue.add` en try/catch
+- Expresión cron inválida → log ERROR claro, tarea skipeada, módulo sigue funcionando
 
 ## Trampas
 - API routes se populan en init() mutando manifest.console.apiRoutes

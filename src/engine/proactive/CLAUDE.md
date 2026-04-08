@@ -57,6 +57,11 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 }
 ```
 
+## Job idempotency (FIX-05)
+- `proactive-runner.ts` adquiere lock Redis SETNX antes de ejecutar cada job: `proactive:lock:{jobName}`
+- TTL 300s (5 min) — expira solo, no se borra manualmente (protege contra crash mid-execution)
+- Si el lock ya existe → WARN + skip — previene doble ejecución por race entre BullMQ re-queue y orphan recovery
+
 ## Trampas
 - `guardConversation` (#7) usa `conversation:farewell:{id}` set por `markFarewell()` en Phase 5
 - `guardGoodbyeSuppressor` (#8) usa `suppress:{id}:{channel}` detectado por pattern matching
@@ -64,3 +69,4 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 - Smart cooldown es per-contact y lo aplican los job handlers individualmente (follow-up, commitment, etc.) — el runner no lo aplica a nivel batch
 - `isJobEnabled()` y `getJobInterval()` deben ser actualizados cuando se agrega un nuevo triggerType
 - Orphan recovery: `proactive_outreach_log.trigger_type` requiere migration 029 para aceptar `'orphan_recovery'`
+- Idempotency lock per-jobName (no per-jobId) — previene que el mismo tipo de job corra en paralelo

@@ -120,14 +120,22 @@ export async function scheduleTask(task: ScheduledTask): Promise<void> {
 
   if (!task.enabled) return
 
-  const repeatJob = await queue.add(
-    task.name,
-    { taskId: task.id, taskName: task.name },
-    {
-      repeat: { pattern: task.cron, ...(agentTimezone ? { tz: agentTimezone } : {}) },
-      jobId,
-    },
-  )
+  // FIX-04: Wrap scheduling in try/catch so an invalid cron expression (e.g. day-of-month
+  // out of range) does not crash the entire module — log ERROR and skip the task.
+  let repeatJob
+  try {
+    repeatJob = await queue.add(
+      task.name,
+      { taskId: task.id, taskName: task.name },
+      {
+        repeat: { pattern: task.cron, ...(agentTimezone ? { tz: agentTimezone } : {}) },
+        jobId,
+      },
+    )
+  } catch (err) {
+    logger.error({ err, taskId: task.id, cron: task.cron }, 'Invalid cron expression — task skipped, fix the cron pattern')
+    return
+  }
 
   if (repeatJob.repeatJobKey) {
     repeatJobKeys.push(repeatJob.repeatJobKey)
@@ -158,10 +166,14 @@ export async function unscheduleTask(taskId: string): Promise<void> {
  */
 export async function addDelayedJob(taskId: string, taskName: string, delayMs: number): Promise<string | null> {
   if (!queue) return null
+  // FIX-03: Use timestamp to make jobId unique per scheduling call — prevents BullMQ silent
+  // deduplication when the same task is rescheduled quickly. Colons are also replaced with
+  // hyphens because BullMQ rejects custom job IDs that contain colons.
+  const jobId = `delayed-${taskId}-${Date.now()}`
   const job = await queue.add(
     taskName,
     { taskId, taskName } as TaskJobPayload,
-    { delay: delayMs, jobId: `delayed:${taskId}`, attempts: 2, backoff: { type: 'exponential', delay: 60000 } },
+    { delay: delayMs, jobId, attempts: 2, backoff: { type: 'exponential', delay: 60000 } },
   )
   return job.id ?? null
 }
