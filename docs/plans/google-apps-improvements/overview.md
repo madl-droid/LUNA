@@ -10,9 +10,10 @@
 
 | Plan | Contenido | Peso | Estado |
 |------|-----------|------|--------|
-| [01.md](./01.md) | **Sheets** — paginación, auto-detect tab, protección, validaciones, find-replace, batch edit | Heavy (~2.5h) | Pendiente |
-| [02.md](./02.md) | **Docs + Auth** — truncation, word count, batch edit, retry OAuth init | Medium (~1.5h) | Pendiente |
-| [03.md](./03.md) | **Slides** — speaker notes, add-slide tool, update-notes, batch edit | Medium (~2h) | Pendiente |
+| [01.md](./01.md) | **Sheets** — paginación, auto-detect tab, protección, validaciones, find-replace, batch edit | Heavy (~2.5h) | Completado |
+| [02.md](./02.md) | **Docs + Auth** — truncation, word count, batch edit, retry OAuth init | Medium (~1.5h) | Completado |
+| [03.md](./03.md) | **Slides** — speaker notes, add-slide tool, update-notes, batch edit | Medium (~2h) | Completado |
+| [04.md](./04.md) | **Audit Fixes** — eliminar S2, bugs, DUP-3 googleApiCall, performance, dedup | Medium (~2h) | Pendiente |
 
 ---
 
