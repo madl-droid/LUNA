@@ -41,7 +41,7 @@
 - Retries: 3 intentos con backoff exponencial (30s, 60s, 120s)
 - Safety net: nightly batch comprime sesiones >24h sin compression_status
 
-## Beta-hardening fixes aplicados (plan-03)
+## Resiliencia
 - **PG write retry**: `saveMessage` en memory-manager.ts reintenta 3 veces (500ms/1s/2s) errores transitorios. No reintenta constraint violations.
 - **Compression safety**: `compressSession()` aborta si `archiveSession()` falla — jamás borra mensajes sin respaldo. `compression-worker.ts` verifica `session_archives` y `session_summaries_v2` antes de DELETE.
 - **Redis saveMessage try/catch**: redis-buffer.ts tiene try/catch — error de Redis no crashea el pipeline.
@@ -51,7 +51,7 @@
 - **BullMQ reconnect**: `enableReadyCheck: false` en connection config + listeners `error`/`stalled`.
 
 ## Trampas
-- **compressSession() aborta si archiveSession() falla** — nunca borrar originales sin respaldo (fix plan-03)
+- **compressSession() aborta si archiveSession() falla** — nunca borrar originales sin respaldo
 - **NO cambiar fire-and-forget de pipeline_logs a await** — bloquearía pipeline
 - Tablas fundacionales las crea el migrador del kernel (`src/migrations/*.sql`)
 - pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration

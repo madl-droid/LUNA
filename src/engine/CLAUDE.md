@@ -29,12 +29,6 @@ concurrency/
   contact-lock.ts     — serialización per-contacto (capa 2)
   step-semaphore.ts   — concurrencia de tool calls paralelos (capa 3)
 
-checkpoints/
-  types.ts            — TaskCheckpoint, Phase1Snapshot, CheckpointStatus
-  checkpoint-manager.ts — CRUD + resume + cleanup para task_checkpoints
-  index.ts            — re-exports
-  CLAUDE.md           — documentación del subsistema
-
 boundaries/
   intake.ts           — normalización + context loading via memory:manager + users:resolve (<200ms)
   delivery.ts         — delivery boundary: sanitización final + envío + persistencia + commitment auto-detect

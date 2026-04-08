@@ -63,7 +63,7 @@ Canal WhatsApp usando Baileys 7.x. Recibe y envía mensajes (texto, imagen, audi
 - `sendPaused(to)`: envía 'paused', limpia timer.
 - Socket se setea en connection open, se limpia en shutdown/disconnect.
 
-## Resiliencia (hardening beta)
+## Resiliencia
 - **initialize() mutex**: `_initializing` flag previene llamadas concurrentes (hot-reload + reconexión). Early return si ya está inicializando.
 - **sendMessage retries**: 3 reintentos con backoff exponencial (1s/2s/4s) en errores transitorios. Errores de validación fallan inmediatamente.
 - **Outgoing queue**: si el socket no está conectado, los mensajes se encolan (max 100, TTL 5min). Al reconectar se hace flush ordenado.
