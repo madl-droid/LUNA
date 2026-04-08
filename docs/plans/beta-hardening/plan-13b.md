@@ -305,18 +305,28 @@ Si el usuario dice que quiere agendar para otra persona (hijo, mama, pareja, etc
    - Si dice "reagenda la cita de mi hijo", usa `medilink-list-dependents` para encontrarlo
    - Busca las citas del tercero y ofrece reagendar
 
-5. **REGLAS:**
+5. **Mensaje de menores de edad (OBLIGATORIO al confirmar cita):**
+   - Si la cita es para un TERCERO: agregar al final del mensaje de confirmacion:
+     "Recuerda que si el paciente es menor de edad debe venir con un acudiente mayor de edad."
+   - Si la cita es para el CONTACTO PRINCIPAL (no tercero): agregar:
+     "Si eres menor de edad debes venir con un acudiente mayor de edad."
+   - Aplica tanto a citas nuevas como a reagendamientos
+   - El mensaje va al final de la confirmacion, despues de la fecha/hora/profesional
+
+6. **REGLAS:**
    - NUNCA agendes para un tercero sin registrarlo primero
    - SIEMPRE confirma la relacion antes de registrar
    - El contacto principal debe estar verificado (phone_matched minimo) para registrar terceros
    - Los datos de documento del tercero son OBLIGATORIOS (para vincular con Medilink)
+   - SIEMPRE incluir el recordatorio de menores de edad en la confirmacion de cita
 ```
 
 ---
 
-## FIX-06: Adaptacion a Gmail [SMALL]
+## FIX-06: Adaptacion a Gmail y Google Calendar [SMALL]
 **Archivos:** `instance/prompts/system/skills/medilink-lead-scheduling.md`
 
+### Gmail
 El canal Gmail ya pasa por el mismo engine y tiene acceso a las mismas tools. La adaptacion es solo de prompt:
 
 1. En el skill, agregar nota: "Este flujo aplica tanto para WhatsApp como para email. En email, puedes solicitar todos los datos del tercero en un solo mensaje."
@@ -324,18 +334,34 @@ El canal Gmail ya pasa por el mismo engine y tiene acceso a las mismas tools. La
 3. El `SecurityContext` se resuelve por `contactId`, que existe en ambos canales
 4. Si el contacto de Gmail ya esta vinculado a Medilink (por cross-channel linking), los dependientes ya estan disponibles
 
+### Google Calendar
+Verificar como interactua el agendamiento con Google Calendar:
+
+1. Leer `src/modules/google-apps/calendar-*.ts` — como se crean eventos de calendario cuando se agenda una cita
+2. Si el agente crea un evento de Calendar al confirmar una cita Medilink:
+   - El titulo/descripcion del evento debe incluir el nombre del tercero cuando aplique
+   - Ejemplo: "Cita Sofia Mendoza (agendada por Maria Mendoza)" en vez de solo "Cita Maria Mendoza"
+   - El recordatorio de menores tambien puede ir en la descripcion del evento
+3. Si Calendar se usa como skill de agendamiento independiente (no Medilink):
+   - Agregar la misma logica de terceros al skill de Calendar si existe (`instance/prompts/system/skills/calendar-*.md`)
+   - Verificar si existe un skill de agendamiento por Calendar — si no existe, documentar que el flujo de terceros aplica solo via Medilink por ahora
+4. En el prompt del skill, agregar: "Si la cita se sincroniza con Google Calendar, incluir el nombre del tercero en el titulo del evento."
+
 ---
 
 ## Verificacion post-fix
 
 1. Contacto dice "quiero agendar a mi hijo" → agente pide datos → registra dependiente → agenda cita con `dependent_patient_id`
-2. Contacto vuelve y dice "reagendame la cita de mi hijo" → agente encuentra al hijo por relacion → reagenda
-3. Contacto dice "agenda para mi hijo y mi mama" → agente procesa uno a uno → 2 citas creadas
-4. `agent_data` contiene `medilink_dependents` con los terceros registrados
-5. Tool `create-appointment` con `dependent_patient_id` que NO esta en dependientes → error de seguridad
-6. Contacto no verificado intenta registrar tercero → rechazado
-7. Mismo flujo funciona por email (Gmail)
-8. Compilar: `npx tsc --noEmit` — 0 errores nuevos
+2. Confirmacion de cita para tercero incluye: "Recuerda que si el paciente es menor de edad debe venir con un acudiente mayor de edad."
+3. Confirmacion de cita para si mismo incluye: "Si eres menor de edad debes venir con un acudiente mayor de edad."
+4. Contacto vuelve y dice "reagendame la cita de mi hijo" → agente encuentra al hijo por relacion → reagenda → incluye recordatorio de menores
+5. Contacto dice "agenda para mi hijo y mi mama" → agente procesa uno a uno → 2 citas creadas
+6. `agent_data` contiene `medilink_dependents` con los terceros registrados
+7. Tool `create-appointment` con `dependent_patient_id` que NO esta en dependientes → error de seguridad
+8. Contacto no verificado intenta registrar tercero → rechazado
+9. Mismo flujo funciona por email (Gmail)
+10. Si Calendar sync activo: evento incluye nombre del tercero en titulo
+11. Compilar: `npx tsc --noEmit` — 0 errores nuevos
 
 ## Notas
 
