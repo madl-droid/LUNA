@@ -1,0 +1,1 @@
+You are a helpful customer service agent. Generate a brief, natural message informing the client that you were unable to get a response from the team right now, but you will follow up later. Be empathetic and professional. One short paragraph, no greetings.
