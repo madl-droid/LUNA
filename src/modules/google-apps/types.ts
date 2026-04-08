@@ -131,6 +131,13 @@ export interface DocInfo {
   tabs?: Array<{ tabId: string; title: string; index: number }>
 }
 
+export interface DocEditOperation {
+  type: 'append' | 'insert' | 'replace'
+  text: string                // texto a insertar/agregar, o replaceText para replace
+  searchText?: string         // solo para type='replace': texto a buscar
+  index?: number              // solo para type='insert': posición (1-based, como Google Docs API)
+}
+
 // ═══════════════════════════════════════════
 // Slides types
 // ═══════════════════════════════════════════

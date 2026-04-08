@@ -46,7 +46,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 ## Tools registrados (cuando tools module existe)
 - Drive: drive-list-files, drive-get-file, drive-create-folder, drive-create-file, drive-share, drive-move-file
 - Sheets: sheets-read (paginación, auto-detect tab), sheets-write (protección), sheets-append (protección, restaura validaciones), sheets-create, sheets-info, sheets-find-replace, sheets-batch-edit
-- Docs: docs-read, docs-create, docs-append, docs-replace
+- Docs: docs-read (truncation 30K, word count), docs-create, docs-append, docs-replace, docs-batch-edit
 - Slides: slides-read, slides-info, slides-create, slides-replace-text
 - Calendar: calendar-list-events, calendar-get-event, calendar-create-event, calendar-update-event, calendar-delete-event, calendar-add-attendees, calendar-list-calendars, calendar-check-availability, calendar-get-scheduling-context, calendar-execute-followup
 
@@ -100,6 +100,8 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 
 ## Trampas
 - NO leer process.env — usar registry.getConfig()
+- OAuth init hace 3 intentos con exponential backoff (2s, 4s). Si falla, continúa sin auth — conectar manualmente.
+- `docs-read` trunca body a 30K chars con indicador. wordCount y charCount reflejan el documento completo.
 - El refresh_token de OAuth2 dura indefinidamente SI la app está en modo "producción" en GCP (en "testing" expira en 7 días)
 - auth-url siempre incluye gmail scopes por conveniencia (si email está activo, comparte este OAuth; si no, no afecta)
 - Email ya NO depende de google-apps — puede autenticarse solo con su propio EmailOAuthManager

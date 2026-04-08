@@ -8,7 +8,7 @@ import type { SheetsService } from './sheets-service.js'
 import type { DocsService } from './docs-service.js'
 import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
-import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, GoogleApiConfig } from './types.js'
+import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, GoogleApiConfig, DocEditOperation } from './types.js'
 import { CALENDAR_CONFIG_DEFAULTS } from './calendar-config.js'
 import {
   formatEventsListForAgent,
@@ -697,7 +697,31 @@ export async function registerGoogleTools(
       },
       handler: async (input) => {
         const doc = await docs.getDocument(input.documentId as string)
-        return { success: true, data: doc }
+
+        // Métricas sobre el documento completo
+        const wordCount = doc.body.split(/\s+/).filter(Boolean).length
+        const charCount = doc.body.length
+
+        // Truncar si excede 30K chars
+        const MAX_DOC_CHARS = 30_000
+        let body = doc.body
+        let truncated = false
+        if (body.length > MAX_DOC_CHARS) {
+          body = body.slice(0, MAX_DOC_CHARS)
+            + `\n\n[... documento truncado: mostrando ${MAX_DOC_CHARS.toLocaleString()} de ${charCount.toLocaleString()} caracteres (${wordCount.toLocaleString()} palabras totales)]`
+          truncated = true
+        }
+
+        return {
+          success: true,
+          data: {
+            ...doc,
+            body,
+            wordCount,
+            charCount,
+            truncated,
+          },
+        }
       },
     })
 
@@ -769,6 +793,44 @@ export async function registerGoogleTools(
           input.replaceText as string,
         )
         return { success: true, data: { occurrencesChanged: count } }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'docs-batch-edit',
+        displayName: 'Edición batch en Google Doc',
+        description: 'Ejecuta múltiples operaciones de edición (agregar texto, insertar en posición, buscar/reemplazar) en un documento de Google Docs en una sola llamada. Ideal para aplicar plantillas con múltiples {claves}.',
+        category: 'docs',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'ID del documento' },
+            operations: {
+              type: 'array',
+              description: 'Array de operaciones a ejecutar',
+              items: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string', enum: ['append', 'insert', 'replace'], description: 'Tipo de operación' },
+                  text: { type: 'string', description: 'Texto a insertar/agregar, o texto de reemplazo para replace' },
+                  searchText: { type: 'string', description: 'Texto a buscar (solo para replace)' },
+                  index: { type: 'number', description: 'Posición de inserción 1-based (solo para insert)' },
+                },
+                required: ['type', 'text'],
+              },
+            },
+          },
+          required: ['documentId', 'operations'],
+        },
+      },
+      handler: async (input) => {
+        const result = await docs.batchEdit(
+          input.documentId as string,
+          input.operations as DocEditOperation[],
+        )
+        return { success: true, data: result }
       },
     })
   }
