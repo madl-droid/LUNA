@@ -8,6 +8,9 @@ import type {
   CampaignTag,
   ContactCampaignEntry,
   CampaignStatRow,
+  CampaignDetailedStats,
+  SourceBreakdown,
+  UtmBreakdown,
 } from './campaign-types.js'
 
 const logger = pino({ name: 'marketing-data:campaigns-db' })
@@ -182,7 +185,7 @@ export class CampaignQueries {
 
   async createCampaign(data: {
     name: string
-    keyword: string
+    keyword?: string
     matchThreshold?: number
     matchMaxRounds?: number
     allowedChannels?: string[]
@@ -191,7 +194,7 @@ export class CampaignQueries {
     utmKeys?: string[]
     tagIds?: string[]
   }): Promise<CampaignRecord> {
-    const promptCtx = (data.promptContext ?? data.keyword).slice(0, 200)
+    const promptCtx = (data.promptContext ?? data.keyword ?? '').slice(0, 200)
     const result = await this.db.query(`
       INSERT INTO campaigns (name, keyword, match_threshold, match_max_rounds, allowed_channels,
                              prompt_context, utm_data, utm_keys, origin, active, updated_at)
@@ -505,6 +508,194 @@ export class CampaignQueries {
     }
 
     return stats
+  }
+
+  // ═══════════════════════════════════════════
+  // Detailed stats — breakdown by source & UTM
+  // ═══════════════════════════════════════════
+
+  async getCampaignDetailedStats(): Promise<CampaignDetailedStats[]> {
+    const [
+      baseStats,
+      sourceEntriesResult,
+      utmEntriesResult,
+      firstTouchResult,
+      sourceConversionsResult,
+      utmConversionsResult,
+    ] = await Promise.all([
+      this.getCampaignStats(),
+
+      // Query 1 — source entries per campaign
+      this.db.query(`
+        SELECT campaign_id,
+               COALESCE(match_source, 'keyword') AS match_source,
+               COUNT(DISTINCT contact_id) AS entries
+        FROM contact_campaigns
+        GROUP BY campaign_id, match_source
+      `),
+
+      // Query 2 — UTM entries per campaign
+      this.db.query(`
+        SELECT campaign_id,
+               COALESCE(utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(DISTINCT contact_id) AS entries
+        FROM contact_campaigns
+        WHERE utm_data != '{}'::jsonb AND utm_data IS NOT NULL
+        GROUP BY campaign_id, utm_data->>'utm_source', utm_data->>'utm_medium'
+      `),
+
+      // Query 3 — first-touch attribution
+      this.db.query(`
+        WITH first_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, campaign_id
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at ASC
+        )
+        SELECT campaign_id, COUNT(*) AS first_touch_entries
+        FROM first_campaign
+        GROUP BY campaign_id
+      `),
+
+      // Query 4 — conversions by source
+      this.db.query(`
+        WITH last_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, campaign_id, match_source
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at DESC
+        )
+        SELECT lc.campaign_id, COALESCE(lc.match_source, 'keyword') AS match_source, COUNT(*) AS conversions
+        FROM last_campaign lc
+        JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
+        WHERE ac.lead_status = 'converted'
+        GROUP BY lc.campaign_id, lc.match_source
+      `),
+
+      // Query 5 — conversions by UTM source
+      this.db.query(`
+        WITH last_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, campaign_id, utm_data
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at DESC
+        )
+        SELECT lc.campaign_id,
+               COALESCE(lc.utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(lc.utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(*) AS conversions
+        FROM last_campaign lc
+        JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
+        WHERE ac.lead_status = 'converted' AND lc.utm_data != '{}'::jsonb
+        GROUP BY lc.campaign_id, lc.utm_data->>'utm_source', lc.utm_data->>'utm_medium'
+      `),
+    ])
+
+    // Build lookup maps
+    const sourceEntriesMap = new Map<string, Map<string, number>>()
+    for (const r of sourceEntriesResult.rows) {
+      if (!sourceEntriesMap.has(r.campaign_id)) sourceEntriesMap.set(r.campaign_id, new Map())
+      sourceEntriesMap.get(r.campaign_id)!.set(r.match_source, parseInt(r.entries, 10))
+    }
+
+    const sourceConvMap = new Map<string, Map<string, number>>()
+    for (const r of sourceConversionsResult.rows) {
+      if (!sourceConvMap.has(r.campaign_id)) sourceConvMap.set(r.campaign_id, new Map())
+      sourceConvMap.get(r.campaign_id)!.set(r.match_source, parseInt(r.conversions, 10))
+    }
+
+    const utmEntriesMap = new Map<string, Array<{ utm_source: string; utm_medium: string; entries: number }>>()
+    for (const r of utmEntriesResult.rows) {
+      if (!utmEntriesMap.has(r.campaign_id)) utmEntriesMap.set(r.campaign_id, [])
+      utmEntriesMap.get(r.campaign_id)!.push({
+        utm_source: r.utm_source,
+        utm_medium: r.utm_medium,
+        entries: parseInt(r.entries, 10),
+      })
+    }
+
+    const utmConvMap = new Map<string, Map<string, number>>()
+    for (const r of utmConversionsResult.rows) {
+      if (!utmConvMap.has(r.campaign_id)) utmConvMap.set(r.campaign_id, new Map())
+      const key = `${r.utm_source}::${r.utm_medium}`
+      utmConvMap.get(r.campaign_id)!.set(key, parseInt(r.conversions, 10))
+    }
+
+    const firstTouchMap = new Map<string, number>()
+    for (const r of firstTouchResult.rows) {
+      firstTouchMap.set(r.campaign_id, parseInt(r.first_touch_entries, 10))
+    }
+
+    // Assemble detailed stats
+    const SOURCES = ['keyword', 'url_utm', 'webhook', 'webhook_utm']
+    return baseStats.map((base: CampaignStatRow) => {
+      const cid = base.campaignId ?? ''
+
+      const sourceBreakdown: SourceBreakdown[] = SOURCES
+        .map(src => ({
+          matchSource: src,
+          entries: sourceEntriesMap.get(cid)?.get(src) ?? 0,
+          conversions: sourceConvMap.get(cid)?.get(src) ?? 0,
+        }))
+        .filter(b => b.entries > 0 || b.conversions > 0)
+
+      const utmEntries = utmEntriesMap.get(cid) ?? []
+      const utmBreakdown: UtmBreakdown[] = utmEntries.map(u => {
+        const key = `${u.utm_source}::${u.utm_medium}`
+        return {
+          utmSource: u.utm_source,
+          utmMedium: u.utm_medium,
+          entries: u.entries,
+          conversions: utmConvMap.get(cid)?.get(key) ?? 0,
+        }
+      })
+
+      return {
+        ...base,
+        sourceBreakdown,
+        utmBreakdown,
+        firstTouchEntries: firstTouchMap.get(cid) ?? 0,
+      }
+    })
+  }
+
+  async getGlobalUtmBreakdown(): Promise<UtmBreakdown[]> {
+    const [entriesResult, conversionsResult] = await Promise.all([
+      this.db.query(`
+        SELECT COALESCE(utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(DISTINCT contact_id) AS entries
+        FROM contact_campaigns
+        WHERE utm_data != '{}'::jsonb AND utm_data IS NOT NULL
+        GROUP BY utm_data->>'utm_source', utm_data->>'utm_medium'
+        ORDER BY entries DESC
+        LIMIT 50
+      `),
+      this.db.query(`
+        WITH last_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, utm_data
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at DESC
+        )
+        SELECT COALESCE(lc.utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(lc.utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(*) AS conversions
+        FROM last_campaign lc
+        JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
+        WHERE ac.lead_status = 'converted' AND lc.utm_data != '{}'::jsonb
+        GROUP BY lc.utm_data->>'utm_source', lc.utm_data->>'utm_medium'
+      `),
+    ])
+
+    const convMap = new Map<string, number>()
+    for (const r of conversionsResult.rows) {
+      convMap.set(`${r.utm_source}::${r.utm_medium}`, parseInt(r.conversions, 10))
+    }
+
+    return entriesResult.rows.map((r: Record<string, unknown>) => ({
+      utmSource: r.utm_source as string,
+      utmMedium: r.utm_medium as string,
+      entries: parseInt(r.entries as string, 10),
+      conversions: convMap.get(`${r.utm_source}::${r.utm_medium}`) ?? 0,
+    }))
   }
 
   // ═══════════════════════════════════════════
