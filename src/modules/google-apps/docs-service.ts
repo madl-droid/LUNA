@@ -3,7 +3,7 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import type { DocInfo } from './types.js'
+import type { DocInfo, DocEditOperation } from './types.js'
 
 export class DocsService {
   private docs
@@ -161,6 +161,102 @@ export class DocsService {
         ],
       },
     })
+  }
+
+  async batchEdit(
+    documentId: string,
+    operations: DocEditOperation[],
+  ): Promise<{ applied: number }> {
+    const replaceOps = operations.filter(op => op.type === 'replace')
+    const insertOps = operations.filter(op => op.type === 'insert')
+    const appendOps = operations.filter(op => op.type === 'append')
+
+    const hasMixed = replaceOps.length > 0 && (insertOps.length > 0 || appendOps.length > 0)
+
+    // Build replace requests
+    const buildReplaceRequests = (ops: DocEditOperation[]) =>
+      ops.map(op => ({
+        replaceAllText: {
+          containsText: { text: op.searchText ?? op.text, matchCase: true },
+          replaceText: op.text,
+        },
+      }))
+
+    // Build insert/append requests given a document endIndex
+    const buildInsertAppendRequests = (
+      inserts: DocEditOperation[],
+      appends: DocEditOperation[],
+      endIndex: number,
+    ) => {
+      const requests: object[] = []
+
+      // Inserts: ordered from largest to smallest index to avoid index displacement
+      const sortedInserts = [...inserts].sort((a, b) => (b.index ?? 1) - (a.index ?? 1))
+      for (const op of sortedInserts) {
+        requests.push({
+          insertText: {
+            location: { index: op.index ?? 1 },
+            text: op.text,
+          },
+        })
+      }
+
+      // Appends: accumulate offset so each insert goes after the previous
+      let offset = 0
+      const insertIndex = Math.max(endIndex - 1, 1)
+      for (const op of appends) {
+        requests.push({
+          insertText: {
+            location: { index: insertIndex + offset },
+            text: op.text,
+          },
+        })
+        offset += op.text.length
+      }
+
+      return requests
+    }
+
+    if (hasMixed) {
+      // Two-call strategy: replaces first, then re-fetch endIndex for inserts/appends
+      if (replaceOps.length > 0) {
+        await this.docs.documents.batchUpdate({
+          documentId,
+          requestBody: { requests: buildReplaceRequests(replaceOps) },
+        })
+      }
+
+      if (insertOps.length > 0 || appendOps.length > 0) {
+        const doc = await this.docs.documents.get({ documentId })
+        const content = doc.data.body?.content ?? []
+        const lastElement = content[content.length - 1]
+        const endIndex = lastElement?.endIndex ?? 1
+
+        await this.docs.documents.batchUpdate({
+          documentId,
+          requestBody: { requests: buildInsertAppendRequests(insertOps, appendOps, endIndex) },
+        })
+      }
+    } else if (replaceOps.length > 0) {
+      // Only replaces — single call
+      await this.docs.documents.batchUpdate({
+        documentId,
+        requestBody: { requests: buildReplaceRequests(replaceOps) },
+      })
+    } else if (insertOps.length > 0 || appendOps.length > 0) {
+      // Only inserts/appends — single call after fetching endIndex
+      const doc = await this.docs.documents.get({ documentId })
+      const content = doc.data.body?.content ?? []
+      const lastElement = content[content.length - 1]
+      const endIndex = lastElement?.endIndex ?? 1
+
+      await this.docs.documents.batchUpdate({
+        documentId,
+        requestBody: { requests: buildInsertAppendRequests(insertOps, appendOps, endIndex) },
+      })
+    }
+
+    return { applied: operations.length }
   }
 
   private extractPlainText(content: unknown[]): string {
