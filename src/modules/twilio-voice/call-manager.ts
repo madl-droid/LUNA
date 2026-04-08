@@ -78,6 +78,15 @@ export class CallManager {
       return `<?xml version="1.0" encoding="UTF-8"?><Response><Say language="es-MX">Lo siento, en este momento no puedo atender tu llamada. Por favor intenta m\u00e1s tarde.</Say><Hangup/></Response>`
     }
 
+    // Check per-number inbound rate limit
+    if (this.config.VOICE_INBOUND_RATE_LIMIT_HOUR > 0) {
+      const recentInbound = await pgStore.countRecentCalls(this.db, from, 'inbound', 60)
+      if (recentInbound >= this.config.VOICE_INBOUND_RATE_LIMIT_HOUR) {
+        logger.warn({ callSid, from, count: recentInbound, limit: this.config.VOICE_INBOUND_RATE_LIMIT_HOUR }, 'Inbound rate limit exceeded')
+        return `<?xml version="1.0" encoding="UTF-8"?><Response><Say language="es-MX">Lo siento, has superado el l\u00edmite de llamadas por hora. Por favor intenta m\u00e1s tarde.</Say><Hangup/></Response>`
+      }
+    }
+
     // Insert call record in DB
     const callId = await pgStore.insertCall(this.db, callSid, 'inbound', from, to, this.config.VOICE_GEMINI_VOICE)
 

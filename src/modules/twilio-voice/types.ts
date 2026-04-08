@@ -59,6 +59,7 @@ export interface TwilioVoiceConfig {
   VOICE_BUSINESS_HOURS_END: number
   VOICE_BUSINESS_HOURS_TIMEZONE: string
   VOICE_OUTBOUND_RATE_LIMIT_HOUR: number
+  VOICE_INBOUND_RATE_LIMIT_HOUR: number
   // Ring delay range (replaces VOICE_ANSWER_DELAY_RINGS)
   VOICE_ANSWER_DELAY_MIN_RINGS: number
   VOICE_ANSWER_DELAY_MAX_RINGS: number

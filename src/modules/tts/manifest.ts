@@ -130,6 +130,21 @@ const manifest: ModuleManifest = {
     service = new TTSService(ttsConfig)
     registry.provide('tts:service', service)
 
+    // Validate TTS model against model-scanner (warn only, don't block)
+    const getGoogleModels = registry.getOptional<() => Array<{ id: string }>>('model-scanner:getGoogleModels')
+    if (getGoogleModels) {
+      try {
+        const available = getGoogleModels()
+        const modelIds = available.map(m => m.id)
+        if (config.TTS_MODEL && !modelIds.includes(config.TTS_MODEL)) {
+          const ttsSuggestions = modelIds.filter(id => id.includes('tts'))
+          logger.warn({ model: config.TTS_MODEL, suggestions: ttsSuggestions }, 'TTS_MODEL not found in model-scanner cache — may be new or unavailable')
+        }
+      } catch {
+        // model-scanner may not be ready yet; skip validation
+      }
+    }
+
     // Hot-reload: update service config when console applies changes
     registry.addHook('tts', 'console:config_applied', async () => {
       if (!service) return

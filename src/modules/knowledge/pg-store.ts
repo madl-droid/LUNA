@@ -1253,6 +1253,32 @@ export class KnowledgePgStore {
 
   // ─── Suggestions ───────────────────────────
 
+  // ─── Embedding Progress ────────────────────
+
+  async getEmbeddingProgress(itemId: string): Promise<{
+    total: number
+    embedded: number
+    failed: number
+    processing: number
+  }> {
+    const { rows } = await this.db.query<{
+      total: number
+      embedded: number
+      failed: number
+      processing: number
+    }>(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE c.embedding_status = 'embedded')::int AS embedded,
+        COUNT(*) FILTER (WHERE c.embedding_status = 'failed' AND c.retry_count >= 10)::int AS failed,
+        COUNT(*) FILTER (WHERE c.embedding_status IN ('queued','processing'))::int AS processing
+      FROM knowledge_chunks c
+      JOIN knowledge_documents d ON d.id = c.document_id
+      WHERE d.item_id = $1
+    `, [itemId])
+    return rows[0] ?? { total: 0, embedded: 0, failed: 0, processing: 0 }
+  }
+
   // ─── Knowledge Items CRUD ─────────────────
 
   async insertItem(data: {

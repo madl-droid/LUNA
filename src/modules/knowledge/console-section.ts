@@ -1102,6 +1102,51 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
       .catch(function(err) { toast(String(err), 'error'); });
   };
 
+  // ── Embedding progress polling ──
+  var activePolls = {}; // itemId → intervalId
+  function updateProgressDot(id, p) {
+    var row = document.querySelector('[data-item-id="' + id + '"]');
+    if (!row) return;
+    var estado = row.querySelector('.ki-status-row');
+    if (!estado) return;
+    if (p.total === 0) return;
+    var pct = p.percent;
+    if (p.processing > 0 || (p.embedded < p.total && p.failed < p.total - p.embedded)) {
+      estado.innerHTML = '<span class="ki-dot ki-dot-processing"></span>' + p.embedded + '/' + p.total + ' (' + pct + '%)';
+    } else if (p.embedded >= p.total) {
+      estado.innerHTML = '<span class="ki-dot ki-dot-embedded"></span>${isEs ? 'Entrenado' : 'Trained'}';
+    } else if (p.failed > 0) {
+      estado.innerHTML = '<span class="ki-dot ki-dot-failed"></span>${isEs ? 'Error' : 'Failed'} (' + p.failed + ')';
+    }
+  }
+  function startProgressPolling(id) {
+    if (activePolls[id]) return; // already polling
+    activePolls[id] = setInterval(function() {
+      fetch('/console/api/knowledge/items/progress?itemId=' + encodeURIComponent(id))
+        .then(function(r) { return r.json(); })
+        .then(function(p) {
+          if (p.error) { stopProgressPolling(id); return; }
+          updateProgressDot(id, p);
+          // Stop when all chunks are terminal
+          var done = p.total > 0 && (p.embedded + p.failed >= p.total) && p.processing === 0;
+          if (done) stopProgressPolling(id);
+        })
+        .catch(function() { stopProgressPolling(id); });
+    }, 3000);
+  }
+  function stopProgressPolling(id) {
+    if (activePolls[id]) { clearInterval(activePolls[id]); delete activePolls[id]; }
+  }
+
+  // Auto-start polling for items already in processing state on page load
+  (function() {
+    var processingRows = document.querySelectorAll('[data-item-id]');
+    for (var i = 0; i < processingRows.length; i++) {
+      var dot = processingRows[i].querySelector('.ki-dot-processing');
+      if (dot) startProgressPolling(processingRows[i].getAttribute('data-item-id'));
+    }
+  })();
+
   window.kiLoadContent = function(id) {
     if (!confirm('${isEs ? '¿Entrenar este contenido?' : 'Train this content?'}')) return;
     toast('${isEs ? 'Entrenando...' : 'Training...'}', 'info');
@@ -1111,12 +1156,13 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
         setCooldown('ki-cd-' + id);
         toast('${isEs ? 'Entrenado: ' : 'Trained: '}' + r.chunks + ' ${isEs ? 'datos' : 'data points'}');
         updateStatsFooter(r.chunks);
-        // Update status dot in-place
+        // Update status dot and start progress polling
         var row = document.querySelector('[data-item-id="' + id + '"]');
         if (row) {
           var estado = row.querySelector('.ki-status-row');
-          if (estado) estado.innerHTML = '<span class="ki-dot ki-dot-processing"></span>${isEs ? 'Procesando' : 'Processing'}';
+          if (estado) estado.innerHTML = '<span class="ki-dot ki-dot-processing"></span>${isEs ? 'Procesando...' : 'Processing...'}';
         }
+        startProgressPolling(id);
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
@@ -1147,6 +1193,12 @@ function renderClientScript(lang: Lang, categories: KnowledgeCategory[], isProdu
         setCooldown('ki-cd-bulk');
         toast('${isEs ? 'Entrenamiento iniciado' : 'Training started'}');
         updateStatsFooter();
+        // Start polling for all active (non-inactive) items
+        var rows = document.querySelectorAll('[data-item-id]');
+        for (var i = 0; i < rows.length; i++) {
+          var itemId = rows[i].getAttribute('data-item-id');
+          if (itemId) startProgressPolling(itemId);
+        }
       })
       .catch(function(err) { toast(String(err), 'error'); });
   };
