@@ -40,6 +40,14 @@ import {
 
 const logger = pino({ name: 'llm:gateway' })
 
+/**
+ * Remove unpaired Unicode surrogates that cause "no low surrogate in string" errors
+ * when serializing to JSON. Replaces them with U+FFFD (replacement character).
+ */
+function sanitizeUnicode(text: string): string {
+  return text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')
+}
+
 /** Load pricing file, fallback to hardcoded defaults */
 function loadPricingFileSafe(): Record<string, { inputPer1M: number; outputPer1M: number }> {
   try {
@@ -189,6 +197,19 @@ export class LLMGateway {
     } else {
       request.system = securityPreamble()
     }
+
+    // 2b. Sanitize Unicode surrogates in all text content (prevents JSON serialization errors)
+    if (request.system) {
+      request.system = sanitizeUnicode(request.system)
+    }
+    request.messages = request.messages.map(m => ({
+      ...m,
+      content: typeof m.content === 'string'
+        ? sanitizeUnicode(m.content)
+        : m.content.map(part => part.type === 'text' && part.text
+            ? { ...part, text: sanitizeUnicode(part.text) }
+            : part),
+    }))
 
     // 3. Resolve route targets (ordered by preference + availability)
     const targets = this.router.resolve(
@@ -625,33 +646,23 @@ export class LLMGateway {
           durationMs, false, error.message, request.traceId,
         )
 
-        // Only count retryable errors toward circuit breaker
+        // Count every failure (retryable or not) toward circuit breaker — each attempt is a real failure
+        const providerOpened = this.breakers.get(target.provider).recordFailure(error.message)
+        this.targetBreakers.get(target.provider, target.model).recordFailure(error.message)
+        if (providerOpened && this.registry) {
+          await this.registry.runHook('llm:provider_down', {
+            provider: target.provider,
+            reason: error.message,
+          })
+        }
+
         if (this.isRetryableError(error)) {
-          if (attempt === this.retryMax) {
-            // All retries exhausted — record failure on both breakers
-            const providerOpened = this.breakers.get(target.provider).recordFailure(error.message)
-            this.targetBreakers.get(target.provider, target.model).recordFailure(error.message)
-            if (providerOpened && this.registry) {
-              await this.registry.runHook('llm:provider_down', {
-                provider: target.provider,
-                reason: error.message,
-              })
-            }
-          } else {
-            // Wait before retry with exponential backoff
-            const delay = this.retryBackoffMs * Math.pow(2, attempt)
+          if (attempt < this.retryMax) {
+            // Wait before retry with exponential backoff (capped at 30s)
+            const delay = Math.min(this.retryBackoffMs * Math.pow(2, attempt), 30_000)
             await sleep(delay)
           }
         } else {
-          // Non-retryable error — count as failure on both breakers immediately
-          const providerOpened = this.breakers.get(target.provider).recordFailure(error.message)
-          this.targetBreakers.get(target.provider, target.model).recordFailure(error.message)
-          if (providerOpened && this.registry) {
-            await this.registry.runHook('llm:provider_down', {
-              provider: target.provider,
-              reason: error.message,
-            })
-          }
           break // Don't retry non-retryable errors
         }
       }

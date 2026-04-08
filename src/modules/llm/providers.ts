@@ -443,11 +443,17 @@ export class GoogleAdapter implements ProviderAdapter {
     const lastParts = buildGoogleParts(lastMessage.content)
 
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        reject(new Error(`Google LLM timeout after ${timeoutMs}ms`))
+      }, timeoutMs)
+    })
 
     try {
       const chat = genModel.startChat({ history })
-      const result = await chat.sendMessage(lastParts)
+      const result = await Promise.race([chat.sendMessage(lastParts), timeoutPromise])
       const response = result.response
 
       // Extract tool calls and code execution results
@@ -528,7 +534,7 @@ export class GoogleAdapter implements ProviderAdapter {
         codeResults: codeResults.length > 0 ? codeResults : undefined,
       }
     } finally {
-      clearTimeout(timer)
+      if (timer !== null) clearTimeout(timer)
     }
   }
 
