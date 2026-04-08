@@ -177,6 +177,7 @@ async function loadContactData(db: Pool, contactId: string): Promise<ContactData
     qualificationStatus: (row.qualification_status as string) ?? null,
     qualificationScore: (row.qualification_score as number) ?? null,
     qualificationData: (row.qualification_data as Record<string, unknown>) ?? null,
+    followUpIntensity: (row.follow_up_intensity as string) ?? null,
     createdAt: new Date(),
   }
 

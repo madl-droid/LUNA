@@ -241,6 +241,7 @@ async function buildProactiveContext(
             ac.lead_status AS qualification_status,
             COALESCE(ac.qualification_score, 0) AS qualification_score,
             COALESCE(ac.qualification_data, '{}') AS qualification_data,
+            ac.follow_up_intensity,
             c.created_at,
             cc.channel_identifier, cc.channel_type
      FROM contacts c
@@ -265,6 +266,7 @@ async function buildProactiveContext(
     qualificationStatus: contactRow.qualification_status,
     qualificationScore: contactRow.qualification_score,
     qualificationData: contactRow.qualification_data,
+    followUpIntensity: contactRow.follow_up_intensity ?? null,
     createdAt: contactRow.created_at,
   } : null
 
