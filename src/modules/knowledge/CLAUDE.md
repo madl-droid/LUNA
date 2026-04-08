@@ -174,6 +174,9 @@ Rotar si se expone en logs.
 ## csvBuffer (Sheets)
 `extractSheets()` genera `csvBuffer` pero no se persiste a disco. Sheets se indexan como texto; no requieren binario para embedding multimodal. Esto es by design.
 
+## Config notable
+- `KNOWLEDGE_CONTACT_CATEGORY_MAP`: configurable desde consola (campo textarea en seccion Avanzado). JSON que mapea contact_type → categoryId[]. Fail-open: si vacio o JSON invalido, no filtra. Se usa en search_knowledge y expand_knowledge.
+
 ## Trampas
 - pgvector requiere CREATE EXTENSION vector (ya instalado en prod por módulo memory)
 - BullMQ: primer uso real en el proyecto. Worker corre en mismo proceso. Comparte instancia ioredis.
