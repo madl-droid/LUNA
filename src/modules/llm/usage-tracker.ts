@@ -268,31 +268,42 @@ export class UsageTracker {
 
   // ─── Private ───────────────────────────────
 
+  // FIX-09: Lua script executes all INCR+EXPIRE pairs atomically.
+  // A Redis crash between INCR and EXPIRE with pipeline() would leave
+  // a key without TTL, causing a permanent rate-limit after restart.
+  private static readonly COUNTERS_LUA = `
+    local rpm = redis.call('INCR', KEYS[1])
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+    redis.call('INCRBY', KEYS[2], tonumber(ARGV[2]))
+    redis.call('EXPIRE', KEYS[2], tonumber(ARGV[3]))
+    redis.call('INCRBYFLOAT', KEYS[3], ARGV[4])
+    redis.call('EXPIRE', KEYS[3], tonumber(ARGV[5]))
+    redis.call('INCRBYFLOAT', KEYS[4], ARGV[6])
+    redis.call('EXPIRE', KEYS[4], tonumber(ARGV[7]))
+    return rpm
+  `
+
   private async updateRedisCounters(
     provider: LLMProviderName,
     totalTokens: number,
     cost: number,
   ): Promise<void> {
     try {
-      const pipeline = this.redis.pipeline()
-
-      // RPM counter (expires after 60s)
-      pipeline.incr(RPM_KEY(provider))
-      pipeline.expire(RPM_KEY(provider), 60)
-
-      // TPM counter (expires after 60s)
-      pipeline.incrby(TPM_KEY(provider), totalTokens)
-      pipeline.expire(TPM_KEY(provider), 60)
-
-      // Daily cost (expires after 48h for safety)
-      pipeline.incrbyfloat(DAILY_COST_KEY(), cost)
-      pipeline.expire(DAILY_COST_KEY(), 172800)
-
-      // Monthly cost (expires after 35 days)
-      pipeline.incrbyfloat(MONTHLY_COST_KEY(), cost)
-      pipeline.expire(MONTHLY_COST_KEY(), 3024000)
-
-      await pipeline.exec()
+      await this.redis.eval(
+        UsageTracker.COUNTERS_LUA,
+        4,
+        RPM_KEY(provider),      // KEYS[1] — RPM counter
+        TPM_KEY(provider),      // KEYS[2] — TPM counter
+        DAILY_COST_KEY(),       // KEYS[3] — daily cost
+        MONTHLY_COST_KEY(),     // KEYS[4] — monthly cost
+        '60',                   // ARGV[1] — RPM TTL (60s)
+        String(totalTokens),    // ARGV[2] — token count for INCRBY
+        '60',                   // ARGV[3] — TPM TTL (60s)
+        String(cost),           // ARGV[4] — cost for INCRBYFLOAT daily
+        '172800',               // ARGV[5] — daily cost TTL (48h)
+        String(cost),           // ARGV[6] — cost for INCRBYFLOAT monthly
+        '3024000',              // ARGV[7] — monthly cost TTL (35d)
+      )
     } catch (err) {
       logger.error({ err }, 'Failed to update Redis counters')
     }

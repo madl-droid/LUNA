@@ -14,7 +14,7 @@ Sistema de carga dinámica de módulos con hooks tipados, inyección de dependen
 - `db.ts` — pool PostgreSQL + ejecución de migraciones kernel (kernel_modules + config_store) + llama a migrator
 - `migrator.ts` — auto-migrador SQL: lee `src/migrations/*.sql`, trackea en tabla `schema_migrations`, ejecuta pendientes en transacción
 - `bootstrap.ts` — asegura directorios de `instance/` al arrancar (knowledge/media, fallbacks, wa-auth, tools)
-- `redis.ts` — conexión Redis con lazyConnect
+- `redis.ts` — conexión Redis con lazyConnect + **retryStrategy con backoff exponencial** (100ms→500ms→1s→2s→5s, max 10 intentos). `maxRetriesPerRequest: null` para que comandos esperen durante reconexión. `reconnectOnError` para READONLY/LOADING.
 - `migrations/001_modules.sql` — tabla kernel_modules (name, active, activated_at, meta)
 
 ## Sistema de hooks
