@@ -74,6 +74,8 @@ export class MessageBatcher {
 
   /**
    * Flush a pending batch — dispatch messages to the handler.
+   * Retries up to 3 times with exponential backoff (1s, 2s, 4s).
+   * On exhaustion, dead-letters the messages with a CRITICAL log (never silently drops).
    */
   private async flush(key: string): Promise<void> {
     const batch = this.pending.get(key)
@@ -87,20 +89,37 @@ export class MessageBatcher {
 
     logger.info({ from: key, count: messages.length }, 'Flushing message batch')
 
-    try {
-      await this.handler(messages)
-      this.pending.delete(key)
-    } catch (err) {
-      logger.error({ err, from: key, count: messages.length }, 'Batch handler failed, retrying once')
-      // Retry once after 2s
+    const RETRY_DELAYS_MS = [1000, 2000, 4000]
+    let lastErr: unknown
+    let succeeded = false
+
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
-        await new Promise(r => setTimeout(r, 2000))
         await this.handler(messages)
         this.pending.delete(key)
-      } catch (retryErr) {
-        logger.error({ err: retryErr, from: key, count: messages.length }, 'Batch handler retry failed — messages lost')
-        this.pending.delete(key)
+        succeeded = true
+        break
+      } catch (err) {
+        lastErr = err
+        if (attempt < RETRY_DELAYS_MS.length) {
+          const delay = RETRY_DELAYS_MS[attempt]!
+          logger.warn(
+            { err, from: key, count: messages.length, attempt: attempt + 1, retryInMs: delay },
+            'Batch handler failed, retrying with backoff',
+          )
+          await new Promise(r => setTimeout(r, delay))
+        }
       }
+    }
+
+    if (!succeeded) {
+      const messageIds = messages.map(m => m.channelMessageId)
+      logger.error(
+        { err: lastErr, from: key, count: messages.length, messageIds },
+        'CRITICAL: Batch handler exhausted all 3 retries — messages dead-lettered',
+      )
+      // Remove from pending so future messages from this contact are not blocked
+      this.pending.delete(key)
     }
   }
 
