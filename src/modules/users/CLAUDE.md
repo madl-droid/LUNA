@@ -77,6 +77,8 @@ Resuelve QUIÉN es cada contacto (admin, coworker, lead, custom) y QUÉ puede ha
 ## Webhook — registro externo de contactos (coworker)
 - Endpoint: `POST /console/api/users/webhook/register` (auth: Bearer token)
 - Config almacenada en `syncConfig` de la lista coworker (webhookEnabled, webhookToken, webhookPreferredChannel)
+- **User ID**: `USR-{16 hex chars}` (8 bytes = 4.3T combinaciones). Verificación de colisión antes de INSERT (max 3 reintentos).
+- **ON CONFLICT seguro**: `ensureContactChannel()` verifica si el canal ya pertenece a otro usuario antes de INSERT. Si hay conflicto de propietario → log WARN + DO NOTHING (no reasigna silenciosamente).
 - Settings visibles en `/console/contacts` → config de coworker
 - Acepta: email, phone, name, campaign (keyword, visible_id, o UUID)
 - Normaliza phone a formato E.164 (sin +) para WhatsApp JID

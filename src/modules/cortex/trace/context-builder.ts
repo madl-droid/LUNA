@@ -154,7 +154,7 @@ interface ContactData {
 async function loadContactData(db: Pool, contactId: string): Promise<ContactData | null> {
   // Load contact
   const { rows: contactRows } = await db.query(
-    `SELECT c.id, cc.channel_contact_id, cc.channel, c.display_name, c.contact_type,
+    `SELECT c.id, cc.channel_identifier, cc.channel_type, c.display_name, c.contact_type,
             ac.qualification_status, ac.qualification_score, ac.qualification_data,
             ac.contact_memory, ac.lead_status
      FROM contacts c
@@ -170,8 +170,8 @@ async function loadContactData(db: Pool, contactId: string): Promise<ContactData
 
   const contact: ContactInfo = {
     id: row.id as string,
-    channelContactId: (row.channel_contact_id as string) ?? '',
-    channel: (row.channel as ChannelName) ?? 'whatsapp',
+    channelContactId: (row.channel_identifier as string) ?? '',
+    channel: (row.channel_type as ChannelName) ?? 'whatsapp',
     displayName: (row.display_name as string) ?? null,
     contactType: (row.contact_type as string) ?? null,
     qualificationStatus: (row.qualification_status as string) ?? null,
