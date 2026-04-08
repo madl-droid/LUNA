@@ -62,6 +62,12 @@ export class CampaignQueries {
       CREATE INDEX IF NOT EXISTS idx_campaigns_utm_keys ON campaigns USING GIN (utm_keys)
     `).catch(() => {})
 
+    // Unique index on name for auto_utm campaigns — prevents duplicates on race conditions
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_auto_utm_name
+        ON campaigns (name) WHERE origin = 'auto_utm'
+    `).catch(() => {})
+
     // Seed default "Sin campaña" (visible_id=0) if it doesn't exist
     await this.db.query(`
       INSERT INTO campaigns (id, name, keyword, active, visible_id)
@@ -139,6 +145,8 @@ export class CampaignQueries {
              COALESCE(c.allowed_channels, '{}') AS allowed_channels,
              COALESCE(c.prompt_context, '') AS prompt_context,
              c.active, COALESCE(c.utm_data, '{}') AS utm_data,
+             COALESCE(c.utm_keys, '{}') AS utm_keys,
+             COALESCE(c.origin, 'manual') AS origin,
              c.created_at, COALESCE(c.updated_at, c.created_at) AS updated_at,
              COALESCE(
                json_agg(
@@ -174,6 +182,8 @@ export class CampaignQueries {
              COALESCE(c.allowed_channels, '{}') AS allowed_channels,
              COALESCE(c.prompt_context, '') AS prompt_context,
              c.active, COALESCE(c.utm_data, '{}') AS utm_data,
+             COALESCE(c.utm_keys, '{}') AS utm_keys,
+             COALESCE(c.origin, 'manual') AS origin,
              c.created_at, COALESCE(c.updated_at, c.created_at) AS updated_at
       FROM campaigns c WHERE c.id = $1
     `, [id])
@@ -208,7 +218,7 @@ export class CampaignQueries {
       data.allowedChannels ?? [],
       promptCtx,
       JSON.stringify(data.utmData ?? {}),
-      data.utmKeys ?? [],
+      (data.utmKeys ?? []).map(k => k.toLowerCase()),
     ])
 
     const { id } = result.rows[0]!
@@ -243,7 +253,7 @@ export class CampaignQueries {
     if (data.promptContext !== undefined) { sets.push(`prompt_context = $${idx++}`); params.push(data.promptContext.slice(0, 200)) }
     if (data.active !== undefined) { sets.push(`active = $${idx++}`); params.push(data.active) }
     if (data.utmData !== undefined) { sets.push(`utm_data = $${idx++}`); params.push(JSON.stringify(data.utmData)) }
-    if (data.utmKeys !== undefined) { sets.push(`utm_keys = $${idx++}`); params.push(data.utmKeys) }
+    if (data.utmKeys !== undefined) { sets.push(`utm_keys = $${idx++}`); params.push(data.utmKeys.map(k => k.toLowerCase())) }
 
     if (sets.length > 0) {
       sets.push(`updated_at = now()`)
@@ -280,7 +290,7 @@ export class CampaignQueries {
     const result = await this.db.query<{ id: string; name: string; visible_id: number; keyword: string; prompt_context: string }>(`
       SELECT id, name, visible_id, keyword, prompt_context
       FROM campaigns
-      WHERE $1 = ANY(utm_keys) AND active = true
+      WHERE LOWER($1) = ANY(utm_keys) AND active = true
       LIMIT 1
     `, [utmCampaignValue])
     if (result.rows.length === 0) return null
@@ -301,7 +311,9 @@ export class CampaignQueries {
   async autoCreateFromUtm(utmCampaignValue: string, utmData: Record<string, string>): Promise<{ id: string; name: string; visibleId: number }> {
     const result = await this.db.query<{ id: string; name: string; visible_id: number }>(`
       INSERT INTO campaigns (name, keyword, utm_keys, utm_data, origin, active, updated_at)
-      VALUES ($1, NULL, ARRAY[$1], $2, 'auto_utm', true, now())
+      VALUES ($1, NULL, ARRAY[LOWER($1)], $2, 'auto_utm', true, now())
+      ON CONFLICT (name) WHERE origin = 'auto_utm'
+        DO UPDATE SET utm_data = EXCLUDED.utm_data, updated_at = now()
       RETURNING id, name, visible_id
     `, [utmCampaignValue, JSON.stringify(utmData)])
     const r = result.rows[0]!
@@ -488,13 +500,15 @@ export class CampaignQueries {
     // "Sin campaña" row
     const noCampaignResult = await this.db.query(`
       SELECT
-        (SELECT COUNT(*) FROM contacts WHERE contact_type = 'lead'
-          AND id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS entries,
+        (SELECT COUNT(*) FROM contacts c
+          LEFT JOIN contact_campaigns cc ON cc.contact_id = c.id
+          WHERE c.contact_type = 'lead' AND cc.id IS NULL) AS entries,
         (SELECT COUNT(*) FROM contacts c2
           JOIN agent_contacts ac2 ON ac2.contact_id = c2.id
+          LEFT JOIN contact_campaigns cc2 ON cc2.contact_id = c2.id
           WHERE c2.contact_type = 'lead'
             AND ac2.lead_status = 'converted'
-            AND c2.id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS conversions
+            AND cc2.id IS NULL) AS conversions
     `)
     const nc = noCampaignResult.rows[0]
     if (nc) {

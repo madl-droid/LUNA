@@ -24,6 +24,10 @@ export class CampaignMatcher {
   private fuse: Fuse<FuseItem> | null = null
   private items: FuseItem[] = []
   private campaignQueries: CampaignQueries | null = null
+  private autoCreateCount = 0
+  private autoCreateWindowStart = Date.now()
+  private static readonly AUTO_CREATE_MAX_PER_HOUR = 50
+  private static readonly AUTO_CREATE_WINDOW_MS = 60 * 60 * 1000
 
   setCampaignQueries(cq: CampaignQueries): void {
     this.campaignQueries = cq
@@ -164,6 +168,18 @@ export class CampaignMatcher {
       let found = await this.campaignQueries.findByUtmCampaign(utmCampaign)
 
       if (!found) {
+        // Rate limit check for auto-creation
+        const now = Date.now()
+        if (now - this.autoCreateWindowStart > CampaignMatcher.AUTO_CREATE_WINDOW_MS) {
+          this.autoCreateCount = 0
+          this.autoCreateWindowStart = now
+        }
+        if (this.autoCreateCount >= CampaignMatcher.AUTO_CREATE_MAX_PER_HOUR) {
+          logger.warn({ utmCampaign }, 'Auto-create rate limit reached (50/hr), skipping')
+          return null
+        }
+        this.autoCreateCount++
+
         // Auto-create campaign from UTM
         const created = await this.campaignQueries.autoCreateFromUtm(utmCampaign, utmDataClean)
         found = { id: created.id, name: created.name, visibleId: created.visibleId, keyword: '', promptContext: '' }

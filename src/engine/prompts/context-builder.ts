@@ -202,9 +202,9 @@ export async function buildContextLayers(
 
   // ── 8. Campaign context ──────────────────────────────────────────────────
   if (ctx.campaign) {
-    let campaignLine = `[Campaña: ${ctx.campaign.name}]`
+    let campaignLine = `[Campaña: ${escapeDataForPrompt(ctx.campaign.name, 200)}]`
     if (ctx.campaign.promptContext) {
-      campaignLine += ` — ${ctx.campaign.promptContext}`
+      campaignLine += ` — ${escapeDataForPrompt(ctx.campaign.promptContext, 500)}`
     }
     parts.push(campaignLine)
   }
