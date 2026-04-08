@@ -17,7 +17,6 @@ import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 import { loadSystemPrompt, renderTemplate } from '../../modules/prompts/template-loader.js'
 import { getChannelLimit } from './channel-format.js'
 import { buildContextLayers } from './context-builder.js'
-import { buildAccentSection } from './accent.js'
 import { loadSkillCatalog, buildSkillCatalogSection, filterSkillsByTools } from './skills.js'
 
 interface TTSServiceLike {
@@ -95,12 +94,6 @@ export async function buildAgenticPrompt(
     if (prompts.relationship) {
       systemParts.push(`<relationship>\n${prompts.relationship}\n</relationship>`)
     }
-  }
-
-  // ── Section 6: <accent> ───────────────────────────────────────────────────
-  const accentSection = await buildAccentSection(registry)
-  if (accentSection) {
-    systemParts.push(accentSection)
   }
 
   // ── Section 7: <agentic_instructions> ────────────────────────────────────
