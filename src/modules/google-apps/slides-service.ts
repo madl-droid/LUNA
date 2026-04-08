@@ -3,17 +3,26 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import type { SlideInfo, SlideEditOperation } from './types.js'
+import type { SlideInfo, SlideEditOperation, GoogleApiConfig } from './types.js'
+import { googleApiCall } from './api-wrapper.js'
 
 export class SlidesService {
   private slides
+  private apiConfig: { timeoutMs: number; maxRetries: number }
 
-  constructor(auth: OAuth2Client) {
+  constructor(auth: OAuth2Client, config?: GoogleApiConfig) {
     this.slides = google.slides({ version: 'v1', auth })
+    this.apiConfig = {
+      timeoutMs: config?.GOOGLE_API_TIMEOUT_MS ?? 30000,
+      maxRetries: config?.GOOGLE_API_RETRY_MAX ?? 2,
+    }
   }
 
   async getPresentation(presentationId: string): Promise<SlideInfo> {
-    const res = await this.slides.presentations.get({ presentationId })
+    const res = await googleApiCall(
+      () => this.slides.presentations.get({ presentationId }),
+      this.apiConfig, 'slides.presentations.get',
+    )
 
     return {
       presentationId: res.data.presentationId ?? presentationId,
@@ -27,9 +36,10 @@ export class SlidesService {
   }
 
   async createPresentation(title: string): Promise<SlideInfo> {
-    const res = await this.slides.presentations.create({
-      requestBody: { title },
-    })
+    const res = await googleApiCall(
+      () => this.slides.presentations.create({ requestBody: { title } }),
+      this.apiConfig, 'slides.presentations.create',
+    )
 
     return {
       presentationId: res.data.presentationId ?? '',
@@ -42,21 +52,32 @@ export class SlidesService {
   }
 
   async getSlideText(presentationId: string, slideIndex?: number): Promise<string> {
-    const res = await this.slides.presentations.get({ presentationId })
+    const result = await this.getSlideTextWithInfo(presentationId, slideIndex)
+    return result.text
+  }
+
+  /** Single-fetch: returns text + title + totalSlides (used by slides-read tool) */
+  async getSlideTextWithInfo(
+    presentationId: string,
+    slideIndex?: number,
+  ): Promise<{ text: string; title: string; totalSlides: number }> {
+    const res = await googleApiCall(
+      () => this.slides.presentations.get({ presentationId }),
+      this.apiConfig, 'slides.presentations.get(text)',
+    )
     const slides = res.data.slides ?? []
+    const title = res.data.title ?? ''
+    const totalSlides = slides.length
 
     if (slideIndex !== undefined) {
       const slide = slides[slideIndex]
-      if (!slide) return ''
+      if (!slide) return { text: '', title, totalSlides }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const text = this.extractSlideText(slide as any)
+      let text = this.extractSlideText(slide as any)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const notes = this.extractSpeakerNotes(slide as any)
-      let result = text
-      if (notes) {
-        result += '\n[Notas del presentador]: ' + notes
-      }
-      return result
+      if (notes) text += '\n[Notas del presentador]: ' + notes
+      return { text, title, totalSlides }
     }
 
     // Todos los slides
@@ -69,13 +90,11 @@ export class SlidesService {
       const notes = this.extractSpeakerNotes(slide as any)
       if (text.trim() || notes.trim()) {
         let slideOutput = `[Slide ${i + 1}]\n${text}`
-        if (notes.trim()) {
-          slideOutput += `\n[Notas del presentador]: ${notes}`
-        }
+        if (notes.trim()) slideOutput += `\n[Notas del presentador]: ${notes}`
         parts.push(slideOutput)
       }
     }
-    return parts.join('\n\n')
+    return { text: parts.join('\n\n'), title, totalSlides }
   }
 
   async addSlide(presentationId: string, layout?: string, insertionIndex?: number): Promise<string> {
@@ -89,51 +108,25 @@ export class SlidesService {
       request.insertionIndex = insertionIndex
     }
 
-    await this.slides.presentations.batchUpdate({
-      presentationId,
-      requestBody: {
-        requests: [{ createSlide: request }],
-      },
-    })
+    await googleApiCall(
+      () => this.slides.presentations.batchUpdate({
+        presentationId,
+        requestBody: { requests: [{ createSlide: request }] },
+      }),
+      this.apiConfig, 'slides.presentations.batchUpdate(addSlide)',
+    )
 
     return objectId
   }
 
   async updateSpeakerNotes(presentationId: string, slideIndex: number, text: string): Promise<void> {
-    const res = await this.slides.presentations.get({ presentationId })
-    const slides = res.data.slides ?? []
-    const slide = slides[slideIndex]
-    if (!slide) throw new Error(`Slide ${slideIndex} no encontrado`)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const notesPage = (slide as any).slideProperties?.notesPage
-    if (!notesPage) throw new Error('El slide no tiene página de notas')
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pageElements = (notesPage.pageElements ?? []) as Array<any>
-    const textBox = pageElements.find(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (el: any) => el.shape?.shapeType === 'TEXT_BOX' || el.shape?.text,
-    )
-    if (!textBox) throw new Error('No se encontró text box en la página de notas')
-
-    const existingElements = (textBox.shape?.text?.textElements ?? []) as Array<Record<string, unknown>>
-    const hasText = existingElements.some(
-      (te) => (te.textRun as Record<string, unknown> | undefined)?.content !== undefined &&
-        String((te.textRun as Record<string, unknown>).content).trim() !== '',
-    )
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const requests: any[] = []
-    if (hasText) {
-      requests.push({ deleteText: { objectId: textBox.objectId, textRange: { type: 'ALL' } } })
+    const result = await this.batchEdit(presentationId, [
+      { type: 'update_notes', slideIndex, text },
+    ])
+    const detail = result.results[0]?.detail as Record<string, unknown> | undefined
+    if (detail?.error) {
+      throw new Error(String(detail.error))
     }
-    requests.push({ insertText: { objectId: textBox.objectId, text, insertionIndex: 0 } })
-
-    await this.slides.presentations.batchUpdate({
-      presentationId,
-      requestBody: { requests },
-    })
   }
 
   async batchEdit(
@@ -143,7 +136,11 @@ export class SlidesService {
     const needsFetch = operations.some((op) => op.type === 'update_notes')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const presentationData: any = needsFetch
-      ? (await this.slides.presentations.get({ presentationId })).data
+      ? (await googleApiCall(
+          () => this.slides.presentations.get({ presentationId }),
+          this.apiConfig, 'slides.presentations.get(batchEdit)',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ) as any).data
       : null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -199,29 +196,31 @@ export class SlidesService {
     }
 
     if (requests.length > 0) {
-      await this.slides.presentations.batchUpdate({
-        presentationId,
-        requestBody: { requests },
-      })
+      await googleApiCall(
+        () => this.slides.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests },
+        }),
+        this.apiConfig, 'slides.presentations.batchUpdate(batch)',
+      )
     }
 
-    return { applied: operations.length, results }
+    const successCount = results.filter(r => !(r.detail as Record<string, unknown>)?.error).length
+    return { applied: successCount, results }
   }
 
   async replaceText(presentationId: string, searchText: string, replaceText: string): Promise<number> {
-    const res = await this.slides.presentations.batchUpdate({
-      presentationId,
-      requestBody: {
-        requests: [
-          {
-            replaceAllText: {
-              containsText: { text: searchText, matchCase: true },
-              replaceText,
-            },
-          },
-        ],
-      },
-    })
+    const res = await googleApiCall(
+      () => this.slides.presentations.batchUpdate({
+        presentationId,
+        requestBody: {
+          requests: [
+            { replaceAllText: { containsText: { text: searchText, matchCase: true }, replaceText } },
+          ],
+        },
+      }),
+      this.apiConfig, 'slides.presentations.batchUpdate(replace)',
+    )
 
     const reply = res.data.replies?.[0]
     const replaceResult = reply as Record<string, unknown> | undefined
@@ -235,72 +234,55 @@ export class SlidesService {
     text: string,
     insertionIndex = 0,
   ): Promise<void> {
-    await this.slides.presentations.batchUpdate({
-      presentationId,
-      requestBody: {
-        requests: [
-          {
-            insertText: {
-              objectId: shapeId,
-              text,
-              insertionIndex,
-            },
-          },
-        ],
-      },
-    })
+    await googleApiCall(
+      () => this.slides.presentations.batchUpdate({
+        presentationId,
+        requestBody: {
+          requests: [{ insertText: { objectId: shapeId, text, insertionIndex } }],
+        },
+      }),
+      this.apiConfig, 'slides.presentations.batchUpdate(insertShape)',
+    )
   }
 
-  private extractSlideText(slide: Record<string, unknown>): string {
+  /**
+   * Extrae texto de un array de pageElements (shapes con texto).
+   * Usado por extractSlideText (slide content) y extractSpeakerNotes (notes page).
+   */
+  private extractTextFromElements(
+    pageElements: Array<Record<string, unknown>>,
+    options?: { trimEmpty?: boolean },
+  ): string {
     const parts: string[] = []
-    const elements = (slide.pageElements ?? []) as Array<Record<string, unknown>>
-
-    for (const element of elements) {
+    for (const element of pageElements) {
       const shape = element.shape as Record<string, unknown> | undefined
       if (!shape) continue
-
       const textContent = shape.text as Record<string, unknown> | undefined
       if (!textContent) continue
-
       const textElements = (textContent.textElements ?? []) as Array<Record<string, unknown>>
       for (const te of textElements) {
         const textRun = te.textRun as Record<string, unknown> | undefined
         if (textRun?.content) {
-          parts.push(String(textRun.content))
+          const content = String(textRun.content)
+          if (!options?.trimEmpty || content.trim()) {
+            parts.push(content)
+          }
         }
       }
     }
+    return options?.trimEmpty ? parts.join('').trim() : parts.join('')
+  }
 
-    return parts.join('')
+  private extractSlideText(slide: Record<string, unknown>): string {
+    const elements = (slide.pageElements ?? []) as Array<Record<string, unknown>>
+    return this.extractTextFromElements(elements)
   }
 
   private extractSpeakerNotes(slide: Record<string, unknown>): string {
     const slideProps = slide.slideProperties as Record<string, unknown> | undefined
     const notesPage = slideProps?.notesPage as Record<string, unknown> | undefined
     if (!notesPage) return ''
-
-    const pageElements = (notesPage.pageElements ?? []) as Array<Record<string, unknown>>
-    const parts: string[] = []
-
-    for (const element of pageElements) {
-      const shape = element.shape as Record<string, unknown> | undefined
-      if (!shape) continue
-
-      const textContent = shape.text as Record<string, unknown> | undefined
-      if (!textContent) continue
-
-      const textElements = (textContent.textElements ?? []) as Array<Record<string, unknown>>
-      for (const te of textElements) {
-        const textRun = te.textRun as Record<string, unknown> | undefined
-        if (textRun?.content) {
-          const content = String(textRun.content)
-          if (content.trim()) {
-            parts.push(content)
-          }
-        }
-      }
-    }
-
-    return parts.join('').trim()
+    const elements = (notesPage.pageElements ?? []) as Array<Record<string, unknown>>
+    return this.extractTextFromElements(elements, { trimEmpty: true })
   }
 }

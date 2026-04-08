@@ -3,20 +3,26 @@
 
 import { google } from 'googleapis'
 import type { OAuth2Client } from 'google-auth-library'
-import type { DocInfo, DocEditOperation } from './types.js'
+import type { DocInfo, DocEditOperation, GoogleApiConfig } from './types.js'
+import { googleApiCall } from './api-wrapper.js'
 
 export class DocsService {
   private docs
+  private apiConfig: { timeoutMs: number; maxRetries: number }
 
-  constructor(auth: OAuth2Client) {
+  constructor(auth: OAuth2Client, config?: GoogleApiConfig) {
     this.docs = google.docs({ version: 'v1', auth })
+    this.apiConfig = {
+      timeoutMs: config?.GOOGLE_API_TIMEOUT_MS ?? 30000,
+      maxRetries: config?.GOOGLE_API_RETRY_MAX ?? 2,
+    }
   }
 
   async getDocument(documentId: string): Promise<DocInfo> {
-    const res = await this.docs.documents.get({
-      documentId,
-      includeTabsContent: true,
-    })
+    const res = await googleApiCall(
+      () => this.docs.documents.get({ documentId, includeTabsContent: true }),
+      this.apiConfig, 'docs.documents.get',
+    )
 
     // Extract tabs info from response
     const rawTabs = (res.data as Record<string, unknown>).tabs as
@@ -76,27 +82,24 @@ export class DocsService {
   }
 
   async createDocument(title: string, content?: string): Promise<DocInfo> {
-    const res = await this.docs.documents.create({
-      requestBody: { title },
-    })
+    const res = await googleApiCall(
+      () => this.docs.documents.create({ requestBody: { title } }),
+      this.apiConfig, 'docs.documents.create',
+    )
 
     const documentId = res.data.documentId ?? ''
 
     // Si hay contenido, insertarlo
     if (content && documentId) {
-      await this.docs.documents.batchUpdate({
-        documentId,
-        requestBody: {
-          requests: [
-            {
-              insertText: {
-                location: { index: 1 },
-                text: content,
-              },
-            },
-          ],
-        },
-      })
+      await googleApiCall(
+        () => this.docs.documents.batchUpdate({
+          documentId,
+          requestBody: {
+            requests: [{ insertText: { location: { index: 1 }, text: content } }],
+          },
+        }),
+        this.apiConfig, 'docs.documents.batchUpdate(create-insert)',
+      )
     }
 
     return {
@@ -107,35 +110,29 @@ export class DocsService {
   }
 
   async insertText(documentId: string, text: string, index?: number): Promise<void> {
-    await this.docs.documents.batchUpdate({
-      documentId,
-      requestBody: {
-        requests: [
-          {
-            insertText: {
-              location: { index: index ?? 1 },
-              text,
-            },
-          },
-        ],
-      },
-    })
+    await googleApiCall(
+      () => this.docs.documents.batchUpdate({
+        documentId,
+        requestBody: {
+          requests: [{ insertText: { location: { index: index ?? 1 }, text } }],
+        },
+      }),
+      this.apiConfig, 'docs.documents.batchUpdate(insert)',
+    )
   }
 
   async replaceText(documentId: string, searchText: string, replaceText: string): Promise<number> {
-    const res = await this.docs.documents.batchUpdate({
-      documentId,
-      requestBody: {
-        requests: [
-          {
-            replaceAllText: {
-              containsText: { text: searchText, matchCase: true },
-              replaceText,
-            },
-          },
-        ],
-      },
-    })
+    const res = await googleApiCall(
+      () => this.docs.documents.batchUpdate({
+        documentId,
+        requestBody: {
+          requests: [
+            { replaceAllText: { containsText: { text: searchText, matchCase: true }, replaceText } },
+          ],
+        },
+      }),
+      this.apiConfig, 'docs.documents.batchUpdate(replace)',
+    )
 
     const reply = res.data.replies?.[0]
     return reply?.replaceAllText?.occurrencesChanged ?? 0
@@ -143,117 +140,83 @@ export class DocsService {
 
   async appendText(documentId: string, text: string): Promise<void> {
     // Obtener longitud del documento para insertar al final
-    const doc = await this.docs.documents.get({ documentId })
+    const doc = await googleApiCall(
+      () => this.docs.documents.get({ documentId }),
+      this.apiConfig, 'docs.documents.get',
+    )
     const content = doc.data.body?.content ?? []
     const lastElement = content[content.length - 1]
     const endIndex = lastElement?.endIndex ?? 1
 
-    await this.docs.documents.batchUpdate({
-      documentId,
-      requestBody: {
-        requests: [
-          {
-            insertText: {
-              location: { index: Math.max(endIndex - 1, 1) },
-              text,
-            },
-          },
-        ],
-      },
-    })
+    await googleApiCall(
+      () => this.docs.documents.batchUpdate({
+        documentId,
+        requestBody: {
+          requests: [{ insertText: { location: { index: Math.max(endIndex - 1, 1) }, text } }],
+        },
+      }),
+      this.apiConfig, 'docs.documents.batchUpdate(append)',
+    )
   }
 
   async batchEdit(
     documentId: string,
     operations: DocEditOperation[],
   ): Promise<{ applied: number }> {
+    // BUG-1: validate replace ops have searchText
+    const badReplace = operations.find(op => op.type === 'replace' && !op.searchText)
+    if (badReplace) throw new Error('Las operaciones replace requieren searchText')
+
     const replaceOps = operations.filter(op => op.type === 'replace')
     const insertOps = operations.filter(op => op.type === 'insert')
     const appendOps = operations.filter(op => op.type === 'append')
 
-    const hasMixed = replaceOps.length > 0 && (insertOps.length > 0 || appendOps.length > 0)
-
-    // Build replace requests
-    const buildReplaceRequests = (ops: DocEditOperation[]) =>
-      ops.map(op => ({
+    // Step 1: Execute replaces (if any) — no index issues
+    if (replaceOps.length > 0) {
+      const requests = replaceOps.map(op => ({
         replaceAllText: {
-          containsText: { text: op.searchText ?? op.text, matchCase: true },
+          containsText: { text: op.searchText!, matchCase: true },
           replaceText: op.text,
         },
       }))
-
-    // Build insert/append requests given a document endIndex
-    const buildInsertAppendRequests = (
-      inserts: DocEditOperation[],
-      appends: DocEditOperation[],
-      endIndex: number,
-    ) => {
-      const requests: object[] = []
-
-      // Inserts: ordered from largest to smallest index to avoid index displacement
-      const sortedInserts = [...inserts].sort((a, b) => (b.index ?? 1) - (a.index ?? 1))
-      for (const op of sortedInserts) {
-        requests.push({
-          insertText: {
-            location: { index: op.index ?? 1 },
-            text: op.text,
-          },
-        })
-      }
-
-      // Appends: accumulate offset so each insert goes after the previous
-      let offset = 0
-      const insertIndex = Math.max(endIndex - 1, 1)
-      for (const op of appends) {
-        requests.push({
-          insertText: {
-            location: { index: insertIndex + offset },
-            text: op.text,
-          },
-        })
-        offset += op.text.length
-      }
-
-      return requests
+      await googleApiCall(
+        () => this.docs.documents.batchUpdate({ documentId, requestBody: { requests } }),
+        this.apiConfig, 'docs.documents.batchUpdate(replace)',
+      )
     }
 
-    if (hasMixed) {
-      // Two-call strategy: replaces first, then re-fetch endIndex for inserts/appends
-      if (replaceOps.length > 0) {
-        await this.docs.documents.batchUpdate({
-          documentId,
-          requestBody: { requests: buildReplaceRequests(replaceOps) },
-        })
-      }
-
-      if (insertOps.length > 0 || appendOps.length > 0) {
-        const doc = await this.docs.documents.get({ documentId })
-        const content = doc.data.body?.content ?? []
-        const lastElement = content[content.length - 1]
-        const endIndex = lastElement?.endIndex ?? 1
-
-        await this.docs.documents.batchUpdate({
-          documentId,
-          requestBody: { requests: buildInsertAppendRequests(insertOps, appendOps, endIndex) },
-        })
-      }
-    } else if (replaceOps.length > 0) {
-      // Only replaces — single call
-      await this.docs.documents.batchUpdate({
-        documentId,
-        requestBody: { requests: buildReplaceRequests(replaceOps) },
-      })
-    } else if (insertOps.length > 0 || appendOps.length > 0) {
-      // Only inserts/appends — single call after fetching endIndex
-      const doc = await this.docs.documents.get({ documentId })
+    // Step 2: Execute inserts + appends (if any) — need fresh endIndex
+    if (insertOps.length > 0 || appendOps.length > 0) {
+      const doc = await googleApiCall(
+        () => this.docs.documents.get({ documentId }),
+        this.apiConfig, 'docs.documents.get',
+      )
       const content = doc.data.body?.content ?? []
       const lastElement = content[content.length - 1]
       const endIndex = lastElement?.endIndex ?? 1
 
-      await this.docs.documents.batchUpdate({
-        documentId,
-        requestBody: { requests: buildInsertAppendRequests(insertOps, appendOps, endIndex) },
-      })
+      const requests: object[] = []
+
+      // Inserts: descending order to avoid displacement
+      const sortedInserts = [...insertOps].sort((a, b) => (b.index ?? 1) - (a.index ?? 1))
+      for (const op of sortedInserts) {
+        requests.push({ insertText: { location: { index: op.index ?? 1 }, text: op.text } })
+      }
+
+      // Appends: accumulate offset
+      let offset = 0
+      const baseIndex = Math.max(endIndex - 1, 1)
+      for (const op of appendOps) {
+        requests.push({ insertText: { location: { index: baseIndex + offset }, text: op.text } })
+        offset += op.text.length
+      }
+
+      if (requests.length > 0) {
+        await googleApiCall(
+          () => this.docs.documents.batchUpdate({ documentId, requestBody: { requests } }),
+          this.apiConfig, 'docs.documents.batchUpdate(insert+append)',
+        )
+      }
     }
 
     return { applied: operations.length }

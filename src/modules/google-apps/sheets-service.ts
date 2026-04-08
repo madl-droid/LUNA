@@ -199,6 +199,47 @@ export class SheetsService {
   }
 
   /**
+   * Append rows and restore data validations (dropdowns) from the last data row.
+   * Used by both the sheets-append tool handler and batchEdit.
+   */
+  async appendWithValidations(
+    spreadsheetId: string,
+    range: string,
+    values: string[][],
+  ): Promise<{ updatedCells: number; updatedRows: number }> {
+    // Parsear sheetTitle del range (ej: "Sheet1" de "Sheet1!A:D" o "'Mi hoja'!A:D")
+    const sheetTitleMatch = /^'?([^'!]+)'?!/.exec(range)
+    const sheetTitle = sheetTitleMatch?.[1] ?? range.split('!')[0] ?? 'Sheet1'
+
+    // Best-effort: capturar validaciones antes del append
+    let sheetId: number | undefined
+    let lastDataRow = 0
+    let validations: Array<Record<string, unknown> | null> = []
+    try {
+      const info = await this.getSpreadsheet(spreadsheetId)
+      const sheetMeta = info.sheets.find((s) => s.title === sheetTitle)
+      sheetId = sheetMeta?.sheetId
+      const existing = await this.readRange(spreadsheetId, range)
+      lastDataRow = existing.values.length > 0 ? existing.values.length - 1 : 0
+      if (sheetId !== undefined && lastDataRow > 0) {
+        validations = await this.getRowValidations(spreadsheetId, sheetTitle, lastDataRow)
+      }
+    } catch {
+      // best-effort — continuar sin validaciones
+    }
+
+    // Ejecutar append
+    const result = await this.appendRows(spreadsheetId, range, values)
+
+    // Restaurar validaciones (fire-and-forget)
+    if (sheetId !== undefined && validations.some((v) => v !== null)) {
+      this.applyValidations(spreadsheetId, sheetId, validations, lastDataRow + 1, values.length).catch(() => {})
+    }
+
+    return result
+  }
+
+  /**
    * Busca un texto en toda la hoja (o en una hoja específica) y lo reemplaza.
    */
   async findReplace(
@@ -265,10 +306,10 @@ export class SheetsService {
       results.push({ type: 'write', detail: { updatedCells: res.data.totalUpdatedCells ?? 0 } })
     }
 
-    // APPENDS — ejecutar secuencialmente
+    // APPENDS — ejecutar secuencialmente con restauración de validaciones
     const appendOps = operations.filter((op) => op.type === 'append' && op.range && op.values)
     for (const op of appendOps) {
-      const r = await this.appendRows(spreadsheetId, op.range!, op.values!)
+      const r = await this.appendWithValidations(spreadsheetId, op.range!, op.values!)
       results.push({ type: 'append', detail: r })
     }
 

@@ -18,9 +18,10 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - `tools.ts` — registro de tools para el pipeline (Drive, Sheets, Docs, Slides, Calendar)
 
 ## Manifest
-- type: `provider`, removable: true, activateByDefault: false
+- type: `provider`, removable: true, activateByDefault: true
 - depends: [] (sin dependencias, pero tools module es opcional)
 - configSchema: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN, GOOGLE_ENABLED_SERVICES, GOOGLE_TOKEN_REFRESH_BUFFER_MS, GOOGLE_API_TIMEOUT_MS, GOOGLE_API_RETRY_MAX
+- **Todos los servicios (Sheets, Docs, Slides)** usan `googleApiCall` wrapper (api-wrapper.ts) para timeout + retry con exponential backoff
 
 ## Servicios registrados
 - `google:oauth-client` — OAuth2Client de google-auth-library
@@ -45,7 +46,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 
 ## Tools registrados (cuando tools module existe)
 - Drive: drive-list-files, drive-get-file, drive-create-folder, drive-create-file, drive-share, drive-move-file
-- Sheets: sheets-read (paginación, auto-detect tab), sheets-write (protección), sheets-append (protección, restaura validaciones), sheets-create, sheets-info, sheets-find-replace, sheets-batch-edit
+- Sheets: sheets-read (paginación server-side, auto-detect tab), sheets-write, sheets-append (restaura validaciones), sheets-create, sheets-info, sheets-find-replace, sheets-batch-edit
 - Docs: docs-read (truncation 30K, word count), docs-create, docs-append, docs-replace, docs-batch-edit
 - Slides: slides-read (incluye speaker notes), slides-info, slides-create, slides-replace-text, slides-add-slide, slides-update-notes, slides-batch-edit
 - Calendar: calendar-list-events, calendar-get-event, calendar-create-event, calendar-update-event, calendar-delete-event, calendar-add-attendees, calendar-list-calendars, calendar-check-availability, calendar-get-scheduling-context, calendar-execute-followup
@@ -69,10 +70,6 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - `google-calendar-scheduler` — subagent de agendamiento, se habilita/deshabilita automáticamente con el servicio Calendar
 - Skills en `instance/prompts/system/skills/gcal-*.md`: new-appointment, reschedule, cancel, check-availability, info
 - Tool `calendar-get-scheduling-context` entrega config completa al subagent (roles, coworkers, instrucciones, horario, days off)
-
-## Protección de Sheets
-- `GOOGLE_SHEETS_PROTECTED_IDS` (env var): IDs de spreadsheets protegidos contra escritura (comma-separated)
-- Guard aplicado en: sheets-write, sheets-append, sheets-find-replace, sheets-batch-edit
 
 ## Hooks emitidos
 - `calendar:event-created` — al crear evento (payload: event, contactId, channel, meetLink)

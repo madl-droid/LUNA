@@ -391,7 +391,6 @@ const manifest: ModuleManifest = {
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
     GOOGLE_API_TIMEOUT_MS: numEnv(30000),
     GOOGLE_API_RETRY_MAX: numEnv(2),
-    GOOGLE_SHEETS_PROTECTED_IDS: z.string().default('').describe('Comma-separated spreadsheet IDs protegidos contra escritura'),
   }),
 
   console: {
@@ -485,13 +484,13 @@ const manifest: ModuleManifest = {
     }
 
     if (_enabledSet.has('docs')) {
-      _services.docs = new DocsService(authClient)
+      _services.docs = new DocsService(authClient, config)
       registry.provide('google:docs', _services.docs)
       logger.info('Docs service enabled')
     }
 
     if (_enabledSet.has('slides')) {
-      _services.slides = new SlidesService(authClient)
+      _services.slides = new SlidesService(authClient, config)
       registry.provide('google:slides', _services.slides)
       logger.info('Slides service enabled')
     }

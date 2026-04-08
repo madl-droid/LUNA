@@ -8,7 +8,7 @@ import type { SheetsService } from './sheets-service.js'
 import type { DocsService } from './docs-service.js'
 import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
-import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, GoogleApiConfig, DocEditOperation, SlideEditOperation } from './types.js'
+import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, DocEditOperation, SlideEditOperation } from './types.js'
 import { CALENDAR_CONFIG_DEFAULTS } from './calendar-config.js'
 import {
   formatEventsListForAgent,
@@ -383,13 +383,6 @@ export async function registerGoogleTools(
   if (enabledServices.has('sheets') && services.sheets) {
     const sheets = services.sheets
 
-    /** Guard: retorna true si el spreadsheetId está en la lista de IDs protegidos */
-    function isProtectedSheet(spreadsheetId: string): boolean {
-      const config = registry.getConfig<GoogleApiConfig>('google-apps')
-      const ids = config.GOOGLE_SHEETS_PROTECTED_IDS.split(',').map((s) => s.trim()).filter(Boolean)
-      return ids.includes(spreadsheetId)
-    }
-
     await toolRegistry.registerTool({
       definition: {
         name: 'sheets-read',
@@ -422,6 +415,14 @@ export async function registerGoogleTools(
           range = `'${firstTitle}'`
         }
 
+        // PERF-1: Si el range no tiene filas explícitas (ej: "'Sheet1'" sin !A1:D10),
+        // limitar server-side para evitar cargar toda la hoja en memoria
+        const hasExplicitRows = /\d/.test(range)
+        if (!hasExplicitRows) {
+          const maxRow = offset + limit + 2 // +1 header, +1 one-based
+          range = `${range}!A1:ZZZ${maxRow}`
+        }
+
         const data = await sheets.readRange(spreadsheetId, range)
         const values = data.values
 
@@ -438,6 +439,7 @@ export async function registerGoogleTools(
         const pageRows = dataRows.slice(offset, offset + limit)
         const hasMore = (offset + limit) < totalDataRows
         const nextOffset = hasMore ? offset + limit : null
+        const mayHaveMore = !hasExplicitRows && values.length >= offset + limit + 2
 
         // Formatear output tabular
         const separator = header.map(() => '────').join('─┼─')
@@ -459,8 +461,8 @@ export async function registerGoogleTools(
             header,
             offset,
             limit,
-            hasMore,
-            nextOffset,
+            hasMore: hasMore || mayHaveMore,
+            nextOffset: nextOffset ?? (mayHaveMore ? offset + limit : null),
           },
         }
       },
@@ -484,9 +486,6 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        if (isProtectedSheet(input.spreadsheetId as string)) {
-          return { success: false, error: 'Este spreadsheet está protegido contra escritura por el administrador.' }
-        }
         const result = await sheets.writeRange(
           input.spreadsheetId as string,
           input.range as string,
@@ -518,47 +517,7 @@ export async function registerGoogleTools(
         const range = input.range as string
         const values = input.values as string[][]
 
-        if (isProtectedSheet(spreadsheetId)) {
-          return { success: false, error: 'Este spreadsheet está protegido contra escritura por el administrador.' }
-        }
-
-        // Parsear sheetTitle del range (ej: "Sheet1" de "Sheet1!A:D" o "'Mi hoja'!A:D")
-        const sheetTitleMatch = /^'?([^'!]+)'?!/.exec(range)
-        const sheetTitle = sheetTitleMatch?.[1] ?? range.split('!')[0] ?? 'Sheet1'
-
-        // Obtener info del spreadsheet para sheetId y última fila con datos
-        let sheetId: number | undefined
-        let lastDataRow = 0
-        try {
-          const info = await sheets.getSpreadsheet(spreadsheetId)
-          const sheetMeta = info.sheets.find((s) => s.title === sheetTitle)
-          sheetId = sheetMeta?.sheetId
-          // Leer rango para saber cuántas filas hay actualmente (para saber dónde aplicar validaciones)
-          const existing = await sheets.readRange(spreadsheetId, range)
-          lastDataRow = existing.values.length > 0 ? existing.values.length - 1 : 0 // -1 excluye header
-        } catch {
-          // Si falla la lectura previa, continuar sin restaurar validaciones
-        }
-
-        // Obtener validaciones de la última fila con datos (best-effort)
-        let validations: Array<Record<string, unknown> | null> = []
-        if (sheetId !== undefined && lastDataRow > 0) {
-          try {
-            validations = await sheets.getRowValidations(spreadsheetId, sheetTitle, lastDataRow)
-          } catch {
-            // best-effort
-          }
-        }
-
-        // Ejecutar el append
-        const result = await sheets.appendRows(spreadsheetId, range, values)
-
-        // Restaurar validaciones post-append (best-effort, fire-and-forget)
-        if (sheetId !== undefined && validations.some((v) => v !== null)) {
-          sheets.applyValidations(spreadsheetId, sheetId, validations, lastDataRow + 1, values.length).catch((err) => {
-            logger.warn({ err }, 'sheets-append: failed to restore validations (non-blocking)')
-          })
-        }
+        const result = await sheets.appendWithValidations(spreadsheetId, range, values)
 
         return { success: true, data: result }
       },
@@ -626,9 +585,6 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        if (isProtectedSheet(input.spreadsheetId as string)) {
-          return { success: false, error: 'Este spreadsheet está protegido contra escritura.' }
-        }
         const result = await sheets.findReplace(
           input.spreadsheetId as string,
           input.find as string,
@@ -663,9 +619,6 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        if (isProtectedSheet(input.spreadsheetId as string)) {
-          return { success: false, error: 'Este spreadsheet está protegido contra escritura.' }
-        }
         const result = await sheets.batchEdit(
           input.spreadsheetId as string,
           input.operations as SheetBatchOperation[],
@@ -859,15 +812,14 @@ export async function registerGoogleTools(
       handler: async (input) => {
         const presentationId = input.presentationId as string
         const slideIndex = input.slideIndex as number | undefined
-        const text = await slides.getSlideText(presentationId, slideIndex)
-        const info = await slides.getPresentation(presentationId)
+        const result = await slides.getSlideTextWithInfo(presentationId, slideIndex)
         return {
           success: true,
           data: {
-            title: info.title,
-            totalSlides: info.slides.length,
+            title: result.title,
+            totalSlides: result.totalSlides,
             readingSlide: slideIndex !== undefined ? slideIndex + 1 : 'all',
-            text,
+            text: result.text,
           },
         }
       },
@@ -990,12 +942,16 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        await slides.updateSpeakerNotes(
-          input.presentationId as string,
-          input.slideIndex as number,
-          input.text as string,
-        )
-        return { success: true, data: { updated: true, slideIndex: input.slideIndex } }
+        try {
+          await slides.updateSpeakerNotes(
+            input.presentationId as string,
+            input.slideIndex as number,
+            input.text as string,
+          )
+          return { success: true, data: { updated: true, slideIndex: input.slideIndex } }
+        } catch (err) {
+          return { success: false, error: err instanceof Error ? err.message : String(err) }
+        }
       },
     })
 

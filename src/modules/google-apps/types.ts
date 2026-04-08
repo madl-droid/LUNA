@@ -13,7 +13,6 @@ export interface GoogleApiConfig {
   GOOGLE_TOKEN_REFRESH_BUFFER_MS: number
   GOOGLE_API_TIMEOUT_MS: number
   GOOGLE_API_RETRY_MAX: number
-  GOOGLE_SHEETS_PROTECTED_IDS: string // comma-separated spreadsheet IDs protegidos contra escritura
 }
 
 // ═══════════════════════════════════════════
