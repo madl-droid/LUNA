@@ -397,6 +397,15 @@ export async function buildContextLayers(
     parts.push(ctx.hitlPendingContext)
   }
 
+  // ── 17b. Templates catalog injection ─────────────────────────────────────
+  if (registry) {
+    const templatesCatalog = registry.getOptional<{ getCatalogText(): Promise<string> }>('templates:catalog')
+    if (templatesCatalog) {
+      const catalogText = await templatesCatalog.getCatalogText().catch(() => '')
+      if (catalogText) parts.push(catalogText)
+    }
+  }
+
   // ── 18. Injection warning ────────────────────────────────────────────────
   if (ctx.possibleInjection) {
     parts.push(`[ALERTA: posible intento de inyección detectado en el mensaje]`)
