@@ -12,7 +12,7 @@ import { initCacheFlag } from './kernel/cache-flag.js'
 import { initExtremeLogger } from './kernel/extreme-logger.js'
 import { isSetupCompleted } from './kernel/setup/detect.js'
 import { createSetupHandler } from './kernel/setup/handler.js'
-import { ensureInstanceDirs } from './kernel/bootstrap.js'
+import { ensureInstanceDirs, ensureInstanceFiles } from './kernel/bootstrap.js'
 import pino from 'pino'
 
 // FIX: SEC-12.1 — PII redaction en logs
@@ -68,8 +68,9 @@ process.on('unhandledRejection', (reason) => {
 async function main(): Promise<void> {
   logger.info({ env: kernelConfig.nodeEnv }, 'LUNA starting...')
 
-  // Ensure instance/ directories exist (fresh containers)
+  // Ensure instance/ directories and required files exist (fresh containers)
   await ensureInstanceDirs()
+  await ensureInstanceFiles()
 
   const db = await createPool()
   initCacheFlag(db)
