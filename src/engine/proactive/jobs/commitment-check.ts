@@ -51,6 +51,7 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
       // If commitment is assigned to a human, notify the human — not the contact
       if (row.assigned_to) {
         await notifyAssignedHuman(ctx, row)
+        processed++
         continue
       }
 
@@ -194,35 +195,35 @@ async function notifyAssignedHuman(ctx: ProactiveJobContext, row: Record<string,
     )
 
     logger.info({ commitmentId, assignedTo, attempt: attemptCount + 1 }, 'Notified assigned human about commitment')
-  } catch (err) {
-    logger.warn({ err, commitmentId, assignedTo }, 'Failed to notify assigned human')
-  }
 
-  // If max attempts reached, escalate
-  if (attemptCount + 1 >= maxAttempts) {
-    await ctx.db.query(
-      `UPDATE commitments SET status = 'failed', action_taken = 'Human did not respond after max attempts'
-       WHERE id = $1`,
-      [commitmentId],
-    )
-    logger.warn({ commitmentId, assignedTo }, 'Human commitment failed after max attempts')
+    // Check max attempts AFTER successful notification + DB update
+    if (attemptCount + 1 >= maxAttempts) {
+      await ctx.db.query(
+        `UPDATE commitments SET status = 'failed', action_taken = 'Human did not respond after max attempts'
+         WHERE id = $1`,
+        [commitmentId],
+      )
+      logger.warn({ commitmentId, assignedTo }, 'Human commitment failed after max attempts')
 
-    const hitlManager = ctx.registry.getOptional<{
-      createTicket(params: Record<string, unknown>): Promise<unknown>
-    }>('hitl:manager')
-    if (hitlManager) {
-      try {
-        await hitlManager.createTicket({
-          requestType: 'escalation',
-          requestSummary: `Compromiso no atendido por ${assignedTo}: "${description}"`,
-          requesterContactId: row.contact_id as string,
-          urgency: 'high',
-          targetRole: 'admin',
-          metadata: { commitmentId, originalAssignee: assignedTo },
-        })
-      } catch (err) {
-        logger.warn({ err, commitmentId }, 'Failed to create escalation ticket for unattended commitment')
+      const hitlManager = ctx.registry.getOptional<{
+        createTicket(params: Record<string, unknown>): Promise<unknown>
+      }>('hitl:manager')
+      if (hitlManager) {
+        try {
+          await hitlManager.createTicket({
+            requestType: 'escalation',
+            requestSummary: `Compromiso no atendido por ${assignedTo}: "${description}"`,
+            requesterContactId: row.contact_id as string,
+            urgency: 'high',
+            targetRole: 'admin',
+            metadata: { commitmentId, originalAssignee: assignedTo },
+          })
+        } catch (err) {
+          logger.warn({ err, commitmentId }, 'Failed to create escalation ticket for unattended commitment')
+        }
       }
     }
+  } catch (err) {
+    logger.warn({ err, commitmentId, assignedTo }, 'Failed to notify assigned human — will retry on next scan')
   }
 }
