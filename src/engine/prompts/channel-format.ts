@@ -5,12 +5,6 @@
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../../modules/prompts/types.js'
 
-// Minimal fallback — full formats live in instance/prompts/system/channel-format-*.md
-const DEFAULT_CHANNEL_LIMITS: Record<string, string> = {
-  whatsapp: 'CANAL: WhatsApp — Categoría: mensajería instantánea\nMensajes cortos y conversacionales. Máximo 300 caracteres. Sin markdown.',
-  email: 'CANAL: Email — Categoría: comunicación asíncrona\nFormato rico, tono profesional, párrafos cortos. Incluye saludo y despedida.',
-}
-
 /** Map channel names to their communication category */
 const CHANNEL_CATEGORIES: Record<string, string> = {
   whatsapp: 'mensajería instantánea',
@@ -41,8 +35,7 @@ export async function getChannelLimit(channel: string, registry?: Registry): Pro
     const tmpl = await svc.getSystemPrompt(`channel-format-${channel}`)
     if (tmpl) return tmpl
   }
-  // 3. Hardcoded defaults
-  return DEFAULT_CHANNEL_LIMITS[channel] ?? DEFAULT_CHANNEL_LIMITS.whatsapp ?? ''
+  return ''
 }
 
 /** Build format prompt dynamically from form fields stored in config_store */

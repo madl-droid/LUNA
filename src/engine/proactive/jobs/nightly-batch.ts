@@ -160,29 +160,22 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
 
         const displayName = row.display_name ?? 'Sin nombre'
         const promptsSvc = ctx.registry.getOptional<PromptsService>('prompts:service')
-        let coldLeadUserContent = ''
-        if (promptsSvc) {
-          coldLeadUserContent = await promptsSvc.getSystemPrompt('cold-lead-scoring', {
-            displayName,
-            qualificationData: dataStr,
-            historyStr,
-          })
-        }
-        if (!coldLeadUserContent) {
-          coldLeadUserContent = `Lead: ${displayName}
-Datos de calificación:
-${dataStr}
+        const coldLeadUserContent = promptsSvc
+          ? await promptsSvc.getSystemPrompt('cold-lead-scoring', {
+              displayName,
+              qualificationData: dataStr,
+              historyStr,
+            })
+          : ''
+        if (!coldLeadUserContent) return
 
-Historial de conversaciones:
-${historyStr}
-
-Evalúa este lead frío. Responde SOLO con JSON:
-{ "score": 0-100, "reason": "breve explicación", "recommend_reactivation": true/false }`
-        }
+        const nightlyScoreSystem = promptsSvc
+          ? await promptsSvc.getSystemPrompt('nightly-scoring-system')
+          : ''
 
         const llmResult = await ctx.registry.callHook('llm:chat', {
           task: 'nightly-scoring',
-          system: 'Eres un analista de leads. Evalúa si un lead frío vale la pena reactivar.',
+          system: nightlyScoreSystem,
           messages: [{
             role: 'user' as const,
             content: coldLeadUserContent,

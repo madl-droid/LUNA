@@ -20,9 +20,6 @@ export const VISUAL_SECTION_MARKER = '(visual)'
 /** Marker appended to section titles produced by OCR on scanned pages */
 export const OCR_SECTION_MARKER = '(OCR)'
 
-// Minimal fallback — full prompt lives in instance/prompts/system/pdf-ocr.md
-const PDF_OCR_SYSTEM_FALLBACK = 'Eres un OCR. Extrae TODO el texto visible de esta imagen. Responde SOLO con el texto extraído.'
-
 // ═══════════════════════════════════════════
 // Función principal
 // ═══════════════════════════════════════════
@@ -182,15 +179,8 @@ async function extractScannedPdf(parser: any, pages: number[], fileName: string,
     return [{ title: 'PDF escaneado', content: `[PDF escaneado: ${fileName}. LLM no disponible para OCR.]` }]
   }
 
-  // Load OCR system prompt from .md template
-  let ocrSystem = PDF_OCR_SYSTEM_FALLBACK
   const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
-  if (promptsSvc) {
-    try {
-      const tmpl = await promptsSvc.getSystemPrompt('pdf-ocr')
-      if (tmpl) ocrSystem = tmpl
-    } catch { /* fallback */ }
-  }
+  const ocrSystem = promptsSvc ? await promptsSvc.getSystemPrompt('pdf-ocr') : ''
 
   const sections: ExtractedSection[] = []
   const pagesToProcess = pages.slice(0, MAX_VISION_PAGES)

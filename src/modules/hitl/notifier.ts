@@ -136,13 +136,13 @@ export async function notifyRequesterExpired(
   // Load system prompt from .md, fallback to inline
   const promptsSvc = registry.getOptional<{ getSystemPrompt(name: string): Promise<string> }>('prompts:service')
   const hitlSystem = promptsSvc
-    ? await promptsSvc.getSystemPrompt('hitl-expire-message').catch(() => null)
-    : null
+    ? await promptsSvc.getSystemPrompt('hitl-expire-message')
+    : ''
 
   // Use LLM to compose a natural expiration message
   const result = await registry.callHook('llm:chat', {
     task: 'hitl-expire-message',
-    system: hitlSystem || `You are a helpful customer service agent. Generate a brief, natural message informing the client that you were unable to get a response from the team right now, but you will follow up later. Be empathetic and professional. One short paragraph, no greetings.`,
+    system: hitlSystem,
     messages: [
       {
         role: 'user',

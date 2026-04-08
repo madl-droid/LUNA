@@ -12,13 +12,6 @@ import { SKILL_READ_TOOL_NAME } from '../agentic/skill-delegation.js'
 import { loadSkillCatalog } from './skills.js'
 import { buildDatetimeSection } from './agentic.js'
 
-// Minimal fallback — full prompt lives in instance/prompts/system/subagent-system.md
-const SUBAGENT_SYSTEM_FALLBACK = `Eres un agente de ejecución. Completa la tarea con las herramientas disponibles.
-Responde en JSON: {"status":"done|partial|failed","result":{},"summary":"..."}`
-
-// Minimal fallback — full instructions live in instance/prompts/system/spawn-instructions.md
-const SPAWN_INSTRUCTIONS_FALLBACK = `\nIMPORTANTE: Solo usa spawn_subagent si la tarea es demasiado compleja para resolverla tú mismo.`
-
 /**
  * Build the subagent prompt for a specific execution step.
  * Uses catalog entry's system prompt if available, falls back to prompts module, then hardcoded.
@@ -47,15 +40,11 @@ export async function buildSubagentPrompt(
     system = svc ? await svc.getSystemPrompt('subagent-system') : ''
   }
 
-  if (!system) {
-    system = SUBAGENT_SYSTEM_FALLBACK
-  }
-
   // Append spawn instructions if this subagent can spawn children
   if (catalogEntry?.canSpawnChildren) {
     const svcForSpawn = registry?.getOptional<PromptsService>('prompts:service') ?? null
     const spawnInstr = svcForSpawn ? await svcForSpawn.getSystemPrompt('spawn-instructions') : ''
-    system += spawnInstr || SPAWN_INSTRUCTIONS_FALLBACK
+    system += spawnInstr
   }
 
   // ── User message ──

@@ -12,9 +12,6 @@ import { validateCommitment } from './commitment-validator.js'
 
 const logger = pino({ name: 'engine:commitment-detector' })
 
-// Minimal fallback — full prompt lives in instance/prompts/system/commitment-detector-system.md
-const DETECTOR_SYSTEM_FALLBACK = `You are a commitment detector. Respond in JSON: {"has_commitment":true/false,"commitments":[{"type":"...","description":"...","due_within_hours":null}]}`
-
 /**
  * Scan an agent response for implicit commitments.
  * Uses a fast LLM (classify model) to detect promises.
@@ -51,8 +48,8 @@ export async function detectCommitments(
   try {
     const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
     const systemPrompt = promptsSvc
-      ? (await promptsSvc.getSystemPrompt('commitment-detector-system')) || DETECTOR_SYSTEM_FALLBACK
-      : DETECTOR_SYSTEM_FALLBACK
+      ? await promptsSvc.getSystemPrompt('commitment-detector-system')
+      : ''
 
     const result = await callLLM({
       task: 'commitment-detect',

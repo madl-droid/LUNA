@@ -131,7 +131,7 @@ Reglas:
   try {
     const result = await llm.callHook('llm:chat', {
       task: 'knowledge-description',
-      system: systemPrompt || 'Eres un bibliotecario experto que cataloga documentos. Generas descripciones precisas y keywords útiles para búsqueda.',
+      system: systemPrompt ?? '',
       messages: [{ role: 'user' as const, content: userContent }],
       maxTokens: 500,
       temperature: 0.2,

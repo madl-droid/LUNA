@@ -130,12 +130,9 @@ export async function buildAgenticPrompt(
     || (ctx.responseFormat === 'auto' && !!ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType))
 
   if (prepareForVoice) {
-    const voiceSection = svc
-      ? await svc.getSystemPrompt('voice-tts-format').catch(() => null)
-      : null
-    const voiceFallback = 'Tu respuesta será convertida a nota de voz (audio). Escribe como si hablaras en voz alta. NO uses listas, viñetas ni markdown. Usa frases cortas y naturales.'
+    const voiceSection = svc ? await svc.getSystemPrompt('voice-tts-format') : ''
     const voiceTags = svc ? await svc.getSystemPrompt('tts-voice-tags') : ''
-    let voiceContent = voiceSection || voiceFallback
+    let voiceContent = voiceSection
     if (voiceTags) voiceContent += `\n\n${voiceTags}`
     systemParts.push(`<voice_instructions>\n${voiceContent}\n</voice_instructions>`)
   }

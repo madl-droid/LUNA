@@ -354,20 +354,9 @@ async function getReviewFeedback(
     getPrompt(slot: string, variant?: string): Promise<string>
   }>('prompts:service')
 
-  const criticizerPrompt = promptsService
-    ? await promptsService.getPrompt('criticizer').catch(() => null)
-    : null
-
-  const system = criticizerPrompt || `You are a quality reviewer for a sales agent's response. Evaluate it for:
-1. Factual accuracy — does it correctly reflect the tool results? No invented data?
-2. Guardrails — does it respect system restrictions (no invented URLs, no unverified prices)?
-3. Coherence — does it contradict anything said earlier in the conversation?
-4. Security — does it contain sensitive information that should not be shared?
-
-If the response passes all criteria, reply with exactly: APPROVED
-
-If improvements are needed, explain clearly what should be changed (max 3 concise points).
-Do NOT rewrite the response — only provide your feedback.`
+  const system = promptsService
+    ? await promptsService.getPrompt('criticizer').catch(() => '')
+    : ''
 
   const result = await callLLM({
     task: 'criticizer-review',
@@ -422,16 +411,8 @@ async function rewriteWithFeedback(
   config: EngineConfig,
   registry: Registry,
 ): Promise<string> {
-  // Load from .md file, fallback to inline
   const svc = registry.getOptional<{ getSystemPrompt(name: string): Promise<string> }>('prompts:service')
-  const loaded = svc ? await svc.getSystemPrompt('criticizer-rewrite').catch(() => null) : null
-  const system = loaded || `You are a response editor for a sales agent. You receive the agent's original response and feedback from a quality reviewer. Your job is to rewrite the response incorporating the feedback.
-
-Rules:
-- Return ONLY the improved response text
-- No explanation, no preamble, no labels, no headers
-- Keep the same language as the original response
-- Preserve the original intent and information — only improve what the feedback indicates`
+  const system = svc ? await svc.getSystemPrompt('criticizer-rewrite') : ''
 
   const result = await callLLM({
     task: 'criticizer-rewrite',
