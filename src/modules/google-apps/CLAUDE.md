@@ -47,7 +47,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - Drive: drive-list-files, drive-get-file, drive-create-folder, drive-create-file, drive-share, drive-move-file
 - Sheets: sheets-read (paginación, auto-detect tab), sheets-write (protección), sheets-append (protección, restaura validaciones), sheets-create, sheets-info, sheets-find-replace, sheets-batch-edit
 - Docs: docs-read (truncation 30K, word count), docs-create, docs-append, docs-replace, docs-batch-edit
-- Slides: slides-read, slides-info, slides-create, slides-replace-text
+- Slides: slides-read (incluye speaker notes), slides-info, slides-create, slides-replace-text, slides-add-slide, slides-update-notes, slides-batch-edit
 - Calendar: calendar-list-events, calendar-get-event, calendar-create-event, calendar-update-event, calendar-delete-event, calendar-add-attendees, calendar-list-calendars, calendar-check-availability, calendar-get-scheduling-context, calendar-execute-followup
 
 ## Autenticación OAuth2
@@ -93,6 +93,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - Config persiste en config_store como JSON (key: GCAL_SCHEDULING_CONFIG), validada con Zod
 
 ## Patrones
+- `slides-read` extrae texto de shapes + speaker notes de cada slide. Las notas aparecen como `[Notas del presentador]: ...` en el output.
 - Cada servicio se habilita/deshabilita via `GOOGLE_ENABLED_SERVICES` (CSV)
 - Los services solo se registran si están habilitados
 - Los tools solo se registran si el servicio correspondiente está habilitado Y el módulo tools existe

@@ -8,7 +8,7 @@ import type { SheetsService } from './sheets-service.js'
 import type { DocsService } from './docs-service.js'
 import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
-import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, GoogleApiConfig, DocEditOperation } from './types.js'
+import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, GoogleApiConfig, DocEditOperation, SlideEditOperation } from './types.js'
 import { CALENDAR_CONFIG_DEFAULTS } from './calendar-config.js'
 import {
   formatEventsListForAgent,
@@ -857,11 +857,19 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        const text = await slides.getSlideText(
-          input.presentationId as string,
-          input.slideIndex as number | undefined,
-        )
-        return { success: true, data: { text } }
+        const presentationId = input.presentationId as string
+        const slideIndex = input.slideIndex as number | undefined
+        const text = await slides.getSlideText(presentationId, slideIndex)
+        const info = await slides.getPresentation(presentationId)
+        return {
+          success: true,
+          data: {
+            title: info.title,
+            totalSlides: info.slides.length,
+            readingSlide: slideIndex !== undefined ? slideIndex + 1 : 'all',
+            text,
+          },
+        }
       },
     })
 
@@ -931,6 +939,92 @@ export async function registerGoogleTools(
           input.replaceText as string,
         )
         return { success: true, data: { occurrencesChanged: count } }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'slides-add-slide',
+        displayName: 'Agregar slide a presentación',
+        description: 'Agrega un nuevo slide a una presentación de Google Slides.',
+        category: 'slides',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            presentationId: { type: 'string', description: 'ID de la presentación' },
+            layout: {
+              type: 'string',
+              description: 'Layout del slide (default: BLANK). Opciones: BLANK, CAPTION_ONLY, TITLE, TITLE_AND_BODY, TITLE_AND_TWO_COLUMNS, TITLE_ONLY, ONE_COLUMN_TEXT, MAIN_POINT, SECTION_HEADER, BIG_NUMBER',
+            },
+            insertionIndex: { type: 'number', description: 'Posición donde insertar (0-based). Si no se especifica, se agrega al final.' },
+          },
+          required: ['presentationId'],
+        },
+      },
+      handler: async (input) => {
+        const objectId = await slides.addSlide(
+          input.presentationId as string,
+          input.layout as string | undefined,
+          input.insertionIndex as number | undefined,
+        )
+        return { success: true, data: { objectId, layout: input.layout ?? 'BLANK' } }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'slides-update-notes',
+        displayName: 'Actualizar notas de presentador',
+        description: 'Reemplaza las notas del presentador (speaker notes) de un slide específico.',
+        category: 'slides',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            presentationId: { type: 'string', description: 'ID de la presentación' },
+            slideIndex: { type: 'number', description: 'Índice del slide (0-based)' },
+            text: { type: 'string', description: 'Nuevo texto para las notas del presentador' },
+          },
+          required: ['presentationId', 'slideIndex', 'text'],
+        },
+      },
+      handler: async (input) => {
+        await slides.updateSpeakerNotes(
+          input.presentationId as string,
+          input.slideIndex as number,
+          input.text as string,
+        )
+        return { success: true, data: { updated: true, slideIndex: input.slideIndex } }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'slides-batch-edit',
+        displayName: 'Edición batch en Google Slides',
+        description: 'Ejecuta múltiples operaciones (reemplazar texto, agregar slides, actualizar notas) en una presentación en una sola llamada. Ideal para aplicar plantillas con múltiples {claves}.',
+        category: 'slides',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            presentationId: { type: 'string', description: 'ID de la presentación' },
+            operations: {
+              type: 'array',
+              description: 'Array de operaciones. Cada objeto debe tener "type" ("replace_text"|"add_slide"|"update_notes"). replace_text: {searchText, replaceText}. add_slide: {layout?, insertionIndex?}. update_notes: {slideIndex, text}.',
+              items: { type: 'object', description: 'Operación de edición' },
+            },
+          },
+          required: ['presentationId', 'operations'],
+        },
+      },
+      handler: async (input) => {
+        const result = await slides.batchEdit(
+          input.presentationId as string,
+          input.operations as SlideEditOperation[],
+        )
+        return { success: true, data: result }
       },
     })
   }
