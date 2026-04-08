@@ -178,7 +178,7 @@ async function notifyAssignedHuman(ctx: ProactiveJobContext, row: Record<string,
   const maxAttempts = ctx.proactiveConfig.commitments.max_attempts
 
   const overdueTag = status === 'overdue' ? ' ⚠ VENCIDO' : ''
-  const message = `📋 Recordatorio de compromiso${overdueTag}\n\nContacto: ${contactName ?? 'Sin nombre'}\nCompromiso: ${description}\nIntento: ${attemptCount + 1}/${maxAttempts}\n\nPor favor atiende este compromiso o responde "completado" cuando lo hayas resuelto.`
+  const message = `📋 Recordatorio de compromiso${overdueTag}\n\nContacto: ${contactName ?? 'Sin nombre'}\nCompromiso: ${description}\nID: ${commitmentId}\nIntento: ${attemptCount + 1}/${maxAttempts}\n\nPor favor atiende este compromiso. Cuando lo hayas resuelto, responde en este chat para que el sistema lo cierre automáticamente.`
 
   try {
     await ctx.registry.runHook('message:send', {

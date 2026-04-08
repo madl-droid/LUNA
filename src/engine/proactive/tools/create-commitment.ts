@@ -89,6 +89,10 @@ TIMING GUIDELINES — always set due_within_hours and scheduled_at_hours based o
             type: 'number',
             description: 'Hours from now to schedule execution. If different from due_within_hours, the commitment will not trigger proactively until this time even if due_at has passed. Useful for respecting business hours or patient preferences.',
           },
+          context_note: {
+            type: 'string',
+            description: 'Brief context note (1-2 sentences) explaining why this commitment is being created and what the contact needs. This helps fulfill the commitment later with full context.',
+          },
         },
         required: ['type', 'description'],
       },
@@ -121,7 +125,14 @@ TIMING GUIDELINES — always set due_within_hours and scheduled_at_hours based o
         return { success: false, error: validation.reason }
       }
 
-      // Capture conversation context summary for future fulfillment
+      // Capture conversation context summary for future fulfillment.
+      // Priority: LLM-provided context_note > raw message capture.
+      const contextNote = typeof input.context_note === 'string' ? input.context_note.trim() : ''
+      if (contextNote) {
+        validation.commitment.contextSummary = contextNote.slice(0, 500)
+      }
+
+      // Always capture raw messages as supplementary context (or primary if no context_note)
       try {
         const db = registry.getDb()
         const sessionResult = await db.query(
@@ -133,10 +144,20 @@ TIMING GUIDELINES — always set due_within_hours and scheduled_at_hours based o
           const recentMessages = await memMgr.getSessionMessages(sessionId)
           if (recentMessages.length > 0) {
             const relevantMsgs = recentMessages.slice(-6)
-            const summary = relevantMsgs
+            const rawContext = relevantMsgs
               .map(m => `${m.role === 'assistant' ? 'Agent' : 'User'}: ${(m.contentText || '').slice(0, 200)}`)
               .join('\n')
-            validation.commitment.contextSummary = summary.slice(0, 1000)
+
+            if (validation.commitment.contextSummary) {
+              // Append raw messages as supplementary (after LLM note)
+              const remaining = 1000 - validation.commitment.contextSummary.length - 1
+              if (remaining > 100) {
+                validation.commitment.contextSummary += '\n' + rawContext.slice(0, remaining)
+              }
+            } else {
+              // No context_note — use raw messages as primary
+              validation.commitment.contextSummary = rawContext.slice(0, 1000)
+            }
           }
         }
       } catch {

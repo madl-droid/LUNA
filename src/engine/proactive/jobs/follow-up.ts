@@ -22,9 +22,11 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
   logger.info({ traceId: ctx.traceId }, 'Follow-up scanner starting')
 
   try {
-    // Fetch all leads in active statuses updated within the last 7 days.
-    // Filtering by inactivity_hours and max_attempts is done per-row in code
-    // because each contact may have a different intensity level.
+    // Filter by intensity per contact directly in SQL — LIMIT applies after all filters.
+    // SYNC: intensity levels must match INTENSITY_LEVELS in intensity.ts (2h/5, 4h/3, 12h/2, 24h/1).
+    const globalH = config.follow_up.inactivity_hours
+    const globalMax = config.follow_up.max_attempts
+
     const result = await ctx.db.query(
       `SELECT ac.contact_id, ac.follow_up_count, ac.follow_up_intensity, ac.updated_at,
               c.display_name,
@@ -34,33 +36,33 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
        JOIN contact_channels cc ON cc.contact_id = ac.contact_id AND cc.is_primary = true
        WHERE ac.lead_status IN ('new', 'qualifying')
          AND ac.updated_at > now() - interval '7 days'
+         AND ac.updated_at < now() - (
+           CASE ac.follow_up_intensity
+             WHEN 'aggressive' THEN interval '2 hours'
+             WHEN 'normal'     THEN interval '4 hours'
+             WHEN 'gentle'     THEN interval '12 hours'
+             WHEN 'minimal'    THEN interval '24 hours'
+             ELSE make_interval(hours => $1)
+           END
+         )
+         AND ac.follow_up_count < (
+           CASE ac.follow_up_intensity
+             WHEN 'aggressive' THEN 5
+             WHEN 'normal'     THEN 3
+             WHEN 'gentle'     THEN 2
+             WHEN 'minimal'    THEN 1
+             ELSE $2
+           END
+         )
        ORDER BY ac.updated_at ASC
-       LIMIT 40`,
+       LIMIT 50`,
+      [globalH, globalMax],
     )
 
-    // Filter candidates by their individual intensity config
-    const now = Date.now()
-    const candidates = result.rows.filter((row: Record<string, unknown>) => {
-      const intensity = resolveIntensity(
-        row['follow_up_intensity'] as string | null,
-        config.follow_up.inactivity_hours,
-        config.follow_up.max_attempts,
-      )
-
-      const lastActivity = new Date(row['updated_at'] as string)
-      const hoursSinceActivity = (now - lastActivity.getTime()) / (1000 * 60 * 60)
-      if (hoursSinceActivity < intensity.inactivityHours) return false
-      if ((row['follow_up_count'] as number ?? 0) >= intensity.maxAttempts) return false
-      return true
-    })
-
     let processed = 0
-    for (const row of candidates) {
-      const intensity = resolveIntensity(
-        row['follow_up_intensity'] as string | null,
-        config.follow_up.inactivity_hours,
-        config.follow_up.max_attempts,
-      )
+    for (const row of result.rows) {
+      const intensityValue = row['follow_up_intensity'] as string | null
+      const intensity = resolveIntensity(intensityValue, globalH, globalMax)
       const followUpCount = (row['follow_up_count'] as number ?? 0)
 
       const candidate: ProactiveCandidate = {
@@ -110,7 +112,7 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
       }
     }
 
-    logger.info({ traceId: ctx.traceId, checked: result.rows.length, filtered: candidates.length, processed }, 'Follow-up scanner complete')
+    logger.info({ traceId: ctx.traceId, checked: result.rows.length, processed }, 'Follow-up scanner complete')
   } catch (err) {
     logger.error({ traceId: ctx.traceId, err }, 'Follow-up scanner failed')
   }

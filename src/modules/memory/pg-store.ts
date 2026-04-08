@@ -638,6 +638,28 @@ export class PgStore {
     }
   }
 
+  async getAssignedCommitments(assignedTo: string, limit = 10): Promise<Commitment[]> {
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM commitments
+         WHERE assigned_to = $1
+           AND status IN ('pending', 'in_progress', 'waiting', 'overdue')
+         ORDER BY CASE priority
+           WHEN 'urgent' THEN 0
+           WHEN 'high' THEN 1
+           WHEN 'normal' THEN 2
+           ELSE 3
+         END, due_at ASC NULLS LAST
+         LIMIT ${Math.max(1, Math.floor(limit))}`,
+        [assignedTo],
+      )
+      return result.rows.map((r: Record<string, unknown>) => this.mapCommitmentRow(r))
+    } catch (err) {
+      logger.warn({ err, assignedTo }, 'Failed to load assigned commitments')
+      return []
+    }
+  }
+
   async getRecentCompletedCommitments(contactId: string, limit = 5): Promise<Commitment[]> {
     try {
       const result = await this.pool.query(
