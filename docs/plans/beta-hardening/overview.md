@@ -34,6 +34,7 @@ Preparación para pruebas BETA con clientes reales. Se consolidaron 3 fuentes de
 | **12** | UI / Console Fixes | 1 | `src/modules/console/templates-section-channels.ts` | MEDIUM |
 | **13a** | Quick Fixes (Drive, TTS, Embedding UI, Voice) | 4 | `src/modules/knowledge/item-manager.ts`, `src/modules/tts/tts-service.ts`, `src/modules/knowledge/console-section.ts`, `src/modules/twilio-voice/call-manager.ts` | MEDIUM |
 | **13b** | Medilink: Agendamiento para Terceros | 6 | `src/modules/medilink/types.ts`, `security.ts`, `tools.ts`, `working-memory.ts`, `manifest.ts`, skill prompt | HIGH |
+| **14** | Google Apps Audit Fixes | 11 | `src/modules/google-apps/` (api-wrapper, tools, sheets-service, docs-service, slides-service, manifest, types) | HIGH |
 
 ## Estrategia de ejecución
 
@@ -122,3 +123,16 @@ Después de planes 13a-13b:
 - **Embedding progress** visible en tiempo real en consola (polling cada 3s)
 - **Voice inbound** rate limit por número (default 10/hora)
 - **Medilink terceros** — contacto puede agendar para hijos, padres, pareja; datos persistidos en agent_data; reagendamiento con memoria de relación
+
+## Métricas de éxito — Ronda 4
+
+Después de plan 14:
+- **googleApiCall** con timeout real via Promise.race (no cuelga en API lenta)
+- **Sheets pagination** regex solo matchea rangos con filas explícitas (`!A1`), no nombres de tab
+- **Docs batchEdit** retorna count real de operaciones aplicadas (no `operations.length`)
+- **4 métodos Sheets** (writeRange, clearRange, createSpreadsheet, addSheet) con retry y timeout via wrapper
+- **Slides batchEdit** con update_notes aislado — fallo en notas no cancela replace_text
+- **Manifest** `activateByDefault: false` (provider con OAuth)
+- **`.env.example`** con las 7 variables del configSchema
+- **Batch operations** validadas en runtime antes de cast
+- **0 errores TS nuevos** post-fix
