@@ -1248,7 +1248,7 @@ export function renderUsersSection(data: SectionData): string {
         <div id="webhook-settings-lead">
           <label class="ts-webhook-label">Endpoint <span class="ts-webhook-label-sub">(POST)</span></label>
           <div class="wizard-uri-box" style="margin-bottom:14px">
-            <code class="wizard-uri" id="webhook-endpoint-display">{BASE_URL}/console/api/leads/webhook/register</code>
+            <code class="wizard-uri" id="webhook-endpoint-display">{BASE_URL}/console/api/users/webhook/register</code>
             <button type="button" class="wizard-copy-icon" onclick="copyWizardUri(this)" title="${lang === 'es' ? 'Copiar' : 'Copy'}">${SVG_COPY}</button>
           </div>
           <label class="ts-webhook-label">${lang === 'es' ? 'Token de autorizacion' : 'Authorization token'}</label>
