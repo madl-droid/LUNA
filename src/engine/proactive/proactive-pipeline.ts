@@ -269,8 +269,10 @@ async function buildProactiveContext(
   } : null
 
   // Load history + memory in parallel
+  // Commitments get more history so the LLM has full context to fulfill them
+  const historyLimit = candidate.triggerType === 'commitment' ? 10 : 5
   const [historyResult, memoryResult, commitmentsResult, leadStatusResult] = await Promise.allSettled([
-    loadRecentHistory(memoryManager, db, candidate.contactId, candidate.channel, 5),
+    loadRecentHistory(memoryManager, db, candidate.contactId, candidate.channel, historyLimit),
     memoryManager ? loadContactMemory(memoryManager, candidate.contactId) : Promise.resolve(null),
     memoryManager ? memoryManager.getPendingCommitments(candidate.contactId) : Promise.resolve([]),
     memoryManager ? memoryManager.getLeadStatus(candidate.contactId) : Promise.resolve(null),

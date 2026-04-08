@@ -121,6 +121,28 @@ TIMING GUIDELINES — always set due_within_hours and scheduled_at_hours based o
         return { success: false, error: validation.reason }
       }
 
+      // Capture conversation context summary for future fulfillment
+      try {
+        const db = registry.getDb()
+        const sessionResult = await db.query(
+          `SELECT id FROM sessions WHERE contact_id = $1 ORDER BY last_activity_at DESC LIMIT 1`,
+          [ctx.contactId],
+        )
+        const sessionId = sessionResult.rows[0]?.id as string | undefined
+        if (sessionId) {
+          const recentMessages = await memMgr.getSessionMessages(sessionId)
+          if (recentMessages.length > 0) {
+            const relevantMsgs = recentMessages.slice(-6)
+            const summary = relevantMsgs
+              .map(m => `${m.role === 'assistant' ? 'Agent' : 'User'}: ${(m.contentText || '').slice(0, 200)}`)
+              .join('\n')
+            validation.commitment.contextSummary = summary.slice(0, 1000)
+          }
+        }
+      } catch {
+        // Best effort — don't fail commitment creation if context capture fails
+      }
+
       try {
         const commitmentId = await memMgr.saveCommitment(validation.commitment)
         logger.info({

@@ -34,6 +34,12 @@ Si es un follow-up o reactivación:
 - Ofrece valor antes de pedir algo
 - Una sola pregunta o propuesta por mensaje
 
+## Compromisos asignados a humanos
+
+- Si el contacto es un admin/coworker y tiene compromisos asignados, recuérdales amablemente.
+- Si responden "completado", "listo", "ya lo hice", "done", o similar → usa update_commitment con status=done.
+- Si responden "no puedo", "no me es posible" → usa update_commitment con status=cancelled y crea un nuevo compromiso para que el agente lo maneje.
+
 ## Formato
 
 Aplica las mismas reglas de formato del canal. Los mensajes proactivos deben ser cortos: máximo 2-3 frases. La brevedad demuestra respeto por el tiempo del contacto.
