@@ -165,7 +165,13 @@ export async function delivery(
 
   // 5b. Record campaign match (fire-and-forget)
   if (ctx.campaign && ctx.contactId) {
-    type CQ = { recordMatch(contactId: string, campaignId: string, sessionId: string | null, channel: string | null, score: number | null): Promise<void> }
+    type CQ = {
+      recordMatch(
+        contactId: string, campaignId: string, sessionId: string | null,
+        channel: string | null, score: number | null,
+        matchSource?: string, utmData?: Record<string, string>
+      ): Promise<void>
+    }
     const cq = registry.getOptional<CQ>('marketing-data:campaign-queries')
     if (cq) {
       cq.recordMatch(
@@ -174,6 +180,8 @@ export async function delivery(
         ctx.session.id,
         ctx.message.channelName,
         ctx.campaign.matchScore ?? null,
+        ctx.campaign.matchSource ?? 'keyword',
+        ctx.campaign.utm ?? {},
       ).catch(err => logger.warn({ err, traceId: ctx.traceId }, 'Failed to record campaign match'))
     }
   }

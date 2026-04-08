@@ -205,8 +205,8 @@ export async function intake(
     ? processAttachmentsInPhase1(message, config, registry, db, session.id)
     : Promise.resolve(null)
 
-  // 11c. Detect campaign (needs session for round number)
-  const detectedCampaign = detectCampaign(registry, normalizedText, message.channelName, session.messageCount)
+  // 11c. Detect campaign (needs session for round number) — async: UTM > keyword
+  const detectedCampaign = await detectCampaign(registry, normalizedText, message.channelName, session.messageCount)
 
   // 12-15. Load memory context in parallel
   const historyTurns = getChannelHistoryTurns(registry, message.channelName)
@@ -914,30 +914,51 @@ async function loadOrCreateSession(
 }
 
 /**
- * Detect campaign via marketing-data:match-campaign service.
- * Matches keyword against text with channel/round filtering.
+ * Detect campaign via dual detection: UTM (priority) > keyword (fallback).
+ * UTM match can auto-create campaigns; keyword match is synchronous.
  */
-function detectCampaign(
+async function detectCampaign(
   registry: Registry,
   normalizedText: string,
   channelName: string,
   sessionMessageCount: number,
-): CampaignInfo | null {
-  type MatchFn = (text: string, channelName: string, channelType: string, roundNumber: number) => {
-    campaignId: string; visibleId: number; name: string; keyword: string; promptContext: string; score: number
-  } | null
-
-  const matchFn = registry.getOptional<MatchFn>('marketing-data:match-campaign')
-  if (!matchFn) return null
-
-  // Get channel type from channel-config service
+): Promise<CampaignInfo | null> {
   const channelSvc = registry.getOptional<{ get(): { channelType: string } }>(`channel-config:${channelName}`)
   const channelType = channelSvc?.get()?.channelType ?? 'instant'
-
-  // Round number: session.messageCount is the count BEFORE this message, so +1
   const roundNumber = sessionMessageCount + 1
 
-  const result = matchFn(normalizedText, channelName, channelType, roundNumber)
+  // --- Paso 1: Intentar UTM match (prioridad máxima) ---
+  const { extractUtmFromText } = await import('../../modules/marketing-data/utm-parser.js')
+  const utmFromText = extractUtmFromText(normalizedText)
+
+  if (utmFromText) {
+    type UtmResult = { campaignId: string; visibleId: number; name: string; keyword: string; promptContext: string; score: number; matchSource: 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm'; utmData: Record<string, string> }
+    type UtmMatchFn = (utmData: Record<string, string>, ch: string, ct: string) => Promise<UtmResult | null>
+    const utmMatchFn = registry.getOptional<UtmMatchFn>('marketing-data:match-campaign-utm')
+    if (utmMatchFn) {
+      const utmResult = await utmMatchFn(utmFromText as Record<string, string>, channelName, channelType)
+      if (utmResult) {
+        return {
+          id: utmResult.campaignId,
+          visibleId: utmResult.visibleId,
+          name: utmResult.name,
+          keyword: utmResult.keyword,
+          utm: utmResult.utmData,
+          promptContext: utmResult.promptContext,
+          matchScore: utmResult.score,
+          matchSource: utmResult.matchSource,
+        }
+      }
+    }
+  }
+
+  // --- Paso 2: Fallback a keyword match ---
+  type KwResult = { campaignId: string; visibleId: number; name: string; keyword: string; promptContext: string; score: number }
+  type KeywordMatchFn = (text: string, ch: string, ct: string, round: number) => KwResult | null
+  const keywordMatchFn = registry.getOptional<KeywordMatchFn>('marketing-data:match-campaign')
+  if (!keywordMatchFn) return null
+
+  const result = keywordMatchFn(normalizedText, channelName, channelType, roundNumber)
   if (!result) return null
 
   return {
@@ -948,6 +969,7 @@ function detectCampaign(
     utm: null,
     promptContext: result.promptContext,
     matchScore: result.score,
+    matchSource: 'keyword',
   }
 }
 

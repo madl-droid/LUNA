@@ -3,13 +3,15 @@
 // Extraído de lead-scoring para independizar la funcionalidad de campañas.
 
 import pino from 'pino'
+import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
+import { boolEnv } from '../../kernel/config-helpers.js'
 import { CampaignQueries } from './campaign-queries.js'
 import { CampaignMatcher } from './campaign-matcher.js'
 import { renderMarketingDataConsole } from './templates.js'
-import type { CampaignMatchResult } from './campaign-types.js'
+import type { CampaignMatchResult, UtmParams } from './campaign-types.js'
 
 const logger = pino({ name: 'marketing-data' })
 
@@ -249,7 +251,7 @@ function createApiRoutes(): ApiRoute[] {
 
 const manifest: ModuleManifest = {
   name: 'marketing-data',
-  version: '1.0.0',
+  version: '1.1.0',
   description: {
     es: 'Gestión de campañas de marketing: CRUD, tags, matching, estadísticas de conversión',
     en: 'Marketing campaign management: CRUD, tags, matching, conversion stats',
@@ -258,6 +260,11 @@ const manifest: ModuleManifest = {
   removable: true,
   activateByDefault: true,
   depends: [],
+
+  configSchema: z.object({
+    CAMPAIGN_UTM_MATCH_ENABLED: boolEnv(true),
+    CAMPAIGN_KEYWORD_MATCH_ENABLED: boolEnv(true),
+  }),
 
   console: {
     title: { es: 'Marketing Data', en: 'Marketing Data' },
@@ -274,19 +281,32 @@ const manifest: ModuleManifest = {
   async init(registry: Registry) {
     const db = registry.getDb()
 
+    // Read feature toggles
+    const config = registry.getConfig<{ CAMPAIGN_UTM_MATCH_ENABLED: boolean; CAMPAIGN_KEYWORD_MATCH_ENABLED: boolean }>('marketing-data')
+
     // Initialize campaign subsystem
     campaignQueries = new CampaignQueries(db)
     await campaignQueries.ensureTables()
     campaignMatcher = new CampaignMatcher()
+    campaignMatcher.setCampaignQueries(campaignQueries)
     await reloadCampaignMatcher()
 
     // Register services
     registry.provide('marketing-data:campaign-queries', campaignQueries)
 
-    // Campaign match service — called from engine Phase 1
+    // Keyword match service — called from engine intake (fallback when UTM doesn't match)
     registry.provide('marketing-data:match-campaign',
       (text: string, channelName: string, channelType: string, roundNumber: number): CampaignMatchResult | null => {
+        if (!config.CAMPAIGN_KEYWORD_MATCH_ENABLED) return null
         return campaignMatcher?.match(text, channelName, channelType, roundNumber) ?? null
+      },
+    )
+
+    // UTM match service — called from engine intake (priority over keyword)
+    registry.provide('marketing-data:match-campaign-utm',
+      async (utmData: UtmParams, channelName: string, channelType: string): Promise<CampaignMatchResult | null> => {
+        if (!config.CAMPAIGN_UTM_MATCH_ENABLED) return null
+        return campaignMatcher?.matchUtm(utmData, channelName, channelType) ?? null
       },
     )
 
@@ -298,7 +318,7 @@ const manifest: ModuleManifest = {
       return renderMarketingDataConsole(lang)
     })
 
-    logger.info('Marketing data module initialized')
+    logger.info({ utmMatch: config.CAMPAIGN_UTM_MATCH_ENABLED, keywordMatch: config.CAMPAIGN_KEYWORD_MATCH_ENABLED }, 'Marketing data module initialized')
   },
 
   async stop() {

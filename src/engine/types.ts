@@ -91,6 +91,7 @@ export interface CampaignInfo {
   utm: Record<string, string> | null
   promptContext: string | null
   matchScore: number | null
+  matchSource: 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm' | null
 }
 
 export interface KnowledgeMatch {
