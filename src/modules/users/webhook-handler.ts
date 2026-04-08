@@ -18,7 +18,8 @@ export interface WebhookRegisterBody {
   email?: string
   phone?: string
   name?: string
-  campaign: string
+  campaign?: string                      // OPCIONAL — keyword/visibleId/UUID de campaña
+  utm?: Record<string, string>           // UTMs: {utm_source, utm_medium, utm_campaign, ...}
 }
 
 export interface WebhookRegisterResult {
@@ -27,6 +28,7 @@ export interface WebhookRegisterResult {
   channel: string
   campaignId?: string
   campaignName?: string
+  matchSource?: string
   warning?: string
 }
 
@@ -162,19 +164,53 @@ export async function registerLead(
     throw new Error('Se requiere al menos email o phone')
   }
 
-  // ── Find campaign by keyword ──
+  // ── Find campaign: UTM takes priority, keyword is fallback ──
   const NO_CAMPAIGN_ID = '00000000-0000-0000-0000-000000000000'
   let campaignId: string = NO_CAMPAIGN_ID
   let campaignName: string = 'Sin campaña'
+  let matchSource: 'webhook' | 'webhook_utm' = 'webhook'
+  let utmData: Record<string, string> = {}
   let warning: string | undefined
 
-  if (body.campaign) {
+  // Paso 1: Si hay UTMs, intentar match/auto-create por utm_campaign
+  if (body.utm && Object.keys(body.utm).length > 0) {
+    const { normalizeUtmData } = await import('../marketing-data/utm-parser.js')
+    const normalized = normalizeUtmData(body.utm)
+
+    if (normalized?.utm_campaign) {
+      type CQ = {
+        findByUtmCampaign(v: string): Promise<{ id: string; name: string; visibleId: number } | null>
+        autoCreateFromUtm(v: string, utm: Record<string, string>): Promise<{ id: string; name: string; visibleId: number }>
+      }
+      const cq = registry.getOptional<CQ>('marketing-data:campaign-queries')
+      if (cq) {
+        let found = await cq.findByUtmCampaign(normalized.utm_campaign)
+        if (!found) {
+          found = await cq.autoCreateFromUtm(normalized.utm_campaign, normalized as Record<string, string>)
+          // Recargar matcher para que la nueva campaña esté disponible
+          const reload = registry.getOptional<() => Promise<void>>('marketing-data:reload-campaigns')
+          if (reload) await reload()
+        }
+        campaignId = found.id
+        campaignName = found.name
+        matchSource = 'webhook_utm'
+        utmData = normalized as Record<string, string>
+      }
+    } else if (normalized) {
+      // Hay UTMs pero sin utm_campaign — guardar UTMs como contexto
+      utmData = normalized as Record<string, string>
+    }
+  }
+
+  // Paso 2: Si UTM no resolvió campaña, intentar por keyword (fallback)
+  if (campaignId === NO_CAMPAIGN_ID && body.campaign) {
     const campaign = await findCampaignByKeyword(db, body.campaign)
     if (campaign) {
       campaignId = campaign.id
       campaignName = campaign.name
+      matchSource = 'webhook'
     } else {
-      warning = `Keyword de campaña "${body.campaign}" no encontrada. Lead asignado a "Sin campaña" (ID 0).`
+      warning = `Keyword de campaña "${body.campaign}" no encontrada. Lead asignado a "Sin campaña".`
       logger.warn({ keyword: body.campaign }, 'Campaign keyword not found — assigned to Sin campaña')
     }
   }
@@ -224,7 +260,7 @@ export async function registerLead(
 
   // ── Record campaign attribution (via lead-scoring service) ──
   if (campaignId) {
-    await recordCampaignMatch(registry, contactId, campaignId, preferredChannel)
+    await recordCampaignMatch(registry, contactId, campaignId, preferredChannel, matchSource, utmData)
   }
 
   // ── ALWAYS trigger outbound contact (new or existing) ──
@@ -250,6 +286,7 @@ export async function registerLead(
     channel: preferredChannel,
     campaignId: campaignId ?? undefined,
     campaignName: campaignName ?? undefined,
+    matchSource,
     warning,
   }
 }
@@ -306,6 +343,8 @@ async function recordCampaignMatch(
   contactId: string,
   campaignId: string,
   channelName: string,
+  matchSource: string = 'webhook',
+  utmData: Record<string, string> = {},
 ): Promise<void> {
   type CQ = {
     recordMatch(
@@ -314,12 +353,14 @@ async function recordCampaignMatch(
       sessionId: string | null,
       channelName: string | null,
       matchScore: number | null,
+      matchSource?: string,
+      utmData?: Record<string, string>,
     ): Promise<void>
   }
   const cq = registry.getOptional<CQ>('marketing-data:campaign-queries')
   if (cq) {
     try {
-      await cq.recordMatch(contactId, campaignId, null, channelName, 1.0)
+      await cq.recordMatch(contactId, campaignId, null, channelName, 1.0, matchSource, utmData)
     } catch (err) {
       logger.warn({ err, contactId, campaignId }, 'Failed to record campaign match')
     }

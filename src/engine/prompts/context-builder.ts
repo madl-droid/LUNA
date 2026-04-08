@@ -202,7 +202,11 @@ export async function buildContextLayers(
 
   // ── 8. Campaign context ──────────────────────────────────────────────────
   if (ctx.campaign) {
-    parts.push(`[Campaña: ${ctx.campaign.name}]`)
+    let campaignLine = `[Campaña: ${ctx.campaign.name}]`
+    if (ctx.campaign.promptContext) {
+      campaignLine += ` — ${ctx.campaign.promptContext}`
+    }
+    parts.push(campaignLine)
   }
 
   // ── 9. Qualification state (BANT) ────────────────────────────────────────

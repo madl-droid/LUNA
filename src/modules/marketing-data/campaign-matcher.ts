@@ -4,8 +4,8 @@
 
 import Fuse from 'fuse.js'
 import pino from 'pino'
-import type { CampaignRecord } from './campaign-types.js'
-import type { CampaignMatchResult } from './campaign-types.js'
+import type { CampaignRecord, CampaignMatchResult, UtmParams } from './campaign-types.js'
+import type { CampaignQueries } from './campaign-queries.js'
 
 const logger = pino({ name: 'marketing-data:campaign-matcher' })
 
@@ -23,6 +23,11 @@ interface FuseItem {
 export class CampaignMatcher {
   private fuse: Fuse<FuseItem> | null = null
   private items: FuseItem[] = []
+  private campaignQueries: CampaignQueries | null = null
+
+  setCampaignQueries(cq: CampaignQueries): void {
+    this.campaignQueries = cq
+  }
 
   /**
    * Build the fuse.js index from active campaign records.
@@ -123,10 +128,65 @@ export class CampaignMatcher {
           keyword: item.keyword,
           promptContext: item.promptContext,
           score: matchPercent,
+          matchSource: 'keyword',
+          utmData: {},
         }
       }
     }
 
     return null
+  }
+
+  /**
+   * Intenta match por UTM: busca campaña por utm_campaign, auto-crea si no existe.
+   * Retorna CampaignMatchResult con matchSource y utmData, o null si no hay UTMs.
+   */
+  async matchUtm(
+    utmData: UtmParams,
+    channelName: string,
+    channelType: string,
+  ): Promise<CampaignMatchResult | null> {
+    // Never match on voice channels
+    if (channelType === 'voice') return null
+    // Without utm_campaign we can't map to a campaign
+    if (!utmData.utm_campaign) return null
+    if (!this.campaignQueries) {
+      logger.warn('matchUtm called but campaignQueries not set')
+      return null
+    }
+
+    const utmCampaign = utmData.utm_campaign
+    const utmDataClean = Object.fromEntries(
+      Object.entries(utmData).filter(([, v]) => v !== undefined),
+    ) as Record<string, string>
+
+    try {
+      let found = await this.campaignQueries.findByUtmCampaign(utmCampaign)
+
+      if (!found) {
+        // Auto-create campaign from UTM
+        const created = await this.campaignQueries.autoCreateFromUtm(utmCampaign, utmDataClean)
+        found = { id: created.id, name: created.name, visibleId: created.visibleId, keyword: '', promptContext: '' }
+        // Reload index so the new campaign is available for future keyword matching
+        const active = await this.campaignQueries.listActiveCampaigns()
+        this.load(active)
+      }
+
+      logger.info({ campaignId: found.id, name: found.name, channelName }, 'UTM campaign matched')
+
+      return {
+        campaignId: found.id,
+        visibleId: found.visibleId,
+        name: found.name,
+        keyword: found.keyword,
+        promptContext: found.promptContext,
+        score: 1.0,
+        matchSource: 'url_utm',
+        utmData: utmDataClean,
+      }
+    } catch (err) {
+      logger.error({ err, utmCampaign }, 'UTM campaign match/auto-create failed')
+      return null
+    }
   }
 }
