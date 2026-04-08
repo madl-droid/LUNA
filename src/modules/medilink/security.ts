@@ -7,7 +7,7 @@ import type { Pool } from 'pg'
 import type { MedilinkApiClient } from './api-client.js'
 import type {
   MedilinkConfig, VerificationLevel, SecurityContext,
-  MedilinkAppointment, MedilinkEvolution,
+  MedilinkAppointment, MedilinkEvolution, MedilinkDependent,
 } from './types.js'
 import type { Registry } from '../../kernel/registry.js'
 import * as pgStore from './pg-store.js'
@@ -56,11 +56,17 @@ export class SecurityService {
     const rawIdentifier = (row?.phone_or_identifier ?? '') as string
     const phone = rawIdentifier.replace(/@.*$/, '').replace(/[^0-9+]/g, '')
 
+    const dependents: MedilinkDependent[] = (agentData.medilink_dependents as MedilinkDependent[] | undefined) ?? []
+
     return {
       contactId,
       contactPhone: phone,
       medilinkPatientId: agentData.medilink_patient_id ? Number(agentData.medilink_patient_id) : null,
       verificationLevel: (agentData.medilink_verified as VerificationLevel) ?? 'unverified',
+      dependents,
+      activeTargetPatientId: null,
+      activeTargetName: null,
+      activeTargetRelationship: null,
     }
   }
 
@@ -436,5 +442,52 @@ export class SecurityService {
        WHERE contact_id = $1`,
       [contactId],
     )
+  }
+
+  // ─── Dependientes (terceros) ───────────
+
+  /**
+   * Add or update a dependent for a contact.
+   * Deduplicates by medilinkPatientId (skip if already registered).
+   */
+  async addDependent(contactId: string, dep: MedilinkDependent): Promise<void> {
+    const { rows } = await this.db.query<{ deps: MedilinkDependent[] }>(
+      `SELECT agent_data->'medilink_dependents' AS deps FROM agent_contacts WHERE contact_id = $1`,
+      [contactId],
+    )
+    const current: MedilinkDependent[] = rows[0]?.deps ?? []
+
+    if (current.some(d => d.medilinkPatientId === dep.medilinkPatientId)) {
+      return // Already registered — skip
+    }
+
+    current.push(dep)
+
+    await this.db.query(
+      `UPDATE agent_contacts SET agent_data = agent_data || $1::jsonb WHERE contact_id = $2`,
+      [JSON.stringify({ medilink_dependents: current }), contactId],
+    )
+    logger.info({ contactId, depPatientId: dep.medilinkPatientId, relationship: dep.relationship }, 'Dependent registered')
+  }
+
+  /**
+   * Find a registered dependent by relationship or name hint (for agent resolution).
+   * hint examples: "mi hijo", "sofia", "mama"
+   */
+  findDependent(ctx: SecurityContext, hint: string): MedilinkDependent | null {
+    const lower = hint.toLowerCase()
+    const byRelation = ctx.dependents.find(d => lower.includes(d.relationship.toLowerCase()))
+    if (byRelation) return byRelation
+    const byName = ctx.dependents.find(d => d.displayName.toLowerCase().includes(lower))
+    return byName ?? null
+  }
+
+  /**
+   * Check if an appointment belongs to the contact OR any of their registered dependents.
+   * Use instead of ownsAppointment when dependents are involved.
+   */
+  ownsOrDependentAppointment(ctx: SecurityContext, appt: MedilinkAppointment): boolean {
+    if (ctx.medilinkPatientId === appt.id_paciente) return true
+    return ctx.dependents.some(d => d.medilinkPatientId === appt.id_paciente)
   }
 }

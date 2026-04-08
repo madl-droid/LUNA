@@ -1,8 +1,9 @@
 // LUNA — Module: medilink
 // Agent tools registration — these are the capabilities the AI agent gets
-// 12 tools: check-availability, get-professionals, search-patient, get-patient-info,
+// 14 tools: check-availability, get-professionals, search-patient, get-patient-info,
 //           get-my-appointments, get-my-payments, get-patient-treatments, get-prestaciones,
-//           create-patient, create-appointment, reschedule-appointment, mark-pending-reschedule
+//           create-patient, create-appointment, reschedule-appointment, mark-pending-reschedule,
+//           list-dependents, register-dependent
 
 import pino from 'pino'
 import type { Registry } from '../../kernel/registry.js'
@@ -11,6 +12,7 @@ import type { MedilinkCache } from './cache.js'
 import type { SecurityService } from './security.js'
 import * as pgStore from './pg-store.js'
 import { WorkingMemory, ML, type AppointmentSnapshot } from './working-memory.js'
+import type { MedilinkDependent } from './types.js'
 
 const logger = pino({ name: 'medilink:tools' })
 
@@ -756,6 +758,7 @@ export async function registerMedilinkTools(
           date: { type: 'string', description: 'Fecha (YYYY-MM-DD)' },
           time: { type: 'string', description: 'Hora (HH:MM)' },
           context_summary: { type: 'string', description: 'Resumen breve del contexto del paciente para el profesional: motivo de consulta, datos relevantes mencionados en la conversación (síntomas, antecedentes, expectativas). Extraer de la conversación, NO preguntar al paciente por esto.' },
+          dependent_patient_id: { type: 'number', description: 'ID Medilink del dependiente/tercero. Si se especifica, la cita se agenda para ese tercero en vez del contacto principal. El tercero debe estar previamente registrado con medilink-register-dependent.' },
         },
         required: ['date', 'time'],
       },
@@ -837,17 +840,35 @@ export async function registerMedilinkTools(
 
         const statusId = parseInt(config.MEDILINK_DEFAULT_STATUS_ID, 10) || 7  // 7 = "No confirmado" (default)
 
+        // Resolve target patient: dependent or self
+        let targetPatientId: number
+        let dep: MedilinkDependent | undefined
+        if (input.dependent_patient_id) {
+          dep = secCtx.dependents.find(d => d.medilinkPatientId === (input.dependent_patient_id as number))
+          if (!dep) {
+            return { success: false, error: 'El tercero indicado no está registrado para este contacto. Regístralo primero con medilink-register-dependent.' }
+          }
+          targetPatientId = dep.medilinkPatientId
+        } else {
+          targetPatientId = secCtx.medilinkPatientId!
+        }
+
+        const baseComment = input.context_summary as string | undefined
+        const comentario = dep
+          ? `Para ${dep.displayName} (${dep.relationship}). ${baseComment ?? ''}`.trim()
+          : baseComment
+
         const appointment = await api.createAppointment({
           id_dentista: prof.id,
           id_sucursal: defaultBranch.id,
           id_estado: statusId,
           id_sillon: chairId,
-          id_paciente: secCtx.medilinkPatientId!,
+          id_paciente: targetPatientId,
           id_tratamiento: treatment.id,
           fecha: input.date as string,
           hora_inicio: requestedTime,
           duracion: config.MEDILINK_DEFAULT_DURATION_MIN,
-          comentario: input.context_summary as string | undefined,
+          comentario,
         })
 
         // Invalidate availability cache
@@ -900,6 +921,7 @@ export async function registerMedilinkTools(
             treatment: treatment.nombre,
             date: input.date, time: requestedTime,
             branch: appointment.nombre_sucursal,
+            ...(dep ? { dependentPatientId: dep.medilinkPatientId, dependentName: dep.displayName, relationship: dep.relationship } : {}),
           },
           verificationLevel: secCtx.verificationLevel,
           result: 'success',
@@ -977,8 +999,8 @@ export async function registerMedilinkTools(
 
         const existing = await api.getAppointment(appointmentId, 'high')
 
-        // Verify ownership
-        if (!security.ownsAppointment(secCtx, existing)) {
+        // Verify ownership — contact or any of their registered dependents
+        if (!security.ownsOrDependentAppointment(secCtx, existing)) {
           await pgStore.logAudit(ctx.db, {
             contactId: ctx.contactId,
             action: 'reschedule_appointment', targetType: 'appointment',
@@ -1285,5 +1307,150 @@ export async function registerMedilinkTools(
     },
   })
 
-  logger.info('12 Medilink tools registered')
+  // ═══════════════════════════════════════
+  // 13. LIST DEPENDENTS
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-list-dependents',
+      displayName: 'Listar terceros/dependientes',
+      description: 'Lista los terceros (hijos, padres, pareja, etc.) registrados bajo este contacto para agendar citas. Devuelve nombre, relación e ID Medilink de cada uno.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    handler: async (_input, ctx) => {
+      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
+
+      const secCtx = await security.resolveContext(ctx.contactId)
+
+      if (secCtx.dependents.length === 0) {
+        return {
+          success: true,
+          data: { dependents: [], message: 'No tienes terceros registrados' },
+        }
+      }
+
+      const list = secCtx.dependents.map(d => ({
+        medilinkPatientId: d.medilinkPatientId,
+        displayName: d.displayName,
+        relationship: d.relationship,
+        documentType: d.documentType,
+        registeredAt: d.registeredAt,
+      }))
+
+      const summary = list.map(d => `${d.displayName} (${d.relationship}, ID: ${d.medilinkPatientId})`).join(', ')
+
+      return {
+        success: true,
+        data: { dependents: list, summary },
+      }
+    },
+  })
+
+  // ═══════════════════════════════════════
+  // 14. REGISTER DEPENDENT
+  // ═══════════════════════════════════════
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'medilink-register-dependent',
+      displayName: 'Registrar tercero/dependiente',
+      description: 'Registra un tercero (hijo, madre, pareja, etc.) bajo el contacto para poder agendar citas en su nombre. Busca al paciente en Medilink por documento; si no existe, lo crea.',
+      category: 'medilink',
+      sourceModule: 'medilink',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Nombre(s) del tercero' },
+          last_name: { type: 'string', description: 'Apellidos del tercero' },
+          relationship: { type: 'string', description: 'Relación con el contacto: hijo, hija, mama, papa, esposo, esposa, hermano, hermana, abuelo, abuela, otro' },
+          document_type: { type: 'string', description: 'Tipo de documento: RUT, CI, Pasaporte, Tarjeta de Identidad, CE' },
+          document_number: { type: 'string', description: 'Número de documento (sin puntos ni guiones)' },
+        },
+        required: ['name', 'last_name', 'relationship', 'document_type', 'document_number'],
+      },
+    },
+    handler: async (input, ctx) => {
+      if (!ctx.contactId) return { success: false, error: 'No contact ID' }
+
+      const secCtx = await security.resolveContext(ctx.contactId)
+
+      // Contact must be at least phone_matched to register dependents
+      if (secCtx.verificationLevel === 'unverified') {
+        return { success: false, error: 'Necesito verificar tu identidad antes de registrar un familiar. Proporciona tu número de documento.' }
+      }
+
+      const docNumber = (input.document_number as string).replace(/[.\-\s]/g, '')
+      const name = input.name as string
+      const lastName = input.last_name as string
+      const relationship = (input.relationship as string).toLowerCase()
+      const documentType = input.document_type as string
+
+      try {
+        let medilinkPatientId: number
+
+        // Search patient in Medilink by document
+        const found = await api.findPatientByDocument(docNumber)
+
+        if (found.length > 0) {
+          const patient = found[0]!
+          medilinkPatientId = patient.id
+          logger.info({ contactId: ctx.contactId, medilinkPatientId, relationship }, 'Dependent found in Medilink')
+        } else {
+          // Create new patient in Medilink
+          const created = await api.createPatient({
+            nombre: name,
+            apellidos: lastName,
+            rut: documentType === 'RUT' ? docNumber : undefined,
+            tipo_documento: documentType === 'RUT' ? 0 : 1,
+            observaciones: `Documento: ${documentType} ${docNumber}`,
+          })
+          medilinkPatientId = created.id
+          logger.info({ contactId: ctx.contactId, medilinkPatientId, relationship }, 'Dependent created in Medilink')
+        }
+
+        const dep: MedilinkDependent = {
+          medilinkPatientId,
+          displayName: name,
+          relationship,
+          documentNumber: docNumber,
+          documentType,
+          registeredAt: new Date().toISOString(),
+        }
+
+        await security.addDependent(ctx.contactId, dep)
+
+        await pgStore.logAudit(ctx.db, {
+          contactId: ctx.contactId,
+          medilinkPatientId: String(secCtx.medilinkPatientId),
+          action: 'create_patient',
+          targetType: 'dependent',
+          targetId: String(medilinkPatientId),
+          detail: { relationship, dependentPatientId: medilinkPatientId, displayName: name },
+          verificationLevel: secCtx.verificationLevel,
+          result: 'success',
+        })
+
+        return {
+          success: true,
+          data: {
+            medilinkPatientId,
+            displayName: name,
+            relationship,
+            message: `${name} (${relationship}) registrado exitosamente. Ya puedes agendar citas para ${name} usando dependent_patient_id: ${medilinkPatientId}`,
+          },
+        }
+      } catch (err) {
+        logger.error({ err, contactId: ctx.contactId }, 'register-dependent failed')
+        return { success: false, error: 'Error al registrar tercero: ' + medilinkErrorDetail(err) }
+      }
+    },
+  })
+
+  logger.info('14 Medilink tools registered')
 }
