@@ -72,7 +72,7 @@ export function determineResponseFormat(
   if (inputType === 'audio' && channelType === 'instant') return 'auto'
 
   // 3. When TTS is enabled for this channel, text input also gets 'auto'
-  //    so TTS_TEXT_TO_AUDIO_FREQ ratio (e.g. 5-10%) is actually consulted in Phase 4
+  //    so TTS_TEXT_TO_AUDIO_FREQ ratio (e.g. 5-10%) is actually consulted in post-processor
   if (ttsEnabled && channelType === 'instant') return 'auto'
 
   // 4. Default: text (async channels, TTS disabled, etc.)

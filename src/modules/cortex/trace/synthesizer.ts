@@ -84,8 +84,8 @@ function buildSynthesizerUserMessage(analyses: string[], summary: RunSummary): s
   msg += `- **Simulaciones**: ${summary.total_simulations}\n`
   msg += `- **Mensajes totales**: ${summary.total_messages}\n`
   msg += `- **Intents detectados**: ${Object.entries(summary.intents).map(([k, v]) => `${k}(${v})`).join(', ')}\n`
-  msg += `- **Avg Phase 2**: ${summary.avg_phase2_ms}ms\n`
-  msg += `- **Avg Phase 4**: ${summary.avg_phase4_ms}ms\n`
+  msg += `- **Avg Classify**: ${summary.avg_classify_ms}ms\n`
+  msg += `- **Avg Postprocess**: ${summary.avg_postprocess_ms}ms\n`
   msg += `- **Tools planificadas**: ${summary.tools_planned.join(', ') || 'ninguna'}\n`
   msg += `- **Tools dry-run**: ${summary.tools_dry_run.join(', ') || 'ninguna'}\n`
   msg += `- **Tokens**: in=${summary.total_tokens_input}, out=${summary.total_tokens_output}\n\n`

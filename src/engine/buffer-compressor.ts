@@ -1,5 +1,5 @@
-// LUNA Engine — Inline buffer compressor (Phase 3)
-// Triggered fire-and-forget from Phase 5 after each response.
+// LUNA Engine — Inline buffer compressor (agentic loop)
+// Triggered fire-and-forget from delivery after each response.
 // Compresses oldest Redis buffer messages into a running summary stored in Redis.
 // PG messages are NEVER touched — they remain intact for nightly batch session summaries.
 
@@ -17,7 +17,7 @@ const BUFFER_COMPRESS_SYSTEM_FALLBACK = 'Eres un asistente que resume conversaci
 
 /**
  * Check if the session buffer exceeds the compression threshold and compress if so.
- * Call without await from Phase 5 — this is fire-and-forget.
+ * Call without await from delivery — this is fire-and-forget.
  *
  * Flow:
  * 1. Count messages in Redis buffer
@@ -25,7 +25,7 @@ const BUFFER_COMPRESS_SYSTEM_FALLBACK = 'Eres un asistente que resume conversaci
  * 3. LLM summarizes them (cheap model — haiku)
  * 4. New summary stored in session:{id}:buffer_summary (cumulative)
  * 5. Oldest messages trimmed from Redis buffer
- * 6. Phase 1 of next turn loads: bufferSummary + last N turns
+ * 6. Intake of next turn loads: bufferSummary + last N turns
  */
 export async function checkAndCompressBuffer(
   sessionId: string,

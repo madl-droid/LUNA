@@ -1,5 +1,5 @@
-// LUNA Engine — Phase 5: Validate + Send + Persist (v2)
-// Receives pre-formatted + pre-TTS output from Phase 4.
+// LUNA Engine — Delivery: Validate + Send + Persist (v2)
+// Receives pre-formatted + pre-TTS output from post-processor.
 // Validates, rate-limits, sends, persists, signals proactive guards.
 
 import { randomUUID } from 'node:crypto'
@@ -86,7 +86,7 @@ export async function delivery(
     await sendFallbackMessages(ctx, ctx.attachmentContext.fallbackMessages, registry)
   }
 
-  // 4. Send response (Phase 4 already formatted + TTS'd)
+  // 4. Send response (post-processor already formatted + TTS'd)
   let deliveryResult: DeliveryResult
 
   // Resolve tone once for fallback messages
@@ -558,7 +558,7 @@ async function sendMessages(
         correlationId: ctx.traceId,
       }).catch(() => {})
 
-      const delay = calculateTypingDelay(part, cc!.typingDelayMsPerChar, cc!.typingDelayMinMs, cc!.typingDelayMaxMs)
+      const delay = calculateTypingDelay(part, cc!.typingDelayMinMs, cc!.typingDelayMaxMs)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
 

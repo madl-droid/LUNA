@@ -18,7 +18,6 @@ import { registerUpdateCommitmentTool } from './proactive/tools/update-commitmen
 import { registerQueryPendingItemsTool } from './proactive/tools/query-pending-items.js'
 import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
-import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
 // --- Agentic imports (v2.0) ---
 import { runAgenticDelivery } from './agentic/index.js'
 import { classifyEmailTriage } from './agentic/email-triage.js'
@@ -29,8 +28,6 @@ let engineConfig: EngineConfig
 let registry: Registry
 let pipelineSemaphore: PipelineSemaphore
 let contactLock: ContactLock
-let checkpointMgr: CheckpointManager | null = null
-
 // FIX-E6: Graceful shutdown flag — set by stopEngine(), checked by processMessage()
 let shuttingDown = false
 
@@ -113,25 +110,8 @@ export function initEngine(reg: Registry): void {
     logger.warn({ err }, 'Failed to register query_pending_items tool'),
   )
 
-  // Initialize checkpoint manager
   const db = registry.getDb()
   const redis = registry.getRedis()
-
-  if (engineConfig.checkpointEnabled) {
-    checkpointMgr = new CheckpointManager(db)
-
-    // On startup: expire stale checkpoints, resume recent ones, cleanup old ones
-    initCheckpoints().catch(err =>
-      logger.error({ err }, 'Failed to initialize checkpoints'),
-    )
-
-    // Periodic cleanup every 6 hours
-    setInterval(() => {
-      checkpointMgr?.cleanup(engineConfig.checkpointCleanupDays).catch(err =>
-        logger.warn({ err }, 'Periodic checkpoint cleanup failed'),
-      )
-    }, 6 * 60 * 60 * 1000)
-  }
 
   // Start proactive runner (BullMQ)
   startProactiveRunner(db, redis, engineConfig, registry).catch(err =>
@@ -711,87 +691,6 @@ function getChannelTone(channel: string): string {
     return style === 'dynamic' ? 'casual' : style
   }
   return ''
-}
-
-// ═══════════════════════════════════════════
-// Checkpoint resume & cleanup (startup only)
-// ═══════════════════════════════════════════
-
-/**
- * On startup: expire stale, resume recent incomplete pipelines, cleanup old.
- * Simple approach: re-process the message through the full pipeline,
- * passing completed steps so Phase 3 skips them.
- */
-async function initCheckpoints(): Promise<void> {
-  if (!checkpointMgr) return
-  const db = registry.getDb()
-
-  await checkpointMgr.expireStale(engineConfig.checkpointResumeWindowMs)
-
-  const incomplete = await checkpointMgr.findIncomplete(engineConfig.checkpointResumeWindowMs)
-
-  if (incomplete.length > 0) {
-    logger.info({ count: incomplete.length }, 'Found incomplete checkpoints — resuming')
-
-    for (const cp of incomplete) {
-      // Skip if no steps were completed (nothing to salvage)
-      if (cp.stepResults.length === 0) {
-        await checkpointMgr.fail(cp.id, 'No steps completed — not worth resuming')
-        continue
-      }
-
-      // Idempotency check: skip if a response was already sent for this message
-      try {
-        const alreadySent = await db.query(
-          `SELECT 1 FROM messages WHERE reply_to_message_id = $1 AND role = 'assistant' LIMIT 1`,
-          [cp.messageId],
-        )
-        if (alreadySent.rows.length > 0) {
-          logger.info({ checkpointId: cp.id, messageId: cp.messageId }, 'Response already sent — skipping resume')
-          await checkpointMgr.complete(cp.id)
-          continue
-        }
-      } catch (idempErr) {
-        logger.warn({ err: idempErr, checkpointId: cp.id }, 'Idempotency check failed — resuming anyway')
-      }
-
-      logger.info({
-        checkpointId: cp.id,
-        traceId: cp.traceId,
-        completedSteps: cp.stepResults.length,
-        totalSteps: cp.executionPlan.length,
-      }, 'Resuming from checkpoint')
-
-      try {
-        // Reconstruct a minimal IncomingMessage from checkpoint data
-        const resumeMessage: IncomingMessage = {
-          id: cp.messageId,
-          channelName: cp.channel as IncomingMessage['channelName'],
-          channelMessageId: cp.channelMessageId || cp.messageId,
-          from: cp.messageFrom,
-          senderName: cp.senderName || '',
-          timestamp: cp.createdAt,
-          content: { type: 'text', text: cp.messageText ?? '' },
-          attachments: [],
-        }
-
-        // Mark old checkpoint as failed (new pipeline run creates its own)
-        await checkpointMgr.fail(cp.id, 'Resumed: re-processing via agentic pipeline')
-
-        // Go through full processMessage for proper concurrency/timeout control
-        const result = await processMessage(resumeMessage)
-
-        if (!result.success) {
-          logger.warn({ checkpointId: cp.id, error: result.error }, 'Checkpoint resume pipeline failed')
-        }
-      } catch (err) {
-        logger.error({ err, checkpointId: cp.id }, 'Checkpoint resume failed')
-        await checkpointMgr.fail(cp.id, `Resume error: ${String(err)}`).catch(() => {})
-      }
-    }
-  }
-
-  await checkpointMgr.cleanup(engineConfig.checkpointCleanupDays)
 }
 
 async function isAdminOnlyActive(registry: Registry): Promise<boolean> {

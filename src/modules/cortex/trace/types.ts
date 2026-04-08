@@ -154,20 +154,20 @@ export interface ResultRow {
   execution_plan: unknown
   injection_risk: boolean | null
   on_scope: boolean | null
-  // Phase 3 output
+  // Agentic loop output
   tools_executed: SandboxToolResult[]
-  // Phase 4 output
+  // Post-processor output
   response_text: string | null
   // Timing
-  phase2_ms: number | null
-  phase3_ms: number | null
-  phase4_ms: number | null
+  classify_ms: number | null
+  agentic_ms: number | null
+  postprocess_ms: number | null
   total_ms: number | null
   tokens_input: number
   tokens_output: number
   // Raw outputs
-  raw_phase2: unknown
-  raw_phase4: string | null
+  raw_classify: unknown
+  raw_postprocess: string | null
   // Analyst output
   analysis: string | null
   analysis_model: string | null
@@ -183,8 +183,8 @@ export interface RunSummary {
   total_simulations: number
   total_messages: number
   intents: Record<string, number>
-  avg_phase2_ms: number
-  avg_phase4_ms: number
+  avg_classify_ms: number
+  avg_postprocess_ms: number
   tools_planned: string[]
   tools_dry_run: string[]
   total_tokens_input: number
