@@ -145,6 +145,8 @@ const manifest: ModuleManifest = {
     // Missed messages
     WHATSAPP_MISSED_MSG_ENABLED: boolEnv(true),
     WHATSAPP_MISSED_MSG_WINDOW_MIN: numEnv(15),
+    // Anti-flood: max inbound messages from one contact before immediate batch flush (0 = disabled)
+    WHATSAPP_FLOOD_THRESHOLD: numEnvMin(0, 20),
     // Attachment processing
     WHATSAPP_ATT_IMAGES: boolEnv(true),
     WHATSAPP_ATT_DOCUMENTS: boolEnv(true),
@@ -382,19 +384,26 @@ const manifest: ModuleManifest = {
           .map(m => m.content.text ?? '')
           .filter(t => t.length > 0)
         base.content = { ...base.content, text: allTexts.join('\n') }
-        manifestLogger.info({ from: base.from, count: messages.length }, 'Batched messages concatenated')
+        // Merge attachments from all messages in batch (in chronological order)
+        const allAttachments = messages.flatMap(m => m.attachments ?? [])
+        if (allAttachments.length > 0) {
+          base.attachments = allAttachments
+        }
+        manifestLogger.info({ from: base.from, count: messages.length, attachments: allAttachments.length }, 'Batched messages concatenated')
       }
       await registry.runHook('message:incoming', {
         id: base.id, channelName: base.channelName,
         channelMessageId: base.channelMessageId, from: base.from,
         resolvedPhone: base.resolvedPhone, senderName: base.senderName,
-        timestamp: base.timestamp, content: base.content, raw: base.raw,
+        timestamp: base.timestamp, content: base.content,
+        attachments: base.attachments,
+        raw: base.raw,
       })
       schedulePrecloseFollowup(base.from, config, registry)
     }
 
     if (config.WHATSAPP_BATCH_ENABLED) {
-      batcher = new MessageBatcher(config.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
+      batcher = new MessageBatcher(config.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch, config.WHATSAPP_FLOOD_THRESHOLD)
     }
 
     // Register message handler: incoming messages → batcher (if enabled) or direct dispatch
@@ -408,6 +417,7 @@ const manifest: ModuleManifest = {
         senderName: msg.senderName,
         timestamp: msg.timestamp,
         content: { ...msg.content, type: (msg.content.type || 'text') as IncomingMessage['content']['type'] },
+        attachments: msg.attachments,
         raw: msg.raw,
       }
       if (batcher) {
@@ -436,7 +446,7 @@ const manifest: ModuleManifest = {
       }
       // Update batcher: create/destroy based on toggle, update wait time
       if (fresh.WHATSAPP_BATCH_ENABLED && !batcher) {
-        batcher = new MessageBatcher(fresh.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch)
+        batcher = new MessageBatcher(fresh.WHATSAPP_BATCH_WAIT_SECONDS, dispatchBatch, fresh.WHATSAPP_FLOOD_THRESHOLD)
         manifestLogger.info('Message batcher enabled')
       } else if (!fresh.WHATSAPP_BATCH_ENABLED && batcher) {
         batcher.clearAll()
@@ -444,6 +454,7 @@ const manifest: ModuleManifest = {
         manifestLogger.info('Message batcher disabled')
       } else if (batcher) {
         batcher.updateWaitSeconds(fresh.WHATSAPP_BATCH_WAIT_SECONDS)
+        batcher.updateFloodThreshold(fresh.WHATSAPP_FLOOD_THRESHOLD)
       }
       manifestLogger.info('WhatsApp config hot-reloaded')
     })
@@ -501,6 +512,7 @@ interface WhatsAppFullConfig {
   WHATSAPP_PRECLOSE_MESSAGE: string
   WHATSAPP_MISSED_MSG_ENABLED: boolean
   WHATSAPP_MISSED_MSG_WINDOW_MIN: number
+  WHATSAPP_FLOOD_THRESHOLD: number
   // Attachment config
   WHATSAPP_ATT_IMAGES: boolean
   WHATSAPP_ATT_DOCUMENTS: boolean
@@ -550,7 +562,7 @@ function buildChannelConfig(cfg: WhatsAppFullConfig): import('../../channels/typ
     ttsEnabled: cfg.WHATSAPP_FORMAT_AUDIO_ENABLED,
     antiSpamMaxPerWindow: 25,
     antiSpamWindowMs: 60000,
-    floodThreshold: 20,
+    floodThreshold: cfg.WHATSAPP_FLOOD_THRESHOLD,
     historyTurns: 0, // placeholder — overridden in channel-config service get() with memory:buffer-turns
     attachments: buildAttachmentConfig(cfg),
   }
