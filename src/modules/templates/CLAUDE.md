@@ -3,13 +3,14 @@
 Módulo para registrar plantillas de Google Drive y gestionar documentos generados desde ellas. El agente usa las plantillas para crear cotizaciones, comparativos, presentaciones, etc.
 
 ## Archivos
-- `manifest.ts` — lifecycle, configSchema, console fields + API routes, service + tools init
+- `manifest.ts` — lifecycle, configSchema, console fields + API routes, service + tools init, enable/disable subagent
 - `types.ts` — DocTemplate, DocGenerated, TemplateKey, DocType, CreateTemplateInput, etc.
 - `repository.ts` — CRUD raw SQL: doc_templates + doc_generated
 - `service.ts` — TemplatesService: CRUD plantillas, scanKeysFromDrive, createDocument, reeditDocument, findExistingDocument, getCatalogForPrompt
 - `folder-manager.ts` — FolderManager: resuelve folder patterns a Drive IDs, crea carpetas sin duplicados, cache en memoria
 - `tools.ts` — registerTemplateTools: registra 3 tools en tools:registry
 - `render-section.ts` — UI HTML server-side para gestión de plantillas en consola
+- `comparativo-subagent.ts` — COMPARATIVO_SLUG + COMPARATIVO_SYSTEM_PROMPT (constantes del subagente)
 
 ## Manifest
 - **type**: `feature`, removable: true, activateByDefault: false
@@ -74,6 +75,28 @@ Módulo para registrar plantillas de Google Drive y gestionar documentos generad
 - `tags` en DB: JSONB object para búsqueda con GIN index
 - FolderManager: cache en memoria (path completo → folder ID), invalidar en console:config_applied si root cambia
 - KEY_REGEX: `/\{([A-Z][A-Z0-9_]*)\}/g` — solo mayúsculas
+
+## Subagente: comparativo-researcher
+- Slug: `comparativo-researcher`, is_system: true, model_tier: complex, token_budget: 100000
+- verify_result: true, can_spawn_children: true (puede spawnar web-researcher)
+- google_search_grounding: false — delega búsqueda a web-researcher, no usa Google Search directo
+- allowed_tools: {} — sin tools propios, opera sobre contexto recibido del pipeline
+- Seed en migración `049_comparativo-subagent.sql` (enabled=false por defecto)
+- `init()` del módulo templates: actualiza system_prompt + enabled=true → catalog.reload()
+- `stop()` del módulo templates: enabled=false → catalog.reload()
+- System prompt y slug definidos en `comparativo-subagent.ts`
+
+## Flujo comparativo completo
+1. Agente busca comparativo existente (`search-generated-documents` con doc_type=comparativo + tags)
+2. Si existe → comparte enlace existente
+3. Si no existe → `run_subagent("comparativo-researcher", { task con keys + descripciones + contexto contacto })`
+4. Subagente investiga (spawna web-researcher si falta info) → retorna `{ key_values, sources, notes }`
+5. Agente llama `create-from-template` con key_values investigados
+6. Auto-tags: si doc_type=comparativo y tags vacíos, se extraen de key_values (brand, competitor, product, company, marca, competidor)
+7. Re-edición comparativo: solo por error factual — se logea docId + reason + updatedKeys
+
+## Skill del agente
+- `instance/prompts/system/skills/templates-usage.md` — guía de uso de plantillas (comparativos, cotizaciones, presentaciones)
 
 ## Strict mode
 - `TEMPLATES_STRICT_MODE=true`: agente solo crea docs desde plantillas
