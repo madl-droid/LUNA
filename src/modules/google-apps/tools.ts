@@ -8,7 +8,7 @@ import type { SheetsService } from './sheets-service.js'
 import type { DocsService } from './docs-service.js'
 import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
-import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, DocEditOperation, SlideEditOperation } from './types.js'
+import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig } from './types.js'
 import { CALENDAR_CONFIG_DEFAULTS } from './calendar-config.js'
 import {
   formatEventsListForAgent,
@@ -387,83 +387,47 @@ export async function registerGoogleTools(
       definition: {
         name: 'sheets-read',
         displayName: 'Leer Google Sheet',
-        description: 'Lee datos de un rango en una hoja de cálculo de Google Sheets. Soporta paginación con offset/limit y auto-detecta el primer tab si no se especifica rango.',
+        description: 'Lee datos de un rango en una hoja de cálculo de Google Sheets.',
         category: 'sheets',
         sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'ID de la hoja de cálculo' },
-            range: { type: 'string', description: 'Rango a leer (ej: Sheet1!A1:D10). Si se omite, se lee el primer tab completo.' },
-            offset: { type: 'number', description: 'Fila de inicio para paginación (0-based, default 0). Excluye la fila de header.' },
-            limit: { type: 'number', description: 'Máximo de filas de datos a retornar (default 100, max 500).' },
+            range: { type: 'string', description: 'Rango a leer (ej: Sheet1!A1:D10)' },
           },
-          required: ['spreadsheetId'],
+          required: ['spreadsheetId', 'range'],
         },
       },
       handler: async (input) => {
         const spreadsheetId = input.spreadsheetId as string
-        const offset = Math.max((input.offset as number | undefined) ?? 0, 0)
-        const limit = Math.min(Math.max((input.limit as number | undefined) ?? 100, 1), 500)
-
-        // Auto-detect primer tab si no se proporciona range
-        let range = input.range as string | undefined
-        if (!range) {
-          const info = await sheets.getSpreadsheet(spreadsheetId)
-          const firstSheet = info.sheets[0]
-          const firstTitle = firstSheet?.title ?? 'Sheet1'
-          range = `'${firstTitle}'`
-        }
-
-        // PERF-1: Si el range no tiene filas explícitas (ej: "'Sheet1'" sin !A1:D10),
-        // limitar server-side para evitar cargar toda la hoja en memoria
-        const hasExplicitRows = /\d/.test(range)
-        if (!hasExplicitRows) {
-          const maxRow = offset + limit + 2 // +1 header, +1 one-based
-          range = `${range}!A1:ZZZ${maxRow}`
-        }
-
-        const data = await sheets.readRange(spreadsheetId, range)
-        const values = data.values
-
-        // Hoja vacía
-        if (values.length === 0) {
-          return { success: true, data: { range, message: 'Hoja vacía — sin datos', totalRows: 0 } }
-        }
-
-        const header = values[0]!
-        const dataRows = values.slice(1)
-        const totalDataRows = dataRows.length
-
-        // Paginar
-        const pageRows = dataRows.slice(offset, offset + limit)
-        const hasMore = (offset + limit) < totalDataRows
-        const nextOffset = hasMore ? offset + limit : null
-        const mayHaveMore = !hasExplicitRows && values.length >= offset + limit + 2
-
-        // Formatear output tabular
-        const separator = header.map(() => '────').join('─┼─')
-        const headerLine = header.join(' | ')
-        const dataLines = pageRows.map((row) => row.join(' | ')).join('\n')
-        const rangeLabel = `Rango: ${data.range}`
-        const countLabel = `${totalDataRows} filas de datos × ${header.length} columnas`
-        const showingLabel = `Mostrando filas ${offset + 1}-${offset + pageRows.length} de ${totalDataRows}`
-        const moreHint = hasMore ? `\n\n(${totalDataRows - offset - pageRows.length} filas más — usa offset=${nextOffset} para ver las siguientes)` : ''
-
-        const formatted = `${rangeLabel}\n${countLabel}\n${showingLabel}\n\n${headerLine}\n${separator}\n${dataLines}${moreHint}`
-
-        return {
-          success: true,
-          data: {
-            formatted,
-            totalRows: totalDataRows,
-            columns: header.length,
-            header,
-            offset,
-            limit,
-            hasMore: hasMore || mayHaveMore,
-            nextOffset: nextOffset ?? (mayHaveMore ? offset + limit : null),
-          },
+        const range = input.range as string
+        try {
+          const data = await sheets.readRange(spreadsheetId, range)
+          return { success: true, data }
+        } catch (err) {
+          const errMsg = String(err)
+          // FIX-04: Auto-recovery cuando el LLM usa un nombre de hoja incorrecto
+          if (errMsg.toLowerCase().includes('unable to parse range') || errMsg.includes('400')) {
+            logger.debug({ spreadsheetId, range }, '[sheets-read] Range error, attempting auto-recovery with sheets-info')
+            try {
+              const info = await sheets.getSpreadsheet(spreadsheetId)
+              const firstSheet = info.sheets[0]?.title
+              if (!firstSheet) return { success: false, error: errMsg }
+              const correctedRange = range.includes('!')
+                ? `${firstSheet}!${range.split('!').slice(1).join('!')}`
+                : `${firstSheet}!${range}`
+              logger.debug({ originalRange: range, correctedRange }, '[sheets-read] Retrying with corrected range')
+              const data = await sheets.readRange(spreadsheetId, correctedRange)
+              return {
+                success: true,
+                data: { ...data, note: `Nota: el rango solicitado "${range}" era inválido. Se usó "${correctedRange}".` },
+              }
+            } catch {
+              return { success: false, error: errMsg }
+            }
+          }
+          return { success: false, error: errMsg }
         }
       },
     })
@@ -499,7 +463,7 @@ export async function registerGoogleTools(
       definition: {
         name: 'sheets-append',
         displayName: 'Agregar filas a Google Sheet',
-        description: 'Agrega filas al final de una hoja de cálculo. Restaura automáticamente validaciones de datos (dropdowns) en las filas añadidas.',
+        description: 'Agrega filas al final de una hoja de cálculo.',
         category: 'sheets',
         sourceModule: 'google-apps',
         parameters: {
@@ -513,12 +477,11 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        const spreadsheetId = input.spreadsheetId as string
-        const range = input.range as string
-        const values = input.values as string[][]
-
-        const result = await sheets.appendWithValidations(spreadsheetId, range, values)
-
+        const result = await sheets.appendRows(
+          input.spreadsheetId as string,
+          input.range as string,
+          input.values as string[][],
+        )
         return { success: true, data: result }
       },
     })
@@ -564,68 +527,6 @@ export async function registerGoogleTools(
         return { success: true, data: info }
       },
     })
-
-    await toolRegistry.registerTool({
-      definition: {
-        name: 'sheets-find-replace',
-        displayName: 'Buscar y reemplazar en Google Sheet',
-        description: 'Busca un texto en toda la hoja de cálculo y lo reemplaza. Útil para actualizar valores en masa o aplicar plantillas con {claves}.',
-        category: 'sheets',
-        sourceModule: 'google-apps',
-        parameters: {
-          type: 'object',
-          properties: {
-            spreadsheetId: { type: 'string', description: 'ID de la hoja de cálculo' },
-            find: { type: 'string', description: 'Texto a buscar (ej: {nombre})' },
-            replacement: { type: 'string', description: 'Texto de reemplazo' },
-            matchCase: { type: 'boolean', description: 'Coincidencia exacta de mayúsculas/minúsculas (default: false)' },
-            matchEntireCell: { type: 'boolean', description: 'Solo reemplazar si la celda contiene exactamente el texto buscado (default: false)' },
-          },
-          required: ['spreadsheetId', 'find', 'replacement'],
-        },
-      },
-      handler: async (input) => {
-        const result = await sheets.findReplace(
-          input.spreadsheetId as string,
-          input.find as string,
-          input.replacement as string,
-          {
-            matchCase: input.matchCase as boolean | undefined,
-            matchEntireCell: input.matchEntireCell as boolean | undefined,
-          },
-        )
-        return { success: true, data: result }
-      },
-    })
-
-    await toolRegistry.registerTool({
-      definition: {
-        name: 'sheets-batch-edit',
-        displayName: 'Edición batch en Google Sheet',
-        description: 'Ejecuta múltiples operaciones (escribir, agregar filas, limpiar rangos, buscar/reemplazar) en una hoja de cálculo en una sola llamada.',
-        category: 'sheets',
-        sourceModule: 'google-apps',
-        parameters: {
-          type: 'object',
-          properties: {
-            spreadsheetId: { type: 'string', description: 'ID de la hoja de cálculo' },
-            operations: {
-              type: 'array',
-              description: 'Array de operaciones. Cada objeto: { type: "write"|"append"|"clear"|"find_replace", range?: string, values?: string[][], find?: string, replacement?: string, matchCase?: boolean }',
-              items: { type: 'object', description: 'Operación a ejecutar' },
-            },
-          },
-          required: ['spreadsheetId', 'operations'],
-        },
-      },
-      handler: async (input) => {
-        const result = await sheets.batchEdit(
-          input.spreadsheetId as string,
-          input.operations as SheetBatchOperation[],
-        )
-        return { success: true, data: result }
-      },
-    })
   }
 
   // ─── Docs tools ────────────────────────────
@@ -650,31 +551,7 @@ export async function registerGoogleTools(
       },
       handler: async (input) => {
         const doc = await docs.getDocument(input.documentId as string)
-
-        // Métricas sobre el documento completo
-        const wordCount = doc.body.split(/\s+/).filter(Boolean).length
-        const charCount = doc.body.length
-
-        // Truncar si excede 30K chars
-        const MAX_DOC_CHARS = 30_000
-        let body = doc.body
-        let truncated = false
-        if (body.length > MAX_DOC_CHARS) {
-          body = body.slice(0, MAX_DOC_CHARS)
-            + `\n\n[... documento truncado: mostrando ${MAX_DOC_CHARS.toLocaleString()} de ${charCount.toLocaleString()} caracteres (${wordCount.toLocaleString()} palabras totales)]`
-          truncated = true
-        }
-
-        return {
-          success: true,
-          data: {
-            ...doc,
-            body,
-            wordCount,
-            charCount,
-            truncated,
-          },
-        }
+        return { success: true, data: doc }
       },
     })
 
@@ -748,35 +625,6 @@ export async function registerGoogleTools(
         return { success: true, data: { occurrencesChanged: count } }
       },
     })
-
-    await toolRegistry.registerTool({
-      definition: {
-        name: 'docs-batch-edit',
-        displayName: 'Edición batch en Google Doc',
-        description: 'Ejecuta múltiples operaciones de edición (agregar texto, insertar en posición, buscar/reemplazar) en un documento de Google Docs en una sola llamada. Ideal para aplicar plantillas con múltiples {claves}.',
-        category: 'docs',
-        sourceModule: 'google-apps',
-        parameters: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'ID del documento' },
-            operations: {
-              type: 'array',
-              description: 'Array de operaciones. Cada objeto debe tener "type" ("append"|"insert"|"replace") y "text". replace: agregar "searchText". insert: agregar "index" (1-based).',
-              items: { type: 'object', description: 'Operación de edición' },
-            },
-          },
-          required: ['documentId', 'operations'],
-        },
-      },
-      handler: async (input) => {
-        const result = await docs.batchEdit(
-          input.documentId as string,
-          input.operations as DocEditOperation[],
-        )
-        return { success: true, data: result }
-      },
-    })
   }
 
   // ─── Slides tools ──────────────────────────
@@ -801,18 +649,11 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        const presentationId = input.presentationId as string
-        const slideIndex = input.slideIndex as number | undefined
-        const result = await slides.getSlideTextWithInfo(presentationId, slideIndex)
-        return {
-          success: true,
-          data: {
-            title: result.title,
-            totalSlides: result.totalSlides,
-            readingSlide: slideIndex !== undefined ? slideIndex + 1 : 'all',
-            text: result.text,
-          },
-        }
+        const text = await slides.getSlideText(
+          input.presentationId as string,
+          input.slideIndex as number | undefined,
+        )
+        return { success: true, data: { text } }
       },
     })
 
@@ -882,96 +723,6 @@ export async function registerGoogleTools(
           input.replaceText as string,
         )
         return { success: true, data: { occurrencesChanged: count } }
-      },
-    })
-
-    await toolRegistry.registerTool({
-      definition: {
-        name: 'slides-add-slide',
-        displayName: 'Agregar slide a presentación',
-        description: 'Agrega un nuevo slide a una presentación de Google Slides.',
-        category: 'slides',
-        sourceModule: 'google-apps',
-        parameters: {
-          type: 'object',
-          properties: {
-            presentationId: { type: 'string', description: 'ID de la presentación' },
-            layout: {
-              type: 'string',
-              description: 'Layout del slide (default: BLANK). Opciones: BLANK, CAPTION_ONLY, TITLE, TITLE_AND_BODY, TITLE_AND_TWO_COLUMNS, TITLE_ONLY, ONE_COLUMN_TEXT, MAIN_POINT, SECTION_HEADER, BIG_NUMBER',
-            },
-            insertionIndex: { type: 'number', description: 'Posición donde insertar (0-based). Si no se especifica, se agrega al final.' },
-          },
-          required: ['presentationId'],
-        },
-      },
-      handler: async (input) => {
-        const objectId = await slides.addSlide(
-          input.presentationId as string,
-          input.layout as string | undefined,
-          input.insertionIndex as number | undefined,
-        )
-        return { success: true, data: { objectId, layout: input.layout ?? 'BLANK' } }
-      },
-    })
-
-    await toolRegistry.registerTool({
-      definition: {
-        name: 'slides-update-notes',
-        displayName: 'Actualizar notas de presentador',
-        description: 'Reemplaza las notas del presentador (speaker notes) de un slide específico.',
-        category: 'slides',
-        sourceModule: 'google-apps',
-        parameters: {
-          type: 'object',
-          properties: {
-            presentationId: { type: 'string', description: 'ID de la presentación' },
-            slideIndex: { type: 'number', description: 'Índice del slide (0-based)' },
-            text: { type: 'string', description: 'Nuevo texto para las notas del presentador' },
-          },
-          required: ['presentationId', 'slideIndex', 'text'],
-        },
-      },
-      handler: async (input) => {
-        try {
-          await slides.updateSpeakerNotes(
-            input.presentationId as string,
-            input.slideIndex as number,
-            input.text as string,
-          )
-          return { success: true, data: { updated: true, slideIndex: input.slideIndex } }
-        } catch (err) {
-          return { success: false, error: err instanceof Error ? err.message : String(err) }
-        }
-      },
-    })
-
-    await toolRegistry.registerTool({
-      definition: {
-        name: 'slides-batch-edit',
-        displayName: 'Edición batch en Google Slides',
-        description: 'Ejecuta múltiples operaciones (reemplazar texto, agregar slides, actualizar notas) en una presentación en una sola llamada. Ideal para aplicar plantillas con múltiples {claves}.',
-        category: 'slides',
-        sourceModule: 'google-apps',
-        parameters: {
-          type: 'object',
-          properties: {
-            presentationId: { type: 'string', description: 'ID de la presentación' },
-            operations: {
-              type: 'array',
-              description: 'Array de operaciones. Cada objeto debe tener "type" ("replace_text"|"add_slide"|"update_notes"). replace_text: {searchText, replaceText}. add_slide: {layout?, insertionIndex?}. update_notes: {slideIndex, text}.',
-              items: { type: 'object', description: 'Operación de edición' },
-            },
-          },
-          required: ['presentationId', 'operations'],
-        },
-      },
-      handler: async (input) => {
-        const result = await slides.batchEdit(
-          input.presentationId as string,
-          input.operations as SlideEditOperation[],
-        )
-        return { success: true, data: result }
       },
     })
   }
