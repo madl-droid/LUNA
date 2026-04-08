@@ -9,6 +9,7 @@ Funciones de extracción de contenido unificadas. **CUALQUIER** módulo, agente,
 - `index.ts` — Registry central: extractContent(), enrichWithLLM(), isSupportedMimeType(), classifyMimeType(), MIGRATED_EXTRACTORS. Re-exporta VISUAL_SECTION_MARKER, OCR_SECTION_MARKER de pdf.ts
 - `convert-to-pdf.ts` — Conversión DOCX/PPTX→PDF via LibreOffice headless (120s timeout, tmpdir con UUID)
 - Extractores por formato: text.ts, docx.ts, sheets.ts, pdf.ts, slides.ts, image.ts, web.ts, youtube.ts, video.ts, audio.ts
+- `youtube-adapter.ts` — **FIX-02**: `getVideoMeta()`, `listPlaylistVideos()`, `getChannelMeta()` aceptan `opts?: { accessToken?: string }`. Cuando accessToken presente → Bearer header en vez de API key en query string. Backward compatible.
 
 ## Pipeline dual: TEXT vs VISUAL
 

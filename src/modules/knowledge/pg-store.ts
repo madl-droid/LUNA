@@ -1414,6 +1414,14 @@ export class KnowledgePgStore {
     }))
   }
 
+  /** Return active items with content_loaded = false (for bulk train pre-load). FIX-03 */
+  async listItemsPendingContent(): Promise<KnowledgeItem[]> {
+    const res = await this.db.query<ItemRow>(
+      `SELECT * FROM knowledge_items WHERE content_loaded = false AND active = true ORDER BY created_at ASC`,
+    )
+    return res.rows.map(mapItemRow)
+  }
+
   /** Return active items that need content loading or re-embedding (for nightly scan) */
   async listItemsNeedingEmbedding(): Promise<KnowledgeItem[]> {
     const res = await this.db.query<ItemRow>(

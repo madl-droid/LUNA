@@ -400,8 +400,35 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        const data = await sheets.readRange(input.spreadsheetId as string, input.range as string)
-        return { success: true, data }
+        const spreadsheetId = input.spreadsheetId as string
+        const range = input.range as string
+        try {
+          const data = await sheets.readRange(spreadsheetId, range)
+          return { success: true, data }
+        } catch (err) {
+          const errMsg = String(err)
+          // FIX-04: Auto-recovery cuando el LLM usa un nombre de hoja incorrecto
+          if (errMsg.toLowerCase().includes('unable to parse range') || errMsg.includes('400')) {
+            logger.debug({ spreadsheetId, range }, '[sheets-read] Range error, attempting auto-recovery with sheets-info')
+            try {
+              const info = await sheets.getSpreadsheet(spreadsheetId)
+              const firstSheet = info.sheets[0]?.title
+              if (!firstSheet) return { success: false, error: errMsg }
+              const correctedRange = range.includes('!')
+                ? `${firstSheet}!${range.split('!').slice(1).join('!')}`
+                : `${firstSheet}!${range}`
+              logger.debug({ originalRange: range, correctedRange }, '[sheets-read] Retrying with corrected range')
+              const data = await sheets.readRange(spreadsheetId, correctedRange)
+              return {
+                success: true,
+                data: { ...data, note: `Nota: el rango solicitado "${range}" era inválido. Se usó "${correctedRange}".` },
+              }
+            } catch {
+              return { success: false, error: errMsg }
+            }
+          }
+          return { success: false, error: errMsg }
+        }
       },
     })
 

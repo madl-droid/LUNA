@@ -491,8 +491,8 @@ export class KnowledgeManager {
    * Search consultable knowledge (for tool use in Phase 3).
    * Accepts searchHint for category boost.
    */
-  async searchConsultable(query: string, limit = 5, searchHint?: string): Promise<KnowledgeSearchResult[]> {
-    const results = await this.searchEngine.search(query, { limit, searchHint })
+  async searchConsultable(query: string, limit = 5, searchHint?: string, allowedCategoryIds?: string[]): Promise<KnowledgeSearchResult[]> {
+    const results = await this.searchEngine.search(query, { limit, searchHint, allowedCategoryIds })
     this.trackHits(results)
     if (results.length === 0 && query.trim().length > 5) {
       this.pgStore.recordGap(query).catch(() => {})
