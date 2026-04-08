@@ -762,17 +762,8 @@ export async function registerGoogleTools(
             documentId: { type: 'string', description: 'ID del documento' },
             operations: {
               type: 'array',
-              description: 'Array de operaciones a ejecutar',
-              items: {
-                type: 'object',
-                properties: {
-                  type: { type: 'string', enum: ['append', 'insert', 'replace'], description: 'Tipo de operación' },
-                  text: { type: 'string', description: 'Texto a insertar/agregar, o texto de reemplazo para replace' },
-                  searchText: { type: 'string', description: 'Texto a buscar (solo para replace)' },
-                  index: { type: 'number', description: 'Posición de inserción 1-based (solo para insert)' },
-                },
-                required: ['type', 'text'],
-              },
+              description: 'Array de operaciones. Cada objeto debe tener "type" ("append"|"insert"|"replace") y "text". replace: agregar "searchText". insert: agregar "index" (1-based).',
+              items: { type: 'object', description: 'Operación de edición' },
             },
           },
           required: ['documentId', 'operations'],
