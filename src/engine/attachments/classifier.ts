@@ -1,6 +1,6 @@
-// LUNA Engine — Attachment Classifier (lightweight, Phase 1)
+// LUNA Engine — Attachment Classifier (lightweight, intake)
 // Extracts metadata only — NO downloading, NO processing, NO LLM calls.
-// Heavy processing moves to Phase 3 as 'process_attachment' steps.
+// Heavy processing happens in the agentic loop via 'process_attachment' tool calls.
 
 import type { IncomingMessage } from '../../channels/types.js'
 import type { AttachmentMetadata } from '../types.js'

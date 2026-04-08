@@ -52,9 +52,9 @@ export async function ensureTraceTables(db: Pool): Promise<void> {
         intent TEXT, emotion TEXT, tools_planned TEXT[], execution_plan JSONB,
         injection_risk BOOLEAN, on_scope BOOLEAN,
         tools_executed JSONB, response_text TEXT,
-        phase2_ms INTEGER, phase3_ms INTEGER, phase4_ms INTEGER, total_ms INTEGER,
+        classify_ms INTEGER, agentic_ms INTEGER, postprocess_ms INTEGER, total_ms INTEGER,
         tokens_input INTEGER DEFAULT 0, tokens_output INTEGER DEFAULT 0,
-        raw_phase2 JSONB, raw_phase4 TEXT,
+        raw_classify JSONB, raw_postprocess TEXT,
         analysis TEXT, analysis_model TEXT, analysis_tokens INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`)
@@ -246,9 +246,9 @@ export async function insertResult(
     intent?: string; emotion?: string; toolsPlanned?: string[]
     executionPlan?: unknown; injectionRisk?: boolean; onScope?: boolean
     toolsExecuted?: SandboxToolResult[]; responseText?: string
-    phase2Ms?: number; phase3Ms?: number; phase4Ms?: number; totalMs?: number
+    classifyMs?: number; agenticMs?: number; postprocessMs?: number; totalMs?: number
     tokensInput?: number; tokensOutput?: number
-    rawPhase2?: unknown; rawPhase4?: string
+    rawClassify?: unknown; rawPostprocess?: string
   },
 ): Promise<string> {
   const { rows } = await db.query(
@@ -256,8 +256,8 @@ export async function insertResult(
        run_id, sim_index, message_index, message_text,
        intent, emotion, tools_planned, execution_plan, injection_risk, on_scope,
        tools_executed, response_text,
-       phase2_ms, phase3_ms, phase4_ms, total_ms,
-       tokens_input, tokens_output, raw_phase2, raw_phase4
+       classify_ms, agentic_ms, postprocess_ms, total_ms,
+       tokens_input, tokens_output, raw_classify, raw_postprocess
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
      ) RETURNING id`,
@@ -266,9 +266,9 @@ export async function insertResult(
       r.intent ?? null, r.emotion ?? null, r.toolsPlanned ?? [], r.executionPlan ? JSON.stringify(r.executionPlan) : null,
       r.injectionRisk ?? null, r.onScope ?? null,
       r.toolsExecuted ? JSON.stringify(r.toolsExecuted) : null, r.responseText ?? null,
-      r.phase2Ms ?? null, r.phase3Ms ?? null, r.phase4Ms ?? null, r.totalMs ?? null,
+      r.classifyMs ?? null, r.agenticMs ?? null, r.postprocessMs ?? null, r.totalMs ?? null,
       r.tokensInput ?? 0, r.tokensOutput ?? 0,
-      r.rawPhase2 ? JSON.stringify(r.rawPhase2) : null, r.rawPhase4 ?? null,
+      r.rawClassify ? JSON.stringify(r.rawClassify) : null, r.rawPostprocess ?? null,
     ],
   )
   return (rows[0]! as { id: string }).id

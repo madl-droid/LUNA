@@ -657,7 +657,7 @@ async function handleSpawnSubagent(
 
 /**
  * Legacy runSubagent wrapper for backward compatibility.
- * Called by Phase 3 when no catalog is available (graceful fallback).
+ * Called by the agentic loop when no catalog is available (graceful fallback).
  */
 export async function runSubagent(
   ctx: ContextBundle,

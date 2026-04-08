@@ -88,12 +88,12 @@ export async function runSingleSimulation(
         toolsExecuted: agenticResult.toolResults,
         responseText: agenticResult.responseText,
         // Timing: total for the agentic loop, no separate phases
-        phase4Ms: agenticMs,
+        agenticMs,
         totalMs,
         tokensInput: agenticResult.tokensIn,
         tokensOutput: agenticResult.tokensOut,
-        rawPhase2: { toolsUsed: agenticResult.toolsUsed, turns: agenticResult.turns },
-        rawPhase4: agenticResult.responseText,
+        rawClassify: { toolsUsed: agenticResult.toolsUsed, turns: agenticResult.turns },
+        rawPostprocess: agenticResult.responseText,
       })
 
       // ── Multi-turn: accumulate history ──
@@ -119,7 +119,7 @@ export async function runSingleSimulation(
         messageIndex: msgIdx,
         messageText: msg.text,
         totalMs: Date.now() - start,
-        rawPhase4: err instanceof Error ? err.message : 'Unknown error',
+        rawPostprocess: err instanceof Error ? err.message : 'Unknown error',
       })
 
       const row = await db.query(`SELECT * FROM trace_results WHERE id = $1`, [resultId])

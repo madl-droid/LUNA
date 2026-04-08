@@ -289,10 +289,10 @@ function buildRunSummary(
   const toolsPlannedSet = new Set<string>()
   const toolsDryRunSet = new Set<string>()
   let totalMessages = 0
-  let sumPhase2 = 0
-  let sumPhase4 = 0
-  let countPhase2 = 0
-  let countPhase4 = 0
+  let sumClassify = 0
+  let sumPostprocess = 0
+  let countClassify = 0
+  let countPostprocess = 0
 
   for (const results of allResults) {
     if (!results) continue
@@ -303,8 +303,8 @@ function buildRunSummary(
         intents[r.intent] = (intents[r.intent] ?? 0) + 1
       }
 
-      if (r.phase2_ms) { sumPhase2 += r.phase2_ms; countPhase2++ }
-      if (r.phase4_ms) { sumPhase4 += r.phase4_ms; countPhase4++ }
+      if (r.classify_ms) { sumClassify += r.classify_ms; countClassify++ }
+      if (r.postprocess_ms) { sumPostprocess += r.postprocess_ms; countPostprocess++ }
 
       for (const t of r.tools_planned ?? []) toolsPlannedSet.add(t)
 
@@ -320,8 +320,8 @@ function buildRunSummary(
     total_simulations: allResults.filter(Boolean).length,
     total_messages: totalMessages,
     intents,
-    avg_phase2_ms: countPhase2 > 0 ? Math.round(sumPhase2 / countPhase2) : 0,
-    avg_phase4_ms: countPhase4 > 0 ? Math.round(sumPhase4 / countPhase4) : 0,
+    avg_classify_ms: countClassify > 0 ? Math.round(sumClassify / countClassify) : 0,
+    avg_postprocess_ms: countPostprocess > 0 ? Math.round(sumPostprocess / countPostprocess) : 0,
     tools_planned: [...toolsPlannedSet],
     tools_dry_run: [...toolsDryRunSet],
     total_tokens_input: totalTokensIn,

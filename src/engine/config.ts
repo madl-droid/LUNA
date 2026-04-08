@@ -12,7 +12,6 @@ interface EngineModuleConfig {
   ENGINE_MAX_QUEUE_SIZE: number
   ENGINE_MAX_CONCURRENT_STEPS: number
   ENGINE_BACKPRESSURE_MESSAGE: string
-  ENGINE_COMPOSE_RETRIES_PER_PROVIDER: number
   ATTACHMENT_ENABLED: boolean
   ATTACHMENT_SMALL_DOC_TOKENS: number
   ATTACHMENT_MEDIUM_DOC_TOKENS: number
@@ -23,9 +22,6 @@ interface EngineModuleConfig {
   MEMORY_SESSION_REOPEN_WINDOW_HOURS: number
   SESSION_REOPEN_WINDOW_MS: number
   ENGINE_PIPELINE_TIMEOUT_MS: number
-  ENGINE_CHECKPOINT_ENABLED: boolean
-  ENGINE_CHECKPOINT_RESUME_WINDOW_MS: number
-  ENGINE_CHECKPOINT_CLEANUP_DAYS: number
   ENGINE_AGENTIC_MAX_TURNS: number
   ENGINE_EFFORT_ROUTING: boolean
   LLM_CRITICIZER_MODE: string
@@ -110,20 +106,12 @@ export function loadEngineConfig(registry: Registry): EngineConfig {
     maxConcurrentSteps: moduleConfig.ENGINE_MAX_CONCURRENT_STEPS,
     backpressureMessage: moduleConfig.ENGINE_BACKPRESSURE_MESSAGE,
 
-    // Phase 4 retries per provider
-    composeRetriesPerProvider: moduleConfig.ENGINE_COMPOSE_RETRIES_PER_PROVIDER,
-
     // FIX: E-1 — Pipeline global timeout (2 minutes default)
     pipelineTimeoutMs: moduleConfig.ENGINE_PIPELINE_TIMEOUT_MS,
 
     // Criticizer (quality gate): disabled | complex_only | always
     criticizerMode: moduleConfig.LLM_CRITICIZER_MODE as 'disabled' | 'complex_only' | 'always',
     criticizerMaxRetries: envInt('ENGINE_CRITICIZER_MAX_RETRIES', 2),
-
-    // Checkpoints (resumable pipelines)
-    checkpointEnabled: moduleConfig.ENGINE_CHECKPOINT_ENABLED,
-    checkpointResumeWindowMs: moduleConfig.ENGINE_CHECKPOINT_RESUME_WINDOW_MS,
-    checkpointCleanupDays: moduleConfig.ENGINE_CHECKPOINT_CLEANUP_DAYS,
 
     // --- Agentic engine config (v2.0) ---
     agenticMaxTurns:         moduleConfig.ENGINE_AGENTIC_MAX_TURNS,
