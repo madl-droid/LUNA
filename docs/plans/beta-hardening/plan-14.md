@@ -1,330 +1,273 @@
-# Plan 14 — Google Apps Audit Fixes
+# Plan 14 — Audit Beta-Hardening Fixes
 
-**Prioridad:** HIGH (bloquea merge de la rama google-apps-improvements)
-**Branch auditado:** `claude/plan-google-apps-improvements-0dfMU`
-**Fuente:** `docs/reports/AUDIT-google-apps-branch.md`
-**Objetivo:** Corregir todos los bugs, huecos funcionales y violaciones de politica encontrados en la auditoria. La rama NO debe mergearse sin estos fixes.
+**Prioridad:** CRITICA (bloquea merge a pruebas)
+**Branch auditado:** `claude/project-planning-session-Zwy1r`
+**Fuente:** `docs/reports/audit-beta-hardening.md`
+**Objetivo:** Corregir los 3 blockers de compilación/datos + 2 bugs alta prioridad encontrados en la auditoría integral de los 14 planes de beta-hardening (~75 fixes, ~60 archivos).
+
+## Contexto — Qué encontró la auditoría
+
+De los 82 fixes implementados en 14 planes, 81 están correctos. La auditoría reveló:
+- **2 errores de compilación TS** que rompen el build de GitHub Actions
+- **1 bug de datos** que puede corromper ownership de contactos
+- **1 bug funcional** que descarta respuestas válidas del LLM
+- **1 hueco funcional** donde orphan recovery choca con dedup
+
+Los ~8 items de deuda técnica y ~3 violaciones de política son post-beta (documentados en sección "Diferidos").
 
 ## Archivos target
 
 | Archivo | Scope |
 |---------|-------|
-| `src/modules/google-apps/tools.ts` | BUG-3 regex, HUECO-1 validacion, COMPLEX-2 formatted |
-| `src/modules/google-apps/sheets-service.ts` | BUG-4 wrapper faltante |
-| `src/modules/google-apps/docs-service.ts` | BUG-2 applied count |
-| `src/modules/google-apps/slides-service.ts` | BUG-6 batch atomico, DUP-1 getSlideText |
-| `src/modules/google-apps/api-wrapper.ts` | BUG-1 timeout decorativo |
-| `src/modules/google-apps/manifest.ts` | POL-1 activateByDefault |
-| `src/modules/google-apps/types.ts` | HUECO-2 text opcional |
-| `src/modules/google-apps/CLAUDE.md` | POL-1 correccion doc |
-| `src/modules/google-apps/.env.example` | POL-2 archivo faltante |
+| `src/engine/engine.ts` | TS-01: Redis SET NX overload |
+| `src/engine/utils/llm-client.ts` | TS-02: cast inseguro a ModelParams |
+| `src/modules/users/db.ts` | BUG-01: DO UPDATE → DO NOTHING |
+| `src/engine/agentic/agentic-loop.ts` | BUG-02: reasoning patterns false positives |
+| `src/engine/proactive/orphan-recovery.ts` | GAP-01: dedup collision en retry |
 
-## Paso 0 — Verificacion obligatoria
+## Cambios previos relevantes
 
-1. Hacer checkout de la rama `claude/plan-google-apps-improvements-0dfMU`
-2. Leer TODOS los archivos target completos
-3. Confirmar que cada bug existe en la ubicacion indicada
-4. Verificar la firma de `googleApiCall` en `api-wrapper.ts` para entender el patron de AbortSignal
+- **Plan 02** (Engine Hardening): Introdujo dedup Redis con SET NX (FIX-E1) y reasoning patterns (FIX-F13). Ambos son correctos en diseño pero tienen bugs de implementación.
+- **Plan 07b** (Cross-Module): Implementó protección de ownership en `webhook-handler.ts` (FIX-03, correcto), pero la ruta alternativa via `db.ts:addContact()` quedó sin proteger.
+- **Plan 02** (Engine): Introdujo orphan recovery con grace period de 5 min, coincidente con dedup TTL de 5 min.
+
+## Paso 0 — Verificación obligatoria
+
+1. Confirmar que estás en la rama correcta (derivada de `claude/project-planning-session-Zwy1r`)
+2. Leer COMPLETOS los 5 archivos target
+3. Compilar `npx tsc --noEmit` y confirmar que TS-01 y TS-02 existen como errores
+4. Confirmar que `db.ts:331` tiene `DO UPDATE SET user_id`
 
 ---
 
-## FIX-01: BUG-1 — Timeout decorativo en `googleApiCall` [CRITICO]
-**Archivo:** `src/modules/google-apps/api-wrapper.ts`
-**Bug:** `googleApiCall` crea un `AbortController` con timeout pero el `signal` nunca se pasa a las requests HTTP de googleapis. Todos los callers ignoran el parametro signal de la lambda.
-**Impacto:** Todas las llamadas a Google API carecen de timeout real. Una API lenta bloquea el thread indefinidamente.
+## FIX-01: TS-01 — Redis SET NX tipo incorrecto [BLOQUEANTE]
+**Archivo:** `src/engine/engine.ts:162`
+**Error:** `error TS2769: Argument of type '"NX"' is not assignable to parameter of type '"KEEPTTL"'`
+**Causa:** ioredis v5.10.0 no acepta `'NX'` como tercer argumento posicional de `set()`. El overload requiere que `PX` vaya antes de `NX`.
 
-**Investigacion requerida:**
-1. Leer la firma actual de `googleApiCall` — verificar si recibe `fn: (signal: AbortSignal) => Promise<T>` o `fn: () => Promise<T>`
-2. Verificar si las APIs de googleapis (`google.sheets`, `google.docs`, `google.slides`) aceptan `signal` o `AbortSignal` como opcion
-3. Buscar en node_modules (si disponible) o en la documentacion de googleapis si soportan cancelacion
-
-**Fix — Opcion A (si googleapis soporta signal):**
-- Actualizar todos los callers para pasar signal: `(signal) => this.docs.documents.get({...}, { signal })`
-- Esto requiere actualizar ~15 call sites en sheets-service, docs-service, slides-service
-
-**Fix — Opcion B (si googleapis NO soporta signal — mas probable):**
-- Implementar timeout via `Promise.race` en el wrapper:
+**Código actual (línea 162):**
 ```typescript
-async function googleApiCall<T>(
-  fn: () => Promise<T>,  // quitar signal del parametro
-  config: ApiConfig,
-  label: string,
-): Promise<T> {
-  const timeoutMs = config.timeoutMs ?? 30_000
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Google API timeout: ${label} after ${timeoutMs}ms`)), timeoutMs)
-    timer.unref()  // no bloquear shutdown
-  })
-  
-  // ... retry logic existente, pero envolver cada intento:
-  const result = await Promise.race([fn(), timeoutPromise])
-  return result
-}
+const set = await redis.set(dedupKey, '1', 'NX', 'PX', 300_000)
 ```
-- Eliminar AbortController si ya no se usa
-- Asegurar que el timeout aplica POR INTENTO, no globalmente (si hay retries)
 
-**Nota:** Este bug es preexistente pero la rama lo propago a mas servicios. El fix debe aplicar a TODOS los callers.
+**Fix — reordenar argumentos para matchear el overload de ioredis v5:**
+```typescript
+const set = await redis.set(dedupKey, '1', 'PX', 300_000, 'NX')
+```
+
+Esto matchea el overload `set(key, value, 'PX', milliseconds, 'NX')` que es el correcto en ioredis v5.
+
+**Verificación:** `npx tsc --noEmit` ya no debe mostrar error en esta línea.
 
 ---
 
-## FIX-02: BUG-3 — Regex de paginacion matchea digitos en nombre de tab [ALTO]
-**Archivo:** `src/modules/google-apps/tools.ts` ~linea 420
-**Bug:** `/\d/.test(range)` matchea digitos en nombres como `Sheet1`, `Datos 2024`
-**Impacto:** Paginacion server-side desactivada para casi todas las hojas.
+## FIX-02: TS-02 — Cast inseguro a ModelParams [BLOQUEANTE]
+**Archivo:** `src/engine/utils/llm-client.ts:320`
+**Error:** `error TS2352: Conversion of type 'Record<string, unknown>' to type 'ModelParams' may be a mistake`
+**Causa:** `modelConfig` se construye como object literal que TS infiere como `Record<string, unknown>`, y se castea directamente a `Parameters<typeof googleClient.getGenerativeModel>[0]` que es `ModelParams`. TS rechaza el cast directo entre tipos sin overlap suficiente.
+
+**Código actual (línea 320):**
+```typescript
+const genModel = googleClient.getGenerativeModel(modelConfig as Parameters<typeof googleClient.getGenerativeModel>[0])
+```
+
+**Fix — agregar intermediate cast via `unknown`:**
+```typescript
+const genModel = googleClient.getGenerativeModel(modelConfig as unknown as Parameters<typeof googleClient.getGenerativeModel>[0])
+```
+
+**Verificación:** `npx tsc --noEmit` ya no debe mostrar error en esta línea.
+
+---
+
+## FIX-03: BUG-01 — ON CONFLICT reasigna user_id silenciosamente [BLOQUEANTE]
+**Archivo:** `src/modules/users/db.ts:331`
+**Bug:** `addContact()` usa `DO UPDATE SET user_id = EXCLUDED.user_id` que sobrescribe el dueño de un contacto si otro usuario intenta registrar el mismo canal+sender_id. Esto permite "robar" contactos.
+**Patrón correcto:** Ya implementado en `webhook-handler.ts:505` que usa `DO NOTHING`.
+
+**Código actual (líneas 328-334):**
+```typescript
+const result = await this.pool.query(
+  `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
+   VALUES ($1, $2, $3, false)
+   ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = EXCLUDED.user_id
+   RETURNING *`,
+  [userId, channel, normalized],
+)
+return result.rows[0] ? this.mapContactRow(result.rows[0]) : null
+```
 
 **Fix:**
 ```typescript
-// Antes:
-const hasExplicitRows = /\d/.test(range)
-
-// Despues:
-const hasExplicitRows = /![A-Z]+\d/.test(range)
-```
-
-Esto solo matchea cuando hay un `!` seguido de letras de columna y digitos de fila (ej: `!A1`, `!B10`), que es el patron real de un rango con filas explicitas en Sheets.
-
----
-
-## FIX-03: BUG-2 — `docs-service.batchEdit` retorna count incorrecto [ALTO]
-**Archivo:** `src/modules/google-apps/docs-service.ts` ~linea 222
-**Bug:** `return { applied: operations.length }` retorna total enviado, no aplicado realmente.
-
-**Fix:**
-1. Leer como lo hace `slides-service.ts` (~linea 208) para consistencia
-2. Google Docs batchUpdate retorna `replies[]` — un reply por request
-3. Para `replaceAllText`, el reply tiene `replaceAllText.occurrencesChanged`
-4. Actualizar para retornar detalle:
-```typescript
-// Ejecutar batch
-const res = await googleApiCall(
-  () => this.docs.documents.batchUpdate({ documentId, requestBody: { requests } }),
-  this.apiConfig, 'docs.documents.batchUpdate',
+const result = await this.pool.query(
+  `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
+   VALUES ($1, $2, $3, false)
+   ON CONFLICT (channel, sender_id) DO NOTHING
+   RETURNING *`,
+  [userId, channel, normalized],
 )
-
-// Contar reales
-const replies = res.data?.replies ?? []
-const results = operations.map((op, i) => {
-  const reply = replies[i]
-  if (op.type === 'replace_text') {
-    const changed = reply?.replaceAllText?.occurrencesChanged ?? 0
-    return { type: op.type, detail: { occurrencesChanged: changed } }
-  }
-  return { type: op.type, detail: { applied: true } }
-})
-
-const applied = results.filter(r => {
-  if (r.type === 'replace_text') return (r.detail as { occurrencesChanged: number }).occurrencesChanged > 0
-  return true
-}).length
-
-return { applied, results }
-```
-5. Tambien aplicar a la rama de `insert_text`/`append_text` si tiene batch update separado
-
----
-
-## FIX-04: BUG-4 — 4 metodos de Sheets sin `googleApiCall` wrapper [MEDIO]
-**Archivo:** `src/modules/google-apps/sheets-service.ts` ~lineas 53-130
-**Bug:** `writeRange`, `clearRange`, `createSpreadsheet`, `addSheet` llaman Google API directo sin retry ni timeout.
-
-**Fix:** Envolver cada uno con `googleApiCall`:
-
-```typescript
-// writeRange (~linea 59)
-const res = await googleApiCall(
-  () => this.sheets.spreadsheets.values.update({
-    spreadsheetId, range, valueInputOption: inputOption,
-    requestBody: { values },
-  }),
-  this.apiConfig, 'sheets.values.update',
-)
-
-// clearRange (~linea 93)
-await googleApiCall(
-  () => this.sheets.spreadsheets.values.clear({
-    spreadsheetId, range, requestBody: {},
-  }),
-  this.apiConfig, 'sheets.values.clear',
-)
-
-// createSpreadsheet (~linea 101)
-const res = await googleApiCall(
-  () => this.sheets.spreadsheets.create({
-    requestBody: { properties: { title } },
-    fields: 'spreadsheetId,properties.title,sheets.properties',
-  }),
-  this.apiConfig, 'sheets.spreadsheets.create',
-)
-
-// addSheet (~linea 121)
-const res = await googleApiCall(
-  () => this.sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: { requests: [{ addSheet: { properties: { title } } }] },
-  }),
-  this.apiConfig, 'sheets.spreadsheets.batchUpdate(addSheet)',
-)
-```
-
----
-
-## FIX-05: BUG-6 — Slides batchEdit: deleteText falla y cancela todo el batch [MEDIO]
-**Archivo:** `src/modules/google-apps/slides-service.ts` ~lineas 190-195
-**Bug:** `deleteText` y `insertText` para `update_notes` van en el mismo array de requests. Si `deleteText` falla (ej: text box vacio sin texto), toda la batch falla.
-
-**Fix:**
-1. Separar `update_notes` en request independiente ANTES del batch principal:
-```typescript
-// Pre-process: ejecutar update_notes como operaciones independientes
-const notesOps = operations.filter(op => op.type === 'update_notes')
-const otherOps = operations.filter(op => op.type !== 'update_notes')
-
-// Procesar notas una a una (aisladas del batch principal)
-for (const op of notesOps) {
-  try {
-    const noteRequests = []
-    // ... misma logica de deleteText/insertText
-    if (noteRequests.length > 0) {
-      await googleApiCall(
-        () => this.slides.presentations.batchUpdate({
-          presentationId, requestBody: { requests: noteRequests },
-        }),
-        this.apiConfig, 'slides.batchUpdate(notes)',
-      )
-    }
-    results.push({ type: 'update_notes', detail: { slideIndex: op.slideIndex, updated: true } })
-  } catch (err) {
-    results.push({ type: 'update_notes', detail: { error: String(err) } })
-  }
+if (result.rows[0]) {
+  return this.mapContactRow(result.rows[0])
 }
-
-// Luego procesar replace_text y add_slide en batch normal
+// Conflict — contact already exists for another user. Return existing record.
+const existing = await this.pool.query(
+  `SELECT * FROM user_contacts WHERE channel = $1 AND sender_id = $2 LIMIT 1`,
+  [channel, normalized],
+)
+return existing.rows[0] ? this.mapContactRow(existing.rows[0]) : null
 ```
-2. Alternativa mas simple: envolver el `deleteText` en try/catch individual y no fallar si no habia texto que borrar (el `existingText` check ya intenta esto pero puede fallar por timing)
+
+**Lógica:** Si `DO NOTHING` no retorna fila (conflicto), buscar la existente. El caller necesita el registro (lo usa para asociar). No logueamos warn aquí porque el caller puede decidir qué hacer.
+
+**Verificación:** Revisar qué callers de `addContact()` esperan como retorno. Si algún caller espera que siempre devuelva una fila, el fallback a SELECT es obligatorio. Si el caller tolera `null`, basta con `DO NOTHING` + `RETURNING *`.
 
 ---
 
-## FIX-06: POL-1 — `activateByDefault: true` [ALTO — trivial]
-**Archivo:** `src/modules/google-apps/manifest.ts` linea 383
-**Bug:** Modulos tipo `provider` con dependencia OAuth no deben activarse por defecto.
+## FIX-04: BUG-02 — Reasoning patterns producen false positives [ALTA]
+**Archivo:** `src/engine/agentic/agentic-loop.ts:30-46`
+**Bug:** 10 patrones con `string.includes()` matchean substrings sin contexto. Frases comunes como "Te voy a ayudar", "Let me explain", "Puedo usar esta herramienta" son respuestas legítimas del agente que se descartan como "razonamiento interno".
+**Impacto:** El usuario recibe fallback genérico cuando el LLM había generado una respuesta válida.
 
-**Fix:**
-1. Cambiar `activateByDefault: true` → `activateByDefault: false`
-2. En `CLAUDE.md` del modulo, si dice que se activa por defecto, corregir tambien
-
----
-
-## FIX-07: POL-2 — Crear `.env.example` [MEDIO — trivial]
-**Archivo:** `src/modules/google-apps/.env.example` — NO EXISTE
-
-**Fix:** Crear archivo con las 7 variables del configSchema:
-```bash
-# Google Apps — Provider OAuth2 + API services
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:3000/console/api/google-apps/oauth/callback
-GOOGLE_ENABLED_SERVICES=drive,sheets,docs,slides,calendar
-GOOGLE_PERMS_DRIVE=view,share,create,edit
-GOOGLE_PERMS_SHEETS=view,share,create,edit
-GOOGLE_PERMS_DOCS=view,share,create,edit
-```
-Verificar las 7 variables contra el configSchema real y ajustar.
-
----
-
-## FIX-08: HUECO-1 — Validacion runtime de operaciones batch [MEDIO]
-**Archivos:** `src/modules/google-apps/tools.ts` lineas 622, 775, 972
-**Bug:** Cast directo `input.operations as XxxOperation[]` sin validacion.
-
-**Fix:** Agregar validacion minima antes del cast en cada handler:
+**Código actual:**
 ```typescript
-// Sheets batch-edit handler (~linea 622)
-const ops = input.operations as SheetBatchOperation[]
-if (!Array.isArray(ops) || ops.length === 0) {
-  return { success: false, error: 'operations must be a non-empty array' }
-}
-for (const op of ops) {
-  if (!op.type || !['set_values', 'append_rows', 'clear', 'find_replace'].includes(op.type)) {
-    return { success: false, error: `Invalid operation type: ${op.type}. Valid: set_values, append_rows, clear, find_replace` }
-  }
-}
+const REASONING_PATTERNS = [
+  'voy a ',        // "Te voy a ayudar" ← false positive
+  'let me ',       // "Let me explain" ← false positive
+  "i'll ",
+  'using tool',
+  'herramienta',   // "Puedo usar esta herramienta" ← false positive
+  'tool call',
+  'i need to ',
+  'vou usar',
+  'llamaré a',     // "Te llamaré a las 3" ← false positive
+  'utilizaré',
+]
 
-// Mismo patron para Docs (~linea 775) y Slides (~linea 972) con sus tipos respectivos
-```
-
-Tambien actualizar los tool schemas para definir propiedades de `items` en vez de `{ type: 'object' }` vacio — esto ayuda al LLM a generar operaciones correctas.
-
----
-
-## FIX-09: HUECO-2 — `SlideEditOperation.text` opcional pero requerido [BAJO]
-**Archivo:** `src/modules/google-apps/types.ts` ~linea 151
-**Bug:** `text?: string` es opcional pero `update_notes` e `insertText` lo requieren.
-
-**Fix:** Agregar guard en slides-service.ts antes de usar `op.text`:
-```typescript
-if (op.type === 'update_notes') {
-  if (!op.text && op.text !== '') {
-    results.push({ type: 'update_notes', detail: { error: 'text is required for update_notes' } })
-    continue
-  }
-  // ... resto de la logica
+function isInternalReasoning(text: string): boolean {
+  const lower = text.toLowerCase()
+  return REASONING_PATTERNS.some(p => lower.includes(p))
 }
 ```
 
----
+**Contexto de uso (líneas 220-224 y 270-274):** Se llama en dos paths:
+1. Cuando hay `partialText` pero el loop terminó por error
+2. Cuando se fuerza respuesta de texto sin tool calls
 
-## FIX-10: HUECO-3 + DEUDA-3 — Unificar respuesta de batch edits [BAJO]
-**Archivos:** `docs-service.ts`, `slides-service.ts`, `sheets-service.ts`
-**Bug:** Los 3 servicios retornan contratos diferentes para batch edit.
+**Fix — Restringir a patrones que solo aplican al inicio del texto:**
 
-**Fix:** Ya cubierto parcialmente por FIX-03 (docs retornara `results[]`). Verificar que los 3 sigan el mismo patron:
+El razonamiento interno del LLM comienza con frases meta como "Voy a usar la herramienta X" o "Let me call the function". Una respuesta dirigida al usuario nunca empieza así — empieza con la respuesta misma.
+
 ```typescript
-{ applied: number, results: Array<{ type: string, detail: Record<string, unknown> }> }
+// Patterns que indican razonamiento interno SOLO si aparecen al inicio del texto
+const REASONING_START_PATTERNS = [
+  'voy a usar ',
+  'voy a llamar ',
+  'voy a buscar ',
+  'voy a consultar ',
+  'let me use ',
+  'let me call ',
+  'let me check ',
+  'let me search ',
+  "i'll use ",
+  "i'll call ",
+  "i'll check ",
+  'i need to use ',
+  'i need to call ',
+  'i need to check ',
+  'using tool',
+  'calling tool',
+  'tool call',
+  'vou usar ',
+  'llamaré a la herramienta',
+  'utilizaré la herramienta',
+]
+
+function isInternalReasoning(text: string): boolean {
+  const lower = text.trimStart().toLowerCase()
+  return REASONING_START_PATTERNS.some(p => lower.startsWith(p))
+}
 ```
 
+**Cambios clave:**
+1. `includes()` → `startsWith()` — solo coincide si el texto empieza con el patrón
+2. `trimStart()` antes de comparar — ignora whitespace inicial
+3. Patrones más específicos: "voy a usar" en vez de "voy a " (elimina "te voy a ayudar")
+4. Eliminar patrones genéricos: "herramienta" (demasiado amplio), "i'll " (demasiado corto)
+5. Agregar patrones específicos de tool calling: "calling tool", "i'll use ", "i'll call "
+
+**Verificación manual:**
+- `"Te voy a enviar la información"` → `false` ✓ (no empieza con "voy a usar")
+- `"Let me explain how this works"` → `false` ✓ (no matchea "let me use/call/check")
+- `"Voy a usar la herramienta de búsqueda"` → `true` ✓ (razonamiento interno real)
+- `"Let me check the calendar for you"` → `true` ✓ (razonamiento interno)
+
 ---
 
-## FIX-11: DUP-1 — Eliminar `getSlideText` si no tiene callers [BAJO — trivial]
-**Archivo:** `src/modules/google-apps/slides-service.ts` ~lineas 54-57
-**Bug:** `getSlideText` es wrapper trivial de `getSlideTextWithInfo`. Si no hay callers externos, es codigo muerto.
+## FIX-05: GAP-01 — Orphan recovery choca con dedup de Redis [ALTA]
+**Archivo:** `src/engine/proactive/orphan-recovery.ts:118`
+**Bug:** `redispatchOrphan` usa el `messageId` original como `channelMessageId` del nuevo `IncomingMessage`. Si la entrada dedup de Redis aún existe (TTL 5 min), el retry se rechaza como duplicado. El grace period del orphan recovery es también 5 min, creando una ventana de colisión exacta.
 
-**Fix:**
-1. Buscar `getSlideText` en todo el codebase (excluyendo su definicion)
-2. Si NO hay callers → eliminar el metodo
-3. Si hay callers → dejar como esta (backward compat)
+**Código actual (línea 115-122):**
+```typescript
+const message: IncomingMessage = {
+  id: randomUUID(),
+  channelName: orphan.channel,
+  channelMessageId: orphan.messageId,  // ← usa el mismo ID que el original
+  from: orphan.channelContactId,
+  timestamp: orphan.receivedAt,
+  content: orphan.content,
+}
+```
+
+**Fix — Usar channelMessageId distinto para retries:**
+```typescript
+const message: IncomingMessage = {
+  id: randomUUID(),
+  channelName: orphan.channel,
+  channelMessageId: `${orphan.messageId}:orphan-retry`,
+  from: orphan.channelContactId,
+  timestamp: orphan.receivedAt,
+  content: orphan.content,
+}
+```
+
+El sufijo `:orphan-retry` hace que el dedup key sea diferente (`dedup:msg:{id}:orphan-retry`), evitando la colisión con el mensaje original. Si el orphan recovery se ejecuta múltiples veces para el mismo mensaje, el dedup dentro de la misma ventana de 5 min evitará procesamiento doble del retry (que es correcto).
+
+**Nota:** Solo se ejecuta UN retry por huérfano (no hay loop de retries), así que un solo sufijo basta. Si en el futuro se agregan múltiples retries, agregar el número de intento: `${orphan.messageId}:orphan-retry-${attempt}`.
 
 ---
 
-## Verificacion post-fix
+## Verificación post-fix
 
-1. `sheets-read` con tab `Sheet1` → `hasExplicitRows = false` (paginacion server-side activa)
-2. `sheets-read` con range `Sheet1!A1:D10` → `hasExplicitRows = true`
-3. `docs-batch-edit` con replace que no matchea → `applied: 0`, no `applied: N`
-4. `writeRange`, `clearRange`, `createSpreadsheet`, `addSheet` → retry en 429
-5. `slides-batch-edit` con update_notes fallido → no cancela replace_text del batch
-6. `googleApiCall` con API lenta (>30s) → timeout real, no cuelga
-7. Manifest tiene `activateByDefault: false`
-8. `.env.example` existe con las variables del configSchema
-9. `slides-batch-edit` con `{ type: 'update_notes' }` sin text → error descriptivo
-10. Compilar: `npx tsc --noEmit` — 0 errores nuevos
+1. **Compilación:** `docker run --rm -v /docker/luna-repo:/app -w /app node:22-alpine npx tsc --noEmit` → 0 errores
+2. **FIX-01:** Grep `redis.set` en engine.ts → argumentos en orden `'PX', N, 'NX'`
+3. **FIX-02:** Grep `as unknown as` en llm-client.ts → intermediate cast presente
+4. **FIX-03:** Grep `DO NOTHING` en db.ts → confirmado, no hay `DO UPDATE SET user_id`
+5. **FIX-04:** Verificar que `isInternalReasoning("Te voy a ayudar")` retorna `false`
+6. **FIX-05:** Grep `orphan-retry` en orphan-recovery.ts → sufijo presente
 
-## Estrategia de ejecucion
+## Estrategia de ejecución
 
-**Todo en un solo agente, un solo branch derivado de `claude/plan-google-apps-improvements-0dfMU`.**
+**Todo en un solo agente, un solo commit.** Son 5 fixes puntuales en 5 archivos sin interdependencias.
 
 Orden recomendado:
-1. FIX-06, FIX-07 (triviales — POL-1, POL-2)
-2. FIX-02 (trivial — regex)
-3. FIX-04 (bajo riesgo — wrapper)
-4. FIX-08, FIX-09 (validacion)
-5. FIX-03, FIX-10 (docs results — requiere entender replies de API)
-6. FIX-05 (slides batch — reestructuracion)
-7. FIX-01 (timeout — requiere investigacion)
-8. FIX-11 (cleanup)
+1. FIX-01 + FIX-02 (bloqueantes de TS — una línea cada uno)
+2. FIX-03 (bug datos — SQL change + fallback query)
+3. FIX-04 (reasoning patterns — reemplazar array + función)
+4. FIX-05 (orphan retry — una línea)
+5. Compilar + verificar
 
-**BUG-5 (race condition en appendWithValidations):** Diferido — aceptable como best-effort documentado. Baja probabilidad en uso normal.
-**DEUDA-1 (eslint-disable):** Diferido — justificado por googleapis types.
-**DEUDA-2 (error handling inconsistente):** Diferido — unificar en siguiente refactor.
-**COMPLEX-1 (paginacion sobre-engineered):** Diferido — simplificar despues de validar BUG-3 fix.
-**COMPLEX-2 (formatted output):** Diferido — evaluar si el LLM se beneficia del formato tabular.
+## Diferidos (post-beta — documentados en auditoría)
+
+| ID | Descripción | Prioridad |
+|----|-------------|-----------|
+| DT-01 | 8 constantes hardcodeadas → configSchema | BAJA |
+| DT-02 | llm-client.ts backoff fijo 1s → exponencial | BAJA |
+| DT-03 | precloseTimers Map nunca se limpia | BAJA |
+| DT-04 | AVISO field names confusos (_MS = minutos) | BAJA |
+| DT-05 | Migration 025 sin IF EXISTS guards | BAJA |
+| POL-01 | config-store.ts lee process.env directamente | BAJA (kernel) |
+| POL-02 | console/server.ts: 29× res.writeHead → jsonResponse() | BAJA |
+| POL-03 | engine/prompts/agentic.ts importa módulo directamente | BAJA |
+| GAP-02 | Rate limit pre-check vs delivery race condition | BAJA (best-effort) |
+| GAP-03 | Pipeline log matching es por sesión, no por mensaje | MEDIA |
