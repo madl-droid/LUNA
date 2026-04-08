@@ -1036,6 +1036,27 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // GET /console/api/knowledge/items/progress?itemId=xxx
+    {
+      method: 'GET',
+      path: 'items/progress',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const itemId = q.get('itemId') ?? ''
+          if (!itemId) {
+            jsonResponse(res, 400, { error: 'Falta itemId' })
+            return
+          }
+          const progress = await getPgStore().getEmbeddingProgress(itemId)
+          const percent = progress.total > 0 ? Math.round((progress.embedded / progress.total) * 100) : 0
+          jsonResponse(res, 200, { ...progress, percent })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // ─── Search & Stats ───
 
     // GET /console/api/knowledge/search?q=&hint=&limit=5

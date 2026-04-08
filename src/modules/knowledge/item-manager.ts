@@ -395,8 +395,14 @@ export class KnowledgeItemManager {
     } else if (item.sourceType === 'drive') {
       const drive = this.registry.getOptional<DriveService>('google:drive')
       if (drive) {
-        const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 100 })
-        tabNames = result.files.map(f => f.name)
+        let allDriveFiles: Array<{ id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string }> = []
+        let drivePageToken: string | undefined
+        do {
+          const result = await drive.listFiles({ folderId: item.sourceId, pageSize: 100, pageToken: drivePageToken })
+          allDriveFiles.push(...result.files)
+          drivePageToken = result.nextPageToken
+        } while (drivePageToken)
+        tabNames = allDriveFiles.map(f => f.name)
         logger.info({ fileCount: tabNames.length, files: tabNames.slice(0, 10) }, 'Drive folder files scanned')
       } else {
         throw new Error('Servicio Google Drive no disponible — requiere OAuth')
