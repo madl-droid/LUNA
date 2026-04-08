@@ -47,6 +47,7 @@ export interface HookMap {
   // Contactos
   'contact:new':            [{ contactId: string; channel: string }, void]
   'contact:status_changed': [{ contactId: string; from: string; to: string }, void]
+  'contact:type_changed':   [{ contactId: string; previousType: string; newType: string; reason: string }, void]
 
   // Usuarios (users module)
   'user:resolved':          [{ senderId: string; channel: string; userType: string; listName: string }, void]

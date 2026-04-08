@@ -1,5 +1,5 @@
 // LUNA Engine — Step Semaphore
-// Limits concurrent step executions within Phase 3.
+// Limits concurrent step executions within the agentic loop.
 // Prevents overloading LLM/DB/tool backends.
 
 export class StepSemaphore {

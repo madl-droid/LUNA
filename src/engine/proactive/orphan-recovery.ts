@@ -112,10 +112,14 @@ export async function redispatchOrphan(
   orphan: OrphanMessage,
   registry: Registry,
 ): Promise<boolean> {
+  // GAP-01: Use a retry-suffixed channelMessageId so the engine dedup (Redis key
+  // dedup:msg:{channelMsgId}, TTL 5 min) does not reject this re-dispatch as a duplicate.
+  // The original message was already deduped when first received; the retry must get a
+  // distinct key or the dedup check will see the original key still in Redis and drop it.
   const message: IncomingMessage = {
     id: randomUUID(),
     channelName: orphan.channel,
-    channelMessageId: orphan.messageId, // original message ID
+    channelMessageId: `${orphan.messageId}-orphan-${Date.now()}`,
     from: orphan.channelContactId,
     timestamp: orphan.receivedAt,
     content: orphan.content,

@@ -49,12 +49,14 @@ export class CompressionWorker {
     this.db = db
     this.registry = registry
 
+    // FIX-08: enableReadyCheck:false required for BullMQ reconnect stability
     const bullRedisOpts = {
       host: redis.options.host ?? 'localhost',
       port: redis.options.port ?? 6379,
       password: redis.options.password,
       db: redis.options.db ?? 0,
       maxRetriesPerRequest: null,
+      enableReadyCheck: false,
     }
 
     this.queue = new Queue<CompressionJobData>(QUEUE_NAME, {
@@ -69,6 +71,15 @@ export class CompressionWorker {
         concurrency: 2,
       },
     )
+
+    // FIX-08: Error and stalled event handlers for recovery
+    this.worker.on('error', (err: Error) => {
+      logger.error({ err }, 'Compression worker error — will reconnect automatically')
+    })
+
+    this.worker.on('stalled', (jobId: string) => {
+      logger.warn({ jobId }, 'Compression job stalled — will be re-processed')
+    })
 
     this.worker.on('failed', (job: Job<CompressionJobData> | undefined, err: Error) => {
       const data = job?.data
@@ -193,6 +204,22 @@ export class CompressionWorker {
     // Step 4: Cleanup
     if (!currentStatus || ['queued', 'archiving', 'summarizing', 'embedding'].includes(currentStatus)) {
       await this.updateStatus(sessionId, 'cleaning')
+
+      // FIX-02: Verify backups exist before deleting originals — never lose messages without a backup
+      const [archiveCheck, summaryCheck] = await Promise.all([
+        this.db.query(`SELECT id FROM session_archives WHERE session_id = $1 LIMIT 1`, [sessionId]),
+        this.db.query(`SELECT id FROM session_summaries_v2 WHERE session_id = $1 LIMIT 1`, [sessionId]),
+      ])
+
+      if (archiveCheck.rows.length === 0 || summaryCheck.rows.length === 0) {
+        const missing = [
+          archiveCheck.rows.length === 0 ? 'session_archives' : null,
+          summaryCheck.rows.length === 0 ? 'session_summaries_v2' : null,
+        ].filter(Boolean).join(', ')
+        await this.updateStatus(sessionId, 'failed', `Backup verification failed: missing ${missing}`)
+        logger.error({ sessionId, missing }, 'Aborting message delete: backup records not found')
+        throw new Error(`Compression safety check failed: ${missing} backup missing for session ${sessionId}`)
+      }
 
       // Delete raw messages from PG
       await this.db.query(

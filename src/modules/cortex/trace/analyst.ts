@@ -99,7 +99,7 @@ function buildAnalystUserMessage(results: ResultRow[]): string {
       section += `### Respuesta generada:\n${r.response_text}\n\n`
     }
 
-    section += `**Timing**: Phase2=${r.phase2_ms ?? '?'}ms, Phase3=${r.phase3_ms ?? '?'}ms, Phase4=${r.phase4_ms ?? '?'}ms, Total=${r.total_ms ?? '?'}ms\n`
+    section += `**Timing**: Classify=${r.classify_ms ?? '?'}ms, Agentic=${r.agentic_ms ?? '?'}ms, Postprocess=${r.postprocess_ms ?? '?'}ms, Total=${r.total_ms ?? '?'}ms\n`
     section += `**Tokens**: in=${r.tokens_input}, out=${r.tokens_output}\n`
 
     sections.push(section)

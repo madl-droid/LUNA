@@ -97,6 +97,14 @@ export interface IncomingMessage {
 
 export type MessageHandler = (message: IncomingMessage) => Promise<void>
 
+/** Outgoing message queued during reconnection */
+interface QueuedOutgoing {
+  to: string
+  message: OutgoingMessage
+  resolve: (result: SendResult) => void
+  enqueuedAt: number
+}
+
 export class BaileysAdapter {
   private socket: WASocket | null = null
   private presenceManager = new PresenceManager()
@@ -111,8 +119,16 @@ export class BaileysAdapter {
   private _lastDisconnectReason: string | null = null
   private _connectedNumber: string | null = null
   private _autoReconnect = true
+  /** Mutex: prevents concurrent initialize() calls from creating duplicate sockets */
+  private _initializing = false
   /** Maps contact identifiers to their JID suffix (@lid or @s.whatsapp.net) for outbound routing */
   private jidTypeMap = new Map<string, '@s.whatsapp.net' | '@lid'>()
+  /** Max entries in jidTypeMap before evicting oldest 20% */
+  private static readonly JID_MAP_MAX = 10_000
+  /** Outgoing messages queued while socket is reconnecting */
+  private _outgoingQueue: QueuedOutgoing[] = []
+  private static readonly QUEUE_MAX = 100
+  private static readonly QUEUE_TTL_MS = 5 * 60 * 1000 // 5 minutes
   private config: WhatsAppConfig
   private pool: Pool
   readonly instanceId: string
@@ -139,6 +155,21 @@ export class BaileysAdapter {
   }
 
   async initialize(): Promise<void> {
+    // Mutex: prevent concurrent calls (e.g. hot-reload racing with auto-reconnect)
+    if (this._initializing) {
+      logger.warn('initialize() called while already initializing — skipping duplicate call')
+      return
+    }
+    this._initializing = true
+
+    try {
+      await this._doInitialize()
+    } finally {
+      this._initializing = false
+    }
+  }
+
+  private async _doInitialize(): Promise<void> {
     this._status = 'connecting'
     this._qr = null
     this._autoReconnect = true
@@ -244,6 +275,9 @@ export class BaileysAdapter {
           logger.warn({ err }, 'Failed to apply privacy settings')
         )
 
+        // Flush messages queued while disconnected
+        void this.flushOutgoingQueue()
+
         if (this.callbacks.onConnected) {
           this.callbacks.onConnected().catch(err => logger.error({ err }, 'onConnected callback failed'))
         }
@@ -313,6 +347,11 @@ export class BaileysAdapter {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    // Drain outgoing queue — reject all pending sends
+    for (const item of this._outgoingQueue) {
+      item.resolve({ success: false, error: 'WhatsApp adapter shutting down' })
+    }
+    this._outgoingQueue = []
     this.presenceManager.setSocket(null)
     if (this.socket) {
       this.socket.ev.removeAllListeners('creds.update')
@@ -342,10 +381,23 @@ export class BaileysAdapter {
   async disconnect(): Promise<void> {
     this._autoReconnect = false
     this.presenceManager.setSocket(null)
-    if (this.socket) {
-      await this.socket.logout()
-      this.socket.end(undefined)
-      this.socket = null
+    // Drain outgoing queue on intentional disconnect
+    for (const item of this._outgoingQueue) {
+      item.resolve({ success: false, error: 'WhatsApp disconnected' })
+    }
+    this._outgoingQueue = []
+    // Logout with guaranteed socket cleanup even if logout() throws
+    try {
+      if (this.socket) {
+        await this.socket.logout()
+      }
+    } catch (err) {
+      logger.warn({ err }, 'logout() failed during disconnect — continuing socket cleanup')
+    } finally {
+      if (this.socket) {
+        this.socket.end(undefined)
+        this.socket = null
+      }
     }
     // Clear auth state from DB so next connect starts fresh with QR
     await clearAuthState(this.pool, this.instanceId)
@@ -357,46 +409,116 @@ export class BaileysAdapter {
     logger.info('WhatsApp disconnected and session cleared from DB')
   }
 
+  /**
+   * Send a message. If the socket is not connected, queues the message and
+   * resolves once the socket reconnects and the message is flushed.
+   * Queue TTL: 5 minutes. Queue max: 100 messages.
+   */
   async sendMessage(to: string, message: OutgoingMessage): Promise<SendResult> {
     if (!this.socket) {
-      return { success: false, error: 'WhatsApp not connected' }
+      // Enqueue instead of silently dropping
+      return new Promise<SendResult>((resolve) => {
+        if (this._outgoingQueue.length >= BaileysAdapter.QUEUE_MAX) {
+          const evicted = this._outgoingQueue.shift()!
+          logger.warn({ to: evicted.to, queueSize: BaileysAdapter.QUEUE_MAX }, 'Outgoing queue full — evicting oldest message')
+          evicted.resolve({ success: false, error: 'Outgoing queue full, message evicted' })
+        }
+        logger.warn({ to, queueSize: this._outgoingQueue.length + 1 }, 'Socket not connected — queuing outgoing message')
+        this._outgoingQueue.push({ to, message, resolve, enqueuedAt: Date.now() })
+      })
     }
+    return this._doSendMessage(to, message)
+  }
 
-    try {
-      const jid = to.includes('@') ? to : `${to}${this.jidTypeMap.get(to) ?? '@s.whatsapp.net'}`
+  /** Delay between messages during bulk flush to avoid WhatsApp rate limits. */
+  private static readonly QUEUE_FLUSH_DELAY_MS = 200
 
-      // Build quoted context if present
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const quoted = message.quotedRaw ? (message.quotedRaw as any) : undefined
-
-      if (message.content.type === 'text' && message.content.text) {
-        const sent = await this.socket.sendMessage(jid, { text: message.content.text }, { quoted })
-        return { success: true, channelMessageId: sent?.key.id ?? undefined }
+  /**
+   * Flush outgoing queue after successful reconnect.
+   * Discards messages older than QUEUE_TTL_MS.
+   * Applies 200ms delay between sends to avoid triggering WhatsApp rate limits.
+   */
+  private async flushOutgoingQueue(): Promise<void> {
+    if (this._outgoingQueue.length === 0) return
+    const items = this._outgoingQueue.splice(0)
+    logger.info(
+      { count: items.length, estimatedMs: items.length * BaileysAdapter.QUEUE_FLUSH_DELAY_MS },
+      'Flushing outgoing queue after reconnect',
+    )
+    const now = Date.now()
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!
+      if (now - item.enqueuedAt > BaileysAdapter.QUEUE_TTL_MS) {
+        logger.warn({ to: item.to, ageMs: now - item.enqueuedAt }, 'Dropping expired queued message (TTL 5min exceeded)')
+        item.resolve({ success: false, error: 'Message expired in outgoing queue (TTL: 5min)' })
+        continue
       }
-
-      if (message.content.type === 'image' && message.content.mediaUrl) {
-        const sent = await this.socket.sendMessage(jid, {
-          image: { url: message.content.mediaUrl },
-          caption: message.content.caption,
-        }, { quoted })
-        return { success: true, channelMessageId: sent?.key.id ?? undefined }
+      const result = await this._doSendMessage(item.to, item.message)
+      item.resolve(result)
+      // Rate limit: don't spam WhatsApp servers during bulk flush
+      if (i < items.length - 1) {
+        await new Promise(r => setTimeout(r, BaileysAdapter.QUEUE_FLUSH_DELAY_MS))
       }
+    }
+  }
 
-      if (message.content.type === 'audio' && message.content.audioBuffer) {
-        const sent = await this.socket.sendMessage(jid, {
-          audio: message.content.audioBuffer,
-          mimetype: 'audio/ogg; codecs=opus',
-          ptt: message.content.ptt ?? true,
-          seconds: message.content.audioDurationSeconds,
-        }, { quoted })
-        return { success: true, channelMessageId: sent?.key.id ?? undefined }
-      }
+  /**
+   * Internal send with 3 retries and exponential backoff (1s, 2s, 4s).
+   * Only retries transient errors (network/timeout); validation errors fail immediately.
+   */
+  private async _doSendMessage(to: string, message: OutgoingMessage): Promise<SendResult> {
+    // Validation errors — fail immediately, no retry
+    if (!this.socket) return { success: false, error: 'WhatsApp not connected' }
 
+    const jid = to.includes('@') ? to : `${to}${this.jidTypeMap.get(to) ?? '@s.whatsapp.net'}`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const quoted = message.quotedRaw ? (message.quotedRaw as any) : undefined
+
+    // Unsupported type — fail immediately (not a transient error)
+    if (message.content.type !== 'text' && message.content.type !== 'image' && message.content.type !== 'audio') {
       return { success: false, error: `Unsupported message type: ${message.content.type}` }
-    } catch (err) {
-      logger.error({ err, to }, 'Failed to send WhatsApp message')
-      return { success: false, error: String(err) }
     }
+
+    const RETRY_DELAYS_MS = [1000, 2000, 4000]
+    let lastErr: unknown
+
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      if (!this.socket) return { success: false, error: 'WhatsApp disconnected during send' }
+      try {
+        if (message.content.type === 'text' && message.content.text) {
+          const sent = await this.socket.sendMessage(jid, { text: message.content.text }, { quoted })
+          return { success: true, channelMessageId: sent?.key.id ?? undefined }
+        }
+
+        if (message.content.type === 'image' && message.content.mediaUrl) {
+          const sent = await this.socket.sendMessage(jid, {
+            image: { url: message.content.mediaUrl },
+            caption: message.content.caption,
+          }, { quoted })
+          return { success: true, channelMessageId: sent?.key.id ?? undefined }
+        }
+
+        if (message.content.type === 'audio' && message.content.audioBuffer) {
+          const sent = await this.socket.sendMessage(jid, {
+            audio: message.content.audioBuffer,
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: message.content.ptt ?? true,
+            seconds: message.content.audioDurationSeconds,
+          }, { quoted })
+          return { success: true, channelMessageId: sent?.key.id ?? undefined }
+        }
+      } catch (err) {
+        lastErr = err
+        if (attempt < RETRY_DELAYS_MS.length) {
+          const delay = RETRY_DELAYS_MS[attempt]!
+          logger.warn({ err, to, attempt: attempt + 1, retryInMs: delay }, 'sendMessage failed, retrying with backoff')
+          await new Promise(r => setTimeout(r, delay))
+        }
+      }
+    }
+
+    logger.error({ err: lastErr, to }, 'sendMessage exhausted all retries')
+    return { success: false, error: String(lastErr) }
   }
 
   onMessage(handler: MessageHandler): void {
@@ -437,6 +559,21 @@ export class BaileysAdapter {
 
     // Ignore WhatsApp status broadcasts — they are not real messages
     if (remoteJid === 'status@broadcast') return null
+
+    const m = msg.message
+    // Filter message types that must not reach the LLM pipeline
+    if (m?.reactionMessage) {
+      logger.debug({ msgId: msg.key.id }, 'Ignoring reaction message')
+      return null
+    }
+    if (m?.stickerMessage) {
+      logger.debug({ msgId: msg.key.id }, 'Ignoring sticker message')
+      return null
+    }
+    if (m?.viewOnceMessage || m?.viewOnceMessageV2 || m?.viewOnceMessageV2Extension) {
+      logger.debug({ msgId: msg.key.id }, 'Ignoring view-once message')
+      return null
+    }
 
     const isGroup = remoteJid.endsWith('@g.us')
 
@@ -499,13 +636,25 @@ export class BaileysAdapter {
   }
 
   /**
-   * Resolve a WhatsApp JID to a from identifier + optional phone number.
-   * - Phone JIDs (`573155524620@s.whatsapp.net`): from=phone, no resolvedPhone
-   * - LID JIDs (`125151119208@lid`): from=LID, resolvedPhone=phone (via Baileys mapping)
+   * Evict oldest entries from jidTypeMap when it grows beyond JID_MAP_MAX.
+   * Map preserves insertion order so iteration starts from the oldest.
    */
+  private evictJidMapIfNeeded(): void {
+    if (this.jidTypeMap.size < BaileysAdapter.JID_MAP_MAX) return
+    const evictCount = Math.floor(BaileysAdapter.JID_MAP_MAX * 0.2)
+    let evicted = 0
+    for (const key of this.jidTypeMap.keys()) {
+      if (evicted >= evictCount) break
+      this.jidTypeMap.delete(key)
+      evicted++
+    }
+    logger.debug({ evicted, remaining: this.jidTypeMap.size }, 'jidTypeMap: evicted oldest entries')
+  }
+
   private async resolveJid(jid: string): Promise<{ from: string; resolvedPhone: string | null }> {
     if (jid.endsWith('@lid')) {
       const lidNumber = jid.replace(/:.*@/, '@').replace('@lid', '')
+      this.evictJidMapIfNeeded()
       this.jidTypeMap.set(lidNumber, '@lid')
 
       // Try to resolve LID → phone via Baileys signal repository
@@ -531,6 +680,7 @@ export class BaileysAdapter {
     // Standard phone JID — add + prefix for E.164 consistency with user_contacts
     const raw = jid.replace(/:.*@/, '@').replace('@s.whatsapp.net', '')
     const phone = raw.startsWith('+') ? raw : `+${raw}`
+    this.evictJidMapIfNeeded()
     this.jidTypeMap.set(phone, '@s.whatsapp.net')
     return { from: phone, resolvedPhone: null }
   }
@@ -575,48 +725,90 @@ export class BaileysAdapter {
     return cleaned || text
   }
 
+  /**
+   * Download media with a 30s timeout and 50MB size limit.
+   * - Pre-checks reportedSize from metadata (fast fail, no download needed)
+   * - Races the download against an AbortController timer
+   * - Post-checks actual buffer size (in case metadata was wrong/missing)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async downloadWithLimits(msg: any, reportedSize: number, label: string): Promise<Buffer> {
+    const MAX_SIZE_BYTES = 50 * 1024 * 1024 // 50MB
+    if (reportedSize > MAX_SIZE_BYTES) {
+      throw new Error(`${label} too large: ${reportedSize} bytes (max 50MB)`)
+    }
+    const start = Date.now()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30_000)
+    try {
+      const bufferPromise: Promise<Buffer> = downloadMediaMessage(msg, 'buffer', {})
+        .then(b => {
+          const buf = Buffer.from(b as Uint8Array)
+          if (buf.length > MAX_SIZE_BYTES) {
+            throw new Error(`${label} too large: ${buf.length} bytes (max 50MB)`)
+          }
+          logger.debug({ label, sizeBytes: buf.length, elapsedMs: Date.now() - start }, 'Media downloaded')
+          return buf
+        })
+      return await Promise.race([
+        bufferPromise,
+        new Promise<never>((_, reject) => {
+          controller.signal.addEventListener('abort', () =>
+            reject(new Error(`${label} download timed out (30s)`)),
+          )
+        }),
+      ])
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extractAttachments(msg: any): IncomingMessage['attachments'] & object {
     const attachments: NonNullable<IncomingMessage['attachments']> = []
     const m = msg.message
 
     if (m?.imageMessage) {
+      const reportedSize = m.imageMessage.fileLength ? Number(m.imageMessage.fileLength) : 0
       attachments.push({
         id: `wa-img-${msg.key.id}`,
         filename: m.imageMessage.caption || `image-${msg.key.id}.jpg`,
         mimeType: m.imageMessage.mimetype || 'image/jpeg',
-        size: m.imageMessage.fileLength ? Number(m.imageMessage.fileLength) : 0,
-        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+        size: reportedSize,
+        getData: () => this.downloadWithLimits(msg, reportedSize, 'image'),
       })
     }
 
     if (m?.audioMessage) {
+      const reportedSize = m.audioMessage.fileLength ? Number(m.audioMessage.fileLength) : 0
       attachments.push({
         id: `wa-audio-${msg.key.id}`,
         filename: `audio-${msg.key.id}.ogg`,
         mimeType: m.audioMessage.mimetype || 'audio/ogg; codecs=opus',
-        size: m.audioMessage.fileLength ? Number(m.audioMessage.fileLength) : 0,
-        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+        size: reportedSize,
+        getData: () => this.downloadWithLimits(msg, reportedSize, 'audio'),
       })
     }
 
     if (m?.documentMessage) {
+      const reportedSize = m.documentMessage.fileLength ? Number(m.documentMessage.fileLength) : 0
       attachments.push({
         id: `wa-doc-${msg.key.id}`,
         filename: m.documentMessage.fileName || `document-${msg.key.id}`,
         mimeType: m.documentMessage.mimetype || 'application/octet-stream',
-        size: m.documentMessage.fileLength ? Number(m.documentMessage.fileLength) : 0,
-        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+        size: reportedSize,
+        getData: () => this.downloadWithLimits(msg, reportedSize, 'document'),
       })
     }
 
     if (m?.videoMessage) {
+      const reportedSize = m.videoMessage.fileLength ? Number(m.videoMessage.fileLength) : 0
       attachments.push({
         id: `wa-video-${msg.key.id}`,
         filename: m.videoMessage.caption || `video-${msg.key.id}.mp4`,
         mimeType: m.videoMessage.mimetype || 'video/mp4',
-        size: m.videoMessage.fileLength ? Number(m.videoMessage.fileLength) : 0,
-        getData: () => downloadMediaMessage(msg, 'buffer', {}).then(b => Buffer.from(b as Uint8Array)),
+        size: reportedSize,
+        getData: () => this.downloadWithLimits(msg, reportedSize, 'video'),
       })
     }
 

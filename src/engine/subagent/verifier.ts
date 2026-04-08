@@ -20,7 +20,7 @@ Responde en JSON: {"verdict":"accept|retry|fail","confidence":0.0-1.0,"feedback"
 
 /**
  * Verify the result of a subagent execution.
- * Uses the classify model (Phase 2) for consistency.
+ * Uses the classify model (effort router) for consistency.
  *
  * @param taskDescription - What was asked of the subagent
  * @param result - The result data from the subagent

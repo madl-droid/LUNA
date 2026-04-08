@@ -54,8 +54,12 @@ export class CircuitBreaker {
       return false
     }
 
-    // half-open: allow limited requests
-    return this.halfOpenRequests < this.config.halfOpenMax
+    // half-open: allow limited requests (increment counter so only halfOpenMax requests pass)
+    if (this.halfOpenRequests < this.config.halfOpenMax) {
+      this.halfOpenRequests++
+      return true
+    }
+    return false
   }
 
   /**
@@ -229,8 +233,12 @@ export class EscalatingCircuitBreaker {
       return false
     }
 
-    // half-open
-    return this.halfOpenRequests < this.config.halfOpenMax
+    // half-open: allow limited requests (increment counter so only halfOpenMax requests pass)
+    if (this.halfOpenRequests < this.config.halfOpenMax) {
+      this.halfOpenRequests++
+      return true
+    }
+    return false
   }
 
   recordSuccess(): void {

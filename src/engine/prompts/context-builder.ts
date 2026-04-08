@@ -1,6 +1,5 @@
 // LUNA Engine — Shared Context Layer Builder
-// Extracted from evaluator.ts (Phase 2) to be reused by both legacy evaluator
-// and the new agentic prompt builder (agentic.ts).
+// Shared by the agentic prompt builder (agentic.ts) and subagent prompt builder.
 //
 // Builds the user-message context layers: memory, knowledge, history, etc.
 // All data is escaped before injection (SEC-2.x).

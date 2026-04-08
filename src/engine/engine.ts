@@ -10,6 +10,7 @@ import type { PipelineResult, EngineConfig, ContextBundle } from './types.js'
 import { loadEngineConfig } from './config.js'
 import { initLLMClients, setLLMGateway } from './utils/llm-client.js'
 import { intake } from './boundaries/intake.js'
+import { isRateLimitedPreCheck } from './boundaries/delivery.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
 import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
@@ -17,7 +18,6 @@ import { registerUpdateCommitmentTool } from './proactive/tools/update-commitmen
 import { registerQueryPendingItemsTool } from './proactive/tools/query-pending-items.js'
 import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
-import { CheckpointManager } from './checkpoints/checkpoint-manager.js'
 // --- Agentic imports (v2.0) ---
 import { runAgenticDelivery } from './agentic/index.js'
 import { classifyEmailTriage } from './agentic/email-triage.js'
@@ -28,7 +28,13 @@ let engineConfig: EngineConfig
 let registry: Registry
 let pipelineSemaphore: PipelineSemaphore
 let contactLock: ContactLock
-let checkpointMgr: CheckpointManager | null = null
+// FIX-E6: Graceful shutdown flag — set by stopEngine(), checked by processMessage()
+let shuttingDown = false
+
+// FIX-E1: In-memory dedup fallback (used when Redis is unavailable)
+// LRU-capped at 10K entries — evicts oldest on overflow.
+const DEDUP_MEMORY_MAX = 10_000
+const dedupMemory = new Map<string, number>()
 
 /**
  * Initialize the engine. Call once at startup.
@@ -42,6 +48,11 @@ export function initEngine(reg: Registry): void {
   // Initialize concurrency controls
   pipelineSemaphore = new PipelineSemaphore(engineConfig.maxConcurrentPipelines, engineConfig.maxQueueSize)
   contactLock = new ContactLock()
+
+  // FIX-E10: Expose contact-lock check for orphan recovery (read-only, no circular dep)
+  registry.provide('engine:contact-lock', {
+    hasLock: (channelContactId: string) => contactLock.hasLock(channelContactId),
+  })
 
   // Initialize LLM clients (direct SDK fallback)
   initLLMClients(engineConfig)
@@ -99,25 +110,8 @@ export function initEngine(reg: Registry): void {
     logger.warn({ err }, 'Failed to register query_pending_items tool'),
   )
 
-  // Initialize checkpoint manager
   const db = registry.getDb()
   const redis = registry.getRedis()
-
-  if (engineConfig.checkpointEnabled) {
-    checkpointMgr = new CheckpointManager(db)
-
-    // On startup: expire stale checkpoints, resume recent ones, cleanup old ones
-    initCheckpoints().catch(err =>
-      logger.error({ err }, 'Failed to initialize checkpoints'),
-    )
-
-    // Periodic cleanup every 6 hours
-    setInterval(() => {
-      checkpointMgr?.cleanup(engineConfig.checkpointCleanupDays).catch(err =>
-        logger.warn({ err }, 'Periodic checkpoint cleanup failed'),
-      )
-    }, 6 * 60 * 60 * 1000)
-  }
 
   // Start proactive runner (BullMQ)
   startProactiveRunner(db, redis, engineConfig, registry).catch(err =>
@@ -144,6 +138,82 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
   const totalStart = Date.now()
   const db = registry.getDb()
   const redis = registry.getRedis()
+
+  // FIX-E6: Reject incoming messages during graceful shutdown
+  if (shuttingDown) {
+    logger.warn({ from: message.from, channel: message.channelName }, 'Engine shutting down — rejecting new message')
+    return {
+      traceId: 'shutdown',
+      success: true,
+      skipped: 'shutdown',
+      intakeDurationMs: 0,
+      deliveryDurationMs: 0,
+      totalDurationMs: Date.now() - totalStart,
+    }
+  }
+
+  // FIX-E1: Dedup — reject duplicate channelMessageId within 5 minutes.
+  // WhatsApp often re-delivers webhooks. Processing the same message twice → double response.
+  const channelMsgId = message.channelMessageId
+  if (channelMsgId) {
+    const dedupKey = `dedup:msg:${channelMsgId}`
+    try {
+      // SET PX NX — atomic: only sets if key doesn't exist, returns 'OK' or null
+      const set = await redis.set(dedupKey, '1', 'PX', 300_000, 'NX')
+      if (set === null) {
+        // Key already existed — duplicate message
+        logger.warn({ channelMsgId, from: message.from, channel: message.channelName }, 'Duplicate message — skipping (Redis dedup)')
+        return {
+          traceId: 'dedup',
+          success: true,
+          skipped: 'duplicate',
+          intakeDurationMs: 0,
+          deliveryDurationMs: 0,
+          totalDurationMs: Date.now() - totalStart,
+        }
+      }
+    } catch {
+      // Redis unavailable — fall through to in-memory dedup
+      const now = Date.now()
+      const seenAt = dedupMemory.get(channelMsgId)
+      if (seenAt && now - seenAt < 300_000) {
+        logger.warn({ channelMsgId, from: message.from, channel: message.channelName }, 'Duplicate message — skipping (memory dedup)')
+        return {
+          traceId: 'dedup',
+          success: true,
+          skipped: 'duplicate',
+          intakeDurationMs: 0,
+          deliveryDurationMs: 0,
+          totalDurationMs: Date.now() - totalStart,
+        }
+      }
+      // Evict oldest entry if over cap
+      if (dedupMemory.size >= DEDUP_MEMORY_MAX) {
+        const firstKey = dedupMemory.keys().next().value
+        if (firstKey !== undefined) dedupMemory.delete(firstKey)
+      }
+      dedupMemory.set(channelMsgId, now)
+    }
+  }
+
+  // FIX-LAB18: Rate limit pre-check — skip LLM processing if contact is already over limit.
+  // Saves tokens when a spammy user sends many messages in quick succession.
+  try {
+    const limited = await isRateLimitedPreCheck(redis, message.from, message.channelName, registry)
+    if (limited) {
+      logger.warn({ from: message.from, channel: message.channelName }, 'Rate limit pre-check exceeded — skipping pipeline')
+      return {
+        traceId: 'rate-limited',
+        success: true,
+        skipped: 'rate_limited',
+        intakeDurationMs: 0,
+        deliveryDurationMs: 0,
+        totalDurationMs: Date.now() - totalStart,
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, from: message.from }, 'Rate limit pre-check threw — continuing with pipeline')
+  }
 
   // ═══ CONCURRENCY LAYER 1: Pipeline Semaphore ═══
   const acquireResult = await pipelineSemaphore.acquire(message.from)
@@ -528,9 +598,40 @@ async function runAgenticPipeline(
 
 /**
  * Stop the engine. Call on shutdown.
+ * FIX-E6: Graceful drain — waits up to 30s for active pipelines to finish before forcing stop.
  */
 export async function stopEngine(): Promise<void> {
+  // 1. Signal: no new messages accepted
+  shuttingDown = true
+  logger.info('Engine shutdown initiated — rejecting new messages')
+
+  // 2. Stop proactive runner (no new proactive jobs)
   await stopProactiveRunner()
+
+  // 3. Drain: wait for active pipelines to finish (up to 30s)
+  const DRAIN_TIMEOUT_MS = 30_000
+  const DRAIN_POLL_MS = 250
+  const drainStart = Date.now()
+
+  const stats = pipelineSemaphore.stats()
+  if (stats.running > 0) {
+    logger.info({ activePipelines: stats.running }, 'Waiting for active pipelines to drain...')
+
+    while (Date.now() - drainStart < DRAIN_TIMEOUT_MS) {
+      await new Promise(r => setTimeout(r, DRAIN_POLL_MS))
+      const current = pipelineSemaphore.stats()
+      if (current.running === 0) {
+        logger.info({ drainMs: Date.now() - drainStart }, 'All pipelines drained — clean shutdown')
+        break
+      }
+    }
+
+    const remaining = pipelineSemaphore.stats().running
+    if (remaining > 0) {
+      logger.error({ remaining, drainMs: Date.now() - drainStart }, 'DRAIN TIMEOUT — forcing shutdown with active pipelines')
+    }
+  }
+
   logger.info('Engine stopped')
 }
 
@@ -549,10 +650,10 @@ export function reloadEngineConfig(): void {
   const prev = engineConfig
   engineConfig = loadEngineConfig(registry)
 
-  // Re-init semaphore if concurrency limits changed
+  // FIX-F1: Update semaphore limits in-place (avoids abandoning queued waiters)
   if (prev.maxConcurrentPipelines !== engineConfig.maxConcurrentPipelines
     || prev.maxQueueSize !== engineConfig.maxQueueSize) {
-    pipelineSemaphore = new PipelineSemaphore(
+    pipelineSemaphore.updateLimits(
       engineConfig.maxConcurrentPipelines,
       engineConfig.maxQueueSize,
     )
@@ -590,87 +691,6 @@ function getChannelTone(channel: string): string {
     return style === 'dynamic' ? 'casual' : style
   }
   return ''
-}
-
-// ═══════════════════════════════════════════
-// Checkpoint resume & cleanup (startup only)
-// ═══════════════════════════════════════════
-
-/**
- * On startup: expire stale, resume recent incomplete pipelines, cleanup old.
- * Simple approach: re-process the message through the full pipeline,
- * passing completed steps so Phase 3 skips them.
- */
-async function initCheckpoints(): Promise<void> {
-  if (!checkpointMgr) return
-  const db = registry.getDb()
-
-  await checkpointMgr.expireStale(engineConfig.checkpointResumeWindowMs)
-
-  const incomplete = await checkpointMgr.findIncomplete(engineConfig.checkpointResumeWindowMs)
-
-  if (incomplete.length > 0) {
-    logger.info({ count: incomplete.length }, 'Found incomplete checkpoints — resuming')
-
-    for (const cp of incomplete) {
-      // Skip if no steps were completed (nothing to salvage)
-      if (cp.stepResults.length === 0) {
-        await checkpointMgr.fail(cp.id, 'No steps completed — not worth resuming')
-        continue
-      }
-
-      // Idempotency check: skip if a response was already sent for this message
-      try {
-        const alreadySent = await db.query(
-          `SELECT 1 FROM messages WHERE reply_to_message_id = $1 AND role = 'assistant' LIMIT 1`,
-          [cp.messageId],
-        )
-        if (alreadySent.rows.length > 0) {
-          logger.info({ checkpointId: cp.id, messageId: cp.messageId }, 'Response already sent — skipping resume')
-          await checkpointMgr.complete(cp.id)
-          continue
-        }
-      } catch (idempErr) {
-        logger.warn({ err: idempErr, checkpointId: cp.id }, 'Idempotency check failed — resuming anyway')
-      }
-
-      logger.info({
-        checkpointId: cp.id,
-        traceId: cp.traceId,
-        completedSteps: cp.stepResults.length,
-        totalSteps: cp.executionPlan.length,
-      }, 'Resuming from checkpoint')
-
-      try {
-        // Reconstruct a minimal IncomingMessage from checkpoint data
-        const resumeMessage: IncomingMessage = {
-          id: cp.messageId,
-          channelName: cp.channel as IncomingMessage['channelName'],
-          channelMessageId: cp.channelMessageId || cp.messageId,
-          from: cp.messageFrom,
-          senderName: cp.senderName || '',
-          timestamp: cp.createdAt,
-          content: { type: 'text', text: cp.messageText ?? '' },
-          attachments: [],
-        }
-
-        // Mark old checkpoint as failed (new pipeline run creates its own)
-        await checkpointMgr.fail(cp.id, 'Resumed: re-processing via agentic pipeline')
-
-        // Go through full processMessage for proper concurrency/timeout control
-        const result = await processMessage(resumeMessage)
-
-        if (!result.success) {
-          logger.warn({ checkpointId: cp.id, error: result.error }, 'Checkpoint resume pipeline failed')
-        }
-      } catch (err) {
-        logger.error({ err, checkpointId: cp.id }, 'Checkpoint resume failed')
-        await checkpointMgr.fail(cp.id, `Resume error: ${String(err)}`).catch(() => {})
-      }
-    }
-  }
-
-  await checkpointMgr.cleanup(engineConfig.checkpointCleanupDays)
 }
 
 async function isAdminOnlyActive(registry: Registry): Promise<boolean> {

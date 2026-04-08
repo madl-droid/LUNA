@@ -7,7 +7,7 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 - `types.ts` — KnowledgeDocument, KnowledgeCategory, KnowledgeApiConnector, KnowledgeWebSource, KnowledgeInjection, EmbeddingStatus, DocumentSourceType (incluye 'attachment')
 - `knowledge-manager.ts` — orquestador: addDocument con **router dual TEXT/VISUAL**, setCore(), getInjection(), triggerBulkVectorization(), expandKnowledge(), invalidateExpandCache()
 - `pg-store.ts` — 8 tablas: documents, chunks, faqs, sync_sources, gaps, categories, document_categories, api_connectors, web_sources. Métodos de binary lifecycle: markBinariesForCleanup(), getDocumentsForBinaryCleanup(), clearBinaryCleanupFlag(). Nuevo: getChunksByDocumentId() (para expand_knowledge)
-- `search-engine.ts` — búsqueda híbrida: pgvector cosine + FTS + FAQ FTS. Category boost (+0.2) via searchHint. Core boost (+0.15) aditivo. Degradación a FTS si sin embeddings.
+- `search-engine.ts` — búsqueda híbrida: pgvector cosine + FTS + FAQ FTS. Category boost (+0.2) via searchHint. Core boost (+0.15) aditivo. Degradación a FTS si sin embeddings. **allowedCategoryIds**: filtro estricto por categoría (fail-open: sin config → sin filtro; uncategorized → siempre visible).
 - `cache.ts` — Redis cache para KnowledgeInjection (TTL 5min), invalidación en cambios core/categorías/connectors
 - `embedding-service.ts` — Google gemini-embedding-exp-03-07 (1536 dims) via @google/generative-ai. Circuit breaker (3 fallas → 5min down). Rate limit 5000 RPM (tier 2). Soporta multimodal (generateFileEmbedding).
 - `embedding-queue.ts` — BullMQ cola unificada. Circuit breaker, HITL escalation (retry 5 y 10), reconcileDocumentStatus, generateMultimodalEmbedding (lee mediaRefs de disco), runNightlyBinaryCleanup.
@@ -123,7 +123,7 @@ addDocument() / loadContent()
 - DB: knowledge_items, knowledge_item_tabs, knowledge_item_columns
 
 ## Tools registradas
-- `search_knowledge` — busca en conocimiento con category_hint para boosting (Phase 3). Retorna campos extendidos: documentId, chunkIndex, chunkTotal, sourceType, isCore, fileUrl
+- `search_knowledge` — busca en conocimiento con category_hint para boosting (Phase 3). Retorna campos extendidos: documentId, chunkIndex, chunkTotal, sourceType, isCore, fileUrl. **FIX-01**: filtro estricto por categoría via `KNOWLEDGE_CONTACT_CATEGORY_MAP` JSON + `context.contactType`.
 - `expand_knowledge` — deep-dive: obtiene contenido completo de un documento por documentId (viene de search_knowledge). Cache Redis 15min. Si doc tiene ≤15 chunks muestra todo, si >15 muestra primeros 5 + últimos 3. Incluye liveQueryHint si el item soporta consulta en vivo
 
 ## Pipeline integration (v2)

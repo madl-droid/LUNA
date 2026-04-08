@@ -343,6 +343,7 @@ const manifest: ModuleManifest = {
     VOICE_BUSINESS_HOURS_END: numEnvMin(0, 17),
     VOICE_BUSINESS_HOURS_TIMEZONE: z.string().default('America/Bogota'),
     VOICE_OUTBOUND_RATE_LIMIT_HOUR: numEnvMin(0, 3),
+    VOICE_INBOUND_RATE_LIMIT_HOUR: numEnvMin(0, 10),
   }),
 
   console: {
@@ -681,6 +682,14 @@ const manifest: ModuleManifest = {
         type: 'number',
         label: { es: 'Max llamadas salientes/hora por numero', en: 'Max outbound calls/hour per number' },
         info: { es: '0 = sin limite. Limita llamadas salientes al mismo numero en la ultima hora', en: '0 = unlimited. Limits outbound calls to the same number in the last hour' },
+        min: 0,
+        width: 'half',
+      },
+      {
+        key: 'VOICE_INBOUND_RATE_LIMIT_HOUR',
+        type: 'number',
+        label: { es: 'Max llamadas entrantes/hora por numero', en: 'Max inbound calls/hour per number' },
+        info: { es: '0 = sin limite. Limita llamadas entrantes del mismo numero en la ultima hora', en: '0 = unlimited. Limits inbound calls from the same number in the last hour' },
         min: 0,
         width: 'half',
       },

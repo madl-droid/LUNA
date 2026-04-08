@@ -7,14 +7,12 @@
  * More natural than per-character — reading/typing speed correlates better with words.
  *
  * @param text      - The message text to calculate delay for
- * @param _msPerChar - DEPRECATED (kept for backward compat). Ignored — uses msPerWord internally.
  * @param minMs     - Minimum delay in ms (default 800)
  * @param maxMs     - Maximum delay in ms (default 4000)
  * @param msPerWord - Milliseconds per word (default 500)
  */
 export function calculateTypingDelay(
   text: string,
-  _msPerChar = 50,
   minMs = 800,
   maxMs = 4000,
   msPerWord = 500,

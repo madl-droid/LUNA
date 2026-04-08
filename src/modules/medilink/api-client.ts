@@ -80,7 +80,7 @@ export class MedilinkApiClient {
           method,
           headers: {
             'Authorization': `Token ${this.token}`,
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json; charset=utf-8',
             'Accept': 'application/json',
           },
           signal: controller.signal,

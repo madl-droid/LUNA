@@ -40,6 +40,11 @@ Base: `MEDILINK_BASE_URL` + `/api/v1` (se agrega automaticamente si falta)
 **NO existen**: `/consentimientos`, `/imagenes`, `/fichas`, `/documentosClinicos`, `/profesionales` (v1)
 **Filtros soportados**: solo `eq`. NO soporta `like` ni `contains`.
 
+## Encoding UTF-8
+- `api-client.ts` usa `Content-Type: application/json; charset=utf-8` en todos los requests
+- Previene double-encoding Latin1↔UTF-8 en strings con acentos (ej: "Valoración médica")
+- `JSON.stringify()` en JS es siempre UTF-8 — el header hace explícito el encoding al servidor
+
 ## Trampas criticas
 - `POST /citas` y `PUT /citas/{id}` usan v5 (`/api/v5/citas`), todo lo demás usa v1
 - La respuesta de `POST /citas` retorna `id` (primer campo) e `id_atencion` — ambos se guardan

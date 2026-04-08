@@ -473,6 +473,14 @@ export class KnowledgeManager {
   }
 
   /**
+   * Get category IDs assigned to a document (for access control checks).
+   * Returns empty array if document has no categories (uncategorized).
+   */
+  async getDocumentCategoryIds(documentId: string): Promise<string[]> {
+    return this.pgStore.getDocumentCategoryIds(documentId)
+  }
+
+  /**
    * Invalidate expand_knowledge cache for a document.
    * Called when document is re-trained.
    */
@@ -491,8 +499,8 @@ export class KnowledgeManager {
    * Search consultable knowledge (for tool use in Phase 3).
    * Accepts searchHint for category boost.
    */
-  async searchConsultable(query: string, limit = 5, searchHint?: string): Promise<KnowledgeSearchResult[]> {
-    const results = await this.searchEngine.search(query, { limit, searchHint })
+  async searchConsultable(query: string, limit = 5, searchHint?: string, allowedCategoryIds?: string[]): Promise<KnowledgeSearchResult[]> {
+    const results = await this.searchEngine.search(query, { limit, searchHint, allowedCategoryIds })
     this.trackHits(results)
     if (results.length === 0 && query.trim().length > 5) {
       this.pgStore.recordGap(query).catch(() => {})

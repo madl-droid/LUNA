@@ -58,6 +58,7 @@ export class KnowledgeSearchEngine {
 
     const limit = opts.limit ?? 5
     const searchHint = opts.searchHint ?? null
+    const allowedCategoryIds = opts.allowedCategoryIds
 
     // Determine if embeddings are available
     const embeddingsAvailable = this.embeddingService?.isAvailable() ?? false
@@ -149,6 +150,16 @@ export class KnowledgeSearchEngine {
         combinedScore: r.rank * wFaq,
         categoryIds: [],
       })
+    }
+
+    // FIX-01: Filter by allowed categories if specified (fail-open: uncategorized entries pass through)
+    if (allowedCategoryIds && allowedCategoryIds.length > 0) {
+      const allowedSet = new Set(allowedCategoryIds)
+      for (const [key, entry] of scored) {
+        if (entry.categoryIds.length === 0) continue  // uncategorized → siempre permitido
+        const hasMatch = entry.categoryIds.some(cid => allowedSet.has(cid))
+        if (!hasMatch) scored.delete(key)
+      }
     }
 
     // Apply category boost if searchHint is provided

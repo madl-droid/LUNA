@@ -60,6 +60,12 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSa
 export class TTSService {
   config: TTSConfig
   private enabledChannels: Set<string>
+  // ── Circuit breaker state ──
+  private failures = 0
+  private cbOpenUntil = 0
+  private static CB_THRESHOLD = 5      // 5 consecutive failures
+  private static CB_COOLDOWN_MS = 5 * 60_000  // 5 min cooldown
+  private static FETCH_TIMEOUT_MS = 30_000    // 30s request timeout
 
   constructor(config: TTSConfig) {
     this.config = config
@@ -165,16 +171,27 @@ export class TTSService {
   }
 
   private async callTTSModel(model: string, requestBody: Record<string, unknown>): Promise<SynthesizeResult | null> {
+    // ── Circuit breaker check ──
+    if (Date.now() < this.cbOpenUntil) {
+      logger.warn({ model, cooldownMs: this.cbOpenUntil - Date.now() }, 'TTS circuit breaker open, skipping request')
+      return null
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TTSService.FETCH_TIMEOUT_MS)
+
     try {
       const response = await fetch(`${GEMINI_TTS_API_BASE}/${model}:generateContent?key=${this.config.TTS_GOOGLE_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
+        signal: controller.signal,
       })
 
       if (!response.ok) {
         const errorText = await response.text()
         logger.error({ status: response.status, model, body: errorText }, 'Gemini TTS API error')
+        this.recordFailure(model)
         return null
       }
 
@@ -184,7 +201,14 @@ export class TTSService {
       const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
       if (!base64Audio) {
         logger.error({ model }, 'Gemini TTS: no audio data in response')
+        this.recordFailure(model)
         return null
+      }
+
+      // Success — reset circuit breaker
+      if (this.failures > 0) {
+        logger.info({ model }, 'TTS circuit breaker reset after success')
+        this.failures = 0
       }
 
       const pcmBuffer = Buffer.from(base64Audio, 'base64')
@@ -201,8 +225,23 @@ export class TTSService {
       const durationSeconds = Math.max(1, Math.round(pcmBuffer.length / 48000))
       return { audioBuffer, durationSeconds }
     } catch (err) {
-      logger.error({ err, model }, 'TTS model call failed')
+      if ((err as Error).name === 'AbortError') {
+        logger.error({ model }, 'TTS fetch timed out after 30s')
+      } else {
+        logger.error({ err, model }, 'TTS model call failed')
+      }
+      this.recordFailure(model)
       return null
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private recordFailure(model: string): void {
+    this.failures++
+    if (this.failures >= TTSService.CB_THRESHOLD) {
+      this.cbOpenUntil = Date.now() + TTSService.CB_COOLDOWN_MS
+      logger.warn({ model, failures: this.failures, cooldownMs: TTSService.CB_COOLDOWN_MS }, 'TTS circuit breaker opened after repeated failures')
     }
   }
 

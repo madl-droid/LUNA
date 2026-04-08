@@ -114,9 +114,14 @@ function resolveDirectModel(task?: string): string {
   return DIRECT_TASK_DEFAULTS[task]?.model ?? 'claude-sonnet-4-6-20260214'
 }
 
+const DIRECT_TIMEOUT_MS = 30_000
+const DIRECT_RETRY_MAX = 2
+const DIRECT_RETRY_BACKOFF_MS = 1_000
+
 /**
  * Call an LLM provider.
  * Routes through gateway if available, otherwise uses direct SDK calls.
+ * Direct path includes timeout (30s) and retry (2 attempts) for safety.
  */
 export async function callLLM(options: LLMCallOptions): Promise<LLMCallResult> {
   // If gateway available, delegate
@@ -128,12 +133,22 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMCallResult> {
   const provider = options.provider ?? resolveDirectProvider(options.task)
   const model = options.model ?? resolveDirectModel(options.task)
 
-  try {
-    return await callProvider(provider, model, options)
-  } catch (err) {
-    logger.warn({ provider, model, task: options.task, err }, 'Primary LLM call failed')
-    throw err
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= DIRECT_RETRY_MAX; attempt++) {
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Direct LLM timeout after ${DIRECT_TIMEOUT_MS}ms`)), DIRECT_TIMEOUT_MS),
+      )
+      return await Promise.race([callProvider(provider, model, options), timeoutPromise])
+    } catch (err) {
+      lastErr = err
+      logger.warn({ provider, model, task: options.task, attempt, err }, 'Direct LLM call failed')
+      if (attempt < DIRECT_RETRY_MAX) {
+        await new Promise(r => setTimeout(r, DIRECT_RETRY_BACKOFF_MS))
+      }
+    }
   }
+  throw lastErr
 }
 
 /**
@@ -282,14 +297,27 @@ async function callAnthropic(model: string, options: LLMCallOptions): Promise<LL
 async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCallResult> {
   if (!googleClient) throw new Error('Google AI client not initialized')
 
-  const genModel = googleClient.getGenerativeModel({
+  const modelConfig: Record<string, unknown> = {
     model,
     generationConfig: {
       maxOutputTokens: options.maxTokens ?? 2048,
       temperature: options.temperature ?? 0.7,
     },
     systemInstruction: options.system || undefined,
-  })
+  }
+
+  // Convert tools to Gemini functionDeclarations format
+  if (options.tools?.length) {
+    modelConfig.tools = [{
+      functionDeclarations: options.tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      })),
+    }]
+  }
+
+  const genModel = googleClient.getGenerativeModel(modelConfig as unknown as Parameters<typeof googleClient.getGenerativeModel>[0])
 
   // Convert message format: combine into Gemini history + last user message
   const history = options.messages.slice(0, -1).map(m => ({
@@ -303,12 +331,25 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
   const result = await chat.sendMessage(buildGeminiParts(lastMessage.content))
   const response = result.response
 
+  // Extract tool calls from response
+  const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = []
+  const candidate = response.candidates?.[0]
+  if (candidate?.content?.parts) {
+    for (const part of candidate.content.parts) {
+      if ('functionCall' in part && part.functionCall) {
+        const fc = part.functionCall as { name: string; args?: Record<string, unknown> }
+        toolCalls.push({ name: fc.name, input: fc.args ?? {} })
+      }
+    }
+  }
+
   return {
     text: response.text(),
     provider: 'google',
     model,
     inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
     outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
   }
 }
 

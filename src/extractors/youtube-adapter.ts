@@ -151,12 +151,15 @@ export function parseDuration(iso: string): number {
 /**
  * Obtiene metadata completa de un video via YouTube Data API v3.
  * Consulta: videos.list part=snippet,contentDetails,topicDetails
+ * FIX-02: Soporta OAuth access token como alternativa a API key.
  */
-export async function getVideoMeta(videoId: string, apiKey: string): Promise<YouTubeVideoMeta> {
-  if (!apiKey) throw new Error('YouTube API key required for getVideoMeta')
+export async function getVideoMeta(videoId: string, apiKey: string, opts?: { accessToken?: string }): Promise<YouTubeVideoMeta> {
+  if (!apiKey && !opts?.accessToken) throw new Error('YouTube API key or OAuth access token required for getVideoMeta')
 
-  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,topicDetails&id=${encodeURIComponent(videoId)}&key=${encodeURIComponent(apiKey)}`
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+  const base = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,topicDetails&id=${encodeURIComponent(videoId)}`
+  const url = opts?.accessToken ? base : `${base}&key=${encodeURIComponent(apiKey)}`
+  const headers: Record<string, string> = opts?.accessToken ? { Authorization: `Bearer ${opts.accessToken}` } : {}
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
   if (!res.ok) throw new Error(`YouTube Data API error: ${res.status}`)
 
   const data = await res.json() as {
@@ -384,19 +387,23 @@ export async function downloadAudio(videoId: string): Promise<{ buffer: Buffer; 
 
 /**
  * Lista hasta 250 videos de una playlist via YouTube Data API v3.
+ * FIX-02: Soporta OAuth access token como alternativa a API key.
  */
-export async function listPlaylistVideos(playlistId: string, apiKey: string): Promise<YouTubeVideoMeta[]> {
-  if (!apiKey) {
-    logger.warn('[YT] No API key for listPlaylistVideos')
+export async function listPlaylistVideos(playlistId: string, apiKey: string, opts?: { accessToken?: string }): Promise<YouTubeVideoMeta[]> {
+  if (!apiKey && !opts?.accessToken) {
+    logger.warn('[YT] No API key or access token for listPlaylistVideos')
     return []
   }
+
+  const headers: Record<string, string> = opts?.accessToken ? { Authorization: `Bearer ${opts.accessToken}` } : {}
+  const keyParam = opts?.accessToken ? '' : `&key=${encodeURIComponent(apiKey)}`
 
   const videoIds: string[] = []
   let pageToken = ''
 
   for (let page = 0; page < 5; page++) {  // max 250 videos (5 × 50)
-    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}${keyParam}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
     if (!res.ok) {
       logger.warn({ status: res.status, playlistId }, '[YT] Playlist API error')
       break
@@ -425,8 +432,9 @@ export async function listPlaylistVideos(playlistId: string, apiKey: string): Pr
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50)
     try {
-      const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,topicDetails&id=${batch.map(id => encodeURIComponent(id)).join(',')}&key=${encodeURIComponent(apiKey)}`
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+      const batchKeyParam = opts?.accessToken ? '' : `&key=${encodeURIComponent(apiKey)}`
+      const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,topicDetails&id=${batch.map(id => encodeURIComponent(id)).join(',')}${batchKeyParam}`
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
       if (!res.ok) continue
 
       const data = await res.json() as {
@@ -478,9 +486,13 @@ export async function listPlaylistVideos(playlistId: string, apiKey: string): Pr
 /**
  * Obtiene metadata de un canal: uploads playlist + playlists públicas.
  * handleOrId puede ser @handle, channelId (UCxxx), o nombre de usuario.
+ * FIX-02: Soporta OAuth access token como alternativa a API key.
  */
-export async function getChannelMeta(handleOrId: string, apiKey: string): Promise<YouTubeChannelMeta> {
-  if (!apiKey) throw new Error('YouTube API key required for getChannelMeta')
+export async function getChannelMeta(handleOrId: string, apiKey: string, opts?: { accessToken?: string }): Promise<YouTubeChannelMeta> {
+  if (!apiKey && !opts?.accessToken) throw new Error('YouTube API key or OAuth access token required for getChannelMeta')
+
+  const headers: Record<string, string> = opts?.accessToken ? { Authorization: `Bearer ${opts.accessToken}` } : {}
+  const keyParam = opts?.accessToken ? '' : `&key=${encodeURIComponent(apiKey)}`
 
   // Resolver canal
   const isChannelId = handleOrId.startsWith('UC')
@@ -490,8 +502,8 @@ export async function getChannelMeta(handleOrId: string, apiKey: string): Promis
       ? `forHandle=${encodeURIComponent(handleOrId.slice(1))}`
       : `forHandle=${encodeURIComponent(handleOrId)}`
 
-  const chUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails,brandingSettings&${param}&key=${encodeURIComponent(apiKey)}`
-  const chRes = await fetch(chUrl, { signal: AbortSignal.timeout(15000) })
+  const chUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails,brandingSettings&${param}${keyParam}`
+  const chRes = await fetch(chUrl, { headers, signal: AbortSignal.timeout(15000) })
   if (!chRes.ok) throw new Error(`YouTube Channel API error: ${chRes.status}`)
 
   const chData = await chRes.json() as {
@@ -511,8 +523,8 @@ export async function getChannelMeta(handleOrId: string, apiKey: string): Promis
   // Listar playlists públicas
   const playlists: YouTubePlaylistMeta[] = []
   try {
-    const plUrl = `https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${encodeURIComponent(channelId)}&maxResults=50&key=${encodeURIComponent(apiKey)}`
-    const plRes = await fetch(plUrl, { signal: AbortSignal.timeout(15000) })
+    const plUrl = `https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${encodeURIComponent(channelId)}&maxResults=50${keyParam}`
+    const plRes = await fetch(plUrl, { headers, signal: AbortSignal.timeout(15000) })
     if (plRes.ok) {
       const plData = await plRes.json() as {
         items?: Array<{

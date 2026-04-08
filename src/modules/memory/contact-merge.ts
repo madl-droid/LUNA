@@ -88,11 +88,17 @@ export async function mergeContacts(
     )
     const messagesMoved = messagesResult.rowCount ?? 0
 
-    // 5. Merge contact_memory from agent_contacts
+    // FIX-07: Read ALL data first, then write, then delete.
+    // Previously, mergeContactMemory deleted merge contact's agent_contacts row,
+    // then mergeQualificationData tried to read it — resulting in a no-op.
+    // 5. Merge contact_memory from agent_contacts (no longer deletes merge row)
     await mergeContactMemory(client, keepContactId, mergeContactId)
 
     // 6. Merge qualification data (keep wins on conflict, but take higher score)
     await mergeQualificationData(client, keepContactId, mergeContactId)
+
+    // 6b. Delete merge contact's agent_contacts AFTER both merges complete
+    await client.query(`DELETE FROM agent_contacts WHERE contact_id = $1`, [mergeContactId])
 
     // 7. Copy missing contact info fields (email, phone, display_name) to keep
     await backfillContactInfo(client, keepContactId, mergeContactId)
@@ -211,11 +217,8 @@ async function mergeContactMemory(
     )
   }
 
-  // Delete merge contact's agent_contacts (no longer needed)
-  await client.query(
-    `DELETE FROM agent_contacts WHERE contact_id = $1`,
-    [mergeContactId],
-  )
+  // Note: deletion of merge contact's agent_contacts row is handled by the caller
+  // after both mergeContactMemory and mergeQualificationData complete (FIX-07).
 }
 
 async function mergeQualificationData(

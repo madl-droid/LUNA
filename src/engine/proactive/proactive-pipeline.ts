@@ -1,5 +1,5 @@
 // LUNA Engine — Proactive Pipeline
-// Simplified Phase 1 + reuses Phases 2-5 from reactive pipeline.
+// Simplified intake + reuses effort router → agentic loop → delivery from reactive pipeline.
 // Entry point for all proactive flows (follow-up, reminder, commitment, reactivation).
 
 import { randomUUID } from 'node:crypto'
@@ -28,7 +28,7 @@ const logger = pino({ name: 'engine:proactive-pipeline' })
 
 /**
  * Process a proactive candidate through the pipeline.
- * Simplified Phase 1 → Phase 2 (with NO_ACTION option) → Phase 3-5.
+ * Simplified intake → effort router (with NO_ACTION option) → agentic loop → delivery.
  */
 export async function processProactive(
   candidate: ProactiveCandidate,

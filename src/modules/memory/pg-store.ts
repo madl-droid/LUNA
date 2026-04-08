@@ -7,6 +7,7 @@ import pino from 'pino'
 import type {
   StoredMessage,
   SessionSummary,
+  SessionMeta,
   KeyFact,
   AgentContact,
   ContactMemory,
@@ -154,14 +155,61 @@ export class PgStore {
 
   async updateContactMemory(contactId: string, memory: ContactMemory): Promise<void> {
     try {
+      // FIX-06: Upsert instead of UPDATE-only — avoids silent data loss when agent_contacts row doesn't exist
       await this.pool.query(
-        `UPDATE agent_contacts
-         SET contact_memory = $1
-         WHERE contact_id = $2`,
-        [JSON.stringify(memory), contactId],
+        `INSERT INTO agent_contacts (contact_id, contact_memory)
+         VALUES ($1, $2)
+         ON CONFLICT (contact_id) DO UPDATE SET contact_memory = $2, updated_at = NOW()`,
+        [contactId, JSON.stringify(memory)],
       )
     } catch (err) {
       logger.error({ err, contactId }, 'Failed to update contact_memory')
+    }
+  }
+
+  // FIX-05: Persist SessionMeta to PG so it survives Redis restarts.
+  // Only updates message_count and last_activity_at (status is managed by markSessionCompressed).
+  async persistSessionMeta(meta: SessionMeta): Promise<void> {
+    try {
+      await this.pool.query(
+        `UPDATE sessions
+         SET message_count = GREATEST(message_count, $2),
+             last_activity_at = GREATEST(COALESCE(last_activity_at, $3), $3)
+         WHERE id = $1
+           AND COALESCE(status, 'active') NOT IN ('compressed', 'done')`,
+        [meta.sessionId, meta.messageCount, meta.lastActivityAt],
+      )
+    } catch (err) {
+      logger.warn({ err, sessionId: meta.sessionId }, 'Failed to persist session meta to PG')
+    }
+  }
+
+  // FIX-05: Load SessionMeta from PG for recovery after Redis restart.
+  async getSessionMetaForRecovery(sessionId: string): Promise<SessionMeta | null> {
+    try {
+      const result = await this.pool.query(
+        `SELECT id, contact_id, channel_name, started_at, last_activity_at,
+                message_count, status, compressed_at
+         FROM sessions WHERE id = $1`,
+        [sessionId],
+      )
+      const row = result.rows[0]
+      if (!row) return null
+
+      const status = row.status ?? 'active'
+      return {
+        sessionId: row.id as string,
+        contactId: (row.contact_id as string) ?? '',
+        channelName: (row.channel_name as string) ?? '',
+        startedAt: new Date(row.started_at as string),
+        lastActivityAt: row.last_activity_at ? new Date(row.last_activity_at as string) : new Date(),
+        messageCount: (row.message_count as number) ?? 0,
+        compressed: status === 'compressed' || row.compressed_at != null,
+        status: (status === 'compressed' ? 'compressed' : status === 'closed' ? 'closed' : 'active') as SessionMeta['status'],
+      }
+    } catch (err) {
+      logger.warn({ err, sessionId }, 'Failed to load session meta from PG for recovery')
+      return null
     }
   }
 

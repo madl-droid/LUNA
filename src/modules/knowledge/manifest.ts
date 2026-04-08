@@ -410,6 +410,18 @@ function createApiRoutes(): ApiRoute[] {
       path: 'vectorize',
       handler: async (_req, res) => {
         try {
+          // FIX-03: Cargar contenido de items pendientes antes de vectorizar
+          const pendingItems = await getPgStore().listItemsPendingContent()
+          if (pendingItems.length > 0) {
+            logger.info({ count: pendingItems.length }, 'Loading content for pending items before vectorization')
+            for (const item of pendingItems) {
+              try {
+                await getItemManager().loadContent(item.id)
+              } catch (err) {
+                logger.warn({ err, itemId: item.id }, 'Failed to load content for pending item, continuing')
+              }
+            }
+          }
           const result = await getManager().triggerBulkVectorization()
           jsonResponse(res, 200, result)
         } catch (err) {
@@ -1024,6 +1036,27 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // GET /console/api/knowledge/items/progress?itemId=xxx
+    {
+      method: 'GET',
+      path: 'items/progress',
+      handler: async (req, res) => {
+        try {
+          const q = parseQuery(req)
+          const itemId = q.get('itemId') ?? ''
+          if (!itemId) {
+            jsonResponse(res, 400, { error: 'Falta itemId' })
+            return
+          }
+          const progress = await getPgStore().getEmbeddingProgress(itemId)
+          const percent = progress.total > 0 ? Math.round((progress.embedded / progress.total) * 100) : 0
+          jsonResponse(res, 200, { ...progress, percent })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // ─── Search & Stats ───
 
     // GET /console/api/knowledge/search?q=&hint=&limit=5
@@ -1129,6 +1162,8 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_MAX_CORE_DOCS: numEnvMin(1, 3),
     KNOWLEDGE_EMBEDDING_MODEL: z.string().default('gemini-embedding-2-preview'),
     KNOWLEDGE_EMBEDDING_DIMENSIONS: numEnvMin(256, 1536),
+    /** JSON: { "contact_type": ["categoryId1", ...] } — filtrado de knowledge por tipo de contacto */
+    KNOWLEDGE_CONTACT_CATEGORY_MAP: z.string().default(''),
   }),
 
   console: {
@@ -1346,11 +1381,27 @@ const manifest: ModuleManifest = {
             required: ['query'],
           },
         },
-        handler: async (input) => {
+        handler: async (input, context) => {
           try {
             const query = input.query as string
             const hint = input.category_hint as string | undefined
-            const results = await knowledgeManager!.searchConsultable(query, 5, hint)
+
+            // FIX-01: Category filtering by contact_type (fail-open: no mapping → no filter)
+            let allowedCategoryIds: string[] | undefined
+            const cfg = resolveKnowledgeConfig(_registry!)
+            if (cfg.KNOWLEDGE_CONTACT_CATEGORY_MAP && context.contactType) {
+              try {
+                const mapping = JSON.parse(cfg.KNOWLEDGE_CONTACT_CATEGORY_MAP) as Record<string, string[]>
+                const mapped = mapping[context.contactType]
+                if (Array.isArray(mapped) && mapped.length > 0) {
+                  allowedCategoryIds = mapped
+                }
+              } catch {
+                // JSON inválido — fail-open, no filtrar
+              }
+            }
+
+            const results = await knowledgeManager!.searchConsultable(query, 5, hint, allowedCategoryIds)
             return {
               success: true,
               data: {
@@ -1394,9 +1445,31 @@ const manifest: ModuleManifest = {
             required: ['documentId'],
           },
         },
-        handler: async (input) => {
+        handler: async (input, context) => {
           try {
             const documentId = input.documentId as string
+
+            // FIX-01: Category access control — same pattern as search_knowledge
+            const cfg = resolveKnowledgeConfig(_registry!)
+            if (cfg.KNOWLEDGE_CONTACT_CATEGORY_MAP && context.contactType) {
+              try {
+                const mapping = JSON.parse(cfg.KNOWLEDGE_CONTACT_CATEGORY_MAP) as Record<string, string[]>
+                const allowedCategoryIds = mapping[context.contactType]
+                if (Array.isArray(allowedCategoryIds) && allowedCategoryIds.length > 0) {
+                  const docCategoryIds = await knowledgeManager!.getDocumentCategoryIds(documentId)
+                  if (docCategoryIds.length > 0) {
+                    const hasAccess = docCategoryIds.some(id => allowedCategoryIds.includes(id))
+                    if (!hasAccess) {
+                      return { success: false, error: 'Document not accessible' }
+                    }
+                  }
+                  // Uncategorized document (docCategoryIds.length === 0) → fail-open, allow
+                }
+              } catch {
+                // JSON inválido — fail-open, no filtrar
+              }
+            }
+
             return await knowledgeManager!.expandKnowledge(documentId)
           } catch (err) {
             return { success: false, error: String(err) }

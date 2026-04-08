@@ -34,6 +34,7 @@ export class ToolDedupCache {
     'escalate_to_human',
     'spawn_subagent',
     'schedule_follow_up',
+    'request_human_help',  // side-effect: creates HITL ticket — must not be deduped
   ])
 
   private cache = new Map<string, CachedResult>()

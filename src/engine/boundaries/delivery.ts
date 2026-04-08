@@ -1,5 +1,5 @@
-// LUNA Engine — Phase 5: Validate + Send + Persist (v2)
-// Receives pre-formatted + pre-TTS output from Phase 4.
+// LUNA Engine — Delivery: Validate + Send + Persist (v2)
+// Receives pre-formatted + pre-TTS output from post-processor.
 // Validates, rate-limits, sends, persists, signals proactive guards.
 
 import { randomUUID } from 'node:crypto'
@@ -86,7 +86,7 @@ export async function delivery(
     await sendFallbackMessages(ctx, ctx.attachmentContext.fallbackMessages, registry)
   }
 
-  // 4. Send response (Phase 4 already formatted + TTS'd)
+  // 4. Send response (post-processor already formatted + TTS'd)
   let deliveryResult: DeliveryResult
 
   // Resolve tone once for fallback messages
@@ -237,6 +237,48 @@ async function logLeakageEvent(
 }
 
 // ─── Rate Limiting ──────────────────────────────
+
+/**
+ * FIX-LAB18: Read-only pre-check: returns true if the contact is already over the rate limit.
+ * Does NOT increment counters — only checks current values.
+ * Used by engine.ts to skip LLM processing for rate-limited contacts.
+ */
+export async function isRateLimitedPreCheck(
+  redis: Redis,
+  to: string,
+  channel: string,
+  registry: Registry,
+): Promise<boolean> {
+  try {
+    const channelSvc = registry.getOptional<{ get(): import('../../channels/types.js').ChannelRuntimeConfig }>(`channel-config:${channel}`)
+    const cc = channelSvc?.get()
+
+    const channelLimitHour = cc?.rateLimitHour ?? 0
+    const limitHour = channelLimitHour > 0
+      ? Math.min(channelLimitHour, SYSTEM_MAX_MESSAGES_PER_HOUR)
+      : SYSTEM_MAX_MESSAGES_PER_HOUR
+    const limitDay = cc?.rateLimitDay ?? 0
+
+    const hourKey = `rate:${channel}:${to}:hour`
+    const dayKey = `rate:${channel}:${to}:day`
+
+    const [hourVal, dayVal] = await Promise.all([
+      redis.get(hourKey),
+      dayKey ? redis.get(dayKey) : Promise.resolve(null),
+    ])
+
+    const hourCount = hourVal ? parseInt(hourVal, 10) : 0
+    if (limitHour > 0 && hourCount >= limitHour) return true
+
+    const dayCount = dayVal ? parseInt(dayVal, 10) : 0
+    if (limitDay > 0 && dayCount >= limitDay) return true
+
+    return false
+  } catch {
+    // Redis down or other error — don't block on pre-check, let delivery handle it
+    return false
+  }
+}
 
 // Emergency in-memory rate limiter when Redis is down
 const emergencyRateLimiter = new Map<string, { count: number; resetAt: number }>()
@@ -516,7 +558,7 @@ async function sendMessages(
         correlationId: ctx.traceId,
       }).catch(() => {})
 
-      const delay = calculateTypingDelay(part, cc!.typingDelayMsPerChar, cc!.typingDelayMinMs, cc!.typingDelayMaxMs)
+      const delay = calculateTypingDelay(part, cc!.typingDelayMinMs, cc!.typingDelayMaxMs)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
 

@@ -62,9 +62,28 @@ export class MemoryManager {
   async saveMessage(message: StoredMessage): Promise<void> {
     await this.redis.saveMessage(message)
 
-    // Fire-and-forget write to PG
-    this.pg.saveMessage(message).catch((err) => {
-      logger.error({ err, messageId: message.id }, 'Async PG write failed')
+    // FIX-01: Fire-and-forget PG write with retry (non-blocking).
+    // Retries only on transient errors (connection resets, timeouts), not constraint violations.
+    const pgWriteWithRetry = async () => {
+      const delays = [500, 1000, 2000]
+      for (let attempt = 0; attempt < delays.length + 1; attempt++) {
+        try {
+          await this.pg.saveMessage(message)
+          return
+        } catch (err) {
+          const isLast = attempt === delays.length
+          const errMsg = err instanceof Error ? err.message : String(err)
+          const isConstraint = errMsg.includes('duplicate key') || errMsg.includes('violates') || errMsg.includes('constraint')
+          if (isLast || isConstraint) {
+            if (isLast) logger.error({ err, messageId: message.id }, 'PG write failed after retries — message safe in Redis')
+            return
+          }
+          await new Promise<void>(r => setTimeout(r, delays[attempt] ?? 500))
+        }
+      }
+    }
+    pgWriteWithRetry().catch((err) => {
+      logger.error({ err, messageId: message.id }, 'PG write retry helper crashed')
     })
   }
 
@@ -79,11 +98,28 @@ export class MemoryManager {
   }
 
   async getSessionMeta(sessionId: string): Promise<SessionMeta | null> {
-    return await this.redis.getSessionMeta(sessionId)
+    const redisMeta = await this.redis.getSessionMeta(sessionId)
+    if (redisMeta) return redisMeta
+
+    // FIX-05: Redis miss (e.g. after restart) — recover from PG
+    const pgMeta = await this.pg.getSessionMetaForRecovery(sessionId)
+    if (pgMeta) {
+      // Repopulate Redis for subsequent reads
+      this.redis.updateSessionMeta(pgMeta).catch((err) => {
+        logger.warn({ err, sessionId }, 'Failed to repopulate Redis session meta after PG recovery')
+      })
+      logger.info({ sessionId }, 'Session meta recovered from PG after Redis miss')
+    }
+    return pgMeta
   }
 
   async updateSessionMeta(meta: SessionMeta): Promise<void> {
     await this.redis.updateSessionMeta(meta)
+
+    // FIX-05: Fire-and-forget PG sync so session meta survives Redis restarts
+    this.pg.persistSessionMeta(meta).catch((err) => {
+      logger.warn({ err, sessionId: meta.sessionId }, 'Async PG session meta sync failed')
+    })
   }
 
   async needsCompression(sessionId: string): Promise<boolean> {
@@ -261,7 +297,9 @@ export class MemoryManager {
         logger.info({ sessionId, messageCount: messages.length }, 'Session archived before compression')
       }
     } catch (archiveErr) {
-      logger.warn({ err: archiveErr, sessionId }, 'Archive before compression failed (non-fatal)')
+      // FIX-02: Archive failure ABORTS compression — never delete originals without a backup
+      logger.error({ err: archiveErr, sessionId }, 'Archive before compression failed — aborting to preserve messages')
+      throw archiveErr
     }
 
     // Save summary to warm tier

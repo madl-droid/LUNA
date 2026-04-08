@@ -151,6 +151,7 @@ export class UsageTracker {
 
   /**
    * Check if within budget.
+   * Primary: Redis (fast). Fallback: PG query on Redis failure. Fail-closed if both fail.
    */
   async checkBudget(): Promise<{ allowed: boolean; reason?: string }> {
     if (this.dailyBudgetUsd === 0 && this.monthlyBudgetUsd === 0) {
@@ -178,8 +179,51 @@ export class UsageTracker {
       }
 
       return { allowed: true }
-    } catch {
+    } catch (redisErr) {
+      logger.warn({ err: redisErr }, 'Redis unavailable for budget check — falling back to PG')
+      return this.checkBudgetFromPg()
+    }
+  }
+
+  /**
+   * Fallback budget check from PostgreSQL when Redis is unavailable.
+   * Fail-closed: if PG also fails, reject the call to avoid runaway spend.
+   */
+  private async checkBudgetFromPg(): Promise<{ allowed: boolean; reason?: string }> {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const monthStart = `${new Date().toISOString().slice(0, 7)}-01`
+
+      if (this.dailyBudgetUsd > 0) {
+        const res = await this.db.query<{ total: string }>(
+          `SELECT COALESCE(SUM(cost_usd), 0)::text AS total
+           FROM llm_usage WHERE timestamp >= $1::date`,
+          [today],
+        )
+        const cost = parseFloat(res.rows[0]!.total)
+        if (cost >= this.dailyBudgetUsd) {
+          logger.warn({ cost, budget: this.dailyBudgetUsd }, 'Daily budget exceeded (PG fallback)')
+          return { allowed: false, reason: `Daily budget exceeded ($${cost.toFixed(2)}/$${this.dailyBudgetUsd})` }
+        }
+      }
+
+      if (this.monthlyBudgetUsd > 0) {
+        const res = await this.db.query<{ total: string }>(
+          `SELECT COALESCE(SUM(cost_usd), 0)::text AS total
+           FROM llm_usage WHERE timestamp >= $1::date`,
+          [monthStart],
+        )
+        const cost = parseFloat(res.rows[0]!.total)
+        if (cost >= this.monthlyBudgetUsd) {
+          logger.warn({ cost, budget: this.monthlyBudgetUsd }, 'Monthly budget exceeded (PG fallback)')
+          return { allowed: false, reason: `Monthly budget exceeded ($${cost.toFixed(2)}/$${this.monthlyBudgetUsd})` }
+        }
+      }
+
       return { allowed: true }
+    } catch (pgErr) {
+      logger.error({ err: pgErr }, 'Both Redis and PG unavailable for budget check — failing closed')
+      return { allowed: false, reason: 'Budget check unavailable — failing closed for safety' }
     }
   }
 
@@ -268,31 +312,42 @@ export class UsageTracker {
 
   // ─── Private ───────────────────────────────
 
+  // FIX-09: Lua script executes all INCR+EXPIRE pairs atomically.
+  // A Redis crash between INCR and EXPIRE with pipeline() would leave
+  // a key without TTL, causing a permanent rate-limit after restart.
+  private static readonly COUNTERS_LUA = `
+    local rpm = redis.call('INCR', KEYS[1])
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+    redis.call('INCRBY', KEYS[2], tonumber(ARGV[2]))
+    redis.call('EXPIRE', KEYS[2], tonumber(ARGV[3]))
+    redis.call('INCRBYFLOAT', KEYS[3], ARGV[4])
+    redis.call('EXPIRE', KEYS[3], tonumber(ARGV[5]))
+    redis.call('INCRBYFLOAT', KEYS[4], ARGV[6])
+    redis.call('EXPIRE', KEYS[4], tonumber(ARGV[7]))
+    return rpm
+  `
+
   private async updateRedisCounters(
     provider: LLMProviderName,
     totalTokens: number,
     cost: number,
   ): Promise<void> {
     try {
-      const pipeline = this.redis.pipeline()
-
-      // RPM counter (expires after 60s)
-      pipeline.incr(RPM_KEY(provider))
-      pipeline.expire(RPM_KEY(provider), 60)
-
-      // TPM counter (expires after 60s)
-      pipeline.incrby(TPM_KEY(provider), totalTokens)
-      pipeline.expire(TPM_KEY(provider), 60)
-
-      // Daily cost (expires after 48h for safety)
-      pipeline.incrbyfloat(DAILY_COST_KEY(), cost)
-      pipeline.expire(DAILY_COST_KEY(), 172800)
-
-      // Monthly cost (expires after 35 days)
-      pipeline.incrbyfloat(MONTHLY_COST_KEY(), cost)
-      pipeline.expire(MONTHLY_COST_KEY(), 3024000)
-
-      await pipeline.exec()
+      await this.redis.eval(
+        UsageTracker.COUNTERS_LUA,
+        4,
+        RPM_KEY(provider),      // KEYS[1] — RPM counter
+        TPM_KEY(provider),      // KEYS[2] — TPM counter
+        DAILY_COST_KEY(),       // KEYS[3] — daily cost
+        MONTHLY_COST_KEY(),     // KEYS[4] — monthly cost
+        '60',                   // ARGV[1] — RPM TTL (60s)
+        String(totalTokens),    // ARGV[2] — token count for INCRBY
+        '60',                   // ARGV[3] — TPM TTL (60s)
+        String(cost),           // ARGV[4] — cost for INCRBYFLOAT daily
+        '172800',               // ARGV[5] — daily cost TTL (48h)
+        String(cost),           // ARGV[6] — cost for INCRBYFLOAT monthly
+        '3024000',              // ARGV[7] — monthly cost TTL (35d)
+      )
     } catch (err) {
       logger.error({ err }, 'Failed to update Redis counters')
     }

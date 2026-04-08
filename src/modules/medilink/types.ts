@@ -487,11 +487,35 @@ export interface FollowUpTemplate {
 
 export type VerificationLevel = 'unverified' | 'phone_matched' | 'document_verified'
 
+/** A third-party/dependent registered under a contact for scheduling purposes */
+export interface MedilinkDependent {
+  /** ID del paciente en Medilink */
+  medilinkPatientId: number
+  /** Nombre del tercero como lo conoce el contacto */
+  displayName: string
+  /** Relacion: hijo, hija, mama, papa, esposo/a, hermano/a, abuelo/a, otro */
+  relationship: string
+  /** Numero de documento del tercero (RUT, CI, etc.) */
+  documentNumber?: string
+  /** Tipo de documento */
+  documentType?: string
+  /** Fecha de registro */
+  registeredAt: string
+}
+
 export interface SecurityContext {
   contactId: string
   contactPhone: string
   medilinkPatientId: number | null
   verificationLevel: VerificationLevel
+  /** Dependientes/terceros registrados para este contacto */
+  dependents: MedilinkDependent[]
+  /** Si estamos agendando para un tercero, su patient ID */
+  activeTargetPatientId: number | null
+  /** Nombre del tercero activo */
+  activeTargetName: string | null
+  /** Relacion del tercero activo */
+  activeTargetRelationship: string | null
 }
 
 // ─── Scheduling rules ────────────────────

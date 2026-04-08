@@ -449,6 +449,14 @@ export class KnowledgePgStore {
     )
   }
 
+  async getDocumentCategoryIds(documentId: string): Promise<string[]> {
+    const res = await this.db.query<{ category_id: string }>(
+      `SELECT category_id FROM knowledge_document_categories WHERE document_id = $1`,
+      [documentId],
+    )
+    return res.rows.map(r => r.category_id)
+  }
+
   // ─── Categories CRUD ─────────────────────
 
   async listCategories(): Promise<KnowledgeCategory[]> {
@@ -1245,6 +1253,32 @@ export class KnowledgePgStore {
 
   // ─── Suggestions ───────────────────────────
 
+  // ─── Embedding Progress ────────────────────
+
+  async getEmbeddingProgress(itemId: string): Promise<{
+    total: number
+    embedded: number
+    failed: number
+    processing: number
+  }> {
+    const { rows } = await this.db.query<{
+      total: number
+      embedded: number
+      failed: number
+      processing: number
+    }>(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE c.embedding_status = 'embedded')::int AS embedded,
+        COUNT(*) FILTER (WHERE c.embedding_status = 'failed' AND c.retry_count >= 10)::int AS failed,
+        COUNT(*) FILTER (WHERE c.embedding_status IN ('queued','processing'))::int AS processing
+      FROM knowledge_chunks c
+      JOIN knowledge_documents d ON d.id = c.document_id
+      WHERE d.item_id = $1
+    `, [itemId])
+    return rows[0] ?? { total: 0, embedded: 0, failed: 0, processing: 0 }
+  }
+
   // ─── Knowledge Items CRUD ─────────────────
 
   async insertItem(data: {
@@ -1412,6 +1446,14 @@ export class KnowledgePgStore {
       sourceId: row.source_id,
       sourceType: row.source_type as import('./types.js').KnowledgeSourceType,
     }))
+  }
+
+  /** Return active items with content_loaded = false (for bulk train pre-load). FIX-03 */
+  async listItemsPendingContent(): Promise<KnowledgeItem[]> {
+    const res = await this.db.query<ItemRow>(
+      `SELECT * FROM knowledge_items WHERE content_loaded = false AND active = true ORDER BY created_at ASC`,
+    )
+    return res.rows.map(mapItemRow)
   }
 
   /** Return active items that need content loading or re-embedding (for nightly scan) */

@@ -80,6 +80,8 @@ export interface ScheduledTasksConfig {
   SCHEDULED_TASKS_ENABLED: boolean
   SCHEDULED_TASKS_MAX_CONCURRENT: number
   SCHEDULED_TASKS_EXECUTION_TIMEOUT_MS: number
+  /** Max messages a scheduled task can send to a single contact per hour. 0 = unlimited. */
+  SCHEDULED_TASKS_MAX_MSG_PER_CONTACT_PER_HOUR: number
 }
 
 /** Lightweight user group info for the UI dropdown */

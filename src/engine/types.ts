@@ -167,7 +167,7 @@ export interface ContextBundle {
   // History
   history: HistoryMessage[]
 
-  // Buffer summary — running compressed summary of older turns in this session (Phase 3)
+  // Buffer summary — running compressed summary of older turns in this session (agentic loop)
   // Loaded from Redis; null if session is new or hasn't been compressed yet.
   // PG messages are never touched by inline compression.
   bufferSummary: string | null
@@ -188,7 +188,7 @@ export interface ContextBundle {
   // Attachment metadata (lightweight, no processing)
   attachmentMeta: AttachmentMetadata[]
 
-  // Attachment context (processed — populated by Phase 3, not Phase 1)
+  // Attachment context (processed — populated by agentic loop, not intake)
   attachmentContext: import('./attachments/types.js').AttachmentContext | null
 
   // Injection flag from basic regex check
@@ -212,7 +212,7 @@ export interface ActiveHitlTicket {
 }
 
 // ═══════════════════════════════════════════
-// Phase 2 — Evaluator output
+// Effort Router — Classification output
 // ═══════════════════════════════════════════
 
 export type ExecutionPlanType =
@@ -231,9 +231,9 @@ export interface ExecutionStep {
   params?: Record<string, unknown>
   description?: string
   dependsOn?: number[]  // indices of steps this depends on
-  /** Phase 2 hint: activate extended thinking for this step's LLM calls */
+  /** Effort router hint: activate extended thinking for this step's LLM calls */
   useThinking?: boolean
-  /** Phase 2 hint: activate code execution sandbox for this step */
+  /** Effort router hint: activate code execution sandbox for this step */
   useCoding?: boolean
   /** Subagent slug from catalog (for type='subagent') */
   subagentSlug?: string
@@ -242,7 +242,7 @@ export interface ExecutionStep {
 export interface StepResult {
   stepIndex: number
   type: ExecutionPlanType
-  /** Tool name (if applicable) — used for checkpoint step validation */
+  /** Tool name (if applicable) */
   tool?: string
   success: boolean
   data?: unknown
@@ -251,7 +251,7 @@ export interface StepResult {
 }
 
 // ═══════════════════════════════════════════
-// Phase 4 — Compositor output
+// Post-processor output
 // ═══════════════════════════════════════════
 
 export interface CompositorOutput {
@@ -296,7 +296,7 @@ export interface PipelineResult {
   responseText?: string
   deliveryResult?: DeliveryResult
   error?: string
-  skipped?: 'test_mode' | 'backpressure' | `unregistered:${string}` | `triage:${string}`
+  skipped?: 'test_mode' | 'backpressure' | 'shutdown' | 'duplicate' | 'rate_limited' | `unregistered:${string}` | `triage:${string}`
   // --- Agentic fields (v2.0) ---
   agenticResult?: import('./agentic/types.js').AgenticResult
   effortLevel?: import('./agentic/types.js').EffortLevel
@@ -594,9 +594,6 @@ export interface EngineConfig {
   maxConcurrentSteps: number
   backpressureMessage: string
 
-  // Phase 4 retries per provider
-  composeRetriesPerProvider: number
-
   // FIX: E-1 — Pipeline global timeout
   pipelineTimeoutMs: number
 
@@ -604,13 +601,6 @@ export interface EngineConfig {
   criticizerMode: 'disabled' | 'complex_only' | 'always'
   /** Max criticizer retry attempts before accepting the original response (0-5) */
   criticizerMaxRetries: number
-
-  // Checkpoints (resumable pipelines)
-  checkpointEnabled: boolean
-  /** Max age (ms) of incomplete checkpoints eligible for resume on startup */
-  checkpointResumeWindowMs: number
-  /** Days after which completed/failed checkpoints are purged */
-  checkpointCleanupDays: number
 
   // --- Agentic engine config (v2.0) ---
   /** Max tool-calling turns before forcing a text response */

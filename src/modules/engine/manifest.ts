@@ -24,8 +24,6 @@ interface EngineModuleConfig {
   ENGINE_MAX_QUEUE_SIZE: number
   ENGINE_MAX_CONCURRENT_STEPS: number
   ENGINE_BACKPRESSURE_MESSAGE: string
-  // Phase 4
-  ENGINE_COMPOSE_RETRIES_PER_PROVIDER: number
   // Attachments
   ATTACHMENT_ENABLED: boolean
   ATTACHMENT_SMALL_DOC_TOKENS: number
@@ -38,9 +36,6 @@ interface EngineModuleConfig {
   MEMORY_SESSION_REOPEN_WINDOW_HOURS: number
   SESSION_REOPEN_WINDOW_MS: number
   ENGINE_PIPELINE_TIMEOUT_MS: number
-  ENGINE_CHECKPOINT_ENABLED: boolean
-  ENGINE_CHECKPOINT_RESUME_WINDOW_MS: number
-  ENGINE_CHECKPOINT_CLEANUP_DAYS: number
   // Nightly batch
   NIGHTLY_SCORING_ENABLED: boolean
   NIGHTLY_SCORING_THRESHOLD: number
@@ -83,8 +78,6 @@ const manifest: ModuleManifest = {
     ENGINE_MAX_QUEUE_SIZE: numEnvMin(0, 200),
     ENGINE_MAX_CONCURRENT_STEPS: numEnvMin(1, 5),
     ENGINE_BACKPRESSURE_MESSAGE: z.string().default('Estamos atendiendo muchos clientes en este momento. Te responderemos pronto.'),
-    // Phase 4
-    ENGINE_COMPOSE_RETRIES_PER_PROVIDER: numEnvMin(0, 1),
     // Attachments
     ATTACHMENT_ENABLED: boolEnv(true),
     ATTACHMENT_SMALL_DOC_TOKENS: numEnvMin(1000, 8000),
@@ -97,9 +90,6 @@ const manifest: ModuleManifest = {
     MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnvMin(0, 1),
     SESSION_REOPEN_WINDOW_MS: numEnvMin(60000, 3600000),
     ENGINE_PIPELINE_TIMEOUT_MS: numEnvMin(1000, 120000),
-    ENGINE_CHECKPOINT_ENABLED: boolEnv(true),
-    ENGINE_CHECKPOINT_RESUME_WINDOW_MS: numEnvMin(1000, 300000),
-    ENGINE_CHECKPOINT_CLEANUP_DAYS: numEnvMin(1, 7),
     // Nightly batch
     NIGHTLY_SCORING_ENABLED: boolEnv(true),
     NIGHTLY_SCORING_THRESHOLD: numEnvMin(0, 40),
@@ -161,7 +151,7 @@ const manifest: ModuleManifest = {
       {
         key: 'ENGINE_MAX_CONCURRENT_STEPS',
         type: 'number',
-        label: { es: 'Steps simultaneos (Phase 3)', en: 'Max concurrent steps (Phase 3)' },
+        label: { es: 'Steps simultaneos (agentic loop)', en: 'Max concurrent steps (agentic loop)' },
         description: {
           es: 'Cuantos pasos de ejecucion corren en paralelo dentro de un pipeline.',
           en: 'How many execution steps run in parallel within a single pipeline.',
@@ -182,21 +172,6 @@ const manifest: ModuleManifest = {
           es: 'Este mensaje se muestra al usuario cuando el motor esta sobrecargado y no puede procesar mas solicitudes. Personalizalo para que sea claro y amigable.',
           en: 'This message is shown to users when the engine is overloaded and cannot process more requests. Customize it to be clear and friendly.',
         },
-      },
-
-      // ── Phase 4 ──
-      { key: '_div_phase4', type: 'divider', label: { es: 'Composicion (Phase 4)', en: 'Composition (Phase 4)' } },
-      {
-        key: 'ENGINE_COMPOSE_RETRIES_PER_PROVIDER',
-        type: 'number',
-        label: { es: 'Reintentos por proveedor LLM', en: 'Retries per LLM provider' },
-        description: {
-          es: 'Cuantos reintentos antes de pasar al proveedor de fallback. 0 = sin reintentos.',
-          en: 'How many retries before switching to fallback provider. 0 = no retries.',
-        },
-        min: 0,
-        max: 5,
-        width: 'half',
       },
 
       // ── Attachments ──
@@ -302,39 +277,6 @@ const manifest: ModuleManifest = {
         unit: 'ms',
         width: 'half',
       },
-      {
-        key: 'ENGINE_CHECKPOINT_ENABLED',
-        type: 'boolean',
-        label: { es: 'Checkpoints activos', en: 'Enable checkpoints' },
-        description: {
-          es: 'Guarda checkpoints para reanudar pipelines interrumpidos.',
-          en: 'Stores checkpoints to resume interrupted pipelines.',
-        },
-      },
-      {
-        key: 'ENGINE_CHECKPOINT_RESUME_WINDOW_MS',
-        type: 'duration',
-        label: { es: 'Ventana de reanudacion', en: 'Resume window' },
-        description: {
-          es: 'Edad maxima de checkpoints incompletos candidatos a reanudacion.',
-          en: 'Maximum age of incomplete checkpoints eligible for resume.',
-        },
-        unit: 'ms',
-        width: 'half',
-      },
-      {
-        key: 'ENGINE_CHECKPOINT_CLEANUP_DAYS',
-        type: 'number',
-        label: { es: 'Limpieza de checkpoints (dias)', en: 'Checkpoint cleanup (days)' },
-        description: {
-          es: 'Dias antes de purgar checkpoints completados o fallidos.',
-          en: 'Days before purging completed or failed checkpoints.',
-        },
-        min: 1,
-        max: 90,
-        width: 'half',
-      },
-
       // ── Nightly Batch ──
       { key: '_div_nightly', type: 'divider', label: { es: 'Lote Nocturno', en: 'Nightly Batch' } },
       {

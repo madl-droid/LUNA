@@ -61,4 +61,21 @@ export class PipelineSemaphore {
       maxQueue: this.maxQueueSize,
     }
   }
+
+  /**
+   * Update concurrency limits in-place without replacing the semaphore.
+   * Avoids abandoning queued waiters that are pending on the old instance.
+   * FIX-F1: hot-reload must use this instead of creating a new PipelineSemaphore.
+   */
+  updateLimits(maxConcurrent: number, maxQueueSize: number): void {
+    this.maxConcurrent = maxConcurrent
+    this.maxQueueSize = maxQueueSize
+    logger.info({ maxConcurrent, maxQueueSize, queued: this.queue.length }, 'PipelineSemaphore limits updated in-place')
+    // Drain any newly-eligible waiters (in case limit was increased)
+    while (this.running < this.maxConcurrent && this.queue.length > 0) {
+      const next = this.queue.shift()!
+      this.running++
+      next.resolve('queued')
+    }
+  }
 }

@@ -75,6 +75,9 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - Escalamiento: 1h → 3h → 6h → loop cada 6h
 - Reset: primer éxito → closed + reset escalation level
 - Independiente del CB legacy por provider (ambos se verifican)
+- **halfOpen fix**: `halfOpenRequests` se incrementa en `isAvailable()` para limitar correctamente las requests de prueba (antes nunca se incrementaba → todas pasaban)
+- **CB counting fix**: `recordFailure()` se llama por CADA intento fallido (no solo al final del bloque de retry)
+- **Backoff cap**: delay máximo 30s (`Math.min(backoff, 30_000)`) para evitar esperas de horas con retryMax alto
 
 ## Features nativos de las APIs
 - **Prompt Caching**: Anthropic `cache_control: { type: 'ephemeral' }` (90% ahorro). Google implícito en 2.5+.
@@ -97,6 +100,13 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - Temperaturas por tarea definidas en `TASK_TEMPERATURES` (internal, no configurable por UI)
 - 10 tareas canónicas: main, complex, low, criticize, media, web_search, compress, batch, tts, knowledge
 - `resolveTaskName()` en task-router.ts resuelve aliases a tareas canónicas
+
+## Timeouts y sanitización
+- **Google timeout real**: `providers.ts` usa `Promise.race([chat.sendMessage(), timeoutPromise])` — el SDK de Google no acepta `AbortSignal` directamente, por eso la carrera
+- **Direct SDK timeout**: `llm-client.ts` (fallback cuando módulo LLM no activo) tiene timeout 30s y 2 retries propios
+- **Direct SDK tools**: `callGoogle()` en llm-client.ts convierte tools a `functionDeclarations` y extrae tool_calls de la respuesta
+- **SQL seguro**: `pg-store.ts:getUsageSummary` usa `$1::interval` parametrizado (antes interpolaba `'${interval}'` directamente)
+- **Unicode surrogates**: `llm-gateway.ts:chat()` sanitiza surrogates en system prompt y mensajes antes de enviar al LLM (previene "no low surrogate in string" con emojis raros)
 
 ## Trampas
 - **API keys**: NUNCA se logean ni se incluyen en prompts.

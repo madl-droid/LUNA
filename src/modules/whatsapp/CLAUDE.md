@@ -16,7 +16,7 @@ Canal WhatsApp usando Baileys 7.x. Recibe y envía mensajes (texto, imagen, audi
   - **ACK**: WHATSAPP_AVISO_TRIGGER_MS (3000), WHATSAPP_AVISO_HOLD_MS (2000), WHATSAPP_AVISO_MESSAGE
   - **Socket**: WHATSAPP_MARK_ONLINE (true), WHATSAPP_REJECT_CALLS (true)
   - **Privacy**: WHATSAPP_PRIVACY_LAST_SEEN (false), WHATSAPP_PRIVACY_PROFILE_PIC ('all'), WHATSAPP_PRIVACY_STATUS ('all'), WHATSAPP_PRIVACY_READ_RECEIPTS (true)
-  - **Batching**: WHATSAPP_BATCH_ENABLED (true), WHATSAPP_BATCH_WAIT_SECONDS (30)
+  - **Batching**: WHATSAPP_BATCH_ENABLED (true), WHATSAPP_BATCH_WAIT_SECONDS (30), WHATSAPP_FLOOD_THRESHOLD (20)
   - **Sessions**: WHATSAPP_SESSION_TIMEOUT_HOURS (24), WHATSAPP_PRECLOSE_ENABLED (true), WHATSAPP_PRECLOSE_FOLLOWUP_HOURS (1), WHATSAPP_PRECLOSE_MESSAGE
   - **Missed msgs**: WHATSAPP_MISSED_MSG_ENABLED (true), WHATSAPP_MISSED_MSG_WINDOW_MIN (15)
   - **Attachments**: WHATSAPP_ATT_IMAGES (true), WHATSAPP_ATT_DOCUMENTS (true), WHATSAPP_ATT_AUDIO (true), WHATSAPP_ATT_VIDEO (false), WHATSAPP_ATT_SPREADSHEETS (true), WHATSAPP_ATT_TEXT (true)
@@ -62,6 +62,18 @@ Canal WhatsApp usando Baileys 7.x. Recibe y envía mensajes (texto, imagen, audi
 - `sendComposing(to)`: suscribe + envía 'composing'. Auto-clear a 25s.
 - `sendPaused(to)`: envía 'paused', limpia timer.
 - Socket se setea en connection open, se limpia en shutdown/disconnect.
+
+## Resiliencia
+- **initialize() mutex**: `_initializing` flag previene llamadas concurrentes (hot-reload + reconexión). Early return si ya está inicializando.
+- **sendMessage retries**: 3 reintentos con backoff exponencial (1s/2s/4s) en errores transitorios. Errores de validación fallan inmediatamente.
+- **Outgoing queue**: si el socket no está conectado, los mensajes se encolan (max 100, TTL 5min). Al reconectar se hace flush ordenado.
+- **disconnect() try/finally**: `socket.logout()` puede fallar; el cleanup de socket ocurre en `finally` para garantizarse.
+- **jidTypeMap eviction**: max 10,000 entries. Al superarse, se eliminan el 20% más antiguo (LRU simple por insertion order).
+- **Media download limits**: timeout 30s (AbortController + Promise.race) y límite 50MB (pre-check por fileLength + post-check en buffer).
+- **Filtro de mensajes no-procesables**: reactions, stickers y viewOnce se descartan silenciosamente en `normalizeMessage()` (log DEBUG).
+- **Batch attachments merge**: `dispatchBatch` combina attachments de todos los mensajes del batch (no solo el primero). `onMessage` pasa `attachments` al IncomingMessage.
+- **floodThreshold configurable**: `WHATSAPP_FLOOD_THRESHOLD` en configSchema (default 20) se pasa al batcher y a `buildChannelConfig()`.
+- **message-batcher retry**: 3 retries con backoff (1s/2s/4s). Si agotan, dead-letter log CRITICAL con IDs de mensajes.
 
 ## Trampas
 - NO implementar Meta Cloud API adapter — solo placeholder si se necesita

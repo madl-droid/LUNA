@@ -39,6 +39,7 @@ const manifest: ModuleManifest = {
     SCHEDULED_TASKS_ENABLED: boolEnv(true),
     SCHEDULED_TASKS_MAX_CONCURRENT: numEnvMin(1, 3),
     SCHEDULED_TASKS_EXECUTION_TIMEOUT_MS: numEnv(120_000),
+    SCHEDULED_TASKS_MAX_MSG_PER_CONTACT_PER_HOUR: numEnvMin(0, 10),
   }),
 
   console: {

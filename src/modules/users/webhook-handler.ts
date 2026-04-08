@@ -436,8 +436,17 @@ async function upsertContact(
     }
   }
 
-  // 4. Create new user as lead
-  const userId = `USR-${crypto.randomBytes(3).toString('hex').toUpperCase()}`
+  // 4. Create new user as lead — generate collision-safe ID (8 bytes = 4.3T combinations)
+  let userId: string
+  let idAttempts = 0
+  while (true) {
+    userId = `USR-${crypto.randomBytes(8).toString('hex').toUpperCase()}`
+    const exists = await db.query<{ id: string }>(`SELECT id FROM users WHERE id = $1`, [userId])
+    if (exists.rows.length === 0) break
+    idAttempts++
+    logger.warn({ userId, attempt: idAttempts }, 'User ID collision detected — regenerating')
+    if (idAttempts >= 3) throw new Error('Failed to generate unique user ID after 3 attempts')
+  }
   await db.query(
     `INSERT INTO users (id, display_name, list_type, metadata, source)
      VALUES ($1, $2, 'lead', '{"contact_origin":"outbound"}'::jsonb, 'webhook')`,
@@ -473,10 +482,27 @@ async function ensureContactChannel(
   isPrimary: boolean,
 ): Promise<void> {
   const channel = channelName === 'voice' ? 'twilio-voice' : (channelName === 'gmail' ? 'email' : channelName)
+
+  // Check for existing channel contact owned by a different user before inserting
+  const existing = await db.query<{ user_id: string }>(
+    `SELECT user_id FROM user_contacts WHERE channel = $1 AND sender_id = $2 LIMIT 1`,
+    [channel, channelContactId],
+  )
+  if (existing.rows.length > 0) {
+    const existingUserId = existing.rows[0]!.user_id
+    if (existingUserId !== userId) {
+      logger.warn(
+        { existingUserId, newUserId: userId, channel, senderId: channelContactId },
+        'Contact channel already belongs to a different user — not reassigning (possible contact merge needed)',
+      )
+      return
+    }
+  }
+
   await db.query(
     `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1`,
+     ON CONFLICT (channel, sender_id) DO NOTHING`,
     [userId, channel, channelContactId, isPrimary],
   )
 }
