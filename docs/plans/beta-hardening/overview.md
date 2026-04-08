@@ -32,6 +32,8 @@ Preparación para pruebas BETA con clientes reales. Se consolidaron 3 fuentes de
 | **10** | Legacy Cleanup | 6 | `src/engine/checkpoints/`, `src/engine/engine.ts`, `src/engine/types.ts`, ~14 archivos con comentarios Phase | LOW |
 | **11** | Operational Fixes | 4 | `src/modules/knowledge/manifest.ts`, `src/modules/whatsapp/adapter.ts`, `src/modules/medilink/security.ts` | HIGH |
 | **12** | UI / Console Fixes | 1 | `src/modules/console/templates-section-channels.ts` | MEDIUM |
+| **13a** | Quick Fixes (Drive, TTS, Embedding UI, Voice) | 4 | `src/modules/knowledge/item-manager.ts`, `src/modules/tts/tts-service.ts`, `src/modules/knowledge/console-section.ts`, `src/modules/twilio-voice/call-manager.ts` | MEDIUM |
+| **13b** | Medilink: Agendamiento para Terceros | 6 | `src/modules/medilink/types.ts`, `security.ts`, `tools.ts`, `working-memory.ts`, `manifest.ts`, skill prompt | HIGH |
 
 ## Estrategia de ejecución
 
@@ -111,3 +113,12 @@ Después de planes 10-12:
 - **WhatsApp flush** con rate limiting (200ms entre mensajes)
 - **Medilink lead→patient** limpia flag y dispara hook
 - **Calendar settings** accesible desde Google Apps card en cualquier estado
+
+## Métricas de éxito — Ronda 3
+
+Después de planes 13a-13b:
+- **Drive scan** pagina carpetas con >100 archivos
+- **TTS** con circuit breaker (5 fallas → 5 min cooldown), timeout 30s, validación de modelo
+- **Embedding progress** visible en tiempo real en consola (polling cada 3s)
+- **Voice inbound** rate limit por número (default 10/hora)
+- **Medilink terceros** — contacto puede agendar para hijos, padres, pareja; datos persistidos en agent_data; reagendamiento con memoria de relación
