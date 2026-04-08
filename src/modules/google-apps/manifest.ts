@@ -391,6 +391,7 @@ const manifest: ModuleManifest = {
     GOOGLE_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
     GOOGLE_API_TIMEOUT_MS: numEnv(30000),
     GOOGLE_API_RETRY_MAX: numEnv(2),
+    GOOGLE_SHEETS_PROTECTED_IDS: z.string().default('').describe('Comma-separated spreadsheet IDs protegidos contra escritura'),
   }),
 
   console: {

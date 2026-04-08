@@ -45,7 +45,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 
 ## Tools registrados (cuando tools module existe)
 - Drive: drive-list-files, drive-get-file, drive-create-folder, drive-create-file, drive-share, drive-move-file
-- Sheets: sheets-read, sheets-write, sheets-append, sheets-create, sheets-info
+- Sheets: sheets-read (paginación, auto-detect tab), sheets-write (protección), sheets-append (protección, restaura validaciones), sheets-create, sheets-info, sheets-find-replace, sheets-batch-edit
 - Docs: docs-read, docs-create, docs-append, docs-replace
 - Slides: slides-read, slides-info, slides-create, slides-replace-text
 - Calendar: calendar-list-events, calendar-get-event, calendar-create-event, calendar-update-event, calendar-delete-event, calendar-add-attendees, calendar-list-calendars, calendar-check-availability, calendar-get-scheduling-context, calendar-execute-followup
@@ -69,6 +69,10 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - `google-calendar-scheduler` — subagent de agendamiento, se habilita/deshabilita automáticamente con el servicio Calendar
 - Skills en `instance/prompts/system/skills/gcal-*.md`: new-appointment, reschedule, cancel, check-availability, info
 - Tool `calendar-get-scheduling-context` entrega config completa al subagent (roles, coworkers, instrucciones, horario, days off)
+
+## Protección de Sheets
+- `GOOGLE_SHEETS_PROTECTED_IDS` (env var): IDs de spreadsheets protegidos contra escritura (comma-separated)
+- Guard aplicado en: sheets-write, sheets-append, sheets-find-replace, sheets-batch-edit
 
 ## Hooks emitidos
 - `calendar:event-created` — al crear evento (payload: event, contactId, channel, meetLink)

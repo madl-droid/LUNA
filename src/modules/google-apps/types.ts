@@ -13,6 +13,7 @@ export interface GoogleApiConfig {
   GOOGLE_TOKEN_REFRESH_BUFFER_MS: number
   GOOGLE_API_TIMEOUT_MS: number
   GOOGLE_API_RETRY_MAX: number
+  GOOGLE_SHEETS_PROTECTED_IDS: string // comma-separated spreadsheet IDs protegidos contra escritura
 }
 
 // ═══════════════════════════════════════════
@@ -107,6 +108,15 @@ export interface SheetProperties {
   spreadsheetId: string
   title: string
   sheets: Array<{ sheetId: number; title: string; rowCount: number; columnCount: number }>
+}
+
+export interface SheetBatchOperation {
+  type: 'write' | 'append' | 'clear' | 'find_replace'
+  range?: string        // requerido para write, append, clear
+  values?: string[][]   // requerido para write, append
+  find?: string         // requerido para find_replace
+  replacement?: string  // requerido para find_replace
+  matchCase?: boolean   // opcional para find_replace
 }
 
 // ═══════════════════════════════════════════

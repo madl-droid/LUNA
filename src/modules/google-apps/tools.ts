@@ -8,7 +8,7 @@ import type { SheetsService } from './sheets-service.js'
 import type { DocsService } from './docs-service.js'
 import type { SlidesService } from './slides-service.js'
 import type { CalendarService } from './calendar-service.js'
-import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig } from './types.js'
+import type { GoogleServiceName, CalendarEventUpdateOptions, CalendarSchedulingConfig, SheetBatchOperation, GoogleApiConfig } from './types.js'
 import { CALENDAR_CONFIG_DEFAULTS } from './calendar-config.js'
 import {
   formatEventsListForAgent,
@@ -383,25 +383,86 @@ export async function registerGoogleTools(
   if (enabledServices.has('sheets') && services.sheets) {
     const sheets = services.sheets
 
+    /** Guard: retorna true si el spreadsheetId está en la lista de IDs protegidos */
+    function isProtectedSheet(spreadsheetId: string): boolean {
+      const config = registry.getConfig<GoogleApiConfig>('google-apps')
+      const ids = config.GOOGLE_SHEETS_PROTECTED_IDS.split(',').map((s) => s.trim()).filter(Boolean)
+      return ids.includes(spreadsheetId)
+    }
+
     await toolRegistry.registerTool({
       definition: {
         name: 'sheets-read',
         displayName: 'Leer Google Sheet',
-        description: 'Lee datos de un rango en una hoja de cálculo de Google Sheets.',
+        description: 'Lee datos de un rango en una hoja de cálculo de Google Sheets. Soporta paginación con offset/limit y auto-detecta el primer tab si no se especifica rango.',
         category: 'sheets',
         sourceModule: 'google-apps',
         parameters: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'ID de la hoja de cálculo' },
-            range: { type: 'string', description: 'Rango a leer (ej: Sheet1!A1:D10)' },
+            range: { type: 'string', description: 'Rango a leer (ej: Sheet1!A1:D10). Si se omite, se lee el primer tab completo.' },
+            offset: { type: 'number', description: 'Fila de inicio para paginación (0-based, default 0). Excluye la fila de header.' },
+            limit: { type: 'number', description: 'Máximo de filas de datos a retornar (default 100, max 500).' },
           },
-          required: ['spreadsheetId', 'range'],
+          required: ['spreadsheetId'],
         },
       },
       handler: async (input) => {
-        const data = await sheets.readRange(input.spreadsheetId as string, input.range as string)
-        return { success: true, data }
+        const spreadsheetId = input.spreadsheetId as string
+        const offset = Math.max((input.offset as number | undefined) ?? 0, 0)
+        const limit = Math.min(Math.max((input.limit as number | undefined) ?? 100, 1), 500)
+
+        // Auto-detect primer tab si no se proporciona range
+        let range = input.range as string | undefined
+        if (!range) {
+          const info = await sheets.getSpreadsheet(spreadsheetId)
+          const firstSheet = info.sheets[0]
+          const firstTitle = firstSheet?.title ?? 'Sheet1'
+          range = `'${firstTitle}'`
+        }
+
+        const data = await sheets.readRange(spreadsheetId, range)
+        const values = data.values
+
+        // Hoja vacía
+        if (values.length === 0) {
+          return { success: true, data: { range, message: 'Hoja vacía — sin datos', totalRows: 0 } }
+        }
+
+        const header = values[0]!
+        const dataRows = values.slice(1)
+        const totalDataRows = dataRows.length
+
+        // Paginar
+        const pageRows = dataRows.slice(offset, offset + limit)
+        const hasMore = (offset + limit) < totalDataRows
+        const nextOffset = hasMore ? offset + limit : null
+
+        // Formatear output tabular
+        const separator = header.map(() => '────').join('─┼─')
+        const headerLine = header.join(' | ')
+        const dataLines = pageRows.map((row) => row.join(' | ')).join('\n')
+        const rangeLabel = `Rango: ${data.range}`
+        const countLabel = `${totalDataRows} filas de datos × ${header.length} columnas`
+        const showingLabel = `Mostrando filas ${offset + 1}-${offset + pageRows.length} de ${totalDataRows}`
+        const moreHint = hasMore ? `\n\n(${totalDataRows - offset - pageRows.length} filas más — usa offset=${nextOffset} para ver las siguientes)` : ''
+
+        const formatted = `${rangeLabel}\n${countLabel}\n${showingLabel}\n\n${headerLine}\n${separator}\n${dataLines}${moreHint}`
+
+        return {
+          success: true,
+          data: {
+            formatted,
+            totalRows: totalDataRows,
+            columns: header.length,
+            header,
+            offset,
+            limit,
+            hasMore,
+            nextOffset,
+          },
+        }
       },
     })
 
@@ -423,6 +484,9 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
+        if (isProtectedSheet(input.spreadsheetId as string)) {
+          return { success: false, error: 'Este spreadsheet está protegido contra escritura por el administrador.' }
+        }
         const result = await sheets.writeRange(
           input.spreadsheetId as string,
           input.range as string,
@@ -436,7 +500,7 @@ export async function registerGoogleTools(
       definition: {
         name: 'sheets-append',
         displayName: 'Agregar filas a Google Sheet',
-        description: 'Agrega filas al final de una hoja de cálculo.',
+        description: 'Agrega filas al final de una hoja de cálculo. Restaura automáticamente validaciones de datos (dropdowns) en las filas añadidas.',
         category: 'sheets',
         sourceModule: 'google-apps',
         parameters: {
@@ -450,11 +514,52 @@ export async function registerGoogleTools(
         },
       },
       handler: async (input) => {
-        const result = await sheets.appendRows(
-          input.spreadsheetId as string,
-          input.range as string,
-          input.values as string[][],
-        )
+        const spreadsheetId = input.spreadsheetId as string
+        const range = input.range as string
+        const values = input.values as string[][]
+
+        if (isProtectedSheet(spreadsheetId)) {
+          return { success: false, error: 'Este spreadsheet está protegido contra escritura por el administrador.' }
+        }
+
+        // Parsear sheetTitle del range (ej: "Sheet1" de "Sheet1!A:D" o "'Mi hoja'!A:D")
+        const sheetTitleMatch = /^'?([^'!]+)'?!/.exec(range)
+        const sheetTitle = sheetTitleMatch?.[1] ?? range.split('!')[0] ?? 'Sheet1'
+
+        // Obtener info del spreadsheet para sheetId y última fila con datos
+        let sheetId: number | undefined
+        let lastDataRow = 0
+        try {
+          const info = await sheets.getSpreadsheet(spreadsheetId)
+          const sheetMeta = info.sheets.find((s) => s.title === sheetTitle)
+          sheetId = sheetMeta?.sheetId
+          // Leer rango para saber cuántas filas hay actualmente (para saber dónde aplicar validaciones)
+          const existing = await sheets.readRange(spreadsheetId, range)
+          lastDataRow = existing.values.length > 0 ? existing.values.length - 1 : 0 // -1 excluye header
+        } catch {
+          // Si falla la lectura previa, continuar sin restaurar validaciones
+        }
+
+        // Obtener validaciones de la última fila con datos (best-effort)
+        let validations: Array<Record<string, unknown> | null> = []
+        if (sheetId !== undefined && lastDataRow > 0) {
+          try {
+            validations = await sheets.getRowValidations(spreadsheetId, sheetTitle, lastDataRow)
+          } catch {
+            // best-effort
+          }
+        }
+
+        // Ejecutar el append
+        const result = await sheets.appendRows(spreadsheetId, range, values)
+
+        // Restaurar validaciones post-append (best-effort, fire-and-forget)
+        if (sheetId !== undefined && validations.some((v) => v !== null)) {
+          sheets.applyValidations(spreadsheetId, sheetId, validations, lastDataRow + 1, values.length).catch((err) => {
+            logger.warn({ err }, 'sheets-append: failed to restore validations (non-blocking)')
+          })
+        }
+
         return { success: true, data: result }
       },
     })
@@ -498,6 +603,74 @@ export async function registerGoogleTools(
       handler: async (input) => {
         const info = await sheets.getSpreadsheet(input.spreadsheetId as string)
         return { success: true, data: info }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'sheets-find-replace',
+        displayName: 'Buscar y reemplazar en Google Sheet',
+        description: 'Busca un texto en toda la hoja de cálculo y lo reemplaza. Útil para actualizar valores en masa o aplicar plantillas con {claves}.',
+        category: 'sheets',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            spreadsheetId: { type: 'string', description: 'ID de la hoja de cálculo' },
+            find: { type: 'string', description: 'Texto a buscar (ej: {nombre})' },
+            replacement: { type: 'string', description: 'Texto de reemplazo' },
+            matchCase: { type: 'boolean', description: 'Coincidencia exacta de mayúsculas/minúsculas (default: false)' },
+            matchEntireCell: { type: 'boolean', description: 'Solo reemplazar si la celda contiene exactamente el texto buscado (default: false)' },
+          },
+          required: ['spreadsheetId', 'find', 'replacement'],
+        },
+      },
+      handler: async (input) => {
+        if (isProtectedSheet(input.spreadsheetId as string)) {
+          return { success: false, error: 'Este spreadsheet está protegido contra escritura.' }
+        }
+        const result = await sheets.findReplace(
+          input.spreadsheetId as string,
+          input.find as string,
+          input.replacement as string,
+          {
+            matchCase: input.matchCase as boolean | undefined,
+            matchEntireCell: input.matchEntireCell as boolean | undefined,
+          },
+        )
+        return { success: true, data: result }
+      },
+    })
+
+    await toolRegistry.registerTool({
+      definition: {
+        name: 'sheets-batch-edit',
+        displayName: 'Edición batch en Google Sheet',
+        description: 'Ejecuta múltiples operaciones (escribir, agregar filas, limpiar rangos, buscar/reemplazar) en una hoja de cálculo en una sola llamada.',
+        category: 'sheets',
+        sourceModule: 'google-apps',
+        parameters: {
+          type: 'object',
+          properties: {
+            spreadsheetId: { type: 'string', description: 'ID de la hoja de cálculo' },
+            operations: {
+              type: 'array',
+              description: 'Array de operaciones. Cada objeto: { type: "write"|"append"|"clear"|"find_replace", range?: string, values?: string[][], find?: string, replacement?: string, matchCase?: boolean }',
+              items: { type: 'object', description: 'Operación a ejecutar' },
+            },
+          },
+          required: ['spreadsheetId', 'operations'],
+        },
+      },
+      handler: async (input) => {
+        if (isProtectedSheet(input.spreadsheetId as string)) {
+          return { success: false, error: 'Este spreadsheet está protegido contra escritura.' }
+        }
+        const result = await sheets.batchEdit(
+          input.spreadsheetId as string,
+          input.operations as SheetBatchOperation[],
+        )
+        return { success: true, data: result }
       },
     })
   }
