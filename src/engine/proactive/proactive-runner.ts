@@ -76,6 +76,15 @@ export async function startProactiveRunner(
         return
       }
 
+      // FIX-05: Idempotency lock — prevents double-execution from BullMQ re-queue
+      // racing with orphan recovery. SETNX with 5-min TTL (let it expire naturally).
+      const lockKey = `proactive:lock:${job.data.jobName}`
+      const acquired = await redis.set(lockKey, '1', 'EX', 300, 'NX')
+      if (!acquired) {
+        logger.warn({ jobName: job.data.jobName, jobId: job.id }, 'Proactive job already running — skipping duplicate execution')
+        return
+      }
+
       // Smart cooldown is applied per-contact inside each individual job handler
       // (follow-up.ts, commitment-check.ts, etc.) — not at the runner level.
       // All jobs here are batch-type: they scan and process multiple contacts per run.

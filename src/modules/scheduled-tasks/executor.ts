@@ -8,6 +8,7 @@ import type { PromptsService } from '../prompts/types.js'
 import type { LLMChatPayload } from '../../kernel/types.js'
 import type { ScheduledTask, ScheduledTasksConfig, TaskAction } from './types.js'
 import * as store from './store.js'
+import { atomicRateCheck } from '../../kernel/redis-rate-limiter.js'
 
 const logger = pino({ name: 'scheduled-tasks:executor' })
 
@@ -83,7 +84,7 @@ export async function executeTask(
     }
 
     // Execute configured actions (post-LLM)
-    const actionResults = await executeActions(registry, task, responseText, traceId)
+    const actionResults = await executeActions(db, registry, task, config, responseText, traceId)
 
     // Build full result
     const parts = [responseText]
@@ -111,8 +112,10 @@ export async function executeTask(
 
 /** Execute the task's configured actions after LLM response */
 async function executeActions(
+  db: Pool,
   registry: Registry,
   task: ScheduledTask,
+  config: ScheduledTasksConfig,
   llmResult: string,
   traceId: string,
 ): Promise<string[]> {
@@ -120,7 +123,7 @@ async function executeActions(
 
   for (const action of task.actions) {
     try {
-      const actionResult = await executeAction(registry, task, action, llmResult, traceId)
+      const actionResult = await executeAction(db, registry, task, config, action, llmResult, traceId)
       results.push(actionResult)
     } catch (err) {
       results.push(`[${action.type}] ERROR: ${String(err)}`)
@@ -132,8 +135,10 @@ async function executeActions(
 }
 
 async function executeAction(
+  db: Pool,
   registry: Registry,
   task: ScheduledTask,
+  config: ScheduledTasksConfig,
   action: TaskAction,
   llmResult: string,
   traceId: string,
@@ -167,9 +172,24 @@ async function executeAction(
       const recipients = await resolveRecipients(registry, task)
       if (recipients.length === 0) return '[message] No recipients resolved'
 
+      // FIX-01: Get Redis for rate limiting
+      const redis = registry.getRedis()
+      const maxPerHour = config.SCHEDULED_TASKS_MAX_MSG_PER_CONTACT_PER_HOUR
+
       const sentResults: string[] = []
       for (const r of recipients) {
         try {
+          // FIX-01: Enforce per-contact hourly rate limit before sending
+          if (maxPerHour > 0) {
+            const rlKey = `ratelimit:scheduled-task:${r.senderId}:hourly`
+            const allowed = await atomicRateCheck(redis, rlKey, maxPerHour, 3600)
+            if (!allowed) {
+              logger.warn({ senderId: r.senderId, channel, taskId: task.id, maxPerHour }, 'Scheduled task rate limit exceeded — skipping message')
+              sentResults.push(`rate-limited ${r.senderId}`)
+              continue
+            }
+          }
+
           await registry.runHook('message:send', {
             channel,
             to: r.senderId,
@@ -177,6 +197,10 @@ async function executeAction(
             correlationId: traceId,
           }, traceId)
           sentResults.push(`sent to ${r.senderId}`)
+
+          // FIX-02: Persist outbound message in memory so the agent knows what was sent
+          persistScheduledMessage(db, registry, r.senderId, channel, text, task.id, traceId)
+            .catch(err => logger.warn({ err, senderId: r.senderId, taskId: task.id }, 'Failed to persist scheduled task message'))
         } catch (err) {
           sentResults.push(`failed ${r.senderId}: ${String(err)}`)
         }
@@ -283,6 +307,72 @@ Nombre de la tarea: ${task.name}
 Tipo de activacion: ${task.trigger_type}${task.trigger_type === 'cron' ? ` (${task.cron})` : ''}${task.trigger_event ? `\nEvento: ${task.trigger_event}` : ''}${recipientInfo}
 
 Ejecuta la instruccion del usuario. Si necesitas herramientas, usalas. Responde de forma concisa con el resultado.`
+}
+
+/**
+ * FIX-02: Persist a scheduled task outbound message in the memory module.
+ * Fire-and-forget: looks up the contact's active session and saves the message.
+ * Skips silently if the contact has no active session or if memory module is not loaded.
+ */
+async function persistScheduledMessage(
+  db: Pool,
+  registry: Registry,
+  senderId: string,
+  channel: string,
+  text: string,
+  taskId: string,
+  traceId: string,
+): Promise<void> {
+  const memory = registry.getOptional<{
+    saveMessage(msg: {
+      id: string
+      sessionId: string
+      channelName: string
+      senderType: string
+      senderId: string
+      content: { type: string; text?: string }
+      role: 'assistant'
+      contentText: string
+      contentType: string
+      createdAt: Date
+      metadata?: Record<string, unknown>
+    }): Promise<void>
+  }>('memory:manager')
+  if (!memory) return
+
+  // Look up the contact's most recent active session via channel identifier
+  const result = await db.query<{ id: string }>(
+    `SELECT s.id
+     FROM sessions s
+     JOIN contact_channels cc ON cc.contact_id = s.contact_id
+     WHERE cc.channel_type = $1 AND cc.channel_identifier = $2
+       AND s.status = 'active'
+     ORDER BY s.last_activity_at DESC NULLS LAST
+     LIMIT 1`,
+    [channel, senderId],
+  )
+
+  const session = result.rows[0]
+  if (!session) {
+    logger.debug({ senderId, channel, taskId }, 'No active session for scheduled task recipient — skipping persistence')
+    return
+  }
+
+  await memory.saveMessage({
+    id: randomUUID(),
+    sessionId: session.id,
+    channelName: channel,
+    senderType: 'agent',
+    senderId: `task:${taskId}`,
+    content: { type: 'text', text },
+    role: 'assistant',
+    contentText: text,
+    contentType: 'text',
+    createdAt: new Date(),
+    metadata: { source: 'scheduled-task', taskId, traceId },
+  })
+
+  logger.debug({ senderId, channel, taskId }, 'Scheduled task message persisted to memory')
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
