@@ -74,7 +74,6 @@ proactive/
   guards.ts             — 7 guardas de protección (business hours, cooldown, Redis contact lock, etc.)
   triggers.ts           — definiciones de triggers proactivos
   commitment-validator.ts — valida y clasifica requests de creación de compromisos
-  commitment-validator.ts — valida y clasifica requests de creación de compromisos
   jobs/
     follow-up.ts       — scanner de leads inactivos
     reminder.ts        — scanner de eventos próximos
