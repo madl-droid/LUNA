@@ -55,6 +55,12 @@ export const ML = {
   APPOINTMENTS: 'appointments',
   PENDING_RESCHEDULE_ID: 'pending_reschedule_id',
   LAST_APPOINTMENT_ID: 'last_appointment_id',
+  /** 'self' | medilinkPatientId (number) — who the current scheduling flow targets */
+  SCHEDULING_TARGET: 'scheduling_target',
+  /** Display name of the scheduling target (for messages) */
+  SCHEDULING_TARGET_NAME: 'scheduling_target_name',
+  /** Array of medilinkPatientIds pending scheduling (multi-dependent queue) */
+  SCHEDULING_QUEUE: 'scheduling_queue',
 } as const
 
 export interface AppointmentSnapshot {
