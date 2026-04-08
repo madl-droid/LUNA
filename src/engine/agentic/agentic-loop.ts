@@ -9,6 +9,7 @@ import type {
   EngineConfig,
   LLMToolDef,
 } from '../types.js'
+import { pickErrorFallback } from '../fallbacks/error-defaults.js'
 import type { AgenticConfig, AgenticResult, ToolCallLog } from './types.js'
 import {
   executeRunSubagentTool,
@@ -23,6 +24,26 @@ import { ToolResultCache } from './tool-result-cache.js'
 import { captureDriveToolResult } from '../attachments/drive-capture.js'
 
 const logger = pino({ name: 'engine:agentic' })
+
+// FIX-F13: Patterns that indicate internal reasoning leaked as partial text.
+// If partialText matches any of these, it must not be sent to the user.
+const REASONING_PATTERNS = [
+  'voy a ',
+  'let me ',
+  "i'll ",
+  'using tool',
+  'herramienta',
+  'tool call',
+  'i need to ',
+  'vou usar',
+  'llamaré a',
+  'utilizaré',
+]
+
+function isInternalReasoning(text: string): boolean {
+  const lower = text.toLowerCase()
+  return REASONING_PATTERNS.some(p => lower.includes(p))
+}
 
 // ── Tool executor interface (only the methods we need) ──
 // Avoids importing the full ToolRegistry class from modules/.
@@ -125,7 +146,13 @@ export async function runAgenticLoop(
 
       // No tool calls: LLM is done. Return text.
       if (!llmResult.toolCalls || llmResult.toolCalls.length === 0) {
-        const responseText = llmResult.text || partialText
+        let responseText = llmResult.text || partialText
+
+        // FIX-E3: Guard against empty response — never send blank message to user
+        if (!responseText || responseText.trim().length === 0) {
+          logger.warn({ traceId: ctx.traceId, turns }, 'LLM returned empty response — using error fallback')
+          responseText = pickErrorFallback('')
+        }
 
         logger.info({
           traceId: ctx.traceId,
@@ -188,8 +215,12 @@ export async function runAgenticLoop(
     }
   } catch (err) {
     logger.error({ traceId: ctx.traceId, turns, err }, 'Agentic loop unexpected error')
-    // If we have partial text from a previous turn, return it
-    if (partialText) {
+    // FIX-F13: Only return partialText if it doesn't look like internal reasoning
+    if (partialText && partialText.trim().length > 0) {
+      if (isInternalReasoning(partialText)) {
+        logger.warn({ traceId: ctx.traceId, partialText: partialText.slice(0, 200) }, 'Discarding partial reasoning text — using fallback')
+        return buildResult(pickErrorFallback(''), toolCallsLog, turns, totalTokens, config.effort)
+      }
       return buildResult(partialText, toolCallsLog, turns, totalTokens, config.effort, partialText)
     }
     throw err
@@ -215,7 +246,13 @@ export async function runAgenticLoop(
     })
 
     totalTokens += finalResult.inputTokens + finalResult.outputTokens
-    const responseText = finalResult.text || partialText
+    let responseText = finalResult.text || partialText
+
+    // FIX-E3: Guard against empty forced response
+    if (!responseText || responseText.trim().length === 0) {
+      logger.warn({ traceId: ctx.traceId, turns, reason }, 'Forced text response is empty — using error fallback')
+      responseText = pickErrorFallback('')
+    }
 
     logger.info({
       traceId: ctx.traceId,
@@ -228,7 +265,12 @@ export async function runAgenticLoop(
     return buildResult(responseText, toolCallsLog, turns, totalTokens, config.effort, partialText || undefined)
   } catch (err) {
     logger.error({ traceId: ctx.traceId, turns, reason, err }, 'Final forced text response failed')
-    if (partialText) {
+    // FIX-F13: Filter reasoning from partialText before returning as fallback
+    if (partialText && partialText.trim().length > 0) {
+      if (isInternalReasoning(partialText)) {
+        logger.warn({ traceId: ctx.traceId, partialText: partialText.slice(0, 200) }, 'Discarding partial reasoning text in forced path — using fallback')
+        return buildResult(pickErrorFallback(''), toolCallsLog, turns, totalTokens, config.effort)
+      }
       return buildResult(partialText, toolCallsLog, turns, totalTokens, config.effort, partialText)
     }
     throw err

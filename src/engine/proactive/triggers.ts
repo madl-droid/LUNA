@@ -32,8 +32,17 @@ async function runOrphanRecovery(ctx: ProactiveJobContext): Promise<void> {
 
   logger.info({ count: orphans.length, lookbackMinutes }, 'Orphan recovery: found orphan messages')
 
+  // FIX-E10: Skip orphans whose contact has an active pipeline in-flight.
+  // A pipeline that hasn't written its log yet would be falsely flagged as orphaned.
+  const contactLockSvc = ctx.registry.getOptional<{ hasLock(channelContactId: string): boolean }>('engine:contact-lock')
+
   const redispatched: typeof orphans = []
   for (const orphan of orphans) {
+    // Check if pipeline is currently running for this contact
+    if (contactLockSvc?.hasLock(orphan.channelContactId)) {
+      logger.info({ contactId: orphan.contactId, channelContactId: orphan.channelContactId }, 'Orphan recovery: skipping — contact has active pipeline (false orphan)')
+      continue
+    }
     const ok = await redispatchOrphan(orphan, ctx.registry)
     if (ok) redispatched.push(orphan)
   }
