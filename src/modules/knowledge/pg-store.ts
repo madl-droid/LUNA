@@ -449,6 +449,14 @@ export class KnowledgePgStore {
     )
   }
 
+  async getDocumentCategoryIds(documentId: string): Promise<string[]> {
+    const res = await this.db.query<{ category_id: string }>(
+      `SELECT category_id FROM knowledge_document_categories WHERE document_id = $1`,
+      [documentId],
+    )
+    return res.rows.map(r => r.category_id)
+  }
+
   // ─── Categories CRUD ─────────────────────
 
   async listCategories(): Promise<KnowledgeCategory[]> {

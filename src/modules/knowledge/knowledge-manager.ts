@@ -473,6 +473,14 @@ export class KnowledgeManager {
   }
 
   /**
+   * Get category IDs assigned to a document (for access control checks).
+   * Returns empty array if document has no categories (uncategorized).
+   */
+  async getDocumentCategoryIds(documentId: string): Promise<string[]> {
+    return this.pgStore.getDocumentCategoryIds(documentId)
+  }
+
+  /**
    * Invalidate expand_knowledge cache for a document.
    * Called when document is re-trained.
    */

@@ -430,16 +430,24 @@ export class BaileysAdapter {
     return this._doSendMessage(to, message)
   }
 
+  /** Delay between messages during bulk flush to avoid WhatsApp rate limits. */
+  private static readonly QUEUE_FLUSH_DELAY_MS = 200
+
   /**
    * Flush outgoing queue after successful reconnect.
    * Discards messages older than QUEUE_TTL_MS.
+   * Applies 200ms delay between sends to avoid triggering WhatsApp rate limits.
    */
   private async flushOutgoingQueue(): Promise<void> {
     if (this._outgoingQueue.length === 0) return
     const items = this._outgoingQueue.splice(0)
-    logger.info({ count: items.length }, 'Flushing outgoing queue after reconnect')
+    logger.info(
+      { count: items.length, estimatedMs: items.length * BaileysAdapter.QUEUE_FLUSH_DELAY_MS },
+      'Flushing outgoing queue after reconnect',
+    )
     const now = Date.now()
-    for (const item of items) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!
       if (now - item.enqueuedAt > BaileysAdapter.QUEUE_TTL_MS) {
         logger.warn({ to: item.to, ageMs: now - item.enqueuedAt }, 'Dropping expired queued message (TTL 5min exceeded)')
         item.resolve({ success: false, error: 'Message expired in outgoing queue (TTL: 5min)' })
@@ -447,6 +455,10 @@ export class BaileysAdapter {
       }
       const result = await this._doSendMessage(item.to, item.message)
       item.resolve(result)
+      // Rate limit: don't spam WhatsApp servers during bulk flush
+      if (i < items.length - 1) {
+        await new Promise(r => setTimeout(r, BaileysAdapter.QUEUE_FLUSH_DELAY_MS))
+      }
     }
   }
 

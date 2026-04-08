@@ -1424,9 +1424,31 @@ const manifest: ModuleManifest = {
             required: ['documentId'],
           },
         },
-        handler: async (input) => {
+        handler: async (input, context) => {
           try {
             const documentId = input.documentId as string
+
+            // FIX-01: Category access control — same pattern as search_knowledge
+            const cfg = resolveKnowledgeConfig(_registry!)
+            if (cfg.KNOWLEDGE_CONTACT_CATEGORY_MAP && context.contactType) {
+              try {
+                const mapping = JSON.parse(cfg.KNOWLEDGE_CONTACT_CATEGORY_MAP) as Record<string, string[]>
+                const allowedCategoryIds = mapping[context.contactType]
+                if (Array.isArray(allowedCategoryIds) && allowedCategoryIds.length > 0) {
+                  const docCategoryIds = await knowledgeManager!.getDocumentCategoryIds(documentId)
+                  if (docCategoryIds.length > 0) {
+                    const hasAccess = docCategoryIds.some(id => allowedCategoryIds.includes(id))
+                    if (!hasAccess) {
+                      return { success: false, error: 'Document not accessible' }
+                    }
+                  }
+                  // Uncategorized document (docCategoryIds.length === 0) → fail-open, allow
+                }
+              } catch {
+                // JSON inválido — fail-open, no filtrar
+              }
+            }
+
             return await knowledgeManager!.expandKnowledge(documentId)
           } catch (err) {
             return { success: false, error: String(err) }
