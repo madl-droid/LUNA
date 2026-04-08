@@ -114,9 +114,9 @@ export async function getUsageSummary(
       COALESCE(SUM(CASE WHEN NOT success THEN 1 ELSE 0 END), 0) as errors,
       COALESCE(SUM(cost_usd), 0) as cost_usd
     FROM llm_usage
-    WHERE timestamp >= now() - interval '${interval}'
+    WHERE timestamp >= now() - $1::interval
     GROUP BY provider, task
-  `)
+  `, [interval])
 
   const summary: UsageSummary = {
     period,
