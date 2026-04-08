@@ -16,6 +16,7 @@ import { loadProactiveConfig } from './proactive/proactive-config.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
 import { registerUpdateCommitmentTool } from './proactive/tools/update-commitment.js'
 import { registerQueryPendingItemsTool } from './proactive/tools/query-pending-items.js'
+import { registerSetIntensityTool } from './proactive/tools/set-intensity.js'
 import { pickErrorFallback } from './fallbacks/error-defaults.js'
 import { PipelineSemaphore, ContactLock } from './concurrency/index.js'
 // --- Agentic imports (v2.0) ---
@@ -108,6 +109,9 @@ export function initEngine(reg: Registry): void {
   )
   registerQueryPendingItemsTool(registry).catch(err =>
     logger.warn({ err }, 'Failed to register query_pending_items tool'),
+  )
+  registerSetIntensityTool(registry).catch(err =>
+    logger.warn({ err }, 'Failed to register set_follow_up_intensity tool'),
   )
 
   const db = registry.getDb()

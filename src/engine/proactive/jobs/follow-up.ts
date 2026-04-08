@@ -3,12 +3,15 @@
 // Enqueues each as a ProactiveCandidate to the proactive pipeline.
 // Supports cross-channel follow-up: when primary channel exhausts attempts,
 // tries secondary channels before transitioning to cold.
+// Per-contact intensity: reads follow_up_intensity from agent_contacts and
+// applies individual inactivity_hours / max_attempts instead of global defaults.
 
 import pino from 'pino'
 import type { Pool } from 'pg'
 import type { ProactiveJobContext, ProactiveCandidate } from '../../types.js'
 import type { ChannelName } from '../../../channels/types.js'
 import { processProactive } from '../proactive-pipeline.js'
+import { resolveIntensity } from '../intensity.js'
 
 const logger = pino({ name: 'engine:job:follow-up' })
 
@@ -18,38 +21,55 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
 
   logger.info({ traceId: ctx.traceId }, 'Follow-up scanner starting')
 
-  const inactivityHours = config.follow_up.inactivity_hours
-  const maxAttempts = config.follow_up.max_attempts
   try {
-    // Find leads needing follow-up:
-    // - Last interaction > X hours ago (but < 7 days to avoid ancient)
-    // - Status is new or qualifying
-    // - Follow-up count < max
+    // Fetch all leads in active statuses updated within the last 7 days.
+    // Filtering by inactivity_hours and max_attempts is done per-row in code
+    // because each contact may have a different intensity level.
     const result = await ctx.db.query(
-      `SELECT ac.contact_id, ac.follow_up_count,
+      `SELECT ac.contact_id, ac.follow_up_count, ac.follow_up_intensity, ac.updated_at,
               c.display_name,
               cc.channel_identifier, cc.channel_type
        FROM agent_contacts ac
        JOIN contacts c ON c.id = ac.contact_id
        JOIN contact_channels cc ON cc.contact_id = ac.contact_id AND cc.is_primary = true
        WHERE ac.lead_status IN ('new', 'qualifying')
-         AND ac.follow_up_count < $1
-         AND ac.updated_at < now() - interval '1 hour' * $2
          AND ac.updated_at > now() - interval '7 days'
        ORDER BY ac.updated_at ASC
-       LIMIT 20`,
-      [maxAttempts, inactivityHours],
+       LIMIT 40`,
     )
 
+    // Filter candidates by their individual intensity config
+    const now = Date.now()
+    const candidates = result.rows.filter((row: Record<string, unknown>) => {
+      const intensity = resolveIntensity(
+        row['follow_up_intensity'] as string | null,
+        config.follow_up.inactivity_hours,
+        config.follow_up.max_attempts,
+      )
+
+      const lastActivity = new Date(row['updated_at'] as string)
+      const hoursSinceActivity = (now - lastActivity.getTime()) / (1000 * 60 * 60)
+      if (hoursSinceActivity < intensity.inactivityHours) return false
+      if ((row['follow_up_count'] as number ?? 0) >= intensity.maxAttempts) return false
+      return true
+    })
+
     let processed = 0
-    for (const row of result.rows) {
+    for (const row of candidates) {
+      const intensity = resolveIntensity(
+        row['follow_up_intensity'] as string | null,
+        config.follow_up.inactivity_hours,
+        config.follow_up.max_attempts,
+      )
+      const followUpCount = (row['follow_up_count'] as number ?? 0)
+
       const candidate: ProactiveCandidate = {
-        contactId: row.contact_id,
-        channelContactId: row.channel_identifier,
-        channel: row.channel_type as ChannelName,
-        displayName: row.display_name,
+        contactId: row['contact_id'] as string,
+        channelContactId: row['channel_identifier'] as string,
+        channel: row['channel_type'] as ChannelName,
+        displayName: row['display_name'] as string | null,
         triggerType: 'follow_up',
-        reason: `Lead inactive for >${inactivityHours}h. Follow-up ${(row.follow_up_count ?? 0) + 1}/${maxAttempts}.`,
+        reason: `Lead inactive for >${intensity.inactivityHours}h. Follow-up ${followUpCount + 1}/${intensity.maxAttempts}.`,
       }
 
       try {
@@ -63,30 +83,34 @@ export async function runFollowUp(ctx: ProactiveJobContext): Promise<void> {
             `UPDATE agent_contacts
              SET follow_up_count = follow_up_count + 1, last_follow_up_at = now()
              WHERE contact_id = $1`,
-            [row.contact_id],
+            [row['contact_id']],
           )
           processed++
 
-          // Check if max attempts reached on primary channel
-          const newCount = (row.follow_up_count ?? 0) + 1
-          if (newCount >= maxAttempts) {
+          // Check if max attempts reached on primary channel (per-contact intensity)
+          const newCount = followUpCount + 1
+          if (newCount >= intensity.maxAttempts) {
             if (config.follow_up.cross_channel) {
-              // Try secondary channels before giving up
-              const crossResult = await tryCrossChannelFollowUp(ctx, row.contact_id, row.display_name, row.channel_type as ChannelName)
+              const crossResult = await tryCrossChannelFollowUp(
+                ctx,
+                row['contact_id'] as string,
+                row['display_name'] as string | null,
+                row['channel_type'] as ChannelName,
+              )
               if (!crossResult) {
-                await transitionToCold(ctx, row.contact_id)
+                await transitionToCold(ctx, row['contact_id'] as string)
               }
             } else {
-              await transitionToCold(ctx, row.contact_id)
+              await transitionToCold(ctx, row['contact_id'] as string)
             }
           }
         }
       } catch (err) {
-        logger.error({ err, contactId: row.contact_id, traceId: ctx.traceId }, 'Follow-up pipeline failed for candidate')
+        logger.error({ err, contactId: row['contact_id'], traceId: ctx.traceId }, 'Follow-up pipeline failed for candidate')
       }
     }
 
-    logger.info({ traceId: ctx.traceId, checked: result.rows.length, processed }, 'Follow-up scanner complete')
+    logger.info({ traceId: ctx.traceId, checked: result.rows.length, filtered: candidates.length, processed }, 'Follow-up scanner complete')
   } catch (err) {
     logger.error({ traceId: ctx.traceId, err }, 'Follow-up scanner failed')
   }
@@ -131,10 +155,10 @@ async function tryCrossChannelFollowUp(
     [contactId, primaryChannel],
   )
 
-  const alreadyTriedChannels = new Set(outreachResult.rows.map((r: Record<string, unknown>) => r.channel as string))
+  const alreadyTriedChannels = new Set(outreachResult.rows.map((r: Record<string, unknown>) => r['channel'] as string))
   const availableSecondary = channelsResult.rows.map((r: Record<string, unknown>) => ({
-    channel: r.channel_type as ChannelName,
-    channelContactId: r.channel_identifier as string,
+    channel: r['channel_type'] as ChannelName,
+    channelContactId: r['channel_identifier'] as string,
   }))
 
   // Try channels in fallback order, skip primary and already-tried
