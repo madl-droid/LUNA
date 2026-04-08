@@ -14,6 +14,28 @@ const URGENCY_EMOJI: Record<string, string> = {
   critical: '(!!) ',
 }
 
+interface ContactMeta {
+  displayName: string | null
+  contactType: string | null
+}
+
+async function loadContactMeta(registry: Registry, contactId: string): Promise<ContactMeta> {
+  try {
+    const db = registry.getDb()
+    const { rows } = await db.query<{ display_name: string | null; contact_type: string | null }>(
+      `SELECT display_name, contact_type FROM contacts WHERE id = $1 LIMIT 1`,
+      [contactId],
+    )
+    const row = rows[0]
+    return {
+      displayName: row?.display_name ?? null,
+      contactType: row?.contact_type ?? null,
+    }
+  } catch {
+    return { displayName: null, contactType: null }
+  }
+}
+
 /**
  * Send the initial HITL notification to the human responder.
  */
@@ -24,8 +46,22 @@ export async function sendNotification(
 ): Promise<void> {
   const urgencyPrefix = URGENCY_EMOJI[ticket.urgency] ?? ''
   const roleLabel = ticket.targetRole === 'admin' ? 'Admin' : 'Coworker'
+  const ticketShort = ticket.id.slice(-6).toUpperCase()
+
+  // Load contact metadata for the notification
+  const meta = await loadContactMeta(registry, ticket.requesterContactId)
+  const contactName = meta.displayName ?? ticket.requesterSenderId
+  const contactPhone = meta.displayName ? ticket.requesterSenderId : null
+  const contactType = meta.contactType ?? ticket.requesterChannel
 
   let message = `${urgencyPrefix}*HITL — ${roleLabel} Request*\n`
+  // Contact line: "Contacto: Name (phone) [type]" or "Contacto: senderId [channel]"
+  if (contactPhone) {
+    message += `Contacto: ${contactName} (${contactPhone}) [${contactType}]\n`
+  } else {
+    message += `Contacto: ${contactName} [${contactType}]\n`
+  }
+  message += `Ticket: #${ticketShort}\n`
   message += `Type: ${ticket.requestType}\n`
   message += `Summary: ${ticket.requestSummary}\n`
 

@@ -151,6 +151,7 @@ export class UsageTracker {
 
   /**
    * Check if within budget.
+   * Primary: Redis (fast). Fallback: PG query on Redis failure. Fail-closed if both fail.
    */
   async checkBudget(): Promise<{ allowed: boolean; reason?: string }> {
     if (this.dailyBudgetUsd === 0 && this.monthlyBudgetUsd === 0) {
@@ -178,8 +179,51 @@ export class UsageTracker {
       }
 
       return { allowed: true }
-    } catch {
+    } catch (redisErr) {
+      logger.warn({ err: redisErr }, 'Redis unavailable for budget check — falling back to PG')
+      return this.checkBudgetFromPg()
+    }
+  }
+
+  /**
+   * Fallback budget check from PostgreSQL when Redis is unavailable.
+   * Fail-closed: if PG also fails, reject the call to avoid runaway spend.
+   */
+  private async checkBudgetFromPg(): Promise<{ allowed: boolean; reason?: string }> {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const monthStart = `${new Date().toISOString().slice(0, 7)}-01`
+
+      if (this.dailyBudgetUsd > 0) {
+        const res = await this.db.query<{ total: string }>(
+          `SELECT COALESCE(SUM(cost_usd), 0)::text AS total
+           FROM llm_usage WHERE timestamp >= $1::date`,
+          [today],
+        )
+        const cost = parseFloat(res.rows[0]!.total)
+        if (cost >= this.dailyBudgetUsd) {
+          logger.warn({ cost, budget: this.dailyBudgetUsd }, 'Daily budget exceeded (PG fallback)')
+          return { allowed: false, reason: `Daily budget exceeded ($${cost.toFixed(2)}/$${this.dailyBudgetUsd})` }
+        }
+      }
+
+      if (this.monthlyBudgetUsd > 0) {
+        const res = await this.db.query<{ total: string }>(
+          `SELECT COALESCE(SUM(cost_usd), 0)::text AS total
+           FROM llm_usage WHERE timestamp >= $1::date`,
+          [monthStart],
+        )
+        const cost = parseFloat(res.rows[0]!.total)
+        if (cost >= this.monthlyBudgetUsd) {
+          logger.warn({ cost, budget: this.monthlyBudgetUsd }, 'Monthly budget exceeded (PG fallback)')
+          return { allowed: false, reason: `Monthly budget exceeded ($${cost.toFixed(2)}/$${this.monthlyBudgetUsd})` }
+        }
+      }
+
       return { allowed: true }
+    } catch (pgErr) {
+      logger.error({ err: pgErr }, 'Both Redis and PG unavailable for budget check — failing closed')
+      return { allowed: false, reason: 'Budget check unavailable — failing closed for safety' }
     }
   }
 

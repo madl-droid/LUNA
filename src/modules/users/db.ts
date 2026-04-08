@@ -735,15 +735,15 @@ export class UsersDb {
     try {
       // Get engine contact IDs mapped to sender IDs
       const mappingResult = await this.pool.query(
-        `SELECT cc.channel_contact_id, cc.contact_id
+        `SELECT cc.channel_identifier, cc.contact_id
          FROM contact_channels cc
-         WHERE cc.channel_contact_id = ANY($1)`,
+         WHERE cc.channel_identifier = ANY($1)`,
         [senderIds],
       )
 
       const senderToContactId = new Map<string, string>()
       for (const row of mappingResult.rows) {
-        senderToContactId.set(row.channel_contact_id as string, row.contact_id as string)
+        senderToContactId.set(row.channel_identifier as string, row.contact_id as string)
       }
 
       const userToContactId = new Map<string, string>()

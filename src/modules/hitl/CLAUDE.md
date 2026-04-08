@@ -59,6 +59,12 @@ Sistema unificado de consulta humana y escalamiento. El agente solicita ayuda/au
 2. Repeticion (2+ tickets mismo contacto/sesion)
 3. Regla configurable con handoff=true
 
+## Notificación HITL — formato enriquecido
+`sendNotification()` en `notifier.ts` incluye:
+- `Contacto: {display_name} ({senderId}) [{contact_type}]` — cargado desde tabla `contacts` con `requesterContactId`
+- `Ticket: #{últimos-6-chars-UUID}` — ID corto para identificar el ticket en conversaciones
+- Si la DB lookup falla, usa `requesterSenderId` como fallback graceful
+
 ## Trampas
 - El interceptor consume el mensaje del humano (Redis key `hitl:consumed:{msgId}`). Engine lo checkea.
 - Handoff en Gmail pausa al agente (Redis key `hitl:handoff:{channel}:{senderId}`).
