@@ -616,6 +616,7 @@ async function findContact(
               ac.lead_status AS qualification_status,
               COALESCE(ac.qualification_score, 0) AS qualification_score,
               COALESCE(ac.qualification_data, '{}') AS qualification_data,
+              ac.follow_up_intensity,
               c.created_at,
               cc.channel_identifier, cc.channel_type, cc.id AS cc_id
       FROM contacts c
@@ -664,6 +665,7 @@ async function findContact(
       qualificationStatus: row.qualification_status,
       qualificationScore: row.qualification_score,
       qualificationData: row.qualification_data,
+      followUpIntensity: row.follow_up_intensity ?? null,
       createdAt: row.created_at,
     }
   } catch (err) {
@@ -720,6 +722,7 @@ async function autoCreateContact(
       qualificationStatus: null,
       qualificationScore: 0,
       qualificationData: {},
+      followUpIntensity: null,
       createdAt: now,
     }
   } catch (err) {

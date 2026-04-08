@@ -69,6 +69,7 @@ export interface ContactInfo {
   qualificationStatus: string | null
   qualificationScore: number | null
   qualificationData: Record<string, unknown> | null
+  followUpIntensity: string | null
   createdAt: Date
 }
 

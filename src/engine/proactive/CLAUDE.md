@@ -40,6 +40,15 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 - Guard #8 en guards.ts: skippable para commitment follow-ups (`skip_for_commitments=true`)
 - API: `shouldSuppressProactive()`, `clearSuppressCache()`
 
+## Follow-up Intensity (`intensity.ts`)
+- 4 niveles per-contact: `aggressive` (2h/5), `normal` (4h/3), `gentle` (12h/2), `minimal` (24h/1)
+- Stored in `agent_contacts.follow_up_intensity` (migration 048, default `'normal'`)
+- `resolveIntensity(intensity, globalH, globalMax)` — fallback a config global si valor desconocido
+- `follow-up.ts` elimina filtros SQL globales y filtra en código per-row usando la intensidad del contacto
+- Tool `set_follow_up_intensity` registrado en `engine.ts` — el agente puede ajustar durante conversación
+- Intensidad no-default se inyecta en el contexto del LLM via `context-builder.ts` (sección 9b)
+- Backward compat: con intensidad `normal`, el comportamiento es idéntico al global (4h, 3 intentos)
+
 ## Guards (orden de ejecución)
 1. `guardIdempotency` — Redis NX key por día
 2. `guardBusinessHours` — timezone-aware, email bypass

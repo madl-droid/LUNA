@@ -222,6 +222,11 @@ export async function buildContextLayers(
     }
   }
 
+  // ── 9b. Follow-up intensity (only if non-default) ───────────────────────
+  if (ctx.contact?.followUpIntensity && ctx.contact.followUpIntensity !== 'normal') {
+    parts.push(`[Intensidad de seguimiento: ${ctx.contact.followUpIntensity}]`)
+  }
+
   // ── 10. Knowledge v2 injection ───────────────────────────────────────────
   if (ctx.knowledgeInjection) {
     const inj = ctx.knowledgeInjection
