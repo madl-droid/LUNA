@@ -21,7 +21,9 @@ const REQUIRED_DIRS = [
  * the directory), copy them from the repo template.
  */
 const REQUIRED_FILES: Array<{ target: string; source: string }> = [
-  { target: 'instance/proactive.json', source: 'instance/proactive.json' },
+  // proactive.json: not needed here — loadProactiveConfig() has hardcoded defaults
+  // and gracefully handles missing file. Add future entries that have a real
+  // source template (outside instance/) here.
 ]
 
 /**
