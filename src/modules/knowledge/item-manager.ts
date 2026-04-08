@@ -411,13 +411,16 @@ export class KnowledgeItemManager {
       tabNames = ['PDF']
     } else if (item.sourceType === 'youtube') {
       const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
+      // FIX-02: Usar OAuth access token para YouTube Data API
+      const accessToken = await this.getYouTubeAccessToken()
+      const ytOpts = accessToken ? { accessToken } : undefined
       const parsed = parseYouTubeUrl(item.sourceUrl)
       if (parsed.type === 'playlist' && parsed.id) {
-        const videos = await listPlaylistVideos(parsed.id, apiKey)
+        const videos = await listPlaylistVideos(parsed.id, apiKey, ytOpts)
         tabNames = videos.map(v => v.title)
-      } else if (parsed.type === 'channel' && parsed.id && apiKey) {
+      } else if (parsed.type === 'channel' && parsed.id && (accessToken || apiKey)) {
         try {
-          const channelMeta = await getChannelMeta(parsed.id, apiKey)
+          const channelMeta = await getChannelMeta(parsed.id, apiKey, ytOpts)
           tabNames = channelMeta.playlists.map(p => p.title)
           if (tabNames.length === 0) tabNames = ['Uploads']
         } catch {
@@ -1394,6 +1397,22 @@ export class KnowledgeItemManager {
   }
 
   /**
+   * FIX-02: Obtiene access token OAuth para YouTube Data API.
+   * Usa google:oauth-client (OAuth2Client de google-auth-library).
+   * Fallback a null si OAuth no está disponible o falla.
+   */
+  private async getYouTubeAccessToken(): Promise<string | null> {
+    try {
+      const oauthClient = this.registry.getOptional<{ getAccessToken(): Promise<{ token: string | null | undefined }> }>('google:oauth-client')
+      if (!oauthClient) return null
+      const result = await oauthClient.getAccessToken()
+      return result.token ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * YouTube: router unificado.
    * Detecta tipo (video / playlist / channel) y delega al sub-loader correspondiente.
    */
@@ -1423,11 +1442,18 @@ export class KnowledgeItemManager {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
     const mediaDir = KNOWLEDGE_MEDIA_DIR
 
+    // FIX-02: Usar OAuth access token para YouTube Data API (evita 403 con AI Studio key)
+    const accessToken = await this.getYouTubeAccessToken()
+    if (!accessToken && apiKey) {
+      logger.warn({ videoId }, '[YT-VIDEO] No OAuth token, falling back to API key (may fail with 403)')
+    }
+    const ytOpts = accessToken ? { accessToken } : undefined
+
     // 1. Metadata del video
     let meta: import('../../extractors/youtube-adapter.js').YouTubeVideoMeta | null = null
-    if (apiKey) {
+    if (accessToken || apiKey) {
       try {
-        meta = await getVideoMeta(videoId, apiKey)
+        meta = await getVideoMeta(videoId, apiKey, ytOpts)
       } catch (err) {
         logger.warn({ err, videoId }, '[YT-VIDEO] getVideoMeta failed, continuing')
       }
@@ -1602,10 +1628,14 @@ export class KnowledgeItemManager {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
     const mediaDir = KNOWLEDGE_MEDIA_DIR
 
+    // FIX-02: Usar OAuth access token para YouTube Data API
+    const accessToken = await this.getYouTubeAccessToken()
+    const ytOpts = accessToken ? { accessToken } : undefined
+
     const allTabs = item.tabs ?? []
     const ignoredNames = new Set(allTabs.filter(t => t.ignored).map(t => t.tabName))
 
-    const videos = await listPlaylistVideos(playlistId, apiKey)
+    const videos = await listPlaylistVideos(playlistId, apiKey, ytOpts)
     logger.info({ itemId: item.id, playlistId, videoCount: videos.length }, '[YT-PLAYLIST] Videos found')
 
     let totalChunks = 0
@@ -1731,9 +1761,13 @@ export class KnowledgeItemManager {
   private async loadYoutubeChannel(item: KnowledgeItem, handleOrId: string): Promise<number> {
     const apiKey = this.config.KNOWLEDGE_GOOGLE_AI_API_KEY
 
+    // FIX-02: Usar OAuth access token para YouTube Data API
+    const accessToken = await this.getYouTubeAccessToken()
+    const ytOpts = accessToken ? { accessToken } : undefined
+
     let channelMeta: import('../../extractors/youtube-adapter.js').YouTubeChannelMeta | null = null
     try {
-      channelMeta = await getChannelMeta(handleOrId, apiKey)
+      channelMeta = await getChannelMeta(handleOrId, apiKey, ytOpts)
     } catch (err) {
       logger.warn({ err, handleOrId }, '[YT-CHANNEL] getChannelMeta failed')
       return 0

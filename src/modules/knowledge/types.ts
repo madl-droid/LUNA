@@ -235,6 +235,7 @@ export interface KnowledgeSearchResult {
 export interface KnowledgeSearchOptions {
   limit?: number
   searchHint?: string         // título de categoría para boost
+  allowedCategoryIds?: string[]  // si está presente y no vacío, filtrar resultados por categoría (FIX-01)
 }
 
 // ═══════════════════════════════════════════
@@ -276,6 +277,8 @@ export interface KnowledgeConfig {
   KNOWLEDGE_MAX_CORE_DOCS: number
   KNOWLEDGE_EMBEDDING_MODEL: string
   KNOWLEDGE_EMBEDDING_DIMENSIONS: number
+  /** JSON: { "contact_type": ["categoryId1", "categoryId2"] } — mapeo para filtrado de knowledge por tipo de contacto */
+  KNOWLEDGE_CONTACT_CATEGORY_MAP: string
 }
 
 // ═══════════════════════════════════════════
