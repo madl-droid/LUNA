@@ -26,23 +26,31 @@ import { captureDriveToolResult } from '../attachments/drive-capture.js'
 const logger = pino({ name: 'engine:agentic' })
 
 // FIX-F13: Patterns that indicate internal reasoning leaked as partial text.
-// If partialText matches any of these, it must not be sent to the user.
-const REASONING_PATTERNS = [
+// Only applied to partialText in error/fallback paths — NOT to normal LLM responses.
+// Patterns are checked at start-of-text only to avoid false positives in Spanish sentences
+// (e.g. "Te voy a ayudar" must not trigger on "voy a").
+// Exact phrases (tool_call, using tool) are still matched anywhere — they never appear in valid user-facing text.
+const REASONING_START_PATTERNS = [
   'voy a ',
   'let me ',
   "i'll ",
-  'using tool',
-  'herramienta',
-  'tool call',
   'i need to ',
   'vou usar',
   'llamaré a',
   'utilizaré',
 ]
 
+const REASONING_EXACT_PATTERNS = [
+  'tool call',
+  'using tool',
+]
+
 function isInternalReasoning(text: string): boolean {
-  const lower = text.toLowerCase()
-  return REASONING_PATTERNS.some(p => lower.includes(p))
+  const lower = text.toLowerCase().trimStart()
+  return (
+    REASONING_START_PATTERNS.some(p => lower.startsWith(p)) ||
+    REASONING_EXACT_PATTERNS.some(p => lower.includes(p))
+  )
 }
 
 // ── Tool executor interface (only the methods we need) ──

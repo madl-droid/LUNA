@@ -317,7 +317,7 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
     }]
   }
 
-  const genModel = googleClient.getGenerativeModel(modelConfig as Parameters<typeof googleClient.getGenerativeModel>[0])
+  const genModel = googleClient.getGenerativeModel(modelConfig as unknown as Parameters<typeof googleClient.getGenerativeModel>[0])
 
   // Convert message format: combine into Gemini history + last user message
   const history = options.messages.slice(0, -1).map(m => ({
