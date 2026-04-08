@@ -328,7 +328,7 @@ export class UsersDb {
     const result = await this.pool.query(
       `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
        VALUES ($1, $2, $3, false)
-       ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = EXCLUDED.user_id
+       ON CONFLICT (channel, sender_id) DO NOTHING
        RETURNING *`,
       [userId, channel, normalized],
     )

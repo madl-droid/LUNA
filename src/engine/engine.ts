@@ -158,8 +158,8 @@ export async function processMessage(message: IncomingMessage): Promise<Pipeline
   if (channelMsgId) {
     const dedupKey = `dedup:msg:${channelMsgId}`
     try {
-      // SET NX PX — atomic: only sets if key doesn't exist, returns 'OK' or null
-      const set = await redis.set(dedupKey, '1', 'NX', 'PX', 300_000)
+      // SET PX NX — atomic: only sets if key doesn't exist, returns 'OK' or null
+      const set = await redis.set(dedupKey, '1', 'PX', 300_000, 'NX')
       if (set === null) {
         // Key already existed — duplicate message
         logger.warn({ channelMsgId, from: message.from, channel: message.channelName }, 'Duplicate message — skipping (Redis dedup)')
