@@ -41,9 +41,18 @@
 - Retries: 3 intentos con backoff exponencial (30s, 60s, 120s)
 - Safety net: nightly batch comprime sesiones >24h sin compression_status
 
+## Beta-hardening fixes aplicados (plan-03)
+- **PG write retry**: `saveMessage` en memory-manager.ts reintenta 3 veces (500ms/1s/2s) errores transitorios. No reintenta constraint violations.
+- **Compression safety**: `compressSession()` aborta si `archiveSession()` falla — jamás borra mensajes sin respaldo. `compression-worker.ts` verifica `session_archives` y `session_summaries_v2` antes de DELETE.
+- **Redis saveMessage try/catch**: redis-buffer.ts tiene try/catch — error de Redis no crashea el pipeline.
+- **SessionMeta persist PG**: `updateSessionMeta` sincroniza a PG fire-and-forget. `getSessionMeta` hace fallback a PG si Redis está vacío y re-popula Redis.
+- **updateContactMemory upsert**: usa `INSERT ON CONFLICT DO UPDATE` — nunca pierde datos si no existe el row.
+- **Contact merge fix**: `mergeQualificationData` lee de `agent_contacts` ANTES de que `mergeContactMemory` lo borre. El DELETE ahora ocurre después de ambos merges.
+- **BullMQ reconnect**: `enableReadyCheck: false` en connection config + listeners `error`/`stalled`.
+
 ## Trampas
-- **compressSession() ahora llama archiveSession() ANTES de borrar** — bug original corregido
-- **NO cambiar fire-and-forget de pipeline_logs/messages a await** — bloquearía pipeline
+- **compressSession() aborta si archiveSession() falla** — nunca borrar originales sin respaldo (fix plan-03)
+- **NO cambiar fire-and-forget de pipeline_logs a await** — bloquearía pipeline
 - Tablas fundacionales las crea el migrador del kernel (`src/migrations/*.sql`)
 - pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration
 - **Config helpers**: usa `numEnv`, `boolEnv` de `kernel/config-helpers.js`

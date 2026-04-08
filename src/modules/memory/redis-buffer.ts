@@ -23,16 +23,22 @@ export class RedisBuffer {
   // ═══════════════════════════════════════════
 
   async saveMessage(message: StoredMessage): Promise<void> {
-    const key = `session:${message.sessionId}:messages`
-    const ttlSeconds = this.config.MEMORY_SESSION_MAX_TTL_HOURS * 3600
+    // FIX-03: try/catch so a Redis error doesn't crash the pipeline.
+    // PG is the source of truth — the message will be persisted there regardless.
+    try {
+      const key = `session:${message.sessionId}:messages`
+      const ttlSeconds = this.config.MEMORY_SESSION_MAX_TTL_HOURS * 3600
 
-    await this.redis.rpush(key, JSON.stringify(message))
-    await this.redis.expire(key, ttlSeconds)
+      await this.redis.rpush(key, JSON.stringify(message))
+      await this.redis.expire(key, ttlSeconds)
 
-    const bufferSize = this.config.MEMORY_BUFFER_MESSAGE_COUNT
-    const len = await this.redis.llen(key)
-    if (len > bufferSize) {
-      await this.redis.ltrim(key, len - bufferSize, -1)
+      const bufferSize = this.config.MEMORY_BUFFER_MESSAGE_COUNT
+      const len = await this.redis.llen(key)
+      if (len > bufferSize) {
+        await this.redis.ltrim(key, len - bufferSize, -1)
+      }
+    } catch (err) {
+      logger.error({ err, sessionId: message.sessionId }, 'Redis saveMessage failed — message persisted to PG only')
     }
   }
 
