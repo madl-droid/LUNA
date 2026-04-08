@@ -132,6 +132,19 @@ export interface SlideInfo {
   locale?: string
 }
 
+export interface SlideEditOperation {
+  type: 'replace_text' | 'add_slide' | 'update_notes'
+  // Para replace_text:
+  searchText?: string
+  replaceText?: string
+  // Para add_slide:
+  layout?: string
+  insertionIndex?: number
+  // Para update_notes:
+  slideIndex?: number
+  text?: string
+}
+
 // ═══════════════════════════════════════════
 // Calendar types
 // ═══════════════════════════════════════════
