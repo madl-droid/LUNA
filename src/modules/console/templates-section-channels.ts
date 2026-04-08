@@ -201,8 +201,8 @@ export function renderGoogleAppsSection(data: SectionData): string {
       </div>`
     }
 
-    const settingsBtn = (svc as { hasSettings?: boolean }).hasSettings && isActive
-      ? `<a href="/console/herramientas/google-apps/${svc.id}" class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:8px;text-decoration:none" onclick="event.stopPropagation()">${isEs ? 'Configurar' : 'Configure'}</a>`
+    const settingsBtn = (svc as { hasSettings?: boolean }).hasSettings
+      ? `<a href="/console/herramientas/google-apps/${svc.id}" class="btn-secondary gws-settings-btn" data-service="${svc.id}" style="font-size:12px;padding:4px 10px;margin-left:8px;text-decoration:none${!isActive ? ';display:none' : ''}" onclick="event.stopPropagation()">${isEs ? 'Configurar' : 'Configure'}</a>`
       : ''
 
     return `<div class="gws-card ts-gws-card${!isActive ? ' ts-gws-card-inactive' : ''}" data-service="${svc.id}">
@@ -245,9 +245,18 @@ export function renderGoogleAppsSection(data: SectionData): string {
   };
 
   window.gwsServiceToggled = function(checkbox) {
-    var serviceId = checkbox.dataset.service;
     var card = checkbox.closest('.gws-card');
-    if (card) card.style.opacity = checkbox.checked ? '1' : '0.6';
+    if (!card) { gwsSaveServices(); return; }
+    var isChecked = checkbox.checked;
+    if (isChecked) {
+      card.classList.remove('ts-gws-card-inactive');
+      card.style.opacity = '1';
+    } else {
+      card.classList.add('ts-gws-card-inactive');
+      card.style.opacity = '0.6';
+    }
+    var settingsBtn = card.querySelector('.gws-settings-btn');
+    if (settingsBtn) settingsBtn.style.display = isChecked ? '' : 'none';
     gwsSaveServices();
   };
 
