@@ -334,7 +334,7 @@ async function runCriticizer(
   logger.debug({ traceId: ctx.traceId, feedbackLength: feedback.length }, 'Criticizer has feedback — rewriting')
 
   // Step 2: Rewrite using feedback
-  const improved = await rewriteWithFeedback(responseText, feedback, ctx, config)
+  const improved = await rewriteWithFeedback(responseText, feedback, ctx, config, registry)
   return improved
 }
 
@@ -420,8 +420,12 @@ async function rewriteWithFeedback(
   feedback: string,
   ctx: ContextBundle,
   config: EngineConfig,
+  registry: Registry,
 ): Promise<string> {
-  const system = `You are a response editor for a sales agent. You receive the agent's original response and feedback from a quality reviewer. Your job is to rewrite the response incorporating the feedback.
+  // Load from .md file, fallback to inline
+  const svc = registry.getOptional<{ getSystemPrompt(name: string): Promise<string> }>('prompts:service')
+  const loaded = svc ? await svc.getSystemPrompt('criticizer-rewrite').catch(() => null) : null
+  const system = loaded || `You are a response editor for a sales agent. You receive the agent's original response and feedback from a quality reviewer. Your job is to rewrite the response incorporating the feedback.
 
 Rules:
 - Return ONLY the improved response text
