@@ -54,6 +54,10 @@ Sistema unificado de consulta humana y escalamiento. El agente solicita ayuda/au
 3. Humano responde asincrono → interceptor consume → resolver entrega via LLM rephrase
 4. Si humano tarda → follow-up reminders → max follow-ups → escala a supervisor
 
+## Reasignación de compromisos
+
+Cuando un ticket se resuelve con `handoffMode = 'full_handoff'`, `resolver.ts` llama `reassignCommitmentsToHuman()` que hace UPDATE en `commitments`: pone `assigned_to = assignedSenderId` y agrega `assigned_channel` al metadata. El commitment scanner (`commitment-check.ts`) detecta `assigned_to` y notifica directamente al humano en vez del contacto original. Si el humano no responde tras max_attempts, escala via `hitl:manager.createTicket()`.
+
 ## Handoff triggers (NO automatico por request_type)
 1. Instruccion del humano ("voy a contactar al cliente")
 2. Repeticion (2+ tickets mismo contacto/sesion)

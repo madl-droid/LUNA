@@ -4,13 +4,15 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 
 ## Archivos
 - `proactive-runner.ts` — BullMQ orchestrator, job scheduling, smart cooldown integration
-- `proactive-pipeline.ts` — pipeline simplificado (Phase 1 minimal + Phases 2-5)
+- `proactive-pipeline.ts` — pipeline simplificado (Phase 1 minimal + Phases 2-5); historial 10 msgs para commitments, 5 para el resto
 - `proactive-config.ts` — loader de `instance/proactive.json` con defaults
 - `guards.ts` — 8 guardas en orden (idempotency → business_hours → contact_lock → dedup → cooldown → rate_limit → conversation → goodbye_suppressor)
 - `triggers.ts` — definiciones de todos los jobs (incluye orphan-recovery)
 - `smart-cooldown.ts` — cooldown adaptativo per-contact+trigger en Redis
 - `orphan-recovery.ts` — detección y re-dispatch de mensajes sin respuesta
 - `conversation-guard.ts` — detección de goodbye patterns, Redis cache 6h
+
+> **Nota:** El auto-detector de compromisos (Via B, `commitment-detector.ts`) fue eliminado. Los compromisos se crean exclusivamente via tool `create_commitment`.
 
 ## Nuevas features (v2 reset)
 
@@ -61,6 +63,14 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 - `proactive-runner.ts` adquiere lock Redis SETNX antes de ejecutar cada job: `proactive:lock:{jobName}`
 - TTL 300s (5 min) — expira solo, no se borra manualmente (protege contra crash mid-execution)
 - Si el lock ya existe → WARN + skip — previene doble ejecución por race entre BullMQ re-queue y orphan recovery
+
+## Context summary en compromisos
+
+Al crear un compromiso via `create_commitment`, el tool captura automáticamente un resumen de los últimos 6 mensajes de la sesión activa y lo guarda en `commitments.context_summary`. Cuando el commitment scanner dispara el compromiso, ese resumen se inyecta en el prompt del agentic loop proactivo para que el LLM tenga contexto completo sin re-cargar historial completo.
+
+## HITL handoff → reasignación de compromisos
+
+Cuando un ticket HITL se resuelve con `handoffMode = 'full_handoff'`, los compromisos pendientes del contacto se reasignan al humano (`assigned_to = assignedSenderId`). El commitment scanner luego notifica directamente al humano en vez del contacto original. Si el humano no responde tras max_attempts, se crea un ticket HITL de escalación.
 
 ## Trampas
 - `guardConversation` (#7) usa `conversation:farewell:{id}` set por `markFarewell()` en Phase 5
