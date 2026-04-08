@@ -1,6 +1,7 @@
 // scheduled-tasks/templates.ts — SSR HTML for console section
 
 import type { ScheduledTask, UserGroupInfo } from './types.js'
+import { CRON_PRESETS, cronToPresetValue } from './types.js'
 
 type Lang = 'es' | 'en'
 
@@ -233,10 +234,38 @@ function formatDate(iso: string | null, lang: Lang): string {
   return d.toLocaleString(lang === 'es' ? 'es-CL' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })
 }
 
+function renderCronPresetOptions(lang: Lang): string {
+  const groups: Record<string, typeof CRON_PRESETS> = {}
+  for (const preset of CRON_PRESETS) {
+    if (!groups[preset.group]) groups[preset.group] = []
+    groups[preset.group]!.push(preset)
+  }
+  const groupLabels: Record<string, { es: string; en: string }> = {
+    minutes: { es: 'Minutos', en: 'Minutes' },
+    hours: { es: 'Horas', en: 'Hours' },
+    days: { es: 'Dias', en: 'Days' },
+    weeks: { es: 'Semanas', en: 'Weeks' },
+    months: { es: 'Mes', en: 'Month' },
+  }
+  let html = ''
+  for (const [group, presets] of Object.entries(groups)) {
+    const label = groupLabels[group]?.[lang] ?? group
+    html += `<optgroup label="${label}">`
+    for (const p of presets) {
+      html += `<option value="${p.value}">${p.label[lang]}</option>`
+    }
+    html += `</optgroup>`
+  }
+  return html
+}
+
 function triggerBadge(task: ScheduledTask, lang: Lang): string {
   if (task.trigger_type === 'event') return `<span class="panel-badge st-badge-event">&#9889; ${esc(task.trigger_event ?? '')}</span>`
   if (task.trigger_type === 'manual') return `<span class="panel-badge st-badge-manual">${l('triggerManual', lang)}</span>`
-  return `<span class="panel-badge st-badge-cron"><code>${esc(task.cron)}</code></span>`
+  const presetValue = cronToPresetValue(task.cron)
+  const presetObj = CRON_PRESETS.find(p => p.value === presetValue)
+  const cronDisplay = presetObj ? presetObj.label[lang] : task.cron
+  return `<span class="panel-badge st-badge-cron"><code>${esc(cronDisplay)}</code></span>`
 }
 
 export function renderTasksSection(
@@ -344,8 +373,9 @@ export function renderTasksSection(
                 <option value="manual">${l('triggerManual', lang)}</option>
               </select>
               <div id="st-cron-row">
-                <input type="text" id="st-cron" placeholder="*/30 * * * *" class="st-input-sm">
-                <div class="st-help">${l('cronHelp', lang)}</div>
+                <select id="st-cron-preset" class="st-select">
+                  ${renderCronPresetOptions(lang)}
+                </select>
               </div>
               <div id="st-event-row" style="display:none">
                 <select id="st-trigger-event" class="st-select-no-mb">
@@ -420,6 +450,11 @@ function renderScript(
   const L = ${JSON.stringify(labels[lang])}
   const USER_GROUPS = ${JSON.stringify(userGroups.filter(g => g.isEnabled))}
   const TOOLS = ${JSON.stringify(availableTools)}
+  var CRON_TO_PRESET = ${JSON.stringify(Object.fromEntries(CRON_PRESETS.map(p => [p.cron, p.value])))}
+
+  function findPresetForCron(cron) {
+    return CRON_TO_PRESET[cron] || null
+  }
 
   let actionCounter = 0
 
@@ -536,7 +571,7 @@ function renderScript(
     document.getElementById('st-name').value = ''
     document.getElementById('st-prompt').value = ''
     document.getElementById('st-trigger-type').value = 'cron'
-    document.getElementById('st-cron').value = ''
+    document.getElementById('st-cron-preset').selectedIndex = 0
     document.getElementById('st-trigger-event').value = 'contact:new'
     document.getElementById('st-recipient-type').value = 'none'
     document.getElementById('st-enabled').checked = true
@@ -562,7 +597,19 @@ function renderScript(
     document.getElementById('st-name').value = task.name
     document.getElementById('st-prompt').value = task.prompt
     document.getElementById('st-trigger-type').value = task.trigger_type || 'cron'
-    document.getElementById('st-cron').value = task.cron
+    var cronPresetEl = document.getElementById('st-cron-preset')
+    if (cronPresetEl) {
+      var presetVal = findPresetForCron(task.cron)
+      var presetFound = false
+      for (var i = 0; i < cronPresetEl.options.length; i++) {
+        if (cronPresetEl.options[i].value === presetVal) {
+          cronPresetEl.selectedIndex = i
+          presetFound = true
+          break
+        }
+      }
+      if (!presetFound) cronPresetEl.selectedIndex = 0
+    }
     document.getElementById('st-trigger-event').value = task.trigger_event || 'contact:new'
     document.getElementById('st-enabled').checked = task.enabled
     stTriggerChanged()
@@ -598,7 +645,7 @@ function renderScript(
       name: document.getElementById('st-name').value.trim(),
       prompt: document.getElementById('st-prompt').value.trim(),
       trigger_type: triggerType,
-      cron: triggerType === 'cron' ? document.getElementById('st-cron').value.trim() : '',
+      cron_preset: triggerType === 'cron' ? (document.getElementById('st-cron-preset')?.value || null) : null,
       trigger_event: triggerType === 'event' ? document.getElementById('st-trigger-event').value : null,
       enabled: document.getElementById('st-enabled').checked,
       recipient: { type: recipientType },
@@ -616,8 +663,8 @@ function renderScript(
       alert(${JSON.stringify(lang === 'es' ? 'Nombre e instruccion son obligatorios' : 'Name and instruction are required')})
       return
     }
-    if (triggerType === 'cron' && !body.cron) {
-      alert(${JSON.stringify(lang === 'es' ? 'La expresion cron es obligatoria para tareas programadas' : 'Cron expression is required for scheduled tasks')})
+    if (triggerType === 'cron' && !body.cron_preset) {
+      alert(${JSON.stringify(lang === 'es' ? 'Selecciona un horario para la tarea programada' : 'Select a schedule for the scheduled task')})
       return
     }
 

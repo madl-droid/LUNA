@@ -34,7 +34,12 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 - `scheduled_task_executions` — id, task_id (FK), started_at, finished_at, status, result, error
 
 ## Triggers soportados
-- **cron** — BullMQ repeatable job segun expresion cron
+- **cron** — BullMQ repeatable job. Solo presets fijos (no cron libre en UI):
+  - Minutos: 5min, 15min, 30min
+  - Horas: 1h, 2h, 6h, 12h
+  - Dias: 1d (diario 9 AM), 3d (cada 3 dias 9 AM), 5d (Lun-Vie 9 AM)
+  - Semanas: 1w (semanal Lun 9 AM), 2w (quincenal 1 y 15)
+  - Mes: 1m (mensual dia 1, 9 AM)
 - **event** — hooks del kernel: contact:new, contact:status_changed, message:incoming, module:activated/deactivated
 - **manual** — solo ejecutable via boton o API /trigger
 
@@ -76,6 +81,10 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 - `unscheduleTask` acepta ambos formatos (`scheduled-` y `scheduled:`) para migración
 
 ## Trampas
+- Cron presets definidos en types.ts (CRON_PRESETS). Para agregar nuevos, modificar el array.
+- Tareas legacy con cron libre se muestran con el raw cron expression en el badge (fail-open).
+- La UI envia `cron_preset` (no `cron`). La API resuelve el preset a la expresion cron y la guarda.
+- `cron_preset` NO se almacena en DB. La UI carga el preset via `findPresetForCron(task.cron)`.
 - API routes se populan en init() mutando manifest.console.apiRoutes
 - El render HTML se provee via registry service (no import directo)
 - BullMQ connection usa host/port/password de redis.options
