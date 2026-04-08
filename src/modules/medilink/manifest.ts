@@ -491,7 +491,7 @@ const manifest: ModuleManifest = {
     cache = new MedilinkCache(apiClient, redis, config)
 
     // Initialize security service
-    security = new SecurityService(apiClient, db, config)
+    security = new SecurityService(apiClient, db, config, registry)
 
     // Initialize webhook handler
     webhookHandler = new WebhookHandler(config, db, cache)

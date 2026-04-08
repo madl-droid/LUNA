@@ -9,6 +9,7 @@ import type {
   MedilinkConfig, VerificationLevel, SecurityContext,
   MedilinkAppointment, MedilinkEvolution,
 } from './types.js'
+import type { Registry } from '../../kernel/registry.js'
 import * as pgStore from './pg-store.js'
 
 const logger = pino({ name: 'medilink:security' })
@@ -17,11 +18,13 @@ export class SecurityService {
   private api: MedilinkApiClient
   private db: Pool
   private config: MedilinkConfig
+  private registry: Registry
 
-  constructor(api: MedilinkApiClient, db: Pool, config: MedilinkConfig) {
+  constructor(api: MedilinkApiClient, db: Pool, config: MedilinkConfig, registry: Registry) {
     this.api = api
     this.db = db
     this.config = config
+    this.registry = registry
   }
 
   // ─── Identity resolution ───────────────
@@ -399,17 +402,27 @@ export class SecurityService {
           medilink_patient_id: String(patientId),
           medilink_verified: level,
           medilink_verified_at: new Date().toISOString(),
+          medilink_is_lead: false,  // FIX-03: clear lead flag on patient link
         }),
         contactId,
       ],
     )
     // Promote lead to active client now that we've confirmed they're a Medilink patient.
     // Only upgrades — won't overwrite client_former, team_internal, etc.
-    await this.db.query(
+    const result = await this.db.query(
       `UPDATE contacts SET contact_type = 'client_active' WHERE id = $1 AND contact_type = 'lead'`,
       [contactId],
     )
     logger.info({ contactId, patientId, level }, 'Contact linked to Medilink patient')
+    // FIX-04: notify other modules that this contact was promoted from lead to client
+    if (result.rowCount && result.rowCount > 0) {
+      await this.registry.runHook('contact:type_changed', {
+        contactId,
+        previousType: 'lead',
+        newType: 'client_active',
+        reason: 'medilink_patient_linked',
+      })
+    }
   }
 
   /**
