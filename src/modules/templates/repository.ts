@@ -142,6 +142,17 @@ export async function updateTemplate(
 }
 
 export async function deleteTemplate(db: Pool, id: string): Promise<boolean> {
+  // Check for generated documents referencing this template (FK constraint)
+  const docsCount = await db.query(
+    'SELECT COUNT(*)::int AS cnt FROM doc_generated WHERE template_id = $1', [id],
+  )
+  const cnt = (docsCount.rows[0] as { cnt: number } | undefined)?.cnt ?? 0
+  if (cnt > 0) {
+    throw new Error(
+      `No se puede eliminar la plantilla: tiene ${cnt} documento(s) generado(s). ` +
+      `Desactívala en vez de eliminarla.`,
+    )
+  }
   const res = await db.query('DELETE FROM doc_templates WHERE id = $1', [id])
   return (res.rowCount ?? 0) > 0
 }
@@ -155,37 +166,6 @@ export async function getTemplatesByType(db: Pool, docType: DocType): Promise<Do
 }
 
 // ─── Generated Docs CRUD ───────────────────────────────────────────────────
-
-export async function listGenerated(
-  db: Pool,
-  filters?: {
-    templateId?: string
-    contactId?: string
-    docType?: string
-    status?: string
-    tags?: Record<string, string>
-  },
-): Promise<DocGenerated[]> {
-  const conditions: string[] = []
-  const values: unknown[] = []
-  let idx = 1
-
-  if (filters?.templateId) { conditions.push(`template_id = $${idx++}`); values.push(filters.templateId) }
-  if (filters?.contactId) { conditions.push(`contact_id = $${idx++}`); values.push(filters.contactId) }
-  if (filters?.docType) { conditions.push(`doc_type = $${idx++}`); values.push(filters.docType) }
-  if (filters?.status) { conditions.push(`status = $${idx++}`); values.push(filters.status) }
-  if (filters?.tags && Object.keys(filters.tags).length > 0) {
-    conditions.push(`tags @> $${idx++}::jsonb`)
-    values.push(JSON.stringify(filters.tags))
-  }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  const res = await db.query(
-    `SELECT * FROM doc_generated ${where} ORDER BY created_at DESC LIMIT 100`,
-    values,
-  )
-  return res.rows.map(rowToGenerated)
-}
 
 export async function getGenerated(db: Pool, id: string): Promise<DocGenerated | null> {
   const res = await db.query('SELECT * FROM doc_generated WHERE id = $1', [id])
@@ -260,20 +240,29 @@ export async function updateGenerated(
 
 export async function searchGenerated(
   db: Pool,
-  query: { docType?: string; tags?: Record<string, string>; contactId?: string; limit?: number },
+  query?: {
+    templateId?: string
+    docType?: string
+    tags?: Record<string, string>
+    contactId?: string
+    status?: string
+    limit?: number
+  },
 ): Promise<DocGenerated[]> {
   const conditions: string[] = []
   const values: unknown[] = []
   let idx = 1
 
-  if (query.docType) { conditions.push(`doc_type = $${idx++}`); values.push(query.docType) }
-  if (query.tags && Object.keys(query.tags).length > 0) {
+  if (query?.templateId) { conditions.push(`template_id = $${idx++}`); values.push(query.templateId) }
+  if (query?.docType) { conditions.push(`doc_type = $${idx++}`); values.push(query.docType) }
+  if (query?.tags && Object.keys(query.tags).length > 0) {
     conditions.push(`tags @> $${idx++}::jsonb`)
     values.push(JSON.stringify(query.tags))
   }
-  if (query.contactId) { conditions.push(`contact_id = $${idx++}`); values.push(query.contactId) }
+  if (query?.contactId) { conditions.push(`contact_id = $${idx++}`); values.push(query.contactId) }
+  if (query?.status) { conditions.push(`status = $${idx++}`); values.push(query.status) }
 
-  const limit = query.limit ?? 20
+  const limit = query?.limit ?? 100
   values.push(limit)
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   const res = await db.query(
