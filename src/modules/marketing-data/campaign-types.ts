@@ -92,3 +92,26 @@ export interface CampaignStatRow {
   entries: number
   conversions: number
 }
+
+// ═══════════════════════════════════════════
+// Detailed stats — breakdown by source & UTM
+// ═══════════════════════════════════════════
+
+export interface SourceBreakdown {
+  matchSource: string          // 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm'
+  entries: number
+  conversions: number
+}
+
+export interface UtmBreakdown {
+  utmSource: string            // valor de utm_source (o 'unknown')
+  utmMedium: string            // valor de utm_medium (o 'unknown')
+  entries: number
+  conversions: number
+}
+
+export interface CampaignDetailedStats extends CampaignStatRow {
+  sourceBreakdown: SourceBreakdown[]
+  utmBreakdown: UtmBreakdown[]
+  firstTouchEntries: number    // leads cuyo PRIMER contacto fue esta campaña
+}

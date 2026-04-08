@@ -55,6 +55,19 @@ const labels: Record<Lang, Record<string, string>> = {
     error_load: 'Error al cargar datos',
     success_saved: 'Guardado correctamente',
     success_deleted: 'Eliminado correctamente',
+    col_origin: 'Origen',
+    origin_manual: 'Manual',
+    origin_auto: 'Auto UTM',
+    col_utm_keys: 'UTM Keys',
+    form_utm_keys: 'UTM Campaign Keys (separados por coma)',
+    col_match_source: 'Fuente',
+    settings_title: 'Configuracion de deteccion',
+    settings_utm_enabled: 'Deteccion UTM habilitada',
+    settings_keyword_enabled: 'Deteccion Keyword habilitada',
+    stats_by_source: 'Por fuente de deteccion',
+    stats_by_utm: 'Por fuente UTM',
+    stats_first_touch: 'First-touch',
+    stats_last_touch: 'Last-touch (conversion)',
   },
   en: {
     title: 'Campaigns',
@@ -107,6 +120,19 @@ const labels: Record<Lang, Record<string, string>> = {
     error_load: 'Error loading data',
     success_saved: 'Saved successfully',
     success_deleted: 'Deleted successfully',
+    col_origin: 'Origin',
+    origin_manual: 'Manual',
+    origin_auto: 'Auto UTM',
+    col_utm_keys: 'UTM Keys',
+    form_utm_keys: 'UTM Campaign Keys (comma separated)',
+    col_match_source: 'Source',
+    settings_title: 'Detection settings',
+    settings_utm_enabled: 'UTM detection enabled',
+    settings_keyword_enabled: 'Keyword detection enabled',
+    stats_by_source: 'By detection source',
+    stats_by_utm: 'By UTM source',
+    stats_first_touch: 'First-touch',
+    stats_last_touch: 'Last-touch (conversion)',
   },
 }
 
@@ -137,6 +163,20 @@ export function renderMarketingDataConsole(lang: Lang): string {
       <button class="btn btn-primary btn-sm" id="md-btn-new-campaign" style="padding:6px 16px;font-size:13px;border-radius:6px;background:var(--primary);color:#fff;border:none;cursor:pointer;">
         + ${esc(l.btn_new!)}
       </button>
+    </div>
+    <!-- Detection settings panel -->
+    <div style="margin-bottom:16px;padding:12px 16px;border-radius:8px;border:1px solid var(--border-color);background:var(--surface-variant);">
+      <div style="font-size:13px;font-weight:500;color:var(--on-surface);margin-bottom:8px;">${esc(l.settings_title!)}</div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--on-surface);cursor:pointer;">
+          <input type="checkbox" id="md-toggle-utm" checked style="width:16px;height:16px;">
+          ${esc(l.settings_utm_enabled!)}
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--on-surface);cursor:pointer;">
+          <input type="checkbox" id="md-toggle-keyword" checked style="width:16px;height:16px;">
+          ${esc(l.settings_keyword_enabled!)}
+        </label>
+      </div>
     </div>
     <div id="md-campaigns-list" style="display:grid;gap:12px;">
       <div class="md-loading" style="text-align:center;padding:40px;color:var(--on-surface-dim);">${esc(l.loading!)}</div>
@@ -175,7 +215,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
         </div>
         <div>
           <label style="font-size:12px;color:var(--on-surface-dim);display:block;margin-bottom:4px;">${esc(l.form_keyword!)}</label>
-          <input type="text" id="md-form-keyword" required style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--surface-variant);color:var(--on-surface);font-size:14px;box-sizing:border-box;">
+          <input type="text" id="md-form-keyword" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--surface-variant);color:var(--on-surface);font-size:14px;box-sizing:border-box;">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div>
@@ -194,6 +234,10 @@ export function renderMarketingDataConsole(lang: Lang): string {
         <div>
           <label style="font-size:12px;color:var(--on-surface-dim);display:block;margin-bottom:4px;">${esc(l.form_prompt_context!)}</label>
           <textarea id="md-form-context" maxlength="200" rows="2" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--surface-variant);color:var(--on-surface);font-size:14px;resize:vertical;box-sizing:border-box;"></textarea>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--on-surface-dim);display:block;margin-bottom:4px;">${esc(l.form_utm_keys!)}</label>
+          <input type="text" id="md-form-utm-keys" placeholder="black-friday,bf-2024,summer-sale" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--surface-variant);color:var(--on-surface);font-size:14px;box-sizing:border-box;">
         </div>
         <div>
           <label style="font-size:12px;color:var(--on-surface-dim);display:block;margin-bottom:4px;">${esc(l.form_tags!)}</label>
@@ -309,8 +353,9 @@ export function renderMarketingDataConsole(lang: Lang): string {
       return '<div class="panel" style="padding:16px;border-radius:8px;border:1px solid var(--border-color);background:var(--surface);">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
           '<div>' +
-            '<div style="font-size:15px;font-weight:500;color:var(--on-surface);">#' + c.visibleId + ' ' + c.name + '</div>' +
+            '<div style="font-size:15px;font-weight:500;color:var(--on-surface);">#' + c.visibleId + ' ' + c.name + (c.origin === 'auto_utm' ? '<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;font-size:10px;background:#fef3c7;color:#d97706;border:1px solid rgba(217,119,6,0.2);">Auto UTM</span>' : '') + '</div>' +
             '<div style="font-size:12px;color:var(--on-surface-dim);margin-top:2px;">Keyword: <code style="background:var(--surface-variant);padding:1px 6px;border-radius:3px;">' + (c.keyword || '-') + '</code></div>' +
+            (c.utmKeys && c.utmKeys.length > 0 ? '<div style="font-size:12px;color:var(--on-surface-dim);margin-top:2px;">UTM Keys: ' + c.utmKeys.map(function(k) { return '<code style="background:var(--surface-variant);padding:1px 6px;border-radius:3px;">' + k + '</code>'; }).join(' ') + '</div>' : '') +
           '</div>' +
           '<div style="display:flex;gap:6px;align-items:center;">' +
             '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + statusColor + ';"></span>' +
@@ -354,6 +399,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
     document.getElementById('md-form-rounds').value = '1';
     document.getElementById('md-form-channels').value = '';
     document.getElementById('md-form-context').value = '';
+    document.getElementById('md-form-utm-keys').value = '';
     renderFormTags([]);
     const modal = document.getElementById('md-campaign-modal');
     modal.style.display = 'flex';
@@ -371,6 +417,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
     document.getElementById('md-form-rounds').value = String(c.matchMaxRounds);
     document.getElementById('md-form-channels').value = (c.allowedChannels || []).join(',');
     document.getElementById('md-form-context').value = c.promptContext || '';
+    document.getElementById('md-form-utm-keys').value = (c.utmKeys || []).join(', ');
     const selectedIds = [...(c.platformTags||[]), ...(c.sourceTags||[])].map(t => t.id);
     renderFormTags(selectedIds);
     const modal = document.getElementById('md-campaign-modal');
@@ -403,6 +450,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
     const channelsRaw = document.getElementById('md-form-channels').value;
     const tagCheckboxes = document.querySelectorAll('#md-form-tags input[type=checkbox]:checked');
     const tagIds = Array.from(tagCheckboxes).map(cb => cb.value);
+    const utmKeysRaw = document.getElementById('md-form-utm-keys').value;
     const body = {
       name: document.getElementById('md-form-name').value,
       keyword: document.getElementById('md-form-keyword').value,
@@ -410,6 +458,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
       matchMaxRounds: parseInt(document.getElementById('md-form-rounds').value, 10),
       allowedChannels: channelsRaw ? channelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
       promptContext: document.getElementById('md-form-context').value,
+      utmKeys: utmKeysRaw ? utmKeysRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
       tagIds: tagIds,
     };
     if (id) body.id = id;
@@ -490,12 +539,14 @@ export function renderMarketingDataConsole(lang: Lang): string {
 
   // ─── Stats ───
   async function loadStats() {
-    const data = await api('campaign-stats');
-    const stats = data.stats || [];
-    renderStats(stats);
+    const [statsData, utmData] = await Promise.all([
+      api('campaign-detailed-stats'),
+      api('utm-breakdown'),
+    ]);
+    renderStats(statsData.stats || [], utmData.breakdown || []);
   }
 
-  function renderStats(stats) {
+  function renderStats(stats, utmBreakdown) {
     const container = document.getElementById('md-stats-container');
     if (!stats.length) {
       container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--on-surface-dim);">-</div>';
@@ -517,11 +568,13 @@ export function renderMarketingDataConsole(lang: Lang): string {
       '<div style="font-size:12px;color:var(--on-surface-dim);">' + l.col_rate + '</div></div>';
     html += '</div>';
 
+    // Main table with first-touch column
     html += '<div class="panel" style="border-radius:8px;border:1px solid var(--border-color);overflow:hidden;">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<thead><tr style="background:var(--surface-variant);">' +
       '<th style="padding:10px 12px;text-align:left;color:var(--on-surface-dim);font-weight:500;">' + l.stats_campaign + '</th>' +
       '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.col_entries + '</th>' +
+      '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.stats_first_touch + '</th>' +
       '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.col_conversions + '</th>' +
       '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.col_rate + '</th>' +
     '</tr></thead><tbody>';
@@ -531,16 +584,95 @@ export function renderMarketingDataConsole(lang: Lang): string {
       html += '<tr style="border-top:1px solid var(--border-color);">' +
         '<td style="padding:8px 12px;color:var(--on-surface);">' + name + '</td>' +
         '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + s.entries + '</td>' +
+        '<td style="padding:8px 12px;text-align:right;color:var(--on-surface-dim);">' + (s.firstTouchEntries || 0) + '</td>' +
         '<td style="padding:8px 12px;text-align:right;color:var(--success);">' + s.conversions + '</td>' +
         '<td style="padding:8px 12px;text-align:right;color:var(--on-surface-dim);">' + rate + '%</td>' +
       '</tr>';
     });
     html += '</tbody></table></div>';
+
+    // Source breakdown table
+    const campaignsWithSource = stats.filter(s => s.campaignId && s.sourceBreakdown && s.sourceBreakdown.length > 0);
+    if (campaignsWithSource.length > 0) {
+      html += '<h4 style="margin:20px 0 12px;font-size:14px;color:var(--on-surface);">' + l.stats_by_source + '</h4>';
+      html += '<div class="panel" style="border-radius:8px;border:1px solid var(--border-color);overflow:hidden;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="background:var(--surface-variant);">' +
+        '<th style="padding:10px 12px;text-align:left;color:var(--on-surface-dim);font-weight:500;">Campana</th>' +
+        '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">Keyword</th>' +
+        '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">URL UTM</th>' +
+        '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">Webhook</th>' +
+        '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">Webhook UTM</th>' +
+      '</tr></thead><tbody>';
+      stats.forEach(function(s) {
+        if (!s.campaignId) return;
+        var getCount = function(source) {
+          var found = (s.sourceBreakdown || []).find(function(b) { return b.matchSource === source; });
+          return found ? found.entries : 0;
+        };
+        html += '<tr style="border-top:1px solid var(--border-color);">' +
+          '<td style="padding:8px 12px;color:var(--on-surface);">#' + (s.visibleId||'') + ' ' + s.name + '</td>' +
+          '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + getCount('keyword') + '</td>' +
+          '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + getCount('url_utm') + '</td>' +
+          '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + getCount('webhook') + '</td>' +
+          '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + getCount('webhook_utm') + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    // Global UTM breakdown table
+    if (utmBreakdown && utmBreakdown.length > 0) {
+      html += '<h4 style="margin:20px 0 12px;font-size:14px;color:var(--on-surface);">' + l.stats_by_utm + '</h4>';
+      html += '<div class="panel" style="border-radius:8px;border:1px solid var(--border-color);overflow:hidden;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="background:var(--surface-variant);">' +
+        '<th style="padding:10px 12px;text-align:left;color:var(--on-surface-dim);font-weight:500;">utm_source</th>' +
+        '<th style="padding:10px 12px;text-align:left;color:var(--on-surface-dim);font-weight:500;">utm_medium</th>' +
+        '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.col_entries + '</th>' +
+        '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.col_conversions + '</th>' +
+        '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.col_rate + '</th>' +
+      '</tr></thead><tbody>';
+      utmBreakdown.forEach(function(u) {
+        var rate = u.entries > 0 ? ((u.conversions / u.entries) * 100).toFixed(1) : '0.0';
+        html += '<tr style="border-top:1px solid var(--border-color);">' +
+          '<td style="padding:8px 12px;color:var(--on-surface);">' + (u.utmSource || 'unknown') + '</td>' +
+          '<td style="padding:8px 12px;color:var(--on-surface);">' + (u.utmMedium || 'unknown') + '</td>' +
+          '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + u.entries + '</td>' +
+          '<td style="padding:8px 12px;text-align:right;color:var(--success);">' + u.conversions + '</td>' +
+          '<td style="padding:8px 12px;text-align:right;color:var(--on-surface-dim);">' + rate + '%</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
     container.innerHTML = html;
+  }
+
+  // ─── Config / toggles ───
+  async function loadConfig() {
+    try {
+      const data = await api('config');
+      const utmToggle = document.getElementById('md-toggle-utm');
+      const kwToggle = document.getElementById('md-toggle-keyword');
+      if (utmToggle) {
+        utmToggle.checked = data.utmMatchEnabled !== false;
+        utmToggle.disabled = true;
+        utmToggle.title = 'Configurable via CAMPAIGN_UTM_MATCH_ENABLED';
+      }
+      if (kwToggle) {
+        kwToggle.checked = data.keywordMatchEnabled !== false;
+        kwToggle.disabled = true;
+        kwToggle.title = 'Configurable via CAMPAIGN_KEYWORD_MATCH_ENABLED';
+      }
+    } catch (_e) {
+      // Config endpoint unavailable — defaults apply
+    }
   }
 
   // Initial load
   loadCampaigns();
+  loadConfig();
 })();
 </script>`;
 }

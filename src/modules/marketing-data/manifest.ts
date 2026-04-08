@@ -17,6 +17,7 @@ const logger = pino({ name: 'marketing-data' })
 
 let campaignQueries: CampaignQueries | null = null
 let campaignMatcher: CampaignMatcher | null = null
+let moduleConfig: { CAMPAIGN_UTM_MATCH_ENABLED: boolean; CAMPAIGN_KEYWORD_MATCH_ENABLED: boolean } | null = null
 
 // ═══════════════════════════════════════════
 // Campaign matcher reload helper
@@ -84,12 +85,13 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            name: string; keyword: string; matchThreshold?: number
+            name: string; keyword?: string; matchThreshold?: number
             matchMaxRounds?: number; allowedChannels?: string[]
-            promptContext?: string; utmData?: Record<string, string>; tagIds?: string[]
+            promptContext?: string; utmData?: Record<string, string>
+            utmKeys?: string[]; tagIds?: string[]
           }>(req)
-          if (!body.name || !body.keyword) {
-            jsonResponse(res, 400, { error: 'Missing name or keyword' }); return
+          if (!body.name) {
+            jsonResponse(res, 400, { error: 'Missing name' }); return
           }
           const campaign = await getCampaignQueries().createCampaign(body)
           await reloadCampaignMatcher()
@@ -110,7 +112,7 @@ function createApiRoutes(): ApiRoute[] {
             id: string; name?: string; keyword?: string; matchThreshold?: number
             matchMaxRounds?: number; allowedChannels?: string[]
             promptContext?: string; active?: boolean
-            utmData?: Record<string, string>; tagIds?: string[]
+            utmData?: Record<string, string>; utmKeys?: string[]; tagIds?: string[]
           }>(req)
           if (!body.id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
           const campaign = await getCampaignQueries().updateCampaign(body.id, body)
@@ -242,6 +244,46 @@ function createApiRoutes(): ApiRoute[] {
         }
       },
     },
+
+    // GET /console/api/marketing-data/campaign-detailed-stats
+    {
+      method: 'GET',
+      path: 'campaign-detailed-stats',
+      handler: async (_req, res) => {
+        try {
+          const stats = await getCampaignQueries().getCampaignDetailedStats()
+          jsonResponse(res, 200, { stats })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/marketing-data/utm-breakdown
+    {
+      method: 'GET',
+      path: 'utm-breakdown',
+      handler: async (_req, res) => {
+        try {
+          const breakdown = await getCampaignQueries().getGlobalUtmBreakdown()
+          jsonResponse(res, 200, { breakdown })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/marketing-data/config
+    {
+      method: 'GET',
+      path: 'config',
+      handler: async (_req, res) => {
+        jsonResponse(res, 200, {
+          utmMatchEnabled: moduleConfig?.CAMPAIGN_UTM_MATCH_ENABLED ?? true,
+          keywordMatchEnabled: moduleConfig?.CAMPAIGN_KEYWORD_MATCH_ENABLED ?? true,
+        })
+      },
+    },
   ]
 }
 
@@ -283,6 +325,7 @@ const manifest: ModuleManifest = {
 
     // Read feature toggles
     const config = registry.getConfig<{ CAMPAIGN_UTM_MATCH_ENABLED: boolean; CAMPAIGN_KEYWORD_MATCH_ENABLED: boolean }>('marketing-data')
+    moduleConfig = config
 
     // Initialize campaign subsystem
     campaignQueries = new CampaignQueries(db)
@@ -324,6 +367,7 @@ const manifest: ModuleManifest = {
   async stop() {
     campaignQueries = null
     campaignMatcher = null
+    moduleConfig = null
     logger.info('Marketing data module stopped')
   },
 }
