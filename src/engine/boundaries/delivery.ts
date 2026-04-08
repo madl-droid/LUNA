@@ -18,26 +18,10 @@ import type { StoredMessage } from '../../modules/memory/types.js'
 import { checkAndCompressBuffer } from '../buffer-compressor.js'
 import { calculateTypingDelay } from '../../channels/typing-delay.js'
 import { setContactLock } from '../proactive/guards.js'
-import { detectCommitments } from '../proactive/commitment-detector.js'
-import { loadProactiveConfig } from '../proactive/proactive-config.js'
 import { pickErrorFallback, pickTTSFailureFallback } from '../fallbacks/error-defaults.js'
 import { sanitizeParts, validateOutput } from '../output-sanitizer.js'
 
 const logger = pino({ name: 'engine:delivery' })
-
-// Cache proactive config with TTL (reloaded every 5 minutes)
-let cachedProactiveConfig: ReturnType<typeof loadProactiveConfig> | null = null
-let proactiveConfigLoadedAt = 0
-const PROACTIVE_CONFIG_TTL_MS = 5 * 60 * 1000
-
-function getProactiveConfig() {
-  const now = Date.now()
-  if (!cachedProactiveConfig || (now - proactiveConfigLoadedAt) > PROACTIVE_CONFIG_TTL_MS) {
-    cachedProactiveConfig = loadProactiveConfig()
-    proactiveConfigLoadedAt = now
-  }
-  return cachedProactiveConfig
-}
 
 /** System-wide hard cap: no contact receives more than this per hour */
 const SYSTEM_MAX_MESSAGES_PER_HOUR = 20
@@ -191,12 +175,6 @@ export async function delivery(
     const isProactive = 'isProactive' in ctx && (ctx as Record<string, unknown>).isProactive
     if (!isProactive) {
       setContactLock(ctx.contactId, redis, config.sessionTtlMs).catch(() => {})
-
-      const proactiveConfig = getProactiveConfig()
-      detectCommitments(
-        responseText, ctx.contactId, ctx.session.id,
-        registry, proactiveConfig,
-      ).catch(() => {})
     }
   }
 

@@ -96,9 +96,9 @@ export async function registerUpdateCommitmentTool(registry: Registry): Promise<
       }
 
       try {
-        // Verify the commitment exists and belongs to this contact
+        // Verify the commitment exists and belongs to this contact (or is assigned to them)
         const { rows: existing } = await ctx.db.query(
-          `SELECT id, contact_id, status, parent_id FROM commitments WHERE id = $1`,
+          `SELECT id, contact_id, assigned_to, status, parent_id FROM commitments WHERE id = $1`,
           [commitmentId],
         )
 
@@ -108,9 +108,20 @@ export async function registerUpdateCommitmentTool(registry: Registry): Promise<
 
         const commitment = existing[0]!
 
-        // Security: commitment must belong to the contact in context
+        // Security: commitment must belong to the contact in context,
+        // OR be assigned to the current user (human closing an assigned commitment).
         if (commitment.contact_id !== ctx.contactId) {
-          return { success: false, error: 'Cannot update commitments for other contacts' }
+          let isAssignedToMe = false
+          if (commitment.assigned_to) {
+            const { rows: channels } = await ctx.db.query(
+              `SELECT 1 FROM contact_channels WHERE contact_id = $1 AND channel_identifier = $2 LIMIT 1`,
+              [ctx.contactId, commitment.assigned_to],
+            )
+            isAssignedToMe = channels.length > 0
+          }
+          if (!isAssignedToMe) {
+            return { success: false, error: 'Cannot update commitments for other contacts' }
+          }
         }
 
         // Build dynamic UPDATE

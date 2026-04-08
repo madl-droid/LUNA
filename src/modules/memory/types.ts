@@ -181,6 +181,7 @@ export interface Commitment {
   requiresTool?: string | null
   autoCancelAt?: Date | null
   createdVia?: 'tool' | 'auto_detect' | null
+  contextSummary?: string | null  // Conversation context when commitment was created
   metadata?: Record<string, unknown>
   createdAt: Date
   updatedAt: Date

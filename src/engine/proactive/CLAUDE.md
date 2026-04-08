@@ -4,13 +4,15 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 
 ## Archivos
 - `proactive-runner.ts` — BullMQ orchestrator, job scheduling, smart cooldown integration
-- `proactive-pipeline.ts` — pipeline simplificado (Phase 1 minimal + Phases 2-5)
+- `proactive-pipeline.ts` — pipeline simplificado (Phase 1 minimal + Phases 2-5); historial 10 msgs para commitments, 5 para el resto
 - `proactive-config.ts` — loader de `instance/proactive.json` con defaults
 - `guards.ts` — 8 guardas en orden (idempotency → business_hours → contact_lock → dedup → cooldown → rate_limit → conversation → goodbye_suppressor)
 - `triggers.ts` — definiciones de todos los jobs (incluye orphan-recovery)
 - `smart-cooldown.ts` — cooldown adaptativo per-contact+trigger en Redis
 - `orphan-recovery.ts` — detección y re-dispatch de mensajes sin respuesta
 - `conversation-guard.ts` — detección de goodbye patterns, Redis cache 6h
+
+> **Nota:** El auto-detector de compromisos (Via B, `commitment-detector.ts`) fue eliminado. Los compromisos se crean exclusivamente via tool `create_commitment`.
 
 ## Nuevas features (v2 reset)
 
@@ -38,6 +40,15 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 - Guard #8 en guards.ts: skippable para commitment follow-ups (`skip_for_commitments=true`)
 - API: `shouldSuppressProactive()`, `clearSuppressCache()`
 
+## Follow-up Intensity (`intensity.ts`)
+- 4 niveles per-contact: `aggressive` (2h/5), `normal` (4h/3), `gentle` (12h/2), `minimal` (24h/1)
+- Stored in `agent_contacts.follow_up_intensity` (migration 048, default `'normal'`)
+- `resolveIntensity(intensity, globalH, globalMax)` — fallback a config global si valor desconocido
+- `follow-up.ts` filtra por intensidad **en SQL** (CASE WHEN) — `LIMIT 50` se aplica DESPUÉS del filtro. Los globals se usan como fallback en el `ELSE` de cada CASE. Si se agregan nuevos niveles de intensidad, actualizar también la query SQL en `follow-up.ts`.
+- Tool `set_follow_up_intensity` registrado en `engine.ts` — el agente puede ajustar durante conversación
+- Intensidad no-default se inyecta en el contexto del LLM via `context-builder.ts` (sección 9b)
+- Backward compat: con intensidad `normal`, el comportamiento es idéntico al global (4h, 3 intentos)
+
 ## Guards (orden de ejecución)
 1. `guardIdempotency` — Redis NX key por día
 2. `guardBusinessHours` — timezone-aware, email bypass
@@ -61,6 +72,18 @@ Sistema de mensajes salientes: follow-up, reminders, commitments, reactivation, 
 - `proactive-runner.ts` adquiere lock Redis SETNX antes de ejecutar cada job: `proactive:lock:{jobName}`
 - TTL 300s (5 min) — expira solo, no se borra manualmente (protege contra crash mid-execution)
 - Si el lock ya existe → WARN + skip — previene doble ejecución por race entre BullMQ re-queue y orphan recovery
+
+## Context summary en compromisos
+
+Al crear un compromiso via `create_commitment`, el tool captura contexto para uso futuro con prioridad:
+1. **`context_note`** (fuente primaria): parámetro opcional que el LLM puede proveer con 1-2 frases de contexto. Max 500 chars.
+2. **Raw messages** (fuente secundaria): últimos 6 mensajes de la sesión activa. Si hay `context_note`, los mensajes se anexan como suplemento (hasta 1000 chars total). Si no hay `context_note`, son la fuente primaria.
+
+Cuando el commitment scanner dispara el compromiso, ese `context_summary` se inyecta en el prompt del agentic loop proactivo para que el LLM tenga contexto completo sin re-cargar historial completo.
+
+## HITL handoff → reasignación de compromisos
+
+Cuando un ticket HITL se resuelve con `handoffMode = 'full_handoff'`, los compromisos pendientes del contacto se reasignan al humano (`assigned_to = assignedSenderId`). El commitment scanner luego notifica directamente al humano incluyendo el `ID` del compromiso en el mensaje. El humano puede responder en la conversación reactiva — el pipeline carga sus compromisos asignados (via `getAssignedCommitments`) y el LLM puede usar `update_commitment` para cerrarlos. Si el humano no responde tras max_attempts, se crea un ticket HITL de escalación.
 
 ## Trampas
 - `guardConversation` (#7) usa `conversation:farewell:{id}` set por `markFarewell()` en Phase 5

@@ -156,7 +156,7 @@ async function loadContactData(db: Pool, contactId: string): Promise<ContactData
   const { rows: contactRows } = await db.query(
     `SELECT c.id, cc.channel_identifier, cc.channel_type, c.display_name, c.contact_type,
             ac.qualification_status, ac.qualification_score, ac.qualification_data,
-            ac.contact_memory, ac.lead_status
+            ac.contact_memory, ac.lead_status, ac.follow_up_intensity
      FROM contacts c
      LEFT JOIN contact_channels cc ON cc.contact_id = c.id
      LEFT JOIN agent_contacts ac ON ac.contact_id = c.id
@@ -177,6 +177,7 @@ async function loadContactData(db: Pool, contactId: string): Promise<ContactData
     qualificationStatus: (row.qualification_status as string) ?? null,
     qualificationScore: (row.qualification_score as number) ?? null,
     qualificationData: (row.qualification_data as Record<string, unknown>) ?? null,
+    followUpIntensity: (row.follow_up_intensity as string) ?? null,
     createdAt: new Date(),
   }
 

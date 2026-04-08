@@ -73,7 +73,6 @@ proactive/
   proactive-config.ts   — carga y valida instance/proactive.json
   guards.ts             — 7 guardas de protección (business hours, cooldown, Redis contact lock, etc.)
   triggers.ts           — definiciones de triggers proactivos
-  commitment-detector.ts — auto-detecta compromisos implícitos en respuestas del agente
   commitment-validator.ts — valida y clasifica requests de creación de compromisos
   jobs/
     follow-up.ts       — scanner de leads inactivos
@@ -184,7 +183,10 @@ Configurable desde consola y .env. Persiste al reinicio.
 - 7 guardas de protección antes de cada job (business hours, cooldown, max per day, conversation guard, Redis contact lock, etc.)
 - Pipeline simplificado: Phase 1 minimal → agentic loop → Phase 5 con `ProactiveContextBundle`
 - `NO_ACTION` es el default seguro — si LLM falla, no se envía nada
-- Commitment auto-detector escanea respuestas del agente en Phase 5
+- Compromisos se crean exclusivamente via tool `create_commitment` (el auto-detector fue eliminado por eficiencia)
+- Al crear un compromiso, `context_summary` usa `context_note` (LLM) como fuente primaria + raw messages como suplemento/fallback
+- Commitments asignados a non-lead users se inyectan en `ctx.pendingCommitments` en `intake.ts` (marcados `assignedToMe=true`), permitiendo que humanos cierren compromisos respondiendo en la conversación reactiva
+- historial 10 msgs para pipelines de tipo 'commitment', 5 para el resto
 
 ## Trampas
 

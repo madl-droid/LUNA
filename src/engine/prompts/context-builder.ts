@@ -158,28 +158,44 @@ export async function buildContextLayers(
 
   // ── 6. Pending commitments + HITL tickets (unified view) ──────────────────
   {
-    const commitments = ctx.pendingCommitments
+    const allCommitments = ctx.pendingCommitments
+    const contactCommitments = allCommitments.filter(c => !(c as unknown as Record<string, unknown>).assignedToMe)
+    const assignedToMe = allCommitments.filter(c => (c as unknown as Record<string, unknown>).assignedToMe)
     const hitlTickets = ctx.activeHitlTickets ?? []
-    const overdueCount = commitments.filter(c => c.status === 'overdue').length
-    const totalPending = commitments.length + hitlTickets.length
+    const overdueCount = contactCommitments.filter(c => c.status === 'overdue').length
+    const totalPending = contactCommitments.length + assignedToMe.length + hitlTickets.length
 
     if (totalPending > 0) {
       // Header with counts
       const parts2: string[] = []
-      if (commitments.length > 0) {
-        parts2.push(`${commitments.length} compromiso${commitments.length > 1 ? 's' : ''}${overdueCount > 0 ? ` (${overdueCount} vencido${overdueCount > 1 ? 's' : ''})` : ''}`)
+      if (contactCommitments.length > 0) {
+        parts2.push(`${contactCommitments.length} compromiso${contactCommitments.length > 1 ? 's' : ''} del contacto${overdueCount > 0 ? ` (${overdueCount} vencido${overdueCount > 1 ? 's' : ''})` : ''}`)
+      }
+      if (assignedToMe.length > 0) {
+        parts2.push(`${assignedToMe.length} compromiso${assignedToMe.length > 1 ? 's' : ''} asignados a ti`)
       }
       if (hitlTickets.length > 0) {
         parts2.push(`${hitlTickets.length} consulta${hitlTickets.length > 1 ? 's' : ''} HITL`)
       }
-      parts.push(`[Pendientes con este contacto: ${parts2.join(', ')}]`)
+      parts.push(`[Pendientes: ${parts2.join(', ')}]`)
 
-      // Commitment details
-      for (const c of commitments) {
+      // Contact commitment details
+      for (const c of contactCommitments) {
         const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
         const statusTag = c.status === 'overdue' ? ' ⚠ VENCIDO' : ''
         const scheduled = c.scheduledAt ? ` [programado: ${c.scheduledAt.toISOString().split('T')[0]}]` : ''
         parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)}${due}${scheduled}${statusTag}`)
+      }
+
+      // Commitments assigned to the current user (human coworker/admin)
+      if (assignedToMe.length > 0) {
+        parts.push(`[Compromisos asignados a ti — usa update_commitment para marcarlos como completados:]`)
+        for (const c of assignedToMe) {
+          const due = c.dueAt ? ` (vence: ${c.dueAt.toISOString().split('T')[0]})` : ''
+          const statusTag = c.status === 'overdue' ? ' ⚠ VENCIDO' : ''
+          const contactName = (c.metadata as Record<string, unknown> | undefined)?.['contactDisplayName'] as string | undefined ?? c.contactId
+          parts.push(`- [${c.commitmentType}] ${escapeDataForPrompt(c.description, 500)} — contacto: ${contactName}${due}${statusTag} (id: ${c.id})`)
+        }
       }
 
       // HITL ticket details
@@ -224,6 +240,11 @@ export async function buildContextLayers(
         }
       } catch { /* lead-scoring module not available */ }
     }
+  }
+
+  // ── 9b. Follow-up intensity (only if non-default) ───────────────────────
+  if (ctx.contact?.followUpIntensity && ctx.contact.followUpIntensity !== 'normal') {
+    parts.push(`[Intensidad de seguimiento: ${ctx.contact.followUpIntensity}]`)
   }
 
   // ── 10. Knowledge v2 injection ───────────────────────────────────────────
