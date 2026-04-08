@@ -290,14 +290,18 @@ export class DriveService {
     fileId: string,
     role: 'reader' | 'writer' | 'commenter' = 'reader',
   ): Promise<DrivePermission> {
-    const res = await this.drive.permissions.create({
-      fileId,
-      requestBody: {
-        type: 'anyone',
-        role,
-      },
-      fields: 'id, type, role',
-    })
+    const res = await googleApiCall(
+      () => this.drive.permissions.create({
+        fileId,
+        requestBody: {
+          type: 'anyone',
+          role,
+        },
+        fields: 'id, type, role',
+      }),
+      this.apiConfig,
+      'drive.permissions.createAnyone',
+    )
 
     return {
       id: res.data.id ?? '',
@@ -315,14 +319,18 @@ export class DriveService {
     content: Buffer,
     mimeType: string,
   ): Promise<void> {
-    await this.drive.files.update({
-      fileId,
-      media: {
-        mimeType,
-        body: Readable.from([content]),
-      },
-      fields: 'id',
-      supportsAllDrives: true,
-    })
+    await googleApiCall(
+      () => this.drive.files.update({
+        fileId,
+        media: {
+          mimeType,
+          body: Readable.from([content]),
+        },
+        fields: 'id',
+        supportsAllDrives: true,
+      }),
+      this.apiConfig,
+      'drive.files.updateContent',
+    )
   }
 }

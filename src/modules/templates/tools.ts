@@ -158,12 +158,20 @@ export async function registerTemplateTools(
       // Auto-generate tags for comparativos if none were provided
       const effectiveDocType = (docType ?? template.docType) as DocType
       if (effectiveDocType === 'comparativo' && Object.keys(tags).length === 0) {
-        const tagKeywords = ['brand', 'competitor', 'product', 'company', 'marca', 'competidor']
+        // Auto-extract tags from key names for dedup search.
+        // Map common key name patterns → canonical tag names.
+        const tagPatterns: Array<{ pattern: RegExp; tag: string }> = [
+          { pattern: /brand|marca/i, tag: 'brand' },
+          { pattern: /competitor|competidor|competencia|rival/i, tag: 'competitor' },
+          { pattern: /product|producto/i, tag: 'product' },
+          { pattern: /company|empresa|cliente|customer/i, tag: 'company' },
+          { pattern: /categor/i, tag: 'category' },
+          { pattern: /nombre|name/i, tag: 'name' },
+        ]
         for (const [key, value] of Object.entries(keyValues)) {
-          const lowerKey = key.toLowerCase()
-          for (const keyword of tagKeywords) {
-            if (lowerKey.includes(keyword)) {
-              tags[keyword] = value
+          for (const { pattern, tag } of tagPatterns) {
+            if (pattern.test(key) && !tags[tag]) {
+              tags[tag] = value
               break
             }
           }

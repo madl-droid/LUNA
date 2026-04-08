@@ -32,11 +32,29 @@ const GOOGLE_MIME_MAP: Record<string, MimeType> = {
 const KEY_REGEX = /\{([A-Z][A-Z0-9_]*)\}/g
 
 export class TemplatesService {
+  private folderManager: FolderManager | null = null
+
   constructor(
     private db: Pool,
     private registry: Registry,
     private config: TemplatesConfig,
   ) {}
+
+  private getFolderManager(): FolderManager | null {
+    if (!this.config.TEMPLATES_ROOT_FOLDER_ID) return null
+    if (!this.folderManager) {
+      const drive = this.registry.getOptional<DriveService>('google:drive')
+      if (!drive) return null
+      this.folderManager = new FolderManager(drive, this.config.TEMPLATES_ROOT_FOLDER_ID)
+    }
+    return this.folderManager
+  }
+
+  /** Call when root folder config changes to reset folder cache */
+  invalidateFolderCache(): void {
+    this.folderManager?.invalidateCache()
+    this.folderManager = null
+  }
 
   // ─── Template CRUD ───────────────────────────────────────────────────────
 
@@ -141,10 +159,12 @@ export class TemplatesService {
 
   // ─── Generated doc queries ───────────────────────────────────────────────
 
-  async searchGeneratedDocs(query: {
+  async searchGeneratedDocs(query?: {
+    templateId?: string
     docType?: string
     tags?: Record<string, string>
     contactId?: string
+    status?: string
     limit?: number
   }): Promise<DocGenerated[]> {
     return repo.searchGenerated(this.db, query)
@@ -152,16 +172,6 @@ export class TemplatesService {
 
   async getGeneratedDoc(id: string): Promise<DocGenerated | null> {
     return repo.getGenerated(this.db, id)
-  }
-
-  async listGeneratedDocs(filters?: {
-    templateId?: string
-    contactId?: string
-    docType?: string
-    status?: string
-    tags?: Record<string, string>
-  }): Promise<DocGenerated[]> {
-    return repo.listGenerated(this.db, filters)
   }
 
   // ─── Document creation ───────────────────────────────────────────────────
@@ -195,10 +205,10 @@ export class TemplatesService {
 
     // Resolve destination folder
     let folderId: string | undefined
-    if (this.config.TEMPLATES_ROOT_FOLDER_ID) {
-      const folderManager = new FolderManager(drive, this.config.TEMPLATES_ROOT_FOLDER_ID)
+    const fm = this.getFolderManager()
+    if (fm) {
       if (template.folderPattern) {
-        folderId = await folderManager.resolveFolder(template.folderPattern, input.keyValues)
+        folderId = await fm.resolveFolder(template.folderPattern, input.keyValues)
       } else {
         folderId = this.config.TEMPLATES_ROOT_FOLDER_ID
       }
@@ -275,22 +285,15 @@ export class TemplatesService {
         newValue: v,
       })))
     } else {
-      // Conflict fallback: regenerate document content from scratch
-      logger.warn({ docId: input.generatedDocId, changedKeys: changedKeys.map(([k]) => k) }, 'Key conflict detected, regenerating document')
-      const mergedValues = { ...doc.keyValues, ...input.updatedKeyValues }
-
-      // Copy template again to a temp buffer — export as Office format
-      const exportMimeType = this._getExportMimeType(template.mimeType)
-      const exportedContent = await drive.exportFile(template.driveFileId, exportMimeType)
-
-      // Upload new content over existing file ID
-      const contentBuffer = typeof exportedContent === 'string'
-        ? Buffer.from(exportedContent, 'utf-8')
-        : exportedContent
-      await drive.updateFileContent(doc.driveFileId, contentBuffer, exportMimeType)
-
-      // Now fill keys on the updated file
-      await this._fillKeys(doc.driveFileId, template.mimeType, template.keys.map(k => k.key), mergedValues)
+      // Conflict: two different changed keys share the same current value in the document.
+      // In-place replaceText would be ambiguous, and Office export/re-upload corrupts Google Workspace files.
+      // Best approach: fail fast with descriptive error — let the agent create a new document instead.
+      const conflictingKeys = changedKeys.map(([k]) => k).join(', ')
+      logger.warn({ docId: input.generatedDocId, conflictingKeys }, 'Key conflict detected — cannot re-edit in-place')
+      throw new Error(
+        `No se puede re-editar este documento en su lugar: los campos [${conflictingKeys}] comparten el mismo valor actual en el documento. ` +
+        `Crea un documento nuevo con create-from-template usando los valores actualizados.`,
+      )
     }
 
     // Merge key values
@@ -404,11 +407,4 @@ export class TemplatesService {
     }
   }
 
-  private _getExportMimeType(mimeType: MimeType): string {
-    switch (mimeType) {
-      case 'document': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      case 'presentation': return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-      case 'spreadsheet': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
-  }
 }

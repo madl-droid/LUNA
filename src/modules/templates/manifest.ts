@@ -41,7 +41,7 @@ const manifest: ModuleManifest = {
 
   configSchema: z.object({
     TEMPLATES_STRICT_MODE: boolEnv(false),
-    TEMPLATES_NO_TEMPLATE_ACTION: z.string().default('hitl'),
+    TEMPLATES_NO_TEMPLATE_ACTION: z.enum(['warn', 'block', 'hitl']).default('hitl'),
     TEMPLATES_ROOT_FOLDER_ID: z.string().default(''),
   }),
 
@@ -234,7 +234,7 @@ const manifest: ModuleManifest = {
             const ci = query.get('contactId'); if (ci) filters.contactId = ci
             const tid = query.get('templateId'); if (tid) filters.templateId = tid
             const st = query.get('status'); if (st) filters.status = st
-            const generated = await service.listGeneratedDocs(filters)
+            const generated = await service.searchGeneratedDocs(filters)
             jsonResponse(res, 200, { ok: true, generated })
           } catch (err) {
             logger.error({ err }, 'GET /generated error')
@@ -288,6 +288,11 @@ const manifest: ModuleManifest = {
     } else {
       logger.warn('tools:registry not available — templates tools not registered')
     }
+
+    // Invalidate folder cache when config changes (root folder might change)
+    registry.addHook('templates', 'console:config_applied', () => {
+      service?.invalidateFolderCache()
+    })
 
     // Enable comparativo-researcher subagent and inject system prompt
     try {

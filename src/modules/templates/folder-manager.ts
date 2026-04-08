@@ -34,8 +34,9 @@ export class FolderManager {
     const segments = resolved.split('/').filter(s => s.length > 0)
     let currentParentId = this.rootFolderId
 
-    for (const segment of segments) {
-      const segmentPath = `${this.rootFolderId}:${segments.slice(0, segments.indexOf(segment) + 1).join('/')}`
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]!
+      const segmentPath = `${this.rootFolderId}:${segments.slice(0, i + 1).join('/')}`
       const segmentCached = this.cache.get(segmentPath)
       if (segmentCached) {
         currentParentId = segmentCached
