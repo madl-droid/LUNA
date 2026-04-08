@@ -16,10 +16,10 @@ agentic/
   types.ts            — AgenticConfig, AgenticResult, EffortLevel (normal|complex), ToolCallLog, LoopDetectorResult
   effort-router.ts    — clasificador de complejidad determinístico (2 niveles: normal/complex, sin LLM, <5ms)
   email-triage.ts     — clasificador pre-agentic para email (RESPOND/OBSERVE/IGNORE, determinístico, <5ms)
-  tool-dedup-cache.ts — caché de dedup per-pipeline para tool calls idénticos
+  tool-dedup-cache.ts — caché de dedup per-pipeline para tool calls idénticos (WRITE_TOOLS incluye request_human_help)
   tool-loop-detector.ts — anti-loop: generic repeat, no-progress, ping-pong detection
   agentic-loop.ts     — THE CORE: LLM + tool calling loop (reemplaza Phases 2+3+4)
-  post-processor.ts   — criticizer (smart mode) + channel formatting + TTS → CompositorOutput
+  post-processor.ts   — criticizer (smart mode) + tool call sanitizer + loop detector + channel formatting + TTS → CompositorOutput
   run-agentic-delivery.ts — runner compartido reactive/proactive: prompt + loop + post-process + delivery
   index.ts            — exports públicos
 
@@ -201,6 +201,26 @@ Configurable desde consola y .env. Persiste al reinicio.
 - Contact lock in-memory auto-expira con session TTL
 - Redis contact lock (proactive) es independiente del ContactLock in-memory (reactivo)
 - ACK service es opcional — si falla, el pipeline continúa sin enviar ACK
+
+## Post-processor — Funcionalidades clave
+
+### Tool call sanitizer (FIX-01)
+Limpia marcadores como `[Tool call: ...]`, `[tool_use: ...]`, `[Calling tool: ...]` y bloques ` ```tool_call``` ` que el LLM a veces inyecta en el texto de respuesta. Se ejecuta DESPUÉS del criticizer y ANTES del delivery. Log WARN cuando detecta marcadores (indica que el LLM está mezclando formatos).
+
+### Loop detector (FIX-04)
+Detecta cuando el bot envía respuestas casi idénticas al mismo contacto usando similitud Jaccard (palabras, umbral 0.80). Counter en Redis `repeat:{contactId}` con TTL 30min:
+- count 1: pasa (primera repetición puede ser legítima)
+- count 2: pasa + persiste nota del sistema en el historial de sesión para el siguiente turno
+- count 3+: HARD STOP — envía mensaje hardcoded, crea ticket HITL (si el módulo HITL está activo), resetea counter
+
+### Criticizer threshold (FIX-03)
+Threshold para activar criticizer en modo `complex_only`: 6 tool calls no-cacheados (antes era 3). Justificación: un flujo normal con knowledge+sheets+medilink = 5-6 tools. El criticizer debe activarse solo en flujos realmente complejos.
+
+### Criticizer parsing (FIX-02)
+`getReviewFeedback()` soporta dos formatos de respuesta del LLM:
+1. Texto plano `APPROVED` (formato primario, lo que pide el prompt)
+2. JSON `{"approved": true}` (fallback para Gemini que responde en JSON)
+Los criterios de revisión se redujeron de 10 a 4 objetivos: precisión factual, guardrails, coherencia, seguridad.
 
 ## Deuda técnica
 
