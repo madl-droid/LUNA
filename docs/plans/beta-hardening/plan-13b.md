@@ -26,14 +26,29 @@ El flujo deseado:
 | `instance/prompts/system/skills/medilink-lead-scheduling.md` | Actualizar skill con flujo de terceros |
 | `instance/prompts/system/skills/medilink-dependent-scheduling.md` | Nuevo skill para terceros (o merge con el existente) |
 
+## Cambios previos relevantes (Plan 11 ya ejecutado)
+
+**CRITICO — Plan 11 ya modifico `security.ts` y `manifest.ts`:**
+- `SecurityService` constructor ahora recibe 4 parametros: `(apiClient, db, config, registry)` — `registry` ya esta disponible como `this.registry`
+- `linkContactToPatient()` ya incluye `medilink_is_lead: false` en el merge JSONB
+- `linkContactToPatient()` ya captura `result.rowCount` y dispara `registry.runHook('contact:type_changed', ...)` si hubo cambio
+- `manifest.ts` ya instancia con `new SecurityService(apiClient, db, config, registry)`
+- `src/kernel/types.ts` ya tiene `contact:type_changed` en `HookMap`
+
+**Impacto en este plan:**
+- FIX-02: NO necesita agregar `registry` al constructor de SecurityService — ya existe. Los metodos nuevos (`addDependent`, `findDependent`) pueden usar `this.registry` directamente.
+- FIX-01: Los nuevos campos en `SecurityContext` deben coexistir con los existentes. Leer la interfaz ACTUAL (post-Plan 11) antes de modificar.
+- Hacer `git pull` o merge del branch con Plan 11 antes de empezar.
+
 ## Paso 0 — Verificacion obligatoria
 
-1. Leer `types.ts` completo — mapear `SecurityContext`, `MedilinkPatient`, `AppointmentSnapshot`
-2. Leer `security.ts` completo — entender `resolveContext()`, `linkContactToPatient()`, `ownsAppointment()`
-3. Leer `tools.ts` lineas 744-927 — entender `create-appointment`, especificamente linea 845 donde hardcodea `id_paciente`
-4. Leer `working-memory.ts` — entender campos actuales y como se usan
-5. Leer `instance/prompts/system/skills/medilink-lead-scheduling.md` — el prompt actual de agendamiento
-6. Verificar que la API de Medilink acepta `id_paciente` de cualquier paciente (no solo el vinculado al contacto) — ya confirmado en api-client.ts
+1. **PRIMERO:** Merge o pull del branch con Plan 11 (`claude/fix-bugs-implementation-a8Cvm`) para tener los cambios recientes
+2. Leer `types.ts` completo — mapear `SecurityContext` ACTUAL (post-Plan 11), `MedilinkPatient`, `AppointmentSnapshot`
+3. Leer `security.ts` completo — verificar que el constructor ya tiene 4 params y que `this.registry` esta disponible
+4. Leer `tools.ts` lineas 744-927 — entender `create-appointment`, especificamente linea 845 donde hardcodea `id_paciente`
+5. Leer `working-memory.ts` — entender campos actuales y como se usan
+6. Leer `instance/prompts/system/skills/medilink-lead-scheduling.md` — el prompt actual de agendamiento
+7. Verificar que la API de Medilink acepta `id_paciente` de cualquier paciente (no solo el vinculado al contacto) — ya confirmado en api-client.ts
 
 ---
 
@@ -328,3 +343,5 @@ El canal Gmail ya pasa por el mismo engine y tiene acceso a las mismas tools. La
 - Las tools nuevas se registran automaticamente al cargar el modulo medilink
 - No se necesita migracion SQL — los dependientes viven en `agent_data` (JSONB existente)
 - La API de Medilink ya soporta `id_paciente` de cualquier paciente (confirmado)
+- **Plan 11 ya se ejecuto** — `security.ts` tiene constructor con `registry`, `linkContactToPatient` ya limpia `medilink_is_lead` y dispara hook. NO duplicar esos cambios
+- **Plan 13b NO puede ejecutarse en paralelo con Plan 13a** si 13a toca knowledge/pg-store. En la practica son independientes (medilink vs knowledge/tts) pero coordinar merge

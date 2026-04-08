@@ -15,12 +15,20 @@
 | `src/modules/knowledge/manifest.ts` | API endpoint progress |
 | `src/modules/twilio-voice/call-manager.ts` | Inbound per-number rate limit |
 
+## Cambios previos relevantes (Plans 10/11/12 ya ejecutados)
+
+- **Plan 10** elimino el checkpoint system y renombro comentarios Phase 2/3/4 en engine. No afecta este plan.
+- **Plan 11 FIX-01** agrego `getDocumentCategoryIds()` a `knowledge/pg-store.ts`. FIX-03 de este plan agrega `getEmbeddingProgress()` al MISMO archivo — no hay conflicto pero el ejecutor debe saber que el archivo ya fue modificado.
+- **Plan 11** agrego hook `contact:type_changed` a `src/kernel/types.ts`. No afecta este plan.
+- **Plan 12** modifico `templates-section-channels.ts` (Google Apps toggle). No afecta este plan.
+
 ## Paso 0 — Verificacion obligatoria
 
 1. Leer `item-manager.ts` funcion `scanTabs()` — confirmar que NO pagina (solo 1 call a `listFiles` sin `pageToken` loop)
 2. Leer `tts-service.ts` completo — confirmar que usa `fetch()` directo a `generativelanguage.googleapis.com` sin pasar por LLM gateway
 3. Leer `console-section.ts` — confirmar que no hay polling de progreso de embedding
 4. Leer `call-manager.ts` — confirmar que solo hay rate limit outbound, no inbound per-number
+5. **NUEVO:** Hacer `git pull` o merge del branch con Plans 10/11/12 antes de empezar para tener los cambios recientes
 
 ---
 
