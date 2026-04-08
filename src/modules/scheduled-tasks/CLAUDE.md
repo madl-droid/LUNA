@@ -68,6 +68,12 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 ## Cron validation (FIX-04)
 - `scheduleTask` envuelve `queue.add` en try/catch
 - Expresión cron inválida → log ERROR claro, tarea skipeada, módulo sigue funcionando
+- Solo tareas `trigger_type='cron'` se registran como repeatable en BullMQ
+
+## JobId uniqueness (FIX-03 + FIX-04)
+- `addDelayedJob` usa `delayed-{taskId}-{Date.now()}` como jobId (único por llamada)
+- Repeatable jobs usan `scheduled-{taskId}` (con guion, no dos puntos — BullMQ rechaza `:`)
+- `unscheduleTask` acepta ambos formatos (`scheduled-` y `scheduled:`) para migración
 
 ## Trampas
 - API routes se populan en init() mutando manifest.console.apiRoutes
@@ -75,4 +81,5 @@ Modulo para crear y gestionar tareas que el agente ejecuta automaticamente. Sopo
 - BullMQ connection usa host/port/password de redis.options
 - Migraciones ALTER TABLE IF NOT EXISTS corren en ensureTables
 - Event hooks se registran con prioridad 100 (baja) para no bloquear otros handlers
-- Tareas de evento usan cron dummy `0 0 31 2 *` (nunca dispara) para satisfacer schema
+- Tareas de evento/manual usan cron placeholder `0 0 1 1 *` para satisfacer schema. No se registran como repeatable en BullMQ.
+- Solo tareas `trigger_type='cron'` se registran como repeatable; manual/event se disparan via API/hooks/delayed jobs

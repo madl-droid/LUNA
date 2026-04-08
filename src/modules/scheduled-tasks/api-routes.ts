@@ -129,7 +129,7 @@ export function createApiRoutes(db: Pool, registry: Registry, config: ScheduledT
             return
           }
           // Default cron for non-cron triggers
-          if (!input.cron) input.cron = '0 0 31 2 *' // never fires via cron
+          if (!input.cron) input.cron = '0 0 1 1 *' // placeholder for non-cron tasks (valid, never scheduled)
 
           // FIX: ST-3 — Validar cron string antes de guardar
           if (input.cron && !isValidCron(input.cron)) {
