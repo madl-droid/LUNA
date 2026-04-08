@@ -326,6 +326,11 @@ export function renderMarketingDataConsole(lang: Lang): string {
     console.log('[toast]', type, msg);
   }
 
+  function escHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   // ─── Campaigns ───
   async function loadCampaigns() {
     const data = await api('campaigns');
@@ -345,7 +350,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
       const statusColor = c.active ? 'var(--success)' : 'var(--on-surface-dim)';
       const statusText = c.active ? l.status_active : l.status_inactive;
       const tags = [...(c.platformTags||[]), ...(c.sourceTags||[])].map(t =>
-        '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:' + t.color + '22;color:' + t.color + ';border:1px solid ' + t.color + '44;">' + t.name + '</span>'
+        '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:' + t.color + '22;color:' + t.color + ';border:1px solid ' + t.color + '44;">' + escHtml(t.name) + '</span>'
       ).join(' ');
       const channels = c.allowedChannels && c.allowedChannels.length > 0
         ? c.allowedChannels.join(', ')
@@ -353,9 +358,9 @@ export function renderMarketingDataConsole(lang: Lang): string {
       return '<div class="panel" style="padding:16px;border-radius:8px;border:1px solid var(--border-color);background:var(--surface);">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">' +
           '<div>' +
-            '<div style="font-size:15px;font-weight:500;color:var(--on-surface);">#' + c.visibleId + ' ' + c.name + (c.origin === 'auto_utm' ? '<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;font-size:10px;background:#fef3c7;color:#d97706;border:1px solid rgba(217,119,6,0.2);">Auto UTM</span>' : '') + '</div>' +
-            '<div style="font-size:12px;color:var(--on-surface-dim);margin-top:2px;">Keyword: <code style="background:var(--surface-variant);padding:1px 6px;border-radius:3px;">' + (c.keyword || '-') + '</code></div>' +
-            (c.utmKeys && c.utmKeys.length > 0 ? '<div style="font-size:12px;color:var(--on-surface-dim);margin-top:2px;">UTM Keys: ' + c.utmKeys.map(function(k) { return '<code style="background:var(--surface-variant);padding:1px 6px;border-radius:3px;">' + k + '</code>'; }).join(' ') + '</div>' : '') +
+            '<div style="font-size:15px;font-weight:500;color:var(--on-surface);">#' + c.visibleId + ' ' + escHtml(c.name) + (c.origin === 'auto_utm' ? '<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;font-size:10px;background:#fef3c7;color:#d97706;border:1px solid rgba(217,119,6,0.2);">Auto UTM</span>' : '') + '</div>' +
+            '<div style="font-size:12px;color:var(--on-surface-dim);margin-top:2px;">Keyword: <code style="background:var(--surface-variant);padding:1px 6px;border-radius:3px;">' + escHtml(c.keyword || '-') + '</code></div>' +
+            (c.utmKeys && c.utmKeys.length > 0 ? '<div style="font-size:12px;color:var(--on-surface-dim);margin-top:2px;">UTM Keys: ' + c.utmKeys.map(function(k) { return '<code style="background:var(--surface-variant);padding:1px 6px;border-radius:3px;">' + escHtml(k) + '</code>'; }).join(' ') + '</div>' : '') +
           '</div>' +
           '<div style="display:flex;gap:6px;align-items:center;">' +
             '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + statusColor + ';"></span>' +
@@ -497,7 +502,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--surface);">' +
         '<div style="display:flex;align-items:center;gap:10px;">' +
           '<span style="width:16px;height:16px;border-radius:50%;background:' + t.color + ';display:inline-block;"></span>' +
-          '<span style="font-size:14px;color:var(--on-surface);">' + t.name + '</span>' +
+          '<span style="font-size:14px;color:var(--on-surface);">' + escHtml(t.name) + '</span>' +
           '<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:var(--surface-variant);color:var(--on-surface-dim);">' + typeLabel + '</span>' +
         '</div>' +
         '<button class="md-delete-tag" data-id="' + t.id + '" style="padding:4px 10px;font-size:11px;border-radius:4px;background:transparent;color:var(--error);border:1px solid var(--error);cursor:pointer;">' + l.btn_delete + '</button>' +
@@ -579,7 +584,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
       '<th style="padding:10px 12px;text-align:right;color:var(--on-surface-dim);font-weight:500;">' + l.col_rate + '</th>' +
     '</tr></thead><tbody>';
     stats.forEach(s => {
-      const name = s.campaignId ? ('#' + (s.visibleId||'') + ' ' + s.name) : l.stats_no_campaign;
+      const name = s.campaignId ? ('#' + (s.visibleId||'') + ' ' + escHtml(s.name)) : l.stats_no_campaign;
       const rate = s.entries > 0 ? ((s.conversions / s.entries) * 100).toFixed(1) : '0.0';
       html += '<tr style="border-top:1px solid var(--border-color);">' +
         '<td style="padding:8px 12px;color:var(--on-surface);">' + name + '</td>' +
@@ -611,7 +616,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
           return found ? found.entries : 0;
         };
         html += '<tr style="border-top:1px solid var(--border-color);">' +
-          '<td style="padding:8px 12px;color:var(--on-surface);">#' + (s.visibleId||'') + ' ' + s.name + '</td>' +
+          '<td style="padding:8px 12px;color:var(--on-surface);">#' + (s.visibleId||'') + ' ' + escHtml(s.name) + '</td>' +
           '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + getCount('keyword') + '</td>' +
           '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + getCount('url_utm') + '</td>' +
           '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + getCount('webhook') + '</td>' +
@@ -636,8 +641,8 @@ export function renderMarketingDataConsole(lang: Lang): string {
       utmBreakdown.forEach(function(u) {
         var rate = u.entries > 0 ? ((u.conversions / u.entries) * 100).toFixed(1) : '0.0';
         html += '<tr style="border-top:1px solid var(--border-color);">' +
-          '<td style="padding:8px 12px;color:var(--on-surface);">' + (u.utmSource || 'unknown') + '</td>' +
-          '<td style="padding:8px 12px;color:var(--on-surface);">' + (u.utmMedium || 'unknown') + '</td>' +
+          '<td style="padding:8px 12px;color:var(--on-surface);">' + escHtml(u.utmSource || 'unknown') + '</td>' +
+          '<td style="padding:8px 12px;color:var(--on-surface);">' + escHtml(u.utmMedium || 'unknown') + '</td>' +
           '<td style="padding:8px 12px;text-align:right;color:var(--on-surface);">' + u.entries + '</td>' +
           '<td style="padding:8px 12px;text-align:right;color:var(--success);">' + u.conversions + '</td>' +
           '<td style="padding:8px 12px;text-align:right;color:var(--on-surface-dim);">' + rate + '%</td>' +

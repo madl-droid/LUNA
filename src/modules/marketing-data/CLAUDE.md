@@ -50,6 +50,6 @@ Cuando llega un utm_campaign sin campana existente, se auto-crea con origin='aut
 ## Trampas
 - keyword es OPCIONAL en campanas (las auto-creadas no tienen)
 - utm_keys[] es un array: una campana puede tener multiples utm_campaign values
-- Auto-creacion usa ON CONFLICT para evitar race conditions
+- Auto-creacion usa ON CONFLICT (name) WHERE origin = 'auto_utm' + unique index parcial para evitar duplicados en race conditions
 - Toggles son readonly en consola (env vars, requieren reinicio)
 - moduleConfig se asigna en init() y los handlers de API lo capturan via closure

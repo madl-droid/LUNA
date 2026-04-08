@@ -928,28 +928,32 @@ async function detectCampaign(
   const roundNumber = sessionMessageCount + 1
 
   // --- Paso 1: Intentar UTM match (prioridad máxima) ---
-  const { extractUtmFromText } = await import('../../modules/marketing-data/utm-parser.js')
-  const utmFromText = extractUtmFromText(normalizedText)
+  try {
+    const { extractUtmFromText } = await import('../../modules/marketing-data/utm-parser.js')
+    const utmFromText = extractUtmFromText(normalizedText)
 
-  if (utmFromText) {
-    type UtmResult = { campaignId: string; visibleId: number; name: string; keyword: string; promptContext: string; score: number; matchSource: 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm'; utmData: Record<string, string> }
-    type UtmMatchFn = (utmData: Record<string, string>, ch: string, ct: string) => Promise<UtmResult | null>
-    const utmMatchFn = registry.getOptional<UtmMatchFn>('marketing-data:match-campaign-utm')
-    if (utmMatchFn) {
-      const utmResult = await utmMatchFn(utmFromText as Record<string, string>, channelName, channelType)
-      if (utmResult) {
-        return {
-          id: utmResult.campaignId,
-          visibleId: utmResult.visibleId,
-          name: utmResult.name,
-          keyword: utmResult.keyword,
-          utm: utmResult.utmData,
-          promptContext: utmResult.promptContext,
-          matchScore: utmResult.score,
-          matchSource: utmResult.matchSource,
+    if (utmFromText) {
+      type UtmResult = { campaignId: string; visibleId: number; name: string; keyword: string; promptContext: string; score: number; matchSource: 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm'; utmData: Record<string, string> }
+      type UtmMatchFn = (utmData: Record<string, string>, ch: string, ct: string) => Promise<UtmResult | null>
+      const utmMatchFn = registry.getOptional<UtmMatchFn>('marketing-data:match-campaign-utm')
+      if (utmMatchFn) {
+        const utmResult = await utmMatchFn(utmFromText as Record<string, string>, channelName, channelType)
+        if (utmResult) {
+          return {
+            id: utmResult.campaignId,
+            visibleId: utmResult.visibleId,
+            name: utmResult.name,
+            keyword: utmResult.keyword,
+            utm: utmResult.utmData,
+            promptContext: utmResult.promptContext,
+            matchScore: utmResult.score,
+            matchSource: utmResult.matchSource,
+          }
         }
       }
     }
+  } catch {
+    // marketing-data module not available or UTM parsing failed — continue to keyword match
   }
 
   // --- Paso 2: Fallback a keyword match ---
