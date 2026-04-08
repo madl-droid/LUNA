@@ -6,7 +6,9 @@ import pino from 'pino'
 
 const logger = pino({ name: 'engine:contact-lock' })
 
-const DEFAULT_LOCK_TIMEOUT_MS = 60_000 // 60s — safety net against hanging pipelines
+// FIX-E2: 150s — must exceed pipeline timeout (120s default) + 30s margin to prevent
+// lock expiry before pipeline completes (which would allow a second pipeline to enter).
+const DEFAULT_LOCK_TIMEOUT_MS = 150_000
 
 export class ContactLock {
   private locks = new Map<string, Promise<unknown>>()
@@ -49,15 +51,27 @@ export class ContactLock {
   /** Wrap fn() with a timeout to prevent indefinite blocking. */
   private withTimeout<T>(contactId: string, fn: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      // Warn at 80% of timeout — signals a slow pipeline before it hits the hard limit
+      const warnAt = this.timeoutMs * 0.8
+      const warnTimer = setTimeout(() => {
+        logger.warn({ contactId, timeoutMs: this.timeoutMs, warnAt }, 'Contact lock approaching timeout (80%) — pipeline may be slow')
+      }, warnAt)
+
       const timer = setTimeout(() => {
+        clearTimeout(warnTimer)
         logger.error({ contactId, timeoutMs: this.timeoutMs }, 'Contact lock timeout — releasing to prevent deadlock')
         reject(new Error(`Contact lock timeout after ${this.timeoutMs}ms for ${contactId}`))
       }, this.timeoutMs)
 
       fn()
-        .then(result => { clearTimeout(timer); resolve(result) })
-        .catch(err => { clearTimeout(timer); reject(err) })
+        .then(result => { clearTimeout(warnTimer); clearTimeout(timer); resolve(result) })
+        .catch(err => { clearTimeout(warnTimer); clearTimeout(timer); reject(err) })
     })
+  }
+
+  /** Returns true if contactId currently holds a pipeline lock. */
+  hasLock(contactId: string): boolean {
+    return this.locks.has(contactId)
   }
 
   /** Number of contacts currently locked. */
