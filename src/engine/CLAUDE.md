@@ -184,7 +184,8 @@ Configurable desde consola y .env. Persiste al reinicio.
 - Pipeline simplificado: Phase 1 minimal → agentic loop → Phase 5 con `ProactiveContextBundle`
 - `NO_ACTION` es el default seguro — si LLM falla, no se envía nada
 - Compromisos se crean exclusivamente via tool `create_commitment` (el auto-detector fue eliminado por eficiencia)
-- Al crear un compromiso, `context_summary` captura los últimos 6 mensajes para contexto futuro
+- Al crear un compromiso, `context_summary` usa `context_note` (LLM) como fuente primaria + raw messages como suplemento/fallback
+- Commitments asignados a non-lead users se inyectan en `ctx.pendingCommitments` en `intake.ts` (marcados `assignedToMe=true`), permitiendo que humanos cierren compromisos respondiendo en la conversación reactiva
 - historial 10 msgs para pipelines de tipo 'commitment', 5 para el resto
 
 ## Trampas

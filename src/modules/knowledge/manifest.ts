@@ -1163,7 +1163,17 @@ const manifest: ModuleManifest = {
     KNOWLEDGE_EMBEDDING_MODEL: z.string().default('gemini-embedding-2-preview'),
     KNOWLEDGE_EMBEDDING_DIMENSIONS: numEnvMin(256, 1536),
     /** JSON: { "contact_type": ["categoryId1", ...] } — filtrado de knowledge por tipo de contacto */
-    KNOWLEDGE_CONTACT_CATEGORY_MAP: z.string().default(''),
+    KNOWLEDGE_CONTACT_CATEGORY_MAP: z.string().default('').refine(
+      (v) => {
+        if (!v) return true
+        try {
+          const parsed = JSON.parse(v)
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false
+          return Object.values(parsed).every(arr => Array.isArray(arr) && arr.every(id => typeof id === 'string'))
+        } catch { return false }
+      },
+      { message: 'Must be valid JSON: {"contact_type": ["category-id", ...]} or empty' },
+    ),
   }),
 
   console: {

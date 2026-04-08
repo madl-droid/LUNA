@@ -433,6 +433,10 @@ export class MemoryManager {
     return await this.pg.getPendingCommitments(contactId, limit)
   }
 
+  async getAssignedCommitments(assignedTo: string, limit?: number): Promise<Commitment[]> {
+    return await this.pg.getAssignedCommitments(assignedTo, limit)
+  }
+
   async getRecentCompletedCommitments(contactId: string, limit = 5): Promise<Commitment[]> {
     return await this.pg.getRecentCompletedCommitments(contactId, limit)
   }

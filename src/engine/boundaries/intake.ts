@@ -232,6 +232,20 @@ export async function intake(
   const history = historyResult.status === 'fulfilled' ? historyResult.value : []
   const contactMemory = memoryResult.status === 'fulfilled' ? memoryResult.value : null
   const pendingCommitments = commitmentsResult.status === 'fulfilled' ? commitmentsResult.value : []
+
+  // Load commitments assigned to this sender (non-lead users: coworkers, admins).
+  // This enables humans to close commitments by replying "completado" in conversation.
+  if (userType !== 'lead' && !userType.startsWith('_unregistered:') && memoryManager) {
+    try {
+      const assigned = await memoryManager.getAssignedCommitments(message.from, 5)
+      if (assigned.length > 0) {
+        for (const c of assigned) {
+          (c as unknown as Record<string, unknown>).assignedToMe = true
+        }
+        pendingCommitments.push(...assigned)
+      }
+    } catch { /* best effort */ }
+  }
   const relevantSummaries = summariesResult.status === 'fulfilled' ? summariesResult.value : []
   const leadStatus = leadStatusResult.status === 'fulfilled' ? leadStatusResult.value : null
   const bufferSummary = bufferSummaryResult.status === 'fulfilled' ? bufferSummaryResult.value : null
