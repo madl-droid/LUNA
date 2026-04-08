@@ -1216,6 +1216,16 @@ const manifest: ModuleManifest = {
         width: 'half',
       },
       {
+        key: 'KNOWLEDGE_CONTACT_CATEGORY_MAP',
+        type: 'textarea',
+        label: { es: 'Filtro de categorias por tipo de contacto', en: 'Category filter by contact type' },
+        info: {
+          es: 'JSON que mapea tipos de contacto a categorias de conocimiento permitidas. Ejemplo: {"lead":["cat-id-1","cat-id-2"],"coworker":["cat-id-3"]}. Vacio = sin filtro.',
+          en: 'JSON mapping contact types to allowed knowledge categories. Example: {"lead":["cat-id-1","cat-id-2"],"coworker":["cat-id-3"]}. Empty = no filter.',
+        },
+        placeholder: '{"lead":["category-uuid-1"],"coworker":["category-uuid-2"]}',
+      },
+      {
         key: 'KNOWLEDGE_SYNC_ENABLED',
         type: 'boolean',
         label: { es: 'Sincronizacion automatica', en: 'Auto sync' },
