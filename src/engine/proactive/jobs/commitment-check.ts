@@ -26,6 +26,7 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
     const result = await ctx.db.query(
       `SELECT cm.id, cm.contact_id, cm.description, cm.commitment_type,
               cm.due_at, cm.status, cm.attempt_count, cm.requires_tool, cm.priority,
+              cm.context_summary, cm.assigned_to, cm.metadata,
               c.display_name,
               cc.channel_identifier, cc.channel_type
        FROM commitments cm
@@ -47,6 +48,12 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
     let processed = 0
 
     for (const row of result.rows) {
+      // If commitment is assigned to a human, notify the human — not the contact
+      if (row.assigned_to) {
+        await notifyAssignedHuman(ctx, row)
+        continue
+      }
+
       // Build commitment data directly from the query row (avoids N+1 re-fetch)
       const commitmentData: import('../../../modules/memory/types.js').Commitment = {
         id: row.id,
@@ -59,6 +66,7 @@ export async function runCommitmentCheck(ctx: ProactiveJobContext): Promise<void
         status: row.status,
         attemptCount: row.attempt_count ?? 0,
         requiresTool: row.requires_tool ?? null,
+        contextSummary: row.context_summary ?? null,
         sortOrder: 0,
         reminderSent: false,
         metadata: {},
@@ -149,5 +157,72 @@ async function markOverdue(ctx: ProactiveJobContext): Promise<void> {
     )
   } catch (err) {
     logger.warn({ err, traceId: ctx.traceId }, 'Mark overdue query failed')
+  }
+}
+
+/**
+ * Notify the assigned human that their commitment is due/overdue.
+ * Uses message:send hook to contact the human directly.
+ */
+async function notifyAssignedHuman(ctx: ProactiveJobContext, row: Record<string, unknown>): Promise<void> {
+  const assignedTo = row.assigned_to as string
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>
+  const channel = (metadata.assigned_channel as string) || 'whatsapp'
+  const description = row.description as string
+  const status = row.status as string
+  const commitmentId = row.id as string
+  const contactName = row.display_name as string | null
+  const attemptCount = (row.attempt_count as number) ?? 0
+
+  const maxAttempts = ctx.proactiveConfig.commitments.max_attempts
+
+  const overdueTag = status === 'overdue' ? ' ⚠ VENCIDO' : ''
+  const message = `📋 Recordatorio de compromiso${overdueTag}\n\nContacto: ${contactName ?? 'Sin nombre'}\nCompromiso: ${description}\nIntento: ${attemptCount + 1}/${maxAttempts}\n\nPor favor atiende este compromiso o responde "completado" cuando lo hayas resuelto.`
+
+  try {
+    await ctx.registry.runHook('message:send', {
+      channel,
+      to: assignedTo,
+      content: { type: 'text', text: message },
+      correlationId: ctx.traceId,
+    }, ctx.traceId)
+
+    await ctx.db.query(
+      `UPDATE commitments SET attempt_count = attempt_count + 1, last_attempt_at = now()
+       WHERE id = $1`,
+      [commitmentId],
+    )
+
+    logger.info({ commitmentId, assignedTo, attempt: attemptCount + 1 }, 'Notified assigned human about commitment')
+  } catch (err) {
+    logger.warn({ err, commitmentId, assignedTo }, 'Failed to notify assigned human')
+  }
+
+  // If max attempts reached, escalate
+  if (attemptCount + 1 >= maxAttempts) {
+    await ctx.db.query(
+      `UPDATE commitments SET status = 'failed', action_taken = 'Human did not respond after max attempts'
+       WHERE id = $1`,
+      [commitmentId],
+    )
+    logger.warn({ commitmentId, assignedTo }, 'Human commitment failed after max attempts')
+
+    const hitlManager = ctx.registry.getOptional<{
+      createTicket(params: Record<string, unknown>): Promise<unknown>
+    }>('hitl:manager')
+    if (hitlManager) {
+      try {
+        await hitlManager.createTicket({
+          requestType: 'escalation',
+          requestSummary: `Compromiso no atendido por ${assignedTo}: "${description}"`,
+          requesterContactId: row.contact_id as string,
+          urgency: 'high',
+          targetRole: 'admin',
+          metadata: { commitmentId, originalAssignee: assignedTo },
+        })
+      } catch (err) {
+        logger.warn({ err, commitmentId }, 'Failed to create escalation ticket for unattended commitment')
+      }
+    }
   }
 }

@@ -1,5 +1,6 @@
 // hitl/resolver.ts — Resolution delivery: rephrase human answer via LLM + send to client
 
+import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
 import type { HitlTicket } from './types.js'
@@ -44,6 +45,16 @@ export async function resolveTicket(
     await deactivateHandoff(ticket.requesterChannel, ticket.requesterSenderId, redis)
   }
 
+  // 5b. If full handoff, reassign pending commitments to the human who took responsibility
+  if (ticket.handoffMode === 'full_handoff' && ticket.assignedSenderId && ticket.assignedChannel) {
+    await reassignCommitmentsToHuman(
+      registry.getDb(),
+      ticket.requesterContactId,
+      ticket.assignedSenderId,
+      ticket.assignedChannel,
+    )
+  }
+
   // 6. Fire resolved hook
   await registry.runHook('hitl:ticket_resolved', {
     ticketId: ticket.id,
@@ -84,6 +95,33 @@ async function rephraseResolution(
 
   // Fallback: return human's response as-is
   return humanResponse
+}
+
+/**
+ * Reassign pending commitments from the agent to a human who took responsibility.
+ * The commitment scanner will then notify the human instead of the contact.
+ */
+async function reassignCommitmentsToHuman(
+  db: Pool,
+  contactId: string,
+  humanSenderId: string,
+  humanChannel: string,
+): Promise<void> {
+  try {
+    const result = await db.query(
+      `UPDATE commitments
+       SET assigned_to = $1, metadata = metadata || $2, updated_at = now()
+       WHERE contact_id = $3
+         AND status IN ('pending', 'in_progress', 'waiting', 'overdue')
+         AND assigned_to IS NULL`,
+      [humanSenderId, JSON.stringify({ assigned_channel: humanChannel, assigned_via: 'hitl_handoff' }), contactId],
+    )
+    if (result.rowCount && result.rowCount > 0) {
+      logger.info({ contactId, humanSenderId, count: result.rowCount }, 'Commitments reassigned to human via HITL handoff')
+    }
+  } catch (err) {
+    logger.warn({ err, contactId, humanSenderId }, 'Failed to reassign commitments to human')
+  }
 }
 
 function buildRephrasePrompt(ticket: HitlTicket): string {
