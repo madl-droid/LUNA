@@ -183,7 +183,7 @@ export class SheetsService {
           },
         }
       })
-      .filter(Boolean)
+      .filter((r): r is NonNullable<typeof r> => r !== null)
 
     if (requests.length === 0) return
 
