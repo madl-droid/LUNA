@@ -1,9 +1,4 @@
-Responde SOLO con JSON válido. Sin markdown, sin backticks, sin texto fuera del JSON.
+Si la respuesta pasa todos los criterios de calidad, responde exactamente con:
+APPROVED
 
-Si la respuesta es aceptable:
-{"approved": true}
-
-Si necesita corrección:
-{"approved": false, "tone": "instrucción de tono si aplica", "length": "más corta|más larga|null", "remove": ["frase o dato a eliminar"], "add": ["dato o CTA a incluir"], "rephrase": ["instrucción específica de reformulación"]}
-
-Solo incluye los campos que aplican. Omite los que no necesitan cambio.
+Si necesita corrección, explica qué debe cambiarse (máx 3 puntos concisos). No reescribas la respuesta — solo da tu feedback.
