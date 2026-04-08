@@ -109,6 +109,15 @@ export interface SheetProperties {
   sheets: Array<{ sheetId: number; title: string; rowCount: number; columnCount: number }>
 }
 
+export interface SheetBatchOperation {
+  type: 'write' | 'append' | 'clear' | 'find_replace'
+  range?: string        // requerido para write, append, clear
+  values?: string[][]   // requerido para write, append
+  find?: string         // requerido para find_replace
+  replacement?: string  // requerido para find_replace
+  matchCase?: boolean   // opcional para find_replace
+}
+
 // ═══════════════════════════════════════════
 // Docs types
 // ═══════════════════════════════════════════
@@ -121,6 +130,13 @@ export interface DocInfo {
   tabs?: Array<{ tabId: string; title: string; index: number }>
 }
 
+export interface DocEditOperation {
+  type: 'append' | 'insert' | 'replace'
+  text: string                // texto a insertar/agregar, o replaceText para replace
+  searchText?: string         // solo para type='replace': texto a buscar
+  index?: number              // solo para type='insert': posición (1-based, como Google Docs API)
+}
+
 // ═══════════════════════════════════════════
 // Slides types
 // ═══════════════════════════════════════════
@@ -130,6 +146,19 @@ export interface SlideInfo {
   title: string
   slides: Array<{ objectId: string; pageElements: number }>
   locale?: string
+}
+
+export interface SlideEditOperation {
+  type: 'replace_text' | 'add_slide' | 'update_notes'
+  // Para replace_text:
+  searchText?: string
+  replaceText?: string
+  // Para add_slide:
+  layout?: string
+  insertionIndex?: number
+  // Para update_notes:
+  slideIndex?: number
+  text?: string
 }
 
 // ═══════════════════════════════════════════
