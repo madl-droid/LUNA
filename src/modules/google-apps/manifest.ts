@@ -441,10 +441,20 @@ const manifest: ModuleManifest = {
 
     // Intentar conectar si hay credenciales
     if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {
-      try {
-        await oauthManager.initialize()
-      } catch (err) {
-        logger.warn({ err }, 'OAuth initialization failed — connect manually from console')
+      let initialized = false
+      for (let attempt = 1; attempt <= 3 && !initialized; attempt++) {
+        try {
+          await oauthManager.initialize()
+          initialized = true
+        } catch (err) {
+          if (attempt < 3) {
+            const delayMs = 2000 * Math.pow(2, attempt - 1) // 2s, 4s
+            logger.warn({ err, attempt, nextRetryMs: delayMs }, 'OAuth initialization failed — retrying')
+            await new Promise(resolve => setTimeout(resolve, delayMs))
+          } else {
+            logger.warn({ err, attempts: 3 }, 'OAuth initialization failed after 3 attempts — connect manually from console')
+          }
+        }
       }
     } else {
       logger.info('Google API credentials not configured — use console wizard to set them')
@@ -474,13 +484,13 @@ const manifest: ModuleManifest = {
     }
 
     if (_enabledSet.has('docs')) {
-      _services.docs = new DocsService(authClient)
+      _services.docs = new DocsService(authClient, config)
       registry.provide('google:docs', _services.docs)
       logger.info('Docs service enabled')
     }
 
     if (_enabledSet.has('slides')) {
-      _services.slides = new SlidesService(authClient)
+      _services.slides = new SlidesService(authClient, config)
       registry.provide('google:slides', _services.slides)
       logger.info('Slides service enabled')
     }

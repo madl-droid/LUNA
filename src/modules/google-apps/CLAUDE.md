@@ -18,9 +18,10 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - `tools.ts` — registro de tools para el pipeline (Drive, Sheets, Docs, Slides, Calendar)
 
 ## Manifest
-- type: `provider`, removable: true, activateByDefault: false
+- type: `provider`, removable: true, activateByDefault: true
 - depends: [] (sin dependencias, pero tools module es opcional)
 - configSchema: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_REFRESH_TOKEN, GOOGLE_ENABLED_SERVICES, GOOGLE_TOKEN_REFRESH_BUFFER_MS, GOOGLE_API_TIMEOUT_MS, GOOGLE_API_RETRY_MAX
+- **Todos los servicios (Sheets, Docs, Slides)** usan `googleApiCall` wrapper (api-wrapper.ts) para timeout + retry con exponential backoff
 
 ## Servicios registrados
 - `google:oauth-client` — OAuth2Client de google-auth-library
@@ -45,9 +46,9 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 
 ## Tools registrados (cuando tools module existe)
 - Drive: drive-list-files, drive-get-file, drive-create-folder, drive-create-file, drive-share, drive-move-file
-- Sheets: sheets-read, sheets-write, sheets-append, sheets-create, sheets-info
-- Docs: docs-read, docs-create, docs-append, docs-replace
-- Slides: slides-read, slides-info, slides-create, slides-replace-text
+- Sheets: sheets-read (paginación server-side, auto-detect tab), sheets-write, sheets-append (restaura validaciones), sheets-create, sheets-info, sheets-find-replace, sheets-batch-edit
+- Docs: docs-read (truncation 30K, word count), docs-create, docs-append, docs-replace, docs-batch-edit
+- Slides: slides-read (incluye speaker notes), slides-info, slides-create, slides-replace-text, slides-add-slide, slides-update-notes, slides-batch-edit
 - Calendar: calendar-list-events, calendar-get-event, calendar-create-event, calendar-update-event, calendar-delete-event, calendar-add-attendees, calendar-list-calendars, calendar-check-availability, calendar-get-scheduling-context, calendar-execute-followup
 
 ## Autenticación OAuth2
@@ -89,6 +90,7 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - Config persiste en config_store como JSON (key: GCAL_SCHEDULING_CONFIG), validada con Zod
 
 ## Patrones
+- `slides-read` extrae texto de shapes + speaker notes de cada slide. Las notas aparecen como `[Notas del presentador]: ...` en el output.
 - Cada servicio se habilita/deshabilita via `GOOGLE_ENABLED_SERVICES` (CSV)
 - Los services solo se registran si están habilitados
 - Los tools solo se registran si el servicio correspondiente está habilitado Y el módulo tools existe
@@ -96,6 +98,8 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 
 ## Trampas
 - NO leer process.env — usar registry.getConfig()
+- OAuth init hace 3 intentos con exponential backoff (2s, 4s). Si falla, continúa sin auth — conectar manualmente.
+- `docs-read` trunca body a 30K chars con indicador. wordCount y charCount reflejan el documento completo.
 - El refresh_token de OAuth2 dura indefinidamente SI la app está en modo "producción" en GCP (en "testing" expira en 7 días)
 - auth-url siempre incluye gmail scopes por conveniencia (si email está activo, comparte este OAuth; si no, no afecta)
 - Email ya NO depende de google-apps — puede autenticarse solo con su propio EmailOAuthManager
