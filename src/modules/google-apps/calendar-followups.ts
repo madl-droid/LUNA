@@ -281,7 +281,7 @@ export class CalendarFollowUpScheduler {
       const task = await tasksApi.createTask({
         name: taskName,
         prompt: `Ejecuta seguimiento de calendario. Follow-up ID: ${followUpId}. No generes texto adicional.`,
-        cron: '0 0 31 2 *', // dummy cron (31 de febrero — nunca ocurre)
+        cron: '0 0 1 1 *', // placeholder (never scheduled as repeatable — triggered by delayed job)
         trigger_type: 'manual',
         enabled: true,
         actions: [{
@@ -436,7 +436,7 @@ export class CalendarFollowUpScheduler {
         const task = await tasksApi.createTask({
           name: taskName,
           prompt: `Ejecuta seguimiento de calendario. Follow-up ID: ${row.id}. No generes texto adicional.`,
-          cron: '0 0 31 2 *',
+          cron: '0 0 1 1 *', // placeholder (never scheduled as repeatable — triggered by delayed job)
           trigger_type: 'manual',
           enabled: true,
           actions: [{
