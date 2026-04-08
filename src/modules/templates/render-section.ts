@@ -398,15 +398,12 @@ export function renderTemplatesSection(lang: 'es' | 'en'): string {
   }
 
   function extractDriveFileId(url) {
-    const patterns = [
-      /\/d\/([a-zA-Z0-9_-]{20,})/,
-      /id=([a-zA-Z0-9_-]{20,})/,
-      /^([a-zA-Z0-9_-]{20,})$/,
-    ];
-    for (const p of patterns) {
-      const m = url.match(p);
-      if (m && m[1]) return m[1];
-    }
+    var m = url.match(new RegExp('/d/([a-zA-Z0-9_-]{20,})'));
+    if (m && m[1]) return m[1];
+    m = url.match(/id=([a-zA-Z0-9_-]{20,})/);
+    if (m && m[1]) return m[1];
+    m = url.match(/^([a-zA-Z0-9_-]{20,})$/);
+    if (m && m[1]) return m[1];
     return null;
   }
 
