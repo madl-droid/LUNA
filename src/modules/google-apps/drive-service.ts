@@ -252,4 +252,57 @@ export class DriveService {
       pageToken,
     })
   }
+
+  async copyFile(
+    fileId: string,
+    name: string,
+    parentId?: string,
+  ): Promise<DriveFile> {
+    const requestBody: Record<string, unknown> = { name }
+    if (parentId) requestBody['parents'] = [parentId]
+
+    const res = await googleApiCall(
+      () => this.drive.files.copy({
+        fileId,
+        requestBody,
+        fields: 'id, name, mimeType, size, createdTime, webViewLink, webContentLink, parents',
+        supportsAllDrives: true,
+      }),
+      this.apiConfig,
+      'drive.files.copy',
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = (res as any).data as Record<string, unknown>
+    return {
+      id: (d['id'] as string) ?? '',
+      name: (d['name'] as string) ?? '',
+      mimeType: (d['mimeType'] as string) ?? '',
+      size: d['size'] as string | undefined,
+      createdTime: d['createdTime'] as string | undefined,
+      webViewLink: d['webViewLink'] as string | undefined,
+      webContentLink: d['webContentLink'] as string | undefined,
+      parents: d['parents'] as string[] | undefined,
+    }
+  }
+
+  async shareFileAnyone(
+    fileId: string,
+    role: 'reader' | 'writer' | 'commenter' = 'reader',
+  ): Promise<DrivePermission> {
+    const res = await this.drive.permissions.create({
+      fileId,
+      requestBody: {
+        type: 'anyone',
+        role,
+      },
+      fields: 'id, type, role',
+    })
+
+    return {
+      id: res.data.id ?? '',
+      type: (res.data.type ?? 'anyone') as DrivePermission['type'],
+      role: (res.data.role ?? 'reader') as DrivePermission['role'],
+    }
+  }
 }

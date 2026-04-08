@@ -43,6 +43,7 @@ src/
     medilink/        — integración Medilink/HealthAtom: pacientes, citas, follow-up (ver CLAUDE.md)
     freshdesk/       — integración Freshdesk Knowledge Base: búsqueda y sync de artículos (ver CLAUDE.md)
     cortex/          — sistema nervioso: monitoreo, alertas, Reflex (ver CLAUDE.md)
+    templates/       — plantillas de documentos: comparativos, cotizaciones, presentaciones (ver CLAUDE.md)
     subagents/       — subagentes especializados: CRUD, system subagents, web-researcher, verificación iterativa (3 retries), spawn, métricas (ver CLAUDE.md)
     hitl/            — Human-in-the-Loop: consulta humana y escalamiento unificado (ver CLAUDE.md)
   tools/
@@ -282,6 +283,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/cortex/CLAUDE.md` — sistema nervioso: monitoreo, alertas, Reflex, Pulse, Trace (simulación y testing)
 - `src/modules/subagents/CLAUDE.md` — subagentes especializados (CRUD, system subagents, web-researcher, verificación iterativa 3 retries, spawn, métricas)
 - `src/modules/hitl/CLAUDE.md` — Human-in-the-Loop (consulta humana, escalamiento, supervisor chain, handoff por canal)
+- `src/modules/templates/CLAUDE.md` — plantillas de documentos (comparativos, cotizaciones, presentaciones, gestión Drive)
 - `src/tools/freshdesk/CLAUDE.md` — Freshdesk Knowledge Base (búsqueda, artículos, sync semanal)
 - `src/engine/CLAUDE.md` — pipeline de procesamiento
 - `src/engine/checkpoints/CLAUDE.md` — checkpoints para pipelines resumibles

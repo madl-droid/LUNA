@@ -1066,6 +1066,18 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           } else {
             sectionData.herramientasContent = notAvailable('HITL')
           }
+        } else if (herramientasSubpage === 'templates') {
+          const templatesMod = data.moduleStates.find(m => m.name === 'templates')
+          if (templatesMod?.active) {
+            let html = renderModulePanels([templatesMod], data.config, lang, 'templates')
+            try {
+              const renderFn = registry.getOptional<(lang: string) => string>('templates:renderSection')
+              if (renderFn) html += renderFn(lang)
+            } catch (err) { logger.error({ err }, 'Failed to render templates custom section') }
+            sectionData.herramientasContent = html
+          } else {
+            sectionData.herramientasContent = notAvailable('templates')
+          }
         } else if (herramientasSubpage) {
           // Dynamic: any active agent-group module renders as module panel
           const dynMod = data.moduleStates.find(m => m.name === herramientasSubpage)
