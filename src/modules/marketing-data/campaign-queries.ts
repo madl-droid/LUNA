@@ -8,6 +8,9 @@ import type {
   CampaignTag,
   ContactCampaignEntry,
   CampaignStatRow,
+  CampaignDetailedStats,
+  SourceBreakdown,
+  UtmBreakdown,
 } from './campaign-types.js'
 
 const logger = pino({ name: 'marketing-data:campaigns-db' })
@@ -41,12 +44,29 @@ export class CampaignQueries {
       `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS allowed_channels TEXT[] DEFAULT '{}'`,
       `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS prompt_context VARCHAR(200) DEFAULT ''`,
       `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now()`,
+      // UTM Foundation columns
+      `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS utm_keys TEXT[] DEFAULT '{}'`,
+      `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'manual'`,
+      // contact_campaigns UTM tracking
+      `ALTER TABLE contact_campaigns ADD COLUMN IF NOT EXISTS match_source TEXT DEFAULT 'keyword'`,
+      `ALTER TABLE contact_campaigns ADD COLUMN IF NOT EXISTS utm_data JSONB DEFAULT '{}'`,
     ]
     for (const sql of alters) {
       await this.db.query(sql).catch(() => {
         // Column may already exist — non-critical
       })
     }
+
+    // GIN index for utm_keys lookups
+    await this.db.query(`
+      CREATE INDEX IF NOT EXISTS idx_campaigns_utm_keys ON campaigns USING GIN (utm_keys)
+    `).catch(() => {})
+
+    // Unique index on name for auto_utm campaigns — prevents duplicates on race conditions
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_auto_utm_name
+        ON campaigns (name) WHERE origin = 'auto_utm'
+    `).catch(() => {})
 
     // Seed default "Sin campaña" (visible_id=0) if it doesn't exist
     await this.db.query(`
@@ -125,6 +145,8 @@ export class CampaignQueries {
              COALESCE(c.allowed_channels, '{}') AS allowed_channels,
              COALESCE(c.prompt_context, '') AS prompt_context,
              c.active, COALESCE(c.utm_data, '{}') AS utm_data,
+             COALESCE(c.utm_keys, '{}') AS utm_keys,
+             COALESCE(c.origin, 'manual') AS origin,
              c.created_at, COALESCE(c.updated_at, c.created_at) AS updated_at,
              COALESCE(
                json_agg(
@@ -160,6 +182,8 @@ export class CampaignQueries {
              COALESCE(c.allowed_channels, '{}') AS allowed_channels,
              COALESCE(c.prompt_context, '') AS prompt_context,
              c.active, COALESCE(c.utm_data, '{}') AS utm_data,
+             COALESCE(c.utm_keys, '{}') AS utm_keys,
+             COALESCE(c.origin, 'manual') AS origin,
              c.created_at, COALESCE(c.updated_at, c.created_at) AS updated_at
       FROM campaigns c WHERE c.id = $1
     `, [id])
@@ -171,19 +195,20 @@ export class CampaignQueries {
 
   async createCampaign(data: {
     name: string
-    keyword: string
+    keyword?: string
     matchThreshold?: number
     matchMaxRounds?: number
     allowedChannels?: string[]
     promptContext?: string
     utmData?: Record<string, string>
+    utmKeys?: string[]
     tagIds?: string[]
   }): Promise<CampaignRecord> {
-    const promptCtx = (data.promptContext ?? data.keyword).slice(0, 200)
+    const promptCtx = (data.promptContext ?? data.keyword ?? '').slice(0, 200)
     const result = await this.db.query(`
       INSERT INTO campaigns (name, keyword, match_threshold, match_max_rounds, allowed_channels,
-                             prompt_context, utm_data, active, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, true, now())
+                             prompt_context, utm_data, utm_keys, origin, active, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'manual', true, now())
       RETURNING id, visible_id
     `, [
       data.name,
@@ -193,6 +218,7 @@ export class CampaignQueries {
       data.allowedChannels ?? [],
       promptCtx,
       JSON.stringify(data.utmData ?? {}),
+      (data.utmKeys ?? []).map(k => k.toLowerCase()),
     ])
 
     const { id } = result.rows[0]!
@@ -212,6 +238,7 @@ export class CampaignQueries {
     promptContext?: string
     active?: boolean
     utmData?: Record<string, string>
+    utmKeys?: string[]
     tagIds?: string[]
   }): Promise<CampaignRecord | null> {
     const sets: string[] = []
@@ -226,6 +253,7 @@ export class CampaignQueries {
     if (data.promptContext !== undefined) { sets.push(`prompt_context = $${idx++}`); params.push(data.promptContext.slice(0, 200)) }
     if (data.active !== undefined) { sets.push(`active = $${idx++}`); params.push(data.active) }
     if (data.utmData !== undefined) { sets.push(`utm_data = $${idx++}`); params.push(JSON.stringify(data.utmData)) }
+    if (data.utmKeys !== undefined) { sets.push(`utm_keys = $${idx++}`); params.push(data.utmKeys.map(k => k.toLowerCase())) }
 
     if (sets.length > 0) {
       sets.push(`updated_at = now()`)
@@ -248,6 +276,49 @@ export class CampaignQueries {
 
   async deleteCampaign(id: string): Promise<void> {
     await this.db.query(`DELETE FROM campaigns WHERE id = $1`, [id])
+  }
+
+  // ═══════════════════════════════════════════
+  // UTM lookup + auto-create
+  // ═══════════════════════════════════════════
+
+  /**
+   * Busca campaña activa por valor de utm_campaign en utm_keys[].
+   * Retorna la primera campaña que contenga el valor (case-insensitive).
+   */
+  async findByUtmCampaign(utmCampaignValue: string): Promise<{ id: string; name: string; visibleId: number; keyword: string; promptContext: string } | null> {
+    const result = await this.db.query<{ id: string; name: string; visible_id: number; keyword: string; prompt_context: string }>(`
+      SELECT id, name, visible_id, keyword, prompt_context
+      FROM campaigns
+      WHERE LOWER($1) = ANY(utm_keys) AND active = true
+      LIMIT 1
+    `, [utmCampaignValue])
+    if (result.rows.length === 0) return null
+    const r = result.rows[0]!
+    return {
+      id: r.id,
+      name: r.name,
+      visibleId: r.visible_id,
+      keyword: r.keyword ?? '',
+      promptContext: r.prompt_context ?? '',
+    }
+  }
+
+  /**
+   * Auto-crea campaña desde un utm_campaign value.
+   * name = utmCampaignValue, keyword = null, utm_keys = [utmCampaignValue], origin = 'auto_utm'.
+   */
+  async autoCreateFromUtm(utmCampaignValue: string, utmData: Record<string, string>): Promise<{ id: string; name: string; visibleId: number }> {
+    const result = await this.db.query<{ id: string; name: string; visible_id: number }>(`
+      INSERT INTO campaigns (name, keyword, utm_keys, utm_data, origin, active, updated_at)
+      VALUES ($1, NULL, ARRAY[LOWER($1)], $2, 'auto_utm', true, now())
+      ON CONFLICT (name) WHERE origin = 'auto_utm'
+        DO UPDATE SET utm_data = EXCLUDED.utm_data, updated_at = now()
+      RETURNING id, name, visible_id
+    `, [utmCampaignValue, JSON.stringify(utmData)])
+    const r = result.rows[0]!
+    logger.info({ name: utmCampaignValue }, 'Auto-created campaign from UTM')
+    return { id: r.id, name: r.name, visibleId: r.visible_id }
   }
 
   // ═══════════════════════════════════════════
@@ -332,19 +403,21 @@ export class CampaignQueries {
     sessionId: string | null,
     channelName: string | null,
     matchScore: number | null,
+    matchSource: string = 'keyword',
+    utmData: Record<string, string> = {},
   ): Promise<void> {
     await this.db.query(`
-      INSERT INTO contact_campaigns (contact_id, campaign_id, session_id, channel_name, match_score)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO contact_campaigns (contact_id, campaign_id, session_id, channel_name, match_score, match_source, utm_data)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (contact_id, campaign_id, session_id) DO NOTHING
-    `, [contactId, campaignId, sessionId, channelName, matchScore])
+    `, [contactId, campaignId, sessionId, channelName, matchScore, matchSource, JSON.stringify(utmData)])
   }
 
   async getContactCampaigns(contactId: string): Promise<ContactCampaignEntry[]> {
     const result = await this.db.query(`
       SELECT cc.id, cc.contact_id, cc.campaign_id, c.name AS campaign_name,
              c.visible_id AS campaign_visible_id, cc.session_id,
-             cc.channel_name, cc.match_score, cc.matched_at
+             cc.channel_name, cc.match_score, cc.match_source, cc.utm_data, cc.matched_at
       FROM contact_campaigns cc
       JOIN campaigns c ON c.id = cc.campaign_id
       WHERE cc.contact_id = $1
@@ -359,6 +432,10 @@ export class CampaignQueries {
       sessionId: r.session_id as string | null,
       channelName: r.channel_name as string | null,
       matchScore: r.match_score as number | null,
+      matchSource: (r.match_source as string | null) ?? null,
+      utmData: (typeof r.utm_data === 'string'
+        ? JSON.parse(r.utm_data)
+        : (r.utm_data ?? {})) as Record<string, string>,
       matchedAt: (r.matched_at as Date)?.toISOString() ?? '',
     }))
   }
@@ -423,13 +500,15 @@ export class CampaignQueries {
     // "Sin campaña" row
     const noCampaignResult = await this.db.query(`
       SELECT
-        (SELECT COUNT(*) FROM contacts WHERE contact_type = 'lead'
-          AND id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS entries,
+        (SELECT COUNT(*) FROM contacts c
+          LEFT JOIN contact_campaigns cc ON cc.contact_id = c.id
+          WHERE c.contact_type = 'lead' AND cc.id IS NULL) AS entries,
         (SELECT COUNT(*) FROM contacts c2
           JOIN agent_contacts ac2 ON ac2.contact_id = c2.id
+          LEFT JOIN contact_campaigns cc2 ON cc2.contact_id = c2.id
           WHERE c2.contact_type = 'lead'
             AND ac2.lead_status = 'converted'
-            AND c2.id NOT IN (SELECT DISTINCT contact_id FROM contact_campaigns)) AS conversions
+            AND cc2.id IS NULL) AS conversions
     `)
     const nc = noCampaignResult.rows[0]
     if (nc) {
@@ -443,6 +522,194 @@ export class CampaignQueries {
     }
 
     return stats
+  }
+
+  // ═══════════════════════════════════════════
+  // Detailed stats — breakdown by source & UTM
+  // ═══════════════════════════════════════════
+
+  async getCampaignDetailedStats(): Promise<CampaignDetailedStats[]> {
+    const [
+      baseStats,
+      sourceEntriesResult,
+      utmEntriesResult,
+      firstTouchResult,
+      sourceConversionsResult,
+      utmConversionsResult,
+    ] = await Promise.all([
+      this.getCampaignStats(),
+
+      // Query 1 — source entries per campaign
+      this.db.query(`
+        SELECT campaign_id,
+               COALESCE(match_source, 'keyword') AS match_source,
+               COUNT(DISTINCT contact_id) AS entries
+        FROM contact_campaigns
+        GROUP BY campaign_id, match_source
+      `),
+
+      // Query 2 — UTM entries per campaign
+      this.db.query(`
+        SELECT campaign_id,
+               COALESCE(utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(DISTINCT contact_id) AS entries
+        FROM contact_campaigns
+        WHERE utm_data != '{}'::jsonb AND utm_data IS NOT NULL
+        GROUP BY campaign_id, utm_data->>'utm_source', utm_data->>'utm_medium'
+      `),
+
+      // Query 3 — first-touch attribution
+      this.db.query(`
+        WITH first_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, campaign_id
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at ASC
+        )
+        SELECT campaign_id, COUNT(*) AS first_touch_entries
+        FROM first_campaign
+        GROUP BY campaign_id
+      `),
+
+      // Query 4 — conversions by source
+      this.db.query(`
+        WITH last_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, campaign_id, match_source
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at DESC
+        )
+        SELECT lc.campaign_id, COALESCE(lc.match_source, 'keyword') AS match_source, COUNT(*) AS conversions
+        FROM last_campaign lc
+        JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
+        WHERE ac.lead_status = 'converted'
+        GROUP BY lc.campaign_id, lc.match_source
+      `),
+
+      // Query 5 — conversions by UTM source
+      this.db.query(`
+        WITH last_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, campaign_id, utm_data
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at DESC
+        )
+        SELECT lc.campaign_id,
+               COALESCE(lc.utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(lc.utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(*) AS conversions
+        FROM last_campaign lc
+        JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
+        WHERE ac.lead_status = 'converted' AND lc.utm_data != '{}'::jsonb
+        GROUP BY lc.campaign_id, lc.utm_data->>'utm_source', lc.utm_data->>'utm_medium'
+      `),
+    ])
+
+    // Build lookup maps
+    const sourceEntriesMap = new Map<string, Map<string, number>>()
+    for (const r of sourceEntriesResult.rows) {
+      if (!sourceEntriesMap.has(r.campaign_id)) sourceEntriesMap.set(r.campaign_id, new Map())
+      sourceEntriesMap.get(r.campaign_id)!.set(r.match_source, parseInt(r.entries, 10))
+    }
+
+    const sourceConvMap = new Map<string, Map<string, number>>()
+    for (const r of sourceConversionsResult.rows) {
+      if (!sourceConvMap.has(r.campaign_id)) sourceConvMap.set(r.campaign_id, new Map())
+      sourceConvMap.get(r.campaign_id)!.set(r.match_source, parseInt(r.conversions, 10))
+    }
+
+    const utmEntriesMap = new Map<string, Array<{ utm_source: string; utm_medium: string; entries: number }>>()
+    for (const r of utmEntriesResult.rows) {
+      if (!utmEntriesMap.has(r.campaign_id)) utmEntriesMap.set(r.campaign_id, [])
+      utmEntriesMap.get(r.campaign_id)!.push({
+        utm_source: r.utm_source,
+        utm_medium: r.utm_medium,
+        entries: parseInt(r.entries, 10),
+      })
+    }
+
+    const utmConvMap = new Map<string, Map<string, number>>()
+    for (const r of utmConversionsResult.rows) {
+      if (!utmConvMap.has(r.campaign_id)) utmConvMap.set(r.campaign_id, new Map())
+      const key = `${r.utm_source}::${r.utm_medium}`
+      utmConvMap.get(r.campaign_id)!.set(key, parseInt(r.conversions, 10))
+    }
+
+    const firstTouchMap = new Map<string, number>()
+    for (const r of firstTouchResult.rows) {
+      firstTouchMap.set(r.campaign_id, parseInt(r.first_touch_entries, 10))
+    }
+
+    // Assemble detailed stats
+    const SOURCES = ['keyword', 'url_utm', 'webhook', 'webhook_utm']
+    return baseStats.map((base: CampaignStatRow) => {
+      const cid = base.campaignId ?? ''
+
+      const sourceBreakdown: SourceBreakdown[] = SOURCES
+        .map(src => ({
+          matchSource: src,
+          entries: sourceEntriesMap.get(cid)?.get(src) ?? 0,
+          conversions: sourceConvMap.get(cid)?.get(src) ?? 0,
+        }))
+        .filter(b => b.entries > 0 || b.conversions > 0)
+
+      const utmEntries = utmEntriesMap.get(cid) ?? []
+      const utmBreakdown: UtmBreakdown[] = utmEntries.map(u => {
+        const key = `${u.utm_source}::${u.utm_medium}`
+        return {
+          utmSource: u.utm_source,
+          utmMedium: u.utm_medium,
+          entries: u.entries,
+          conversions: utmConvMap.get(cid)?.get(key) ?? 0,
+        }
+      })
+
+      return {
+        ...base,
+        sourceBreakdown,
+        utmBreakdown,
+        firstTouchEntries: firstTouchMap.get(cid) ?? 0,
+      }
+    })
+  }
+
+  async getGlobalUtmBreakdown(): Promise<UtmBreakdown[]> {
+    const [entriesResult, conversionsResult] = await Promise.all([
+      this.db.query(`
+        SELECT COALESCE(utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(DISTINCT contact_id) AS entries
+        FROM contact_campaigns
+        WHERE utm_data != '{}'::jsonb AND utm_data IS NOT NULL
+        GROUP BY utm_data->>'utm_source', utm_data->>'utm_medium'
+        ORDER BY entries DESC
+        LIMIT 50
+      `),
+      this.db.query(`
+        WITH last_campaign AS (
+          SELECT DISTINCT ON (contact_id) contact_id, utm_data
+          FROM contact_campaigns
+          ORDER BY contact_id, matched_at DESC
+        )
+        SELECT COALESCE(lc.utm_data->>'utm_source', 'unknown') AS utm_source,
+               COALESCE(lc.utm_data->>'utm_medium', 'unknown') AS utm_medium,
+               COUNT(*) AS conversions
+        FROM last_campaign lc
+        JOIN agent_contacts ac ON ac.contact_id = lc.contact_id
+        WHERE ac.lead_status = 'converted' AND lc.utm_data != '{}'::jsonb
+        GROUP BY lc.utm_data->>'utm_source', lc.utm_data->>'utm_medium'
+      `),
+    ])
+
+    const convMap = new Map<string, number>()
+    for (const r of conversionsResult.rows) {
+      convMap.set(`${r.utm_source}::${r.utm_medium}`, parseInt(r.conversions, 10))
+    }
+
+    return entriesResult.rows.map((r: Record<string, unknown>) => ({
+      utmSource: r.utm_source as string,
+      utmMedium: r.utm_medium as string,
+      entries: parseInt(r.entries as string, 10),
+      conversions: convMap.get(`${r.utm_source}::${r.utm_medium}`) ?? 0,
+    }))
   }
 
   // ═══════════════════════════════════════════
@@ -469,6 +736,8 @@ export class CampaignQueries {
       promptContext: (row.prompt_context as string) ?? '',
       active: (row.active as boolean) ?? true,
       utmData,
+      utmKeys: Array.isArray(row.utm_keys) ? row.utm_keys as string[] : [],
+      origin: (row.origin as 'manual' | 'auto_utm') ?? 'manual',
       platformTags: tags.filter(t => t.tagType === 'platform'),
       sourceTags: tags.filter(t => t.tagType === 'source'),
       createdAt: (row.created_at as Date)?.toISOString() ?? '',

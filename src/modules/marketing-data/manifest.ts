@@ -3,18 +3,21 @@
 // Extraído de lead-scoring para independizar la funcionalidad de campañas.
 
 import pino from 'pino'
+import { z } from 'zod'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
+import { boolEnv } from '../../kernel/config-helpers.js'
 import { CampaignQueries } from './campaign-queries.js'
 import { CampaignMatcher } from './campaign-matcher.js'
 import { renderMarketingDataConsole } from './templates.js'
-import type { CampaignMatchResult } from './campaign-types.js'
+import type { CampaignMatchResult, UtmParams } from './campaign-types.js'
 
 const logger = pino({ name: 'marketing-data' })
 
 let campaignQueries: CampaignQueries | null = null
 let campaignMatcher: CampaignMatcher | null = null
+let moduleConfig: { CAMPAIGN_UTM_MATCH_ENABLED: boolean; CAMPAIGN_KEYWORD_MATCH_ENABLED: boolean } | null = null
 
 // ═══════════════════════════════════════════
 // Campaign matcher reload helper
@@ -82,12 +85,13 @@ function createApiRoutes(): ApiRoute[] {
       handler: async (req, res) => {
         try {
           const body = await parseBody<{
-            name: string; keyword: string; matchThreshold?: number
+            name: string; keyword?: string; matchThreshold?: number
             matchMaxRounds?: number; allowedChannels?: string[]
-            promptContext?: string; utmData?: Record<string, string>; tagIds?: string[]
+            promptContext?: string; utmData?: Record<string, string>
+            utmKeys?: string[]; tagIds?: string[]
           }>(req)
-          if (!body.name || !body.keyword) {
-            jsonResponse(res, 400, { error: 'Missing name or keyword' }); return
+          if (!body.name) {
+            jsonResponse(res, 400, { error: 'Missing name' }); return
           }
           const campaign = await getCampaignQueries().createCampaign(body)
           await reloadCampaignMatcher()
@@ -108,7 +112,7 @@ function createApiRoutes(): ApiRoute[] {
             id: string; name?: string; keyword?: string; matchThreshold?: number
             matchMaxRounds?: number; allowedChannels?: string[]
             promptContext?: string; active?: boolean
-            utmData?: Record<string, string>; tagIds?: string[]
+            utmData?: Record<string, string>; utmKeys?: string[]; tagIds?: string[]
           }>(req)
           if (!body.id) { jsonResponse(res, 400, { error: 'Missing id' }); return }
           const campaign = await getCampaignQueries().updateCampaign(body.id, body)
@@ -240,6 +244,46 @@ function createApiRoutes(): ApiRoute[] {
         }
       },
     },
+
+    // GET /console/api/marketing-data/campaign-detailed-stats
+    {
+      method: 'GET',
+      path: 'campaign-detailed-stats',
+      handler: async (_req, res) => {
+        try {
+          const stats = await getCampaignQueries().getCampaignDetailedStats()
+          jsonResponse(res, 200, { stats })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/marketing-data/utm-breakdown
+    {
+      method: 'GET',
+      path: 'utm-breakdown',
+      handler: async (_req, res) => {
+        try {
+          const breakdown = await getCampaignQueries().getGlobalUtmBreakdown()
+          jsonResponse(res, 200, { breakdown })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/marketing-data/config
+    {
+      method: 'GET',
+      path: 'config',
+      handler: async (_req, res) => {
+        jsonResponse(res, 200, {
+          utmMatchEnabled: moduleConfig?.CAMPAIGN_UTM_MATCH_ENABLED ?? true,
+          keywordMatchEnabled: moduleConfig?.CAMPAIGN_KEYWORD_MATCH_ENABLED ?? true,
+        })
+      },
+    },
   ]
 }
 
@@ -249,7 +293,7 @@ function createApiRoutes(): ApiRoute[] {
 
 const manifest: ModuleManifest = {
   name: 'marketing-data',
-  version: '1.0.0',
+  version: '1.1.0',
   description: {
     es: 'Gestión de campañas de marketing: CRUD, tags, matching, estadísticas de conversión',
     en: 'Marketing campaign management: CRUD, tags, matching, conversion stats',
@@ -258,6 +302,11 @@ const manifest: ModuleManifest = {
   removable: true,
   activateByDefault: true,
   depends: [],
+
+  configSchema: z.object({
+    CAMPAIGN_UTM_MATCH_ENABLED: boolEnv(true),
+    CAMPAIGN_KEYWORD_MATCH_ENABLED: boolEnv(true),
+  }),
 
   console: {
     title: { es: 'Marketing Data', en: 'Marketing Data' },
@@ -274,19 +323,33 @@ const manifest: ModuleManifest = {
   async init(registry: Registry) {
     const db = registry.getDb()
 
+    // Read feature toggles
+    const config = registry.getConfig<{ CAMPAIGN_UTM_MATCH_ENABLED: boolean; CAMPAIGN_KEYWORD_MATCH_ENABLED: boolean }>('marketing-data')
+    moduleConfig = config
+
     // Initialize campaign subsystem
     campaignQueries = new CampaignQueries(db)
     await campaignQueries.ensureTables()
     campaignMatcher = new CampaignMatcher()
+    campaignMatcher.setCampaignQueries(campaignQueries)
     await reloadCampaignMatcher()
 
     // Register services
     registry.provide('marketing-data:campaign-queries', campaignQueries)
 
-    // Campaign match service — called from engine Phase 1
+    // Keyword match service — called from engine intake (fallback when UTM doesn't match)
     registry.provide('marketing-data:match-campaign',
       (text: string, channelName: string, channelType: string, roundNumber: number): CampaignMatchResult | null => {
+        if (!config.CAMPAIGN_KEYWORD_MATCH_ENABLED) return null
         return campaignMatcher?.match(text, channelName, channelType, roundNumber) ?? null
+      },
+    )
+
+    // UTM match service — called from engine intake (priority over keyword)
+    registry.provide('marketing-data:match-campaign-utm',
+      async (utmData: UtmParams, channelName: string, channelType: string): Promise<CampaignMatchResult | null> => {
+        if (!config.CAMPAIGN_UTM_MATCH_ENABLED) return null
+        return campaignMatcher?.matchUtm(utmData, channelName, channelType) ?? null
       },
     )
 
@@ -298,12 +361,13 @@ const manifest: ModuleManifest = {
       return renderMarketingDataConsole(lang)
     })
 
-    logger.info('Marketing data module initialized')
+    logger.info({ utmMatch: config.CAMPAIGN_UTM_MATCH_ENABLED, keywordMatch: config.CAMPAIGN_KEYWORD_MATCH_ENABLED }, 'Marketing data module initialized')
   },
 
   async stop() {
     campaignQueries = null
     campaignMatcher = null
+    moduleConfig = null
     logger.info('Marketing data module stopped')
   },
 }
