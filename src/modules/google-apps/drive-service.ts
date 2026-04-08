@@ -305,4 +305,24 @@ export class DriveService {
       role: (res.data.role ?? 'reader') as DrivePermission['role'],
     }
   }
+
+  /**
+   * Uploads new content to an existing file ID, creating a new revision.
+   * For Google Workspace types, upload an Office-format buffer and Google will convert it.
+   */
+  async updateFileContent(
+    fileId: string,
+    content: Buffer,
+    mimeType: string,
+  ): Promise<void> {
+    await this.drive.files.update({
+      fileId,
+      media: {
+        mimeType,
+        body: Readable.from([content]),
+      },
+      fields: 'id',
+      supportsAllDrives: true,
+    })
+  }
 }

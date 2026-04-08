@@ -9,6 +9,8 @@ import { boolEnv } from '../../kernel/config-helpers.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import { TemplatesService } from './service.js'
 import { renderTemplatesSection } from './render-section.js'
+import { registerTemplateTools } from './tools.js'
+import type { ToolRegistry } from '../tools/tool-registry.js'
 import type {
   TemplatesConfig,
   CreateTemplateInput,
@@ -269,6 +271,20 @@ const manifest: ModuleManifest = {
     registry.provide('templates:renderSection', (lang: string) =>
       renderTemplatesSection(lang as 'es' | 'en'),
     )
+
+    // Provide catalog service for engine prompt injection
+    registry.provide('templates:catalog', {
+      getCatalogText: () => service!.getCatalogForPrompt(),
+    })
+
+    // Register agent tools
+    const toolRegistry = registry.getOptional<ToolRegistry>('tools:registry')
+    if (toolRegistry) {
+      await registerTemplateTools(registry, service, toolRegistry)
+      logger.info('templates tools registered')
+    } else {
+      logger.warn('tools:registry not available — templates tools not registered')
+    }
 
     logger.info('templates module initialized')
   },

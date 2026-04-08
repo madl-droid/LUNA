@@ -19,6 +19,7 @@ import type {
   TemplatesConfig,
 } from './types.js'
 import * as repo from './repository.js'
+import { FolderManager } from './folder-manager.js'
 
 const logger = pino({ name: 'templates:service' })
 
@@ -161,5 +162,253 @@ export class TemplatesService {
     tags?: Record<string, string>
   }): Promise<DocGenerated[]> {
     return repo.listGenerated(this.db, filters)
+  }
+
+  // ─── Document creation ───────────────────────────────────────────────────
+
+  /**
+   * Crea un documento desde una plantilla.
+   * Flow: copy template → fill keys → move to folder → share → track in DB
+   */
+  async createDocument(input: {
+    templateId: string
+    keyValues: Record<string, string>
+    contactId?: string
+    requesterSenderId?: string
+    requesterChannel?: string
+    docName: string
+    tags?: Record<string, string>
+  }): Promise<DocGenerated> {
+    const template = await repo.getTemplate(this.db, input.templateId)
+    if (!template) throw new Error(`Template ${input.templateId} not found`)
+    if (!template.enabled) throw new Error(`Template "${template.name}" is disabled`)
+
+    // Validate all required keys have values
+    const missingKeys = template.keys.filter(k => !(k.key in input.keyValues))
+    if (missingKeys.length > 0) {
+      const missing = missingKeys.map(k => `${k.key} (${k.description || 'sin descripción'})`).join(', ')
+      throw new Error(`Faltan valores para los siguientes campos: ${missing}`)
+    }
+
+    const drive = this.registry.getOptional<DriveService>('google:drive')
+    if (!drive) throw new Error('Google Drive service not available')
+
+    // Resolve destination folder
+    let folderId: string | undefined
+    if (this.config.TEMPLATES_ROOT_FOLDER_ID) {
+      const folderManager = new FolderManager(drive, this.config.TEMPLATES_ROOT_FOLDER_ID)
+      if (template.folderPattern) {
+        folderId = await folderManager.resolveFolder(template.folderPattern, input.keyValues)
+      } else {
+        folderId = this.config.TEMPLATES_ROOT_FOLDER_ID
+      }
+    }
+
+    // Copy template file
+    const copied = await drive.copyFile(template.driveFileId, input.docName, folderId)
+    const newFileId = copied.id
+
+    // Fill keys via batch edit
+    await this._fillKeys(newFileId, template.mimeType, template.keys.map(k => k.key), input.keyValues)
+
+    // Share with anyone
+    await drive.shareFileAnyone(newFileId, 'reader')
+
+    // Get webViewLink
+    const fileInfo = await drive.getFile(newFileId)
+    const webViewLink = fileInfo.webViewLink ?? `https://drive.google.com/file/d/${newFileId}/view`
+
+    // Persist in DB
+    const generated = await repo.createGenerated(this.db, {
+      templateId: input.templateId,
+      contactId: input.contactId,
+      requesterSenderId: input.requesterSenderId,
+      requesterChannel: input.requesterChannel,
+      keyValues: input.keyValues,
+      docName: input.docName,
+      tags: input.tags,
+      driveFileId: newFileId,
+      driveFolderId: folderId,
+      webViewLink,
+    })
+
+    logger.info({ templateId: input.templateId, docName: input.docName, newFileId }, 'Document created from template')
+    return generated
+  }
+
+  /**
+   * Re-edita un documento existente (in-place, mismo link).
+   * Flow: replaceText para cada key cambiada → update DB → increment version
+   */
+  async reeditDocument(input: {
+    generatedDocId: string
+    updatedKeyValues: Record<string, string>
+  }): Promise<DocGenerated> {
+    const doc = await repo.getGenerated(this.db, input.generatedDocId)
+    if (!doc) throw new Error(`Generated document ${input.generatedDocId} not found`)
+
+    const template = await repo.getTemplate(this.db, doc.templateId)
+    if (!template) throw new Error(`Template ${doc.templateId} not found`)
+
+    // Calculate diff — only keys that actually changed
+    const changedKeys = Object.entries(input.updatedKeyValues).filter(
+      ([k, v]) => doc.keyValues[k] !== v,
+    )
+
+    if (changedKeys.length === 0) {
+      // No changes
+      return doc
+    }
+
+    const drive = this.registry.getOptional<DriveService>('google:drive')
+    if (!drive) throw new Error('Google Drive service not available')
+
+    // Conflict check: do any two changed keys share the same current value?
+    const oldValues = changedKeys.map(([k]) => doc.keyValues[k]).filter(Boolean)
+    const hasConflict = new Set(oldValues).size !== oldValues.length
+
+    if (!hasConflict) {
+      // Normal path: replace each old value with new value in the document
+      await this._replaceKeys(doc.driveFileId, template.mimeType, changedKeys.map(([k, v]) => ({
+        key: k,
+        oldValue: doc.keyValues[k] ?? `{${k}}`,
+        newValue: v,
+      })))
+    } else {
+      // Conflict fallback: regenerate document content from scratch
+      logger.warn({ docId: input.generatedDocId, changedKeys: changedKeys.map(([k]) => k) }, 'Key conflict detected, regenerating document')
+      const mergedValues = { ...doc.keyValues, ...input.updatedKeyValues }
+
+      // Copy template again to a temp buffer — export as Office format
+      const exportMimeType = this._getExportMimeType(template.mimeType)
+      const exportedContent = await drive.exportFile(template.driveFileId, exportMimeType)
+
+      // Upload new content over existing file ID
+      const contentBuffer = typeof exportedContent === 'string'
+        ? Buffer.from(exportedContent, 'utf-8')
+        : exportedContent
+      await drive.updateFileContent(doc.driveFileId, contentBuffer, exportMimeType)
+
+      // Now fill keys on the updated file
+      await this._fillKeys(doc.driveFileId, template.mimeType, template.keys.map(k => k.key), mergedValues)
+    }
+
+    // Merge key values
+    const mergedKeyValues = { ...doc.keyValues, ...input.updatedKeyValues }
+
+    // Update DB
+    const updated = await repo.updateGenerated(this.db, input.generatedDocId, {
+      keyValues: mergedKeyValues,
+      version: doc.version + 1,
+    })
+
+    logger.info({ docId: input.generatedDocId, version: doc.version + 1, updatedKeys: changedKeys.map(([k]) => k) }, 'Document re-edited')
+    return updated!
+  }
+
+  /**
+   * Busca documentos generados existentes.
+   */
+  async findExistingDocument(query: {
+    docType?: DocType
+    tags?: Record<string, string>
+    contactId?: string
+    docNameQuery?: string
+  }): Promise<DocGenerated[]> {
+    const results = await repo.searchGenerated(this.db, {
+      docType: query.docType,
+      tags: query.tags,
+      contactId: query.contactId,
+    })
+
+    if (query.docNameQuery) {
+      const q = query.docNameQuery.toLowerCase()
+      return results.filter(d => d.docName.toLowerCase().includes(q))
+    }
+
+    return results
+  }
+
+  // ─── Prompt catalog ──────────────────────────────────────────────────────
+
+  /**
+   * Retorna texto formateado con el catálogo de plantillas activas para inyectar en el prompt.
+   */
+  async getCatalogForPrompt(): Promise<string> {
+    const templates = await repo.listTemplates(this.db, { enabled: true })
+    if (templates.length === 0) return ''
+
+    const lines = templates.map(t => {
+      const keyList = t.keys.length > 0
+        ? t.keys.map(k => `${k.key}${k.description ? ': ' + k.description : ''}`).join(', ')
+        : 'sin campos'
+      return `- ${t.name} (tipo: ${t.docType}, formato: ${t.mimeType}): campos=[${keyList}]`
+    })
+
+    const strictNote = this.config.TEMPLATES_STRICT_MODE
+      ? '\nREGLA: Solo puedes crear documentos usando las plantillas registradas. NO crees documentos sin plantilla.'
+      : '\nPREFERENCIA: Cuando necesites crear un documento, verifica primero si hay una plantilla disponible.'
+
+    return `## Plantillas de documentos disponibles\n${lines.join('\n')}\n\nUsa la herramienta create-from-template para crear documentos. SIEMPRE busca documentos existentes antes de crear uno nuevo (search-generated-documents).${strictNote}`
+  }
+
+  // ─── Internal helpers ────────────────────────────────────────────────────
+
+  private async _fillKeys(
+    fileId: string,
+    mimeType: MimeType,
+    keys: string[],
+    keyValues: Record<string, string>,
+  ): Promise<void> {
+    const ops = keys.map(k => ({ key: k, oldValue: `{${k}}`, newValue: keyValues[k] ?? '' }))
+    await this._replaceKeys(fileId, mimeType, ops)
+  }
+
+  private async _replaceKeys(
+    fileId: string,
+    mimeType: MimeType,
+    replacements: Array<{ key: string; oldValue: string; newValue: string }>,
+  ): Promise<void> {
+    switch (mimeType) {
+      case 'document': {
+        const docsService = this.registry.getOptional<DocsService>('google:docs')
+        if (!docsService) throw new Error('Google Docs service not available')
+        await docsService.batchEdit(fileId, replacements.map(r => ({
+          type: 'replace' as const,
+          searchText: r.oldValue,
+          text: r.newValue,
+        })))
+        break
+      }
+      case 'presentation': {
+        const slidesService = this.registry.getOptional<SlidesService>('google:slides')
+        if (!slidesService) throw new Error('Google Slides service not available')
+        await slidesService.batchEdit(fileId, replacements.map(r => ({
+          type: 'replace_text' as const,
+          searchText: r.oldValue,
+          replaceText: r.newValue,
+        })))
+        break
+      }
+      case 'spreadsheet': {
+        const sheetsService = this.registry.getOptional<SheetsService>('google:sheets')
+        if (!sheetsService) throw new Error('Google Sheets service not available')
+        await sheetsService.batchEdit(fileId, replacements.map(r => ({
+          type: 'find_replace' as const,
+          find: r.oldValue,
+          replacement: r.newValue,
+          matchCase: true,
+        })))
+        break
+      }
+    }
+  }
+
+  private _getExportMimeType(mimeType: MimeType): string {
+    switch (mimeType) {
+      case 'document': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      case 'presentation': return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+      case 'spreadsheet': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }
   }
 }
