@@ -337,6 +337,17 @@
     <!-- ═══ CONFIG TAB ═══ -->
     <div class="tab-content active" id="content-config">
 
+      <!-- Preset -->
+      <div class="panel" id="preset-panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+          <span class="panel-title" id="preset-panel-title">Preset activo</span>
+          <span class="panel-chevron">&#9660;</span>
+        </div>
+        <div class="panel-body">
+          <div id="preset-container"></div>
+        </div>
+      </div>
+
       <!-- Criteria -->
       <div class="panel" id="criteria-panel">
         <div class="panel-header" onclick="togglePanel(this)">
@@ -550,8 +561,16 @@ const i18n = {
     th_name: 'Nombre', th_channel: 'Canal', th_score: 'Score', th_status: 'Estado',
     th_msgs: 'Msgs', th_last: 'Ultima actividad',
     th_key: 'Clave', th_name_es: 'Nombre (ES)', th_name_en: 'Nombre (EN)',
-    th_type: 'Tipo', th_weight: 'Peso', th_required: 'Req', th_never_ask: 'No preguntar',
+    th_type: 'Tipo', th_priority: 'Prioridad', th_required: 'Req', th_never_ask: 'No preguntar',
     th_options: 'Opciones', th_actions: '',
+    priority_high: 'Alta', priority_medium: 'Media', priority_low: 'Baja',
+    scoring_indexed: 'Orden', scoring_presence: 'Presencia',
+    preset_label: 'Preset activo', preset_apply: 'Aplicar preset',
+    preset_confirm: 'Esto reemplazara los criterios actuales. Continuar?',
+    objective_label: 'Objetivo',
+    freshness_label: 'Frescura de datos (dias)',
+    freshness_info: 'Despues de este periodo, los datos contribuyen solo 30% al score',
+    criteria_count: 'criterios',
     th_dq_key: 'Clave', th_dq_name_es: 'Nombre (ES)', th_dq_name_en: 'Nombre (EN)',
     th_dq_target: 'Estado destino',
     add_criterion: '+ Agregar criterio', add_dq: '+ Agregar motivo',
@@ -613,8 +632,16 @@ const i18n = {
     th_name: 'Name', th_channel: 'Channel', th_score: 'Score', th_status: 'Status',
     th_msgs: 'Msgs', th_last: 'Last activity',
     th_key: 'Key', th_name_es: 'Name (ES)', th_name_en: 'Name (EN)',
-    th_type: 'Type', th_weight: 'Weight', th_required: 'Req', th_never_ask: 'Never ask',
+    th_type: 'Type', th_priority: 'Priority', th_required: 'Req', th_never_ask: 'Never ask',
     th_options: 'Options', th_actions: '',
+    priority_high: 'High', priority_medium: 'Medium', priority_low: 'Low',
+    scoring_indexed: 'Indexed', scoring_presence: 'Presence',
+    preset_label: 'Active preset', preset_apply: 'Apply preset',
+    preset_confirm: 'This will replace current criteria. Continue?',
+    objective_label: 'Objective',
+    freshness_label: 'Data freshness (days)',
+    freshness_info: 'After this period, data contributes only 30% to score',
+    criteria_count: 'criteria',
     th_dq_key: 'Key', th_dq_name_es: 'Name (ES)', th_dq_name_en: 'Name (EN)',
     th_dq_target: 'Target status',
     add_criterion: '+ Add criterion', add_dq: '+ Add reason',
@@ -748,6 +775,7 @@ function renderAll() {
   })
 
   if (config) {
+    renderPreset()
     renderCriteria()
     renderThresholds()
     renderActions()
@@ -762,13 +790,20 @@ function renderAll() {
 // ═══════════════════════════════════════════
 function renderCriteria() {
   const c = document.getElementById('criteria-container')
+  const countLabel = `${config.criteria.length}/10 ${t('criteria_count')}`
   let h = `<table class="criteria-table"><thead><tr>
     <th>${t('th_key')}</th><th>${t('th_name_es')}</th><th>${t('th_name_en')}</th>
-    <th>${t('th_type')}</th><th>${t('th_options')}</th><th>${t('th_weight')}</th>
-    <th>${t('th_required')}</th><th>${t('th_never_ask')}</th><th></th>
+    <th>${t('th_type')}</th><th>${t('th_options')}</th><th>${t('th_priority')}</th>
+    <th>Scoring</th><th>${t('th_required')}</th><th>${t('th_never_ask')}</th><th></th>
   </tr></thead><tbody>`
 
   config.criteria.forEach((cr, i) => {
+    const enumScoringCell = cr.type === 'enum'
+      ? `<select onchange="updateCriterion(${i},'enumScoring',this.value)">
+          <option value="indexed" ${(!cr.enumScoring||cr.enumScoring==='indexed')?'selected':''}>${t('scoring_indexed')}</option>
+          <option value="presence" ${cr.enumScoring==='presence'?'selected':''}>${t('scoring_presence')}</option>
+        </select>`
+      : `<span style="color:#64748b;font-size:0.7rem">&#8212;</span>`
     h += `<tr>
       <td><input value="${esc(cr.key)}" onchange="updateCriterion(${i},'key',this.value)" style="width:80px"></td>
       <td><input value="${esc(cr.name.es)}" onchange="updateCriterion(${i},'name_es',this.value)"></td>
@@ -779,19 +814,21 @@ function renderCriteria() {
         <option value="boolean" ${cr.type==='boolean'?'selected':''}>Boolean</option>
       </select></td>
       <td><input value="${esc((cr.options||[]).join(','))}" onchange="updateCriterion(${i},'options',this.value)" placeholder="opt1,opt2" ${cr.type!=='enum'?'disabled':''}></td>
-      <td><input type="number" class="weight-input" value="${cr.weight}" min="0" max="100" onchange="updateCriterion(${i},'weight',this.value)"></td>
+      <td><select onchange="updateCriterion(${i},'priority',this.value)">
+        <option value="high" ${cr.priority==='high'?'selected':''}>${t('priority_high')}</option>
+        <option value="medium" ${(!cr.priority||cr.priority==='medium')?'selected':''}>${t('priority_medium')}</option>
+        <option value="low" ${cr.priority==='low'?'selected':''}>${t('priority_low')}</option>
+      </select></td>
+      <td>${enumScoringCell}</td>
       <td style="text-align:center"><label class="toggle"><input type="checkbox" ${cr.required?'checked':''} onchange="updateCriterion(${i},'required',this.checked)"><span class="toggle-slider"></span></label></td>
       <td style="text-align:center"><label class="toggle"><input type="checkbox" ${cr.neverAskDirectly?'checked':''} onchange="updateCriterion(${i},'neverAskDirectly',this.checked)"><span class="toggle-slider"></span></label></td>
       <td><button class="btn btn-danger btn-small" onclick="removeCriterion(${i})">X</button></td>
     </tr>`
   })
-  h += '</tbody></table>'
-
-  const totalWeight = config.criteria.reduce((s,c) => s + c.weight, 0)
-  const cls = totalWeight === 100 ? 'ok' : 'warn'
-  h += `<div class="weight-total ${cls}">${t('weight_total')}: ${totalWeight}/100</div>`
-
+  h += `</tbody></table><div style="font-size:0.7rem;color:#64748b;padding:0.5rem 0.75rem">${countLabel}</div>`
   c.innerHTML = h
+  const addBtn = document.getElementById('btn-add-criterion')
+  if (addBtn) addBtn.disabled = config.criteria.length >= 10
 }
 
 function updateCriterion(i, field, value) {
@@ -799,9 +836,13 @@ function updateCriterion(i, field, value) {
   if (field === 'key') cr.key = value
   else if (field === 'name_es') cr.name.es = value
   else if (field === 'name_en') cr.name.en = value
-  else if (field === 'type') { cr.type = value; if (value !== 'enum') delete cr.options }
+  else if (field === 'type') {
+    cr.type = value
+    if (value !== 'enum') { delete cr.options; delete cr.enumScoring }
+  }
   else if (field === 'options') cr.options = value.split(',').map(s => s.trim()).filter(Boolean)
-  else if (field === 'weight') cr.weight = parseInt(value, 10) || 0
+  else if (field === 'priority') cr.priority = value
+  else if (field === 'enumScoring') cr.enumScoring = value
   else if (field === 'required') cr.required = value
   else if (field === 'neverAskDirectly') cr.neverAskDirectly = value
   renderCriteria()
@@ -809,15 +850,14 @@ function updateCriterion(i, field, value) {
 }
 
 function addCriterion() {
-  const maxTotal = 4 + config.maxCustomCriteria
-  if (config.criteria.length >= maxTotal) {
-    showToast(`Max ${maxTotal} criteria`, 'error')
+  if (config.criteria.length >= 10) {
+    showToast(lang === 'es' ? 'Maximo 10 criterios' : 'Max 10 criteria', 'error')
     return
   }
   config.criteria.push({
     key: 'custom_' + Date.now(),
     name: { es: 'Nuevo criterio', en: 'New criterion' },
-    type: 'text', weight: 0, required: false, neverAskDirectly: false,
+    type: 'text', priority: 'medium', required: false, neverAskDirectly: false,
   })
   renderCriteria()
   updateSaveBtn()
@@ -854,41 +894,23 @@ function renderThresholds() {
 }
 
 // ═══════════════════════════════════════════
-// Actions
+// Actions (objective selector — v3)
 // ═══════════════════════════════════════════
 function renderActions() {
   const c = document.getElementById('actions-container')
-  let h = ''
-  ALL_ACTIONS.forEach(a => {
-    const enabled = config.qualifiedActions.includes(a.value)
-    h += `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid rgba(51,65,85,0.4)">
-      <label class="toggle"><input type="checkbox" ${enabled?'checked':''}
-        onchange="toggleAction('${a.value}',this.checked)"><span class="toggle-slider"></span></label>
-      <span class="field-label">${t(a.labelKey)}</span>
-    </div>`
-  })
-  h += `<div class="field" style="margin-top:0.5rem">
-    <span class="field-label">${t('default_action')}</span>
-    <select onchange="config.defaultQualifiedAction=this.value;updateSaveBtn()">
-      ${config.qualifiedActions.map(a =>
-        `<option value="${a}" ${a===config.defaultQualifiedAction?'selected':''}>${t('act_'+a)}</option>`
-      ).join('')}
+  const obj = config.objective || 'schedule'
+  const objectives = [
+    { value: 'schedule', label: t('act_scheduled') },
+    { value: 'sell', label: lang === 'es' ? 'Vender' : 'Sell' },
+    { value: 'escalate', label: lang === 'es' ? 'Escalar a humano' : 'Escalate to human' },
+    { value: 'attend_only', label: lang === 'es' ? 'Solo atender' : 'Attend only' },
+  ]
+  c.innerHTML = `<div class="field">
+    <span class="field-label">${t('objective_label')}</span>
+    <select onchange="config.objective=this.value;updateSaveBtn()">
+      ${objectives.map(o => `<option value="${o.value}" ${obj===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}
     </select>
   </div>`
-  c.innerHTML = h
-}
-
-function toggleAction(action, enabled) {
-  if (enabled) {
-    if (!config.qualifiedActions.includes(action)) config.qualifiedActions.push(action)
-  } else {
-    config.qualifiedActions = config.qualifiedActions.filter(a => a !== action)
-    if (config.defaultQualifiedAction === action && config.qualifiedActions.length > 0) {
-      config.defaultQualifiedAction = config.qualifiedActions[0]
-    }
-  }
-  renderActions()
-  updateSaveBtn()
 }
 
 // ═══════════════════════════════════════════
@@ -943,21 +965,24 @@ function removeDQ(i) {
 }
 
 // ═══════════════════════════════════════════
-// Options
+// Options (v3)
 // ═══════════════════════════════════════════
 function renderOptions() {
   const c = document.getElementById('options-container')
+  const minConf = config.minConfidence ?? 0.4
+  const freshDays = config.dataFreshnessWindowDays ?? 90
   c.innerHTML = `
-    <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid rgba(51,65,85,0.4)">
-      <label class="toggle"><input type="checkbox" ${config.recalculateOnConfigChange?'checked':''}
-        onchange="config.recalculateOnConfigChange=this.checked;updateSaveBtn()"><span class="toggle-slider"></span></label>
-      <span class="field-label">${t('opt_recalc')}</span>
+    <div class="field">
+      <span class="field-label">${lang === 'es' ? 'Confianza minima' : 'Min confidence'}</span>
+      <input type="number" value="${minConf}" min="0.1" max="0.95" step="0.05"
+        onchange="config.minConfidence=parseFloat(this.value)||0.4;updateSaveBtn()">
     </div>
     <div class="field">
-      <span class="field-label">${t('opt_max_custom')}</span>
-      <input type="number" value="${config.maxCustomCriteria}" min="0" max="6"
-        onchange="config.maxCustomCriteria=parseInt(this.value);updateSaveBtn()">
-    </div>`
+      <span class="field-label">${t('freshness_label')}</span>
+      <input type="number" value="${freshDays}" min="7" max="730"
+        onchange="config.dataFreshnessWindowDays=parseInt(this.value)||90;updateSaveBtn()">
+    </div>
+    <div class="panel-info" style="padding-top:0.5rem">${t('freshness_info')}</div>`
 }
 
 // ═══════════════════════════════════════════
@@ -989,6 +1014,53 @@ async function saveConfig() {
       showToast(data.error || t('save_error'), 'error')
     }
   } catch { showToast(t('save_error'), 'error') }
+}
+
+async function applyPreset() {
+  const select = document.getElementById('preset-select')
+  if (!select || !select.value) return
+  if (!confirm(t('preset_confirm'))) return
+  try {
+    const res = await fetch(API + '/apply-preset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset: select.value }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      const configRes = await fetch(API + '/config')
+      const configData = await configRes.json()
+      config = configData.config
+      originalConfig = JSON.parse(JSON.stringify(config))
+      renderAll()
+      showToast(t('saved'), 'success')
+    } else {
+      showToast(data.error || t('save_error'), 'error')
+    }
+  } catch { showToast(t('save_error'), 'error') }
+}
+
+function renderPreset() {
+  const c = document.getElementById('preset-container')
+  if (!c || !config) return
+  const preset = config.preset || 'custom'
+  document.getElementById('preset-panel-title').textContent =
+    t('preset_label') + ': ' + preset.toUpperCase()
+  c.innerHTML = `
+    <div class="panel-info">${t('preset_label')}: <strong>${esc(preset.toUpperCase())}</strong>
+      &nbsp;|&nbsp; ${config.criteria.length}/10 ${t('criteria_count')}
+    </div>
+    <div class="field" style="margin-top:0.5rem">
+      <span class="field-label">${t('preset_apply')}</span>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <select id="preset-select" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:0.4rem 0.65rem;color:#e2e8f0;font-size:0.8rem">
+          <option value="spin">SPIN (B2C)</option>
+          <option value="champ">CHAMP (B2B)</option>
+          <option value="champ_gov">CHAMP+Gov (B2G)</option>
+        </select>
+        <button class="btn btn-primary btn-small" onclick="applyPreset()">${t('preset_apply')}</button>
+      </div>
+    </div>`
 }
 
 async function recalculate() {
@@ -1066,7 +1138,7 @@ function renderLeads() {
     const campBadge = l.latestCampaignName
       ? `<span class="campaign-badge">#${l.latestCampaignVisibleId || ''} ${esc(l.latestCampaignName)}</span>`
       : '-'
-    return `<tr onclick="openDetail('${l.contactId}')">
+    return `<tr data-contact-id="${esc(l.contactId)}" class="lead-row">
       <td>${esc(l.displayName || l.channelContactId || '-')}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${esc(l.channel)} ${esc(l.channelContactId ? l.channelContactId.slice(-4) : '')}</td>
       <td>
@@ -1077,7 +1149,7 @@ function renderLeads() {
       <td>${campBadge}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${l.messageCount}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${ago}</td>
-      <td><button class="btn btn-ghost btn-small" onclick="event.stopPropagation();openDetail('${l.contactId}')">${t('detail')}</button></td>
+      <td><button class="btn btn-ghost btn-small" data-contact-id="${esc(l.contactId)}">${t('detail')}</button></td>
     </tr>`
   }).join('')
 
@@ -1113,7 +1185,7 @@ async function openDetail(contactId) {
         return `<div class="criteria-row">
           <span class="criteria-key">${esc(cr.name[lang] || cr.name.es)}</span>
           <span class="criteria-val" style="color:${filled?'#e2e8f0':'#475569'}">${filled ? esc(String(val)) : '-'}</span>
-          <span class="criteria-pts">${cr.weight}pts</span>
+          <span class="criteria-pts" style="color:#38bdf8;font-size:0.65rem">${cr.priority || 'medium'}</span>
         </div>`
       }).join('')
     }
@@ -1144,7 +1216,7 @@ async function openDetail(contactId) {
         <select id="dq-select" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:0.4rem 0.65rem;color:#e2e8f0;font-size:0.8rem">
           ${opts}
         </select>
-        <button class="btn btn-danger btn-small" onclick="disqualifyLead('${l.contactId}')">${t('detail_disqualify')}</button>
+        <button class="btn btn-danger btn-small" data-dq-contact="${esc(l.contactId)}">${t('detail_disqualify')}</button>
       </div>`
     }
 
@@ -1210,7 +1282,7 @@ async function disqualifyLead(contactId) {
 // ═══════════════════════════════════════════
 function togglePanel(header) { header.closest('.panel').classList.toggle('collapsed') }
 
-function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
 
 function timeAgo(iso) {
   const d = new Date(iso)
@@ -1517,6 +1589,23 @@ async function deleteTag(id, type) {
 // Keyboard
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeModal()
+})
+
+// Event delegation for lead rows (prevents XSS via contactId in inline onclick)
+document.getElementById('leads-tbody').addEventListener('click', function(e) {
+  const row = e.target.closest('[data-contact-id]')
+  if (row) {
+    e.stopPropagation()
+    openDetail(row.dataset.contactId)
+  }
+})
+
+// Event delegation for disqualify button in modal
+document.getElementById('modal-content').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-dq-contact]')
+  if (btn) {
+    disqualifyLead(btn.dataset.dqContact)
+  }
 })
 
 initColorPicker()

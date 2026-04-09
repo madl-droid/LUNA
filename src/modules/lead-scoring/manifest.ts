@@ -1,6 +1,5 @@
-// LUNA — Module: lead-scoring
-// Sistema de calificación de leads. Multi-framework (CHAMP, SPIN, CHAMP+Gov),
-// scoring por código, extracción natural por LLM, UI personalizable en console.
+// LUNA — Module: lead-scoring (v3)
+// Single-framework. Preset-based config. Priority weights.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -15,14 +14,13 @@ import type {
   LeadScoringConfig,
   QualifyingConfig,
   QualificationStatus,
-  FrameworkType,
-  FrameworkObjective,
 } from './types.js'
-import { FRAMEWORK_PRESETS } from './frameworks.js'
+import { PRESETS } from './frameworks.js'
 import { ConfigStore } from './config-store.js'
 import { LeadQueries } from './pg-queries.js'
-import { registerExtractionTool, clearExtractionPromptCache } from './extract-tool.js'
-import { calculateScore, resolveTransition, resolveFramework } from './scoring-engine.js'
+import { registerExtractionTool } from './extract-tool.js'
+import { calculateScore, resolveTransition } from './scoring-engine.js'
+
 const logger = pino({ name: 'lead-scoring' })
 
 let configStore: ConfigStore | null = null
@@ -66,7 +64,48 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const body = await parseBody<QualifyingConfig>(req)
           getConfigStore().save(body)
-          clearExtractionPromptCache()
+          jsonResponse(res, 200, { ok: true })
+        } catch (err) {
+          jsonResponse(res, 400, { error: String(err) })
+        }
+      },
+    },
+
+    // GET /console/api/lead-scoring/presets
+    {
+      method: 'GET',
+      path: 'presets',
+      handler: async (_req, res) => {
+        try {
+          const presets = Object.values(PRESETS).map(p => ({
+            key: p.key,
+            name: p.name,
+            description: p.description,
+            defaultObjective: p.defaultObjective,
+            stageCount: p.stages.length,
+            criteriaCount: p.criteria.length,
+            essentialQuestions: p.essentialQuestions,
+          }))
+          jsonResponse(res, 200, { presets })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
+    // POST /console/api/lead-scoring/apply-preset
+    {
+      method: 'POST',
+      path: 'apply-preset',
+      handler: async (req, res) => {
+        try {
+          const body = await parseBody<{ preset: string }>(req)
+          if (!body.preset) {
+            jsonResponse(res, 400, { error: 'Missing preset' })
+            return
+          }
+          const store = getConfigStore()
+          store.applyPreset(body.preset)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -87,8 +126,7 @@ function createApiRoutes(): ApiRoute[] {
 
           const updates: Array<{ contactId: string; score: number; status: QualificationStatus | null }> = []
           for (const lead of leads) {
-            const fw = resolveFramework(config, lead.qualificationData)
-            const result = calculateScore(lead.qualificationData, config, fw ?? undefined)
+            const result = calculateScore(lead.qualificationData, config)
             const newStatus = resolveTransition(lead.qualificationStatus, result.suggestedStatus)
             updates.push({
               contactId: lead.contactId,
@@ -99,80 +137,6 @@ function createApiRoutes(): ApiRoute[] {
 
           const count = await queries.batchUpdateScores(updates)
           jsonResponse(res, 200, { ok: true, recalculated: count })
-        } catch (err) {
-          jsonResponse(res, 500, { error: String(err) })
-        }
-      },
-    },
-
-    // POST /console/api/lead-scoring/set-framework
-    {
-      method: 'POST',
-      path: 'set-framework',
-      handler: async (req, res) => {
-        try {
-          const body = await parseBody<{
-            framework: FrameworkType
-            enabled: boolean
-            objective?: FrameworkObjective
-          }>(req)
-          if (!body.framework) {
-            jsonResponse(res, 400, { error: 'Missing framework' })
-            return
-          }
-          const store = getConfigStore()
-          store.setFramework(body.framework, body.enabled, body.objective)
-          clearExtractionPromptCache()
-          jsonResponse(res, 200, { ok: true })
-        } catch (err) {
-          jsonResponse(res, 400, { error: String(err) })
-        }
-      },
-    },
-
-    // POST /console/api/lead-scoring/reset-framework
-    {
-      method: 'POST',
-      path: 'reset-framework',
-      handler: async (req, res) => {
-        try {
-          const body = await parseBody<{ framework: FrameworkType }>(req)
-          if (!body.framework) {
-            jsonResponse(res, 400, { error: 'Missing framework' })
-            return
-          }
-          const store = getConfigStore()
-          store.resetFrameworkToPreset(body.framework)
-          clearExtractionPromptCache()
-          jsonResponse(res, 200, { ok: true })
-        } catch (err) {
-          jsonResponse(res, 400, { error: String(err) })
-        }
-      },
-    },
-
-    // GET /console/api/lead-scoring/frameworks
-    {
-      method: 'GET',
-      path: 'frameworks',
-      handler: async (_req, res) => {
-        try {
-          const config = getConfigStore().getConfig()
-          const presets = Object.values(FRAMEWORK_PRESETS).map(p => {
-            const active = config.frameworks.find(f => f.type === p.type)
-            return {
-              type: p.type,
-              clientType: p.clientType,
-              name: p.name,
-              description: p.description,
-              stageCount: p.stages.length,
-              criteriaCount: p.criteria.length,
-              enabled: active?.enabled ?? false,
-              objective: active?.objective ?? 'schedule',
-              essentialQuestions: active?.essentialQuestions ?? p.essentialQuestions,
-            }
-          })
-          jsonResponse(res, 200, { presets })
         } catch (err) {
           jsonResponse(res, 500, { error: String(err) })
         }
@@ -280,8 +244,7 @@ function createApiRoutes(): ApiRoute[] {
           const lead = await getQueries().getLeadDetail(body.contactId)
           if (lead) {
             const config = getConfigStore().getConfig()
-            const fw = resolveFramework(config, lead.qualificationData)
-            const result = calculateScore(lead.qualificationData, config, fw ?? undefined)
+            const result = calculateScore(lead.qualificationData, config)
             await getQueries().updateQualification(
               body.contactId,
               lead.qualificationData,
@@ -311,15 +274,8 @@ function createApiRoutes(): ApiRoute[] {
             return
           }
           const config = getConfigStore().getConfig()
-          // Search across all frameworks for the reason
-          let targetStatus: QualificationStatus = 'not_interested'
-          for (const fw of config.frameworks) {
-            const reason = fw.disqualifyReasons.find(r => r.key === body.reasonKey)
-            if (reason) {
-              targetStatus = reason.targetStatus
-              break
-            }
-          }
+          const reason = config.disqualifyReasons.find(r => r.key === body.reasonKey)
+          const targetStatus: QualificationStatus = reason?.targetStatus ?? 'not_interested'
           await getQueries().disqualifyLead(body.contactId, body.reasonKey, targetStatus)
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
@@ -366,10 +322,10 @@ function createApiRoutes(): ApiRoute[] {
 
 const manifest: ModuleManifest = {
   name: 'lead-scoring',
-  version: '2.0.0',
+  version: '3.0.0',
   description: {
-    es: 'Sistema de calificación de leads multi-framework (CHAMP, SPIN, CHAMP+Gov) con objetivos y detección de tipo de cliente',
-    en: 'Multi-framework lead scoring system (CHAMP, SPIN, CHAMP+Gov) with objectives and client type detection',
+    es: 'Sistema de calificación de leads (preset único por tenant, pesos por prioridad, scoring por código)',
+    en: 'Lead scoring system (single preset per tenant, priority-based weights, code scoring)',
   },
   type: 'feature',
   removable: true,
@@ -383,8 +339,8 @@ const manifest: ModuleManifest = {
   console: {
     title: { es: 'Calificación', en: 'Qualification' },
     info: {
-      es: 'Configura frameworks de calificación, objetivos por framework y tipo de cliente.',
-      en: 'Configure qualification frameworks, per-framework objectives and client type detection.',
+      es: 'Configura el framework de calificación, criterios con prioridad y objetivo del agente.',
+      en: 'Configure the qualification framework, priority-based criteria and agent objective.',
     },
     order: 15,
     group: 'leads',
@@ -418,37 +374,36 @@ const manifest: ModuleManifest = {
       const store = configStore!
       const oldConfig = store.getConfig()
       const newConfig = store.reload()
-      clearExtractionPromptCache()
+
+      // Re-register tool with updated description (criteria may have changed)
+      await registerExtractionTool(registry, store)
 
       // Recalculate if criteria/thresholds changed
-      {
-        const criteriaChanged = JSON.stringify(oldConfig.frameworks.map(f => f.criteria)) !== JSON.stringify(newConfig.frameworks.map(f => f.criteria))
-        const thresholdsChanged = JSON.stringify(oldConfig.thresholds) !== JSON.stringify(newConfig.thresholds)
+      const criteriaChanged = JSON.stringify(oldConfig.criteria) !== JSON.stringify(newConfig.criteria)
+      const thresholdsChanged = JSON.stringify(oldConfig.thresholds) !== JSON.stringify(newConfig.thresholds)
 
-        if (criteriaChanged || thresholdsChanged) {
-          logger.info('Config changed, recalculating all lead scores...')
-          const leads = await leadQueries!.getAllLeadsForRecalc()
-          const updates: Array<{ contactId: string; score: number; status: QualificationStatus | null }> = []
+      if (criteriaChanged || thresholdsChanged) {
+        logger.info('Config changed, recalculating all lead scores...')
+        const leads = await leadQueries!.getAllLeadsForRecalc()
+        const updates: Array<{ contactId: string; score: number; status: QualificationStatus | null }> = []
 
-          for (const lead of leads) {
-            const fw = resolveFramework(newConfig, lead.qualificationData)
-            const result = calculateScore(lead.qualificationData, newConfig, fw ?? undefined)
-            const newStatus = resolveTransition(lead.qualificationStatus, result.suggestedStatus)
-            updates.push({
-              contactId: lead.contactId,
-              score: result.totalScore,
-              status: newStatus,
-            })
-          }
+        for (const lead of leads) {
+          const result = calculateScore(lead.qualificationData, newConfig)
+          const newStatus = resolveTransition(lead.qualificationStatus, result.suggestedStatus)
+          updates.push({
+            contactId: lead.contactId,
+            score: result.totalScore,
+            status: newStatus,
+          })
+        }
 
-          if (updates.length > 0) {
-            await leadQueries!.batchUpdateScores(updates)
-          }
+        if (updates.length > 0) {
+          await leadQueries!.batchUpdateScores(updates)
         }
       }
     })
 
-    logger.info('Lead scoring module v2 initialized')
+    logger.info('Lead scoring module v3 initialized')
   },
 
   async stop() {

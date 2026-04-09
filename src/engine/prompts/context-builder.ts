@@ -225,7 +225,7 @@ export async function buildContextLayers(
     parts.push(campaignLine)
   }
 
-  // ── 9. Qualification state (BANT) ────────────────────────────────────────
+  // ── 9. Qualification state ────────────────────────────────────────────────
   if (registry && ctx.contact?.contactType === 'lead') {
     const scoringConfig = registry.getOptional<ConfigStore>('lead-scoring:config')
     if (scoringConfig) {
@@ -237,6 +237,7 @@ export async function buildContextLayers(
         if (summary) {
           parts.push(`[Qualification state:]`)
           parts.push(summary)
+          parts.push(`[When the contact reveals qualification-relevant info, call extract_qualification with the structured data.]`)
         }
       } catch { /* lead-scoring module not available */ }
     }

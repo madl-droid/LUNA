@@ -1,22 +1,25 @@
-// LUNA — Module: lead-scoring — Scoring Engine
-// Motor de scoring por código. El LLM extrae, el código decide.
-// Supports multi-framework with client_type routing and directo flow.
+// LUNA — Module: lead-scoring — Scoring Engine (v3)
+// Single-framework. Priority-based weights. EnumScoring configurable.
+// LLM extracts, code decides. No multi-framework routing.
 
 import pino from 'pino'
 import type {
   QualifyingConfig,
-  FrameworkConfig,
   QualifyingCriterion,
   QualificationStatus,
   ScoreResult,
   CriterionScore,
   FrameworkStage,
   StageScoreSummary,
-  ClientType,
 } from './types.js'
-import { CLIENT_TYPE_FRAMEWORK } from './types.js'
 
 const logger = pino({ name: 'lead-scoring:engine' })
+
+// ═══════════════════════════════════════════
+// Priority → weight mapping
+// ═══════════════════════════════════════════
+
+const PRIORITY_WEIGHT: Record<string, number> = { high: 3, medium: 2, low: 1 }
 
 // ═══════════════════════════════════════════
 // Valid transitions in the state machine
@@ -37,57 +40,14 @@ const VALID_TRANSITIONS: Record<string, QualificationStatus[]> = {
 }
 
 /**
- * Resolve which framework to use for a contact based on their client_type.
- * If only one framework is active, always use that one.
- * If multiple, route by client_type. Falls back to first active framework.
- */
-export function resolveFramework(
-  config: QualifyingConfig,
-  qualificationData: Record<string, unknown>,
-): FrameworkConfig | null {
-  const active = config.frameworks.filter(f => f.enabled)
-  if (active.length === 0) return null
-  if (active.length === 1) return active[0]!
-
-  // Multi-framework: route by client_type
-  const clientType = qualificationData['_client_type'] as ClientType | undefined
-  if (clientType) {
-    const fwType = CLIENT_TYPE_FRAMEWORK[clientType]
-    const match = active.find(f => f.type === fwType)
-    if (match) return match
-  }
-
-  // No client_type yet — return null to signal "detect client type first"
-  return null
-}
-
-/**
  * Calculate the qualification score for a contact based on their data.
  * Returns score 0-100 and suggested status transition.
  */
 export function calculateScore(
   qualificationData: Record<string, unknown>,
   config: QualifyingConfig,
-  frameworkOverride?: FrameworkConfig,
 ): ScoreResult {
-  const fw = frameworkOverride ?? resolveFramework(config, qualificationData)
-
-  if (!fw) {
-    // No framework resolved (multi-framework, client_type unknown)
-    return {
-      totalScore: 0,
-      criteriaScores: [],
-      stageScores: [],
-      filledCount: 0,
-      totalCount: 0,
-      missingRequired: [],
-      suggestedStatus: 'qualifying',
-      disqualified: false,
-    }
-  }
-
-  const { criteria } = fw
-  const { thresholds } = config
+  const { criteria, thresholds } = config
 
   if (criteria.length === 0) {
     return {
@@ -102,8 +62,8 @@ export function calculateScore(
     }
   }
 
-  // Normalize weights to sum to 100
-  const totalWeight = criteria.reduce((sum, c) => sum + c.weight, 0)
+  // Compute total weight from priorities
+  const totalWeight = criteria.reduce((sum, c) => sum + (PRIORITY_WEIGHT[c.priority] ?? 2), 0)
   const weightMultiplier = totalWeight > 0 ? 100 / totalWeight : 1
 
   const criteriaScores: CriterionScore[] = []
@@ -112,9 +72,14 @@ export function calculateScore(
 
   for (const criterion of criteria) {
     const value = qualificationData[criterion.key]
-    const filled = isFilled(value, criterion)
-    const normalizedWeight = criterion.weight * weightMultiplier
-    const points = filled ? calculateCriterionPoints(value, criterion, normalizedWeight) : 0
+    const filled = isFilled(value)
+    const normalizedWeight = (PRIORITY_WEIGHT[criterion.priority] ?? 2) * weightMultiplier
+    const basePoints = filled ? calculateCriterionPoints(value, criterion, normalizedWeight) : 0
+
+    // Apply temporal decay: older data contributes less to the score
+    const extractedAt = (qualificationData['_extracted_at'] as Record<string, string> | undefined)?.[criterion.key]
+    const decayMultiplier = filled ? calculateDecay(extractedAt, config.dataFreshnessWindowDays ?? 90) : 0
+    const points = basePoints * decayMultiplier
 
     criteriaScores.push({
       key: criterion.key,
@@ -135,12 +100,12 @@ export function calculateScore(
   totalScore = Math.round(Math.min(100, Math.max(0, totalScore)))
 
   // Calculate stage scores
-  const stageScores = calculateStageScores(criteriaScores, fw.stages ?? [])
+  const stageScores = calculateStageScores(criteriaScores, config.stages ?? [])
 
   // Check for disqualification in data
   const disqualifyKey = qualificationData['_disqualified'] as string | undefined
   if (disqualifyKey) {
-    const reason = fw.disqualifyReasons.find(r => r.key === disqualifyKey)
+    const reason = config.disqualifyReasons.find(r => r.key === disqualifyKey)
     return {
       totalScore,
       criteriaScores,
@@ -209,28 +174,48 @@ function calculateStageScores(
  */
 export function getCurrentStage(
   qualificationData: Record<string, unknown>,
-  fw: FrameworkConfig,
+  config: QualifyingConfig,
 ): FrameworkStage | null {
-  if (!fw.stages || fw.stages.length === 0) return null
+  const stages = config.stages
+  if (!stages || stages.length === 0) return null
 
-  const sortedStages = [...fw.stages].sort((a, b) => a.order - b.order)
+  const sortedStages = [...stages].sort((a, b) => a.order - b.order)
 
   for (const stage of sortedStages) {
-    const stageCriteria = fw.criteria.filter(c => c.stage === stage.key)
-    const hasUnfilled = stageCriteria.some(c => {
-      const value = qualificationData[c.key]
-      return !isFilled(value, c)
-    })
+    const stageCriteria = config.criteria.filter(c => c.stage === stage.key)
+    const hasUnfilled = stageCriteria.some(c => !isFilled(qualificationData[c.key]))
     if (hasUnfilled) return stage
   }
 
-  // All stages complete
   return null
 }
 
 /**
+ * Calculate a temporal decay multiplier for a qualification data point.
+ * Returns 1.0 for fresh data, 0.3 floor for data older than windowDays.
+ * Linear decay between 1.0 and 0.3 over the window.
+ */
+function calculateDecay(extractedAtISO: string | undefined, windowDays: number): number {
+  if (!extractedAtISO || windowDays <= 0) return 1 // no timestamp or no decay = full score
+
+  const extractedAt = new Date(extractedAtISO)
+  if (isNaN(extractedAt.getTime())) return 1 // invalid date = no decay
+
+  const now = new Date()
+  const ageMs = now.getTime() - extractedAt.getTime()
+  const ageDays = ageMs / (1000 * 60 * 60 * 24)
+
+  if (ageDays <= 0) return 1
+  if (ageDays >= windowDays) return 0.3 // floor: very old data still contributes 30%
+
+  // Linear decay from 1.0 → 0.3 over windowDays
+  return 1 - (0.7 * ageDays / windowDays)
+}
+
+/**
  * Calculate points for a single criterion based on value and type.
- * Enum values get full or partial points depending on the option chosen.
+ * Enum values: 'indexed' (default) gives partial/full based on position,
+ * 'presence' gives full points if any valid option is set.
  */
 function calculateCriterionPoints(
   value: unknown,
@@ -242,15 +227,20 @@ function calculateCriterionPoints(
       return value === true ? maxPoints : 0
 
     case 'text':
-      // Text: filled = full points (presence-based)
       return maxPoints
 
     case 'enum': {
       if (!criterion.options || criterion.options.length === 0) return 0
       const strVal = String(value)
       const idx = criterion.options.indexOf(strVal)
-      if (idx === -1) return maxPoints * 0.5 // unknown option gets half
-      // Higher index = better (e.g. low=0, medium=1, high=2)
+
+      // Presence mode: full points if valid option, 0 if unknown
+      if (criterion.enumScoring === 'presence') {
+        return idx !== -1 ? maxPoints : 0
+      }
+
+      // Indexed mode (default): higher index = better score
+      if (idx === -1) return 0  // unknown option gets 0 points
       const ratio = (idx + 1) / criterion.options.length
       return maxPoints * ratio
     }
@@ -263,7 +253,7 @@ function calculateCriterionPoints(
 /**
  * Check if a criterion value counts as "filled"
  */
-function isFilled(value: unknown, _criterion: QualifyingCriterion): boolean {
+export function isFilled(value: unknown): boolean {
   if (value === undefined || value === null) return false
   if (typeof value === 'string' && value.trim() === '') return false
   return true
@@ -295,18 +285,21 @@ export function resolveTransition(
  * Merge new extracted data into existing qualification data.
  * Only overwrites if new value has higher confidence or existing is empty.
  * Extractions below minConfidence are discarded (unless no existing value).
+ * Tracks extraction timestamps in _extracted_at.
  */
 export function mergeQualificationData(
   existing: Record<string, unknown>,
   extracted: Record<string, unknown>,
   confidence: Record<string, number>,
-  minConfidence = 0.3,
+  minConfidence = 0.4,
 ): Record<string, unknown> {
   const merged = { ...existing }
+  const now = new Date().toISOString()
+  const adoptedKeys = new Set<string>()
 
   for (const [key, newValue] of Object.entries(extracted)) {
     if (key.startsWith('_')) {
-      // Special keys like _disqualified, _client_type always overwrite
+      // Special keys like _disqualified always overwrite
       merged[key] = newValue
       continue
     }
@@ -314,7 +307,7 @@ export function mergeQualificationData(
     const existingValue = existing[key]
     const newConfidence = confidence[key] ?? 0.5
     const existingConfidence = (existing['_confidence'] as Record<string, number> | undefined)?.[key] ?? 0
-    const hasExisting = isFilled(existingValue, { key, type: 'text', name: { es: '', en: '' }, weight: 0, required: false, neverAskDirectly: false })
+    const hasExisting = isFilled(existingValue)
 
     // Skip low-confidence extractions when there's already a value
     if (newConfidence < minConfidence && hasExisting) {
@@ -323,18 +316,21 @@ export function mergeQualificationData(
     }
 
     // Overwrite if: no existing value, or new confidence is higher
-    if (!hasExisting) {
+    if (!hasExisting || newConfidence > existingConfidence) {
       merged[key] = newValue
-    } else if (newConfidence > existingConfidence) {
-      merged[key] = newValue
+      adoptedKeys.add(key)
+      // Track extraction timestamp
+      const extractedAt = (merged['_extracted_at'] as Record<string, string>) ?? {}
+      extractedAt[key] = now
+      merged['_extracted_at'] = extractedAt
     }
   }
 
-  // Update confidence tracking (only for values that passed the threshold)
+  // Update confidence tracking — only for keys that were actually adopted
   const existingConf = (existing['_confidence'] as Record<string, number>) ?? {}
   const acceptedConf: Record<string, number> = {}
   for (const [key, conf] of Object.entries(confidence)) {
-    if (key.startsWith('_') || merged[key] === extracted[key]) {
+    if (key.startsWith('_') || adoptedKeys.has(key)) {
       acceptedConf[key] = conf
     }
   }
@@ -351,29 +347,12 @@ export function buildQualificationSummary(
   config: QualifyingConfig,
   lang: 'es' | 'en' = 'en',
 ): string {
-  const fw = resolveFramework(config, qualificationData)
-  const clientType = qualificationData['_client_type'] as ClientType | undefined
-  const active = config.frameworks.filter(f => f.enabled)
+  const scoreResult = calculateScore(qualificationData, config)
 
   const lines: string[] = []
 
-  // Client type
-  if (clientType) {
-    lines.push(`Client type: ${clientType.toUpperCase()}`)
-  } else if (active.length > 1) {
-    lines.push(`Client type: UNKNOWN (needs detection — ask if they are a person, company, or government entity)`)
-  }
-
-  if (!fw) {
-    lines.push(`Framework: pending client type detection`)
-    lines.push(`Active frameworks: ${active.map(f => `${f.type} (${lang === 'es' ? 'objetivo' : 'objective'}: ${f.objective})`).join(', ')}`)
-    return lines.join('\n')
-  }
-
-  const scoreResult = calculateScore(qualificationData, config, fw)
-
-  lines.push(`Framework: ${fw.type.toUpperCase()}`)
-  lines.push(`Objective: ${fw.objective}`)
+  lines.push(`Framework: ${config.preset?.toUpperCase() ?? 'CUSTOM'}`)
+  lines.push(`Objective: ${config.objective}`)
   lines.push(`Score: ${scoreResult.totalScore}/100`)
   lines.push(`Status: ${scoreResult.suggestedStatus}`)
   lines.push(`Progress: ${scoreResult.filledCount}/${scoreResult.totalCount} criteria filled`)
@@ -382,16 +361,16 @@ export function buildQualificationSummary(
   if (scoreResult.stageScores.length > 0) {
     lines.push(`Stages:`)
     for (const ss of scoreResult.stageScores) {
-      const stage = fw.stages.find(s => s.key === ss.stageKey)
+      const stage = config.stages.find(s => s.key === ss.stageKey)
       const stageName = stage ? stage.name[lang] : ss.stageKey
       lines.push(`  - ${stageName}: ${ss.filledCount}/${ss.totalCount} (${ss.percentage}%)`)
     }
   }
 
-  // What's missing
+  // What's missing (required)
   if (scoreResult.missingRequired.length > 0) {
     const missingNames = scoreResult.missingRequired.map(k => {
-      const c = fw.criteria.find(cr => cr.key === k)
+      const c = config.criteria.find(cr => cr.key === k)
       return c ? c.name[lang] : k
     })
     lines.push(`Missing required: ${missingNames.join(', ')}`)
@@ -402,7 +381,7 @@ export function buildQualificationSummary(
   if (known.length > 0) {
     lines.push(`Known:`)
     for (const k of known) {
-      const c = fw.criteria.find(cr => cr.key === k.key)
+      const c = config.criteria.find(cr => cr.key === k.key)
       const name = c ? c.name[lang] : k.key
       lines.push(`  - ${name}: ${JSON.stringify(k.value)}`)
     }
@@ -411,13 +390,13 @@ export function buildQualificationSummary(
   // What we still need (unfilled, not neverAskDirectly)
   const needed = scoreResult.criteriaScores.filter(c => !c.filled)
   const askable = needed.filter(n => {
-    const criterion = fw.criteria.find(cr => cr.key === n.key)
+    const criterion = config.criteria.find(cr => cr.key === n.key)
     return criterion && !criterion.neverAskDirectly
   })
   if (askable.length > 0) {
     lines.push(`Still needed (can ask):`)
     for (const n of askable.slice(0, 5)) {
-      const c = fw.criteria.find(cr => cr.key === n.key)
+      const c = config.criteria.find(cr => cr.key === n.key)
       const name = c ? c.name[lang] : n.key
       lines.push(`  - ${name}`)
     }
@@ -425,22 +404,22 @@ export function buildQualificationSummary(
 
   // Never ask directly (unfilled)
   const neverAsk = needed.filter(n => {
-    const criterion = fw.criteria.find(cr => cr.key === n.key)
+    const criterion = config.criteria.find(cr => cr.key === n.key)
     return criterion?.neverAskDirectly
   })
   if (neverAsk.length > 0) {
     lines.push(`Never ask directly (infer only):`)
     for (const n of neverAsk) {
-      const c = fw.criteria.find(cr => cr.key === n.key)
+      const c = config.criteria.find(cr => cr.key === n.key)
       const name = c ? c.name[lang] : n.key
       lines.push(`  - ${name}`)
     }
   }
 
   // Essential questions for directo flow
-  if (fw.essentialQuestions.length > 0) {
-    const eqNames = fw.essentialQuestions.map(k => {
-      const c = fw.criteria.find(cr => cr.key === k)
+  if (config.essentialQuestions.length > 0) {
+    const eqNames = config.essentialQuestions.map(k => {
+      const c = config.criteria.find(cr => cr.key === k)
       return c ? c.name[lang] : k
     })
     lines.push(`Essential questions (for direct conversion): ${eqNames.join(', ')}`)

@@ -111,123 +111,86 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
     return
   }
 
-  logger.info({ traceId: ctx.traceId, batchSize: config.scoringBatchSize }, 'Scoring cold leads')
+  // Import scoring engine — zero LLM, code-only recalculation
+  const { calculateScore } = await import('../../../modules/lead-scoring/scoring-engine.js')
+  const configStore = ctx.registry.getOptional<{ getConfig(): import('../../../modules/lead-scoring/types.js').QualifyingConfig }>('lead-scoring:config')
+  if (!configStore) {
+    logger.debug({ traceId: ctx.traceId }, 'Lead-scoring module not active — skipping cold lead scoring')
+    return
+  }
+  const qualConfig = configStore.getConfig()
+
+  logger.info({ traceId: ctx.traceId, batchSize: config.scoringBatchSize }, 'Scoring cold leads (code-based, zero LLM)')
 
   try {
-    const result = await ctx.db.query(
-      `SELECT c.id, c.display_name, ac.qualification_data, ac.qualification_score
-       FROM contacts c
-       JOIN agent_contacts ac ON ac.contact_id = c.id
-       WHERE c.contact_type = 'lead'
-         AND ac.lead_status = 'cold'
-       ORDER BY ac.updated_at DESC
-       LIMIT $1`,
-      [config.scoringBatchSize],
-    )
-
-    if (result.rows.length === 0) {
-      logger.info({ traceId: ctx.traceId }, 'No cold leads to score')
-      return
-    }
-
+    // Cursor-based batch by contact_id (stable, no race condition)
+    let lastContactId: string | null = null
+    const batchSize = config.scoringBatchSize
     let reactivated = 0
+    let total = 0
 
-    interface ColdLeadRow { id: string; display_name: string | null; qualification_data: Record<string, unknown> | null; qualification_score: number | null }
+    while (true) {
+      const params: unknown[] = [batchSize]
+      let whereExtra = ''
+      if (lastContactId) {
+        whereExtra = ` AND ac.contact_id > $2`
+        params.push(lastContactId)
+      }
 
-    const poolResult = await taskPool({
-      items: result.rows as ColdLeadRow[],
-      concurrency: config.concurrency,
-      maxRetries: config.maxRetries,
-      label: 'nightly-scoring',
-      worker: async (row) => {
-        const qualData = row.qualification_data ?? {}
-        const dataStr = Object.entries(qualData)
-          .map(([k, v]) => `- ${k}: ${v}`)
-          .join('\n') || '(sin datos)'
+      const result = await ctx.db.query(
+        `SELECT ac.contact_id,
+                COALESCE(ac.qualification_data, '{}') AS qualification_data,
+                ac.qualification_score
+         FROM agent_contacts ac
+         JOIN contacts c ON c.id = ac.contact_id
+         WHERE c.contact_type = 'lead'
+           AND ac.lead_status = 'cold'${whereExtra}
+         ORDER BY ac.contact_id ASC
+         LIMIT $1`,
+        params,
+      )
 
-        const summaries = await ctx.db.query(
-          `SELECT summary_text FROM (
-             SELECT summary_text, created_at FROM session_summaries WHERE contact_id = $1
-             UNION ALL
-             SELECT full_summary AS summary_text, created_at FROM session_summaries_v2 WHERE contact_id = $1
-           ) combined ORDER BY created_at DESC LIMIT 3`,
-          [row.id],
-        ).catch(() => ({ rows: [] }))
+      if (result.rows.length === 0) break
 
-        const historyStr = summaries.rows.length > 0
-          ? summaries.rows.map((s: Record<string, string>) => s.summary_text).join('\n---\n')
-          : '(sin historial)'
+      for (const row of result.rows) {
+        const qualData = typeof row.qualification_data === 'string'
+          ? JSON.parse(row.qualification_data) as Record<string, unknown>
+          : (row.qualification_data as Record<string, unknown>) ?? {}
 
-        const displayName = row.display_name ?? 'Sin nombre'
-        const promptsSvc = ctx.registry.getOptional<PromptsService>('prompts:service')
-        const coldLeadUserContent = promptsSvc
-          ? await promptsSvc.getSystemPrompt('cold-lead-scoring', {
-              displayName,
-              qualificationData: dataStr,
-              historyStr,
-            })
-          : ''
-        if (!coldLeadUserContent) {
-          logger.warn({ template: 'cold-lead-scoring', contactId: row.id }, 'System prompt missing — skipping cold lead scoring')
-          return
+        const scoreResult = calculateScore(qualData, qualConfig)
+
+        // Only write if score changed
+        if (scoreResult.totalScore !== (row.qualification_score ?? 0)) {
+          await ctx.db.query(
+            `UPDATE agent_contacts SET qualification_score = $1, updated_at = NOW()
+             WHERE contact_id = $2`,
+            [scoreResult.totalScore, row.contact_id],
+          )
         }
 
-        const nightlyScoreSystem = promptsSvc
-          ? await promptsSvc.getSystemPrompt('nightly-scoring-system')
-          : ''
-
-        if (!nightlyScoreSystem) {
-          logger.warn({ template: 'nightly-scoring-system', contactId: row.id }, 'System prompt missing — skipping LLM call')
-          return
-        }
-
-        const llmResult = await ctx.registry.callHook('llm:chat', {
-          task: 'nightly-scoring',
-          system: nightlyScoreSystem,
-          messages: [{
-            role: 'user' as const,
-            content: coldLeadUserContent,
-          }],
-          maxTokens: 200,
-          temperature: 0.2,
-        })
-
-        if (!llmResult?.text) return
-        const parsed = parseJSON(llmResult.text)
-        if (!parsed || typeof parsed.score !== 'number') return
-
-        const newScore = Math.max(0, Math.min(100, Math.round(parsed.score)))
-
-        await ctx.db.query(
-          `UPDATE agent_contacts SET qualification_score = $1, updated_at = NOW()
-           WHERE contact_id = $2`,
-          [newScore, row.id],
-        )
-
-        if (newScore >= config.scoringThreshold && parsed.recommend_reactivation) {
+        // Reactivate if score above threshold and engine suggests qualifying
+        if (scoreResult.totalScore >= config.scoringThreshold && scoreResult.suggestedStatus === 'qualifying') {
           await ctx.db.query(
             `UPDATE agent_contacts SET lead_status = 'qualifying', updated_at = NOW()
              WHERE contact_id = $1 AND lead_status = 'cold'`,
-            [row.id],
+            [row.contact_id],
           )
           await ctx.registry.runHook('contact:status_changed', {
-            contactId: row.id,
+            contactId: row.contact_id,
             from: 'cold',
             to: 'qualifying',
           })
           reactivated++
-          logger.info({ contactId: row.id, score: newScore, reason: parsed.reason }, 'Cold lead reactivated')
         }
-      },
-    })
+      }
 
-    logger.info({
-      traceId: ctx.traceId,
-      total: result.rows.length,
-      succeeded: poolResult.succeeded,
-      failed: poolResult.failed,
-      reactivated,
-    }, 'Cold lead scoring complete')
+      lastContactId = result.rows[result.rows.length - 1]!.contact_id as string
+      total += result.rows.length
+
+      if (total >= 1000) break
+    }
+
+    logger.info({ traceId: ctx.traceId, total, reactivated }, 'Cold lead scoring complete (code-based)')
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Cold lead scoring failed')
   }
