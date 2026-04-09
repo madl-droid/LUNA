@@ -40,6 +40,12 @@ export async function verifySubagentResult(
         systemPrompt = await promptsSvc.getSystemPrompt('subagent-verifier')
       }
     }
+
+    if (!systemPrompt) {
+      logger.warn({ template: 'subagent-verifier' }, 'System prompt missing — skipping LLM call')
+      return { verdict: 'accept', confidence: 0.5, tokensUsed: 0 }
+    }
+
     const parts: string[] = [
       `Tarea asignada al subagente: ${taskDescription}`,
       ``,

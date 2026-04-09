@@ -2,6 +2,8 @@
 // Gestión centralizada de prompts del agente. Editables desde console, con cache en memoria.
 // Evaluador generado on-demand por LLM. Campaign management moved to lead-scoring module.
 
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import pino from 'pino'
 import { z } from 'zod'
 import { numEnv } from '../../kernel/config-helpers.js'
@@ -478,8 +480,6 @@ async function generateAccentPrompt(registry: Registry): Promise<void> {
     return
   }
 
-  const { readFile } = await import('node:fs/promises')
-  const { join } = await import('node:path')
   const accentPath = join(process.cwd(), 'instance', 'prompts', 'accents', `${accent}.md`)
   let traitPrompt = ''
   try {

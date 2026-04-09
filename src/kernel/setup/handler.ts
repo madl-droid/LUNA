@@ -98,8 +98,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^\+\d{7,15}$/
 const VALID_AGENT_LANGS = new Set(['es', 'en'])
 const VALID_AGENT_ACCENTS: Record<string, Set<string>> = {
-  es: new Set(['', 'es-MX', 'es-CO', 'es-EC', 'es-PE', 'es-CL', 'es-CAR']),
-  en: new Set(['', 'en-US', 'en-CAR']),
+  es: new Set(['', 'es-MX', 'es-CO', 'es-EC', 'es-PE']),
+  en: new Set(['', 'en-US']),
 }
 
 function validateAdmin(form: Record<string, string>, lang: SetupLang): Record<string, string> {

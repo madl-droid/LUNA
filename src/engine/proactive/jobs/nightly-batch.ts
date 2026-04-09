@@ -167,11 +167,19 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
               historyStr,
             })
           : ''
-        if (!coldLeadUserContent) return
+        if (!coldLeadUserContent) {
+          logger.warn({ template: 'cold-lead-scoring', contactId: row.id }, 'System prompt missing — skipping cold lead scoring')
+          return
+        }
 
         const nightlyScoreSystem = promptsSvc
           ? await promptsSvc.getSystemPrompt('nightly-scoring-system')
           : ''
+
+        if (!nightlyScoreSystem) {
+          logger.warn({ template: 'nightly-scoring-system', contactId: row.id }, 'System prompt missing — skipping LLM call')
+          return
+        }
 
         const llmResult = await ctx.registry.callHook('llm:chat', {
           task: 'nightly-scoring',
