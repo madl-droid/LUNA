@@ -36,6 +36,13 @@
 - **Impacto**: Cristian Marin no puede hablar con Luna porque sus mensajes se interpretan como resoluciones de tickets ajenos. Cualquier coworker con un ticket abierto pierde acceso a Luna hasta que el ticket se resuelva o expire.
 - **Fix**: Rediseño completo a quote-based (ver sección REDISEÑO HITL). Solo mensajes que citen la notificación HITL se tratan como respuestas.
 
+### B6. Gmail module usa tabla OAuth separada — nunca arranca
+- **Archivos**: `src/modules/gmail/` + `src/modules/google-apps/`
+- **Qué pasa**: El módulo `gmail` busca credenciales en `email_oauth_tokens` (vacía). El módulo `google-apps` tiene un token válido en `google_oauth_tokens` con scopes de Gmail (`gmail.readonly`, `gmail.send`, `gmail.modify`). Son dos sistemas OAuth separados para la misma cuenta (`luna@clinicateff.com`).
+- **Impacto**: El polling de email nunca arranca. Emails enviados a Luna no llegan al sistema. Además `EMAIL_FROM` está en blanco.
+- **Fix (unificar OAuth)**: El módulo `gmail` debe usar la misma tabla `google_oauth_tokens` del módulo `google-apps`. Una sola autenticación OAuth de Google para todos los servicios (Drive, Sheets, Gmail, etc). Eliminar `email_oauth_tokens` como tabla separada.
+- **Fix (control de activación)**: Si `EMAIL_ENABLED=false` o el módulo gmail está desactivado, Luna simplemente no debe hacer polling ni responder emails — pero NO por falta de OAuth, sino por configuración explícita. El estado correcto es: OAuth unificado siempre disponible, el flag `EMAIL_ENABLED` controla si el canal está activo o no.
+
 ---
 
 ## CALIDAD DE RESPUESTA — Luna responde mal o incompleto
@@ -253,5 +260,6 @@ ALTER TABLE hitl_tickets ADD COLUMN IF NOT EXISTS notification_message_id TEXT;
 | 9 | Q3 | Re-chunking documento precios | Re-procesar knowledge | No |
 | 10 | B3 | Renombrar prompt imagen | Renombrar + editar archivo | No |
 | 11 | Q4 | Retry para mensajes reactivos | Desarrollo nuevo | No |
-| 12 | L1+L2 | Limpieza código/config muerta | Opcional | No |
-| 13 | S6 | Verificar tier API Anthropic | Manual en console | No |
+| 12 | B6 | Unificar OAuth Google (gmail + google-apps = 1 sola tabla) | Desarrollo medio | Restart app |
+| 13 | L1+L2 | Limpieza código/config muerta | Opcional | No |
+| 14 | S6 | Verificar tier API Anthropic | Manual en console | No |
