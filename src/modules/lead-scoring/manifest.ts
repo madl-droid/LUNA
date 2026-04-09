@@ -18,7 +18,7 @@ import type {
 import { PRESETS } from './frameworks.js'
 import { ConfigStore } from './config-store.js'
 import { LeadQueries } from './pg-queries.js'
-import { registerExtractionTool, clearExtractionPromptCache } from './extract-tool.js'
+import { registerExtractionTool } from './extract-tool.js'
 import { calculateScore, resolveTransition } from './scoring-engine.js'
 
 const logger = pino({ name: 'lead-scoring' })
@@ -64,7 +64,6 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const body = await parseBody<QualifyingConfig>(req)
           getConfigStore().save(body)
-          clearExtractionPromptCache()
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -107,7 +106,6 @@ function createApiRoutes(): ApiRoute[] {
           }
           const store = getConfigStore()
           store.applyPreset(body.preset)
-          clearExtractionPromptCache()
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -376,7 +374,6 @@ const manifest: ModuleManifest = {
       const store = configStore!
       const oldConfig = store.getConfig()
       const newConfig = store.reload()
-      clearExtractionPromptCache()
 
       // Recalculate if criteria/thresholds changed
       const criteriaChanged = JSON.stringify(oldConfig.criteria) !== JSON.stringify(newConfig.criteria)
