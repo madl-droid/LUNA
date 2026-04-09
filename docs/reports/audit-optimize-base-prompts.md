@@ -84,6 +84,37 @@ Si `cold-lead-scoring.md` se borra o corrompe, el nightly batch entero se salta 
 
 **Fix:** Agregar un `logger.warn` antes del `return`.
 
+### BUG-5: `criticizer.md` introduce semántica "BLOQUEAR" que el código no maneja (ALTO)
+
+El nuevo `criticizer.md` dice:
+```
+CRITERIOS DE DECISIÓN
+- BLOQUEAR si: Hay un error en un precio, un link roto/inventado...
+- APROBAR si: La información es veraz y segura...
+```
+
+Pero `post-processor.ts:376` solo verifica:
+```ts
+if (feedback.toUpperCase().startsWith('APPROVED') || feedback.length < 10) {
+  return null  // approved
+}
+```
+
+Si el criticizer responde "BLOQUEAR: precio incorrecto", el código lo trata como **feedback para reescritura**, no como un bloqueo. La palabra "BLOQUEAR" nunca se verifica — el código solo busca "APPROVED". Esto no es un crash, pero es una desconexión entre lo que el prompt pide y lo que el código espera. El criticizer podría responder en un formato que confunde al rewriter.
+
+**Fix:** El prompt debería usar solo "APPROVED" vs feedback (como antes), o el código debe manejar "BLOQUEAR".
+
+### BUG-6: `job.md` perdió instrucciones operativas importantes (MEDIO)
+
+El `job.md` original incluía instrucciones operativas claras:
+- "Responder en el idioma del contacto"
+- "Usar las herramientas disponibles para obtener datos reales"
+- "Derivar a un humano cuando detectes un caso complejo"
+
+El nuevo `job.md` se enfoca en estrategia de ventas pero **pierde estas instrucciones operativas**. El idioma del contacto se menciona en `agentic-system.md` viejo pero también fue removido de ahí en la reescritura.
+
+**Fix:** Restaurar "Responder en el idioma del contacto" en algún prompt (job.md o agentic-system.md).
+
 ---
 
 ## DEUDAS TÉCNICAS
@@ -202,6 +233,8 @@ Pero el formato con `**NOMBRES EN MAYÚSCULA:**` es teatro de seguridad — el L
 2. **Restaurar fallbacks mínimos** para funciones que esperan JSON (`commitment-detector`, `subagent/verifier`)
 3. **Agregar log warning** en `nightly-batch.ts` cuando `coldLeadUserContent` es vacío
 4. **Fix imports dinámicos** en `manifest.ts` (usar imports estáticos)
+5. **Fix criticizer.md** — eliminar semántica "BLOQUEAR/APROBAR" y mantener solo "APPROVED" vs feedback como el código espera
+6. **Restaurar instrucciones operativas perdidas** en `job.md` o `agentic-system.md` (idioma del contacto, uso de herramientas, derivación a humano)
 
 ### P1 — Mejoras post-merge
 5. **Simplificar prompts de Fase 2** — reducir verbosidad de `identity.md`, `job.md`, `guardrails.md` a ~60% del tamaño actual
