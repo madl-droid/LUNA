@@ -1,16 +1,16 @@
-# Lead Scoring — Sistema de calificacion de leads (v2)
+# Lead Scoring — Sistema de calificacion de leads (v3)
 
-Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) simultaneamente. Deteccion de tipo de cliente, objectives per-framework, flujo directo. Extraccion natural por LLM, scoring por codigo, UI en console.
+Preset unico por tenant: califica leads con CHAMP (B2B), SPIN (B2C) o CHAMP+Gov (B2G). Sin multi-framework ni deteccion de client_type. Pesos por prioridad (high/medium/low), scoring por codigo, extraccion por LLM, UI en console.
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios
-- `types.ts` — FrameworkType, ClientType, FrameworkObjective, FrameworkConfig, QualifyingConfig (multi-framework), ExtractionResult, generateKeyFromName()
-- `frameworks.ts` — presets CHAMP, SPIN, CHAMP+Gov con stages, criterios, disqualify reasons, essentialQuestions
-- `scoring-engine.ts` — motor de scoring: resolveFramework(), calculateScore(), buildQualificationSummary(), directo status
-- `config-store.ts` — lee/escribe instance/qualifying.json, multi-framework, setFramework(), resetFrameworkToPreset(), migracion old→new
-- `extract-tool.ts` — tool `extract_qualification`: prompt caching, client type detection, conversation buffer, dynamic tool description
-- `pg-queries.ts` — queries: listar leads, detalle, actualizar score, recalcular batch, stats (con directo status)
-- `templates.ts` — SSR HTML: framework cards con toggle+objetivo, criterios per-framework, comportamiento
+- `types.ts` — QualifyingCriterion (priority, enumScoring), QualifyingConfig (single-fw), ExtractionResult, generateKeyFromName()
+- `frameworks.ts` — PresetDefinition, CHAMP_PRESET, SPIN_PRESET, CHAMP_GOV_PRESET (max 10 criterios c/u), PRESETS registry, getPreset()
+- `scoring-engine.ts` — calculateScore(), buildQualificationSummary(), getCurrentStage(), mergeQualificationData() (con timestamps), resolveTransition(), isFilled()
+- `config-store.ts` — lee/escribe instance/qualifying.json, migracion 3 formatos (v1 BANT plano, v2 multi-fw, v3 single-fw), applyPreset(), addCriterion(), removeCriterion()
+- `extract-tool.ts` — tool `extract_qualification`: LLM extraction, prompt caching por fingerprint, dynamic tool description
+- `pg-queries.ts` — queries: listar leads, detalle, actualizar score, recalcular batch, stats
+- `templates.ts` — SSR HTML: single-fw card con objetivo, criterios con prioridad, comportamiento
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true
@@ -20,46 +20,51 @@ Multi-framework: califica leads usando CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G) 
 ## Servicios registrados
 - `lead-scoring:config` — instancia de ConfigStore
 - `lead-scoring:queries` — instancia de LeadQueries
-- Campanas movidas al modulo `marketing-data` (servicios: `marketing-data:campaign-queries`, `marketing-data:match-campaign`, `marketing-data:reload-campaigns`)
 
-## Multi-framework
-- `frameworks[]` en config: cada uno con type, enabled, objective, stages, criteria, essentialQuestions
-- Client type detection: si >1 framework activo, primera extraccion detecta b2b/b2c/b2g
-- `_client_type` en qualification_data guarda tipo detectado
-- `resolveFramework()` rutea al framework correcto segun client type
+## Scoring v3
+- Pesos calculados en runtime desde `priority`: high=3, medium=2, low=1
+- Normalizado a 100 automaticamente — agregar/quitar criterios no rompe nada
+- EnumScoring: `indexed` (default, escala) vs `presence` (sin orden semantico)
+- `_extracted_at[key]` guarda timestamps de extraccion por campo (base para decay)
+- Config max 10 criterios
 
-## Objectives per-framework
-- `schedule` | `sell` | `escalate` | `attend_only`
-- Compositor recibe objetivo en espanol para guiar respuestas
-- Configurable desde console en cada card de framework
+## Formato config (v3) — instance/qualifying.json
+```json
+{
+  "preset": "spin",
+  "objective": "schedule",
+  "stages": [...],
+  "criteria": [{ "key": ..., "priority": "high|medium|low", "enumScoring"?: "presence", ... }],
+  "disqualifyReasons": [...],
+  "essentialQuestions": ["key1", "key2"],
+  "thresholds": { "cold": 30, "qualifying": 31, "qualified": 70 },
+  "minConfidence": 0.4,
+  "dataFreshnessWindowDays": 90
+}
+```
 
-## Flujo directo
-- Status `directo`: lead pide accion objetivo antes de completar calificacion
-- essentialQuestions (max 2 por framework): preguntas minimas antes de convertir directo
-- Estado: new/qualifying → directo → converted/blocked
-
-## Tool registrada
-- `extract_qualification` — extraccion con prompt caching, tool description dinamica
+## Migracion automatica de formatos
+El config-store detecta y migra al cargar:
+- Formato 1 (BANT plano): `criteria` en root, sin `frameworks` ni `preset` → migra con preset='spin'
+- Formato 2 (multi-fw v2): tiene `frameworks[]` → toma primer framework activo
+- Formato 3 (v3): tiene `preset` → carga directo
 
 ## API routes (montadas en /console/api/lead-scoring/)
 - `GET /config` — config actual
 - `PUT /config` — guardar config nueva
-- `POST /set-framework` — enable/disable framework + objective
-- `POST /reset-framework` — resetear framework a preset
-- `GET /frameworks` — listar presets con estado actual
+- `GET /presets` — listar presets disponibles
+- `POST /apply-preset` — aplicar preset (reemplaza criterios/stages)
 - `POST /recalculate` — recalcular scores batch
-- `GET /stats`, `GET /leads`, `GET /lead`, `PUT /lead-status`, `POST /disqualify`
-- Campanas: movidas al modulo `marketing-data`
+- `GET /stats`, `GET /stats-detailed`, `GET /leads`, `GET /lead`, `PUT /lead-status`, `POST /disqualify`
 
-## Integracion con evaluator/compositor
-- Evaluator: recibe `buildQualificationSummary()` en ingles (score, stage, missing, known, essential questions)
-- Compositor: recibe summary en espanol + objetivo + neverAskDirectly + instruccion directo
-- Tool description: dinamica, refleja frameworks activos y nombres de criterios
+## Integracion con context-builder
+- `buildQualificationSummary(qualData, config, lang)` — sin parametro de framework
+- Inyectado en prompt por context-builder.ts cuando contact_type='lead'
 
 ## Trampas
 - Config en instance/qualifying.json (JSON), NO en .env
-- Keys auto-generadas desde name.en via generateKeyFromName() — no edicion manual
-- Configs viejas (single framework, custom) se migran automaticamente
-- Prompt cache se invalida en cambio de config (clearExtractionPromptCache)
-- `_client_type` y `_disqualified` son campos reservados en qualification_data
-- Helpers HTTP: usa jsonResponse, parseBody, parseQuery de kernel/http-helpers.js
+- `resolveFramework()` eliminado — no importar de scoring-engine.ts
+- `FrameworkType`/`ClientType`/`FrameworkConfig` eliminados de types.ts — no usar
+- `_disqualified` campo reservado en qualification_data
+- Prompt cache key = `${preset}:${JSON.stringify(criteria.map(c => c.key))}`
+- Helpers HTTP: jsonResponse, parseBody, parseQuery de kernel/http-helpers.js

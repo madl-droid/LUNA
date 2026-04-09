@@ -1,8 +1,7 @@
-// LUNA — Module: lead-scoring — Extract Qualification Tool
-// Tool que se registra en tools:registry para extraer datos de calificación
-// de la conversación. Framework-aware: adapts extraction prompt to active framework.
-// Supports multi-framework with client_type detection and directo flow.
-// Receives conversation buffer (not just single message) for better context.
+// LUNA — Module: lead-scoring — Extract Qualification Tool (v3)
+// Tool registered in tools:registry to extract qualification data from conversation.
+// Single-framework: uses config.criteria and config.stages directly.
+// LLM extraction preserved here; Plan 2 will refactor to code-only.
 
 import type { Registry } from '../../kernel/registry.js'
 import type { PromptsService } from '../prompts/types.js'
@@ -10,10 +9,8 @@ import type { ToolRegistration, ToolExecutionContext } from '../tools/types.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 import type {
   QualifyingConfig,
-  FrameworkConfig,
   ExtractionResult,
   FrameworkStage,
-  ClientType,
   QualificationStatus,
 } from './types.js'
 import type { ConfigStore } from './config-store.js'
@@ -22,30 +19,10 @@ import {
   mergeQualificationData,
   resolveTransition,
   getCurrentStage,
-  resolveFramework,
 } from './scoring-engine.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'lead-scoring:extract-tool' })
-
-// ═══════════════════════════════════════════
-// Framework-specific extraction context
-// ═══════════════════════════════════════════
-
-const FRAMEWORK_CONTEXT: Record<string, { es: string; en: string }> = {
-  champ: {
-    es: 'Estás calificando un lead B2B usando el framework CHAMP (Challenges, Authority, Money, Prioritization).',
-    en: 'You are qualifying a B2B lead using the CHAMP framework (Challenges, Authority, Money, Prioritization).',
-  },
-  spin: {
-    es: 'Estás calificando un lead B2C usando SPIN Selling (Situación, Problema, Implicación, Cierre). La conversación avanza naturalmente por las etapas.',
-    en: 'You are qualifying a B2C lead using SPIN Selling (Situation, Problem, Implication, Need-payoff). The conversation progresses naturally through stages.',
-  },
-  champ_gov: {
-    es: 'Estás calificando un lead B2G (gobierno) usando CHAMP + Gov. Incluye etapas de proceso de compra pública y encaje normativo.',
-    en: 'You are qualifying a B2G (government) lead using CHAMP + Gov. Includes procurement process stages and compliance fit.',
-  },
-}
 
 // ═══════════════════════════════════════════
 // Prompt cache for static parts
@@ -60,18 +37,16 @@ export function clearExtractionPromptCache(): void {
 
 /**
  * Build the static part of the extraction prompt (criteria, stages, rules).
- * Cached per framework type — only rebuilt on config change.
+ * Cached per config fingerprint — only rebuilt on config change.
  */
-function buildStaticPromptPart(fw: FrameworkConfig): string {
-  const cacheKey = `${fw.type}:${JSON.stringify(fw.criteria.map(c => c.key))}`
+function buildStaticPromptPart(config: QualifyingConfig): string {
+  const cacheKey = `${config.preset}:${JSON.stringify(config.criteria.map(c => c.key))}`
   const cached = promptCache.get(cacheKey)
   if (cached) return cached
 
-  const frameworkCtx = FRAMEWORK_CONTEXT[fw.type]?.en ?? ''
-
-  const sortedStages = [...(fw.stages ?? [])].sort((a, b) => a.order - b.order)
+  const sortedStages = [...(config.stages ?? [])].sort((a, b) => a.order - b.order)
   const stageBlocks = sortedStages.map(stage => {
-    const stageCriteria = fw.criteria.filter(c => c.stage === stage.key)
+    const stageCriteria = config.criteria.filter(c => c.stage === stage.key)
     if (stageCriteria.length === 0) return ''
 
     const header = `\n## ${stage.name.en} (${stage.key})`
@@ -91,14 +66,29 @@ function buildStaticPromptPart(fw: FrameworkConfig): string {
     return `${header}\n${desc}\n${fields}`
   }).filter(Boolean)
 
+  // Include unstaged criteria
+  const unstaggedCriteria = config.criteria.filter(c => !c.stage)
+  if (unstaggedCriteria.length > 0) {
+    const unstaggedFields = unstaggedCriteria.map(c => {
+      let line = `  - ${c.key} (${c.type}): ${c.name.en}`
+      if (c.type === 'enum' && c.options) {
+        line += ` [options: ${c.options.join(', ')}]`
+      }
+      if (c.neverAskDirectly) {
+        line += ' [NEVER ASK DIRECTLY — infer only]'
+      }
+      return line
+    }).join('\n')
+    stageBlocks.push(`\n## General\n${unstaggedFields}`)
+  }
+
   const criteriaSection = stageBlocks.join('\n')
 
-  const disqualifyList = fw.disqualifyReasons.map(d =>
+  const disqualifyList = config.disqualifyReasons.map(d =>
     `- ${d.key}: ${d.name.en}`
   ).join('\n')
 
-  const result = `${frameworkCtx.length > 0 ? frameworkCtx + '\n' : ''}
-CRITERIA TO EXTRACT:
+  const result = `CRITERIA TO EXTRACT:
 ${criteriaSection}
 
 DISQUALIFICATION REASONS (set disqualifyDetected if any detected):
@@ -112,7 +102,7 @@ ${disqualifyList}`
  * Build the dynamic part: existing values + current stage focus.
  */
 function buildDynamicPromptPart(
-  fw: FrameworkConfig,
+  config: QualifyingConfig,
   existingData: Record<string, unknown>,
   currentStage: FrameworkStage | null,
 ): string {
@@ -120,7 +110,7 @@ function buildDynamicPromptPart(
 
   // Already known values
   const known: string[] = []
-  for (const c of fw.criteria) {
+  for (const c of config.criteria) {
     const val = existingData[c.key]
     if (val !== undefined && val !== null && val !== '') {
       known.push(`  - ${c.key}: ${JSON.stringify(val)}`)
@@ -140,46 +130,16 @@ function buildDynamicPromptPart(
 }
 
 /**
- * Build client_type detection prompt for multi-framework mode.
- */
-function buildClientTypeDetectionPrompt(activeFrameworks: FrameworkConfig[]): string {
-  const fwList = activeFrameworks.map(f => {
-    const ctx = FRAMEWORK_CONTEXT[f.type]
-    return `- ${f.type}: ${ctx?.en ?? f.type}`
-  }).join('\n')
-
-  return `You are a client type classifier. Determine what type of client this is.
-
-Active frameworks:
-${fwList}
-
-Based on the conversation, classify the client type:
-- "b2b" if they represent a company/business
-- "b2c" if they are an individual consumer/person
-- "b2g" if they represent a government entity/institution
-
-Respond ONLY with valid JSON:
-{
-  "clientTypeDetected": "b2b" | "b2c" | "b2g" | null,
-  "confidence": 0.0-1.0,
-  "extracted": {},
-  "confidence_map": {}
-}
-
-Set clientTypeDetected to null ONLY if there is truly not enough information to determine client type.`
-}
-
-/**
  * Build the full extraction prompt.
  */
 async function buildExtractionPrompt(
-  fw: FrameworkConfig,
+  config: QualifyingConfig,
   existingData: Record<string, unknown>,
   currentStage: FrameworkStage | null,
   registry?: Registry,
 ): Promise<string> {
-  const staticPart = buildStaticPromptPart(fw)
-  const dynamicPart = buildDynamicPromptPart(fw, existingData, currentStage)
+  const staticPart = buildStaticPromptPart(config)
+  const dynamicPart = buildDynamicPromptPart(config, existingData, currentStage)
 
   // Try to load from template first
   if (registry) {
@@ -209,7 +169,7 @@ RULES:
 7. If a disqualification signal is detected, set disqualifyDetected to the reason key.
 8. Only include fields you actually found data for — do not include null fields.
 9. Extract data from ANY stage if present, not just the current focus stage.
-10. Do NOT re-extract values that are already known unless the new information contradicts them.
+10. Do NOT re-extract values that are already known unless new info contradicts them.
 
 Respond ONLY with valid JSON matching this schema:
 {
@@ -221,7 +181,7 @@ Respond ONLY with valid JSON matching this schema:
 
 /**
  * Register the extract_qualification tool in the tools registry.
- * The tool description is dynamic — reflects active frameworks and criteria.
+ * The tool description is dynamic — reflects active criteria.
  */
 export async function registerExtractionTool(
   registry: Registry,
@@ -257,31 +217,22 @@ export async function registerExtractionTool(
 }
 
 /**
- * Build a dynamic tool description that reflects active frameworks.
- * This is what the evaluator LLM sees to decide when to trigger extraction.
+ * Build a dynamic tool description that reflects the active criteria.
  */
 function buildToolDescription(configStore: ConfigStore): string {
   const config = configStore.getConfig()
-  const active = config.frameworks.filter(f => f.enabled)
 
-  if (active.length === 0) {
-    return 'Extrae datos de calificación de leads. No hay frameworks activos.'
+  if (config.criteria.length === 0) {
+    return 'Extrae datos de calificación de leads. No hay criterios configurados.'
   }
 
-  const fwNames = active.map(f => {
-    const names: Record<string, string> = {
-      champ: 'CHAMP (B2B: challenges, authority, money, prioritization)',
-      spin: 'SPIN (B2C: situation, problem, implication, need-payoff)',
-      champ_gov: 'CHAMP+Gov (B2G: CHAMP + process + compliance)',
-    }
-    return names[f.type] ?? f.type
-  })
+  const presetLabel = config.preset ? config.preset.toUpperCase() : 'CUSTOM'
+  const criteriaNames = config.criteria
+    .filter(c => !c.neverAskDirectly)
+    .slice(0, 6)
+    .map(c => c.name.en)
 
-  const criteriaNames = active.flatMap(f =>
-    f.criteria.filter(c => !c.neverAskDirectly).slice(0, 4).map(c => c.name.en)
-  ).slice(0, 6)
-
-  return `Extrae datos de calificación de leads. Frameworks activos: ${fwNames.join(', ')}. Busca señales de: ${criteriaNames.join(', ')}. Dispara cuando el contacto mencione su problema, empresa, presupuesto, urgencia, rol, o contexto relevante.`
+  return `Extrae datos de calificación de leads. Framework: ${presetLabel}. Busca señales de: ${criteriaNames.join(', ')}. Dispara cuando el contacto mencione su problema, necesidad, presupuesto, urgencia, rol o contexto relevante.`
 }
 
 /**
@@ -306,6 +257,10 @@ async function handleExtraction(
   const config = configStore.getConfig()
   const db = ctx.db
 
+  if (config.criteria.length === 0) {
+    return { success: true, data: { extracted: false, reason: 'no_criteria_configured' } }
+  }
+
   // Load existing qualification data from agent_contacts
   const contactRow = await db.query(
     `SELECT ac.qualification_data, ac.lead_status, ac.qualification_score
@@ -322,39 +277,11 @@ async function handleExtraction(
   const existingData = (row.qualification_data as Record<string, unknown>) ?? {}
   const currentStatus = (row.lead_status as QualificationStatus) ?? 'new'
 
-  // Determine active frameworks
-  const active = config.frameworks.filter(f => f.enabled)
-  if (active.length === 0) {
-    return { success: true, data: { extracted: false, reason: 'no_active_frameworks' } }
-  }
-
-  // Multi-framework: detect client type first if unknown
-  const clientType = existingData['_client_type'] as ClientType | undefined
-  if (!clientType && active.length > 1) {
-    const detection = await handleClientTypeDetection(messageText, contactId, existingData, currentStatus, config, db, registry)
-    if (!detection.success) return detection
-    // If client type was detected, update existingData in memory so resolveFramework works
-    const detectedType = (detection.data as Record<string, unknown> | undefined)?.clientTypeDetected
-    if (detectedType) {
-      existingData['_client_type'] = detectedType
-    } else {
-      // Could not determine client type — return without extracting
-      return detection
-    }
-    // Fall through to normal extraction with the now-known client type
-  }
-
-  // Resolve framework
-  const fw = resolveFramework(config, existingData)
-  if (!fw) {
-    return { success: true, data: { extracted: false, reason: 'no_framework_resolved' } }
-  }
-
   // Determine current stage for focused extraction
-  const currentStage = getCurrentStage(existingData, fw)
+  const currentStage = getCurrentStage(existingData, config)
 
   // Build prompt and call LLM
-  const systemPrompt = await buildExtractionPrompt(fw, existingData, currentStage, registry)
+  const systemPrompt = await buildExtractionPrompt(config, existingData, currentStage, registry)
 
   try {
     const llmResult = await registry.callHook('llm:chat', {
@@ -404,14 +331,14 @@ async function handleExtraction(
         freshData,
         extraction.extracted,
         extraction.confidence ?? {},
-        config.minConfidence ?? 0.3,
+        config.minConfidence ?? 0.4,
       )
 
       if (extraction.disqualifyDetected) {
         mergedData['_disqualified'] = extraction.disqualifyDetected
       }
 
-      scoreResult = calculateScore(mergedData, config, fw)
+      scoreResult = calculateScore(mergedData, config)
       newStatus = resolveTransition(freshStatus, scoreResult.suggestedStatus)
 
       await client.query(
@@ -455,7 +382,7 @@ async function handleExtraction(
         fields: Object.keys(extraction.extracted),
         score: scoreResult.totalScore,
         status: newStatus ?? currentStatus,
-        framework: fw.type,
+        preset: config.preset,
         currentStage: currentStage?.key ?? null,
         stageScores: scoreResult.stageScores,
         disqualified: scoreResult.disqualified,
@@ -465,89 +392,5 @@ async function handleExtraction(
   } catch (err) {
     logger.error({ err, contactId }, 'Extraction failed')
     return { success: false, error: 'Extraction failed: ' + String(err) }
-  }
-}
-
-/**
- * Handle client type detection in multi-framework mode.
- * First extraction in multi-framework always tries to detect client type.
- */
-async function handleClientTypeDetection(
-  messageText: string,
-  contactId: string,
-  _existingData: Record<string, unknown>,
-  currentStatus: QualificationStatus,
-  config: QualifyingConfig,
-  db: import('pg').Pool,
-  registry: Registry,
-): Promise<{ success: boolean; data?: unknown; error?: string }> {
-  const active = config.frameworks.filter(f => f.enabled)
-  const systemPrompt = buildClientTypeDetectionPrompt(active)
-
-  try {
-    const llmResult = await registry.callHook('llm:chat', {
-      task: 'extract_qualification',
-      system: systemPrompt,
-      messages: [{ role: 'user', content: messageText }],
-      temperature: 0.1,
-      maxTokens: 200,
-    })
-
-    if (!llmResult?.text) {
-      return { success: true, data: { extracted: false, reason: 'client_type_detection_failed' } }
-    }
-
-    const cleaned = llmResult.text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    let parsed: { clientTypeDetected?: ClientType | null; confidence?: number }
-    try {
-      parsed = JSON.parse(cleaned) as { clientTypeDetected?: ClientType | null; confidence?: number }
-    } catch {
-      return { success: true, data: { extracted: false, reason: 'client_type_parse_failed' } }
-    }
-
-    if (!parsed.clientTypeDetected) {
-      return { success: true, data: { extracted: false, reason: 'client_type_not_determined' } }
-    }
-
-    // Save client type
-    const client = await db.connect()
-    try {
-      await client.query('BEGIN')
-      const freshRow = await client.query(
-        `SELECT qualification_data, lead_status FROM agent_contacts
-         WHERE contact_id = $1
-         FOR UPDATE`,
-        [contactId],
-      )
-      const freshData = (freshRow.rows[0]?.qualification_data as Record<string, unknown>) ?? {}
-      freshData['_client_type'] = parsed.clientTypeDetected
-
-      await client.query(
-        `UPDATE agent_contacts
-         SET qualification_data = $1, updated_at = NOW()
-         WHERE contact_id = $2`,
-        [JSON.stringify(freshData), contactId],
-      )
-      await client.query('COMMIT')
-    } catch (txErr) {
-      await client.query('ROLLBACK')
-      throw txErr
-    } finally {
-      client.release()
-    }
-
-    logger.info({ contactId, clientType: parsed.clientTypeDetected }, 'Client type detected')
-
-    return {
-      success: true,
-      data: {
-        extracted: true,
-        clientTypeDetected: parsed.clientTypeDetected,
-        status: currentStatus,
-      },
-    }
-  } catch (err) {
-    logger.error({ err, contactId }, 'Client type detection failed')
-    return { success: false, error: 'Client type detection failed: ' + String(err) }
   }
 }

@@ -2,7 +2,7 @@
 // Renders lead-scoring qualification view: filters, metrics, frameworks, behavior, signals.
 
 import type { ConfigStore } from './config-store.js'
-import type { QualifyingConfig, FrameworkConfig, FrameworkType } from './types.js'
+import type { QualifyingConfig, QualifyingCriterion } from './types.js'
 
 type Lang = 'es' | 'en'
 
@@ -397,62 +397,43 @@ function renderFilters(lang: Lang): string {
 // Framework cards
 // ═══════════════════════════════════════════
 
-const FRAMEWORK_DEFS: Array<{ value: FrameworkType; nameKey: string; typeKey: string; descKey: string }> = [
-  { value: 'spin', nameKey: 'fw_spin', typeKey: 'fw_spin_type', descKey: 'fw_spin_desc' },
-  { value: 'champ', nameKey: 'fw_champ', typeKey: 'fw_champ_type', descKey: 'fw_champ_desc' },
-  { value: 'champ_gov', nameKey: 'fw_champ_gov', typeKey: 'fw_champ_gov_type', descKey: 'fw_champ_gov_desc' },
-]
-
+/** Render single-framework info card (v3: one active preset per tenant) */
 function renderFrameworkCards(config: QualifyingConfig, lang: Lang): string {
-  const enabledTypes = new Set(config.frameworks.filter(f => f.enabled).map(f => f.type))
-
-  const cards = FRAMEWORK_DEFS.map(fw => {
-    const isActive = enabledTypes.has(fw.value)
-    const activeClass = isActive ? ' active' : ''
-    const toggleClass = isActive ? ' on' : ''
-    const fwConfig = config.frameworks.find(f => f.type === fw.value)
-    const objective = fwConfig?.objective ?? 'schedule'
-
-    return `
-      <div class="ls-fw-card${activeClass}" id="ls-fw-card-${fw.value}" data-fw="${fw.value}">
-        <div class="ls-fw-card-type">${l(fw.typeKey, lang)}</div>
-        <div class="ls-fw-card-title">${l(fw.nameKey, lang)}</div>
-        <div class="ls-fw-card-desc">${l(fw.descKey, lang)}</div>
-        <div style="font-size:11px;color:var(--on-surface-dim);margin-bottom:8px">
-          ${lang === 'es' ? 'Objetivo' : 'Objective'}:
-          <select style="font-size:11px;padding:2px 6px;border:1px solid var(--outline-variant);border-radius:4px;background:var(--surface-container-lowest);color:var(--on-surface)"
-            onchange="lsSetObjective('${fw.value}',this.value)" ${!isActive ? 'disabled' : ''}>
-            <option value="schedule" ${objective === 'schedule' ? 'selected' : ''}>${l('act_scheduled', lang)}</option>
-            <option value="sell" ${objective === 'sell' ? 'selected' : ''}>Vender</option>
-            <option value="escalate" ${objective === 'escalate' ? 'selected' : ''}>${l('act_escalate_human', lang)}</option>
-            <option value="attend_only" ${objective === 'attend_only' ? 'selected' : ''}>Solo atender</option>
-          </select>
-        </div>
-        <div class="ls-fw-card-actions">
-          <button type="button" class="ls-fw-toggle${toggleClass}" id="ls-fw-toggle-${fw.value}"
-            onclick="lsToggleFramework('${fw.value}',${isActive})"></button>
-          <button type="button" class="wa-btn" onclick="lsViewFramework('${fw.value}')"
-            style="font-size:11px;padding:3px 10px" id="ls-fw-view-${fw.value}">${l('fw_view', lang)}</button>
-        </div>
-      </div>`
-  }).join('')
-
-  const enabledCount = enabledTypes.size
-  const noteDisplay = enabledCount > 1 ? 'block' : 'none'
+  const preset = config.preset ?? 'custom'
+  const objective = config.objective ?? 'schedule'
+  const criteriaCount = config.criteria.length
+  const stageCount = config.stages.length
 
   return `
     <div class="ls-fw-grid">
-      ${cards}
-    </div>
-    <div class="ls-fw-note" id="ls-fw-multi-note" style="display:${noteDisplay}">${l('fw_multi_note', lang)}</div>`
+      <div class="ls-fw-card active" id="ls-fw-card-active" data-fw="${esc(preset)}">
+        <div class="ls-fw-card-type">${lang === 'es' ? 'Preset activo' : 'Active preset'}: <strong>${esc(preset.toUpperCase())}</strong></div>
+        <div class="ls-fw-card-desc">${criteriaCount} ${lang === 'es' ? 'criterios' : 'criteria'} &middot; ${stageCount} ${lang === 'es' ? 'etapas' : 'stages'}</div>
+        <div style="font-size:11px;color:var(--on-surface-dim);margin-bottom:8px">
+          ${lang === 'es' ? 'Objetivo' : 'Objective'}:
+          <select style="font-size:11px;padding:2px 6px;border:1px solid var(--outline-variant);border-radius:4px;background:var(--surface-container-lowest);color:var(--on-surface)"
+            onchange="lsConfig.objective=this.value">
+            <option value="schedule" ${objective === 'schedule' ? 'selected' : ''}>${l('act_scheduled', lang)}</option>
+            <option value="sell" ${objective === 'sell' ? 'selected' : ''}>${lang === 'es' ? 'Vender' : 'Sell'}</option>
+            <option value="escalate" ${objective === 'escalate' ? 'selected' : ''}>${l('act_escalate_human', lang)}</option>
+            <option value="attend_only" ${objective === 'attend_only' ? 'selected' : ''}>${lang === 'es' ? 'Solo atender' : 'Attend only'}</option>
+          </select>
+        </div>
+        <div class="ls-fw-card-actions">
+          <button type="button" class="wa-btn" onclick="lsViewFramework()"
+            style="font-size:11px;padding:3px 10px">${l('fw_view', lang)}</button>
+        </div>
+      </div>
+    </div>`
 }
 
 // ═══════════════════════════════════════════
 // Criteria panel (shown when "Ver" clicked)
 // ═══════════════════════════════════════════
 
-function renderCriterionRow(cr: FrameworkConfig['criteria'][number], i: number, lang: Lang, _stageCount: number): string {
+function renderCriterionRow(cr: QualifyingCriterion, i: number, lang: Lang, _stageCount: number): string {
   const nameVal = esc(cr.name[lang] || cr.name.es)
+  const priorityOpts = ['high', 'medium', 'low']
 
   return `
     <tr data-ls-cri="${i}">
@@ -465,8 +446,9 @@ function renderCriterionRow(cr: FrameworkConfig['criteria'][number], i: number, 
       </select></td>
       <td><input value="${esc((cr.options || []).join(','))}" data-field="options" placeholder="opt1,opt2"
         ${cr.type !== 'enum' ? 'disabled' : ''} onchange="lsUpdateCri(${i},'options',this.value)"></td>
-      <td><input type="number" class="ls-w-input" value="${cr.weight}" min="0" max="100"
-        onchange="lsUpdateCri(${i},'weight',parseInt(this.value)||0)"></td>
+      <td><select data-field="priority" onchange="lsUpdateCri(${i},'priority',this.value)">
+        ${priorityOpts.map(p => `<option value="${p}" ${cr.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
+      </select></td>
       <td style="text-align:center"><input type="checkbox" ${cr.required ? 'checked' : ''}
         onchange="lsUpdateCri(${i},'required',this.checked)"></td>
       <td style="text-align:center"><input type="checkbox" ${cr.neverAskDirectly ? 'checked' : ''}
@@ -476,19 +458,13 @@ function renderCriterionRow(cr: FrameworkConfig['criteria'][number], i: number, 
 }
 
 function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
-  // Default: show first enabled framework's criteria
-  const fw = config.frameworks.find(f => f.enabled) ?? config.frameworks[0]
-  if (!fw) return '<p>No framework configured</p>'
-
-  const criteria = fw.criteria
-  const stages = fw.stages
-  const totalWeight = criteria.reduce((s, c) => s + c.weight, 0)
-  const weightColor = totalWeight === 100 ? 'var(--success)' : 'var(--warning)'
+  const criteria = config.criteria
+  const stages = config.stages
   const hasStages = stages && stages.length > 0
 
   const theadCols = `
     <th>${l('th_key', lang)}</th><th>${l('th_name', lang)}</th>
-    <th>${l('th_type', lang)}</th><th>${l('th_options', lang)}</th><th>${l('th_weight', lang)}</th>
+    <th>${l('th_type', lang)}</th><th>${l('th_options', lang)}</th><th>${lang === 'es' ? 'Prioridad' : 'Priority'}</th>
     <th>${l('th_required', lang)}</th><th>${l('th_never_ask', lang)}</th><th></th>`
 
   let bodyHtml: string
@@ -502,13 +478,12 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
 
       if (stageCriteria.length === 0) return ''
 
-      const stageWeight = stageCriteria.reduce((s, { cr }) => s + cr.weight, 0)
       const stageHeader = `
         <tr class="ls-stage-header">
           <td colspan="8">
             ${esc(stage.name[lang] || stage.name.es)}
             <span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">${esc(stage.description[lang] || stage.description.es)}</span>
-            <span style="float:right;font-weight:400;color:var(--on-surface-dim)">${stageWeight}pts &middot; ${stageCriteria.length}/5</span>
+            <span style="float:right;font-weight:400;color:var(--on-surface-dim)">${stageCriteria.length} ${lang === 'es' ? 'criterios' : 'criteria'}</span>
           </td>
         </tr>`
 
@@ -527,6 +502,8 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
     bodyHtml = criteria.map((cr, i) => renderCriterionRow(cr, i, lang, criteria.length)).join('')
   }
 
+  const countLabel = `${criteria.length}/10 ${lang === 'es' ? 'criterios' : 'criteria'}`
+
   return `
     <div style="overflow-x:auto">
       <table class="ls-table" id="ls-criteria-table">
@@ -534,12 +511,13 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
         <tbody>${bodyHtml}</tbody>
       </table>
     </div>
-    <div style="padding:8px 12px;text-align:right">
-      <button type="button" class="act-btn" onclick="lsAddCri()" style="font-size:12px">
+    <div style="padding:8px 12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;color:var(--on-surface-dim)">${countLabel}</span>
+      <button type="button" class="act-btn" onclick="lsAddCri()" style="font-size:12px"
+        ${criteria.length >= 10 ? 'disabled' : ''}>
         + ${l('add_criterion', lang)}
       </button>
-    </div>
-    <div class="ls-weight-total" style="color:${weightColor}" id="ls-weight-total">${l('weight_total', lang)}: ${totalWeight}/100</div>`
+    </div>`
 }
 
 // ═══════════════════════════════════════════
