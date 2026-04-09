@@ -296,8 +296,12 @@ export async function intake(
           const sizeNote = att.tokenEstimate > 0 ? ` [documento de ~${String(att.tokenEstimate)} tokens, contenido resumido]` : ''
           const queryHint = ` Si necesitas buscar información específica dentro del documento, usa query_attachment con id "${att.id}".`
           injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}${queryHint}`
-        } else if (att.llmText && (att.category === 'images' || att.category === 'audio' || att.category === 'video')) {
-          // Multimedia: inject category label + filename + duration + LLM content
+        } else if (att.llmText && att.category === 'images') {
+          // Image: inject id so agent can re-examine with inspect_image if description is insufficient
+          const inspectHint = ` Si necesitas más detalle específico, usa inspect_image con id "${att.id}".`
+          injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename}${durationTag} — ${att.llmText}${inspectHint}`
+        } else if (att.llmText && (att.category === 'audio' || att.category === 'video')) {
+          // Audio/video: inject category label + filename + duration + LLM content (no re-query binary available)
           injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}`
         } else {
           // Small/medium text file: inject category label + full extracted content
