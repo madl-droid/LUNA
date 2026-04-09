@@ -375,6 +375,9 @@ const manifest: ModuleManifest = {
       const oldConfig = store.getConfig()
       const newConfig = store.reload()
 
+      // Re-register tool with updated description (criteria may have changed)
+      await registerExtractionTool(registry, store)
+
       // Recalculate if criteria/thresholds changed
       const criteriaChanged = JSON.stringify(oldConfig.criteria) !== JSON.stringify(newConfig.criteria)
       const thresholdsChanged = JSON.stringify(oldConfig.thresholds) !== JSON.stringify(newConfig.thresholds)

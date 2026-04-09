@@ -707,6 +707,7 @@ let originalConfig = null
 let leadsData = { leads: [], total: 0 }
 let stats = {}
 let leadsPage = 0
+let currentDetailId = ''
 const PAGE_SIZE = 25
 let searchTimeout = null
 
@@ -1138,7 +1139,7 @@ function renderLeads() {
     const campBadge = l.latestCampaignName
       ? `<span class="campaign-badge">#${l.latestCampaignVisibleId || ''} ${esc(l.latestCampaignName)}</span>`
       : '-'
-    return `<tr onclick="openDetail('${l.contactId}')">
+    return `<tr data-contact-id="${esc(l.contactId)}" class="lead-row">
       <td>${esc(l.displayName || l.channelContactId || '-')}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${esc(l.channel)} ${esc(l.channelContactId ? l.channelContactId.slice(-4) : '')}</td>
       <td>
@@ -1149,7 +1150,7 @@ function renderLeads() {
       <td>${campBadge}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${l.messageCount}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${ago}</td>
-      <td><button class="btn btn-ghost btn-small" onclick="event.stopPropagation();openDetail('${l.contactId}')">${t('detail')}</button></td>
+      <td><button class="btn btn-ghost btn-small" data-contact-id="${esc(l.contactId)}">${t('detail')}</button></td>
     </tr>`
   }).join('')
 
@@ -1167,6 +1168,7 @@ function renderLeads() {
 // Lead Detail Modal
 // ═══════════════════════════════════════════
 async function openDetail(contactId) {
+  currentDetailId = contactId
   try {
     const res = await fetch(API + '/lead?id=' + encodeURIComponent(contactId))
     const data = await res.json()
@@ -1216,7 +1218,7 @@ async function openDetail(contactId) {
         <select id="dq-select" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:0.4rem 0.65rem;color:#e2e8f0;font-size:0.8rem">
           ${opts}
         </select>
-        <button class="btn btn-danger btn-small" onclick="disqualifyLead('${l.contactId}')">${t('detail_disqualify')}</button>
+        <button class="btn btn-danger btn-small" onclick="disqualifyLead()">${t('detail_disqualify')}</button>
       </div>`
     }
 
@@ -1259,7 +1261,8 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.add('hidden')
 }
 
-async function disqualifyLead(contactId) {
+async function disqualifyLead() {
+  const contactId = currentDetailId
   const reasonKey = document.getElementById('dq-select').value
   try {
     const res = await fetch(API + '/disqualify', {
@@ -1282,7 +1285,7 @@ async function disqualifyLead(contactId) {
 // ═══════════════════════════════════════════
 function togglePanel(header) { header.closest('.panel').classList.toggle('collapsed') }
 
-function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
 
 function timeAgo(iso) {
   const d = new Date(iso)
@@ -1589,6 +1592,14 @@ async function deleteTag(id, type) {
 // Keyboard
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeModal()
+})
+
+document.getElementById('leads-tbody').addEventListener('click', function(e) {
+  const row = e.target.closest('[data-contact-id]')
+  if (row) {
+    e.stopPropagation()
+    openDetail(row.dataset.contactId)
+  }
 })
 
 initColorPicker()

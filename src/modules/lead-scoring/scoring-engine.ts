@@ -234,13 +234,13 @@ function calculateCriterionPoints(
       const strVal = String(value)
       const idx = criterion.options.indexOf(strVal)
 
-      // Presence mode: full points if any valid option is set
+      // Presence mode: full points if valid option, 0 if unknown
       if (criterion.enumScoring === 'presence') {
-        return idx !== -1 ? maxPoints : maxPoints * 0.5
+        return idx !== -1 ? maxPoints : 0
       }
 
-      // Indexed mode (default): higher index = better score
-      if (idx === -1) return maxPoints * 0.5  // unknown option gets half
+      // Indexed mode (default): higher index = better score; 0 if unknown
+      if (idx === -1) return 0
       const ratio = (idx + 1) / criterion.options.length
       return maxPoints * ratio
     }
@@ -295,6 +295,7 @@ export function mergeQualificationData(
 ): Record<string, unknown> {
   const merged = { ...existing }
   const now = new Date().toISOString()
+  const adoptedKeys = new Set<string>()
 
   for (const [key, newValue] of Object.entries(extracted)) {
     if (key.startsWith('_')) {
@@ -317,6 +318,7 @@ export function mergeQualificationData(
     // Overwrite if: no existing value, or new confidence is higher
     if (!hasExisting || newConfidence > existingConfidence) {
       merged[key] = newValue
+      adoptedKeys.add(key)
       // Track extraction timestamp
       const extractedAt = (merged['_extracted_at'] as Record<string, string>) ?? {}
       extractedAt[key] = now
@@ -324,11 +326,11 @@ export function mergeQualificationData(
     }
   }
 
-  // Update confidence tracking (only for values that passed the threshold)
+  // Update confidence tracking — only for keys that were actually adopted
   const existingConf = (existing['_confidence'] as Record<string, number>) ?? {}
   const acceptedConf: Record<string, number> = {}
   for (const [key, conf] of Object.entries(confidence)) {
-    if (key.startsWith('_') || merged[key] === extracted[key]) {
+    if (key.startsWith('_') || adoptedKeys.has(key)) {
       acceptedConf[key] = conf
     }
   }
