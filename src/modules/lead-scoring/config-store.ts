@@ -63,6 +63,7 @@ export class ConfigStore {
     const newConfig: QualifyingConfig = {
       ...this.config,
       preset: presetKey,
+      objective: preset.defaultObjective,
       stages: JSON.parse(JSON.stringify(preset.stages)) as typeof preset.stages,
       criteria: JSON.parse(JSON.stringify(preset.criteria)) as typeof preset.criteria,
       disqualifyReasons: JSON.parse(JSON.stringify(preset.disqualifyReasons)) as typeof preset.disqualifyReasons,

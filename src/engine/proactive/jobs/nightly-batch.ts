@@ -123,13 +123,20 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
   logger.info({ traceId: ctx.traceId, batchSize: config.scoringBatchSize }, 'Scoring cold leads (code-based, zero LLM)')
 
   try {
-    // Cursor-based batch (max 1000 leads per run for safety)
-    let offset = 0
+    // Cursor-based batch by contact_id (stable, no race condition)
+    let lastContactId: string | null = null
     const batchSize = config.scoringBatchSize
     let reactivated = 0
     let total = 0
 
     while (true) {
+      const params: unknown[] = [batchSize]
+      let whereExtra = ''
+      if (lastContactId) {
+        whereExtra = ` AND ac.contact_id > $2`
+        params.push(lastContactId)
+      }
+
       const result = await ctx.db.query(
         `SELECT ac.contact_id,
                 COALESCE(ac.qualification_data, '{}') AS qualification_data,
@@ -137,10 +144,10 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
          FROM agent_contacts ac
          JOIN contacts c ON c.id = ac.contact_id
          WHERE c.contact_type = 'lead'
-           AND ac.lead_status = 'cold'
-         ORDER BY ac.updated_at DESC
-         LIMIT $1 OFFSET $2`,
-        [batchSize, offset],
+           AND ac.lead_status = 'cold'${whereExtra}
+         ORDER BY ac.contact_id ASC
+         LIMIT $1`,
+        params,
       )
 
       if (result.rows.length === 0) break
@@ -177,8 +184,8 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
         }
       }
 
+      lastContactId = result.rows[result.rows.length - 1]!.contact_id as string
       total += result.rows.length
-      offset += batchSize
 
       if (total >= 1000) break
     }

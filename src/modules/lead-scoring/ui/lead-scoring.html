@@ -1138,7 +1138,7 @@ function renderLeads() {
     const campBadge = l.latestCampaignName
       ? `<span class="campaign-badge">#${l.latestCampaignVisibleId || ''} ${esc(l.latestCampaignName)}</span>`
       : '-'
-    return `<tr onclick="openDetail('${l.contactId}')">
+    return `<tr data-contact-id="${esc(l.contactId)}" class="lead-row">
       <td>${esc(l.displayName || l.channelContactId || '-')}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${esc(l.channel)} ${esc(l.channelContactId ? l.channelContactId.slice(-4) : '')}</td>
       <td>
@@ -1149,7 +1149,7 @@ function renderLeads() {
       <td>${campBadge}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${l.messageCount}</td>
       <td style="font-size:0.75rem;color:#94a3b8">${ago}</td>
-      <td><button class="btn btn-ghost btn-small" onclick="event.stopPropagation();openDetail('${l.contactId}')">${t('detail')}</button></td>
+      <td><button class="btn btn-ghost btn-small" data-contact-id="${esc(l.contactId)}">${t('detail')}</button></td>
     </tr>`
   }).join('')
 
@@ -1216,7 +1216,7 @@ async function openDetail(contactId) {
         <select id="dq-select" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:0.4rem 0.65rem;color:#e2e8f0;font-size:0.8rem">
           ${opts}
         </select>
-        <button class="btn btn-danger btn-small" onclick="disqualifyLead('${l.contactId}')">${t('detail_disqualify')}</button>
+        <button class="btn btn-danger btn-small" data-dq-contact="${esc(l.contactId)}">${t('detail_disqualify')}</button>
       </div>`
     }
 
@@ -1282,7 +1282,7 @@ async function disqualifyLead(contactId) {
 // ═══════════════════════════════════════════
 function togglePanel(header) { header.closest('.panel').classList.toggle('collapsed') }
 
-function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
 
 function timeAgo(iso) {
   const d = new Date(iso)
@@ -1589,6 +1589,23 @@ async function deleteTag(id, type) {
 // Keyboard
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeModal()
+})
+
+// Event delegation for lead rows (prevents XSS via contactId in inline onclick)
+document.getElementById('leads-tbody').addEventListener('click', function(e) {
+  const row = e.target.closest('[data-contact-id]')
+  if (row) {
+    e.stopPropagation()
+    openDetail(row.dataset.contactId)
+  }
+})
+
+// Event delegation for disqualify button in modal
+document.getElementById('modal-content').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-dq-contact]')
+  if (btn) {
+    disqualifyLead(btn.dataset.dqContact)
+  }
 })
 
 initColorPicker()
