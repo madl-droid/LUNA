@@ -24,6 +24,18 @@
 - **Impacto**: Bajo en producción (el fallback funciona mejor que el prompt incompleto del archivo). Pero genera warnings innecesarios y si alguien "arregla" el nombre sin el formato dual, rompe `parseDualDescription()`.
 - **Fix**: Renombrar `lab/instance/prompts/system/image-extraction.md` a `image-description.md` Y actualizar su contenido para incluir el formato `[DESCRIPCIÓN]/[RESUMEN]` obligatorio.
 
+### B4. HITL tickets no auto-expiran
+- **Tabla**: `hitl_tickets`
+- **Qué pasa**: Se encontraron 2 tickets de tipo `escalation` con status `notified` que llevan +19 horas pasados de su `expires_at`. El job de expiración no los limpia.
+- **Impacto**: Tickets zombis bloquean conversaciones de contactos que comparten el sender_id (ver caso Cristian Marin).
+- **Fix**: Revisar y corregir el cron/job de expiración de tickets. Se mitiga con el rediseño quote-based (sección HITL).
+
+### B5. HITL interceptor matchea por sender_id, no por contexto
+- **Archivo**: `luna-repo/src/modules/hitl/message-interceptor.ts`
+- **Qué pasa**: El interceptor busca tickets abiertos por `requester_sender_id`. CUALQUIER mensaje del humano asignado se consume como respuesta al ticket, bloqueando su conversación normal con Luna.
+- **Impacto**: Cristian Marin no puede hablar con Luna porque sus mensajes se interpretan como resoluciones de tickets ajenos. Cualquier coworker con un ticket abierto pierde acceso a Luna hasta que el ticket se resuelva o expire.
+- **Fix**: Rediseño completo a quote-based (ver sección REDISEÑO HITL). Solo mensajes que citen la notificación HITL se tratan como respuestas.
+
 ---
 
 ## CALIDAD DE RESPUESTA — Luna responde mal o incompleto
@@ -88,6 +100,116 @@
 
 ---
 
+## REDISEÑO HITL — Interceptor basado en citas (quote-based)
+
+### Problema actual
+El interceptor HITL decide si un mensaje es "respuesta humana" buscando tickets abiertos por `requester_sender_id`. Si el humano (coworker/admin) tiene UN ticket abierto y envía CUALQUIER mensaje, ese mensaje se consume como respuesta al ticket. Esto bloquea la conversación normal del humano con Luna.
+
+**Caso real encontrado**: Cristian Marin no puede hablar con Luna porque hay 2 tickets zombis de escalation (vencidos hace 19+ horas) asociados a su sender_id. Cada mensaje que envía se interpreta como resolución de ticket en vez de llegar al pipeline.
+
+### Rediseño propuesto: Quote-based HITL
+
+**Principio**: Solo los mensajes que **citen (quoten) el mensaje de notificación HITL** se tratan como respuestas a tickets. Todo lo demás fluye normal al pipeline de Luna.
+
+#### Cambios en `message-interceptor.ts`
+
+**Flujo actual (a eliminar)**:
+1. Mensaje llega → buscar tickets abiertos por sender_id → si hay ticket → clasificar intent → consumir
+
+**Flujo nuevo**:
+1. Mensaje llega → verificar si **cita un mensaje** (`quotedMessage` en contextInfo)
+2. Si NO cita nada → pasa directo al pipeline de Luna (sin importar si hay tickets abiertos)
+3. Si cita un mensaje → verificar si el mensaje citado es una **notificación HITL** (matchear por formato o por ID almacenado)
+4. Si es cita de HITL → extraer ticket_id del mensaje citado → procesar como respuesta al ticket
+5. Si es cita de otro mensaje → pasa al pipeline normal
+
+#### Cambios en `notifier.ts`
+
+**Al enviar la notificación HITL al humano**:
+1. Guardar el `messageId` del mensaje de notificación enviado en la tabla `hitl_tickets` (nuevo campo `notification_message_id`)
+2. También guardar en Redis: `hitl:notification:{messageId} → ticketId` (TTL = ticket expiry)
+3. Esto permite identificar rápidamente si un quoted message es una notificación HITL
+
+**Formato de notificación (mantener actual + agregar instrucción)**:
+```
+(!) *HITL — Admin Request*
+Contacto: John Doe (+541234567890) [lead]
+Ticket: #ABC123
+Tipo: domain_help
+Resumen: Usuario pregunta por envíos a Argentina
+
+Mensaje del cliente: "¿Cuánto sale enviar a Argentina?"
+
+↩️ Cita este mensaje para responder al ticket.
+```
+
+#### Nuevo comando: "qué tickets tenemos abiertos"
+
+**En el interceptor, agregar detección de comando** (antes del check de quote):
+1. Si el mensaje del humano matchea patrones como: "tickets abiertos", "tickets pendientes", "hitl pendientes", "qué tickets hay", "open tickets"
+2. Consultar `hitl_tickets` con status IN ('notified', 'waiting') donde el responder es el sender actual
+3. Responder con lista formateada:
+
+```
+📋 *Tickets HITL abiertos (3):*
+
+1. #ABC123 — domain_help
+   Contacto: John Doe (+54...)
+   Hace: 2h 15min
+   "¿Cuánto sale enviar a Argentina?"
+
+2. #DEF456 — authorization
+   Contacto: María López (+57...)
+   Hace: 45min
+   "Necesito aprobar descuento del 20%"
+
+3. #GHI789 — escalation
+   Contacto: Pedro Ruiz (+52...)
+   Hace: 10min
+   "Quiere hablar con un gerente"
+
+↩️ Cita el mensaje original del ticket para responder.
+```
+
+4. Este mensaje de lista NO se consume — el humano puede seguir hablando con Luna normalmente.
+
+#### Flujo de respuesta ticket por ticket
+
+1. Humano ve la lista (o recuerda la notificación original)
+2. Humano **cita** el mensaje de notificación del ticket #ABC123
+3. Escribe su respuesta: "El envío a Argentina cuesta $150 USD, tarda 5-7 días"
+4. Interceptor detecta la cita → identifica ticket → resuelve con la respuesta
+5. Luna reformula vía LLM y envía al cliente (flujo existente de `resolver.ts`)
+6. **La conversación normal del humano con Luna NO se interrumpe en ningún momento**
+
+#### Cambios en handoff (mantener igual)
+
+El handoff completo (`@Luna` para devolver control) sigue funcionando igual. El quote-based solo aplica al flujo de respuesta a tickets individuales.
+
+#### Migración necesaria
+
+```sql
+ALTER TABLE hitl_tickets ADD COLUMN IF NOT EXISTS notification_message_id TEXT;
+```
+
+#### Archivos a modificar
+
+| Archivo | Cambio |
+|---|---|
+| `src/modules/hitl/message-interceptor.ts` | Reescribir lógica: quote-based en vez de sender-based |
+| `src/modules/hitl/notifier.ts` | Guardar message_id de notificación, actualizar texto instrucción |
+| `src/modules/hitl/types.ts` | Agregar `notification_message_id` a HitlTicket |
+| `src/modules/hitl/ticket-store.ts` | Método `findByNotificationMessageId()`, método `listActiveByResponder()` |
+| Nueva migración SQL | Campo `notification_message_id` en hitl_tickets |
+
+#### Bugs relacionados que se resuelven con este rediseño
+
+- **B4 (tickets no auto-expiran)**: Aunque se implemente expiración, el rediseño hace que tickets vencidos ya no bloqueen conversaciones porque solo se activan por cita explícita.
+- **B5 (matcheo por sender_id)**: Eliminado por completo. Ya no se busca por sender_id sino por mensaje citado.
+- **Caso Cristian**: Se desbloquea inmediatamente sin necesidad de expirar tickets manualmente.
+
+---
+
 ## LIMPIEZA — Código muerto
 
 ### L1. ExecutionQueue es código huérfano
@@ -121,14 +243,15 @@
 | Prioridad | ID | Descripción | Esfuerzo | Downtime |
 |---|---|---|---|---|
 | 1 | B1 | Fix HITL SQL cast | 1 línea | No |
-| 2 | S1+S2 | RAM y CPU del container | Docker update | No |
-| 3 | S3 | Node.js heap size | Env var | Restart app |
-| 4 | Q1 | Prompt para usar descripciones de imagen | 1 párrafo en prompt | No |
-| 5 | Q2 | Sincronizar guardrails lab ↔ prod | Copiar archivo | No |
-| 6 | S4+S5 | DB pool + PG max_connections | Config + restart PG | ~10s PG restart |
-| 7 | B2 | Fix compression threshold | 1 valor en config | No |
-| 8 | Q3 | Re-chunking documento precios | Re-procesar knowledge | No |
-| 9 | B3 | Renombrar prompt imagen | Renombrar + editar archivo | No |
-| 10 | Q4 | Retry para mensajes reactivos | Desarrollo nuevo | No |
-| 11 | L1+L2 | Limpieza código/config muerta | Opcional | No |
-| 12 | S6 | Verificar tier API Anthropic | Manual en console | No |
+| 2 | B4+B5 | **Rediseño HITL quote-based** (interceptor + notifier + comando de lista) | Desarrollo medio (~4 archivos + migración) | No |
+| 3 | S1+S2 | RAM y CPU del container | Docker update | No |
+| 4 | S3 | Node.js heap size | Env var | Restart app |
+| 5 | Q1 | Prompt para usar descripciones de imagen | 1 párrafo en prompt | No |
+| 6 | Q2 | Sincronizar guardrails lab ↔ prod | Copiar archivo | No |
+| 7 | S4+S5 | DB pool + PG max_connections | Config + restart PG | ~10s PG restart |
+| 8 | B2 | Fix compression threshold | 1 valor en config | No |
+| 9 | Q3 | Re-chunking documento precios | Re-procesar knowledge | No |
+| 10 | B3 | Renombrar prompt imagen | Renombrar + editar archivo | No |
+| 11 | Q4 | Retry para mensajes reactivos | Desarrollo nuevo | No |
+| 12 | L1+L2 | Limpieza código/config muerta | Opcional | No |
+| 13 | S6 | Verificar tier API Anthropic | Manual en console | No |
