@@ -8,47 +8,6 @@ import { logSqlQuery } from './extreme-logger.js'
 
 const logger = pino({ name: 'kernel:db' })
 
-const KERNEL_MIGRATIONS = `
-CREATE TABLE IF NOT EXISTS kernel_modules (
-  name          TEXT PRIMARY KEY,
-  active        BOOLEAN NOT NULL DEFAULT false,
-  installed_at  TIMESTAMPTZ DEFAULT now(),
-  activated_at  TIMESTAMPTZ,
-  config_overrides JSONB DEFAULT '{}',
-  meta          JSONB DEFAULT '{}'
-);
-
-CREATE TABLE IF NOT EXISTS config_store (
-  key         TEXT PRIMARY KEY,
-  value       TEXT NOT NULL,
-  is_secret   BOOLEAN DEFAULT false,
-  updated_at  TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS user_credentials (
-  user_id       VARCHAR(20) PRIMARY KEY,
-  password_hash TEXT NOT NULL,
-  last_login    TIMESTAMPTZ,
-  created_at    TIMESTAMPTZ DEFAULT now(),
-  updated_at    TIMESTAMPTZ DEFAULT now()
-);
-`
-
-async function seedDefaultAgent(pool: Pool): Promise<void> {
-  try {
-    const result = await pool.query<{ id: string }>(
-      `INSERT INTO agents (slug, name, description, config_path)
-       VALUES ('luna', 'LUNA', 'Agente principal', 'instance/config.json')
-       ON CONFLICT (slug) DO NOTHING
-       RETURNING id`,
-    )
-    if (result.rowCount && result.rowCount > 0) {
-      logger.info({ agentId: result.rows[0]?.id }, 'Default agent seeded')
-    }
-  } catch {
-    // agents table may not exist yet in very early migrations — safe to skip
-  }
-}
 
 export async function createPool(): Promise<Pool> {
   const pool = new Pool({
@@ -67,20 +26,10 @@ export async function createPool(): Promise<Pool> {
     logger.error({ err }, 'Unexpected PostgreSQL pool error')
   })
 
-  // Run kernel migrations
-  const client = await pool.connect()
-  try {
-    await client.query(KERNEL_MIGRATIONS)
-    logger.info('PostgreSQL connected, kernel tables ensured')
-  } finally {
-    client.release()
-  }
+  logger.info('PostgreSQL connected')
 
-  // Run domain migrations (contacts, sessions, agents, etc.)
+  // Run domain migrations (contacts, sessions, kernel tables, etc.)
   await runMigrations(pool)
-
-  // Seed default agent if missing — survives factory resets
-  await seedDefaultAgent(pool)
 
   // Wrap pool.query to instrument SQL logging
   const originalQuery = pool.query.bind(pool)
