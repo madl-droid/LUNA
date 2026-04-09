@@ -1,187 +1,64 @@
-// LUNA — Module: lead-scoring — Extract Qualification Tool (v3)
-// Tool registered in tools:registry to extract qualification data from conversation.
-// Single-framework: uses config.criteria and config.stages directly.
-// LLM extraction preserved here; Plan 2 will refactor to code-only.
+// LUNA — Module: lead-scoring — Extract Qualification Tool (v3, code-only)
+// Tool registered in tools:registry to register extracted qualification data.
+// Zero LLM: the agentic loop extracts data as part of its reasoning and passes
+// structured parameters to this tool. Tool only does merge + score + transition.
 
 import type { Registry } from '../../kernel/registry.js'
-import type { PromptsService } from '../prompts/types.js'
 import type { ToolRegistration, ToolExecutionContext } from '../tools/types.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
-import type {
-  QualifyingConfig,
-  ExtractionResult,
-  FrameworkStage,
-  QualificationStatus,
-} from './types.js'
+import type { QualificationStatus } from './types.js'
 import type { ConfigStore } from './config-store.js'
 import {
   calculateScore,
   mergeQualificationData,
   resolveTransition,
-  getCurrentStage,
 } from './scoring-engine.js'
 import pino from 'pino'
 
 const logger = pino({ name: 'lead-scoring:extract-tool' })
 
-// ═══════════════════════════════════════════
-// Prompt cache for static parts
-// ═══════════════════════════════════════════
-
-const promptCache = new Map<string, string>()
-
-/** Clear the static prompt cache (called on config change) */
-export function clearExtractionPromptCache(): void {
-  promptCache.clear()
-}
-
 /**
- * Build the static part of the extraction prompt (criteria, stages, rules).
- * Cached per config fingerprint — only rebuilt on config change.
+ * Build a dynamic tool description reflecting active criteria.
+ * Called once at registration time (and on re-registration after config change).
  */
-function buildStaticPromptPart(config: QualifyingConfig): string {
-  const cacheKey = `${config.preset}:${JSON.stringify(config.criteria.map(c => c.key))}`
-  const cached = promptCache.get(cacheKey)
-  if (cached) return cached
+function buildToolDescription(configStore: ConfigStore): string {
+  const config = configStore.getConfig()
 
-  const sortedStages = [...(config.stages ?? [])].sort((a, b) => a.order - b.order)
-  const stageBlocks = sortedStages.map(stage => {
-    const stageCriteria = config.criteria.filter(c => c.stage === stage.key)
-    if (stageCriteria.length === 0) return ''
+  if (config.criteria.length === 0) {
+    return 'Registra datos de calificación de leads. No hay criterios configurados.'
+  }
 
-    const header = `\n## ${stage.name.en} (${stage.key})`
-    const desc = stage.description.en
-
-    const fields = stageCriteria.map(c => {
-      let line = `  - ${c.key} (${c.type}): ${c.name.en}`
+  const criteriaDesc = config.criteria
+    .filter(c => !c.neverAskDirectly)
+    .map(c => {
+      let desc = `${c.key} (${c.type}): ${c.name.en}`
       if (c.type === 'enum' && c.options) {
-        line += ` [options: ${c.options.join(', ')}]`
+        desc += ` [${c.options.join(', ')}]`
       }
-      if (c.neverAskDirectly) {
-        line += ' [NEVER ASK DIRECTLY — infer only]'
-      }
-      return line
-    }).join('\n')
+      return desc
+    })
+    .join('; ')
 
-    return `${header}\n${desc}\n${fields}`
-  }).filter(Boolean)
+  const neverAsk = config.criteria
+    .filter(c => c.neverAskDirectly)
+    .map(c => c.name.en)
+    .join(', ')
 
-  // Include unstaged criteria
-  const unstaggedCriteria = config.criteria.filter(c => !c.stage)
-  if (unstaggedCriteria.length > 0) {
-    const unstaggedFields = unstaggedCriteria.map(c => {
-      let line = `  - ${c.key} (${c.type}): ${c.name.en}`
-      if (c.type === 'enum' && c.options) {
-        line += ` [options: ${c.options.join(', ')}]`
-      }
-      if (c.neverAskDirectly) {
-        line += ' [NEVER ASK DIRECTLY — infer only]'
-      }
-      return line
-    }).join('\n')
-    stageBlocks.push(`\n## General\n${unstaggedFields}`)
+  let desc = `Registra datos de calificación extraídos de la conversación. `
+  desc += `Dispara cuando el contacto mencione información relevante para calificar. `
+  desc += `Criterios: ${criteriaDesc}. `
+  if (neverAsk) {
+    desc += `Criterios de inferencia (nunca preguntar directo, solo registrar si el lead lo menciona): ${neverAsk}. `
   }
+  desc += `Incluir solo datos claramente expresados con confianza >= 0.4. No adivinar.`
 
-  const criteriaSection = stageBlocks.join('\n')
-
-  const disqualifyList = config.disqualifyReasons.map(d =>
-    `- ${d.key}: ${d.name.en}`
-  ).join('\n')
-
-  const result = `CRITERIA TO EXTRACT:
-${criteriaSection}
-
-DISQUALIFICATION REASONS (set disqualifyDetected if any detected):
-${disqualifyList}`
-
-  promptCache.set(cacheKey, result)
-  return result
-}
-
-/**
- * Build the dynamic part: existing values + current stage focus.
- */
-function buildDynamicPromptPart(
-  config: QualifyingConfig,
-  existingData: Record<string, unknown>,
-  currentStage: FrameworkStage | null,
-): string {
-  const parts: string[] = []
-
-  // Already known values
-  const known: string[] = []
-  for (const c of config.criteria) {
-    const val = existingData[c.key]
-    if (val !== undefined && val !== null && val !== '') {
-      known.push(`  - ${c.key}: ${JSON.stringify(val)}`)
-    }
-  }
-  if (known.length > 0) {
-    parts.push(`\nALREADY KNOWN VALUES:\n${known.join('\n')}`)
-  }
-
-  // Current stage focus
-  if (currentStage) {
-    parts.push(`\nCURRENT STAGE FOCUS: "${currentStage.name.en}" — ${currentStage.description.en}`)
-    parts.push('Prioritize extracting fields from this stage, but also capture any info for other stages if clearly present.')
-  }
-
-  return parts.join('\n')
-}
-
-/**
- * Build the full extraction prompt.
- */
-async function buildExtractionPrompt(
-  config: QualifyingConfig,
-  existingData: Record<string, unknown>,
-  currentStage: FrameworkStage | null,
-  registry?: Registry,
-): Promise<string> {
-  const staticPart = buildStaticPromptPart(config)
-  const dynamicPart = buildDynamicPromptPart(config, existingData, currentStage)
-
-  // Try to load from template first
-  if (registry) {
-    const svc = registry.getOptional<PromptsService>('prompts:service')
-    if (svc) {
-      const tmpl = await svc.getSystemPrompt('lead-scoring-extraction', {
-        staticPart,
-        dynamicPart,
-      })
-      if (tmpl) return tmpl
-    }
-  }
-
-  return `You are an extraction assistant for lead qualification.
-Your ONLY job is to extract structured data from the conversation.
-DO NOT generate responses — only extract data.
-${staticPart}
-${dynamicPart}
-
-RULES:
-1. Only extract information that is CLEARLY stated or strongly implied.
-2. Do not guess or infer weak signals.
-3. For enum types, map to the closest option or leave null.
-4. For text types, extract the relevant phrase or summary.
-5. For boolean types, set true/false only if clearly indicated.
-6. Include a confidence score (0.0-1.0) for each extracted field.
-7. If a disqualification signal is detected, set disqualifyDetected to the reason key.
-8. Only include fields you actually found data for — do not include null fields.
-9. Extract data from ANY stage if present, not just the current focus stage.
-10. Do NOT re-extract values that are already known unless new info contradicts them.
-
-Respond ONLY with valid JSON matching this schema:
-{
-  "extracted": { "key": "value", ... },
-  "confidence": { "key": 0.0-1.0, ... },
-  "disqualifyDetected": "reason_key or null"
-}`
+  return desc
 }
 
 /**
  * Register the extract_qualification tool in the tools registry.
- * The tool description is dynamic — reflects active criteria.
+ * The agentic loop extracts data as part of its reasoning — this tool only
+ * persists the structured result (merge + score + state transition).
  */
 export async function registerExtractionTool(
   registry: Registry,
@@ -199,12 +76,20 @@ export async function registerExtractionTool(
       parameters: {
         type: 'object',
         properties: {
-          message_text: {
+          extracted: {
+            type: 'object',
+            description: 'Key-value pairs of extracted qualification data. Keys must match criterion keys from the qualification config. Values should be strings for text/enum types, booleans for boolean types.',
+          },
+          confidence: {
+            type: 'object',
+            description: 'Confidence scores (0.0-1.0) for each extracted field. Keys match the extracted object keys.',
+          },
+          disqualify_reason: {
             type: 'string',
-            description: 'The conversation messages to extract qualification data from (last N messages)',
+            description: 'If a disqualification signal is detected, set to the reason key (e.g. "not_interested", "spam", "out_of_zone"). Otherwise omit.',
           },
         },
-        required: ['message_text'],
+        required: ['extracted', 'confidence'],
       },
     },
     handler: async (input, ctx) => {
@@ -213,30 +98,12 @@ export async function registerExtractionTool(
   }
 
   await toolRegistry.registerTool(registration)
-  logger.info('extract_qualification tool registered')
+  logger.info('extract_qualification tool registered (code-only, zero LLM)')
 }
 
 /**
- * Build a dynamic tool description that reflects the active criteria.
- */
-function buildToolDescription(configStore: ConfigStore): string {
-  const config = configStore.getConfig()
-
-  if (config.criteria.length === 0) {
-    return 'Extrae datos de calificación de leads. No hay criterios configurados.'
-  }
-
-  const presetLabel = config.preset ? config.preset.toUpperCase() : 'CUSTOM'
-  const criteriaNames = config.criteria
-    .filter(c => !c.neverAskDirectly)
-    .slice(0, 6)
-    .map(c => c.name.en)
-
-  return `Extrae datos de calificación de leads. Framework: ${presetLabel}. Busca señales de: ${criteriaNames.join(', ')}. Dispara cuando el contacto mencione su problema, necesidad, presupuesto, urgencia, rol o contexto relevante.`
-}
-
-/**
- * Handle the extraction: call LLM, parse result, update DB.
+ * Handle extraction: validate keys, merge with existing data, recalculate
+ * score, apply state transition. Zero LLM calls.
  */
 async function handleExtraction(
   input: Record<string, unknown>,
@@ -244,133 +111,92 @@ async function handleExtraction(
   configStore: ConfigStore,
   registry: Registry,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
-  const messageText = input['message_text'] as string
+  const extracted = input['extracted'] as Record<string, unknown> | undefined
+  const confidence = input['confidence'] as Record<string, number> | undefined
+  const disqualifyReason = input['disqualify_reason'] as string | undefined
   const contactId = ctx.contactId
 
-  if (!messageText) {
-    return { success: false, error: 'Missing message_text' }
+  if (!extracted || Object.keys(extracted).length === 0) {
+    return { success: true, data: { extracted: false, reason: 'no_data_provided' } }
   }
   if (!contactId) {
     return { success: false, error: 'Missing contactId in execution context' }
   }
 
   const config = configStore.getConfig()
-  const db = ctx.db
 
   if (config.criteria.length === 0) {
     return { success: true, data: { extracted: false, reason: 'no_criteria_configured' } }
   }
 
-  // Load existing qualification data from agent_contacts
-  const contactRow = await db.query(
-    `SELECT ac.qualification_data, ac.lead_status, ac.qualification_score
-     FROM agent_contacts ac
-     WHERE ac.contact_id = $1`,
-    [contactId],
-  )
+  // Validate keys against configured criteria
+  const validKeys = new Set(config.criteria.map(c => c.key))
+  const validExtracted: Record<string, unknown> = {}
+  const validConfidence: Record<string, number> = {}
 
-  if (contactRow.rows.length === 0) {
-    return { success: false, error: 'Agent-contact relationship not found' }
+  for (const [key, value] of Object.entries(extracted)) {
+    if (validKeys.has(key)) {
+      validExtracted[key] = value
+      validConfidence[key] = confidence?.[key] ?? 0.5
+    } else {
+      logger.debug({ key }, 'Ignoring extracted key not in criteria config')
+    }
   }
 
-  const row = contactRow.rows[0]!
-  const existingData = (row.qualification_data as Record<string, unknown>) ?? {}
-  const currentStatus = (row.lead_status as QualificationStatus) ?? 'new'
+  if (Object.keys(validExtracted).length === 0) {
+    return { success: true, data: { extracted: false, reason: 'no_valid_keys' } }
+  }
 
-  // Determine current stage for focused extraction
-  const currentStage = getCurrentStage(existingData, config)
-
-  // Build prompt and call LLM
-  const systemPrompt = await buildExtractionPrompt(config, existingData, currentStage, registry)
-
+  // Transactional merge + score + transition
+  const db = ctx.db
+  const client = await db.connect()
   try {
-    const llmResult = await registry.callHook('llm:chat', {
-      task: 'extract_qualification',
-      system: systemPrompt,
-      messages: [{ role: 'user', content: messageText }],
-      temperature: 0.1,
-      maxTokens: 500,
-    })
+    await client.query('BEGIN')
 
-    if (!llmResult?.text) {
-      return { success: false, error: 'LLM returned empty response' }
+    const freshRow = await client.query(
+      `SELECT qualification_data, lead_status FROM agent_contacts
+       WHERE contact_id = $1 FOR UPDATE`,
+      [contactId],
+    )
+
+    const freshData = (freshRow.rows[0]?.qualification_data as Record<string, unknown>) ?? {}
+    const freshStatus = (freshRow.rows[0]?.lead_status as QualificationStatus) ?? 'new'
+
+    // Merge extracted data into existing
+    const mergedData = mergeQualificationData(
+      freshData,
+      validExtracted,
+      validConfidence,
+      config.minConfidence ?? 0.4,
+    )
+
+    if (disqualifyReason) {
+      mergedData['_disqualified'] = disqualifyReason
     }
 
-    // Parse LLM response
-    const cleaned = llmResult.text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    let extraction: ExtractionResult
+    // Recalculate score (with decay applied inside calculateScore)
+    const scoreResult = calculateScore(mergedData, config)
+    const newStatus = resolveTransition(freshStatus, scoreResult.suggestedStatus)
 
-    try {
-      extraction = JSON.parse(cleaned) as ExtractionResult
-    } catch {
-      logger.warn({ raw: llmResult.text }, 'Failed to parse extraction JSON')
-      return { success: false, error: 'Failed to parse LLM extraction response' }
-    }
-
-    if (!extraction.extracted || Object.keys(extraction.extracted).length === 0) {
-      return { success: true, data: { extracted: false, reason: 'no_relevant_info' } }
-    }
-
-    // Transactional merge
-    const client = await db.connect()
-    let mergedData: Record<string, unknown>
-    let scoreResult: ReturnType<typeof calculateScore>
-    let newStatus: QualificationStatus | null
-    try {
-      await client.query('BEGIN')
-      const freshRow = await client.query(
-        `SELECT qualification_data, lead_status FROM agent_contacts
-         WHERE contact_id = $1
-         FOR UPDATE`,
-        [contactId],
-      )
-      const freshData = (freshRow.rows[0]?.qualification_data as Record<string, unknown>) ?? {}
-      const freshStatus = (freshRow.rows[0]?.lead_status as QualificationStatus) ?? currentStatus
-
-      mergedData = mergeQualificationData(
-        freshData,
-        extraction.extracted,
-        extraction.confidence ?? {},
-        config.minConfidence ?? 0.4,
-      )
-
-      if (extraction.disqualifyDetected) {
-        mergedData['_disqualified'] = extraction.disqualifyDetected
-      }
-
-      scoreResult = calculateScore(mergedData, config)
-      newStatus = resolveTransition(freshStatus, scoreResult.suggestedStatus)
-
-      await client.query(
-        `UPDATE agent_contacts
-         SET qualification_data = $1,
-             qualification_score = $2,
-             lead_status = COALESCE($3, lead_status),
-             updated_at = NOW()
-         WHERE contact_id = $4`,
-        [
-          JSON.stringify(mergedData),
-          scoreResult.totalScore,
-          newStatus,
-          contactId,
-        ],
-      )
-      await client.query('COMMIT')
-    } catch (txErr) {
-      await client.query('ROLLBACK')
-      throw txErr
-    } finally {
-      client.release()
-    }
+    await client.query(
+      `UPDATE agent_contacts
+       SET qualification_data = $1,
+           qualification_score = $2,
+           lead_status = COALESCE($3, lead_status),
+           updated_at = NOW()
+       WHERE contact_id = $4`,
+      [JSON.stringify(mergedData), scoreResult.totalScore, newStatus, contactId],
+    )
+    await client.query('COMMIT')
 
     if (newStatus) {
       logger.info(
-        { contactId, from: currentStatus, to: newStatus, score: scoreResult.totalScore },
+        { contactId, from: freshStatus, to: newStatus, score: scoreResult.totalScore },
         'Lead qualification status changed',
       )
       await registry.runHook('contact:status_changed', {
         contactId,
-        from: currentStatus,
+        from: freshStatus,
         to: newStatus,
       })
     }
@@ -379,18 +205,17 @@ async function handleExtraction(
       success: true,
       data: {
         extracted: true,
-        fields: Object.keys(extraction.extracted),
+        fields: Object.keys(validExtracted),
         score: scoreResult.totalScore,
-        status: newStatus ?? currentStatus,
-        preset: config.preset,
-        currentStage: currentStage?.key ?? null,
-        stageScores: scoreResult.stageScores,
+        status: newStatus ?? freshStatus,
         disqualified: scoreResult.disqualified,
-        disqualifyReason: scoreResult.disqualifyReason,
       },
     }
-  } catch (err) {
-    logger.error({ err, contactId }, 'Extraction failed')
-    return { success: false, error: 'Extraction failed: ' + String(err) }
+  } catch (txErr) {
+    await client.query('ROLLBACK')
+    logger.error({ err: txErr, contactId }, 'Extraction merge failed')
+    return { success: false, error: 'Extraction merge failed: ' + String(txErr) }
+  } finally {
+    client.release()
   }
 }

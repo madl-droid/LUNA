@@ -74,7 +74,12 @@ export function calculateScore(
     const value = qualificationData[criterion.key]
     const filled = isFilled(value)
     const normalizedWeight = (PRIORITY_WEIGHT[criterion.priority] ?? 2) * weightMultiplier
-    const points = filled ? calculateCriterionPoints(value, criterion, normalizedWeight) : 0
+    const basePoints = filled ? calculateCriterionPoints(value, criterion, normalizedWeight) : 0
+
+    // Apply temporal decay: older data contributes less to the score
+    const extractedAt = (qualificationData['_extracted_at'] as Record<string, string> | undefined)?.[criterion.key]
+    const decayMultiplier = filled ? calculateDecay(extractedAt, config.dataFreshnessWindowDays ?? 90) : 0
+    const points = basePoints * decayMultiplier
 
     criteriaScores.push({
       key: criterion.key,
@@ -183,6 +188,28 @@ export function getCurrentStage(
   }
 
   return null
+}
+
+/**
+ * Calculate a temporal decay multiplier for a qualification data point.
+ * Returns 1.0 for fresh data, 0.3 floor for data older than windowDays.
+ * Linear decay between 1.0 and 0.3 over the window.
+ */
+function calculateDecay(extractedAtISO: string | undefined, windowDays: number): number {
+  if (!extractedAtISO || windowDays <= 0) return 1 // no timestamp or no decay = full score
+
+  const extractedAt = new Date(extractedAtISO)
+  if (isNaN(extractedAt.getTime())) return 1 // invalid date = no decay
+
+  const now = new Date()
+  const ageMs = now.getTime() - extractedAt.getTime()
+  const ageDays = ageMs / (1000 * 60 * 60 * 24)
+
+  if (ageDays <= 0) return 1
+  if (ageDays >= windowDays) return 0.3 // floor: very old data still contributes 30%
+
+  // Linear decay from 1.0 → 0.3 over windowDays
+  return 1 - (0.7 * ageDays / windowDays)
 }
 
 /**
