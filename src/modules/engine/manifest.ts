@@ -11,6 +11,7 @@ import { initEngine, stopEngine, getEngineStats, reloadEngineConfig } from '../.
 import { runAttachmentMigration } from '../../engine/attachments/migration.js'
 import { registerQueryAttachmentTool } from '../../engine/attachments/tools/query-attachment.js'
 import { registerWebExploreTool } from '../../engine/attachments/tools/web-explore.js'
+import { registerInspectImageTool } from '../../engine/attachments/tools/inspect-image.js'
 import type { AttachmentEngineConfig } from '../../engine/attachments/types.js'
 import { SYSTEM_HARD_LIMITS } from '../../engine/attachments/types.js'
 import { jsonResponse } from '../../kernel/http-helpers.js'
@@ -550,6 +551,7 @@ const manifest: ModuleManifest = {
     // Register attachment tools (after engine init, tools:registry may now be available)
     await registerQueryAttachmentTool(registry)
     await registerWebExploreTool(registry)
+    await registerInspectImageTool(registry)
 
     // ── Attachment engine config service (hot-reloadable via console) ──
     let attConfig = registry.getConfig<EngineModuleConfig>('engine')

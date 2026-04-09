@@ -230,7 +230,7 @@ async function buildSystemInstruction(
   }
   const callDirectionText = direction === 'inbound' ? 'ENTRANTE (el cliente te llama a ti)' : 'SALIENTE (t\u00fa llamas al cliente)'
   const outboundInstr = direction === 'outbound' ? 'Espera confirmaci\u00f3n de que es buen momento antes de continuar.' : ''
-  let voiceInstr = svc
+  const voiceInstr = svc
     ? await svc.getSystemPrompt('voice-system-instruction', {
         callDirection: callDirectionText,
         greeting,
@@ -239,10 +239,9 @@ async function buildSystemInstruction(
         silenceMessage: config.VOICE_SILENCE_MESSAGE,
       })
     : ''
-  if (!voiceInstr) {
-    voiceInstr = `## Instrucciones de llamada de voz\n\nEst\u00e1s en una llamada telef\u00f3nica en VIVO.\nSaludo: "${greeting}"\nFiller: "${config.VOICE_FILLER_MESSAGE}"\nSilencio: "${config.VOICE_SILENCE_MESSAGE}"`
+  if (voiceInstr) {
+    parts.push(voiceInstr)
   }
-  parts.push(voiceInstr)
 
   // Outbound call reason (injected after voice instructions)
   if (direction === 'outbound' && outboundReason) {
