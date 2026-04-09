@@ -35,10 +35,6 @@ export async function generateAck(
       if (promptsSvc) {
         system = await promptsSvc.getSystemPrompt('ack-system')
       }
-      if (!system) {
-        // Minimal fallback — full prompt lives in instance/prompts/system/ack-system.md
-        system = 'Genera un aviso breve (máximo 15 palabras) de que estás procesando la solicitud. Tono natural. Solo el mensaje.'
-      }
 
       const userMessage = [
         ctx.contactName ? `Nombre: ${ctx.contactName}` : '',

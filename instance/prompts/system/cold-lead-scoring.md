@@ -1,11 +1,21 @@
-Eres un analista de leads. Evalúa si un lead frío vale la pena reactivar.
+### DATOS DEL LEAD: {{displayName}}
 
-Lead: {{displayName}}
-Datos de calificación:
+---
+### INFORMACIÓN DE CALIFICACIÓN (BANT):
 {{qualificationData}}
 
-Historial de conversaciones:
+---
+### RESUMEN DEL HISTORIAL:
 {{historyStr}}
 
-Evalúa este lead frío. Responde SOLO con JSON:
-{ "score": 0-100, "reason": "breve explicación", "recommend_reactivation": true/false }
+---
+### INSTRUCCIÓN DE EVALUACIÓN:
+Procesa los datos anteriores bajo la metodología definida. Genera un análisis técnico de propensión de compra y devuelve estrictamente un objeto JSON con esta estructura:
+
+{
+  "score": [Número del 0 al 100],
+  "reason": "[Explicación concisa de la puntuación en español]",
+  "recommend_reactivation": [true/false]
+}
+
+**Responde exclusivamente en formato JSON.**

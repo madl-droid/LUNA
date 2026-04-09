@@ -62,21 +62,16 @@ export async function synthesizeResults(
 
 // ─── Prompt builders ─────────────────────
 
-// Minimal fallback — full prompt lives in instance/prompts/system/cortex-trace-synthesizer.md
-const SYNTHESIZER_SYSTEM_FALLBACK = `Eres un analista senior de QA. Revisa los análisis y produce un informe ejecutivo con patrones, problemas y recomendaciones. Score 0-10.`
-
 async function buildSynthesizerSystemPrompt(adminContext: string, summary: RunSummary, registry: Registry): Promise<string> {
   const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
   if (promptsSvc) {
-    try {
-      const tmpl = await promptsSvc.getSystemPrompt('cortex-trace-synthesizer', {
-        adminContext,
-        totalSimulations: String(summary.total_simulations),
-      })
-      if (tmpl) return tmpl
-    } catch { /* fallback */ }
+    const tmpl = await promptsSvc.getSystemPrompt('cortex-trace-synthesizer', {
+      adminContext,
+      totalSimulations: String(summary.total_simulations),
+    })
+    if (tmpl) return tmpl
   }
-  return SYNTHESIZER_SYSTEM_FALLBACK + `\n\n${summary.total_simulations} simulaciones. Instrucciones: "${adminContext}"`
+  return ''
 }
 
 function buildSynthesizerUserMessage(analyses: string[], summary: RunSummary): string {

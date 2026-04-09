@@ -17,7 +17,6 @@ import type { SubagentCatalogEntry } from '../../modules/subagents/types.js'
 import { loadSystemPrompt, renderTemplate } from '../../modules/prompts/template-loader.js'
 import { getChannelLimit } from './channel-format.js'
 import { buildContextLayers } from './context-builder.js'
-import { buildAccentSection } from './accent.js'
 import { loadSkillCatalog, buildSkillCatalogSection, filterSkillsByTools } from './skills.js'
 
 interface TTSServiceLike {
@@ -97,12 +96,6 @@ export async function buildAgenticPrompt(
     }
   }
 
-  // ── Section 6: <accent> ───────────────────────────────────────────────────
-  const accentSection = await buildAccentSection(registry)
-  if (accentSection) {
-    systemParts.push(accentSection)
-  }
-
   // ── Section 7: <agentic_instructions> ────────────────────────────────────
   const agenticInstructionsTemplate = isProactive
     ? 'proactive-agentic-system'
@@ -130,7 +123,7 @@ export async function buildAgenticPrompt(
     || (ctx.responseFormat === 'auto' && !!ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType))
 
   if (prepareForVoice) {
-    const voiceSection = buildVoiceSection()
+    const voiceSection = svc ? await svc.getSystemPrompt('voice-tts-format') : ''
     const voiceTags = svc ? await svc.getSystemPrompt('tts-voice-tags') : ''
     let voiceContent = voiceSection
     if (voiceTags) voiceContent += `\n\n${voiceTags}`
@@ -196,13 +189,6 @@ export async function buildAgenticPrompt(
 }
 
 // ─── System section builders ──────────────────────────────────────────────────
-
-function buildVoiceSection(): string {
-  return `Tu respuesta será convertida a nota de voz (audio). Escribe como si hablaras en voz alta:
-- NO uses listas, viñetas, markdown ni formato visual — el contacto no las verá
-- Usa frases cortas y naturales. Habla como en una conversación telefónica
-- Evita compartir URLs, emails o datos que se vean mejor por escrito`
-}
 
 /**
  * Build the tools section: catalog stubs + subagent catalog + routing hints.

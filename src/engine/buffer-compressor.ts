@@ -12,9 +12,6 @@ import { callLLM } from './utils/llm-client.js'
 
 const logger = pino({ name: 'engine:buffer-compressor' })
 
-// Minimal fallback — full prompt lives in instance/prompts/system/buffer-compressor.md
-const BUFFER_COMPRESS_SYSTEM_FALLBACK = 'Eres un asistente que resume conversaciones de soporte y ventas de manera concisa. Responde SOLO con el resumen.'
-
 /**
  * Check if the session buffer exceeds the compression threshold and compress if so.
  * Call without await from delivery — this is fire-and-forget.
@@ -79,13 +76,8 @@ export async function checkAndCompressBuffer(
 }
 
 async function loadBufferCompressSystem(registry?: Registry): Promise<string> {
-  if (!registry) return BUFFER_COMPRESS_SYSTEM_FALLBACK
+  if (!registry) return ''
   const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
-  if (!promptsSvc) return BUFFER_COMPRESS_SYSTEM_FALLBACK
-  try {
-    const tmpl = await promptsSvc.getSystemPrompt('buffer-compressor')
-    return tmpl || BUFFER_COMPRESS_SYSTEM_FALLBACK
-  } catch {
-    return BUFFER_COMPRESS_SYSTEM_FALLBACK
-  }
+  if (!promptsSvc) return ''
+  return promptsSvc.getSystemPrompt('buffer-compressor')
 }

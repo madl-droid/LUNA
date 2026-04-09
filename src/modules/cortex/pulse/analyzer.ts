@@ -14,9 +14,6 @@ import pino from 'pino'
 
 const logger = pino({ name: 'cortex:pulse:analyzer' })
 
-// Minimal fallback — full prompt lives in instance/prompts/system/cortex-pulse-analyzer.md
-const SYSTEM_PROMPT_FALLBACK = `Eres un ingeniero de sistemas analizando métricas de un agente de IA. Responde SOLO con JSON válido siguiendo el schema proporcionado.`
-
 export interface AnalysisResult {
   report: PulseReport
   modelUsed: string
@@ -241,11 +238,6 @@ function buildMetricsSummary(data: PulseDataPackage): PulseMetricsSummary {
 
 async function loadPulseAnalyzerSystem(registry: Registry): Promise<string> {
   const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
-  if (!promptsSvc) return SYSTEM_PROMPT_FALLBACK
-  try {
-    const tmpl = await promptsSvc.getSystemPrompt('cortex-pulse-analyzer')
-    return tmpl || SYSTEM_PROMPT_FALLBACK
-  } catch {
-    return SYSTEM_PROMPT_FALLBACK
-  }
+  if (!promptsSvc) return ''
+  return promptsSvc.getSystemPrompt('cortex-pulse-analyzer')
 }

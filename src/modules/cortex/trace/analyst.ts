@@ -57,18 +57,13 @@ export async function analyzeSimulation(
 
 // ─── Prompt builders ─────────────────────
 
-// Minimal fallback — full prompt lives in instance/prompts/system/cortex-trace-analyst.md
-const ANALYST_SYSTEM_FALLBACK = `Eres un analista de QA para LUNA. Evalúa la simulación: intención, tools, respuesta, seguridad. Resultado: PASS/WARN/FAIL.`
-
 async function buildAnalystSystemPrompt(adminContext: string, registry: Registry): Promise<string> {
   const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
   if (promptsSvc) {
-    try {
-      const tmpl = await promptsSvc.getSystemPrompt('cortex-trace-analyst', { adminContext })
-      if (tmpl) return tmpl
-    } catch { /* fallback */ }
+    const tmpl = await promptsSvc.getSystemPrompt('cortex-trace-analyst', { adminContext })
+    if (tmpl) return tmpl
   }
-  return ANALYST_SYSTEM_FALLBACK + `\n\nInstrucciones del administrador:\n"${adminContext}"`
+  return ''
 }
 
 function buildAnalystUserMessage(results: ResultRow[]): string {

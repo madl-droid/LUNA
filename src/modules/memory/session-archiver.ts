@@ -14,9 +14,6 @@ import type {
 } from './types.js'
 import type { AttachmentExtraction } from './session-chunker.js'
 
-// Minimal fallback — full prompt lives in instance/prompts/system/session-summary.md
-const SESSION_SUMMARY_SYSTEM_FALLBACK = 'Eres un asistente que resume conversaciones de ventas. Genera resúmenes estructurados precisos.'
-
 const logger = pino({ name: 'memory:session-archiver' })
 
 // ═══════════════════════════════════════════
@@ -180,13 +177,8 @@ Responde SOLO con JSON válido:
 
 async function loadSessionSummarySystem(registry: Registry): Promise<string> {
   const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
-  if (!promptsSvc) return SESSION_SUMMARY_SYSTEM_FALLBACK
-  try {
-    const tmpl = await promptsSvc.getSystemPrompt('session-summary')
-    return tmpl || SESSION_SUMMARY_SYSTEM_FALLBACK
-  } catch {
-    return SESSION_SUMMARY_SYSTEM_FALLBACK
-  }
+  if (!promptsSvc) return ''
+  return promptsSvc.getSystemPrompt('session-summary')
 }
 
 function parseJSON(text: string): Record<string, unknown> | null {
