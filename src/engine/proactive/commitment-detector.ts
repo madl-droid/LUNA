@@ -51,6 +51,11 @@ export async function detectCommitments(
       ? await promptsSvc.getSystemPrompt('commitment-detector-system')
       : ''
 
+    if (!systemPrompt) {
+      logger.warn({ template: 'commitment-detector-system' }, 'System prompt missing — skipping LLM call')
+      return
+    }
+
     const result = await callLLM({
       task: 'commitment-detect',
       system: systemPrompt,
