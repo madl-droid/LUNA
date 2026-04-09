@@ -145,6 +145,10 @@ export class EmbeddingQueue {
       },
     )
 
+    this.worker.on('error', (err: Error) => {
+      logger.error({ err }, 'Embedding worker error (Redis connection or internal)')
+    })
+
     this.worker.on('failed', (job: Job<EmbedJobData> | undefined, err: Error) => {
       logger.error({ jobId: job?.id, data: job?.data, err }, 'Embedding job failed')
     })

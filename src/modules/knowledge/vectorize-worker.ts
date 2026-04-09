@@ -72,6 +72,10 @@ export class VectorizeWorker {
       },
     )
 
+    this.worker.on('error', (err) => {
+      this.log.error({ err }, 'vectorize worker error (Redis connection or internal)')
+    })
+
     this.worker.on('failed', (job, err) => {
       this.log.error({ jobId: job?.id, jobData: job?.data, err }, 'vectorize job failed')
     })
