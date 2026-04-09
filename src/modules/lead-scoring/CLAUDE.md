@@ -1,70 +1,66 @@
 # Lead Scoring — Sistema de calificacion de leads (v3)
 
-Preset unico por tenant: califica leads con CHAMP (B2B), SPIN (B2C) o CHAMP+Gov (B2G). Sin multi-framework ni deteccion de client_type. Pesos por prioridad (high/medium/low), scoring por codigo, extraccion por LLM, UI en console.
+Califica leads usando un framework configurable (presets: CHAMP/SPIN/CHAMP+Gov o custom).
+Un framework activo por tenant. Extraccion code-only (sin LLM interno), scoring deterministico,
+decay temporal, priority weights. UI en console.
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console (apiRoutes), servicios
-- `types.ts` — QualifyingCriterion (priority, enumScoring), QualifyingConfig (single-fw), ExtractionResult, generateKeyFromName()
-- `frameworks.ts` — PresetDefinition, CHAMP_PRESET, SPIN_PRESET, CHAMP_GOV_PRESET (max 10 criterios c/u), PRESETS registry, getPreset()
-- `scoring-engine.ts` — calculateScore(), buildQualificationSummary(), getCurrentStage(), mergeQualificationData() (con timestamps), resolveTransition(), isFilled()
-- `config-store.ts` — lee/escribe instance/qualifying.json, migracion 3 formatos (v1 BANT plano, v2 multi-fw, v3 single-fw), applyPreset(), addCriterion(), removeCriterion()
-- `extract-tool.ts` — tool `extract_qualification`: LLM extraction, prompt caching por fingerprint, dynamic tool description
-- `pg-queries.ts` — queries: listar leads, detalle, actualizar score, recalcular batch, stats
-- `templates.ts` — SSR HTML: single-fw card con objetivo, criterios con prioridad, comportamiento
+- `types.ts` — QualifyingConfig, QualifyingCriterion (priority-based), QualificationStatus, ScoreResult
+- `frameworks.ts` — presets CHAMP, SPIN, CHAMP+Gov (max 10 criterios cada uno)
+- `scoring-engine.ts` — calculateScore(), buildQualificationSummary(), temporal decay, transition validation
+- `config-store.ts` — lee/escribe instance/qualifying.json, migraciones old→v3, apply preset
+- `extract-tool.ts` — tool `extract_qualification`: recibe datos estructurados del agentic loop, merge + score (CERO LLM)
+- `pg-queries.ts` — queries paginadas: listar leads, detalle, actualizar score, recalcular batch (paginated), stats
+- `templates.ts` — SSR HTML: preset selector, criterios con priority y enumScoring, comportamiento con freshness
 
 ## Manifest
 - type: `feature`, removable: true, activateByDefault: true
 - depends: `['tools']`
-- configSchema: LEAD_SCORING_CONFIG_PATH (default: `instance/qualifying.json`)
 
 ## Servicios registrados
 - `lead-scoring:config` — instancia de ConfigStore
 - `lead-scoring:queries` — instancia de LeadQueries
 
-## Scoring v3
-- Pesos calculados en runtime desde `priority`: high=3, medium=2, low=1
-- Normalizado a 100 automaticamente — agregar/quitar criterios no rompe nada
-- EnumScoring: `indexed` (default, escala) vs `presence` (sin orden semantico)
-- `_extracted_at[key]` guarda timestamps de extraccion por campo (base para decay)
-- Config max 10 criterios
+## Extraccion (Zero-LLM)
+- Tool `extract_qualification` recibe `{ extracted, confidence, disqualify_reason? }` del agentic loop
+- NO hace llamadas LLM internas. Solo merge transaccional + calculateScore + transition
+- El agentic loop extrae datos naturalmente y los pasa como parametros del tool
+- Keys que no coinciden con criterios configurados se ignoran silenciosamente
 
-## Formato config (v3) — instance/qualifying.json
-```json
-{
-  "preset": "spin",
-  "objective": "schedule",
-  "stages": [...],
-  "criteria": [{ "key": ..., "priority": "high|medium|low", "enumScoring"?: "presence", ... }],
-  "disqualifyReasons": [...],
-  "essentialQuestions": ["key1", "key2"],
-  "thresholds": { "cold": 30, "qualifying": 31, "qualified": 70 },
-  "minConfidence": 0.4,
-  "dataFreshnessWindowDays": 90
-}
-```
+## Scoring
+- Pesos por prioridad: high=3, medium=2, low=1 → normalizados a 100
+- Enum scoring: 'indexed' (posicion = calidad) o 'presence' (cualquier valor = full score)
+- Decay temporal: datos pierden relevancia linealmente (100%→30% en dataFreshnessWindowDays)
+- Timestamps en `_extracted_at` por campo
+
+## Config (instance/qualifying.json)
+- `preset`: preset base ('champ', 'spin', 'champ_gov', null)
+- `objective`: 'schedule' | 'sell' | 'escalate' | 'attend_only'
+- `criteria[]`: max 10, con priority en vez de weight
+- `thresholds`: cold/qualifying/qualified
+- `minConfidence`: default 0.4
+- `dataFreshnessWindowDays`: default 90
 
 ## Migracion automatica de formatos
-El config-store detecta y migra al cargar:
-- Formato 1 (BANT plano): `criteria` en root, sin `frameworks` ni `preset` → migra con preset='spin'
+- Formato 1 (BANT plano): sin `preset` ni `frameworks` → migra con preset='spin'
 - Formato 2 (multi-fw v2): tiene `frameworks[]` → toma primer framework activo
 - Formato 3 (v3): tiene `preset` → carga directo
 
 ## API routes (montadas en /console/api/lead-scoring/)
-- `GET /config` — config actual
-- `PUT /config` — guardar config nueva
-- `GET /presets` — listar presets disponibles
-- `POST /apply-preset` — aplicar preset (reemplaza criterios/stages)
-- `POST /recalculate` — recalcular scores batch
-- `GET /stats`, `GET /stats-detailed`, `GET /leads`, `GET /lead`, `PUT /lead-status`, `POST /disqualify`
+- `GET /config`, `PUT /config`, `GET /presets`, `POST /apply-preset`
+- `POST /recalculate`, `GET /stats`, `GET /stats-detailed`
+- `GET /leads`, `GET /lead`, `PUT /lead-status`, `POST /disqualify`
 
-## Integracion con context-builder
-- `buildQualificationSummary(qualData, config, lang)` — sin parametro de framework
-- Inyectado en prompt por context-builder.ts cuando contact_type='lead'
+## Batch recalc
+- `getAllLeadsForRecalc()` pagina internamente (200 por batch, cap 10000)
+- Excluye solo 'blocked' y 'converted' (estados terminales)
+- 'directo' SI se recalcula (puede cambiar con nueva config)
 
 ## Trampas
 - Config en instance/qualifying.json (JSON), NO en .env
-- `resolveFramework()` eliminado — no importar de scoring-engine.ts
-- `FrameworkType`/`ClientType`/`FrameworkConfig` eliminados de types.ts — no usar
-- `_disqualified` campo reservado en qualification_data
-- Prompt cache key = `${preset}:${JSON.stringify(criteria.map(c => c.key))}`
-- Helpers HTTP: jsonResponse, parseBody, parseQuery de kernel/http-helpers.js
+- Keys auto-generadas desde name.en via generateKeyFromName()
+- Configs viejas (BANT plano, multi-framework v2) se migran automaticamente a v3
+- `_extracted_at`, `_confidence` y `_disqualified` son campos reservados en qualification_data
+- Max 10 criterios por tenant
+- Helpers HTTP: usa jsonResponse, parseBody, parseQuery de kernel/http-helpers.js

@@ -265,7 +265,7 @@ Secciones: propósito (1-2 líneas), Archivos (lista), Manifest (type, depends, 
 - `src/modules/users/CLAUDE.md` — listas de usuarios y permisos
 - `src/modules/llm/CLAUDE.md` — gateway LLM unificado (circuit breaker, routing, tracking, seguridad)
 - `src/modules/tools/CLAUDE.md` — herramientas del agente (registro, ejecución, tool calling nativo)
-- `src/modules/lead-scoring/CLAUDE.md` — calificación de leads (BANT + custom, scoring, UI console)
+- `src/modules/lead-scoring/CLAUDE.md` — calificación de leads (CHAMP/SPIN presets, scoring determinístico zero-LLM, priority weights, decay temporal)
 - `src/modules/google-apps/CLAUDE.md` — provider Google (OAuth2, Drive, Sheets, Docs, Slides, Calendar)
 - `src/modules/gmail/CLAUDE.md` — canal de email via Gmail API (send, reply, forward, attachments, email tools: read-inbox, search, get-detail)
 - `src/modules/prompts/CLAUDE.md` — gestión centralizada de prompts del agente (slots, campaigns, console)
