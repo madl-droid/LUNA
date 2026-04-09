@@ -230,8 +230,8 @@ export class SyncManager {
     let buffer: Buffer
     if (exportType && typeof exportType === 'string' && exportType !== 'slides') {
       // Google native type → export
-      const text = await driveService.exportFile(file.id, exportType)
-      buffer = Buffer.from(text, 'utf-8')
+      const exported = await driveService.exportFile(file.id, exportType)
+      buffer = Buffer.isBuffer(exported) ? exported : Buffer.from(exported, 'utf-8')
     } else {
       // Regular file → download
       buffer = await driveService.downloadFile(file.id)

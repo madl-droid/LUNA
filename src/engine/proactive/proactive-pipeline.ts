@@ -241,6 +241,7 @@ async function buildProactiveContext(
             ac.lead_status AS qualification_status,
             COALESCE(ac.qualification_score, 0) AS qualification_score,
             COALESCE(ac.qualification_data, '{}') AS qualification_data,
+            ac.follow_up_intensity,
             c.created_at,
             cc.channel_identifier, cc.channel_type
      FROM contacts c
@@ -265,12 +266,15 @@ async function buildProactiveContext(
     qualificationStatus: contactRow.qualification_status,
     qualificationScore: contactRow.qualification_score,
     qualificationData: contactRow.qualification_data,
+    followUpIntensity: contactRow.follow_up_intensity ?? null,
     createdAt: contactRow.created_at,
   } : null
 
   // Load history + memory in parallel
+  // Commitments get more history so the LLM has full context to fulfill them
+  const historyLimit = candidate.triggerType === 'commitment' ? 10 : 5
   const [historyResult, memoryResult, commitmentsResult, leadStatusResult] = await Promise.allSettled([
-    loadRecentHistory(memoryManager, db, candidate.contactId, candidate.channel, 5),
+    loadRecentHistory(memoryManager, db, candidate.contactId, candidate.channel, historyLimit),
     memoryManager ? loadContactMemory(memoryManager, candidate.contactId) : Promise.resolve(null),
     memoryManager ? memoryManager.getPendingCommitments(candidate.contactId) : Promise.resolve([]),
     memoryManager ? memoryManager.getLeadStatus(candidate.contactId) : Promise.resolve(null),

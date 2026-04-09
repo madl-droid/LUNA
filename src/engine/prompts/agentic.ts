@@ -320,6 +320,10 @@ async function buildUserMessage(
       if (c.dueAt) parts.push(`- Vence: ${c.dueAt.toISOString()}`)
       if (c.requiresTool) parts.push(`- Tool requerida: ${c.requiresTool}`)
       parts.push(`- Intentos previos: ${c.attemptCount}`)
+      if (c.contextSummary) {
+        parts.push(`[Contexto de la conversación cuando se hizo el compromiso:]`)
+        parts.push(c.contextSummary)
+      }
     }
   }
 

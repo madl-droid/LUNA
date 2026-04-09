@@ -139,7 +139,7 @@ export class LLMGateway {
 
     // Create usage tracker (load pricing from file, fallback to hardcoded defaults)
     this.tracker = new UsageTracker(db, redis, loadPricingFileSafe(), {
-      enabled: config.LLM_USAGE_ENABLED === 'true',
+      enabled: config.LLM_USAGE_ENABLED,
       retentionDays: config.LLM_USAGE_RETENTION_DAYS,
       dailyBudgetUsd: config.LLM_DAILY_BUDGET_USD,
       monthlyBudgetUsd: config.LLM_MONTHLY_BUDGET_USD,

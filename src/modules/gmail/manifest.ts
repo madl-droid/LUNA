@@ -1847,10 +1847,14 @@ function startPolling(intervalMs: number): void {
 
   pollerState.status = 'idle'
   // Primera poll inmediata
-  pollForEmails().catch(() => {})
+  pollForEmails().catch((err: unknown) => {
+    logger.error({ err }, 'Unexpected error in initial email poll')
+  })
 
   pollInterval = setInterval(() => {
-    pollForEmails().catch(() => {})
+    pollForEmails().catch((err: unknown) => {
+      logger.error({ err }, 'Unexpected error in email poll cycle')
+    })
   }, intervalMs)
 
   logger.info({ intervalMs }, 'Email polling started')

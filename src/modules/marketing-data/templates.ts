@@ -196,6 +196,10 @@ export function renderMarketingDataConsole(lang: Lang): string {
           <textarea id="md-form-context" maxlength="200" rows="2" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--surface-variant);color:var(--on-surface);font-size:14px;resize:vertical;box-sizing:border-box;"></textarea>
         </div>
         <div>
+          <label style="font-size:12px;color:var(--on-surface-dim);display:block;margin-bottom:4px;">${esc(l.form_utm!)}</label>
+          <textarea id="md-form-utm" rows="3" placeholder='{"utm_source":"instagram","utm_medium":"paid","utm_campaign":"promo"}' style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--surface-variant);color:var(--on-surface);font-size:13px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+        </div>
+        <div>
           <label style="font-size:12px;color:var(--on-surface-dim);display:block;margin-bottom:4px;">${esc(l.form_tags!)}</label>
           <div id="md-form-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:32px;padding:4px;border:1px solid var(--border-color);border-radius:6px;background:var(--surface-variant);"></div>
         </div>
@@ -322,6 +326,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
           '<span>' + l.col_rounds + ': ' + c.matchMaxRounds + '</span>' +
           '<span>' + l.col_channels + ': ' + channels + '</span>' +
         '</div>' +
+        (c.utmData && Object.keys(c.utmData).length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">' + Object.entries(c.utmData).map(([k,v]) => '<span style="font-size:11px;padding:1px 7px;border-radius:8px;background:var(--surface-variant);color:var(--on-surface-dim);border:1px solid var(--border-color);"><b>' + k + '</b>: ' + v + '</span>').join('') + '</div>' : '') +
         (tags ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">' + tags + '</div>' : '') +
         '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
           '<button class="md-edit-campaign" data-id="' + c.id + '" style="padding:4px 12px;font-size:12px;border-radius:4px;background:var(--surface-variant);color:var(--on-surface);border:1px solid var(--border-color);cursor:pointer;">' + l.btn_edit + '</button>' +
@@ -354,6 +359,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
     document.getElementById('md-form-rounds').value = '1';
     document.getElementById('md-form-channels').value = '';
     document.getElementById('md-form-context').value = '';
+    document.getElementById('md-form-utm').value = '{}';
     renderFormTags([]);
     const modal = document.getElementById('md-campaign-modal');
     modal.style.display = 'flex';
@@ -371,6 +377,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
     document.getElementById('md-form-rounds').value = String(c.matchMaxRounds);
     document.getElementById('md-form-channels').value = (c.allowedChannels || []).join(',');
     document.getElementById('md-form-context').value = c.promptContext || '';
+    document.getElementById('md-form-utm').value = Object.keys(c.utmData || {}).length ? JSON.stringify(c.utmData, null, 2) : '{}';
     const selectedIds = [...(c.platformTags||[]), ...(c.sourceTags||[])].map(t => t.id);
     renderFormTags(selectedIds);
     const modal = document.getElementById('md-campaign-modal');
@@ -403,6 +410,8 @@ export function renderMarketingDataConsole(lang: Lang): string {
     const channelsRaw = document.getElementById('md-form-channels').value;
     const tagCheckboxes = document.querySelectorAll('#md-form-tags input[type=checkbox]:checked');
     const tagIds = Array.from(tagCheckboxes).map(cb => cb.value);
+    let utmData = {};
+    try { utmData = JSON.parse(document.getElementById('md-form-utm').value || '{}'); } catch(e) { utmData = {}; }
     const body = {
       name: document.getElementById('md-form-name').value,
       keyword: document.getElementById('md-form-keyword').value,
@@ -410,6 +419,7 @@ export function renderMarketingDataConsole(lang: Lang): string {
       matchMaxRounds: parseInt(document.getElementById('md-form-rounds').value, 10),
       allowedChannels: channelsRaw ? channelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
       promptContext: document.getElementById('md-form-context').value,
+      utmData: utmData,
       tagIds: tagIds,
     };
     if (id) body.id = id;

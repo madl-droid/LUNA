@@ -3,6 +3,7 @@
 // Expone configSchema para engine params (editable desde console).
 
 import { z } from 'zod'
+import pino from 'pino'
 import type { ModuleManifest } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { boolEnv, numEnvMin } from '../../kernel/config-helpers.js'
@@ -15,6 +16,8 @@ import type { AttachmentEngineConfig } from '../../engine/attachments/types.js'
 import { SYSTEM_HARD_LIMITS } from '../../engine/attachments/types.js'
 import { jsonResponse } from '../../kernel/http-helpers.js'
 import { kernelConfig } from '../../kernel/config.js'
+
+const logger = pino({ name: 'engine-module' })
 
 /** Config type for engine module params */
 interface EngineModuleConfig {
@@ -569,7 +572,9 @@ const manifest: ModuleManifest = {
     }
 
     // Initial load of knowledge domains (fire-and-forget)
-    refreshKnowledgeDomains().catch(() => {})
+    refreshKnowledgeDomains().catch((err: unknown) => {
+      logger.warn({ err }, 'Failed to refresh knowledge domains for attachment URL list')
+    })
 
     const buildAttEngineConfig = (): AttachmentEngineConfig => {
       const configDomains = attConfig.ATTACHMENT_AUTHORIZED_DOMAINS
@@ -642,7 +647,9 @@ const manifest: ModuleManifest = {
       reloadEngineConfig()
 
       // Refresh knowledge domains for authorized URL list
-      refreshKnowledgeDomains().catch(() => {})
+      refreshKnowledgeDomains().catch((err: unknown) => {
+      logger.warn({ err }, 'Failed to refresh knowledge domains for attachment URL list')
+    })
 
       // Dynamic extreme logging: read DEBUG_EXTREME_LOG and update global pino level
       try {

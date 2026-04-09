@@ -27,6 +27,8 @@ export interface CampaignRecord {
   promptContext: string              // max 200 chars, default = keyword
   active: boolean
   utmData: Record<string, string>
+  utmKeys: string[]                  // valores utm_campaign que mapean a esta campaña
+  origin: 'manual' | 'auto_utm'     // como fue creada
   platformTags: CampaignTag[]
   sourceTags: CampaignTag[]
   createdAt: string
@@ -44,6 +46,8 @@ export interface CampaignMatchResult {
   keyword: string
   promptContext: string
   score: number                      // match score 0-1
+  matchSource: 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm'
+  utmData: Record<string, string>    // UTMs capturados (vacío si match por keyword)
 }
 
 // ═══════════════════════════════════════════
@@ -59,7 +63,22 @@ export interface ContactCampaignEntry {
   sessionId: string | null
   channelName: string | null
   matchScore: number | null
+  matchSource: string | null
+  utmData: Record<string, string>
   matchedAt: string
+}
+
+// ═══════════════════════════════════════════
+// UTM params
+// ═══════════════════════════════════════════
+
+export interface UtmParams {
+  utm_source?: string
+  utm_medium?: string
+  utm_campaign?: string
+  utm_content?: string
+  utm_term?: string
+  [key: string]: string | undefined  // custom UTMs
 }
 
 // ═══════════════════════════════════════════
@@ -72,4 +91,27 @@ export interface CampaignStatRow {
   name: string
   entries: number
   conversions: number
+}
+
+// ═══════════════════════════════════════════
+// Detailed stats — breakdown by source & UTM
+// ═══════════════════════════════════════════
+
+export interface SourceBreakdown {
+  matchSource: string          // 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm'
+  entries: number
+  conversions: number
+}
+
+export interface UtmBreakdown {
+  utmSource: string            // valor de utm_source (o 'unknown')
+  utmMedium: string            // valor de utm_medium (o 'unknown')
+  entries: number
+  conversions: number
+}
+
+export interface CampaignDetailedStats extends CampaignStatRow {
+  sourceBreakdown: SourceBreakdown[]
+  utmBreakdown: UtmBreakdown[]
+  firstTouchEntries: number    // leads cuyo PRIMER contacto fue esta campaña
 }

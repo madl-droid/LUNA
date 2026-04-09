@@ -69,6 +69,7 @@ export interface ContactInfo {
   qualificationStatus: string | null
   qualificationScore: number | null
   qualificationData: Record<string, unknown> | null
+  followUpIntensity: string | null
   createdAt: Date
 }
 
@@ -91,6 +92,7 @@ export interface CampaignInfo {
   utm: Record<string, string> | null
   promptContext: string | null
   matchScore: number | null
+  matchSource: 'keyword' | 'url_utm' | 'webhook' | 'webhook_utm' | null
 }
 
 export interface KnowledgeMatch {

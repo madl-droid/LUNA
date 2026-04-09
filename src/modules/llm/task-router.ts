@@ -88,10 +88,6 @@ const TASK_ALIASES: Record<string, LLMTask> = {
   // ── Engine: buffer compression ──
   'buffer_compress': 'compress',         // buffer-compressor.ts
 
-  // ── Engine: commitment detection ──
-  'commitment-detect': 'main',           // commitment-detector.ts
-  'detect_commitment': 'main',           // legacy alias
-
   // ── Engine: subagent ──
   'subagent': 'main',                    // subagent execution
   'subagent-verify': 'criticize',        // subagent verification step

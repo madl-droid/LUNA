@@ -17,6 +17,16 @@ const REQUIRED_DIRS = [
 ]
 
 /**
+ * Files that must exist in instance/. If missing (e.g. volume mount overwrote
+ * the directory), copy them from the repo template.
+ */
+const REQUIRED_FILES: Array<{ target: string; source: string }> = [
+  // proactive.json: not needed here — loadProactiveConfig() has hardcoded defaults
+  // and gracefully handles missing file. Add future entries that have a real
+  // source template (outside instance/) here.
+]
+
+/**
  * Create instance/ subdirectories if they don't exist.
  * Safe to call on every boot — uses recursive mkdir.
  */
@@ -31,4 +41,30 @@ export async function ensureInstanceDirs(): Promise<void> {
     }
   }
   logger.info({ dirs: REQUIRED_DIRS.length }, 'Instance directories ensured')
+}
+
+/**
+ * Copy required instance files from the repo template if they don't exist.
+ * Handles the case where a Docker volume mount overwrites instance/ without
+ * including template files like proactive.json.
+ */
+export async function ensureInstanceFiles(): Promise<void> {
+  for (const { target, source } of REQUIRED_FILES) {
+    const targetPath = path.resolve(target)
+    const sourcePath = path.resolve(source)
+
+    try {
+      await fs.access(targetPath)
+      // File exists, skip
+    } catch {
+      // File missing — try to copy from source
+      try {
+        await fs.access(sourcePath)
+        await fs.copyFile(sourcePath, targetPath)
+        logger.info({ file: target }, 'Copied missing instance file from template')
+      } catch {
+        logger.warn({ file: target }, 'Instance file missing and no template source found')
+      }
+    }
+  }
 }

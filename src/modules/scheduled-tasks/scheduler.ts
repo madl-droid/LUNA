@@ -81,15 +81,15 @@ export async function startScheduler(
     agentTimezone = (await configStore.get(db, 'AGENT_TIMEZONE').catch(() => '')) || ''
   } catch { /* ignore — timezone is best-effort */ }
 
-  // Load and schedule all enabled tasks
+  // Load and schedule all enabled cron tasks
   const tasks = await store.listTasks(db)
   for (const task of tasks) {
-    if (task.enabled) {
+    if (task.enabled && task.trigger_type === 'cron') {
       await scheduleTask(task)
     }
   }
 
-  logger.info({ count: tasks.filter(t => t.enabled).length }, 'Scheduler started')
+  logger.info({ count: tasks.filter(t => t.enabled && t.trigger_type === 'cron').length }, 'Scheduler started')
 }
 
 export async function stopScheduler(): Promise<void> {
@@ -113,12 +113,16 @@ export async function stopScheduler(): Promise<void> {
 export async function scheduleTask(task: ScheduledTask): Promise<void> {
   if (!queue) return
 
-  const jobId = `scheduled:${task.id}`
+  const jobId = `scheduled-${task.id}`
 
   // Remove existing repeatable if any
   await unscheduleTask(task.id)
 
   if (!task.enabled) return
+
+  // Only cron-triggered tasks need repeatable BullMQ jobs.
+  // Manual and event tasks are triggered via API/hooks or delayed jobs.
+  if (task.trigger_type !== 'cron') return
 
   // FIX-04: Wrap scheduling in try/catch so an invalid cron expression (e.g. day-of-month
   // out of range) does not crash the entire module — log ERROR and skip the task.
@@ -150,7 +154,8 @@ export async function unscheduleTask(taskId: string): Promise<void> {
   // Find and remove the repeatable job for this task
   const repeatables = await queue.getRepeatableJobs()
   for (const r of repeatables) {
-    if (r.id === `scheduled:${taskId}`) {
+    // Match both old format (scheduled:) and new (scheduled-)
+    if (r.id === `scheduled-${taskId}` || r.id === `scheduled:${taskId}`) {
       await queue.removeRepeatableByKey(r.key)
       const idx = repeatJobKeys.indexOf(r.key)
       if (idx >= 0) repeatJobKeys.splice(idx, 1)
