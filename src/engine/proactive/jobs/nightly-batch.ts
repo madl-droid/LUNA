@@ -146,11 +146,8 @@ async function scoreColdLeads(ctx: ProactiveJobContext): Promise<void> {
           .join('\n') || '(sin datos)'
 
         const summaries = await ctx.db.query(
-          `SELECT summary_text FROM (
-             SELECT summary_text, created_at FROM session_summaries WHERE contact_id = $1
-             UNION ALL
-             SELECT full_summary AS summary_text, created_at FROM session_summaries_v2 WHERE contact_id = $1
-           ) combined ORDER BY created_at DESC LIMIT 3`,
+          `SELECT full_summary AS summary_text FROM session_summaries_v2
+           WHERE contact_id = $1 ORDER BY created_at DESC LIMIT 3`,
           [row.id],
         ).catch(() => ({ rows: [] }))
 
@@ -702,21 +699,7 @@ async function purgeOldArchives(ctx: ProactiveJobContext): Promise<void> {
   try {
     const purged = await memoryManager.purgeOldArchives()
     if (purged > 0) {
-      logger.info({ traceId: ctx.traceId, purged }, 'Purged old conversation archives')
-    }
-
-    // Also purge session_archives (v2) using the same retention
-    const config = ctx.registry.getConfig<{ MEMORY_ARCHIVE_RETENTION_YEARS: number }>('memory')
-    const years = config.MEMORY_ARCHIVE_RETENTION_YEARS
-    if (years > 0 && years < 999) {
-      const result = await ctx.db.query(
-        `DELETE FROM session_archives WHERE created_at < now() - interval '1 year' * $1`,
-        [years],
-      )
-      const v2Purged = result.rowCount ?? 0
-      if (v2Purged > 0) {
-        logger.info({ traceId: ctx.traceId, purged: v2Purged }, 'Purged old session archives (v2)')
-      }
+      logger.info({ traceId: ctx.traceId, purged }, 'Purged old session archives')
     }
   } catch (err) {
     logger.error({ err, traceId: ctx.traceId }, 'Archive purge failed')
@@ -798,15 +781,10 @@ async function mergeContactMemories(ctx: ProactiveJobContext): Promise<void> {
   }
 
   try {
-    // Find contacts with unmerged summaries from both v1 and v2 tables
+    // Find contacts with unmerged summaries from session_summaries_v2
     const result = await ctx.db.query<{ contact_id: string }>(
-      `SELECT DISTINCT contact_id FROM (
-         SELECT contact_id FROM session_summaries
-         WHERE merged_to_memory_at IS NULL AND created_at < NOW() - INTERVAL '1 hour'
-         UNION
-         SELECT contact_id FROM session_summaries_v2
-         WHERE merged_to_memory_at IS NULL AND created_at < NOW() - INTERVAL '1 hour'
-       ) combined
+      `SELECT DISTINCT contact_id FROM session_summaries_v2
+       WHERE merged_to_memory_at IS NULL AND created_at < NOW() - INTERVAL '1 hour'
        LIMIT $1`,
       [config.compressionBatchSize],
     )

@@ -808,8 +808,8 @@ async function loadOrCreateSession(
                 s.message_count, ss.summary_text AS compressed_summary
          FROM sessions s
          LEFT JOIN LATERAL (
-           SELECT summary_text FROM session_summaries
-           WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+           SELECT full_summary AS summary_text FROM session_summaries_v2
+           WHERE session_id = s.id LIMIT 1
          ) ss ON true
          WHERE s.thread_id = $1 AND s.last_activity_at > $2
          ORDER BY s.last_activity_at DESC
@@ -841,8 +841,8 @@ async function loadOrCreateSession(
                 s.message_count, ss.summary_text AS compressed_summary
          FROM sessions s
          LEFT JOIN LATERAL (
-           SELECT summary_text FROM session_summaries
-           WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+           SELECT full_summary AS summary_text FROM session_summaries_v2
+           WHERE session_id = s.id LIMIT 1
          ) ss ON true
          WHERE s.contact_id = $1 AND s.channel_name = $2 AND s.last_activity_at > $3
          ORDER BY s.last_activity_at DESC
@@ -876,8 +876,8 @@ async function loadOrCreateSession(
                 s.message_count, ss.summary_text AS compressed_summary
          FROM sessions s
          LEFT JOIN LATERAL (
-           SELECT summary_text FROM session_summaries
-           WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1
+           SELECT full_summary AS summary_text FROM session_summaries_v2
+           WHERE session_id = s.id LIMIT 1
          ) ss ON true
          WHERE s.channel_contact_id = $1 AND s.channel_name = $2 AND s.last_activity_at > $3
          ORDER BY s.last_activity_at DESC

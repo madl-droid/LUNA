@@ -321,7 +321,7 @@ export class MemoryManager {
     // Generate semantic chunks from summary + key facts
     const chunks = this.splitSummaryIntoChunks(compression.summary, compression.keyFacts)
     if (chunks.length > 0) {
-      const saved = await this.pg.saveChunks(summaryId, contactId, chunks)
+      const saved = await this.pg.saveChunks(summaryId, contactId, sessionId, chunks)
       logger.info({ sessionId, summaryId, chunks: saved }, 'Summary chunks saved')
     }
 
@@ -329,7 +329,7 @@ export class MemoryManager {
     await this.pg.markSessionCompressed(sessionId)
 
     // Purge ALL hot messages — summary + chunks replace them.
-    // Legal backup lives in conversation_archives (separate tier).
+    // Legal backup lives in session_archives (v2 tier).
     const deleted = await this.pg.deleteAllSessionMessages(sessionId)
     if (deleted > 0) logger.info({ sessionId, deleted }, 'Purged all messages after compression')
 

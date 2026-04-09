@@ -19,23 +19,23 @@
 - `memory:compression-worker` — CompressionWorker (enqueue para compresión asíncrona)
 - `memory:search` — búsqueda en memoria a largo plazo (.search(contactId, query, limit))
 
-## Tablas PG (v3 + compresión v2)
+## Tablas PG (v2-only)
 - `messages` — nivel caliente: mensajes raw
-- `session_summaries` — nivel tibio: resúmenes comprimidos con FTS + embeddings vector(1536)
 - `session_archives` — archivo legal: mensajes texto + metadata adjuntos (migración 020)
 - `session_summaries_v2` — resúmenes LLM: título, descripción, summary completo (migración 020)
-- `session_memory_chunks` — chunks multimodales con pgvector + FTS (migración 020)
+- `session_memory_chunks` — chunks multimodales con pgvector + FTS (migración 020); `source_type='session_summary'` para chunks de resumen
 - `sessions.compression_status` — tracking: queued/archiving/summarizing/embedding/cleaning/done/failed (migración 020)
 - `agent_contacts` — nivel frío: contact_memory JSONB
 - `commitments` — compromisos (PERMANENTE)
-- `conversation_archives` — backup legal legacy
 - `pipeline_logs` — observabilidad
 
-## Compresión v2 — Flujo
+> Tablas v1 eliminadas del código: `session_summaries`, `conversation_archives`, `summary_chunks`. Solo persisten en el esquema SQL hasta migration squash (Plan 3).
+
+## Compresión v2 — Flujo (v2-only)
 1. Trigger: 5 min después de expirar ventana de reapertura → enqueue en BullMQ `session:compress`
 2. `archiving`: guarda mensajes texto + metadata adjuntos en `session_archives`
 3. `summarizing`: genera título/descripción/summary vía LLM → `session_summaries_v2`
-4. `embedding`: split en chunks multimodales → embed vía Gemini Embedding 2 → `session_memory_chunks`
+4. `embedding`: split en chunks multimodales → embed vía Gemini Embedding 2 → `session_memory_chunks` (source_type='session_summary')
 5. `cleaning`: DELETE mensajes raw + attachment_extractions
 6. `done`: marca compressed_at, limpia error
 - Retries: 3 intentos con backoff exponencial (30s, 60s, 120s)
@@ -51,12 +51,15 @@
 - **BullMQ reconnect**: `enableReadyCheck: false` en connection config + listeners `error`/`stalled`.
 
 ## Trampas
-- **compressSession() aborta si archiveSession() falla** — nunca borrar originales sin respaldo
+- **compressSession() aborta si archiveSession() falla** — nunca borrar originales sin respaldo; archiva en `session_archives` (v2)
 - **NO cambiar fire-and-forget de pipeline_logs a await** — bloquearía pipeline
 - Tablas fundacionales las crea el migrador del kernel (`src/migrations/*.sql`)
 - pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration
 - **Config helpers**: usa `numEnv`, `boolEnv` de `kernel/config-helpers.js`
 - Nightly batch usa compression worker si disponible, fallback a compresión legacy
+- **saveChunks() ahora requiere sessionId** — tercer parámetro después de contactId
+- **updateSummaryEmbedding() es no-op** — embeddings en chunks, no en summaries v2
+- **getSummariesWithoutEmbeddings() retorna []** — usar getChunksWithoutEmbeddings() en su lugar
 
 ### Race condition en trimKeepingTurns (aceptado)
 `lrange` y `ltrim` no son atómicos. En la ventana entre ambas operaciones (microsegundos),

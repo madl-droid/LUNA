@@ -2,6 +2,7 @@
 // Handles hot (messages), warm (session_summaries), cold (contact_memory) tiers,
 // plus commitments, archives, and pipeline logs.
 
+import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
 import pino from 'pino'
 import type {
@@ -247,27 +248,25 @@ export class PgStore {
   // ═══════════════════════════════════════════
 
   async saveSessionSummary(summary: Omit<SessionSummary, 'id' | 'createdAt' | 'mergedToMemoryAt'>): Promise<string> {
+    // v2: write to session_summaries_v2 (legacy SessionSummary fields mapped to v2 schema)
+    const title = (summary.summaryText.split('\n')[0] ?? summary.summaryText).slice(0, 200)
+    const description = summary.summaryText.slice(0, 500)
     const result = await this.pool.query(
-      `INSERT INTO session_summaries (
-        session_id, contact_id, channel_identifier, summary_text,
-        summary_language, key_facts, structured_data, original_message_count,
-        model_used, compression_tokens, interaction_started_at, interaction_closed_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING id`,
+      `INSERT INTO session_summaries_v2 (session_id, contact_id, title, description, full_summary, sections, model_used, tokens_used)
+       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)
+       ON CONFLICT (session_id) DO UPDATE SET
+         title = EXCLUDED.title, description = EXCLUDED.description,
+         full_summary = EXCLUDED.full_summary,
+         model_used = EXCLUDED.model_used, tokens_used = EXCLUDED.tokens_used
+       RETURNING id`,
       [
         summary.sessionId,
         summary.contactId,
-        summary.channelIdentifier ?? null,
+        title,
+        description,
         summary.summaryText,
-        summary.summaryLanguage,
-        JSON.stringify(summary.keyFacts),
-        JSON.stringify(summary.structuredData),
-        summary.originalMessageCount,
         summary.modelUsed,
         summary.compressionTokens ?? null,
-        summary.interactionStartedAt,
-        summary.interactionClosedAt,
       ],
     )
     return result.rows[0]!.id as string
@@ -279,15 +278,16 @@ export class PgStore {
     language: string = 'es',
     limit: number = 5,
   ): Promise<HybridSearchResult[]> {
+    // v2: search session_summaries_v2.full_summary with inline tsvector
     const pgDict = this.langToDict(language)
     try {
       const result = await this.pool.query(
-        `SELECT id, session_id, summary_text, key_facts,
-                ts_rank(search_vector, plainto_tsquery($3, $2)) AS rank,
-                interaction_started_at
-         FROM session_summaries
+        `SELECT id::text AS id, session_id, full_summary AS summary_text,
+                ts_rank(to_tsvector($3, full_summary), plainto_tsquery($3, $2)) AS rank,
+                created_at AS interaction_started_at
+         FROM session_summaries_v2
          WHERE contact_id = $1
-           AND search_vector @@ plainto_tsquery($3, $2)
+           AND to_tsvector($3, full_summary) @@ plainto_tsquery($3, $2)
          ORDER BY rank DESC
          LIMIT $4`,
         [contactId, query, pgDict, limit],
@@ -296,7 +296,7 @@ export class PgStore {
         summaryId: row.id,
         sessionId: row.session_id,
         summaryText: row.summary_text,
-        keyFacts: row.key_facts ?? [],
+        keyFacts: [],
         score: parseFloat(row.rank),
         matchType: 'fts' as const,
         interactionStartedAt: row.interaction_started_at,
@@ -312,39 +312,17 @@ export class PgStore {
     embedding: number[],
     limit: number = 5,
   ): Promise<HybridSearchResult[]> {
-    try {
-      const result = await this.pool.query(
-        `SELECT id, session_id, summary_text, key_facts,
-                1 - (embedding <=> $2::vector) AS similarity,
-                interaction_started_at
-         FROM session_summaries
-         WHERE contact_id = $1 AND embedding IS NOT NULL
-         ORDER BY embedding <=> $2::vector
-         LIMIT $3`,
-        [contactId, `[${embedding.join(',')}]`, limit],
-      )
-      return result.rows.map((row: DbRow) => ({
-        summaryId: row.id,
-        sessionId: row.session_id,
-        summaryText: row.summary_text,
-        keyFacts: row.key_facts ?? [],
-        score: parseFloat(row.similarity),
-        matchType: 'vector' as const,
-        interactionStartedAt: row.interaction_started_at,
-      }))
-    } catch (err) {
-      logger.warn({ err, contactId }, 'Vector search failed')
-      return []
-    }
+    // v2: summary-level vector search delegated to chunk-level search
+    return this.searchChunksVector(contactId, embedding, limit)
   }
 
   async getRecentSummaries(contactId: string, limit: number = 3): Promise<HybridSearchResult[]> {
     try {
       const result = await this.pool.query(
-        `SELECT id, session_id, summary_text, key_facts, interaction_started_at
-         FROM session_summaries
+        `SELECT id::text AS id, session_id, full_summary AS summary_text, created_at AS interaction_started_at
+         FROM session_summaries_v2
          WHERE contact_id = $1
-         ORDER BY interaction_started_at DESC
+         ORDER BY created_at DESC
          LIMIT $2`,
         [contactId, limit],
       )
@@ -352,7 +330,7 @@ export class PgStore {
         summaryId: row.id,
         sessionId: row.session_id,
         summaryText: row.summary_text,
-        keyFacts: row.key_facts ?? [],
+        keyFacts: [],
         score: 1.0 - idx * 0.1,
         matchType: 'recency' as const,
         interactionStartedAt: row.interaction_started_at,
@@ -365,25 +343,18 @@ export class PgStore {
 
   async getUnmergedSummaries(contactId: string): Promise<SessionSummary[]> {
     try {
-      // Query both v1 and v2 tables — v2 columns aliased to match v1 schema
+      // v2-only: read from session_summaries_v2
       const result = await this.pool.query(
-        `SELECT id, session_id, contact_id, channel_identifier, summary_text,
-                summary_language, key_facts, structured_data, original_message_count,
-                model_used, compression_tokens, interaction_started_at, interaction_closed_at,
-                merged_to_memory_at, created_at, 'v1' AS source_table
-         FROM session_summaries
-         WHERE contact_id = $1 AND merged_to_memory_at IS NULL
-         UNION ALL
-         SELECT id::text, session_id, contact_id, NULL AS channel_identifier,
+        `SELECT id::text AS id, session_id, contact_id, NULL AS channel_identifier,
                 full_summary AS summary_text, 'es' AS summary_language,
                 '[]'::jsonb AS key_facts, '{}'::jsonb AS structured_data,
                 0 AS original_message_count, model_used,
                 tokens_used AS compression_tokens,
                 created_at AS interaction_started_at, created_at AS interaction_closed_at,
-                merged_to_memory_at, created_at, 'v2' AS source_table
+                merged_to_memory_at, created_at
          FROM session_summaries_v2
          WHERE contact_id = $1 AND merged_to_memory_at IS NULL
-         ORDER BY interaction_started_at ASC`,
+         ORDER BY created_at ASC`,
         [contactId],
       )
       return result.rows.map((row: DbRow) => this.mapSessionSummaryRow(row))
@@ -396,64 +367,49 @@ export class PgStore {
   async markSummariesMerged(summaryIds: string[]): Promise<void> {
     if (summaryIds.length === 0) return
     try {
-      // Update both tables — IDs are unique across tables so both queries are safe
-      await Promise.all([
-        this.pool.query(
-          `UPDATE session_summaries SET merged_to_memory_at = now() WHERE id = ANY($1)`,
-          [summaryIds],
-        ),
-        this.pool.query(
-          `UPDATE session_summaries_v2 SET merged_to_memory_at = now() WHERE id::text = ANY($1)`,
-          [summaryIds],
-        ),
-      ])
+      // v2-only: update session_summaries_v2
+      await this.pool.query(
+        `UPDATE session_summaries_v2 SET merged_to_memory_at = now() WHERE id::text = ANY($1)`,
+        [summaryIds],
+      )
     } catch (err) {
       logger.warn({ err, count: summaryIds.length }, 'Failed to mark summaries as merged')
     }
   }
 
-  async updateSummaryEmbedding(summaryId: string, embedding: number[]): Promise<void> {
-    try {
-      await this.pool.query(
-        `UPDATE session_summaries SET embedding = $2::vector WHERE id = $1`,
-        [summaryId, `[${embedding.join(',')}]`],
-      )
-    } catch (err) {
-      logger.warn({ err, summaryId }, 'Failed to update embedding')
-    }
+  async updateSummaryEmbedding(_summaryId: string, _embedding: number[]): Promise<void> {
+    // v2: summary-level embeddings removed — embeddings live in session_memory_chunks
+    logger.debug('updateSummaryEmbedding is a no-op in v2 (embeddings are on chunks)')
   }
 
-  async getSummariesWithoutEmbeddings(limit: number = 50): Promise<Array<{ id: string; summaryText: string }>> {
-    try {
-      const result = await this.pool.query(
-        `SELECT id, summary_text FROM session_summaries WHERE embedding IS NULL ORDER BY created_at ASC LIMIT $1`,
-        [limit],
-      )
-      return result.rows.map((row: DbRow) => ({ id: row.id, summaryText: row.summary_text }))
-    } catch (err) {
-      logger.warn({ err }, 'Failed to get summaries without embeddings')
-      return []
-    }
+  async getSummariesWithoutEmbeddings(_limit: number = 50): Promise<Array<{ id: string; summaryText: string }>> {
+    // v2: summary-level embeddings removed — use getChunksWithoutEmbeddings instead
+    return []
   }
 
   // ═══════════════════════════════════════════
   // Summary Chunks — Semantic search tier
   // ═══════════════════════════════════════════
 
-  async saveChunks(summaryId: string, contactId: string, chunks: string[]): Promise<number> {
+  async saveChunks(summaryId: string, contactId: string, sessionId: string, chunks: string[]): Promise<number> {
     if (chunks.length === 0) return 0
-    // Build multi-row INSERT
+    // v2: write to session_memory_chunks with source_type='session_summary'
+    const totalChunks = chunks.length
     const values: unknown[] = []
     const placeholders: string[] = []
     for (let i = 0; i < chunks.length; i++) {
-      const offset = i * 4
-      placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`)
-      values.push(summaryId, contactId, chunks[i], i)
+      const offset = i * 7
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, 'session_summary', 'text', $${offset + 5}, $${offset + 6}, $${offset + 7}, 'pending')`,
+      )
+      values.push(randomUUID(), sessionId, contactId, summaryId, i, totalChunks, chunks[i])
     }
     try {
       await this.pool.query(
-        `INSERT INTO summary_chunks (summary_id, contact_id, chunk_text, chunk_index)
-         VALUES ${placeholders.join(', ')}`,
+        `INSERT INTO session_memory_chunks
+           (id, session_id, contact_id, source_id, source_type, content_type, chunk_index, chunk_total, content, embedding_status)
+         VALUES ${placeholders.join(', ')}
+         ON CONFLICT (id) DO NOTHING`,
         values,
       )
       return chunks.length
@@ -465,8 +421,13 @@ export class PgStore {
 
   async getChunksBySummary(summaryId: string): Promise<Array<{ id: string; chunkText: string }>> {
     try {
+      // v2: query session_memory_chunks by source_id (summaryId)
       const result = await this.pool.query(
-        `SELECT id, chunk_text FROM summary_chunks WHERE summary_id = $1 AND embedding IS NULL ORDER BY chunk_index ASC`,
+        `SELECT id, content AS chunk_text
+         FROM session_memory_chunks
+         WHERE source_id = $1 AND source_type = 'session_summary'
+           AND embedding_status != 'embedded'
+         ORDER BY chunk_index ASC`,
         [summaryId],
       )
       return result.rows.map((row: DbRow) => ({ id: row.id, chunkText: row.chunk_text }))
@@ -478,8 +439,15 @@ export class PgStore {
 
   async getChunksWithoutEmbeddings(limit: number = 100): Promise<Array<{ id: string; chunkText: string }>> {
     try {
+      // v2: query session_memory_chunks with source_type='session_summary' and embedding_status='pending'
       const result = await this.pool.query(
-        `SELECT id, chunk_text FROM summary_chunks WHERE embedding IS NULL ORDER BY created_at ASC LIMIT $1`,
+        `SELECT id, content AS chunk_text
+         FROM session_memory_chunks
+         WHERE embedding_status = 'pending'
+           AND source_type = 'session_summary'
+           AND content IS NOT NULL
+         ORDER BY source_id, chunk_index ASC
+         LIMIT $1`,
         [limit],
       )
       return result.rows.map((row: DbRow) => ({ id: row.id, chunkText: row.chunk_text }))
@@ -496,8 +464,9 @@ export class PgStore {
    */
   async updateChunkEmbedding(chunkId: string, embedding: number[]): Promise<void> {
     try {
+      // v2: update session_memory_chunks and mark as embedded
       await this.pool.query(
-        `UPDATE summary_chunks SET embedding = $2::vector WHERE id = $1`,
+        `UPDATE session_memory_chunks SET embedding = $2::vector, embedding_status = 'embedded' WHERE id = $1`,
         [chunkId, `[${embedding.join(',')}]`],
       )
     } catch (err) {
@@ -511,22 +480,25 @@ export class PgStore {
     limit: number = 5,
   ): Promise<HybridSearchResult[]> {
     try {
+      // v2: search session_memory_chunks with LEFT JOIN to session_summaries_v2
       const result = await this.pool.query(
-        `SELECT sc.id AS chunk_id, sc.chunk_text, sc.summary_id,
-                ss.session_id, ss.summary_text, ss.key_facts, ss.interaction_started_at,
-                1 - (sc.embedding <=> $2::vector) AS similarity
-         FROM summary_chunks sc
-         JOIN session_summaries ss ON ss.id = sc.summary_id
-         WHERE sc.contact_id = $1 AND sc.embedding IS NOT NULL
-         ORDER BY sc.embedding <=> $2::vector
+        `SELECT smc.id AS chunk_id, smc.content AS chunk_text, smc.source_id AS summary_id,
+                smc.session_id,
+                COALESCE(ssv2.full_summary, smc.content) AS summary_text,
+                COALESCE(ssv2.created_at, '1970-01-01'::timestamptz) AS interaction_started_at,
+                1 - (smc.embedding <=> $2::vector) AS similarity
+         FROM session_memory_chunks smc
+         LEFT JOIN session_summaries_v2 ssv2 ON ssv2.id::text = smc.source_id
+         WHERE smc.contact_id = $1 AND smc.embedding_status = 'embedded'
+         ORDER BY smc.embedding <=> $2::vector
          LIMIT $3`,
         [contactId, `[${embedding.join(',')}]`, limit],
       )
       return result.rows.map((row: DbRow) => ({
         summaryId: row.summary_id,
         sessionId: row.session_id,
-        summaryText: row.chunk_text,  // Return the chunk text (more precise than full summary)
-        keyFacts: row.key_facts ?? [],
+        summaryText: row.chunk_text,
+        keyFacts: [],
         score: parseFloat(row.similarity),
         matchType: 'chunk_vector' as const,
         interactionStartedAt: row.interaction_started_at,
@@ -543,15 +515,15 @@ export class PgStore {
     limit: number = 10,
   ): Promise<HybridSearchResult[]> {
     try {
-      // Use websearch_to_tsquery for flexible matching (handles partial terms)
+      // v2: use session_memory_chunks.tsv column + LEFT JOIN session_summaries_v2
       const result = await this.pool.query(
-        `SELECT sc.summary_id, ss.session_id, sc.chunk_text, ss.key_facts,
-                ss.interaction_started_at,
-                ts_rank(to_tsvector('simple', sc.chunk_text), plainto_tsquery('simple', $2)) AS rank
-         FROM summary_chunks sc
-         JOIN session_summaries ss ON ss.id = sc.summary_id
-         WHERE sc.contact_id = $1
-           AND to_tsvector('simple', sc.chunk_text) @@ plainto_tsquery('simple', $2)
+        `SELECT smc.source_id AS summary_id, smc.session_id, smc.content AS chunk_text,
+                COALESCE(ssv2.created_at, '1970-01-01'::timestamptz) AS interaction_started_at,
+                ts_rank(smc.tsv, plainto_tsquery('simple', $2)) AS rank
+         FROM session_memory_chunks smc
+         LEFT JOIN session_summaries_v2 ssv2 ON ssv2.id::text = smc.source_id
+         WHERE smc.contact_id = $1
+           AND smc.tsv @@ plainto_tsquery('simple', $2)
          ORDER BY rank DESC
          LIMIT $3`,
         [contactId, query, limit],
@@ -560,9 +532,9 @@ export class PgStore {
         summaryId: row.summary_id,
         sessionId: row.session_id,
         summaryText: row.chunk_text,
-        keyFacts: row.key_facts ?? [],
+        keyFacts: [],
         score: parseFloat(row.rank),
-        matchType: 'chunk_vector' as const,  // reuse type — it's chunk-sourced
+        matchType: 'chunk_vector' as const,
         interactionStartedAt: row.interaction_started_at,
       }))
     } catch (err) {
@@ -713,22 +685,24 @@ export class PgStore {
   }
 
   // ═══════════════════════════════════════════
-  // Conversation Archives — Legal backup
+  // Session Archives — Legal backup (v2)
   // ═══════════════════════════════════════════
 
   async archiveSession(archive: Omit<ConversationArchive, 'id' | 'archivedAt'>): Promise<string> {
+    // v2: write to session_archives (maps ConversationArchive fields to v2 schema)
+    const channel = archive.channelIdentifier ?? archive.channelType ?? 'unknown'
     const result = await this.pool.query(
-      `INSERT INTO conversation_archives (
-        session_id, contact_id, channel_identifier, channel_type, contact_snapshot,
-        messages, message_count, interaction_started_at, interaction_closed_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING id`,
+      `INSERT INTO session_archives (session_id, contact_id, channel, started_at, closed_at, message_count, messages_json, attachments_meta)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NULL)
+       RETURNING id`,
       [
-        archive.sessionId, archive.contactId, archive.channelIdentifier ?? null, archive.channelType ?? null,
-        JSON.stringify(archive.contactSnapshot), JSON.stringify(archive.messages),
+        archive.sessionId,
+        archive.contactId,
+        channel,
+        archive.interactionStartedAt,
+        archive.interactionClosedAt,
         archive.messageCount,
-        archive.interactionStartedAt, archive.interactionClosedAt,
+        JSON.stringify(archive.messages),
       ],
     )
     return result.rows[0]!.id as string
@@ -797,7 +771,7 @@ export class PgStore {
            AND COALESCE(s.status, 'active') = 'active'
            AND s.contact_id IS NOT NULL
            AND NOT EXISTS (
-             SELECT 1 FROM session_summaries ss WHERE ss.session_id = s.id
+             SELECT 1 FROM session_summaries_v2 ss WHERE ss.session_id = s.id
            )
          ORDER BY s.last_activity_at ASC
          LIMIT $2`,
@@ -860,8 +834,9 @@ export class PgStore {
 
   async purgeOldArchives(retentionYears: number): Promise<number> {
     try {
+      // v2: purge from session_archives
       const result = await this.pool.query(
-        `DELETE FROM conversation_archives WHERE archived_at < now() - interval '1 year' * $1`,
+        `DELETE FROM session_archives WHERE created_at < now() - interval '1 year' * $1`,
         [retentionYears],
       )
       return result.rowCount ?? 0
