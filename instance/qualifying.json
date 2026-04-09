@@ -1,55 +1,138 @@
 {
-  "criteria": [
+  "preset": "spin",
+  "objective": "schedule",
+  "stages": [
     {
-      "key": "budget",
-      "name": { "es": "Presupuesto", "en": "Budget" },
-      "type": "enum",
-      "options": ["low", "medium", "high"],
-      "weight": 25,
-      "required": false,
-      "neverAskDirectly": true
+      "key": "situation",
+      "name": { "es": "Situación", "en": "Situation" },
+      "description": { "es": "¿Qué busca? ¿Cuál es su contexto?", "en": "What are they looking for? What is their context?" },
+      "order": 1
     },
     {
-      "key": "authority",
-      "name": { "es": "Autoridad", "en": "Authority" },
-      "type": "enum",
-      "options": ["decision_maker", "influencer", "researcher"],
-      "weight": 20,
-      "required": false,
-      "neverAskDirectly": false
+      "key": "problem",
+      "name": { "es": "Problema", "en": "Problem" },
+      "description": { "es": "¿Qué quiere resolver? ¿Qué le molesta?", "en": "What do they want to solve? What bothers them?" },
+      "order": 2
     },
     {
-      "key": "need",
-      "name": { "es": "Necesidad", "en": "Need" },
-      "type": "text",
-      "weight": 30,
-      "required": true,
-      "neverAskDirectly": false
+      "key": "implication",
+      "name": { "es": "Implicación", "en": "Implication" },
+      "description": { "es": "¿Qué tanto le afecta? ¿Qué pasa si no actúa?", "en": "How much does it affect them? What happens if they don't act?" },
+      "order": 3
     },
     {
-      "key": "timeline",
-      "name": { "es": "Timeline", "en": "Timeline" },
-      "type": "enum",
-      "options": ["urgent", "this_month", "this_quarter", "no_rush"],
-      "weight": 25,
-      "required": false,
-      "neverAskDirectly": false
+      "key": "need_payoff",
+      "name": { "es": "Cierre", "en": "Need-payoff" },
+      "description": { "es": "¿Se ve usando la solución? ¿Quiere proceder?", "en": "Can they see themselves using the solution? Do they want to proceed?" },
+      "order": 4
     }
   ],
-  "thresholds": {
-    "cold": 30,
-    "qualifying": 31,
-    "qualified": 70
-  },
-  "qualifiedActions": ["scheduled", "transferred_to_sales", "sold", "purchase_complete"],
-  "defaultQualifiedAction": "scheduled",
+  "criteria": [
+    {
+      "key": "product_interest",
+      "name": { "es": "Producto o servicio de interés", "en": "Product/service of interest" },
+      "type": "text",
+      "priority": "high",
+      "required": true,
+      "neverAskDirectly": false,
+      "stage": "situation"
+    },
+    {
+      "key": "prior_experience",
+      "name": { "es": "Experiencia previa", "en": "Prior experience" },
+      "type": "enum",
+      "options": ["first_time", "returning"],
+      "priority": "medium",
+      "enumScoring": "presence",
+      "required": false,
+      "neverAskDirectly": false,
+      "stage": "situation"
+    },
+    {
+      "key": "main_pain",
+      "name": { "es": "Dolor o motivación principal", "en": "Main pain/motivation" },
+      "type": "text",
+      "priority": "high",
+      "required": true,
+      "neverAskDirectly": false,
+      "stage": "problem"
+    },
+    {
+      "key": "dissatisfaction_level",
+      "name": { "es": "Nivel de insatisfacción", "en": "Dissatisfaction level" },
+      "type": "enum",
+      "options": ["low", "medium", "high"],
+      "priority": "medium",
+      "required": false,
+      "neverAskDirectly": false,
+      "stage": "problem"
+    },
+    {
+      "key": "impact",
+      "name": { "es": "Impacto emocional o práctico", "en": "Emotional/practical impact" },
+      "type": "enum",
+      "options": ["low", "medium", "high"],
+      "priority": "high",
+      "required": false,
+      "neverAskDirectly": false,
+      "stage": "implication"
+    },
+    {
+      "key": "perceived_urgency",
+      "name": { "es": "Urgencia percibida", "en": "Perceived urgency" },
+      "type": "enum",
+      "options": ["low", "medium", "high"],
+      "priority": "high",
+      "required": false,
+      "neverAskDirectly": false,
+      "stage": "implication"
+    },
+    {
+      "key": "trigger_event",
+      "name": { "es": "Evento detonante", "en": "Trigger event" },
+      "type": "text",
+      "priority": "medium",
+      "required": false,
+      "neverAskDirectly": false,
+      "stage": "implication"
+    },
+    {
+      "key": "willingness_to_invest",
+      "name": { "es": "Disposición a invertir", "en": "Willingness to invest" },
+      "type": "enum",
+      "options": ["not_ready", "considering", "ready"],
+      "priority": "medium",
+      "required": false,
+      "neverAskDirectly": true,
+      "stage": "implication"
+    },
+    {
+      "key": "chosen_product",
+      "name": { "es": "Producto específico elegido", "en": "Specific product chosen" },
+      "type": "text",
+      "priority": "medium",
+      "required": false,
+      "neverAskDirectly": false,
+      "stage": "need_payoff"
+    },
+    {
+      "key": "explicit_interest",
+      "name": { "es": "Confirmación de interés", "en": "Interest confirmation" },
+      "type": "boolean",
+      "priority": "medium",
+      "required": false,
+      "neverAskDirectly": false,
+      "stage": "need_payoff"
+    }
+  ],
   "disqualifyReasons": [
-    { "key": "no_budget", "name": { "es": "Sin presupuesto", "en": "No budget" }, "targetStatus": "not_interested" },
     { "key": "not_interested", "name": { "es": "No interesado", "en": "Not interested" }, "targetStatus": "not_interested" },
+    { "key": "just_browsing", "name": { "es": "Solo cotizando", "en": "Just browsing" }, "targetStatus": "cold" },
     { "key": "spam", "name": { "es": "Spam", "en": "Spam" }, "targetStatus": "blocked" },
     { "key": "out_of_zone", "name": { "es": "Fuera de zona", "en": "Out of zone" }, "targetStatus": "out_of_zone" }
   ],
-  "maxCustomCriteria": 6,
-  "recalculateOnConfigChange": true,
-  "minConfidence": 0.3
+  "essentialQuestions": ["product_interest", "main_pain"],
+  "thresholds": { "cold": 30, "qualifying": 31, "qualified": 70 },
+  "minConfidence": 0.4,
+  "dataFreshnessWindowDays": 90
 }

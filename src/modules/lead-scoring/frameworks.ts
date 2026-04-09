@@ -1,21 +1,36 @@
-// LUNA — Module: lead-scoring — Framework Presets
-// Definiciones de CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G).
-// No custom framework — only presets. No auto signals — moved to Cortex.
+// LUNA — Module: lead-scoring — Framework Presets (v3)
+// Single-preset config: CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G).
+// Each preset max 10 criteria. Priority replaces weight.
 
-import type { FrameworkPreset, FrameworkType } from './types.js'
+import type { FrameworkObjective, FrameworkStage, QualifyingCriterion, DisqualifyReason } from './types.js'
 
 // ═══════════════════════════════════════════
-// CHAMP — B2B (InsightSquared)
+// Preset definition
 // ═══════════════════════════════════════════
 
-export const CHAMP_PRESET: FrameworkPreset = {
-  type: 'champ',
-  clientType: 'b2b',
+export interface PresetDefinition {
+  key: string                                 // 'champ', 'spin', 'champ_gov'
+  name: { es: string; en: string }
+  description: { es: string; en: string }
+  defaultObjective: FrameworkObjective
+  stages: FrameworkStage[]
+  criteria: QualifyingCriterion[]             // uses priority instead of weight
+  disqualifyReasons: DisqualifyReason[]
+  essentialQuestions: string[]
+}
+
+// ═══════════════════════════════════════════
+// CHAMP — B2B (InsightSquared) — 10 criteria
+// ═══════════════════════════════════════════
+
+export const CHAMP_PRESET: PresetDefinition = {
+  key: 'champ',
   name: { es: 'CHAMP (B2B)', en: 'CHAMP (B2B)' },
   description: {
     es: 'Framework B2B: Desafíos, Autoridad, Presupuesto, Priorización',
     en: 'B2B framework: Challenges, Authority, Money, Prioritization',
   },
+  defaultObjective: 'schedule',
   essentialQuestions: ['main_problem', 'contact_role'],
   stages: [
     {
@@ -61,7 +76,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       key: 'main_problem',
       name: { es: 'Problema principal', en: 'Main problem' },
       type: 'text',
-      weight: 10,
+      priority: 'high',
       required: true,
       neverAskDirectly: false,
       stage: 'challenges',
@@ -70,7 +85,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       key: 'current_solution',
       name: { es: 'Qué usan actualmente', en: 'Current solution' },
       type: 'text',
-      weight: 5,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'challenges',
@@ -80,16 +95,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       name: { es: 'Impacto en su negocio', en: 'Business impact' },
       type: 'enum',
       options: ['low', 'medium', 'high', 'critical'],
-      weight: 8,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'challenges',
-    },
-    {
-      key: 'industry',
-      name: { es: 'Industria / vertical', en: 'Industry / vertical' },
-      type: 'text',
-      weight: 5,
+      priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'challenges',
@@ -100,16 +106,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       name: { es: 'Rol del contacto', en: 'Contact role' },
       type: 'enum',
       options: ['researcher', 'influencer', 'decision_maker'],
-      weight: 12,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'authority',
-    },
-    {
-      key: 'decision_maker_name',
-      name: { es: 'Nombre del decisor', en: 'Decision maker name' },
-      type: 'text',
-      weight: 3,
+      priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
@@ -119,7 +116,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       name: { es: 'Proceso de aprobación', en: 'Approval process' },
       type: 'enum',
       options: ['solo', 'committee', 'boss_approval'],
-      weight: 5,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
@@ -129,7 +126,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       name: { es: 'Tamaño de empresa', en: 'Company size' },
       type: 'enum',
       options: ['micro', 'small', 'medium', 'large', 'enterprise'],
-      weight: 5,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
@@ -139,7 +136,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       key: 'budget_range',
       name: { es: 'Rango de presupuesto', en: 'Budget range' },
       type: 'text',
-      weight: 10,
+      priority: 'high',
       required: false,
       neverAskDirectly: true,
       stage: 'money',
@@ -149,28 +146,9 @@ export const CHAMP_PRESET: FrameworkPreset = {
       name: { es: 'Estado del presupuesto', en: 'Budget status' },
       type: 'enum',
       options: ['undefined', 'pending', 'approved'],
-      weight: 8,
+      priority: 'high',
       required: false,
       neverAskDirectly: true,
-      stage: 'money',
-    },
-    {
-      key: 'purchase_model',
-      name: { es: 'Modelo de compra', en: 'Purchase model' },
-      type: 'enum',
-      options: ['purchase', 'leasing', 'subscription'],
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'money',
-    },
-    {
-      key: 'scope_quantity',
-      name: { es: 'Cantidad / alcance', en: 'Scope / quantity' },
-      type: 'text',
-      weight: 4,
-      required: false,
-      neverAskDirectly: false,
       stage: 'money',
     },
     // --- Prioritization ---
@@ -178,7 +156,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       key: 'deadline',
       name: { es: 'Fecha límite o evento detonante', en: 'Deadline or trigger event' },
       type: 'text',
-      weight: 7,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'prioritization',
@@ -188,25 +166,7 @@ export const CHAMP_PRESET: FrameworkPreset = {
       name: { es: 'Nivel de urgencia', en: 'Urgency level' },
       type: 'enum',
       options: ['low', 'medium', 'high'],
-      weight: 8,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'prioritization',
-    },
-    {
-      key: 'competitors_evaluated',
-      name: { es: 'Competencia que evalúan', en: 'Competitors being evaluated' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'prioritization',
-    },
-    {
-      key: 'expected_next_step',
-      name: { es: 'Siguiente paso esperado', en: 'Expected next step' },
-      type: 'text',
-      weight: 4,
+      priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'prioritization',
@@ -222,17 +182,17 @@ export const CHAMP_PRESET: FrameworkPreset = {
 }
 
 // ═══════════════════════════════════════════
-// SPIN Selling adaptado — B2C (Neil Rackham)
+// SPIN Selling — B2C (Neil Rackham) — 10 criteria
 // ═══════════════════════════════════════════
 
-export const SPIN_PRESET: FrameworkPreset = {
-  type: 'spin',
-  clientType: 'b2c',
+export const SPIN_PRESET: PresetDefinition = {
+  key: 'spin',
   name: { es: 'SPIN Selling (B2C)', en: 'SPIN Selling (B2C)' },
   description: {
     es: 'Framework B2C: Situación, Problema, Implicación, Cierre',
     en: 'B2C framework: Situation, Problem, Implication, Need-payoff',
   },
+  defaultObjective: 'schedule',
   essentialQuestions: ['product_interest', 'main_pain'],
   stages: [
     {
@@ -258,7 +218,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       name: { es: 'Implicación', en: 'Implication' },
       description: {
         es: '¿Qué tanto le afecta? ¿Qué pasa si no actúa?',
-        en: 'How much does it affect them? What happens if they don\'t act?',
+        en: "How much does it affect them? What happens if they don't act?",
       },
       order: 3,
     },
@@ -278,7 +238,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       key: 'product_interest',
       name: { es: 'Producto o servicio de interés', en: 'Product/service of interest' },
       type: 'text',
-      weight: 10,
+      priority: 'high',
       required: true,
       neverAskDirectly: false,
       stage: 'situation',
@@ -288,26 +248,8 @@ export const SPIN_PRESET: FrameworkPreset = {
       name: { es: 'Experiencia previa', en: 'Prior experience' },
       type: 'enum',
       options: ['first_time', 'returning'],
-      weight: 5,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'situation',
-    },
-    {
-      key: 'current_solution',
-      name: { es: 'Cómo lo resuelve actualmente', en: 'How they solve it now' },
-      type: 'text',
-      weight: 5,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'situation',
-    },
-    {
-      key: 'lead_source',
-      name: { es: 'Cómo llegó', en: 'How they arrived' },
-      type: 'enum',
-      options: ['campaign', 'referral', 'organic', 'social_media'],
-      weight: 3,
+      priority: 'medium',
+      enumScoring: 'presence',
       required: false,
       neverAskDirectly: false,
       stage: 'situation',
@@ -317,26 +259,8 @@ export const SPIN_PRESET: FrameworkPreset = {
       key: 'main_pain',
       name: { es: 'Dolor o motivación principal', en: 'Main pain/motivation' },
       type: 'text',
-      weight: 12,
+      priority: 'high',
       required: true,
-      neverAskDirectly: false,
-      stage: 'problem',
-    },
-    {
-      key: 'problem_duration',
-      name: { es: 'Hace cuánto tiene el problema', en: 'How long they\'ve had the problem' },
-      type: 'text',
-      weight: 5,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'problem',
-    },
-    {
-      key: 'previous_attempts',
-      name: { es: 'Qué ha intentado antes', en: 'What they\'ve tried before' },
-      type: 'text',
-      weight: 5,
-      required: false,
       neverAskDirectly: false,
       stage: 'problem',
     },
@@ -345,7 +269,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       name: { es: 'Nivel de insatisfacción', en: 'Dissatisfaction level' },
       type: 'enum',
       options: ['low', 'medium', 'high'],
-      weight: 5,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'problem',
@@ -356,7 +280,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       name: { es: 'Impacto emocional o práctico', en: 'Emotional/practical impact' },
       type: 'enum',
       options: ['low', 'medium', 'high'],
-      weight: 8,
+      priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'implication',
@@ -366,7 +290,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       name: { es: 'Urgencia percibida', en: 'Perceived urgency' },
       type: 'enum',
       options: ['low', 'medium', 'high'],
-      weight: 8,
+      priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'implication',
@@ -375,7 +299,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       key: 'trigger_event',
       name: { es: 'Evento detonante', en: 'Trigger event' },
       type: 'text',
-      weight: 5,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'implication',
@@ -385,7 +309,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       name: { es: 'Disposición a invertir', en: 'Willingness to invest' },
       type: 'enum',
       options: ['not_ready', 'considering', 'ready'],
-      weight: 7,
+      priority: 'medium',
       required: false,
       neverAskDirectly: true,
       stage: 'implication',
@@ -395,7 +319,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       key: 'chosen_product',
       name: { es: 'Producto específico elegido', en: 'Specific product chosen' },
       type: 'text',
-      weight: 7,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'need_payoff',
@@ -404,25 +328,7 @@ export const SPIN_PRESET: FrameworkPreset = {
       key: 'explicit_interest',
       name: { es: 'Confirmación de interés', en: 'Interest confirmation' },
       type: 'boolean',
-      weight: 7,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'need_payoff',
-    },
-    {
-      key: 'preferred_schedule',
-      name: { es: 'Preferencia de horario/fecha', en: 'Preferred schedule/date' },
-      type: 'text',
-      weight: 4,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'need_payoff',
-    },
-    {
-      key: 'preferred_contact_method',
-      name: { es: 'Método de contacto preferido', en: 'Preferred contact method' },
-      type: 'text',
-      weight: 4,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'need_payoff',
@@ -437,17 +343,17 @@ export const SPIN_PRESET: FrameworkPreset = {
 }
 
 // ═══════════════════════════════════════════
-// CHAMP + Gov — B2G (Government)
+// CHAMP + Gov — B2G (Government) — 10 criteria
 // ═══════════════════════════════════════════
 
-export const CHAMP_GOV_PRESET: FrameworkPreset = {
-  type: 'champ_gov',
-  clientType: 'b2g',
+export const CHAMP_GOV_PRESET: PresetDefinition = {
+  key: 'champ_gov',
   name: { es: 'CHAMP + Gov (B2G)', en: 'CHAMP + Gov (B2G)' },
   description: {
     es: 'Framework B2G: CHAMP + Etapa del proceso + Encaje normativo',
     en: 'B2G framework: CHAMP + Process Stage + Compliance Fit',
   },
+  defaultObjective: 'schedule',
   essentialQuestions: ['institutional_need', 'contact_role'],
   stages: [
     {
@@ -464,7 +370,7 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       name: { es: 'Autoridad', en: 'Authority' },
       description: {
         es: '¿Cuál es el rol del contacto en el proceso?',
-        en: 'What is the contact\'s role in the process?',
+        en: "What is the contact's role in the process?",
       },
       order: 2,
     },
@@ -511,17 +417,8 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       key: 'institutional_need',
       name: { es: 'Problema o necesidad institucional', en: 'Institutional need' },
       type: 'text',
-      weight: 8,
+      priority: 'high',
       required: true,
-      neverAskDirectly: false,
-      stage: 'challenges',
-    },
-    {
-      key: 'current_solution',
-      name: { es: 'Qué usan actualmente', en: 'Current solution' },
-      type: 'text',
-      weight: 3,
-      required: false,
       neverAskDirectly: false,
       stage: 'challenges',
     },
@@ -530,16 +427,8 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       name: { es: 'Tipo de entidad', en: 'Entity type' },
       type: 'enum',
       options: ['municipality', 'ministry', 'hospital', 'university', 'other'],
-      weight: 4,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'challenges',
-    },
-    {
-      key: 'department',
-      name: { es: 'Área o dependencia', en: 'Department' },
-      type: 'text',
-      weight: 3,
+      priority: 'medium',
+      enumScoring: 'presence',
       required: false,
       neverAskDirectly: false,
       stage: 'challenges',
@@ -550,16 +439,7 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       name: { es: 'Rol del contacto', en: 'Contact role' },
       type: 'enum',
       options: ['technical', 'procurement', 'management', 'advisory'],
-      weight: 7,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'authority',
-    },
-    {
-      key: 'decision_area',
-      name: { es: 'Área que lidera la decisión', en: 'Area leading the decision' },
-      type: 'text',
-      weight: 3,
+      priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
@@ -569,7 +449,7 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       name: { es: 'Proceso de aprobación', en: 'Approval process' },
       type: 'enum',
       options: ['committee', 'director', 'secretary'],
-      weight: 4,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
@@ -578,7 +458,7 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       key: 'can_influence_specs',
       name: { es: '¿Puede influir en especificaciones?', en: 'Can influence specs?' },
       type: 'boolean',
-      weight: 4,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
@@ -589,37 +469,18 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       name: { es: 'Estado del presupuesto', en: 'Budget status' },
       type: 'enum',
       options: ['unassigned', 'pending', 'assigned', 'executed'],
-      weight: 8,
+      priority: 'high',
       required: false,
       neverAskDirectly: true,
-      stage: 'money',
-    },
-    {
-      key: 'fiscal_year',
-      name: { es: 'Año fiscal del rubro', en: 'Fiscal year' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
       stage: 'money',
     },
     {
       key: 'budget_range',
       name: { es: 'Rango de inversión', en: 'Investment range' },
       type: 'text',
-      weight: 5,
+      priority: 'medium',
       required: false,
       neverAskDirectly: true,
-      stage: 'money',
-    },
-    {
-      key: 'funding_source',
-      name: { es: 'Fuente de financiación', en: 'Funding source' },
-      type: 'enum',
-      options: ['own_budget', 'royalties', 'cooperation', 'other'],
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
       stage: 'money',
     },
     // --- Prioritization ---
@@ -628,7 +489,7 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       name: { es: 'Urgencia institucional', en: 'Institutional urgency' },
       type: 'enum',
       options: ['low', 'medium', 'high'],
-      weight: 6,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'prioritization',
@@ -637,104 +498,21 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
       key: 'deadline',
       name: { es: 'Fecha límite', en: 'Deadline' },
       type: 'text',
-      weight: 5,
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'prioritization',
     },
-    {
-      key: 'associated_project',
-      name: { es: 'Proyecto o plan asociado', en: 'Associated project/plan' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'prioritization',
-    },
-    {
-      key: 'other_solutions',
-      name: { es: 'Otras soluciones que evalúen', en: 'Other solutions being evaluated' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'prioritization',
-    },
-    // --- Process Stage (B2G specific) ---
+    // --- Process Stage ---
     {
       key: 'procurement_phase',
       name: { es: 'Fase de compra', en: 'Procurement phase' },
       type: 'enum',
       options: ['exploration', 'specification', 'formal_process', 'adjudication'],
-      weight: 7,
+      priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'process_stage',
-    },
-    {
-      key: 'procurement_type',
-      name: { es: 'Tipo de proceso', en: 'Procurement type' },
-      type: 'enum',
-      options: ['minimum_amount', 'abbreviated_selection', 'public_tender'],
-      weight: 4,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'process_stage',
-    },
-    {
-      key: 'process_number',
-      name: { es: 'Número de proceso', en: 'Process number' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'process_stage',
-    },
-    {
-      key: 'platform',
-      name: { es: 'Plataforma de compras', en: 'Procurement platform' },
-      type: 'text',
-      weight: 1,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'process_stage',
-    },
-    // --- Compliance Fit (B2G specific) ---
-    {
-      key: 'required_certifications',
-      name: { es: 'Certificaciones requeridas', en: 'Required certifications' },
-      type: 'text',
-      weight: 4,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'compliance_fit',
-    },
-    {
-      key: 'vendor_requirements',
-      name: { es: 'Requisitos de proveedor', en: 'Vendor requirements' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'compliance_fit',
-    },
-    {
-      key: 'technical_specs',
-      name: { es: 'Especificaciones técnicas del pliego', en: 'Technical specs from terms' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'compliance_fit',
-    },
-    {
-      key: 'warranty_support',
-      name: { es: 'Garantías o soporte exigido', en: 'Required warranty/support' },
-      type: 'text',
-      weight: 3,
-      required: false,
-      neverAskDirectly: false,
-      stage: 'compliance_fit',
     },
   ],
   disqualifyReasons: [
@@ -750,12 +528,12 @@ export const CHAMP_GOV_PRESET: FrameworkPreset = {
 // Registry
 // ═══════════════════════════════════════════
 
-export const FRAMEWORK_PRESETS: Record<FrameworkType, FrameworkPreset> = {
+export const PRESETS: Record<string, PresetDefinition> = {
   champ: CHAMP_PRESET,
   spin: SPIN_PRESET,
   champ_gov: CHAMP_GOV_PRESET,
 }
 
-export function getFrameworkPreset(type: FrameworkType): FrameworkPreset {
-  return FRAMEWORK_PRESETS[type]!
+export function getPreset(key: string): PresetDefinition | undefined {
+  return PRESETS[key]
 }

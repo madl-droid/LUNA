@@ -4,7 +4,11 @@
 
 import type { Pool } from 'pg'
 import pino from 'pino'
-import type { LeadSummary, LeadDetail, QualificationStatus, StatusMetric } from './types.js'
+import type { LeadSummary, LeadDetail, QualificationStatus } from './types.js'
+
+// Local types (moved from types.ts — only used by this module)
+interface MetricChannelBreakdown { channel: string; count: number }
+interface StatusMetric { status: string; total: number; channels: MetricChannelBreakdown[] }
 
 const logger = pino({ name: 'lead-scoring:db' })
 
