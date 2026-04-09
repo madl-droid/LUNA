@@ -74,5 +74,5 @@ Al cargar `qualifying.json`, el config-store detecta el formato y migra automát
 Son campos SEPARADOS. `contact_type` dice QUÉ es la persona (lead, cliente, proveedor, equipo). `qualification_status` dice EN QUÉ PUNTO del funnel está el lead.
 No confundirlos.
 
-## Decay temporal (Plan 2)
-Los campos `_extracted_at[key]` (timestamps de extracción) permiten implementar decay temporal en Plan 2: datos de hace 6 meses pesarán menos que datos recientes. Por defecto `dataFreshnessWindowDays: 90`.
+## Decay temporal
+Los campos `_extracted_at[key]` (timestamps de extracción) permiten implementar decay temporal: datos de hace 6 meses pesarán menos que datos recientes. Por defecto `dataFreshnessWindowDays: 90`.

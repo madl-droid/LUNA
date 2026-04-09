@@ -25,35 +25,29 @@ const labels: Record<Lang, Record<string, string>> = {
     metric_qualifying: 'En calificacion',
     metric_qualified: 'Calificados',
     metric_converted: 'Convertidos',
-    // Frameworks
-    sec_frameworks: 'Frameworks de Calificacion',
-    fw_spin: 'SPIN Selling',
-    fw_spin_type: 'B2C',
-    fw_spin_desc: 'Situacion, Problema, Implicacion, Cierre',
-    fw_champ: 'CHAMP',
-    fw_champ_type: 'B2B',
-    fw_champ_desc: 'Desafios, Autoridad, Presupuesto, Priorizacion',
-    fw_champ_gov: 'CHAMP Gobierno',
-    fw_champ_gov_type: 'B2G',
-    fw_champ_gov_desc: 'CHAMP + Etapa del proceso + Encaje normativo',
-    fw_view: 'Ver',
-    fw_hide: 'Ocultar',
-    fw_multi_note: 'Con mas de 2 frameworks activos, el agente identificara el tipo de cliente en las primeras interacciones antes de avanzar con la calificacion.',
-    fw_confirm: 'Esto reemplazara los criterios actuales. Continuar?',
-    fw_applied: 'Framework aplicado',
-    fw_apply_error: 'Error al aplicar framework',
+    // Preset
+    preset_label: 'Preset activo',
+    preset_apply: 'Aplicar preset',
+    preset_confirm: 'Esto reemplazara los criterios actuales. Continuar?',
+    objective_label: 'Objetivo',
+    priority_high: 'Alta',
+    priority_medium: 'Media',
+    priority_low: 'Baja',
+    scoring_indexed: 'Orden',
+    scoring_presence: 'Presencia',
+    criteria_count: 'criterios',
+    freshness_label: 'Frescura de datos (dias)',
+    freshness_info: 'Despues de este periodo, los datos contribuyen solo 30% al score',
     // Criteria
     th_key: 'Clave',
     th_name: 'Nombre',
     th_type: 'Tipo',
     th_options: 'Opciones',
-    th_weight: 'Peso',
     th_required: 'Req',
     th_never_ask: 'No preguntar',
     type_text: 'Texto',
     type_list: 'Lista',
     type_boolean: 'Si/No',
-    weight_total: 'Total de pesos',
     add_criterion: 'Agregar criterio',
     // Behavior tab
     tab_behavior: 'Comportamiento',
@@ -104,33 +98,28 @@ const labels: Record<Lang, Record<string, string>> = {
     metric_qualifying: 'Qualifying',
     metric_qualified: 'Qualified',
     metric_converted: 'Converted',
-    sec_frameworks: 'Qualification Frameworks',
-    fw_spin: 'SPIN Selling',
-    fw_spin_type: 'B2C',
-    fw_spin_desc: 'Situation, Problem, Implication, Need-payoff',
-    fw_champ: 'CHAMP',
-    fw_champ_type: 'B2B',
-    fw_champ_desc: 'Challenges, Authority, Money, Prioritization',
-    fw_champ_gov: 'CHAMP Government',
-    fw_champ_gov_type: 'B2G',
-    fw_champ_gov_desc: 'CHAMP + Process Stage + Compliance Fit',
-    fw_view: 'View',
-    fw_hide: 'Hide',
-    fw_multi_note: 'With more than 2 active frameworks, the agent will identify the client type in the first interactions before proceeding with qualification.',
-    fw_confirm: 'This will replace current criteria. Continue?',
-    fw_applied: 'Framework applied',
-    fw_apply_error: 'Failed to apply framework',
+    // Preset
+    preset_label: 'Active preset',
+    preset_apply: 'Apply preset',
+    preset_confirm: 'This will replace current criteria. Continue?',
+    objective_label: 'Objective',
+    priority_high: 'High',
+    priority_medium: 'Medium',
+    priority_low: 'Low',
+    scoring_indexed: 'Indexed',
+    scoring_presence: 'Presence',
+    criteria_count: 'criteria',
+    freshness_label: 'Data freshness (days)',
+    freshness_info: 'After this period, data contributes only 30% to score',
     th_key: 'Key',
     th_name: 'Name',
     th_type: 'Type',
     th_options: 'Options',
-    th_weight: 'Weight',
     th_required: 'Req',
     th_never_ask: 'Never ask',
     type_text: 'Text',
     type_list: 'List',
     type_boolean: 'Yes/No',
-    weight_total: 'Total weight',
     add_criterion: 'Add criterion',
     tab_behavior: 'Behavior',
     tab_signals: 'Auto signals',
@@ -405,23 +394,35 @@ function renderFrameworkCards(config: QualifyingConfig, lang: Lang): string {
   const stageCount = config.stages.length
 
   return `
-    <div class="ls-fw-grid">
-      <div class="ls-fw-card active" id="ls-fw-card-active" data-fw="${esc(preset)}">
-        <div class="ls-fw-card-type">${lang === 'es' ? 'Preset activo' : 'Active preset'}: <strong>${esc(preset.toUpperCase())}</strong></div>
-        <div class="ls-fw-card-desc">${criteriaCount} ${lang === 'es' ? 'criterios' : 'criteria'} &middot; ${stageCount} ${lang === 'es' ? 'etapas' : 'stages'}</div>
-        <div style="font-size:11px;color:var(--on-surface-dim);margin-bottom:8px">
-          ${lang === 'es' ? 'Objetivo' : 'Objective'}:
-          <select style="font-size:11px;padding:2px 6px;border:1px solid var(--outline-variant);border-radius:4px;background:var(--surface-container-lowest);color:var(--on-surface)"
-            onchange="lsConfig.objective=this.value">
-            <option value="schedule" ${objective === 'schedule' ? 'selected' : ''}>${l('act_scheduled', lang)}</option>
-            <option value="sell" ${objective === 'sell' ? 'selected' : ''}>${lang === 'es' ? 'Vender' : 'Sell'}</option>
-            <option value="escalate" ${objective === 'escalate' ? 'selected' : ''}>${l('act_escalate_human', lang)}</option>
-            <option value="attend_only" ${objective === 'attend_only' ? 'selected' : ''}>${lang === 'es' ? 'Solo atender' : 'Attend only'}</option>
-          </select>
+    <div class="ls-fw-card active" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="ls-fw-card-type">${l('preset_label', lang)}: <strong>${esc(preset.toUpperCase())}</strong></div>
+          <div class="ls-fw-card-desc">${criteriaCount}/10 ${l('criteria_count', lang)} &middot; ${stageCount} ${lang === 'es' ? 'etapas' : 'stages'}</div>
+          <div style="font-size:11px;color:var(--on-surface-dim);margin-top:6px">
+            ${l('objective_label', lang)}:
+            <select style="font-size:11px;padding:2px 6px;border:1px solid var(--outline-variant);border-radius:4px;background:var(--surface-container-lowest);color:var(--on-surface)"
+              onchange="lsConfig.objective=this.value">
+              <option value="schedule" ${objective === 'schedule' ? 'selected' : ''}>${l('act_scheduled', lang)}</option>
+              <option value="sell" ${objective === 'sell' ? 'selected' : ''}>${lang === 'es' ? 'Vender' : 'Sell'}</option>
+              <option value="escalate" ${objective === 'escalate' ? 'selected' : ''}>${l('act_escalate_human', lang)}</option>
+              <option value="attend_only" ${objective === 'attend_only' ? 'selected' : ''}>${lang === 'es' ? 'Solo atender' : 'Attend only'}</option>
+            </select>
+          </div>
         </div>
-        <div class="ls-fw-card-actions">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:11px;color:var(--on-surface-dim);font-weight:600">${l('preset_apply', lang)}</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="ls-preset-select" style="font-size:11px;padding:4px 8px;border:1px solid var(--outline-variant);border-radius:4px;background:var(--surface-container-lowest);color:var(--on-surface)">
+              <option value="spin">SPIN (B2C)</option>
+              <option value="champ">CHAMP (B2B)</option>
+              <option value="champ_gov">CHAMP+Gov (B2G)</option>
+            </select>
+            <button type="button" class="wa-btn" onclick="lsApplyPreset()"
+              style="font-size:11px;padding:3px 10px">${l('preset_apply', lang)}</button>
+          </div>
           <button type="button" class="wa-btn" onclick="lsViewFramework()"
-            style="font-size:11px;padding:3px 10px">${l('fw_view', lang)}</button>
+            style="font-size:11px;padding:3px 10px;margin-top:2px">${lang === 'es' ? 'Ver criterios' : 'View criteria'}</button>
         </div>
       </div>
     </div>`
@@ -433,7 +434,19 @@ function renderFrameworkCards(config: QualifyingConfig, lang: Lang): string {
 
 function renderCriterionRow(cr: QualifyingCriterion, i: number, lang: Lang, _stageCount: number): string {
   const nameVal = esc(cr.name[lang] || cr.name.es)
-  const priorityOpts = ['high', 'medium', 'low']
+  const priorityOpts = ['high', 'medium', 'low'] as const
+  const priorityLabel: Record<string, string> = {
+    high: l('priority_high', lang),
+    medium: l('priority_medium', lang),
+    low: l('priority_low', lang),
+  }
+
+  const enumScoringCell = cr.type === 'enum'
+    ? `<select data-field="enumScoring" onchange="lsUpdateCri(${i},'enumScoring',this.value)">
+        <option value="indexed" ${!cr.enumScoring || cr.enumScoring === 'indexed' ? 'selected' : ''}>${l('scoring_indexed', lang)}</option>
+        <option value="presence" ${cr.enumScoring === 'presence' ? 'selected' : ''}>${l('scoring_presence', lang)}</option>
+      </select>`
+    : `<span style="color:var(--on-surface-dim);font-size:11px">—</span>`
 
   return `
     <tr data-ls-cri="${i}">
@@ -447,13 +460,14 @@ function renderCriterionRow(cr: QualifyingCriterion, i: number, lang: Lang, _sta
       <td><input value="${esc((cr.options || []).join(','))}" data-field="options" placeholder="opt1,opt2"
         ${cr.type !== 'enum' ? 'disabled' : ''} onchange="lsUpdateCri(${i},'options',this.value)"></td>
       <td><select data-field="priority" onchange="lsUpdateCri(${i},'priority',this.value)">
-        ${priorityOpts.map(p => `<option value="${p}" ${cr.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
+        ${priorityOpts.map(p => `<option value="${p}" ${cr.priority === p ? 'selected' : ''}>${priorityLabel[p]!}</option>`).join('')}
       </select></td>
+      <td>${enumScoringCell}</td>
       <td style="text-align:center"><input type="checkbox" ${cr.required ? 'checked' : ''}
         onchange="lsUpdateCri(${i},'required',this.checked)"></td>
       <td style="text-align:center"><input type="checkbox" ${cr.neverAskDirectly ? 'checked' : ''}
         onchange="lsUpdateCri(${i},'neverAskDirectly',this.checked)"></td>
-      <td><button type="button" class="ls-clear-btn" onclick="lsClearCri(${i})" title="Limpiar">&#10005;</button></td>
+      <td><button type="button" class="ls-clear-btn" onclick="lsClearCri(${i})" title="Eliminar">&#10005;</button></td>
     </tr>`
 }
 
@@ -464,7 +478,9 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
 
   const theadCols = `
     <th>${l('th_key', lang)}</th><th>${l('th_name', lang)}</th>
-    <th>${l('th_type', lang)}</th><th>${l('th_options', lang)}</th><th>${lang === 'es' ? 'Prioridad' : 'Priority'}</th>
+    <th>${l('th_type', lang)}</th><th>${l('th_options', lang)}</th>
+    <th>${lang === 'es' ? 'Prioridad' : 'Priority'}</th>
+    <th>Scoring</th>
     <th>${l('th_required', lang)}</th><th>${l('th_never_ask', lang)}</th><th></th>`
 
   let bodyHtml: string
@@ -480,7 +496,7 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
 
       const stageHeader = `
         <tr class="ls-stage-header">
-          <td colspan="8">
+          <td colspan="9">
             ${esc(stage.name[lang] || stage.name.es)}
             <span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">${esc(stage.description[lang] || stage.description.es)}</span>
             <span style="float:right;font-weight:400;color:var(--on-surface-dim)">${stageCriteria.length} ${lang === 'es' ? 'criterios' : 'criteria'}</span>
@@ -569,6 +585,18 @@ function renderBehaviorTab(config: QualifyingConfig, lang: Lang): string {
           style="width:80px;padding:6px 10px;border:1px solid var(--outline-variant);border-radius:6px;font-size:13px"
           onchange="lsConfig.thresholds.qualified=parseInt(this.value)||50">
       </div>
+
+      <!-- Data freshness window -->
+      <div class="ls-setting-row">
+        <div class="ls-setting-left">
+          <span class="ls-setting-label">${l('freshness_label', lang)}</span>
+          <span class="ls-info-icon" title="${l('freshness_info', lang)}">i</span>
+          <div class="ls-setting-info">${l('freshness_info', lang)}</div>
+        </div>
+        <input type="number" id="ls-freshness-days" value="${config.dataFreshnessWindowDays ?? 90}" min="7" max="730"
+          style="width:80px;padding:6px 10px;border:1px solid var(--outline-variant);border-radius:6px;font-size:13px"
+          onchange="lsConfig.dataFreshnessWindowDays=parseInt(this.value)||90">
+      </div>
     </div>`
 }
 
@@ -586,14 +614,12 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
   var LANG = '${lang}'
   var lsConfig = JSON.parse('${JSON.stringify(config).replace(/'/g, "\\'")}')
   var CH_COLORS = ${channelColors}
-  var lsViewingFw = null
 
   window.lsConfig = lsConfig
 
   // ═══ Filters ═══
   window.lsApplyFilters = function() {
     lsLoadMetrics()
-    // Update channel button text
     var checks = document.querySelectorAll('#ls-ch-dropdown input[type=checkbox]')
     var all = true, count = 0
     checks.forEach(function(c) { if (c.checked) count++; else all = false })
@@ -646,83 +672,30 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     }).catch(function(){})
   }
 
-  // ═══ Framework toggle & view ═══
-  window.lsToggleFramework = function(fw, currentlyEnabled) {
-    fetch(API + '/set-framework', {
+  // ═══ Apply preset ═══
+  window.lsApplyPreset = function() {
+    var select = document.getElementById('ls-preset-select')
+    if (!select || !select.value) return
+    var preset = select.value
+    if (!confirm(L.preset_confirm)) return
+    fetch(API + '/apply-preset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ framework: fw, enabled: !currentlyEnabled })
+      body: JSON.stringify({ preset: preset })
     }).then(function(r){return r.json()}).then(function(d) {
-      if (d.ok) { lsToast(L.fw_applied, 'success'); location.reload() }
-      else lsToast(d.error || L.fw_apply_error, 'error')
-    }).catch(function(){ lsToast(L.fw_apply_error, 'error') })
-  }
-
-  window.lsSetObjective = function(fw, objective) {
-    fetch(API + '/set-framework', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ framework: fw, enabled: true, objective: objective })
-    }).then(function(r){return r.json()}).then(function(d) {
-      if (d.ok) { lsToast(L.saved, 'success') }
+      if (d.ok) { location.reload() }
       else lsToast(d.error || L.save_error, 'error')
     }).catch(function(){ lsToast(L.save_error, 'error') })
   }
 
-  window.lsViewFramework = function(fw) {
+  // ═══ Criteria panel toggle ═══
+  window.lsViewFramework = function() {
     var panel = document.getElementById('ls-criteria-panel')
     if (!panel) return
-    if (lsViewingFw === fw) {
-      panel.style.display = 'none'
-      lsViewingFw = null
-      return
-    }
-    lsViewingFw = fw
-    panel.style.display = ''
-    // Re-render criteria panel for the selected framework
-    lsRenderCriteriaForFw(fw)
+    panel.style.display = (panel.style.display === 'none') ? 'block' : 'none'
   }
 
-  function lsRenderCriteriaForFw(fwType) {
-    var fwObj = lsConfig.frameworks ? lsConfig.frameworks.find(function(f){return f.type === fwType}) : null
-    if (!fwObj) return
-    var panel = document.getElementById('ls-criteria-panel')
-    if (!panel) return
-
-    var criteria = fwObj.criteria || []
-    var stages = fwObj.stages || []
-    var totalWeight = criteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
-    var weightColor = totalWeight === 100 ? 'var(--success)' : 'var(--warning)'
-
-    var theadCols = '<th>' + L.th_key + '</th><th>' + L.th_name + '</th>' +
-      '<th>' + L.th_type + '</th><th>' + L.th_options + '</th><th>' + L.th_weight + '</th>' +
-      '<th>' + L.th_required + '</th><th>' + L.th_never_ask + '</th><th></th>'
-
-    var bodyHtml = ''
-    if (stages.length > 0) {
-      stages.sort(function(a,b){return a.order - b.order})
-      stages.forEach(function(stage) {
-        var stageCri = []
-        criteria.forEach(function(cr, i) { if (cr.stage === stage.key) stageCri.push({cr:cr,i:i}) })
-        if (stageCri.length === 0) return
-        var stageWeight = stageCri.reduce(function(s,x){return s + (x.cr.weight||0)}, 0)
-        var stageName = stage.name[LANG] || stage.name.es || ''
-        var stageDesc = stage.description[LANG] || stage.description.es || ''
-        bodyHtml += '<tr class="ls-stage-header"><td colspan="8">' + stageName +
-          '<span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">' + stageDesc + '</span>' +
-          '<span style="float:right;font-weight:400;color:var(--on-surface-dim)">' + stageWeight + 'pts &middot; ' + stageCri.length + '/5</span></td></tr>'
-        stageCri.forEach(function(x) { bodyHtml += buildCriRow(x.cr, x.i) })
-      })
-    } else {
-      criteria.forEach(function(cr, i) { bodyHtml += buildCriRow(cr, i) })
-    }
-
-    panel.innerHTML = '<div style="overflow-x:auto"><table class="ls-table" id="ls-criteria-table">' +
-      '<thead><tr>' + theadCols + '</tr></thead><tbody>' + bodyHtml + '</tbody></table></div>' +
-      '<div style="padding:8px 12px;text-align:right"><button type="button" class="act-btn" onclick="lsAddCri()" style="font-size:12px">+ ' + L.add_criterion + '</button></div>' +
-      '<div class="ls-weight-total" style="color:' + weightColor + '" id="ls-weight-total">' + L.weight_total + ': ' + totalWeight + '/100</div>'
-  }
-
+  // ═══ Criteria CRUD helpers ═══
   function lsEsc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
   }
@@ -731,115 +704,121 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     var nameVal = lsEsc((cr.name && (cr.name[LANG] || cr.name.es)) || '')
     var optVal = lsEsc((cr.options || []).join(','))
     var optDisabled = cr.type !== 'enum' ? 'disabled' : ''
+    var enumScoringCell = ''
+    if (cr.type === 'enum') {
+      var idxSel = (!cr.enumScoring || cr.enumScoring === 'indexed') ? ' selected' : ''
+      var presSel = cr.enumScoring === 'presence' ? ' selected' : ''
+      enumScoringCell = '<select onchange="lsUpdateCri(' + i + ',\'enumScoring\',this.value)">' +
+        '<option value="indexed"' + idxSel + '>' + L.scoring_indexed + '</option>' +
+        '<option value="presence"' + presSel + '>' + L.scoring_presence + '</option>' +
+        '</select>'
+    } else {
+      enumScoringCell = '<span style="color:var(--on-surface-dim);font-size:11px">\u2014</span>'
+    }
+    var hiSel = cr.priority === 'high' ? ' selected' : ''
+    var mdSel = (!cr.priority || cr.priority === 'medium') ? ' selected' : ''
+    var loSel = cr.priority === 'low' ? ' selected' : ''
     return '<tr data-ls-cri="' + i + '">' +
       '<td><input value="' + lsEsc(cr.key||'') + '" data-field="key" style="width:80px" readonly></td>' +
-      '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\\'name\\',this.value)"></td>' +
-      '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\\'type\\',this.value)">' +
+      '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\'name\',this.value)"></td>' +
+      '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\'type\',this.value)">' +
         '<option value="text"' + (cr.type==='text'?' selected':'') + '>' + L.type_text + '</option>' +
         '<option value="enum"' + (cr.type==='enum'?' selected':'') + '>' + L.type_list + '</option>' +
         '<option value="boolean"' + (cr.type==='boolean'?' selected':'') + '>' + L.type_boolean + '</option>' +
       '</select></td>' +
-      '<td><input value="' + optVal + '" data-field="options" placeholder="opt1,opt2" ' + optDisabled + ' onchange="lsUpdateCri(' + i + ',\\'options\\',this.value)"></td>' +
-      '<td><input type="number" class="ls-w-input" value="' + (cr.weight||0) + '" min="0" max="100" onchange="lsUpdateCri(' + i + ',\\'weight\\',parseInt(this.value)||0)"></td>' +
-      '<td style="text-align:center"><input type="checkbox"' + (cr.required?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\\'required\\',this.checked)"></td>' +
-      '<td style="text-align:center"><input type="checkbox"' + (cr.neverAskDirectly?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\\'neverAskDirectly\\',this.checked)"></td>' +
-      '<td><button type="button" class="ls-clear-btn" onclick="lsClearCri(' + i + ')" title="Limpiar">&#10005;</button></td></tr>'
+      '<td><input value="' + optVal + '" data-field="options" placeholder="opt1,opt2" ' + optDisabled + ' onchange="lsUpdateCri(' + i + ',\'options\',this.value)"></td>' +
+      '<td><select data-field="priority" onchange="lsUpdateCri(' + i + ',\'priority\',this.value)">' +
+        '<option value="high"' + hiSel + '>' + L.priority_high + '</option>' +
+        '<option value="medium"' + mdSel + '>' + L.priority_medium + '</option>' +
+        '<option value="low"' + loSel + '>' + L.priority_low + '</option>' +
+      '</select></td>' +
+      '<td>' + enumScoringCell + '</td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.required?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'required\',this.checked)"></td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.neverAskDirectly?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'neverAskDirectly\',this.checked)"></td>' +
+      '<td><button type="button" class="ls-clear-btn" onclick="lsClearCri(' + i + ')" title="Eliminar">&#10005;</button></td></tr>'
   }
 
-  // ═══ Helper: get criteria for current viewing framework ═══
-  function getActiveFwCriteria() {
-    if (!lsViewingFw || !lsConfig.frameworks) return []
-    var fw = lsConfig.frameworks.find(function(f){return f.type === lsViewingFw})
-    return fw ? fw.criteria : []
-  }
-  function getActiveFw() {
-    if (!lsViewingFw || !lsConfig.frameworks) return null
-    return lsConfig.frameworks.find(function(f){return f.type === lsViewingFw}) || null
+  function lsRerenderCriteriaPanel() {
+    var criteria = lsConfig.criteria || []
+    var stages = lsConfig.stages || []
+    var hasStages = stages.length > 0
+    var theadCols = '<th>' + L.th_key + '</th><th>' + L.th_name + '</th>' +
+      '<th>' + L.th_type + '</th><th>' + L.th_options + '</th>' +
+      '<th>' + (LANG === 'es' ? 'Prioridad' : 'Priority') + '</th>' +
+      '<th>Scoring</th>' +
+      '<th>' + L.th_required + '</th><th>' + L.th_never_ask + '</th><th></th>'
+    var bodyHtml = ''
+    if (hasStages) {
+      var sorted = stages.slice().sort(function(a,b){return a.order-b.order})
+      sorted.forEach(function(stage) {
+        var stageCri = []
+        criteria.forEach(function(cr,i){ if(cr.stage===stage.key) stageCri.push({cr:cr,i:i}) })
+        if (stageCri.length === 0) return
+        var stageName = (stage.name && (stage.name[LANG] || stage.name.es)) || ''
+        var stageDesc = (stage.description && (stage.description[LANG] || stage.description.es)) || ''
+        bodyHtml += '<tr class="ls-stage-header"><td colspan="9">' + lsEsc(stageName) +
+          '<span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">' + lsEsc(stageDesc) + '</span>' +
+          '<span style="float:right;font-weight:400;color:var(--on-surface-dim)">' + stageCri.length + ' ' + L.criteria_count + '</span></td></tr>'
+        stageCri.forEach(function(x){ bodyHtml += buildCriRow(x.cr, x.i) })
+      })
+      criteria.forEach(function(cr,i){ if(!cr.stage) bodyHtml += buildCriRow(cr, i) })
+    } else {
+      criteria.forEach(function(cr, i){ bodyHtml += buildCriRow(cr, i) })
+    }
+    var countLabel = criteria.length + '/10 ' + L.criteria_count
+    var addDisabled = criteria.length >= 10 ? ' disabled' : ''
+    var panel = document.getElementById('ls-criteria-panel')
+    if (!panel) return
+    panel.innerHTML = '<div style="overflow-x:auto"><table class="ls-table" id="ls-criteria-table">' +
+      '<thead><tr>' + theadCols + '</tr></thead>' +
+      '<tbody>' + bodyHtml + '</tbody></table></div>' +
+      '<div style="padding:8px 12px;display:flex;justify-content:space-between;align-items:center">' +
+      '<span style="font-size:12px;color:var(--on-surface-dim)">' + countLabel + '</span>' +
+      '<button type="button" class="act-btn" onclick="lsAddCri()" style="font-size:12px"' + addDisabled + '>+ ' + L.add_criterion + '</button>' +
+      '</div>'
   }
 
   // ═══ Criteria CRUD ═══
   window.lsUpdateCri = function(i, field, value) {
-    var criteria = getActiveFwCriteria()
-    var cr = criteria[i]
+    var cr = (lsConfig.criteria || [])[i]
     if (!cr) return
     if (field === 'name') {
       cr.name.es = value; cr.name.en = value
-      // Auto-generate key from name
       cr.key = value.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '').substring(0, 50)
     }
-    else if (field === 'type') { cr.type = value; if (value !== 'enum') delete cr.options }
+    else if (field === 'type') {
+      cr.type = value
+      if (value !== 'enum') { delete cr.options; delete cr.enumScoring }
+      lsRerenderCriteriaPanel()
+    }
     else if (field === 'options') cr.options = value.split(',').map(function(s){return s.trim()}).filter(Boolean)
-    else if (field === 'weight') cr.weight = parseInt(value, 10) || 0
+    else if (field === 'priority') cr.priority = value
+    else if (field === 'enumScoring') cr.enumScoring = value
     else if (field === 'required') cr.required = value
     else if (field === 'neverAskDirectly') cr.neverAskDirectly = value
-    updateWeightTotal()
   }
 
   window.lsClearCri = function(i) {
-    var criteria = getActiveFwCriteria()
-    var cr = criteria[i]
-    if (!cr) return
-    if (cr.stage) {
-      var stageCri = criteria.filter(function(c){return c.stage === cr.stage})
-      var filled = stageCri.filter(function(c){return c.key && c.name && c.name.es})
-      if (filled.length <= 1) { lsToast('Minimo 1 criterio por etapa', 'error'); return }
-    }
-    cr.key = ''
-    cr.name = { es: '', en: '' }
-    cr.type = 'text'
-    cr.options = undefined
-    cr.weight = 0
-    cr.required = false
-    cr.neverAskDirectly = false
-    location.reload()
+    lsConfig.criteria = lsConfig.criteria || []
+    lsConfig.criteria.splice(i, 1)
+    lsRerenderCriteriaPanel()
   }
 
   window.lsAddCri = function() {
-    var fw = getActiveFw()
-    if (!fw) return
-    // Use first stage of the framework as default (not the framework type)
-    var stage = (fw.stages && fw.stages.length > 0) ? fw.stages[0].key : ''
-    var stageCount = fw.criteria.filter(function(c) { return c.stage === stage }).length
-    if (stageCount >= 5) {
-      if (window.showToast) showToast('Maximo 5 criterios por etapa', 'error')
+    lsConfig.criteria = lsConfig.criteria || []
+    if (lsConfig.criteria.length >= 10) {
+      lsToast(LANG === 'es' ? 'Maximo 10 criterios' : 'Max 10 criteria', 'error')
       return
     }
-    fw.criteria.push({
-      key: '', name: { es: '', en: '' }, type: 'text', weight: 0,
-      required: false, neverAskDirectly: false, stage: stage
+    lsConfig.criteria.push({
+      key: '', name: { es: '', en: '' }, type: 'text',
+      priority: 'medium', required: false, neverAskDirectly: false
     })
-    location.reload()
-  }
-
-  function updateWeightTotal() {
-    var criteria = getActiveFwCriteria()
-    var total = criteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
-    var el = document.getElementById('ls-weight-total')
-    if (el) {
-      el.textContent = L.weight_total + ': ' + total + '/100'
-      el.style.color = total === 100 ? 'var(--success)' : 'var(--warning)'
-    }
+    lsRerenderCriteriaPanel()
   }
 
   // ═══ Save ═══
   window.lsSave = function() {
-    // Always recalculate
-    lsConfig.recalculateOnConfigChange = true
-
-    // Validate weights per framework
-    if (lsConfig.frameworks) {
-      for (var fi = 0; fi < lsConfig.frameworks.length; fi++) {
-        var fw = lsConfig.frameworks[fi]
-        if (!fw.enabled) continue
-        var activeCriteria = (fw.criteria || []).filter(function(c){return c.key && c.key.length > 0})
-        var total = activeCriteria.reduce(function(s,c){return s + (c.weight || 0)}, 0)
-        if (total !== 100 && activeCriteria.length > 0) {
-          lsToast(fw.type + ': ' + L.weight_error.replace('{n}', String(total)), 'error')
-          return
-        }
-      }
-    }
-
     // Validate thresholds
     var cold = lsConfig.thresholds.cold
     var qualified = lsConfig.thresholds.qualified
