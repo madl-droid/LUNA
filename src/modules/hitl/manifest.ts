@@ -11,7 +11,7 @@ import { RulesStore } from './rules-store.js'
 import { registerHitlTool } from './tool.js'
 import { registerInterceptor } from './message-interceptor.js'
 import { provideRulesService, provideContextService } from './context-injector.js'
-import { registerFollowUpJob } from './follow-up-job.js'
+import { registerFollowUpJob, stopFollowUpJob } from './follow-up-job.js'
 import { renderHitlSection } from './render-section.js'
 import pino from 'pino'
 
@@ -200,6 +200,7 @@ const manifest: ModuleManifest = {
   },
 
   async stop() {
+    stopFollowUpJob()
     logger.info('HITL module stopped')
   },
 }
