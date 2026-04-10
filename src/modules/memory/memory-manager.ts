@@ -139,6 +139,10 @@ export class MemoryManager {
     }
   }
 
+  getBufferMessageCount(): number {
+    return this.redis.getConfig().MEMORY_BUFFER_MESSAGE_COUNT
+  }
+
   // ─── Buffer summary (inline compression) ───
 
   async getBufferSummary(sessionId: string): Promise<string | null> {

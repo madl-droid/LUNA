@@ -76,3 +76,4 @@ Cuando un ticket se resuelve con `handoffMode = 'full_handoff'`, `resolver.ts` l
 - Contacto compartido NUNCA incluye LID (WhatsApp Local ID) ni IDs internos.
 - Reglas son lenguaje natural inyectado al evaluador, no codigo ejecutable.
 - Migration 023 agrega supervisor_id a tabla users existente.
+- `getShareableContact()` en `handoff.ts` usa `contact_channels` (no `user_contacts`) para resolver el teléfono de leads WhatsApp con LID. El JOIN es `contact_channels.channel_identifier = sender_id AND channel_type = 'whatsapp'`.

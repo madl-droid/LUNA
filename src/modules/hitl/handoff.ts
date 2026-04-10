@@ -64,12 +64,12 @@ export async function getShareableContact(
     }
   }
 
-  // If we only have WhatsApp LID and no phone, check contacts table for resolved phone
+  // If we only have WhatsApp LID and no phone, check contact_channels for resolved phone
   if (!phone && requesterChannel === 'whatsapp') {
     const { rows: contactRows } = await db.query(
       `SELECT c.phone FROM contacts c
-       JOIN user_contacts uc ON c.id = uc.user_id
-       WHERE uc.sender_id = $1 AND uc.channel = 'whatsapp'
+       JOIN contact_channels cc ON cc.contact_id = c.id
+       WHERE cc.channel_identifier = $1 AND cc.channel_type = 'whatsapp'
        LIMIT 1`,
       [requesterSenderId],
     )
