@@ -71,7 +71,7 @@ export async function sendNotification(
     message += `\nClient message: "${ctx.clientMessage}"\n`
   }
 
-  message += `\nPlease reply to this message with your response.`
+  message += `\n↩️ Cita este mensaje para responder al ticket.`
 
   // Check if handoff triggers should share contact
   const handoffAction = getHandoffAction(ticket.requesterChannel)
@@ -113,9 +113,11 @@ export async function sendFollowup(
   }
 
   const ageMinutes = Math.round((Date.now() - ticket.createdAt.getTime()) / 60_000)
+  const ticketShort = ticket.id.slice(-6).toUpperCase()
   const message = `*HITL Reminder*\n`
+    + `Ticket: #${ticketShort}\n`
     + `Pending request (${ageMinutes} min ago): ${ticket.requestSummary}\n`
-    + `Please respond when available.`
+    + `↩️ Cita este mensaje para responder al ticket.`
 
   await registry.runHook('message:send', {
     channel: ticket.assignedChannel,

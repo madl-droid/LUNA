@@ -188,6 +188,20 @@ Configurable desde consola y .env. Persiste al reinicio.
 - Commitments asignados a non-lead users se inyectan en `ctx.pendingCommitments` en `intake.ts` (marcados `assignedToMe=true`), permitiendo que humanos cierren compromisos respondiendo en la conversación reactiva
 - historial 10 msgs para pipelines de tipo 'commitment', 5 para el resto
 
+## Pipeline Retry (mensajes reactivos)
+
+El agentic pipeline se reintenta hasta 2 veces si falla por error transitorio (timeout LLM, rate limit, error de red). Backoff exponencial: 1.5s, 3s.
+
+**NO se reintenta si**:
+- Error de autenticación, config inválido, o permiso denegado
+- La respuesta ya fue entregada al usuario (delivery completó)
+
+**Guard de side effects**: Tools ejecutados antes del fallo pueden re-ejecutarse en el retry. Los tools críticos (HITL, commitments) son idempotentes. El dedup cache se resetea entre intentos — esto es aceptado.
+
+**Guard de double-delivery**: `delivery.ts` envuelve las post-send operations (`persistMessages`, `updateLeadQualification`, `updateSession`) en try-catch. Si la persistencia falla después de que el mensaje fue enviado, el error se loggea pero NO se propaga — evita que el retry loop reenvíe el mensaje al usuario.
+
+**Nota**: El retry de envío en delivery.ts (2 intentos, backoff 1s/2s) es SEPARADO y cubre errores de red al enviar el mensaje final. El pipeline retry cubre fallos en LLM/tools.
+
 ## Trampas
 
 - users:resolve es opcional — fallback: todos son "lead" si módulo users no está activo

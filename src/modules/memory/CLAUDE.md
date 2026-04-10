@@ -57,6 +57,7 @@
 - pgvector requiere `CREATE EXTENSION vector` — ver phase0 migration
 - **Config helpers**: usa `numEnv`, `boolEnv` de `kernel/config-helpers.js`
 - Nightly batch usa compression worker si disponible, fallback a compresión legacy
+- **Compression threshold auto-clamping**: `buffer-compressor.ts` ajusta automáticamente el threshold si el valor configurado excede los turns posibles en el buffer (`floor(BUFFER_MESSAGE_COUNT/2) - KEEP_RECENT - 2`). Log `debug` cuando ocurre el clamp. Default cambiado de 30 a 20.
 
 ### Race condition en trimKeepingTurns (aceptado)
 `lrange` y `ltrim` no son atómicos. En la ventana entre ambas operaciones (microsegundos),

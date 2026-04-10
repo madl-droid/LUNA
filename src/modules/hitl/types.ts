@@ -12,8 +12,6 @@ export type Urgency = 'low' | 'normal' | 'high' | 'critical'
 
 export type HandoffMode = 'intermediary' | 'share_contact' | 'full_handoff'
 
-export type HumanReplyIntent = 'resolve' | 'handoff' | 'question'
-
 // ═══════════════════════════════════════════
 // Core ticket
 // ═══════════════════════════════════════════
