@@ -102,6 +102,6 @@ Autenticación OAuth2 y servicios Google: Drive, Sheets, Docs, Slides, Calendar.
 - `docs-read` trunca body a 30K chars con indicador. wordCount y charCount reflejan el documento completo.
 - El refresh_token de OAuth2 dura indefinidamente SI la app está en modo "producción" en GCP (en "testing" expira en 7 días)
 - auth-url siempre incluye gmail scopes por conveniencia (si email está activo, comparte este OAuth; si no, no afecta)
-- Email ya NO depende de google-apps — puede autenticarse solo con su propio EmailOAuthManager
+- El módulo `gmail` depende de `google-apps` (dependencia dura) — siempre usa el OAuth compartido de este módulo
 - `google-auth-library` y `googleapis` ya están instalados en package.json
 - **Helpers HTTP y config**: usa `jsonResponse`, `parseBody` de `kernel/http-helpers.js` y `numEnv` de `kernel/config-helpers.js`. NO redefinir localmente.
