@@ -343,7 +343,6 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const db = registry.getDb()
           // Preserve super admin (source = 'setup_wizard') and their contacts
           await db.query(`DELETE FROM user_contacts WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
-          await db.query(`DELETE FROM user_lists WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
           await db.query(`DELETE FROM users WHERE source != 'setup_wizard'`)
           // Invalidate user cache in Redis
           const redis = registry.getRedis()

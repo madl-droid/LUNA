@@ -12,7 +12,6 @@ import { UsageTracker } from './usage-tracker.js'
 import { createAdapters } from './providers.js'
 import { sanitizePrompt, sanitizeResponse, securityPreamble } from './security.js'
 import { loadPricingFile } from './pricing-sync.js'
-import * as pgStore from './pg-store.js'
 import {
   DEFAULT_COST_TABLE,
   type LLMModuleConfig,
@@ -156,7 +155,7 @@ export class LLMGateway {
   /**
    * Initialize database tables and start background processes.
    */
-  async init(db: Pool, scanIntervalMs?: number): Promise<void> {
+  async init(_db: Pool, scanIntervalMs?: number): Promise<void> {
     this.tracker.startCleanup()
 
     // Start model scanner if registry available

@@ -23,12 +23,12 @@ async function checkSuperAdmin(registry: Registry, cookieHeader: string | undefi
 }
 
 const MEMORY_TABLES = [
-  'messages', 'sessions', 'session_summaries', 'session_summaries_v2', 'summary_chunks',
-  'session_archives', 'session_memory_chunks', 'conversation_archives',
+  'messages', 'sessions', 'session_summaries_v2',
+  'session_archives', 'session_memory_chunks',
   'contacts', 'contact_channels', 'agent_contacts',
   'campaigns', 'commitments', 'pipeline_logs', 'ack_messages',
-  'agents', 'companies', 'system_state',
-  'trace_scenarios', 'trace_runs', 'trace_results', 'task_checkpoints', 'pulse_reports',
+  'companies', 'system_state',
+  'trace_scenarios', 'trace_runs', 'trace_results', 'pulse_reports',
   'notifications',
   'hitl_tickets', 'hitl_ticket_log',
   'llm_usage', 'llm_daily_stats', 'llm_descriptions',
@@ -69,10 +69,18 @@ async function truncateTables(db: import('pg').Pool, tables: readonly string[]):
 }
 
 async function reseedSystemSubagents(db: import('pg').Pool): Promise<void> {
-  const webResearcherSeed = fs.readFileSync(path.resolve(process.cwd(), 'src', 'migrations', '018_subagents-v2.sql'), 'utf8')
-  const medilinkSchedulerSeed = fs.readFileSync(path.resolve(process.cwd(), 'src', 'migrations', '032_medilink-scheduler-subagent.sql'), 'utf8')
-  await db.query(webResearcherSeed).catch(() => {})
-  await db.query(medilinkSchedulerSeed).catch(() => {})
+  // Extract and run only the subagent seed INSERTs from the canonical migration
+  const migrationPath = path.resolve(process.cwd(), 'src', 'migrations', '001_beta-schema.sql')
+  try {
+    const sql = fs.readFileSync(migrationPath, 'utf8')
+    // Extract all INSERT INTO subagent_types blocks (each ends with ON CONFLICT ... DO NOTHING;)
+    const seedBlocks = sql.match(/INSERT INTO subagent_types[\s\S]*?ON CONFLICT \(slug\) DO NOTHING;/g)
+    if (seedBlocks) {
+      for (const block of seedBlocks) {
+        await db.query(block).catch(() => {})
+      }
+    }
+  } catch { /* migration file not found — skip */ }
 }
 
 async function purgeMemoryData(registry: Registry, opts: { preserveSuperAdmin: boolean }): Promise<void> {
@@ -81,21 +89,15 @@ async function purgeMemoryData(registry: Registry, opts: { preserveSuperAdmin: b
 
   if (opts.preserveSuperAdmin) {
     await db.query(`DELETE FROM user_contacts WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`).catch(() => {})
-    await db.query(`DELETE FROM user_lists WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`).catch(() => {})
     await db.query(`DELETE FROM user_credentials WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`).catch(() => {})
     await db.query(`DELETE FROM users WHERE source != 'setup_wizard'`).catch(() => {})
   } else {
-    for (const table of ['user_contacts', 'user_lists', 'user_credentials', 'users']) {
+    for (const table of ['user_contacts', 'user_credentials', 'users']) {
       try { await db.query(`TRUNCATE ${table} CASCADE`) } catch { /* ignore */ }
     }
   }
 
   await flushRedisExceptSessions(registry.getRedis())
-  await db.query(`
-    INSERT INTO agents (slug, name, description, config_path)
-    VALUES ('luna', 'LUNA', 'Agente principal de ventas', 'instance/config.json')
-    ON CONFLICT (slug) DO NOTHING
-  `).catch(() => {})
 
   logger.info({ preserveSuperAdmin: opts.preserveSuperAdmin }, 'Memory data purged - agent intelligence preserved')
 }
@@ -130,27 +132,18 @@ async function purgeAllData(registry: Registry, opts: { preserveSuperAdmin: bool
   if (opts.preserveSuperAdmin) {
     await db.query(`DELETE FROM user_contacts WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
       .catch(() => {})
-    await db.query(`DELETE FROM user_lists WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
-      .catch(() => {})
     await db.query(`DELETE FROM user_credentials WHERE user_id NOT IN (SELECT id FROM users WHERE source = 'setup_wizard')`)
       .catch(() => {})
     await db.query(`DELETE FROM users WHERE source != 'setup_wizard'`)
       .catch(() => {})
   } else {
-    for (const t of ['user_contacts', 'user_lists', 'user_credentials', 'users']) {
+    for (const t of ['user_contacts', 'user_credentials', 'users']) {
       try { await db.query(`TRUNCATE ${t} CASCADE`) } catch { /* ignore */ }
     }
   }
 
   // Flush Redis (preserve session keys so the current user stays logged in)
   await flushRedisExceptSessions(registry.getRedis())
-
-  // Re-seed default agent — must exist for session creation to work
-  await db.query(`
-    INSERT INTO agents (slug, name, description, config_path)
-    VALUES ('luna', 'LUNA', 'Agente principal de ventas', 'instance/config.json')
-    ON CONFLICT (slug) DO NOTHING
-  `).catch(() => {})
 
   await reseedSystemSubagents(db)
 

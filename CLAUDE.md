@@ -173,7 +173,7 @@ Si hay errores, corregirlos ANTES de pushear. No hay excepción a esta regla.
 
 ## Sistema de migraciones SQL
 
-Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.) se crean automáticamente al arrancar mediante un auto-migrador.
+Las tablas fundacionales del dominio (contacts, sessions, messages, etc.) se crean automáticamente al arrancar mediante un auto-migrador.
 
 ### Cómo funciona
 1. `src/kernel/migrator.ts` corre en `createPool()`, después de las kernel tables, antes del setup wizard

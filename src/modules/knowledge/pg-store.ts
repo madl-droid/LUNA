@@ -2,7 +2,6 @@
 // Persistencia: documentos, chunks, FAQs, sync sources, categories, API connectors, web sources.
 
 import type { Pool } from 'pg'
-import pino from 'pino'
 import type {
   KnowledgeDocument,
   KnowledgeFAQ,
@@ -26,7 +25,6 @@ import type {
   FolderIndexEntry,
 } from './types.js'
 
-const logger = pino({ name: 'knowledge:pg' })
 
 export class KnowledgePgStore {
   constructor(private db: Pool) {}

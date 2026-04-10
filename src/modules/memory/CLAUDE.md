@@ -1,12 +1,12 @@
 # Memory — Sistema de memoria tres-tier (v3) + Compresión v2
 
-3 niveles: caliente (messages Redis+PG), tibio (session_summaries), frío (contact_memory en agent_contacts). Incluye búsqueda híbrida FTS+vector, compromisos, archivo legal, pipeline logs, y compresión v2 con memoria a largo plazo multimodal.
+3 niveles: caliente (messages Redis+PG), tibio (session_summaries_v2), frío (contact_memory en agent_contacts). Incluye búsqueda híbrida FTS+vector, compromisos, archivo legal, pipeline logs, y compresión v2 con memoria a largo plazo multimodal.
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema (27 params), servicios: `memory:manager`, `memory:compression-worker`, `memory:search`
 - `memory-manager.ts` — orquestador, API pública: hybrid search, compress (con archive previo), merge, fact correction
 - `redis-buffer.ts` — ops Redis: mensajes (lista circular), metadata (hash), lead_status cache, context cache
-- `pg-store.ts` — persistencia PG: messages, agent_contacts, session_summaries, commitments, archives, pipeline_logs
+- `pg-store.ts` — persistencia PG: messages, agent_contacts, session_summaries_v2, commitments, session_archives, pipeline_logs
 - `types.ts` — StoredMessage, SessionSummary, AgentContact, ContactMemory, Commitment, SessionArchive, SessionSummaryV2, SessionMemoryChunk, CompressionStatus
 - `session-chunker.ts` — split sesión en chunks multimodales (texto, imágenes, PDF, slides, video, audio, spreadsheets) con linking
 - `session-archiver.ts` — archivo legal (texto+metadata adjuntos) + summary LLM estructurado (título/descripción/resumen completo)
@@ -29,7 +29,7 @@
 - `commitments` — compromisos (PERMANENTE)
 - `pipeline_logs` — observabilidad
 
-> Tablas v1 eliminadas del código: `session_summaries`, `conversation_archives`, `summary_chunks`. Solo persisten en el esquema SQL hasta migration squash (Plan 3).
+> Tablas v1 eliminadas: `session_summaries`, `conversation_archives`, `summary_chunks` — ya no existen en código ni en el schema SQL (eliminadas en Plans 2+3).
 
 ## Compresión v2 — Flujo (v2-only)
 1. Trigger: 5 min después de expirar ventana de reapertura → enqueue en BullMQ `session:compress`
