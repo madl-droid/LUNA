@@ -8,13 +8,12 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
 - `gmail-adapter.ts` — lectura/envío/reply/forward via Gmail API, listMessages (búsqueda genérica), filtro no-reply/domain/subject/List-Unsubscribe, labels, star, parsing MIME, footer, firma (workspace/custom/auto), retry 429/5xx
 - `email-cleaner.ts` — limpieza de body: stripQuotedReplies, stripDisclaimers, compactForwardHeaders, stripThirdPartySignatures
 - `tools.ts` — registro de email tools para el pipeline (email-read-inbox, email-search, email-get-detail)
-- `email-oauth.ts` — OAuth2 standalone para Gmail-only (se usa cuando google-apps no está activo)
 - `rate-limiter.ts` — Redis-backed rate limiter con limites configurables (defaults: workspace 80/h 1500/d, free 20/h 400/d)
 
 ## Manifest
 - type: `channel`, channelType: `async`, removable: true, activateByDefault: false
 - console.title: "Gmail"
-- depends: [] — google-apps es OPCIONAL (si está activo, comparte su OAuth; si no, email usa su propio OAuth)
+- depends: ['google-apps'] — Gmail SIEMPRE usa el OAuth compartido de google-apps (dependencia dura)
 - configSchema:
   - **Polling**: EMAIL_POLL_INTERVAL_MS (60000), EMAIL_MAX_HISTORY_FETCH (20)
   - **Filtering**: EMAIL_NOREPLY_ADDRESSES, EMAIL_NOREPLY_PATTERNS, EMAIL_PROCESS_LABELS ('INBOX'), EMAIL_SKIP_LABELS ('SPAM,TRASH'), EMAIL_AUTO_MARK_READ (true), EMAIL_ONLY_FIRST_IN_THREAD (true), EMAIL_IGNORE_SUBJECTS, EMAIL_ALLOWED_DOMAINS, EMAIL_BLOCKED_DOMAINS
@@ -24,7 +23,6 @@ Canal que recibe emails via polling de Gmail API, los procesa por el engine, y e
   - **Labels**: EMAIL_CUSTOM_LABELS (JSON array)
   - **Batching**: EMAIL_BATCH_WAIT_MS (0)
   - **Sessions**: EMAIL_SESSION_INACTIVITY_HOURS (48), EMAIL_PRECLOSE_FOLLOWUP_HOURS (0), EMAIL_PRECLOSE_FOLLOWUP_TEXT, EMAIL_GAP_CONTEXT_MAX (5)
-  - **OAuth standalone**: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_TOKEN_REFRESH_BUFFER_MS (300000)
   - **ACK**: ACK_EMAIL_TRIGGER_MS (0=off), ACK_EMAIL_HOLD_MS (2000), ACK_EMAIL_MESSAGE, ACK_EMAIL_STYLE ('formal')
   - **Formato**: EMAIL_FORMAT_ADVANCED (false), FORMAT_INSTRUCTIONS_EMAIL, EMAIL_FORMAT_TONE ('profesional'), EMAIL_FORMAT_MAX_SENTENCES (4), EMAIL_FORMAT_MAX_PARAGRAPHS (4), EMAIL_FORMAT_EMOJI_LEVEL ('nunca')
   - **Firma**: EMAIL_SIGNATURE_MODE ('gmail'), EMAIL_SIGNATURE_TEXT
@@ -91,7 +89,7 @@ Cuando Luna es removida del CC de un hilo y luego re-agregada, detecta y recuper
 - `GET /labels` — lista default + custom labels con IDs
 - `GET /label-instructions` — instrucciones de labels custom (para el agente)
 - `POST /apply-label` — aplicar label a mensaje (messageId + labelId)
-- Auth: `GET /auth-status`, `GET /auth-url`, `POST /auth-callback`, `POST /auth-disconnect`, `POST /auth-refresh`
+- Auth: `GET /auth-status` — estado OAuth (delegado a google-apps OAuthManager)
 
 ## Skill de outreach
 - `instance/prompts/system/skills/email-outreach.md` — protocolo cross-channel (captura email, envío material, cuándo no responder, timing follow-ups)
@@ -113,6 +111,14 @@ Cuando Luna es removida del CC de un hilo y luego re-agregada, detecta y recuper
 - **Dedup**: si el body ya contiene la firma en plain text, no la duplica (por si el LLM la incluyó)
 - Se refresca en `console:config_applied` (por si cambió el modo o la firma en workspace)
 - El prompt `channel-format-email.md` instruye al LLM a NO firmar — la firma la pone el sistema
+
+## OAuth
+Gmail usa EXCLUSIVAMENTE el OAuth compartido del módulo `google-apps`. No existe path standalone.
+- `registry.get('google:oauth-manager')` — dependencia dura (google-apps debe estar activo)
+- La tabla `google_oauth_tokens` es la única fuente de credenciales
+- La tabla `email_oauth_tokens` es legacy inerte (existía para el path standalone eliminado)
+- El polling se activa si: google-apps tiene OAuth conectado Y EMAIL_ENABLED=true (activación del módulo)
+- Si el admin desconecta OAuth en google-apps, las llamadas a Gmail API fallarán con 401 — el poller para automáticamente
 
 ## Trampas
 - Emails con header `List-Unsubscribe` se filtran automáticamente (newsletters/marketing)
