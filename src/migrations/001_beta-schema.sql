@@ -1835,9 +1835,6 @@ ALTER TABLE ONLY users
 ALTER TABLE ONLY voice_call_transcripts
     ADD CONSTRAINT voice_call_transcripts_call_id_fkey FOREIGN KEY (call_id) REFERENCES voice_calls(id) ON DELETE CASCADE;
 
-\unrestrict WQXhoNpyqwU6pPSx9MAAgIgcO6jmTssKxPrHTbptX2boCA3Bg0xwiEolTDDbsj9
-
-
 -- ============================================================
 -- Additional FKs (new for beta)
 -- ============================================================
