@@ -3,35 +3,6 @@
 
 import type { Pool } from 'pg'
 import type { PulseReport, PulseReportMode, PulseReportRow } from '../types.js'
-import pino from 'pino'
-
-const logger = pino({ name: 'cortex:pulse:store' })
-
-const CREATE_TABLE = `
-CREATE TABLE IF NOT EXISTS pulse_reports (
-  id            TEXT PRIMARY KEY,
-  period_start  TIMESTAMPTZ NOT NULL,
-  period_end    TIMESTAMPTZ NOT NULL,
-  mode          TEXT NOT NULL,
-  report_json   JSONB NOT NULL,
-  model_used    TEXT NOT NULL DEFAULT '',
-  tokens_used   INTEGER NOT NULL DEFAULT 0,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-)`
-
-const CREATE_INDEX = `
-CREATE INDEX IF NOT EXISTS idx_pulse_reports_created ON pulse_reports(created_at DESC)`
-
-export async function ensurePulseTable(db: Pool): Promise<void> {
-  try {
-    await db.query(CREATE_TABLE)
-    await db.query(CREATE_INDEX)
-    logger.debug('pulse_reports table ensured')
-  } catch (err) {
-    logger.error({ err }, 'Failed to create pulse_reports table')
-    throw err
-  }
-}
 
 export async function saveReport(
   db: Pool,

@@ -76,7 +76,6 @@ const manifest: ModuleManifest = {
 
     // Setup DB
     db = new UsersDb(registry.getDb())
-    await db.ensureTables()
     await db.seedDefaults()
 
     // Setup cache
@@ -145,9 +144,8 @@ const manifest: ModuleManifest = {
       return { configs, usersByType, counts, channels, tools, activeModules, knowledgeCategories, subagentTypes }
     })
 
-    // Initialize webhook tables + auto-generate token if missing
-    const { ensureWebhookTables, generateToken } = await import('./webhook-handler.js')
-    await ensureWebhookTables(registry.getDb())
+    // Auto-generate webhook token if missing
+    const { generateToken } = await import('./webhook-handler.js')
     try {
       const coworkerCfg = await db.getListConfig('coworker')
       if (coworkerCfg && !coworkerCfg.syncConfig.webhookToken) {

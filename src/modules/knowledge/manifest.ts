@@ -1264,9 +1264,8 @@ const manifest: ModuleManifest = {
     const db = registry.getDb()
     const redis = registry.getRedis()
 
-    // Initialize PostgreSQL store and run migrations
+    // Initialize PostgreSQL store
     pgStore = new KnowledgePgStore(db)
-    await pgStore.runMigrations()
 
     // Ensure default category exists
     await pgStore.ensureDefaultCategory()

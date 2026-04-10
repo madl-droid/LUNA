@@ -10,34 +10,6 @@ import pino from 'pino'
 
 const logger = pino({ name: 'whatsapp:pg-auth' })
 
-// ─── Tables ──────────────────────────────────────
-
-const ENSURE_TABLES_SQL = `
-CREATE TABLE IF NOT EXISTS wa_auth_creds (
-  instance_id  TEXT PRIMARY KEY,
-  creds        JSONB NOT NULL,
-  updated_at   TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS wa_auth_keys (
-  instance_id  TEXT NOT NULL,
-  category     TEXT NOT NULL,
-  key_id       TEXT NOT NULL,
-  value        JSONB,
-  updated_at   TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (instance_id, category, key_id)
-);
-`
-
-let tablesEnsured = false
-
-async function ensureTables(pool: Pool): Promise<void> {
-  if (tablesEnsured) return
-  await pool.query(ENSURE_TABLES_SQL)
-  tablesEnsured = true
-  logger.debug('wa_auth tables ensured')
-}
-
 // ─── Serialization helpers ───────────────────────
 
 /**
@@ -60,8 +32,6 @@ export async function usePostgresAuthState(
   pool: Pool,
   instanceId: string,
 ): Promise<{ state: AuthenticationState; saveCreds: () => Promise<void> }> {
-  await ensureTables(pool)
-
   // Load or init creds
   const { rows: credRows } = await pool.query<{ creds: unknown }>(
     'SELECT creds FROM wa_auth_creds WHERE instance_id = $1',
@@ -146,7 +116,6 @@ export async function usePostgresAuthState(
 
 /** Delete all auth data for an instance (used on explicit disconnect/logout) */
 export async function hasAuthCreds(pool: Pool, instanceId: string): Promise<boolean> {
-  await ensureTables(pool)
   const { rows } = await pool.query('SELECT 1 FROM wa_auth_creds WHERE instance_id = $1 LIMIT 1', [instanceId])
   return rows.length > 0
 }

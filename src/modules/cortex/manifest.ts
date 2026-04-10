@@ -15,8 +15,8 @@ import { Evaluator } from './reflex/evaluator.js'
 import { checkHealth } from './reflex/health.js'
 import { getMetricsSummary, writeHealthSnapshot } from './reflex/metrics-store.js'
 import { PulseScheduler } from './pulse/scheduler.js'
-import { ensurePulseTable, listReports, getReportById } from './pulse/store.js'
-import { ensureTraceTables, listScenarios, getScenario, createScenario, updateScenario, deleteScenario, listRuns, getRun, deleteRun, getResults, getResultById } from './trace/store.js'
+import { listReports, getReportById } from './pulse/store.js'
+import { listScenarios, getScenario, createScenario, updateScenario, deleteScenario, listRuns, getRun, deleteRun, getResults, getResultById } from './trace/store.js'
 import { launchRun, cancelRun, isRunActive } from './trace/runner.js'
 import * as notifStore from './notifications.js'
 import { renderTraceSection } from './trace/render.js'
@@ -307,8 +307,6 @@ const manifest: ModuleManifest = {
 
     // ─── Pulse initialization ───
     if (config.CORTEX_PULSE_ENABLED) {
-      await ensurePulseTable(db)
-
       pulseScheduler = new PulseScheduler(
         db, redis, registry, config, config, evaluator.alerts, ringBuffer,
       )
@@ -336,8 +334,6 @@ const manifest: ModuleManifest = {
     }
 
     if (config.CORTEX_TRACE_ENABLED) {
-      await ensureTraceTables(db)
-
       registry.provide('cortex:trace', {
         isRunActive: () => isRunActive(),
         launchRun: (req: RunRequest) => launchRun(db, registry, req, traceConfig),

@@ -329,7 +329,6 @@ const manifest: ModuleManifest = {
 
     // Initialize campaign subsystem
     campaignQueries = new CampaignQueries(db)
-    await campaignQueries.ensureTables()
     campaignMatcher = new CampaignMatcher()
     campaignMatcher.setCampaignQueries(campaignQueries)
     await reloadCampaignMatcher()

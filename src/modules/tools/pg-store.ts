@@ -13,67 +13,8 @@ import type {
 
 const logger = pino({ name: 'tools:pg-store' })
 
-const CREATE_TABLES_SQL = `
-CREATE TABLE IF NOT EXISTS tools (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          TEXT UNIQUE NOT NULL,
-  display_name  TEXT NOT NULL,
-  description   TEXT NOT NULL,
-  category      TEXT NOT NULL DEFAULT 'general',
-  source_module TEXT NOT NULL,
-  enabled       BOOLEAN NOT NULL DEFAULT true,
-  max_retries   INTEGER NOT NULL DEFAULT 2,
-  max_uses_per_loop INTEGER NOT NULL DEFAULT 3,
-  parameters    JSONB NOT NULL DEFAULT '{}',
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_tools_name ON tools(name);
-CREATE INDEX IF NOT EXISTS idx_tools_enabled ON tools(enabled);
-CREATE INDEX IF NOT EXISTS idx_tools_source ON tools(source_module);
-
-CREATE TABLE IF NOT EXISTS tool_access_rules (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tool_name     TEXT NOT NULL REFERENCES tools(name) ON DELETE CASCADE,
-  contact_type  TEXT NOT NULL,
-  allowed       BOOLEAN NOT NULL DEFAULT true,
-  UNIQUE(tool_name, contact_type)
-);
-
-CREATE TABLE IF NOT EXISTS tool_executions (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tool_name     TEXT NOT NULL,
-  message_id    TEXT,
-  contact_id    TEXT,
-  input         JSONB,
-  output        JSONB,
-  status        TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed', 'timeout')),
-  error         TEXT,
-  duration_ms   INTEGER,
-  retries       INTEGER DEFAULT 0,
-  created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_tool_exec_tool ON tool_executions(tool_name);
-CREATE INDEX IF NOT EXISTS idx_tool_exec_created ON tool_executions(created_at);
-`
-
 export class PgStore {
   constructor(private pool: Pool) {}
-
-  async ensureTable(): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query(CREATE_TABLES_SQL)
-      // Add two-tier description columns if they don't exist yet (idempotent)
-      await client.query(`
-        ALTER TABLE tools ADD COLUMN IF NOT EXISTS short_description TEXT;
-        ALTER TABLE tools ADD COLUMN IF NOT EXISTS detailed_guidance TEXT;
-      `)
-      logger.info('PostgreSQL tools tables ensured')
-    } finally {
-      client.release()
-    }
-  }
 
   async upsertTool(
     name: string,

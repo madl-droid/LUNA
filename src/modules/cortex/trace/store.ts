@@ -7,64 +7,6 @@ import type {
   ScenarioConfig, ScenarioRow, RunRow, ResultRow,
   RunStatus, RunProgress, RunSummary, SandboxToolResult,
 } from './types.js'
-import pino from 'pino'
-
-const logger = pino({ name: 'cortex:trace:store' })
-
-// ═══════════════════════════════════════════
-// DDL (safety net — migration 010 is canonical)
-// ═══════════════════════════════════════════
-
-export async function ensureTraceTables(db: Pool): Promise<void> {
-  try {
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS trace_scenarios (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name TEXT NOT NULL, description TEXT,
-        config JSONB NOT NULL DEFAULT '{}',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )`)
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS trace_runs (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        scenario_id UUID NOT NULL REFERENCES trace_scenarios(id) ON DELETE CASCADE,
-        variant_name TEXT NOT NULL DEFAULT 'baseline',
-        status TEXT NOT NULL DEFAULT 'pending'
-          CHECK (status IN ('pending','running','analyzing','completed','failed','cancelled')),
-        sim_count SMALLINT NOT NULL DEFAULT 1,
-        admin_context TEXT NOT NULL,
-        config JSONB,
-        started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
-        progress JSONB DEFAULT '{"completed":0,"total":0,"analyzing":0}',
-        summary JSONB, synthesis TEXT, synthesis_model TEXT,
-        tokens_input INTEGER DEFAULT 0, tokens_output INTEGER DEFAULT 0,
-        error TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )`)
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS trace_results (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        run_id UUID NOT NULL REFERENCES trace_runs(id) ON DELETE CASCADE,
-        sim_index SMALLINT NOT NULL DEFAULT 0,
-        message_index SMALLINT NOT NULL,
-        message_text TEXT NOT NULL,
-        intent TEXT, emotion TEXT, tools_planned TEXT[], execution_plan JSONB,
-        injection_risk BOOLEAN, on_scope BOOLEAN,
-        tools_executed JSONB, response_text TEXT,
-        classify_ms INTEGER, agentic_ms INTEGER, postprocess_ms INTEGER, total_ms INTEGER,
-        tokens_input INTEGER DEFAULT 0, tokens_output INTEGER DEFAULT 0,
-        raw_classify JSONB, raw_postprocess TEXT,
-        analysis TEXT, analysis_model TEXT, analysis_tokens INTEGER DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )`)
-    logger.debug('trace tables ensured')
-  } catch (err) {
-    logger.error({ err }, 'Failed to ensure trace tables')
-    throw err
-  }
-}
-
 // ═══════════════════════════════════════════
 // Scenarios CRUD
 // ═══════════════════════════════════════════

@@ -157,7 +157,6 @@ export class LLMGateway {
    * Initialize database tables and start background processes.
    */
   async init(db: Pool, scanIntervalMs?: number): Promise<void> {
-    await pgStore.ensureTables(db)
     this.tracker.startCleanup()
 
     // Start model scanner if registry available

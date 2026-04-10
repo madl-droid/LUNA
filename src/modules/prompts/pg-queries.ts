@@ -5,21 +5,6 @@ import type { PromptRecord, PromptSlot } from './types.js'
 
 // ─── prompt_slots table ─────────────────────
 
-export async function ensureTable(pool: Pool): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS prompt_slots (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      slot TEXT NOT NULL,
-      variant TEXT NOT NULL DEFAULT 'default',
-      content TEXT NOT NULL DEFAULT '',
-      is_generated BOOLEAN DEFAULT false,
-      updated_at TIMESTAMPTZ DEFAULT now(),
-      created_at TIMESTAMPTZ DEFAULT now(),
-      UNIQUE (slot, variant)
-    )
-  `)
-}
-
 export async function getBySlotVariant(
   pool: Pool,
   slot: PromptSlot,

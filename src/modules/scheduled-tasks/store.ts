@@ -6,56 +6,6 @@ import type { ScheduledTask, CreateTaskInput, UpdateTaskInput, TaskExecution, Ta
 
 const DEFAULT_RECIPIENT: TaskRecipient = { type: 'none' }
 
-const CREATE_TABLE = `
-CREATE TABLE IF NOT EXISTS scheduled_tasks (
-  id             TEXT PRIMARY KEY,
-  name           TEXT NOT NULL,
-  prompt         TEXT NOT NULL,
-  cron           TEXT NOT NULL,
-  enabled        BOOLEAN NOT NULL DEFAULT true,
-  trigger_type   TEXT NOT NULL DEFAULT 'cron',
-  trigger_event  TEXT,
-  recipient      JSONB NOT NULL DEFAULT '{"type":"none"}',
-  actions        JSONB NOT NULL DEFAULT '[]',
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  last_run_at    TIMESTAMPTZ,
-  last_result    TEXT,
-  last_status    TEXT
-)`
-
-const CREATE_EXECUTIONS_TABLE = `
-CREATE TABLE IF NOT EXISTS scheduled_task_executions (
-  id          TEXT PRIMARY KEY,
-  task_id     TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
-  started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  finished_at TIMESTAMPTZ,
-  status      TEXT NOT NULL DEFAULT 'running',
-  result      TEXT,
-  error       TEXT
-)`
-
-const CREATE_INDEX = `
-CREATE INDEX IF NOT EXISTS idx_task_executions_task_id ON scheduled_task_executions(task_id)`
-
-// Migration: add new columns to existing tables
-const MIGRATIONS = [
-  `ALTER TABLE scheduled_tasks ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'cron'`,
-  `ALTER TABLE scheduled_tasks ADD COLUMN IF NOT EXISTS trigger_event TEXT`,
-  `ALTER TABLE scheduled_tasks ADD COLUMN IF NOT EXISTS recipient JSONB NOT NULL DEFAULT '{"type":"none"}'`,
-  `ALTER TABLE scheduled_tasks ADD COLUMN IF NOT EXISTS actions JSONB NOT NULL DEFAULT '[]'`,
-]
-
-export async function ensureTables(db: Pool): Promise<void> {
-  await db.query(CREATE_TABLE)
-  await db.query(CREATE_EXECUTIONS_TABLE)
-  await db.query(CREATE_INDEX)
-  // Run migrations (safe: ADD COLUMN IF NOT EXISTS)
-  for (const sql of MIGRATIONS) {
-    await db.query(sql)
-  }
-}
-
 function parseRow(row: Record<string, unknown>): ScheduledTask {
   return {
     ...row,

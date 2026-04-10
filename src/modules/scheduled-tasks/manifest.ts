@@ -57,9 +57,6 @@ const manifest: ModuleManifest = {
     const db = registry.getDb()
     const redis = registry.getRedis()
 
-    // Ensure DB tables + migrations
-    await store.ensureTables(db)
-
     // Set up API routes
     const routes = createApiRoutes(db, registry, config)
     if (manifest.console) {

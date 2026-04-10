@@ -1,7 +1,7 @@
 // LUNA — Users module: PostgreSQL operations
 // Unified user identity: users + user_contacts tables.
 
-import type { Pool, PoolClient } from 'pg'
+import type { Pool } from 'pg'
 import pino from 'pino'
 import type {
   User,
@@ -30,51 +30,6 @@ function generateUserId(): string {
   return `USR-${code}`
 }
 
-// ═══════════════════════════════════════════
-// DDL — Create tables on init
-// ═══════════════════════════════════════════
-
-const CREATE_TABLES_SQL = `
-CREATE TABLE IF NOT EXISTS users (
-  id VARCHAR(20) PRIMARY KEY,
-  display_name VARCHAR(255),
-  list_type VARCHAR(50) NOT NULL DEFAULT 'lead',
-  metadata JSONB DEFAULT '{}',
-  is_active BOOLEAN DEFAULT true,
-  source VARCHAR(50) DEFAULT 'manual',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_users_type ON users(list_type, is_active);
-
-CREATE TABLE IF NOT EXISTS user_contacts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id VARCHAR(20) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  channel VARCHAR(50) NOT NULL,
-  sender_id VARCHAR(255) NOT NULL,
-  is_primary BOOLEAN DEFAULT false,
-  verified BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(channel, sender_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_contacts_sender ON user_contacts(sender_id, channel);
-CREATE INDEX IF NOT EXISTS idx_user_contacts_user ON user_contacts(user_id);
-
-CREATE TABLE IF NOT EXISTS user_list_config (
-  list_type VARCHAR(50) PRIMARY KEY,
-  display_name VARCHAR(100) NOT NULL,
-  is_enabled BOOLEAN DEFAULT true,
-  permissions JSONB NOT NULL,
-  sync_config JSONB DEFAULT '{}',
-  unregistered_behavior VARCHAR(50) DEFAULT 'silence',
-  unregistered_message TEXT,
-  max_users INT,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-`
-
 const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
   tools: ['*'],
   skills: ['*'],
@@ -91,117 +46,6 @@ const DEFAULT_LEAD_PERMISSIONS: UserPermissions = {
 
 export class UsersDb {
   constructor(private pool: Pool) {}
-
-  // ─── Schema ─────────────────────────────
-
-  async ensureTables(): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query(CREATE_TABLES_SQL)
-
-      // Check for migration from old schema
-      const oldTable = await client.query(
-        `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'user_lists') AS exists`,
-      )
-      if (oldTable.rows[0]?.exists) {
-        await this.migrateFromUserLists(client)
-      }
-
-      // Add new columns to user_list_config (idempotent)
-      await client.query(`
-        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
-        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT false;
-        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS knowledge_categories TEXT[] DEFAULT '{}';
-        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS assignment_enabled BOOLEAN DEFAULT false;
-        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS assignment_prompt TEXT DEFAULT '';
-        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS disable_behavior VARCHAR(50) DEFAULT 'leads';
-        ALTER TABLE user_list_config ADD COLUMN IF NOT EXISTS disable_target_list VARCHAR(50);
-      `)
-
-      logger.info('User tables ensured')
-    } finally {
-      client.release()
-    }
-  }
-
-  /** Migrate data from old user_lists table to users + user_contacts. */
-  private async migrateFromUserLists(client: PoolClient): Promise<void> {
-    // Check if already migrated (users table has data)
-    const hasUsers = await client.query(`SELECT COUNT(*) AS c FROM users`)
-    if (parseInt(hasUsers.rows[0]!.c, 10) > 0) {
-      // Already migrated, drop backup if exists
-      return
-    }
-
-    const oldRows = await client.query(
-      `SELECT * FROM user_lists WHERE is_active = true ORDER BY
-        CASE list_type WHEN 'admin' THEN 0 WHEN 'coworker' THEN 1 ELSE 2 END,
-        created_at`,
-    )
-
-    if (oldRows.rows.length === 0) {
-      logger.info('No data to migrate from user_lists')
-      await client.query(`ALTER TABLE IF EXISTS user_lists RENAME TO user_lists_backup`)
-      return
-    }
-
-    // Group by sender_id — each unique sender_id becomes one user
-    // If same sender_id in multiple list_types, highest priority wins
-    const senderMap = new Map<string, { row: Record<string, unknown>; channels: Set<string> }>()
-
-    for (const row of oldRows.rows) {
-      const existing = senderMap.get(row.sender_id as string)
-      if (!existing) {
-        senderMap.set(row.sender_id as string, {
-          row: row as Record<string, unknown>,
-          channels: new Set([row.channel as string]),
-        })
-      } else {
-        existing.channels.add(row.channel as string)
-      }
-    }
-
-    await client.query('BEGIN')
-    try {
-      let migrated = 0
-      for (const [senderId, { row, channels }] of senderMap) {
-        const userId = generateUserId()
-        await client.query(
-          `INSERT INTO users (id, display_name, list_type, metadata, is_active, source, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            userId,
-            row.display_name ?? null,
-            row.list_type,
-            JSON.stringify(row.metadata ?? {}),
-            true,
-            row.source ?? 'migration',
-            row.created_at,
-            row.updated_at,
-          ],
-        )
-
-        let first = true
-        for (const channel of channels) {
-          await client.query(
-            `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary, verified)
-             VALUES ($1, $2, $3, $4, true)
-             ON CONFLICT (channel, sender_id) DO NOTHING`,
-            [userId, channel, senderId, first],
-          )
-          first = false
-        }
-        migrated++
-      }
-
-      await client.query(`ALTER TABLE user_lists RENAME TO user_lists_backup`)
-      await client.query('COMMIT')
-      logger.info({ migrated }, 'Migrated user_lists → users + user_contacts')
-    } catch (err) {
-      await client.query('ROLLBACK')
-      logger.error({ err }, 'Migration failed, keeping user_lists')
-    }
-  }
 
   /** Seed default configs for system lists if they don't exist. */
   async seedDefaults(): Promise<void> {

@@ -106,47 +106,6 @@ function getRedirectUri(req: import('node:http').IncomingMessage): string {
   return `${buildBaseUrl(req)}/console/oauth/callback`
 }
 
-// ─── Migrations ────────────────────────────
-
-async function runMigrations(db: import('pg').Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS email_state (
-      id TEXT PRIMARY KEY DEFAULT 'primary',
-      last_history_id TEXT,
-      last_poll_at TIMESTAMPTZ,
-      messages_processed INTEGER DEFAULT 0,
-      updated_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS email_threads (
-      thread_id TEXT PRIMARY KEY,
-      contact_id TEXT,
-      subject TEXT,
-      last_message_at TIMESTAMPTZ,
-      message_count INTEGER DEFAULT 0,
-      created_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS email_oauth_tokens (
-      id TEXT PRIMARY KEY DEFAULT 'primary',
-      access_token TEXT NOT NULL,
-      refresh_token TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      scopes JSONB DEFAULT '[]',
-      email TEXT,
-      created_at TIMESTAMPTZ DEFAULT now(),
-      updated_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  // Phase 2: additional columns for label tracking and session management
-  await db.query(`ALTER TABLE email_threads ADD COLUMN IF NOT EXISTS last_message_gmail_id TEXT`)
-  await db.query(`ALTER TABLE email_threads ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ`)
-  await db.query(`ALTER TABLE email_threads ADD COLUMN IF NOT EXISTS followup_sent_at TIMESTAMPTZ`)
-  logger.info('Email migrations complete')
-}
-
 // ─── Polling logic ─────────────────────────
 
 async function pollForEmails(): Promise<void> {
@@ -1434,9 +1393,6 @@ const manifest: ModuleManifest = {
     if (config.EMAIL_REPLY_MODE && !validReplyModes.includes(config.EMAIL_REPLY_MODE)) {
       logger.warn({ configured: config.EMAIL_REPLY_MODE, valid: validReplyModes }, 'EMAIL_REPLY_MODE is not a recognized value — defaulting to reply-sender')
     }
-
-    // Run migrations
-    await runMigrations(db)
 
     // ─── Resolver autenticación: google-apps compartido o standalone ───
     let authClient: import('google-auth-library').OAuth2Client | null = null

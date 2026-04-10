@@ -8,50 +8,6 @@ import type { UsageRecord, UsageSummary, LLMProviderName } from './types.js'
 const logger = pino({ name: 'llm:pg-store' })
 
 /**
- * Create LLM module tables if they don't exist.
- */
-export async function ensureTables(db: Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS llm_usage (
-      id            BIGSERIAL PRIMARY KEY,
-      timestamp     TIMESTAMPTZ NOT NULL DEFAULT now(),
-      provider      TEXT NOT NULL,
-      model         TEXT NOT NULL,
-      task          TEXT NOT NULL,
-      input_tokens  INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      duration_ms   INTEGER NOT NULL DEFAULT 0,
-      success       BOOLEAN NOT NULL DEFAULT true,
-      error         TEXT,
-      trace_id      TEXT,
-      cost_usd      NUMERIC(10,6) NOT NULL DEFAULT 0,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_llm_usage_timestamp ON llm_usage (timestamp);
-    CREATE INDEX IF NOT EXISTS idx_llm_usage_provider ON llm_usage (provider, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_llm_usage_task ON llm_usage (task, timestamp);
-
-    CREATE TABLE IF NOT EXISTS llm_daily_stats (
-      id              SERIAL PRIMARY KEY,
-      date            DATE NOT NULL,
-      provider        TEXT NOT NULL,
-      model           TEXT NOT NULL,
-      task            TEXT NOT NULL,
-      total_calls     INTEGER NOT NULL DEFAULT 0,
-      total_input     BIGINT NOT NULL DEFAULT 0,
-      total_output    BIGINT NOT NULL DEFAULT 0,
-      total_errors    INTEGER NOT NULL DEFAULT 0,
-      total_cost_usd  NUMERIC(10,6) NOT NULL DEFAULT 0,
-      avg_duration_ms INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(date, provider, model, task)
-    );
-  `)
-
-  logger.info('LLM tables ensured')
-}
-
-/**
  * Insert a single usage record.
  */
 export async function insertUsage(db: Pool, record: UsageRecord): Promise<void> {

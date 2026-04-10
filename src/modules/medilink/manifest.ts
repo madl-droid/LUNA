@@ -15,7 +15,7 @@ import { WebhookHandler } from './webhook-handler.js'
 import { SecurityService } from './security.js'
 import { registerMedilinkTools } from './tools.js'
 import { FollowUpScheduler } from './follow-up-scheduler.js'
-import { runMigrations } from './pg-store.js'
+import { seedFollowUpTemplatesIfEmpty } from './pg-store.js'
 import * as pgStore from './pg-store.js'
 import { renderMedilinkConsole } from './templates.js'
 import type { MedilinkConsoleData } from './templates.js'
@@ -477,8 +477,8 @@ const manifest: ModuleManifest = {
     const db = registry.getDb()
     const redis = registry.getRedis()
 
-    // Run migrations
-    await runMigrations(db)
+    // Seed follow-up templates if empty
+    await seedFollowUpTemplatesIfEmpty(db)
 
     // Initialize rate limiter
     rateLimiter = new RateLimiter(config.MEDILINK_RATE_LIMIT_RPM, redis)

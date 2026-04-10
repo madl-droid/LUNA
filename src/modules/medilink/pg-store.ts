@@ -14,133 +14,13 @@ import type {
 
 const logger = pino({ name: 'medilink:pg-store' })
 
-// ─── Migrations ──────────────────────────
+// ─── Seed ──────────────────────────────────
 
-export async function runMigrations(db: Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS medilink_audit_log (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      contact_id TEXT NOT NULL,
-      medilink_patient_id TEXT,
-      action TEXT NOT NULL,
-      target_type TEXT NOT NULL,
-      target_id TEXT,
-      detail JSONB DEFAULT '{}',
-      verification_level TEXT,
-      result TEXT NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_audit_contact
-    ON medilink_audit_log(contact_id, created_at DESC)`)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_audit_patient
-    ON medilink_audit_log(medilink_patient_id, created_at DESC)`)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_audit_action
-    ON medilink_audit_log(action, created_at DESC)`)
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS medilink_edit_requests (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      medilink_patient_id TEXT NOT NULL,
-      contact_id TEXT NOT NULL,
-      requested_changes JSONB NOT NULL,
-      reason TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      reviewed_by TEXT,
-      reviewed_at TIMESTAMPTZ,
-      review_notes TEXT,
-      created_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_edits_status
-    ON medilink_edit_requests(status, created_at DESC)`)
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS medilink_follow_ups (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      medilink_appointment_id TEXT NOT NULL,
-      contact_id TEXT NOT NULL,
-      appointment_date TIMESTAMPTZ NOT NULL,
-      touch_type TEXT NOT NULL,
-      channel TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      scheduled_at TIMESTAMPTZ NOT NULL,
-      executed_at TIMESTAMPTZ,
-      response TEXT,
-      bullmq_job_id TEXT,
-      metadata JSONB DEFAULT '{}',
-      created_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_followup_appt
-    ON medilink_follow_ups(medilink_appointment_id)`)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_followup_status
-    ON medilink_follow_ups(status, scheduled_at)`)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_followup_contact
-    ON medilink_follow_ups(contact_id, status)`)
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS medilink_professional_treatments (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      medilink_professional_id INTEGER NOT NULL,
-      medilink_treatment_id INTEGER NOT NULL,
-      professional_name TEXT NOT NULL,
-      treatment_name TEXT NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT now(),
-      UNIQUE(medilink_professional_id, medilink_treatment_id)
-    )
-  `)
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS medilink_user_type_rules (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_type TEXT NOT NULL,
-      medilink_treatment_id INTEGER NOT NULL,
-      treatment_name TEXT NOT NULL,
-      allowed BOOLEAN NOT NULL DEFAULT true,
-      notes TEXT,
-      created_at TIMESTAMPTZ DEFAULT now(),
-      UNIQUE(user_type, medilink_treatment_id)
-    )
-  `)
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS medilink_followup_templates (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      touch_type TEXT NOT NULL UNIQUE,
-      template_text TEXT NOT NULL DEFAULT '',
-      llm_instructions TEXT,
-      use_llm BOOLEAN NOT NULL DEFAULT true,
-      channel TEXT NOT NULL DEFAULT 'whatsapp',
-      voice_script TEXT,
-      updated_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS medilink_webhook_log (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      entity TEXT NOT NULL,
-      action TEXT NOT NULL,
-      medilink_id INTEGER NOT NULL,
-      payload JSONB NOT NULL,
-      signature_valid BOOLEAN NOT NULL DEFAULT true,
-      processed BOOLEAN NOT NULL DEFAULT false,
-      error TEXT,
-      received_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_medilink_webhook_received
-    ON medilink_webhook_log(received_at DESC)`)
-
-  // Seed default follow-up templates if empty
+export async function seedFollowUpTemplatesIfEmpty(db: Pool): Promise<void> {
   const { rows } = await db.query('SELECT count(*) as c FROM medilink_followup_templates')
   if (parseInt(String(rows[0]?.c ?? '0'), 10) === 0) {
     await seedDefaultTemplates(db)
   }
-
-  logger.info('Medilink migrations complete')
 }
 
 async function seedDefaultTemplates(db: Pool): Promise<void> {

@@ -44,45 +44,6 @@ function parseFormBody(req: http.IncomingMessage): Promise<Record<string, string
 // Users DDL (copied from users module — idempotent)
 // ═══════════════════════════════════════════
 
-const USERS_DDL = `
-CREATE TABLE IF NOT EXISTS users (
-  id VARCHAR(20) PRIMARY KEY,
-  display_name VARCHAR(255),
-  list_type VARCHAR(50) NOT NULL DEFAULT 'lead',
-  metadata JSONB DEFAULT '{}',
-  is_active BOOLEAN DEFAULT true,
-  source VARCHAR(50) DEFAULT 'manual',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_users_type ON users(list_type, is_active);
-
-CREATE TABLE IF NOT EXISTS user_contacts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id VARCHAR(20) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  channel VARCHAR(50) NOT NULL,
-  sender_id VARCHAR(255) NOT NULL,
-  is_primary BOOLEAN DEFAULT false,
-  verified BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(channel, sender_id)
-);
-CREATE INDEX IF NOT EXISTS idx_user_contacts_sender ON user_contacts(sender_id, channel);
-CREATE INDEX IF NOT EXISTS idx_user_contacts_user ON user_contacts(user_id);
-
-CREATE TABLE IF NOT EXISTS user_list_config (
-  list_type VARCHAR(50) PRIMARY KEY,
-  display_name VARCHAR(100) NOT NULL,
-  is_enabled BOOLEAN DEFAULT true,
-  permissions JSONB NOT NULL,
-  sync_config JSONB DEFAULT '{}',
-  unregistered_behavior VARCHAR(50) DEFAULT 'silence',
-  unregistered_message TEXT,
-  max_users INT,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-`
-
 const ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 function generateUserId(): string {
   let code = ''
@@ -389,15 +350,7 @@ async function finalizeSetup(ctx: WizardContext, state: SetupState, token: strin
   }
   logger.info('Cleared all channel credentials for fresh setup')
 
-  // 1. Create tables (DDL — outside transaction, idempotent)
-  const ddlClient = await pool.connect()
-  try {
-    await ddlClient.query(USERS_DDL)
-  } finally {
-    ddlClient.release()
-  }
-
-  // 2. All data operations in a single transaction (atomicity)
+  // 1. All data operations in a single transaction (atomicity)
   let userId = ''
   const client = await pool.connect()
   try {

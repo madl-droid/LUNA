@@ -14,7 +14,6 @@ import { TwilioAdapter } from './twilio-adapter.js'
 import { MediaStreamServer } from './media-stream.js'
 import { CallManager } from './call-manager.js'
 import * as pgStore from './pg-store.js'
-import { createTables } from './pg-store.js'
 
 let callManager: CallManager | null = null
 let mediaServer: MediaStreamServer | null = null
@@ -754,9 +753,6 @@ const manifest: ModuleManifest = {
   async init(registry: Registry): Promise<void> {
     _registry = registry
     const db = registry.getDb()
-
-    // Create tables
-    await createTables(db)
 
     // Load config (mutable for hot-reload)
     let config = registry.getConfig<TwilioVoiceConfig>('twilio-voice')

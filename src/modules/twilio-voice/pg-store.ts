@@ -5,62 +5,6 @@ import type { Pool } from 'pg'
 import type { VoiceCallRow, VoiceCallTranscriptRow, CallStatus, CallDirection, TranscriptEntry } from './types.js'
 
 // ═══════════════════════════════════════════
-// Table creation
-// ═══════════════════════════════════════════
-
-export async function createTables(db: Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS voice_calls (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      call_sid TEXT UNIQUE NOT NULL,
-      direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
-      from_number TEXT NOT NULL,
-      to_number TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'initiated'
-        CHECK (status IN ('initiated', 'ringing', 'connecting', 'active', 'completed', 'failed', 'no-answer', 'busy')),
-      contact_id TEXT,
-      started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      connected_at TIMESTAMPTZ,
-      ended_at TIMESTAMPTZ,
-      duration_seconds INTEGER,
-      end_reason TEXT,
-      gemini_voice TEXT,
-      summary TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `)
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS voice_call_transcripts (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      call_id UUID NOT NULL REFERENCES voice_calls(id) ON DELETE CASCADE,
-      speaker TEXT NOT NULL CHECK (speaker IN ('caller', 'agent', 'system')),
-      text TEXT NOT NULL,
-      timestamp_ms INTEGER NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `)
-
-  // Indexes (IF NOT EXISTS not supported for indexes on all PG versions, use DO block)
-  await db.query(`
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_voice_calls_contact') THEN
-        CREATE INDEX idx_voice_calls_contact ON voice_calls(contact_id);
-      END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_voice_calls_started') THEN
-        CREATE INDEX idx_voice_calls_started ON voice_calls(started_at);
-      END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_voice_calls_status') THEN
-        CREATE INDEX idx_voice_calls_status ON voice_calls(status);
-      END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_voice_transcripts_call') THEN
-        CREATE INDEX idx_voice_transcripts_call ON voice_call_transcripts(call_id);
-      END IF;
-    END $$
-  `)
-}
-
-// ═══════════════════════════════════════════
 // voice_calls CRUD
 // ═══════════════════════════════════════════
 

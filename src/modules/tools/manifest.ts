@@ -205,7 +205,6 @@ const manifest: ModuleManifest = {
     const redis = registry.getRedis()
 
     const pgStore = new PgStore(db)
-    await pgStore.ensureTable()
 
     const executor = new ToolExecutor(config)
     toolRegistry = new ToolRegistry(pgStore, executor, config, db, redis, registry)

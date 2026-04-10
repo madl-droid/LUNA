@@ -69,32 +69,6 @@ export function extractBearerToken(authHeader: string | undefined): string | nul
 }
 
 // ═══════════════════════════════════════════
-// DB: webhook log table
-// ═══════════════════════════════════════════
-
-export async function ensureWebhookTables(db: Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS webhook_lead_log (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      email TEXT,
-      phone TEXT,
-      display_name TEXT,
-      campaign_keyword TEXT,
-      campaign_id UUID,
-      contact_id TEXT,
-      channel_used TEXT,
-      success BOOLEAN DEFAULT true,
-      error_message TEXT,
-      created_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_webhook_lead_log_created
-    ON webhook_lead_log (created_at DESC)
-  `).catch(() => {})
-}
-
-// ═══════════════════════════════════════════
 // Phone normalization (WhatsApp JID format)
 // ═══════════════════════════════════════════
 

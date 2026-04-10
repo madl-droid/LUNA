@@ -9,7 +9,6 @@ import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import type { PromptSlot } from './types.js'
-import { ensureTable } from './pg-queries.js'
 import { PromptsServiceImpl } from './prompts-service.js'
 
 const logger = pino({ name: 'prompts' })
@@ -323,9 +322,6 @@ const manifest: ModuleManifest = {
 
   async init(registry: Registry) {
     const db = registry.getDb()
-
-    // Ensure tables
-    await ensureTable(db)
 
     // Create service
     service = new PromptsServiceImpl(db, registry)

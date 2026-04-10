@@ -249,26 +249,6 @@ const apiRoutes: ApiRoute[] = [
   },
 ]
 
-// ─── Migrations ─────────────────────────────────
-
-async function runMigrations(db: import('pg').Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS google_chat_spaces (
-      space_name TEXT PRIMARY KEY,
-      space_type TEXT NOT NULL,
-      display_name TEXT,
-      user_email TEXT,
-      bot_added_at TIMESTAMPTZ DEFAULT now(),
-      last_message_at TIMESTAMPTZ,
-      active BOOLEAN DEFAULT true
-    )
-  `)
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_gc_spaces_email ON google_chat_spaces(user_email)
-  `)
-  logger.debug('Migrations complete')
-}
-
 // ─── Manifest ───────────────────────────────────
 
 const manifest: ModuleManifest = {
@@ -624,9 +604,6 @@ const manifest: ModuleManifest = {
     _registry = registry
     const config = registry.getConfig<GoogleChatConfig>('google-chat')
     const db = registry.getDb()
-
-    // Run migrations
-    await runMigrations(db)
 
     // ── Agent name: read from centralized prompts config ──
     const getAgentName = (): string => {

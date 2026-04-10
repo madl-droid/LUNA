@@ -42,24 +42,6 @@ function getRedirectUri(req: import('node:http').IncomingMessage): string {
   return `${buildBaseUrl(req)}/console/oauth/callback`
 }
 
-// ─── Migrations ────────────────────────────
-
-async function runMigrations(db: import('pg').Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS google_oauth_tokens (
-      id TEXT PRIMARY KEY DEFAULT 'primary',
-      access_token TEXT NOT NULL,
-      refresh_token TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      scopes JSONB DEFAULT '[]',
-      email TEXT,
-      created_at TIMESTAMPTZ DEFAULT now(),
-      updated_at TIMESTAMPTZ DEFAULT now()
-    )
-  `)
-  logger.info('Google API migrations complete')
-}
-
 // ─── API Routes ────────────────────────────
 
 const apiRoutes: ApiRoute[] = [
@@ -432,9 +414,6 @@ const manifest: ModuleManifest = {
     _registry = registry
     const db = registry.getDb()
     const config = registry.getConfig<GoogleApiConfig>('google-apps')
-
-    // Run migrations
-    await runMigrations(db)
 
     // Inicializar OAuth manager
     oauthManager = new OAuthManager(config, db)
