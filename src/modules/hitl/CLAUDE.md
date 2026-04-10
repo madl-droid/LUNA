@@ -72,7 +72,7 @@ Summary: ...
 ↩️ Cita este mensaje para responder al ticket.
 ```
 
-**Comando de listado**: "tickets abiertos", "open tickets", etc. → lista formateada con #shortId, tipo, contacto, edad.
+**Comando de listado**: "tickets abiertos", "open tickets", etc. → **solo si el sender tiene tickets activos asignados** → lista formateada con #shortId, tipo, contacto, edad. Leads/usuarios sin tickets asignados no activan el comando (el mensaje pasa al pipeline normalmente).
 
 ## Follow-up Job (B4 fix)
 `follow-up-job.ts` usa `setInterval` directamente (no `job:register` hook).

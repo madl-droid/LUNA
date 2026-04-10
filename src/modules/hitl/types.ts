@@ -49,8 +49,6 @@ export interface HitlTicket {
   // Follow-up
   notificationCount: number
   lastNotifiedAt: Date | null
-  // Notification message tracking (for quote-based interception)
-  notificationMessageId: string | null
   // Timestamps
   createdAt: Date
   updatedAt: Date

@@ -132,12 +132,18 @@ export async function delivery(
   }
 
   // 5. Post-send operations (parallel — all are independent)
+  // Wrapped in try-catch: if persistence fails after message was sent,
+  // we must NOT let the error propagate — the retry loop would re-send the message.
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
-  await Promise.all([
-    persistMessages(ctx, responseText, db, memoryManager),
-    updateLeadQualification(ctx, registry, db, memoryManager),
-    updateSession(ctx, db),
-  ])
+  try {
+    await Promise.all([
+      persistMessages(ctx, responseText, db, memoryManager),
+      updateLeadQualification(ctx, registry, db, memoryManager),
+      updateSession(ctx, db),
+    ])
+  } catch (postSendErr) {
+    logger.error({ postSendErr, traceId: ctx.traceId }, 'Post-send persistence failed — message was already delivered, not rethrowing')
+  }
 
   // 5bis. Inline buffer compression — fire-and-forget, never blocks the pipeline
   // Only touches Redis buffer; PG messages remain intact for nightly batch summaries.

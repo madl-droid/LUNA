@@ -85,11 +85,10 @@ export function registerInterceptor(
     // Check if sender is asking to list their open tickets
     if (TICKET_LIST_PATTERNS.some(p => p.test(text))) {
       const tickets = await ticketStore.listActiveByResponder(payload.from, payload.channelName)
+      if (tickets.length === 0) return  // No es responder activo — pasar al pipeline
 
       let listMessage: string
-      if (tickets.length === 0) {
-        listMessage = 'No hay tickets HITL abiertos asignados a ti.'
-      } else {
+      {
         const lines: string[] = [`📋 *Tickets HITL abiertos (${tickets.length}):*\n`]
         tickets.forEach((t, i) => {
           const shortId = t.id.slice(-6).toUpperCase()
