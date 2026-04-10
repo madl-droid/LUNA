@@ -8,20 +8,27 @@ import pino from 'pino'
 const logger = pino({ name: 'extreme-logger' })
 
 let _db: Pool | null = null
+let _cachedEnabled: boolean | null = null
+let _cacheTs = 0
+const CACHE_TTL_MS = 10_000
 
 /** Initialize extreme logger with database pool reference */
 export function initExtremeLogger(db: Pool): void {
   _db = db
 }
 
-/** Check if extreme logging is enabled */
+/** Check if extreme logging is enabled (cached 10s) */
 export async function isExtremeLogEnabled(): Promise<boolean> {
+  const now = Date.now()
+  if (_cachedEnabled !== null && (now - _cacheTs) < CACHE_TTL_MS) return _cachedEnabled
   if (!_db) return false
   try {
     const result = await _db.query(`SELECT value FROM config_store WHERE key = 'DEBUG_EXTREME_LOG'`)
-    return result.rows[0]?.value === 'true'
+    _cachedEnabled = result.rows[0]?.value === 'true'
+    _cacheTs = now
+    return _cachedEnabled
   } catch {
-    return false
+    return _cachedEnabled ?? false
   }
 }
 
