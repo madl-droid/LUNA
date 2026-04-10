@@ -14,10 +14,6 @@ import { callLLM } from '../utils/llm-client.js'
 
 const logger = pino({ name: 'engine:verifier' })
 
-// Minimal fallback — full prompt lives in instance/prompts/system/subagent-verifier.md
-const VERIFIER_SYSTEM_FALLBACK = `Eres un verificador de calidad. Evalúa si la tarea se completó correctamente.
-Responde en JSON: {"verdict":"accept|retry|fail","confidence":0.0-1.0,"feedback":"...","issues":[]}`
-
 /**
  * Verify the result of a subagent execution.
  * Uses the classify model (effort router) for consistency.
@@ -37,15 +33,19 @@ export async function verifySubagentResult(
   registry?: Registry,
 ): Promise<VerificationResult & { tokensUsed: number }> {
   try {
-    // Load system prompt from .md template, fallback to minimal constant
-    let systemPrompt = VERIFIER_SYSTEM_FALLBACK
+    let systemPrompt = ''
     if (registry) {
       const promptsSvc = registry.getOptional<PromptsService>('prompts:service')
       if (promptsSvc) {
-        const tmpl = await promptsSvc.getSystemPrompt('subagent-verifier')
-        if (tmpl) systemPrompt = tmpl
+        systemPrompt = await promptsSvc.getSystemPrompt('subagent-verifier')
       }
     }
+
+    if (!systemPrompt) {
+      logger.warn({ template: 'subagent-verifier' }, 'System prompt missing — skipping LLM call')
+      return { verdict: 'accept', confidence: 0.5, tokensUsed: 0 }
+    }
+
     const parts: string[] = [
       `Tarea asignada al subagente: ${taskDescription}`,
       ``,

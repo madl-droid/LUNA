@@ -402,7 +402,7 @@ export interface LLMModuleConfig {
   LLM_TPM_GOOGLE: number
 
   // Usage tracking
-  LLM_USAGE_ENABLED: string
+  LLM_USAGE_ENABLED: boolean
   LLM_USAGE_RETENTION_DAYS: number
 
   // Cost budget

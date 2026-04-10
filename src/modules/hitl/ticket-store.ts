@@ -317,4 +317,30 @@ export class TicketStore {
     )
     return rows.map(rowToLogEntry)
   }
+
+  // ─── Quote-based interception helpers ────
+
+  async findByShortId(shortId: string): Promise<HitlTicket | null> {
+    const { rows } = await this.db.query(
+      `SELECT * FROM hitl_tickets
+       WHERE RIGHT(id::text, 6) = $1
+         AND status IN ('notified', 'waiting')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [shortId.toLowerCase()],
+    )
+    return rows[0] ? rowToTicket(rows[0]) : null
+  }
+
+  async listActiveByResponder(senderId: string, channel: string): Promise<HitlTicket[]> {
+    const { rows } = await this.db.query(
+      `SELECT * FROM hitl_tickets
+       WHERE assigned_sender_id = $1
+         AND assigned_channel = $2
+         AND status IN ('notified', 'waiting')
+       ORDER BY created_at ASC`,
+      [senderId, channel],
+    )
+    return rows.map(rowToTicket)
+  }
 }

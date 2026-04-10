@@ -60,6 +60,7 @@
 - **saveChunks() ahora requiere sessionId** — tercer parámetro después de contactId
 - **updateSummaryEmbedding() es no-op** — embeddings en chunks, no en summaries v2
 - **getSummariesWithoutEmbeddings() retorna []** — usar getChunksWithoutEmbeddings() en su lugar
+- **Compression threshold auto-clamping**: `buffer-compressor.ts` ajusta automáticamente el threshold si el valor configurado excede los turns posibles en el buffer (`floor(BUFFER_MESSAGE_COUNT/2) - KEEP_RECENT - 2`). Log `debug` cuando ocurre el clamp. Default cambiado de 30 a 20.
 
 ### Race condition en trimKeepingTurns (aceptado)
 `lrange` y `ltrim` no son atómicos. En la ventana entre ambas operaciones (microsegundos),

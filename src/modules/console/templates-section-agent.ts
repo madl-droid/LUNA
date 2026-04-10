@@ -655,16 +655,13 @@ export function renderIdentitySection(data: SectionData): string {
   // Each language maps to countries where it's an official language
   const ACCENT_MAP: Record<string, Array<{ code: string; country: string }>> = {
     es: [
-      { code: 'es-CL', country: 'Chile' },
+      { code: 'es-MX', country: isEs ? 'México' : 'Mexico' },
       { code: 'es-CO', country: 'Colombia' },
-      { code: 'es-CAR', country: isEs ? 'Caribe' : 'Caribbean' },
       { code: 'es-EC', country: 'Ecuador' },
-      { code: 'es-MX', country: isEs ? 'Mexico' : 'Mexico' },
-      { code: 'es-PE', country: isEs ? 'Peru' : 'Peru' },
+      { code: 'es-PE', country: isEs ? 'Perú' : 'Peru' },
     ],
     en: [
-      { code: 'en-CAR', country: isEs ? 'Caribe' : 'Caribbean' },
-      { code: 'en-US', country: isEs ? 'Estados Unidos' : 'United States' },
+      { code: 'en-US', country: isEs ? 'Estados Unidos (Neutro)' : 'United States (Neutral)' },
     ],
   }
 
@@ -815,13 +812,10 @@ export function renderIdentitySection(data: SectionData): string {
 
     // IANA timezone by accent code
     var CODE_TZ = {
-      'es-CL':'America/Santiago',
-      'es-CO':'America/Bogota',
-      'es-CAR':'America/Santo_Domingo',
-      'es-EC':'America/Guayaquil',
       'es-MX':'America/Mexico_City',
+      'es-CO':'America/Bogota',
+      'es-EC':'America/Guayaquil',
       'es-PE':'America/Lima',
-      'en-CAR':'America/Port_of_Spain',
       'en-US':'America/New_York'
     };
 

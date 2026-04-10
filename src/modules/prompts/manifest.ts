@@ -2,6 +2,8 @@
 // Gestión centralizada de prompts del agente. Editables desde console, con cache en memoria.
 // Evaluador generado on-demand por LLM. Campaign management moved to lead-scoring module.
 
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import pino from 'pino'
 import { z } from 'zod'
 import { numEnv } from '../../kernel/config-helpers.js'
@@ -406,84 +408,6 @@ async function syncFromConsole(registry: Registry): Promise<void> {
   }
 }
 
-// ─── Accent TTS Style Prompts ─────────────────────
-// Gemini TTS style instructions per BCP-47 accent code.
-// These guide the TTS engine to speak with the correct regional style, intonation, and expressions.
-// Based on Gemini TTS documentation: use natural language style descriptions for voice persona.
-
-const ACCENT_TRAIT_PROMPTS: Record<string, string> = {
-  // Spanish accents
-  'es-CAR': `Habla en espanol caribeno neutro. Prioriza cadencia calida, musical y cercana. Usa tuteo natural. Manten la pronunciacion clara para que se entienda bien en audio y evita exagerar modismos locales; si usas uno, que sea ocasional y muy comprensible.`,
-  'es-MX': `Habla con acento mexicano neutro (zona centro/Ciudad de Mexico). Entonacion melodica y amable. Tuteo natural. Pronuncia las 's' claramente. Las 'd' intervocalicas se suavizan en habla casual ("cansado" suena mas como "cansao"). Muletillas: "o sea", "bueno pues", "este...", "no?", "fijate que", "mira". Expresiones: "orale" (=genial/OK), "que onda" (=que tal), "padre/padrisimo" (=genial), "chido", "neta" (=verdad), "a poco" (=en serio?), "sale" (=OK). Tono calido y cercano, ritmo moderado.`,
-  'es-AR': `Habla con acento argentino rioplatense (Buenos Aires). Usa voseo ("vos sos", "dale"). Entonacion italiana con cadencia ascendente al final de las frases. Pronuncia "ll/y" como "sh". Expresiones: "che", "barbaro", "genial". Ritmo expresivo y enfatico.`,
-  'es-CO': `Habla con acento colombiano (Bogota/zona andina). Entonacion suave y melodica. Usa "usted" en contextos formales o con desconocidos, tuteo con confianza. Pronunciacion clara y pausada, todas las letras se articulan. Muletillas: "pues" (al final: "si pues", "bueno pues"), "o sea", "digamos", "listo?". Expresiones: "con mucho gusto" (respuesta a gracias), "a la orden", "parce/parcero" (=amigo informal), "bacano/chevere" (=genial), "berraco" (=impresionante o dificil), "de una" (=de inmediato). NUNCA uses "que pena" ni variantes — suena insegura; usa "disculpa" o "perdona" en su lugar. Tono muy amable y servicial, ritmo moderado-pausado.`,
-  'es-CL': `Habla con acento chileno (Santiago). Ritmo rapido, aspira las 's' finales ("entonces" suena "entonce"). Las 'd' intervocalicas desaparecen ("cansado" → "cansao", "helado" → "helao"). Muletillas: "po" (al final de todo: "si po", "ya po", "no po"), "cachai" (=entiendes?), "weon/weon" (coloquial, como "dude"), "al tiro" (=de inmediato). Expresiones: "bacan" (=genial), "fome" (=aburrido), "carrete" (=fiesta), "polola/pololo" (=novia/novio), "luca" (=mil pesos). Entonacion con subidas y bajadas marcadas. Tono directo pero amigable.`,
-  'es-PE': `Habla con acento peruano (Lima). Entonacion clara y neutra, sin melodia marcada. Tuteo en Lima, "usted" en sierra. Pronunciacion limpia de todas las consonantes. Muletillas: "pe" (al final: "ya pe", "claro pe", "no pe"), "pues", "oe" (llamar atencion), "manyas?" (=entiendes?). Expresiones: "chevere" (=genial), "causa" (=amigo), "al toque" (=rapido), "jato" (=casa), "pituco" (=elegante/fresa), "misio" (=sin dinero), "yapa" (=extra gratis). Tono respetuoso y amable, ritmo moderado.`,
-  'es-VE': `Habla con acento venezolano (Caracas). Entonacion cantarina y expresiva, con melodia marcada. Tuteo. Aspira las 's' finales ("entonces" → "entonce"). La 'r' final suena suave. Muletillas: "vale" (=OK, al final de todo), "mira", "verga" (coloquial, expresion de sorpresa), "coño" (sorpresa informal), "o sea". Expresiones: "chamo/chama" (=amigo/a), "chevere" (=genial), "arrecho" (=enojado o genial segun contexto), "ladilla" (=fastidio), "fino" (=perfecto), "burda" (=mucho), "pana" (=amigo cercano), "vaina" (=cosa). Tono calido y entusiasta, ritmo rapido y animado.`,
-  'es-EC': `Habla con acento ecuatoriano (Sierra/Quito). Entonacion pausada y melodica con influencia quichua. Pronuncia todas las letras claramente, especialmente las 's'. Usa "usted" mas que tuteo, incluso entre amigos. Muletillas: "pues" (al final: "si pues"), "ve" (llamar atencion: "ve, escucha"), "no cierto?", "verás". Expresiones: "que fue" (=que tal, saludo informal), "ahi nos vemos" (=nos vemos), "chuta" (=sorpresa), "de ley" (=seguro/obligatorio), "bacán" (=genial), "achachay" (=que frio), "arrarray" (=que calor), "mande" (=digame?). Tono amable y respetuoso, ritmo moderado-pausado.`,
-  'es-ES': `Habla con acento espanol castellano (Madrid). Distingue z/c de s (ceceo/distincion). Usa "vosotros". Expresiones: "vale", "tio", "mola", "venga". Entonacion directa y energica. Ritmo moderado-rapido.`,
-  'es-BO': `Habla con acento boliviano. Entonacion pausada y suave. Pronunciacion clara de todas las consonantes. Tono respetuoso, ritmo tranquilo. Expresiones: "puej", "yaa".`,
-  'es-CR': `Habla con acento costarricense. Entonacion amigable y melodica. Expresiones: "pura vida", "mae", "tuanis". Tono relajado y positivo. Ritmo moderado.`,
-  'es-CU': `Habla con acento cubano (La Habana). Entonacion expresiva y ritmica, con cadencia musical. Aspira las 's' ("vamos" → "vamo"), la 'r' final suena como 'l' ("comer" → "comel"), omite las 'd' intervocalicas ("cansado" → "cansao"). Tuteo. Muletillas: "mira", "oye", "no?", "acere/asere" (=amigo), "dale". Expresiones: "que bola" (=que tal), "tremendo" (=genial o impresionante), "la cosa" (=la situacion), "jama" (=comida), "guagua" (=autobus), "fula" (=dolar), "yuma" (=extranjero). Tono animado y calido, ritmo rapido con mucha energia.`,
-  'es-DO': `Habla con acento dominicano (Santo Domingo). Entonacion ritmica y animada, muy expresiva. Aspira las 's' ("estas" → "etai"), cambia 'r' final por 'l' o la omite ("comer" → "comel"), elimina 'd' intervocalicas ("cansado" → "cansao"). Tuteo. Muletillas: "dime a ver", "mira", "tu ta claro?", "verdad?", "ombe" (=hombre, sorpresa). Expresiones: "que lo que" (=que tal), "vaina" (=cosa), "tigre/tiguere" (=tipo listo), "chin" (=poquito), "jevi" (=cool), "ta to" (=esta todo bien), "klk" (=que lo que, escrito). Tono alegre y directo, ritmo rapido y energico.`,
-  'es-SV': `Habla con acento salvadoreno. Entonacion suave y melodica. Usa voseo ("vos"). Expresiones: "va pues", "cipote". Tono amable, ritmo moderado.`,
-  'es-GT': `Habla con acento guatemalteco. Entonacion pausada y respetuosa. Usa voseo. Expresiones: "que onda", "pisto", "a la gran". Tono cordial, ritmo tranquilo.`,
-  'es-HN': `Habla con acento hondureno. Entonacion melodica y amable. Usa voseo. Expresiones: "maje", "va pues", "que onda". Tono calido, ritmo moderado.`,
-  'es-NI': `Habla con acento nicaraguense. Entonacion cantarina. Usa voseo. Expresiones: "ideay", "que onda". Tono amigable, ritmo moderado.`,
-  'es-PA': `Habla con acento panameno (Ciudad de Panama). Entonacion caribena y melodica. Aspira las 's', suaviza las consonantes finales. Tuteo. Muletillas: "mira", "oye", "viste", "chuzo" (=sorpresa). Expresiones: "que xopa" (=que tal), "fren" (=amigo), "vaina" (=cosa), "juega vivo" (=ponerse listo), "pelao" (=nino), "yeye" (=elegante/fresa), "chantin" (=casa). Tono relajado y amigable, ritmo moderado-rapido.`,
-  'es-PY': `Habla con acento paraguayo. Entonacion influida por guarani. Pronuncia las vocales con claridad. Expresiones: "luego", "nde". Tono amable y respetuoso. Ritmo pausado.`,
-  'es-PR': `Habla con acento puertorriqueno (San Juan). Entonacion ritmica y expresiva con influencia del ingles. La 'r' doble suena como 'l' o jota suave ("perro" → "pelro"), aspira las 's', la 'r' final suena como 'l'. Mezcla espanol e ingles naturalmente (Spanglish). Muletillas: "mano" (=hermano), "brutal" (=genial), "nah", "bro", "tu sabes". Expresiones: "wepa" (=exclamacion de alegria), "boricua" (=puertorriqueno), "corillo" (=grupo de amigos), "chavos" (=dinero), "pai" (=padre, sorpresa), "diantre", "so" (=tipo/persona). Tono animado y expresivo, ritmo rapido.`,
-  'es-UY': `Habla con acento uruguayo. Similar al argentino con voseo. Pronuncia "ll/y" como "sh". Expresiones: "ta", "bo", "que hacemo". Tono tranquilo y amigable. Ritmo moderado.`,
-  'es-GQ': `Habla con acento de Guinea Ecuatorial. Entonacion clara y formal. Pronunciacion cuidada de todas las consonantes. Tono respetuoso. Ritmo moderado.`,
-
-  // English accents
-  'en-CAR': `Speak with a neutral Caribbean English accent. Keep a warm, melodic cadence and relaxed confidence. Prioritize clarity and avoid heavy dialect spelling. If you use regional expressions, keep them occasional and easy to understand.`,
-  'en-US': `Speak with a standard American English accent (General American, Midwest neutral). Clear pronunciation, rhotic 'r' (pronounce all r's). Natural contractions: "gonna", "wanna", "gotta", "y'all" (informal). Fillers: "like", "you know", "I mean", "basically", "so", "right?". Expressions: "awesome", "cool", "sounds good", "for sure", "no worries", "gotcha" (=got you), "my bad" (=sorry), "heads up" (=warning). Warm and professional tone. Moderate pace with slight upward inflection on questions.`,
-  'en-GB': `Speak with a British Received Pronunciation accent. Clear enunciation, measured pace. Use British expressions: "brilliant", "lovely", "cheers". Professional and polished tone.`,
-  'en-AU': `Speak with an Australian English accent. Rising intonation at end of sentences. Use Australian expressions: "no worries", "mate", "reckon". Friendly and relaxed tone. Moderate pace.`,
-  'en-CA': `Speak with a Canadian English accent. Similar to American but with distinct vowel sounds. Use "eh" naturally. Polite and friendly tone. Moderate pace.`,
-  'en-IN': `Speak with an Indian English accent. Distinctive rhythm and intonation patterns. Clear pronunciation. Use expressions like "kindly", "do the needful". Professional and courteous tone.`,
-  'en-IE': `Speak with an Irish English accent. Musical intonation with lilting rhythm. Use expressions: "grand", "craic", "sure". Warm and engaging tone.`,
-  'en-JM': `Speak with a Jamaican English accent (Kingston). Rhythmic and melodic intonation influenced by Patois. 'th' sounds like 'd' or 't' ("the" → "de", "thing" → "ting"). Drop 'h' at start of words. Fillers: "yuh know", "seen?", "ya dun know". Expressions: "no problem" (=you're welcome), "yeah man", "irie" (=good/great), "likkle" (=little), "mi soon come" (=I'll be right back), "wah gwaan" (=what's going on), "big up" (=respect/shout out), "everyting criss" (=everything's good). Warm, relaxed and confident tone. Moderate-slow pace with sing-song rhythm.`,
-  'en-TT': `Speak with a Trinidadian English accent (Port of Spain). Melodic and rhythmic intonation with Caribbean lilt. 'th' often becomes 'd' or 't'. Fillers: "yuh know", "right", "boy/gyul". Expressions: "lime/liming" (=hanging out), "fete" (=party), "steups" (=disapproval sound), "horning" (=cheating), "wha happening" (=what's up), "real" (intensifier: "real nice"), "eh eh" (=surprise), "bacchanal" (=drama/chaos). Warm, animated and friendly tone. Moderate pace with musical cadence.`,
-  'en-KE': `Speak with a Kenyan English accent. Clear and measured pronunciation. Professional and warm tone. Moderate pace with distinct rhythm.`,
-  'en-NZ': `Speak with a New Zealand English accent. Similar to Australian but with distinct vowel shifts. Use expressions: "sweet as", "choice". Friendly and laid-back tone.`,
-  'en-NG': `Speak with a Nigerian English accent. Clear pronunciation with distinctive rhythm. Professional and confident tone. Moderate pace.`,
-  'en-PH': `Speak with a Filipino English accent. Clear and precise pronunciation. Friendly and warm tone. Moderate pace with slight tonal variations.`,
-  'en-SG': `Speak with a Singaporean English accent. Clear pronunciation with distinct rhythm. Use particles naturally: "lah", "leh". Professional and efficient tone.`,
-  'en-ZA': `Speak with a South African English accent. Distinctive vowel sounds and rhythm. Use expressions: "shame" (sympathy), "just now". Professional and warm tone.`,
-  'en-GH': `Speak with a Ghanaian English accent. Clear and measured pronunciation. Professional and warm tone. Moderate pace.`,
-
-  // ── Portuguese accents ──
-  'pt-BR': `Fale com sotaque brasileiro (Sao Paulo/sudeste). Entonacao melodica e calorosa. Use expressoes: "legal", "beleza", "tranquilo". Tom amigavel e descontraido. Ritmo moderado. Pronuncie as vogais abertas.`,
-  'pt-PT': `Fale com sotaque portugues europeu (Lisboa). Entonacao mais fechada, vogais reduzidas. Use expressoes: "fixe", "pois", "pronto". Tom profissional e direto. Ritmo moderado-rapido.`,
-  'pt-AO': `Fale com sotaque angolano. Entonacao clara e ritmica. Tom respeitoso e caloroso. Ritmo moderado. Pronuncia clara das vogais.`,
-  'pt-MZ': `Fale com sotaque mocambicano. Entonacao clara e melodica. Tom amavel e profissional. Ritmo moderado.`,
-  'pt-CV': `Fale com sotaque cabo-verdiano. Entonacao ritmica e melodica. Tom caloroso e amigavel. Ritmo moderado.`,
-
-  // ── French accents ──
-  'fr-FR': `Parle avec un accent francais standard (parisien). Intonation elegante et mesuree. Utilise des expressions: "c'est genial", "formidable", "d'accord". Ton professionnel et chaleureux. Rythme modere.`,
-  'fr-CA': `Parle avec un accent quebecois. Intonation chantante et expressive. Utilise le "tu" naturellement. Expressions: "correct", "pas de trouble", "c'est l'fun". Ton chaleureux et direct.`,
-  'fr-BE': `Parle avec un accent belge francophone. Intonation douce et mesuree. Utilise "septante", "nonante". Ton amical et professionnel. Rythme modere.`,
-  'fr-CH': `Parle avec un accent suisse romand. Intonation posee et claire. Utilise "huitante". Ton professionnel et cordial. Rythme mesure.`,
-  'fr-SN': `Parle avec un accent senegalais. Intonation claire et rythmee. Ton respectueux et chaleureux. Rythme modere.`,
-  'fr-CM': `Parle avec un accent camerounais. Intonation melodique et expressive. Ton chaleureux et professionnel. Rythme modere.`,
-  'fr-CD': `Parle avec un accent congolais (RDC). Intonation melodique et chaleureuse. Ton respectueux et amical. Rythme modere.`,
-  'fr-CI': `Parle avec un accent ivoirien. Intonation melodique et animee. Ton chaleureux et direct. Rythme modere-rapide.`,
-  'fr-HT': `Parle avec un accent haitien. Intonation chantante et expressive. Ton chaleureux et amical. Rythme modere.`,
-
-  // ── German accents ──
-  'de-DE': `Sprich mit einem standarddeutschen Akzent (Hochdeutsch). Klare Aussprache und gemessene Intonation. Professioneller und freundlicher Ton. Moderates Tempo.`,
-  'de-AT': `Sprich mit einem oesterreichischen Akzent. Weichere Intonation als Hochdeutsch. Verwende Ausdruecke: "passt", "gell", "leiwand". Freundlicher und warmer Ton.`,
-  'de-CH': `Sprich mit einem Schweizer Hochdeutsch Akzent. Klare und gemessene Aussprache. Verwende "grueezi". Hoeflicher und professioneller Ton. Ruhiges Tempo.`,
-  'de-LI': `Sprich mit einem liechtensteinischen Akzent. Aehnlich wie Schweizer Deutsch. Hoeflich und professionell. Ruhiges Tempo.`,
-  'de-LU': `Sprich mit einem luxemburgischen Akzent. Klare Aussprache mit franzoesischem Einfluss. Professioneller Ton. Moderates Tempo.`,
-
-  // ── Italian accents ──
-  'it-IT': `Parla con un accento italiano standard (Roma/Milano). Intonazione melodica e espressiva. Usa espressioni: "perfetto", "benissimo", "certo". Tono caldo e professionale. Ritmo moderato.`,
-  'it-CH': `Parla con un accento ticinese (Svizzera italiana). Intonazione chiara e misurata. Tono professionale e cordiale. Ritmo moderato.`,
-  'it-SM': `Parla con un accento sammarinese. Intonazione simile all'italiano standard con sfumature romagnole. Tono cordiale e professionale.`,
-}
 
 function buildIdentityAccentPrompt(accent: string, traitPrompt: string): string {
   const languageScopedPrefix = accent.startsWith('en-')
@@ -539,6 +463,7 @@ ${traitPrompt}`
 
 /**
  * Auto-generate AGENT_ACCENT_PROMPT and AGENT_TTS_STYLE_PROMPT when accent changes.
+ * Trait text is loaded from instance/prompts/accents/{accent}.md.
  */
 async function generateAccentPrompt(registry: Registry): Promise<void> {
   const configStore = await import('../../kernel/config-store.js')
@@ -546,15 +471,17 @@ async function generateAccentPrompt(registry: Registry): Promise<void> {
   const accent = await configStore.get(db, 'AGENT_ACCENT').catch(() => '')
 
   if (!accent) {
-    // Clear accent prompts when no accent selected
     await configStore.set(db, 'AGENT_ACCENT_PROMPT', '', false).catch(() => {})
     await configStore.set(db, 'AGENT_TTS_STYLE_PROMPT', '', false).catch(() => {})
     return
   }
 
-  const traitPrompt = ACCENT_TRAIT_PROMPTS[accent] ?? ''
-  if (!traitPrompt) {
-    logger.warn({ accent }, 'No accent trait prompt defined for accent')
+  const accentPath = join(process.cwd(), 'instance', 'prompts', 'accents', `${accent}.md`)
+  let traitPrompt = ''
+  try {
+    traitPrompt = (await readFile(accentPath, 'utf-8')).trim()
+  } catch {
+    logger.warn({ accent, path: accentPath }, 'Accent .md file not found')
     await configStore.set(db, 'AGENT_ACCENT_PROMPT', '', false).catch(() => {})
     await configStore.set(db, 'AGENT_TTS_STYLE_PROMPT', '', false).catch(() => {})
     return
@@ -562,7 +489,7 @@ async function generateAccentPrompt(registry: Registry): Promise<void> {
 
   await configStore.set(db, 'AGENT_ACCENT_PROMPT', buildIdentityAccentPrompt(accent, traitPrompt), false).catch(() => {})
   await configStore.set(db, 'AGENT_TTS_STYLE_PROMPT', buildTtsAccentPrompt(accent, traitPrompt), false).catch(() => {})
-  logger.info({ accent }, 'Accent prompt auto-generated')
+  logger.info({ accent }, 'Accent prompt loaded from .md file')
 }
 
 export default manifest

@@ -228,7 +228,7 @@ const AGENT_LANGUAGES = [
   { value: 'en', label: 'English / Ingles' },
 ]
 
-/** Accent options grouped by language */
+/** Accent options grouped by language — must match instance/prompts/accents/*.md files */
 const ACCENT_OPTIONS: Record<string, { value: string; label: string }[]> = {
   es: [
     { value: '', label: 'Neutro / Neutral' },
@@ -236,13 +236,10 @@ const ACCENT_OPTIONS: Record<string, { value: string; label: string }[]> = {
     { value: 'es-CO', label: 'Colombia' },
     { value: 'es-EC', label: 'Ecuador' },
     { value: 'es-PE', label: 'Peru' },
-    { value: 'es-CL', label: 'Chile' },
-    { value: 'es-CAR', label: 'Caribe' },
   ],
   en: [
     { value: '', label: 'Neutral' },
     { value: 'en-US', label: 'USA' },
-    { value: 'en-CAR', label: 'Caribbean' },
   ],
 }
 

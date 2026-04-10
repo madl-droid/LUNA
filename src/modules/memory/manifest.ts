@@ -34,8 +34,8 @@ const manifest: ModuleManifest = {
     MEMORY_SESSION_INACTIVITY_TIMEOUT_MIN: numEnv(30),
     MEMORY_SESSION_MAX_TTL_HOURS: numEnv(24),
     MEMORY_SESSION_REOPEN_WINDOW_HOURS: numEnv(1),
-    MEMORY_COMPRESSION_THRESHOLD: numEnv(30).describe(
-      'Número de TURNS (ida+vuelta) antes de comprimir. Un turn = mensaje usuario + respuesta asistente.',
+    MEMORY_COMPRESSION_THRESHOLD: numEnv(20).describe(
+      'Turnos (ida+vuelta) antes de comprimir. DEBE ser menor que MEMORY_BUFFER_MESSAGE_COUNT/2 - KEEP_RECENT. buffer-compressor auto-ajusta si excede el límite posible.',
     ),
     MEMORY_COMPRESSION_KEEP_RECENT: numEnv(10),
 

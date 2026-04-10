@@ -4,7 +4,11 @@
 
 import type { Pool } from 'pg'
 import pino from 'pino'
-import type { LeadSummary, LeadDetail, QualificationStatus, StatusMetric } from './types.js'
+import type { LeadSummary, LeadDetail, QualificationStatus } from './types.js'
+
+// Local types (moved from types.ts — only used by this module)
+interface MetricChannelBreakdown { channel: string; count: number }
+interface StatusMetric { status: string; total: number; channels: MetricChannelBreakdown[] }
 
 const logger = pino({ name: 'lead-scoring:db' })
 
@@ -274,29 +278,50 @@ export class LeadQueries {
 
   /**
    * Get all leads that need recalculation (for batch recalc on config change).
+   * Uses internal pagination to avoid loading all leads at once. Safety cap: 10000.
    */
   async getAllLeadsForRecalc(): Promise<Array<{
     contactId: string
     qualificationData: Record<string, unknown>
     qualificationStatus: QualificationStatus
   }>> {
-    const result = await this.db.query(
-      `SELECT ac.contact_id,
-              COALESCE(ac.qualification_data, '{}') AS qualification_data,
-              ac.lead_status AS qualification_status
-       FROM agent_contacts ac
-       JOIN contacts c ON c.id = ac.contact_id
-       WHERE c.contact_type = 'lead'
-         AND ac.lead_status NOT IN ('blocked', 'converted', 'directo')`,
-    )
+    const allLeads: Array<{
+      contactId: string
+      qualificationData: Record<string, unknown>
+      qualificationStatus: QualificationStatus
+    }> = []
+    let offset = 0
+    const batchSize = 200
 
-    return result.rows.map((r: { contact_id: string; qualification_data: unknown; qualification_status: string }) => ({
-      contactId: r.contact_id,
-      qualificationData: typeof r.qualification_data === 'string'
-        ? JSON.parse(r.qualification_data)
-        : r.qualification_data as Record<string, unknown>,
-      qualificationStatus: r.qualification_status as QualificationStatus,
-    }))
+    while (true) {
+      const result = await this.db.query(
+        `SELECT ac.contact_id,
+                COALESCE(ac.qualification_data, '{}') AS qualification_data,
+                ac.lead_status AS qualification_status
+         FROM agent_contacts ac
+         JOIN contacts c ON c.id = ac.contact_id
+         WHERE c.contact_type = 'lead'
+           AND ac.lead_status NOT IN ('blocked', 'converted')
+         ORDER BY ac.contact_id
+         LIMIT $1 OFFSET $2`,
+        [batchSize, offset],
+      )
+
+      if (result.rows.length === 0) break
+
+      allLeads.push(...result.rows.map((r: { contact_id: string; qualification_data: unknown; qualification_status: string }) => ({
+        contactId: r.contact_id,
+        qualificationData: typeof r.qualification_data === 'string'
+          ? JSON.parse(r.qualification_data)
+          : r.qualification_data as Record<string, unknown>,
+        qualificationStatus: r.qualification_status as QualificationStatus,
+      })))
+
+      offset += batchSize
+      if (allLeads.length >= 10000) break // safety cap
+    }
+
+    return allLeads
   }
 
   /**

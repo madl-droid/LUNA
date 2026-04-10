@@ -93,7 +93,6 @@ const TASK_ALIASES: Record<string, LLMTask> = {
   'subagent-verify': 'criticize',        // subagent verification step
 
   // ── Engine: proactive ──
-  'nightly-scoring': 'batch',            // nightly-batch.ts
   'nightly-compress': 'batch',           // nightly-batch.ts
   'nightly-reactivation': 'batch',       // nightly-batch.ts
   'scheduled-task': 'main',              // scheduled-tasks/executor.ts
@@ -111,9 +110,6 @@ const TASK_ALIASES: Record<string, LLMTask> = {
   'extract_knowledge': 'media',          // legacy alias
   'read_document': 'media',              // legacy alias
   'summarize_document': 'media',         // legacy alias
-
-  // ── Modules: lead-scoring ──
-  'extract_qualification': 'main',       // lead-scoring/extract-tool.ts
 
   // ── Modules: gmail ──
   'signature_extraction': 'main',        // gmail/signature-parser.ts

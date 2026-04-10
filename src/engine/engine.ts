@@ -499,6 +499,36 @@ async function persistObservedMessage(
 }
 
 // ═══════════════════════════════════════════════════════════
+// Pipeline Retry — error classification
+// ═══════════════════════════════════════════════════════════
+
+const PIPELINE_MAX_RETRIES = 2
+const PIPELINE_RETRY_BASE_MS = 1500  // backoff: 1.5s, 3s
+
+function isRetriableError(err: unknown): boolean {
+  if (!(err instanceof Error)) return true  // Unknown — try again
+
+  const msg = err.message.toLowerCase()
+
+  // NOT retriable — permanent errors
+  if (msg.includes('authentication') || msg.includes('unauthorized')) return false
+  if (msg.includes('not found') || msg.includes('no existe')) return false
+  if (msg.includes('invalid config') || msg.includes('schema')) return false
+  if (msg.includes('permission denied') || msg.includes('forbidden')) return false
+
+  // Retriable — transient errors
+  if (msg.includes('timeout') || msg.includes('timed out')) return true
+  if (msg.includes('rate limit') || msg.includes('429')) return true
+  if (msg.includes('econnreset') || msg.includes('econnrefused')) return true
+  if (msg.includes('socket hang up') || msg.includes('network')) return true
+  if (msg.includes('overloaded') || msg.includes('529')) return true
+  if (msg.includes('pool') || msg.includes('connection')) return true
+
+  // Default: retriable (better to try too much than too little)
+  return true
+}
+
+// ═══════════════════════════════════════════════════════════
 // Agentic pipeline
 // ═══════════════════════════════════════════════════════════
 
@@ -506,6 +536,7 @@ async function persistObservedMessage(
  * Run the agentic pipeline for a reactive message.
  * Phase 1 → effort classification → agentic loop → post-process → Phase 5.
  * Called from processMessageInner().
+ * Retries up to PIPELINE_MAX_RETRIES times on transient errors (backoff: 1.5s, 3s).
  */
 async function runAgenticPipeline(
   ctx: ContextBundle,
@@ -517,17 +548,48 @@ async function runAgenticPipeline(
   intakeDurationMs: number,
 ): Promise<PipelineResult> {
   const log = logger.child({ traceId: ctx.traceId, pipeline: 'agentic' })
+  const traceId = ctx.traceId
 
-  const runResult = await runAgenticDelivery({
-    ctx,
-    mode: 'reactive',
-    registry: reg,
-    db,
-    redis,
-    engineConfig: config,
-    totalStart,
-    intakeDurationMs,
-  })
+  let lastError: Error | null = null
+  let runResult: Awaited<ReturnType<typeof runAgenticDelivery>> | undefined
+
+  for (let attempt = 0; attempt <= PIPELINE_MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delayMs = PIPELINE_RETRY_BASE_MS * Math.pow(2, attempt - 1)
+        log.warn({ traceId, attempt, delayMs }, 'Pipeline retry — backing off')
+        await new Promise(r => setTimeout(r, delayMs))
+      }
+      runResult = await runAgenticDelivery({
+        ctx,
+        mode: 'reactive',
+        registry: reg,
+        db,
+        redis,
+        engineConfig: config,
+        totalStart,
+        intakeDurationMs,
+      })
+      log.info({ traceId, attempt, totalAttempts: attempt + 1 }, 'Pipeline completed')
+      break  // Success — exit retry loop
+    } catch (err) {
+      lastError = err as Error
+      if (!isRetriableError(err)) {
+        log.warn({ traceId, err, attempt }, 'Pipeline failed with non-retriable error — no retry')
+        break
+      }
+      if (attempt < PIPELINE_MAX_RETRIES) {
+        log.warn({ traceId, err, attempt }, 'Pipeline failed — will retry')
+      } else {
+        log.error({ traceId, err, attempt }, 'Pipeline failed — all retries exhausted')
+      }
+    }
+  }
+
+  if (!runResult) {
+    throw lastError
+  }
+
   const { pipelineResult, agenticResult, deliveryResult, responseText } = runResult
   const totalDurationMs = pipelineResult.totalDurationMs
   const deliveryDurationMs = pipelineResult.deliveryDurationMs

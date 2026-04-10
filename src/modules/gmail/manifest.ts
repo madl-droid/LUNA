@@ -7,11 +7,9 @@ import { z } from 'zod'
 import pino from 'pino'
 import type { ModuleManifest, ApiRoute } from '../../kernel/types.js'
 import type { Registry } from '../../kernel/registry.js'
-import { jsonResponse, parseBody, parseQuery, buildBaseUrl, oauthCallbackPage } from '../../kernel/http-helpers.js'
+import { jsonResponse, parseBody, buildBaseUrl } from '../../kernel/http-helpers.js'
 import { numEnv, numEnvMin, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
-import * as configStore from '../../kernel/config-store.js'
 import type { OAuthManager } from '../google-apps/oauth-manager.js'
-import { EmailOAuthManager } from './email-oauth.js'
 import { GmailAdapter } from './gmail-adapter.js'
 import { EmailRateLimiter } from './rate-limiter.js'
 import { cleanEmailBody, stripHtml } from './email-cleaner.js'
@@ -23,9 +21,6 @@ let gmailAdapter: GmailAdapter | null = null
 let _registry: Registry | null = null
 let pollInterval: ReturnType<typeof setInterval> | null = null
 let lastHistoryId: string | null = null
-let standaloneOAuth: EmailOAuthManager | null = null
-// Indica si email usa su propio OAuth (true) o el de google-apps (false)
-let usingStandaloneAuth = false
 let lunaLabels: LunaLabelIds = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
 let resolvedCustomLabels: ResolvedCustomLabel[] = []
 let detectedOwnAddress = ''
@@ -543,24 +538,15 @@ const apiRoutes: ApiRoute[] = [
     method: 'GET',
     path: 'status',
     handler: async (_req, res) => {
-      let connected = false
-      let email: string | null = null
-
-      if (usingStandaloneAuth && standaloneOAuth) {
-        connected = standaloneOAuth.isConnected()
-        email = standaloneOAuth.getState().email
-      } else {
-        const oauthManager = _registry?.getOptional<OAuthManager>('google:oauth-manager')
-        connected = oauthManager?.isConnected() ?? false
-        email = oauthManager?.getState().email ?? null
-      }
+      const oauthManager = _registry?.getOptional<OAuthManager>('google:oauth-manager')
+      const connected = oauthManager?.isConnected() ?? false
+      const email = oauthManager?.getState().email ?? null
 
       jsonResponse(res, 200, {
         ...pollerState,
         connected,
         email,
         adapterReady: gmailAdapter !== null,
-        standaloneAuth: usingStandaloneAuth,
       })
     },
   },
@@ -680,214 +666,19 @@ const apiRoutes: ApiRoute[] = [
       jsonResponse(res, 200, { email, isNoReply: gmailAdapter.isNoReply(email) })
     },
   },
-  // ─── Auth standalone routes ──────────────────────
+  // ─── Auth status route ──────────────────────
   {
     method: 'GET',
     path: 'auth-status',
     handler: async (req, res) => {
-      const hasCredentials = standaloneOAuth?.hasCredentials() ?? false
       const redirectUri = getRedirectUri(req)
-
-      // Si google-apps está activo, redirigir a su status
-      if (!usingStandaloneAuth) {
-        const oauthManager = _registry?.getOptional<OAuthManager>('google:oauth-manager')
-        if (oauthManager) {
-          const state = oauthManager.getState()
-          jsonResponse(res, 200, { standalone: false, connected: oauthManager.isConnected(), hasCredentials: oauthManager.hasCredentials(), redirectUri, ...state })
-          return
-        }
-      }
-      if (!standaloneOAuth) {
-        jsonResponse(res, 200, { standalone: true, connected: false, status: 'not_configured', email: null, hasCredentials: false, redirectUri })
+      const oauthManager = _registry?.getOptional<OAuthManager>('google:oauth-manager')
+      if (!oauthManager) {
+        jsonResponse(res, 200, { connected: false, status: 'google_apps_not_active', email: null, hasCredentials: false, redirectUri })
         return
       }
-      const state = standaloneOAuth.getState()
-      jsonResponse(res, 200, { standalone: true, connected: standaloneOAuth.isConnected(), hasCredentials, redirectUri, ...state })
-    },
-  },
-  {
-    method: 'POST',
-    path: 'setup-credentials',
-    handler: async (req, res) => {
-      if (!usingStandaloneAuth) {
-        jsonResponse(res, 400, { error: 'Standalone auth not active — use google-apps module' })
-        return
-      }
-      try {
-        const body = await parseBody<{ clientId: string; clientSecret: string }>(req)
-        if (!body.clientId || !body.clientSecret) {
-          jsonResponse(res, 400, { error: 'Missing clientId or clientSecret' })
-          return
-        }
-
-        // Persist to config_store (encrypted) + .env
-        if (_registry) {
-          const db = _registry.getDb()
-          await configStore.setMultiple(db, {
-            GMAIL_CLIENT_ID: body.clientId,
-            GMAIL_CLIENT_SECRET: body.clientSecret,
-          })
-        }
-
-        // Re-initialize OAuth manager with new credentials
-        const db = _registry!.getDb()
-        if (!standaloneOAuth) {
-          standaloneOAuth = new EmailOAuthManager({
-            GMAIL_CLIENT_ID: body.clientId,
-            GMAIL_CLIENT_SECRET: body.clientSecret,
-            GMAIL_REFRESH_TOKEN: '',
-            GMAIL_TOKEN_REFRESH_BUFFER_MS: 300000,
-          }, db)
-        } else {
-          standaloneOAuth.updateCredentials(body.clientId, body.clientSecret)
-        }
-
-        // Generate auth URL
-        const redirectUri = getRedirectUri(req)
-        const url = standaloneOAuth.generateAuthUrl(redirectUri)
-        jsonResponse(res, 200, { ok: true, authUrl: url })
-      } catch (err) {
-        jsonResponse(res, 500, { error: 'Setup failed: ' + String(err) })
-      }
-    },
-  },
-  {
-    method: 'GET',
-    path: 'auth-url',
-    handler: async (req, res) => {
-      if (!usingStandaloneAuth || !standaloneOAuth) {
-        jsonResponse(res, 400, { error: 'Standalone auth not active — use google-apps module for authentication' })
-        return
-      }
-      if (!standaloneOAuth.hasCredentials()) {
-        jsonResponse(res, 400, { error: 'No credentials configured — use setup-credentials first', needsSetup: true })
-        return
-      }
-      const redirectUri = getRedirectUri(req)
-      const url = standaloneOAuth.generateAuthUrl(redirectUri)
-      jsonResponse(res, 200, { url })
-    },
-  },
-  {
-    method: 'GET',
-    path: 'oauth2callback',
-    handler: async (req, res) => {
-      const query = parseQuery(req)
-      const code = query.get('code')
-      const error = query.get('error')
-
-      if (error) {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(oauthCallbackPage({ success: false, title: 'Error de autorizacion', message: error }))
-        return
-      }
-
-      if (!code) {
-        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(oauthCallbackPage({ success: false, title: 'Error', message: 'Codigo de autorizacion no recibido' }))
-        return
-      }
-
-      try {
-        const redirectUri = getRedirectUri(req)
-
-        // Use standalone or shared OAuth
-        if (usingStandaloneAuth && standaloneOAuth) {
-          await standaloneOAuth.handleAuthCallback(code, redirectUri)
-
-          // Initialize adapter and polling if not done
-          if (!gmailAdapter && _registry) {
-            const config = _registry.getConfig<EmailConfig>('gmail')
-            gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
-            _registry.provide('email:adapter', gmailAdapter)
-            const { registerEmailTools } = await import('./tools.js')
-            await registerEmailTools(_registry, gmailAdapter)
-            await ensureAllLabels()
-            startPolling(config.EMAIL_POLL_INTERVAL_MS)
-          }
-        }
-
-        const email = standaloneOAuth?.getState().email ?? ''
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(oauthCallbackPage({
-          success: true,
-          title: 'Gmail conectado',
-          message: email ? `Autenticado como ${email}` : 'Esta ventana se cerrara automaticamente',
-        }))
-      } catch (err) {
-        logger.error({ err }, 'Gmail OAuth callback failed')
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(oauthCallbackPage({ success: false, title: 'Error de autenticacion', message: String(err) }))
-      }
-    },
-  },
-  {
-    method: 'POST',
-    path: 'auth-callback',
-    handler: async (req, res) => {
-      if (!usingStandaloneAuth || !standaloneOAuth) {
-        jsonResponse(res, 400, { error: 'Standalone auth not active' })
-        return
-      }
-      try {
-        const body = await parseBody(req)
-        const code = body.code as string
-        if (!code) {
-          jsonResponse(res, 400, { error: 'Missing authorization code' })
-          return
-        }
-        const redirectUri = getRedirectUri(req)
-        await standaloneOAuth.handleAuthCallback(code, redirectUri)
-
-        // Ahora que tenemos auth, inicializar adapter y polling
-        if (!gmailAdapter && _registry) {
-          const config = _registry.getConfig<EmailConfig>('gmail')
-          gmailAdapter = new GmailAdapter(standaloneOAuth.getClient(), config)
-          _registry.provide('email:adapter', gmailAdapter)
-          const { registerEmailTools } = await import('./tools.js')
-          await registerEmailTools(_registry, gmailAdapter)
-          await ensureAllLabels()
-          startPolling(config.EMAIL_POLL_INTERVAL_MS)
-        }
-
-        jsonResponse(res, 200, { ok: true, state: standaloneOAuth.getState() })
-      } catch (err) {
-        jsonResponse(res, 500, { error: 'Auth callback failed: ' + String(err) })
-      }
-    },
-  },
-  {
-    method: 'POST',
-    path: 'auth-disconnect',
-    handler: async (_req, res) => {
-      if (!usingStandaloneAuth || !standaloneOAuth) {
-        jsonResponse(res, 400, { error: 'Standalone auth not active' })
-        return
-      }
-      try {
-        stopPolling()
-        gmailAdapter = null
-        await standaloneOAuth.disconnect()
-        jsonResponse(res, 200, { ok: true, status: 'disconnected' })
-      } catch (err) {
-        jsonResponse(res, 500, { error: 'Disconnect failed: ' + String(err) })
-      }
-    },
-  },
-  {
-    method: 'POST',
-    path: 'auth-refresh',
-    handler: async (_req, res) => {
-      if (!usingStandaloneAuth || !standaloneOAuth) {
-        jsonResponse(res, 400, { error: 'Standalone auth not active' })
-        return
-      }
-      try {
-        await standaloneOAuth.refreshAccessToken()
-        jsonResponse(res, 200, { ok: true, state: standaloneOAuth.getState() })
-      } catch (err) {
-        jsonResponse(res, 500, { error: 'Refresh failed: ' + String(err) })
-      }
+      const state = oauthManager.getState()
+      jsonResponse(res, 200, { connected: oauthManager.isConnected(), hasCredentials: oauthManager.hasCredentials(), redirectUri, ...state })
     },
   },
 ]
@@ -905,7 +696,7 @@ const manifest: ModuleManifest = {
   channelType: 'async',
   removable: true,
   activateByDefault: false,
-  depends: [], // google-apps es opcional — si está activo se comparte su OAuth, si no email usa el suyo
+  depends: ['google-apps'], // Gmail SIEMPRE usa el OAuth compartido de google-apps
 
   configSchema: z.object({
     EMAIL_POLL_INTERVAL_MS: numEnv(60000),
@@ -940,11 +731,6 @@ const manifest: ModuleManifest = {
     EMAIL_SESSION_INACTIVITY_HOURS: numEnvMin(1, 48),
     EMAIL_PRECLOSE_FOLLOWUP_HOURS: numEnv(0),
     EMAIL_PRECLOSE_FOLLOWUP_TEXT: z.string().default(''),
-    // OAuth standalone (cuando google-apps no está activo)
-    GMAIL_CLIENT_ID: z.string().default(''),
-    GMAIL_CLIENT_SECRET: z.string().default(''),
-    GMAIL_REFRESH_TOKEN: z.string().default(''),
-    GMAIL_TOKEN_REFRESH_BUFFER_MS: numEnv(300000),
     // Naturalidad — avisos automaticos cuando la respuesta tarda
     ACK_EMAIL_TRIGGER_MS: numEnv(0),
     ACK_EMAIL_HOLD_MS: numEnv(2000),
@@ -1343,36 +1129,16 @@ const manifest: ModuleManifest = {
       title: { es: 'Conectar Gmail', en: 'Connect Gmail' },
       steps: [
         {
-          title: { es: 'Crear proyecto en Google Cloud', en: 'Create Google Cloud project' },
+          title: { es: 'Autenticacion via Google Apps', en: 'Authentication via Google Apps' },
           instructions: {
-            es: '<ol><li>Ve a <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Crea un proyecto nuevo (o selecciona uno existente).</li><li>Ve a <strong>APIs y servicios > Pantalla de consentimiento</strong> y configura como "Interno" o "Externo".</li></ol>',
-            en: '<ol><li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></li><li>Create a new project (or select an existing one).</li><li>Go to <strong>APIs & Services > OAuth consent screen</strong> and configure as "Internal" or "External".</li></ol>',
+            es: '<p>Gmail utiliza la autenticacion OAuth2 compartida del modulo <strong>Google Apps</strong>. Para conectar Gmail:</p><ol><li>Ve a <strong>Canales &gt; Google Apps</strong> en el panel de control.</li><li>Haz clic en <strong>Conectar</strong> y sigue el flujo OAuth2.</li><li>Los scopes de Gmail ya estan incluidos en la autorizacion de Google Apps.</li><li>Una vez conectado, regresa aqui y activa el polling.</li></ol>',
+            en: '<p>Gmail uses the shared OAuth2 authentication from the <strong>Google Apps</strong> module. To connect Gmail:</p><ol><li>Go to <strong>Channels &gt; Google Apps</strong> in the control panel.</li><li>Click <strong>Connect</strong> and follow the OAuth2 flow.</li><li>Gmail scopes are already included in the Google Apps authorization.</li><li>Once connected, return here and enable polling.</li></ol>',
           },
-        },
-        {
-          title: { es: 'Habilitar Gmail API y crear credenciales', en: 'Enable Gmail API and create credentials' },
-          instructions: {
-            es: '<ol><li>En <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener">Gmail API <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>, haz clic en <strong>Habilitar</strong>.</li><li>Ve a <strong>Credenciales > Crear credenciales > ID de cliente OAuth</strong>.</li><li>Tipo: <strong>Aplicacion web</strong>. Copia el Client ID y Client Secret.</li></ol>',
-            en: '<ol><li>In <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener">Gmail API <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>, click <strong>Enable</strong>.</li><li>Go to <strong>Credentials > Create credentials > OAuth client ID</strong>.</li><li>Type: <strong>Web application</strong>. Copy Client ID and Client Secret.</li></ol>',
-          },
-        },
-        {
-          title: { es: 'Ingresa las credenciales', en: 'Enter credentials' },
-          instructions: {
-            es: '<p>Ingresa el Client ID y Client Secret que obtuviste en el paso anterior:</p>',
-            en: '<p>Enter the Client ID and Client Secret from the previous step:</p>',
-          },
-          fields: [
-            { key: 'GMAIL_CLIENT_ID', label: { es: 'Client ID', en: 'Client ID' }, type: 'text', placeholder: 'xxxxx.apps.googleusercontent.com' },
-            { key: 'GMAIL_CLIENT_SECRET', label: { es: 'Client Secret', en: 'Client Secret' }, type: 'secret', placeholder: 'GOCSPX-...' },
-          ],
         },
       ],
-      saveEndpoint: 'auth-callback',
-      applyAfterSave: true,
       verifyEndpoint: 'auth-status',
       operationParams: {
-        autoReconnect: { es: 'Refresco automatico de token OAuth', en: 'Automatic OAuth token refresh' },
+        autoReconnect: { es: 'Refresco automatico de token OAuth (gestionado por Google Apps)', en: 'Automatic OAuth token refresh (managed by Google Apps)' },
         maxRetries: { es: 'Reintentos de polling ante error', en: 'Polling retries on error' },
         retryIntervalMs: { es: 'Intervalo de polling de emails (ms)', en: 'Email polling interval (ms)' },
         custom: [
@@ -1393,75 +1159,11 @@ const manifest: ModuleManifest = {
       logger.warn({ configured: config.EMAIL_REPLY_MODE, valid: validReplyModes }, 'EMAIL_REPLY_MODE is not a recognized value — defaulting to reply-sender')
     }
 
-    // ─── Resolver autenticación: google-apps compartido o standalone ───
-    let authClient: import('google-auth-library').OAuth2Client | null = null
-    let oauthConnected = false
-
-    // Opción 1: Intentar usar OAuth de google-apps (si está activo)
-    const sharedOAuth = registry.getOptional<OAuthManager>('google:oauth-manager')
-    if (sharedOAuth) {
-      usingStandaloneAuth = false
-      authClient = sharedOAuth.getClient()
-      oauthConnected = sharedOAuth.isConnected()
-      logger.info('Email using shared OAuth from google-apps module')
-    } else {
-      // Opción 2: OAuth standalone con credenciales propias
-      usingStandaloneAuth = true
-      if (config.GMAIL_CLIENT_ID && config.GMAIL_CLIENT_SECRET) {
-        standaloneOAuth = new EmailOAuthManager({
-          GMAIL_CLIENT_ID: config.GMAIL_CLIENT_ID,
-          GMAIL_CLIENT_SECRET: config.GMAIL_CLIENT_SECRET,
-          GMAIL_REFRESH_TOKEN: config.GMAIL_REFRESH_TOKEN,
-          GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
-        }, db)
-
-        try {
-          await standaloneOAuth.initialize()
-        } catch (err) {
-          logger.warn({ err }, 'Standalone OAuth initialization failed — connect from console')
-        }
-
-        authClient = standaloneOAuth.getClient()
-        oauthConnected = standaloneOAuth.isConnected()
-        logger.info('Email using standalone OAuth (gmail-only scopes)')
-      } else {
-        // Try loading credentials from config_store (wizard may have saved them)
-        let storedClientId = ''
-        let storedClientSecret = ''
-        try {
-          storedClientId = await configStore.get(db, 'GMAIL_CLIENT_ID') ?? ''
-          storedClientSecret = await configStore.get(db, 'GMAIL_CLIENT_SECRET') ?? ''
-        } catch { /* config_store may not be ready */ }
-
-        if (storedClientId && storedClientSecret) {
-          standaloneOAuth = new EmailOAuthManager({
-            GMAIL_CLIENT_ID: storedClientId,
-            GMAIL_CLIENT_SECRET: storedClientSecret,
-            GMAIL_REFRESH_TOKEN: '',
-            GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
-          }, db)
-
-          try {
-            await standaloneOAuth.initialize()
-          } catch (err) {
-            logger.warn({ err }, 'Standalone OAuth initialization failed — connect from console')
-          }
-
-          authClient = standaloneOAuth.getClient()
-          oauthConnected = standaloneOAuth.isConnected()
-          logger.info('Email using standalone OAuth from config_store credentials')
-        } else {
-          // Create uninitialized manager — wizard will configure credentials later
-          standaloneOAuth = new EmailOAuthManager({
-            GMAIL_CLIENT_ID: '',
-            GMAIL_CLIENT_SECRET: '',
-            GMAIL_REFRESH_TOKEN: '',
-            GMAIL_TOKEN_REFRESH_BUFFER_MS: config.GMAIL_TOKEN_REFRESH_BUFFER_MS,
-          }, db)
-          logger.warn('No OAuth available — configure Google credentials from console wizard')
-        }
-      }
-    }
+    // ─── OAuth: always use shared OAuth from google-apps ───
+    const sharedOAuth = registry.get<OAuthManager>('google:oauth-manager')
+    const authClient = sharedOAuth.getClient()
+    const oauthConnected = sharedOAuth.isConnected()
+    logger.info('Email using shared OAuth from google-apps module')
 
     // Crear Gmail adapter si tenemos auth client
     if (authClient) {
@@ -1476,23 +1178,13 @@ const manifest: ModuleManifest = {
       await registerEmailTools(registry, gmailAdapter)
     }
 
-    // Expose standalone OAuth manager for shared callback dispatch
-    if (standaloneOAuth) {
-      registry.provide('gmail:oauth-manager', standaloneOAuth)
-    }
-
     // Expose label accessor so engine/tools can read custom label instructions
     registry.provide('gmail:label-instructions', () => resolvedCustomLabels)
 
     // ── Triage Config Service (engine reads this for pre-agentic classification) ──
     // Auto-detect own address from OAuth profile
     try {
-      if (standaloneOAuth) {
-        detectedOwnAddress = standaloneOAuth.getState().email ?? ''
-      } else {
-        const googleApps = registry.getOptional<{ getProfile?(): { email?: string } }>('google-apps:provider')
-        detectedOwnAddress = googleApps?.getProfile?.()?.email ?? ''
-      }
+      detectedOwnAddress = sharedOAuth.getState().email ?? ''
     } catch { /* ignore — will use empty string */ }
     registry.provide('gmail:triage-config', {
       getTriageConfig: () => ({
@@ -1774,7 +1466,7 @@ const manifest: ModuleManifest = {
       logger.info('OAuth not connected yet — email polling will start when authenticated')
     }
 
-    logger.info({ pollInterval: config.EMAIL_POLL_INTERVAL_MS, standalone: usingStandaloneAuth }, 'Email module initialized')
+    logger.info({ pollInterval: config.EMAIL_POLL_INTERVAL_MS }, 'Email module initialized')
   },
 
   async stop() {
@@ -1784,11 +1476,6 @@ const manifest: ModuleManifest = {
       clearTimeout(batch.timer)
     }
     pendingBatch.clear()
-    if (standaloneOAuth) {
-      await standaloneOAuth.shutdown()
-      standaloneOAuth = null
-    }
-    usingStandaloneAuth = false
     gmailAdapter = null
     _registry = null
     lunaLabels = { agent: null, escalated: null, converted: null, humanLoop: null, ignored: null }
@@ -1802,10 +1489,14 @@ function startPolling(intervalMs: number): void {
 
   pollerState.status = 'idle'
   // Primera poll inmediata
-  pollForEmails().catch(() => {})
+  pollForEmails().catch((err: unknown) => {
+    logger.error({ err }, 'Unexpected error in initial email poll')
+  })
 
   pollInterval = setInterval(() => {
-    pollForEmails().catch(() => {})
+    pollForEmails().catch((err: unknown) => {
+      logger.error({ err }, 'Unexpected error in email poll cycle')
+    })
   }, intervalMs)
 
   logger.info({ intervalMs }, 'Email polling started')

@@ -51,7 +51,7 @@ const manifest: ModuleManifest = {
     LLM_TPM_GOOGLE: numEnvMin(0, 0),
 
     // Usage tracking
-    LLM_USAGE_ENABLED: z.string().default('true'),
+    LLM_USAGE_ENABLED: boolEnv(true),
     LLM_USAGE_RETENTION_DAYS: numEnvMin(1, 90),
 
     // Cost budget (0 = unlimited)
@@ -402,6 +402,12 @@ const manifest: ModuleManifest = {
     const db = registry.getDb()
     const redis = registry.getRedis()
     const config = registry.getConfig<LLMModuleConfig>('llm')
+
+    // Warn early if no LLM provider is configured — system will start but all LLM calls will fail
+    if (!config.ANTHROPIC_API_KEY && !config.GOOGLE_AI_API_KEY) {
+      const logger = (await import('pino')).default({ name: 'llm' })
+      logger.warn('No LLM API keys configured (ANTHROPIC_API_KEY and GOOGLE_AI_API_KEY are both empty). All LLM calls will fail until at least one key is set.')
+    }
 
     // Create gateway
     _gateway = new LLMGateway(db, redis, config)
