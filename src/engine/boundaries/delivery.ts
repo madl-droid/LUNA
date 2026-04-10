@@ -194,32 +194,22 @@ export async function delivery(
 
 async function logLeakageEvent(
   ctx: ContextBundle,
-  db: Pool,
+  _db: Pool,
   details: {
     action: 'sanitized-text' | 'audio-blocked'
     issues: string[]
     outputFormat: CompositorOutput['outputFormat']
   },
 ): Promise<void> {
-  try {
-    await db.query(
-      `INSERT INTO pipeline_logs (trace_id, contact_id, session_id, event_type, payload, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [
-        ctx.traceId,
-        ctx.contactId,
-        ctx.session.id,
-        'output_leakage',
-        JSON.stringify({
-          ...details,
-          channel: ctx.message.channelName,
-          responseFormat: ctx.responseFormat,
-        }),
-      ],
-    )
-  } catch (err) {
-    logger.warn({ err, traceId: ctx.traceId }, 'Failed to log leakage event')
-  }
+  logger.warn({
+    traceId: ctx.traceId,
+    contactId: ctx.contactId,
+    sessionId: ctx.session.id,
+    event: 'output_leakage',
+    ...details,
+    channel: ctx.message.channelName,
+    responseFormat: ctx.responseFormat,
+  }, 'Output leakage detected')
 }
 
 // ─── Rate Limiting ──────────────────────────────
@@ -636,25 +626,23 @@ async function persistMessages(
   // Legacy: direct DB
   try {
     await db.query(
-      `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO messages (id, session_id, role, content_text, content_type, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (id) DO NOTHING`,
       [
-        ctx.message.id, ctx.session.id, ctx.message.channelName,
-        'user', ctx.message.from,
-        JSON.stringify({ type: ctx.messageType, text: ctx.normalizedText }),
+        ctx.message.id, ctx.session.id,
+        'user', ctx.normalizedText, ctx.messageType ?? 'text',
         ctx.message.timestamp,
       ],
     )
 
     await db.query(
-      `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO messages (id, session_id, role, content_text, content_type, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (id) DO NOTHING`,
       [
-        randomUUID(), ctx.session.id, ctx.message.channelName,
-        'agent', 'assistant',
-        JSON.stringify({ type: 'text', text: responseText }),
+        randomUUID(), ctx.session.id,
+        'assistant', responseText, 'text',
         now,
       ],
     )

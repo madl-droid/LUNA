@@ -75,8 +75,8 @@ export async function shouldSuppressProactive(
       text_content: string | null
     }>(
       `
-      SELECT m.sender_type,
-             m.content->>'text' AS text_content
+      SELECT m.role AS sender_type,
+             m.content_text AS text_content
       FROM messages m
       JOIN sessions s ON m.session_id = s.id
       WHERE s.contact_id = $1
@@ -91,7 +91,7 @@ export async function shouldSuppressProactive(
 
     // Determine if the last user message is a farewell
     const lastUserMsg = messages.find((m) => m.sender_type === 'user')
-    const lastAgentMsg = messages.find((m) => m.sender_type === 'agent')
+    const lastAgentMsg = messages.find((m) => m.sender_type === 'assistant')
 
     const userSaidGoodbye = lastUserMsg?.text_content
       ? FAREWELL_PATTERNS.some((p) => p.test(lastUserMsg.text_content!))

@@ -109,12 +109,54 @@
 **Problema:** Variable `logger` declarada pero nunca usada.
 **Fix:** Import de `pino` y declaración de `logger` eliminados.
 
+## Column-Schema Alignment (Paso 5)
+
+Verificación exhaustiva de columnas en 10 tablas críticas. Resultado:
+
+| Tabla | Estado | Detalles |
+|-------|--------|---------|
+| `contacts` | **CORREGIDO** | `status` no existe — eliminado de UPDATE en contact-merge.ts |
+| `sessions` | PASS | Todas las columnas coinciden |
+| `messages` | **CORREGIDO** | 5 columnas legacy en fallbacks: channel_name, sender_type, sender_id, content, contact_id |
+| `session_memory_chunks` | PASS | Todas las columnas coinciden |
+| `session_summaries_v2` | PASS | Todas las columnas coinciden |
+| `session_archives` | PASS | Todas las columnas coinciden |
+| `agent_contacts` | PASS | Todas las columnas coinciden |
+| `commitments` | PASS | Todas las columnas coinciden |
+| `pipeline_logs` | **CORREGIDO** | INSERT con trace_id, event_type, payload (no existen) → reemplazado con pino log |
+| `knowledge_chunks` | PASS | Todas las columnas coinciden |
+
+### Bugs críticos de columnas (corregidos)
+
+#### 4. `contacts.status` — columna inexistente
+
+**Archivo:** `src/modules/memory/contact-merge.ts:108`
+**Problema:** `UPDATE contacts SET merged_into = $1, status = 'merged'` — no hay columna `status`.
+**Fix:** Eliminado `status = 'merged'`. `merged_into IS NOT NULL` indica contacto mergeado.
+
+#### 5. `messages` — columnas legacy en fallbacks (5 columnas)
+
+**Archivos:** `engine.ts`, `delivery.ts`, `gmail/manifest.ts`, `orphan-recovery.ts`, `conversation-guard.ts`
+**Problema:** Fallbacks de SQL directo usan columnas legacy (`channel_name`, `sender_type`, `sender_id`, `content`, `contact_id`) que no existen en el schema. El path principal (memory:manager → pg-store.ts) usa las correctas (`role`, `content_text`).
+**Fix:**
+- INSERTs actualizados a `role`, `content_text`, `content_type`
+- SELECTs actualizados: `sender_type` → `role`, `content` → `content_text`
+- Valores: `'agent'` → `'assistant'` (para coincidir con CHECK constraint)
+- `UPDATE messages SET contact_id` eliminado (messages no tiene contact_id; sessions ya movida)
+
+#### 6. `pipeline_logs` — INSERT con columnas inexistentes
+
+**Archivo:** `src/engine/boundaries/delivery.ts:206`
+**Problema:** `INSERT INTO pipeline_logs (trace_id, event_type, payload)` — ninguna de estas columnas existe.
+**Fix:** Reemplazado con `logger.warn()` de pino (structured logging). El INSERT siempre fallaba silenciosamente.
+
 ## Documentación actualizada
 
 | Archivo | Cambio |
 |---------|--------|
 | `CLAUDE.md` (raíz) | Eliminada ref a tabla `agents` en descripción del migrador |
 | `src/modules/memory/CLAUDE.md` | Actualizado a v2-only: tablas, nombres, nota de eliminación de v1 |
+| `src/engine/proactive/CLAUDE.md` | Corregida trampa: `sender_type` → `role` con valores correctos |
 
 ## Compilación Final
 
@@ -122,4 +164,4 @@
 npx tsc --noEmit → 0 errores
 ```
 
-## Overall Status: **PASS** (7 issues encontrados y corregidos)
+## Overall Status: **PASS** (10 issues encontrados y corregidos)

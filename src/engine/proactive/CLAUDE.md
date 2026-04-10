@@ -88,7 +88,7 @@ Cuando un ticket HITL se resuelve con `handoffMode = 'full_handoff'`, los compro
 ## Trampas
 - `guardConversation` (#7) usa `conversation:farewell:{id}` set por `markFarewell()` en Phase 5
 - `guardGoodbyeSuppressor` (#8) usa `suppress:{id}:{channel}` detectado por pattern matching
-- Orphan recovery usa `sender_type` (no `role`) — la tabla `messages` usa 'user'/'agent'
+- Orphan recovery usa `role` — la tabla `messages` usa 'user'/'assistant'/'system'
 - Smart cooldown es per-contact y lo aplican los job handlers individualmente (follow-up, commitment, etc.) — el runner no lo aplica a nivel batch
 - `isJobEnabled()` y `getJobInterval()` deben ser actualizados cuando se agrega un nuevo triggerType
 - Orphan recovery: `proactive_outreach_log.trigger_type` requiere migration 029 para aceptar `'orphan_recovery'`

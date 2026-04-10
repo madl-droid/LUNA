@@ -39,7 +39,7 @@ export async function findOrphanMessages(
   const sql = `
     SELECT
       m.id           AS message_id,
-      m.content      AS content,
+      m.content_text AS content,
       m.created_at   AS received_at,
       s.id           AS session_id,
       s.contact_id   AS contact_id,
@@ -47,7 +47,7 @@ export async function findOrphanMessages(
       s.channel_name AS channel_name
     FROM messages m
     JOIN sessions s ON m.session_id = s.id
-    WHERE m.sender_type = 'user'
+    WHERE m.role = 'user'
       AND m.created_at >= now() - ($1 || ' minutes')::interval
       AND m.created_at <= now() - ($2 || ' minutes')::interval
       AND s.contact_id IS NOT NULL
@@ -55,7 +55,7 @@ export async function findOrphanMessages(
         SELECT 1
         FROM messages m2
         WHERE m2.session_id = m.session_id
-          AND m2.sender_type = 'agent'
+          AND m2.role = 'assistant'
           AND m2.created_at > m.created_at
           AND m2.created_at <= m.created_at + ($2 || ' minutes')::interval
       )

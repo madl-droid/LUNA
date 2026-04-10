@@ -348,10 +348,9 @@ async function persistGapMessages(
       } else {
         const db = registry.getDb()
         await db.query(
-          `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, role, content_text, content_type, metadata, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
-          [msg.id, msg.sessionId, msg.channelName, msg.senderType, msg.senderId,
-           JSON.stringify(msg.content), msg.role, msg.contentText, msg.contentType,
+          `INSERT INTO messages (id, session_id, role, content_text, content_type, metadata, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
+          [msg.id, msg.sessionId, msg.role, msg.contentText, msg.contentType,
            JSON.stringify(msg.metadata), msg.createdAt],
         )
       }

@@ -488,9 +488,9 @@ async function persistObservedMessage(
       await memoryManager.saveMessage(msg)
     } else {
       await db.query(
-        `INSERT INTO messages (id, session_id, channel_name, sender_type, sender_id, content, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
-        [msg.id, msg.sessionId, msg.channelName, 'user', msg.senderId, JSON.stringify(msg.content), msg.createdAt],
+        `INSERT INTO messages (id, session_id, role, content_text, content_type, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+        [msg.id, msg.sessionId, 'user', msg.contentText, msg.contentType ?? 'text', msg.createdAt],
       )
     }
   } catch (err) {

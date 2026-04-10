@@ -81,12 +81,8 @@ export async function mergeContacts(
     )
     const sessionsMoved = sessionsResult.rowCount ?? 0
 
-    // 4. Move messages
-    const messagesResult = await client.query(
-      `UPDATE messages SET contact_id = $1 WHERE contact_id = $2`,
-      [keepContactId, mergeContactId],
-    )
-    const messagesMoved = messagesResult.rowCount ?? 0
+    // 4. Messages inherit contact via sessions (no direct contact_id on messages)
+    const messagesMoved = 0
 
     // FIX-07: Read ALL data first, then write, then delete.
     // Previously, mergeContactMemory deleted merge contact's agent_contacts row,
@@ -105,7 +101,7 @@ export async function mergeContacts(
 
     // 8. Soft-delete merge contact
     await client.query(
-      `UPDATE contacts SET merged_into = $1, status = 'merged', updated_at = NOW()
+      `UPDATE contacts SET merged_into = $1, updated_at = NOW()
        WHERE id = $2`,
       [keepContactId, mergeContactId],
     )
