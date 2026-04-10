@@ -183,24 +183,7 @@ Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.
 
 ### Archivos de migración (`src/migrations/`)
 ```
-001_engine-tables.sql        — contacts, contact_channels, sessions, messages, campaigns
-002_memory-v3-phase0.sql     — pgvector, agents, companies, system_state, pipeline_logs
-003_memory-v3-phase1.sql     — ALTER columns, agent_contacts, session_summaries, commitments, archives
-004_memory-v3-phase3.sql     — DROP old columns (cleanup)
-005_proactive-v1.sql         — extend commitments, proactive_outreach_log
-006_ack-messages-v1.sql      — ack_messages + seeds
-007_rename-oficina.sql       — rename oficina→console
-008_replan-metrics.sql       — add replan columns to pipeline_logs
-009_db-cleanup.sql           — drop unused tables, add indexes, final column cleanup
-010_alter-ego-v1.sql         — trace_scenarios, trace_runs, trace_results (Cortex simulation & testing)
-011_cross-channel-v1.sql     — relax proactive_outreach_log channel constraint for all channels
-012_task-checkpoints.sql     — task_checkpoints table for resumable pipeline execution
-013_subagents-v1.sql         — subagent_types (CRUD), subagent_usage (métricas)
-018_subagents-v2.sql         — is_system, google_search_grounding, seed web-researcher
-023_hitl-v1.sql              — hitl_tickets, hitl_ticket_log, hitl_rules, users.supervisor_id
-019_attachment-dual-results.sql — llm_text, category_label, file_path en attachment_extractions
-020_session-compression-v2.sql — session_archives, session_summaries_v2, session_memory_chunks, compression tracking
-021_knowledge-optimization.sql — attachment dedup (content_hash, knowledge_match_id), value evaluation, full_video_embed
+001_beta-schema.sql  — Schema completo para beta: 78 tablas, extensions, indexes, FKs, seeds
 ```
 
 ### Cómo agregar una nueva migración
@@ -212,8 +195,7 @@ Las tablas fundacionales del dominio (contacts, sessions, messages, agents, etc.
 `src/kernel/bootstrap.ts` crea directorios faltantes de `instance/` al arrancar (knowledge/media, fallbacks, wa-auth, tools). El Dockerfile copia `instance/` como template base.
 
 ### Notas
-- Los módulos siguen creando sus tablas propias en `init()` (prompts, llm_usage, google_oauth_tokens, etc.)
-- Las migraciones fundacionales (contacts, messages, agents) ahora las maneja el migrador, NO los módulos
+- Los módulos ya NO crean tablas en init() — ver Plan 4
 - `docs/migrations/` se mantiene como referencia histórica; la versión canónica está en `src/migrations/`
 
 ## Deploy
