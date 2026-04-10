@@ -45,6 +45,7 @@ function rowToTicket(r: any): HitlTicket {
     resolvedAt: r.resolved_at ? new Date(r.resolved_at) : null,
     notificationCount: r.notification_count,
     lastNotifiedAt: r.last_notified_at ? new Date(r.last_notified_at) : null,
+    notificationMessageId: r.notification_message_id ?? null,
     createdAt: new Date(r.created_at),
     updatedAt: new Date(r.updated_at),
     expiresAt: r.expires_at ? new Date(r.expires_at) : null,
@@ -316,5 +317,38 @@ export class TicketStore {
       [ticketId],
     )
     return rows.map(rowToLogEntry)
+  }
+
+  // ─── Quote-based interception helpers ────
+
+  async setNotificationMessageId(id: string, messageId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE hitl_tickets SET notification_message_id = $1, updated_at = NOW() WHERE id = $2`,
+      [messageId, id],
+    )
+  }
+
+  async findByShortId(shortId: string): Promise<HitlTicket | null> {
+    const { rows } = await this.db.query(
+      `SELECT * FROM hitl_tickets
+       WHERE RIGHT(id::text, 6) = $1
+         AND status IN ('notified', 'waiting')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [shortId.toLowerCase()],
+    )
+    return rows[0] ? rowToTicket(rows[0]) : null
+  }
+
+  async listActiveByResponder(senderId: string, channel: string): Promise<HitlTicket[]> {
+    const { rows } = await this.db.query(
+      `SELECT * FROM hitl_tickets
+       WHERE assigned_sender_id = $1
+         AND assigned_channel = $2
+         AND status IN ('notified', 'waiting')
+       ORDER BY created_at ASC`,
+      [senderId, channel],
+    )
+    return rows.map(rowToTicket)
   }
 }

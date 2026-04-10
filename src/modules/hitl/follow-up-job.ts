@@ -1,4 +1,4 @@
-// hitl/follow-up-job.ts — BullMQ job for follow-up reminders + supervisor escalation
+// hitl/follow-up-job.ts — Interval-based job for follow-up reminders + supervisor escalation
 
 import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
@@ -12,8 +12,10 @@ import pino from 'pino'
 
 const logger = pino({ name: 'hitl:followup' })
 
+let followUpInterval: ReturnType<typeof setInterval> | null = null
+
 /**
- * Register the HITL follow-up job via job:register hook.
+ * Register the HITL follow-up job using setInterval.
  * Runs every 2 minutes to check for stale tickets and expired tickets.
  */
 export function registerFollowUpJob(
@@ -22,19 +24,31 @@ export function registerFollowUpJob(
   redis: Redis,
   getConfig: () => HitlConfig,
 ): void {
-  registry.runHook('job:register', {
-    jobName: 'hitl:follow-up',
-    intervalMs: 2 * 60_000, // Every 2 minutes
-    handler: async () => {
-      const config = getConfig()
-      if (!config.HITL_ENABLED) return
+  if (followUpInterval) {
+    clearInterval(followUpInterval)
+  }
 
-      await processStaleTickets(registry, ticketStore, redis, config)
-      await processExpiredTickets(registry, ticketStore, redis, config)
-    },
-  }).catch(err => {
-    logger.warn({ err }, 'Failed to register hitl:follow-up job')
-  })
+  followUpInterval = setInterval(() => {
+    const config = getConfig()
+    if (!config.HITL_ENABLED) return
+
+    processStaleTickets(registry, ticketStore, redis, config).catch(err => {
+      logger.error({ err }, 'hitl:follow-up processStaleTickets error')
+    })
+    processExpiredTickets(registry, ticketStore, redis, config).catch(err => {
+      logger.error({ err }, 'hitl:follow-up processExpiredTickets error')
+    })
+  }, 2 * 60_000) // Every 2 minutes
+
+  logger.info('HITL follow-up job started (interval: 2 min)')
+}
+
+export function stopFollowUpJob(): void {
+  if (followUpInterval) {
+    clearInterval(followUpInterval)
+    followUpInterval = null
+    logger.info('HITL follow-up job stopped')
+  }
 }
 
 async function processStaleTickets(
