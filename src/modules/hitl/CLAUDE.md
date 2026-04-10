@@ -98,3 +98,4 @@ Cuando un ticket se resuelve con `handoffMode = 'full_handoff'`, `resolver.ts` l
 - `findByShortId()` busca los ultimos 6 chars del UUID en tickets activos (status notified/waiting).
 - `listActiveByResponder()` devuelve todos los tickets activos asignados a un sender.
 - Si respuesta del humano es vacia (solo cita sin texto), se pide que agregue contenido.
+- `getShareableContact()` en `handoff.ts` usa `contact_channels` (no `user_contacts`) para resolver el teléfono de leads WhatsApp con LID. El JOIN es `contact_channels.channel_identifier = sender_id AND channel_type = 'whatsapp'`.

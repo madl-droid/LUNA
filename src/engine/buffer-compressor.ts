@@ -30,7 +30,20 @@ export async function checkAndCompressBuffer(
   _config: EngineConfig,
   registry?: Registry,
 ): Promise<void> {
-  const { threshold, keepRecent } = memoryManager.getCompressionConfig()
+  const { threshold: configuredThreshold, keepRecent } = memoryManager.getCompressionConfig()
+
+  // Clamping: prevenir threshold imposible (cuando buffer es demasiado pequeño para el threshold configurado)
+  const bufferMessageCount = memoryManager.getBufferMessageCount()
+  const maxPossibleTurns = Math.floor(bufferMessageCount / 2)
+  const threshold = Math.min(configuredThreshold, Math.max(1, maxPossibleTurns - keepRecent - 2))
+
+  if (threshold !== configuredThreshold) {
+    logger.debug(
+      { configuredThreshold, effectiveThreshold: threshold, maxPossibleTurns },
+      'Compression threshold clamped — buffer too small for configured value',
+    )
+  }
+
   // Count turns (assistant messages), not raw messages
   const turnCount = await memoryManager.getTurnCount(sessionId)
 
