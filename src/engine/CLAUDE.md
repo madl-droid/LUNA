@@ -198,6 +198,8 @@ El agentic pipeline se reintenta hasta 2 veces si falla por error transitorio (t
 
 **Guard de side effects**: Tools ejecutados antes del fallo pueden re-ejecutarse en el retry. Los tools críticos (HITL, commitments) son idempotentes. El dedup cache se resetea entre intentos — esto es aceptado.
 
+**Guard de double-delivery**: `delivery.ts` envuelve las post-send operations (`persistMessages`, `updateLeadQualification`, `updateSession`) en try-catch. Si la persistencia falla después de que el mensaje fue enviado, el error se loggea pero NO se propaga — evita que el retry loop reenvíe el mensaje al usuario.
+
 **Nota**: El retry de envío en delivery.ts (2 intentos, backoff 1s/2s) es SEPARADO y cubre errores de red al enviar el mensaje final. El pipeline retry cubre fallos en LLM/tools.
 
 ## Trampas
