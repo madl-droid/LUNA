@@ -71,7 +71,7 @@ const manifest: ModuleManifest = {
   type: 'core-module',
   removable: false,
   activateByDefault: true,
-  depends: ['memory', 'llm'],
+  depends: ['memory', 'llm', 'tools'],
 
   configSchema: z.object({
     // Test mode
