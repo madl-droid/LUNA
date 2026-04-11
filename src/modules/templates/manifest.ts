@@ -10,7 +10,7 @@ import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.j
 import { TemplatesService } from './service.js'
 import { renderTemplatesSection } from './render-section.js'
 import { registerTemplateTools } from './tools.js'
-import { COMPARATIVO_SLUG, COMPARATIVO_SYSTEM_PROMPT } from './comparativo-subagent.js'
+import { COMPARATIVO_SLUG } from './comparativo-subagent.js'
 import type { ToolRegistry } from '../tools/tool-registry.js'
 import type {
   TemplatesConfig,
