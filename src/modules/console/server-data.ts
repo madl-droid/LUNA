@@ -50,7 +50,10 @@ async function fetchSectionData(registry: Registry, _section: string): Promise<{
   const config = { ...moduleDefaults, ...defaults, ...envValues, ...dbValues }
 
   // Version
-  const version = kernelConfig.buildVersion || packageJsonVersion || 'dev'
+  // Prefer semver from package.json; fall back to build hash for unversioned dev builds
+  const version = packageJsonVersion && packageJsonVersion !== '0.0.0'
+    ? packageJsonVersion
+    : kernelConfig.buildVersion || 'dev'
 
   // Models: try to get from LLM module's integrated model scanner
   let allModels: Record<string, string[]> = { anthropic: [], gemini: [] }
