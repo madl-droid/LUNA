@@ -402,17 +402,9 @@ async function processMessageInner(
     }).catch(() => {})
 
     // ═══ SIGNAL: COMPOSING/RECORDING ═══
-    // 'audio' → always recording. 'auto' with audio input → likely recording.
-    // Otherwise → composing (typing indicator).
-    const composingMode = ctx.responseFormat === 'audio'
-      || (ctx.responseFormat === 'auto' && ctx.messageType === 'audio')
-      ? 'recording' : 'composing'
-    registry.runHook('channel:composing', {
-      channel: message.channelName,
-      to: signalTo,
-      mode: composingMode,
-      correlationId: traceId,
-    }).catch(() => {})
+    // Moved to agentic-loop.ts — composing is now emitted when the LLM stops
+    // calling tools and starts generating the final text response, so the user
+    // sees "typing..." only when Luna is actually composing, not while processing.
 
     return await runAgenticPipeline(ctx, engineConfig, registry, db, redis, totalStart, intakeDurationMs)
   } catch (err) {

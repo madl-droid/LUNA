@@ -154,6 +154,21 @@ export async function runAgenticLoop(
 
       // No tool calls: LLM is done. Return text.
       if (!llmResult.toolCalls || llmResult.toolCalls.length === 0) {
+        // ═══ SIGNAL: COMPOSING/RECORDING ═══
+        // Emit now that the LLM is composing its final response (all tools finished).
+        // The user sees "typing..." only when Luna is actually composing, not while processing tools.
+        const rawMsg = ctx.message.raw as Record<string, Record<string, string>> | undefined
+        const composingTo = rawMsg?.key?.remoteJid ?? ctx.message.from
+        const composingMode = ctx.responseFormat === 'audio'
+          || (ctx.responseFormat === 'auto' && ctx.messageType === 'audio')
+          ? 'recording' : 'composing'
+        registry.runHook('channel:composing', {
+          channel: ctx.message.channelName,
+          to: composingTo,
+          mode: composingMode,
+          correlationId: ctx.traceId,
+        }).catch(() => {})
+
         let responseText = llmResult.text || partialText
 
         // FIX-E3: Guard against empty response — never send blank message to user
