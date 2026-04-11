@@ -217,7 +217,14 @@ const manifest: ModuleManifest = {
             jsonResponse(res, 200, { ok: true, ...result })
           } catch (err) {
             logger.error({ err }, 'POST /scan-keys error')
-            jsonResponse(res, 500, { ok: false, error: String(err) })
+            const msg = err instanceof Error ? err.message : String(err)
+            const isOAuth = msg.includes('refresh token') || msg.includes('API key') || msg.includes('No access')
+            jsonResponse(res, isOAuth ? 401 : 500, {
+              ok: false,
+              error: isOAuth
+                ? 'Google Workspace no está conectado. Ve a Configuración → Google Workspace para autenticarte.'
+                : msg,
+            })
           }
         },
       },
@@ -294,18 +301,8 @@ const manifest: ModuleManifest = {
       service?.invalidateFolderCache()
     })
 
-    // Enable comparativo-researcher subagent and inject system prompt
-    try {
-      await db.query(
-        `UPDATE subagent_types SET system_prompt = $1, enabled = true, updated_at = now() WHERE slug = $2`,
-        [COMPARATIVO_SYSTEM_PROMPT, COMPARATIVO_SLUG],
-      )
-      const saCatalog = registry.getOptional<{ reload(): Promise<void> }>('subagents:catalog')
-      await saCatalog?.reload()
-      logger.info('comparativo-researcher subagent enabled')
-    } catch (err) {
-      logger.warn({ err }, 'Could not enable comparativo-researcher subagent')
-    }
+    // comparativo-researcher subagent removed — the main agent now dispatches
+    // web-researcher directly (in parallel if needed) and creates the template itself.
 
     logger.info('templates module initialized')
   },

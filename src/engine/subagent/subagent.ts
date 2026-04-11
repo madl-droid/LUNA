@@ -322,33 +322,9 @@ async function runSubagentLoop(
   // Build prompt
   const { system, userMessage, tools } = await buildSubagentPrompt(ctx, step, toolDefs, registry, entry)
 
-  // Add spawn_subagent tool if allowed and not a child
+  // Child spawning disabled — the main agent orchestrates subagents directly
+  // via run_subagent (supports parallel dispatch via Promise.allSettled).
   const allTools = [...tools]
-  if (entry.canSpawnChildren && !runConfig.isChild) {
-    allTools.push({
-      name: 'spawn_subagent',
-      description: 'Crea un sub-subagente para dividir trabajo complejo. SOLO usar si la tarea es demasiado compleja o larga para completarla tú mismo. Para tareas simples, resuélvelas directamente.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          subagent_slug: {
-            type: 'string',
-            description: 'Slug del tipo de subagente a crear (de los disponibles en el catálogo)',
-          },
-          task: {
-            type: 'string',
-            description: 'Descripción clara de la sub-tarea que debe completar el hijo',
-          },
-          tools: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Lista de nombres de tools que el hijo necesita (subset de tus tools)',
-          },
-        },
-        required: ['subagent_slug', 'task'],
-      },
-    })
-  }
 
   // Add skill_read meta-tool if 'skill_read' is in allowed tools
   if (entry.allowedTools.includes(SKILL_READ_TOOL_NAME)) {

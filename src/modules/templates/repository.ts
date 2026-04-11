@@ -142,17 +142,8 @@ export async function updateTemplate(
 }
 
 export async function deleteTemplate(db: Pool, id: string): Promise<boolean> {
-  // Check for generated documents referencing this template (FK constraint)
-  const docsCount = await db.query(
-    'SELECT COUNT(*)::int AS cnt FROM doc_generated WHERE template_id = $1', [id],
-  )
-  const cnt = (docsCount.rows[0] as { cnt: number } | undefined)?.cnt ?? 0
-  if (cnt > 0) {
-    throw new Error(
-      `No se puede eliminar la plantilla: tiene ${cnt} documento(s) generado(s). ` +
-      `Desactívala en vez de eliminarla.`,
-    )
-  }
+  // Detach generated documents so the template can be deleted (they keep their data)
+  await db.query('UPDATE doc_generated SET template_id = NULL WHERE template_id = $1', [id])
   const res = await db.query('DELETE FROM doc_templates WHERE id = $1', [id])
   return (res.rowCount ?? 0) > 0
 }
