@@ -220,13 +220,26 @@ export class OAuthManager {
     this.state.scopes = tokens.scope?.split(' ') ?? []
     this.state.error = null
 
+    // Resolve refresh token: prefer new one from Google, fall back to existing DB token, then env
+    let resolvedRefreshToken = tokens.refresh_token ?? ''
+    if (!resolvedRefreshToken) {
+      const existing = await this.loadTokenFromDb()
+      resolvedRefreshToken = existing?.refreshToken || this.config.GOOGLE_REFRESH_TOKEN || ''
+    }
+
+    if (!resolvedRefreshToken) {
+      logger.warn('OAuth callback received NO refresh token — token will not survive restart. User should re-authorize with prompt=consent.')
+    }
+
     await this.saveTokenToDb({
       accessToken: tokens.access_token ?? '',
-      refreshToken: tokens.refresh_token ?? this.config.GOOGLE_REFRESH_TOKEN,
+      refreshToken: resolvedRefreshToken,
       expiresAt: new Date(expiryDate),
       scopes: this.state.scopes,
       email: this.state.email,
     })
+
+    logger.info({ email: this.state.email, hasRefreshToken: !!resolvedRefreshToken }, 'OAuth token saved to DB')
 
     const refreshIn = expiryDate - Date.now() - this.config.GOOGLE_TOKEN_REFRESH_BUFFER_MS
     this.scheduleRefresh(Math.max(refreshIn, 60_000))
@@ -286,6 +299,7 @@ export class OAuthManager {
           access_token = $1, refresh_token = $2, expires_at = $3, scopes = $4, email = $5,
           updated_at = now()
       `, [encAccess, encRefresh, token.expiresAt, JSON.stringify(token.scopes), token.email])
+      logger.info({ email: token.email, hasRefresh: !!token.refreshToken }, 'OAuth token persisted to DB')
     } catch (err) {
       logger.error({ err }, 'Failed to save token to DB')
     }
@@ -319,7 +333,8 @@ export class OAuthManager {
         scopes: Array.isArray(row.scopes) ? row.scopes : JSON.parse(row.scopes ?? '[]'),
         email: row.email,
       }
-    } catch {
+    } catch (err) {
+      logger.error({ err }, 'Failed to load token from DB')
       return null
     }
   }

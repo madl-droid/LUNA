@@ -29,7 +29,7 @@ const GOOGLE_MIME_MAP: Record<string, MimeType> = {
   'application/vnd.google-apps.presentation': 'presentation',
 }
 
-const KEY_REGEX = /\{([A-Z][A-Z0-9_]*)\}/g
+const KEY_REGEX = /\{([A-Za-z][A-Za-z0-9_-]*)\}/g
 
 export class TemplatesService {
   private folderManager: FolderManager | null = null
