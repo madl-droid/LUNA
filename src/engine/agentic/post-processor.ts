@@ -232,8 +232,9 @@ export async function postProcess(
   // Must run BEFORE delivery so markers never reach the user.
   const sanitized = sanitizeToolCallMarkers(responseText, ctx.traceId)
   if (!sanitized) {
-    // Sanitization consumed everything — restore original to avoid empty message
-    logger.warn({ traceId: ctx.traceId }, 'Response empty after sanitization — restoring original')
+    // Sanitization consumed everything — use a safe fallback instead of restoring the tainted original
+    logger.warn({ traceId: ctx.traceId }, 'Response empty after sanitization — using fallback message')
+    responseText = 'Dame un momento mientras consulto la información que necesitas. 🔍'
   } else {
     responseText = sanitized
   }
