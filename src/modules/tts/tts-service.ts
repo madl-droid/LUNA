@@ -134,9 +134,18 @@ export class TTSService {
       const rateTag = speakingRateToTag(this.config.TTS_SPEAKING_RATE ?? 1.0)
       const textToSynthesize = rateTag ? `${rateTag} ${text}` : text
 
-      // Build request body with optional system instruction for accent/voice style
+      // Gemini TTS does NOT support systemInstruction (returns 500).
+      // Voice style/accent is prepended as a natural-language stage direction —
+      // this is the documented approach for controlling accent, pace, and tone.
+      const styleParts: string[] = []
+      if (this.config.TTS_ACCENT_STYLE) styleParts.push(this.config.TTS_ACCENT_STYLE)
+      if (this.config.TTS_VOICE_INSTRUCTIONS) styleParts.push(this.config.TTS_VOICE_INSTRUCTIONS)
+      const styledText = styleParts.length > 0
+        ? `[${styleParts.join(' ')}]\n${textToSynthesize}`
+        : textToSynthesize
+
       const requestBody: Record<string, unknown> = {
-        contents: [{ role: 'user', parts: [{ text: textToSynthesize }] }],
+        contents: [{ role: 'user', parts: [{ text: styledText }] }],
         generationConfig: {
           responseModalities: ['AUDIO'],
           temperature,
@@ -146,14 +155,6 @@ export class TTSService {
             },
           },
         },
-      }
-
-      // Inject accent + voice instructions as system instruction
-      const styleParts: string[] = []
-      if (this.config.TTS_ACCENT_STYLE) styleParts.push(this.config.TTS_ACCENT_STYLE)
-      if (this.config.TTS_VOICE_INSTRUCTIONS) styleParts.push(this.config.TTS_VOICE_INSTRUCTIONS)
-      if (styleParts.length > 0) {
-        requestBody.systemInstruction = { parts: [{ text: styleParts.join('\n') }] }
       }
 
       const primaryModel = this.config.TTS_MODEL || 'gemini-2.5-flash-preview-tts'
