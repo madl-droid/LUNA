@@ -56,7 +56,7 @@ export async function startProactiveRunner(
     db: redis.options.db ?? 0,
   }
 
-  proactiveQueue = new Queue('luna:proactive', {
+  proactiveQueue = new Queue('luna-proactive', {
     connection,
     defaultJobOptions: {
       removeOnComplete: { count: 100 },
@@ -68,7 +68,7 @@ export async function startProactiveRunner(
 
   // Create worker
   proactiveWorker = new Worker(
-    'luna:proactive',
+    'luna-proactive',
     async (job: Job<ProactiveJobPayload>) => {
       const jobDef = getProactiveJobs().find(j => j.name === job.data.jobName)
       if (!jobDef) {

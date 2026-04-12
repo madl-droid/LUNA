@@ -74,11 +74,11 @@ export class ConfigStore {
   }
 
   /**
-   * Add a criterion. Max 10 total.
+   * Add a criterion. Max 30 total.
    */
   addCriterion(criterion: QualifyingCriterion): void {
-    if (this.config.criteria.length >= 10) {
-      throw new Error('Maximum 10 criteria allowed')
+    if (this.config.criteria.length >= 30) {
+      throw new Error('Maximum 30 criteria allowed')
     }
     const clone = JSON.parse(JSON.stringify(this.config)) as QualifyingConfig
     clone.criteria.push(criterion)
@@ -245,8 +245,8 @@ export class ConfigStore {
     if (!Array.isArray(config.criteria)) {
       throw new Error('criteria must be an array')
     }
-    if (config.criteria.length > 10) {
-      throw new Error(`Maximum 10 criteria allowed (got ${config.criteria.length})`)
+    if (config.criteria.length > 30) {
+      throw new Error(`Maximum 30 criteria allowed (got ${config.criteria.length})`)
     }
     if (!config.thresholds || typeof config.thresholds.cold !== 'number') {
       throw new Error('thresholds.cold must be a number')

@@ -245,12 +245,11 @@ export async function postProcess(
     responseText = loopResult.hardStopMessage!
   }
 
-  // ── 6.4 Channel formatting ──
+  // ── 6.4 Validation ──
   const preValidation = validateOutput(responseText)
   if (!preValidation.passed) {
     responseText = preValidation.sanitizedText
   }
-  const formattedParts = formatForChannel(responseText, ctx.message.channelName, registry)
 
   // ── 6.5 TTS ──
   let audioBuffer: Buffer | undefined
@@ -293,6 +292,15 @@ export async function postProcess(
     }
   }
 
+  // Strip voice tags from text output (TTS failed, circuit breaker open, or not attempted)
+  // MUST happen BEFORE formatForChannel so formattedParts are clean
+  if (outputFormat === 'text') {
+    responseText = stripVoiceTags(responseText)
+  }
+
+  // ── 6.6 Channel formatting (after TTS decision — text must be clean) ──
+  const formattedParts = formatForChannel(responseText, ctx.message.channelName, registry)
+
   logger.info({
     traceId: ctx.traceId,
     criticizerRan: shouldCriticize,
@@ -302,7 +310,7 @@ export async function postProcess(
     loopHardStop: loopResult.hardStop || undefined,
   }, 'Post-processor completed')
 
-  // ── 6.6 Build and return CompositorOutput ──
+  // ── 6.7 Build and return CompositorOutput ──
   return {
     responseText,
     formattedParts,
@@ -315,6 +323,18 @@ export async function postProcess(
 }
 
 // ── Internal helpers ──
+
+/** Remove TTS voice tags from text so users don't see raw [VOICE], [happy], [pause], etc. */
+function stripVoiceTags(text: string): string {
+  return text
+    // Remove [VOICE] tag
+    .replace(/\[VOICE\]\s*/gi, '')
+    // Remove emotion/vocalization/style tags: [happy], [pause], [whispering], [1s pause], [PAUSE=2s], etc.
+    .replace(/\[(?:happy|sad|excited|surprised|worried|nervous|confused|grateful|proud|relaxed|curious|confident|empathetic|reluctant|hesitating|yielding|conciliative|comforting|sincere|amused|moved|keen|satisfied|delighted|joyful|interested|serious|sigh|laughing|chuckling|gasp|clears throat|sniffling|exhale|inhale|hmm|uhm|whispering|fast|slowly|soft tone|loud|short pause|pause|long pause|beat|\d+s pause|PAUSE=\d+s)\]\s*/gi, '')
+    // Clean up any resulting double spaces or leading whitespace on lines
+    .replace(/ {2,}/g, ' ')
+    .replace(/^ +/gm, '')
+}
 
 /**
  * Run the criticizer: two-step process.

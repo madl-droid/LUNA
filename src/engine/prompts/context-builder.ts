@@ -368,15 +368,32 @@ export async function buildContextLayers(
     for (const msg of recent) {
       const label = msg.role === 'user' ? 'Contacto' : 'Agente'
       const ts = msg.timestamp ? ` [${relativeTime(msg.timestamp, now)}]` : ''
-      parts.push(`${label}${ts}: ${escapeForPrompt(msg.content.substring(0, 200), 250)}`)
+      parts.push(`${label}${ts}: ${escapeForPrompt(msg.content.substring(0, 1000), 1050)}`)
     }
   }
 
-  // ── 16. Attachment context ───────────────────────────────────────────────
+  // ── 16. Attachment context — full content for current message ────────────
   if (ctx.attachmentContext && ctx.attachmentContext.attachments.length > 0) {
-    const processed = ctx.attachmentContext.attachments.filter(a => a.status === 'processed')
+    const processed = ctx.attachmentContext.attachments.filter(a => a.status === 'processed' && (a.extractedText || a.llmText))
     if (processed.length > 0) {
-      parts.push(`[${processed.length} adjunto(s) procesado(s) — su contenido ya aparece en el historial con etiquetas como [images], [documents], [audio], [video], etc.]`)
+      parts.push(`[Adjuntos del mensaje actual:]`)
+      for (const att of processed) {
+        const durationSec = typeof att.metadata?.duration === 'number' ? att.metadata.duration : null
+        const durationTag = durationSec != null ? ` (${Math.round(durationSec)}s)` : ''
+        const queryHint = att.extractedText ? ` Puedes consultar este adjunto con query_attachment id "${att.id}".` : ''
+
+        if (att.category === 'images' && att.llmText) {
+          const inspectHint = ` Si necesitas más detalle, usa inspect_image con id "${att.id}".`
+          parts.push(`[${att.categoryLabel}] (id: ${att.id}) ${att.filename}${durationTag} — ${att.llmText}${inspectHint}${queryHint}`)
+        } else if ((att.category === 'audio' || att.category === 'video') && att.llmText) {
+          parts.push(`[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}${queryHint}`)
+        } else if (att.sizeTier === 'large' && att.llmText) {
+          const sizeNote = att.tokenEstimate > 0 ? ` [~${String(att.tokenEstimate)} tokens, resumido]` : ''
+          parts.push(`[${att.categoryLabel}] ${att.filename}${sizeNote} — ${att.llmText}${queryHint}`)
+        } else if (att.extractedText) {
+          parts.push(`[${att.categoryLabel}] ${att.filename} — ${att.extractedText}${queryHint}`)
+        }
+      }
     }
     const failed = ctx.attachmentContext.attachments.filter(a => a.status !== 'processed')
     if (failed.length > 0) {

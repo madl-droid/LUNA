@@ -84,6 +84,11 @@ export class TTSService {
     }
   }
 
+  /** Whether the TTS service is currently available (circuit breaker closed) */
+  isAvailable(): boolean {
+    return Date.now() >= this.cbOpenUntil
+  }
+
   isEnabledForChannel(channel: string): boolean {
     return this.enabledChannels.has(channel)
   }

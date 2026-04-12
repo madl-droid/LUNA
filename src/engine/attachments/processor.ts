@@ -313,8 +313,15 @@ async function processOneAttachment(
     }
   }
 
-  // Download data via lazy loader
-  const data = await att.getData()
+  // Download data via lazy loader (retry once on failure)
+  let data: Buffer
+  try {
+    data = await att.getData()
+  } catch (firstErr) {
+    logger.warn({ err: firstErr, filename: att.filename }, 'Attachment download failed, retrying in 1s')
+    await new Promise(r => setTimeout(r, 1000))
+    data = await att.getData()
+  }
 
   // Dedup: check if content already exists in knowledge base
   const contentHash = createHash('sha256').update(data).digest('hex')

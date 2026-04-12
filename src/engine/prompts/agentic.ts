@@ -21,6 +21,7 @@ import { loadSkillCatalog, buildSkillCatalogSection, filterSkillsByTools } from 
 
 interface TTSServiceLike {
   shouldAutoTTS(channel: string, inputType: string): boolean
+  isAvailable(): boolean
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -123,11 +124,17 @@ export async function buildAgenticPrompt(
     || (ctx.responseFormat === 'auto' && !!ttsService?.shouldAutoTTS(ctx.message.channelName, ctx.messageType))
 
   if (prepareForVoice) {
-    const voiceSection = svc ? await svc.getSystemPrompt('voice-tts-format') : ''
-    const voiceTags = svc ? await svc.getSystemPrompt('tts-voice-tags') : ''
-    let voiceContent = voiceSection
-    if (voiceTags) voiceContent += `\n\n${voiceTags}`
-    systemParts.push(`<voice_instructions>\n${voiceContent}\n</voice_instructions>`)
+    // Check if TTS is actually available (circuit breaker closed)
+    if (ttsService && !ttsService.isAvailable()) {
+      // TTS temporarily down — tell the agent so it doesn't promise audio
+      systemParts.push(`<voice_status>\nTu sistema de audio/micrófono está temporalmente fuera de servicio. NO prometas enviar audios ni notas de voz. Responde solo con texto. NO uses tags de voz como [VOICE], [happy], [pause], etc. Si el usuario pide audio, dile que en este momento no puedes enviar notas de voz pero que le respondes por texto.\n</voice_status>`)
+    } else {
+      const voiceSection = svc ? await svc.getSystemPrompt('voice-tts-format') : ''
+      const voiceTags = svc ? await svc.getSystemPrompt('tts-voice-tags') : ''
+      let voiceContent = voiceSection
+      if (voiceTags) voiceContent += `\n\n${voiceTags}`
+      systemParts.push(`<voice_instructions>\n${voiceContent}\n</voice_instructions>`)
+    }
   }
 
   // ── Section 10: <quality_checklist> ──────────────────────────────────────

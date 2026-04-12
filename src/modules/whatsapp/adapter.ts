@@ -626,6 +626,7 @@ export class BaileysAdapter {
       content: {
         type: msg.message?.imageMessage ? 'image'
           : msg.message?.audioMessage ? 'audio'
+          : msg.message?.videoMessage ? 'video'
           : msg.message?.documentMessage ? 'document'
           : 'text',
         text: finalText,

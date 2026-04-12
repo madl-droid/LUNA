@@ -56,7 +56,7 @@ export async function intake(
   const memoryManager = registry.getOptional<MemoryManager>('memory:manager') ?? null
 
   // 1. Normalize message text
-  const normalizedText = normalizeText(message.content.text)
+  let normalizedText = normalizeText(message.content.text)
   const messageType = detectMessageType(message.content)
 
   // 2. Resolve user type via users:resolve service (FIRST — before anything else)
@@ -287,12 +287,16 @@ export async function intake(
           continue
         }
 
-        // Extraction failed for audio/video: tell the agent so it can respond
-        if (att.status === 'extraction_failed' && (att.category === 'audio' || att.category === 'video')) {
+        // Extraction failed: tell the agent so it can respond (ALL categories)
+        if (att.status === 'extraction_failed') {
           const failDuration = typeof att.metadata?.duration === 'number' ? ` (${Math.round(att.metadata.duration)}s)` : ''
+          const categoryDesc = att.category === 'audio' ? 'un audio'
+            : att.category === 'video' ? 'un video'
+            : att.category === 'images' ? 'una imagen'
+            : `un archivo (${att.categoryLabel})`
           history.push({
             role: 'user',
-            content: `[${att.categoryLabel}] ${att.filename}${failDuration} — No se pudo procesar. El usuario envió un ${att.category === 'audio' ? 'audio' : 'video'} pero no fue posible transcribirlo/analizarlo.`,
+            content: `[${att.categoryLabel}] ${att.filename}${failDuration} — No se pudo procesar. El usuario envió ${categoryDesc} pero no fue posible extraer/analizar el contenido.`,
             timestamp: new Date(),
           })
           continue
@@ -304,22 +308,24 @@ export async function intake(
         const durationSec = typeof att.metadata?.duration === 'number' ? att.metadata.duration : null
         const durationTag = durationSec != null ? ` (${Math.round(durationSec)}s)` : ''
 
+        // query_attachment works for ALL types that have extractedText in DB
+        const queryHint = att.extractedText ? ` Puedes consultar este adjunto con query_attachment id "${att.id}".` : ''
+
         let injectedContent: string
         if (att.sizeTier === 'large' && att.llmText) {
-          // Large file: inject category label + filename + duration + truncation note + LLM description + query hint
+          // Large file: LLM description + query hint
           const sizeNote = att.tokenEstimate > 0 ? ` [documento de ~${String(att.tokenEstimate)} tokens, contenido resumido]` : ''
-          const queryHint = ` Si necesitas buscar información específica dentro del documento, usa query_attachment con id "${att.id}".`
           injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}${queryHint}`
         } else if (att.llmText && att.category === 'images') {
-          // Image: inject id so agent can re-examine with inspect_image if description is insufficient
-          const inspectHint = ` Si necesitas más detalle específico, usa inspect_image con id "${att.id}".`
-          injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename}${durationTag} — ${att.llmText}${inspectHint}`
+          // Image: vision description + inspect + query hints
+          const inspectHint = ` Si necesitas más detalle visual, usa inspect_image con id "${att.id}".`
+          injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename}${durationTag} — ${att.llmText}${inspectHint}${queryHint}`
         } else if (att.llmText && (att.category === 'audio' || att.category === 'video')) {
-          // Audio/video: inject category label + filename + duration + LLM content (no re-query binary available)
-          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}`
+          // Audio/video: transcription/description + query hint
+          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}${queryHint}`
         } else {
-          // Small/medium text file: inject category label + full extracted content
-          injectedContent = `[${att.categoryLabel}] ${att.extractedText}`
+          // Small/medium text file: full extracted content + query hint
+          injectedContent = `[${att.categoryLabel}] ${att.extractedText}${queryHint}`
         }
 
         history.push({
@@ -382,6 +388,26 @@ export async function intake(
     }
   } catch (err) {
     logger.warn({ err, traceId }, 'Attachment processing in Phase 1 failed — evaluator will see metadata only')
+  }
+
+  // 16b. Fill normalizedText when empty (media-only messages)
+  // The agent only sees text — for audio the transcription IS what the user said,
+  // for other media types describe what was sent so the LLM never sees an empty message.
+  if (!normalizedText.trim() && attachmentContext) {
+    const processed = attachmentContext.attachments.filter(a => a.status === 'processed')
+    const audios = processed.filter(a => a.category === 'audio' && a.llmText)
+    if (audios.length > 0 && audios.length === processed.length) {
+      // All attachments are audio: use transcriptions as the user's message
+      normalizedText = audios.map(a => a.llmText!).join('\n')
+    } else if (processed.length > 0) {
+      // Mixed or non-audio: describe what the user sent
+      const descriptions = processed.map(a => {
+        const durationSec = typeof a.metadata?.duration === 'number' ? a.metadata.duration : null
+        const dur = durationSec != null ? ` (${Math.round(durationSec)}s)` : ''
+        return `${a.categoryLabel}: ${a.filename}${dur}`
+      })
+      normalizedText = `[envió: ${descriptions.join(', ')}]`
+    }
   }
 
   // Load HITL pending context (if hitl module is active)
