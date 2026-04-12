@@ -153,6 +153,7 @@ const manifest: ModuleManifest = {
     WHATSAPP_ATT_AUDIO: boolEnv(true),
     WHATSAPP_ATT_VIDEO: boolEnv(false),
     WHATSAPP_ATT_SPREADSHEETS: boolEnv(true),
+    WHATSAPP_ATT_PRESENTATIONS: boolEnv(true),
     WHATSAPP_ATT_TEXT: boolEnv(true),
     // Response format
     FORMAT_INSTRUCTIONS_WHATSAPP: z.string().default(''),
@@ -230,6 +231,7 @@ const manifest: ModuleManifest = {
       { key: 'WHATSAPP_ATT_AUDIO', type: 'boolean', label: { es: 'Procesar audio', en: 'Process audio' }, description: { es: 'Notas de voz y audios', en: 'Voice notes and audio' }, icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>', tab: 'attachments', width: 'third' },
       { key: 'WHATSAPP_ATT_VIDEO', type: 'boolean', label: { es: 'Procesar videos', en: 'Process videos' }, description: { es: 'Videos recibidos por WhatsApp', en: 'Videos received via WhatsApp' }, icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>', tab: 'attachments', width: 'third' },
       { key: 'WHATSAPP_ATT_SPREADSHEETS', type: 'boolean', label: { es: 'Procesar hojas de calculo', en: 'Process spreadsheets' }, description: { es: 'Excel y CSV', en: 'Excel and CSV' }, icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>', tab: 'attachments', width: 'third' },
+      { key: 'WHATSAPP_ATT_PRESENTATIONS', type: 'boolean', label: { es: 'Procesar presentaciones', en: 'Process presentations' }, description: { es: 'PowerPoint y similares', en: 'PowerPoint and similar' }, icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>', tab: 'attachments', width: 'third' },
       { key: 'WHATSAPP_ATT_TEXT', type: 'boolean', label: { es: 'Procesar archivos de texto', en: 'Process text files' }, description: { es: '.txt, .md, .json', en: '.txt, .md, .json' }, icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>', tab: 'attachments', width: 'third' },
     ],
     apiRoutes,
@@ -519,6 +521,7 @@ interface WhatsAppFullConfig {
   WHATSAPP_ATT_AUDIO: boolean
   WHATSAPP_ATT_VIDEO: boolean
   WHATSAPP_ATT_SPREADSHEETS: boolean
+  WHATSAPP_ATT_PRESENTATIONS: boolean
   WHATSAPP_ATT_TEXT: boolean
   // Response format
   FORMAT_INSTRUCTIONS_WHATSAPP: string
@@ -576,6 +579,7 @@ function buildAttachmentConfig(cfg: WhatsAppFullConfig): import('../../engine/at
   if (cfg.WHATSAPP_ATT_AUDIO) categories.push('audio')
   if (cfg.WHATSAPP_ATT_VIDEO) categories.push('video')
   if (cfg.WHATSAPP_ATT_SPREADSHEETS) categories.push('spreadsheets')
+  if (cfg.WHATSAPP_ATT_PRESENTATIONS) categories.push('presentations')
   if (cfg.WHATSAPP_ATT_TEXT) categories.push('text')
   return {
     enabledCategories: categories,

@@ -32,7 +32,7 @@ export const ENGINE_EXTRACTION_CAPABILITIES: AttachmentCategory[] = [
  * New channels: add an entry here reflecting platform limitations.
  */
 export const CHANNEL_PLATFORM_CAPABILITIES: Record<string, AttachmentCategory[]> = {
-  whatsapp: ['images', 'documents', 'audio', 'video', 'spreadsheets', 'text'],
+  whatsapp: ['images', 'documents', 'audio', 'video', 'spreadsheets', 'presentations', 'text'],
   email: ['documents', 'spreadsheets', 'images', 'presentations', 'text', 'audio'],
   'google-chat': ['images', 'documents'],
   voice: [],

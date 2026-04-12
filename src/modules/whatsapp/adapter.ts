@@ -584,7 +584,9 @@ export class BaileysAdapter {
 
     const text = msg.message?.conversation
       || msg.message?.extendedTextMessage?.text
+      || msg.message?.extendedTextMessage?.matchedText  // URL-only messages (link preview without text)
       || msg.message?.imageMessage?.caption
+      || msg.message?.videoMessage?.caption
       || ''
 
     // For group messages: check if bot is mentioned or addressed by name
