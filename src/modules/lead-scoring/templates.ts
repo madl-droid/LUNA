@@ -450,7 +450,6 @@ function renderCriterionRow(cr: QualifyingCriterion, i: number, lang: Lang, _sta
 
   return `
     <tr data-ls-cri="${i}">
-      <td><input value="${esc(cr.key)}" data-field="key" style="width:80px" readonly></td>
       <td><input value="${nameVal}" data-field="name" onchange="lsUpdateCri(${i},'name',this.value)"></td>
       <td><select data-field="type" onchange="lsUpdateCri(${i},'type',this.value)">
         <option value="text" ${cr.type === 'text' ? 'selected' : ''}>${l('type_text', lang)}</option>
@@ -477,7 +476,7 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
   const hasStages = stages && stages.length > 0
 
   const theadCols = `
-    <th>${l('th_key', lang)}</th><th>${l('th_name', lang)}</th>
+    <th>${l('th_name', lang)}</th>
     <th>${l('th_type', lang)}</th><th>${l('th_options', lang)}</th>
     <th>${lang === 'es' ? 'Prioridad' : 'Priority'}</th>
     <th>Scoring</th>
@@ -496,7 +495,7 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
 
       const stageHeader = `
         <tr class="ls-stage-header">
-          <td colspan="9">
+          <td colspan="8">
             ${esc(stage.name[lang] || stage.name.es)}
             <span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">${esc(stage.description[lang] || stage.description.es)}</span>
             <span style="float:right;font-weight:400;color:var(--on-surface-dim)">${stageCriteria.length} ${lang === 'es' ? 'criterios' : 'criteria'}</span>
@@ -719,7 +718,6 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     var mdSel = (!cr.priority || cr.priority === 'medium') ? ' selected' : ''
     var loSel = cr.priority === 'low' ? ' selected' : ''
     return '<tr data-ls-cri="' + i + '">' +
-      '<td><input value="' + lsEsc(cr.key||'') + '" data-field="key" style="width:80px" readonly></td>' +
       '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\\'name\\',this.value)"></td>' +
       '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\\'type\\',this.value)">' +
         '<option value="text"' + (cr.type==='text'?' selected':'') + '>' + L.type_text + '</option>' +
@@ -742,7 +740,7 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     var criteria = lsConfig.criteria || []
     var stages = lsConfig.stages || []
     var hasStages = stages.length > 0
-    var theadCols = '<th>' + L.th_key + '</th><th>' + L.th_name + '</th>' +
+    var theadCols = '<th>' + L.th_name + '</th>' +
       '<th>' + L.th_type + '</th><th>' + L.th_options + '</th>' +
       '<th>' + (LANG === 'es' ? 'Prioridad' : 'Priority') + '</th>' +
       '<th>Scoring</th>' +
@@ -756,7 +754,7 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
         if (stageCri.length === 0) return
         var stageName = (stage.name && (stage.name[LANG] || stage.name.es)) || ''
         var stageDesc = (stage.description && (stage.description[LANG] || stage.description.es)) || ''
-        bodyHtml += '<tr class="ls-stage-header"><td colspan="9">' + lsEsc(stageName) +
+        bodyHtml += '<tr class="ls-stage-header"><td colspan="8">' + lsEsc(stageName) +
           '<span style="font-weight:400;color:var(--on-surface-dim);margin-left:8px">' + lsEsc(stageDesc) + '</span>' +
           '<span style="float:right;font-weight:400;color:var(--on-surface-dim)">' + stageCri.length + ' ' + L.criteria_count + '</span></td></tr>'
         stageCri.forEach(function(x){ bodyHtml += buildCriRow(x.cr, x.i) })
