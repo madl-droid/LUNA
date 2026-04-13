@@ -51,15 +51,17 @@ export class GeminiLiveSession {
 
   /**
    * Build model-specific thinking config for the setup message.
-   * 3.1 models use thinkingLevel, 2.5 models use thinkingBudget.
+   * 3.x models (3.0, 3.1) use thinkingLevel, 2.5 models use thinkingBudget.
    */
   private buildModelSpecificConfig(model: string): {
     thinkingLevel?: string
     thinkingBudget?: number
   } {
-    if (model.includes('3.1')) {
+    // Gemini 3.x (3.0 Flash Live, 3.1, etc.) — use thinkingLevel
+    if (model.includes('3.0') || model.includes('3.1') || model.includes('3.')) {
       return { thinkingLevel: this.config.thinkingLevel.toUpperCase() }
     }
+    // Gemini 2.5 — disable thinking for lowest latency
     if (model.includes('2.5')) {
       return { thinkingBudget: 0 }
     }
@@ -209,19 +211,36 @@ export class GeminiLiveSession {
 
   /**
    * Send text message to Gemini (for injecting system events like silence detection).
+   * 3.1 models restrict clientContent to initial history seeding — use realtimeInput.text instead.
+   * 2.5 models don't support realtimeInput.text — fall back to clientContent.
    */
   sendTextInput(text: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.setupComplete) return
 
-    this.ws.send(JSON.stringify({
-      clientContent: {
-        turns: [{
-          role: 'user',
-          parts: [{ text }],
-        }],
-        turnComplete: true,
-      },
-    }))
+    if (this.isModel31()) {
+      // Gemini 3.1+: clientContent rejected after first model turn (error 1007)
+      this.ws.send(JSON.stringify({
+        realtimeInput: {
+          text,
+        },
+      }))
+    } else {
+      // Gemini 2.5: use clientContent (realtimeInput.text not supported)
+      this.ws.send(JSON.stringify({
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [{ text }],
+          }],
+          turnComplete: true,
+        },
+      }))
+    }
+  }
+
+  /** Check if the connected model is 3.1+ (affects message format) */
+  private isModel31(): boolean {
+    return this.modelUsed.includes('3.1') || this.modelUsed.includes('3.2')
   }
 
   /**
@@ -287,6 +306,13 @@ export class GeminiLiveSession {
         // Native bidirectional transcription
         outputAudioTranscription: {},
         inputAudioTranscription: {},
+        // Auto-compress context when approaching token limit (prevents session drops on long calls)
+        contextWindowCompression: {
+          triggerTokens: 100000, // compress when nearing 128k limit
+          slidingWindowTokens: 80000, // keep ~80k tokens after compression
+        },
+        // Enable session resumption for reconnection resilience
+        sessionResumption: {},
       },
     }
 

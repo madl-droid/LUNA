@@ -9,7 +9,7 @@ import { TwilioAdapter } from './twilio-adapter.js'
 import { MediaStreamServer } from './media-stream.js'
 import { GeminiLiveSession } from './gemini-live.js'
 import { SilenceDetector } from './silence-detector.js'
-import { mulawToPcm16k, pcmToMulaw8k } from './audio-converter.js'
+import { mulawToPcm16k, pcmToMulaw8k, parseSampleRate } from './audio-converter.js'
 import { preloadContext, persistToMemory } from './voice-engine.js'
 import * as pgStore from './pg-store.js'
 
@@ -59,6 +59,16 @@ export class CallManager {
     return promptsSvc?.getAccent() || 'es-MX'
   }
 
+  /** Get voice name from TTS module (identity page) — single source of truth for agent voice */
+  private getVoiceName(): string {
+    try {
+      const ttsConfig = this.registry.getConfig<{ TTS_VOICE_NAME?: string }>('tts')
+      return ttsConfig?.TTS_VOICE_NAME || this.config.VOICE_GEMINI_VOICE || 'Kore'
+    } catch {
+      return this.config.VOICE_GEMINI_VOICE || 'Kore'
+    }
+  }
+
   /**
    * Handle an incoming call webhook. Pre-loads context and returns TwiML.
    */
@@ -88,16 +98,17 @@ export class CallManager {
     }
 
     // Insert call record in DB
-    const callId = await pgStore.insertCall(this.db, callSid, 'inbound', from, to, this.config.VOICE_GEMINI_VOICE)
+    const callId = await pgStore.insertCall(this.db, callSid, 'inbound', from, to, this.getVoiceName())
 
-    // Start pre-loading context in background (will be ready by the time media stream connects)
+    // Start pre-loading context in background — ring delay gives time for loading.
+    // Context MUST be fully loaded before Gemini connects (enforced in onMediaStreamStart).
     const contextPromise = preloadContext(this.registry, this.db, from, 'inbound', this.config)
 
     // Store the promise for when stream connects
     this.callSidToStream.set(callSid, '') // placeholder, will be updated on stream start
     this.contextPromises.set(callSid, contextPromise)
 
-    logger.info({ callSid, callId, from }, 'Incoming call, generating TwiML')
+    logger.info({ callSid, callId, from }, 'Incoming call — context loading, generating TwiML with ring delay')
 
     // Random ring delay between min and max for natural feel
     const minRings = this.config.VOICE_ANSWER_DELAY_MIN_RINGS
@@ -153,12 +164,14 @@ export class CallManager {
       }
     }
 
-    // Pre-load context before dialing (pass reason for greeting customization)
+    // Fully load context BEFORE dialing — system must be 100% ready before the call starts
     const contextPromise = preloadContext(this.registry, this.db, to, 'outbound', this.config, reason)
+    await contextPromise
+    logger.info({ to }, 'Outbound context fully loaded, dialing')
 
-    const { callSid } = await this.twilioAdapter.makeCall(to, twimlUrl, statusCallbackUrl)
+    const { callSid } = await this.twilioAdapter.makeCall(to, twimlUrl, statusCallbackUrl, this.config.VOICE_OUTBOUND_RING_TIMEOUT_S)
     const callId = await pgStore.insertCall(
-      this.db, callSid, 'outbound', this.config.TWILIO_PHONE_NUMBER, to, this.config.VOICE_GEMINI_VOICE,
+      this.db, callSid, 'outbound', this.config.TWILIO_PHONE_NUMBER, to, this.getVoiceName(),
     )
 
     this.callSidToStream.set(callSid, '')
@@ -179,13 +192,15 @@ export class CallManager {
     // Update mapping
     this.callSidToStream.set(callSid, streamSid)
 
-    // Retrieve pre-loaded context
+    // Retrieve pre-loaded context — must be fully resolved before connecting Gemini
     const ctxPromise = this.contextPromises.get(callSid)
     this.contextPromises.delete(callSid)
 
+    const ctxStartMs = Date.now()
     const context = ctxPromise ? await ctxPromise : await preloadContext(
       this.registry, this.db, '', direction, this.config,
     )
+    logger.info({ callSid, contextLoadMs: Date.now() - ctxStartMs, contactId: context.contactId }, 'Context fully loaded, bridging to Gemini')
 
     // Create real session in sessions table for compression pipeline integration
     let sessionId: string | null = null
@@ -214,7 +229,7 @@ export class CallManager {
       sessionId,
       startedAt: new Date(),
       connectedAt: new Date(),
-      geminiVoice: this.config.VOICE_GEMINI_VOICE,
+      geminiVoice: this.getVoiceName(),
       modelUsed: this.config.VOICE_GEMINI_MODEL, // updated after connect()
       transcript: [],
       preloadedContext: context,
@@ -263,7 +278,7 @@ export class CallManager {
         model: this.config.VOICE_GEMINI_MODEL,
         fallbackModel: this.config.VOICE_GEMINI_FALLBACK_MODEL,
         thinkingLevel: this.config.VOICE_GEMINI_THINKING_LEVEL,
-        voice: this.config.VOICE_GEMINI_VOICE,
+        voice: this.getVoiceName(),
         language: this.config.VOICE_GEMINI_LANGUAGE || this.getGlobalAccent(),
         systemInstruction: context.systemInstruction,
         tools: context.tools,
@@ -279,7 +294,7 @@ export class CallManager {
         connectionTimeoutMs: this.config.VOICE_GEMINI_CONNECTION_TIMEOUT_MS,
       },
       {
-        onAudio: (audioBase64, _mimeType) => {
+        onAudio: (audioBase64, mimeType) => {
           // Gemini is producing audio — cancel any freeze timer and mark as speaking
           if (!call.geminiSpeaking) {
             call.geminiSpeaking = true
@@ -289,9 +304,10 @@ export class CallManager {
             }
             call.geminiFreezeAttempts = 0
           }
-          // Convert PCM from Gemini to mulaw for Twilio
+          // Convert PCM from Gemini (24kHz default, parsed from mimeType) to mulaw 8kHz for Twilio
           const pcmBuffer = Buffer.from(audioBase64, 'base64')
-          const mulawBuffer = pcmToMulaw8k(pcmBuffer)
+          const sampleRate = parseSampleRate(mimeType)
+          const mulawBuffer = pcmToMulaw8k(pcmBuffer, sampleRate)
           this.mediaServer.sendAudio(streamSid, mulawBuffer.toString('base64'))
         },
         onText: (text) => {
@@ -394,7 +410,7 @@ export class CallManager {
         setTimeout(() => this.endCall(streamSid, 'max-duration'), this.config.VOICE_GOODBYE_TIMEOUT_MS)
       }, this.config.VOICE_MAX_CALL_DURATION_MS))
 
-      logger.info({ callSid, streamSid, voice: this.config.VOICE_GEMINI_VOICE, modelUsed: call.modelUsed }, 'Audio bridge established')
+      logger.info({ callSid, streamSid, voice: call.geminiVoice, modelUsed: call.modelUsed }, 'Audio bridge established')
     } catch (err) {
       logger.error({ err, callSid }, 'Failed to connect Gemini Live')
       this.endCall(streamSid, 'error')

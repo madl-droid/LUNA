@@ -9,7 +9,6 @@ import { jsonResponse, parseBody, readBody, parseQuery } from '../../kernel/http
 import { numEnv, numEnvMin, boolEnv, floatEnvMin } from '../../kernel/config-helpers.js'
 import type { Server } from '../../kernel/server.js'
 import type { TwilioVoiceConfig, InitiateCallRequest, VoicePreviewRequest } from './types.js'
-import { GEMINI_VOICES } from './types.js'
 import { TwilioAdapter } from './twilio-adapter.js'
 import { MediaStreamServer } from './media-stream.js'
 import { CallManager } from './call-manager.js'
@@ -295,7 +294,7 @@ const manifest: ModuleManifest = {
     // ── Gemini Live — API & model ──
     VOICE_GOOGLE_API_KEY: z.string().default(''),
     VOICE_GEMINI_MODEL: z.string().default('gemini-3.1-flash-live-preview'),
-    VOICE_GEMINI_FALLBACK_MODEL: z.string().default('gemini-2.5-flash-live-preview'),
+    VOICE_GEMINI_FALLBACK_MODEL: z.string().default('gemini-2.5-flash-native-audio-preview-12-2025'),
     VOICE_GEMINI_THINKING_LEVEL: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
     VOICE_GEMINI_VOICE: z.string().default('Kore'),
     VOICE_GEMINI_LANGUAGE: z.string().default(''),
@@ -341,6 +340,7 @@ const manifest: ModuleManifest = {
     VOICE_BUSINESS_HOURS_START: numEnvMin(0, 8),
     VOICE_BUSINESS_HOURS_END: numEnvMin(0, 17),
     VOICE_BUSINESS_HOURS_TIMEZONE: z.string().default('America/Bogota'),
+    VOICE_OUTBOUND_RING_TIMEOUT_S: numEnvMin(30, 110),
     VOICE_OUTBOUND_RATE_LIMIT_HOUR: numEnvMin(0, 3),
     VOICE_INBOUND_RATE_LIMIT_HOUR: numEnvMin(0, 10),
   }),
@@ -375,7 +375,7 @@ const manifest: ModuleManifest = {
         label: { es: 'Numero de telefono Twilio', en: 'Twilio Phone Number' },
         info: { es: 'Numero con formato internacional (+1234567890)', en: 'International format number (+1234567890)' },
       },
-      // ── Gemini Live — API & modelo ──
+      // ── Gemini Live — API ──
       { key: '_divider_gemini', type: 'divider', label: { es: 'Gemini Live', en: 'Gemini Live' } },
       {
         key: 'VOICE_GOOGLE_API_KEY',
@@ -384,44 +384,10 @@ const manifest: ModuleManifest = {
         info: { es: 'Dejar vacio para usar la key del modulo LLM', en: 'Leave empty to use the LLM module key' },
       },
       {
-        key: 'VOICE_GEMINI_MODEL',
-        type: 'text',
-        label: { es: 'Modelo Gemini Live (primario)', en: 'Gemini Live model (primary)' },
-        info: { es: 'Modelo principal (ej: gemini-3.1-flash-live-preview)', en: 'Primary model (e.g., gemini-3.1-flash-live-preview)' },
-        width: 'half',
-      },
-      {
-        key: 'VOICE_GEMINI_FALLBACK_MODEL',
-        type: 'text',
-        label: { es: 'Modelo Gemini Live (fallback)', en: 'Gemini Live model (fallback)' },
-        info: { es: 'Modelo alternativo si el primario falla (ej: gemini-2.5-flash-live-preview)', en: 'Fallback model if primary fails (e.g., gemini-2.5-flash-live-preview)' },
-        width: 'half',
-      },
-      {
-        key: 'VOICE_GEMINI_THINKING_LEVEL',
-        type: 'select',
-        label: { es: 'Nivel de razonamiento (thinking)', en: 'Thinking level' },
-        info: { es: 'Solo aplica a gemini-3.1. minimal = latencia minima; high = respuestas mas elaboradas', en: 'Only applies to gemini-3.1. minimal = lowest latency; high = more thorough responses' },
-        options: [
-          { value: 'minimal', label: 'Minimal (recomendado)' },
-          { value: 'low', label: 'Low' },
-          { value: 'medium', label: 'Medium' },
-          { value: 'high', label: 'High' },
-        ],
-        width: 'half',
-      },
-      {
-        key: 'VOICE_GEMINI_LANGUAGE',
-        type: 'text',
-        label: { es: 'Idioma (languageCode)', en: 'Language (languageCode)' },
-        info: { es: 'Codigo BCP-47 (ej: es-ES, en-US). Vacio = auto-detect', en: 'BCP-47 code (e.g., es-ES, en-US). Empty = auto-detect' },
-        width: 'half',
-      },
-      {
-        key: 'VOICE_GEMINI_VOICE',
-        type: 'select',
-        label: { es: 'Voz del agente', en: 'Agent voice' },
-        options: [...GEMINI_VOICES],
+        key: '_voice_model_info',
+        type: 'readonly',
+        label: { es: 'Modelo y voz', en: 'Model & voice' },
+        info: { es: 'El modelo de voz se configura en Agente \u2192 Avanzado \u2192 Uso de modelos. La voz del agente se configura en Agente \u2192 Identidad.', en: 'The voice model is configured in Agent \u2192 Advanced \u2192 Model assignment. The agent voice is configured in Agent \u2192 Identity.' },
       },
       {
         key: 'VOICE_PREVIEW_TEXT',
@@ -431,6 +397,19 @@ const manifest: ModuleManifest = {
       },
       // ── Generacion ──
       { key: '_divider_generation', type: 'divider', label: { es: 'Generacion (LLM)', en: 'Generation (LLM)' } },
+      {
+        key: 'VOICE_GEMINI_THINKING_LEVEL',
+        type: 'select',
+        label: { es: 'Nivel de razonamiento (thinking)', en: 'Thinking level' },
+        info: { es: 'Solo aplica a gemini-3.x. minimal = latencia minima; high = respuestas mas elaboradas', en: 'Only applies to gemini-3.x. minimal = lowest latency; high = more thorough responses' },
+        options: [
+          { value: 'minimal', label: 'Minimal (recomendado)' },
+          { value: 'low', label: 'Low' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High' },
+        ],
+        width: 'half',
+      },
       {
         key: 'VOICE_GEMINI_TEMPERATURE',
         type: 'number',
@@ -468,6 +447,7 @@ const manifest: ModuleManifest = {
         info: { es: 'HIGH = detecta voces suaves. LOW = solo voces claras', en: 'HIGH = detects soft voices. LOW = only clear voices' },
         options: [
           { value: 'START_SENSITIVITY_HIGH', label: 'Alta (High)' },
+          { value: 'START_SENSITIVITY_MEDIUM', label: 'Media (Medium)' },
           { value: 'START_SENSITIVITY_LOW', label: 'Baja (Low)' },
         ],
         width: 'half',
@@ -479,6 +459,7 @@ const manifest: ModuleManifest = {
         info: { es: 'LOW = espera mas antes de cortar (bueno para pausas). HIGH = corta rapido', en: 'LOW = waits longer before cutting (good for pauses). HIGH = cuts quickly' },
         options: [
           { value: 'END_SENSITIVITY_HIGH', label: 'Alta (High)' },
+          { value: 'END_SENSITIVITY_MEDIUM', label: 'Media (Medium)' },
           { value: 'END_SENSITIVITY_LOW', label: 'Baja (Low)' },
         ],
         width: 'half',
@@ -674,6 +655,14 @@ const manifest: ModuleManifest = {
         type: 'text',
         label: { es: 'Zona horaria', en: 'Timezone' },
         info: { es: 'Zona horaria IANA (ej: America/Bogota, America/Mexico_City, Europe/Madrid)', en: 'IANA timezone (e.g.: America/Bogota, America/Mexico_City, Europe/Madrid)' },
+        width: 'half',
+      },
+      {
+        key: 'VOICE_OUTBOUND_RING_TIMEOUT_S',
+        type: 'number',
+        label: { es: 'Timeout de timbre saliente (seg)', en: 'Outbound ring timeout (sec)' },
+        info: { es: 'Segundos esperando a que conteste antes de colgar. Twilio default = 60. Min recomendado 110s', en: 'Seconds waiting for answer before hanging up. Twilio default = 60. Recommended min 110s' },
+        min: 30,
         width: 'half',
       },
       {

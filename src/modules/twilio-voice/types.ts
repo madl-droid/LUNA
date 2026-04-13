@@ -58,6 +58,7 @@ export interface TwilioVoiceConfig {
   VOICE_BUSINESS_HOURS_START: number
   VOICE_BUSINESS_HOURS_END: number
   VOICE_BUSINESS_HOURS_TIMEZONE: string
+  VOICE_OUTBOUND_RING_TIMEOUT_S: number
   VOICE_OUTBOUND_RATE_LIMIT_HOUR: number
   VOICE_INBOUND_RATE_LIMIT_HOUR: number
   // Ring delay range (replaces VOICE_ANSWER_DELAY_RINGS)
@@ -281,6 +282,11 @@ export interface GeminiSetupMessage {
     }
     outputAudioTranscription?: Record<string, never>
     inputAudioTranscription?: Record<string, never>
+    contextWindowCompression?: {
+      triggerTokens?: number
+      slidingWindowTokens?: number
+    }
+    sessionResumption?: Record<string, never>
     tools?: Array<{
       functionDeclarations: GeminiToolDeclaration[]
     }>

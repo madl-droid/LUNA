@@ -341,7 +341,13 @@ function renderModelsTable(data: SectionData, lang: string): string {
     'gemini-embedding-2-preview',
     'text-embedding-004',
   ])}
-  ${renderSpecializedRow(isEs ? 'Voz (Live)' : 'Voice (Live)', 'VOICE_GEMINI_MODEL', cfg['VOICE_GEMINI_MODEL'] || 'gemini-2.5-flash', isEs ? 'Modelo para llamadas de voz en vivo' : 'Model for live voice calls', googleModels, [])}
+  ${renderSpecializedRow(isEs ? 'Voz (Live)' : 'Voice (Live)', 'VOICE_GEMINI_MODEL', cfg['VOICE_GEMINI_MODEL'] || 'gemini-3.1-flash-live-preview', isEs ? 'Modelo para llamadas de voz en vivo' : 'Model for live voice calls', googleModels, [
+    'gemini-3.1-flash-live-preview',
+    'gemini-2.5-flash-native-audio-preview-12-2025',
+  ], 'VOICE_GEMINI_FALLBACK_MODEL', cfg['VOICE_GEMINI_FALLBACK_MODEL'] || 'gemini-2.5-flash-native-audio-preview-12-2025', [
+    'gemini-2.5-flash-native-audio-preview-12-2025',
+    'gemini-3.1-flash-live-preview',
+  ])}
 
   <script type="application/json" id="models-data">${JSON.stringify(data.allModels ?? {})}</script>`
 }

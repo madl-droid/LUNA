@@ -84,11 +84,14 @@ export class TwilioAdapter {
     to: string,
     twimlUrl: string,
     statusCallbackUrl?: string,
+    ringTimeoutSeconds?: number,
   ): Promise<{ callSid: string; status: string }> {
     const params = new URLSearchParams({
       To: to,
       From: this.phoneNumber,
       Url: twimlUrl,
+      // How long to let the phone ring before giving up (default 110s for max reach)
+      Timeout: String(ringTimeoutSeconds ?? 110),
       ...(statusCallbackUrl ? {
         StatusCallback: statusCallbackUrl,
         StatusCallbackEvent: 'initiated ringing answered completed',

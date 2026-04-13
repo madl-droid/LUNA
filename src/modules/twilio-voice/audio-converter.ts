@@ -9,7 +9,8 @@
 const MULAW_BIAS = 0x84
 const MULAW_CLIP = 32635
 const TWILIO_SAMPLE_RATE = 8000
-const GEMINI_SAMPLE_RATE = 16000
+const GEMINI_INPUT_SAMPLE_RATE = 16000
+const GEMINI_OUTPUT_SAMPLE_RATE = 24000
 
 // ═══════════════════════════════════════════
 // Mulaw decode lookup table (256 entries)
@@ -88,7 +89,7 @@ export function mulawToPcm16k(mulawBuffer: Buffer): Buffer {
  * Convert PCM 16-bit LE buffer (at given sample rate) to mulaw 8kHz buffer.
  * Downsamples to 8kHz first, then encodes each sample as mulaw.
  */
-export function pcmToMulaw8k(pcmBuffer: Buffer, inputSampleRate: number = GEMINI_SAMPLE_RATE): Buffer {
+export function pcmToMulaw8k(pcmBuffer: Buffer, inputSampleRate: number = GEMINI_OUTPUT_SAMPLE_RATE): Buffer {
   const bytesPerSample = 2
   const totalSamples = pcmBuffer.length / bytesPerSample
   const ratio = inputSampleRate / TWILIO_SAMPLE_RATE
@@ -124,4 +125,10 @@ export function calculateRms(pcmBuffer: Buffer): number {
   return Math.sqrt(sumSquares / sampleCount)
 }
 
-export { TWILIO_SAMPLE_RATE, GEMINI_SAMPLE_RATE }
+export { TWILIO_SAMPLE_RATE, GEMINI_INPUT_SAMPLE_RATE, GEMINI_OUTPUT_SAMPLE_RATE }
+
+/** Parse sample rate from Gemini mimeType (e.g., 'audio/pcm;rate=24000') */
+export function parseSampleRate(mimeType: string, fallback: number = GEMINI_OUTPUT_SAMPLE_RATE): number {
+  const match = mimeType.match(/rate=(\d+)/)
+  return match ? parseInt(match[1]!, 10) : fallback
+}
