@@ -48,6 +48,9 @@ jobs:
     needs: build-and-push
     runs-on: [self-hosted, luna]
     steps:
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Sync instance prompts from repo
         run: |
           REPO_PROMPTS="/docker/luna-repo/instance/prompts"
