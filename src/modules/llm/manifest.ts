@@ -8,7 +8,7 @@ import type { Registry } from '../../kernel/registry.js'
 import { jsonResponse, parseBody, parseQuery } from '../../kernel/http-helpers.js'
 import { numEnvMin, numEnv, floatEnvMin, boolEnv } from '../../kernel/config-helpers.js'
 import { LLMGateway } from './llm-gateway.js'
-import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget, TTSRequest } from './types.js'
+import type { LLMModuleConfig, LLMTask, LLMProviderName, TaskRoute, RouteTarget } from './types.js'
 
 let _gateway: LLMGateway | null = null
 let _pricingTimer: ReturnType<typeof setInterval> | null = null
@@ -320,28 +320,6 @@ const manifest: ModuleManifest = {
           }
         },
       },
-      // TTS — Text-to-Speech synthesis
-      {
-        method: 'POST',
-        path: 'tts',
-        handler: async (req, res) => {
-          if (!_gateway) {
-            jsonResponse(res, 503, { error: 'LLM gateway not initialized' })
-            return
-          }
-          try {
-            const body = await parseBody<TTSRequest>(req)
-            if (!body?.text || !body?.voice) {
-              jsonResponse(res, 400, { error: 'Missing text or voice' })
-              return
-            }
-            const result = await _gateway.tts(body)
-            jsonResponse(res, 200, result)
-          } catch (err) {
-            jsonResponse(res, 500, { error: `TTS failed: ${String(err)}` })
-          }
-        },
-      },
       // Model scanner — status
       {
         method: 'GET',
@@ -442,15 +420,17 @@ const manifest: ModuleManifest = {
       }
     })
 
-    // Register llm:tts hook handler — enables hook-based TTS calls
+    // Register llm:tts hook handler — delegates to tts:service (Gemini TTS)
     registry.addHook('llm', 'llm:tts', async (payload) => {
-      const result = await _gateway!.tts({
-        text: payload.text,
+      const ttsService = registry.getOptional<{ synthesize: (text: string) => Promise<{ audioBuffer: Buffer; durationSeconds: number } | null> }>('tts:service')
+      if (!ttsService) throw new Error('tts:service not available')
+      const result = await ttsService.synthesize(payload.text)
+      if (!result) throw new Error('TTS synthesis failed')
+      return {
+        audioBase64: result.audioBuffer.toString('base64') as string,
+        mimeType: 'audio/ogg',
         voice: payload.voice,
-        languageCode: payload.languageCode,
-        audioEncoding: payload.audioEncoding as 'MP3' | 'LINEAR16' | 'OGG_OPUS' | undefined,
-      })
-      return result
+      }
     })
 
     // Register llm:models_available hook handler

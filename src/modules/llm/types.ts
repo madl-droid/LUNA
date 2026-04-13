@@ -451,30 +451,6 @@ export const DEFAULT_COST_TABLE: Record<string, { inputPer1M: number; outputPer1
 }
 
 // ═══════════════════════════════════════════
-// TTS (Text-to-Speech)
-// ═══════════════════════════════════════════
-
-export interface TTSRequest {
-  /** Text to synthesize */
-  text: string
-  /** Voice name (e.g. 'Kore', 'Aoede', or a Wavenet voice name) */
-  voice: string
-  /** Language code (default: 'es-US') */
-  languageCode?: string
-  /** Audio encoding (default: 'MP3') */
-  audioEncoding?: 'MP3' | 'LINEAR16' | 'OGG_OPUS'
-}
-
-export interface TTSResponse {
-  /** Base64-encoded audio content */
-  audioBase64: string
-  /** MIME type of the audio */
-  mimeType: string
-  /** Voice used */
-  voice: string
-}
-
-// ═══════════════════════════════════════════
 // Model scanner types
 // ═══════════════════════════════════════════
 

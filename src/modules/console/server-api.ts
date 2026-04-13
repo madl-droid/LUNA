@@ -2,6 +2,7 @@ import { readBody, parseBody, parseQuery, jsonResponse } from '../../kernel/http
 import type { ApiRoute } from '../../kernel/types.js'
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
+import { GoogleGenAI } from '@google/genai'
 import { logger, findEnvFile, parseEnvFile, writeEnvFile, guardDebugEndpoint, flushRedisExceptSessions, purgeAllData, purgeMemoryData, purgeAgentData, packageJsonVersion, checkSuperAdmin } from './server-helpers.js'
 
 export function createApiRoutes(): ApiRoute[] {
@@ -809,31 +810,20 @@ export function createApiRoutes(): ApiRoute[] {
             return
           }
           const ttsModel = config['TTS_MODEL'] || 'gemini-2.5-flash-preview-tts'
-          const ttsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${ttsModel}:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: body.text.substring(0, 500) }] }],
-              generationConfig: {
-                responseModalities: ['AUDIO'],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: body.voiceName },
-                  },
+          const genAI = new GoogleGenAI({ apiKey })
+          const ttsResult = await genAI.models.generateContent({
+            model: ttsModel,
+            contents: [{ role: 'user', parts: [{ text: body.text.substring(0, 500) }] }],
+            config: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: body.voiceName },
                 },
               },
-            }),
+            },
           })
-          if (!ttsResponse.ok) {
-            const errText = await ttsResponse.text()
-            logger.error({ status: ttsResponse.status, body: errText }, 'TTS preview API error')
-            jsonResponse(res, 502, { error: 'Gemini TTS API error' })
-            return
-          }
-          const data = await ttsResponse.json() as {
-            candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }>
-          }
-          const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
+          const base64Audio = ttsResult.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
           if (!base64Audio) {
             logger.error('TTS preview: no audio data in Gemini response')
             jsonResponse(res, 502, { error: 'No audio data in response' })
