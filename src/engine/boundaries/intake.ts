@@ -315,14 +315,14 @@ export async function intake(
         if (att.sizeTier === 'large' && att.llmText) {
           // Large file: LLM description + query hint
           const sizeNote = att.tokenEstimate > 0 ? ` [documento de ~${String(att.tokenEstimate)} tokens, contenido resumido]` : ''
-          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}${queryHint}`
+          injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename}${durationTag}${sizeNote} — Descripción: ${att.llmText}${queryHint}`
         } else if (att.llmText && att.category === 'images') {
           // Image: vision description + inspect + query hints
           const inspectHint = ` Si necesitas más detalle visual, usa inspect_image con id "${att.id}".`
           injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename}${durationTag} — ${att.llmText}${inspectHint}${queryHint}`
         } else if (att.llmText && (att.category === 'audio' || att.category === 'video')) {
           // Audio/video: transcription/description + query hint
-          injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}${queryHint}`
+          injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename}${durationTag} — ${att.llmText}${queryHint}`
         } else {
           // Small/medium text file: full extracted content + query hint
           injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename} — ${att.extractedText}${queryHint}`

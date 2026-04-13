@@ -358,16 +358,11 @@ export class UsersDb {
 
       if (fallbackResult.rows.length > 0) {
         const row = fallbackResult.rows[0]!
-        // Auto-migrate: update sender_id from phone to LID so next lookup is direct
-        try {
-          await this.pool.query(
-            `UPDATE user_contacts SET sender_id = $1 WHERE id = $2`,
-            [senderId, row.contact_id],
-          )
-          logger.info({ userId: row.user_id, oldSenderId: fallbackSenderId, newSenderId: senderId, channel }, 'Auto-migrated user_contacts sender_id (phone → LID)')
-        } catch (err) {
-          logger.warn({ err, userId: row.user_id }, 'Failed to auto-migrate sender_id')
-        }
+        // Do NOT auto-migrate sender_id phone→LID: LIDs are volatile (jidTypeMap
+        // is in-memory, lost on restart). Phone is the stable identifier.
+        // Cost: one extra fallback query per admin message — acceptable.
+        logger.debug({ userId: row.user_id, phoneSenderId: fallbackSenderId, lidSenderId: senderId, channel },
+          'Resolved user via phone fallback (no LID migration)')
         return { userId: row.user_id, listType: row.list_type, listName: row.list_name }
       }
     }
@@ -613,13 +608,14 @@ export class UsersDb {
 
       // Fetch message counts + last inbound/outbound timestamps
       const msgResult = await this.pool.query(
-        `SELECT m.contact_id,
+        `SELECT s.contact_id,
                 COUNT(*) AS message_count,
                 MAX(CASE WHEN m.role = 'user' THEN m.created_at END) AS last_inbound,
                 MAX(CASE WHEN m.role = 'assistant' THEN m.created_at END) AS last_outbound
          FROM messages m
-         WHERE m.contact_id = ANY($1::uuid[])
-         GROUP BY m.contact_id`,
+         JOIN sessions s ON m.session_id = s.id
+         WHERE s.contact_id = ANY($1::uuid[])
+         GROUP BY s.contact_id`,
         [contactIds],
       )
       const msgMap = new Map<string, Record<string, unknown>>()

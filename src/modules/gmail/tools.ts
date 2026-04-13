@@ -211,5 +211,91 @@ export async function registerEmailTools(
     },
   })
 
-  logger.info('Registered 3 email tools: email-read-inbox, email-search, email-get-detail')
+  // ─── send_email ──────────────────────────────
+
+  await toolRegistry.registerTool({
+    definition: {
+      name: 'send_email',
+      displayName: 'Enviar email',
+      description:
+        'Envía un email nuevo. Para responder a un thread existente, incluye thread_id y original_message_id del email original.',
+      shortDescription: 'Envía email o responde a un thread',
+      category: 'email',
+      sourceModule: 'gmail',
+      parameters: {
+        type: 'object',
+        properties: {
+          to: {
+            type: 'string',
+            description: 'Dirección(es) de email del destinatario, separadas por coma si son varias',
+          },
+          subject: {
+            type: 'string',
+            description: 'Asunto del email',
+          },
+          body: {
+            type: 'string',
+            description: 'Contenido del email en texto plano',
+          },
+          cc: {
+            type: 'string',
+            description: 'Direcciones CC separadas por coma (opcional)',
+          },
+          thread_id: {
+            type: 'string',
+            description: 'ID del thread de Gmail para responder a un email existente (opcional)',
+          },
+          original_message_id: {
+            type: 'string',
+            description: 'ID del mensaje original para reply threading (opcional, usar junto con thread_id)',
+          },
+        },
+        required: ['to', 'subject', 'body'],
+      },
+    },
+    handler: async (input) => {
+      const to = input.to as string
+      const subject = input.subject as string
+      const body = input.body as string
+      const cc = input.cc as string | undefined
+      const threadId = input.thread_id as string | undefined
+      const originalMessageId = input.original_message_id as string | undefined
+
+      if (!to || !subject || !body) {
+        return { success: false, error: 'to, subject, and body are required' }
+      }
+
+      try {
+        // Reply to existing thread
+        if (threadId && originalMessageId) {
+          const result = await adapter.reply({
+            originalMessageId,
+            bodyHtml: `<p>${body.replace(/\n/g, '<br>')}</p>`,
+            bodyText: body,
+            replyAll: false,
+          })
+          return { success: true, data: { messageId: result.messageId, threadId: result.threadId } }
+        }
+
+        // New email
+        const toList = to.split(',').map((e) => e.trim()).filter(Boolean)
+        const ccList = cc ? cc.split(',').map((e) => e.trim()).filter(Boolean) : undefined
+
+        const result = await adapter.sendEmail({
+          to: toList,
+          cc: ccList,
+          subject,
+          bodyHtml: `<p>${body.replace(/\n/g, '<br>')}</p>`,
+          bodyText: body,
+        })
+
+        return { success: true, data: { messageId: result.messageId, threadId: result.threadId } }
+      } catch (err) {
+        logger.error({ err, to, subject }, 'send_email tool failed')
+        return { success: false, error: `Failed to send email: ${String(err)}` }
+      }
+    },
+  })
+
+  logger.info('Registered 4 email tools: email-read-inbox, email-search, email-get-detail, send_email')
 }

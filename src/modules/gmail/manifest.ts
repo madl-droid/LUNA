@@ -429,7 +429,7 @@ async function processIncomingEmail(msg: EmailMessage): Promise<void> {
 
   // Fire message:incoming hook para que el engine lo procese
   await _registry.runHook('message:incoming', {
-    id: msg.id,
+    id: randomUUID(),
     channelName: 'email',
     channelMessageId: msg.id,
     from: msg.from,

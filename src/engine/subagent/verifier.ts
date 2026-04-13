@@ -14,6 +14,18 @@ import { callLLM } from '../utils/llm-client.js'
 
 const logger = pino({ name: 'engine:verifier' })
 
+/** Resilient JSON parser: strips markdown fences and trailing commas from LLM output. */
+function safeParseJSON(text: string): Record<string, unknown> | null {
+  try {
+    let s = text.trim()
+    if (s.startsWith('```')) s = s.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '')
+    s = s.replace(/,\s*([\]}])/g, '$1')
+    return JSON.parse(s) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
 /**
  * Verify the result of a subagent execution.
  * Uses the classify model (effort router) for consistency.
@@ -78,9 +90,10 @@ export async function verifySubagentResult(
     })
 
     const verifierTokens = llmResult.inputTokens + llmResult.outputTokens
-    const parsed = JSON.parse(llmResult.text)
+    const parsed = safeParseJSON(llmResult.text)
+    if (!parsed) throw new Error('Verifier returned unparseable JSON')
 
-    const verdict = ['accept', 'retry', 'fail'].includes(parsed.verdict)
+    const verdict = ['accept', 'retry', 'fail'].includes(parsed.verdict as string)
       ? parsed.verdict as VerificationResult['verdict']
       : 'accept'
 

@@ -137,6 +137,12 @@ export async function buildAgenticPrompt(
     }
   }
 
+  // ── Section 9b: <call_status> (Twilio voice availability) ──────────────
+  const twilioAdapter = registry.getOptional<{ isConfigured(): boolean }>('twilio-voice:adapter')
+  if (!twilioAdapter || !twilioAdapter.isConfigured()) {
+    systemParts.push(`<call_status>\nNo tienes capacidad de hacer ni recibir llamadas telefónicas. Si te piden llamar, explica que no puedes hacer llamadas en este momento pero ofrece alternativas: videollamada por Google Meet o continuar la conversación por WhatsApp.\n</call_status>`)
+  }
+
   // ── Section 10: <quality_checklist> ──────────────────────────────────────
   if (svc) {
     const prompts = await svc.getCompositorPrompts(ctx.userType)
