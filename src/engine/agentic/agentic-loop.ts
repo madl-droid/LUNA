@@ -9,6 +9,7 @@ import type {
   EngineConfig,
   LLMToolDef,
 } from '../types.js'
+import type { MessageContentBlock } from '../../modules/llm/types.js'
 import { pickErrorFallback } from '../fallbacks/error-defaults.js'
 import type { AgenticConfig, AgenticResult, ToolCallLog } from './types.js'
 import {
@@ -126,7 +127,7 @@ export async function runAgenticLoop(
   // The user message includes full context layers (contact info, history, memory, knowledge, etc.)
   // built by buildContextLayers() in the prompt builder, plus the actual user message.
   // Falls back to raw normalizedText if userMessage is not provided (backwards compat).
-  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+  const messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentBlock[] }> = [
     { role: 'user', content: userMessage ?? ctx.normalizedText },
   ]
 
@@ -226,15 +227,40 @@ export async function runAgenticLoop(
         }
       }
 
-      // Append assistant message (with tool calls) and user message (with results)
-      messages.push({
-        role: 'assistant',
-        content: formatAssistantToolMessage(llmResult.text, llmResult.toolCalls),
-      })
-      messages.push({
-        role: 'user',
-        content: formatToolResultsMessage(toolResults),
-      })
+      // Append assistant message (text + tool_use blocks) and user message (tool_result blocks).
+      // Uses native content block format — no text serialization overhead.
+
+      // Assistant turn: optional partial text + one tool_use block per call
+      const assistantBlocks: MessageContentBlock[] = []
+      if (llmResult.text) {
+        assistantBlocks.push({ type: 'text', text: llmResult.text })
+      }
+      for (const tc of llmResult.toolCalls) {
+        assistantBlocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.input })
+      }
+      messages.push({ role: 'assistant', content: assistantBlocks })
+
+      // User turn: one tool_result block per executed tool
+      const MAX_TOOL_RESULT_CHARS = 8_000
+      const resultBlocks: MessageContentBlock[] = []
+      for (let i = 0; i < toolResults.length; i++) {
+        const r = toolResults[i]!
+        const tc = llmResult.toolCalls[i]!
+        const dataStr = r.success
+          ? (typeof r.data === 'string' ? r.data : JSON.stringify(r.data)) ?? '(no data)'
+          : `ERROR: ${r.error ?? 'Unknown error'}`
+        const content = dataStr.length > MAX_TOOL_RESULT_CHARS
+          ? dataStr.slice(0, MAX_TOOL_RESULT_CHARS) + `\n[truncated: ${MAX_TOOL_RESULT_CHARS}/${dataStr.length} chars]`
+          : dataStr
+        resultBlocks.push({
+          type: 'tool_result',
+          toolUseId: tc.id,
+          name: tc.name,
+          content,
+          isError: !r.success,
+        })
+      }
+      messages.push({ role: 'user', content: resultBlocks })
     }
   } catch (err) {
     logger.error({ traceId: ctx.traceId, turns, err }, 'Agentic loop unexpected error')
@@ -307,7 +333,7 @@ export async function runAgenticLoop(
  * Uses StepSemaphore for parallelism, dedup cache, and loop detection.
  */
 async function executeToolCalls(
-  toolCalls: Array<{ name: string; input: Record<string, unknown> }>,
+  toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }>,
   ctx: ContextBundle,
   toolExecutor: ToolExecutor,
   registry: Registry,
@@ -477,44 +503,6 @@ async function executeToolCalls(
   })
 }
 
-/**
- * Format the assistant's response that contains tool calls for the conversation history.
- * Represents tool calls as structured text so the LLM can track what it did.
- */
-function formatAssistantToolMessage(
-  text: string | undefined,
-  toolCalls: Array<{ name: string; input: Record<string, unknown> }>,
-): string {
-  const parts: string[] = []
-  if (text) parts.push(text)
-  for (const tc of toolCalls) {
-    parts.push(`[Tool call: ${tc.name}(${JSON.stringify(tc.input).slice(0, 500)})]`)
-  }
-  return parts.join('\n')
-}
-
-/**
- * Format tool results as a user message for the conversation.
- */
-function formatToolResultsMessage(
-  results: Array<{ name: string; success: boolean; data: unknown; error?: string }>,
-): string {
-  const parts: string[] = ['Tool results:']
-  for (const r of results) {
-    if (r.success) {
-      const dataStr = typeof r.data === 'string' ? r.data : JSON.stringify(r.data)
-      const fullText = dataStr ?? '(no data)'
-      const MAX_TOOL_RESULT_CHARS = 8_000
-      const truncated = fullText.length > MAX_TOOL_RESULT_CHARS
-      const display = truncated ? fullText.slice(0, MAX_TOOL_RESULT_CHARS) : fullText
-      const truncNote = truncated ? `\n[... resultado truncado: mostrando ${MAX_TOOL_RESULT_CHARS} de ${String(fullText.length)} caracteres]` : ''
-      parts.push(`[${r.name}]: ${display}${truncNote}`)
-    } else {
-      parts.push(`[${r.name}]: ERROR — ${r.error ?? 'Unknown error'}`)
-    }
-  }
-  return parts.join('\n\n')
-}
 
 /**
  * Build the final AgenticResult from loop state.

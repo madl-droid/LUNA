@@ -19,6 +19,10 @@ import type {
   ModelInfo,
   ContentPart,
   LLMMessage,
+  MessageContentBlock,
+  ToolUseBlock,
+  ToolResultBlock,
+  TextBlock,
 } from './types.js'
 
 const logger = pino({ name: 'llm:providers' })
@@ -27,18 +31,57 @@ const logger = pino({ name: 'llm:providers' })
 // Helper: extract text content from message
 // ═══════════════════════════════════════════
 
-function textContent(content: string | ContentPart[]): string {
+function textContent(content: string | ContentPart[] | MessageContentBlock[]): string {
   if (typeof content === 'string') return content
-  return content
+  return (content as Array<{ type: string; text?: string }>)
     .filter(p => p.type === 'text' && p.text)
     .map(p => p.text!)
     .join('')
 }
 
-/** Build Google Gemini content parts from string or ContentPart[] */
-function buildGoogleParts(content: string | ContentPart[]): Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> {
+/** Build Google Gemini content parts from string, ContentPart[], or MessageContentBlock[] */
+function buildGoogleParts(content: string | ContentPart[] | MessageContentBlock[]): Array<Record<string, unknown>> {
   if (typeof content === 'string') return [{ text: content }]
-  return content.map(part => {
+
+  // Detect native tool calling blocks
+  const hasToolBlocks = (content as Array<{ type: string }>).some(
+    b => b.type === 'tool_use' || b.type === 'tool_result',
+  )
+
+  if (hasToolBlocks) {
+    // Build Google-native functionCall / functionResponse parts
+    const parts: Array<Record<string, unknown>> = []
+    for (const block of content as MessageContentBlock[]) {
+      if (block.type === 'tool_use') {
+        parts.push({
+          functionCall: {
+            name: (block as ToolUseBlock).name,
+            args: (block as ToolUseBlock).input,
+          },
+        })
+      } else if (block.type === 'tool_result') {
+        const rb = block as ToolResultBlock
+        let parsedResult: Record<string, unknown>
+        try {
+          parsedResult = JSON.parse(rb.content) as Record<string, unknown>
+        } catch {
+          parsedResult = { result: rb.content }
+        }
+        parts.push({
+          functionResponse: {
+            name: rb.name,
+            response: parsedResult,
+          },
+        })
+      } else if (block.type === 'text') {
+        parts.push({ text: (block as TextBlock).text })
+      }
+    }
+    return parts
+  }
+
+  // Standard multimedia content — existing path
+  return (content as ContentPart[]).map(part => {
     if (part.type === 'text' && part.text) return { text: part.text }
     if ((part.type === 'image_url' || part.type === 'audio' || part.type === 'video') && part.data) {
       return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
@@ -178,7 +221,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         if (block.type === 'text') {
           text += block.text
         } else if (block.type === 'tool_use') {
-          toolCalls.push({ name: block.name, input: block.input as Record<string, unknown> })
+          toolCalls.push({ id: block.id, name: block.name, input: block.input as Record<string, unknown> })
         }
         // Code execution results (type: 'code_execution_result' — Anthropic built-in)
         if ((block as unknown as Record<string, unknown>).type === 'code_execution_result') {
@@ -339,8 +382,40 @@ export class AnthropicAdapter implements ProviderAdapter {
   private buildAnthropicContent(msg: LLMMessage): string | Anthropic.ContentBlockParam[] {
     if (typeof msg.content === 'string') return msg.content
 
+    // Detect native tool calling blocks
+    const hasToolBlocks = (msg.content as Array<{ type: string }>).some(
+      b => b.type === 'tool_use' || b.type === 'tool_result',
+    )
+
+    if (hasToolBlocks) {
+      // Build Anthropic-native tool blocks (tool_use / tool_result)
+      const blocks: Anthropic.ContentBlockParam[] = []
+      for (const block of msg.content as MessageContentBlock[]) {
+        if (block.type === 'tool_use') {
+          blocks.push({
+            type: 'tool_use',
+            id: (block as ToolUseBlock).id,
+            name: (block as ToolUseBlock).name,
+            input: (block as ToolUseBlock).input,
+          })
+        } else if (block.type === 'tool_result') {
+          blocks.push({
+            type: 'tool_result',
+            tool_use_id: (block as ToolResultBlock).toolUseId,
+            content: (block as ToolResultBlock).content,
+            is_error: (block as ToolResultBlock).isError,
+          })
+        } else if (block.type === 'text') {
+          blocks.push({ type: 'text', text: (block as TextBlock).text })
+        }
+        // ContentPart types (image_url, audio, video) are not expected alongside tool blocks
+      }
+      return blocks
+    }
+
+    // Standard multimedia content — existing path
     const blocks: Anthropic.ContentBlockParam[] = []
-    for (const part of msg.content) {
+    for (const part of msg.content as ContentPart[]) {
       if (part.type === 'text' && part.text) {
         blocks.push({ type: 'text', text: part.text })
       } else if (part.type === 'image_url' && part.data) {
@@ -449,7 +524,7 @@ export class GoogleAdapter implements ProviderAdapter {
     const nonSystemMessages = request.messages.filter(m => m.role !== 'system')
     const contents: Content[] = nonSystemMessages.map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
-      parts: buildGoogleParts(m.content),
+      parts: buildGoogleParts(m.content) as Content['parts'],
     }))
 
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -473,6 +548,7 @@ export class GoogleAdapter implements ProviderAdapter {
         for (const part of candidate.content.parts) {
           if (part.functionCall) {
             toolCalls.push({
+              id: `gc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
               name: part.functionCall.name ?? '',
               input: (part.functionCall.args ?? {}) as Record<string, unknown>,
             })

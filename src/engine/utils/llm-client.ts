@@ -20,7 +20,7 @@ interface LLMGatewayLike {
     provider?: string
     model?: string
     system?: string
-    messages: Array<{ role: string; content: string | import('../../kernel/types.js').LLMContentPart[] }>
+    messages: Array<{ role: string; content: string | import('../../kernel/types.js').LLMContentPart[] | import('../../modules/llm/types.js').MessageContentBlock[] }>
     maxTokens?: number
     temperature?: number
     tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
@@ -37,7 +37,7 @@ interface LLMGatewayLike {
     model: string
     inputTokens: number
     outputTokens: number
-    toolCalls?: Array<{ name: string; input: Record<string, unknown> }>
+    toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown> }>
     durationMs: number
     cacheReadTokens?: number
     cacheCreationTokens?: number
@@ -272,13 +272,13 @@ async function callAnthropic(model: string, options: LLMCallOptions): Promise<LL
 
   // Extract text and tool calls
   let text = ''
-  const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = []
+  const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
 
   for (const block of response.content) {
     if (block.type === 'text') {
       text += block.text
     } else if (block.type === 'tool_use') {
-      toolCalls.push({ name: block.name, input: block.input as Record<string, unknown> })
+      toolCalls.push({ id: block.id, name: block.name, input: block.input as Record<string, unknown> })
     }
   }
 
@@ -330,12 +330,13 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
   })
 
   // Extract tool calls from response candidates
-  const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = []
+  const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
   const candidate = response.candidates?.[0]
   if (candidate?.content?.parts) {
     for (const part of candidate.content.parts) {
       if (part.functionCall) {
         toolCalls.push({
+          id: `gc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name: part.functionCall.name ?? '',
           input: (part.functionCall.args ?? {}) as Record<string, unknown>,
         })
@@ -357,12 +358,43 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
 
 type ContentInput = string | import('../types.js').LLMCallOptions['messages'][number]['content']
 
-/** Convert content to Anthropic format (string or ContentBlockParam[]) */
+// Loose part type for duck-typed iteration over the LLMContentPart | MessageContentBlock union
+type AnyPart = {
+  type: string
+  text?: string
+  data?: string
+  mimeType?: string
+  // ToolUseBlock fields
+  id?: string
+  name?: string
+  input?: Record<string, unknown>
+  // ToolResultBlock fields
+  toolUseId?: string
+  content?: string
+  isError?: boolean
+}
+
+/** Convert content to Anthropic format (string or ContentBlockParam[]).
+ *  Handles multimedia parts and native tool calling blocks (tool_use / tool_result). */
 function buildAnthropicContent(content: ContentInput): string | Anthropic.ContentBlockParam[] {
   if (typeof content === 'string') return content
   const blocks: Anthropic.ContentBlockParam[] = []
-  for (const part of content) {
-    if (part.type === 'text' && part.text) {
+  for (const part of content as AnyPart[]) {
+    if (part.type === 'tool_use' && part.id) {
+      blocks.push({
+        type: 'tool_use',
+        id: part.id,
+        name: part.name!,
+        input: part.input!,
+      })
+    } else if (part.type === 'tool_result' && part.toolUseId) {
+      blocks.push({
+        type: 'tool_result',
+        tool_use_id: part.toolUseId,
+        content: part.content!,
+        is_error: part.isError,
+      })
+    } else if (part.type === 'text' && part.text) {
       blocks.push({ type: 'text', text: part.text })
     } else if (part.type === 'image_url' && part.data) {
       blocks.push({
@@ -381,10 +413,23 @@ function buildAnthropicContent(content: ContentInput): string | Anthropic.Conten
   return blocks.length === 1 && blocks[0]?.type === 'text' ? (blocks[0] as { type: 'text'; text: string }).text : blocks
 }
 
-/** Convert content to Google Gemini parts format */
-function buildGeminiParts(content: ContentInput): Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> {
+/** Convert content to Google Gemini parts format.
+ *  Handles multimedia parts and native tool calling blocks (functionCall / functionResponse). */
+function buildGeminiParts(content: ContentInput): Array<Record<string, unknown>> {
   if (typeof content === 'string') return [{ text: content }]
-  return content.map(part => {
+  return (content as AnyPart[]).map(part => {
+    if (part.type === 'tool_use') {
+      return { functionCall: { name: part.name ?? '', args: part.input ?? {} } }
+    }
+    if (part.type === 'tool_result') {
+      let parsedResult: Record<string, unknown>
+      try {
+        parsedResult = JSON.parse(part.content ?? '{}') as Record<string, unknown>
+      } catch {
+        parsedResult = { result: part.content ?? '' }
+      }
+      return { functionResponse: { name: part.name ?? '', response: parsedResult } }
+    }
     if (part.type === 'text' && part.text) return { text: part.text }
     if ((part.type === 'image_url' || part.type === 'audio') && part.data) {
       return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
