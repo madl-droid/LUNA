@@ -501,17 +501,27 @@ export class GoogleAdapter implements ProviderAdapter {
 
     // Build tools array for Gemini
     const geminiTools: GoogleTool[] = []
-    if (request.tools?.length) {
+    const hasCustomTools = !!request.tools?.length
+    const hasBuiltInTools = !!request.googleSearchGrounding || !!request.codeExecution
+    const isGemini3 = model.includes('gemini-3')
+
+    if (hasCustomTools) {
       geminiTools.push({
-        functionDeclarations: request.tools.map(t => ({
+        functionDeclarations: request.tools!.map(t => ({
           name: t.name,
           description: t.description,
-          parametersJsonSchema: t.inputSchema, // NEW: parametersJsonSchema (not parameters)
+          parametersJsonSchema: t.inputSchema,
         })),
       })
     }
     // Google Search grounding (built-in Gemini tool)
     if (request.googleSearchGrounding) {
+      if (hasCustomTools && !isGemini3) {
+        // Gemini 2.x cannot combine google_search with function calling —
+        // drop custom tools and let the model use only google_search
+        geminiTools.length = 0
+        logger.debug({ model }, 'Gemini 2.x: dropping function tools for google_search (incompatible)')
+      }
       geminiTools.push({ googleSearch: {} })
     }
     // Code execution (built-in Gemini tool)
@@ -520,6 +530,11 @@ export class GoogleAdapter implements ProviderAdapter {
     }
     if (geminiTools.length > 0) {
       genConfig.tools = geminiTools
+    }
+
+    // Gemini 3+: enable tool combination (google_search + function calling in same request)
+    if (isGemini3 && hasBuiltInTools && hasCustomTools) {
+      genConfig.toolConfig = { includeServerSideToolInvocations: true } as GenerateContentConfig['toolConfig']
     }
 
     // Build contents: filter system messages, map to Gemini format (role: 'user'|'model')
