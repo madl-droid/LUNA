@@ -1,13 +1,14 @@
 // LUNA — Module: knowledge — Embedding Service
-// Google Gemini Embedding 2 (multimodal) via REST API with outputDimensionality.
+// Google Gemini Embedding 2 (multimodal) via @google/genai SDK with outputDimensionality.
 // Degrades gracefully: on failure → FTS-only search.
 
 import type pino from 'pino'
+import { GoogleGenAI } from '@google/genai'
 
 const DEFAULT_MODEL = 'gemini-embedding-2-preview'
 const DEFAULT_DIMENSIONS = 1536
 const MAX_BATCH_SIZE = 100
-const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
+const BATCH_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 // Circuit breaker: 3 failures in 5 min → open for 5 min
 const CB_FAILURE_THRESHOLD = 3
@@ -24,6 +25,7 @@ export class EmbeddingService {
   private readonly model: string
   private readonly dimensions: number
   private readonly log: pino.Logger
+  private readonly client: GoogleGenAI
 
   // Circuit breaker state
   private failures: number[] = []
@@ -39,6 +41,7 @@ export class EmbeddingService {
     this.model = model || DEFAULT_MODEL
     this.dimensions = dimensions || DEFAULT_DIMENSIONS
     this.log = logger.child({ component: 'embedding-service' })
+    this.client = new GoogleGenAI({ apiKey: apiKey || 'placeholder' })
 
     if (EmbeddingService.instanceCount > 1) {
       this.log.warn('Multiple EmbeddingService instances detected — rate limiting may not work correctly')
@@ -61,7 +64,7 @@ export class EmbeddingService {
 
   /**
    * Generate embedding for a text string.
-   * Uses REST API with outputDimensionality=1536.
+   * Uses @google/genai SDK with outputDimensionality=1536.
    */
   async generateEmbedding(text: string): Promise<number[] | null> {
     if (!this.isAvailable()) return null
@@ -72,26 +75,14 @@ export class EmbeddingService {
     }
 
     try {
-      const body = {
-        model: `models/${this.model}`,
-        content: { parts: [{ text }] },
-        outputDimensionality: this.dimensions,
-      }
-
-      const res = await fetch(`${API_BASE}/${this.model}:embedContent?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
+      const result = await this.client.models.embedContent({
+        model: this.model,
+        contents: { parts: [{ text }] },
+        config: { outputDimensionality: this.dimensions },
       })
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '')
-        throw new Error(`Embedding API ${res.status}: ${errText.substring(0, 200)}`)
-      }
-
-      const data = await res.json() as { embedding?: { values?: number[] } }
-      const values = data.embedding?.values
+      // SDK v1 returns embeddings array; fallback to singular embedding field
+      const values = result.embeddings?.[0]?.values ?? (result as unknown as { embedding?: { values?: number[] } }).embedding?.values
       if (!values || values.length === 0) {
         this.log.warn('Embedding response missing values')
         return null
@@ -108,7 +99,7 @@ export class EmbeddingService {
 
   /**
    * Generate embedding from raw file (PDF, image) using multimodal inlineData.
-   * REST API with outputDimensionality=1536.
+   * Uses @google/genai SDK with outputDimensionality=1536.
    */
   async generateFileEmbedding(data: Buffer, mimeType: string): Promise<number[] | null> {
     if (!this.isAvailable()) return null
@@ -134,28 +125,16 @@ export class EmbeddingService {
       const base64 = data.toString('base64')
       this.log.info({ mimeType, sizeBytes: data.length }, '[EMBED] Sending file to multimodal embedding')
 
-      const body = {
-        model: `models/${this.model}`,
-        content: {
+      const result = await this.client.models.embedContent({
+        model: this.model,
+        contents: {
           parts: [{ inlineData: { mimeType, data: base64 } }],
         },
-        outputDimensionality: this.dimensions,
-      }
-
-      const res = await fetch(`${API_BASE}/${this.model}:embedContent?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30000),
+        config: { outputDimensionality: this.dimensions },
       })
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '')
-        throw new Error(`File embedding API ${res.status}: ${errText.substring(0, 200)}`)
-      }
-
-      const result = await res.json() as { embedding?: { values?: number[] } }
-      const values = result.embedding?.values
+      // SDK v1 returns embeddings array; fallback to singular embedding field
+      const values = result.embeddings?.[0]?.values ?? (result as unknown as { embedding?: { values?: number[] } }).embedding?.values
       if (!values) return null
 
       this.log.info({ mimeType, dims: values.length }, '[EMBED] Multimodal file embedding generated')
@@ -195,7 +174,7 @@ export class EmbeddingService {
         })),
       }
 
-      const res = await fetch(`${API_BASE}/${this.model}:batchEmbedContents?key=${this.apiKey}`, {
+      const res = await fetch(`${BATCH_API_BASE}/${this.model}:batchEmbedContents?key=${this.apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

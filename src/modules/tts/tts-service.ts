@@ -5,6 +5,7 @@
 
 import { spawn } from 'node:child_process'
 import pino from 'pino'
+import { GoogleGenAI } from '@google/genai'
 
 const logger = pino({ name: 'tts:service' })
 
@@ -33,8 +34,6 @@ export interface SynthesizeResult {
   durationSeconds: number
 }
 
-const GEMINI_TTS_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
-
 /** Convert raw PCM data to WAV by prepending a 44-byte RIFF header */
 function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
   const byteRate = sampleRate * channels * (bitsPerSample / 8)
@@ -60,6 +59,7 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSa
 export class TTSService {
   config: TTSConfig
   private enabledChannels: Set<string>
+  private client: GoogleGenAI | null = null
   // ── Circuit breaker state ──
   private failures = 0
   private cbOpenUntil = 0
@@ -72,6 +72,9 @@ export class TTSService {
     this.enabledChannels = new Set(
       config.TTS_ENABLED_CHANNELS.split(',').map(c => c.trim()).filter(Boolean),
     )
+    if (config.TTS_GOOGLE_API_KEY) {
+      this.client = new GoogleGenAI({ apiKey: config.TTS_GOOGLE_API_KEY })
+    }
   }
 
   /** Hot-reload: update config in place without recreating the service instance */
@@ -81,6 +84,11 @@ export class TTSService {
       this.enabledChannels = new Set(
         this.config.TTS_ENABLED_CHANNELS.split(',').map(c => c.trim()).filter(Boolean),
       )
+    }
+    if (fresh.TTS_GOOGLE_API_KEY !== undefined) {
+      this.client = fresh.TTS_GOOGLE_API_KEY
+        ? new GoogleGenAI({ apiKey: fresh.TTS_GOOGLE_API_KEY })
+        : null
     }
   }
 
@@ -182,29 +190,22 @@ export class TTSService {
       logger.warn({ model, cooldownMs: this.cbOpenUntil - Date.now() }, 'TTS circuit breaker open, skipping request')
       return null
     }
+    if (!this.client) return null
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TTSService.FETCH_TIMEOUT_MS)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contents = requestBody['contents'] as any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const config = requestBody['generationConfig'] as any
 
     try {
-      const response = await fetch(`${GEMINI_TTS_API_BASE}/${model}:generateContent?key=${this.config.TTS_GOOGLE_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      })
+      const response = await Promise.race([
+        this.client.models.generateContent({ model, contents, config }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('TTS timeout')), TTSService.FETCH_TIMEOUT_MS),
+        ),
+      ])
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        logger.error({ status: response.status, model, body: errorText }, 'Gemini TTS API error')
-        this.recordFailure(model)
-        return null
-      }
-
-      const data = await response.json() as {
-        candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }>
-      }
-      const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
       if (!base64Audio) {
         logger.error({ model }, 'Gemini TTS: no audio data in response')
         this.recordFailure(model)
@@ -231,15 +232,13 @@ export class TTSService {
       const durationSeconds = Math.max(1, Math.round(pcmBuffer.length / 48000))
       return { audioBuffer, durationSeconds }
     } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        logger.error({ model }, 'TTS fetch timed out after 30s')
+      if ((err as Error).message === 'TTS timeout') {
+        logger.error({ model }, 'TTS request timed out after 30s')
       } else {
         logger.error({ err, model }, 'TTS model call failed')
       }
       this.recordFailure(model)
       return null
-    } finally {
-      clearTimeout(timer)
     }
   }
 
@@ -321,7 +320,7 @@ async function wavToOggOpus(wavBuffer: Buffer): Promise<Buffer> {
       }
     }, FFMPEG_TIMEOUT_MS)
 
-    proc.on('close', (code) => {
+    proc.on('close', (code: number | null) => {
       clearTimeout(timer)
       if (settled) return
       settled = true
@@ -332,7 +331,7 @@ async function wavToOggOpus(wavBuffer: Buffer): Promise<Buffer> {
         reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`))
       }
     })
-    proc.on('error', (err) => {
+    proc.on('error', (err: Error) => {
       clearTimeout(timer)
       if (!settled) { settled = true; reject(err) }
     })
