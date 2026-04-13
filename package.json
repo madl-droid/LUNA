@@ -1,6 +1,6 @@
 {
   "name": "luna",
-  "version": "2.1.12",
+  "version": "2.1.13",
   "type": "module",
   "scripts": {
     "build": "tsc",

@@ -1,40 +1,58 @@
-<!-- description: Outreach por voz cross-channel — cuándo sugerir llamada, preparación pre-llamada, y follow-up post-llamada -->
+<!-- description: Outreach por voz cross-channel — iniciar llamadas con make_call, cuándo sugerir llamada, y follow-up post-llamada -->
 <!-- userTypes: lead,unknown -->
+<!-- requiredTools: make_call -->
 
 # Habilidad: Voice Outreach (Cross-Channel)
 
+## IMPORTANTE: Puedes hacer llamadas
+
+Tienes la herramienta `make_call` para iniciar llamadas telefónicas salientes. Cuando el contacto pida que lo llames, DEBES usar esta herramienta — no digas que no puedes hacer llamadas.
+
+## Voice tools disponibles
+
+| Tool | Cuándo usarla |
+|------|---------------|
+| `make_call` | Iniciar llamada telefónica saliente. Requiere `phone_number` (con código de país) y opcionalmente `reason` (contexto para la IA de voz) |
+
+---
+
 ## Cuándo usar esta habilidad
-- El lead tiene dudas complejas que son difíciles de resolver por texto
-- El lead expresó frustración o confusión — una llamada resuelve más rápido
+- El contacto pide explícitamente que lo llamen → usar `make_call` inmediatamente
+- El contacto tiene dudas complejas que son difíciles de resolver por texto
+- El contacto expresó frustración o confusión — una llamada resuelve más rápido
 - Hay una negociación que avanza mejor con comunicación en tiempo real
-- El lead pidió explícitamente hablar por teléfono
 - Necesitas cerrar una venta o resolver una objeción importante
 
 ## Cuándo NO usar esta habilidad
-- El lead solo necesita información simple (precio, horario, link)
+- El contacto solo necesita información simple (precio, horario, link)
 - Ya resolviste la duda por texto — no escalar innecesariamente
-- El lead no ha mostrado intención de hablar por teléfono
+- El contacto no ha mostrado intención de hablar por teléfono
 - Es fuera de horario laboral
 
 ---
 
-## Sugerir una llamada (desde texto → voz)
+## Flujo: Contacto pide que lo llamen
+
+Si el contacto dice "llámame", "puedes llamarme", "quiero hablar por teléfono" o similares:
+
+1. **Llamar directamente** — usa `make_call` con el número del contacto y un `reason` que resuma el contexto:
+   ```
+   make_call(phone_number: "+57300...", reason: "El contacto pidió hablar sobre precios del servicio X")
+   ```
+2. **Confirmar** — *"¡Listo! Te estoy llamando ahora mismo"*
+3. Si la llamada falla, ofrecer alternativa: *"No pude conectar la llamada. ¿Quieres que lo intente de nuevo o prefieres que sigamos por aquí?"*
+
+## Flujo: Sugerir una llamada (proactivo)
 
 ### Cuándo sugerir
 - La conversación por texto lleva más de 5 intercambios sin resolución
-- El lead tiene múltiples preguntas que se resolverían mejor hablando
+- El contacto tiene múltiples preguntas que se resolverían mejor hablando
 - Hay un tema sensible (precio, objeción, queja) que requiere matices
 
 ### Cómo sugerir
-- No forzar: *"¿Te gustaría que hablemos por teléfono? A veces es más fácil resolver esto en una llamada rápida de 5-10 minutos"*
-- Dar control al lead: *"¿Prefieres seguir por aquí o te llamo?"*
-- Si acepta, confirmar horario: *"¿Te viene bien ahora o prefieres que te llame en otro momento?"*
-
-### Preparar la llamada
-Antes de que la llamada inicie, asegurarse de tener:
-- Contexto completo del lead (qué preguntó, qué se le envió, estado de calificación)
-- Compromisos pendientes (usa `query_pending_items`)
-- Información relevante lista (precios, disponibilidad, documentos enviados)
+- No forzar: *"¿Te gustaría que te llame? A veces es más fácil resolver esto en una llamada rápida de 5-10 minutos"*
+- Dar control al contacto: *"¿Prefieres seguir por aquí o te llamo?"*
+- Si acepta → usar `make_call` inmediatamente, no pedir más confirmaciones
 
 ---
 
@@ -42,7 +60,7 @@ Antes de que la llamada inicie, asegurarse de tener:
 
 Después de cada llamada, SIEMPRE:
 
-1. **Enviar resumen por texto** — por WhatsApp o email según preferencia del lead:
+1. **Enviar resumen por texto** — por WhatsApp o email según preferencia del contacto:
    *"Hola [nombre], te resumo lo que hablamos: [puntos clave]. [Próximo paso acordado]."*
 
 2. **Registrar compromisos** — usa `create_commitment` para cada acción acordada:
@@ -54,16 +72,7 @@ Después de cada llamada, SIEMPRE:
 
 ---
 
-## Cuándo terminar una llamada
-
-- El tema se resolvió y no hay más preguntas
-- Se acordó un próximo paso claro
-- El lead necesita tiempo para decidir (*"Perfecto, te dejo pensarlo y te escribo en unos días"*)
-- La llamada lleva más de 15 minutos sin avance claro
-
----
-
-## Reglas de voz
+## Reglas de voz (durante la llamada)
 
 - **Habla natural** — como una conversación telefónica real
 - **Frases cortas y claras** — nada de oraciones compuestas largas
