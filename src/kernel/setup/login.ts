@@ -180,9 +180,10 @@ export function createLoginHandler(pool: Pool, redis: Redis): (req: http.Incomin
       // FIX: SEC-12.1 — No loguear email completo (PII)
       logger.info({ userId: user.userId }, 'Login successful')
 
+      const isSecure = req.headers['x-forwarded-proto'] === 'https'
       res.writeHead(302, {
         Location: '/console',
-        'Set-Cookie': sessionCookie(token),
+        'Set-Cookie': sessionCookie(token, undefined, isSecure),
       })
       res.end()
       return true

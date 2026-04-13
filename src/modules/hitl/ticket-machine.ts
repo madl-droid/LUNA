@@ -5,8 +5,9 @@ import type { HitlStatus } from './types.js'
 // Valid state transitions
 const TRANSITIONS: Record<HitlStatus, HitlStatus[]> = {
   pending:   ['notified', 'cancelled'],
-  notified:  ['waiting', 'resolved', 'expired', 'cancelled'],
-  waiting:   ['waiting', 'notified', 'resolved', 'expired', 'cancelled'],
+  notified:  ['waiting', 'escalated', 'resolved', 'expired', 'cancelled'],
+  waiting:   ['waiting', 'notified', 'escalated', 'resolved', 'expired', 'cancelled'],
+  escalated: ['resolved', 'expired', 'cancelled'],
   resolved:  [],
   expired:   [],
   cancelled: [],

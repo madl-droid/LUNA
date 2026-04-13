@@ -52,6 +52,7 @@ const DOCS_REGEX = /\/document\/d\/([a-zA-Z0-9_-]+)/
 const SLIDES_REGEX = /\/presentation\/d\/([a-zA-Z0-9_-]+)/
 const DRIVE_FOLDER_REGEX = /\/folders\/([a-zA-Z0-9_-]+)/
 const DRIVE_FILE_REGEX = /\/file\/d\/([a-zA-Z0-9_-]+)/
+const YOUTUBE_VIDEO_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
 const YOUTUBE_PLAYLIST_REGEX = /[?&]list=([a-zA-Z0-9_-]+)/
 const YOUTUBE_CHANNEL_REGEX = /youtube\.com\/(?:@([a-zA-Z0-9_.-]+)|channel\/([a-zA-Z0-9_-]+))/
 const DIRECT_PDF_REGEX = /^https?:\/\/.+\.pdf(\?.*)?$/i
@@ -76,6 +77,10 @@ export function extractGoogleId(url: string): { id: string; type: KnowledgeSourc
 
   m = DRIVE_FILE_REGEX.exec(url)
   if (m?.[1]) return { id: m[1], type: 'drive' } // reclassified on create based on MIME
+
+  // YouTube: individual video (youtube.com/watch, youtu.be, shorts, embed)
+  m = YOUTUBE_VIDEO_REGEX.exec(url)
+  if (m?.[1]) return { id: m[1], type: 'youtube' }
 
   // YouTube playlist or channel
   m = YOUTUBE_PLAYLIST_REGEX.exec(url)

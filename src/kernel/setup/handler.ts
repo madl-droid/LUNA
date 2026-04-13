@@ -302,11 +302,12 @@ export function createSetupHandler(pool: Pool, redis: Redis, onComplete: () => v
           const authToken = await finalizeSetup(ctx, state, token)
           // Send completion page with BOTH the setup cookie and the session cookie
           const html = setupCompletePage(lang)
+          const isSecure = req.headers['x-forwarded-proto'] === 'https'
           res.writeHead(200, {
             'Content-Type': 'text/html; charset=utf-8',
             'Set-Cookie': [
-              `${SETUP_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax`,
-              sessionCookie(authToken),
+              `${SETUP_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`,
+              sessionCookie(authToken, undefined, isSecure),
             ],
           })
           res.end(html)

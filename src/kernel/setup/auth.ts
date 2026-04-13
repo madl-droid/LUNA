@@ -80,13 +80,13 @@ export function getSessionToken(cookieHeader: string | undefined): string | null
 }
 
 /** Build Set-Cookie header value for a session token. */
-export function sessionCookie(token: string, maxAge = SESSION_TTL_SECONDS): string {
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+export function sessionCookie(token: string, maxAge = SESSION_TTL_SECONDS, secure = false): string {
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`
 }
 
 /** Build Set-Cookie header to clear the session. */
-export function clearSessionCookie(): string {
-  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+export function clearSessionCookie(secure = false): string {
+  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`
 }
 
 // ═══════════════════════════════════════════
