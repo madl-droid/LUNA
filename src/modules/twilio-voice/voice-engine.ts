@@ -214,10 +214,11 @@ async function buildSystemInstruction(
 ): Promise<string> {
   const parts: string[] = []
 
-  // Agent identity and job
+  // Agent identity, job, accent, guardrails, relationship
   if (prompts) {
     if (prompts.identity) parts.push(prompts.identity)
     if (prompts.job) parts.push(prompts.job)
+    if (prompts.accent) parts.push(prompts.accent)
     if (prompts.guardrails) parts.push(prompts.guardrails)
     if (prompts.relationship) parts.push(prompts.relationship)
   }
@@ -338,6 +339,7 @@ interface ContactInfo {
 interface AgentPrompts {
   identity: string | null
   job: string | null
+  accent: string | null
   guardrails: string | null
   relationship: string | null
 }
@@ -375,6 +377,7 @@ async function loadPrompts(registry: Registry): Promise<AgentPrompts | null> {
     getCompositorPrompts: (userType: string) => Promise<{
       identity: string | null
       job: string | null
+      accent: string | null
       guardrails: string | null
       relationship: string | null
     }>
