@@ -229,6 +229,8 @@ export interface LLMRequest {
   thinking?: {
     type: 'enabled' | 'adaptive'
     budgetTokens?: number
+    /** Adaptive thinking effort level (Anthropic 4.6+, replaces budget_tokens when type='adaptive') */
+    effort?: 'low' | 'medium' | 'high'
   }
   /** Enable Google Search grounding (Google only, ignored by Anthropic) */
   googleSearchGrounding?: boolean

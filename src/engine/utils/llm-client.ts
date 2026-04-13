@@ -26,7 +26,7 @@ interface LLMGatewayLike {
     tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
     jsonMode?: boolean
     jsonSchema?: Record<string, unknown>
-    thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number }
+    thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number; effort?: 'low' | 'medium' | 'high' }
     googleSearchGrounding?: boolean
     citations?: boolean
     codeExecution?: boolean

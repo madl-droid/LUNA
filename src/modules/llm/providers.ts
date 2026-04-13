@@ -109,9 +109,18 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     // Extended thinking (incompatible with temperature — remove it)
     if (request.thinking) {
-      params.thinking = {
-        type: request.thinking.type === 'adaptive' ? 'adaptive' : 'enabled',
-        budget_tokens: request.thinking.budgetTokens ?? 4096,
+      if (request.thinking.type === 'adaptive') {
+        // Adaptive thinking: uses effort level, NOT budget_tokens (deprecated in 4.6)
+        params.thinking = {
+          type: 'adaptive',
+          effort: request.thinking.effort ?? 'medium',
+        }
+      } else {
+        // Manual thinking: uses budget_tokens (for pre-4.6 models or manual control)
+        params.thinking = {
+          type: 'enabled',
+          budget_tokens: request.thinking.budgetTokens ?? 4096,
+        }
       }
       delete params.temperature // Anthropic: thinking and temperature are incompatible
     }
@@ -129,15 +138,26 @@ export class AnthropicAdapter implements ProviderAdapter {
     }
     // Code execution tool (built-in Anthropic sandbox)
     if (request.codeExecution) {
-      tools.push({ type: 'code_execution' })
+      tools.push({ type: 'code_execution_20260120', name: 'code_execution' })
     }
     if (tools.length > 0) {
       params.tools = tools
     }
 
-    // JSON mode — prefill trick: add assistant message starting with '{'
-    if (request.jsonMode && !request.tools?.length) {
-      messages.push({ role: 'assistant', content: '{' })
+    // JSON mode — use output_config.format when schema available, prefill trick as fallback
+    if (request.jsonMode) {
+      if (request.jsonSchema) {
+        // Schema available → use output_config.format (native, guaranteed valid JSON)
+        params.output_config = {
+          format: {
+            type: 'json_schema',
+            schema: request.jsonSchema,
+          },
+        }
+      } else if (!request.tools?.length) {
+        // No schema, no tools → prefill trick as fallback
+        messages.push({ role: 'assistant', content: '{' })
+      }
     }
 
     const controller = new AbortController()
@@ -171,8 +191,8 @@ export class AnthropicAdapter implements ProviderAdapter {
         }
       }
 
-      // JSON mode — prepend '{' since we used prefill
-      if (request.jsonMode && !request.tools?.length) {
+      // JSON mode — prepend '{' only if we used the prefill trick (no schema, no tools)
+      if (request.jsonMode && !request.jsonSchema && !request.tools?.length) {
         text = '{' + text
       }
 
@@ -209,12 +229,13 @@ export class AnthropicAdapter implements ProviderAdapter {
 
   async listModels(apiKey: string): Promise<ModelInfo[]> {
     try {
-      const res = await fetch('https://api.anthropic.com/v1/models', {
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      })
-      if (!res.ok) return []
-      const data = await res.json() as { data: Array<{ id: string; display_name: string }> }
-      return data.data.map(m => ({
+      let client = this.clients.get(apiKey)
+      if (!client) {
+        client = new Anthropic({ apiKey })
+        this.clients.set(apiKey, client)
+      }
+      const page = await client.models.list()
+      return page.data.map(m => ({
         id: m.id,
         provider: 'anthropic' as const,
         displayName: m.display_name,
@@ -230,94 +251,89 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   async submitBatch(requests: LLMBatchRequest[], apiKey: string): Promise<string> {
+    let client = this.clients.get(apiKey)
+    if (!client) {
+      client = new Anthropic({ apiKey })
+      this.clients.set(apiKey, client)
+    }
+
     const batchRequests = requests.map(r => ({
       custom_id: r.customId,
       params: {
-        model: r.request.model ?? 'claude-sonnet-4-5-20250929',
+        model: r.request.model ?? 'claude-sonnet-4-6-20260214',
         max_tokens: r.request.maxTokens ?? 2048,
         messages: r.request.messages.map(m => ({
-          role: m.role,
+          role: m.role as 'user' | 'assistant',
           content: typeof m.content === 'string' ? m.content : this.buildAnthropicContent(m as LLMMessage),
         })),
         ...(r.request.system ? { system: r.request.system } : {}),
       },
     }))
 
-    const res = await fetch('https://api.anthropic.com/v1/messages/batches', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ requests: batchRequests }),
-    })
-
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`Anthropic batch submit failed: ${errText}`)
-    }
-    const data = await res.json() as { id: string }
-    return data.id
+    const batch = await client.messages.batches.create({ requests: batchRequests })
+    return batch.id
   }
 
   async getBatchStatus(batchId: string, apiKey: string): Promise<LLMBatchInfo> {
-    const res = await fetch(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    })
-    if (!res.ok) throw new Error(`Anthropic batch status failed: ${res.status}`)
-    const data = await res.json() as Record<string, unknown>
-    const counts = data.request_counts as Record<string, number> | undefined
+    let client = this.clients.get(apiKey)
+    if (!client) {
+      client = new Anthropic({ apiKey })
+      this.clients.set(apiKey, client)
+    }
+
+    const batch = await client.messages.batches.retrieve(batchId)
+    const counts = batch.request_counts
     return {
       batchId,
       provider: 'anthropic',
-      status: (data.processing_status as string) === 'ended' ? 'ended' : 'processing',
+      status: batch.processing_status === 'ended' ? 'ended' : 'processing',
       totalRequests: (counts?.processing ?? 0) + (counts?.succeeded ?? 0) + (counts?.errored ?? 0),
       completedRequests: counts?.succeeded ?? 0,
       failedRequests: counts?.errored ?? 0,
-      createdAt: String(data.created_at ?? ''),
-      endedAt: data.ended_at ? String(data.ended_at) : undefined,
+      createdAt: String(batch.created_at ?? ''),
+      endedAt: batch.ended_at ? String(batch.ended_at) : undefined,
     }
   }
 
   async getBatchResults(batchId: string, apiKey: string): Promise<LLMBatchResult[]> {
-    const res = await fetch(`https://api.anthropic.com/v1/messages/batches/${batchId}/results`, {
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    })
-    if (!res.ok) throw new Error(`Anthropic batch results failed: ${res.status}`)
-    const text = await res.text()
-    // Results are JSONL (one JSON per line)
-    return text.trim().split('\n').filter(Boolean).map((line: string) => {
-      const item = JSON.parse(line) as Record<string, unknown>
-      const result = item.result as Record<string, unknown> | undefined
-      if (result?.type === 'succeeded') {
-        const msg = result.message as Record<string, unknown>
-        const usage = msg.usage as Record<string, number> | undefined
+    let client = this.clients.get(apiKey)
+    if (!client) {
+      client = new Anthropic({ apiKey })
+      this.clients.set(apiKey, client)
+    }
+
+    const results: LLMBatchResult[] = []
+    // SDK returns an async iterable — not an array
+    for await (const item of client.messages.batches.results(batchId)) {
+      if (item.result?.type === 'succeeded') {
+        const msg = item.result.message
         let respText = ''
-        for (const block of (msg.content as Array<Record<string, unknown>>) ?? []) {
+        for (const block of msg.content) {
           if (block.type === 'text') respText += block.text
         }
-        return {
-          customId: String(item.custom_id ?? ''),
+        results.push({
+          customId: item.custom_id,
           response: {
             text: respText,
-            provider: 'anthropic' as const,
-            model: String(msg.model ?? ''),
-            inputTokens: usage?.input_tokens ?? 0,
-            outputTokens: usage?.output_tokens ?? 0,
+            provider: 'anthropic',
+            model: msg.model,
+            inputTokens: msg.usage.input_tokens,
+            outputTokens: msg.usage.output_tokens,
             durationMs: 0,
             fromFallback: false,
             attempt: 0,
           },
-        }
+        })
+      } else {
+        results.push({
+          customId: item.custom_id,
+          error: item.result?.type === 'errored'
+            ? JSON.stringify(item.result.error ?? 'batch item failed')
+            : 'unknown error',
+        })
       }
-      return {
-        customId: String(item.custom_id ?? ''),
-        error: result?.type === 'errored'
-          ? JSON.stringify((result as Record<string, unknown>).error ?? 'batch item failed')
-          : 'unknown error',
-      }
-    })
+    }
+    return results
   }
 
   private buildAnthropicContent(msg: LLMMessage): string | Anthropic.ContentBlockParam[] {

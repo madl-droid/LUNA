@@ -505,7 +505,7 @@ export interface LLMCallOptions {
   jsonSchema?: Record<string, unknown>
   tools?: LLMToolDef[]
   /** Extended thinking (Anthropic: adaptive thinking, Google: thinkingConfig) */
-  thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number }
+  thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number; effort?: 'low' | 'medium' | 'high' }
   /** Enable Google Search grounding (Google only) */
   googleSearchGrounding?: boolean
   /** Enable citations / source attribution (Anthropic only) */
