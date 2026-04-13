@@ -346,8 +346,9 @@ export class AnthropicAdapter implements ProviderAdapter {
     }
 
     const results: LLMBatchResult[] = []
-    // SDK returns an async iterable — not an array
-    for await (const item of client.messages.batches.results(batchId)) {
+    // results() returns Promise<JSONLDecoder> — await first, then iterate
+    const decoder = await client.messages.batches.results(batchId)
+    for await (const item of decoder) {
       if (item.result?.type === 'succeeded') {
         const msg = item.result.message
         let respText = ''

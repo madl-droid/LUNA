@@ -4,7 +4,7 @@ Generates OGG/Opus audio from text for voice notes (PTT) in WhatsApp and browser
 
 ## Archivos
 - `manifest.ts` — lifecycle, configSchema, console fields
-- `tts-service.ts` — TTSService: Gemini TTS API → PCM → WAV → ffmpeg → OGG/Opus, chunking, splitting
+- `tts-service.ts` — TTSService: Gemini TTS via @google/genai SDK → PCM → WAV → ffmpeg → OGG/Opus, chunking, splitting
 - `types.ts` — TTSServiceInterface
 - `.env.example` — variables de entorno
 

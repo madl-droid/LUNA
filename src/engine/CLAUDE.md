@@ -105,7 +105,8 @@ Las Phases 2+3+4 legacy fueron eliminadas. El engine usa exclusivamente el agent
 3. **Loop**: `runAgenticLoop(ctx, systemPrompt, tools, config, registry)`:
    - Llama `callLLM()` con task name (router decide modelo/provider)
    - Si LLM retorna solo texto → listo, retorna como respuesta final
-   - Si LLM retorna tool_calls → ejecuta via `ToolRegistry.executeTool()`, retorna resultados
+   - Si LLM retorna tool_calls (con IDs) → ejecuta via `ToolRegistry.executeTool()`, retorna resultados
+   - Tool calls y resultados se envían como **content blocks nativos** (tool_use/tool_result para Anthropic, functionCall/functionResponse para Google) — NO como texto plano
    - Protecciones: dedup cache (omite llamadas idénticas), loop detector (graduado: warn → block → circuit break)
    - Ejecución paralela de tools via `StepSemaphore`
    - Límite de turns → fuerza respuesta texto final
@@ -124,14 +125,15 @@ Las Phases 2+3+4 legacy fueron eliminadas. El engine usa exclusivamente el agent
 ### Ruta de ejecución de tools
 
 ```
-LLM produce tool_calls
+LLM produce tool_calls (con IDs)
   → loop detector pre-check (allow/block/circuit_break)
   → dedup cache check (hit → retorna cacheado)
   → registry.getOptional<ToolRegistry>('tools:registry')
   → toolRegistry.executeTool(name, input, context)
   → dedup cache store
   → loop detector post-check (registra llamada, detecta patrones)
-  → resultados retornados al LLM como siguiente user message
+  → resultados retornados al LLM como content blocks nativos (tool_result/functionResponse)
+  → siguiente turn del loop
 ```
 
 ## Concurrencia (4 capas)
