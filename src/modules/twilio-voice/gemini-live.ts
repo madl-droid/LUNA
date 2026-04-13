@@ -306,13 +306,6 @@ export class GeminiLiveSession {
         // Native bidirectional transcription
         outputAudioTranscription: {},
         inputAudioTranscription: {},
-        // Auto-compress context when approaching token limit (prevents session drops on long calls)
-        contextWindowCompression: {
-          triggerTokens: 100000, // compress when nearing 128k limit
-          slidingWindowTokens: 80000, // keep ~80k tokens after compression
-        },
-        // Enable session resumption for reconnection resilience
-        sessionResumption: {},
       },
     }
 

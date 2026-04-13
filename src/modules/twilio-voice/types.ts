@@ -284,11 +284,6 @@ export interface GeminiSetupMessage {
     }
     outputAudioTranscription?: Record<string, never>
     inputAudioTranscription?: Record<string, never>
-    contextWindowCompression?: {
-      triggerTokens?: number
-      slidingWindowTokens?: number
-    }
-    sessionResumption?: Record<string, never>
     tools?: Array<{
       functionDeclarations: GeminiToolDeclaration[]
     }>
