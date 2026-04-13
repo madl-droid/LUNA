@@ -58,10 +58,15 @@ export class Registry {
       }
     }
 
-    // Parse configSchema before init if not already set
+    // Parse configSchema before init — merge env + DB config_store values
     if (mod.manifest.configSchema && !this.moduleConfigs.has(name)) {
       try {
-        const parsed = mod.manifest.configSchema.parse(getAllEnv())
+        let dbConfig: Record<string, string> = {}
+        try {
+          dbConfig = await configStore.getAll(this.db)
+        } catch { /* config_store may not be ready yet */ }
+        const env = { ...getAllEnv(), ...dbConfig }
+        const parsed = mod.manifest.configSchema.parse(env)
         this.moduleConfigs.set(name, parsed as Record<string, unknown>)
       } catch {
         try {
