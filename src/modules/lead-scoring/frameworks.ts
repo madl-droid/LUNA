@@ -1,6 +1,6 @@
 // LUNA — Module: lead-scoring — Framework Presets (v3)
 // Single-preset config: CHAMP (B2B), SPIN (B2C), CHAMP+Gov (B2G).
-// Each preset max 10 criteria. Priority replaces weight.
+// Each preset max 30 criteria. Priority replaces weight.
 
 import type { FrameworkObjective, FrameworkStage, QualifyingCriterion, DisqualifyReason } from './types.js'
 
@@ -20,7 +20,7 @@ export interface PresetDefinition {
 }
 
 // ═══════════════════════════════════════════
-// CHAMP — B2B (InsightSquared) — 10 criteria
+// CHAMP — B2B (InsightSquared)
 // ═══════════════════════════════════════════
 
 export const CHAMP_PRESET: PresetDefinition = {
@@ -31,7 +31,7 @@ export const CHAMP_PRESET: PresetDefinition = {
     en: 'B2B framework: Challenges, Authority, Money, Prioritization',
   },
   defaultObjective: 'schedule',
-  essentialQuestions: ['main_problem', 'contact_role'],
+  essentialQuestions: ['problema_principal', 'rol_contacto'],
   stages: [
     {
       key: 'challenges',
@@ -64,8 +64,8 @@ export const CHAMP_PRESET: PresetDefinition = {
       key: 'prioritization',
       name: { es: 'Priorización', en: 'Prioritization' },
       description: {
-        es: '¿Qué tan urgente es?',
-        en: 'How urgent is it?',
+        es: '¿Qué tan urgente es resolver esto?',
+        en: 'How urgent is it to solve this?',
       },
       order: 4,
     },
@@ -73,7 +73,7 @@ export const CHAMP_PRESET: PresetDefinition = {
   criteria: [
     // --- Challenges ---
     {
-      key: 'main_problem',
+      key: 'problema_principal',
       name: { es: 'Problema principal', en: 'Main problem' },
       type: 'text',
       priority: 'high',
@@ -82,8 +82,8 @@ export const CHAMP_PRESET: PresetDefinition = {
       stage: 'challenges',
     },
     {
-      key: 'current_solution',
-      name: { es: 'Qué usan actualmente', en: 'Current solution' },
+      key: 'solucion_actual',
+      name: { es: 'Solución actual', en: 'Current solution' },
       type: 'text',
       priority: 'medium',
       required: false,
@@ -91,10 +91,11 @@ export const CHAMP_PRESET: PresetDefinition = {
       stage: 'challenges',
     },
     {
-      key: 'business_impact',
-      name: { es: 'Impacto en su negocio', en: 'Business impact' },
+      key: 'impacto_negocio',
+      name: { es: 'Impacto en el negocio', en: 'Business impact' },
       type: 'enum',
-      options: ['low', 'medium', 'high', 'critical'],
+      options: ['Bajo', 'Medio', 'Alto', 'Crítico'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: false,
@@ -102,30 +103,33 @@ export const CHAMP_PRESET: PresetDefinition = {
     },
     // --- Authority ---
     {
-      key: 'contact_role',
+      key: 'rol_contacto',
       name: { es: 'Rol del contacto', en: 'Contact role' },
       type: 'enum',
-      options: ['researcher', 'influencer', 'decision_maker'],
+      options: ['Investigador', 'Influenciador', 'Tomador de decisión'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
     },
     {
-      key: 'approval_process',
+      key: 'proceso_aprobacion',
       name: { es: 'Proceso de aprobación', en: 'Approval process' },
       type: 'enum',
-      options: ['solo', 'committee', 'boss_approval'],
+      options: ['Decisión individual', 'Aprobación de directivo', 'Comité'],
+      enumScoring: 'indexed',
       priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
     },
     {
-      key: 'company_size',
+      key: 'tamano_empresa',
       name: { es: 'Tamaño de empresa', en: 'Company size' },
       type: 'enum',
-      options: ['micro', 'small', 'medium', 'large', 'enterprise'],
+      options: ['Micro', 'Pequeña', 'Mediana', 'Grande', 'Corporativo'],
+      enumScoring: 'presence',
       priority: 'medium',
       required: false,
       neverAskDirectly: false,
@@ -133,56 +137,58 @@ export const CHAMP_PRESET: PresetDefinition = {
     },
     // --- Money ---
     {
-      key: 'budget_range',
-      name: { es: 'Rango de presupuesto', en: 'Budget range' },
-      type: 'text',
+      key: 'estado_presupuesto',
+      name: { es: 'Estado del presupuesto', en: 'Budget status' },
+      type: 'enum',
+      options: ['Sin definir', 'En proceso', 'Aprobado'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: true,
       stage: 'money',
     },
     {
-      key: 'budget_status',
-      name: { es: 'Estado del presupuesto', en: 'Budget status' },
-      type: 'enum',
-      options: ['undefined', 'pending', 'approved'],
-      priority: 'high',
+      key: 'rango_inversion',
+      name: { es: 'Rango de inversión', en: 'Investment range' },
+      type: 'text',
+      priority: 'medium',
       required: false,
       neverAskDirectly: true,
       stage: 'money',
     },
     // --- Prioritization ---
     {
-      key: 'deadline',
-      name: { es: 'Fecha límite o evento detonante', en: 'Deadline or trigger event' },
+      key: 'urgencia',
+      name: { es: 'Urgencia', en: 'Urgency' },
+      type: 'enum',
+      options: ['Baja', 'Media', 'Alta'],
+      enumScoring: 'indexed',
+      priority: 'high',
+      required: false,
+      neverAskDirectly: false,
+      stage: 'prioritization',
+    },
+    {
+      key: 'plazo_decision',
+      name: { es: 'Plazo de decisión', en: 'Decision timeline' },
       type: 'text',
       priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'prioritization',
     },
-    {
-      key: 'urgency',
-      name: { es: 'Nivel de urgencia', en: 'Urgency level' },
-      type: 'enum',
-      options: ['low', 'medium', 'high'],
-      priority: 'high',
-      required: false,
-      neverAskDirectly: false,
-      stage: 'prioritization',
-    },
   ],
   disqualifyReasons: [
-    { key: 'no_budget', name: { es: 'Sin presupuesto', en: 'No budget' }, targetStatus: 'not_interested' },
-    { key: 'not_interested', name: { es: 'No interesado', en: 'Not interested' }, targetStatus: 'not_interested' },
-    { key: 'competitor_chosen', name: { es: 'Eligió competencia', en: 'Chose competitor' }, targetStatus: 'not_interested' },
+    { key: 'sin_presupuesto', name: { es: 'Sin presupuesto', en: 'No budget' }, targetStatus: 'not_interested' },
+    { key: 'no_interesado', name: { es: 'No interesado', en: 'Not interested' }, targetStatus: 'not_interested' },
+    { key: 'eligio_competencia', name: { es: 'Eligió competencia', en: 'Chose competitor' }, targetStatus: 'not_interested' },
     { key: 'spam', name: { es: 'Spam', en: 'Spam' }, targetStatus: 'blocked' },
-    { key: 'out_of_zone', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
+    { key: 'fuera_de_zona', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
   ],
 }
 
 // ═══════════════════════════════════════════
-// SPIN Selling — B2C (Neil Rackham) — 10 criteria
+// SPIN Selling — B2C (Neil Rackham)
 // ═══════════════════════════════════════════
 
 export const SPIN_PRESET: PresetDefinition = {
@@ -193,7 +199,7 @@ export const SPIN_PRESET: PresetDefinition = {
     en: 'B2C framework: Situation, Problem, Implication, Need-payoff',
   },
   defaultObjective: 'schedule',
-  essentialQuestions: ['product_interest', 'main_pain'],
+  essentialQuestions: ['producto_interes', 'motivacion_principal'],
   stages: [
     {
       key: 'situation',
@@ -235,7 +241,7 @@ export const SPIN_PRESET: PresetDefinition = {
   criteria: [
     // --- Situation ---
     {
-      key: 'product_interest',
+      key: 'producto_interes',
       name: { es: 'Producto o servicio de interés', en: 'Product/service of interest' },
       type: 'text',
       priority: 'high',
@@ -244,20 +250,20 @@ export const SPIN_PRESET: PresetDefinition = {
       stage: 'situation',
     },
     {
-      key: 'prior_experience',
+      key: 'experiencia_previa',
       name: { es: 'Experiencia previa', en: 'Prior experience' },
       type: 'enum',
-      options: ['first_time', 'returning'],
-      priority: 'medium',
+      options: ['Primera vez', 'Cliente recurrente'],
       enumScoring: 'presence',
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'situation',
     },
     // --- Problem ---
     {
-      key: 'main_pain',
-      name: { es: 'Dolor o motivación principal', en: 'Main pain/motivation' },
+      key: 'motivacion_principal',
+      name: { es: 'Motivación o dolor principal', en: 'Main pain/motivation' },
       type: 'text',
       priority: 'high',
       required: true,
@@ -265,10 +271,11 @@ export const SPIN_PRESET: PresetDefinition = {
       stage: 'problem',
     },
     {
-      key: 'dissatisfaction_level',
-      name: { es: 'Nivel de insatisfacción', en: 'Dissatisfaction level' },
+      key: 'nivel_insatisfaccion',
+      name: { es: 'Nivel de insatisfacción actual', en: 'Dissatisfaction level' },
       type: 'enum',
-      options: ['low', 'medium', 'high'],
+      options: ['Bajo', 'Medio', 'Alto'],
+      enumScoring: 'indexed',
       priority: 'medium',
       required: false,
       neverAskDirectly: false,
@@ -276,27 +283,29 @@ export const SPIN_PRESET: PresetDefinition = {
     },
     // --- Implication ---
     {
-      key: 'impact',
+      key: 'impacto',
       name: { es: 'Impacto emocional o práctico', en: 'Emotional/practical impact' },
       type: 'enum',
-      options: ['low', 'medium', 'high'],
+      options: ['Bajo', 'Medio', 'Alto'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'implication',
     },
     {
-      key: 'perceived_urgency',
+      key: 'urgencia_percibida',
       name: { es: 'Urgencia percibida', en: 'Perceived urgency' },
       type: 'enum',
-      options: ['low', 'medium', 'high'],
+      options: ['Sin urgencia', 'Pronto', 'Urgente'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'implication',
     },
     {
-      key: 'trigger_event',
+      key: 'evento_detonante',
       name: { es: 'Evento detonante', en: 'Trigger event' },
       type: 'text',
       priority: 'medium',
@@ -305,10 +314,11 @@ export const SPIN_PRESET: PresetDefinition = {
       stage: 'implication',
     },
     {
-      key: 'willingness_to_invest',
+      key: 'disposicion_invertir',
       name: { es: 'Disposición a invertir', en: 'Willingness to invest' },
       type: 'enum',
-      options: ['not_ready', 'considering', 'ready'],
+      options: ['No listo', 'Considerando', 'Listo para comprar'],
+      enumScoring: 'indexed',
       priority: 'medium',
       required: false,
       neverAskDirectly: true,
@@ -316,7 +326,7 @@ export const SPIN_PRESET: PresetDefinition = {
     },
     // --- Need-payoff ---
     {
-      key: 'chosen_product',
+      key: 'producto_especifico',
       name: { es: 'Producto específico elegido', en: 'Specific product chosen' },
       type: 'text',
       priority: 'medium',
@@ -325,8 +335,8 @@ export const SPIN_PRESET: PresetDefinition = {
       stage: 'need_payoff',
     },
     {
-      key: 'explicit_interest',
-      name: { es: 'Confirmación de interés', en: 'Interest confirmation' },
+      key: 'confirmacion_interes',
+      name: { es: 'Confirmó interés explícitamente', en: 'Confirmed interest explicitly' },
       type: 'boolean',
       priority: 'medium',
       required: false,
@@ -335,15 +345,15 @@ export const SPIN_PRESET: PresetDefinition = {
     },
   ],
   disqualifyReasons: [
-    { key: 'not_interested', name: { es: 'No interesado', en: 'Not interested' }, targetStatus: 'not_interested' },
-    { key: 'just_browsing', name: { es: 'Solo cotizando', en: 'Just browsing' }, targetStatus: 'cold' },
+    { key: 'no_interesado', name: { es: 'No interesado', en: 'Not interested' }, targetStatus: 'not_interested' },
+    { key: 'solo_cotizando', name: { es: 'Solo cotizando', en: 'Just browsing' }, targetStatus: 'cold' },
     { key: 'spam', name: { es: 'Spam', en: 'Spam' }, targetStatus: 'blocked' },
-    { key: 'out_of_zone', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
+    { key: 'fuera_de_zona', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
   ],
 }
 
 // ═══════════════════════════════════════════
-// CHAMP + Gov — B2G (Government) — 10 criteria
+// CHAMP + Gov — B2G (Government)
 // ═══════════════════════════════════════════
 
 export const CHAMP_GOV_PRESET: PresetDefinition = {
@@ -354,7 +364,7 @@ export const CHAMP_GOV_PRESET: PresetDefinition = {
     en: 'B2G framework: CHAMP + Process Stage + Compliance Fit',
   },
   defaultObjective: 'schedule',
-  essentialQuestions: ['institutional_need', 'contact_role'],
+  essentialQuestions: ['necesidad_institucional', 'rol_contacto'],
   stages: [
     {
       key: 'challenges',
@@ -414,8 +424,8 @@ export const CHAMP_GOV_PRESET: PresetDefinition = {
   criteria: [
     // --- Challenges ---
     {
-      key: 'institutional_need',
-      name: { es: 'Problema o necesidad institucional', en: 'Institutional need' },
+      key: 'necesidad_institucional',
+      name: { es: 'Necesidad institucional', en: 'Institutional need' },
       type: 'text',
       priority: 'high',
       required: true,
@@ -423,39 +433,41 @@ export const CHAMP_GOV_PRESET: PresetDefinition = {
       stage: 'challenges',
     },
     {
-      key: 'entity_type',
+      key: 'tipo_entidad',
       name: { es: 'Tipo de entidad', en: 'Entity type' },
       type: 'enum',
-      options: ['municipality', 'ministry', 'hospital', 'university', 'other'],
-      priority: 'medium',
+      options: ['Municipio', 'Ministerio', 'Hospital', 'Universidad', 'Empresa pública', 'Otro'],
       enumScoring: 'presence',
+      priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'challenges',
     },
     // --- Authority ---
     {
-      key: 'contact_role',
+      key: 'rol_contacto',
       name: { es: 'Rol del contacto', en: 'Contact role' },
       type: 'enum',
-      options: ['technical', 'procurement', 'management', 'advisory'],
+      options: ['Técnico', 'Contratación', 'Directivo', 'Asesor'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
     },
     {
-      key: 'approval_process',
+      key: 'proceso_aprobacion',
       name: { es: 'Proceso de aprobación', en: 'Approval process' },
       type: 'enum',
-      options: ['committee', 'director', 'secretary'],
+      options: ['Comité', 'Director', 'Secretario o Ministro'],
+      enumScoring: 'indexed',
       priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'authority',
     },
     {
-      key: 'can_influence_specs',
+      key: 'puede_influir_specs',
       name: { es: '¿Puede influir en especificaciones?', en: 'Can influence specs?' },
       type: 'boolean',
       priority: 'medium',
@@ -465,17 +477,18 @@ export const CHAMP_GOV_PRESET: PresetDefinition = {
     },
     // --- Money ---
     {
-      key: 'budget_status',
+      key: 'estado_presupuesto',
       name: { es: 'Estado del presupuesto', en: 'Budget status' },
       type: 'enum',
-      options: ['unassigned', 'pending', 'assigned', 'executed'],
+      options: ['Sin rubro', 'En proceso de asignación', 'Asignado', 'Ejecutado'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: true,
       stage: 'money',
     },
     {
-      key: 'budget_range',
+      key: 'rango_inversion',
       name: { es: 'Rango de inversión', en: 'Investment range' },
       type: 'text',
       priority: 'medium',
@@ -485,17 +498,18 @@ export const CHAMP_GOV_PRESET: PresetDefinition = {
     },
     // --- Prioritization ---
     {
-      key: 'institutional_urgency',
+      key: 'urgencia_institucional',
       name: { es: 'Urgencia institucional', en: 'Institutional urgency' },
       type: 'enum',
-      options: ['low', 'medium', 'high'],
+      options: ['Baja', 'Media', 'Alta'],
+      enumScoring: 'indexed',
       priority: 'medium',
       required: false,
       neverAskDirectly: false,
       stage: 'prioritization',
     },
     {
-      key: 'deadline',
+      key: 'plazo_limite',
       name: { es: 'Fecha límite', en: 'Deadline' },
       type: 'text',
       priority: 'medium',
@@ -505,22 +519,35 @@ export const CHAMP_GOV_PRESET: PresetDefinition = {
     },
     // --- Process Stage ---
     {
-      key: 'procurement_phase',
+      key: 'fase_compra',
       name: { es: 'Fase de compra', en: 'Procurement phase' },
       type: 'enum',
-      options: ['exploration', 'specification', 'formal_process', 'adjudication'],
+      options: ['Exploración', 'Especificación', 'Proceso formal', 'Adjudicación'],
+      enumScoring: 'indexed',
       priority: 'high',
       required: false,
       neverAskDirectly: false,
       stage: 'process_stage',
     },
+    // --- Compliance Fit ---
+    {
+      key: 'cumplimiento_normativo',
+      name: { es: 'Encaje normativo', en: 'Compliance fit' },
+      type: 'enum',
+      options: ['No evaluado', 'Parcial', 'Cumple'],
+      enumScoring: 'indexed',
+      priority: 'high',
+      required: false,
+      neverAskDirectly: false,
+      stage: 'compliance_fit',
+    },
   ],
   disqualifyReasons: [
-    { key: 'no_budget', name: { es: 'Sin rubro presupuestal', en: 'No budget allocation' }, targetStatus: 'not_interested' },
-    { key: 'not_interested', name: { es: 'No interesado', en: 'Not interested' }, targetStatus: 'not_interested' },
-    { key: 'compliance_fail', name: { es: 'No cumple requisitos normativos', en: 'Does not meet compliance' }, targetStatus: 'not_interested' },
+    { key: 'sin_rubro', name: { es: 'Sin rubro presupuestal', en: 'No budget allocation' }, targetStatus: 'not_interested' },
+    { key: 'no_interesado', name: { es: 'No interesado', en: 'Not interested' }, targetStatus: 'not_interested' },
+    { key: 'no_cumple_normativa', name: { es: 'No cumple requisitos normativos', en: 'Does not meet compliance' }, targetStatus: 'not_interested' },
     { key: 'spam', name: { es: 'Spam', en: 'Spam' }, targetStatus: 'blocked' },
-    { key: 'out_of_zone', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
+    { key: 'fuera_de_zona', name: { es: 'Fuera de zona', en: 'Out of zone' }, targetStatus: 'out_of_zone' },
   ],
 }
 

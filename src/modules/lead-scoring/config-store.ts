@@ -19,7 +19,7 @@ export const DEFAULT_CONFIG: QualifyingConfig = {
   disqualifyReasons: SPIN_PRESET.disqualifyReasons,
   essentialQuestions: SPIN_PRESET.essentialQuestions,
   thresholds: { cold: 30, qualifying: 31, qualified: 70 },
-  minConfidence: 0.4,
+  minConfidence: 0.5,
   dataFreshnessWindowDays: 90,
 }
 
@@ -140,7 +140,7 @@ export class ConfigStore {
     }
     // Already v3 — fill in any missing fields with defaults
     const config = raw as unknown as QualifyingConfig
-    if (config.minConfidence === undefined) config.minConfidence = 0.4
+    if (config.minConfidence === undefined) config.minConfidence = 0.5
     if (config.dataFreshnessWindowDays === undefined) config.dataFreshnessWindowDays = 90
     return config
   }

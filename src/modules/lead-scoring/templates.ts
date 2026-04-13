@@ -784,6 +784,10 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     if (!cr) return
     if (field === 'name') {
       cr.name.es = value; cr.name.en = value
+      if (!cr.key) {
+        cr.key = value.toLowerCase().replace(/[^a-záéíóúüñ0-9\s]/gi, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '').substring(0, 50)
+        lsRerenderCriteriaPanel()
+      }
     }
     else if (field === 'type') {
       cr.type = value
