@@ -130,7 +130,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
         for (const [k, v] of Object.entries(body)) {
           if (k.startsWith('_')) continue
           // Route user/contact config fields to users module
-          if (k.startsWith('perm_') || k.startsWith('mod_') || k.startsWith('tool_') || k.startsWith('sub_') || k.startsWith('kcat_') || k.startsWith('assignment_') || k.startsWith('disable_') || k.startsWith('list_enabled_') || k.startsWith('webhook_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
+          if (k.startsWith('perm_') || k.startsWith('mod_') || k.startsWith('tool_') || k.startsWith('sub_') || k.startsWith('kcat_') || k.startsWith('assignment_') || k.startsWith('disable_') || k.startsWith('list_enabled_') || k.startsWith('webhook_') || k.startsWith('coworker_') || k === 'unregisteredBehavior' || k === 'unregisteredMessage') {
             userPermUpdates[k] = v
           } else {
             updates[k] = v

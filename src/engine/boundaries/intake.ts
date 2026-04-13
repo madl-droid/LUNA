@@ -325,7 +325,7 @@ export async function intake(
           injectedContent = `[${att.categoryLabel}] ${att.filename}${durationTag} — ${att.llmText}${queryHint}`
         } else {
           // Small/medium text file: full extracted content + query hint
-          injectedContent = `[${att.categoryLabel}] ${att.extractedText}${queryHint}`
+          injectedContent = `[${att.categoryLabel}] (id: ${att.id}) ${att.filename} — ${att.extractedText}${queryHint}`
         }
 
         history.push({

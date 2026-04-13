@@ -645,7 +645,7 @@ export function renderUsersSection(data: SectionData): string {
       form.querySelectorAll('[data-channel]').forEach(function(inp){inp.value='';inp.classList.remove('invalid')});
       form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
       errorBox.style.display='none';
-      listLabel.style.display='none';listSelect.style.display='none';
+      listLabel.style.display='none';listSelect.style.display='none';listSelect.disabled=true;
       setupRoleDropdown(lt,'');
       // Show step 0 (mode selector)
       showImportStep('select');
@@ -678,7 +678,7 @@ export function renderUsersSection(data: SectionData): string {
       form.querySelectorAll('.wizard-field-error').forEach(function(e){e.style.display='none'});
       errorBox.style.display='none';
       // Show list change dropdown
-      listLabel.style.display='block';listSelect.style.display='block';
+      listLabel.style.display='block';listSelect.style.display='block';listSelect.disabled=false;
       listSelect.value=lt;
       // Skip step 0, go directly to manual form (no back button for edit)
       document.getElementById('import-step-0').style.display='none';
