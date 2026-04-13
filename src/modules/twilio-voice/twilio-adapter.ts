@@ -20,6 +20,13 @@ export class TwilioAdapter {
     this.baseUrl = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}`
   }
 
+  reloadConfig(config: TwilioVoiceConfig): void {
+    this.accountSid = config.TWILIO_ACCOUNT_SID
+    this.authToken = config.TWILIO_AUTH_TOKEN
+    this.phoneNumber = config.TWILIO_PHONE_NUMBER
+    this.baseUrl = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}`
+  }
+
   /**
    * Generate TwiML for answering an inbound call.
    * Includes pause for natural ring delay, then connects to media stream.

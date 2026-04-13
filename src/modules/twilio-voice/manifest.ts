@@ -820,8 +820,11 @@ const manifest: ModuleManifest = {
     registry.addHook('twilio-voice', 'console:config_applied', async () => {
       const fresh = registry.getConfig<TwilioVoiceConfig>('twilio-voice')
       Object.assign(config, fresh)
+      if (twilioAdapter) {
+        twilioAdapter.reloadConfig(fresh)
+      }
       const pino = await import('pino')
-      pino.default({ name: 'twilio-voice' }).info('Config hot-reloaded')
+      pino.default({ name: 'twilio-voice' }).info({ configured: twilioAdapter?.isConfigured() ?? false }, 'Config hot-reloaded')
     })
 
     const pino = await import('pino')
