@@ -497,7 +497,7 @@ export interface LLMCallOptions {
   provider?: LLMProvider
   model?: string
   system?: string
-  messages: Array<{ role: 'user' | 'assistant'; content: string | import('../kernel/types.js').LLMContentPart[] }>
+  messages: Array<{ role: 'user' | 'assistant'; content: string | import('../kernel/types.js').LLMContentPart[] | import('../modules/llm/types.js').MessageContentBlock[] }>
   maxTokens?: number
   temperature?: number
   jsonMode?: boolean
@@ -505,7 +505,7 @@ export interface LLMCallOptions {
   jsonSchema?: Record<string, unknown>
   tools?: LLMToolDef[]
   /** Extended thinking (Anthropic: adaptive thinking, Google: thinkingConfig) */
-  thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number }
+  thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number; effort?: 'low' | 'medium' | 'high' }
   /** Enable Google Search grounding (Google only) */
   googleSearchGrounding?: boolean
   /** Enable citations / source attribution (Anthropic only) */
@@ -526,7 +526,7 @@ export interface LLMCallResult {
   model: string
   inputTokens: number
   outputTokens: number
-  toolCalls?: Array<{ name: string; input: Record<string, unknown> }>
+  toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown> }>
   /** Prompt cache tokens read (cost savings) */
   cacheReadTokens?: number
   /** Which fallback level was used */

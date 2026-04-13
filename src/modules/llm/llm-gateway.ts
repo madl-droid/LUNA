@@ -26,8 +26,6 @@ import {
   type CircuitBreakerConfig,
   type EscalatingCBSnapshot,
   type UsageSummary,
-  type TTSRequest,
-  type TTSResponse,
   type ScanResult,
 } from './types.js'
 import {
@@ -433,70 +431,6 @@ export class LLMGateway {
    */
   resetTargetCB(provider: LLMProviderName, model: string): void {
     this.targetBreakers.resetTarget(provider, model)
-  }
-
-  // ═══════════════════════════════════════════
-  // TTS (Text-to-Speech)
-  // ═══════════════════════════════════════════
-
-  /**
-   * Synthesize text to speech via Google Cloud TTS.
-   * Uses the Google API key from LLM config.
-   */
-  async tts(request: TTSRequest): Promise<TTSResponse> {
-    const apiKey = this.apiKeys.get('GOOGLE_AI_API_KEY')
-    if (!apiKey) {
-      throw new Error('No Google API key configured for TTS')
-    }
-
-    // Check service-level circuit breaker
-    const serviceCB = this.serviceBreakers.get('service:tts')
-    if (!serviceCB.isAvailable()) {
-      throw new Error('TTS service circuit breaker is open — service temporarily unavailable')
-    }
-
-    const languageCode = request.languageCode ?? 'es-US'
-    const audioEncoding = request.audioEncoding ?? 'MP3'
-
-    try {
-      const ttsResponse = await fetch(
-        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            input: { text: request.text },
-            voice: {
-              languageCode,
-              name: request.voice,
-            },
-            audioConfig: { audioEncoding },
-          }),
-        },
-      )
-
-      if (!ttsResponse.ok) {
-        const errText = await ttsResponse.text()
-        throw new Error(`TTS synthesis failed: ${errText}`)
-      }
-
-      const data = await ttsResponse.json() as { audioContent: string }
-      const mimeMap: Record<string, string> = {
-        MP3: 'audio/mp3',
-        LINEAR16: 'audio/wav',
-        OGG_OPUS: 'audio/ogg',
-      }
-
-      serviceCB.recordSuccess()
-      return {
-        audioBase64: data.audioContent,
-        mimeType: mimeMap[audioEncoding] ?? 'audio/mp3',
-        voice: request.voice,
-      }
-    } catch (err) {
-      serviceCB.recordFailure(String(err))
-      throw err
-    }
   }
 
   /**

@@ -5,26 +5,14 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import pino from 'pino'
+import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenAI } from '@google/genai'
 import type { Registry } from '../../kernel/registry.js'
 import * as configStore from '../../kernel/config-store.js'
 import type { ScannedModel, ScanResult, ModelReplacement } from './types.js'
+import { detectFamily } from './helpers.js'
 
 const logger = pino({ name: 'llm:model-scanner' })
-
-// ═══════════════════════════════════════════
-// Family detection
-// ═══════════════════════════════════════════
-
-const ANTHROPIC_FAMILIES = ['haiku', 'sonnet', 'opus'] as const
-const GOOGLE_FAMILIES = ['flash', 'pro'] as const
-
-function detectFamily(modelId: string): string {
-  const lower = modelId.toLowerCase()
-  for (const f of [...ANTHROPIC_FAMILIES, ...GOOGLE_FAMILIES]) {
-    if (lower.includes(f)) return f
-  }
-  return 'unknown'
-}
 
 // ═══════════════════════════════════════════
 // API calls
@@ -32,18 +20,9 @@ function detectFamily(modelId: string): string {
 
 async function fetchAnthropicModels(apiKey: string): Promise<ScannedModel[]> {
   try {
-    const res = await fetch('https://api.anthropic.com/v1/models', {
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-    })
-    if (!res.ok) {
-      logger.warn({ status: res.status }, 'Failed to fetch Anthropic models')
-      return []
-    }
-    const data = await res.json() as { data: Array<{ id: string; display_name: string; created_at: string }> }
-    return data.data.map(m => ({
+    const client = new Anthropic({ apiKey })
+    const page = await client.models.list()
+    return page.data.map((m: { id: string; display_name: string; created_at: string }) => ({
       id: m.id,
       displayName: m.display_name,
       provider: 'anthropic' as const,
@@ -58,24 +37,22 @@ async function fetchAnthropicModels(apiKey: string): Promise<ScannedModel[]> {
 
 async function fetchGoogleModels(apiKey: string): Promise<ScannedModel[]> {
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
-    if (!res.ok) {
-      logger.warn({ status: res.status }, 'Failed to fetch Google models')
-      return []
-    }
-    const data = await res.json() as { models: Array<{ name: string; displayName: string }> }
-    return (data.models || [])
-      .filter(m => m.name.startsWith('models/gemini'))
-      .map(m => {
-        const id = m.name.replace('models/', '')
-        return {
-          id,
-          displayName: m.displayName,
-          provider: 'google' as const,
-          family: detectFamily(id),
-          createdAt: '',
-        }
+    const client = new GoogleGenAI({ apiKey })
+    const pager = await client.models.list()
+    const models: ScannedModel[] = []
+    for await (const m of pager) {
+      const name = m.name ?? ''
+      if (!name.startsWith('models/gemini')) continue
+      const id = name.replace('models/', '')
+      models.push({
+        id,
+        displayName: m.displayName ?? id,
+        provider: 'google' as const,
+        family: detectFamily(id),
+        createdAt: '',
       })
+    }
+    return models
   } catch (err) {
     logger.error({ err }, 'Error fetching Google models')
     return []

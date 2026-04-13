@@ -80,13 +80,14 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - **Backoff cap**: delay máximo 30s (`Math.min(backoff, 30_000)`) para evitar esperas de horas con retryMax alto
 
 ## Features nativos de las APIs
-- **Prompt Caching**: Anthropic `cache_control: { type: 'ephemeral' }` (90% ahorro). Google implícito en 2.5+.
-- **JSON Mode**: Anthropic prefill trick (`{`). Google `responseMimeType: 'application/json'`.
-- **Extended Thinking**: Anthropic `thinking: { type: 'adaptive' }`. Google `thinkingConfig`.
+- **Prompt Caching**: Anthropic `cache_control: { type: 'ephemeral' }` (90% ahorro). Google implícito en 2.5+, explícito via `ai.caches` (nuevo SDK).
+- **JSON Mode**: Anthropic `output_config.format` con JSON schema (nativo, garantizado). Google `responseMimeType: 'application/json'`.
+- **Extended Thinking**: Anthropic `thinking: { type: 'adaptive', effort: 'medium' }` (4.6+) o `thinking: { type: 'enabled', budget_tokens: N }` (pre-4.6). Google `thinkingConfig`.
 - **Google Search Grounding**: `{ googleSearch: {} }` tool nativa en web_search.
-- **Code Execution**: Anthropic `{ type: 'code_execution' }`. Google `{ codeExecution: {} }`.
+- **Code Execution**: Anthropic `{ type: 'code_execution_20260120', name: 'code_execution' }`. Google `{ codeExecution: {} }`.
 - **Citations**: Anthropic document blocks (configurable, `LLM_CITATIONS_ENABLED`).
-- **Batch**: Anthropic Message Batches API (50% off). Gateway expone `submitBatch/getBatchStatus/getBatchResults`.
+- **Batch**: Anthropic `client.messages.batches.*` (SDK nativo, 50% off). Gateway expone `submitBatch/getBatchStatus/getBatchResults`.
+- **Tool Calling**: Formato nativo — Anthropic `tool_use/tool_result` content blocks con IDs, Google `functionCall/functionResponse` parts.
 
 ## Service-level Circuit Breaker
 - TTS, embeddings, voice tienen CB independiente del provider CB
@@ -101,8 +102,14 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - 10 tareas canónicas: main, complex, low, criticize, media, web_search, compress, batch, tts, knowledge
 - `resolveTaskName()` en task-router.ts resuelve aliases a tareas canónicas
 
+## SDKs y versiones
+- **Anthropic**: `@anthropic-ai/sdk` ^0.88.0 — SDK tipado completo
+- **Google**: `@google/genai` ^1.49.0 — SDK unificado (reemplaza @google/generative-ai deprecado)
+- **Patrón Google**: `new GoogleGenAI({ apiKey })` → `ai.models.generateContent({ model, contents, config })`
+- **Tool params Google**: `parametersJsonSchema` (JSON Schema estándar, NO `parameters`)
+
 ## Timeouts y sanitización
-- **Google timeout real**: `providers.ts` usa `Promise.race([chat.sendMessage(), timeoutPromise])` — el SDK de Google no acepta `AbortSignal` directamente, por eso la carrera
+- **Google timeout real**: `providers.ts` usa `Promise.race([ai.models.generateContent(), timeoutPromise])` — signal de abort no siempre es soportado
 - **Direct SDK timeout**: `llm-client.ts` (fallback cuando módulo LLM no activo) tiene timeout 30s y 2 retries propios
 - **Direct SDK tools**: `callGoogle()` en llm-client.ts convierte tools a `functionDeclarations` y extrae tool_calls de la respuesta
 - **SQL seguro**: `pg-store.ts:getUsageSummary` usa `$1::interval` parametrizado (antes interpolaba `'${interval}'` directamente)
@@ -112,6 +119,8 @@ Paso separado en Phase 4 que revisa la respuesta antes de enviarla.
 - **API keys**: NUNCA se logean ni se incluyen en prompts.
 - **Thinking + temperature**: incompatibles en Anthropic — adapter elimina temperature automáticamente.
 - **JSON mode + tools**: incompatibles en Google 2.5 cuando hay tool calls en historial.
+- **Google SDK response.text**: Es PROPIEDAD, no método. `response.text` NO `response.text()`.
+- **Tool calling IDs**: Anthropic genera `tool_use_id` automáticamente. Para Google se generan IDs sintéticos.
 - **Budget = 0**: sin límite. Se chequea antes de cada llamada.
 - **Escalating CB es por target**: un modelo puede estar down sin afectar a otros del mismo provider.
 - **Phase 2 decide thinking/coding**: `ExecutionStep.useThinking` y `useCoding` son hints del evaluador.

@@ -3,7 +3,8 @@
 // Cada adapter implementa ProviderAdapter y normaliza la respuesta a LLMResponse.
 
 import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
+import type { Content, GenerateContentConfig, Tool as GoogleTool } from '@google/genai'
 import pino from 'pino'
 import { logExternalApi } from '../../kernel/extreme-logger.js'
 import type {
@@ -18,7 +19,12 @@ import type {
   ModelInfo,
   ContentPart,
   LLMMessage,
+  MessageContentBlock,
+  ToolUseBlock,
+  ToolResultBlock,
+  TextBlock,
 } from './types.js'
+import { detectFamily } from './helpers.js'
 
 const logger = pino({ name: 'llm:providers' })
 
@@ -26,18 +32,57 @@ const logger = pino({ name: 'llm:providers' })
 // Helper: extract text content from message
 // ═══════════════════════════════════════════
 
-function textContent(content: string | ContentPart[]): string {
+function textContent(content: string | ContentPart[] | MessageContentBlock[]): string {
   if (typeof content === 'string') return content
-  return content
+  return (content as Array<{ type: string; text?: string }>)
     .filter(p => p.type === 'text' && p.text)
     .map(p => p.text!)
     .join('')
 }
 
-/** Build Google Gemini content parts from string or ContentPart[] */
-function buildGoogleParts(content: string | ContentPart[]): Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> {
+/** Build Google Gemini content parts from string, ContentPart[], or MessageContentBlock[] */
+function buildGoogleParts(content: string | ContentPart[] | MessageContentBlock[]): Array<Record<string, unknown>> {
   if (typeof content === 'string') return [{ text: content }]
-  return content.map(part => {
+
+  // Detect native tool calling blocks
+  const hasToolBlocks = (content as Array<{ type: string }>).some(
+    b => b.type === 'tool_use' || b.type === 'tool_result',
+  )
+
+  if (hasToolBlocks) {
+    // Build Google-native functionCall / functionResponse parts
+    const parts: Array<Record<string, unknown>> = []
+    for (const block of content as MessageContentBlock[]) {
+      if (block.type === 'tool_use') {
+        parts.push({
+          functionCall: {
+            name: (block as ToolUseBlock).name,
+            args: (block as ToolUseBlock).input,
+          },
+        })
+      } else if (block.type === 'tool_result') {
+        const rb = block as ToolResultBlock
+        let parsedResult: Record<string, unknown>
+        try {
+          parsedResult = JSON.parse(rb.content) as Record<string, unknown>
+        } catch {
+          parsedResult = { result: rb.content }
+        }
+        parts.push({
+          functionResponse: {
+            name: rb.name,
+            response: parsedResult,
+          },
+        })
+      } else if (block.type === 'text') {
+        parts.push({ text: (block as TextBlock).text })
+      }
+    }
+    return parts
+  }
+
+  // Standard multimedia content — existing path
+  return (content as ContentPart[]).map(part => {
     if (part.type === 'text' && part.text) return { text: part.text }
     if ((part.type === 'image_url' || part.type === 'audio' || part.type === 'video') && part.data) {
       return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
@@ -108,9 +153,18 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     // Extended thinking (incompatible with temperature — remove it)
     if (request.thinking) {
-      params.thinking = {
-        type: request.thinking.type === 'adaptive' ? 'adaptive' : 'enabled',
-        budget_tokens: request.thinking.budgetTokens ?? 4096,
+      if (request.thinking.type === 'adaptive') {
+        // Adaptive thinking: uses effort level, NOT budget_tokens (deprecated in 4.6)
+        params.thinking = {
+          type: 'adaptive',
+          effort: request.thinking.effort ?? 'medium',
+        }
+      } else {
+        // Manual thinking: uses budget_tokens (for pre-4.6 models or manual control)
+        params.thinking = {
+          type: 'enabled',
+          budget_tokens: request.thinking.budgetTokens ?? 4096,
+        }
       }
       delete params.temperature // Anthropic: thinking and temperature are incompatible
     }
@@ -128,15 +182,26 @@ export class AnthropicAdapter implements ProviderAdapter {
     }
     // Code execution tool (built-in Anthropic sandbox)
     if (request.codeExecution) {
-      tools.push({ type: 'code_execution' })
+      tools.push({ type: 'code_execution_20260120', name: 'code_execution' })
     }
     if (tools.length > 0) {
       params.tools = tools
     }
 
-    // JSON mode — prefill trick: add assistant message starting with '{'
-    if (request.jsonMode && !request.tools?.length) {
-      messages.push({ role: 'assistant', content: '{' })
+    // JSON mode — use output_config.format when schema available, prefill trick as fallback
+    if (request.jsonMode) {
+      if (request.jsonSchema) {
+        // Schema available → use output_config.format (native, guaranteed valid JSON)
+        params.output_config = {
+          format: {
+            type: 'json_schema',
+            schema: request.jsonSchema,
+          },
+        }
+      } else if (!request.tools?.length) {
+        // No schema, no tools → prefill trick as fallback
+        messages.push({ role: 'assistant', content: '{' })
+      }
     }
 
     const controller = new AbortController()
@@ -157,7 +222,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         if (block.type === 'text') {
           text += block.text
         } else if (block.type === 'tool_use') {
-          toolCalls.push({ name: block.name, input: block.input as Record<string, unknown> })
+          toolCalls.push({ id: block.id, name: block.name, input: block.input as Record<string, unknown> })
         }
         // Code execution results (type: 'code_execution_result' — Anthropic built-in)
         if ((block as unknown as Record<string, unknown>).type === 'code_execution_result') {
@@ -170,8 +235,8 @@ export class AnthropicAdapter implements ProviderAdapter {
         }
       }
 
-      // JSON mode — prepend '{' since we used prefill
-      if (request.jsonMode && !request.tools?.length) {
+      // JSON mode — prepend '{' only if we used the prefill trick (no schema, no tools)
+      if (request.jsonMode && !request.jsonSchema && !request.tools?.length) {
         text = '{' + text
       }
 
@@ -208,12 +273,13 @@ export class AnthropicAdapter implements ProviderAdapter {
 
   async listModels(apiKey: string): Promise<ModelInfo[]> {
     try {
-      const res = await fetch('https://api.anthropic.com/v1/models', {
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      })
-      if (!res.ok) return []
-      const data = await res.json() as { data: Array<{ id: string; display_name: string }> }
-      return data.data.map(m => ({
+      let client = this.clients.get(apiKey)
+      if (!client) {
+        client = new Anthropic({ apiKey })
+        this.clients.set(apiKey, client)
+      }
+      const page = await client.models.list()
+      return page.data.map(m => ({
         id: m.id,
         provider: 'anthropic' as const,
         displayName: m.display_name,
@@ -229,101 +295,129 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   async submitBatch(requests: LLMBatchRequest[], apiKey: string): Promise<string> {
+    let client = this.clients.get(apiKey)
+    if (!client) {
+      client = new Anthropic({ apiKey })
+      this.clients.set(apiKey, client)
+    }
+
     const batchRequests = requests.map(r => ({
       custom_id: r.customId,
       params: {
-        model: r.request.model ?? 'claude-sonnet-4-5-20250929',
+        model: r.request.model ?? 'claude-sonnet-4-6-20260214',
         max_tokens: r.request.maxTokens ?? 2048,
         messages: r.request.messages.map(m => ({
-          role: m.role,
+          role: m.role as 'user' | 'assistant',
           content: typeof m.content === 'string' ? m.content : this.buildAnthropicContent(m as LLMMessage),
         })),
         ...(r.request.system ? { system: r.request.system } : {}),
       },
     }))
 
-    const res = await fetch('https://api.anthropic.com/v1/messages/batches', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ requests: batchRequests }),
-    })
-
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`Anthropic batch submit failed: ${errText}`)
-    }
-    const data = await res.json() as { id: string }
-    return data.id
+    const batch = await client.messages.batches.create({ requests: batchRequests })
+    return batch.id
   }
 
   async getBatchStatus(batchId: string, apiKey: string): Promise<LLMBatchInfo> {
-    const res = await fetch(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    })
-    if (!res.ok) throw new Error(`Anthropic batch status failed: ${res.status}`)
-    const data = await res.json() as Record<string, unknown>
-    const counts = data.request_counts as Record<string, number> | undefined
+    let client = this.clients.get(apiKey)
+    if (!client) {
+      client = new Anthropic({ apiKey })
+      this.clients.set(apiKey, client)
+    }
+
+    const batch = await client.messages.batches.retrieve(batchId)
+    const counts = batch.request_counts
     return {
       batchId,
       provider: 'anthropic',
-      status: (data.processing_status as string) === 'ended' ? 'ended' : 'processing',
+      status: batch.processing_status === 'ended' ? 'ended' : 'processing',
       totalRequests: (counts?.processing ?? 0) + (counts?.succeeded ?? 0) + (counts?.errored ?? 0),
       completedRequests: counts?.succeeded ?? 0,
       failedRequests: counts?.errored ?? 0,
-      createdAt: String(data.created_at ?? ''),
-      endedAt: data.ended_at ? String(data.ended_at) : undefined,
+      createdAt: String(batch.created_at ?? ''),
+      endedAt: batch.ended_at ? String(batch.ended_at) : undefined,
     }
   }
 
   async getBatchResults(batchId: string, apiKey: string): Promise<LLMBatchResult[]> {
-    const res = await fetch(`https://api.anthropic.com/v1/messages/batches/${batchId}/results`, {
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    })
-    if (!res.ok) throw new Error(`Anthropic batch results failed: ${res.status}`)
-    const text = await res.text()
-    // Results are JSONL (one JSON per line)
-    return text.trim().split('\n').filter(Boolean).map((line: string) => {
-      const item = JSON.parse(line) as Record<string, unknown>
-      const result = item.result as Record<string, unknown> | undefined
-      if (result?.type === 'succeeded') {
-        const msg = result.message as Record<string, unknown>
-        const usage = msg.usage as Record<string, number> | undefined
+    let client = this.clients.get(apiKey)
+    if (!client) {
+      client = new Anthropic({ apiKey })
+      this.clients.set(apiKey, client)
+    }
+
+    const results: LLMBatchResult[] = []
+    // results() returns Promise<JSONLDecoder> — await first, then iterate
+    const decoder = await client.messages.batches.results(batchId)
+    for await (const item of decoder) {
+      if (item.result?.type === 'succeeded') {
+        const msg = item.result.message
         let respText = ''
-        for (const block of (msg.content as Array<Record<string, unknown>>) ?? []) {
+        for (const block of msg.content) {
           if (block.type === 'text') respText += block.text
         }
-        return {
-          customId: String(item.custom_id ?? ''),
+        results.push({
+          customId: item.custom_id,
           response: {
             text: respText,
-            provider: 'anthropic' as const,
-            model: String(msg.model ?? ''),
-            inputTokens: usage?.input_tokens ?? 0,
-            outputTokens: usage?.output_tokens ?? 0,
+            provider: 'anthropic',
+            model: msg.model,
+            inputTokens: msg.usage.input_tokens,
+            outputTokens: msg.usage.output_tokens,
             durationMs: 0,
             fromFallback: false,
             attempt: 0,
           },
-        }
+        })
+      } else {
+        results.push({
+          customId: item.custom_id,
+          error: item.result?.type === 'errored'
+            ? JSON.stringify(item.result.error ?? 'batch item failed')
+            : 'unknown error',
+        })
       }
-      return {
-        customId: String(item.custom_id ?? ''),
-        error: result?.type === 'errored'
-          ? JSON.stringify((result as Record<string, unknown>).error ?? 'batch item failed')
-          : 'unknown error',
-      }
-    })
+    }
+    return results
   }
 
   private buildAnthropicContent(msg: LLMMessage): string | Anthropic.ContentBlockParam[] {
     if (typeof msg.content === 'string') return msg.content
 
+    // Detect native tool calling blocks
+    const hasToolBlocks = (msg.content as Array<{ type: string }>).some(
+      b => b.type === 'tool_use' || b.type === 'tool_result',
+    )
+
+    if (hasToolBlocks) {
+      // Build Anthropic-native tool blocks (tool_use / tool_result)
+      const blocks: Anthropic.ContentBlockParam[] = []
+      for (const block of msg.content as MessageContentBlock[]) {
+        if (block.type === 'tool_use') {
+          blocks.push({
+            type: 'tool_use',
+            id: (block as ToolUseBlock).id,
+            name: (block as ToolUseBlock).name,
+            input: (block as ToolUseBlock).input,
+          })
+        } else if (block.type === 'tool_result') {
+          blocks.push({
+            type: 'tool_result',
+            tool_use_id: (block as ToolResultBlock).toolUseId,
+            content: (block as ToolResultBlock).content,
+            is_error: (block as ToolResultBlock).isError,
+          })
+        } else if (block.type === 'text') {
+          blocks.push({ type: 'text', text: (block as TextBlock).text })
+        }
+        // ContentPart types (image_url, audio, video) are not expected alongside tool blocks
+      }
+      return blocks
+    }
+
+    // Standard multimedia content — existing path
     const blocks: Anthropic.ContentBlockParam[] = []
-    for (const part of msg.content) {
+    for (const part of msg.content as ContentPart[]) {
       if (part.type === 'text' && part.text) {
         blocks.push({ type: 'text', text: part.text })
       } else if (part.type === 'image_url' && part.data) {
@@ -357,11 +451,11 @@ export class AnthropicAdapter implements ProviderAdapter {
 
 export class GoogleAdapter implements ProviderAdapter {
   readonly name: LLMProviderName = 'google'
-  private clients = new Map<string, GoogleGenerativeAI>()
+  private clients = new Map<string, GoogleGenAI>()
 
   init(apiKey: string): void {
     if (!this.clients.has(apiKey)) {
-      this.clients.set(apiKey, new GoogleGenerativeAI(apiKey))
+      this.clients.set(apiKey, new GoogleGenAI({ apiKey }))
     }
   }
 
@@ -372,7 +466,7 @@ export class GoogleAdapter implements ProviderAdapter {
   async chat(request: LLMRequest, apiKey: string, timeoutMs: number): Promise<LLMResponse> {
     let client = this.clients.get(apiKey)
     if (!client) {
-      client = new GoogleGenerativeAI(apiKey)
+      client = new GoogleGenAI({ apiKey })
       this.clients.set(apiKey, client)
     }
 
@@ -380,34 +474,39 @@ export class GoogleAdapter implements ProviderAdapter {
     const model = request.model ?? 'gemini-2.5-flash'
 
     // Build generation config
-    const generationConfig: Record<string, unknown> = {
+    const genConfig: GenerateContentConfig = {
       maxOutputTokens: request.maxTokens ?? 2048,
       temperature: request.temperature ?? 0.7,
     }
 
+    // System instruction (goes in config, not in contents)
+    if (request.system) {
+      genConfig.systemInstruction = request.system
+    }
+
     // JSON mode (Gemini: responseMimeType + optional responseSchema)
     if (request.jsonMode) {
-      generationConfig.responseMimeType = 'application/json'
+      genConfig.responseMimeType = 'application/json'
       if (request.jsonSchema) {
-        generationConfig.responseSchema = request.jsonSchema
+        genConfig.responseSchema = request.jsonSchema as GenerateContentConfig['responseSchema']
       }
     }
 
-    // Extended thinking (Gemini 3+: thinkingConfig)
+    // Extended thinking (Gemini 2.5+: thinkingConfig)
     if (request.thinking) {
-      generationConfig.thinkingConfig = {
+      genConfig.thinkingConfig = {
         thinkingBudget: request.thinking.budgetTokens ?? 4096,
       }
     }
 
     // Build tools array for Gemini
-    const geminiTools: unknown[] = []
+    const geminiTools: GoogleTool[] = []
     if (request.tools?.length) {
       geminiTools.push({
         functionDeclarations: request.tools.map(t => ({
           name: t.name,
           description: t.description,
-          parameters: t.inputSchema,
+          parametersJsonSchema: t.inputSchema, // NEW: parametersJsonSchema (not parameters)
         })),
       })
     }
@@ -419,70 +518,56 @@ export class GoogleAdapter implements ProviderAdapter {
     if (request.codeExecution) {
       geminiTools.push({ codeExecution: {} })
     }
-
-    const modelConfig: Record<string, unknown> = {
-      model,
-      generationConfig,
-      systemInstruction: request.system || undefined,
-    }
     if (geminiTools.length > 0) {
-      modelConfig.tools = geminiTools
+      genConfig.tools = geminiTools
     }
 
-    const genModel = client.getGenerativeModel(modelConfig as unknown as Parameters<typeof client.getGenerativeModel>[0])
-
-    // Build conversation: system messages go to systemInstruction, rest to history
+    // Build contents: filter system messages, map to Gemini format (role: 'user'|'model')
     const nonSystemMessages = request.messages.filter(m => m.role !== 'system')
-
-    const history = nonSystemMessages.slice(0, -1).map(m => ({
-      role: m.role === 'assistant' ? 'model' as const : 'user' as const,
-      parts: buildGoogleParts(m.content),
+    const contents: Content[] = nonSystemMessages.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: buildGoogleParts(m.content) as Content['parts'],
     }))
 
-    const lastMessage = nonSystemMessages[nonSystemMessages.length - 1]!
-    const lastParts = buildGoogleParts(lastMessage.content)
-
-    const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | null = null
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        controller.abort()
         reject(new Error(`Google LLM timeout after ${timeoutMs}ms`))
       }, timeoutMs)
     })
 
     try {
-      const chat = genModel.startChat({ history })
-      const result = await Promise.race([chat.sendMessage(lastParts), timeoutPromise])
-      const response = result.response
+      const response = await Promise.race([
+        client.models.generateContent({ model, contents, config: genConfig }),
+        timeoutPromise,
+      ])
 
-      // Extract tool calls and code execution results
+      // Extract tool calls and code execution results from candidates
       const toolCalls: LLMToolCall[] = []
       const codeResults: Array<{ code: string; output: string; error?: string }> = []
       const candidate = response.candidates?.[0]
       if (candidate?.content?.parts) {
         for (const part of candidate.content.parts) {
-          if ('functionCall' in part && part.functionCall) {
+          if (part.functionCall) {
             toolCalls.push({
-              name: part.functionCall.name,
+              id: `gc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              name: part.functionCall.name ?? '',
               input: (part.functionCall.args ?? {}) as Record<string, unknown>,
             })
           }
-          // Code execution results
-          const p = part as unknown as Record<string, unknown>
-          if ('executableCode' in p && p.executableCode) {
-            const ec = p.executableCode as Record<string, unknown>
+          if (part.executableCode) {
             codeResults.push({
-              code: String(ec.code ?? ''),
+              code: part.executableCode.code ?? '',
               output: '',
             })
           }
-          if ('codeExecutionResult' in p && p.codeExecutionResult) {
-            const cer = p.codeExecutionResult as Record<string, unknown>
+          if (part.codeExecutionResult) {
             const last = codeResults[codeResults.length - 1]
             if (last) {
-              last.output = String(cer.output ?? '')
-              if (cer.outcome === 'ERROR') last.error = String(cer.output ?? 'execution error')
+              last.output = part.codeExecutionResult.output ?? ''
+              if (part.codeExecutionResult.outcome === 'OUTCOME_FAILED') {
+                last.error = part.codeExecutionResult.output ?? 'execution error'
+              }
             }
           }
         }
@@ -490,10 +575,10 @@ export class GoogleAdapter implements ProviderAdapter {
 
       // Extract grounding metadata if available
       let groundingMetadata: LLMResponse['groundingMetadata']
-      const gm = (candidate as Record<string, unknown> | undefined)?.groundingMetadata as Record<string, unknown> | undefined
+      const gm = candidate?.groundingMetadata
       if (gm) {
         groundingMetadata = {
-          searchQueries: Array.isArray(gm.searchEntryPoint) ? undefined : undefined,
+          searchQueries: gm.webSearchQueries ?? undefined,
           sources: Array.isArray(gm.groundingChunks)
             ? (gm.groundingChunks as Array<Record<string, unknown>>)
                 .filter(c => c.web)
@@ -506,7 +591,7 @@ export class GoogleAdapter implements ProviderAdapter {
       }
 
       // Extract cache metrics if available
-      const usageMeta = response.usageMetadata as Record<string, unknown> | undefined
+      const usageMeta = response.usageMetadata
       const cacheReadTokens = typeof usageMeta?.cachedContentTokenCount === 'number'
         ? usageMeta.cachedContentTokenCount
         : undefined
@@ -520,7 +605,7 @@ export class GoogleAdapter implements ProviderAdapter {
       }).catch(() => {})
 
       return {
-        text: response.text(),
+        text: response.text ?? '',  // property (NOT method) in @google/genai
         provider: 'google',
         model,
         inputTokens: inTokens,
@@ -540,23 +625,24 @@ export class GoogleAdapter implements ProviderAdapter {
 
   async listModels(apiKey: string): Promise<ModelInfo[]> {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
-      if (!res.ok) return []
-      const data = await res.json() as { models: Array<{ name: string; displayName: string }> }
-      return (data.models || [])
-        .filter(m => m.name.startsWith('models/gemini'))
-        .map(m => {
-          const id = m.name.replace('models/', '')
-          return {
-            id,
-            provider: 'google' as const,
-            displayName: m.displayName,
-            family: detectFamily(id),
-            capabilities: detectCapabilities('google', id),
-            inputCostPer1M: 0,
-            outputCostPer1M: 0,
-          }
+      const client = this.clients.get(apiKey) ?? new GoogleGenAI({ apiKey })
+      const pager = await client.models.list()
+      const result: ModelInfo[] = []
+      for await (const m of pager) {
+        const name = m.name ?? ''
+        if (!name.startsWith('models/gemini')) continue
+        const id = name.replace('models/', '')
+        result.push({
+          id,
+          provider: 'google',
+          displayName: m.displayName ?? id,
+          family: detectFamily(id),
+          capabilities: detectCapabilities('google', id),
+          inputCostPer1M: 0,
+          outputCostPer1M: 0,
         })
+      }
+      return result
     } catch (err) {
       logger.error({ err }, 'Failed to list Google models')
       return []
@@ -567,15 +653,6 @@ export class GoogleAdapter implements ProviderAdapter {
 // ═══════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════
-
-function detectFamily(modelId: string): string {
-  const lower = modelId.toLowerCase()
-  const families = ['haiku', 'sonnet', 'opus', 'flash', 'pro']
-  for (const f of families) {
-    if (lower.includes(f)) return f
-  }
-  return 'unknown'
-}
 
 function detectCapabilities(provider: LLMProviderName, modelId: string): Array<'text' | 'tools' | 'vision' | 'code'> {
   const caps: Array<'text' | 'tools' | 'vision' | 'code'> = ['text']

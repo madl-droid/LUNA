@@ -1,6 +1,6 @@
 # Knowledge v2 — Base de conocimiento del agente
 
-Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsqueda híbrida: pgvector cosine + FTS PostgreSQL. Categorías como tabla (max 25). Core docs como flag (max 3). Embeddings via Google gemini-embedding-exp-03-07 (1536 dims, multimodal: texto/imágenes/PDF/audio/video).
+Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsqueda híbrida: pgvector cosine + FTS PostgreSQL. Categorías como tabla (max 25). Core docs como flag (max 3). Embeddings via Google gemini-embedding-2-preview (1536 dims, multimodal: texto/imágenes/PDF/audio/video) via @google/genai SDK.
 
 ## Archivos
 - `manifest.ts` — lifecycle v2, configSchema (14 params), ~25 apiRoutes, tool registration
@@ -9,7 +9,7 @@ Almacena, indexa y busca documentos, FAQs, web sources y API connectors. Búsque
 - `pg-store.ts` — 8 tablas: documents, chunks, faqs, sync_sources, gaps, categories, document_categories, api_connectors, web_sources. Métodos de binary lifecycle: markBinariesForCleanup(), getDocumentsForBinaryCleanup(), clearBinaryCleanupFlag(). Nuevo: getChunksByDocumentId() (para expand_knowledge)
 - `search-engine.ts` — búsqueda híbrida: pgvector cosine + FTS + FAQ FTS. Category boost (+0.2) via searchHint. Core boost (+0.15) aditivo. Degradación a FTS si sin embeddings. **allowedCategoryIds**: filtro estricto por categoría (fail-open: sin config → sin filtro; uncategorized → siempre visible).
 - `cache.ts` — Redis cache para KnowledgeInjection (TTL 5min), invalidación en cambios core/categorías/connectors
-- `embedding-service.ts` — Google gemini-embedding-exp-03-07 (1536 dims) via @google/generative-ai. Circuit breaker (3 fallas → 5min down). Rate limit 5000 RPM (tier 2). Soporta multimodal (generateFileEmbedding).
+- `embedding-service.ts` — Google gemini-embedding-2-preview (1536 dims) via @google/genai SDK. Circuit breaker (3 fallas → 5min down). Rate limit 5000 RPM (tier 2). Soporta multimodal (generateFileEmbedding).
 - `embedding-queue.ts` — BullMQ cola unificada. Circuit breaker, HITL escalation (retry 5 y 10), reconcileDocumentStatus, generateMultimodalEmbedding (lee mediaRefs de disco), runNightlyBinaryCleanup.
 - `embedding-limits.ts` — Constantes de embedding: MAX_PDF_PAGES_PER_REQUEST=3, MAX_TEXT_WORDS, TEXT_OVERLAP_WORDS. Tipos: EmbeddableChunk, LinkedEmbeddableChunk, MediaRef, ChunkMetadata, ChunkContentType.
 - `vectorize-worker.ts` — BullMQ cola knowledge:vectorize. Jobs: document (inmediato) y bulk (cooldown 1hr). Redis mutex para bulk. Delega a embedding-queue para procesamiento real.

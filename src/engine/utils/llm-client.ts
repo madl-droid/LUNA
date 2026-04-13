@@ -4,9 +4,10 @@
 // Si no, usa llamadas directas a SDKs (fallback para compatibilidad).
 
 import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import pino from 'pino'
 import type { LLMCallOptions, LLMCallResult, LLMProvider, EngineConfig } from '../types.js'
+import type { MessageContentBlock, ToolUseBlock, ToolResultBlock, TextBlock, ContentPart } from '../../modules/llm/types.js'
 
 const logger = pino({ name: 'engine:llm' })
 
@@ -20,13 +21,13 @@ interface LLMGatewayLike {
     provider?: string
     model?: string
     system?: string
-    messages: Array<{ role: string; content: string | import('../../kernel/types.js').LLMContentPart[] }>
+    messages: Array<{ role: string; content: string | import('../../kernel/types.js').LLMContentPart[] | import('../../modules/llm/types.js').MessageContentBlock[] }>
     maxTokens?: number
     temperature?: number
     tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
     jsonMode?: boolean
     jsonSchema?: Record<string, unknown>
-    thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number }
+    thinking?: { type: 'enabled' | 'adaptive'; budgetTokens?: number; effort?: 'low' | 'medium' | 'high' }
     googleSearchGrounding?: boolean
     citations?: boolean
     codeExecution?: boolean
@@ -37,7 +38,7 @@ interface LLMGatewayLike {
     model: string
     inputTokens: number
     outputTokens: number
-    toolCalls?: Array<{ name: string; input: Record<string, unknown> }>
+    toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown> }>
     durationMs: number
     cacheReadTokens?: number
     cacheCreationTokens?: number
@@ -74,7 +75,7 @@ export function hasGateway(): boolean {
 // ═══════════════════════════════════════════
 
 let anthropicClient: Anthropic | null = null
-let googleClient: GoogleGenerativeAI | null = null
+let googleClient: GoogleGenAI | null = null
 
 /**
  * Initialize LLM clients with API keys from config.
@@ -84,7 +85,7 @@ export function initLLMClients(config: EngineConfig): void {
     anthropicClient = new Anthropic({ apiKey: config.anthropicApiKey })
   }
   if (config.googleApiKey) {
-    googleClient = new GoogleGenerativeAI(config.googleApiKey)
+    googleClient = new GoogleGenAI({ apiKey: config.googleApiKey })
   }
 }
 
@@ -272,13 +273,13 @@ async function callAnthropic(model: string, options: LLMCallOptions): Promise<LL
 
   // Extract text and tool calls
   let text = ''
-  const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = []
+  const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
 
   for (const block of response.content) {
     if (block.type === 'text') {
       text += block.text
     } else if (block.type === 'tool_use') {
-      toolCalls.push({ name: block.name, input: block.input as Record<string, unknown> })
+      toolCalls.push({ id: block.id, name: block.name, input: block.input as Record<string, unknown> })
     }
   }
 
@@ -297,54 +298,55 @@ async function callAnthropic(model: string, options: LLMCallOptions): Promise<LL
 async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCallResult> {
   if (!googleClient) throw new Error('Google AI client not initialized')
 
-  const modelConfig: Record<string, unknown> = {
-    model,
-    generationConfig: {
-      maxOutputTokens: options.maxTokens ?? 2048,
-      temperature: options.temperature ?? 0.7,
-    },
-    systemInstruction: options.system || undefined,
+  const genConfig: Record<string, unknown> = {
+    maxOutputTokens: options.maxTokens ?? 2048,
+    temperature: options.temperature ?? 0.7,
   }
 
-  // Convert tools to Gemini functionDeclarations format
+  if (options.system) {
+    genConfig.systemInstruction = options.system
+  }
+
+  // Convert tools to Gemini functionDeclarations format (parametersJsonSchema, not parameters)
   if (options.tools?.length) {
-    modelConfig.tools = [{
+    genConfig.tools = [{
       functionDeclarations: options.tools.map(t => ({
         name: t.name,
         description: t.description,
-        parameters: t.inputSchema,
+        parametersJsonSchema: t.inputSchema,
       })),
     }]
   }
 
-  const genModel = googleClient.getGenerativeModel(modelConfig as unknown as Parameters<typeof googleClient.getGenerativeModel>[0])
-
-  // Convert message format: combine into Gemini history + last user message
-  const history = options.messages.slice(0, -1).map(m => ({
-    role: m.role === 'assistant' ? 'model' as const : 'user' as const,
+  // Build contents array: all messages in user/model format
+  const contents = options.messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
     parts: buildGeminiParts(m.content),
   }))
 
-  const lastMessage = options.messages[options.messages.length - 1]!
+  const response = await googleClient.models.generateContent({
+    model,
+    contents: contents as Parameters<typeof googleClient.models.generateContent>[0]['contents'],
+    config: genConfig as Parameters<typeof googleClient.models.generateContent>[0]['config'],
+  })
 
-  const chat = genModel.startChat({ history })
-  const result = await chat.sendMessage(buildGeminiParts(lastMessage.content))
-  const response = result.response
-
-  // Extract tool calls from response
-  const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = []
+  // Extract tool calls from response candidates
+  const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
   const candidate = response.candidates?.[0]
   if (candidate?.content?.parts) {
     for (const part of candidate.content.parts) {
-      if ('functionCall' in part && part.functionCall) {
-        const fc = part.functionCall as { name: string; args?: Record<string, unknown> }
-        toolCalls.push({ name: fc.name, input: fc.args ?? {} })
+      if (part.functionCall) {
+        toolCalls.push({
+          id: `gc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: part.functionCall.name ?? '',
+          input: (part.functionCall.args ?? {}) as Record<string, unknown>,
+        })
       }
     }
   }
 
   return {
-    text: response.text(),
+    text: response.text ?? '',  // property (NOT method) in @google/genai
     provider: 'google',
     model,
     inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
@@ -357,39 +359,80 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
 
 type ContentInput = string | import('../types.js').LLMCallOptions['messages'][number]['content']
 
-/** Convert content to Anthropic format (string or ContentBlockParam[]) */
+/** Convert content to Anthropic format (string or ContentBlockParam[]).
+ *  Handles multimedia parts and native tool calling blocks (tool_use / tool_result). */
 function buildAnthropicContent(content: ContentInput): string | Anthropic.ContentBlockParam[] {
   if (typeof content === 'string') return content
   const blocks: Anthropic.ContentBlockParam[] = []
-  for (const part of content) {
-    if (part.type === 'text' && part.text) {
-      blocks.push({ type: 'text', text: part.text })
-    } else if (part.type === 'image_url' && part.data) {
+  for (const part of content as MessageContentBlock[]) {
+    if (part.type === 'tool_use') {
+      const tu = part as ToolUseBlock
       blocks.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: (part.mimeType ?? 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-          data: part.data,
-        },
+        type: 'tool_use',
+        id: tu.id,
+        name: tu.name,
+        input: tu.input,
       })
-    } else if (part.type === 'audio' && part.data) {
+    } else if (part.type === 'tool_result') {
+      const tr = part as ToolResultBlock
+      blocks.push({
+        type: 'tool_result',
+        tool_use_id: tr.toolUseId,
+        content: tr.content,
+        is_error: tr.isError,
+      })
+    } else if (part.type === 'text') {
+      const tb = part as TextBlock
+      blocks.push({ type: 'text', text: tb.text })
+    } else if (part.type === 'image_url') {
+      const cp = part as ContentPart
+      if (cp.data) {
+        blocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: (cp.mimeType ?? 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+            data: cp.data,
+          },
+        })
+      }
+    } else if (part.type === 'audio') {
+      const cp = part as ContentPart
       // Anthropic doesn't support audio natively — pass as text description
-      blocks.push({ type: 'text', text: `[Audio: ${part.mimeType ?? 'audio/ogg'}]` })
+      blocks.push({ type: 'text', text: `[Audio: ${cp.mimeType ?? 'audio/ogg'}]` })
     }
   }
   return blocks.length === 1 && blocks[0]?.type === 'text' ? (blocks[0] as { type: 'text'; text: string }).text : blocks
 }
 
-/** Convert content to Google Gemini parts format */
-function buildGeminiParts(content: ContentInput): Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> {
+/** Convert content to Google Gemini parts format.
+ *  Handles multimedia parts and native tool calling blocks (functionCall / functionResponse). */
+function buildGeminiParts(content: ContentInput): Array<Record<string, unknown>> {
   if (typeof content === 'string') return [{ text: content }]
-  return content.map(part => {
-    if (part.type === 'text' && part.text) return { text: part.text }
-    if ((part.type === 'image_url' || part.type === 'audio') && part.data) {
-      return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
+  return (content as MessageContentBlock[]).map(part => {
+    if (part.type === 'tool_use') {
+      const tu = part as ToolUseBlock
+      return { functionCall: { name: tu.name, args: tu.input } }
     }
-    return { text: part.text ?? '' }
+    if (part.type === 'tool_result') {
+      const tr = part as ToolResultBlock
+      let parsedResult: Record<string, unknown>
+      try {
+        parsedResult = JSON.parse(tr.content) as Record<string, unknown>
+      } catch {
+        parsedResult = { result: tr.content }
+      }
+      return { functionResponse: { name: tr.name, response: parsedResult } }
+    }
+    if (part.type === 'text') {
+      const tb = part as TextBlock
+      return { text: tb.text }
+    }
+    if (part.type === 'image_url' || part.type === 'audio') {
+      const cp = part as ContentPart
+      if (cp.data) return { inlineData: { data: cp.data, mimeType: cp.mimeType ?? 'application/octet-stream' } }
+    }
+    return { text: (part as TextBlock).text ?? '' }
   })
 }
 

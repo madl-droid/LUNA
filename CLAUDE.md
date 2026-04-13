@@ -4,7 +4,7 @@
 Agente de IA que atiende leads por WhatsApp, email, Google Chat y llamadas de voz. Califica, agenda, hace seguimiento, escala a humanos. Single-instance per server. Un repo, múltiples deploys.
 
 ## Stack
-TypeScript / Node.js ≥22 (ESM), PostgreSQL + pgvector, Redis + BullMQ, Baileys (WhatsApp), Twilio (voz), Google OAuth2 (Gmail, Calendar, Sheets, Chat), LLMs: Anthropic + Google.
+TypeScript / Node.js ≥22 (ESM), PostgreSQL + pgvector, Redis + BullMQ, Baileys (WhatsApp), Twilio (voz), Google OAuth2 (Gmail, Calendar, Sheets, Chat), LLMs: Anthropic SDK ^0.88.0 + Google GenAI SDK ^1.49.0.
 
 ## Arquitectura
 Sistema modular con kernel que descubre y carga módulos dinámicamente. Cada módulo exporta un `manifest.ts` con lifecycle (init/stop), hooks tipados, config schema y definición de UI.
@@ -160,6 +160,10 @@ import type { StoredMessage } from '../memory/types.js'
 - NO hacer sync bidireccional con Google Sheets — Postgres es fuente de verdad, writes a Sheets son async
 - NO usar import sin extensión .js en paths relativos — ESM lo requiere
 - NO acceder arrays por índice sin `!` o `?.` — `noUncheckedIndexedAccess` está activo en tsconfig. `arr[0]` es `T | undefined`. Usar `arr[0]!` cuando hay guard previo (`if (arr.length > 0)`) o `arr[0]?.prop` cuando no hay guard.
+- NO instalar `@google/generative-ai` — está deprecado y archivado. Usar `@google/genai`
+- NO usar `response.text()` como método para Google SDK — es propiedad `response.text`
+- NO usar `parameters` en function declarations de Google — usar `parametersJsonSchema`
+- NO usar `budget_tokens` con `thinking.type: 'adaptive'` en Anthropic — usar `effort`
 
 ## REGLA OBLIGATORIA: Compilar antes de push
 
