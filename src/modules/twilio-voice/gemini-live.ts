@@ -7,7 +7,6 @@ import pino from 'pino'
 import type {
   GeminiLiveConfig,
   GeminiSetupMessage,
-  GeminiAudioInput,
   GeminiServerContent,
   GeminiToolResponse,
 } from './types.js'
@@ -173,17 +172,33 @@ export class GeminiLiveSession {
   /**
    * Send audio chunk to Gemini (caller speaking).
    * Expects PCM 16-bit 16kHz base64-encoded.
+   * Gemini 3.1+ uses realtimeInput.audio; 2.5 uses realtimeInput.mediaChunks.
    */
   sendAudio(pcmBase64: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.setupComplete) return
 
-    const message: GeminiAudioInput = {
-      realtimeInput: {
-        mediaChunks: [{
-          mimeType: 'audio/pcm;rate=16000',
-          data: pcmBase64,
-        }],
-      },
+    let message: Record<string, unknown>
+
+    if (this.isModel31()) {
+      // Gemini 3.1+: new format — realtimeInput.audio
+      message = {
+        realtimeInput: {
+          audio: {
+            mimeType: 'audio/pcm;rate=16000',
+            data: pcmBase64,
+          },
+        },
+      }
+    } else {
+      // Gemini 2.5: legacy format — realtimeInput.mediaChunks
+      message = {
+        realtimeInput: {
+          mediaChunks: [{
+            mimeType: 'audio/pcm;rate=16000',
+            data: pcmBase64,
+          }],
+        },
+      }
     }
 
     this.ws.send(JSON.stringify(message))

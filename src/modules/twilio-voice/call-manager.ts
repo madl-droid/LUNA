@@ -398,6 +398,12 @@ export class CallManager {
       call.modelUsed = gemini.modelUsed
       this.geminiSessions.set(streamSid, gemini)
 
+      // Trigger initial greeting — Gemini Live needs a prompt to start talking
+      const greetingTrigger = direction === 'inbound'
+        ? '[SISTEMA] La llamada acaba de conectar. El cliente está al teléfono esperando. Di tu saludo inicial ahora.'
+        : '[SISTEMA] La llamada saliente acaba de conectar. La persona contestó. Saluda y preséntate ahora.'
+      gemini.sendTextInput(greetingTrigger)
+
       // Start silence monitoring immediately for outbound; inbound waits for greeting to complete
       if (direction === 'outbound') {
         this.silenceDetector.startMonitoring(streamSid)
