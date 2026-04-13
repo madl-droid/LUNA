@@ -459,7 +459,7 @@ const GEAR_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
 
 // ─── Channels marked as "coming soon" — toggle disabled, no settings link ───
 // To enable a channel when it's ready, remove its ID from this set.
-const COMING_SOON_CHANNELS: ReadonlySet<string> = new Set(['google-chat', 'twilio-voice', 'telegram'])
+const COMING_SOON_CHANNELS: ReadonlySet<string> = new Set(['google-chat', 'telegram'])
 void COMING_SOON_CHANNELS // used on line 985
 
 // Helper: renders a single metric cell with label + hover tooltip
