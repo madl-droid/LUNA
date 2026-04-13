@@ -87,22 +87,34 @@ export function mulawToPcm16k(mulawBuffer: Buffer): Buffer {
 
 /**
  * Convert PCM 16-bit LE buffer (at given sample rate) to mulaw 8kHz buffer.
- * Downsamples to 8kHz first, then encodes each sample as mulaw.
+ * Downsamples to 8kHz with anti-aliasing (averaging neighboring samples)
+ * to avoid high-frequency artifacts that sound like a "bad microphone".
  */
 export function pcmToMulaw8k(pcmBuffer: Buffer, inputSampleRate: number = GEMINI_OUTPUT_SAMPLE_RATE): Buffer {
   const bytesPerSample = 2
   const totalSamples = pcmBuffer.length / bytesPerSample
   const ratio = inputSampleRate / TWILIO_SAMPLE_RATE
+  // Half-width of the averaging window (samples on each side of center)
+  const halfWin = Math.max(1, Math.floor(ratio / 2))
   const outputSamples = Math.floor(totalSamples / ratio)
   const mulawBuffer = Buffer.alloc(outputSamples)
 
   for (let i = 0; i < outputSamples; i++) {
-    const srcIndex = Math.floor(i * ratio)
-    const offset = srcIndex * bytesPerSample
-    if (offset + 1 < pcmBuffer.length) {
-      const sample = pcmBuffer.readInt16LE(offset)
-      mulawBuffer[i] = encodeMulawSample(sample)
+    const center = Math.floor(i * ratio)
+    // Average a window of samples around center for anti-aliasing
+    const lo = Math.max(0, center - halfWin)
+    const hi = Math.min(totalSamples - 1, center + halfWin)
+    let sum = 0
+    let count = 0
+    for (let j = lo; j <= hi; j++) {
+      const off = j * bytesPerSample
+      if (off + 1 < pcmBuffer.length) {
+        sum += pcmBuffer.readInt16LE(off)
+        count++
+      }
     }
+    const avg = count > 0 ? Math.round(sum / count) : 0
+    mulawBuffer[i] = encodeMulawSample(avg)
   }
 
   return mulawBuffer

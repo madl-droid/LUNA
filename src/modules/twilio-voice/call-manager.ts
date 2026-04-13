@@ -298,6 +298,8 @@ export class CallManager {
           // Gemini is producing audio — cancel any freeze timer and mark as speaking
           if (!call.geminiSpeaking) {
             call.geminiSpeaking = true
+            // Pause silence detector while agent is talking
+            this.silenceDetector.agentStartedSpeaking(streamSid)
             if (call.geminiResponseTimer) {
               clearTimeout(call.geminiResponseTimer)
               call.geminiResponseTimer = null
@@ -343,10 +345,9 @@ export class CallManager {
             call.greetingDone = true
             this.silenceDetector.startMonitoring(streamSid)
             logger.debug({ callSid }, 'Greeting done, audio gate unlocked')
-          } else {
-            // Gemini completed a turn = conversation flowing; reset silence state machine
-            this.silenceDetector.resetState(streamSid)
           }
+          // Agent finished speaking → now it's the user's turn → start silence countdown
+          this.silenceDetector.agentTurnComplete(streamSid)
         },
         onError: (err) => {
           logger.error({ err, callSid, streamSid }, 'Gemini Live error')
@@ -618,6 +619,19 @@ export class CallManager {
       return
     }
 
+    // Handle proxy tool: use_tool → forward to the real tool
+    let actualToolName = toolName
+    let actualArgs = args
+    if (toolName === 'use_tool') {
+      actualToolName = (args['tool_name'] as string) || ''
+      actualArgs = (args['arguments'] as Record<string, unknown>) || {}
+      logger.info({ callSid: call.callSid, proxyTool: actualToolName }, 'Proxy tool call via use_tool')
+      if (!actualToolName) {
+        gemini.sendToolResponse(toolCallId, toolName, { error: 'tool_name is required' })
+        return
+      }
+    }
+
     // Execute tool via tools:registry
     const toolRegistry = this.registry.getOptional<{
       executeTool: (name: string, input: Record<string, unknown>, context?: Record<string, unknown>) => Promise<{ success: boolean; data?: unknown; error?: string }>
@@ -630,7 +644,7 @@ export class CallManager {
       return
     }
 
-    logger.info({ callSid: call.callSid, toolName }, 'Executing tool call from voice')
+    logger.info({ callSid: call.callSid, toolName: actualToolName }, 'Executing tool call from voice')
 
     const maxRetries = this.config.VOICE_TOOL_MAX_RETRIES
     let attempt = 0
@@ -640,8 +654,8 @@ export class CallManager {
       const fillerTimer = setTimeout(() => {
         if (!call.cancelledToolCalls.has(toolCallId) && gemini.isConnected()) {
           const msg = attempt === 0
-            ? `[Sistema: la herramienta '${toolName}' est\u00e1 tardando. Decile algo breve y natural al caller mientras esperamos.]`
-            : `[Sistema: '${toolName}' sigue tardando. Decile que est\u00e1s reintentando, algo como 'hmm, dej\u00e1me intentar de nuevo'.]`
+            ? `[Sistema: la herramienta '${actualToolName}' est\u00e1 tardando. Decile algo breve y natural al caller mientras esperamos.]`
+            : `[Sistema: '${actualToolName}' sigue tardando. Decile que est\u00e1s reintentando, algo como 'hmm, dej\u00e1me intentar de nuevo'.]`
           gemini.sendTextInput(msg)
         }
       }, this.config.VOICE_TOOL_FILLER_DELAY_MS)
@@ -652,7 +666,7 @@ export class CallManager {
       let timeoutTimer: ReturnType<typeof setTimeout> | null = null
       try {
         result = await Promise.race([
-          toolRegistry.executeTool(toolName, args, {
+          toolRegistry.executeTool(actualToolName, actualArgs, {
             contactId: call.contactId ?? undefined,
             channel: 'voice',
           }),
@@ -667,7 +681,7 @@ export class CallManager {
           timedOut = true
         } else {
           clearTimeout(fillerTimer)
-          logger.error({ err, toolName }, 'Tool execution error')
+          logger.error({ err, toolName: actualToolName }, 'Tool execution error')
           gemini.sendToolResponse(toolCallId, toolName, {
             error: `Error executing tool: ${String(err)}`,
           })
@@ -679,7 +693,7 @@ export class CallManager {
 
       // Check if cancelled by barge-in
       if (call.cancelledToolCalls.has(toolCallId)) {
-        logger.info({ callSid: call.callSid, toolCallId, toolName }, 'Tool cancelled by barge-in, discarding result')
+        logger.info({ callSid: call.callSid, toolCallId, toolName: actualToolName }, 'Tool cancelled by barge-in, discarding result')
         if (call.streamSid) {
           this.mediaServer.clearAudio(call.streamSid)
         }
@@ -689,21 +703,21 @@ export class CallManager {
       if (timedOut) {
         attempt++
         if (attempt <= maxRetries) {
-          logger.warn({ callSid: call.callSid, toolName, attempt }, 'Tool timed out, retrying')
+          logger.warn({ callSid: call.callSid, toolName: actualToolName, attempt }, 'Tool timed out, retrying')
           continue
         }
 
         // All retries exhausted
-        logger.error({ callSid: call.callSid, toolName }, 'Tool timed out after all retries')
+        logger.error({ callSid: call.callSid, toolName: actualToolName }, 'Tool timed out after all retries')
         gemini.sendTextInput(
-          `[Sistema: La herramienta '${toolName}' fall\u00f3 despu\u00e9s de reintentar. Decile que no pudiste completar esa acci\u00f3n ahora pero que lo dej\u00e1s agendado para hacerlo despu\u00e9s de la llamada. Usa la herramienta end_call si ya no hay m\u00e1s temas.]`,
+          `[Sistema: La herramienta '${actualToolName}' fall\u00f3 despu\u00e9s de reintentar. Decile que no pudiste completar esa acci\u00f3n ahora pero que lo dej\u00e1s agendado para hacerlo despu\u00e9s de la llamada. Usa la herramienta end_call si ya no hay m\u00e1s temas.]`,
         )
         gemini.sendToolResponse(toolCallId, toolName, {
           error: `Tool timed out after ${attempt} attempt(s)`,
         })
         call.transcript.push({
           speaker: 'system',
-          text: `[Tool: ${toolName}] Timeout after ${attempt} attempt(s)`,
+          text: `[Tool: ${actualToolName}] Timeout after ${attempt} attempt(s)`,
           timestampMs: Date.now() - call.startedAt.getTime(),
         })
         return
@@ -714,7 +728,7 @@ export class CallManager {
 
       call.transcript.push({
         speaker: 'system',
-        text: `[Tool: ${toolName}] ${result!.success ? 'OK' : 'Error: ' + result!.error}`,
+        text: `[Tool: ${actualToolName}] ${result!.success ? 'OK' : 'Error: ' + result!.error}`,
         timestampMs: Date.now() - call.startedAt.getTime(),
       })
       return

@@ -41,7 +41,7 @@ export async function preloadContext(
 
   const contact = contactResult.status === 'fulfilled' ? contactResult.value : null
   const prompts = promptsResult.status === 'fulfilled' ? promptsResult.value : null
-  const tools = toolsResult.status === 'fulfilled' ? toolsResult.value : { tools: [], declarations: [] }
+  const tools = toolsResult.status === 'fulfilled' ? toolsResult.value : { declarations: [], extendedCatalog: '' }
 
   // Load memory if contact exists
   let contactMemory: string | null = null
@@ -68,7 +68,7 @@ export async function preloadContext(
     ? config.VOICE_GREETING_INBOUND
     : config.VOICE_GREETING_OUTBOUND
 
-  const systemInstruction = await buildSystemInstruction(
+  let systemInstruction = await buildSystemInstruction(
     prompts,
     contact,
     contactMemory,
@@ -81,6 +81,11 @@ export async function preloadContext(
     outboundReason,
     contactChannels,
   )
+
+  // Append extended tool catalog to system instruction (lightweight text stubs)
+  if (tools.extendedCatalog) {
+    systemInstruction += '\n\n' + tools.extendedCatalog
+  }
 
   // Add end-call tool to the declarations
   const endCallTool: GeminiToolDeclaration = {
@@ -214,10 +219,10 @@ async function buildSystemInstruction(
 ): Promise<string> {
   const parts: string[] = []
 
-  // Agent identity, job, accent, guardrails, relationship
+  // Agent identity, job (trimmed for voice), accent, guardrails, relationship
   if (prompts) {
     if (prompts.identity) parts.push(prompts.identity)
-    if (prompts.job) parts.push(prompts.job)
+    if (prompts.job) parts.push(trimJobForVoice(prompts.job))
     if (prompts.accent) parts.push(prompts.accent)
     if (prompts.guardrails) parts.push(prompts.guardrails)
     if (prompts.relationship) parts.push(prompts.relationship)
@@ -299,17 +304,16 @@ function buildCallScenario(
     lines.push('Esta es una LLAMADA ENTRANTE — el cliente/lead te está llamando a ti.')
     if (contact?.displayName) {
       lines.push(`Quien llama: ${contact.displayName}${contact.status ? ` (estado: ${contact.status})` : ''}.`)
-      lines.push('Ya lo conoces — consulta su contexto y memoria más abajo para retomar naturalmente.')
+      lines.push('Ya lo conoces — consulta su contexto y memoria más abajo.')
     } else {
-      lines.push('No tienes registro previo de este número. Puede ser un lead nuevo o alguien que aún no tiene contacto registrado.')
-      lines.push('Saluda cordialmente, preséntate, y averigua quién es y qué necesita.')
+      lines.push('No tienes registro de este número. Puede ser un lead nuevo.')
     }
     lines.push('')
     lines.push('Protocolo de llamada entrante:')
     lines.push('1. Saluda con tu greeting configurado')
     lines.push('2. Escucha atentamente qué necesita')
-    lines.push('3. Si ya lo conoces, demuéstralo naturalmente ("¡Hola [nombre]! ¿Cómo estás?")')
-    lines.push('4. Si es desconocido, pregunta su nombre y en qué puedes ayudarle')
+    lines.push('3. Si es desconocido, pregunta su nombre y en qué puedes ayudarle')
+    lines.push('IMPORTANTE: No repitas el nombre del contacto en cada frase. Úsalo solo al saludar y de manera esporádica.')
   } else {
     lines.push('Esta es una LLAMADA SALIENTE — TÚ estás llamando al cliente/lead.')
     if (contact?.displayName) {
@@ -321,13 +325,29 @@ function buildCallScenario(
     lines.push('')
     lines.push('Protocolo de llamada saliente:')
     lines.push('1. Saluda y preséntate')
-    lines.push('2. Confirma que hablas con la persona correcta ("¿Hablo con [nombre]?")')
+    lines.push('2. Confirma que hablas con la persona correcta')
     lines.push('3. Pregunta si es buen momento para hablar')
     lines.push('4. Explica brevemente la razón de tu llamada')
-    lines.push('5. Si dicen que no es buen momento, pregunta cuándo puedes volver a llamar y despídete amablemente')
+    lines.push('5. Si dicen que no es buen momento, pregunta cuándo puedes volver a llamar')
+    lines.push('IMPORTANTE: No repitas el nombre del contacto en cada frase. Úsalo solo al inicio y de manera esporádica.')
   }
 
   return lines.join('\n')
+}
+
+/**
+ * Trim the job prompt for voice. The full job prompt may include long frameworks
+ * (e.g., Bryan Tracy 6 steps, objection handling guides) that add latency
+ * without adding value in real-time voice. Keep only the mission section.
+ */
+function trimJobForVoice(job: string): string {
+  // Cut at markdown headers that signal detailed frameworks (##, ###)
+  const headerIdx = job.indexOf('\n## ')
+  if (headerIdx > 0) {
+    const trimmed = job.substring(0, headerIdx).trim()
+    return trimmed + '\n\n(En voz: sé concisa y natural. Aplica tu criterio sin frameworks largos.)'
+  }
+  return job
 }
 
 interface ContactInfo {
@@ -387,20 +407,70 @@ async function loadPrompts(registry: Registry): Promise<AgentPrompts | null> {
   return promptsService.getCompositorPrompts('lead')
 }
 
-async function loadTools(registry: Registry): Promise<{
-  tools: Array<{ name: string; description: string; parameters: Record<string, unknown> }>
+/**
+ * Core tools that get full Gemini function declarations (with JSON schemas).
+ * These are the most common tools in voice calls and need low-latency access.
+ */
+const VOICE_CORE_TOOLS = new Set([
+  'search_knowledge',
+  'expand_knowledge',
+  'calendar-check-availability',
+  'calendar-create-event',
+  'calendar-get-scheduling-context',
+  'calendar-list-events',
+  'request_human_help',
+  'extract_qualification',
+  'make_call',
+  'send_email',
+  'query_pending_items',
+  'create_commitment',
+  'update_commitment',
+])
+
+/**
+ * The proxy tool declaration. Gemini calls this to use any extended tool
+ * that isn't in the core set. The call-manager routes it to tools:registry.
+ */
+const USE_TOOL_DECLARATION: GeminiToolDeclaration = {
+  name: 'use_tool',
+  description: 'Ejecuta cualquier herramienta extendida del catálogo que no esté disponible directamente. ' +
+    'Úsala cuando necesites una tool que aparece en el catálogo de herramientas extendidas del system prompt.',
+  parameters: {
+    type: 'object',
+    properties: {
+      tool_name: {
+        type: 'string',
+        description: 'Nombre exacto de la herramienta del catálogo (ej: "docs-create", "sheets-read")',
+      },
+      arguments: {
+        type: 'object',
+        description: 'Argumentos para la herramienta. Pasa los parámetros que creas necesarios según la descripción de la tool.',
+      },
+    },
+    required: ['tool_name'],
+  },
+}
+
+interface ToolLoadResult {
   declarations: GeminiToolDeclaration[]
-}> {
+  extendedCatalog: string // text catalog for system prompt
+}
+
+async function loadTools(registry: Registry): Promise<ToolLoadResult> {
   const toolRegistry = registry.getOptional<{
     getAvailableTools: (contactType?: string) => Array<{
       definition: { name: string; description: string; parameters: { type: string; properties: Record<string, unknown>; required?: string[] } }
     }>
+    getCatalog: (contactType?: string) => Array<{ name: string; description: string; category: string }>
   }>('tools:registry')
 
-  if (!toolRegistry) return { tools: [], declarations: [] }
+  if (!toolRegistry) return { declarations: [], extendedCatalog: '' }
 
-  const available = toolRegistry.getAvailableTools('lead')
-  const declarations: GeminiToolDeclaration[] = available.map(t => ({
+  // Core tools: full Gemini function declarations
+  const allAvailable = toolRegistry.getAvailableTools('lead')
+  const coreTools = allAvailable.filter(t => VOICE_CORE_TOOLS.has(t.definition.name))
+
+  const declarations: GeminiToolDeclaration[] = coreTools.map(t => ({
     name: t.definition.name,
     description: t.definition.description,
     parameters: {
@@ -410,7 +480,32 @@ async function loadTools(registry: Registry): Promise<{
     },
   }))
 
-  return { tools: available.map(t => t.definition), declarations }
+  // Extended tools: text catalog for system prompt (lightweight)
+  const catalog = toolRegistry.getCatalog('lead')
+  const coreNames = new Set(coreTools.map(t => t.definition.name))
+  const extendedTools = catalog.filter(t => !coreNames.has(t.name))
+
+  let extendedCatalog = ''
+  if (extendedTools.length > 0) {
+    const lines = [
+      '\n## Herramientas extendidas',
+      'Estas herramientas adicionales están disponibles bajo demanda. Para usarlas, llama a use_tool(tool_name, arguments):',
+    ]
+    for (const t of extendedTools) {
+      lines.push(`- ${t.name} [${t.category}]: ${t.description}`)
+    }
+    extendedCatalog = lines.join('\n')
+    // Add the proxy tool declaration
+    declarations.push(USE_TOOL_DECLARATION)
+  }
+
+  logger.info({
+    coreCount: coreTools.length,
+    extendedCount: extendedTools.length,
+    coreTools: declarations.filter(d => d.name !== 'use_tool').map(d => d.name),
+  }, 'Voice tools loaded (core + extended catalog)')
+
+  return { declarations, extendedCatalog }
 }
 
 async function loadContactMemory(registry: Registry, contactId: string): Promise<string | null> {
