@@ -228,11 +228,17 @@ async function buildSystemInstruction(
   if (channelFormat) {
     parts.push(channelFormat)
   }
-  const callDirectionText = direction === 'inbound' ? 'ENTRANTE (el cliente te llama a ti)' : 'SALIENTE (t\u00fa llamas al cliente)'
-  const outboundInstr = direction === 'outbound' ? 'Espera confirmaci\u00f3n de que es buen momento antes de continuar.' : ''
+
+  // Build rich call scenario context based on direction
+  const callScenario = buildCallScenario(direction, contact, outboundReason)
+
+  const outboundInstr = direction === 'outbound'
+    ? 'Espera confirmación de que es buen momento antes de continuar.'
+    : ''
+
   const voiceInstr = svc
     ? await svc.getSystemPrompt('voice-system-instruction', {
-        callDirection: callDirectionText,
+        callScenario,
         greeting,
         outboundInstruction: outboundInstr,
         fillerMessage: config.VOICE_FILLER_MESSAGE,
@@ -241,17 +247,6 @@ async function buildSystemInstruction(
     : ''
   if (voiceInstr) {
     parts.push(voiceInstr)
-  }
-
-  // Outbound call reason (injected after voice instructions)
-  if (direction === 'outbound' && outboundReason) {
-    let outboundCtx = '\n\n## Llamada saliente'
-    if (contact?.displayName) {
-      outboundCtx += `\n\nEstás llamando a ${contact.displayName}.`
-    }
-    outboundCtx += ` Razón de la llamada: ${outboundReason}.`
-    outboundCtx += ' Saluda, confirma que hablas con la persona correcta, y explica la razón de tu llamada.'
-    parts.push(outboundCtx)
   }
 
   // Contact context
@@ -287,6 +282,51 @@ async function buildSystemInstruction(
   }
 
   return parts.join('\n\n')
+}
+
+/**
+ * Build a rich scenario description so the voice AI knows exactly what's happening.
+ */
+function buildCallScenario(
+  direction: CallDirection,
+  contact: ContactInfo | null,
+  outboundReason?: string,
+): string {
+  const lines: string[] = []
+
+  if (direction === 'inbound') {
+    lines.push('Esta es una LLAMADA ENTRANTE — el cliente/lead te está llamando a ti.')
+    if (contact?.displayName) {
+      lines.push(`Quien llama: ${contact.displayName}${contact.status ? ` (estado: ${contact.status})` : ''}.`)
+      lines.push('Ya lo conoces — consulta su contexto y memoria más abajo para retomar naturalmente.')
+    } else {
+      lines.push('No tienes registro previo de este número. Puede ser un lead nuevo o alguien que aún no tiene contacto registrado.')
+      lines.push('Saluda cordialmente, preséntate, y averigua quién es y qué necesita.')
+    }
+    lines.push('')
+    lines.push('Protocolo de llamada entrante:')
+    lines.push('1. Saluda con tu greeting configurado')
+    lines.push('2. Escucha atentamente qué necesita')
+    lines.push('3. Si ya lo conoces, demuéstralo naturalmente ("¡Hola [nombre]! ¿Cómo estás?")')
+    lines.push('4. Si es desconocido, pregunta su nombre y en qué puedes ayudarle')
+  } else {
+    lines.push('Esta es una LLAMADA SALIENTE — TÚ estás llamando al cliente/lead.')
+    if (contact?.displayName) {
+      lines.push(`Estás llamando a: ${contact.displayName}${contact.status ? ` (estado: ${contact.status})` : ''}.`)
+    }
+    if (outboundReason) {
+      lines.push(`Razón de la llamada: ${outboundReason}`)
+    }
+    lines.push('')
+    lines.push('Protocolo de llamada saliente:')
+    lines.push('1. Saluda y preséntate')
+    lines.push('2. Confirma que hablas con la persona correcta ("¿Hablo con [nombre]?")')
+    lines.push('3. Pregunta si es buen momento para hablar')
+    lines.push('4. Explica brevemente la razón de tu llamada')
+    lines.push('5. Si dicen que no es buen momento, pregunta cuándo puedes volver a llamar y despídete amablemente')
+  }
+
+  return lines.join('\n')
 }
 
 interface ContactInfo {

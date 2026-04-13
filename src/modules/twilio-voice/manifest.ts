@@ -207,7 +207,14 @@ const apiRoutes: ApiRoute[] = [
         const host = req.headers['host'] ?? 'localhost'
         const webhookUrl = `${proto}://${host}${req.url?.split('?')[0] ?? ''}`
         const signature = req.headers['x-twilio-signature'] as string ?? ''
-        if (!twilioAdapter.validateSignature(webhookUrl, params, signature)) {
+        const sigValid = twilioAdapter.validateSignature(webhookUrl, params, signature)
+        if (!sigValid) {
+          console.error('[twilio-voice] Signature validation FAILED', {
+            reconstructedUrl: webhookUrl,
+            twilioAccountSid: params['AccountSid'] ?? '(missing)',
+            configuredSid: twilioAdapter['accountSid']?.substring(0, 6) + '...',
+            configuredTokenPrefix: twilioAdapter['authToken']?.substring(0, 4) + '...',
+          })
           res.writeHead(403, { 'Content-Type': 'text/xml' })
           res.end('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>')
           return
@@ -287,6 +294,8 @@ const manifest: ModuleManifest = {
   depends: ['memory', 'llm'],
 
   configSchema: z.object({
+    // ── Infra ──
+    DOMAIN: z.string().default(''),
     // ── Twilio credentials ──
     TWILIO_ACCOUNT_SID: z.string().default(''),
     TWILIO_AUTH_TOKEN: z.string().default(''),
@@ -804,6 +813,86 @@ const manifest: ModuleManifest = {
     // Provide services
     registry.provide('twilio-voice:callManager', callManager)
     registry.provide('twilio-voice:adapter', twilioAdapter)
+
+    // ── Register make_call tool for LLM agent ──
+    const toolRegistry = registry.getOptional<{
+      registerTool(reg: {
+        definition: { name: string; displayName: string; description: string; shortDescription?: string; detailedGuidance?: string; category: string; sourceModule: string; parameters: { type: 'object'; properties: Record<string, unknown>; required?: string[] } }
+        handler: (input: Record<string, unknown>, ctx: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>
+      }): Promise<void>
+    }>('tools:registry')
+
+    if (toolRegistry && twilioAdapter.isConfigured()) {
+      await toolRegistry.registerTool({
+        definition: {
+          name: 'make_call',
+          displayName: 'Hacer llamada telefónica',
+          description: 'Inicia una llamada telefónica saliente a un número. Útil cuando el lead pide hablar por teléfono, hay temas complejos que requieren voz, o necesitas cerrar una negociación. La llamada la maneja la IA conversacional en tiempo real.',
+          shortDescription: 'Inicia una llamada telefónica al contacto',
+          detailedGuidance: 'Usa esta herramienta cuando el contacto pida explícitamente hablar por teléfono, cuando la conversación por texto no avanza, o cuando necesitas resolver algo complejo que es más fácil por voz. El número debe incluir código de país (ej: +573001234567). Si la llamada se inicia exitosamente, el sistema maneja la conversación de voz automáticamente usando IA. Después de la llamada, envía un resumen por texto.',
+          category: 'communication',
+          sourceModule: 'twilio-voice',
+          parameters: {
+            type: 'object',
+            properties: {
+              phone_number: {
+                type: 'string',
+                description: 'Número de teléfono con código de país. Ej: +573001234567',
+              },
+              reason: {
+                type: 'string',
+                description: 'Motivo de la llamada (se inyecta como contexto para la IA de voz). Ej: "El lead pidió hablar sobre precios"',
+              },
+            },
+            required: ['phone_number'],
+          },
+        },
+        handler: async (input: Record<string, unknown>) => {
+          if (!callManager || !twilioAdapter || !twilioAdapter.isConfigured()) {
+            return { success: false, error: 'Twilio Voice no está configurado o inicializado' }
+          }
+
+          const phoneNumber = String(input.phone_number || '').trim()
+          if (!phoneNumber) {
+            return { success: false, error: 'Número de teléfono requerido' }
+          }
+
+          try {
+            const domain = config.DOMAIN
+            if (!domain) {
+              return { success: false, error: 'DOMAIN no configurado — no se puede construir webhook URL' }
+            }
+
+            const baseUrl = `https://${domain}`
+            const twimlUrl = `${baseUrl}/console/api/twilio-voice/webhook/outbound-twiml`
+            const statusUrl = `${baseUrl}/console/api/twilio-voice/webhook/status`
+            const mediaStreamUrl = `wss://${domain}/twilio/media-stream`
+
+            const result = await callManager.initiateOutboundCall(
+              phoneNumber,
+              twimlUrl,
+              statusUrl,
+              mediaStreamUrl,
+              String(input.reason || ''),
+            )
+
+            return {
+              success: true,
+              data: {
+                message: `Llamada iniciada a ${phoneNumber}`,
+                callSid: result.callSid,
+                callId: result.callId,
+              },
+            }
+          } catch (err) {
+            return { success: false, error: String(err instanceof Error ? err.message : err) }
+          }
+        },
+      })
+
+      const pino0 = await import('pino')
+      pino0.default({ name: 'twilio-voice' }).info('Registered make_call tool for LLM agent')
+    }
 
     // ── Hot-reload: re-read config when console applies changes ──
     registry.addHook('twilio-voice', 'console:config_applied', async () => {

@@ -84,12 +84,12 @@ async function main(): Promise<void> {
 
   const registry = new Registry(db, redis)
 
-  // Load and activate modules from src/modules/
-  await loadModules(registry)
-
-  // Start HTTP server (mounts module routes + /health)
+  // Create HTTP server early so modules can register upgrade handlers during init()
   const server = new Server(registry)
   registry.provide('kernel:server', server)
+
+  // Load and activate modules from src/modules/
+  await loadModules(registry)
 
   // Mount API routes from active modules
   for (const mod of registry.listModules()) {

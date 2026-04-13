@@ -6,6 +6,8 @@
 // ═══════════════════════════════════════════
 
 export interface TwilioVoiceConfig {
+  // Infra
+  DOMAIN: string
   // Twilio credentials
   TWILIO_ACCOUNT_SID: string
   TWILIO_AUTH_TOKEN: string

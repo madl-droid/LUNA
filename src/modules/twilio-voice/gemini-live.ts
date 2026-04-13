@@ -14,7 +14,7 @@ import type {
 
 const logger = pino({ name: 'twilio-voice:gemini-live' })
 
-const GEMINI_LIVE_BASE_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.BidiGenerateContent'
+const GEMINI_LIVE_BASE_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 
 export type GeminiLiveEvents = {
   onAudio: (audioBase64: string, mimeType: string) => void

@@ -822,7 +822,7 @@ export function createConsoleHandler(registry: Registry): (req: http.IncomingMes
           const [contacts30, contactsPrev30, sessions24h, channels30, cost30, costPrev30, modelsData] = await Promise.all([
             db.query(`SELECT COUNT(*)::int AS c FROM contacts WHERE created_at > now() - interval '30 days'`),
             db.query(`SELECT COUNT(*)::int AS c FROM contacts WHERE created_at > now() - interval '60 days' AND created_at <= now() - interval '30 days'`),
-            db.query(`SELECT COUNT(*)::int AS c FROM sessions WHERE last_activity_at > now() - interval '24 hours'`),
+            db.query(`SELECT COUNT(*)::int AS c FROM sessions WHERE status = 'active' AND last_activity_at > now() - interval '24 hours'`),
             db.query(`SELECT channel_name, COUNT(*)::int AS sessions, COUNT(DISTINCT contact_id)::int AS contacts FROM sessions WHERE started_at > now() - interval '30 days' GROUP BY channel_name ORDER BY sessions DESC LIMIT 6`),
             db.query(`SELECT COALESCE(SUM(cost_usd), 0)::float AS c FROM llm_usage WHERE created_at > now() - interval '30 days'`).catch(() => ({ rows: [{ c: 0 }] })),
             db.query(`SELECT COALESCE(SUM(cost_usd), 0)::float AS c FROM llm_usage WHERE created_at > now() - interval '60 days' AND created_at <= now() - interval '30 days'`).catch(() => ({ rows: [{ c: 0 }] })),
