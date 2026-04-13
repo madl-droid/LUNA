@@ -708,7 +708,7 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     if (cr.type === 'enum') {
       var idxSel = (!cr.enumScoring || cr.enumScoring === 'indexed') ? ' selected' : ''
       var presSel = cr.enumScoring === 'presence' ? ' selected' : ''
-      enumScoringCell = '<select onchange="lsUpdateCri(' + i + ',\'enumScoring\',this.value)">' +
+      enumScoringCell = '<select onchange="lsUpdateCri(' + i + ',\\'enumScoring\\',this.value)">' +
         '<option value="indexed"' + idxSel + '>' + L.scoring_indexed + '</option>' +
         '<option value="presence"' + presSel + '>' + L.scoring_presence + '</option>' +
         '</select>'
@@ -720,21 +720,21 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     var loSel = cr.priority === 'low' ? ' selected' : ''
     return '<tr data-ls-cri="' + i + '">' +
       '<td><input value="' + lsEsc(cr.key||'') + '" data-field="key" style="width:80px" readonly></td>' +
-      '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\'name\',this.value)"></td>' +
-      '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\'type\',this.value)">' +
+      '<td><input value="' + nameVal + '" data-field="name" onchange="lsUpdateCri(' + i + ',\\'name\\',this.value)"></td>' +
+      '<td><select data-field="type" onchange="lsUpdateCri(' + i + ',\\'type\\',this.value)">' +
         '<option value="text"' + (cr.type==='text'?' selected':'') + '>' + L.type_text + '</option>' +
         '<option value="enum"' + (cr.type==='enum'?' selected':'') + '>' + L.type_list + '</option>' +
         '<option value="boolean"' + (cr.type==='boolean'?' selected':'') + '>' + L.type_boolean + '</option>' +
       '</select></td>' +
-      '<td><input value="' + optVal + '" data-field="options" placeholder="opt1,opt2" ' + optDisabled + ' onchange="lsUpdateCri(' + i + ',\'options\',this.value)"></td>' +
-      '<td><select data-field="priority" onchange="lsUpdateCri(' + i + ',\'priority\',this.value)">' +
+      '<td><input value="' + optVal + '" data-field="options" placeholder="opt1,opt2" ' + optDisabled + ' onchange="lsUpdateCri(' + i + ',\\'options\\',this.value)"></td>' +
+      '<td><select data-field="priority" onchange="lsUpdateCri(' + i + ',\\'priority\\',this.value)">' +
         '<option value="high"' + hiSel + '>' + L.priority_high + '</option>' +
         '<option value="medium"' + mdSel + '>' + L.priority_medium + '</option>' +
         '<option value="low"' + loSel + '>' + L.priority_low + '</option>' +
       '</select></td>' +
       '<td>' + enumScoringCell + '</td>' +
-      '<td style="text-align:center"><input type="checkbox"' + (cr.required?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'required\',this.checked)"></td>' +
-      '<td style="text-align:center"><input type="checkbox"' + (cr.neverAskDirectly?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\'neverAskDirectly\',this.checked)"></td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.required?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\\'required\\',this.checked)"></td>' +
+      '<td style="text-align:center"><input type="checkbox"' + (cr.neverAskDirectly?' checked':'') + ' onchange="lsUpdateCri(' + i + ',\\'neverAskDirectly\\',this.checked)"></td>' +
       '<td><button type="button" class="ls-clear-btn" onclick="lsClearCri(' + i + ')" title="Eliminar">&#10005;</button></td></tr>'
   }
 
