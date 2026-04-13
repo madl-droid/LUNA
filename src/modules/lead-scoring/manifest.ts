@@ -25,6 +25,7 @@ const logger = pino({ name: 'lead-scoring' })
 
 let configStore: ConfigStore | null = null
 let leadQueries: LeadQueries | null = null
+let reregisterTool: (() => Promise<void>) | null = null
 
 // ═══════════════════════════════════════════
 // API Routes
@@ -64,6 +65,7 @@ function createApiRoutes(): ApiRoute[] {
         try {
           const body = await parseBody<QualifyingConfig>(req)
           getConfigStore().save(body)
+          await reregisterTool?.()
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -106,6 +108,7 @@ function createApiRoutes(): ApiRoute[] {
           }
           const store = getConfigStore()
           store.applyPreset(body.preset)
+          await reregisterTool?.()
           jsonResponse(res, 200, { ok: true })
         } catch (err) {
           jsonResponse(res, 400, { error: String(err) })
@@ -366,7 +369,8 @@ const manifest: ModuleManifest = {
       return renderLeadScoringConsole(configStore!, lang)
     })
 
-    // Register extraction tool
+    // Register extraction tool (and keep a callback for re-registration after config changes)
+    reregisterTool = () => registerExtractionTool(registry, configStore!)
     await registerExtractionTool(registry, configStore)
 
     // Listen for config apply → reload + optional recalculate
@@ -409,6 +413,7 @@ const manifest: ModuleManifest = {
   async stop() {
     configStore = null
     leadQueries = null
+    reregisterTool = null
     logger.info('Lead scoring module stopped')
   },
 }

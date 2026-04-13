@@ -398,7 +398,7 @@ function renderFrameworkCards(config: QualifyingConfig, lang: Lang): string {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
         <div>
           <div class="ls-fw-card-type">${l('preset_label', lang)}: <strong>${esc(preset.toUpperCase())}</strong></div>
-          <div class="ls-fw-card-desc">${criteriaCount}/10 ${l('criteria_count', lang)} &middot; ${stageCount} ${lang === 'es' ? 'etapas' : 'stages'}</div>
+          <div class="ls-fw-card-desc">${criteriaCount}/30 ${l('criteria_count', lang)} &middot; ${stageCount} ${lang === 'es' ? 'etapas' : 'stages'}</div>
           <div style="font-size:11px;color:var(--on-surface-dim);margin-top:6px">
             ${l('objective_label', lang)}:
             <select style="font-size:11px;padding:2px 6px;border:1px solid var(--outline-variant);border-radius:4px;background:var(--surface-container-lowest);color:var(--on-surface)"
@@ -518,7 +518,7 @@ function renderCriteriaPanel(config: QualifyingConfig, lang: Lang): string {
     bodyHtml = criteria.map((cr, i) => renderCriterionRow(cr, i, lang, criteria.length)).join('')
   }
 
-  const countLabel = `${criteria.length}/10 ${lang === 'es' ? 'criterios' : 'criteria'}`
+  const countLabel = `${criteria.length}/30 ${lang === 'es' ? 'criterios' : 'criteria'}`
 
   return `
     <div style="overflow-x:auto">
@@ -765,8 +765,8 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     } else {
       criteria.forEach(function(cr, i){ bodyHtml += buildCriRow(cr, i) })
     }
-    var countLabel = criteria.length + '/10 ' + L.criteria_count
-    var addDisabled = criteria.length >= 10 ? ' disabled' : ''
+    var countLabel = criteria.length + '/30 ' + L.criteria_count
+    var addDisabled = criteria.length >= 30 ? ' disabled' : ''
     var panel = document.getElementById('ls-criteria-panel')
     if (!panel) return
     panel.innerHTML = '<div style="overflow-x:auto"><table class="ls-table" id="ls-criteria-table">' +
@@ -784,7 +784,6 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
     if (!cr) return
     if (field === 'name') {
       cr.name.es = value; cr.name.en = value
-      cr.key = value.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '').substring(0, 50)
     }
     else if (field === 'type') {
       cr.type = value
@@ -806,8 +805,8 @@ function renderScript(config: QualifyingConfig, lang: Lang): string {
 
   window.lsAddCri = function() {
     lsConfig.criteria = lsConfig.criteria || []
-    if (lsConfig.criteria.length >= 10) {
-      lsToast(LANG === 'es' ? 'Maximo 10 criterios' : 'Max 10 criteria', 'error')
+    if (lsConfig.criteria.length >= 30) {
+      lsToast(LANG === 'es' ? 'Maximo 30 criterios' : 'Max 30 criteria', 'error')
       return
     }
     lsConfig.criteria.push({
