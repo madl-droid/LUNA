@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenAI } from '@google/genai'
 import pino from 'pino'
 import type { LLMCallOptions, LLMCallResult, LLMProvider, EngineConfig } from '../types.js'
+import type { MessageContentBlock, ToolUseBlock, ToolResultBlock, TextBlock, ContentPart } from '../../modules/llm/types.js'
 
 const logger = pino({ name: 'engine:llm' })
 
@@ -358,56 +359,47 @@ async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCa
 
 type ContentInput = string | import('../types.js').LLMCallOptions['messages'][number]['content']
 
-// Loose part type for duck-typed iteration over the LLMContentPart | MessageContentBlock union
-type AnyPart = {
-  type: string
-  text?: string
-  data?: string
-  mimeType?: string
-  // ToolUseBlock fields
-  id?: string
-  name?: string
-  input?: Record<string, unknown>
-  // ToolResultBlock fields
-  toolUseId?: string
-  content?: string
-  isError?: boolean
-}
-
 /** Convert content to Anthropic format (string or ContentBlockParam[]).
  *  Handles multimedia parts and native tool calling blocks (tool_use / tool_result). */
 function buildAnthropicContent(content: ContentInput): string | Anthropic.ContentBlockParam[] {
   if (typeof content === 'string') return content
   const blocks: Anthropic.ContentBlockParam[] = []
-  for (const part of content as AnyPart[]) {
-    if (part.type === 'tool_use' && part.id) {
+  for (const part of content as MessageContentBlock[]) {
+    if (part.type === 'tool_use') {
+      const tu = part as ToolUseBlock
       blocks.push({
         type: 'tool_use',
-        id: part.id,
-        name: part.name!,
-        input: part.input!,
+        id: tu.id,
+        name: tu.name,
+        input: tu.input,
       })
-    } else if (part.type === 'tool_result' && part.toolUseId) {
+    } else if (part.type === 'tool_result') {
+      const tr = part as ToolResultBlock
       blocks.push({
         type: 'tool_result',
-        tool_use_id: part.toolUseId,
-        content: part.content!,
-        is_error: part.isError,
+        tool_use_id: tr.toolUseId,
+        content: tr.content,
+        is_error: tr.isError,
       })
-    } else if (part.type === 'text' && part.text) {
-      blocks.push({ type: 'text', text: part.text })
-    } else if (part.type === 'image_url' && part.data) {
-      blocks.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: (part.mimeType ?? 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-          data: part.data,
-        },
-      })
-    } else if (part.type === 'audio' && part.data) {
+    } else if (part.type === 'text') {
+      const tb = part as TextBlock
+      blocks.push({ type: 'text', text: tb.text })
+    } else if (part.type === 'image_url') {
+      const cp = part as ContentPart
+      if (cp.data) {
+        blocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: (cp.mimeType ?? 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+            data: cp.data,
+          },
+        })
+      }
+    } else if (part.type === 'audio') {
+      const cp = part as ContentPart
       // Anthropic doesn't support audio natively — pass as text description
-      blocks.push({ type: 'text', text: `[Audio: ${part.mimeType ?? 'audio/ogg'}]` })
+      blocks.push({ type: 'text', text: `[Audio: ${cp.mimeType ?? 'audio/ogg'}]` })
     }
   }
   return blocks.length === 1 && blocks[0]?.type === 'text' ? (blocks[0] as { type: 'text'; text: string }).text : blocks
@@ -417,24 +409,30 @@ function buildAnthropicContent(content: ContentInput): string | Anthropic.Conten
  *  Handles multimedia parts and native tool calling blocks (functionCall / functionResponse). */
 function buildGeminiParts(content: ContentInput): Array<Record<string, unknown>> {
   if (typeof content === 'string') return [{ text: content }]
-  return (content as AnyPart[]).map(part => {
+  return (content as MessageContentBlock[]).map(part => {
     if (part.type === 'tool_use') {
-      return { functionCall: { name: part.name ?? '', args: part.input ?? {} } }
+      const tu = part as ToolUseBlock
+      return { functionCall: { name: tu.name, args: tu.input } }
     }
     if (part.type === 'tool_result') {
+      const tr = part as ToolResultBlock
       let parsedResult: Record<string, unknown>
       try {
-        parsedResult = JSON.parse(part.content ?? '{}') as Record<string, unknown>
+        parsedResult = JSON.parse(tr.content) as Record<string, unknown>
       } catch {
-        parsedResult = { result: part.content ?? '' }
+        parsedResult = { result: tr.content }
       }
-      return { functionResponse: { name: part.name ?? '', response: parsedResult } }
+      return { functionResponse: { name: tr.name, response: parsedResult } }
     }
-    if (part.type === 'text' && part.text) return { text: part.text }
-    if ((part.type === 'image_url' || part.type === 'audio') && part.data) {
-      return { inlineData: { data: part.data, mimeType: part.mimeType ?? 'application/octet-stream' } }
+    if (part.type === 'text') {
+      const tb = part as TextBlock
+      return { text: tb.text }
     }
-    return { text: part.text ?? '' }
+    if (part.type === 'image_url' || part.type === 'audio') {
+      const cp = part as ContentPart
+      if (cp.data) return { inlineData: { data: cp.data, mimeType: cp.mimeType ?? 'application/octet-stream' } }
+    }
+    return { text: (part as TextBlock).text ?? '' }
   })
 }
 

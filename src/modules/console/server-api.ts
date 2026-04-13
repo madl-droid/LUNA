@@ -2,7 +2,6 @@ import { readBody, parseBody, parseQuery, jsonResponse } from '../../kernel/http
 import type { ApiRoute } from '../../kernel/types.js'
 import { reloadKernelConfig, kernelConfig } from '../../kernel/config.js'
 import * as configStore from '../../kernel/config-store.js'
-import { GoogleGenAI } from '@google/genai'
 import { logger, findEnvFile, parseEnvFile, writeEnvFile, guardDebugEndpoint, flushRedisExceptSessions, purgeAllData, purgeMemoryData, purgeAgentData, packageJsonVersion, checkSuperAdmin } from './server-helpers.js'
 
 export function createApiRoutes(): ApiRoute[] {
@@ -791,75 +790,38 @@ export function createApiRoutes(): ApiRoute[] {
       method: 'POST',
       path: 'tts-preview',
       handler: async (req, res) => {
+        const body = await parseBody<{
+          voiceName: string
+          text: string
+        }>(req)
+        if (!body?.voiceName || !body?.text) {
+          jsonResponse(res, 400, { error: 'voiceName and text required' })
+          return
+        }
+        const { getRegistryRef } = await import('./manifest-ref.js')
+        const registry = getRegistryRef()!
+        const ttsService = registry.getOptional<{
+          synthesizeWithVoice(text: string, voiceName: string): Promise<{ audioBuffer: Buffer; durationSeconds: number } | null>
+        }>('tts:service')
+        if (!ttsService) {
+          jsonResponse(res, 503, { error: 'TTS service not available' })
+          return
+        }
         try {
-          const body = await parseBody<{
-            voiceName: string
-            text: string
-          }>(req)
-          if (!body?.voiceName || !body?.text) {
-            jsonResponse(res, 400, { error: 'voiceName and text required' })
+          const result = await ttsService.synthesizeWithVoice(body.text, body.voiceName)
+          if (!result) {
+            jsonResponse(res, 502, { error: 'TTS synthesis returned no audio' })
             return
           }
-          // Get Google AI API key from config store (same key as Gemini LLM)
-          const { getRegistryRef } = await import('./manifest-ref.js')
-          const registry = getRegistryRef()!
-          const config = await configStore.getAll(registry.getDb())
-          const apiKey = config['GOOGLE_AI_API_KEY']
-          if (!apiKey) {
-            jsonResponse(res, 400, { error: 'Google AI API key not configured' })
-            return
-          }
-          const ttsModel = config['TTS_MODEL'] || 'gemini-2.5-flash-preview-tts'
-          const genAI = new GoogleGenAI({ apiKey })
-          const ttsResult = await genAI.models.generateContent({
-            model: ttsModel,
-            contents: [{ role: 'user', parts: [{ text: body.text.substring(0, 500) }] }],
-            config: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: body.voiceName },
-                },
-              },
-            },
-          })
-          const base64Audio = ttsResult.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
-          if (!base64Audio) {
-            logger.error('TTS preview: no audio data in Gemini response')
-            jsonResponse(res, 502, { error: 'No audio data in response' })
-            return
-          }
-          const pcmBuffer = Buffer.from(base64Audio, 'base64')
-          // Convert raw PCM (16-bit LE, mono, 24kHz) to WAV for browser playback
-          const sampleRate = 24000
-          const channels = 1
-          const bitsPerSample = 16
-          const byteRate = sampleRate * channels * (bitsPerSample / 8)
-          const blockAlign = channels * (bitsPerSample / 8)
-          const dataSize = pcmBuffer.length
-          const header = Buffer.alloc(44)
-          header.write('RIFF', 0)
-          header.writeUInt32LE(36 + dataSize, 4)
-          header.write('WAVE', 8)
-          header.write('fmt ', 12)
-          header.writeUInt32LE(16, 16)
-          header.writeUInt16LE(1, 20)
-          header.writeUInt16LE(channels, 22)
-          header.writeUInt32LE(sampleRate, 24)
-          header.writeUInt32LE(byteRate, 28)
-          header.writeUInt16LE(blockAlign, 32)
-          header.writeUInt16LE(bitsPerSample, 34)
-          header.write('data', 36)
-          header.writeUInt32LE(dataSize, 40)
-          const audioBuffer = Buffer.concat([header, pcmBuffer])
+          // Result is OGG/Opus (or WAV fallback if ffmpeg unavailable)
           res.writeHead(200, {
-            'Content-Type': 'audio/wav',
-            'Content-Length': String(audioBuffer.length),
+            'Content-Type': 'audio/ogg',
+            'Content-Length': String(result.audioBuffer.length),
           })
-          res.end(audioBuffer)
+          res.end(result.audioBuffer)
         } catch (err) {
           logger.error({ err }, 'TTS preview failed')
-          jsonResponse(res, 500, { error: 'Internal server error' })
+          jsonResponse(res, 502, { error: 'TTS preview failed' })
         }
       },
     },

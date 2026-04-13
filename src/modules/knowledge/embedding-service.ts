@@ -25,7 +25,7 @@ export class EmbeddingService {
   private readonly model: string
   private readonly dimensions: number
   private readonly log: pino.Logger
-  private readonly client: GoogleGenAI
+  private readonly client: GoogleGenAI | null
 
   // Circuit breaker state
   private failures: number[] = []
@@ -41,7 +41,7 @@ export class EmbeddingService {
     this.model = model || DEFAULT_MODEL
     this.dimensions = dimensions || DEFAULT_DIMENSIONS
     this.log = logger.child({ component: 'embedding-service' })
-    this.client = new GoogleGenAI({ apiKey: apiKey || 'placeholder' })
+    this.client = apiKey ? new GoogleGenAI({ apiKey }) : null
 
     if (EmbeddingService.instanceCount > 1) {
       this.log.warn('Multiple EmbeddingService instances detected — rate limiting may not work correctly')
@@ -67,7 +67,7 @@ export class EmbeddingService {
    * Uses @google/genai SDK with outputDimensionality=1536.
    */
   async generateEmbedding(text: string): Promise<number[] | null> {
-    if (!this.isAvailable()) return null
+    if (!this.isAvailable() || !this.client) return null
     if (!text.trim()) return null
     if (!this.consumeToken()) {
       this.log.warn('Rate limit reached, skipping embedding')
@@ -102,7 +102,7 @@ export class EmbeddingService {
    * Uses @google/genai SDK with outputDimensionality=1536.
    */
   async generateFileEmbedding(data: Buffer, mimeType: string): Promise<number[] | null> {
-    if (!this.isAvailable()) return null
+    if (!this.isAvailable() || !this.client) return null
     if (data.length === 0) return null
 
     const SUPPORTED = [
@@ -174,9 +174,12 @@ export class EmbeddingService {
         })),
       }
 
-      const res = await fetch(`${BATCH_API_BASE}/${this.model}:batchEmbedContents?key=${this.apiKey}`, {
+      const res = await fetch(`${BATCH_API_BASE}/${this.model}:batchEmbedContents`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': this.apiKey,
+        },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(30000),
       })

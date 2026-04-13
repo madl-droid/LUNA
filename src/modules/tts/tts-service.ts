@@ -56,6 +56,19 @@ function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSa
   return Buffer.concat([header, pcmBuffer])
 }
 
+// Internal config shape passed to callTTSModelDirect
+interface TTSCallConfig {
+  responseModalities: string[]
+  temperature?: number
+  speechConfig?: {
+    voiceConfig?: {
+      prebuiltVoiceConfig?: {
+        voiceName?: string
+      }
+    }
+  }
+}
+
 export class TTSService {
   config: TTSConfig
   private enabledChannels: Set<string>
@@ -152,26 +165,24 @@ export class TTSService {
         ? `[${styleParts.join(' ')}]\n${textToSynthesize}`
         : textToSynthesize
 
-      const requestBody: Record<string, unknown> = {
-        contents: [{ role: 'user', parts: [{ text: styledText }] }],
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          temperature,
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: this.config.TTS_VOICE_NAME || 'Kore' },
-            },
+      const contents = [{ role: 'user' as const, parts: [{ text: styledText }] }]
+      const ttsConfig: TTSCallConfig = {
+        responseModalities: ['AUDIO'],
+        temperature,
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: this.config.TTS_VOICE_NAME || 'Kore' },
           },
         },
       }
 
       const primaryModel = this.config.TTS_MODEL || 'gemini-2.5-flash-preview-tts'
-      let result = await this.callTTSModel(primaryModel, requestBody)
+      let result = await this.callTTSModelDirect(primaryModel, contents, ttsConfig)
       if (!result) {
         const downgradeModel = this.config.TTS_DOWNGRADE_MODEL
         if (downgradeModel && downgradeModel !== primaryModel) {
           logger.warn({ primaryModel, downgradeModel }, 'TTS primary model failed, trying downgrade')
-          result = await this.callTTSModel(downgradeModel, requestBody)
+          result = await this.callTTSModelDirect(downgradeModel, contents, ttsConfig)
         }
       }
       if (result) {
@@ -184,7 +195,32 @@ export class TTSService {
     }
   }
 
-  private async callTTSModel(model: string, requestBody: Record<string, unknown>): Promise<SynthesizeResult | null> {
+  /**
+   * Synthesize with a specific voice (used by console preview).
+   * Does NOT change the service config — one-shot override.
+   * Returns OGG/Opus audio (or WAV if ffmpeg is unavailable).
+   */
+  async synthesizeWithVoice(text: string, voiceName: string): Promise<SynthesizeResult | null> {
+    if (!this.client) return null
+    if (!text || text.trim().length === 0) return null
+
+    const contents = [{ role: 'user' as const, parts: [{ text: text.substring(0, 500) }] }]
+    const config: TTSCallConfig = {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName },
+        },
+      },
+    }
+    return this.callTTSModelDirect(this.config.TTS_MODEL || 'gemini-2.5-flash-preview-tts', contents, config)
+  }
+
+  private async callTTSModelDirect(
+    model: string,
+    contents: Array<{ role: string; parts: Array<{ text: string }> }>,
+    config: TTSCallConfig,
+  ): Promise<SynthesizeResult | null> {
     // ── Circuit breaker check ──
     if (Date.now() < this.cbOpenUntil) {
       logger.warn({ model, cooldownMs: this.cbOpenUntil - Date.now() }, 'TTS circuit breaker open, skipping request')
@@ -192,14 +228,10 @@ export class TTSService {
     }
     if (!this.client) return null
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const contents = requestBody['contents'] as any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const config = requestBody['generationConfig'] as any
-
     try {
       const response = await Promise.race([
-        this.client.models.generateContent({ model, contents, config }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.client.models.generateContent({ model, contents: contents as any, config: config as any }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('TTS timeout')), TTSService.FETCH_TIMEOUT_MS),
         ),

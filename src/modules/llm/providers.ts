@@ -24,6 +24,7 @@ import type {
   ToolResultBlock,
   TextBlock,
 } from './types.js'
+import { detectFamily } from './helpers.js'
 
 const logger = pino({ name: 'llm:providers' })
 
@@ -652,15 +653,6 @@ export class GoogleAdapter implements ProviderAdapter {
 // ═══════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════
-
-function detectFamily(modelId: string): string {
-  const lower = modelId.toLowerCase()
-  const families = ['haiku', 'sonnet', 'opus', 'flash', 'pro']
-  for (const f of families) {
-    if (lower.includes(f)) return f
-  }
-  return 'unknown'
-}
 
 function detectCapabilities(provider: LLMProviderName, modelId: string): Array<'text' | 'tools' | 'vision' | 'code'> {
   const caps: Array<'text' | 'tools' | 'vision' | 'code'> = ['text']

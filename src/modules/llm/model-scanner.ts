@@ -10,23 +10,9 @@ import { GoogleGenAI } from '@google/genai'
 import type { Registry } from '../../kernel/registry.js'
 import * as configStore from '../../kernel/config-store.js'
 import type { ScannedModel, ScanResult, ModelReplacement } from './types.js'
+import { detectFamily } from './helpers.js'
 
 const logger = pino({ name: 'llm:model-scanner' })
-
-// ═══════════════════════════════════════════
-// Family detection
-// ═══════════════════════════════════════════
-
-const ANTHROPIC_FAMILIES = ['haiku', 'sonnet', 'opus'] as const
-const GOOGLE_FAMILIES = ['flash', 'pro'] as const
-
-function detectFamily(modelId: string): string {
-  const lower = modelId.toLowerCase()
-  for (const f of [...ANTHROPIC_FAMILIES, ...GOOGLE_FAMILIES]) {
-    if (lower.includes(f)) return f
-  }
-  return 'unknown'
-}
 
 // ═══════════════════════════════════════════
 // API calls
