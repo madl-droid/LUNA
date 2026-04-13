@@ -12,8 +12,8 @@
     "version:bump": "node scripts/version-bump.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
-    "@google/generative-ai": "^0.24.1",
+    "@anthropic-ai/sdk": "^0.88.0",
+    "@google/genai": "^1.49.0",
     "@mozilla/readability": "^0.6.0",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "bullmq": "^5.71.0",

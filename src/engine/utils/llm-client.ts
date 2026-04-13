@@ -4,7 +4,7 @@
 // Si no, usa llamadas directas a SDKs (fallback para compatibilidad).
 
 import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import pino from 'pino'
 import type { LLMCallOptions, LLMCallResult, LLMProvider, EngineConfig } from '../types.js'
 
@@ -74,7 +74,7 @@ export function hasGateway(): boolean {
 // ═══════════════════════════════════════════
 
 let anthropicClient: Anthropic | null = null
-let googleClient: GoogleGenerativeAI | null = null
+let googleClient: GoogleGenAI | null = null
 
 /**
  * Initialize LLM clients with API keys from config.
@@ -84,7 +84,7 @@ export function initLLMClients(config: EngineConfig): void {
     anthropicClient = new Anthropic({ apiKey: config.anthropicApiKey })
   }
   if (config.googleApiKey) {
-    googleClient = new GoogleGenerativeAI(config.googleApiKey)
+    googleClient = new GoogleGenAI({ apiKey: config.googleApiKey })
   }
 }
 
@@ -297,54 +297,54 @@ async function callAnthropic(model: string, options: LLMCallOptions): Promise<LL
 async function callGoogle(model: string, options: LLMCallOptions): Promise<LLMCallResult> {
   if (!googleClient) throw new Error('Google AI client not initialized')
 
-  const modelConfig: Record<string, unknown> = {
-    model,
-    generationConfig: {
-      maxOutputTokens: options.maxTokens ?? 2048,
-      temperature: options.temperature ?? 0.7,
-    },
-    systemInstruction: options.system || undefined,
+  const genConfig: Record<string, unknown> = {
+    maxOutputTokens: options.maxTokens ?? 2048,
+    temperature: options.temperature ?? 0.7,
   }
 
-  // Convert tools to Gemini functionDeclarations format
+  if (options.system) {
+    genConfig.systemInstruction = options.system
+  }
+
+  // Convert tools to Gemini functionDeclarations format (parametersJsonSchema, not parameters)
   if (options.tools?.length) {
-    modelConfig.tools = [{
+    genConfig.tools = [{
       functionDeclarations: options.tools.map(t => ({
         name: t.name,
         description: t.description,
-        parameters: t.inputSchema,
+        parametersJsonSchema: t.inputSchema,
       })),
     }]
   }
 
-  const genModel = googleClient.getGenerativeModel(modelConfig as unknown as Parameters<typeof googleClient.getGenerativeModel>[0])
-
-  // Convert message format: combine into Gemini history + last user message
-  const history = options.messages.slice(0, -1).map(m => ({
-    role: m.role === 'assistant' ? 'model' as const : 'user' as const,
+  // Build contents array: all messages in user/model format
+  const contents = options.messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
     parts: buildGeminiParts(m.content),
   }))
 
-  const lastMessage = options.messages[options.messages.length - 1]!
+  const response = await googleClient.models.generateContent({
+    model,
+    contents: contents as Parameters<typeof googleClient.models.generateContent>[0]['contents'],
+    config: genConfig as Parameters<typeof googleClient.models.generateContent>[0]['config'],
+  })
 
-  const chat = genModel.startChat({ history })
-  const result = await chat.sendMessage(buildGeminiParts(lastMessage.content))
-  const response = result.response
-
-  // Extract tool calls from response
+  // Extract tool calls from response candidates
   const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = []
   const candidate = response.candidates?.[0]
   if (candidate?.content?.parts) {
     for (const part of candidate.content.parts) {
-      if ('functionCall' in part && part.functionCall) {
-        const fc = part.functionCall as { name: string; args?: Record<string, unknown> }
-        toolCalls.push({ name: fc.name, input: fc.args ?? {} })
+      if (part.functionCall) {
+        toolCalls.push({
+          name: part.functionCall.name ?? '',
+          input: (part.functionCall.args ?? {}) as Record<string, unknown>,
+        })
       }
     }
   }
 
   return {
-    text: response.text(),
+    text: response.text ?? '',  // property (NOT method) in @google/genai
     provider: 'google',
     model,
     inputTokens: response.usageMetadata?.promptTokenCount ?? 0,

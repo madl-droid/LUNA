@@ -3,7 +3,8 @@
 // Cada adapter implementa ProviderAdapter y normaliza la respuesta a LLMResponse.
 
 import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
+import type { Content, GenerateContentConfig, Tool as GoogleTool } from '@google/genai'
 import pino from 'pino'
 import { logExternalApi } from '../../kernel/extreme-logger.js'
 import type {
@@ -357,11 +358,11 @@ export class AnthropicAdapter implements ProviderAdapter {
 
 export class GoogleAdapter implements ProviderAdapter {
   readonly name: LLMProviderName = 'google'
-  private clients = new Map<string, GoogleGenerativeAI>()
+  private clients = new Map<string, GoogleGenAI>()
 
   init(apiKey: string): void {
     if (!this.clients.has(apiKey)) {
-      this.clients.set(apiKey, new GoogleGenerativeAI(apiKey))
+      this.clients.set(apiKey, new GoogleGenAI({ apiKey }))
     }
   }
 
@@ -372,7 +373,7 @@ export class GoogleAdapter implements ProviderAdapter {
   async chat(request: LLMRequest, apiKey: string, timeoutMs: number): Promise<LLMResponse> {
     let client = this.clients.get(apiKey)
     if (!client) {
-      client = new GoogleGenerativeAI(apiKey)
+      client = new GoogleGenAI({ apiKey })
       this.clients.set(apiKey, client)
     }
 
@@ -380,34 +381,39 @@ export class GoogleAdapter implements ProviderAdapter {
     const model = request.model ?? 'gemini-2.5-flash'
 
     // Build generation config
-    const generationConfig: Record<string, unknown> = {
+    const genConfig: GenerateContentConfig = {
       maxOutputTokens: request.maxTokens ?? 2048,
       temperature: request.temperature ?? 0.7,
     }
 
+    // System instruction (goes in config, not in contents)
+    if (request.system) {
+      genConfig.systemInstruction = request.system
+    }
+
     // JSON mode (Gemini: responseMimeType + optional responseSchema)
     if (request.jsonMode) {
-      generationConfig.responseMimeType = 'application/json'
+      genConfig.responseMimeType = 'application/json'
       if (request.jsonSchema) {
-        generationConfig.responseSchema = request.jsonSchema
+        genConfig.responseSchema = request.jsonSchema as GenerateContentConfig['responseSchema']
       }
     }
 
-    // Extended thinking (Gemini 3+: thinkingConfig)
+    // Extended thinking (Gemini 2.5+: thinkingConfig)
     if (request.thinking) {
-      generationConfig.thinkingConfig = {
+      genConfig.thinkingConfig = {
         thinkingBudget: request.thinking.budgetTokens ?? 4096,
       }
     }
 
     // Build tools array for Gemini
-    const geminiTools: unknown[] = []
+    const geminiTools: GoogleTool[] = []
     if (request.tools?.length) {
       geminiTools.push({
         functionDeclarations: request.tools.map(t => ({
           name: t.name,
           description: t.description,
-          parameters: t.inputSchema,
+          parametersJsonSchema: t.inputSchema, // NEW: parametersJsonSchema (not parameters)
         })),
       })
     }
@@ -419,70 +425,55 @@ export class GoogleAdapter implements ProviderAdapter {
     if (request.codeExecution) {
       geminiTools.push({ codeExecution: {} })
     }
-
-    const modelConfig: Record<string, unknown> = {
-      model,
-      generationConfig,
-      systemInstruction: request.system || undefined,
-    }
     if (geminiTools.length > 0) {
-      modelConfig.tools = geminiTools
+      genConfig.tools = geminiTools
     }
 
-    const genModel = client.getGenerativeModel(modelConfig as unknown as Parameters<typeof client.getGenerativeModel>[0])
-
-    // Build conversation: system messages go to systemInstruction, rest to history
+    // Build contents: filter system messages, map to Gemini format (role: 'user'|'model')
     const nonSystemMessages = request.messages.filter(m => m.role !== 'system')
-
-    const history = nonSystemMessages.slice(0, -1).map(m => ({
-      role: m.role === 'assistant' ? 'model' as const : 'user' as const,
+    const contents: Content[] = nonSystemMessages.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
       parts: buildGoogleParts(m.content),
     }))
 
-    const lastMessage = nonSystemMessages[nonSystemMessages.length - 1]!
-    const lastParts = buildGoogleParts(lastMessage.content)
-
-    const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | null = null
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        controller.abort()
         reject(new Error(`Google LLM timeout after ${timeoutMs}ms`))
       }, timeoutMs)
     })
 
     try {
-      const chat = genModel.startChat({ history })
-      const result = await Promise.race([chat.sendMessage(lastParts), timeoutPromise])
-      const response = result.response
+      const response = await Promise.race([
+        client.models.generateContent({ model, contents, config: genConfig }),
+        timeoutPromise,
+      ])
 
-      // Extract tool calls and code execution results
+      // Extract tool calls and code execution results from candidates
       const toolCalls: LLMToolCall[] = []
       const codeResults: Array<{ code: string; output: string; error?: string }> = []
       const candidate = response.candidates?.[0]
       if (candidate?.content?.parts) {
         for (const part of candidate.content.parts) {
-          if ('functionCall' in part && part.functionCall) {
+          if (part.functionCall) {
             toolCalls.push({
-              name: part.functionCall.name,
+              name: part.functionCall.name ?? '',
               input: (part.functionCall.args ?? {}) as Record<string, unknown>,
             })
           }
-          // Code execution results
-          const p = part as unknown as Record<string, unknown>
-          if ('executableCode' in p && p.executableCode) {
-            const ec = p.executableCode as Record<string, unknown>
+          if (part.executableCode) {
             codeResults.push({
-              code: String(ec.code ?? ''),
+              code: part.executableCode.code ?? '',
               output: '',
             })
           }
-          if ('codeExecutionResult' in p && p.codeExecutionResult) {
-            const cer = p.codeExecutionResult as Record<string, unknown>
+          if (part.codeExecutionResult) {
             const last = codeResults[codeResults.length - 1]
             if (last) {
-              last.output = String(cer.output ?? '')
-              if (cer.outcome === 'ERROR') last.error = String(cer.output ?? 'execution error')
+              last.output = part.codeExecutionResult.output ?? ''
+              if (part.codeExecutionResult.outcome === 'OUTCOME_FAILED') {
+                last.error = part.codeExecutionResult.output ?? 'execution error'
+              }
             }
           }
         }
@@ -490,10 +481,10 @@ export class GoogleAdapter implements ProviderAdapter {
 
       // Extract grounding metadata if available
       let groundingMetadata: LLMResponse['groundingMetadata']
-      const gm = (candidate as Record<string, unknown> | undefined)?.groundingMetadata as Record<string, unknown> | undefined
+      const gm = candidate?.groundingMetadata
       if (gm) {
         groundingMetadata = {
-          searchQueries: Array.isArray(gm.searchEntryPoint) ? undefined : undefined,
+          searchQueries: gm.webSearchQueries ?? undefined,
           sources: Array.isArray(gm.groundingChunks)
             ? (gm.groundingChunks as Array<Record<string, unknown>>)
                 .filter(c => c.web)
@@ -506,7 +497,7 @@ export class GoogleAdapter implements ProviderAdapter {
       }
 
       // Extract cache metrics if available
-      const usageMeta = response.usageMetadata as Record<string, unknown> | undefined
+      const usageMeta = response.usageMetadata
       const cacheReadTokens = typeof usageMeta?.cachedContentTokenCount === 'number'
         ? usageMeta.cachedContentTokenCount
         : undefined
@@ -520,7 +511,7 @@ export class GoogleAdapter implements ProviderAdapter {
       }).catch(() => {})
 
       return {
-        text: response.text(),
+        text: response.text ?? '',  // property (NOT method) in @google/genai
         provider: 'google',
         model,
         inputTokens: inTokens,
@@ -540,23 +531,24 @@ export class GoogleAdapter implements ProviderAdapter {
 
   async listModels(apiKey: string): Promise<ModelInfo[]> {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
-      if (!res.ok) return []
-      const data = await res.json() as { models: Array<{ name: string; displayName: string }> }
-      return (data.models || [])
-        .filter(m => m.name.startsWith('models/gemini'))
-        .map(m => {
-          const id = m.name.replace('models/', '')
-          return {
-            id,
-            provider: 'google' as const,
-            displayName: m.displayName,
-            family: detectFamily(id),
-            capabilities: detectCapabilities('google', id),
-            inputCostPer1M: 0,
-            outputCostPer1M: 0,
-          }
+      const client = this.clients.get(apiKey) ?? new GoogleGenAI({ apiKey })
+      const pager = await client.models.list()
+      const result: ModelInfo[] = []
+      for await (const m of pager) {
+        const name = m.name ?? ''
+        if (!name.startsWith('models/gemini')) continue
+        const id = name.replace('models/', '')
+        result.push({
+          id,
+          provider: 'google',
+          displayName: m.displayName ?? id,
+          family: detectFamily(id),
+          capabilities: detectCapabilities('google', id),
+          inputCostPer1M: 0,
+          outputCostPer1M: 0,
         })
+      }
+      return result
     } catch (err) {
       logger.error({ err }, 'Failed to list Google models')
       return []
