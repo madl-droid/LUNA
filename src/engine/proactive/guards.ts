@@ -38,6 +38,11 @@ export async function runGuards(
   config: ProactiveConfig,
   registry?: Registry,
 ): Promise<GuardResult> {
+  // HITL expire notifications bypass all guards — the user deserves to know
+  if (candidate.triggerType === 'hitl_expire') {
+    return PASS
+  }
+
   const guards = [
     () => guardIdempotency(candidate, redis),
     () => guardBusinessHours(candidate, config, db, registry),

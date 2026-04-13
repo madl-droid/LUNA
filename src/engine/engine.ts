@@ -13,6 +13,7 @@ import { intake } from './boundaries/intake.js'
 import { isRateLimitedPreCheck } from './boundaries/delivery.js'
 import { startProactiveRunner, stopProactiveRunner } from './proactive/proactive-runner.js'
 import { loadProactiveConfig } from './proactive/proactive-config.js'
+import { processProactive } from './proactive/proactive-pipeline.js'
 import { registerCreateCommitmentTool } from './proactive/tools/create-commitment.js'
 import { registerUpdateCommitmentTool } from './proactive/tools/update-commitment.js'
 import { registerQueryPendingItemsTool } from './proactive/tools/query-pending-items.js'
@@ -116,6 +117,47 @@ export function initEngine(reg: Registry): void {
 
   const db = registry.getDb()
   const redis = registry.getRedis()
+
+  // Hook: HITL ticket expired → route notification through proactive pipeline
+  // so the agent composes a natural response that respects the channel's response format
+  registry.addHook('engine', 'hitl:ticket_expired', async (payload) => {
+    if (!payload.notifyRequester || !payload.requesterContactId || !payload.requesterChannel) return
+
+    try {
+      // Look up contact channel to get channelContactId
+      const contactResult = await db.query(
+        `SELECT c.display_name, cc.channel_identifier
+         FROM contacts c
+         JOIN contact_channels cc ON cc.contact_id = c.id AND cc.channel_type = $2
+         WHERE c.id = $1
+         LIMIT 1`,
+        [payload.requesterContactId, payload.requesterChannel],
+      )
+
+      const row = contactResult.rows[0] as { display_name: string | null; channel_identifier: string } | undefined
+      if (!row) {
+        logger.warn({ ticketId: payload.ticketId, contactId: payload.requesterContactId }, 'HITL expire notify: contact channel not found — skipping')
+        return
+      }
+
+      const candidate: import('./types.js').ProactiveCandidate = {
+        contactId: payload.requesterContactId,
+        channelContactId: row.channel_identifier,
+        channel: payload.requesterChannel as import('../channels/types.js').ChannelName,
+        displayName: row.display_name,
+        triggerType: 'hitl_expire',
+        triggerId: payload.ticketId,
+        reason: `HITL ticket expired without human response. The client asked: "${payload.requestSummary ?? 'unknown'}". Compose a natural, empathetic message acknowledging the delay and offering to help directly.`,
+      }
+
+      const freshProactiveConfig = loadProactiveConfig()
+      await processProactive(candidate, db, redis, registry, engineConfig, freshProactiveConfig)
+
+      logger.info({ ticketId: payload.ticketId, contactId: payload.requesterContactId }, 'HITL expire notification routed through proactive pipeline')
+    } catch (err) {
+      logger.error({ err, ticketId: payload.ticketId }, 'Failed to route HITL expire through proactive pipeline')
+    }
+  })
 
   // Start proactive runner (BullMQ)
   startProactiveRunner(db, redis, engineConfig, registry).catch(err =>

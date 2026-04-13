@@ -346,6 +346,7 @@ export type ProactiveTriggerType =
   | 'cache_refresh'
   | 'nightly_batch'
   | 'orphan_recovery'
+  | 'hitl_expire'
 
 export interface ProactiveJob {
   name: string

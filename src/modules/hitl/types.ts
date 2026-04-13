@@ -4,7 +4,7 @@
 // Ticket status state machine
 // ═══════════════════════════════════════════
 
-export type HitlStatus = 'pending' | 'notified' | 'waiting' | 'resolved' | 'expired' | 'cancelled'
+export type HitlStatus = 'pending' | 'notified' | 'waiting' | 'escalated' | 'resolved' | 'expired' | 'cancelled'
 
 export type RequestType = 'authorization' | 'domain_help' | 'availability' | 'escalation' | 'custom'
 

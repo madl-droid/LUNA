@@ -318,6 +318,11 @@ export interface HitlTicketResolvedPayload {
 export interface HitlTicketExpiredPayload {
   ticketId: string
   requestType: string
+  notifyRequester?: boolean
+  requesterContactId?: string
+  requesterChannel?: string
+  requesterSenderId?: string
+  requestSummary?: string
 }
 
 export interface HitlTicketEscalatedPayload {

@@ -4,7 +4,7 @@ import type { Redis } from 'ioredis'
 import type { Registry } from '../../kernel/registry.js'
 import type { HitlConfig } from './types.js'
 import { TicketStore } from './ticket-store.js'
-import { sendFollowup, notifyRequesterExpired } from './notifier.js'
+import { sendFollowup } from './notifier.js'
 import { getSupervisorChain, findNextInChain } from './responder-selector.js'
 import { sendNotification } from './notifier.js'
 import { deactivateHandoff } from './handoff.js'
@@ -123,9 +123,12 @@ async function escalateToSupervisor(
       level: ticket.escalationLevel + 1,
     }, 'Ticket escalated to supervisor')
   } else {
-    // No more supervisors — expire the ticket
-    logger.warn({ ticketId: ticket.id }, 'No supervisor available — expiring ticket')
-    await expireTicket(ticket, registry, ticketStore, redis, config)
+    // No more supervisors — mark as escalated, let TTL handle natural expiry
+    logger.warn({ ticketId: ticket.id }, 'No supervisor available — marking escalated, waiting for TTL expiry')
+    await ticketStore.setEscalated(ticket.id)
+    if (ticket.handoffActive) {
+      await deactivateHandoff(ticket.requesterChannel, ticket.requesterSenderId, redis)
+    }
   }
 }
 
@@ -144,15 +147,16 @@ async function expireTicket(
     await deactivateHandoff(ticket.requesterChannel, ticket.requesterSenderId, redis)
   }
 
-  // Notify requester if configured
-  if (config.HITL_AUTO_EXPIRE_NOTIFY) {
-    await notifyRequesterExpired(ticket, registry)
-  }
-
-  // Fire hook
+  // Fire hook — engine listens and routes notification through proactive pipeline
+  // so the response respects the channel's response format
   await registry.runHook('hitl:ticket_expired', {
     ticketId: ticket.id,
     requestType: ticket.requestType,
+    notifyRequester: config.HITL_AUTO_EXPIRE_NOTIFY,
+    requesterContactId: ticket.requesterContactId,
+    requesterChannel: ticket.requesterChannel,
+    requesterSenderId: ticket.requesterSenderId,
+    requestSummary: ticket.requestSummary,
   })
 }
 

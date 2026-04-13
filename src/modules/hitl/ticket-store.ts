@@ -221,6 +221,14 @@ export class TicketStore {
     await this.log(id, 'cancelled', actor)
   }
 
+  async setEscalated(id: string): Promise<void> {
+    await this.db.query(
+      `UPDATE hitl_tickets SET status = 'escalated', updated_at = NOW() WHERE id = $1`,
+      [id],
+    )
+    await this.log(id, 'escalated', 'system', { reason: 'supervisor_chain_exhausted' })
+  }
+
   async setNotified(id: string, assignedUserId: string, assignedChannel: string, assignedSenderId: string): Promise<void> {
     await this.db.query(
       `UPDATE hitl_tickets SET
