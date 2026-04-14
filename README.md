@@ -276,6 +276,11 @@ docs/                   ← documentación de arquitectura
 
 ## Documentación adicional
 
+### Operaciones
+- [`docs/operations/runbook.md`](docs/operations/runbook.md) — Monitoreo, métricas, mantenimiento y respuesta a incidentes
+- [`docs/operations/troubleshooting.md`](docs/operations/troubleshooting.md) — Problemas comunes y soluciones
+
+### Arquitectura
 - [`docs/architecture/module-system.md`](docs/architecture/module-system.md) — Guía completa del sistema de módulos
 - [`docs/architecture/pipeline.md`](docs/architecture/pipeline.md) — Pipeline de procesamiento y modelos LLM
 - [`docs/architecture/channel-guide.md`](docs/architecture/channel-guide.md) — Cómo crear un nuevo canal
@@ -285,6 +290,9 @@ docs/                   ← documentación de arquitectura
 - [`docs/architecture/concurrency.md`](docs/architecture/concurrency.md) — Control de concurrencia
 - [`docs/architecture/prompts.md`](docs/architecture/prompts.md) — Sistema de prompts
 - [`docs/architecture/voice-channel-guide.md`](docs/architecture/voice-channel-guide.md) — Canal de voz
+
+### Contribuir
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — Setup de desarrollo, convenciones de código y workflow
 
 ## Licencia
 
