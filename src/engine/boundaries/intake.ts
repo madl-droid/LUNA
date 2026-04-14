@@ -839,7 +839,7 @@ async function loadOrCreateSession(
          FROM sessions s
          LEFT JOIN LATERAL (
            SELECT full_summary AS summary_text FROM session_summaries_v2
-           WHERE session_id = s.id::text LIMIT 1
+           WHERE session_id = s.id LIMIT 1
          ) ss ON true
          WHERE s.thread_id = $1 AND s.last_activity_at > $2
          ORDER BY s.last_activity_at DESC
@@ -872,7 +872,7 @@ async function loadOrCreateSession(
          FROM sessions s
          LEFT JOIN LATERAL (
            SELECT full_summary AS summary_text FROM session_summaries_v2
-           WHERE session_id = s.id::text LIMIT 1
+           WHERE session_id = s.id LIMIT 1
          ) ss ON true
          WHERE s.contact_id = $1 AND s.channel_name = $2 AND s.last_activity_at > $3
          ORDER BY s.last_activity_at DESC
@@ -907,7 +907,7 @@ async function loadOrCreateSession(
          FROM sessions s
          LEFT JOIN LATERAL (
            SELECT full_summary AS summary_text FROM session_summaries_v2
-           WHERE session_id = s.id::text LIMIT 1
+           WHERE session_id = s.id LIMIT 1
          ) ss ON true
          WHERE s.channel_contact_id = $1 AND s.channel_name = $2 AND s.last_activity_at > $3
          ORDER BY s.last_activity_at DESC

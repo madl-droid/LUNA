@@ -142,7 +142,7 @@ export class TicketStore {
     const { rows } = await this.db.query(
       `SELECT COUNT(*)::int AS cnt FROM hitl_tickets
        WHERE requester_sender_id = $1 AND requester_channel = $2
-         AND ($3::varchar IS NULL OR session_id = $3)
+         AND ($3::uuid IS NULL OR session_id = $3::uuid)
          AND created_at > NOW() - INTERVAL '2 hours'`,
       [senderId, channel, sessionId],
     )
