@@ -30,6 +30,7 @@ import {
   chunkWeb,
   chunkAudio,
   chunkVideo,
+  chunkImage,
   linkChunks,
 } from './extractors/smart-chunker.js'
 
@@ -1154,6 +1155,43 @@ export class KnowledgeItemManager {
 
       return this.persistSmartChunks(item, file.name, mime, videoChunks, {
         description: `Video from Drive: ${file.name}`,
+        fileUrl: file.webViewLink,
+      })
+
+    // ── Images ──
+    } else if (mime.startsWith('image/')) {
+      const imgBuffer = await drive!.downloadFile(file.id)
+      const contentHash = createHash('sha256').update(imgBuffer).digest('hex')
+      const hashPrefix = contentHash.substring(0, 12)
+      const knowledgeDir = KNOWLEDGE_MEDIA_DIR
+      await mkdir(knowledgeDir, { recursive: true })
+
+      const { extractImage, describeImage } = await import('../../extractors/image.js')
+      const imgResult = await extractImage(imgBuffer, file.name, mime)
+      const enriched = await describeImage(imgResult, this.registry)
+      const description = enriched.llmEnrichment?.description ?? null
+      const shortDescription = enriched.llmEnrichment?.shortDescription ?? file.name
+
+      // Persist image file to media dir
+      const imgFile = `${hashPrefix}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 60)}`
+      await writeFile(join(knowledgeDir, imgFile), imgBuffer)
+
+      const imgChunks = chunkImage({
+        description,
+        shortDescription,
+        mimeType: mime,
+        sourceFile: file.name,
+        sourceUrl: file.webViewLink,
+        filePath: imgFile,
+        width: imgResult.width,
+        height: imgResult.height,
+        docMeta: imgResult.metadata as Record<string, unknown>,
+      })
+
+      logger.info({ fileId: file.id, name: file.name, hasDescription: !!description }, '[DRIVE-IMG] Image processed')
+
+      return this.persistSmartChunks(item, file.name, mime, imgChunks, {
+        description: `Image: ${file.name}`,
         fileUrl: file.webViewLink,
       })
 

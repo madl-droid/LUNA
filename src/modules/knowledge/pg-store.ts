@@ -1042,7 +1042,7 @@ export class KnowledgePgStore {
         COUNT(*) FILTER (WHERE c.embedding_status IN ('queued','processing'))::int AS processing
       FROM knowledge_chunks c
       JOIN knowledge_documents d ON d.id = c.document_id
-      WHERE d.item_id = $1
+      WHERE d.source_ref = $1
     `, [itemId])
     return rows[0] ?? { total: 0, embedded: 0, failed: 0, processing: 0 }
   }
