@@ -788,7 +788,7 @@ export async function registerMedilinkTools(
 
         // Resolve professional — for leads, fall back to MEDILINK_DEFAULT_PROFESSIONAL_ID
         let prof = input.professional_name ? cache.findProfessionalByName(input.professional_name as string) : null
-        if (!prof && isLead) {
+        if (!prof) {
           const defaultProfRow = await registry.getDb().query(
             `SELECT value FROM config_store WHERE key = 'MEDILINK_DEFAULT_PROFESSIONAL_ID'`,
           )
@@ -797,7 +797,7 @@ export async function registerMedilinkTools(
         }
         if (!prof) return { success: false, error: `No se pudo determinar el profesional. Especifica el nombre o configura MEDILINK_DEFAULT_PROFESSIONAL_ID.` }
 
-        if (!treatment && isLead) {
+        if (!treatment) {
           // Use default valoración treatment from config_store
           const defaultValId = await registry.getDb().query(
             `SELECT value FROM config_store WHERE key = 'MEDILINK_DEFAULT_VALORACION_ID'`,

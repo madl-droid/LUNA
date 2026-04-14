@@ -75,9 +75,17 @@ Cuando el lead confirme un horario, pedir UNO a UNO de forma conversacional:
 
 Luego: `medilink-create-patient` → `medilink-create-appointment` (prestación por defecto automáticamente).
 
+### Si `medilink-create-patient` o `medilink-create-appointment` FALLA:
+- **NUNCA confirmar la cita al paciente.** No decir "ya quedaste agendado/a" ni nada similar.
+- Decir algo como: *"Tuve un inconveniente técnico con el registro. Voy a pedirle al equipo que te confirme la cita directamente, te van a contactar en un momentico."*
+- Llamar `request_human_help` **inmediatamente** con el contexto completo (nombre, documento, fecha/hora deseada, error).
+- NO reintentar más de 2 veces el mismo tool antes de escalar.
+
 ---
 
 ## Paso 4 — Confirmación
+
+**Solo llegar a este paso si `medilink-create-appointment` fue exitoso.**
 
 *"¡Listo! Quedaste agendado/a para el [día] a las [hora]. Te mando un recordatorio antes de la cita."*
 
