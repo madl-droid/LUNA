@@ -83,7 +83,7 @@ export class TicketStore {
         request_type, request_summary, request_context, urgency,
         assigned_user_id, assigned_channel, assigned_sender_id,
         target_role, handoff_mode, expires_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      ) VALUES ($1::uuid,$2,$3,$4::uuid,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       RETURNING *`,
       [
         input.requesterContactId, input.requesterChannel, input.requesterSenderId,

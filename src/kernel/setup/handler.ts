@@ -388,16 +388,16 @@ async function finalizeSetup(ctx: WizardContext, state: SetupState, token: strin
 
     // Add contacts (email + optional phone)
     await client.query(
-      `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
-       VALUES ($1, 'email', $2, true)
-       ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1, is_primary = true`,
+      `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary, verified)
+       VALUES ($1, 'email', $2, true, true)
+       ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1, is_primary = true, verified = true`,
       [userId, state.adminEmail.toLowerCase()],
     )
     if (state.adminPhone) {
       await client.query(
-        `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary)
-         VALUES ($1, 'whatsapp', $2, false)
-         ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1`,
+        `INSERT INTO user_contacts (user_id, channel, sender_id, is_primary, verified)
+         VALUES ($1, 'whatsapp', $2, false, true)
+         ON CONFLICT (channel, sender_id) DO UPDATE SET user_id = $1, verified = true`,
         [userId, state.adminPhone],
       )
     }

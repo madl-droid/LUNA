@@ -89,7 +89,7 @@
     ]
   },
   "reactivation": {
-    "enabled": false,
+    "enabled": true,
     "cron": "0 9 * * 1-5",
     "days_inactive": 7,
     "max_attempts": 2,
