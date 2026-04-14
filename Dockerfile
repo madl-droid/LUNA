@@ -22,5 +22,9 @@ COPY .env.example ./.env.example
 COPY .env.schema ./.env.schema
 COPY src/migrations/ ./dist/migrations/
 COPY instance/ ./instance/
+# Bundled defaults: entrypoint copies missing files into the mounted volume
+COPY instance/ ./instance-defaults/
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
