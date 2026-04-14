@@ -470,7 +470,7 @@ export class BaileysAdapter {
     // Validation errors — fail immediately, no retry
     if (!this.socket) return { success: false, error: 'WhatsApp not connected' }
 
-    const jid = to.includes('@') ? to : `${to}${this.jidTypeMap.get(to) ?? '@s.whatsapp.net'}`
+    const jid = to.includes('@') ? to : `${to}${await this.resolveJidSuffix(to)}`
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const quoted = message.quotedRaw ? (message.quotedRaw as any) : undefined
 
@@ -637,6 +637,34 @@ export class BaileysAdapter {
       attachments: attachments.length > 0 ? attachments : undefined,
       raw: msg,
     }
+  }
+
+  /**
+   * Resolve the JID suffix for outbound routing.
+   * 1. Check in-memory jidTypeMap (populated from incoming messages)
+   * 2. Fall back to DB lookup in wa_auth_keys (persisted LID mappings survive restarts)
+   * 3. Default to @s.whatsapp.net for standard phone numbers
+   */
+  private async resolveJidSuffix(to: string): Promise<'@s.whatsapp.net' | '@lid'> {
+    const cached = this.jidTypeMap.get(to)
+    if (cached) return cached
+
+    // DB fallback: check if this identifier is a known LID
+    try {
+      const result = await this.pool.query(
+        `SELECT 1 FROM wa_auth_keys WHERE instance_id = $1 AND category = 'lid-mapping' AND key_id = $2 LIMIT 1`,
+        [this.instanceId, `${to}_reverse`],
+      )
+      if (result.rowCount && result.rowCount > 0) {
+        this.jidTypeMap.set(to, '@lid')
+        logger.info({ to }, 'JID suffix resolved from DB: @lid')
+        return '@lid'
+      }
+    } catch (err) {
+      logger.warn({ err, to }, 'DB JID suffix lookup failed, using default')
+    }
+
+    return '@s.whatsapp.net'
   }
 
   /**
