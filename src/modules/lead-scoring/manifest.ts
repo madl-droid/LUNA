@@ -331,12 +331,14 @@ function createApiRoutes(): ApiRoute[] {
           let scheduled = 0
           for (const lead of ignoredLeads) {
             try {
+              const firstName = lead.display_name ? lead.display_name.split(' ')[0] : ''
+              const greeting = firstName
+                ? `¡Hola ${firstName}! 👋 Quería saber cómo estás y si puedo ayudarte con algo. Estoy a tu disposición 😊`
+                : `¡Hola! 👋 Quería saber cómo estás y si puedo ayudarte con algo. Estoy a tu disposición 😊`
               await registry.runHook('message:send', {
-                contactId: lead.contact_id,
                 channel: 'whatsapp',
-                channelContactId: lead.channel_identifier,
-                text: '', // empty text triggers agentic outreach (engine composes the message)
-                metadata: { source: 'outbound-ignored', proactive: true },
+                to: lead.channel_identifier,
+                content: { type: 'text', text: greeting },
               })
 
               // Update lead status to 'qualifying' to re-enter the pipeline
