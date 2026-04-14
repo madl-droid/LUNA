@@ -26,6 +26,7 @@ const logger = pino({ name: 'lead-scoring' })
 let configStore: ConfigStore | null = null
 let leadQueries: LeadQueries | null = null
 let reregisterTool: (() => Promise<void>) | null = null
+let _registry: Registry | null = null
 
 // ═══════════════════════════════════════════
 // API Routes
@@ -40,6 +41,7 @@ function createApiRoutes(): ApiRoute[] {
     if (!leadQueries) throw new Error('Lead scoring not initialized')
     return leadQueries
   }
+  const getRegistry = (): Registry | null => _registry
   return [
     // ─── Config endpoints ───
 
@@ -287,6 +289,75 @@ function createApiRoutes(): ApiRoute[] {
       },
     },
 
+    // POST /console/api/lead-scoring/contact-ignored
+    // Finds leads with lead_status = 'cold' or inactive leads that the engine
+    // hasn't followed up, and sends them a proactive outbound message.
+    {
+      method: 'POST',
+      path: 'contact-ignored',
+      handler: async (_req, res) => {
+        try {
+          const registry = getRegistry()
+          if (!registry) {
+            jsonResponse(res, 500, { error: 'Registry not available' })
+            return
+          }
+          const db = registry.getDb()
+
+          // Find cold/ignored leads with a WhatsApp channel that haven't been
+          // contacted in the last 7 days
+          const { rows: ignoredLeads } = await db.query<{
+            contact_id: string
+            display_name: string
+            channel_identifier: string
+          }>(`
+            SELECT c.id AS contact_id, c.display_name, ch.channel_identifier
+            FROM contacts c
+            JOIN agent_contacts ac ON ac.contact_id = c.id
+            JOIN contact_channels ch ON ch.contact_id = c.id AND ch.channel_type = 'whatsapp'
+            WHERE ac.lead_status IN ('cold', 'unknown')
+              AND c.contact_type = 'lead'
+              AND c.merged_into IS NULL
+              AND (c.last_interaction_at IS NULL OR c.last_interaction_at < now() - interval '7 days')
+            ORDER BY c.last_interaction_at ASC NULLS FIRST
+            LIMIT 50
+          `)
+
+          if (ignoredLeads.length === 0) {
+            jsonResponse(res, 200, { count: 0, message: 'No ignored leads found' })
+            return
+          }
+
+          let scheduled = 0
+          for (const lead of ignoredLeads) {
+            try {
+              await registry.runHook('message:send', {
+                contactId: lead.contact_id,
+                channel: 'whatsapp',
+                channelContactId: lead.channel_identifier,
+                text: '', // empty text triggers agentic outreach (engine composes the message)
+                metadata: { source: 'outbound-ignored', proactive: true },
+              })
+
+              // Update lead status to 'qualifying' to re-enter the pipeline
+              await db.query(
+                `UPDATE agent_contacts SET lead_status = 'qualifying', updated_at = now() WHERE contact_id = $1`,
+                [lead.contact_id],
+              )
+              scheduled++
+            } catch (err) {
+              logger.warn({ err, contactId: lead.contact_id }, 'Failed to contact ignored lead')
+            }
+          }
+
+          logger.info({ total: ignoredLeads.length, scheduled }, 'Contact-ignored batch complete')
+          jsonResponse(res, 200, { count: scheduled })
+        } catch (err) {
+          jsonResponse(res, 500, { error: String(err) })
+        }
+      },
+    },
+
     // ─── UI endpoint ───
 
     // GET /console/api/lead-scoring/ui
@@ -352,6 +423,7 @@ const manifest: ModuleManifest = {
   },
 
   async init(registry: Registry) {
+    _registry = registry
     const config = registry.getConfig<LeadScoringConfig>('lead-scoring')
     const db = registry.getDb()
 
@@ -414,6 +486,7 @@ const manifest: ModuleManifest = {
     configStore = null
     leadQueries = null
     reregisterTool = null
+    _registry = null
     logger.info('Lead scoring module stopped')
   },
 }
