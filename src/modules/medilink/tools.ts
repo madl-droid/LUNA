@@ -784,7 +784,6 @@ export async function registerMedilinkTools(
 
         // Resolve treatment — for leads/new patients, use default valoración
         let treatment = input.treatment_name ? cache.findTreatmentByName(input.treatment_name as string) : null
-        const isLead = ctx.contactType === 'nuevo' || !ctx.contactType
 
         // Resolve professional — for leads, fall back to MEDILINK_DEFAULT_PROFESSIONAL_ID
         let prof = input.professional_name ? cache.findProfessionalByName(input.professional_name as string) : null
