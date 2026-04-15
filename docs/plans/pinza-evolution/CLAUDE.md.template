@@ -1,0 +1,217 @@
+# LUNA Platform — Agentes IA Conversacionales Multi-Sector
+
+## Que es
+Plataforma para desplegar agentes IA conversacionales por empresa. Cada agente atiende leads y clientes por chat (Chatwoot), WhatsApp, email y voz. Califica leads, agenda reuniones, hace seguimiento, escala a humanos, y ejecuta tareas con herramientas conectadas. Multi-tenant: una instalacion, multiples empresas aisladas.
+
+## Stack
+- **Runtime**: TypeScript / Node.js >= 22 (ESM, extension `.js` en imports relativos)
+- **Base de datos**: PostgreSQL 16 + pgvector (busqueda semantica) + Row Level Security (aislamiento por tenant)
+- **Cache/Queue**: Redis + BullMQ (queue persistente con 3 priority lanes)
+- **Canal principal**: Chatwoot (web chat, WhatsApp via Chatwoot, email, API)
+- **Canales backup**: Baileys (WhatsApp directo), Gmail API, Twilio (voz)
+- **LLMs**: Google GenAI SDK (Gemini Flash/Pro), Anthropic SDK (Claude Sonnet/Haiku)
+- **HTTP**: Fastify (gateway compartido)
+- **Tests**: Vitest
+- **Deploy**: Docker Compose + Traefik
+
+## Arquitectura
+
+```
+Chatwoot (compartido, 1 inbox por tenant)
+  │ webhooks
+  ▼
+Gateway API (Fastify, compartido)
+  │ rutea por tenant_id
+  ├──────────────┬──────────────┐
+  ▼              ▼              ▼
+Worker 1       Worker 2       Worker N      ← proceso aislado por tenant
+(tenant A)     (tenant B)     (tenant N)
+  │              │              │
+  ▼              ▼              ▼
+PostgreSQL (compartido, RLS)  +  Redis (compartido, prefix por tenant)
+```
+
+### Gateway
+Servidor HTTP compartido. Recibe webhooks de Chatwoot, Twilio, Gmail. Resuelve el tenant del request (por inbox_id, phone number, o header). Rutea al worker correcto. Rate limiting global.
+
+### Worker
+Proceso Node.js aislado por tenant. Carga su config de `instance/{tenant}/`. Contiene:
+- **Agent loop**: intake → effort router → agentic loop → output sanitizer → send
+- **Heartbeat**: checks deterministicos (17 checks) + paso LLM opcional
+- **Execution queue**: 3 lanes — reactive(8, pri 100), proactive(5, pri 50), background(3, pri 10)
+- **Tool registry**: herramientas configurables por tenant con policy chain
+
+### Pipeline de mensajes
+```
+Mensaje entrante
+  → Normalizer (unicode, control chars, truncate)
+  → Email triage (si es email: auto-reply/bounce/marketing → skip)
+  → Effort router (normal → Flash, complex → Pro)
+  → Context builder (RAG: identity + standing orders + skills + memory recall)
+  → Agentic loop (LLM + tools, max iterations con timeout)
+  → Output sanitizer (tool call leakage, API key redaction)
+  → Channel adapter → respuesta al usuario
+```
+
+### Memoria (3 tiers)
+- **T1 — contacts**: perfil permanente del contacto (cross-channel)
+- **T2 — interaction_summaries**: resumenes por interaccion (tsvector + pgvector)
+- **T3 — messages**: buffer de mensajes recientes (se archivan)
+
+### Knowledge base
+Busqueda hibrida: pgvector cosine similarity (0.6) + PostgreSQL FTS (0.3) + FAQ (0.1) via Reciprocal Rank Fusion. Documentos se chunkean con overlap, embeddings via Gemini.
+
+### Proactividad
+- **Standing Orders**: autoridad operativa permanente (markdown en instance/{tenant}/)
+- **Heartbeat hibrido**: checks deterministicos + LLM para follow-ups creativos
+- **Dream system**: consolidacion de memoria periodica (Light cada 6h, Deep diario)
+- **Active Memory**: recall pre-respuesta de memorias relevantes
+
+## Estructura de directorios
+
+```
+src/
+  gateway/              — HTTP server compartido (Fastify)
+    routes/             — webhook receivers, admin API, health checks
+    middleware/         — auth, tenant resolution, rate limit, error handler
+  worker/               — proceso por tenant
+    bootstrap.ts        — carga config de instance/{tenant}/
+    agent-loop.ts       — pipeline completo de mensaje
+    heartbeat.ts        — checks deterministicos + LLM
+    queue/              — execution queue (3 lanes)
+      execution-queue.ts
+      semaphore.ts
+      lane.ts
+  core/                 — logica compartida entre workers
+    llm/                — multi-LLM gateway (Gemini, Anthropic, fallback chain)
+    memory/             — 3-tier memory (contacts, summaries, messages)
+    knowledge/          — hybrid search (pgvector + FTS + RRF)
+    tools/              — tool registry + policy chain
+    rag/                — prompt builder (XML sections, skill loader)
+    sanitizer/          — output sanitizer (tool call leakage, API key redaction)
+    scoring/            — lead scoring (CHAMP/BANT, deterministico)
+    hitl/               — Human-in-the-Loop (state machine, supervisor chain)
+    monitoring/         — Reflex rules (13 code-driven) + alter-ego (LLM-driven)
+  channels/             — adaptadores de canal
+    chatwoot/           — canal principal (webhook + API)
+    baileys/            — backup WhatsApp directo
+    twilio-voice/       — voz (Twilio + Gemini Live)
+    gmail/              — email (Gmail API)
+  lib/                  — utilidades compartidas
+    circuit-breaker.ts
+    normalizer.ts
+    email-triage.ts
+    effort-router.ts
+    retry.ts
+    logger.ts
+  migrations/           — SQL numeradas (auto-ejecutadas al arrancar)
+  index.ts              — entry point: gateway + workers
+instance/
+  _template/            — template vacio para nuevo tenant
+    identity.md         — personalidad (formato SOUL.md)
+    standing-orders.md  — autoridad operativa
+    skills/             — skills del agente
+    knowledge/          — documentos de conocimiento
+    config.json         — variables del tenant
+  {tenant-name}/        — config por empresa (misma estructura que _template)
+tests/
+  unit/                 — tests por modulo
+  adversarial/          — tests de edge cases del Auditor
+  integration/          — tests contra tenant real
+deploy/                 — docker-compose, Traefik, scripts
+docs/
+  architecture/         — decisiones arquitectonicas
+  plans/                — planes de evolucion y sesiones
+  analysis/             — extracciones de codigo y patrones
+  audit/                — reportes del Auditor
+```
+
+## Config por tenant
+
+Cada tenant tiene su directorio en `instance/{tenant-name}/` con:
+
+| Archivo | Que define |
+|---------|------------|
+| `config.json` | Env vars: API keys, timezone, idioma, modelos LLM, sheet IDs |
+| `identity.md` | Personalidad del agente (SOUL.md: Core Truths, Boundaries, Vibe, Continuity) |
+| `standing-orders.md` | Que puede hacer el agente sin pedir permiso (scope, triggers, gates) |
+| `skills/*.md` | Habilidades con metadata (requires, invocationPolicy) |
+| `knowledge/` | Documentos de conocimiento (PDFs, docs, FAQs) |
+| `workflows/*.json` | Pipelines de trabajo automatizados |
+| `qualifying.json` | Framework de calificacion de leads (CHAMP, BANT, custom) |
+
+El worker lee TODO de su directorio instance/. **El codigo fuente (src/) es identico para todos los tenants.** La diferencia es solo config.
+
+## Convenciones
+
+### Naming
+- Archivos y carpetas: `kebab-case` (ej: `circuit-breaker.ts`, `email-triage.ts`)
+- Variables y funciones: `camelCase`
+- Clases, types, interfaces: `PascalCase`
+- Constantes globales: `UPPER_SNAKE_CASE`
+
+### Imports
+- Extension `.js` obligatoria en imports relativos (ESM)
+- `import type { X }` para imports solo de tipos
+
+### SQL
+- Raw SQL con queries parametrizadas ($1, $2) — NO usar ORM
+- `IF NOT EXISTS` / `IF EXISTS` en migraciones para idempotencia
+- `tenant_id` en TODAS las tablas de datos (excepto schema_migrations)
+- Row Level Security habilitado por tabla
+
+### Tests
+- Vitest como runner
+- Cada modulo tiene su `.test.ts` al lado del archivo fuente
+- Tests adversarios en `tests/adversarial/`
+- `npx tsc --noEmit` debe pasar SIEMPRE antes de commit
+
+## Lo que NO hacer
+
+### Arquitectura
+- NO usar ORM (Drizzle, Prisma, TypeORM) — raw SQL parametrizado
+- NO agregar Express — Fastify es el server HTTP
+- NO importar entre workers directamente — compartir via core/
+- NO hacer sync bidireccional con servicios externos — PostgreSQL es fuente de verdad
+- NO guardar archivos en la base de datos — media en disco en instance/{tenant}/knowledge/
+- NO agregar bases vectoriales externas (Pinecone, Weaviate) — pgvector ya esta integrado
+- NO construir SPA — SSR con templates si se necesita UI admin
+
+### Codigo
+- NO usar import sin extension `.js` en paths relativos
+- NO leer `process.env` fuera de gateway/middleware y worker/bootstrap — usar config inyectado
+- NO duplicar helpers (retry, JSON parse, HTTP response) — usar los de lib/
+- NO procesar adjuntos fuera del pipeline de extractores
+- NO hardcodear nombres de agente, empresa, timezone, emails — todo viene de instance/
+- NO instalar `@google/generative-ai` — esta deprecado, usar `@google/genai`
+- NO usar `response.text()` como metodo para Google SDK — es propiedad `response.text`
+
+### Proceso
+- NO disenar + implementar en la misma sesion de Claude Code
+- NO pushear sin compilar (`npx tsc --noEmit`)
+- NO mergear sin revision del Auditor
+- NO planificar mas de 5 sesiones adelante — el plan se ajusta
+
+## Multi-agent workflow
+
+El desarrollo usa sesiones de Claude Code con roles especializados:
+
+| Rol | Modelo | Que hace |
+|-----|--------|----------|
+| Explorer (Sonnet) | Lee repos fuente, produce docs/analysis/ | Solo lectura |
+| Planner (Opus) | Lee analisis, produce docs/plans/sessions/ | Solo planifica |
+| Executor (Sonnet) | Implementa UNA sesion del plan | Solo codigo |
+| Auditor (Opus) | Revisa PRs, escribe tests adversarios | Solo revisa |
+
+Prompts por rol en `docs/plans/pinza-evolution/prompts/`.
+Plan maestro en `docs/plans/pinza-evolution/master-plan.md`.
+
+## Principios
+
+1. **Nunca a mas de 1 sesion de un sistema que funciona**
+2. **Si se puede sin LLM → codigo** (deterministico siempre que sea posible)
+3. **OneScreen es el primer tenant** — siempre debe funcionar como hoy
+4. **El segundo tenant es el test de neutralidad** — si funciona sin tocar src/, esta bien
+5. **Config por archivos en instance/** — Markdown + JSON, no base de datos para config
+6. **Fallback messages predefinidos** — nunca generados por LLM
+7. **Logs JSON estructurados** (pino) en cada paso
